@@ -393,7 +393,12 @@ function _buildNeutralGrid(cols, rows) {
  * seatId: identifies which seat this portrait belongs to, used to scope emote overlays.
  * Falls back to a plain drawImage when the composer has no data for this portrait.
  */
-function drawPortraitLayerWarped(ctx, img, xform, cssFilter, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId) {
+/**
+ * staticDeform (optional): array of 24 [dx, dy] offset pairs (one per 4×6 grid point,
+ * in normalised body-layer space). Applied additively on top of the breathing animation
+ * (or on top of the neutral grid when no breathing composer is present).
+ */
+function drawPortraitLayerWarped(ctx, img, xform, cssFilter, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
   const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
@@ -402,8 +407,8 @@ function drawPortraitLayerWarped(ctx, img, xform, cssFilter, breathingComposer, 
   const layerX = cx - w / 2;
   const layerY = cy - h / 2;
 
-  const deformedPts = breathingComposer?.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId);
-  if (!deformedPts) {
+  const breathingPts = breathingComposer?.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId);
+  if (!breathingPts && !staticDeform) {
     ctx.save();
     ctx.filter = cssFilter || 'none';
     ctx.drawImage(img, layerX, layerY, w, h);
@@ -411,12 +416,25 @@ function drawPortraitLayerWarped(ctx, img, xform, cssFilter, breathingComposer, 
     return;
   }
 
-  const anim = breathingComposer.getAnimData(speciesId, gender);
-  const gridCols = anim.gridCols, gridRows = anim.gridRows;
+  const anim = breathingPts ? breathingComposer.getAnimData(speciesId, gender) : null;
+  const gridCols = anim?.gridCols ?? 4;
+  const gridRows = anim?.gridRows ?? 6;
+  const neutralPts = _buildNeutralGrid(gridCols, gridRows);
+
+  // Apply static permanent deform additively on top of breathing (or neutral).
+  // staticDeform is always a 24-element (4×6) array matching the breathing grid.
+  // The length check guards against stale data from a differently-sized grid.
+  let finalPts = breathingPts || neutralPts;
+  if (staticDeform && staticDeform.length === finalPts.length) {
+    finalPts = finalPts.map((p, i) => [
+      p[0] + (staticDeform[i]?.[0] ?? 0),
+      p[1] + (staticDeform[i]?.[1] ?? 0),
+    ]);
+  }
 
   ctx.save();
   ctx.filter = cssFilter || 'none';
-  _drawPortraitLayerWarped(ctx, img, layerX, layerY, w, h, _buildNeutralGrid(gridCols, gridRows), deformedPts, gridCols, gridRows);
+  _drawPortraitLayerWarped(ctx, img, layerX, layerY, w, h, neutralPts, finalPts, gridCols, gridRows);
   ctx.restore();
 }
 
@@ -603,6 +621,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const breathingComposer   = renderOptions?.breathingComposer ?? window.portraitBreathingComposer ?? null;
   const breathingPhaseOffset = Number(renderOptions?.breathingPhaseOffsetMs) || 0;
   const seatId = renderOptions?.seatId ?? null;
+  // Permanent quad deform: array of 24 [dx,dy] offsets, applied additively with breathing.
+  const staticDeform = (Array.isArray(profile.bodyDeform) && profile.bodyDeform.length > 0)
+    ? profile.bodyDeform
+    : (renderOptions?.staticDeform ?? null);
   const renderHeadSprite = !omitHeadSpriteAndCosmetics;
   const renderHeadCosmetics = !omitHeadSpriteAndCosmetics;
   const resolvedFighter = resolvePortraitFighter(fighter) || fighter;
@@ -873,8 +895,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     for (const { layer, filter } of layerList) {
       const img = imgMap.get(layer.url);
       if (!img) continue;
-      if (breathingComposer) {
-        drawPortraitLayerWarped(ctx, img, resolveXform(layer), filter, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId);
+      if (breathingComposer || staticDeform) {
+        drawPortraitLayerWarped(ctx, img, resolveXform(layer), filter, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform);
       } else {
         drawPortraitLayer(ctx, img, resolveXform(layer), filter);
       }

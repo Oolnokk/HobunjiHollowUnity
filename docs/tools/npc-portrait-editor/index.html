@@ -320,6 +320,23 @@
       transition: border-color .12s, color .12s;
     }
     #npe-export-all-btn:hover { border-color: rgba(242,208,143,0.5); color: var(--gold); }
+    #npe-import-btn {
+      background: transparent; border: 1px solid rgba(242,208,143,0.22);
+      border-radius: 7px; color: rgba(242,208,143,0.5); padding: 6px 14px; font-size: 0.85em;
+      font-family: inherit; letter-spacing: inherit; cursor: pointer;
+      transition: border-color .12s, color .12s;
+    }
+    #npe-import-btn:hover { border-color: rgba(242,208,143,0.5); color: var(--gold); }
+
+    /* ── Deform editor ───────────────────────────────────── */
+    .sb-deform-layout {
+      display: flex; gap: 18px; align-items: flex-start; margin-top: 12px;
+    }
+    .sb-deform-preview {
+      flex-shrink: 0; display: flex; flex-direction: column;
+      align-items: center; gap: 6px;
+    }
+    .sb-deform-controls { flex: 1; min-width: 0; }
 
     /* ── Scrollable controls area ────────────────────────── */
     .sb-ap-controls, .sb-col-content {
@@ -344,8 +361,10 @@
     <div id="npe-editor"></div>
     <div id="npe-export-bar">
       <span class="npe-npc-label" id="npe-active-label"></span>
-      <button id="npe-export-json-btn">Export Active NPC JSON</button>
-      <button id="npe-export-all-btn">Export All NPCs JSON</button>
+      <button id="npe-import-btn">Upload NPC JSON</button>
+      <input type="file" id="npe-import-file" accept=".json" style="display:none;">
+      <button id="npe-export-json-btn">Download NPC JSON</button>
+      <button id="npe-export-all-btn">Download All NPCs JSON</button>
     </div>
   </div>
 
@@ -612,7 +631,7 @@
     // ── Editor state ───────────────────────────────────────
     let _npcs = [];
     let _activeNpcIdx = 0;
-    let _activeTab = 'appearance';   // 'appearance' | 'collections'
+    let _activeTab = 'appearance';   // 'appearance' | 'collections' | 'deform'
     let _editAppearance = null;      // working copy while editing
     let _editAIdx = 0;
     let _editBIdx = 0;
@@ -768,6 +787,9 @@
           C: { ...(npc.appearance.bodyColors?.C || { h:0, s:-0.65, v:-0.15 }) },
         },
         chatColor: npc.appearance.chatColor ? { ...npc.appearance.chatColor } : { h: 210, s: 75, l: 68 },
+        bodyDeform: Array.isArray(npc.appearance?.bodyDeform)
+          ? npc.appearance.bodyDeform.map(p => Array.isArray(p) ? [p[0] ?? 0, p[1] ?? 0] : [0, 0])
+          : null,
       };
       const gData = currentSpeciesGenderData();
       const opts = gData ? gData.colorOptions : [];
@@ -857,6 +879,10 @@
         if (savedCosmetics.facialHair !== undefined && !forcedSlots.has('facialHair')) profile.facialHair = lookup(savedCosmetics.facialHair);
       }
       if (bodyColors) profile.bodyColors = { ...(profile.bodyColors || {}), ...bodyColors };
+      // Propagate permanent quad deform so renderProfile can apply it.
+      if (Array.isArray(appearance.bodyDeform) && appearance.bodyDeform.length > 0) {
+        profile.bodyDeform = appearance.bodyDeform;
+      }
 
       // Apply equipped items and dyes via mock account
       const acc = window.ScratchbonesAccount;
@@ -1213,6 +1239,32 @@
         </div>`;
     }
 
+    function renderDeform() {
+      return `
+        <div class="sb-deform-layout">
+          <div class="sb-deform-preview">
+            <div style="position:relative;width:200px;height:200px;">
+              <canvas id="sb-deform-portrait" width="200" height="200" class="sb-portrait-canvas" style="position:absolute;top:0;left:0;"></canvas>
+              <canvas id="sb-deform-grid" width="200" height="200"
+                      style="position:absolute;top:0;left:0;cursor:crosshair;touch-action:none;background:transparent;border-radius:8px;"></canvas>
+            </div>
+            <div class="sb-muted" style="font-size:0.72em;text-align:center;margin-top:4px;">Drag grid points to deform</div>
+          </div>
+          <div class="sb-deform-controls">
+            <div class="sb-label">Body Deformation</div>
+            <div class="sb-muted" style="font-size:0.8em;margin:6px 0 10px;line-height:1.5;">
+              Permanently deforms the body mesh — useful for fat, old, or stooped NPCs.
+              Applied additively on top of any breathing animation.
+              <br>Drag the orange grid control points on the portrait to reshape.
+            </div>
+            <div class="sb-actions" style="justify-content:flex-start;gap:6px;">
+              <button class="sb-btn-ghost" id="sb-deform-reset-btn">Reset All Points</button>
+              <button class="sb-btn-primary" id="sb-save-deform-btn">Save Deform</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
     function renderCollections() {
       const acc = window.ScratchbonesAccount;
       const fullCatalog = acc.getShopCatalog();
@@ -1385,6 +1437,7 @@
         <div class="npe-tab-bar">
           <button class="npe-tab-btn${_activeTab === 'appearance' ? ' active' : ''}" data-editor-tab="appearance">Appearance</button>
           <button class="npe-tab-btn${_activeTab === 'collections' ? ' active' : ''}" data-editor-tab="collections">Collections</button>
+          <button class="npe-tab-btn${_activeTab === 'deform' ? ' active' : ''}" data-editor-tab="deform">Deform</button>
         </div>`;
 
       let content = '';
@@ -1392,6 +1445,8 @@
         content = renderAppearance();
       } else if (_activeTab === 'collections') {
         content = renderCollections();
+      } else if (_activeTab === 'deform' && _editAppearance) {
+        content = renderDeform();
       }
 
       editorEl.innerHTML = `<div class="sb-card sb-wide-card">${tabBar}${content}</div>`;
@@ -1402,6 +1457,9 @@
       } else if (_activeTab === 'collections') {
         const ap = { ...npc.appearance, equippedCosmetics: npc.equippedCosmetics, appliedDyes: npc.appliedDyes };
         renderPreviewCanvas('sb-col-canvas', ap);
+      } else if (_activeTab === 'deform' && _editAppearance) {
+        renderPreviewCanvas('sb-deform-portrait', _editAppearance);
+        initDeformGrid();
       }
 
       renderNpcBar();
@@ -1477,9 +1535,11 @@
         btn.addEventListener('click', () => {
           if (btn.dataset.editorTab === _activeTab) return;
           if (_activeTab === 'appearance') saveEditState();
+          if (_activeTab === 'deform') saveEditState();
           _activeTab = btn.dataset.editorTab;
           _activeDyeSlot = null;
           if (_activeTab === 'appearance') loadEditState();
+          if (_activeTab === 'deform') loadEditState();
           render();
         });
       });
@@ -1767,18 +1827,194 @@
           render();
         });
       });
+
+      // ── Deform tab handlers ────────────────────────────
+      document.getElementById('sb-save-deform-btn')?.addEventListener('click', () => {
+        saveEditState();
+        render();
+      });
+      document.getElementById('sb-deform-reset-btn')?.addEventListener('click', () => {
+        if (_editAppearance?.bodyDeform) {
+          for (let i = 0; i < _editAppearance.bodyDeform.length; i++) _editAppearance.bodyDeform[i] = [0, 0];
+        }
+        initDeformGrid();
+        renderPreviewCanvas('sb-deform-portrait', _editAppearance);
+      });
     }
 
-    // ── Export ─────────────────────────────────────────────
+    // ── Deform grid ────────────────────────────────────────
+    // Interactive 4×6 control-point overlay for the permanent body deformer.
+    function initDeformGrid() {
+      const gridCanvas = document.getElementById('sb-deform-grid');
+      if (!gridCanvas || !_editAppearance) return;
+      const ctx = gridCanvas.getContext('2d');
+
+      const GCOLS = 4, GROWS = 6, GN = GCOLS * GROWS;
+      // Approximate body-layer bounds on the 200×200 canvas.
+      // Assumes default xform {ax:0, ay:0, sx:1, sy:1} and PORTRAIT_L=80.
+      // Width is assumed square for overlay purposes (actual rendering uses sprite aspect ratio).
+      const BX = 60, BY = 60, BW = 80, BH = 80;
+
+      // Ensure bodyDeform array exists on the working copy.
+      if (!Array.isArray(_editAppearance.bodyDeform) || _editAppearance.bodyDeform.length !== GN) {
+        _editAppearance.bodyDeform = Array.from({ length: GN }, () => [0, 0]);
+      }
+      const deform = _editAppearance.bodyDeform;
+
+      function ptCanvas(col, row) {
+        const idx = row * GCOLS + col;
+        const nx = BX + col / (GCOLS - 1) * BW;
+        const ny = BY + row / (GROWS - 1) * BH;
+        const [dx, dy] = deform[idx] ?? [0, 0];
+        return [nx + dx * BW, ny + dy * BH];
+      }
+
+      function nearestPoint(cx, cy) {
+        let best = null, bestD2 = 16 * 16;
+        for (let r = 0; r < GROWS; r++) {
+          for (let c = 0; c < GCOLS; c++) {
+            const [px, py] = ptCanvas(c, r);
+            const d2 = (cx - px) ** 2 + (cy - py) ** 2;
+            if (d2 < bestD2) { bestD2 = d2; best = { c, r }; }
+          }
+        }
+        return best;
+      }
+
+      // Remove previous listeners by replacing the canvas element.
+      const fresh = gridCanvas.cloneNode(false);
+      gridCanvas.parentNode.replaceChild(fresh, gridCanvas);
+      const gc = fresh;
+      const gctx = gc.getContext('2d');
+
+      function canvasXY(e) {
+        const rect = gc.getBoundingClientRect();
+        return [(e.clientX - rect.left) * (200 / rect.width), (e.clientY - rect.top) * (200 / rect.height)];
+      }
+
+      let dragging = null;
+
+      function drawGridOn(c2d) {
+        c2d.clearRect(0, 0, 200, 200);
+        for (let r = 0; r < GROWS; r++) {
+          c2d.beginPath();
+          for (let c = 0; c < GCOLS; c++) {
+            const [px, py] = ptCanvas(c, r);
+            if (c === 0) c2d.moveTo(px, py); else c2d.lineTo(px, py);
+          }
+          c2d.strokeStyle = 'rgba(242,208,143,0.3)';
+          c2d.lineWidth = 1;
+          c2d.stroke();
+        }
+        for (let c = 0; c < GCOLS; c++) {
+          c2d.beginPath();
+          for (let r = 0; r < GROWS; r++) {
+            const [px, py] = ptCanvas(c, r);
+            if (r === 0) c2d.moveTo(px, py); else c2d.lineTo(px, py);
+          }
+          c2d.strokeStyle = 'rgba(242,208,143,0.3)';
+          c2d.lineWidth = 1;
+          c2d.stroke();
+        }
+        for (let r = 0; r < GROWS; r++) {
+          for (let c = 0; c < GCOLS; c++) {
+            const [px, py] = ptCanvas(c, r);
+            const idx = r * GCOLS + c;
+            const [dx, dy] = deform[idx] ?? [0, 0];
+            const moved = Math.abs(dx) > 0.005 || Math.abs(dy) > 0.005;
+            c2d.beginPath();
+            c2d.arc(px, py, moved ? 6 : 4.5, 0, Math.PI * 2);
+            c2d.fillStyle = moved ? 'rgba(200,153,82,0.85)' : 'rgba(242,208,143,0.4)';
+            c2d.fill();
+            c2d.strokeStyle = moved ? 'rgba(242,208,143,0.95)' : 'rgba(242,208,143,0.6)';
+            c2d.lineWidth = 1.5;
+            c2d.stroke();
+          }
+        }
+      }
+
+      gc.addEventListener('pointerdown', (e) => {
+        const [cx, cy] = canvasXY(e);
+        const pt = nearestPoint.call(null, cx, cy);
+        if (!pt) return;
+        dragging = { ...pt };
+        gc.setPointerCapture(e.pointerId);
+        e.preventDefault();
+      });
+
+      gc.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const [cx, cy] = canvasXY(e);
+        const { c, r } = dragging;
+        const idx = r * GCOLS + c;
+        const nx = BX + c / (GCOLS - 1) * BW;
+        const ny = BY + r / (GROWS - 1) * BH;
+        deform[idx] = [
+          Math.max(-0.45, Math.min(0.45, (cx - nx) / BW)),
+          Math.max(-0.45, Math.min(0.45, (cy - ny) / BH)),
+        ];
+        drawGridOn(gctx);
+        renderPreviewCanvas('sb-deform-portrait', _editAppearance);
+        e.preventDefault();
+      });
+
+      gc.addEventListener('pointerup',     () => { dragging = null; });
+      gc.addEventListener('pointercancel', () => { dragging = null; });
+
+      drawGridOn(gctx);
+    }
+
+    // ── Export / Import ────────────────────────────────────
     function exportNpc(npc) {
+      const ap = npc.appearance ? { ...npc.appearance } : null;
+      // Deep-copy bodyDeform so the exported object is standalone.
+      if (ap && Array.isArray(ap.bodyDeform)) {
+        ap.bodyDeform = ap.bodyDeform.map(p => [...p]);
+      }
       return {
         name: npc.name,
         nameFormat: npc.nameFormat || 'nickname',
         loreName: npc.loreName ? { ...npc.loreName } : null,
-        appearance: npc.appearance ? { ...npc.appearance } : null,
+        appearance: ap,
         equippedCosmetics: [...(npc.equippedCosmetics || [])],
         appliedDyes: { ...(npc.appliedDyes || {}) },
       };
+    }
+
+    function sanitizeFilename(name) {
+      return (String(name || 'npc').replace(/[^a-z0-9_\-]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'npc') + '.json';
+    }
+
+    function downloadJson(filename, data) {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function importNpcFromData(data) {
+      const items = Array.isArray(data) ? data : [data];
+      for (const item of items) {
+        if (!item || typeof item !== 'object') continue;
+        _npcs.push({
+          id: makeNpcId(),
+          name: String(item.name || 'Imported NPC'),
+          nameFormat: item.nameFormat || 'nickname',
+          loreName: item.loreName || null,
+          appearance: item.appearance
+            ? { speciesId: 'mao-ao', gender: 'male', cosmetics: {}, bodyColors: {}, ...item.appearance }
+            : { speciesId: 'mao-ao', gender: 'male', cosmetics: {}, bodyColors: {} },
+          equippedCosmetics: Array.isArray(item.equippedCosmetics) ? [...item.equippedCosmetics] : [],
+          appliedDyes: (item.appliedDyes && typeof item.appliedDyes === 'object') ? { ...item.appliedDyes } : {},
+        });
+      }
+      _activeNpcIdx = _npcs.length - 1;
+      loadEditState();
+      render();
     }
 
     function bindExportBar() {
@@ -1786,20 +2022,32 @@
         saveEditState();
         const npc = activeNpc();
         if (!npc) return;
-        const json = JSON.stringify(exportNpc(npc), null, 2);
-        const btn = document.getElementById('npe-export-json-btn');
-        navigator.clipboard?.writeText(json).then(() => {
-          if (btn) { const prev = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = prev; }, 1400); }
-        }).catch(() => { window.prompt?.('Copy this JSON:', json); });
+        downloadJson(sanitizeFilename(npc.name), exportNpc(npc));
       });
 
       document.getElementById('npe-export-all-btn')?.addEventListener('click', () => {
         saveEditState();
-        const json = JSON.stringify(_npcs.map(exportNpc), null, 2);
-        const btn = document.getElementById('npe-export-all-btn');
-        navigator.clipboard?.writeText(json).then(() => {
-          if (btn) { const prev = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = prev; }, 1400); }
-        }).catch(() => { window.prompt?.('Copy this JSON:', json); });
+        downloadJson('npcs.json', _npcs.map(exportNpc));
+      });
+
+      document.getElementById('npe-import-btn')?.addEventListener('click', () => {
+        document.getElementById('npe-import-file')?.click();
+      });
+
+      document.getElementById('npe-import-file')?.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            const data = JSON.parse(ev.target.result);
+            importNpcFromData(data);
+          } catch (err) {
+            alert('Failed to parse JSON: ' + err.message);
+          }
+        };
+        reader.readAsText(file);
+        e.target.value = ''; // allow re-importing the same file
       });
     }
 
