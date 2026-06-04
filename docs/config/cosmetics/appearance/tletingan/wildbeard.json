@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "name": "Wildbeard"
+  },
+  "type": "appearance",
+  "appearance": {
+    "inheritSprite": "head",
+    "bodyColors": [
+      "A"
+    ],
+    "originalId": "tl_wildbeard"
+  },
+  "parts": {
+    "head": {
+      "image": {
+        "url": "./assets/cosmetics/appearance/tletingan/tl_wildbeard.png"
+      },
+      "spriteStyle": {
+        "xform": {
+          "head": {
+            "ax": -0.2,
+            "ay": 0,
+            "scaleX": 2.55,
+            "scaleY": 2.55,
+            "rotDeg": 0
+          }
+        }
+      }
+    }
+  }
+}

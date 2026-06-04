@@ -1,0 +1,29 @@
+{
+  "entries": [
+    {
+      "speciesId": "mao-ao",
+      "label": "Mao-ao",
+      "path": "./mao-ao.json"
+    },
+    {
+      "speciesId": "tletingan",
+      "label": "Tletingan",
+      "path": "./tletingan.json"
+    },
+    {
+      "speciesId": "kenkari",
+      "label": "Kenkari",
+      "path": "./kenkari.json"
+    },
+    {
+      "speciesId": "rakakoan",
+      "label": "Rakako'an",
+      "path": "./rakakoan.json"
+    },
+    {
+      "speciesId": "engh-sho",
+      "label": "Engh-sho",
+      "path": "./engh-sho.json"
+    }
+  ]
+}

@@ -1,0 +1,246 @@
+{
+  "slot": "torso",
+  "tintSlot": "TORSO",
+  "meta": {
+    "name": "Bandolier"
+  },
+  "tags": [
+    "material:leather"
+  ],
+  "speciesVariants": {
+    "mao-ao_male": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/torso/portrait/bandolier1_mao-ao_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mao-ao_female": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/torso/portrait/bandolier1_mao-ao_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "tletingan_male": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/torso/portrait/bandolier1_tl_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "kenkari_male": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/torso/portrait/bandolier1_kenk_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "kenkari_female": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/torso/portrait/bandolier1_kenk_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "engh-sho_male": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/torso/portrait/bandolier1_engh_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "engh-sho_female": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/torso/portrait/bandolier1_engh_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rakakoan_male": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/torso/portrait/bandolier1_kenk_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rakakoan_female": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/torso/portrait/bandolier1_kenk_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

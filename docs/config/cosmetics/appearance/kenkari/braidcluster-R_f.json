@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "name": "Braid Cluster (Right)"
+  },
+  "type": "appearance",
+  "hairSlot": "side",
+  "appearance": {
+    "inheritSprite": "head",
+    "bodyColors": [
+      "A"
+    ],
+    "originalId": "kenk_braidcluster-R_f"
+  },
+  "parts": {
+    "head": {
+      "layers": {
+        "back": {
+          "image": {
+            "url": "./assets/cosmetics/appearance/kenkari/kenk_braidcluster-R_f.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "head": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

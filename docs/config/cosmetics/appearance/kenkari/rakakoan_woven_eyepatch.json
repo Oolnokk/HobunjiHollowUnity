@@ -1,0 +1,57 @@
+{
+  "type": "appearance",
+  "appearance": {
+    "inheritSprite": "",
+    "bodyColors": [
+      "UPPER_FACE"
+    ],
+    "originalId": "rakakoan_woven_eyepatch"
+  },
+  "portraitSlot": "upperFace",
+  "material": "cloth",
+  "meta": {
+    "name": "Woven Eyepatch"
+  },
+  "speciesVariants": {
+    "rakakoan_male": {
+      "parts": {
+        "head": {
+          "image": {
+            "url": "./assets/cosmetics/appearance/kenkari/woven_eyepatch_rakakoan_m.png"
+          },
+          "spriteStyle": {
+            "xform": {
+              "head": {
+                "ax": -0.2,
+                "ay": 0,
+                "scaleX": 2.55,
+                "scaleY": 2.55,
+                "rotDeg": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "rakakoan_female": {
+      "parts": {
+        "head": {
+          "image": {
+            "url": "./assets/cosmetics/appearance/kenkari/woven_eyepatch_rakakoan_f.png"
+          },
+          "spriteStyle": {
+            "xform": {
+              "head": {
+                "ax": -0.2,
+                "ay": 0,
+                "scaleX": 2.55,
+                "scaleY": 2.55,
+                "rotDeg": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

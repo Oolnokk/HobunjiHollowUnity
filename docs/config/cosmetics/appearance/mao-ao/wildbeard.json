@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "name": "Wildbeard"
+  },
+  "type": "appearance",
+  "appearance": {
+    "inheritSprite": "head",
+    "bodyColors": [
+      "A"
+    ],
+    "originalId": "mao-ao_wildbeard"
+  },
+  "parts": {
+    "head": {
+      "image": {
+        "url": "./assets/cosmetics/appearance/mao-ao/facialhair/wildbeard_mint2.png"
+      },
+      "spriteStyle": {
+        "xform": {
+          "head": {
+            "ax": -0.2,
+            "ay": 0,
+            "scaleX": 2.55,
+            "scaleY": 2.55,
+            "rotDeg": 0
+          }
+        }
+      }
+    }
+  }
+}

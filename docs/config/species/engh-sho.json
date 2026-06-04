@@ -1,0 +1,1163 @@
+{
+  "speciesId": "engh-sho",
+  "label": "Engh-sho",
+  "male": {
+    "headSprite": "fightersprites/engh-sho-m/head.png",
+    "headUrLayers": [
+      {
+        "url": "fightersprites/engh-sho-m/untinted_regions/ur-head.png",
+        "renderOrder": "topLayer"
+      }
+    ],
+    "headXform": {
+      "ax": 0,
+      "ay": -0.1,
+      "sx": 0.95,
+      "sy": 1.14
+    },
+    "allowedCosmetics": [
+      "appearance::Engh-sho_M::engh_snowgoggles",
+      "appearance::Engh-sho_M::engh_hairdefault-front",
+      "appearance::Mao-ao_M::mao-ao_forwardtuft_short",
+      "appearance::Mao-ao_M::mao-ao_forwardtuft_long",
+      "appearance::Mao-ao_M::mao-ao_tuft",
+      "appearance::Mao-ao_M::mao-ao_shoulder_length_drape",
+      "appearance::Mao-ao_M::mao-ao_long_ponytail",
+      "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
+      "appearance::Mao-ao_M::mao-ao_wildbeard",
+      "appearance::Mao-ao_M::mao-ao_braid-L",
+      "appearance::Mao-ao_M::mao-ao_braid-R",
+      "appearance::Mao-ao_M::mao-ao_braidcluster-R",
+      "appearance::hat::basic_headband",
+      "appearance::hat::leather_headband",
+      "fine_hood",
+      "tankan_tunic",
+      "bandolier1",
+      "fine_poncho"
+    ],
+    "conditionalCosmetics": [
+      {
+        "slot": "hairFront",
+        "cosmeticId": "engh_hairdefault-front",
+        "conditions": {
+          "hairFront": "none"
+        }
+      }
+    ],
+    "cosmeticWeights": {
+      "eyes": {
+        "none": 0,
+        "engh_snowgoggles": 100
+      },
+      "hat": {
+        "none": 55,
+        "basic_headband": 25,
+        "leather_headband": 20
+      },
+      "hood": {
+        "none": 35,
+        "fine_hood": 65
+      },
+      "hairFront": {
+        "none": 0,
+        "engh_hairdefault-front": 0,
+        "tuft": 30,
+        "forwardtuft_long": 35,
+        "forwardtuft_short": 35
+      },
+      "hairBack": {
+        "none": 50,
+        "long_ponytail": 25,
+        "splayedknot_medium": 25
+      },
+      "hairSide": {
+        "none": 60,
+        "shoulder_length_drape": 10,
+        "braid-R": 15,
+        "braidcluster-R": 15
+      },
+      "hairSideL": {
+        "none": 60,
+        "braid-L": 40
+      },
+      "facialHair": {
+        "none": 65,
+        "wildbeard": 35
+      },
+      "overwear": {
+        "none": 0,
+        "fine_poncho": 35
+      }
+    },
+    "bodyColorRanges": {
+      "A": {
+        "minH": -85,
+        "maxH": 70,
+        "stops": [
+          {
+            "h": -85,
+            "sMin": -0.95,
+            "sMax": -0.6,
+            "vMin": -1.0,
+            "vMax": 0.53
+          },
+          {
+            "h": -60,
+            "sMin": -0.95,
+            "sMax": -0.6,
+            "vMin": -1.0,
+            "vMax": 0.53
+          },
+          {
+            "h": 0,
+            "sMin": -1,
+            "sMax": -0.45,
+            "vMin": -1.0,
+            "vMax": 0.73
+          },
+          {
+            "h": 70,
+            "sMin": -1,
+            "sMax": -0.45,
+            "vMin": -1.0,
+            "vMax": 0.73
+          }
+        ]
+      },
+      "B": {
+        "minH": -85,
+        "maxH": 70,
+        "stops": [
+          {
+            "h": -85,
+            "sMin": -0.95,
+            "sMax": -0.4,
+            "vMin": -1.0,
+            "vMax": 0.18
+          },
+          {
+            "h": -60,
+            "sMin": -0.95,
+            "sMax": -0.4,
+            "vMin": -1.0,
+            "vMax": 0.18
+          },
+          {
+            "h": 0,
+            "sMin": -1,
+            "sMax": -0.45,
+            "vMin": -1.0,
+            "vMax": 0.38
+          },
+          {
+            "h": 70,
+            "sMin": -1,
+            "sMax": -0.45,
+            "vMin": -1.0,
+            "vMax": 0.38
+          }
+        ]
+      },
+      "C": {
+        "minH": -85,
+        "maxH": 70,
+        "stops": [
+          {
+            "h": -85,
+            "sMin": -0.9,
+            "sMax": -0.1,
+            "vMin": -0.12,
+            "vMax": 0.63
+          },
+          {
+            "h": -70,
+            "sMin": -0.9,
+            "sMax": -0.1,
+            "vMin": -0.12,
+            "vMax": 0.63
+          },
+          {
+            "h": 0,
+            "sMin": -1,
+            "sMax": -0.5,
+            "vMin": -0.02,
+            "vMax": 0.78
+          },
+          {
+            "h": 70,
+            "sMin": -1,
+            "sMax": -0.5,
+            "vMin": -0.02,
+            "vMax": 0.78
+          }
+        ]
+      }
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm_L_engh_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_engh_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm_R_engh_m.png",
+        "tintSlot": "A",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ],
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    },
+    "randomizationRules": {
+      "hatHideRules": {
+        "basic_headband": {
+          "hideSlots": []
+        },
+        "leather_headband": {
+          "hideSlots": []
+        }
+      },
+      "clothingColors": {
+        "syncAcrossPieces": false,
+        "range": {
+          "choices": [
+            {
+              "weight": 60,
+              "range": {
+                "minH": -35,
+                "maxH": 45,
+                "stops": [
+                  {
+                    "h": -35,
+                    "sMin": -0.55,
+                    "sMax": 0.25,
+                    "vMin": -0.32,
+                    "vMax": 0.2
+                  },
+                  {
+                    "h": 45,
+                    "sMin": -0.45,
+                    "sMax": 0.32,
+                    "vMin": -0.24,
+                    "vMax": 0.28
+                  }
+                ]
+              }
+            },
+            {
+              "weight": 30,
+              "range": {
+                "minH": -180,
+                "maxH": 180,
+                "stops": [
+                  {
+                    "h": -180,
+                    "sMin": -1.0,
+                    "sMax": -0.62,
+                    "vMin": -0.08,
+                    "vMax": 0.55
+                  },
+                  {
+                    "h": 0,
+                    "sMin": -1.0,
+                    "sMax": -0.65,
+                    "vMin": -0.12,
+                    "vMax": 0.58
+                  },
+                  {
+                    "h": 180,
+                    "sMin": -1.0,
+                    "sMax": -0.62,
+                    "vMin": -0.08,
+                    "vMax": 0.55
+                  }
+                ]
+              }
+            },
+            {
+              "weight": 10,
+              "range": {
+                "minH": 60,
+                "maxH": 145,
+                "stops": [
+                  {
+                    "h": 60,
+                    "sMin": -0.65,
+                    "sMax": 0.12,
+                    "vMin": -0.22,
+                    "vMax": 0.25
+                  },
+                  {
+                    "h": 145,
+                    "sMin": -0.7,
+                    "sMax": 0.1,
+                    "vMin": -0.2,
+                    "vMax": 0.3
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "paletteRanges": {
+          "A": {
+            "choices": [
+              {
+                "weight": 60,
+                "range": {
+                  "minH": -35,
+                  "maxH": 45,
+                  "stops": [
+                    {
+                      "h": -35,
+                      "sMin": -0.55,
+                      "sMax": 0.25,
+                      "vMin": -0.32,
+                      "vMax": 0.2
+                    },
+                    {
+                      "h": 45,
+                      "sMin": -0.45,
+                      "sMax": 0.32,
+                      "vMin": -0.24,
+                      "vMax": 0.28
+                    }
+                  ]
+                }
+              },
+              {
+                "weight": 30,
+                "range": {
+                  "minH": -180,
+                  "maxH": 180,
+                  "stops": [
+                    {
+                      "h": -180,
+                      "sMin": -1.0,
+                      "sMax": -0.62,
+                      "vMin": -0.08,
+                      "vMax": 0.55
+                    },
+                    {
+                      "h": 0,
+                      "sMin": -1.0,
+                      "sMax": -0.65,
+                      "vMin": -0.12,
+                      "vMax": 0.58
+                    },
+                    {
+                      "h": 180,
+                      "sMin": -1.0,
+                      "sMax": -0.62,
+                      "vMin": -0.08,
+                      "vMax": 0.55
+                    }
+                  ]
+                }
+              },
+              {
+                "weight": 10,
+                "range": {
+                  "minH": 60,
+                  "maxH": 145,
+                  "stops": [
+                    {
+                      "h": 60,
+                      "sMin": -0.65,
+                      "sMax": 0.12,
+                      "vMin": -0.22,
+                      "vMax": 0.25
+                    },
+                    {
+                      "h": 145,
+                      "sMin": -0.7,
+                      "sMax": 0.1,
+                      "vMin": -0.2,
+                      "vMax": 0.3
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "B": {
+            "choices": [
+              {
+                "weight": 60,
+                "range": {
+                  "minH": -35,
+                  "maxH": 45,
+                  "stops": [
+                    {
+                      "h": -35,
+                      "sMin": -0.55,
+                      "sMax": 0.25,
+                      "vMin": -0.32,
+                      "vMax": 0.2
+                    },
+                    {
+                      "h": 45,
+                      "sMin": -0.45,
+                      "sMax": 0.32,
+                      "vMin": -0.24,
+                      "vMax": 0.28
+                    }
+                  ]
+                }
+              },
+              {
+                "weight": 30,
+                "range": {
+                  "minH": -180,
+                  "maxH": 180,
+                  "stops": [
+                    {
+                      "h": -180,
+                      "sMin": -1.0,
+                      "sMax": -0.62,
+                      "vMin": -0.08,
+                      "vMax": 0.55
+                    },
+                    {
+                      "h": 0,
+                      "sMin": -1.0,
+                      "sMax": -0.65,
+                      "vMin": -0.12,
+                      "vMax": 0.58
+                    },
+                    {
+                      "h": 180,
+                      "sMin": -1.0,
+                      "sMax": -0.62,
+                      "vMin": -0.08,
+                      "vMax": 0.55
+                    }
+                  ]
+                }
+              },
+              {
+                "weight": 10,
+                "range": {
+                  "minH": 60,
+                  "maxH": 145,
+                  "stops": [
+                    {
+                      "h": 60,
+                      "sMin": -0.65,
+                      "sMax": 0.12,
+                      "vMin": -0.22,
+                      "vMax": 0.25
+                    },
+                    {
+                      "h": 145,
+                      "sMin": -0.7,
+                      "sMax": 0.1,
+                      "vMin": -0.2,
+                      "vMax": 0.3
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "C": {
+            "choices": [
+              {
+                "weight": 60,
+                "range": {
+                  "minH": -35,
+                  "maxH": 45,
+                  "stops": [
+                    {
+                      "h": -35,
+                      "sMin": -0.55,
+                      "sMax": 0.25,
+                      "vMin": -0.32,
+                      "vMax": 0.2
+                    },
+                    {
+                      "h": 45,
+                      "sMin": -0.45,
+                      "sMax": 0.32,
+                      "vMin": -0.24,
+                      "vMax": 0.28
+                    }
+                  ]
+                }
+              },
+              {
+                "weight": 30,
+                "range": {
+                  "minH": -180,
+                  "maxH": 180,
+                  "stops": [
+                    {
+                      "h": -180,
+                      "sMin": -1.0,
+                      "sMax": -0.62,
+                      "vMin": -0.08,
+                      "vMax": 0.55
+                    },
+                    {
+                      "h": 0,
+                      "sMin": -1.0,
+                      "sMax": -0.65,
+                      "vMin": -0.12,
+                      "vMax": 0.58
+                    },
+                    {
+                      "h": 180,
+                      "sMin": -1.0,
+                      "sMax": -0.62,
+                      "vMin": -0.08,
+                      "vMax": 0.55
+                    }
+                  ]
+                }
+              },
+              {
+                "weight": 10,
+                "range": {
+                  "minH": 60,
+                  "maxH": 145,
+                  "stops": [
+                    {
+                      "h": 60,
+                      "sMin": -0.65,
+                      "sMax": 0.12,
+                      "vMin": -0.22,
+                      "vMax": 0.25
+                    },
+                    {
+                      "h": 145,
+                      "sMin": -0.7,
+                      "sMax": 0.1,
+                      "vMin": -0.2,
+                      "vMax": 0.3
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "female": {
+    "headSprite": "fightersprites/engh-sho-f/head.png",
+    "headUrLayers": [
+      {
+        "url": "fightersprites/engh-sho-f/untinted_regions/ur-head.png",
+        "renderOrder": "topLayer"
+      }
+    ],
+    "headXform": {
+      "ax": 0,
+      "ay": -0.1,
+      "sx": 0.95,
+      "sy": 1.14
+    },
+    "allowedCosmetics": [
+      "appearance::Engh-sho_F::engh_snowgoggles",
+      "appearance::Engh-sho_F::engh_hairdefault-front",
+      "appearance::Mao-ao_F::mao-ao_forwardtuft_short",
+      "appearance::Mao-ao_F::mao-ao_forwardtuft_long",
+      "appearance::Mao-ao_F::mao-ao_tuft",
+      "appearance::Mao-ao_F::mao-ao_shoulder_length_drape",
+      "appearance::Mao-ao_F::mao-ao_long_ponytail",
+      "appearance::Mao-ao_F::mao-ao_splayedknot_medium",
+      "appearance::Mao-ao_F::mao-ao_braid-L",
+      "appearance::Mao-ao_F::mao-ao_braid-R",
+      "appearance::Mao-ao_F::mao-ao_braidcluster-R",
+      "appearance::hat::basic_headband",
+      "appearance::hat::leather_headband",
+      "fine_hood",
+      "tankan_tunic",
+      "bandolier1",
+      "tankan_bodywrap",
+      "rugged_poncho",
+      "fine_poncho"
+    ],
+    "conditionalCosmetics": [
+      {
+        "slot": "hairFront",
+        "cosmeticId": "engh_hairdefault-front",
+        "conditions": {
+          "hairFront": "none"
+        }
+      }
+    ],
+    "cosmeticWeights": {
+      "eyes": {
+        "none": 0,
+        "engh_snowgoggles": 100
+      },
+      "hat": {
+        "none": 55,
+        "basic_headband": 25,
+        "leather_headband": 20
+      },
+      "hood": {
+        "none": 35,
+        "fine_hood": 65
+      },
+      "hairFront": {
+        "none": 0,
+        "engh_hairdefault-front": 0,
+        "tuft": 30,
+        "forwardtuft_long": 35,
+        "forwardtuft_short": 35
+      },
+      "hairBack": {
+        "none": 50,
+        "long_ponytail": 25,
+        "splayedknot_medium": 25
+      },
+      "hairSide": {
+        "none": 60,
+        "shoulder_length_drape": 10,
+        "braid-R": 15,
+        "braidcluster-R": 15
+      },
+      "hairSideL": {
+        "none": 60,
+        "braid-L": 40
+      },
+      "overwear": {
+        "none": 0,
+        "rugged_poncho": 35,
+        "fine_poncho": 35,
+        "tankan_bodywrap": 20
+      }
+    },
+    "bodyColorRanges": {
+      "A": {
+        "minH": -85,
+        "maxH": 70,
+        "stops": [
+          {
+            "h": -85,
+            "sMin": -0.95,
+            "sMax": -0.6,
+            "vMin": -1.0,
+            "vMax": 0.53
+          },
+          {
+            "h": -60,
+            "sMin": -0.95,
+            "sMax": -0.6,
+            "vMin": -1.0,
+            "vMax": 0.53
+          },
+          {
+            "h": 0,
+            "sMin": -1,
+            "sMax": -0.45,
+            "vMin": -1.0,
+            "vMax": 0.73
+          },
+          {
+            "h": 70,
+            "sMin": -1,
+            "sMax": -0.45,
+            "vMin": -1.0,
+            "vMax": 0.73
+          }
+        ]
+      },
+      "B": {
+        "minH": -85,
+        "maxH": 70,
+        "stops": [
+          {
+            "h": -85,
+            "sMin": -0.95,
+            "sMax": -0.4,
+            "vMin": -1.0,
+            "vMax": 0.18
+          },
+          {
+            "h": -60,
+            "sMin": -0.95,
+            "sMax": -0.4,
+            "vMin": -1.0,
+            "vMax": 0.18
+          },
+          {
+            "h": 0,
+            "sMin": -1,
+            "sMax": -0.45,
+            "vMin": -1.0,
+            "vMax": 0.38
+          },
+          {
+            "h": 70,
+            "sMin": -1,
+            "sMax": -0.45,
+            "vMin": -1.0,
+            "vMax": 0.38
+          }
+        ]
+      },
+      "C": {
+        "minH": -85,
+        "maxH": 70,
+        "stops": [
+          {
+            "h": -85,
+            "sMin": -0.9,
+            "sMax": -0.1,
+            "vMin": -0.12,
+            "vMax": 0.63
+          },
+          {
+            "h": -70,
+            "sMin": -0.9,
+            "sMax": -0.1,
+            "vMin": -0.12,
+            "vMax": 0.63
+          },
+          {
+            "h": 0,
+            "sMin": -1,
+            "sMax": -0.5,
+            "vMin": -0.02,
+            "vMax": 0.78
+          },
+          {
+            "h": 70,
+            "sMin": -1,
+            "sMax": -0.5,
+            "vMin": -0.02,
+            "vMax": 0.78
+          }
+        ]
+      }
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm_L_engh_f.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_engh_f.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm_R_engh_f.png",
+        "tintSlot": "A",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ],
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    },
+    "randomizationRules": {
+      "hatHideRules": {
+        "basic_headband": {
+          "hideSlots": []
+        },
+        "leather_headband": {
+          "hideSlots": []
+        }
+      },
+      "clothingColors": {
+        "syncAcrossPieces": false,
+        "range": {
+          "choices": [
+            {
+              "weight": 60,
+              "range": {
+                "minH": -35,
+                "maxH": 45,
+                "stops": [
+                  {
+                    "h": -35,
+                    "sMin": -0.55,
+                    "sMax": 0.25,
+                    "vMin": -0.32,
+                    "vMax": 0.2
+                  },
+                  {
+                    "h": 45,
+                    "sMin": -0.45,
+                    "sMax": 0.32,
+                    "vMin": -0.24,
+                    "vMax": 0.28
+                  }
+                ]
+              }
+            },
+            {
+              "weight": 30,
+              "range": {
+                "minH": -180,
+                "maxH": 180,
+                "stops": [
+                  {
+                    "h": -180,
+                    "sMin": -1.0,
+                    "sMax": -0.62,
+                    "vMin": -0.08,
+                    "vMax": 0.55
+                  },
+                  {
+                    "h": 0,
+                    "sMin": -1.0,
+                    "sMax": -0.65,
+                    "vMin": -0.12,
+                    "vMax": 0.58
+                  },
+                  {
+                    "h": 180,
+                    "sMin": -1.0,
+                    "sMax": -0.62,
+                    "vMin": -0.08,
+                    "vMax": 0.55
+                  }
+                ]
+              }
+            },
+            {
+              "weight": 10,
+              "range": {
+                "minH": 60,
+                "maxH": 145,
+                "stops": [
+                  {
+                    "h": 60,
+                    "sMin": -0.65,
+                    "sMax": 0.12,
+                    "vMin": -0.22,
+                    "vMax": 0.25
+                  },
+                  {
+                    "h": 145,
+                    "sMin": -0.7,
+                    "sMax": 0.1,
+                    "vMin": -0.2,
+                    "vMax": 0.3
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "paletteRanges": {
+          "A": {
+            "choices": [
+              {
+                "weight": 60,
+                "range": {
+                  "minH": -35,
+                  "maxH": 45,
+                  "stops": [
+                    {
+                      "h": -35,
+                      "sMin": -0.55,
+                      "sMax": 0.25,
+                      "vMin": -0.32,
+                      "vMax": 0.2
+                    },
+                    {
+                      "h": 45,
+                      "sMin": -0.45,
+                      "sMax": 0.32,
+                      "vMin": -0.24,
+                      "vMax": 0.28
+                    }
+                  ]
+                }
+              },
+              {
+                "weight": 30,
+                "range": {
+                  "minH": -180,
+                  "maxH": 180,
+                  "stops": [
+                    {
+                      "h": -180,
+                      "sMin": -1.0,
+                      "sMax": -0.62,
+                      "vMin": -0.08,
+                      "vMax": 0.55
+                    },
+                    {
+                      "h": 0,
+                      "sMin": -1.0,
+                      "sMax": -0.65,
+                      "vMin": -0.12,
+                      "vMax": 0.58
+                    },
+                    {
+                      "h": 180,
+                      "sMin": -1.0,
+                      "sMax": -0.62,
+                      "vMin": -0.08,
+                      "vMax": 0.55
+                    }
+                  ]
+                }
+              },
+              {
+                "weight": 10,
+                "range": {
+                  "minH": 60,
+                  "maxH": 145,
+                  "stops": [
+                    {
+                      "h": 60,
+                      "sMin": -0.65,
+                      "sMax": 0.12,
+                      "vMin": -0.22,
+                      "vMax": 0.25
+                    },
+                    {
+                      "h": 145,
+                      "sMin": -0.7,
+                      "sMax": 0.1,
+                      "vMin": -0.2,
+                      "vMax": 0.3
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "B": {
+            "choices": [
+              {
+                "weight": 30,
+                "range": {
+                  "minH": 45,
+                  "maxH": 150,
+                  "stops": [
+                    {
+                      "h": 45,
+                      "sMin": -0.65,
+                      "sMax": 0.3,
+                      "vMin": -0.18,
+                      "vMax": 0.32
+                    },
+                    {
+                      "h": 150,
+                      "sMin": -0.7,
+                      "sMax": 0.26,
+                      "vMin": -0.2,
+                      "vMax": 0.3
+                    }
+                  ]
+                }
+              },
+              {
+                "weight": 30,
+                "range": {
+                  "minH": -150,
+                  "maxH": -55,
+                  "stops": [
+                    {
+                      "h": -150,
+                      "sMin": -0.72,
+                      "sMax": 0.22,
+                      "vMin": -0.2,
+                      "vMax": 0.28
+                    },
+                    {
+                      "h": -55,
+                      "sMin": -0.68,
+                      "sMax": 0.28,
+                      "vMin": -0.18,
+                      "vMax": 0.32
+                    }
+                  ]
+                }
+              },
+              {
+                "weight": 40,
+                "range": {
+                  "minH": -180,
+                  "maxH": 180,
+                  "stops": [
+                    {
+                      "h": -180,
+                      "sMin": -1.0,
+                      "sMax": -0.55,
+                      "vMin": -0.04,
+                      "vMax": 0.52
+                    },
+                    {
+                      "h": 0,
+                      "sMin": -1.0,
+                      "sMax": -0.58,
+                      "vMin": -0.08,
+                      "vMax": 0.56
+                    },
+                    {
+                      "h": 180,
+                      "sMin": -1.0,
+                      "sMax": -0.55,
+                      "vMin": -0.04,
+                      "vMax": 0.52
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "C": {
+            "choices": [
+              {
+                "weight": 30,
+                "range": {
+                  "minH": 45,
+                  "maxH": 150,
+                  "stops": [
+                    {
+                      "h": 45,
+                      "sMin": -0.65,
+                      "sMax": 0.3,
+                      "vMin": -0.18,
+                      "vMax": 0.32
+                    },
+                    {
+                      "h": 150,
+                      "sMin": -0.7,
+                      "sMax": 0.26,
+                      "vMin": -0.2,
+                      "vMax": 0.3
+                    }
+                  ]
+                }
+              },
+              {
+                "weight": 30,
+                "range": {
+                  "minH": -150,
+                  "maxH": -55,
+                  "stops": [
+                    {
+                      "h": -150,
+                      "sMin": -0.72,
+                      "sMax": 0.22,
+                      "vMin": -0.2,
+                      "vMax": 0.28
+                    },
+                    {
+                      "h": -55,
+                      "sMin": -0.68,
+                      "sMax": 0.28,
+                      "vMin": -0.18,
+                      "vMax": 0.32
+                    }
+                  ]
+                }
+              },
+              {
+                "weight": 40,
+                "range": {
+                  "minH": -180,
+                  "maxH": 180,
+                  "stops": [
+                    {
+                      "h": -180,
+                      "sMin": -1.0,
+                      "sMax": -0.55,
+                      "vMin": -0.04,
+                      "vMax": 0.52
+                    },
+                    {
+                      "h": 0,
+                      "sMin": -1.0,
+                      "sMax": -0.58,
+                      "vMin": -0.08,
+                      "vMax": 0.56
+                    },
+                    {
+                      "h": 180,
+                      "sMin": -1.0,
+                      "sMax": -0.55,
+                      "vMin": -0.04,
+                      "vMax": 0.52
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

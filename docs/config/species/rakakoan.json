@@ -1,0 +1,559 @@
+{
+  "speciesId": "rakakoan",
+  "label": "Rakako'an",
+  "male": {
+    "headSprite": "fightersprites/kenkari-m/head.png",
+    "headUrLayers": [
+      {
+        "url": "fightersprites/kenkari-m/untinted_regions/ur-head.png",
+        "renderOrder": "topLayer"
+      }
+    ],
+    "headXform": {
+      "ax": 0,
+      "ay": 0,
+      "sx": 1,
+      "sy": 1
+    },
+    "allowedCosmetics": [
+      "appearance::Rakakoan_M::rakakoan_woven_eyepatch",
+      "appearance::Rakakoan_M::rakakoan_ragged_eyepatch",
+      "appearance::Rakakoan_M::rakakoan_wrapped_eyepatch",
+      "appearance::Kenkari_M::kenk_eyedisks",
+      "appearance::Kenkari_M::kenk_forwardtuft_long",
+      "appearance::Kenkari_M::kenk_fowardtuft",
+      "appearance::Kenkari_M::kenk_splayedknot_high_m",
+      "appearance::Kenkari_M::kenk_splayedknot_low_m",
+      "appearance::Kenkari_M::kenk_shirtbeard",
+      "appearance::Kenkari_M::kenk_wildbeard",
+      "appearance::Kenkari_M::kenk_braid-L_m",
+      "appearance::Kenkari_M::kenk_braid-R_m",
+      "appearance::Kenkari_M::kenk_braidcluster-R_m",
+      "appearance::hat::basic_headband",
+      "appearance::hat::leather_headband",
+      "appearance::Kenkari_M::kenk_bowlkasa",
+      "fine_hood",
+      "tankan_tunic",
+      "bandolier1",
+      "tankan_bodywrap",
+      "rugged_poncho",
+      "fine_poncho"
+    ],
+    "forcedCosmetics": {
+      "eyes": "kenk_eyedisks"
+    },
+    "conditionalCosmetics": [
+      {
+        "slot": "facialHair",
+        "cosmeticId": "kenk_shirtbeard",
+        "conditions": {
+          "facialHair": "none",
+          "anyClothingTag": "collared"
+        }
+      }
+    ],
+    "cosmeticWeights": {
+      "hat": {
+        "none": 30,
+        "basic_headband": 30,
+        "kenk_bowlkasa": 40
+      },
+      "hood": {
+        "none": 80,
+        "fine_hood": 20
+      },
+      "hairFront": {
+        "none": 10,
+        "kenk_forwardtuft_long": 45,
+        "kenk_fowardtuft": 45
+      },
+      "facialHair": {
+        "none": 65,
+        "kenk_wildbeard": 35,
+        "kenk_shirtbeard": 0
+      },
+      "hairBack": {
+        "none": 60,
+        "kenk_splayedknot_high_m": 20,
+        "kenk_splayedknot_low_m": 20
+      },
+      "hairSide": {
+        "none": 60,
+        "kenk_braid-R_m": 20,
+        "kenk_braidcluster-R_m": 20
+      },
+      "hairSideL": {
+        "none": 60,
+        "kenk_braid-L_m": 40
+      },
+      "upperFace": {
+        "rakakoan_woven_eyepatch": 34,
+        "rakakoan_ragged_eyepatch": 33,
+        "rakakoan_wrapped_eyepatch": 33
+      }
+    },
+    "bodyColorRanges": {
+      "A": {
+        "minH": -180,
+        "maxH": 180,
+        "stops": [
+          {
+            "h": -180,
+            "sMin": 0.35,
+            "sMax": 1.5,
+            "vMin": -0.27,
+            "vMax": 0.23
+          },
+          {
+            "h": 0,
+            "sMin": 0.35,
+            "sMax": 1.5,
+            "vMin": -0.27,
+            "vMax": 0.23
+          },
+          {
+            "h": 180,
+            "sMin": 0.35,
+            "sMax": 1.5,
+            "vMin": -0.27,
+            "vMax": 0.23
+          }
+        ]
+      },
+      "B": {
+        "minH": -180,
+        "maxH": 180,
+        "stops": [
+          {
+            "h": -180,
+            "sMin": 0.45,
+            "sMax": 1.5,
+            "vMin": -0.37,
+            "vMax": 0.13
+          },
+          {
+            "h": 0,
+            "sMin": 0.45,
+            "sMax": 1.5,
+            "vMin": -0.37,
+            "vMax": 0.13
+          },
+          {
+            "h": 180,
+            "sMin": 0.45,
+            "sMax": 1.5,
+            "vMin": -0.37,
+            "vMax": 0.13
+          }
+        ]
+      },
+      "C": {
+        "minH": -180,
+        "maxH": 180,
+        "stops": [
+          {
+            "h": -180,
+            "sMin": 0.3,
+            "sMax": 1.4,
+            "vMin": -0.22,
+            "vMax": 0.33
+          },
+          {
+            "h": 0,
+            "sMin": 0.3,
+            "sMax": 1.4,
+            "vMin": -0.22,
+            "vMax": 0.33
+          },
+          {
+            "h": 180,
+            "sMin": 0.3,
+            "sMax": 1.4,
+            "vMin": -0.22,
+            "vMax": 0.33
+          }
+        ]
+      }
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm-L_kenk_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_kenk_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm-R_kenk_m.png",
+        "tintSlot": "A",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ],
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    },
+    "randomizationRules": {
+      "brightnessContrastAB": {
+        "medium": {
+          "min": -0.17,
+          "max": 0.08
+        },
+        "bright": {
+          "min": 0.1,
+          "max": 0.33
+        }
+      },
+      "hatHideRules": {
+        "basic_headband": {
+          "hideSlots": []
+        },
+        "leather_headband": {
+          "hideSlots": []
+        },
+        "kenk_bowlkasa": {
+          "hideSlots": [
+            "hairFront",
+            "hairBack",
+            "hairSide",
+            "hairSideL"
+          ]
+        }
+      },
+      "clothingColors": {
+        "syncAcrossPieces": false,
+        "range": {
+          "minH": -40,
+          "maxH": 65,
+          "stops": [
+            {
+              "h": -40,
+              "sMin": -0.85,
+              "sMax": -0.35,
+              "vMin": -0.82,
+              "vMax": -0.22
+            },
+            {
+              "h": 10,
+              "sMin": -0.8,
+              "sMax": -0.25,
+              "vMin": -0.87,
+              "vMax": -0.27
+            },
+            {
+              "h": 65,
+              "sMin": -0.7,
+              "sMax": -0.2,
+              "vMin": -0.77,
+              "vMax": -0.17
+            }
+          ]
+        }
+      }
+    }
+  },
+  "female": {
+    "headSprite": "fightersprites/kenkari-f/head.png",
+    "headUrLayers": [
+      {
+        "url": "fightersprites/kenkari-f/untinted_regions/ur-head.png",
+        "renderOrder": "topLayer"
+      }
+    ],
+    "headXform": {
+      "ax": 0,
+      "ay": 0,
+      "sx": 1,
+      "sy": 1
+    },
+    "allowedCosmetics": [
+      "appearance::Rakakoan_F::rakakoan_woven_eyepatch",
+      "appearance::Rakakoan_F::rakakoan_ragged_eyepatch",
+      "appearance::Rakakoan_F::rakakoan_wrapped_eyepatch",
+      "appearance::Kenkari_F::kenk_longponytail_f",
+      "appearance::Kenkari_F::kenk_splayedknot_high_f",
+      "appearance::Kenkari_F::kenk_splayedknot_low_f",
+      "appearance::Kenkari_F::kenk_shirtbeard_f",
+      "appearance::Kenkari_F::kenk_braid-L_f",
+      "appearance::Kenkari_F::kenk_braid-R_f",
+      "appearance::Kenkari_F::kenk_braidcluster-R_f",
+      "appearance::hat::basic_headband",
+      "appearance::hat::leather_headband",
+      "appearance::Kenkari_F::kenk_bowlkasa",
+      "fine_hood",
+      "tankan_tunic",
+      "bandolier1",
+      "tankan_bodywrap",
+      "rugged_poncho",
+      "fine_poncho"
+    ],
+    "forcedCosmetics": {
+      "eyes": "none"
+    },
+    "conditionalCosmetics": [
+      {
+        "slot": "facialHair",
+        "cosmeticId": "kenk_shirtbeard_f",
+        "conditions": {
+          "facialHair": "none",
+          "anyClothingTag": "collared"
+        }
+      }
+    ],
+    "cosmeticWeights": {
+      "hat": {
+        "none": 65,
+        "basic_headband": 28,
+        "kenk_bowlkasa": 7
+      },
+      "hood": {
+        "none": 80,
+        "fine_hood": 20
+      },
+      "hairFront": {
+        "none": 100
+      },
+      "hairBack": {
+        "none": 35,
+        "kenk_longponytail_f": 30,
+        "kenk_splayedknot_high_f": 17.5,
+        "kenk_splayedknot_low_f": 17.5
+      },
+      "hairSide": {
+        "none": 60,
+        "kenk_braid-R_f": 20,
+        "kenk_braidcluster-R_f": 20
+      },
+      "hairSideL": {
+        "none": 60,
+        "kenk_braid-L_f": 40
+      },
+      "facialHair": {
+        "none": 100,
+        "kenk_shirtbeard_f": 0
+      },
+      "upperFace": {
+        "rakakoan_woven_eyepatch": 34,
+        "rakakoan_ragged_eyepatch": 33,
+        "rakakoan_wrapped_eyepatch": 33
+      }
+    },
+    "bodyColorRanges": {
+      "A": {
+        "minH": -118,
+        "maxH": -28,
+        "stops": [
+          {
+            "h": -118,
+            "sMin": -1.0,
+            "sMax": 0.25,
+            "vMin": -0.92,
+            "vMax": 0.35
+          },
+          {
+            "h": -70,
+            "sMin": -1.0,
+            "sMax": 0.55,
+            "vMin": -0.88,
+            "vMax": 0.42
+          },
+          {
+            "h": -28,
+            "sMin": -0.95,
+            "sMax": 0.75,
+            "vMin": -0.82,
+            "vMax": 0.5
+          }
+        ]
+      },
+      "B": {
+        "minH": -118,
+        "maxH": -28,
+        "stops": [
+          {
+            "h": -118,
+            "sMin": -1.0,
+            "sMax": 0.2,
+            "vMin": -0.96,
+            "vMax": 0.08
+          },
+          {
+            "h": -70,
+            "sMin": -1.0,
+            "sMax": 0.5,
+            "vMin": -0.93,
+            "vMax": 0.15
+          },
+          {
+            "h": -28,
+            "sMin": -0.98,
+            "sMax": 0.7,
+            "vMin": -0.88,
+            "vMax": 0.22
+          }
+        ]
+      },
+      "C": {
+        "minH": -118,
+        "maxH": -28,
+        "stops": [
+          {
+            "h": -118,
+            "sMin": -1.0,
+            "sMax": 0.3,
+            "vMin": -0.75,
+            "vMax": 0.48
+          },
+          {
+            "h": -70,
+            "sMin": -1.0,
+            "sMax": 0.6,
+            "vMin": -0.7,
+            "vMax": 0.55
+          },
+          {
+            "h": -28,
+            "sMin": -0.95,
+            "sMax": 0.78,
+            "vMin": -0.62,
+            "vMax": 0.62
+          }
+        ]
+      }
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm-L_kenk_f.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_kenk_f.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm-R_kenk_f.png",
+        "tintSlot": "A",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ],
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    },
+    "randomizationRules": {
+      "hatHideRules": {
+        "basic_headband": {
+          "hideSlots": []
+        },
+        "leather_headband": {
+          "hideSlots": []
+        },
+        "kenk_bowlkasa": {
+          "hideSlots": [
+            "hairFront",
+            "hairBack",
+            "hairSide",
+            "hairSideL"
+          ]
+        }
+      },
+      "clothingColors": {
+        "syncAcrossPieces": false,
+        "range": {
+          "minH": -150,
+          "maxH": 115,
+          "stops": [
+            {
+              "h": -150,
+              "sMin": 0.15,
+              "sMax": 0.55,
+              "vMin": -0.07,
+              "vMax": 0.23
+            },
+            {
+              "h": -20,
+              "sMin": 0.2,
+              "sMax": 0.6,
+              "vMin": -0.02,
+              "vMax": 0.28
+            },
+            {
+              "h": 115,
+              "sMin": 0.18,
+              "sMax": 0.52,
+              "vMin": -0.04,
+              "vMax": 0.2
+            }
+          ]
+        }
+      }
+    }
+  }
+}

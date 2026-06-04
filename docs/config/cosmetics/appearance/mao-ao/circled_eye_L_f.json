@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "name": "Circled Eye (Left)"
+  },
+  "type": "appearance",
+  "appearance": {
+    "inheritSprite": "head",
+    "bodyColors": [
+      "B"
+    ],
+    "originalId": "mao-ao_circled_eye_L"
+  },
+  "parts": {
+    "head": {
+      "image": {
+        "url": "./assets/cosmetics/appearance/mao-ao/eyes/circled_eye_L_f.png"
+      },
+      "spriteStyle": {
+        "xform": {
+          "head": {
+            "ax": -0.2,
+            "ay": 0,
+            "scaleX": 2.55,
+            "scaleY": 2.55,
+            "rotDeg": 0
+          }
+        }
+      }
+    }
+  }
+}

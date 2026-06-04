@@ -1,0 +1,65 @@
+{
+  "slot": "arms",
+  "meta": {
+    "name": "Bronze Armbands"
+  },
+  "hsv": {
+    "defaults": {
+      "h": 0,
+      "s": 0,
+      "v": 0
+    }
+  },
+  "parts": {
+    "arm_L_lower": {
+      "attachBone": "arm_L_lower",
+      "drawSlot": "arm_L_lower",
+      "layers": {
+        "front": {
+          "layerRole": "layer1",
+          "image": {
+            "url": "./assets/cosmetics/clothes/arms/bronze_armbands_LR.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "armLower": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "arm_R_lower": {
+      "attachBone": "arm_R_lower",
+      "drawSlot": "arm_R_lower",
+      "layers": {
+        "front": {
+          "layerRole": "layer1",
+          "image": {
+            "url": "./assets/cosmetics/clothes/arms/bronze_armbands_LR.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "armLower": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

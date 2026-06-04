@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "name": "Snow Goggles"
+  },
+  "type": "appearance",
+  "appearance": {
+    "inheritSprite": "",
+    "bodyColors": [],
+    "originalId": "engh_snowgoggles"
+  },
+  "speciesVariants": {
+    "engh-sho_male": {
+      "parts": {
+        "head": {
+          "image": {
+            "url": "./assets/cosmetics/appearance/engh-sho-m/snowgoggles_flat.png"
+          },
+          "spriteStyle": {
+            "xform": {
+              "head": {
+                "ax": -0.2,
+                "ay": 0,
+                "scaleX": 2.55,
+                "scaleY": 2.55,
+                "rotDeg": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "engh-sho_female": {
+      "parts": {
+        "head": {
+          "image": {
+            "url": "./assets/cosmetics/appearance/engh-sho-f/snowgoggles.png"
+          },
+          "spriteStyle": {
+            "xform": {
+              "head": {
+                "ax": -0.2,
+                "ay": 0,
+                "scaleX": 2.55,
+                "scaleY": 2.55,
+                "rotDeg": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "portraitSlot": "eyes",
+  "tags": [
+    "layer:eye-accessory-above-under-hood-hat"
+  ]
+}

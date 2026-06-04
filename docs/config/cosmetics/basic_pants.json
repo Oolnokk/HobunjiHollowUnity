@@ -1,0 +1,88 @@
+{
+  "slots": [
+    "legs"
+  ],
+  "meta": {
+    "name": "Basic Pants"
+  },
+  "hsv": {
+    "h": 0,
+    "s": 0,
+    "v": 0
+  },
+  "parts": {
+    "leg_L_upper": {
+      "attachBone": "leg_L_upper",
+      "drawSlot": "leg_L_upper",
+      "layers": {
+        "front": {
+          "image": {
+            "url": "./assets/cosmetics/clothes/legs/pants1_leg_LR.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "legUpper": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "leg_R_upper": {
+      "attachBone": "leg_R_upper",
+      "drawSlot": "leg_R_upper",
+      "layers": {
+        "front": {
+          "image": {
+            "url": "./assets/cosmetics/clothes/legs/pants1_leg_LR.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "legUpper": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "torso": {
+      "styleKey": "torso",
+      "layers": {
+        "front": {
+          "image": {
+            "url": "./assets/cosmetics/clothes/legs/pants1_seat.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "torso": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleMulX": 4.5,
+                  "scaleMulY": 1.5,
+                  "rotDeg": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
