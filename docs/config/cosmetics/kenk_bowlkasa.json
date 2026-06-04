@@ -1,0 +1,80 @@
+{
+  "slot": "hat",
+  "hoodLayering": "over",
+  "material": "wood",
+  "tags": [
+    "material:wood"
+  ],
+  "colorRange": {
+    "minH": -55,
+    "maxH": 35,
+    "stops": [
+      {
+        "h": -55,
+        "sMin": -0.35,
+        "sMax": 0.2,
+        "vMin": -0.45,
+        "vMax": 0.2
+      },
+      {
+        "h": -10,
+        "sMin": -0.25,
+        "sMax": 0.35,
+        "vMin": -0.45,
+        "vMax": 0.25
+      },
+      {
+        "h": 35,
+        "sMin": -0.2,
+        "sMax": 0.4,
+        "vMin": -0.5,
+        "vMax": 0.15
+      }
+    ]
+  },
+  "meta": {
+    "name": "Kenkari Bowl-Kasa"
+  },
+  "parts": {
+    "head": {
+      "layers": {
+        "back": {
+          "image": {
+            "url": "./assets/cosmetics/clothes/hat/bowlkasa-back.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "head": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        },
+        "front": {
+          "image": {
+            "url": "./assets/cosmetics/clothes/hat/bowlkasa-front.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "head": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

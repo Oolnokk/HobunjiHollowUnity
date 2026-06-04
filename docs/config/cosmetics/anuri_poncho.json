@@ -1,0 +1,115 @@
+{
+  "slot": "overwear",
+  "meta": {
+    "name": "Anuri's Poncho"
+  },
+  "hsl": {
+    "defaults": {
+      "h": 150,
+      "s": 0.6,
+      "l": 0.28
+    }
+  },
+  "palette": {
+    "colors": {
+      "A": {
+        "h": 150,
+        "s": 0.6,
+        "l": 0.28
+      },
+      "B": {
+        "h": -90,
+        "s": -0.12,
+        "l": 0.35
+      }
+    },
+    "layers": {
+      "layer0": "A",
+      "overlay": "B"
+    }
+  },
+  "parts": {
+    "torso": {
+      "layers": {
+        "back": {
+          "layerRole": "layer0",
+          "image": {
+            "url": "./assets/cosmetics/clothes/overwear/anuri_poncho-back.png",
+            "colors": [
+              "A"
+            ]
+          },
+          "attachBone": "torso",
+          "drawSlot": "torso",
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "torso": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleMulX": 1.25,
+                  "scaleMulY": 1.5,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        },
+        "front": {
+          "layerRole": "layer0",
+          "image": {
+            "url": "./assets/cosmetics/clothes/overwear/anuri_poncho-front.png",
+            "colors": [
+              "A"
+            ]
+          },
+          "attachBone": "torso",
+          "drawSlot": "torso",
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "torso": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleMulX": 1.25,
+                  "scaleMulY": 1.5,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        },
+        "front_trim": {
+          "layerRole": "layer1",
+          "image": {
+            "url": "./assets/cosmetics/clothes/overwear/anuri_poncho-front-trim.png",
+            "colors": [
+              "B"
+            ]
+          },
+          "attachBone": "torso",
+          "drawSlot": "torso",
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "torso": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleMulX": 1.25,
+                  "scaleMulY": 1.5,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

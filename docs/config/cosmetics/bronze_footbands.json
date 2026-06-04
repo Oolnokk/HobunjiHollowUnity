@@ -1,0 +1,65 @@
+{
+  "slot": "feet",
+  "meta": {
+    "name": "Bronze Footbands"
+  },
+  "hsv": {
+    "defaults": {
+      "h": 0,
+      "s": 0,
+      "v": 0
+    }
+  },
+  "parts": {
+    "leg_L_lower": {
+      "attachBone": "leg_L_lower",
+      "drawSlot": "leg_L_lower",
+      "layers": {
+        "front": {
+          "layerRole": "layer1",
+          "image": {
+            "url": "./assets/cosmetics/clothes/feet/bronze_footbands_LR.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "legLower": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "leg_R_lower": {
+      "attachBone": "leg_R_lower",
+      "drawSlot": "leg_R_lower",
+      "layers": {
+        "front": {
+          "layerRole": "layer1",
+          "image": {
+            "url": "./assets/cosmetics/clothes/feet/bronze_footbands_LR.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "legLower": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

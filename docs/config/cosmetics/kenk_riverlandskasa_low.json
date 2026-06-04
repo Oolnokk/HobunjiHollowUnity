@@ -1,0 +1,83 @@
+{
+  "slot": "hat",
+  "hoodLayering": "over",
+  "tags": [
+    "material:rigid_fiber"
+  ],
+  "colorRange": {
+    "minH": -100,
+    "maxH": -45,
+    "stops": [
+      {
+        "h": -100,
+        "sMin": -0.6,
+        "sMax": -0.4,
+        "vMin": -0.4,
+        "vMax": 0.45
+      },
+      {
+        "h": -100,
+        "sMin": -0.55,
+        "sMax": -0.3,
+        "vMin": -0.45,
+        "vMax": 0.45
+      },
+      {
+        "h": -70,
+        "sMin": -0.5,
+        "sMax": -0.05,
+        "vMin": -0.5,
+        "vMax": 0.4
+      },
+      {
+        "h": -45,
+        "sMin": -0.4,
+        "sMax": 0.2,
+        "vMin": -0.65,
+        "vMax": 0.15
+      }
+    ]
+  },
+  "parts": {
+    "head": {
+      "layers": {
+        "back": {
+          "image": {
+            "url": "./assets/cosmetics/clothes/hat/kenk_riverlandskasa_low-back.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "head": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        },
+        "front": {
+          "image": {
+            "url": "./assets/cosmetics/clothes/hat/kenk_riverlandskasa_low-front.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "head": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

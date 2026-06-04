@@ -1,0 +1,290 @@
+{
+  "speciesId": "tletingan",
+  "label": "Tletingan",
+  "male": {
+    "headSprite": "fightersprites/tletingan/head_mint.png",
+    "headUrLayers": [
+      {
+        "url": "fightersprites/tletingan/untinted_regions/ur-head.png",
+        "renderOrder": "topLayer"
+      }
+    ],
+    "headXform": {
+      "ax": 0,
+      "ay": 0,
+      "sx": 1,
+      "sy": 1
+    },
+    "allowedCosmetics": [
+      "appearance::Tletingan_M::tl_forwardtuft_long",
+      "appearance::Tletingan_M::tl_forwardtuft_short",
+      "appearance::Tletingan_M::tl_longponytail",
+      "appearance::Tletingan_M::tl_splayedknot",
+      "appearance::Tletingan_M::tl_wildbeard",
+      "appearance::Tletingan_M::tl_braid-L",
+      "appearance::Tletingan_M::tl_braid-R",
+      "appearance::Tletingan_M::tl_braidcluster-R",
+      "appearance::hat::basic_headband",
+      "appearance::hat::leather_headband",
+      "appearance::hat::riverlandskasa_low",
+      "appearance::hat::riverlandskasa_wide",
+      "fine_hood",
+      "tankan_tunic",
+      "bandolier1",
+      "tankan_bodywrap",
+      "rugged_poncho",
+      "fine_poncho"
+    ],
+    "cosmeticWeights": {
+      "hat": {
+        "none": 30,
+        "basic_headband": 30,
+        "riverlandskasa_low": 20,
+        "riverlandskasa_wide": 20
+      },
+      "hood": {
+        "none": 80,
+        "fine_hood": 20
+      },
+      "hairFront": {
+        "none": 10,
+        "forwardtuft_long": 45,
+        "forwardtuft_short": 45
+      },
+      "hairBack": {
+        "none": 50,
+        "longponytail": 25,
+        "splayedknot": 25
+      },
+      "hairSide": {
+        "none": 60,
+        "braid-R": 20,
+        "braidcluster-R": 20
+      },
+      "hairSideL": {
+        "none": 60,
+        "braid-L": 40
+      }
+    },
+    "bodyColorRanges": {
+      "A": {
+        "minH": -95,
+        "maxH": 10,
+        "stops": [
+          {
+            "h": -95,
+            "sMin": -0.5,
+            "sMax": 0.15,
+            "vMin": -0.52,
+            "vMax": 0.08
+          },
+          {
+            "h": -60,
+            "sMin": -0.5,
+            "sMax": 0.15,
+            "vMin": -0.52,
+            "vMax": 0.08
+          },
+          {
+            "h": 0,
+            "sMin": -0.7,
+            "sMax": 0.05,
+            "vMin": -0.47,
+            "vMax": 0.03
+          },
+          {
+            "h": 10,
+            "sMin": -0.7,
+            "sMax": 0.05,
+            "vMin": -0.47,
+            "vMax": 0.03
+          }
+        ]
+      },
+      "B": {
+        "minH": -95,
+        "maxH": 10,
+        "stops": [
+          {
+            "h": -95,
+            "sMin": -0.65,
+            "sMax": 0.05,
+            "vMin": -0.67,
+            "vMax": -0.07
+          },
+          {
+            "h": -60,
+            "sMin": -0.65,
+            "sMax": 0.05,
+            "vMin": -0.67,
+            "vMax": -0.07
+          },
+          {
+            "h": 0,
+            "sMin": -0.75,
+            "sMax": -0.1,
+            "vMin": -0.62,
+            "vMax": 0.03
+          },
+          {
+            "h": 10,
+            "sMin": -0.75,
+            "sMax": -0.1,
+            "vMin": -0.62,
+            "vMax": 0.03
+          }
+        ]
+      },
+      "C": {
+        "minH": -95,
+        "maxH": 10,
+        "stops": [
+          {
+            "h": -95,
+            "sMin": -0.75,
+            "sMax": -0.05,
+            "vMin": -0.07,
+            "vMax": 0.43
+          },
+          {
+            "h": -60,
+            "sMin": -0.75,
+            "sMax": -0.05,
+            "vMin": -0.07,
+            "vMax": 0.43
+          },
+          {
+            "h": 0,
+            "sMin": -0.85,
+            "sMax": -0.2,
+            "vMin": -0.02,
+            "vMax": 0.48
+          },
+          {
+            "h": 10,
+            "sMin": -0.85,
+            "sMax": -0.2,
+            "vMin": -0.02,
+            "vMax": 0.48
+          }
+        ]
+      }
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm-L_tl_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_tl_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm-R_tl-m.png",
+        "tintSlot": "A",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ],
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    },
+    "randomizationRules": {
+      "hatHideRules": {
+        "basic_headband": {
+          "hideSlots": []
+        },
+        "leather_headband": {
+          "hideSlots": []
+        },
+        "riverlandskasa_low": {
+          "hideSlots": [
+            "hairFront",
+            "hairBack",
+            "hairSide",
+            "hairSideL"
+          ]
+        },
+        "riverlandskasa_tight": {
+          "hideSlots": [
+            "hairFront",
+            "hairBack",
+            "hairSide",
+            "hairSideL"
+          ]
+        },
+        "riverlandskasa_wide": {
+          "hideSlots": [
+            "hairFront",
+            "hairBack",
+            "hairSide",
+            "hairSideL"
+          ]
+        }
+      },
+      "clothingColors": {
+        "syncAcrossPieces": true,
+        "range": {
+          "minH": -180,
+          "maxH": 180,
+          "stops": [
+            {
+              "h": -180,
+              "sMin": 0.35,
+              "sMax": 0.95,
+              "vMin": -0.02,
+              "vMax": 0.43
+            },
+            {
+              "h": 0,
+              "sMin": 0.35,
+              "sMax": 0.95,
+              "vMin": -0.02,
+              "vMax": 0.43
+            },
+            {
+              "h": 180,
+              "sMin": 0.35,
+              "sMax": 0.95,
+              "vMin": -0.02,
+              "vMax": 0.43
+            }
+          ]
+        }
+      }
+    }
+  }
+}

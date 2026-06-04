@@ -1,0 +1,366 @@
+{
+  "id": "cosmetics",
+  "label": "Cosmetics",
+  "entries": [
+    {
+      "id": "appearance::hat::basic_headband",
+      "path": "./basic_headband.json"
+    },
+    {
+      "id": "appearance::hat::leather_headband",
+      "path": "./leather_headband.json"
+    },
+    {
+      "id": "citywatch_helmet",
+      "path": "./citywatch_helmet.json"
+    },
+    {
+      "id": "appearance::hat::riverlandskasa_low",
+      "path": "./riverlandskasa_low.json"
+    },
+    {
+      "id": "appearance::hat::riverlandskasa_tight",
+      "path": "./riverlandskasa_tight.json"
+    },
+    {
+      "id": "appearance::hat::riverlandskasa_wide",
+      "path": "./riverlandskasa_wide.json"
+    },
+    {
+      "id": "layered_travel_cloak",
+      "path": "./layered_travel_cloak.json"
+    },
+    {
+      "id": "simple_poncho",
+      "path": "./simple_poncho.json"
+    },
+    {
+      "id": "rough_cloth_poncho",
+      "path": "./clothes/overwear/rough_cloth_poncho.json"
+    },
+    {
+      "id": "rugged_poncho",
+      "path": "./clothes/overwear/rugged_poncho.json"
+    },
+    {
+      "id": "fine_poncho",
+      "path": "./clothes/overwear/fine_poncho.json"
+    },
+    {
+      "id": "anuri_hood",
+      "path": "./anuri_hood.json"
+    },
+    {
+      "id": "anuri_poncho",
+      "path": "./anuri_poncho.json"
+    },
+    {
+      "id": "bronze_armbands",
+      "path": "./bronze_armbands.json"
+    },
+    {
+      "id": "bronze_footbands",
+      "path": "./bronze_footbands.json"
+    },
+    {
+      "id": "basic_pants",
+      "path": "./basic_pants.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_circled_eyes",
+      "path": "./appearance/mao-ao/circled_eyes.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_circled_eyes_f",
+      "path": "./appearance/mao-ao/circled_eyes_f.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_circled_eye_L",
+      "path": "./appearance/mao-ao/circled_eye_L.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_circled_eye_R",
+      "path": "./appearance/mao-ao/circled_eye_R.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_shoulder_length_drape",
+      "path": "./appearance/mao-ao/shoulder_length_drape.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_tuft",
+      "path": "./appearance/mao-ao/tuft.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_long_ponytail",
+      "path": "./appearance/mao-ao/long_ponytail.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_wildbeard",
+      "path": "./appearance/mao-ao/wildbeard.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_forwardtuft_long",
+      "path": "./appearance/mao-ao/forwardtuft_long.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_forwardtuft_short",
+      "path": "./appearance/mao-ao/forwardtuft_short.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
+      "path": "./appearance/mao-ao/splayedknot_medium.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_circled_eyes",
+      "path": "./appearance/mao-ao/circled_eyes.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_circled_eyes_f",
+      "path": "./appearance/mao-ao/circled_eyes_f.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_circled_eye_L",
+      "path": "./appearance/mao-ao/circled_eye_L_f.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_circled_eye_R",
+      "path": "./appearance/mao-ao/circled_eye_R_f.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_shoulder_length_drape",
+      "path": "./appearance/mao-ao/shoulder_length_drape.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_tuft",
+      "path": "./appearance/mao-ao/tuft.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_long_ponytail",
+      "path": "./appearance/mao-ao/long_ponytail.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_wildbeard",
+      "path": "./appearance/mao-ao/wildbeard.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_forwardtuft_long",
+      "path": "./appearance/mao-ao/forwardtuft_long.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_forwardtuft_short",
+      "path": "./appearance/mao-ao/forwardtuft_short.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_splayedknot_medium",
+      "path": "./appearance/mao-ao/splayedknot_medium.json"
+    },
+    {
+      "id": "appearance::Tletingan_M::tl_forwardtuft_long",
+      "path": "./appearance/tletingan/forwardtuft_long.json"
+    },
+    {
+      "id": "appearance::Tletingan_M::tl_forwardtuft_short",
+      "path": "./appearance/tletingan/forwardtuft_short.json"
+    },
+    {
+      "id": "appearance::Tletingan_M::tl_longponytail",
+      "path": "./appearance/tletingan/longponytail.json"
+    },
+    {
+      "id": "appearance::Tletingan_M::tl_splayedknot",
+      "path": "./appearance/tletingan/splayedknot.json"
+    },
+    {
+      "id": "appearance::Tletingan_M::tl_wildbeard",
+      "path": "./appearance/tletingan/wildbeard.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_eyedisks",
+      "path": "./appearance/kenkari/eyedisks.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_forwardtuft_long",
+      "path": "./appearance/kenkari/forwardtuft_long.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_fowardtuft",
+      "path": "./appearance/kenkari/fowardtuft.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_shirtbeard",
+      "path": "./appearance/kenkari/shirtbeard.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_wildbeard",
+      "path": "./appearance/kenkari/wildbeard.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_splayedknot_high_m",
+      "path": "./appearance/kenkari/splayedknot_high_m.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_splayedknot_low_m",
+      "path": "./appearance/kenkari/splayedknot_low_m.json"
+    },
+    {
+      "id": "appearance::Kenkari_F::kenk_eyedisks",
+      "path": "./appearance/kenkari/eyedisks.json"
+    },
+    {
+      "id": "appearance::Kenkari_F::kenk_shirtbeard_f",
+      "path": "./appearance/kenkari/shirtbeard_f.json"
+    },
+    {
+      "id": "appearance::Kenkari_F::kenk_longponytail_f",
+      "path": "./appearance/kenkari/longponytail_f.json"
+    },
+    {
+      "id": "appearance::Kenkari_F::kenk_splayedknot_high_f",
+      "path": "./appearance/kenkari/splayedknot_high_f.json"
+    },
+    {
+      "id": "appearance::Kenkari_F::kenk_splayedknot_low_f",
+      "path": "./appearance/kenkari/splayedknot_low_f.json"
+    },
+    {
+      "id": "tankan_tunic",
+      "path": "./clothes/torso/tankan_tunic.json"
+    },
+    {
+      "id": "bandolier1",
+      "path": "./clothes/torso/bandolier1.json"
+    },
+    {
+      "id": "tankan_bodywrap",
+      "path": "./clothes/overwear/tankan_bodywrap.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_braid-L",
+      "path": "./appearance/mao-ao/braid-L.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_braid-R",
+      "path": "./appearance/mao-ao/braid-R.json"
+    },
+    {
+      "id": "appearance::Mao-ao_M::mao-ao_braidcluster-R",
+      "path": "./appearance/mao-ao/braidcluster-R.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_braid-L",
+      "path": "./appearance/mao-ao/braid-L.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_braid-R",
+      "path": "./appearance/mao-ao/braid-R.json"
+    },
+    {
+      "id": "appearance::Mao-ao_F::mao-ao_braidcluster-R",
+      "path": "./appearance/mao-ao/braidcluster-R.json"
+    },
+    {
+      "id": "appearance::Tletingan_M::tl_braid-L",
+      "path": "./appearance/tletingan/braid-L.json"
+    },
+    {
+      "id": "appearance::Tletingan_M::tl_braid-R",
+      "path": "./appearance/tletingan/braid-R.json"
+    },
+    {
+      "id": "appearance::Tletingan_M::tl_braidcluster-R",
+      "path": "./appearance/tletingan/braidcluster-R.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_braid-L_m",
+      "path": "./appearance/kenkari/braid-L_m.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_braid-R_m",
+      "path": "./appearance/kenkari/braid-R_m.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_braidcluster-R_m",
+      "path": "./appearance/kenkari/braidcluster-R_m.json"
+    },
+    {
+      "id": "appearance::Kenkari_F::kenk_braid-L_f",
+      "path": "./appearance/kenkari/braid-L_f.json"
+    },
+    {
+      "id": "appearance::Kenkari_F::kenk_braid-R_f",
+      "path": "./appearance/kenkari/braid-R_f.json"
+    },
+    {
+      "id": "appearance::Kenkari_F::kenk_braidcluster-R_f",
+      "path": "./appearance/kenkari/braidcluster-R_f.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_riverlandskasa_low",
+      "path": "./kenk_riverlandskasa_low.json"
+    },
+    {
+      "id": "appearance::Kenkari_F::kenk_riverlandskasa_low",
+      "path": "./kenk_riverlandskasa_low.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_riverlandskasa_wide",
+      "path": "./kenk_riverlandskasa_wide.json"
+    },
+    {
+      "id": "appearance::Kenkari_F::kenk_riverlandskasa_wide",
+      "path": "./kenk_riverlandskasa_wide.json"
+    },
+    {
+      "id": "appearance::Kenkari_M::kenk_bowlkasa",
+      "path": "./kenk_bowlkasa.json"
+    },
+    {
+      "id": "appearance::Kenkari_F::kenk_bowlkasa",
+      "path": "./kenk_bowlkasa.json"
+    },
+    {
+      "id": "fine_hood",
+      "path": "./fine_hood.json"
+    },
+    {
+      "id": "appearance::Engh-sho_M::engh_snowgoggles",
+      "path": "./appearance/engh-sho/snowgoggles.json"
+    },
+    {
+      "id": "appearance::Engh-sho_F::engh_snowgoggles",
+      "path": "./appearance/engh-sho/snowgoggles.json"
+    },
+    {
+      "id": "appearance::Engh-sho_M::engh_hairdefault-front",
+      "path": "./appearance/engh-sho/hairdefault-front.json"
+    },
+    {
+      "id": "appearance::Engh-sho_F::engh_hairdefault-front",
+      "path": "./appearance/engh-sho/hairdefault-front.json"
+    },
+    {
+      "id": "appearance::Rakakoan_M::rakakoan_woven_eyepatch",
+      "path": "./appearance/kenkari/rakakoan_woven_eyepatch.json"
+    },
+    {
+      "id": "appearance::Rakakoan_M::rakakoan_ragged_eyepatch",
+      "path": "./appearance/kenkari/rakakoan_ragged_eyepatch.json"
+    },
+    {
+      "id": "appearance::Rakakoan_M::rakakoan_wrapped_eyepatch",
+      "path": "./appearance/kenkari/rakakoan_wrapped_eyepatch.json"
+    },
+    {
+      "id": "appearance::Rakakoan_F::rakakoan_woven_eyepatch",
+      "path": "./appearance/kenkari/rakakoan_woven_eyepatch.json"
+    },
+    {
+      "id": "appearance::Rakakoan_F::rakakoan_ragged_eyepatch",
+      "path": "./appearance/kenkari/rakakoan_ragged_eyepatch.json"
+    },
+    {
+      "id": "appearance::Rakakoan_F::rakakoan_wrapped_eyepatch",
+      "path": "./appearance/kenkari/rakakoan_wrapped_eyepatch.json"
+    }
+  ]
+}

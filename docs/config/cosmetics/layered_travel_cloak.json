@@ -1,0 +1,110 @@
+{
+  "slots": [
+    "overwear"
+  ],
+  "hsv": {
+    "defaults": {
+      "h": 0,
+      "s": 0,
+      "v": 0
+    },
+    "limits": {
+      "h": [
+        -45,
+        45
+      ],
+      "s": [
+        -0.4,
+        0.4
+      ],
+      "v": [
+        -0.3,
+        0.5
+      ]
+    }
+  },
+  "parts": {
+    "torso": {
+      "layers": {
+        "front": {
+          "image": {
+            "url": ""
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "torso": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleMulX": 3.8,
+                  "scaleMulY": 4.7,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          },
+          "warp": {
+            "base": {
+              "units": "percent",
+              "bl": {
+                "x": -0.05
+              },
+              "br": {
+                "x": 0.05
+              },
+              "center": {
+                "y": 0.05
+              }
+            }
+          }
+        }
+      }
+    },
+    "leg_L_upper": {
+      "layers": {
+        "front": {
+          "image": {
+            "url": ""
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "legUpper": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "leg_R_upper": {
+      "layers": {
+        "front": {
+          "image": {
+            "url": ""
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "legUpper": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

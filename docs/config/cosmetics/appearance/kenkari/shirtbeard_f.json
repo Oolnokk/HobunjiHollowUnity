@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "name": "Shirtbeard"
+  },
+  "type": "appearance",
+  "appearance": {
+    "inheritSprite": "head",
+    "bodyColors": [
+      "A"
+    ],
+    "originalId": "kenk_shirtbeard_f"
+  },
+  "parts": {
+    "head": {
+      "image": {
+        "url": "./assets/cosmetics/appearance/kenkari/shirtbeard_kenk_f.png"
+      },
+      "spriteStyle": {
+        "xform": {
+          "head": {
+            "ax": -0.2,
+            "ay": 0,
+            "scaleX": 2.55,
+            "scaleY": 2.55,
+            "rotDeg": 0
+          }
+        }
+      }
+    }
+  }
+}
