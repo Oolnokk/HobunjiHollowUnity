@@ -210,8 +210,8 @@
       min-height: 1.4em; margin: 4px 0 8px; text-align: center;
       font-family: 'KhymeryyanRomanLetters+Numbers', Inter, sans-serif;
     }
-    .sb-lore-preview .nd-conn { opacity: 0.55; font-size: 0.78em; margin: 0 0.2em; }
-    .sb-lore-preview .nd-faint { opacity: 0.25; }
+    .sb-lore-preview .sb-lore-conn { opacity: 0.55; font-size: 0.78em; margin: 0 0.2em; }
+    .sb-lore-preview .sb-lore-faint { opacity: 0.25; }
     .sb-lore-slot { margin-bottom: 8px; }
     .sb-lore-input {
       width: 100%; box-sizing: border-box;
@@ -992,8 +992,8 @@
       const adv = window.SCRATCHBONES_NAME_ADVISOR;
       if (!adv) return '';
       const { first, conn, second } = adv.birthNameParts(sp, births, ctx);
-      const faint = s => `<span class="nd-faint">${adv.esc(s)}</span>`;
-      const connHtml = conn ? `<span class="nd-conn">${adv.esc(conn)}</span>` : '';
+      const faint = s => `<span class="sb-lore-faint">${adv.esc(s)}</span>`;
+      const connHtml = conn ? `<span class="sb-lore-conn">${adv.esc(conn)}</span>` : '';
       const parts = [];
       parts.push(first ? adv.esc(first) : faint('—'));
       if (connHtml) parts.push(connHtml);
@@ -1080,7 +1080,7 @@
         <div class="sb-label" style="margin-bottom:6px;">Lore Name
           <span style="font-size:0.72em;font-weight:400;opacity:0.5;text-transform:none;letter-spacing:0;margin-left:6px;">(${adv.esc(species[sp]?.label || sp)})</span>
         </div>
-        <div class="sb-lore-preview" id="sb-lore-preview">${previewHtml || '<span class="nd-faint">—</span>'}</div>
+        <div class="sb-lore-preview" id="sb-lore-preview">${previewHtml || '<span class="sb-lore-faint">—</span>'}</div>
         ${tankanHtml ? `<div id="sb-lore-tankan">${tankanHtml}</div>` : ''}
         ${marriedRow}
         ${slotsHtml}
@@ -1667,7 +1667,7 @@
             if (msgs.length > 0) return;
             _loreState.births[slot] = val.toLowerCase();
             const preview = document.getElementById('sb-lore-preview');
-            if (preview) preview.innerHTML = _buildLorePreviewHtml(sp, _loreState.births, ctx) || '<span class="nd-faint">—</span>';
+            if (preview) preview.innerHTML = _buildLorePreviewHtml(sp, _loreState.births, ctx) || '<span class="sb-lore-faint">—</span>';
             const tankanEl = document.getElementById('sb-lore-tankan');
             if (tankanEl) tankanEl.innerHTML = _buildTankanPillars(sp, _loreState.births, ctx) || '';
           });
