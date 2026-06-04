@@ -1,0 +1,1822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NPC Portrait Editor</title>
+  <style>
+    @font-face {
+      font-family: 'Khymeryyanroman4';
+      src: url('../../assets/hud/Khymeryyanroman4.otf') format('opentype');
+    }
+    @font-face {
+      font-family: 'KhymeryyanRomanLetters+Numbers';
+      src: url('../../assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf') format('truetype');
+    }
+    @font-face {
+      font-family: 'TankanScript';
+      src: url('../../assets/hud/tankanscript_rotated_flipped_horiz.otf') format('opentype');
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0; padding: 0;
+      background: radial-gradient(circle at top, #30211d 0%, #1a1210 42%, #0f0c0b 100%);
+      min-height: 100dvh;
+      font-family: 'KhymeryyanRomanLetters+Numbers', Inter, system-ui, sans-serif;
+      letter-spacing: 0.14em;
+      color: rgba(255,255,255,0.9);
+      --gold: #f2d08f;
+      --gold-dim: rgba(242,208,143,0.65);
+      --gold-faint: rgba(242,208,143,0.35);
+      --border: rgba(200,153,82,0.4);
+      --muted: rgba(242,208,143,0.35);
+    }
+
+    /* ── Page layout ──────────────────────────────────────── */
+    #npe-wrap {
+      display: flex; flex-direction: column; min-height: 100dvh;
+    }
+
+    #npe-header {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 10px 14px 0;
+      border-bottom: 1px solid rgba(200,153,82,0.18);
+    }
+    #npe-header-title {
+      font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.22em;
+      color: rgba(242,208,143,0.4); padding-right: 10px; flex-shrink: 0;
+    }
+    #npe-tabs {
+      display: flex; gap: 4px; flex-wrap: wrap; flex: 1;
+    }
+    .npe-npc-tab {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 12px 6px; background: rgba(242,208,143,0.04);
+      border: 1px solid rgba(242,208,143,0.16); border-bottom: none;
+      border-radius: 7px 7px 0 0; color: rgba(242,208,143,0.55);
+      cursor: pointer; font-family: inherit; letter-spacing: inherit; font-size: 0.85em;
+      transition: background .12s, color .12s;
+    }
+    .npe-npc-tab:hover { background: rgba(242,208,143,0.09); color: var(--gold); }
+    .npe-npc-tab.active {
+      background: rgba(20,12,10,0.97); border-color: rgba(200,153,82,0.4);
+      color: var(--gold);
+    }
+    .npe-npc-del {
+      background: transparent; border: none; color: rgba(242,208,143,0.3);
+      cursor: pointer; font-size: 0.85em; padding: 0 2px; line-height: 1;
+      transition: color .1s;
+    }
+    .npe-npc-del:hover { color: #e07070; }
+    #npe-add-btn {
+      background: transparent; border: 1px solid rgba(242,208,143,0.22);
+      border-radius: 7px 7px 0 0; color: rgba(242,208,143,0.5);
+      padding: 5px 12px 6px; cursor: pointer; font-family: inherit;
+      letter-spacing: inherit; font-size: 0.85em; white-space: nowrap;
+      transition: border-color .12s, color .12s; border-bottom: none;
+    }
+    #npe-add-btn:hover { border-color: rgba(200,153,82,0.5); color: var(--gold); }
+
+    #npe-editor {
+      flex: 1; display: flex; align-items: flex-start; justify-content: center;
+      padding: 16px 14px 24px;
+    }
+
+    /* ── Card ─────────────────────────────────────────────── */
+    .sb-card {
+      background: rgba(20,12,10,0.97);
+      border: 1px solid rgba(200,153,82,0.4);
+      border-radius: 12px; padding: 24px;
+      width: min(480px,92vw);
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .sb-wide-card { width: min(660px, 96vw); }
+    .sb-title { font-size: 1.4em; font-weight: 700; text-align: center; }
+    .sb-subtitle { text-align: center; color: var(--gold-dim); font-size: 0.9em; }
+    .sb-header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; flex-wrap: wrap;
+    }
+    .sb-label {
+      font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.2em;
+      color: rgba(242,208,143,0.45); margin-bottom: -6px;
+    }
+    .sb-muted { font-size: 0.82em; color: var(--muted); }
+    .sb-error { color: #e07070; font-size: 0.82em; margin-top: 4px; }
+    .sb-actions {
+      display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
+      margin-top: 4px;
+    }
+    .sb-field { display: flex; flex-direction: column; gap: 6px; }
+    .sb-field label {
+      font-size: 0.8em; color: rgba(242,208,143,0.55); display: block;
+      margin-bottom: 4px; text-transform: uppercase; letter-spacing: .08em;
+    }
+    .sb-field input {
+      background: rgba(20,12,10,0.8); border: 1px solid rgba(200,153,82,0.38);
+      border-radius: 6px; padding: 8px 12px; color: var(--gold); font-size: 1em;
+      font-family: inherit; letter-spacing: inherit;
+    }
+    .sb-field input:focus { outline: none; border-color: rgba(200,153,82,0.8); }
+    .sb-btn-primary {
+      background: rgba(200,153,82,0.22); border: 1px solid rgba(200,153,82,0.55);
+      border-radius: 8px; color: var(--gold); padding: 9px 20px;
+      font-size: 0.95em; font-family: inherit; letter-spacing: inherit;
+      cursor: pointer; transition: background .12s;
+    }
+    .sb-btn-primary:hover { background: rgba(200,153,82,0.38); }
+    .sb-btn-ghost {
+      background: transparent; border: 1px solid rgba(242,208,143,0.18);
+      border-radius: 8px; color: var(--gold-dim); padding: 7px 14px;
+      font-size: 0.88em; font-family: inherit; letter-spacing: inherit;
+      cursor: pointer; transition: border-color .12s, color .12s;
+    }
+    .sb-btn-ghost:hover { border-color: rgba(242,208,143,0.45); color: var(--gold); }
+
+    /* ── Tab bar (appearance / collections) ─────────────── */
+    .npe-tab-bar {
+      display: flex; gap: 6px; margin-bottom: -4px;
+    }
+    .npe-tab-btn {
+      padding: 5px 14px; background: rgba(242,208,143,0.04);
+      border: 1px solid rgba(242,208,143,0.16); border-radius: 7px 7px 0 0;
+      border-bottom: none; color: rgba(242,208,143,0.5); cursor: pointer;
+      font-family: inherit; letter-spacing: inherit; font-size: 0.82em;
+      transition: background .12s, color .12s;
+    }
+    .npe-tab-btn:hover { background: rgba(242,208,143,0.09); color: var(--gold); }
+    .npe-tab-btn.active {
+      background: rgba(242,208,143,0.08); border-color: rgba(200,153,82,0.45);
+      color: var(--gold);
+    }
+
+    /* ── Appearance editor ──────────────────────────────── */
+    .sb-ap-layout, .sb-col-layout {
+      display: flex; gap: 18px; align-items: flex-start; margin-top: 12px;
+    }
+    .sb-ap-preview, .sb-col-preview {
+      flex-shrink: 0; display: flex; flex-direction: column;
+      align-items: center; gap: 6px;
+    }
+    .sb-ap-controls, .sb-col-content { flex: 1; min-width: 0; }
+    .sb-portrait-canvas {
+      width: 200px; height: 200px; border-radius: 8px;
+      background: rgba(242,208,143,0.05); border: 1px solid rgba(242,208,143,0.14);
+      image-rendering: pixelated;
+    }
+    .sb-sel-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sb-sel-btn {
+      padding: 6px 14px; background: rgba(242,208,143,0.05);
+      border: 1px solid rgba(242,208,143,0.18); border-radius: 6px;
+      color: var(--gold); cursor: pointer; font-family: inherit;
+      letter-spacing: inherit; font-size: 0.88em; transition: background .12s;
+    }
+    .sb-sel-btn:hover { background: rgba(242,208,143,0.10); }
+    .sb-sel-btn.selected { background: rgba(200,153,82,0.22); border-color: rgba(200,153,82,0.65); }
+    .sb-sel-btn.disabled, .sb-sel-btn:disabled { opacity: 0.28; cursor: not-allowed; }
+    .sb-cosmetics-list { display: flex; flex-direction: column; gap: 6px; }
+    .sb-cosmetic-row { display: flex; align-items: center; gap: 8px; }
+    .sb-cosmetic-label {
+      font-size: 0.8em; color: rgba(242,208,143,0.55); min-width: 90px;
+      text-align: right; flex-shrink: 0;
+    }
+    .sb-cosmetic-select {
+      flex: 1; background: rgba(20,12,10,0.85); border: 1px solid rgba(200,153,82,0.35);
+      border-radius: 6px; padding: 5px 8px; color: var(--gold); font-family: inherit;
+      letter-spacing: 0.04em; font-size: 0.88em; cursor: pointer;
+    }
+    .sb-cosmetic-select:focus { outline: none; border-color: rgba(200,153,82,0.7); }
+    .sb-color-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+    .sb-color-row-lbl {
+      font-size: 0.75em; color: rgba(242,208,143,0.45); min-width: 14px;
+    }
+    .sb-swatch-strip { display: flex; gap: 5px; flex-wrap: wrap; }
+    .sb-swatch-btn {
+      width: 28px; height: 28px; border-radius: 5px; border: 2px solid transparent;
+      cursor: pointer; transition: border-color .1s, transform .1s;
+    }
+    .sb-swatch-btn:hover { border-color: rgba(242,208,143,0.45); transform: scale(1.08); }
+    .sb-swatch-btn.selected { border-color: var(--gold); transform: scale(1.08); }
+
+    /* ── Lore name creator ──────────────────────────────── */
+    .sb-lore-section {
+      margin-top: 10px; padding-top: 10px;
+      border-top: 1px solid rgba(200,153,82,0.18);
+    }
+    .sb-lore-preview {
+      font-size: 1.05em; font-weight: 700; color: var(--gold); letter-spacing: 0.14em;
+      min-height: 1.4em; margin: 4px 0 8px; text-align: center;
+      font-family: 'KhymeryyanRomanLetters+Numbers', Inter, sans-serif;
+    }
+    .sb-lore-preview .sb-lore-conn { opacity: 0.55; font-size: 0.78em; margin: 0 0.2em; }
+    .sb-lore-preview .sb-lore-faint { opacity: 0.25; }
+    .sb-lore-slot { margin-bottom: 8px; }
+    .sb-lore-input {
+      width: 100%; box-sizing: border-box;
+      background: rgba(20,12,10,0.8); border: 1px solid rgba(200,153,82,0.35);
+      border-radius: 6px; padding: 5px 10px; color: var(--gold);
+      font-family: inherit; font-size: 0.88em; letter-spacing: 0.08em;
+    }
+    .sb-lore-input:focus { outline: none; border-color: rgba(200,153,82,0.7); }
+    .sb-lore-val {
+      font-size: 0.82em; min-height: 1.2em; padding: 2px 4px;
+      word-break: break-word; letter-spacing: 0.06em;
+    }
+    .sb-lore-val .v-ok  { color: var(--gold); }
+    .sb-lore-val .v-bad { color: #e07070; background: rgba(224,112,112,0.1); border-radius: 2px; padding: 0 1px; }
+    .sb-lore-val .v-ins { color: rgba(212,168,53,0.9); font-style: italic; border-bottom: 1px dashed rgba(212,168,53,0.6); cursor: help; }
+    .sb-lore-msgs { font-size: 0.74em; color: rgba(224,112,112,0.85); margin-top: 2px; letter-spacing: 0.06em; }
+    .sb-lore-suggs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; min-height: 0; }
+    .sb-lore-sugg {
+      font-size: 0.75em; padding: 2px 8px; border: 1px solid rgba(200,153,82,0.3);
+      border-radius: 16px; background: rgba(242,208,143,0.05); color: rgba(242,208,143,0.8);
+      cursor: pointer; font-family: inherit; letter-spacing: 0.07em;
+    }
+    .sb-lore-sugg:hover { background: rgba(242,208,143,0.12); border-color: rgba(200,153,82,0.55); }
+    .sb-lore-place-grid { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .sb-lore-place-btn {
+      font-size: 0.75em; padding: 3px 10px; border: 1px solid rgba(200,153,82,0.28);
+      border-radius: 6px; background: rgba(242,208,143,0.04); color: rgba(242,208,143,0.75);
+      cursor: pointer; font-family: inherit; letter-spacing: 0.07em;
+    }
+    .sb-lore-place-btn.active { background: rgba(200,153,82,0.22); border-color: rgba(200,153,82,0.65); color: var(--gold); }
+    .sb-lore-place-btn:hover { background: rgba(242,208,143,0.10); }
+    .sb-lore-input-row { display: flex; gap: 4px; align-items: stretch; }
+    .sb-lore-apply {
+      flex-shrink: 0; padding: 4px 10px; border: 1px solid rgba(200,153,82,0.35);
+      border-radius: 6px; background: rgba(242,208,143,0.06); color: rgba(242,208,143,0.7);
+      cursor: pointer; font-family: inherit; font-size: 0.88em; letter-spacing: 0.06em;
+      transition: background .1s, border-color .1s;
+    }
+    .sb-lore-apply:not([disabled]):hover { background: rgba(242,208,143,0.16); border-color: rgba(200,153,82,0.6); }
+    .sb-lore-apply[disabled] { opacity: 0.28; cursor: not-allowed; }
+    .sb-lore-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .sb-lore-married-row {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+      font-size: 0.8em; color: rgba(242,208,143,0.6); letter-spacing: 0.07em;
+    }
+
+    /* ── Collections: per-slot clothing rows ────────────── */
+    .sb-slot-rows { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+    .sb-slot-row { display: flex; align-items: center; gap: 8px; }
+    .sb-slot-label {
+      font-size: 0.8em; color: rgba(242,208,143,0.55); min-width: 64px; flex-shrink: 0;
+    }
+    .sb-slot-select { flex: 1; min-width: 0; }
+    .sb-dye-toggle {
+      flex-shrink: 0; font-size: 0.78em; padding: 4px 10px;
+      border-radius: 5px; transition: background .12s, border-color .12s;
+    }
+    .sb-dye-toggle.active {
+      background: rgba(200,153,82,0.18); border-color: rgba(200,153,82,0.6); color: var(--gold);
+    }
+    .sb-dye-panel {
+      margin: 4px 0 6px 72px; padding: 8px 10px;
+      background: rgba(242,208,143,0.04); border: 1px solid rgba(242,208,143,0.12);
+      border-radius: 6px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .sb-dye-row { display: flex; align-items: center; gap: 7px; }
+    .sb-dye-dot {
+      width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+      border: 1px solid rgba(242,208,143,0.18);
+    }
+    .sb-dye-name { flex: 1; font-size: 0.82em; color: rgba(242,208,143,0.75); }
+    .sb-apply-btn {
+      background: rgba(242,208,143,0.06); border: 1px solid rgba(242,208,143,0.22);
+      border-radius: 4px; color: rgba(242,208,143,0.65); font-family: inherit;
+      font-size: 0.75em; padding: 2px 8px; cursor: pointer; transition: background .1s;
+    }
+    .sb-apply-btn:hover { background: rgba(242,208,143,0.14); color: var(--gold); }
+    .sb-apply-btn.applied {
+      background: rgba(200,153,82,0.22); border-color: rgba(200,153,82,0.65); color: var(--gold);
+    }
+    .sb-dye-clears { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+    .sb-dye-category {
+      margin: 7px 0 3px; font-size: 0.74em; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--muted);
+    }
+
+    /* ── Export bar ─────────────────────────────────────── */
+    #npe-export-bar {
+      display: flex; align-items: center; gap: 8px; padding: 10px 14px 8px;
+      border-top: 1px solid rgba(200,153,82,0.14); flex-wrap: wrap;
+    }
+    #npe-export-bar .npe-npc-label {
+      flex: 1; font-size: 0.78em; color: var(--gold-dim); letter-spacing: 0.12em;
+    }
+    #npe-export-json-btn {
+      background: rgba(200,153,82,0.14); border: 1px solid rgba(200,153,82,0.45);
+      border-radius: 7px; color: var(--gold); padding: 6px 16px; font-size: 0.85em;
+      font-family: inherit; letter-spacing: inherit; cursor: pointer;
+      transition: background .12s;
+    }
+    #npe-export-json-btn:hover { background: rgba(200,153,82,0.3); }
+    #npe-export-all-btn {
+      background: transparent; border: 1px solid rgba(242,208,143,0.22);
+      border-radius: 7px; color: rgba(242,208,143,0.5); padding: 6px 14px; font-size: 0.85em;
+      font-family: inherit; letter-spacing: inherit; cursor: pointer;
+      transition: border-color .12s, color .12s;
+    }
+    #npe-export-all-btn:hover { border-color: rgba(242,208,143,0.5); color: var(--gold); }
+
+    /* ── Scrollable controls area ────────────────────────── */
+    .sb-ap-controls, .sb-col-content {
+      max-height: 80dvh; overflow-y: auto;
+      padding-right: 4px;
+    }
+    .sb-ap-controls::-webkit-scrollbar,
+    .sb-col-content::-webkit-scrollbar { width: 4px; }
+    .sb-ap-controls::-webkit-scrollbar-thumb,
+    .sb-col-content::-webkit-scrollbar-thumb {
+      background: rgba(200,153,82,0.25); border-radius: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div id="npe-wrap">
+    <div id="npe-header">
+      <div id="npe-header-title">NPC Portrait Editor</div>
+      <div id="npe-tabs"></div>
+      <button id="npe-add-btn">+ Add NPC</button>
+    </div>
+    <div id="npe-editor"></div>
+    <div id="npe-export-bar">
+      <span class="npe-npc-label" id="npe-active-label"></span>
+      <button id="npe-export-json-btn">Export Active NPC JSON</button>
+      <button id="npe-export-all-btn">Export All NPCs JSON</button>
+    </div>
+  </div>
+
+  <script src="../../config/scratchbones-config.js"></script>
+  <script src="../../js/portrait-utils.js"></script>
+  <script src="../../js/portrait-breathing.js"></script>
+  <script src="../../js/scratchbones-english-words.js"></script>
+  <script src="../../js/scratchbones-name-generator.js"></script>
+  <script src="../../js/scratchbones-name-advisor.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    // Alias for buildPreviewProfile compatibility
+    window.randomProfileSeeded = window.randomPortraitProfileSeeded;
+
+    // ── Species data ───────────────────────────────────────
+    const BASE_SPECIES_DATA = {
+      'mao-ao': {
+        label: 'Mao-ao', genders: ['male', 'female'], swatchBase: '#7dc89a',
+        male: {
+          slots: [
+            { slot: 'hairFront', label: 'Front Hair', options: [
+              { id: null,                                              label: 'None' },
+              { id: 'appearance::Mao-ao_M::mao-ao_smooth_striped',    label: 'Smooth Striped' },
+              { id: 'appearance::Mao-ao_M::mao-ao_tuft',              label: 'Tuft' },
+              { id: 'appearance::Mao-ao_M::mao-ao_forwardtuft_short', label: 'Forward Tuft (Short)' },
+              { id: 'appearance::Mao-ao_M::mao-ao_forwardtuft_long',  label: 'Forward Tuft (Long)' },
+            ]},
+            { slot: 'hairBack', label: 'Back Hair', options: [
+              { id: null,                                                   label: 'None' },
+              { id: 'appearance::Mao-ao_M::mao-ao_splayedknot_medium',     label: 'Splayed Knot' },
+              { id: 'appearance::Mao-ao_M::mao-ao_long_ponytail',          label: 'Long Ponytail' },
+            ]},
+            { slot: 'hairSide', label: 'Side Hair (R)', options: [
+              { id: null,                                                     label: 'None' },
+              { id: 'appearance::Mao-ao_M::mao-ao_shoulder_length_drape',    label: 'Shoulder Drape' },
+              { id: 'appearance::Mao-ao_M::mao-ao_braid-R',                  label: 'Braid (Right)' },
+              { id: 'appearance::Mao-ao_M::mao-ao_braidcluster-R',           label: 'Braid Cluster (Right)' },
+            ]},
+            { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+              { id: null,                                                     label: 'None' },
+              { id: 'appearance::Mao-ao_M::mao-ao_braid-L',                  label: 'Braid (Left)' },
+            ]},
+            { slot: 'eyes', label: 'Eyes', options: [
+              { id: null,                                              label: 'Default' },
+              { id: 'appearance::Mao-ao_M::mao-ao_circled_eyes',      label: 'Circled Eyes' },
+              { id: 'appearance::Mao-ao_M::mao-ao_circled_eye_L',     label: 'Circled Eye (L)' },
+            ]},
+            { slot: 'facialHair', label: 'Facial Hair', options: [
+              { id: null,                                              label: 'None' },
+              { id: 'appearance::Mao-ao_M::mao-ao_wildbeard',         label: 'Wild Beard' },
+            ]},
+          ],
+          colorOptions: [
+            { label: 'Earth',   h:-70, s:-0.80, v:-0.55 },
+            { label: 'Olive',   h:-40, s:-0.70, v:-0.45 },
+            { label: 'Sage',    h:  0, s:-0.70, v:-0.30 },
+            { label: 'Seafoam', h: 30, s:-0.60, v:-0.15 },
+            { label: 'Ash',     h: 10, s:-0.90, v: 0.25 },
+            { label: 'Onyx',    h:  0, s:-0.90, v:-0.85 },
+            { label: 'Brown',   h:-113, s:-0.45, v:-0.45 },
+            { label: 'Rust',    h:-143, s:-0.40, v:-0.40 },
+            { label: 'Amber',   h:-113, s:-0.35, v:-0.25 },
+            { label: 'Ochre',   h: -83, s:-0.45, v:-0.20 },
+            { label: 'Lichen',  h: -23, s:-0.55, v:-0.25 },
+            { label: 'Slate',   h:  77, s:-0.75, v:-0.20 },
+          ],
+        },
+        female: {
+          slots: [
+            { slot: 'hairFront', label: 'Front Hair', options: [
+              { id: null,                                              label: 'None' },
+              { id: 'appearance::Mao-ao_F::mao-ao_smooth_striped',    label: 'Smooth Striped' },
+              { id: 'appearance::Mao-ao_F::mao-ao_tuft',              label: 'Tuft' },
+              { id: 'appearance::Mao-ao_F::mao-ao_forwardtuft_short', label: 'Forward Tuft (Short)' },
+              { id: 'appearance::Mao-ao_F::mao-ao_forwardtuft_long',  label: 'Forward Tuft (Long)' },
+            ]},
+            { slot: 'hairBack', label: 'Back Hair', options: [
+              { id: null,                                                   label: 'None' },
+              { id: 'appearance::Mao-ao_F::mao-ao_splayedknot_medium',     label: 'Splayed Knot' },
+              { id: 'appearance::Mao-ao_F::mao-ao_long_ponytail',          label: 'Long Ponytail' },
+            ]},
+            { slot: 'hairSide', label: 'Side Hair (R)', options: [
+              { id: null,                                                     label: 'None' },
+              { id: 'appearance::Mao-ao_F::mao-ao_shoulder_length_drape',    label: 'Shoulder Drape' },
+              { id: 'appearance::Mao-ao_F::mao-ao_braid-R',                  label: 'Braid (Right)' },
+              { id: 'appearance::Mao-ao_F::mao-ao_braidcluster-R',           label: 'Braid Cluster (Right)' },
+            ]},
+            { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+              { id: null,                                                     label: 'None' },
+              { id: 'appearance::Mao-ao_F::mao-ao_braid-L',                  label: 'Braid (Left)' },
+            ]},
+            { slot: 'eyes', label: 'Eyes', options: [
+              { id: null,                                              label: 'Default' },
+              { id: 'appearance::Mao-ao_F::mao-ao_circled_eyes',      label: 'Circled Eyes' },
+              { id: 'appearance::Mao-ao_F::mao-ao_circled_eyes_f',    label: 'Circled Eyes F' },
+              { id: 'appearance::Mao-ao_F::mao-ao_circled_eye_L',     label: 'Circled Eye (L)' },
+            ]},
+          ],
+          colorOptions: [
+            { label: 'Earth',   h:-70, s:-0.80, v:-0.55 },
+            { label: 'Olive',   h:-40, s:-0.70, v:-0.45 },
+            { label: 'Sage',    h:  0, s:-0.70, v:-0.30 },
+            { label: 'Seafoam', h: 30, s:-0.60, v:-0.15 },
+            { label: 'Ash',     h: 10, s:-0.90, v: 0.25 },
+            { label: 'Onyx',    h:  0, s:-0.90, v:-0.85 },
+            { label: 'Brown',   h:-113, s:-0.45, v:-0.45 },
+            { label: 'Rust',    h:-143, s:-0.40, v:-0.40 },
+            { label: 'Amber',   h:-113, s:-0.35, v:-0.25 },
+            { label: 'Ochre',   h: -83, s:-0.45, v:-0.20 },
+            { label: 'Lichen',  h: -23, s:-0.55, v:-0.25 },
+            { label: 'Slate',   h:  77, s:-0.75, v:-0.20 },
+          ],
+        },
+      },
+      'tletingan': {
+        label: 'Tletingan', genders: ['male'], swatchBase: '#7dc89a',
+        male: {
+          slots: [
+            { slot: 'hairFront', label: 'Front Hair', options: [
+              { id: null,                                                label: 'None' },
+              { id: 'appearance::Tletingan_M::tl_forwardtuft_short',    label: 'Forward Tuft (Short)' },
+              { id: 'appearance::Tletingan_M::tl_forwardtuft_long',     label: 'Forward Tuft (Long)' },
+            ]},
+            { slot: 'hairBack', label: 'Back Hair', options: [
+              { id: null,                                                label: 'None' },
+              { id: 'appearance::Tletingan_M::tl_longponytail',         label: 'Long Ponytail' },
+              { id: 'appearance::Tletingan_M::tl_splayedknot',          label: 'Splayed Knot' },
+            ]},
+            { slot: 'hairSide', label: 'Side Hair (R)', options: [
+              { id: null, label: 'None' },
+              { id: 'appearance::Tletingan_M::tl_braid-R',              label: 'Braid (Right)' },
+              { id: 'appearance::Tletingan_M::tl_braidcluster-R',       label: 'Braid Cluster (Right)' },
+            ]},
+            { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+              { id: null, label: 'None' },
+              { id: 'appearance::Tletingan_M::tl_braid-L',              label: 'Braid (Left)' },
+            ]},
+            { slot: 'facialHair', label: 'Facial Hair', options: [
+              { id: null,                                                label: 'None' },
+              { id: 'appearance::Tletingan_M::tl_wildbeard',            label: 'Wild Beard' },
+            ]},
+          ],
+          colorOptions: [
+            { label: 'Umber',  h:-85, s:-0.30, v:-0.40 },
+            { label: 'Khaki',  h:-60, s:-0.20, v:-0.35 },
+            { label: 'Olive',  h:-40, s:-0.10, v:-0.30 },
+            { label: 'Forest', h:-20, s: 0.00, v:-0.20 },
+            { label: 'Fern',   h:  0, s: 0.10, v:-0.15 },
+            { label: 'Ash',    h:-80, s:-0.40, v:-0.45 },
+            { label: 'Brown',  h:-113, s:-0.30, v:-0.42 },
+            { label: 'Rust',   h:-143, s:-0.20, v:-0.35 },
+            { label: 'Amber',  h:-113, s:-0.20, v:-0.28 },
+            { label: 'Ochre',  h: -83, s:-0.35, v:-0.20 },
+            { label: 'Lichen', h: -23, s:-0.45, v:-0.25 },
+            { label: 'Slate',  h:  77, s:-0.60, v:-0.22 },
+          ],
+        },
+      },
+      'kenkari': {
+        label: 'Kenkari', genders: ['male', 'female'], swatchBase: '#7dc89a',
+        male: {
+          forcedCosmetics: { eyes: 'kenk_eyedisks' },
+          slots: [
+            { slot: 'hairFront', label: 'Front Hair', options: [
+              { id: null,                                                  label: 'None' },
+              { id: 'appearance::Kenkari_M::kenk_forwardtuft_long',       label: 'Forward Tuft (Long)' },
+              { id: 'appearance::Kenkari_M::kenk_fowardtuft',             label: 'Forward Tuft' },
+            ]},
+            { slot: 'hairBack', label: 'Back Hair', options: [
+              { id: null,                                                  label: 'None' },
+              { id: 'appearance::Kenkari_M::kenk_splayedknot_high_m',     label: 'Splayed Knot (High)' },
+              { id: 'appearance::Kenkari_M::kenk_splayedknot_low_m',      label: 'Splayed Knot (Low)' },
+            ]},
+            { slot: 'hairSide', label: 'Side Hair (R)', options: [
+              { id: null, label: 'None' },
+              { id: 'appearance::Kenkari_M::kenk_braid-R_m',            label: 'Braid (Right)' },
+              { id: 'appearance::Kenkari_M::kenk_braidcluster-R_m',     label: 'Braid Cluster (Right)' },
+            ]},
+            { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+              { id: null, label: 'None' },
+              { id: 'appearance::Kenkari_M::kenk_braid-L_m',            label: 'Braid (Left)' },
+            ]},
+            { slot: 'facialHair', label: 'Facial Hair', options: [
+              { id: null,                                                  label: 'None' },
+              { id: 'appearance::Kenkari_M::kenk_wildbeard',              label: 'Wild Beard' },
+            ]},
+          ],
+          colorOptions: [
+            { label: 'Jade',        h: -20, s:0.80, v: 0.00 },
+            { label: 'Lime',        h: -80, s:0.90, v: 0.00 },
+            { label: 'Teal',        h:  40, s:1.00, v: 0.10 },
+            { label: 'Amethyst',    h: 120, s:0.90, v: 0.00 },
+            { label: 'Fuchsia',     h: 160, s:0.80, v:-0.10 },
+            { label: 'Ember',       h:-120, s:0.80, v:-0.10 },
+            { label: 'Chartreuse',  h: -40, s:0.70, v: 0.10 },
+            { label: 'Azure',       h:  60, s:0.90, v: 0.10 },
+            { label: 'Red',         h:-143, s:1.00, v: 0.00 },
+            { label: 'Orange',      h:-113, s:1.00, v: 0.10 },
+            { label: 'Yellow',      h: -83, s:1.20, v: 0.25 },
+            { label: 'Green',       h: -23, s:1.00, v: 0.05 },
+            { label: 'Blue',        h:  77, s:1.00, v: 0.00 },
+            { label: 'Brown',       h:-113, s: 0.10, v:-0.38 },
+          ],
+        },
+        female: {
+          forcedCosmetics: { eyes: 'none' },
+          slots: [
+            { slot: 'hairBack', label: 'Back Hair', options: [
+              { id: null,                                                   label: 'None' },
+              { id: 'appearance::Kenkari_F::kenk_longponytail_f',          label: 'Long Ponytail' },
+              { id: 'appearance::Kenkari_F::kenk_splayedknot_high_f',      label: 'Splayed Knot (High)' },
+              { id: 'appearance::Kenkari_F::kenk_splayedknot_low_f',       label: 'Splayed Knot (Low)' },
+            ]},
+            { slot: 'hairSide', label: 'Side Hair (R)', options: [
+              { id: null, label: 'None' },
+              { id: 'appearance::Kenkari_F::kenk_braid-R_f',            label: 'Braid (Right)' },
+              { id: 'appearance::Kenkari_F::kenk_braidcluster-R_f',     label: 'Braid Cluster (Right)' },
+            ]},
+            { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+              { id: null, label: 'None' },
+              { id: 'appearance::Kenkari_F::kenk_braid-L_f',            label: 'Braid (Left)' },
+            ]},
+          ],
+          colorOptions: [
+            { label: 'Ember',       h: -115, s: 0.20, v: 0.05 },
+            { label: 'Copper',      h: -105, s: 0.25, v: 0.10 },
+            { label: 'Gold',        h: -92,  s: 0.40, v: 0.15 },
+            { label: 'Honey',       h: -80,  s: 0.45, v: 0.20 },
+            { label: 'Yellow',      h: -75,  s: 0.50, v: 0.20 },
+            { label: 'Saffron',     h: -65,  s: 0.52, v: 0.15 },
+            { label: 'Chartreuse',  h: -53,  s: 0.58, v: 0.05 },
+            { label: 'Lime',        h: -42,  s: 0.62, v: 0.00 },
+            { label: 'Spring',      h: -32,  s: 0.68, v: 0.05 },
+            { label: 'Umber',       h: -100, s: -0.30, v: -0.40 },
+            { label: 'Ochre',       h: -80,  s: -0.20, v: -0.25 },
+            { label: 'Straw',       h: -65,  s: -0.10, v: -0.15 },
+          ],
+        },
+      },
+    };
+
+    const CONFIG_SPECIES_DATA = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {};
+    const CONFIG_SPECIES_AVAILABILITY = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.availability || {};
+
+    function normalizeSpeciesKey(speciesId) {
+      return String(speciesId || '').trim().toLowerCase().replace(/_/g, '-');
+    }
+
+    function withConfiguredSpeciesAvailability(speciesData) {
+      const result = { ...speciesData };
+      for (const [speciesId, availability] of Object.entries(CONFIG_SPECIES_AVAILABILITY)) {
+        const key = normalizeSpeciesKey(speciesId);
+        const existing = result[key] || result[speciesId];
+        if (!existing || !Array.isArray(availability?.genders) || !availability.genders.length) continue;
+        result[key] = { ...existing, genders: availability.genders.map(g => String(g).toLowerCase()).filter(Boolean) };
+      }
+      return result;
+    }
+
+    const SPECIES_DATA = withConfiguredSpeciesAvailability({ ...BASE_SPECIES_DATA, ...CONFIG_SPECIES_DATA });
+
+    // ── Editor state ───────────────────────────────────────
+    let _npcs = [];
+    let _activeNpcIdx = 0;
+    let _activeTab = 'appearance';   // 'appearance' | 'collections'
+    let _editAppearance = null;      // working copy while editing
+    let _editAIdx = 0;
+    let _editBIdx = 0;
+    let _editName = '';
+    let _editNameFormat = 'nickname';
+    let _loreState = null;
+    let _activeDyeSlot = null;
+    let _lobbyPortraitCosmetics = null;
+    let _lobbyPortraitLoading = false;
+    let _npcCounter = 0;
+
+    // ── Active NPC accessor ───────────────────────────────
+    function activeNpc() { return _npcs[_activeNpcIdx] || null; }
+
+    // ── NPC account mock ──────────────────────────────────
+    window.ScratchbonesAccount = {
+      getShopCatalog:           () => window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [],
+      getDyeCatalog:            () => window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [],
+      getDyeCategories:         () => window.SCRATCHBONES_CONFIG?.game?.dyes?.categories || [],
+      getAppliedDyes:           () => activeNpc()?.appliedDyes || {},
+      getAppearance:            () => activeNpc()?.appearance || { speciesId: 'mao-ao', gender: 'male', cosmetics: {} },
+      isUnlocked:               () => true,
+      isDyeOwned:               () => true,
+      getEquippedForCategory:   (cat) => {
+        const npc = activeNpc();
+        if (!npc) return null;
+        const catalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
+        return catalog.find(i => i.category === cat && npc.equippedCosmetics.includes(i.id))?.id ?? null;
+      },
+      setAppearance: (ap) => {
+        const npc = activeNpc();
+        if (npc) npc.appearance = { ...ap };
+      },
+      equipCosmetic: (id) => {
+        const npc = activeNpc();
+        if (!npc) return;
+        const catalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
+        const item = catalog.find(i => i.id === id);
+        if (!item) return;
+        npc.equippedCosmetics = npc.equippedCosmetics.filter(eid => {
+          const ei = catalog.find(i => i.id === eid);
+          return ei?.category !== item.category;
+        });
+        npc.equippedCosmetics.push(id);
+      },
+      unequipCosmetic: (id) => {
+        const npc = activeNpc();
+        if (!npc) return;
+        npc.equippedCosmetics = npc.equippedCosmetics.filter(eid => eid !== id);
+      },
+      applyDye: (dyeId, tintKey) => {
+        const npc = activeNpc();
+        if (npc) npc.appliedDyes[tintKey] = dyeId;
+      },
+      removeDye: (tintKey) => {
+        const npc = activeNpc();
+        if (npc) delete npc.appliedDyes[tintKey];
+      },
+    };
+
+    // ── Helpers ────────────────────────────────────────────
+    function esc(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function cap(str) { return String(str).charAt(0).toUpperCase() + String(str).slice(1); }
+
+    function swatchStyle(base, h, s, v) {
+      const hueOffset   = (window.SCRATCHBONES_CONFIG?.clothingHueOffset)   ?? 0;
+      const satOffset   = (window.SCRATCHBONES_CONFIG?.clothingSatOffset)   ?? 0;
+      const lightOffset = (window.SCRATCHBONES_CONFIG?.clothingLightOffset) ?? 0;
+      const sat = Math.max(0, 1 + (Number(s) || 0) + satOffset).toFixed(3);
+      const bri = Math.max(0, 1 + (Number(v) || 0) + lightOffset).toFixed(3);
+      const finalH = (Number(h) || 0) + hueOffset;
+      return `background:${base};filter:hue-rotate(${finalH}deg) saturate(${sat}) brightness(${bri})`;
+    }
+
+    function deriveCFromA(a) {
+      return { h: a.h, s: Math.max(-1, Math.min(1, a.s + 0.05)), v: Math.max(-1, Math.min(1, a.v + 0.18)) };
+    }
+
+    function closestColorIdx(options, target) {
+      if (!options || !options.length || !target) return 0;
+      let best = 0, bestDist = Infinity;
+      options.forEach((o, i) => {
+        const d = Math.abs(o.h - target.h) * 0.5 + Math.abs(o.v - target.v) * 100;
+        if (d < bestDist) { bestDist = d; best = i; }
+      });
+      return best;
+    }
+
+    function currentSpeciesGenderData() {
+      if (!_editAppearance) return null;
+      const specData = SPECIES_DATA[_editAppearance.speciesId];
+      return specData ? specData[_editAppearance.gender] : null;
+    }
+
+    function defaultCosmeticsFor(speciesId, gender) {
+      const genderData = SPECIES_DATA[speciesId]?.[gender];
+      if (!genderData) return {};
+      const cosmetics = { ...(genderData.defaultCosmetics || {}) };
+      for (const slotDef of genderData.slots || []) {
+        if (cosmetics[slotDef.slot] !== undefined) continue;
+        const hasNoneOption = (slotDef.options || []).some(option => option.id == null || option.id === '');
+        if (!hasNoneOption && slotDef.options?.[0]?.id) cosmetics[slotDef.slot] = slotDef.options[0].id;
+      }
+      return cosmetics;
+    }
+
+    function makeNpcId() { return 'npc_' + (++_npcCounter) + '_' + Date.now(); }
+
+    function makeNpc(name, speciesId, gender) {
+      speciesId = speciesId || 'mao-ao';
+      gender = gender || 'male';
+      const gData = SPECIES_DATA[speciesId]?.[gender];
+      const colorOpts = gData?.colorOptions || [];
+      const baseColor = colorOpts[0] || { h: 0, s: -0.70, v: -0.30 };
+      return {
+        id: makeNpcId(),
+        name: name || ('NPC ' + _npcCounter),
+        appearance: {
+          speciesId,
+          gender,
+          cosmetics: { ...defaultCosmeticsFor(speciesId, gender) },
+          bodyColors: {
+            A: { h: baseColor.h, s: baseColor.s, v: baseColor.v },
+            B: { h: baseColor.h, s: baseColor.s, v: baseColor.v },
+            C: deriveCFromA(baseColor),
+          },
+          chatColor: { h: 210, s: 75, l: 68 },
+        },
+        equippedCosmetics: [],
+        appliedDyes: {},
+        loreName: null,
+        nameFormat: 'nickname',
+      };
+    }
+
+    function loadEditState() {
+      const npc = activeNpc();
+      if (!npc) return;
+      _editName = npc.name || '';
+      _editNameFormat = npc.nameFormat || 'nickname';
+      _editAppearance = {
+        speciesId: npc.appearance.speciesId || 'mao-ao',
+        gender: npc.appearance.gender || 'male',
+        cosmetics: { ...(npc.appearance.cosmetics || {}) },
+        bodyColors: {
+          A: { ...(npc.appearance.bodyColors?.A || { h:0, s:-0.70, v:-0.30 }) },
+          B: { ...(npc.appearance.bodyColors?.B || { h:0, s:-0.70, v:-0.50 }) },
+          C: { ...(npc.appearance.bodyColors?.C || { h:0, s:-0.65, v:-0.15 }) },
+        },
+        chatColor: npc.appearance.chatColor ? { ...npc.appearance.chatColor } : { h: 210, s: 75, l: 68 },
+      };
+      const gData = currentSpeciesGenderData();
+      const opts = gData ? gData.colorOptions : [];
+      _editAIdx = closestColorIdx(opts, _editAppearance.bodyColors.A);
+      _editBIdx = closestColorIdx(opts, _editAppearance.bodyColors.B);
+      _initLoreState(_editAppearance.speciesId, _editAppearance.gender);
+      if (npc.loreName) {
+        _loreState.births = { ...npc.loreName };
+        if ('married' in npc.loreName) _loreState.married = !!npc.loreName.married;
+      }
+    }
+
+    function saveEditState() {
+      const npc = activeNpc();
+      if (!npc || !_editAppearance) return;
+      npc.name = (_editName || '').trim() || npc.name;
+      npc.appearance = { ..._editAppearance };
+      npc.nameFormat = _editNameFormat;
+      if (_loreState) {
+        npc.loreName = { ..._loreState.births, married: !!_loreState.married };
+      }
+    }
+
+    // ── Portrait cosmetics ─────────────────────────────────
+    async function ensurePortraitCosmetics() {
+      if (_lobbyPortraitCosmetics) return _lobbyPortraitCosmetics;
+      if (_lobbyPortraitLoading) return null;
+      _lobbyPortraitLoading = true;
+      try {
+        if (window.setPortraitAssetBase) window.setPortraitAssetBase('../../assets/');
+        if (window.loadPortraitCosmetics) {
+          _lobbyPortraitCosmetics = await window.loadPortraitCosmetics('../../config/');
+        }
+      } catch (e) {
+        console.warn('[npe] portrait load failed', e);
+      }
+      _lobbyPortraitLoading = false;
+      return _lobbyPortraitCosmetics;
+    }
+
+    function _previewRng() {
+      let s = 0x9e3779b9;
+      return function() {
+        s = (Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0);
+        s = (Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0);
+        return (s >>> 0) / 0x100000000;
+      };
+    }
+
+    function buildPreviewProfile(appearance) {
+      const cosmetics = _lobbyPortraitCosmetics;
+      if (!cosmetics || !window.getPortraitFighters || !window.randomProfileSeeded) return null;
+      const { optionCache, hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions,
+              upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions,
+              bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter,
+              forcedCosmeticsByFighter, conditionalCosmeticsByFighter } = cosmetics;
+      const fighters = window.getPortraitFighters();
+      if (!fighters || !fighters.length) return null;
+
+      const { speciesId, gender, cosmetics: savedCosmetics, bodyColors } = appearance;
+      const normalize = s => s.replace(/-/g, '_');
+      const fighterGender = f => f.gender ?? (f.id === 'M' ? 'male' : f.id === 'F' ? 'female' : null);
+      const fighter = fighters.find(f =>
+        (f.speciesId === speciesId || f.speciesId === normalize(speciesId)) && fighterGender(f) === gender
+      ) || fighters[0];
+      if (!fighter) return null;
+
+      const rng = _previewRng();
+      const forced = forcedCosmeticsByFighter?.[fighter.id] ?? {};
+      const forcedSlots = new Set(Object.keys(forced));
+
+      const profile = window.randomProfileSeeded(rng, [fighter], hairFrontOptions, hairBackOptions,
+        hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions,
+        bodyColorRangesByGender, allowedCosmeticsByFighter, hatOptions, hoodOptions,
+        cosmeticWeightsByFighter, torsoPortraitOptions, armPortraitOptions,
+        forcedCosmeticsByFighter, conditionalCosmeticsByFighter);
+      if (!profile) return null;
+
+      const lookup = id => id ? (optionCache?.get(id) ?? null) : null;
+      if (savedCosmetics) {
+        if (savedCosmetics.hairFront  !== undefined && !forcedSlots.has('hairFront'))  profile.hairFront  = lookup(savedCosmetics.hairFront);
+        if (savedCosmetics.hairBack   !== undefined && !forcedSlots.has('hairBack'))   profile.hairBack   = lookup(savedCosmetics.hairBack);
+        if (savedCosmetics.hairSide   !== undefined && !forcedSlots.has('hairSide'))   profile.hairSide   = lookup(savedCosmetics.hairSide);
+        if (savedCosmetics.hairSideL  !== undefined && !forcedSlots.has('hairSideL'))  profile.hairSideL  = lookup(savedCosmetics.hairSideL);
+        if (savedCosmetics.eyes       !== undefined && !forcedSlots.has('eyes'))       profile.eyes       = lookup(savedCosmetics.eyes);
+        if (savedCosmetics.upperFace  !== undefined && !forcedSlots.has('upperFace'))  profile.upperFace  = lookup(savedCosmetics.upperFace);
+        if (savedCosmetics.facialHair !== undefined && !forcedSlots.has('facialHair')) profile.facialHair = lookup(savedCosmetics.facialHair);
+      }
+      if (bodyColors) profile.bodyColors = { ...(profile.bodyColors || {}), ...bodyColors };
+
+      // Apply equipped items and dyes via mock account
+      const acc = window.ScratchbonesAccount;
+      if (acc) {
+        const none = { id: 'none', tintSlot: null, layers: [] };
+        const equippedFromAppearance = Array.isArray(appearance?.equippedCosmetics) ? appearance.equippedCosmetics : null;
+        const appliedDyesFromAppearance = appearance && Object.prototype.hasOwnProperty.call(appearance, 'appliedDyes')
+          ? (appearance.appliedDyes || {}) : null;
+        const resolveVariantId = (category, equippedId) => {
+          if (!equippedId) return null;
+          const shopCatalog = acc.getShopCatalog();
+          const base = shopCatalog.find(i => i.id === equippedId);
+          if (!base) return equippedId;
+          const candidates = shopCatalog.filter(i =>
+            i.category === category && i.label === base.label &&
+            (i.material || null) === (base.material || null) &&
+            i.species === speciesId && (!i.gender || i.gender === gender)
+          );
+          const ids = [equippedId, ...candidates.map(i => i.id)];
+          return ids.find(id => optionCache?.has(id)) ?? equippedId;
+        };
+        const applyEquip = (cat, key, noneOpt) => {
+          let id = null;
+          if (equippedFromAppearance) {
+            const shopCatalog = acc.getShopCatalog();
+            id = shopCatalog.find(i => i.category === cat && equippedFromAppearance.includes(i.id))?.id ?? null;
+          } else {
+            id = acc.getEquippedForCategory(cat);
+          }
+          const resolvedId = resolveVariantId(cat, id);
+          profile[key] = (resolvedId && optionCache?.has(resolvedId)) ? optionCache.get(resolvedId) : (noneOpt ?? none);
+        };
+        applyEquip('hat', 'hat', hatOptions[0]);
+        applyEquip('hood', 'hood', hoodOptions[0]);
+        applyEquip('torso', 'torsoCosmetic', torsoPortraitOptions[0]);
+        applyEquip('overwear', 'armCosmetic', armPortraitOptions[0]);
+
+        const collaredTag = window.SCRATCHBONES_CONFIG?.game?.portrait?.cosmetics?.collaredTag || 'collared';
+        const collarLockedFacialHairIds = window.SCRATCHBONES_CONFIG?.game?.portrait?.cosmetics?.collarLockedFacialHairIds
+          || window.SCRATCHBONES_CONFIG?.game?.portrait?.cosmetics?.shirtbeardIds
+          || ['kenk_shirtbeard', 'kenk_shirtbeard_f'];
+        const hasCollaredClothing = [profile.torsoCosmetic, profile.armCosmetic].some(c => c?.tags?.includes(collaredTag));
+        if (!hasCollaredClothing && collarLockedFacialHairIds.includes(profile.facialHair?.id)) {
+          profile.facialHair = optionCache?.get('none') || { id: 'none', label: 'No Facial Hair', tintSlot: null, layers: [] };
+        }
+
+        const defaultTintColors = window.SCRATCHBONES_CONFIG?.game?.portrait?.cosmetics?.defaultTintColors || {};
+        for (const option of [profile.upperFace]) {
+          const defaults = option?.id ? defaultTintColors[option.id] : null;
+          if (!defaults) continue;
+          for (const [tintKey, color] of Object.entries(defaults)) {
+            profile.bodyColors = { ...(profile.bodyColors || {}), [tintKey]: { ...color } };
+          }
+        }
+
+        const dyeIds = appliedDyesFromAppearance ?? (acc.getAppliedDyes ? acc.getAppliedDyes() : {});
+        const catalog = acc.getDyeCatalog ? acc.getDyeCatalog() : [];
+        for (const [tintKey, dyeId] of Object.entries(dyeIds)) {
+          if (dyeId) {
+            const dye = catalog.find(d => d.id === dyeId);
+            if (dye) profile.bodyColors = { ...(profile.bodyColors || {}), [tintKey]: { ...dye.color } };
+          }
+        }
+      }
+      return profile;
+    }
+
+    function renderPreviewCanvas(canvasId, appearance) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      if (!_lobbyPortraitCosmetics) {
+        ensurePortraitCosmetics().then(() => {
+          const c2 = document.getElementById(canvasId);
+          if (!c2) return;
+          const profile = buildPreviewProfile(appearance);
+          if (profile && window.renderProfile) window.renderProfile(c2, profile);
+        });
+        return;
+      }
+      const profile = buildPreviewProfile(appearance);
+      if (profile && window.renderProfile) window.renderProfile(canvas, profile);
+    }
+
+    // ── Lore helpers ───────────────────────────────────────
+    function _advisorSp(speciesId) {
+      return window.SCRATCHBONES_NAME_ADVISOR?.lobbySpeciesToAdvisorKey(speciesId, SPECIES_DATA) || 'mao';
+    }
+
+    function _loreCtx() {
+      if (!_loreState) return { gender: 'male', married: false, births: {} };
+      return { gender: _editAppearance?.gender || 'male', married: !!_loreState.married, births: _loreState.births || {} };
+    }
+
+    function _initLoreState(speciesId, gender) {
+      const sp = _advisorSp(speciesId);
+      if (_loreState && _loreState.sp === sp) return;
+      _loreState = { sp, births: {}, married: false };
+    }
+
+    function _buildDisplayNamePreview() {
+      if (!_editAppearance || !_loreState) return '';
+      const adv = window.SCRATCHBONES_NAME_ADVISOR;
+      const nickname = _editName || 'Nickname';
+      const sp = _loreState.sp;
+      const births = _loreState.births || {};
+      const ctx = _loreCtx();
+      let preview = '';
+      let warning = '';
+      if (_editNameFormat === 'nickname') {
+        preview = nickname;
+      } else if (adv) {
+        const { first, conn, second } = adv.birthNameParts(sp, births, ctx);
+        if (_editNameFormat === 'loreName') {
+          preview = [first, conn, second].filter(Boolean).join(' ') || '';
+          if (!preview) warning = 'Set a lore name below first.';
+        } else if (_editNameFormat === 'combined') {
+          const parts = [first, `"${nickname}"`, conn, second].filter(Boolean);
+          preview = parts.join(' ');
+          if (!first && !second) warning = 'Set a lore name below first.';
+          else if (!second) warning = 'Surname/second slot is empty — only first name will show.';
+        }
+      }
+      const previewHtml = preview
+        ? `<span style="font-style:italic;opacity:0.85;">${esc(preview)}</span>`
+        : `<span style="opacity:0.4;">—</span>`;
+      const warnHtml = warning
+        ? `<div style="font-size:0.72em;color:rgba(242,180,80,0.75);margin-top:2px;">${esc(warning)}</div>`
+        : '';
+      return `<div style="margin-top:4px;margin-bottom:2px;font-size:0.82em;padding:4px 6px;background:rgba(242,208,143,0.06);border-radius:5px;border:1px solid rgba(200,153,82,0.2);">${previewHtml}${warnHtml}</div>`;
+    }
+
+    function _buildLorePreviewHtml(sp, births, ctx) {
+      const adv = window.SCRATCHBONES_NAME_ADVISOR;
+      if (!adv) return '';
+      const { first, conn, second } = adv.birthNameParts(sp, births, ctx);
+      const faint = s => `<span class="sb-lore-faint">${adv.esc(s)}</span>`;
+      const connHtml = conn ? `<span class="sb-lore-conn">${adv.esc(conn)}</span>` : '';
+      const parts = [];
+      parts.push(first ? adv.esc(first) : faint('—'));
+      if (connHtml) parts.push(connHtml);
+      parts.push(second ? adv.esc(second) : faint('—'));
+      return parts.join(' ');
+    }
+
+    function _buildTankanPillars(sp, births, ctx) {
+      const adv = window.SCRATCHBONES_NAME_ADVISOR;
+      if (!adv) return '';
+      const { first, conn, second } = adv.birthNameParts(sp, births, ctx);
+      const words = [first, conn, second].filter(Boolean);
+      if (!words.length) return '';
+      const pillars = words.map(w =>
+        `<span style="writing-mode:vertical-rl;text-orientation:mixed;font-family:'TankanScript','KhymeryyanRomanLetters+Numbers',sans-serif;font-size:0.55em;line-height:1;color:rgba(242,208,143,0.45);letter-spacing:0.05em;display:inline-block;">${adv.esc(w)}</span>`
+      ).join('');
+      return `<div style="display:flex;gap:4px;align-items:flex-start;justify-content:center;margin-top:4px;">${pillars}</div>`;
+    }
+
+    function _slotPlaceholder(sp, slot) {
+      if (sp === 'engh' && slot === 'first')   return 'small handheld object';
+      if (sp === 'engh' && slot === 'surname') return 'clan name';
+      return window.SCRATCHBONES_NAME_ADVISOR?.slotLabel(sp, slot) || slot;
+    }
+
+    function _buildLoreSectionHtml() {
+      const adv = window.SCRATCHBONES_NAME_ADVISOR;
+      if (!adv || !_loreState || !_editAppearance) return '';
+      const sp = _loreState.sp;
+      const births = _loreState.births || {};
+      const ctx = _loreCtx();
+      const species = adv.getSpecies();
+      const slots = species[sp]?.slots || ['first', 'surname'];
+      const previewHtml = _buildLorePreviewHtml(sp, births, ctx);
+      const tankanHtml = _buildTankanPillars(sp, births, ctx);
+
+      let marriedRow = '';
+      if (sp === 'mao' && ctx.gender === 'female') {
+        marriedRow = `<div class="sb-lore-married-row">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+            <input type="checkbox" id="sb-lore-married" ${_loreState.married ? 'checked' : ''} style="accent-color:#c89952;"/>
+            <span>Married</span>
+          </label>
+        </div>`;
+      }
+
+      const slotsHtml = slots.map(slot => {
+        const val = births[slot] || '';
+        const label = adv.slotLabel(sp, slot);
+        const placeholder = _slotPlaceholder(sp, slot);
+
+        if (sp === 'slagothim' && slot === 'surname') {
+          const current = val.replace(/^tley\s*/i, '') || species.slagothim.locations[0];
+          const btns = species.slagothim.locations.map(loc =>
+            `<button class="sb-lore-place-btn${current === loc ? ' active' : ''}" data-lore-place="${adv.esc(loc)}">${adv.esc(loc)}-Doro</button>`
+          ).join('');
+          return `<div class="sb-lore-slot">
+            <div class="sb-cosmetic-label" style="text-align:left;min-width:0;margin-bottom:4px;letter-spacing:0.07em;">${adv.esc(label)}</div>
+            <div class="sb-lore-place-grid">${btns}</div>
+          </div>`;
+        }
+
+        const { html: valHtml, msgs } = adv.validateSlot(sp, slot, val, ctx);
+        const msgsHtml = `<div class="sb-lore-msgs">${adv.esc(msgs[0] || '')}</div>`;
+        const opts = val ? adv.makeIdeaOptions(sp, slot, val, ctx) : [];
+        const suggHtml = `<div class="sb-lore-suggs">${
+          opts.map((o, i) => `<button class="sb-lore-sugg" data-lore-slot="${adv.esc(slot)}" data-lore-idx="${i}">${adv.esc(o.label)}</button>`).join('')
+        }</div>`;
+
+        return `<div class="sb-lore-slot">
+          <div class="sb-cosmetic-label" style="text-align:left;min-width:0;margin-bottom:4px;letter-spacing:0.07em;">${adv.esc(label)}</div>
+          <div class="sb-lore-input-row">
+            <input class="sb-lore-input" id="sb-lore-${adv.esc(slot)}" type="text" value="${adv.esc(val)}"
+                   data-lore-slot="${adv.esc(slot)}" autocomplete="off" spellcheck="false" placeholder="${adv.esc(placeholder)}" />
+            <button class="sb-lore-apply" data-lore-slot="${adv.esc(slot)}"${msgs.length > 0 ? ' disabled' : ''}>✓</button>
+          </div>
+          <div class="sb-lore-val">${valHtml || ''}</div>
+          ${msgsHtml}
+          ${suggHtml}
+        </div>`;
+      }).join('');
+
+      return `<div class="sb-lore-section">
+        <div class="sb-label" style="margin-bottom:6px;">Lore Name
+          <span style="font-size:0.72em;font-weight:400;opacity:0.5;text-transform:none;letter-spacing:0;margin-left:6px;">(${adv.esc(species[sp]?.label || sp)})</span>
+        </div>
+        <div class="sb-lore-preview" id="sb-lore-preview">${previewHtml || '<span class="sb-lore-faint">—</span>'}</div>
+        ${tankanHtml ? `<div id="sb-lore-tankan">${tankanHtml}</div>` : ''}
+        ${marriedRow}
+        ${slotsHtml}
+        <div class="sb-lore-actions">
+          <button id="sb-lore-random-btn" style="font-size:0.75em;padding:3px 10px;border:1px solid rgba(200,153,82,0.35);border-radius:5px;background:rgba(242,208,143,0.06);color:rgba(242,208,143,0.7);cursor:pointer;font-family:inherit;letter-spacing:0.08em;">↺ Random</button>
+          <button id="sb-lore-copy-btn" style="font-size:0.75em;padding:3px 10px;border:1px solid rgba(200,153,82,0.35);border-radius:5px;background:rgba(242,208,143,0.06);color:rgba(242,208,143,0.7);cursor:pointer;font-family:inherit;letter-spacing:0.08em;">Copy Name</button>
+        </div>
+      </div>`;
+    }
+
+    // ── Renderers ──────────────────────────────────────────
+    function renderAppearance() {
+      const ap = _editAppearance;
+      const speciesId = ap.speciesId || 'mao-ao';
+      const gender = ap.gender || 'male';
+      const specData = SPECIES_DATA[speciesId];
+      const genderData = specData && specData[gender];
+      const cosmetics = ap.cosmetics || {};
+      const base = specData ? specData.swatchBase : '#a09070';
+      const colorOpts = genderData ? genderData.colorOptions : [];
+
+      const subSpeciesMap = {};
+      for (const [sid, sd] of Object.entries(SPECIES_DATA)) {
+        if (sd.parentSpecies) {
+          if (!subSpeciesMap[sd.parentSpecies]) subSpeciesMap[sd.parentSpecies] = [];
+          subSpeciesMap[sd.parentSpecies].push(sid);
+        }
+      }
+      const effectiveParentId = SPECIES_DATA[speciesId]?.parentSpecies || speciesId;
+
+      const speciesBtns = Object.entries(SPECIES_DATA)
+        .filter(([sid, sd]) => !sd.parentSpecies)
+        .map(([sid, sd]) =>
+          `<button class="sb-sel-btn${effectiveParentId === sid ? ' selected' : ''}" data-species="${sid}">${esc(sd.label)}</button>`
+        ).join('');
+
+      const subSpeciesIds = subSpeciesMap[effectiveParentId] || [];
+      const subSpeciesHtml = subSpeciesIds.length
+        ? `<div class="sb-label" style="margin-top:4px;">Variant</div><div class="sb-sel-group">${
+            subSpeciesIds.map(childId => {
+              const childData = SPECIES_DATA[childId];
+              const isActive = speciesId === childId;
+              return `<button class="sb-sel-btn sb-subspecies-btn${isActive ? ' selected' : ''}" data-subspecies="${childId}" data-parent-species="${effectiveParentId}">${esc(childData?.label || childId)}</button>`;
+            }).join('')
+          }</div>`
+        : '';
+
+      const availGenders = specData ? specData.genders : ['male'];
+      const genderBtns = ['male', 'female'].map(g => {
+        const avail = availGenders.includes(g);
+        return `<button class="sb-sel-btn${gender === g ? ' selected' : ''}${!avail ? ' disabled' : ''}" data-gender="${g}"${!avail ? ' disabled' : ''}>${cap(g)}</button>`;
+      }).join('');
+
+      let slotsHtml = '';
+      if (genderData && genderData.slots) {
+        for (const slotDef of genderData.slots) {
+          const cur = cosmetics[slotDef.slot] || '';
+          const opts = slotDef.options.map(o =>
+            `<option value="${esc(o.id || '')}"${cur === (o.id || '') ? ' selected' : ''}>${esc(o.label)}</option>`
+          ).join('');
+          slotsHtml += `
+            <div class="sb-cosmetic-row">
+              <label class="sb-cosmetic-label">${esc(slotDef.label)}</label>
+              <select class="sb-cosmetic-select" data-slot="${slotDef.slot}">${opts}</select>
+            </div>`;
+        }
+      }
+
+      function colorRow(label, selectedIdx, dataAttr) {
+        const swatches = colorOpts.map((o, i) =>
+          `<button class="sb-swatch-btn${i === selectedIdx ? ' selected' : ''}" ${dataAttr}="${i}"
+             style="${swatchStyle(base, o.h, o.s, o.v)}" title="${esc(o.label)}"></button>`
+        ).join('');
+        return `
+          <div class="sb-color-row">
+            <span class="sb-color-row-lbl">${label}</span>
+            <div class="sb-swatch-strip">${swatches}</div>
+          </div>`;
+      }
+
+      return `
+        <div class="sb-ap-layout">
+          <div class="sb-ap-preview">
+            <canvas id="sb-ap-canvas" width="200" height="200" class="sb-portrait-canvas"></canvas>
+          </div>
+          <div class="sb-ap-controls">
+            <div class="sb-label">Nickname / Name</div>
+            <div class="sb-field" style="margin-bottom:4px;">
+              <input id="sb-edit-name" type="text" maxlength="48" value="${esc(_editName || '')}"
+                     autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;" />
+            </div>
+            <div class="sb-label" style="margin-top:6px;">Display Name Format</div>
+            <div class="sb-sel-group">
+              <button class="sb-sel-btn${_editNameFormat === 'nickname' ? ' selected' : ''}" data-name-format="nickname">Nickname</button>
+              <button class="sb-sel-btn${_editNameFormat === 'loreName' ? ' selected' : ''}" data-name-format="loreName">Lore Name</button>
+              <button class="sb-sel-btn${_editNameFormat === 'combined' ? ' selected' : ''}" data-name-format="combined">First "Nick" Last</button>
+            </div>
+            ${_buildDisplayNamePreview()}
+            ${_buildLoreSectionHtml()}
+            <div class="sb-label" style="margin-top:8px;">Species</div>
+            <div class="sb-sel-group">${speciesBtns}</div>
+            ${subSpeciesHtml}
+            <div class="sb-label" style="margin-top:8px;">Gender</div>
+            <div class="sb-sel-group">${genderBtns}</div>
+            <div class="sb-label" style="margin-top:8px;">Cosmetics</div>
+            <div class="sb-cosmetics-list">${slotsHtml}</div>
+            <div class="sb-label" style="margin-top:8px;">Primary Color</div>
+            ${colorRow('A', _editAIdx, 'data-a-idx')}
+            <div class="sb-label" style="margin-top:4px;">Secondary Color</div>
+            ${colorRow('B', _editBIdx, 'data-b-idx')}
+            <div class="sb-label" style="margin-top:8px;">Chat Color</div>
+            <div style="margin-top:4px;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                <div id="sb-chat-color-preview" style="width:28px;height:28px;border-radius:4px;border:1px solid rgba(255,255,255,0.25);background:hsl(${ap.chatColor?.h ?? 210},${ap.chatColor?.s ?? 75}%,${ap.chatColor?.l ?? 68}%);flex-shrink:0;"></div>
+                <span style="font-size:0.85em;opacity:0.7;">Name color in chat</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:3px;">
+                <label style="font-size:0.8em;opacity:0.7;">Hue <span id="sb-chat-h-val">${ap.chatColor?.h ?? 210}</span>°</label>
+                <input type="range" id="sb-chat-h" min="0" max="359" step="1" value="${ap.chatColor?.h ?? 210}" style="width:100%;">
+                <label style="font-size:0.8em;opacity:0.7;">Saturation <span id="sb-chat-s-val">${ap.chatColor?.s ?? 75}</span>%</label>
+                <input type="range" id="sb-chat-s" min="20" max="100" step="1" value="${ap.chatColor?.s ?? 75}" style="width:100%;">
+                <label style="font-size:0.8em;opacity:0.7;">Lightness <span id="sb-chat-l-val">${ap.chatColor?.l ?? 68}</span>%</label>
+                <input type="range" id="sb-chat-l" min="40" max="85" step="1" value="${ap.chatColor?.l ?? 68}" style="width:100%;">
+              </div>
+            </div>
+            <div class="sb-actions" style="margin-top:12px;">
+              <button class="sb-btn-primary" id="sb-save-appearance-btn">Save Appearance</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function renderCollections() {
+      const acc = window.ScratchbonesAccount;
+      const fullCatalog = acc.getShopCatalog();
+      const dyes = acc.getDyeCatalog();
+      const dyeCategories = acc.getDyeCategories();
+      const appliedDyes = acc.getAppliedDyes();
+      const npc = activeNpc();
+
+      const CLOTHING_SLOTS = [
+        { key: 'hat',      label: 'Hat',      category: 'hat',      tintKeys: ['HAT',   'HAT_B',   'HAT_C'] },
+        { key: 'hood',     label: 'Hood',     category: 'hood',     tintKeys: ['HOOD',  'HOOD_B',  'HOOD_C'] },
+        { key: 'torso',    label: 'Torso',    category: 'torso',    tintKeys: ['TORSO', 'TORSO_B', 'TORSO_C'] },
+        { key: 'overwear', label: 'Overwear', category: 'overwear', tintKeys: ['CLOTH', 'CLOTH_B', 'CLOTH_C'] },
+      ];
+      const DYE_SWATCH_BASE = window.SCRATCHBONES_CONFIG?.game?.dyes?.swatchBase;
+
+      // All dyes are available (no ownership filter in this dev tool)
+      const ownedDyes = dyes;
+      const appearance = acc.getAppearance();
+      const appearanceSlotDefs = window.SCRATCHBONES_CONFIG?.game?.collections?.appearanceSlots || [];
+      const genderData = SPECIES_DATA[appearance.speciesId]?.[appearance.gender] || null;
+      const appearanceSlots = appearanceSlotDefs
+        .filter(slot => !Array.isArray(slot.species) || slot.species.includes(appearance.speciesId))
+        .map(slot => ({ ...slot, options: (genderData?.slots || []).find(def => def.slot === slot.slot)?.options || [] }))
+        .filter(slot => slot.options.length);
+
+      const entitlementKey = (item) => [item.category || '', item.label || '', item.material || ''].join('::');
+
+      let slotsHtml = '';
+
+      // Appearance-linked slots (e.g. upperFace for rakakoan)
+      for (const slot of appearanceSlots) {
+        const equippedId = appearance.cosmetics?.[slot.slot] || slot.options[0]?.id || '';
+        const opts = slot.options.map(item =>
+          `<option value="${esc(item.id || '')}"${(item.id || '') === equippedId ? ' selected' : ''}>${esc(item.label)}</option>`
+        ).join('');
+        const isDyeOpen = _activeDyeSlot === slot.key;
+        slotsHtml += `
+          <div class="sb-slot-row">
+            <span class="sb-slot-label">${esc(slot.label)}</span>
+            <select class="sb-cosmetic-select sb-slot-select" data-appearance-slot="${esc(slot.slot)}">${opts}</select>
+            <button class="sb-btn-ghost sb-dye-toggle${isDyeOpen ? ' active' : ''}" data-toggle-dye="${esc(slot.key)}">Dye ▾</button>
+          </div>`;
+        if (isDyeOpen) {
+          const tintKeys = slot.tintKeys || [];
+          const dyesForSlot = ownedDyes.filter(d => (d.group || 'cloth') === (slot.dyeGroup || 'cloth'));
+          const dyeRowHtml = (d) => {
+            const color = d.color || { h: 0, s: 0, v: 0 };
+            const style = swatchStyle(DYE_SWATCH_BASE, color.h, color.s, color.v);
+            return `
+              <div class="sb-dye-row">
+                <span class="sb-dye-dot" style="${style}"></span>
+                <span class="sb-dye-name">${esc(d.label)}</span>
+                ${tintKeys.map((key, index) => `<button class="sb-apply-btn${appliedDyes[key] === d.id ? ' applied' : ''}" data-apply-dye="${esc(d.id)}" data-tint-key="${esc(key)}">${['A','B','C'][index] || index + 1}</button>`).join('')}
+              </div>`;
+          };
+          const sortDyes = list => [...list].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+          const dyeRows = sortDyes(dyesForSlot).map(dyeRowHtml).join('') || '<div class="sb-muted" style="font-size:0.8em;">No dyes.</div>';
+          const clearBtns = tintKeys.filter(k => appliedDyes[k]).map((k, i) =>
+            `<button class="sb-btn-ghost sb-apply-btn" data-clear-channel="${esc(k)}">Clear ${['A','B','C'][i] || i + 1}</button>`
+          ).join('');
+          slotsHtml += `
+            <div class="sb-dye-panel">
+              ${dyeRows}
+              ${clearBtns ? `<div class="sb-dye-clears">${clearBtns}</div>` : ''}
+            </div>`;
+        }
+      }
+
+      // Clothing slots (hat, hood, torso, overwear) — all items unlocked
+      for (const slot of CLOTHING_SLOTS) {
+        const equippedId = acc.getEquippedForCategory(slot.category);
+        const ownedByCategory = fullCatalog.filter(item => item.category === slot.category);
+        const ownedMap = new Map();
+        for (const item of ownedByCategory) {
+          const key = entitlementKey(item);
+          const prev = ownedMap.get(key);
+          if (!prev) { ownedMap.set(key, item); continue; }
+          const score = (x) => (x.species === appearance.speciesId ? 2 : 0) + (x.gender === appearance.gender ? 1 : 0);
+          const prevIsEquipped = prev.id === equippedId;
+          const itemIsEquipped = item.id === equippedId;
+          if ((itemIsEquipped && !prevIsEquipped) || (itemIsEquipped === prevIsEquipped && score(item) > score(prev))) {
+            ownedMap.set(key, item);
+          }
+        }
+        const ownedItems = [...ownedMap.values()];
+        const equippedItem = fullCatalog.find(c => c.id === equippedId);
+        const equippedMaterial = equippedItem?.material || 'cloth';
+        const opts = [
+          `<option value="">None</option>`,
+          ...ownedItems.map(item =>
+            `<option value="${esc(item.id)}"${item.id === equippedId ? ' selected' : ''}>${esc(item.label)}</option>`
+          ),
+        ].join('');
+        const slotEmpty = !ownedItems.length && !equippedId;
+        const isDyeOpen = _activeDyeSlot === slot.key;
+        slotsHtml += `
+          <div class="sb-slot-row">
+            <span class="sb-slot-label">${esc(slot.label)}</span>
+            <select class="sb-cosmetic-select sb-slot-select" data-slot-cat="${slot.category}"${slotEmpty ? ' disabled' : ''}>${opts}</select>
+            <button class="sb-btn-ghost sb-dye-toggle${isDyeOpen ? ' active' : ''}" data-toggle-dye="${slot.key}"${slotEmpty ? ' disabled' : ''}>Dye ▾</button>
+          </div>`;
+        if (isDyeOpen) {
+          const [keyA, keyB, keyC] = slot.tintKeys;
+          const dyesForSlot = ownedDyes.filter(d => (d.group || 'cloth') === equippedMaterial);
+          const dyeRowHtml = (d) => {
+            const color = d.color || { h: 0, s: 0, v: 0 };
+            const style = swatchStyle(DYE_SWATCH_BASE, color.h, color.s, color.v);
+            return `
+              <div class="sb-dye-row">
+                <span class="sb-dye-dot" style="${style}"></span>
+                <span class="sb-dye-name">${esc(d.label)}</span>
+                <button class="sb-apply-btn${appliedDyes[keyA] === d.id ? ' applied' : ''}" data-apply-dye="${esc(d.id)}" data-tint-key="${keyA}">A</button>
+                <button class="sb-apply-btn${appliedDyes[keyB] === d.id ? ' applied' : ''}" data-apply-dye="${esc(d.id)}" data-tint-key="${keyB}">B</button>
+                <button class="sb-apply-btn${appliedDyes[keyC] === d.id ? ' applied' : ''}" data-apply-dye="${esc(d.id)}" data-tint-key="${keyC}">C</button>
+              </div>`;
+          };
+          let dyeRows = '';
+          const categoriesById = new Map(dyeCategories.map(c => [c.id, c]));
+          const sortDyes = list => [...list].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+          if (equippedMaterial === 'cloth' && dyeCategories.length) {
+            dyeRows = dyeCategories.map(category => {
+              const categoryDyes = sortDyes(dyesForSlot.filter(d => d.dyeCategory === category.id));
+              if (!categoryDyes.length) return '';
+              return `<div class="sb-dye-category">${esc(category.label)}</div>${categoryDyes.map(dyeRowHtml).join('')}`;
+            }).join('');
+            const uncategorized = sortDyes(dyesForSlot.filter(d => !d.dyeCategory || !categoriesById.has(d.dyeCategory)));
+            if (uncategorized.length) dyeRows += uncategorized.map(dyeRowHtml).join('');
+          } else {
+            dyeRows = sortDyes(dyesForSlot).map(dyeRowHtml).join('');
+          }
+          if (!dyeRows) dyeRows = '<div class="sb-muted" style="font-size:0.8em;">No dyes.</div>';
+          const clearBtns = slot.tintKeys.filter(k => appliedDyes[k]).map((k, i) =>
+            `<button class="sb-btn-ghost sb-apply-btn" data-clear-channel="${k}">Clear ${['A','B','C'][i]}</button>`
+          ).join('');
+          slotsHtml += `
+            <div class="sb-dye-panel">
+              <div class="sb-muted" style="font-size:0.74em;margin-bottom:5px;">A: primary · B/C: sub-channels</div>
+              ${dyeRows}
+              ${clearBtns ? `<div class="sb-dye-clears">${clearBtns}</div>` : ''}
+            </div>`;
+        }
+      }
+
+      return `
+        <div class="sb-col-layout">
+          <div class="sb-col-preview">
+            <canvas id="sb-col-canvas" width="200" height="200" class="sb-portrait-canvas"></canvas>
+          </div>
+          <div class="sb-col-content">
+            <div class="sb-label">Clothing &amp; Dyes</div>
+            <div class="sb-slot-rows">${slotsHtml || '<div class="sb-muted">No clothing items configured.</div>'}</div>
+          </div>
+        </div>`;
+    }
+
+    // ── Main render ────────────────────────────────────────
+    function render() {
+      const npc = activeNpc();
+      const editorEl = document.getElementById('npe-editor');
+      if (!editorEl) return;
+
+      if (!npc) {
+        editorEl.innerHTML = `<div class="sb-card"><div class="sb-muted" style="text-align:center;padding:24px 0;">No NPCs yet. Click "+ Add NPC" to create one.</div></div>`;
+        renderNpcBar();
+        return;
+      }
+
+      const tabBar = `
+        <div class="npe-tab-bar">
+          <button class="npe-tab-btn${_activeTab === 'appearance' ? ' active' : ''}" data-editor-tab="appearance">Appearance</button>
+          <button class="npe-tab-btn${_activeTab === 'collections' ? ' active' : ''}" data-editor-tab="collections">Collections</button>
+        </div>`;
+
+      let content = '';
+      if (_activeTab === 'appearance' && _editAppearance) {
+        content = renderAppearance();
+      } else if (_activeTab === 'collections') {
+        content = renderCollections();
+      }
+
+      editorEl.innerHTML = `<div class="sb-card sb-wide-card">${tabBar}${content}</div>`;
+      bind();
+
+      if (_activeTab === 'appearance' && _editAppearance) {
+        renderPreviewCanvas('sb-ap-canvas', _editAppearance);
+      } else if (_activeTab === 'collections') {
+        const ap = { ...npc.appearance, equippedCosmetics: npc.equippedCosmetics, appliedDyes: npc.appliedDyes };
+        renderPreviewCanvas('sb-col-canvas', ap);
+      }
+
+      renderNpcBar();
+      updateExportBar();
+    }
+
+    function renderNpcBar() {
+      const tabsEl = document.getElementById('npe-tabs');
+      if (!tabsEl) return;
+      tabsEl.innerHTML = _npcs.map((npc, i) => {
+        const active = i === _activeNpcIdx;
+        const canDel = _npcs.length > 1;
+        return `<div class="npe-npc-tab${active ? ' active' : ''}" data-npc-idx="${i}" role="button" tabindex="0">
+          ${esc(npc.name || 'NPC')}
+          ${canDel ? `<button class="npe-npc-del" data-del-npc="${i}" title="Delete NPC" tabindex="-1">×</button>` : ''}
+        </div>`;
+      }).join('');
+      bindNpcBar();
+    }
+
+    function updateExportBar() {
+      const npc = activeNpc();
+      const label = document.getElementById('npe-active-label');
+      if (label) label.textContent = npc ? `Active: ${npc.name || 'NPC'}` : '';
+    }
+
+    // ── Bind: NPC bar ──────────────────────────────────────
+    function bindNpcBar() {
+      document.querySelectorAll('[data-npc-idx]').forEach(el => {
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('[data-del-npc]')) return;
+          const idx = parseInt(el.dataset.npcIdx);
+          if (idx === _activeNpcIdx) return;
+          saveEditState();
+          _activeNpcIdx = idx;
+          _activeDyeSlot = null;
+          loadEditState();
+          render();
+        });
+        el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') el.click(); });
+      });
+      document.querySelectorAll('[data-del-npc]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const idx = parseInt(btn.dataset.delNpc);
+          const name = _npcs[idx]?.name || 'this NPC';
+          if (!confirm(`Delete ${name}?`)) return;
+          _npcs.splice(idx, 1);
+          if (_activeNpcIdx >= _npcs.length) _activeNpcIdx = _npcs.length - 1;
+          _activeDyeSlot = null;
+          loadEditState();
+          render();
+        });
+      });
+      document.getElementById('npe-add-btn')?.addEventListener('click', () => {
+        saveEditState();
+        const npc = makeNpc();
+        _npcs.push(npc);
+        _activeNpcIdx = _npcs.length - 1;
+        _activeDyeSlot = null;
+        loadEditState();
+        render();
+      });
+    }
+
+    // ── Bind: editor ───────────────────────────────────────
+    function bind() {
+      const editorEl = document.getElementById('npe-editor');
+      if (!editorEl) return;
+
+      // Tab switching
+      editorEl.querySelectorAll('[data-editor-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (btn.dataset.editorTab === _activeTab) return;
+          if (_activeTab === 'appearance') saveEditState();
+          _activeTab = btn.dataset.editorTab;
+          _activeDyeSlot = null;
+          if (_activeTab === 'appearance') loadEditState();
+          render();
+        });
+      });
+
+      // ── Appearance editor ──────────────────────────────
+      editorEl.querySelectorAll('[data-species]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (!_editAppearance) return;
+          const sid = btn.dataset.species;
+          _editAppearance.speciesId = sid;
+          const specData = SPECIES_DATA[sid];
+          if (specData && !specData.genders.includes(_editAppearance.gender)) {
+            _editAppearance.gender = specData.genders[0];
+          }
+          _editAppearance.cosmetics = defaultCosmeticsFor(sid, _editAppearance.gender);
+          const gData = specData && specData[_editAppearance.gender];
+          const opts = gData ? gData.colorOptions : [];
+          _editAIdx = 0; _editBIdx = 0;
+          if (opts[0]) {
+            _editAppearance.bodyColors.A = { h: opts[0].h, s: opts[0].s, v: opts[0].v };
+            _editAppearance.bodyColors.B = { h: opts[0].h, s: opts[0].s, v: opts[0].v };
+            _editAppearance.bodyColors.C = deriveCFromA(opts[0]);
+          }
+          _initLoreState(sid, _editAppearance.gender);
+          render();
+        });
+      });
+
+      editorEl.querySelectorAll('[data-subspecies]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (!_editAppearance) return;
+          const childId = btn.dataset.subspecies;
+          const parentId = btn.dataset.parentSpecies;
+          const wasActive = _editAppearance.speciesId === childId;
+          const newSpeciesId = wasActive ? parentId : childId;
+          const newGenderData = SPECIES_DATA[newSpeciesId]?.[_editAppearance.gender];
+          const validSlots = new Set((newGenderData?.slots || []).map(s => s.slot));
+          const oldCosmetics = { ..._editAppearance.cosmetics };
+          const newCosmetics = defaultCosmeticsFor(newSpeciesId, _editAppearance.gender);
+          for (const [slot, val] of Object.entries(oldCosmetics)) {
+            if (validSlots.has(slot)) newCosmetics[slot] = val;
+          }
+          _editAppearance.speciesId = newSpeciesId;
+          _editAppearance.cosmetics = newCosmetics;
+          render();
+        });
+      });
+
+      editorEl.querySelectorAll('[data-gender]:not([disabled])').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (!_editAppearance) return;
+          _editAppearance.gender = btn.dataset.gender;
+          _editAppearance.cosmetics = defaultCosmeticsFor(_editAppearance.speciesId, _editAppearance.gender);
+          const gData = currentSpeciesGenderData();
+          const opts = gData ? gData.colorOptions : [];
+          _editAIdx = 0; _editBIdx = 0;
+          if (opts[0]) {
+            _editAppearance.bodyColors.A = { h: opts[0].h, s: opts[0].s, v: opts[0].v };
+            _editAppearance.bodyColors.B = { h: opts[0].h, s: opts[0].s, v: opts[0].v };
+            _editAppearance.bodyColors.C = deriveCFromA(opts[0]);
+          }
+          render();
+        });
+      });
+
+      editorEl.querySelectorAll('.sb-cosmetic-select[data-slot]').forEach(sel => {
+        sel.addEventListener('change', () => {
+          if (!_editAppearance) return;
+          _editAppearance.cosmetics[sel.dataset.slot] = sel.value || null;
+          renderPreviewCanvas('sb-ap-canvas', _editAppearance);
+        });
+      });
+
+      editorEl.querySelectorAll('[data-a-idx]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (!_editAppearance) return;
+          const idx = parseInt(btn.dataset.aIdx);
+          const gData = currentSpeciesGenderData();
+          const o = gData && gData.colorOptions[idx];
+          if (!o) return;
+          _editAIdx = idx;
+          _editAppearance.bodyColors.A = { h: o.h, s: o.s, v: o.v };
+          _editAppearance.bodyColors.C = deriveCFromA(o);
+          editorEl.querySelectorAll('[data-a-idx]').forEach((b, i) => b.classList.toggle('selected', i === idx));
+          renderPreviewCanvas('sb-ap-canvas', _editAppearance);
+        });
+      });
+
+      editorEl.querySelectorAll('[data-b-idx]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (!_editAppearance) return;
+          const idx = parseInt(btn.dataset.bIdx);
+          const gData = currentSpeciesGenderData();
+          const o = gData && gData.colorOptions[idx];
+          if (!o) return;
+          _editBIdx = idx;
+          _editAppearance.bodyColors.B = { h: o.h, s: o.s, v: o.v };
+          editorEl.querySelectorAll('[data-b-idx]').forEach((b, i) => b.classList.toggle('selected', i === idx));
+          renderPreviewCanvas('sb-ap-canvas', _editAppearance);
+        });
+      });
+
+      // Chat color sliders
+      const updateChatPreview = () => {
+        if (!_editAppearance) return;
+        const hEl = document.getElementById('sb-chat-h');
+        const sEl = document.getElementById('sb-chat-s');
+        const lEl = document.getElementById('sb-chat-l');
+        if (!hEl || !sEl || !lEl) return;
+        const h = parseInt(hEl.value), s = parseInt(sEl.value), l = parseInt(lEl.value);
+        _editAppearance.chatColor = { h, s, l };
+        const prev = document.getElementById('sb-chat-color-preview');
+        if (prev) prev.style.background = `hsl(${h},${s}%,${l}%)`;
+        const hv = document.getElementById('sb-chat-h-val');
+        const sv = document.getElementById('sb-chat-s-val');
+        const lv = document.getElementById('sb-chat-l-val');
+        if (hv) hv.textContent = h;
+        if (sv) sv.textContent = s;
+        if (lv) lv.textContent = l;
+      };
+      ['sb-chat-h', 'sb-chat-s', 'sb-chat-l'].forEach(id => {
+        document.getElementById(id)?.addEventListener('input', updateChatPreview);
+      });
+
+      // Name format selector
+      editorEl.querySelectorAll('[data-name-format]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _editNameFormat = btn.dataset.nameFormat;
+          editorEl.querySelectorAll('[data-name-format]').forEach(b => b.classList.toggle('selected', b.dataset.nameFormat === _editNameFormat));
+          const preview = editorEl.querySelector('.sb-card');
+          // Rebuild display name preview in place
+          const previewContainer = editorEl.querySelector('[data-name-format].selected')?.closest('.sb-ap-controls')
+            ?.querySelector('[style*="rgba(242,208,143,0.06)"]');
+          // Fall back to full re-render for simplicity
+          render();
+        });
+      });
+
+      // ── Lore name handlers ──────────────────────────────
+      if (_loreState) {
+        const adv = window.SCRATCHBONES_NAME_ADVISOR;
+
+        editorEl.querySelectorAll('.sb-lore-input').forEach(input => {
+          input.addEventListener('input', () => {
+            if (!_loreState) return;
+            const slot = input.dataset.loreSlot;
+            const ctx = _loreCtx();
+            const sp = _loreState.sp;
+            const val = input.value;
+            const slotEl = input.closest('.sb-lore-slot');
+            const { html: valHtml, msgs } = adv ? adv.validateSlot(sp, slot, val, ctx) : { html: '', msgs: [] };
+            const vd = slotEl?.querySelector('.sb-lore-val');
+            if (vd) vd.innerHTML = valHtml || '';
+            const msgEl = slotEl?.querySelector('.sb-lore-msgs');
+            if (msgEl) msgEl.textContent = msgs[0] || '';
+            const applyBtn = slotEl?.querySelector('.sb-lore-apply');
+            if (applyBtn) applyBtn.disabled = msgs.length > 0;
+            const sg = slotEl?.querySelector('.sb-lore-suggs');
+            if (sg && adv) {
+              const opts = val ? adv.makeIdeaOptions(sp, slot, val, ctx) : [];
+              sg.innerHTML = opts.map((o, i) =>
+                `<button class="sb-lore-sugg" data-lore-slot="${adv.esc(slot)}" data-lore-idx="${i}">${adv.esc(o.label)}</button>`
+              ).join('');
+              sg.querySelectorAll('[data-lore-idx]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                  if (!_loreState || !adv) return;
+                  const opt = opts[Number(btn.dataset.loreIdx)];
+                  if (opt) { _loreState.births = adv.applyOption(sp, slot, opt, _loreState.births); render(); }
+                });
+              });
+            }
+          });
+        });
+
+        editorEl.querySelectorAll('.sb-lore-apply').forEach(btn => {
+          btn.addEventListener('click', () => {
+            if (!_loreState || !adv) return;
+            const slot = btn.dataset.loreSlot;
+            const input = document.getElementById(`sb-lore-${slot}`);
+            if (!input) return;
+            const val = input.value;
+            const sp = _loreState.sp;
+            const ctx = _loreCtx();
+            const { msgs } = adv.validateSlot(sp, slot, val, ctx);
+            if (msgs.length > 0) return;
+            _loreState.births[slot] = val.toLowerCase();
+            const preview = document.getElementById('sb-lore-preview');
+            if (preview) preview.innerHTML = _buildLorePreviewHtml(sp, _loreState.births, ctx) || '<span class="sb-lore-faint">—</span>';
+            const tankanEl = document.getElementById('sb-lore-tankan');
+            if (tankanEl) tankanEl.innerHTML = _buildTankanPillars(sp, _loreState.births, ctx) || '';
+          });
+        });
+
+        editorEl.querySelectorAll('[data-lore-idx]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            if (!_loreState || !adv) return;
+            const sp = _loreState.sp;
+            const slot = btn.dataset.loreSlot;
+            const opts = adv.makeIdeaOptions(sp, slot, _loreState.births[slot] || '', _loreCtx());
+            const opt = opts[Number(btn.dataset.loreIdx)];
+            if (opt) { _loreState.births = adv.applyOption(sp, slot, opt, _loreState.births); render(); }
+          });
+        });
+
+        editorEl.querySelectorAll('[data-lore-place]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            if (!_loreState) return;
+            _loreState.births.surname = 'tley ' + btn.dataset.lorePlace;
+            render();
+          });
+        });
+
+        document.getElementById('sb-lore-married')?.addEventListener('change', e => {
+          if (_loreState) { _loreState.married = e.target.checked; render(); }
+        });
+
+        document.getElementById('sb-lore-random-btn')?.addEventListener('click', () => {
+          if (!_loreState || !adv) return;
+          _loreState.births = adv.randomizeName(_loreState.sp, _loreCtx());
+          render();
+        });
+
+        document.getElementById('sb-lore-copy-btn')?.addEventListener('click', () => {
+          if (!_loreState || !adv) return;
+          const name = adv.formatFullName(_loreState.sp, _loreState.births, _loreCtx());
+          navigator.clipboard?.writeText(name).catch(() => {});
+        });
+      }
+
+      // Name input live update
+      document.getElementById('sb-edit-name')?.addEventListener('input', e => {
+        _editName = e.target.value;
+        const npc = activeNpc();
+        if (npc) { npc.name = (_editName || '').trim() || npc.name; renderNpcBar(); updateExportBar(); }
+      });
+
+      // Save appearance
+      document.getElementById('sb-save-appearance-btn')?.addEventListener('click', () => {
+        saveEditState();
+        render();
+      });
+
+      // ── Collections handlers ────────────────────────────
+      editorEl.querySelectorAll('[data-appearance-slot]').forEach(sel => {
+        sel.addEventListener('change', () => {
+          const npc = activeNpc();
+          if (!npc) return;
+          npc.appearance.cosmetics = { ...(npc.appearance.cosmetics || {}), [sel.dataset.appearanceSlot]: sel.value || null };
+          render();
+        });
+      });
+
+      editorEl.querySelectorAll('[data-slot-cat]').forEach(sel => {
+        sel.addEventListener('change', () => {
+          const cat = sel.dataset.slotCat;
+          const id = sel.value;
+          if (!id) {
+            const equipped = window.ScratchbonesAccount.getEquippedForCategory(cat);
+            if (equipped) window.ScratchbonesAccount.unequipCosmetic(equipped);
+          } else {
+            window.ScratchbonesAccount.equipCosmetic(id);
+          }
+          render();
+        });
+      });
+
+      editorEl.querySelectorAll('[data-toggle-dye]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.toggleDye;
+          _activeDyeSlot = (_activeDyeSlot === key) ? null : key;
+          render();
+        });
+      });
+
+      editorEl.querySelectorAll('[data-apply-dye]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          window.ScratchbonesAccount.applyDye(btn.dataset.applyDye, btn.dataset.tintKey);
+          render();
+        });
+      });
+
+      editorEl.querySelectorAll('[data-clear-channel]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          window.ScratchbonesAccount.removeDye(btn.dataset.clearChannel);
+          render();
+        });
+      });
+    }
+
+    // ── Export ─────────────────────────────────────────────
+    function exportNpc(npc) {
+      return {
+        name: npc.name,
+        nameFormat: npc.nameFormat || 'nickname',
+        loreName: npc.loreName ? { ...npc.loreName } : null,
+        appearance: npc.appearance ? { ...npc.appearance } : null,
+        equippedCosmetics: [...(npc.equippedCosmetics || [])],
+        appliedDyes: { ...(npc.appliedDyes || {}) },
+      };
+    }
+
+    function bindExportBar() {
+      document.getElementById('npe-export-json-btn')?.addEventListener('click', () => {
+        saveEditState();
+        const npc = activeNpc();
+        if (!npc) return;
+        const json = JSON.stringify(exportNpc(npc), null, 2);
+        const btn = document.getElementById('npe-export-json-btn');
+        navigator.clipboard?.writeText(json).then(() => {
+          if (btn) { const prev = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = prev; }, 1400); }
+        }).catch(() => { window.prompt?.('Copy this JSON:', json); });
+      });
+
+      document.getElementById('npe-export-all-btn')?.addEventListener('click', () => {
+        saveEditState();
+        const json = JSON.stringify(_npcs.map(exportNpc), null, 2);
+        const btn = document.getElementById('npe-export-all-btn');
+        navigator.clipboard?.writeText(json).then(() => {
+          if (btn) { const prev = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = prev; }, 1400); }
+        }).catch(() => { window.prompt?.('Copy this JSON:', json); });
+      });
+    }
+
+    // ── Init ───────────────────────────────────────────────
+    function init() {
+      const firstNpc = makeNpc('NPC 1');
+      _npcs.push(firstNpc);
+      _activeNpcIdx = 0;
+      loadEditState();
+      render();
+      bindExportBar();
+      // Kick off portrait cosmetics load eagerly
+      ensurePortraitCosmetics();
+    }
+
+    init();
+  })();
+  </script>
+</body>
+</html>
