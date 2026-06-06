@@ -155,6 +155,7 @@
         window.PNGPlaneAvatar.disposeAvatarModel(activeModel);
       }
       activeModel = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, record.canvas, {
+        backCanvas: record.backCanvas,
         name: `Temporary_NPC_${idx + 1}`,
         userData: { npcName: record.name, source: record.source },
       });
@@ -187,7 +188,11 @@
       c.width = size;
       c.height = size;
       await window.NpcAvatarPreview.renderProfileToCanvas(c, profile);
-      return { name, source, profile, canvas: c };
+      const backCanvas = document.createElement('canvas');
+      backCanvas.width = size;
+      backCanvas.height = size;
+      await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+      return { name, source, profile, canvas: c, backCanvas };
     }
 
     async function addRandom() {
