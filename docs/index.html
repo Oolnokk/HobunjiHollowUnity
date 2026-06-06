@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Tropical Wet/Dry Trench Farm</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="debug.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Game world -->
+  <div id="gameShell">
+    <div id="canvasWrap">
+      <div id="threeContainer" style="position:absolute;inset:0;"></div>
+      <canvas id="overlayCanvas" aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;"></canvas>
+      <canvas id="lightingCanvas" aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;"></canvas>
+    </div>
+  </div>
+
+  <!-- Persistent status pill (top-left) -->
+  <div id="statusBar">
+    <span class="sb-time" id="spTime">6:00 AM</span>
+    <div class="sb-div"></div>
+    <span class="sb-info" id="spSeason">🌦️ First Rains</span>
+    <div class="sb-div"></div>
+    <span class="sb-info" id="spWeather">🌧️ Rain</span>
+    <div class="sb-div"></div>
+    <span class="sb-info" id="spTool">🥄</span>
+    <div class="sb-div"></div>
+    <span class="sb-accent" id="spTile">—</span>
+    <div class="sb-div"></div>
+    <span class="sb-water" id="spWater">💧 0%</span>
+    <div class="sb-div"></div>
+    <span class="sb-gold" id="spGold">💰 0g</span>
+  </div>
+
+  <!-- Menu button (top-right) -->
+  <button id="menuBtn" aria-label="Open menu" aria-expanded="false">☰</button>
+
+  <!-- Menu Backdrop -->
+  <div id="menuBackdrop"></div>
+
+  <!-- Menu Panel: grid x:3 y:2 w:27 h:14 (32×18)
+       Inventory sub-grid: 54 cols × 28 rows               -->
+  <div id="menuPanel" role="dialog" aria-label="Game menu">
+
+    <!-- Header: tab bar + control buttons -->
+    <div class="mp-header">
+      <div class="mp-tabs" role="tablist">
+        <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
+        <button class="mp-tab"        data-mpanel="shipping"      role="tab">📦 Shipping</button>
+        <button class="mp-tab"        data-mpanel="supplies"      role="tab">🧺 Supplies</button>
+        <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
+        <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
+        <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
+      </div>
+      <div class="mp-ctrls">
+        <button class="mp-ctrl-btn"        id="menuPauseBtn" title="Pause/Resume">⏸</button>
+        <button class="mp-ctrl-btn danger" id="menuResetBtn" title="Reset farm">↩</button>
+        <button class="mp-ctrl-btn"        id="mpClose"      title="Close menu">✕</button>
+      </div>
+    </div>
+
+    <!-- Panel body — one pane per tab -->
+    <div class="mp-body">
+
+      <!-- ── Inventory pane ─────────────────────────────────
+           All sub-elements positioned to sub-grid 54×28      -->
+      <div class="mp-pane active" id="mpInventory">
+
+        <!-- Wallet: x:1/54 y:1/28 w:13 h:2 -->
+        <div class="inv-wallet">💰 <span id="invWalletDisplay">0g</span></div>
+
+        <!-- Category tab bar: x:1/54 y:3/28 w:35 h:3 -->
+        <div class="inv-cats">
+          <button class="inv-cat active" data-cat="all">All</button>
+          <button class="inv-cat" data-cat="seed">Seeds</button>
+          <button class="inv-cat" data-cat="crop">Crops</button>
+          <button class="inv-cat" data-cat="material">Materials</button>
+          <button class="inv-cat" data-cat="furniture">Furniture</button>
+          <button class="inv-cat" data-cat="processed">Processed</button>
+        </div>
+
+        <!-- Item grid: x:1/54 y:6/28 w:33 h:21 -->
+        <div class="inv-grid-area">
+          <div class="inv-grid" id="invGrid"></div>
+        </div>
+
+        <!-- Page scroller: x:34/54 y:6/28 w:2 h:21 -->
+        <div class="inv-pgscroll" id="invPgScroll">
+          <button class="ips-btn" id="invPgUp">▲</button>
+          <div class="ips-fill"></div>
+          <button class="ips-btn" id="invPgDown">▼</button>
+        </div>
+
+        <!-- Item info box: x:37/54 y:0 w:17 h:full -->
+        <div class="inv-info" id="invInfo">
+          <div class="ii-empty" id="iiEmpty">← Select an item</div>
+          <div class="ii-detail" id="iiDetail">
+            <div class="ii-icon-wrap"><span class="ii-icon" id="iiIcon"></span></div>
+            <div class="ii-name"    id="iiName"></div>
+            <div class="ii-price"   id="iiPrice"></div>
+            <div class="ii-tags"    id="iiTags"></div>
+            <div class="ii-desc"    id="iiDesc"></div>
+            <div class="ii-actions" id="iiActions"></div>
+          </div>
+        </div>
+
+      </div><!-- /mpInventory -->
+
+
+
+      <!-- ── Shipping box transfer pane ───────────────────────
+           Adapted from HHItemTransferLayoutV1: left player bag,
+           middle transfer controls, right shipping box.          -->
+      <div class="mp-pane" id="mpShipping">
+        <div class="ship-pane ship-left">
+          <div class="ship-title-row"><div class="ship-title">🎒 Player Bag</div><div class="ship-capacity" id="shipLeftCap">0 stacks</div></div>
+          <div class="ship-cats">
+            <button class="ship-cat active" data-side="left" data-cat="all">All</button>
+            <button class="ship-cat" data-side="left" data-cat="seed">Seeds</button>
+            <button class="ship-cat" data-side="left" data-cat="crop">Crops</button>
+            <button class="ship-cat" data-side="left" data-cat="material">Materials</button>
+            <button class="ship-cat" data-side="left" data-cat="processed">Processed</button>
+          </div>
+          <div class="ship-search-strip">Sellable stacks transfer into the shipping box.</div>
+          <div class="ship-grid-wrap"><div class="ship-grid" id="shipLeftGrid"></div></div>
+          <div class="ship-footer" id="shipLeftFooter">Select a player item.</div>
+        </div>
+
+        <div class="ship-pane ship-mid">
+          <div class="ship-transfer-title">Transfer</div>
+          <div class="ship-preview"><div class="ship-preview-icon" id="shipPreviewIcon">📦</div><div class="ship-preview-name" id="shipPreviewName">Select item</div></div>
+          <div class="ship-direction" id="shipDirection">↔</div>
+          <div class="ship-stepper">
+            <button id="shipAmtMinus" aria-label="Decrease shipping transfer amount">−</button>
+            <div class="ship-amount" id="shipAmount">1</div>
+            <button id="shipAmtPlus" aria-label="Increase shipping transfer amount">+</button>
+          </div>
+          <button class="ship-transfer-btn" id="shipTransferOne">Move 1</button>
+          <button class="ship-transfer-btn" id="shipTransferHalf">Move Half</button>
+          <button class="ship-transfer-btn" id="shipTransferStack">Move Stack</button>
+          <button class="ship-close-btn" id="shipCloseBtn">Close</button>
+        </div>
+
+        <div class="ship-pane ship-right">
+          <div class="ship-title-row"><div class="ship-title">🟧 Shipping Box</div><div class="ship-capacity" id="shipRightCap">Empty</div></div>
+          <div class="ship-cats">
+            <button class="ship-cat active" data-side="right" data-cat="all">All</button>
+            <button class="ship-cat" data-side="right" data-cat="crop">Crops</button>
+            <button class="ship-cat" data-side="right" data-cat="material">Materials</button>
+            <button class="ship-cat" data-side="right" data-cat="processed">Processed</button>
+          </div>
+          <div class="ship-search-strip">Box contents sell automatically on the shipping timer.</div>
+          <div class="ship-grid-wrap"><div class="ship-grid" id="shipRightGrid"></div></div>
+          <div class="ship-footer" id="shipRightFooter">Select a boxed item to take it back before sale.</div>
+        </div>
+
+        <div class="ship-pane ship-detail">
+          <div class="ship-detail-icon" id="shipDetailIcon">📦</div>
+          <div class="ship-detail-copy">
+            <div class="ship-detail-top"><div class="ship-detail-name" id="shipDetailName">Shipping Box Transfer</div><div class="ship-detail-value" id="shipDetailValue">—</div></div>
+            <div class="ship-detail-desc" id="shipDetailDesc">Move sellable crops and materials from the player bag into the shipping box. Select items already in the box to pull them back out before the timed sale.</div>
+            <div class="ship-detail-tags" id="shipDetailTags"><span class="ship-tag">Player ↔ Box</span><span class="ship-tag">Instant transfer</span></div>
+          </div>
+        </div>
+      </div><!-- /mpShipping -->
+
+
+
+      <!-- ── Supply shop pane ──────────────────────────────── -->
+      <div class="mp-pane" id="mpSupplies">
+        <div class="supply-top-row">
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="supplyGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+          <div class="supply-tabs" role="tablist" aria-label="Supply shop category filters">
+            <button class="supply-tab active" data-supply-cat="seeds" type="button">Seeds</button>
+            <button class="supply-tab" data-supply-cat="furniture" type="button">Furniture</button>
+            <button class="supply-tab" data-supply-cat="livestock" type="button">Livestock</button>
+            <button class="supply-tab" data-supply-cat="all" type="button">All</button>
+          </div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title" id="supplySectionTitle">Supply Shop — Seeds</div>
+          <div id="supplyShopList" class="supply-list"></div>
+        </div>
+        <div class="menu-section supply-delivery-section">
+          <div class="menu-section-title">Pending Deliveries / Recent Sales</div>
+          <div id="supplyDeliveryList" class="supply-delivery-list"></div>
+        </div>
+      </div><!-- /mpSupplies -->
+
+      <!-- ── Stub panes ──────────────────────────────────── -->
+      <div class="mp-pane" id="mpProgress">     <div class="mp-stub">⭐ Progress — coming soon</div></div>
+      <div class="mp-pane" id="mpTasks">        <div class="mp-stub">📋 Tasks — coming soon</div></div>
+      <div class="mp-pane" id="mpRelationships"><div class="mp-stub">💬 Relationships — coming soon</div></div>
+
+    </div><!-- /mp-body -->
+  </div><!-- /menuPanel -->
+
+  <!-- Toast -->
+  <div id="toast" role="status" aria-live="polite"></div>
+
+
+
+  <!-- Gameplay Text Box: grid x:5 y:14 w:15 h:3 -->
+  <div id="gameTextBox" role="status" aria-live="polite"></div>
+
+  <!-- Joystick -->
+  <div id="joystickZone" class="control-zone" aria-label="Movement joystick">
+    <div id="joystickBase"></div>
+    <div id="joystickKnob">🕹️</div>
+  </div>
+
+  <!-- Tool Select: grid x:28 y:10 w:3 h:2 -->
+  <div id="toolSelect">
+    <div id="toolPicker" role="menu" aria-label="Select tool">
+      <div class="tool-pick-row">
+        <span class="tool-pick-chip">Shovel</span>
+        <button class="tool-pick-btn active" data-tool="shovel" role="menuitem"><b>🥄</b></button>
+      </div>
+      <div class="tool-pick-row">
+        <span class="tool-pick-chip">Hoe</span>
+        <button class="tool-pick-btn" data-tool="hoe" role="menuitem"><b>🪓</b></button>
+      </div>
+      <div class="tool-pick-row">
+        <span class="tool-pick-chip">Machete</span>
+        <button class="tool-pick-btn" data-tool="machete" role="menuitem"><b>🗡️</b></button>
+      </div>
+    </div>
+    <button class="ts-btn" id="toolBtn" aria-label="Select tool" aria-expanded="false">
+      <span class="ts-icon" id="toolBtnIcon">🥄</span>
+      <span class="ts-lbl" id="toolBtnLabel">Shovel</span>
+    </button>
+  </div>
+
+  <!-- Action Button Stack: grid x:25 y:12 w:6 h:5 · sub-grid 19×17 -->
+  <div id="actionStack">
+    <button class="abt" id="btnAction1" aria-label="Primary action"></button>
+    <button class="abt" id="btnAction2" aria-label="Action 2"></button>
+    <button class="abt" id="btnAction3" aria-label="Action 3"></button>
+    <button class="abt abt-item" id="btnItemAction1" aria-label="Use item"></button>
+    <button class="abt abt-item" id="btnItemAction2" aria-label="Use item 2"></button>
+  </div>
+
+  <!-- Item Select: grid x:20 y:14 w:5 h:3 · sub-grid 14×6 -->
+  <div id="itemSelect" aria-label="Inventory item select">
+    <button class="is-arr" id="itemPrev" aria-label="Previous item">‹</button>
+    <div class="is-body">
+      <div class="is-track">
+        <div class="is-peek" id="isPrevIcon">🌶️</div>
+        <div class="is-curr">
+          <span class="is-icon" id="itemIcon">🌾</span>
+          <span class="is-count" id="itemCount">×6</span>
+        </div>
+        <div class="is-peek" id="isNextIcon">🍠</div>
+      </div>
+      <div class="is-name-row" id="itemName">RICE SEEDS</div>
+    </div>
+    <button class="is-arr" id="itemNext" aria-label="Next item">›</button>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
