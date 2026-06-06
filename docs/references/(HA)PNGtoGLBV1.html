@@ -94,6 +94,7 @@ Try opening the downloaded file directly in a browser instead of an in-app previ
     </section>
   </div>
 
+  <script src="../config/scratchbones-config.js"></script>
   <script>
   (function(){
     var debugLog = document.getElementById('debugLog');
@@ -172,9 +173,10 @@ Try opening the downloaded file directly in a browser instead of an in-app previ
       log('checking dynamic import support');
       if (!supportsDynamicImport()) throw new Error('This browser/viewer does not support dynamic import(). Open the file in a modern browser.');
       log('loading Three.js modules from CDN');
-      var threeUrl = 'https://esm.sh/three@0.165.0';
-      var controlsUrl = 'https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js?deps=three@0.165.0';
-      var exporterUrl = 'https://esm.sh/three@0.165.0/examples/jsm/exporters/GLTFExporter.js?deps=three@0.165.0';
+      var avatarCfg = (window.SCRATCHBONES_CONFIG && window.SCRATCHBONES_CONFIG.game && window.SCRATCHBONES_CONFIG.game.assets && window.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar) || {};
+      var threeUrl = avatarCfg.threeModuleUrl;
+      var controlsUrl = avatarCfg.orbitControlsModuleUrl;
+      var exporterUrl = avatarCfg.gltfExporterModuleUrl;
       return Promise.all([
         dynamicImport(threeUrl),
         dynamicImport(controlsUrl),
