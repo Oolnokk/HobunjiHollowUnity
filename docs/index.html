@@ -9,6 +9,15 @@
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js"></script>
   <link rel="stylesheet" href="style.css">
+  <!-- Portrait system (ScratchbonesGame) -->
+  <script src="config/scratchbones-config.js"></script>
+  <script src="js/portrait-utils.js"></script>
+  <script src="js/portrait-breathing.js"></script>
+  <script src="js/npc-avatar-preview-utils.js"></script>
+  <script src="js/png-plane-avatar.js"></script>
+  <!-- Onboarding overlay -->
+  <link rel="stylesheet" href="onboarding.css">
+  <script src="onboarding.js"></script>
 </head>
 <body>
   <!-- Game world -->
@@ -263,5 +272,6 @@
   </div>
 
   <script src="game.js"></script>
+  <script>HobunjiOnboarding.init();</script>
 </body>
 </html>

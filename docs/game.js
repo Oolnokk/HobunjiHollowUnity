@@ -2282,8 +2282,6 @@
 
       // Global water time — updated in gameLoop
       let waterTime = 0;
-      const playerMat = new THREE.MeshLambertMaterial({ color: 0xf9e28a });
-      const playerFaceMat = new THREE.MeshLambertMaterial({ color: 0xff8844 }); // front face accent
       const reticleMat = new THREE.MeshBasicMaterial({
         color: 0xf9e28a, wireframe: true, transparent: true, opacity: 0.85,
       });
@@ -2335,7 +2333,6 @@
       const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
       const waterGeo  = new THREE.PlaneGeometry(1.0, 1.0);
       waterGeo.rotateX(-Math.PI / 2);
-      const playerGeo  = new THREE.BoxGeometry(0.5, 0.65, 0.5);
       const reticleGeo = new THREE.BoxGeometry(1.0, 0.06, 1.0);
 
       // ── Mesh stores ───────────────────────────────────────────────
@@ -2343,18 +2340,9 @@
       const tileMeshes  = new Array(ROWS * COLS).fill(null);
       const waterMeshes = new Array(ROWS * COLS).fill(null);
 
-      // ── Player mesh ───────────────────────────────────────────────
-      // Multi-material cube: front face accent for direction reading
-      const playerMatsArr = [
-        playerMat,        // right
-        playerMat,        // left
-        playerMat,        // top
-        new THREE.MeshLambertMaterial({ color: 0x224422 }), // bottom
-        playerFaceMat,    // front (face direction)
-        playerMat,        // back
-      ];
-      const playerMesh = new THREE.Mesh(playerGeo, playerMatsArr);
-      playerMesh.castShadow = true;
+      // ── Player root (Group — avatar plane attached after onboarding) ─
+      const playerMesh = new THREE.Group();
+      playerMesh.name = 'player_root';
       scene.add(playerMesh);
 
       // ── Reticle mesh ──────────────────────────────────────────────
@@ -2735,6 +2723,10 @@
         while (dRot < -Math.PI) dRot += Math.PI * 2;
         playerMesh.rotation.y += dRot * 0.18;
 
+        // Billboard: keep avatar plane facing camera (always south-facing in world space)
+        const avatarChild = playerMesh.getObjectByName('player_avatar');
+        if (avatarChild) avatarChild.rotation.y = -playerMesh.rotation.y;
+
         // Bob animation when moving
         const speed = Math.hypot(player.vx, player.vy);
         if (speed > 5) {
@@ -2798,6 +2790,13 @@
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
+
+        if (!gameStarted) {
+          renderer.render(scene, camera);
+          requestAnimationFrame(gameLoop);
+          return;
+        }
+
         if (!paused) {
           updateCalendar(dt);
           updateMovement(dt);
@@ -3715,5 +3714,51 @@
       refreshItemScroll();
       try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
       debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
+
+      // ── Onboarding gate ────────────────────────────────────────────
+      let gameStarted = false;
+
+      async function spawnPlayerAvatar(playerData) {
+        try {
+          const profile = playerData && playerData.portraitProfile
+            ? playerData.portraitProfile
+            : null;
+          if (!profile) { gameStarted = true; return; }
+
+          await window.NpcAvatarPreview.ensurePortraitCosmetics({
+            assetBase: './assets/',
+            configBase: './config/',
+          });
+
+          const portraitCanvas = document.createElement('canvas');
+          portraitCanvas.width  = 128;
+          portraitCanvas.height = 128;
+          await window.renderPortraitProfile(portraitCanvas, profile);
+
+          const avatarGroup = await window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
+            THREE, portraitCanvas,
+            { modelWidth: 0.75, anchorZ: 0, alphaTest: 0.01 }
+          );
+          avatarGroup.name = 'player_avatar';
+          // Offset so avatar base sits at player foot level
+          avatarGroup.position.set(0, 0, 0);
+          playerMesh.add(avatarGroup);
+          debugLog('PNG plane avatar attached to player_root');
+        } catch (err) {
+          console.warn('spawnPlayerAvatar failed, continuing without avatar:', err);
+        }
+        gameStarted = true;
+      }
+
+      window.addEventListener('hobunjiPlayerReady', (e) => {
+        spawnPlayerAvatar(e.detail);
+      }, { once: true });
+
+      // HobunjiOnboarding.init() fires synchronously if a saved profile exists
+      // (event dispatched before this listener — catch that case)
+      if (window.__hobunjiPlayerProfile) {
+        spawnPlayerAvatar(window.__hobunjiPlayerProfile);
+      }
+
       requestAnimationFrame(gameLoop);
     })();
