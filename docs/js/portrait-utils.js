@@ -972,26 +972,20 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   };
 
   if (renderBehindView) {
-    ctx.save();
-    ctx.translate(PORTRAIT_CW, 0);
-    ctx.scale(-1, 1);
-    drawEmoteLayers(preBackLayers);
+    drawBreathingLayers(baseLeftArmLayers);
+    drawBreathingLayers(baseTorsoLayers);
+    drawBreathingLayers(baseRightArmLayers);
     drawBreathingLayers(torsoClothingLayers);
     drawBreathingLayers(overwearLayers);
+    drawEmoteLayers(sideLeftLayers);
     drawEmoteLayers(hatUnderLayers);
     drawBreathingLayers(hoodLayers);
     drawEmoteLayers(pauldronLayers);
     drawEmoteLayers(hatOverLayers);
     drawEmoteLayers(behindSnowgogglesLayers);
-    drawBreathingLayers(baseLeftArmLayers);
     drawEmoteLayers(rightSideHairLayers);
     if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), filterA); }
-    drawEmoteLayers(facialHairLayers);
-    drawEmoteLayers(sideLeftLayers);
-    drawEmoteLayers(frontHairLayers);
-    drawBreathingLayers(baseTorsoLayers);
-    drawBreathingLayers(baseRightArmLayers);
-    ctx.restore();
+    drawEmoteLayers(preBackLayers);
     if (opacityMaskLayer?.url) {
       const maskImg = imgMap.get(opacityMaskLayer.url);
       if (maskImg) applyPortraitOpacityMask(ctx, maskImg, resolveXform(opacityMaskLayer));
