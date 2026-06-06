@@ -3035,6 +3035,45 @@ window.SCRATCHBONES_CONFIG = {
         "anchorZ": 0,
         "alphaTest": 0.001,
         "backPlaneOffsetZ": 0.001,
+        "behindView": {
+          "headUrls": {
+            "mao-ao": {
+              "male": "fightersprites/special_cases/head-behind_mao_m.png",
+              "female": "fightersprites/special_cases/head-behind_mao_f.png"
+            },
+            "engh-sho": {
+              "male": "fightersprites/special_cases/head-behind_engh_m.png",
+              "female": "fightersprites/special_cases/head-behind_engh_f.png"
+            }
+          },
+          "layerReplacements": [
+            {
+              "idIncludes": ["snowgoggles"],
+              "genderUrls": {
+                "male": "cosmetics/appearance/engh-sho-m/snowgoggles-behind_m.png",
+                "female": "cosmetics/appearance/engh-sho-f/snowgoggles-behind-f.png"
+              }
+            },
+            {
+              "idIncludes": ["braidcluster-r"],
+              "url": "cosmetics/appearance/shared/braidcluster-R-behind.png"
+            },
+            {
+              "idIncludes": ["braid-r"],
+              "url": "cosmetics/appearance/shared/braid-R-behind.png"
+            },
+            {
+              "hairSlot": "back",
+              "idIncludes": ["longponytail", "long-ponytail", "ponytail"],
+              "url": "cosmetics/appearance/shared/longponytail-behind.png"
+            },
+            {
+              "hairSlot": "back",
+              "idIncludes": ["splayedknot"],
+              "url": "cosmetics/appearance/shared/splayedknot-behind.png"
+            }
+          ]
+        },
         "previewPortraitCanvasSize": 200,
         "previewCameraFovDeg": 45,
         "previewCameraDistance": 3.2,

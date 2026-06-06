@@ -55,10 +55,12 @@
     });
   }
 
-  function buildTextureSet(THREE, image) {
+  function buildTextureSet(THREE, image, backImage) {
+    const rearSource = backImage || image;
+    const rearOptions = backImage ? { flipX: true } : { flipX: true, blackSilhouette: true };
     return {
       frontOriginal: makeTextureFromCanvas(THREE, makeVariantCanvas(image), 'npc_avatar_front_texture'),
-      backForOriginal: makeTextureFromCanvas(THREE, makeVariantCanvas(image, { flipX: true, blackSilhouette: true }), 'npc_avatar_back_silhouette_texture'),
+      backForOriginal: makeTextureFromCanvas(THREE, makeVariantCanvas(rearSource, rearOptions), backImage ? 'npc_avatar_back_assembled_texture' : 'npc_avatar_back_silhouette_texture'),
     };
   }
 
@@ -73,8 +75,8 @@
     frontMesh.renderOrder = 2;
     group.add(frontMesh);
 
-    const backMesh = new THREE.Mesh(planeGeo.clone(), makeSpriteMaterial(THREE, config.textures.backForOriginal, 'npc_avatar_back_silhouette_material'));
-    backMesh.name = 'npc_avatar_back_silhouette_plane';
+    const backMesh = new THREE.Mesh(planeGeo.clone(), makeSpriteMaterial(THREE, config.textures.backForOriginal, 'npc_avatar_back_material'));
+    backMesh.name = 'npc_avatar_back_plane';
     backMesh.position.z = config.anchorZ - (cfg().backPlaneOffsetZ ?? 0.001);
     backMesh.rotation.y = Math.PI;
     backMesh.renderOrder = 2;
@@ -92,7 +94,7 @@
     const modelWidth = options.modelWidth ?? cfg().modelWidth ?? 1;
     const modelHeight = options.modelHeight ?? modelWidth * aspectHeight;
     const anchorZ = options.anchorZ ?? cfg().anchorZ ?? 0;
-    const textures = buildTextureSet(THREE, sourceCanvas);
+    const textures = buildTextureSet(THREE, sourceCanvas, options.backCanvas || options.backImage || null);
     const root = new THREE.Group();
     root.name = options.name || 'Temporary_NPC_Portrait_Model';
     root.userData = {
@@ -100,7 +102,9 @@
       sourceImagePixels: `${pxW}x${pxH}`,
       pngPipelineMode: 'single',
       modelRole: 'temporary-npc-demo-model',
-      prismRule: 'disabled for runtime NPC preview; only the single front plane plus rear silhouette are created',
+      prismRule: options.backCanvas || options.backImage
+        ? 'disabled for runtime NPC preview; a single front plane plus assembled rear portrait plane are created'
+        : 'disabled for runtime NPC preview; only the single front plane plus rear silhouette are created',
     };
     root.add(createSinglePlaneAssembly(THREE, {
       planeWidth: modelWidth,

@@ -613,11 +613,60 @@ function _getMouthExpressionOpacity(expression, speciesId) {
   return Number.isFinite(numericOpacity) ? Math.max(0, Math.min(1, numericOpacity)) : 1;
 }
 
+
+function _pngPlaneBehindViewConfig() {
+  return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.behindView || {};
+}
+
+function _portraitGenderKey(gender) {
+  const raw = String(gender || '').toLowerCase();
+  if (raw === 'm') return 'male';
+  if (raw === 'f') return 'female';
+  return raw;
+}
+
+function _getBehindHeadUrl(speciesId, gender) {
+  const headUrls = _pngPlaneBehindViewConfig().headUrls || {};
+  const normalizedSpeciesId = String(speciesId || '').toLowerCase().replace(/_/g, '-');
+  const speciesMap = headUrls[normalizedSpeciesId] || headUrls[String(speciesId || '').toLowerCase()];
+  if (!speciesMap) return null;
+  const genderKey = _portraitGenderKey(gender);
+  return speciesMap[genderKey] || speciesMap[genderKey?.[0]] || null;
+}
+
+function _textMatchesAny(text, needles) {
+  const value = String(text || '').toLowerCase().replace(/_/g, '-');
+  return (needles || []).some(needle => value.includes(String(needle || '').toLowerCase().replace(/_/g, '-')));
+}
+
+function _getBehindLayerUrl(layer, group, gender) {
+  const rules = _pngPlaneBehindViewConfig().layerReplacements || [];
+  if (!layer || !Array.isArray(rules)) return layer?.url || null;
+  const idText = [group?.id, group?.originalId].filter(Boolean).join(' ');
+  for (const rule of rules) {
+    if (rule.hairSlot && group?.hairSlot !== rule.hairSlot) continue;
+    if (rule.idIncludes && !_textMatchesAny(idText, rule.idIncludes)) continue;
+    if (rule.urlIncludes && !_textMatchesAny(layer.url, rule.urlIncludes)) continue;
+    if (rule.genderUrls) {
+      const genderKey = _portraitGenderKey(gender);
+      return rule.genderUrls[genderKey] || rule.genderUrls[genderKey?.[0]] || layer.url;
+    }
+    return rule.url || layer.url;
+  }
+  return layer.url;
+}
+
+function _cloneBehindLayer(layer, group, gender) {
+  if (!layer) return layer;
+  return { ...layer, url: _getBehindLayerUrl(layer, group, gender) };
+}
+
 // ── Rendering ──────────────────────────────────────────────
 
 async function renderProfile(canvas, profile, renderOptions = {}) {
   const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, eyes, upperFace, facialHair, pauldron, hat, torsoCosmetic, armCosmetic, bodyColors } = profile;
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
+  const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
   const breathingComposer   = renderOptions?.breathingComposer ?? window.portraitBreathingComposer ?? null;
   const breathingPhaseOffset = Number(renderOptions?.breathingPhaseOffsetMs) || 0;
   const seatId = renderOptions?.seatId ?? null;
@@ -629,7 +678,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const renderHeadCosmetics = !omitHeadSpriteAndCosmetics;
   const resolvedFighter = resolvePortraitFighter(fighter) || fighter;
   const opacityMaskLayer = resolvedFighter?.opacityMaskLayer || fighter?.opacityMaskLayer || null;
-  const headUrl = renderHeadSprite ? (resolvedFighter?.headUrl || fighter?.headUrl) : null;
+  let headUrl = renderHeadSprite ? (resolvedFighter?.headUrl || fighter?.headUrl) : null;
   const bodyLayerSource = resolvedFighter?.bodyLayers || fighter?.bodyLayers || [];
   const urLayerSource = renderHeadSprite ? (resolvedFighter?.urLayers || fighter?.urLayers || []) : [];
   const blinkOverlayUrlsByBase = new Map();
@@ -763,12 +812,31 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const gender    = resolvedFighter?.gender    || fighter?.gender    || '';
   const _preloadNowMs   = Date.now();
   const mouthExpression = breathingComposer?.getExpression(seatId, _preloadNowMs) ?? 'neutral';
-  const mouthSpriteUrl  = _getMouthSpriteUrl(mouthExpression, speciesId, gender);
-  const mouthOpacity    = _getMouthExpressionOpacity(mouthExpression, speciesId);
+  const mouthSpriteUrl  = renderBehindView ? null : _getMouthSpriteUrl(mouthExpression, speciesId, gender);
+  const mouthOpacity    = renderBehindView ? 0 : _getMouthExpressionOpacity(mouthExpression, speciesId);
+
+  if (renderBehindView) {
+    headUrl = _getBehindHeadUrl(speciesId, gender) || headUrl;
+    const useBehindLayers = (layerList) => {
+      for (const entry of layerList) {
+        entry.layer = _cloneBehindLayer(entry.layer, entry.group, gender);
+      }
+    };
+    [
+      preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
+      rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
+      elevatedEyeAccessoryLayers, hoodLayers, pauldronLayers, hatUnderLayers,
+      hatOverLayers,
+    ].forEach(useBehindLayers);
+  }
+  const isSnowgogglesLayer = ({ group }) => _textMatchesAny([group?.id, group?.originalId].filter(Boolean).join(' '), ['snowgoggles']);
+  const behindSnowgogglesLayers = renderBehindView
+    ? [...eyesLayers, ...elevatedEyeAccessoryLayers].filter(isSnowgogglesLayer)
+    : [];
 
   const neededUrls = new Set([
     ...(headUrl ? [headUrl] : []),
-    ...urLayerSource.map(m => m.url),
+    ...(renderBehindView ? [] : urLayerSource.map(m => m.url)),
     ...preBackLayers.map(({ layer }) => layer.url),
     ...baseLeftArmLayers.map(({ layer }) => layer.url),
     ...baseTorsoLayers.map(({ layer }) => layer.url),
@@ -778,16 +846,16 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ...sideLeftLayers.map(({ layer }) => layer.url),
     ...rightSideHairLayers.map(({ layer }) => layer.url),
     ...facialHairLayers.map(({ layer }) => layer.url),
-    ...eyesLayers.map(({ layer }) => layer.url),
-    ...upperFaceLayers.map(({ layer }) => layer.url),
+    ...(renderBehindView ? behindSnowgogglesLayers : eyesLayers).map(({ layer }) => layer.url),
+    ...(renderBehindView ? [] : upperFaceLayers.map(({ layer }) => layer.url)),
     ...frontHairLayers.map(({ layer }) => layer.url),
     ...hatUnderLayers.map(({ layer }) => layer.url),
-    ...elevatedEyeAccessoryLayers.map(({ layer }) => layer.url),
+    ...(renderBehindView ? [] : elevatedEyeAccessoryLayers.map(({ layer }) => layer.url)),
     ...hoodLayers.map(({ layer }) => layer.url),
     ...pauldronLayers.map(({ layer }) => layer.url),
     ...hatOverLayers.map(({ layer }) => layer.url),
     ...(opacityMaskLayer?.url ? [opacityMaskLayer.url] : []),
-    ...blinkOverlayUrlsByBase.values(),
+    ...(renderBehindView ? [] : blinkOverlayUrlsByBase.values()),
   ].filter(Boolean));
 
   let imgMap;
@@ -902,6 +970,35 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       }
     }
   };
+
+  if (renderBehindView) {
+    ctx.save();
+    ctx.translate(PORTRAIT_CW, 0);
+    ctx.scale(-1, 1);
+    drawEmoteLayers(preBackLayers);
+    drawBreathingLayers(torsoClothingLayers);
+    drawBreathingLayers(overwearLayers);
+    drawEmoteLayers(hatUnderLayers);
+    drawBreathingLayers(hoodLayers);
+    drawEmoteLayers(pauldronLayers);
+    drawEmoteLayers(hatOverLayers);
+    drawEmoteLayers(behindSnowgogglesLayers);
+    drawBreathingLayers(baseLeftArmLayers);
+    drawEmoteLayers(rightSideHairLayers);
+    if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), filterA); }
+    drawEmoteLayers(facialHairLayers);
+    drawEmoteLayers(sideLeftLayers);
+    drawEmoteLayers(frontHairLayers);
+    drawBreathingLayers(baseTorsoLayers);
+    drawBreathingLayers(baseRightArmLayers);
+    ctx.restore();
+    if (opacityMaskLayer?.url) {
+      const maskImg = imgMap.get(opacityMaskLayer.url);
+      if (maskImg) applyPortraitOpacityMask(ctx, maskImg, resolveXform(opacityMaskLayer));
+    }
+    if (_needsScale) ctx.restore();
+    return;
+  }
 
   drawEmoteLayers(preBackLayers);
   drawBreathingLayers(baseLeftArmLayers);
@@ -1149,7 +1246,8 @@ function portraitOptionFromJson(entry, json) {
   const hairSlot = json.hairSlot || null; // 'front' | 'back' | 'side' | 'side-L'
   const portraitSlot = json.portraitSlot || null; // 'eyes' | 'upperFace' | 'facialHair' | 'hairFront' | 'hairBack' | 'hairSide' | 'hairSideL'
   const hoodLayering = json.hoodLayering || null; // 'under' means hat renders under hood; default is over
-  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering };
+  const originalId = (json.appearance && json.appearance.originalId) || null;
+  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, originalId };
 }
 
 /**
