@@ -143,7 +143,17 @@
     applyEquip('torso', 'torsoCosmetic', torsoPortraitOptions?.[0]);
     applyEquip('overwear', 'armCosmetic', armPortraitOptions?.[0]);
 
-    const defaultTintColors = window.SCRATCHBONES_CONFIG?.game?.portrait?.cosmetics?.defaultTintColors || {};
+    const portraitCosmeticConfig = window.SCRATCHBONES_CONFIG?.game?.portrait?.cosmetics || {};
+    const collaredTag = portraitCosmeticConfig.collaredTag;
+    const collarLockedFacialHairIds = portraitCosmeticConfig.collarLockedFacialHairIds || portraitCosmeticConfig.shirtbeardIds || [];
+    const hasCollaredClothing = collaredTag
+      ? [profile.torsoCosmetic, profile.armCosmetic].some(c => c?.tags?.includes(collaredTag))
+      : false;
+    if (!hasCollaredClothing && collarLockedFacialHairIds.includes(profile.facialHair?.id)) {
+      profile.facialHair = optionCache?.get('none') || { id: 'none', label: 'No Facial Hair', tintSlot: null, layers: [] };
+    }
+
+    const defaultTintColors = portraitCosmeticConfig.defaultTintColors || {};
     const defaults = profile.upperFace?.id ? defaultTintColors[profile.upperFace.id] : null;
     if (defaults) {
       for (const [tintKey, color] of Object.entries(defaults)) {
