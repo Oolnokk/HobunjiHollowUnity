@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>PNG Prism / Directional Sprite GLB Exporter</title>
+  <style>
+    :root{
+      --bg:#0b0d12;
+      --panel:rgba(20,24,34,.94);
+      --panel2:rgba(10,12,18,.92);
+      --text:#f4f7ff;
+      --muted:#aab4ca;
+      --line:rgba(255,255,255,.16);
+      --ok:#9bffbd;
+      --bad:#ff9b9b;
+      --accent:#86b7ff;
+    }
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    #app{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr auto}
+    header{z-index:10;padding:10px;background:var(--panel);border-bottom:1px solid var(--line);display:grid;gap:8px}
+    h1{margin:0;font-size:15px;letter-spacing:.02em}
+    .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .controlGroup{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);background:rgba(255,255,255,.05);border-radius:10px;min-height:36px;box-sizing:border-box}
+    .controlGroup label{font-size:12px;color:var(--muted)}
+    .controlGroup output{font-size:12px;min-width:34px;text-align:right;color:var(--text)}
+    label.fileLabel,button,select,input[type="range"]{
+      border:1px solid var(--line);
+      background:rgba(255,255,255,.08);
+      color:var(--text);
+      border-radius:10px;
+      padding:9px 11px;
+      font-size:13px;
+      line-height:1;
+      min-height:36px;
+      box-sizing:border-box;
+    }
+    label.fileLabel{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+    input[type=file]{display:none}
+    button{cursor:pointer;touch-action:manipulation}
+    button:disabled{opacity:.45;cursor:not-allowed}
+    select{padding-right:28px}
+    input[type="range"]{padding:0;height:36px}
+    #stage{position:relative;min-height:0}
+    #view{display:block;width:100%;height:100%}
+    #stats{position:absolute;left:10px;top:10px;z-index:5;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px;font-size:12px;color:var(--muted);max-width:min(520px,calc(100vw - 40px));pointer-events:none;white-space:pre-wrap}
+    #debugWrap{z-index:10;background:var(--panel);border-top:1px solid var(--line);max-height:34vh;display:grid;grid-template-rows:auto 1fr}
+    #debugHead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;font-size:12px;color:var(--muted)}
+    #debugLog{margin:0;padding:8px 10px 12px;overflow:auto;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#dce6ff;white-space:pre-wrap}
+    .ok{color:var(--ok)}
+    .bad{color:var(--bad)}
+    #scriptWarning{display:block;padding:8px 10px;background:#3b1b1b;color:#ffd6d6;font-size:12px}
+    @media(min-width:900px){header{grid-template-columns:1fr auto;align-items:center}h1{font-size:16px}}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>PNG → Transparent Prism + Directional Internal Sprite → GLB</h1>
+      <div class="controls">
+        <label class="fileLabel">Upload transparent PNG<input id="fileInput" type="file" accept="image/png"></label>
+        <div class="controlGroup">
+          <label for="modeSelect">Mode</label>
+          <select id="modeSelect">
+            <option value="single">Single plane</option>
+            <option value="directional" selected>2-angle directional (4-state)</option>
+            <option value="doom8">8-angle directional star (Doom-like)</option>
+          </select>
+        </div>
+        <div class="controlGroup">
+          <label for="angleRange">Plane angle</label>
+          <input id="angleRange" type="range" min="10" max="75" step="1" value="35">
+          <output id="angleValue">35°</output>
+        </div>
+        <div class="controlGroup">
+          <label for="exportPrismShellInput">Export prism guide</label>
+          <input id="exportPrismShellInput" type="checkbox">
+        </div>
+        <button id="exportBtn" disabled>Export GLB</button>
+        <button id="resetCameraBtn">Reset Camera</button>
+        <button id="copyDebugBtn">Copy Debug</button>
+      </div>
+    </header>
+    <main id="stage">
+      <canvas id="view"></canvas>
+      <div id="stats">No PNG loaded yet.</div>
+      <noscript id="scriptWarning">JavaScript is not running in this viewer. Open this HTML directly in a browser rather than an in-app preview.</noscript>
+    </main>
+    <section id="debugWrap">
+      <div id="debugHead"><span>Debug log</span><span id="statusText">html loaded; script not started</span></div>
+      <pre id="debugLog">If this stays as the only debug text, this viewer is blocking inline JavaScript.
+Try opening the downloaded file directly in a browser instead of an in-app preview.
+</pre>
+    </section>
+  </div>
+
+  <script>
+  (function(){
+    var debugLog = document.getElementById('debugLog');
+    var statusText = document.getElementById('statusText');
+    var lines = [];
+    function now(){ try { return new Date().toLocaleTimeString(); } catch(e) { return String(Date.now()); } }
+    function log(message, level){
+      level = level || 'info';
+      var line = '[' + now() + '] ' + level + ': ' + message;
+      lines.push(line);
+      if (debugLog) {
+        debugLog.textContent += line + '\n';
+        debugLog.scrollTop = debugLog.scrollHeight;
+      }
+      if (statusText) {
+        statusText.textContent = message;
+        statusText.className = level === 'error' ? 'bad' : (level === 'ok' ? 'ok' : '');
+      }
+      try { (level === 'error' ? console.error : console.log)(line); } catch(e) {}
+    }
+    window.PNG_PRISM_DEBUG_LINES = lines;
+    window.PNG_PRISM_LOG = log;
+    debugLog.textContent = '';
+    log('classic bootstrap script is running', 'ok');
+    window.onerror = function(msg, src, line, col){ log(String(msg) + ' @ ' + String(src) + ':' + String(line) + ':' + String(col), 'error'); };
+    window.onunhandledrejection = function(event){
+      var reason = event && event.reason;
+      log('Unhandled promise rejection: ' + String(reason && reason.message ? reason.message : reason), 'error');
+    };
+  })();
+  </script>
+
+  <script>
+  (function(){
+    'use strict';
+
+    var log = window.PNG_PRISM_LOG || function(){};
+
+    var THREE = null; // Used by all rendering/build functions after module load.
+    var OrbitControls = null; // Used by initThree() for orbit interaction.
+    var GLTFExporter = null; // Used by exportGLB().
+
+    var canvas = document.getElementById('view');
+    var fileInput = document.getElementById('fileInput');
+    var modeSelect = document.getElementById('modeSelect');
+    var angleRange = document.getElementById('angleRange');
+    var angleValue = document.getElementById('angleValue');
+    var exportPrismShellInput = document.getElementById('exportPrismShellInput');
+    var exportBtn = document.getElementById('exportBtn');
+    var resetCameraBtn = document.getElementById('resetCameraBtn');
+    var copyDebugBtn = document.getElementById('copyDebugBtn');
+    var stats = document.getElementById('stats');
+    var debugLog = document.getElementById('debugLog');
+
+    var renderer = null; // Used by resize() and animateLoop().
+    var scene = null; // Used by buildModel() and animateLoop().
+    var camera = null; // Used by frameCamera() and animateLoop().
+    var controls = null; // Used by camera interaction and animateLoop().
+    var animationStarted = false; // Used to avoid starting multiple RAF loops.
+    var objectRoot = null; // Used by clearCurrentModel() and exportGLB().
+    var currentSource = null; // Used by rebuildModelFromCurrentSource() after UI changes.
+    var currentBaseName = 'png_prism'; // Used by export naming.
+
+    function setStats(text){ stats.textContent = text; }
+
+    function supportsDynamicImport(){
+      try { new Function('u', 'return import(u)'); return true; }
+      catch(e) { return false; }
+    }
+
+    function dynamicImport(url){
+      return new Function('u', 'return import(u)')(url);
+    }
+
+    function loadModules(){
+      log('checking dynamic import support');
+      if (!supportsDynamicImport()) throw new Error('This browser/viewer does not support dynamic import(). Open the file in a modern browser.');
+      log('loading Three.js modules from CDN');
+      var threeUrl = 'https://esm.sh/three@0.165.0';
+      var controlsUrl = 'https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js?deps=three@0.165.0';
+      var exporterUrl = 'https://esm.sh/three@0.165.0/examples/jsm/exporters/GLTFExporter.js?deps=three@0.165.0';
+      return Promise.all([
+        dynamicImport(threeUrl),
+        dynamicImport(controlsUrl),
+        dynamicImport(exporterUrl)
+      ]).then(function(mods){
+        THREE = mods[0];
+        OrbitControls = mods[1].OrbitControls;
+        GLTFExporter = mods[2].GLTFExporter;
+        if (!THREE || !OrbitControls || !GLTFExporter) {
+          throw new Error('A Three.js module loaded without the expected exports.');
+        }
+        log('Three.js, OrbitControls, and GLTFExporter loaded', 'ok');
+      });
+    }
+
+    function initThree(){
+      log('initializing renderer');
+      renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setClearColor(0x0b0d12, 1);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.sortObjects = true;
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0b0d12);
+
+      camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
+      scene.add(camera);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.target.set(0, 0.55, 0);
+
+      var hemi = new THREE.HemisphereLight(0xffffff, 0x243044, 1.9);
+      scene.add(hemi);
+      var dir = new THREE.DirectionalLight(0xffffff, 1.45);
+      dir.position.set(3, 5, 4);
+      scene.add(dir);
+
+      var grid = new THREE.GridHelper(3, 12, 0x3d4960, 0x242b38);
+      grid.position.y = 0;
+      scene.add(grid);
+
+      resetCamera();
+      resize();
+      window.addEventListener('resize', resize);
+      startAnimationLoop();
+      log('renderer initialized', 'ok');
+    }
+
+    function startAnimationLoop(){
+      if (animationStarted) return;
+      animationStarted = true;
+      function frame(){
+        requestAnimationFrame(frame);
+        if (controls) controls.update();
+        if (renderer && scene && camera) renderer.render(scene, camera);
+      }
+      requestAnimationFrame(frame);
+    }
+
+    function resize(){
+      if (!renderer || !camera) return;
+      var stage = document.getElementById('stage');
+      var rect = stage.getBoundingClientRect();
+      var w = Math.max(1, Math.floor(rect.width));
+      var h = Math.max(1, Math.floor(rect.height));
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+
+    function resetCamera(){
+      if (!camera || !controls) return;
+      camera.position.set(2.15, 1.45, 2.35);
+      controls.target.set(0, 0.55, 0);
+      camera.lookAt(controls.target);
+      controls.update();
+      log('camera reset');
+    }
+
+    function disposeMaterial(mat){
+      if (mat.map) mat.map.dispose();
+      if (mat.alphaMap) mat.alphaMap.dispose();
+      mat.dispose();
+    }
+
+    function clearCurrentModel(){
+      if (!objectRoot) return;
+      scene.remove(objectRoot);
+      objectRoot.traverse(function(child){
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach(disposeMaterial);
+          else disposeMaterial(child.material);
+        }
+      });
+      objectRoot = null;
+    }
+
+    function stripExtension(name){
+      return name.replace(/\.[^/.]+$/, '').replace(/[^a-z0-9_\-]+/gi, '_').replace(/^_+|_+$/g, '') || 'png_prism';
+    }
+
+    function formatBytes(bytes){
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    function loadImageFromFile(file){
+      return new Promise(function(resolve, reject){
+        var url = URL.createObjectURL(file);
+        var image = new Image();
+        image.onload = function(){
+          URL.revokeObjectURL(url);
+          resolve(image);
+        };
+        image.onerror = function(){
+          URL.revokeObjectURL(url);
+          reject(new Error('Could not decode that PNG.'));
+        };
+        image.src = url;
+      });
+    }
+
+    function detectTransparency(image){
+      var probe = document.createElement('canvas');
+      var sampleW = Math.min(128, image.naturalWidth || image.width);
+      var sampleH = Math.min(128, image.naturalHeight || image.height);
+      probe.width = sampleW;
+      probe.height = sampleH;
+      var ctx = probe.getContext('2d', { willReadFrequently: true });
+      ctx.clearRect(0, 0, sampleW, sampleH);
+      ctx.drawImage(image, 0, 0, sampleW, sampleH);
+      var data = ctx.getImageData(0, 0, sampleW, sampleH).data;
+      for (var i = 3; i < data.length; i += 4) {
+        if (data[i] < 255) return true;
+      }
+      return false;
+    }
+
+    function makeVariantCanvas(image, options){
+      options = options || {};
+      var flipX = !!options.flipX;
+      var blackSilhouette = !!options.blackSilhouette;
+      var c = document.createElement('canvas');
+      c.width = image.naturalWidth || image.width;
+      c.height = image.naturalHeight || image.height;
+      var ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.save();
+      if (flipX) {
+        ctx.translate(c.width, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(image, 0, 0);
+      ctx.restore();
+      if (blackSilhouette) {
+        var imgData = ctx.getImageData(0, 0, c.width, c.height);
+        var data = imgData.data;
+        for (var i = 0; i < data.length; i += 4) {
+          data[i] = 0;
+          data[i + 1] = 0;
+          data[i + 2] = 0;
+        }
+        ctx.putImageData(imgData, 0, 0);
+      }
+      return c;
+    }
+
+    function makeTextureFromCanvas(canvasEl, debugName){
+      var texture = new THREE.CanvasTexture(canvasEl);
+      texture.name = debugName;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.needsUpdate = true;
+      return texture;
+    }
+
+    function makeSpriteMaterial(texture, debugName){
+      return new THREE.MeshBasicMaterial({
+        name: debugName,
+        map: texture,
+        transparent: true,
+        alphaTest: 0.001,
+        side: THREE.FrontSide,
+        depthWrite: false
+      });
+    }
+
+    function createTransparentPrism(width, height, depth){
+      var group = new THREE.Group();
+      group.name = 'transparent_aspect_prism_shell';
+      group.userData = { isExportGuideShell: true };
+
+      var geom = new THREE.BoxGeometry(width, height, depth);
+      var prismMat = new THREE.MeshPhysicalMaterial({
+        name: 'transparent_prism_material',
+        color: 0x8ac7ff,
+        transparent: true,
+        opacity: 0.16,
+        roughness: 0.55,
+        metalness: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      var prismMesh = new THREE.Mesh(geom, prismMat);
+      prismMesh.name = 'transparent_prism_mesh';
+      prismMesh.userData = { isExportGuideShell: true };
+      prismMesh.renderOrder = 1;
+      group.add(prismMesh);
+
+      var edgeLines = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geom),
+        new THREE.LineBasicMaterial({ name: 'prism_edges_material', color: 0xb8dcff, transparent: true, opacity: 0.78 })
+      );
+      edgeLines.name = 'prism_edge_lines';
+      edgeLines.userData = { isExportGuideShell: true };
+      edgeLines.renderOrder = 4;
+      group.add(edgeLines);
+
+      return group;
+    }
+
+    function createSinglePlaneAssembly(config){
+      var group = new THREE.Group();
+      group.name = 'single_plane_assembly';
+
+      var planeGeo = new THREE.PlaneGeometry(config.planeWidth, config.planeHeight);
+      var frontMesh = new THREE.Mesh(planeGeo, makeSpriteMaterial(config.textures.frontOriginal, 'front_uploaded_png_material'));
+      frontMesh.name = 'front_uploaded_png_plane';
+      frontMesh.position.z = config.anchorZ;
+      frontMesh.renderOrder = 2;
+      group.add(frontMesh);
+
+      var backMesh = new THREE.Mesh(planeGeo.clone(), makeSpriteMaterial(config.textures.backForOriginal, 'back_silhouette_material'));
+      backMesh.name = 'back_silhouette_plane';
+      backMesh.position.z = config.anchorZ - 0.001;
+      backMesh.rotation.y = Math.PI;
+      backMesh.renderOrder = 2;
+      group.add(backMesh);
+
+      return group;
+    }
+
+    function createDirectionalAssembly(config){
+      var group = new THREE.Group();
+      group.name = 'directional_two_angle_assembly';
+
+      var planeGeo = new THREE.PlaneGeometry(config.planeWidth, config.planeHeight);
+      var angleRad = THREE.MathUtils.degToRad(config.directionalAngleDeg);
+      var anchorZ = config.anchorZ;
+
+      // Plane A: front-right shows original image; rear-left/right shows mirrored silhouette when seen from behind.
+      var planeAFront = new THREE.Mesh(planeGeo, makeSpriteMaterial(config.textures.frontOriginal, 'front_right_original_material'));
+      planeAFront.name = 'front_right_original_plane';
+      planeAFront.rotation.y = angleRad;
+      planeAFront.position.z = anchorZ;
+      planeAFront.renderOrder = 2;
+      group.add(planeAFront);
+
+      var planeABack = new THREE.Mesh(planeGeo.clone(), makeSpriteMaterial(config.textures.backForOriginal, 'back_of_original_silhouette_material'));
+      planeABack.name = 'back_of_original_silhouette_plane';
+      planeABack.rotation.y = angleRad + Math.PI;
+      planeABack.position.z = anchorZ - 0.001;
+      planeABack.renderOrder = 2;
+      group.add(planeABack);
+
+      // Plane B: front-left shows flipped image; rear opposite is unmirrored silhouette, per your requested behind-view logic.
+      var planeBFront = new THREE.Mesh(planeGeo.clone(), makeSpriteMaterial(config.textures.frontFlipped, 'front_left_flipped_material'));
+      planeBFront.name = 'front_left_flipped_plane';
+      planeBFront.rotation.y = -angleRad;
+      planeBFront.position.z = anchorZ;
+      planeBFront.renderOrder = 2;
+      group.add(planeBFront);
+
+      var planeBBack = new THREE.Mesh(planeGeo.clone(), makeSpriteMaterial(config.textures.backForFlippedFront, 'back_of_flipped_silhouette_material'));
+      planeBBack.name = 'back_of_flipped_silhouette_plane';
+      planeBBack.rotation.y = -angleRad + Math.PI;
+      planeBBack.position.z = anchorZ - 0.002;
+      planeBBack.renderOrder = 2;
+      group.add(planeBBack);
+
+      return group;
+    }
+
+    function createDoom8Assembly(config){
+      var group = new THREE.Group();
+      group.name = 'directional_eight_angle_assembly';
+
+      var planeGeo = new THREE.PlaneGeometry(config.planeWidth, config.planeHeight);
+      var directions = [
+        { key: 'front', angleDeg: 0, texture: config.textures.frontOriginal, label: 'front_original' },
+        { key: 'front_right', angleDeg: 45, texture: config.textures.frontOriginal, label: 'front_right_original' },
+        { key: 'right', angleDeg: 90, texture: config.textures.frontOriginal, label: 'right_original' },
+        { key: 'back_right', angleDeg: 135, texture: config.textures.backForOriginal, label: 'back_right_silhouette_mirrored' },
+        { key: 'back', angleDeg: 180, texture: config.textures.backCenter, label: 'back_center_silhouette' },
+        { key: 'back_left', angleDeg: 225, texture: config.textures.backForFlippedFront, label: 'back_left_silhouette_unmirrored' },
+        { key: 'left', angleDeg: 270, texture: config.textures.frontFlipped, label: 'left_flipped' },
+        { key: 'front_left', angleDeg: 315, texture: config.textures.frontFlipped, label: 'front_left_flipped' }
+      ];
+
+      for (var i = 0; i < directions.length; i += 1) {
+        var entry = directions[i];
+        var angleRad = THREE.MathUtils.degToRad(entry.angleDeg);
+        var mesh = new THREE.Mesh(planeGeo.clone(), makeSpriteMaterial(entry.texture, entry.label + '_material'));
+        mesh.name = entry.label + '_plane';
+        mesh.rotation.y = angleRad;
+        mesh.position.set(0, 0, 0);
+        mesh.renderOrder = 2;
+        group.add(mesh);
+      }
+
+      return group;
+    }
+
+    function buildTextureSet(image){
+      return {
+        frontOriginal: makeTextureFromCanvas(makeVariantCanvas(image, { flipX: false, blackSilhouette: false }), 'front_original_texture'),
+        frontFlipped: makeTextureFromCanvas(makeVariantCanvas(image, { flipX: true, blackSilhouette: false }), 'front_flipped_texture'),
+        backForOriginal: makeTextureFromCanvas(makeVariantCanvas(image, { flipX: true, blackSilhouette: true }), 'back_for_original_mirrored_silhouette_texture'),
+        backForFlippedFront: makeTextureFromCanvas(makeVariantCanvas(image, { flipX: false, blackSilhouette: true }), 'back_for_flipped_unmirrored_silhouette_texture'),
+        backCenter: makeTextureFromCanvas(makeVariantCanvas(image, { flipX: false, blackSilhouette: true }), 'back_center_silhouette_texture')
+      };
+    }
+
+    function rebuildModelFromCurrentSource(){
+      if (!currentSource || !THREE) return;
+      clearCurrentModel();
+
+      var image = currentSource.image;
+      var imageWidth = currentSource.width;
+      var imageHeight = currentSource.height;
+      var aspectHeight = imageHeight / imageWidth;
+      var mode = modeSelect.value;
+      var directionalAngleDeg = parseFloat(angleRange.value);
+      var prismWidth = 1;
+      var prismDepth = 1;
+      var prismHeight = aspectHeight;
+      var planeWidth = prismWidth;
+      var planeHeight = prismHeight;
+      var anchorZ = 0; // Plane centers align vertically with the center of the prism base.
+      var textures = buildTextureSet(image);
+
+      objectRoot = new THREE.Group();
+      objectRoot.name = 'PNG_Prism_With_Internal_Sprite';
+      objectRoot.userData = {
+        sourceImagePixels: imageWidth + 'x' + imageHeight,
+        prismRule: 'base=1x1, height=imageHeight/imageWidth',
+        internalPlaneRule: mode === 'directional' ? 'two angled planes create 4 view states' : (mode === 'doom8' ? 'eight centered planes create Doom-like directional sectors' : 'single centered plane plus silhouette back'),
+        directionalAngleDegrees: directionalAngleDeg,
+        imageHasDetectedTransparency: currentSource.hasAlpha,
+        mode: mode
+      };
+
+      var prismShell = createTransparentPrism(prismWidth, prismHeight, prismDepth);
+      objectRoot.add(prismShell);
+
+      var spriteAssembly = mode === 'directional'
+        ? createDirectionalAssembly({
+            planeWidth: planeWidth,
+            planeHeight: planeHeight,
+            anchorZ: anchorZ,
+            directionalAngleDeg: directionalAngleDeg,
+            textures: textures
+          })
+        : mode === 'doom8'
+          ? createDoom8Assembly({
+              planeWidth: planeWidth,
+              planeHeight: planeHeight,
+              textures: textures
+            })
+          : createSinglePlaneAssembly({
+              planeWidth: planeWidth,
+              planeHeight: planeHeight,
+              anchorZ: anchorZ,
+              textures: textures
+            });
+      objectRoot.add(spriteAssembly);
+
+      scene.add(objectRoot);
+      frameCamera(prismHeight);
+      exportBtn.disabled = false;
+
+      var statsLines = [
+        'Image: ' + imageWidth + ' × ' + imageHeight + ' px',
+        'Aspect height: ' + aspectHeight.toFixed(4) + ' = imageHeight / imageWidth',
+        'Prism dimensions: 1.0000 × ' + aspectHeight.toFixed(4) + ' × 1.0000',
+        'Plane dimensions: 1.0000 × ' + aspectHeight.toFixed(4),
+        'Mode: ' + (mode === 'directional' ? '2-angle directional (4-state)' : (mode === 'doom8' ? '8-angle directional star (Doom-like)' : 'single plane')),
+        'Plane center Z: ' + anchorZ.toFixed(4) + ' aligned over prism base center',
+        'Directional angle: ' + directionalAngleDeg.toFixed(0) + '°',
+        'Export prism guide: ' + (exportPrismShellInput && exportPrismShellInput.checked ? 'yes - guide shell will be included' : 'no - exported GLB contains only sprite planes'),
+        'Transparency detected: ' + (currentSource.hasAlpha ? 'yes' : 'no / fully opaque alpha'),
+        mode === 'directional'
+          ? 'Directional states: front-right=original, front-left=flipped, back-of-original=mirrored silhouette, back-of-flipped=unmirrored silhouette'
+          : (mode === 'doom8'
+            ? '8-direction sectors: centered crossing planes share the prism center; front/front-right/right use original, left/front-left use flipped, back-right uses mirrored silhouette, back uses center silhouette, back-left uses unmirrored silhouette'
+            : 'Single-plane states: front=original, back=mirrored silhouette')
+      ];
+      setStats(statsLines.join('\n'));
+      log('rebuilt model in ' + mode + ' mode', 'ok');
+    }
+
+    function frameCamera(modelHeight){
+      if (!camera || !controls) return;
+      var distance = Math.max(2.0, modelHeight * 1.9 + 1.2);
+      camera.position.set(distance * 0.78, distance * 0.48, distance * 0.98);
+      camera.near = 0.01;
+      camera.far = 100;
+      camera.updateProjectionMatrix();
+      controls.target.set(0, 0, 0);
+      controls.update();
+    }
+
+    function downloadBlob(blob, fileName){
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    }
+
+    function disposeExportClone(root){
+      if (!root) return;
+      root.traverse(function(child){
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach(disposeMaterial);
+          else disposeMaterial(child.material);
+        }
+      });
+    }
+
+    function removeGuideShellFromExport(root){
+      var guideNodes = [];
+      root.traverse(function(child){
+        if (child.userData && child.userData.isExportGuideShell) guideNodes.push(child);
+      });
+      for (var i = 0; i < guideNodes.length; i += 1) {
+        var node = guideNodes[i];
+        if (node.parent) node.parent.remove(node);
+      }
+      return guideNodes.length;
+    }
+
+    function prepareExportRoot(){
+      var exportRoot = objectRoot.clone(true);
+      var removedGuideNodes = 0; // Used by exportGLB() debug output.
+      if (!exportPrismShellInput || !exportPrismShellInput.checked) {
+        removedGuideNodes = removeGuideShellFromExport(exportRoot);
+      }
+      exportRoot.userData = Object.assign({}, objectRoot.userData, {
+        exportIncludesPrismGuideShell: !!(exportPrismShellInput && exportPrismShellInput.checked)
+      });
+      return { root: exportRoot, removedGuideNodes: removedGuideNodes };
+    }
+
+    function exportGLB(){
+      if (!objectRoot) {
+        log('No model to export yet. Upload a PNG first.', 'error');
+        return;
+      }
+      exportBtn.disabled = true;
+      var preparedExport = prepareExportRoot();
+      log('exporting GLB…' + (preparedExport.removedGuideNodes ? ' removed preview-only prism guide nodes=' + preparedExport.removedGuideNodes : ' including prism guide shell'));
+      var exporter = new GLTFExporter();
+      exporter.parse(
+        preparedExport.root,
+        function(result){
+          try {
+            var blob = result instanceof ArrayBuffer
+              ? new Blob([result], { type: 'model/gltf-binary' })
+              : new Blob([JSON.stringify(result, null, 2)], { type: 'model/gltf+json' });
+            var modeSuffix = modeSelect.value === 'directional' ? 'directional_prism' : (modeSelect.value === 'doom8' ? 'doom8_prism' : 'single_plane_prism');
+            downloadBlob(blob, currentBaseName + '_' + modeSuffix + '.glb');
+            log('export complete (' + formatBytes(blob.size) + ')', 'ok');
+          } finally {
+            disposeExportClone(preparedExport.root);
+            exportBtn.disabled = false;
+          }
+        },
+        function(error){
+          disposeExportClone(preparedExport.root);
+          exportBtn.disabled = false;
+          log('export failed: ' + (error && error.message ? error.message : error), 'error');
+        },
+        {
+          binary: true,
+          embedImages: true,
+          onlyVisible: true,
+          includeCustomExtensions: false,
+          trs: false
+        }
+      );
+    }
+
+    angleRange.addEventListener('input', function(){
+      angleValue.value = angleRange.value + '°';
+      if (currentSource) rebuildModelFromCurrentSource();
+    });
+
+    modeSelect.addEventListener('change', function(){
+      if (currentSource) rebuildModelFromCurrentSource();
+    });
+
+    exportPrismShellInput.addEventListener('change', function(){
+      if (currentSource) rebuildModelFromCurrentSource();
+      log('export prism guide ' + (exportPrismShellInput.checked ? 'enabled' : 'disabled'));
+    });
+
+    fileInput.addEventListener('change', function(){
+      var file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      if (file.type !== 'image/png') {
+        log('Please upload a PNG file. Other image types are blocked so alpha handling stays predictable.', 'error');
+        return;
+      }
+      currentBaseName = stripExtension(file.name);
+      log('loading ' + file.name);
+      loadImageFromFile(file).then(function(image){
+        currentSource = {
+          image: image,
+          width: image.naturalWidth || image.width,
+          height: image.naturalHeight || image.height,
+          hasAlpha: detectTransparency(image)
+        };
+        rebuildModelFromCurrentSource();
+        log('loaded PNG ' + currentSource.width + '×' + currentSource.height, 'ok');
+      }).catch(function(error){
+        log(error && error.message ? error.message : String(error), 'error');
+      });
+    });
+
+    exportBtn.addEventListener('click', exportGLB);
+    resetCameraBtn.addEventListener('click', function(){
+      if (currentSource) frameCamera(currentSource.height / currentSource.width);
+      else resetCamera();
+      log('camera reset');
+    });
+
+    copyDebugBtn.addEventListener('click', function(){
+      var text = debugLog.textContent || '(debug log empty)';
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function(){
+          log('debug copied to clipboard', 'ok');
+        }).catch(function(error){
+          log('clipboard failed: ' + (error && error.message ? error.message : error), 'error');
+        });
+      } else {
+        log('clipboard API unavailable in this browser/viewer', 'error');
+      }
+    });
+
+    loadModules().then(function(){
+      initThree();
+      setStats('No PNG loaded yet.\nDefault mode is 2-angle directional (4-state).\nAlso available: 8-angle directional star (Doom-like).\nUpload a transparent PNG to build the prism and export a GLB. The visible prism is now a preview guide only unless you enable Export prism guide.');
+      angleValue.value = angleRange.value + '°';
+      log('app ready', 'ok');
+    }).catch(function(error){
+      log(error && error.message ? error.message : String(error), 'error');
+      setStats('Startup failed. Check the debug log below.');
+    });
+  })();
+  </script>
+</body>
+</html>
