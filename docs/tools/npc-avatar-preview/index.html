@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Runtime NPC Avatar Preview</title>
+  <style>
+    @font-face { font-family: 'KhymeryyanRomanLetters+Numbers'; src: url('../../assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf') format('truetype'); }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      background: radial-gradient(circle at 25% 0%, #30211d 0%, #1a1210 44%, #0b0908 100%);
+      color: rgba(255,255,255,0.92);
+      font-family: 'KhymeryyanRomanLetters+Numbers', system-ui, sans-serif;
+      letter-spacing: 0.11em;
+    }
+    #app { min-height: 100dvh; display: grid; grid-template-columns: minmax(280px, 380px) 1fr; }
+    aside { padding: 18px; border-right: 1px solid rgba(200,153,82,0.28); background: rgba(20,12,10,0.82); }
+    main { min-width: 0; display: grid; grid-template-rows: 1fr auto; }
+    h1 { margin: 0 0 10px; color: #f2d08f; font-size: 1.15rem; }
+    p { color: rgba(242,208,143,0.64); font-size: 0.82rem; line-height: 1.45; }
+    .controls { display: grid; gap: 10px; margin: 16px 0; }
+    label { display: grid; gap: 5px; color: rgba(242,208,143,0.7); font-size: 0.72rem; text-transform: uppercase; }
+    input, select, button, textarea {
+      width: 100%; border: 1px solid rgba(200,153,82,0.38); border-radius: 8px;
+      background: rgba(10,8,7,0.82); color: #f2d08f; padding: 9px 10px;
+      font: inherit; letter-spacing: inherit;
+    }
+    button { cursor: pointer; background: rgba(200,153,82,0.18); }
+    button:hover { background: rgba(200,153,82,0.3); }
+    input[type="file"] { padding: 7px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    #view { width: 100%; height: 100%; min-height: 420px; display: block; }
+    #portrait-strip { display: flex; gap: 10px; padding: 12px; overflow-x: auto; border-top: 1px solid rgba(200,153,82,0.22); background: rgba(10,8,7,0.76); }
+    .card { min-width: 132px; border: 1px solid rgba(200,153,82,0.32); border-radius: 10px; padding: 8px; background: rgba(20,12,10,0.9); cursor: pointer; }
+    .card.active { outline: 2px solid rgba(242,208,143,0.7); }
+    .card canvas { width: 112px; height: 112px; image-rendering: auto; display: block; margin: 0 auto 6px; background: rgba(0,0,0,0.25); border-radius: 8px; }
+    .card strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #f2d08f; font-size: 0.72rem; }
+    .card span { color: rgba(242,208,143,0.5); font-size: 0.66rem; }
+    #status { white-space: pre-wrap; min-height: 4lh; padding: 10px; border: 1px solid rgba(200,153,82,0.22); border-radius: 8px; background: rgba(0,0,0,0.22); color: rgba(242,208,143,0.65); font: 0.72rem/1.45 ui-monospace, Menlo, monospace; letter-spacing: normal; }
+    @media (max-width: 820px) { #app { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid rgba(200,153,82,0.28); } #view { min-height: 360px; } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <aside>
+      <h1>Runtime NPC Avatar Preview</h1>
+      <p>Builds a portrait PNG in memory, feeds it through the PNG-to-GLB reference pipeline's <b>single plane</b> path, and keeps the result as a temporary Three.js NPC model instead of exporting a GLB.</p>
+      <div class="controls">
+        <div class="row">
+          <label>Species
+            <select id="species">
+              <option value="mao-ao">Mao-ao</option>
+              <option value="engh-sho">Engh-sho</option>
+              <option value="kenkari">Kenkari</option>
+              <option value="tletingan">Tletingan</option>
+            </select>
+          </label>
+          <label>Gender
+            <select id="gender">
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
+          </label>
+        </div>
+        <label>Seed <input id="seed" value="demo-npc-1"></label>
+        <button id="randomize">Preview Random Character</button>
+        <label>NPC portrait designer JSON
+          <input id="json-file" type="file" accept=".json,application/json">
+        </label>
+        <button id="fit-camera">Reset Camera</button>
+      </div>
+      <div id="status">Starting…</div>
+    </aside>
+    <main>
+      <canvas id="view"></canvas>
+      <div id="portrait-strip" aria-label="Loaded NPC portraits"></div>
+    </main>
+  </div>
+
+  <script src="../../config/scratchbones-config.js"></script>
+  <script src="../../js/portrait-utils.js"></script>
+  <script src="../../js/portrait-breathing.js"></script>
+  <script src="../../js/png-plane-avatar.js"></script>
+  <script src="../../js/npc-avatar-preview-utils.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    const canvas3d = document.getElementById('view');
+    const strip = document.getElementById('portrait-strip');
+    const statusEl = document.getElementById('status');
+    const cfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+    let THREE = null;
+    let controls = null;
+    let renderer = null;
+    let scene = null;
+    let camera = null;
+    let activeModel = null;
+    let records = [];
+    let activeIndex = -1;
+
+    function log(text) { statusEl.textContent = text; }
+    function esc(text) { return String(text || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch])); }
+
+    function initScene() {
+      renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true, alpha: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0b0908);
+      camera = new THREE.PerspectiveCamera(cfg.previewCameraFovDeg || 45, 1, 0.01, 100);
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x352018, 1.8);
+      scene.add(hemi);
+      const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+      dir.position.set(2.5, 3.5, 4);
+      scene.add(dir);
+      const grid = new THREE.GridHelper(cfg.previewGridSize || 5, cfg.previewGridDivisions || 10, 0x6c5430, 0x2a2118);
+      grid.position.y = -0.55;
+      scene.add(grid);
+      resize();
+      frameCamera();
+      requestAnimationFrame(tick);
+    }
+
+    function resize() {
+      if (!renderer || !camera) return;
+      const rect = canvas3d.getBoundingClientRect();
+      const w = Math.max(1, Math.floor(rect.width));
+      const h = Math.max(1, Math.floor(rect.height));
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+
+    function frameCamera() {
+      if (!camera) return;
+      const d = cfg.previewCameraDistance || 3.2;
+      camera.position.set(d * 0.55, d * 0.28, d * 0.88);
+      camera.lookAt(0, 0, 0);
+      controls?.target.set(0, 0, 0);
+      controls?.update();
+    }
+
+    function tick() {
+      renderer?.render(scene, camera);
+      controls?.update();
+      requestAnimationFrame(tick);
+    }
+
+    function setActiveModel(record, idx) {
+      if (activeModel) {
+        scene.remove(activeModel);
+        window.PNGPlaneAvatar.disposeAvatarModel(activeModel);
+      }
+      activeModel = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, record.canvas, {
+        name: `Temporary_NPC_${idx + 1}`,
+        userData: { npcName: record.name, source: record.source },
+      });
+      scene.add(activeModel);
+      activeIndex = idx;
+      renderStrip();
+      log(`Showing ${record.name}\nPNG pipeline mode: single plane\nTemporary model nodes: ${activeModel.children.length} assembly group`);
+    }
+
+    function renderStrip() {
+      const thumbSize = cfg.previewPortraitCanvasSize || 200;
+      strip.innerHTML = records.map((record, idx) => `
+        <div class="card${idx === activeIndex ? ' active' : ''}" data-idx="${idx}">
+          <canvas width="${thumbSize}" height="${thumbSize}"></canvas>
+          <strong>${esc(record.name)}</strong>
+          <span>${esc(record.source)}</span>
+        </div>`).join('');
+      records.forEach((record, idx) => {
+        const cardCanvas = strip.querySelector(`[data-idx="${idx}"] canvas`);
+        cardCanvas?.getContext('2d')?.drawImage(record.canvas, 0, 0);
+      });
+      strip.querySelectorAll('.card').forEach(card => {
+        card.addEventListener('click', () => setActiveModel(records[Number(card.dataset.idx)], Number(card.dataset.idx)));
+      });
+    }
+
+    async function recordFromProfile(profile, name, source) {
+      const c = document.createElement('canvas');
+      const size = cfg.previewPortraitCanvasSize || 200;
+      c.width = size;
+      c.height = size;
+      await window.NpcAvatarPreview.renderProfileToCanvas(c, profile);
+      return { name, source, profile, canvas: c };
+    }
+
+    async function addRandom() {
+      const seed = document.getElementById('seed').value || String(Date.now());
+      const speciesId = document.getElementById('species').value;
+      const gender = document.getElementById('gender').value;
+      const profile = window.NpcAvatarPreview.randomProfile(seed, { speciesId, gender });
+      if (!profile) throw new Error('Could not create a randomized portrait profile.');
+      const record = await recordFromProfile(profile, `${speciesId} ${gender} (${seed})`, 'randomized portrait');
+      records.push(record);
+      setActiveModel(record, records.length - 1);
+    }
+
+    async function importJsonFile(file) {
+      const data = JSON.parse(await file.text());
+      const npcs = window.NpcAvatarPreview.normalizeNpcImport(data);
+      if (!npcs.length) throw new Error('JSON did not contain an NPC object or NPC array.');
+      for (const npc of npcs) {
+        const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
+        if (!profile) continue;
+        records.push(await recordFromProfile(profile, npc.name || 'Imported NPC', file.name));
+      }
+      if (records.length) setActiveModel(records[records.length - 1], records.length - 1);
+    }
+
+    async function init() {
+      log('Loading Three.js and portrait cosmetics…');
+      const mods = await window.PNGPlaneAvatar.loadThreeModules();
+      THREE = mods.THREE;
+      initScene();
+      if (mods.OrbitControls) {
+        controls = new mods.OrbitControls(camera, canvas3d);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+      }
+      await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: '../../assets/', configBase: '../../config/' });
+      await addRandom();
+    }
+
+    document.getElementById('randomize').addEventListener('click', () => addRandom().catch(err => log('Randomize failed: ' + err.message)));
+    document.getElementById('fit-camera').addEventListener('click', frameCamera);
+    document.getElementById('json-file').addEventListener('change', event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      importJsonFile(file).catch(err => log('Import failed: ' + err.message)).finally(() => { event.target.value = ''; });
+    });
+    window.addEventListener('resize', resize);
+    init().catch(err => log('Startup failed: ' + err.message));
+  })();
+  </script>
+</body>
+</html>

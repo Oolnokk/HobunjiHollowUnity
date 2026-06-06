@@ -3026,6 +3026,20 @@ window.SCRATCHBONES_CONFIG = {
       "portrait": {
         "assetBase": "./docs/assets/",
         "configBase": "./docs/config/"
+      },
+      "pngPlaneAvatar": {
+        "threeModuleUrl": "https://esm.sh/three@0.165.0",
+        "orbitControlsModuleUrl": "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js?deps=three@0.165.0",
+        "gltfExporterModuleUrl": "https://esm.sh/three@0.165.0/examples/jsm/exporters/GLTFExporter.js?deps=three@0.165.0",
+        "modelWidth": 1,
+        "anchorZ": 0,
+        "alphaTest": 0.001,
+        "backPlaneOffsetZ": 0.001,
+        "previewPortraitCanvasSize": 200,
+        "previewCameraFovDeg": 45,
+        "previewCameraDistance": 3.2,
+        "previewGridSize": 5,
+        "previewGridDivisions": 10
       }
     },
 
