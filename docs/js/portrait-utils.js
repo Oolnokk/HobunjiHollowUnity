@@ -972,18 +972,18 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   };
 
   if (renderBehindView) {
+    drawEmoteLayers(sideLeftLayers);
+    drawEmoteLayers(rightSideHairLayers);
     drawBreathingLayers(baseLeftArmLayers);
     drawBreathingLayers(baseTorsoLayers);
     drawBreathingLayers(baseRightArmLayers);
     drawBreathingLayers(torsoClothingLayers);
     drawBreathingLayers(overwearLayers);
-    drawEmoteLayers(sideLeftLayers);
     drawEmoteLayers(hatUnderLayers);
     drawBreathingLayers(hoodLayers);
     drawEmoteLayers(pauldronLayers);
     drawEmoteLayers(hatOverLayers);
     drawEmoteLayers(behindSnowgogglesLayers);
-    drawEmoteLayers(rightSideHairLayers);
     if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), filterA); }
     drawEmoteLayers(preBackLayers);
     if (opacityMaskLayer?.url) {
