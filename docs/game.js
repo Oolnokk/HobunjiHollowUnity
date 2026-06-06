@@ -3720,15 +3720,13 @@
 
       async function spawnPlayerAvatar(playerData) {
         try {
-          const profile = playerData && playerData.portraitProfile
-            ? playerData.portraitProfile
-            : null;
-          if (!profile) { gameStarted = true; return; }
-
           await window.NpcAvatarPreview.ensurePortraitCosmetics({
             assetBase: './assets/',
             configBase: './config/',
           });
+
+          const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(playerData);
+          if (!profile) { gameStarted = true; return; }
 
           const portraitCanvas = document.createElement('canvas');
           portraitCanvas.width  = 128;
@@ -3750,12 +3748,12 @@
         gameStarted = true;
       }
 
-      window.addEventListener('hobunjiPlayerReady', (e) => {
+      document.addEventListener('hobunjiPlayerReady', (e) => {
         spawnPlayerAvatar(e.detail);
       }, { once: true });
 
-      // HobunjiOnboarding.init() fires synchronously if a saved profile exists
-      // (event dispatched before this listener — catch that case)
+      // If init() already fired synchronously (returning player with localStorage profile),
+      // __hobunjiPlayerProfile is set before this listener registered — catch that case.
       if (window.__hobunjiPlayerProfile) {
         spawnPlayerAvatar(window.__hobunjiPlayerProfile);
       }
