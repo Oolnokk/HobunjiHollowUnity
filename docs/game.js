@@ -3724,19 +3724,24 @@
           const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(playerData);
           if (!profile) { gameStarted = true; return; }
 
-          const portraitCanvas = document.createElement('canvas');
-          portraitCanvas.width  = 128;
-          portraitCanvas.height = 128;
-          await window.renderPortraitProfile(portraitCanvas, profile);
+          const MODEL_W  = 0.75;
+          const PORTRAIT_SIZE = 128;
 
-          const MODEL_W = 0.75;
-          const MODEL_H = MODEL_W * (portraitCanvas.height / portraitCanvas.width);
-          const avatarGroup = await window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
-            THREE, portraitCanvas,
-            { modelWidth: MODEL_W, modelHeight: MODEL_H, anchorZ: 0, alphaTest: 0.01 }
+          const frontCanvas = document.createElement('canvas');
+          frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
+          await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+
+          const backCanvas = document.createElement('canvas');
+          backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
+          await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+
+          const MODEL_H = MODEL_W * (PORTRAIT_SIZE / PORTRAIT_SIZE); // square canvas
+          const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
+            THREE, frontCanvas,
+            { backCanvas, modelWidth: MODEL_W, modelHeight: MODEL_H, anchorZ: 0, alphaTest: 0.01 }
           );
           avatarGroup.name = 'player_avatar';
-          // PlaneGeometry is centered at origin; lift by half height so bottom = tile surface
+          // PlaneGeometry is origin-centered; lift by half height so bottom = tile surface
           avatarGroup.position.set(0, MODEL_H / 2, 0);
           playerMesh.add(avatarGroup);
           debugLog('PNG plane avatar attached to player_root');
