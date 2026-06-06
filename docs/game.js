@@ -2706,7 +2706,7 @@
         const col = clamp(Math.floor(wx), 0, COLS-1);
         const row = clamp(Math.floor(wz), 0, ROWS-1);
         const tile = grid[row][col];
-        const standY = tileSurfaceY(tile.type) + 0.36;
+        const standY = tileSurfaceY(tile.type);
 
         // Smooth vertical position (bob over water)
         const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0);
@@ -2722,10 +2722,6 @@
         while (dRot >  Math.PI) dRot -= Math.PI * 2;
         while (dRot < -Math.PI) dRot += Math.PI * 2;
         playerMesh.rotation.y += dRot * 0.18;
-
-        // Billboard: keep avatar plane facing camera (always south-facing in world space)
-        const avatarChild = playerMesh.getObjectByName('player_avatar');
-        if (avatarChild) avatarChild.rotation.y = -playerMesh.rotation.y;
 
         // Bob animation when moving
         const speed = Math.hypot(player.vx, player.vy);
@@ -3733,13 +3729,15 @@
           portraitCanvas.height = 128;
           await window.renderPortraitProfile(portraitCanvas, profile);
 
+          const MODEL_W = 0.75;
+          const MODEL_H = MODEL_W * (portraitCanvas.height / portraitCanvas.width);
           const avatarGroup = await window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
             THREE, portraitCanvas,
-            { modelWidth: 0.75, anchorZ: 0, alphaTest: 0.01 }
+            { modelWidth: MODEL_W, modelHeight: MODEL_H, anchorZ: 0, alphaTest: 0.01 }
           );
           avatarGroup.name = 'player_avatar';
-          // Offset so avatar base sits at player foot level
-          avatarGroup.position.set(0, 0, 0);
+          // PlaneGeometry is centered at origin; lift by half height so bottom = tile surface
+          avatarGroup.position.set(0, MODEL_H / 2, 0);
           playerMesh.add(avatarGroup);
           debugLog('PNG plane avatar attached to player_root');
         } catch (err) {
