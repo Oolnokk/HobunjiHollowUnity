@@ -11,6 +11,13 @@
   <link rel="stylesheet" href="style.css">
   <!-- Portrait system (ScratchbonesGame) -->
   <script src="config/scratchbones-config.js"></script>
+  <script>
+    /* scratchbones-config uses repo-root paths; fix them for docs/ serving */
+    if (window.SCRATCHBONES_CONFIG?.game?.assets?.portrait) {
+      window.SCRATCHBONES_CONFIG.game.assets.portrait.assetBase = './assets/';
+      window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
+    }
+  </script>
   <script src="js/portrait-utils.js"></script>
   <script src="js/portrait-breathing.js"></script>
   <script src="js/npc-avatar-preview-utils.js"></script>
