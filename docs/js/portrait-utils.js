@@ -977,6 +977,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     drawBreathingLayers(baseLeftArmLayers);
     drawBreathingLayers(baseTorsoLayers);
     drawBreathingLayers(baseRightArmLayers);
+    if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), filterA); }
     drawBreathingLayers(torsoClothingLayers);
     drawBreathingLayers(overwearLayers);
     drawEmoteLayers(hatUnderLayers);
@@ -984,7 +985,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     drawEmoteLayers(pauldronLayers);
     drawEmoteLayers(hatOverLayers);
     drawEmoteLayers(behindSnowgogglesLayers);
-    if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), filterA); }
     drawEmoteLayers(preBackLayers);
     if (opacityMaskLayer?.url) {
       const maskImg = imgMap.get(opacityMaskLayer.url);
