@@ -40,6 +40,17 @@
     .card span { color: rgba(242,208,143,0.5); font-size: 0.66rem; }
     #status { white-space: pre-wrap; min-height: 4lh; padding: 10px; border: 1px solid rgba(200,153,82,0.22); border-radius: 8px; background: rgba(0,0,0,0.22); color: rgba(242,208,143,0.65); font: 0.72rem/1.45 ui-monospace, Menlo, monospace; letter-spacing: normal; }
     @media (max-width: 820px) { #app { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid rgba(200,153,82,0.28); } #view { min-height: 360px; } }
+    #layer-stack { margin-top: 14px; }
+    #layer-stack summary { color: rgba(242,208,143,0.7); font-size: 0.72rem; text-transform: uppercase; cursor: pointer; user-select: none; padding: 4px 0; letter-spacing: inherit; list-style: none; display: flex; align-items: center; gap: 6px; }
+    #layer-stack summary::before { content: '▶'; font-size: 0.6rem; transition: transform 0.15s; }
+    #layer-stack[open] summary::before { transform: rotate(90deg); }
+    #layer-list { list-style: none; margin: 8px 0 4px; padding: 0; display: grid; gap: 3px; }
+    #layer-list li { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid rgba(200,153,82,0.25); border-radius: 6px; background: rgba(10,8,7,0.6); font-size: 0.7rem; cursor: grab; user-select: none; }
+    #layer-list li:active { cursor: grabbing; }
+    #layer-list li.drag-over-top { border-top-color: #f2d08f; }
+    #layer-list li.drag-over-bot { border-bottom-color: #f2d08f; }
+    #layer-list .drag-handle { opacity: 0.35; }
+    #layer-list .layer-name { flex: 1; color: #f2d08f; }
   </style>
 </head>
 <body>
@@ -71,6 +82,11 @@
         </label>
         <button id="fit-camera">Reset Camera</button>
       </div>
+      <details id="layer-stack">
+        <summary>Behind View Layer Order</summary>
+        <ul id="layer-list"></ul>
+        <button id="reset-layers">Reset to Default</button>
+      </details>
       <div id="status">Starting…</div>
     </aside>
     <main>
@@ -100,6 +116,88 @@
     let activeModel = null;
     let records = [];
     let activeIndex = -1;
+
+    // ── Behind-view layer stack panel ──────────────────────────
+    const BEHIND_LAYER_DEFS = [
+      { key: 'sideLeft',      label: 'Left Side Hair' },
+      { key: 'rightSideHair', label: 'Right Side Hair' },
+      { key: 'baseLeftArm',   label: 'Left Arm (base)' },
+      { key: 'baseTorso',     label: 'Torso (base)' },
+      { key: 'baseRightArm',  label: 'Right Arm (base)' },
+      { key: 'head',          label: 'Head' },
+      { key: 'torsoClothing', label: 'Torso Clothing' },
+      { key: 'overwear',      label: 'Overwear' },
+      { key: 'hatUnder',      label: 'Hat (under hood)' },
+      { key: 'hood',          label: 'Hood' },
+      { key: 'pauldron',      label: 'Pauldron' },
+      { key: 'hatOver',       label: 'Hat (over)' },
+      { key: 'snowgoggles',   label: 'Snowgoggles' },
+      { key: 'hairBack',      label: 'Back Hair (knots)' },
+    ];
+    const LABEL_MAP = Object.fromEntries(BEHIND_LAYER_DEFS.map(d => [d.key, d.label]));
+    let behindLayerOrder = BEHIND_LAYER_DEFS.map(d => d.key);
+    let _dragSrcIdx = null;
+
+    function renderLayerList() {
+      const list = document.getElementById('layer-list');
+      list.innerHTML = '';
+      behindLayerOrder.forEach((key, i) => {
+        const li = document.createElement('li');
+        li.draggable = true;
+        li.dataset.idx = i;
+        li.innerHTML = `<span class="drag-handle">⠿⠿</span><span class="layer-name">${LABEL_MAP[key] || key}</span>`;
+        list.appendChild(li);
+      });
+      const items = [...list.querySelectorAll('li')];
+      items.forEach(li => {
+        li.addEventListener('dragstart', () => { _dragSrcIdx = Number(li.dataset.idx); });
+        li.addEventListener('dragover', e => {
+          e.preventDefault();
+          items.forEach(el => el.classList.remove('drag-over-top', 'drag-over-bot'));
+          const rect = li.getBoundingClientRect();
+          li.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drag-over-top' : 'drag-over-bot');
+        });
+        li.addEventListener('dragleave', () => li.classList.remove('drag-over-top', 'drag-over-bot'));
+        li.addEventListener('drop', e => {
+          e.preventDefault();
+          const dropIdx = Number(li.dataset.idx);
+          li.classList.remove('drag-over-top', 'drag-over-bot');
+          if (_dragSrcIdx === null || _dragSrcIdx === dropIdx) return;
+          const rect = li.getBoundingClientRect();
+          const insertAfter = e.clientY >= rect.top + rect.height / 2;
+          const newOrder = [...behindLayerOrder];
+          const [moved] = newOrder.splice(_dragSrcIdx, 1);
+          const target = dropIdx > _dragSrcIdx ? dropIdx - 1 : dropIdx;
+          newOrder.splice(insertAfter ? target + 1 : target, 0, moved);
+          behindLayerOrder = newOrder;
+          renderLayerList();
+          rebuildActiveBackCanvas();
+        });
+      });
+      list.addEventListener('dragend', () => items.forEach(el => el.classList.remove('drag-over-top', 'drag-over-bot')));
+    }
+
+    async function rebuildActiveBackCanvas() {
+      if (activeIndex < 0 || !records[activeIndex]?.profile) return;
+      const record = records[activeIndex];
+      const size = cfg.previewPortraitCanvasSize || 200;
+      const backCanvas = document.createElement('canvas');
+      backCanvas.width = size;
+      backCanvas.height = size;
+      await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, record.profile, {
+        portraitView: 'behind', behindLayerOrder,
+      });
+      record.backCanvas = backCanvas;
+      setActiveModel(record, activeIndex);
+    }
+
+    document.getElementById('reset-layers').addEventListener('click', () => {
+      behindLayerOrder = BEHIND_LAYER_DEFS.map(d => d.key);
+      renderLayerList();
+      rebuildActiveBackCanvas();
+    });
+
+    renderLayerList();
 
     function log(text) { statusEl.textContent = text; }
     function esc(text) { return String(text || '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch])); }

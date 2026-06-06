@@ -972,26 +972,25 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   };
 
   if (renderBehindView) {
-    ctx.save();
-    ctx.translate(PORTRAIT_CW, 0);
-    ctx.scale(-1, 1);
-    drawEmoteLayers(preBackLayers);
-    drawBreathingLayers(torsoClothingLayers);
-    drawBreathingLayers(overwearLayers);
-    drawEmoteLayers(hatUnderLayers);
-    drawBreathingLayers(hoodLayers);
-    drawEmoteLayers(pauldronLayers);
-    drawEmoteLayers(hatOverLayers);
-    drawEmoteLayers(behindSnowgogglesLayers);
-    drawBreathingLayers(baseLeftArmLayers);
-    drawEmoteLayers(rightSideHairLayers);
-    if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), filterA); }
-    drawEmoteLayers(facialHairLayers);
-    drawEmoteLayers(sideLeftLayers);
-    drawEmoteLayers(frontHairLayers);
-    drawBreathingLayers(baseTorsoLayers);
-    drawBreathingLayers(baseRightArmLayers);
-    ctx.restore();
+    const _behindDraw = {
+      sideLeft:      () => drawEmoteLayers(sideLeftLayers),
+      rightSideHair: () => drawEmoteLayers(rightSideHairLayers),
+      baseLeftArm:   () => drawBreathingLayers(baseLeftArmLayers),
+      baseTorso:     () => drawBreathingLayers(baseTorsoLayers),
+      baseRightArm:  () => drawBreathingLayers(baseRightArmLayers),
+      head:          () => { if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), filterA); } },
+      torsoClothing: () => drawBreathingLayers(torsoClothingLayers),
+      overwear:      () => drawBreathingLayers(overwearLayers),
+      hatUnder:      () => drawEmoteLayers(hatUnderLayers),
+      hood:          () => drawBreathingLayers(hoodLayers),
+      pauldron:      () => drawEmoteLayers(pauldronLayers),
+      hatOver:       () => drawEmoteLayers(hatOverLayers),
+      snowgoggles:   () => drawEmoteLayers(behindSnowgogglesLayers),
+      hairBack:      () => drawEmoteLayers(preBackLayers),
+    };
+    for (const key of (renderOptions?.behindLayerOrder || renderProfile.defaultBehindLayerOrder)) {
+      _behindDraw[key]?.();
+    }
     if (opacityMaskLayer?.url) {
       const maskImg = imgMap.get(opacityMaskLayer.url);
       if (maskImg) applyPortraitOpacityMask(ctx, maskImg, resolveXform(opacityMaskLayer));
@@ -2035,6 +2034,15 @@ window.setPortraitConfig = setPortraitConfig;
 window.getPortraitFighters = () => FIGHTERS;
 window.preloadAllPortraitSprites = preloadAllPortraitSprites;
 window.getPortraitXformPreset = getPortraitXformPreset;
+
+renderProfile.defaultBehindLayerOrder = [
+  'sideLeft', 'rightSideHair',
+  'baseLeftArm', 'baseTorso', 'baseRightArm',
+  'head',
+  'torsoClothing', 'overwear', 'hatUnder', 'hood', 'pauldron', 'hatOver',
+  'snowgoggles',
+  'hairBack',
+];
 
 window.loadPortraitCosmetics = loadPortraitCosmetics;
 window.renderPortraitProfile = renderProfile;

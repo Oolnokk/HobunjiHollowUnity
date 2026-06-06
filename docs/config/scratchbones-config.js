@@ -3059,10 +3059,6 @@ window.SCRATCHBONES_CONFIG = {
               "url": "cosmetics/appearance/shared/braidcluster-R-behind.png"
             },
             {
-              "idIncludes": ["braid-r"],
-              "url": "cosmetics/appearance/shared/braid-R-behind.png"
-            },
-            {
               "hairSlot": "back",
               "idIncludes": ["longponytail", "long-ponytail", "ponytail"],
               "url": "cosmetics/appearance/shared/longponytail-behind.png"
