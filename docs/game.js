@@ -2647,6 +2647,83 @@
         const mesh = new THREE.Mesh(geo, tileMats.grass);
         mesh.receiveShadow = true;
         scene.add(mesh);
+
+        // ── Inner cliff walls: stone faces along the playable boundary ─────────
+        const WALL_BASE    = -SLAB_H * 0.5;  // just below ground level
+        const WALL_MIN_TOP = 1.5;             // minimum wall height
+
+        const cliffMat = new THREE.MeshLambertMaterial({ color: 0x5c6160, side: THREE.DoubleSide });
+
+        // Max terrain height over the first BLEND_STEPS vertex rows in direction dj
+        function wallTopH(gi, gj_seam, dj) {
+          let maxH = WALL_MIN_TOP;
+          for (let step = 1; step <= BLEND_STEPS; step++) {
+            const gj = gj_seam + dj * step;
+            if (gj < 0 || gj >= GH) break;
+            const gi_c = Math.min(Math.max(0, gi), GW - 1);
+            maxH = Math.max(maxH, Y[gj * GW + gi_c]);
+          }
+          return maxH;
+        }
+
+        // Max terrain height over the first BLEND_STEPS vertex cols in direction di
+        function wallTopHX(gi_seam, di, gj) {
+          let maxH = WALL_MIN_TOP;
+          for (let step = 1; step <= BLEND_STEPS; step++) {
+            const gi = gi_seam + di * step;
+            if (gi < 0 || gi >= GW) break;
+            const gj_c = Math.min(Math.max(0, gj), GH - 1);
+            maxH = Math.max(maxH, Y[gj_c * GW + gi]);
+          }
+          return maxH;
+        }
+
+        function buildWallStrip(edgePts) {
+          const n = edgePts.length;
+          const positions = [];
+          const wIdx = [];
+          let vi = 0;
+          for (let s = 0; s < n - 1; s++) {
+            const p0 = edgePts[s], p1 = edgePts[s + 1];
+            positions.push(p0.x, WALL_BASE, p0.z,
+                           p1.x, WALL_BASE, p1.z,
+                           p0.x, p0.topY,  p0.z,
+                           p1.x, p1.topY,  p1.z);
+            wIdx.push(vi, vi+2, vi+3, vi, vi+3, vi+1);
+            vi += 4;
+          }
+          const wGeo = new THREE.BufferGeometry();
+          wGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+          wGeo.setIndex(new THREE.BufferAttribute(new Uint16Array(wIdx), 1));
+          wGeo.computeVertexNormals();
+          const wMesh = new THREE.Mesh(wGeo, cliffMat);
+          wMesh.receiveShadow = true;
+          scene.add(wMesh);
+        }
+
+        // North wall (seam gj=BV, border goes north: dj=-1)
+        const northPts = [];
+        for (let gi = BV; gi <= BV + PVW; gi++)
+          northPts.push({ x: (gi - BV) * 0.5, z: 0, topY: wallTopH(gi, BV, -1) });
+        buildWallStrip(northPts);
+
+        // South wall (seam gj=BV+PVH, border goes south: dj=+1)
+        const southPts = [];
+        for (let gi = BV; gi <= BV + PVW; gi++)
+          southPts.push({ x: (gi - BV) * 0.5, z: ROWS, topY: wallTopH(gi, BV + PVH, +1) });
+        buildWallStrip(southPts);
+
+        // West wall (seam gi=BV, border goes west: di=-1)
+        const westPts = [];
+        for (let gj = BV; gj <= BV + PVH; gj++)
+          westPts.push({ x: 0, z: (gj - BV) * 0.5, topY: wallTopHX(BV, -1, gj) });
+        buildWallStrip(westPts);
+
+        // East wall (seam gi=BV+PVW, border goes east: di=+1)
+        const eastPts = [];
+        for (let gj = BV; gj <= BV + PVH; gj++)
+          eastPts.push({ x: COLS, z: (gj - BV) * 0.5, topY: wallTopHX(BV + PVW, +1, gj) });
+        buildWallStrip(eastPts);
       }
 
       const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
@@ -2986,6 +3063,19 @@
         const tile = grid[row][col];
         const mat  = tileMats[tile.type] || tileMats.grass;
 
+        if (tile.type === TileType.ROCK && window.FoliageGenerator) {
+          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), tileMats.rock);
+          floorMesh.castShadow = floorMesh.receiveShadow = true;
+          floorMesh.position.set(col + 0.5, NORMAL_TOP - SLAB_H / 2, row + 0.5);
+          scene.add(floorMesh);
+          tileMeshes[i] = floorMesh;
+          const boulderGroup = window.FoliageGenerator.buildBoulderMesh(col, row);
+          boulderGroup.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+          scene.add(boulderGroup);
+          vegFoliageMeshes[i] = boulderGroup;
+          return;
+        }
+
         if ((tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) && window.FoliageGenerator) {
           // Grass floor slab underneath the vegetation
           const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), vegFloorMat);
@@ -2998,11 +3088,9 @@
           let vegGroup;
 
           if (tile.type === TileType.SHRUB) {
-            // Single shrub, 2x scale
-            vegGroup = window.FoliageGenerator.buildShrubMesh(col, row);
+            vegGroup = window.FoliageGenerator.buildJungleTreeMesh(col, row);
             vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
-            vegGroup._windAmp   = 0.06;
-            vegGroup.scale.set(2, 2, 2);
+            vegGroup._windAmp   = 0.04;
             vegGroup.position.set(col + 0.5, surfY, row + 0.5);
           } else {
             // WEEDS: scatter 3-5 plants across the tile with varied seeds
