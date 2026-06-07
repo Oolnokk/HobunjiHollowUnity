@@ -2764,68 +2764,46 @@
         mesh.receiveShadow = true;
         scene.add(mesh);
 
-        // ── Stone cliff skin: stone overlay on steep terrain cliff faces ────────
-        // The near-vertical triangles at the rim transition use the grass material;
-        // these slope-matching quads sit coplanar (polygonOffset) with stone color.
-        const CLIFF_DROP_MIN = 0.5;
-        const CLIFF_ROWS     = 12;
+        // ── Stone cliff skin: elevation-based overlay on border terrain ──────────
+        // Any border-zone cell whose average corner height exceeds STONE_H_MIN
+        // gets a stone-coloured quad coplanar with the terrain (polygonOffset on top).
+        // Covers the full cliff face regardless of slope steepness.
+        const STONE_H_MIN = NORMAL_TOP + 0.8;
         const cliffMat = new THREE.MeshLambertMaterial({
           color: 0x6a6460, side: THREE.DoubleSide,
           polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
         });
 
-        // Stone skin stepping in the gj (Z) direction
-        function cliffSkinZ(gj_start, numRows, di) {
-          const positions = [], idx = [];
+        function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
+          const positions = [], idxArr = [];
           let vi = 0;
-          for (let r = 0; r < numRows; r++) {
-            const gj0 = gj_start + r * di, gj1 = gj0 + di;
-            if (gj1 < 0 || gj1 >= GH) break;
-            for (let gi = 0; gi < GW - 1; gi++) {
-              const y00=Y[gj0*GW+gi],y10=Y[gj0*GW+gi+1];
-              const y01=Y[gj1*GW+gi],y11=Y[gj1*GW+gi+1];
-              if ((y00+y10)*0.5-(y01+y11)*0.5 < CLIFF_DROP_MIN) continue;
-              const x0=(gi-BV)*0.5,x1=x0+0.5,z0=(gj0-BV)*0.5,z1=(gj1-BV)*0.5;
+          for (let gj = gjMin; gj < gjMax; gj++) {
+            for (let gi = giMin; gi < giMax; gi++) {
+              const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
+              const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
+              if ((y00+y10+y01+y11)*0.25 < STONE_H_MIN) continue;
+              const x0=(gi-BV)*0.5, x1=x0+0.5;
+              const z0=(gj-BV)*0.5, z1=z0+0.5;
               positions.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
-              idx.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
+              idxArr.push(vi,vi+1,vi+3, vi,vi+3,vi+2); vi+=4;
             }
           }
           if (!positions.length) return;
           const g = new THREE.BufferGeometry();
           g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          g.setIndex(new THREE.BufferAttribute(new Uint32Array(idxArr), 1));
           g.computeVertexNormals();
           scene.add(new THREE.Mesh(g, cliffMat));
         }
 
-        // Stone skin stepping in the gi (X) direction
-        function cliffSkinX(gi_start, numRows, di) {
-          const positions = [], idx = [];
-          let vi = 0;
-          for (let r = 0; r < numRows; r++) {
-            const gi0 = gi_start + r * di, gi1 = gi0 + di;
-            if (gi1 < 0 || gi1 >= GW) break;
-            for (let gj = 0; gj < GH - 1; gj++) {
-              const y00=Y[gj*GW+gi0],    y10=Y[(gj+1)*GW+gi0];
-              const y01=Y[gj*GW+gi1],    y11=Y[(gj+1)*GW+gi1];
-              if ((y00+y10)*0.5-(y01+y11)*0.5 < CLIFF_DROP_MIN) continue;
-              const z0=(gj-BV)*0.5,z1=z0+0.5,x0=(gi0-BV)*0.5,x1=(gi1-BV)*0.5;
-              positions.push(x0,y00,z0, x0,y10,z1, x1,y01,z0, x1,y11,z1);
-              idx.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
-            }
-          }
-          if (!positions.length) return;
-          const g = new THREE.BufferGeometry();
-          g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
-          g.computeVertexNormals();
-          scene.add(new THREE.Mesh(g, cliffMat));
-        }
-
-        cliffSkinZ(RIM_V,        CLIFF_ROWS, +1);  // North inner face → farm
-        cliffSkinZ(GH-1-RIM_V,   CLIFF_ROWS, -1);  // South inner face → farm
-        cliffSkinX(RIM_V,        CLIFF_ROWS, +1);  // West inner face → farm
-        cliffSkinX(GW-1-RIM_V,   CLIFF_ROWS, -1);  // East inner face → farm
+        // North border strip (full width)
+        elevStoneSkin(0,           BV,          0,          GW - 1);
+        // South border strip (full width)
+        elevStoneSkin(GH - 1 - BV, GH - 1,      0,          GW - 1);
+        // West border strip (middle rows — corners already covered by N/S)
+        elevStoneSkin(BV,          GH - 1 - BV, 0,          BV);
+        // East border strip (middle rows)
+        elevStoneSkin(BV,          GH - 1 - BV, GW - 1 - BV, GW - 1);
       }
 
       const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
