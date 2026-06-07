@@ -3399,7 +3399,7 @@
         // Rotation-based wind sway for procedural foliage groups
         const windScale = windStrBase / 0.03;
         for (const fg of vegFoliageMeshes) {
-          if (!fg) continue;
+          if (!fg || !fg._windAmp) continue;
           const amp = fg._windAmp * windScale;
           fg.rotation.z = amp * Math.sin(windTime * 1.6 + fg._windPhase);
           fg.rotation.x = amp * 0.45 * Math.cos(windTime * 1.1 + fg._windPhase * 1.3);
