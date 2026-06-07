@@ -87,20 +87,35 @@
 
   // Mirror-only single-plane avatar for animals. No back plane, no rotation —
   // the plane always faces the camera (which is permanently to the +Z / south).
-  // Call setFlipped(true/false) to mirror the sprite based on movement direction.
-  function buildAnimalPlaneAvatarModel(THREE, sourceImage, options = {}) {
+  // Uses TextureLoader so the image is fully decoded before rendering.
+  // Call setFlipped(true/false) to mirror via UV transform (no canvas re-draw).
+  function buildAnimalPlaneAvatarModel(THREE, spriteUrl, options = {}) {
     if (!THREE) throw new Error('THREE is required.');
-    if (!sourceImage) throw new Error('A source image is required.');
-    const pxW = sourceImage.naturalWidth || sourceImage.width;
-    const pxH = sourceImage.naturalHeight || sourceImage.height;
-    const aspectH = pxH / Math.max(1, pxW);
+    if (!spriteUrl) throw new Error('A sprite URL is required.');
     const modelWidth  = options.modelWidth  ?? cfg().modelWidth ?? 1;
-    const modelHeight = options.modelHeight ?? modelWidth * aspectH;
+    const modelHeight = options.modelHeight ?? modelWidth;
 
-    const normalTex  = makeTextureFromCanvas(THREE, makeVariantCanvas(sourceImage),                  'animal_normal_tex');
-    const flippedTex = makeTextureFromCanvas(THREE, makeVariantCanvas(sourceImage, { flipX: true }), 'animal_flipped_tex');
+    const loader = new THREE.TextureLoader();
 
-    const mat  = makeSpriteMaterial(THREE, normalTex, 'animal_sprite_mat');
+    const normalTex = loader.load(spriteUrl);
+    normalTex.colorSpace = THREE.SRGBColorSpace;
+
+    // Flipped: same image, mirrored horizontally via UV repeat/offset
+    const flippedTex = loader.load(spriteUrl);
+    flippedTex.colorSpace = THREE.SRGBColorSpace;
+    flippedTex.wrapS = THREE.RepeatWrapping;
+    flippedTex.repeat.set(-1, 1);
+    flippedTex.offset.set(1, 0);
+
+    const mat = new THREE.MeshBasicMaterial({
+      name: 'animal_sprite_mat',
+      map: normalTex,
+      transparent: true,
+      alphaTest: cfg().alphaTest ?? 0.001,
+      side: THREE.FrontSide,
+      depthWrite: false,
+    });
+
     const geo  = new THREE.PlaneGeometry(modelWidth, modelHeight);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 2;

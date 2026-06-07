@@ -742,15 +742,13 @@
       }
 
       function makeUumkaoiiAnimal(col, row) {
-        if (!uumkaoiiSpriteImage || !uumkaoiiSpriteImage.complete) return null;
+        if (!uumkaoiiSpriteImage || !uumkaoiiSpriteImage.naturalWidth) return null;
 
         const ANIMAL_W = 0.85;
-        const pxW = uumkaoiiSpriteImage.naturalWidth;
-        const pxH = uumkaoiiSpriteImage.naturalHeight;
-        const ANIMAL_H = ANIMAL_W * (pxH / Math.max(1, pxW));
+        const ANIMAL_H = ANIMAL_W * (uumkaoiiSpriteImage.naturalHeight / uumkaoiiSpriteImage.naturalWidth);
         const halfH = ANIMAL_H / 2;
 
-        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, uumkaoiiSpriteImage, {
+        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, "assets/creaturesprites/uumkao'ii.png", {
           modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
           name: 'uumkaoii_' + col + '_' + row,
         });
