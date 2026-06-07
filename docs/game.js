@@ -2596,7 +2596,7 @@
             const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
             const tgt = Math.max(Y[v00], Y[v10], Y[v01], Y[v11]) > 0.05
               ? stoneIdx : grassIdx;
-            tgt.push(v00, v10, v11, v00, v11, v01);
+            tgt.push(v00, v01, v11, v00, v11, v10);
           }
 
         const posAttr = new THREE.Float32BufferAttribute(positions, 3);
@@ -2798,7 +2798,7 @@
               const x0=(gi-BV)*0.5, x1=x0+0.5;
               const z0=(gj-BV)*0.5, z1=z0+0.5;
               positions.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
-              idxArr.push(vi,vi+1,vi+3, vi,vi+3,vi+2); vi+=4;
+              idxArr.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
             }
           }
           if (!positions.length) return;
