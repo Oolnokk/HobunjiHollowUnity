@@ -85,6 +85,64 @@
     return group;
   }
 
+  // Two-plane side-view avatar for animals.
+  // The sprite is a side-on image (left edge = creature front/face).
+  // frontMesh rotation.y = +PI/2 → visible from camera when group faces west (rotation.y = -PI/2).
+  // backMesh  rotation.y = -PI/2 → visible from camera when group faces east (rotation.y = +PI/2).
+  // Back texture is the same sprite UV-flipped horizontally; no runtime setFlipped() needed.
+  // Returns { group, dispose() }.
+  function buildAnimalPlaneAvatarModel(THREE, spriteUrl, options = {}) {
+    if (!THREE) throw new Error('THREE is required.');
+    if (!spriteUrl) throw new Error('A sprite URL is required.');
+    const modelWidth  = options.modelWidth  ?? cfg().modelWidth ?? 1;
+    const modelHeight = options.modelHeight ?? modelWidth;
+
+    const loader = new THREE.TextureLoader();
+
+    const frontTex = loader.load(spriteUrl);
+    frontTex.colorSpace = THREE.SRGBColorSpace;
+
+    const backTex = loader.load(spriteUrl);
+    backTex.colorSpace = THREE.SRGBColorSpace;
+    backTex.wrapS = THREE.RepeatWrapping;
+    backTex.repeat.set(-1, 1);
+    backTex.offset.set(1, 0);
+
+    const matOpts = { transparent: true, alphaTest: cfg().alphaTest ?? 0.001, side: THREE.FrontSide, depthWrite: false };
+    const frontMat = new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_front_mat', map: frontTex });
+    const backMat  = new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_back_mat',  map: backTex  });
+
+    const frontGeo = new THREE.PlaneGeometry(modelWidth, modelHeight);
+    const backGeo  = frontGeo.clone();
+
+    const frontMesh = new THREE.Mesh(frontGeo, frontMat);
+    frontMesh.rotation.y = Math.PI / 2;
+    frontMesh.renderOrder = 2;
+    frontMesh.name = (options.name || 'animal') + '_front_plane';
+
+    const backMesh = new THREE.Mesh(backGeo, backMat);
+    backMesh.rotation.y = -Math.PI / 2;
+    backMesh.renderOrder = 2;
+    backMesh.name = (options.name || 'animal') + '_back_plane';
+
+    const group = new THREE.Group();
+    group.name = (options.name || 'animal_plane') + '_group';
+    group.add(frontMesh);
+    group.add(backMesh);
+
+    return {
+      group,
+      dispose() {
+        frontGeo.dispose();
+        backGeo.dispose();
+        frontMat.dispose();
+        backMat.dispose();
+        frontTex.dispose();
+        backTex.dispose();
+      },
+    };
+  }
+
   function buildSinglePlaneAvatarModel(THREE, sourceCanvas, options = {}) {
     if (!THREE) throw new Error('THREE is required to build an NPC plane avatar model.');
     if (!sourceCanvas) throw new Error('A source canvas or image is required to build an NPC plane avatar model.');
@@ -142,6 +200,7 @@
 
   window.PNGPlaneAvatar = {
     makeVariantCanvas,
+    buildAnimalPlaneAvatarModel,
     buildSinglePlaneAvatarModel,
     disposeAvatarModel,
     loadThreeModules,
