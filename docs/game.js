@@ -2764,11 +2764,11 @@
         mesh.receiveShadow = true;
         scene.add(mesh);
 
-        // ── Stone cliff skin: elevation-based overlay on border terrain ──────────
-        // Any border-zone cell whose average corner height exceeds STONE_H_MIN
-        // gets a stone-coloured quad coplanar with the terrain (polygonOffset on top).
-        // Covers the full cliff face regardless of slope steepness.
-        const STONE_H_MIN = NORMAL_TOP + 0.8;
+        // ── Stone cliff skin: normal-based overlay on border terrain ─────────────
+        // Matches the landscape generator's rule: faces with |normal.y| < 0.75
+        // (steeper than ~41° from horizontal) are stone; shallower faces are grass.
+        // For a 0.5×0.5 cell the diagonal cross product has cny=0.5 always, so the
+        // threshold reduces to cnx²+cnz² > 0.194 — no sqrt required.
         const cliffMat = new THREE.MeshLambertMaterial({
           color: 0x6a6460, side: THREE.DoubleSide,
           polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
@@ -2781,7 +2781,10 @@
             for (let gi = giMin; gi < giMax; gi++) {
               const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
               const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
-              if ((y00+y10+y01+y11)*0.25 < STONE_H_MIN) continue;
+              // Cross product of quad diagonals (SE-NW) × (NE-SW); cny = 0.5 always.
+              const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+              const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
+              if (cnx * cnx + cnz * cnz <= 0.194) continue;  // near-horizontal → grass
               const x0=(gi-BV)*0.5, x1=x0+0.5;
               const z0=(gj-BV)*0.5, z1=z0+0.5;
               positions.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
