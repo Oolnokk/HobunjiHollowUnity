@@ -85,6 +85,49 @@
     return group;
   }
 
+  // Mirror-only single-plane avatar for animals. No back plane, no rotation —
+  // the plane always faces the camera (which is permanently to the +Z / south).
+  // Call setFlipped(true/false) to mirror the sprite based on movement direction.
+  function buildAnimalPlaneAvatarModel(THREE, sourceImage, options = {}) {
+    if (!THREE) throw new Error('THREE is required.');
+    if (!sourceImage) throw new Error('A source image is required.');
+    const pxW = sourceImage.naturalWidth || sourceImage.width;
+    const pxH = sourceImage.naturalHeight || sourceImage.height;
+    const aspectH = pxH / Math.max(1, pxW);
+    const modelWidth  = options.modelWidth  ?? cfg().modelWidth ?? 1;
+    const modelHeight = options.modelHeight ?? modelWidth * aspectH;
+
+    const normalTex  = makeTextureFromCanvas(THREE, makeVariantCanvas(sourceImage),                  'animal_normal_tex');
+    const flippedTex = makeTextureFromCanvas(THREE, makeVariantCanvas(sourceImage, { flipX: true }), 'animal_flipped_tex');
+
+    const mat  = makeSpriteMaterial(THREE, normalTex, 'animal_sprite_mat');
+    const geo  = new THREE.PlaneGeometry(modelWidth, modelHeight);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 2;
+    mesh.name = options.name || 'animal_plane_mesh';
+
+    const group = new THREE.Group();
+    group.name = (options.name || 'animal_plane') + '_group';
+    group.add(mesh);
+
+    let isFlipped = false;
+    return {
+      group,
+      setFlipped(flipped) {
+        if (flipped === isFlipped) return;
+        isFlipped = flipped;
+        mat.map = isFlipped ? flippedTex : normalTex;
+        mat.needsUpdate = true;
+      },
+      dispose() {
+        geo.dispose();
+        mat.dispose();
+        normalTex.dispose();
+        flippedTex.dispose();
+      },
+    };
+  }
+
   function buildSinglePlaneAvatarModel(THREE, sourceCanvas, options = {}) {
     if (!THREE) throw new Error('THREE is required to build an NPC plane avatar model.');
     if (!sourceCanvas) throw new Error('A source canvas or image is required to build an NPC plane avatar model.');
@@ -142,6 +185,7 @@
 
   window.PNGPlaneAvatar = {
     makeVariantCanvas,
+    buildAnimalPlaneAvatarModel,
     buildSinglePlaneAvatarModel,
     disposeAvatarModel,
     loadThreeModules,

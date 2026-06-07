@@ -428,7 +428,7 @@
       const LIVESTOCK_CATALOG = [
         { key: 'puktuk',   icon: '🐐', name: 'Puktuk',   desc: 'Coming soon: meat, milk, and wool livestock.', price: 120, comingSoon: true },
         { key: 'nelk',     icon: '🐔', name: 'Nelk',     desc: 'Coming soon: meat, eggs, and mayonnaise chain.', price: 90,  comingSoon: true },
-        { key: 'uumkaoii', icon: '🦆', name: 'Uumkao’ii', desc: 'Coming soon: meat, eggs, dews, cheese, butter, and mayonnaise.', price: 150, comingSoon: true },
+        { key: ‘uumkaoiiCrate’, icon: ‘🦆’, name: ‘Uumkao\’ii Crate’, desc: ‘A travel crate with one uumkao\’ii inside. Select it in your bag and release it on any open tile.’, price: 150, gives: { uumkaoiiCrate: 1 }, category: ‘livestock’ },
         { key: 'nazgraku', icon: '🦃', name: 'Nazgraku', desc: 'Coming soon: meat, eggs, and combat-leaning produce.', price: 160, comingSoon: true },
         { key: 'drenkirra', icon: '🪿', name: 'Drenkirra', desc: 'Coming soon: meat, eggs, and agile produce.', price: 140, comingSoon: true },
         { key: 'grehlr',   icon: '🦨', name: 'Grehlr',   desc: 'Coming soon: meat and denatured stink oil.', price: 130, comingSoon: true },
@@ -462,6 +462,11 @@
       let shippingBoxObject = null; // Used by the Shipping menu pane to read/write the active sell crate contents.
       let supplyBoxObject = null; // Used by the Supplies menu pane to read/write supply order quantities.
       const processingFurnitureObjects = new Set(); // Used by reset and debug to track player-placed processing furniture.
+      const animalObjects = new Set(); // Tracks all live animal world objects for update loop and reset.
+
+      // Preload uumkao'ii sprite; animals check this before spawning.
+      let uumkaoiiSpriteImage = null;
+      { const _img = new Image(); _img.onload = () => { uumkaoiiSpriteImage = _img; }; _img.src = "assets/creaturesprites/uumkao'ii.png"; }
 
       // ── Sell Crate ────────────────────────────────────────────────
       function makeSellCrate(col, row) {
@@ -727,6 +732,112 @@
         processingFurnitureObjects.clear();
       }
 
+      // ── Animal system ─────────────────────────────────────────────
+      function canSpawnAnimalAt(col, row) {
+        const tile = grid[row]?.[col];
+        if (!tile || getWorldObjectAt(col, row)) return false;
+        if (tile.crop || isSolid(tile.type) || tile.type === TileType.TRENCH) return false;
+        return true;
+      }
+
+      function makeUumkaoiiAnimal(col, row) {
+        if (!uumkaoiiSpriteImage || !uumkaoiiSpriteImage.complete) return null;
+
+        const ANIMAL_W = 0.85;
+        const pxW = uumkaoiiSpriteImage.naturalWidth;
+        const pxH = uumkaoiiSpriteImage.naturalHeight;
+        const ANIMAL_H = ANIMAL_W * (pxH / Math.max(1, pxW));
+        const halfH = ANIMAL_H / 2;
+
+        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, uumkaoiiSpriteImage, {
+          modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
+          name: 'uumkaoii_' + col + '_' + row,
+        });
+
+        const initSurfY = tileSurfaceY(grid[row][col].type);
+        avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
+        scene.add(avatarRef.group);
+
+        let tickCounter = 0;
+        const animal = {
+          id: 'uumkaoii_' + col + '_' + row + '_' + (performance.now() | 0),
+          type: 'animal', animalKey: 'uumkaoii',
+          col, row, targetCol: col, targetRow: row,
+          wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
+          halfHeight: halfH, lastMoveX: 0, avatarRef,
+
+          getButtons() {
+            return [{ icon: '🦆', label: "Uumkao'ii", action: 'obj_uumkaoii_' + this.id, style: 'secondary', allowed: false }];
+          },
+          onAction() {
+            return { ok: false, message: "The uumkao'ii ignores you." };
+          },
+          tick() {
+            tickCounter++;
+            if (tickCounter % 3 !== 0) return;   // move every ~3 ticks
+            if (Math.random() > 0.55) return;     // ~45 % chance to wander each opportunity
+
+            const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
+            for (let i = dirs.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+            }
+            for (const d of dirs) {
+              const nc = this.col + d.dc, nr = this.row + d.dr;
+              if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+              if (!canSpawnAnimalAt(nc, nr)) continue;
+              worldObjects.delete(this.col + ',' + this.row);
+              this.col = nc; this.row = nr;
+              this.targetCol = nc; this.targetRow = nr;
+              worldObjects.set(nc + ',' + nr, this);
+              if (d.dc !== 0) this.lastMoveX = d.dc;
+              break;
+            }
+          },
+          update(dt) {
+            const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
+            const tile = grid[this.targetRow]?.[this.targetCol];
+            const ty = tile ? tileSurfaceY(tile.type) + this.halfHeight : this.wy;
+            const sp = Math.min(1, dt * 4);
+            this.wx += (tx - this.wx) * sp;
+            this.wz += (tz - this.wz) * sp;
+            this.wy += (ty - this.wy) * sp;
+            this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
+            this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
+            if (this.lastMoveX !== 0) this.avatarRef.setFlipped(this.lastMoveX > 0);
+          },
+          reset() {
+            scene.remove(avatarRef.group);
+            avatarRef.dispose();
+          },
+        };
+        return animal;
+      }
+
+      function spawnUumkaoii(col, row) {
+        if (!canSpawnAnimalAt(col, row)) return { ok: false, message: 'The uumkao\'ii can\'t be released here.' };
+        if ((inventory.uumkaoiiCrate || 0) < 1) return { ok: false, message: 'No Uumkao\'ii Crate in bag.' };
+        const animal = makeUumkaoiiAnimal(col, row);
+        if (!animal) return { ok: false, message: 'Sprite still loading — try again in a moment.' };
+        inventory.uumkaoiiCrate--;
+        clampInventoryStack('uumkaoiiCrate');
+        worldObjects.set(col + ',' + row, animal);
+        animalObjects.add(animal);
+        return { ok: true, message: "🦆 Uumkao'ii released!" };
+      }
+
+      function clearAnimalObjects() {
+        animalObjects.forEach(obj => {
+          worldObjects.delete(obj.col + ',' + obj.row);
+          obj.reset && obj.reset();
+        });
+        animalObjects.clear();
+      }
+
+      function updateAnimalMeshes(dt) {
+        for (const animal of animalObjects) animal.update(dt);
+      }
+
       function processButtonLabel(methodId, inputKey, output) {
         const methodVerb = ({ mashing: 'Mash', squeezing: 'Squeeze', grinding: 'Grind', drying: 'Dry', smoking: 'Smoke', barrelAging: 'Age', vaseAging: 'Age' })[methodId] || 'Process';
         return methodVerb + ' → ' + output.icon;
@@ -932,6 +1043,7 @@
         { key: 'blackMustard',       icon: '⚫', label: 'BLACK MUSTARD',     max: 99 },
         { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSTARD',     max: 99 },
         { key: 'mulch',              icon: '🍂', label: 'MULCH',            max: 99 },
+        { key: 'uumkaoiiCrate',      icon: '🦆', label: 'UUMKAO\'II CRATE',  max: 9  },
       ];
 
       // ── Item definitions for Inventory panel ──────────────────────
@@ -959,6 +1071,7 @@
         blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: 10, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
         greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: 9, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
+        uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
       };
 
       Object.values(PROCESSING_FURNITURE_DEFS).forEach(def => {
@@ -1820,6 +1933,8 @@
           result = obj ? obj.onAction(activeAction) : { ok: false, message: 'No object here.' };
         } else if (activeAction.startsWith('place_')) {
           result = placeProcessingFurniture(reticle.col, reticle.row, activeAction.slice(6));
+        } else if (activeAction === 'spawn_uumkaoii') {
+          result = spawnUumkaoii(reticle.col, reticle.row);
         } else if (activeAction.startsWith('plant_')) {
           result = plantCrop(tile, activeAction.slice(6));
         } else if (activeAction === 'harvest') {
@@ -2959,6 +3074,7 @@
         updateWaterMeshes();
         updateCropMeshes();
         updatePlayerMesh(dt);
+        updateAnimalMeshes(dt);
         updateToolMesh(dt);
         updateReticleMesh();
         updateThreeLighting();
@@ -3355,6 +3471,16 @@
               allowed: count > 0 && canPlaceFurnitureAt(reticle.col, reticle.row),
             });
           }
+          if (item.key === 'uumkaoiiCrate') {
+            const count = inventory.uumkaoiiCrate || 0;
+            btns.push({
+              icon: '🦆',
+              label: count > 0 ? `Release (${count})` : 'No crate',
+              action: 'spawn_uumkaoii',
+              style: 'plant',
+              allowed: count > 0 && canSpawnAnimalAt(reticle.col, reticle.row),
+            });
+          }
         }
 
         // 3. Context: Harvest button if reticled tile has a ready crop
@@ -3379,7 +3505,7 @@
         const tile    = grid[reticle.row][reticle.col];
 
         const obj = getWorldObjectAt(reticle.col, reticle.row);
-        const key = `${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}`;
+        const key = `${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -3392,8 +3518,8 @@
         if (!needsRebuild) return;
 
         // Split into tool actions (dig/fill/till/cut…) vs item actions (plant_*/harvest)
-        const toolBtns = btns.filter(b => !b.action.startsWith('plant_') && !b.action.startsWith('place_') && b.action !== 'harvest');
-        const itemBtns = btns.filter(b =>  b.action.startsWith('plant_') || b.action.startsWith('place_') || b.action === 'harvest');
+        const toolBtns = btns.filter(b => !b.action.startsWith('plant_') && !b.action.startsWith('place_') && !b.action.startsWith('spawn_') && b.action !== 'harvest');
+        const itemBtns = btns.filter(b =>  b.action.startsWith('plant_') || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest');
 
         const DESK_KEYS = ['E', 'Q', 'F3', 'F4'];
 
@@ -3751,6 +3877,7 @@
         Object.keys(inventory).forEach(key => { delete inventory[key]; });
         Object.assign(inventory, { ...STARTING_INVENTORY });
         clearPlacedProcessingFurniture();
+        clearAnimalObjects();
         worldObjects.forEach(o => o.reset && o.reset());
         grid = createInitialGrid();
         player.x = COLS * TILE * 0.5;
