@@ -3006,8 +3006,9 @@
       }
 
       function tickCropDay() {
-        for (const row of grid) {
-          for (const tile of row) {
+        for (let row = 0; row < ROWS; row++) {
+          for (let col = 0; col < COLS; col++) {
+            const tile = grid[row][col];
             if (!tile.crop) continue;
             const data = cropData[tile.crop];
             const mul = cropGrowthMultiplier(tile, col, row);

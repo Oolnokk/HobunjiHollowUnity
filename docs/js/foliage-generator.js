@@ -239,10 +239,10 @@ window.FoliageGenerator = (() => {
 
         // Mask: skip needles near top (0) and bottom (PI) of cross-section
         if (maskTopRad > 1e-6 || maskBotRad > 1e-6) {
-          const wrapPi = a => { a = (a + Math.PI) % (Math.PI * 2); return a < 0 ? a + Math.PI * 2 : a; } - Math.PI;
-          const maskA = radA + Math.PI * 0.5;
-          const dTop  = Math.abs(((maskA + Math.PI) % (Math.PI * 2)) - Math.PI);
-          const dBot  = Math.abs(Math.PI - dTop);
+          const maskA     = radA + Math.PI * 0.5;
+          const normalized = ((maskA % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+          const dTop       = Math.min(normalized, Math.PI * 2 - normalized);
+          const dBot       = Math.abs(Math.PI - normalized);
           if (maskTopRad > 1e-6 && dTop <= maskTopRad) continue;
           if (maskBotRad > 1e-6 && dBot <= maskBotRad) continue;
         }
