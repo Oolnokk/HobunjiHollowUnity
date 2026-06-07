@@ -2326,7 +2326,7 @@
 
       // ── Materials ─────────────────────────────────────────────────
       const tileMats = {
-        grass:  new THREE.MeshLambertMaterial({ color: 0x5ea75a }),
+        grass:  new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108/360, 0.58, 0.28) }),
         weeds:  new THREE.MeshLambertMaterial({ color: 0x247c3c }),
         tilled: new THREE.MeshLambertMaterial({ color: 0x8a5b34 }),
         trench: new THREE.MeshLambertMaterial({ color: 0x3a2510 }),
@@ -2499,99 +2499,148 @@
         return geo;
       }
 
-      // ── Border terrain: continuous hillscape beyond the playable grid ─────────
-      // Inner-edge vertices use the same FNV hash as makeFloorGeo, so adjacent
-      // tile tops and border mesh share identical heights — zero visible seam.
+      // ── Border terrain: plateau/cliff landscape beyond the playable grid ────────
+      // Mirrors the procedural pipeline from HALandscapeGenV3:
+      //   1) Initialize all verts at seam height (same FNV hash as makeFloorGeo)
+      //   2) Rugged-plain passes: small connected-cell plateaus, low amplitude
+      //   3) Cliff passes: large edge-biased plateaus, tall amplitude
+      // Near-seam vertices are smoothly blended so the inner edge is gap-free.
       function buildBorderTerrain() {
-        const BORDER_TILES = 18;  // tiles of terrain beyond each edge
-        const MAX_H        = 3.2; // max height added at the far edge
+        const BORDER_W   = 18;   // border tile width on each side
+        const SEED       = 2026;
+        const BLEND_STEPS = 8;   // seam-blend zone: 4 tiles = 8 vertex steps
 
-        // 0.5-unit vertex grid matches makeFloorGeo's 2×2 top-face subdivision.
-        // vi=0 / vj=0 aligns to the map's left / top world edge (X=0, Z=0).
-        const VSTEP  = 0.5;
-        const BVERTS = BORDER_TILES * 2;
-        const VW     = COLS * 2;            // half-steps across playable X (72)
-        const VH     = ROWS * 2;            // half-steps across playable Z (52)
-        const GW     = VW + 2 * BVERTS + 1; // total vertex columns
-        const GH     = VH + 2 * BVERTS + 1; // total vertex rows
+        // ── Grid dims (0.5-unit vertex spacing = makeFloorGeo 2×2 subdivision) ──
+        const BV  = BORDER_W * 2;
+        const PVW = COLS * 2, PVH = ROWS * 2;
+        const GW  = PVW + 2*BV + 1;       // 145 vertex columns
+        const GH  = PVH + 2*BV + 1;       // 125 vertex rows
+        const CW  = GW - 1, CH = GH - 1;
 
-        // Exact same hash as makeFloorGeo — guarantees seam-matched displacement.
-        function hashDisp(kx, kz) {
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+        // ── Mulberry32 RNG ─────────────────────────────────────────────────────
+        let _s = SEED >>> 0;
+        const rng = () => {
+          _s += 0x6D2B79F5;
+          let t = Math.imul(_s ^ _s>>>15, _s|1);
+          t ^= t + Math.imul(t ^ t>>>7, t|61);
+          return ((t ^ t>>>14) >>> 0) / 4294967296;
+        };
+
+        // ── Seam hash — exact copy of makeFloorGeo ─────────────────────────────
+        const hashDisp = (vi, vj) => {
+          let h = (2166136261 ^ (vi * 374761393) ^ (vj * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
           return (h / 4294967296 - 0.5) * 0.026;
-        }
+        };
 
-        // Seeded value noise for macro terrain shape.
-        function vnoise(ix, iz) {
-          let h = (1315423911 ^ (ix * 1000003) ^ (iz * 999983)) >>> 0;
-          h = Math.imul(h ^ (h >>> 16), 2246822519) >>> 0;
-          h = Math.imul(h ^ (h >>> 13), 3266489917) >>> 0;
-          return (h >>> 0) / 4294967296;
-        }
+        // Distance (in 0.5-unit vertex steps) of grid vertex (gi,gj) from playable boundary
+        const vSteps = (gi, gj) => {
+          const vi = gi - BV, vj = gj - BV;
+          const dx = Math.max(0, -vi, vi - PVW);
+          const dz = Math.max(0, -vj, vj - PVH);
+          return Math.sqrt(dx*dx + dz*dz);
+        };
 
-        function smoothN(x, z) {
-          const ix = Math.floor(x), iz = Math.floor(z);
-          const fx = x - ix, fz = z - iz;
-          const ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
-          return vnoise(ix,   iz  ) * (1 - ux) * (1 - uz)
-               + vnoise(ix+1, iz  ) * ux       * (1 - uz)
-               + vnoise(ix,   iz+1) * (1 - ux) * uz
-               + vnoise(ix+1, iz+1) * ux       * uz;
-        }
+        const isPlayable = (ci, cj) => ci>=BV && ci<BV+PVW && cj>=BV && cj<BV+PVH;
 
-        function fbm(x, z) {
-          let v = 0, amp = 0.5, freq = 1;
-          for (let i = 0; i < 5; i++) {
-            v += smoothN(x * freq, z * freq) * amp;
-            amp *= 0.5; freq *= 2;
+        // ── Height map initialised to exact seam heights ───────────────────────
+        const Y = new Float32Array(GW * GH);
+        for (let gj = 0; gj < GH; gj++)
+          for (let gi = 0; gi < GW; gi++)
+            Y[gj*GW+gi] = NORMAL_TOP + hashDisp(gi-BV, gj-BV);
+
+        // ── Plateau operations ─────────────────────────────────────────────────
+        const cv4 = (ci, cj) => [cj*GW+ci, cj*GW+ci+1, (cj+1)*GW+ci, (cj+1)*GW+ci+1];
+
+        // Random-frontier connected group expansion (border cells only)
+        function pickGroup(ci0, cj0, maxSz) {
+          const group = [], seen = new Set([cj0*CW+ci0]);
+          const front = [[ci0, cj0]];
+          while (front.length && group.length < maxSz) {
+            const fi = Math.floor(rng() * front.length);
+            const [ci, cj] = front.splice(fi, 1)[0];
+            group.push([ci, cj]);
+            for (const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+              const ni=ci+dc, nj=cj+dr;
+              if (ni<0||ni>=CW||nj<0||nj>=CH) continue;
+              const nk = nj*CW+ni;
+              if (seen.has(nk) || isPlayable(ni,nj)) continue;
+              seen.add(nk); front.push([ni,nj]);
+            }
           }
-          return v; // ~0..1
+          return group;
         }
 
-        // Build vertex positions.
+        // Raise group verts to (max-in-group + amount).
+        // Verts within BLEND_STEPS of the seam are blended proportionally
+        // so the raised terrain ramps smoothly down to the seam edge.
+        function raiseGroup(group, amount) {
+          let maxY = -Infinity;
+          const verts = new Set();
+          for (const [ci,cj] of group)
+            for (const vi of cv4(ci,cj)) { verts.add(vi); if(Y[vi]>maxY) maxY=Y[vi]; }
+          const target = maxY + amount;
+          for (const vi of verts) {
+            const gi = vi%GW, gj = vi/GW|0;
+            const st = vSteps(gi, gj);
+            if (st === 0) continue;                          // seam — never touch
+            const blend  = Math.min(1, st / BLEND_STEPS);   // 0→1 over 4-tile zone
+            const raised = NORMAL_TOP + hashDisp(gi-BV, gj-BV) + blend*(target - NORMAL_TOP);
+            if (raised > Y[vi]) Y[vi] = raised;             // plateaus only go up
+          }
+        }
+
+        // Edge-biased seed cell picker (avoids playable area)
+        function pickCell(outerBias) {
+          const rim = BV >> 2; // outermost-quarter cells per side
+          for (let attempt = 0; attempt < 300; attempt++) {
+            let ci, cj;
+            if (rng() < outerBias) {
+              const side = Math.floor(rng() * 4);
+              if (side===0) { ci=Math.floor(rng()*CW); cj=Math.floor(rng()*rim); }
+              else if(side===1){ ci=Math.floor(rng()*CW); cj=(CH-1-Math.floor(rng()*rim))|0; }
+              else if(side===2){ ci=Math.floor(rng()*rim); cj=Math.floor(rng()*CH); }
+              else              { ci=(CW-1-Math.floor(rng()*rim))|0; cj=Math.floor(rng()*CH); }
+            } else {
+              ci=Math.floor(rng()*CW); cj=Math.floor(rng()*CH);
+            }
+            if (!isPlayable(ci,cj)) return [ci,cj];
+          }
+          return [0,0];
+        }
+
+        // ── Pass 1: rugged plain — small, low plateaus spread across the border ─
+        for (let p = 0; p < 55; p++) {
+          const [ci,cj] = pickCell(0.12);
+          raiseGroup(pickGroup(ci, cj, 4 + Math.floor(rng()*18)), 0.05 + rng()*0.32);
+        }
+
+        // ── Pass 2: distant cliffs — tall, strongly edge-biased plateaus ────────
+        for (let p = 0; p < 32; p++) {
+          const [ci,cj] = pickCell(0.88);
+          raiseGroup(pickGroup(ci, cj, 10 + Math.floor(rng()*38)), 0.9 + rng()*3.2);
+        }
+
+        // ── Build geometry (border ring only — playable interior skipped) ───────
         const pos = new Float32Array(GW * GH * 3);
-        for (let gj = 0; gj < GH; gj++) {
+        for (let gj = 0; gj < GH; gj++)
           for (let gi = 0; gi < GW; gi++) {
-            const vi = gi - BVERTS; // half-tile offset from left map edge
-            const vj = gj - BVERTS;
-            const wx = vi * VSTEP;
-            const wz = vj * VSTEP;
-
-            // Tiny seam-matching displacement — matches tile top-face vertices.
-            const tiny = hashDisp(vi, vj);
-
-            // Distance from playable area boundary (tile units).
-            const dx = Math.max(0, -vi, vi - VW) * VSTEP;
-            const dz = Math.max(0, -vj, vj - VH) * VSTEP;
-            const dist = Math.sqrt(dx * dx + dz * dz);
-
-            // Smooth quadratic rise with noise variation.
-            const t = Math.min(1, dist / BORDER_TILES);
-            const terrainH = t * t * MAX_H * (0.35 + fbm(wx * 0.17, wz * 0.17) * 0.65);
-
-            const k = gj * GW + gi;
-            pos[k * 3    ] = wx;
-            pos[k * 3 + 1] = NORMAL_TOP + tiny + terrainH;
-            pos[k * 3 + 2] = wz;
+            const k = gj*GW+gi;
+            pos[k*3]   = (gi-BV)*0.5;
+            pos[k*3+1] = Y[k];
+            pos[k*3+2] = (gj-BV)*0.5;
           }
-        }
 
-        // Triangulate only border cells — skip the playable interior.
         const indices = [];
-        for (let cj = 0; cj < GH - 1; cj++) {
-          for (let ci = 0; ci < GW - 1; ci++) {
-            if (ci >= BVERTS && ci < BVERTS + VW && cj >= BVERTS && cj < BVERTS + VH) continue;
-            const v00 = cj * GW + ci,        v10 = cj * GW + (ci + 1);
-            const v01 = (cj + 1) * GW + ci,  v11 = (cj + 1) * GW + (ci + 1);
-            // CCW winding → normals point +Y (correct top-face orientation).
+        for (let cj = 0; cj < GH-1; cj++)
+          for (let ci = 0; ci < GW-1; ci++) {
+            if (isPlayable(ci,cj)) continue;
+            const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
             indices.push(v00, v01, v11,  v00, v11, v10);
           }
-        }
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        // Max vertex index = GW*GH-1 ≈ 18 k < 65535 → Uint16 is sufficient.
         geo.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
         geo.computeVertexNormals();
 
