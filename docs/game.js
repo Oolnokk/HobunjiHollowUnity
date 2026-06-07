@@ -2498,6 +2498,108 @@
         geo.computeVertexNormals();
         return geo;
       }
+
+      // ── Border terrain: continuous hillscape beyond the playable grid ─────────
+      // Inner-edge vertices use the same FNV hash as makeFloorGeo, so adjacent
+      // tile tops and border mesh share identical heights — zero visible seam.
+      function buildBorderTerrain() {
+        const BORDER_TILES = 18;  // tiles of terrain beyond each edge
+        const MAX_H        = 3.2; // max height added at the far edge
+
+        // 0.5-unit vertex grid matches makeFloorGeo's 2×2 top-face subdivision.
+        // vi=0 / vj=0 aligns to the map's left / top world edge (X=0, Z=0).
+        const VSTEP  = 0.5;
+        const BVERTS = BORDER_TILES * 2;
+        const VW     = COLS * 2;            // half-steps across playable X (72)
+        const VH     = ROWS * 2;            // half-steps across playable Z (52)
+        const GW     = VW + 2 * BVERTS + 1; // total vertex columns
+        const GH     = VH + 2 * BVERTS + 1; // total vertex rows
+
+        // Exact same hash as makeFloorGeo — guarantees seam-matched displacement.
+        function hashDisp(kx, kz) {
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        }
+
+        // Seeded value noise for macro terrain shape.
+        function vnoise(ix, iz) {
+          let h = (1315423911 ^ (ix * 1000003) ^ (iz * 999983)) >>> 0;
+          h = Math.imul(h ^ (h >>> 16), 2246822519) >>> 0;
+          h = Math.imul(h ^ (h >>> 13), 3266489917) >>> 0;
+          return (h >>> 0) / 4294967296;
+        }
+
+        function smoothN(x, z) {
+          const ix = Math.floor(x), iz = Math.floor(z);
+          const fx = x - ix, fz = z - iz;
+          const ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
+          return vnoise(ix,   iz  ) * (1 - ux) * (1 - uz)
+               + vnoise(ix+1, iz  ) * ux       * (1 - uz)
+               + vnoise(ix,   iz+1) * (1 - ux) * uz
+               + vnoise(ix+1, iz+1) * ux       * uz;
+        }
+
+        function fbm(x, z) {
+          let v = 0, amp = 0.5, freq = 1;
+          for (let i = 0; i < 5; i++) {
+            v += smoothN(x * freq, z * freq) * amp;
+            amp *= 0.5; freq *= 2;
+          }
+          return v; // ~0..1
+        }
+
+        // Build vertex positions.
+        const pos = new Float32Array(GW * GH * 3);
+        for (let gj = 0; gj < GH; gj++) {
+          for (let gi = 0; gi < GW; gi++) {
+            const vi = gi - BVERTS; // half-tile offset from left map edge
+            const vj = gj - BVERTS;
+            const wx = vi * VSTEP;
+            const wz = vj * VSTEP;
+
+            // Tiny seam-matching displacement — matches tile top-face vertices.
+            const tiny = hashDisp(vi, vj);
+
+            // Distance from playable area boundary (tile units).
+            const dx = Math.max(0, -vi, vi - VW) * VSTEP;
+            const dz = Math.max(0, -vj, vj - VH) * VSTEP;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+
+            // Smooth quadratic rise with noise variation.
+            const t = Math.min(1, dist / BORDER_TILES);
+            const terrainH = t * t * MAX_H * (0.35 + fbm(wx * 0.17, wz * 0.17) * 0.65);
+
+            const k = gj * GW + gi;
+            pos[k * 3    ] = wx;
+            pos[k * 3 + 1] = NORMAL_TOP + tiny + terrainH;
+            pos[k * 3 + 2] = wz;
+          }
+        }
+
+        // Triangulate only border cells — skip the playable interior.
+        const indices = [];
+        for (let cj = 0; cj < GH - 1; cj++) {
+          for (let ci = 0; ci < GW - 1; ci++) {
+            if (ci >= BVERTS && ci < BVERTS + VW && cj >= BVERTS && cj < BVERTS + VH) continue;
+            const v00 = cj * GW + ci,        v10 = cj * GW + (ci + 1);
+            const v01 = (cj + 1) * GW + ci,  v11 = (cj + 1) * GW + (ci + 1);
+            // CCW winding → normals point +Y (correct top-face orientation).
+            indices.push(v00, v01, v11,  v00, v11, v10);
+          }
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        // Max vertex index = GW*GH-1 ≈ 18 k < 65535 → Uint16 is sufficient.
+        geo.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
+        geo.computeVertexNormals();
+
+        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+      }
+
       const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
       const waterGeo  = new THREE.PlaneGeometry(1.0, 1.0);
       waterGeo.rotateX(-Math.PI / 2);
@@ -3064,6 +3166,7 @@
       }
 
       buildTileMeshes();
+      buildBorderTerrain();
 
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
