@@ -428,7 +428,7 @@
       const LIVESTOCK_CATALOG = [
         { key: 'puktuk',   icon: '🐐', name: 'Puktuk',   desc: 'Coming soon: meat, milk, and wool livestock.', price: 120, comingSoon: true },
         { key: 'nelk',     icon: '🐔', name: 'Nelk',     desc: 'Coming soon: meat, eggs, and mayonnaise chain.', price: 90,  comingSoon: true },
-        { key: ‘uumkaoiiCrate’, icon: ‘🦆’, name: ‘Uumkao\’ii Crate’, desc: ‘A travel crate with one uumkao\’ii inside. Select it in your bag and release it on any open tile.’, price: 150, gives: { uumkaoiiCrate: 1 }, category: ‘livestock’ },
+        { key: 'uumkaoiiCrate', icon: '🦆', name: 'Uumkao’ii Crate', desc: 'A travel crate with one uumkao’ii inside. Select it in your bag and release it on any open tile.', price: 150, gives: { uumkaoiiCrate: 1 }, category: 'livestock' },
         { key: 'nazgraku', icon: '🦃', name: 'Nazgraku', desc: 'Coming soon: meat, eggs, and combat-leaning produce.', price: 160, comingSoon: true },
         { key: 'drenkirra', icon: '🪿', name: 'Drenkirra', desc: 'Coming soon: meat, eggs, and agile produce.', price: 140, comingSoon: true },
         { key: 'grehlr',   icon: '🦨', name: 'Grehlr',   desc: 'Coming soon: meat and denatured stink oil.', price: 130, comingSoon: true },
