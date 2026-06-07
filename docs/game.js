@@ -2723,6 +2723,20 @@
           raiseGroup(pickGroup(ci, cj, 10 + Math.floor(rng()*38)), 0.9 + rng()*3.2);
         }
 
+        // ── Pass 3: guarantee a continuous outer cliff ring ────────────────────
+        // Force-raise every vertex in the outermost RIM_V steps of each side
+        // so there are no skybox gaps regardless of where random groups landed.
+        const RIM_V   = 20;              // ~10 tile-widths from each outer edge
+        const RIM_MIN = NORMAL_TOP + 3.0;
+        for (let gj = 0; gj < GH; gj++) {
+          for (let gi = 0; gi < GW; gi++) {
+            if (gj >= RIM_V && gj <= GH-1-RIM_V &&
+                gi >= RIM_V && gi <= GW-1-RIM_V) continue; // interior — skip
+            const k = gj * GW + gi;
+            if (Y[k] < RIM_MIN) Y[k] = RIM_MIN;
+          }
+        }
+
         // ── Build geometry (border ring only — playable interior skipped) ───────
         const pos = new Float32Array(GW * GH * 3);
         for (let gj = 0; gj < GH; gj++)
@@ -2749,6 +2763,55 @@
         const mesh = new THREE.Mesh(geo, tileMats.grass);
         mesh.receiveShadow = true;
         scene.add(mesh);
+
+        // ── Stone cliff faces: vertical quads on the inner wall of the rim ───
+        const CLIFF_BASE = NORMAL_TOP - SLAB_H * 0.5;
+        const cliffMat   = new THREE.MeshLambertMaterial({ color: 0x6a6460, side: THREE.DoubleSide });
+
+        function buildCliffStrip(edgePts) {
+          const positions = [], idx = [];
+          let vi = 0;
+          for (let s = 0; s < edgePts.length - 1; s++) {
+            const p0 = edgePts[s], p1 = edgePts[s + 1];
+            positions.push(p0.x, CLIFF_BASE, p0.z,
+                           p1.x, CLIFF_BASE, p1.z,
+                           p0.x, p0.y,       p0.z,
+                           p1.x, p1.y,       p1.z);
+            idx.push(vi, vi+2, vi+3, vi, vi+3, vi+1);
+            vi += 4;
+          }
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          g.computeVertexNormals();
+          const cm = new THREE.Mesh(g, cliffMat);
+          cm.receiveShadow = true;
+          scene.add(cm);
+        }
+
+        // North face at gj=RIM_V — full width including corners
+        { const gj = RIM_V;
+          buildCliffStrip(Array.from({length: GW}, (_,gi) =>
+            ({ x:(gi-BV)*0.5, z:(gj-BV)*0.5, y:Y[gj*GW+gi] }))); }
+
+        // South face at gj=GH-1-RIM_V
+        { const gj = GH - 1 - RIM_V;
+          buildCliffStrip(Array.from({length: GW}, (_,gi) =>
+            ({ x:(gi-BV)*0.5, z:(gj-BV)*0.5, y:Y[gj*GW+gi] }))); }
+
+        // West face at gi=RIM_V — middle segment (corners already covered by N/S)
+        { const gi = RIM_V;
+          buildCliffStrip(Array.from({length: GH - 2*RIM_V}, (_,s) => {
+            const gj = s + RIM_V;
+            return { x:(gi-BV)*0.5, z:(gj-BV)*0.5, y:Y[gj*GW+gi] };
+          })); }
+
+        // East face at gi=GW-1-RIM_V
+        { const gi = GW - 1 - RIM_V;
+          buildCliffStrip(Array.from({length: GH - 2*RIM_V}, (_,s) => {
+            const gj = s + RIM_V;
+            return { x:(gi-BV)*0.5, z:(gj-BV)*0.5, y:Y[gj*GW+gi] };
+          })); }
       }
 
       const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
