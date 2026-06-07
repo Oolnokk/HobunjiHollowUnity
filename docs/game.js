@@ -807,8 +807,8 @@
             this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
 
             const { effectiveTarget, snapTo } = perpClamp(this.perpState, this.targetRot, CREATURE_PERPS);
-            if (snapTo !== null) this.groupRot = snapTo;
-            this.groupRot += angleDiff(effectiveTarget, this.groupRot) * 0.18;
+            if (snapTo !== null) this.groupRot = effectiveTarget;
+            else this.groupRot += angleDiff(effectiveTarget, this.groupRot) * 0.18;
             this.avatarRef.group.rotation.y = this.groupRot;
           },
           reset() {
@@ -1984,7 +1984,7 @@
         return d;
       }
 
-      const PERP_DEAD_RAD = 15 * Math.PI / 180;
+      const PERP_DEAD_RAD = 30 * Math.PI / 180;
 
       // Keeps model rotation outside ±15° dead zones around each perp angle.
       // state: persistent object per entity (must survive across frames).
@@ -3002,8 +3002,8 @@
         if (!player.perpState) player.perpState = {};
         const rawTargetRotY = -facingAngle + Math.PI / 2;
         const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, [Math.PI / 2, -Math.PI / 2]);
-        if (pSnapTo !== null) playerMesh.rotation.y = pSnapTo;
-        playerMesh.rotation.y += angleDiff(pEffTarget, playerMesh.rotation.y) * 0.18;
+        if (pSnapTo !== null) playerMesh.rotation.y = pEffTarget;
+        else playerMesh.rotation.y += angleDiff(pEffTarget, playerMesh.rotation.y) * 0.18;
 
         // Bob animation when moving
         const speed = Math.hypot(player.vx, player.vy);
