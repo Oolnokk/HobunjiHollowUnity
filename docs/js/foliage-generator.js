@@ -510,6 +510,141 @@ window.FoliageGenerator = (() => {
     return group;
   }
 
+  // ─── Weeds (thin grass-blade cluster) ────────────────────────────────────
+  function buildWeedsGroup(seedU32) {
+    const rand = mulberry32(seedU32);
+    const BLADE_COUNT = 5 + Math.floor(rand() * 4);
+    const DOWN = new T.Vector3(0, -1, 0);
+    const UP   = new T.Vector3(0,  1, 0);
+    const geoms = [];
+
+    for (let b = 0; b < BLADE_COUNT; b++) {
+      const a   = (b / BLADE_COUNT) * Math.PI * 2 + (rand() - 0.5) * 0.7;
+      const len = 0.22 + rand() * 0.20;
+      const lat = 0.06 + rand() * 0.12;
+      const dir = new T.Vector3(Math.cos(a) * lat, 1.0, Math.sin(a) * lat).normalize();
+      const origin = new T.Vector3(Math.cos(a) * 0.04 * rand(), 0, Math.sin(a) * 0.04 * rand());
+      const r0 = 0.007 + rand() * 0.005;
+
+      const blade = buildWonkyChain({
+        seedU32: seedU32 ^ (0xB1ADE + b * 7901),
+        length: len, ringSegments: 6, radialSegments: 3,
+        origin, direction: dir,
+        bend: 0.5 + rand() * 0.4, wonk: 0.35, wonkScale: 2.0,
+        twist: 0.1, curl: 0.4 + rand() * 0.35, gravityDir: DOWN,
+        noiseAmt: 0.25, noiseScale: 1.5, noiseOctaves: 1,
+        radiusFn: (t01) => Math.max(1e-4, r0 * (1.0 - t01 * 0.88))
+      });
+      geoms.push(blade.geom);
+    }
+
+    const group = new T.Group();
+    if (geoms.length) {
+      const merged = mergeGeoms(geoms);
+      merged.computeVertexNormals();
+      group.add(new T.Mesh(merged, hslMat(108, 0.58, 0.28)));
+    }
+    return group;
+  }
+
+  // ─── Shrub / tree (trunk + branching canopy) ──────────────────────────────
+  function buildShrubGroup(seedU32) {
+    const rand = mulberry32(seedU32);
+    const DOWN = new T.Vector3(0, -1, 0);
+    const UP   = new T.Vector3(0,  1, 0);
+    const RADIAL = 5;
+
+    const trunkLen = 0.38 + rand() * 0.28;
+    const trunkRad = 0.045 + rand() * 0.02;
+
+    const trunk = buildWonkyChain({
+      seedU32: seedU32 ^ 0xA11CE, length: trunkLen,
+      ringSegments: 8, radialSegments: RADIAL,
+      origin: new T.Vector3(0, 0, 0), direction: UP,
+      bend: 0.12 + rand() * 0.08, wonk: 0.1, wonkScale: 2.0, twist: 0.25, curl: 0,
+      noiseAmt: 0.3, noiseScale: 2.0, noiseOctaves: 1, gravityDir: DOWN,
+      radiusFn: (t01) => Math.max(1e-4, trunkRad * (1.0 - t01 * 0.60))
+    });
+
+    const woodGeoms = [trunk.geom];
+    const leafGeoms = [];
+
+    const trunkPts  = trunk.spine.pts;
+    const trunkTans = trunk.spine.tangents;
+    const BRANCH_COUNT = 7 + Math.floor(rand() * 5);
+
+    for (let b = 0; b < BRANCH_COUNT; b++) {
+      const tTier  = 0.35 + rand() * 0.65;
+      const f      = tTier * (trunkPts.length - 1);
+      const i0     = Math.max(0, Math.min(trunkPts.length - 2, Math.floor(f)));
+      const alpha  = f - i0;
+      const anchor = trunkPts[i0].clone().lerp(trunkPts[i0 + 1], alpha);
+      const tanAt  = trunkTans[i0].clone().lerp(trunkTans[i0 + 1], alpha).normalize();
+
+      let right = new T.Vector3().copy(tanAt).cross(UP);
+      if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+      right.normalize();
+      const upLocal = new T.Vector3().copy(right).cross(tanAt).normalize();
+
+      const a = (b / BRANCH_COUNT) * Math.PI * 2 + (rand() - 0.5) * 0.55;
+      const outward = new T.Vector3()
+        .addScaledVector(right,   Math.cos(a))
+        .addScaledVector(upLocal, Math.sin(a))
+        .normalize();
+
+      const dir = new T.Vector3()
+        .addScaledVector(outward, 1.0)
+        .addScaledVector(UP, 0.55 + rand() * 0.55)
+        .normalize();
+
+      const bLen    = 0.22 + rand() * 0.28;
+      const bRad    = trunkRad * (0.25 + rand() * 0.10);
+      const attachR = trunkRad * (1.0 - tTier * 0.60);
+      const origin  = anchor.clone().addScaledVector(outward, Math.max(1e-4, attachR));
+
+      const branch = buildWonkyChain({
+        seedU32: seedU32 ^ (0xBEEF + b * 5003),
+        length: bLen, ringSegments: 5, radialSegments: 4,
+        origin, direction: dir,
+        bend: 0.2, wonk: 0.4, wonkScale: 1.5, twist: 0.3, curl: 0.25,
+        gravityDir: DOWN, noiseAmt: 0.35, noiseScale: 1.5, noiseOctaves: 1,
+        radiusFn: (t01) => Math.max(1e-4, bRad * (1.0 - t01 * 0.82))
+      });
+      woodGeoms.push(branch.geom);
+
+      const tip   = branch.spine.pts[branch.spine.pts.length - 1];
+      const leafR = 0.09 + rand() * 0.09;
+      const sph   = new T.SphereGeometry(leafR, 5, 4);
+      sph.translate(tip.x, tip.y, tip.z);
+      leafGeoms.push(sph);
+
+      const bPts = branch.spine.pts;
+      for (let li = Math.floor(bPts.length * 0.55); li < bPts.length - 1; li++) {
+        if (rand() < 0.50) {
+          const lr   = 0.045 + rand() * 0.05;
+          const lpt  = bPts[li];
+          const off  = new T.Vector3((rand()-0.5)*0.07, 0.02+rand()*0.04, (rand()-0.5)*0.07);
+          const sph2 = new T.SphereGeometry(lr, 4, 3);
+          sph2.translate(lpt.x + off.x, lpt.y + off.y, lpt.z + off.z);
+          leafGeoms.push(sph2);
+        }
+      }
+    }
+
+    const group = new T.Group();
+    if (woodGeoms.length) {
+      const merged = mergeGeoms(woodGeoms);
+      merged.computeVertexNormals();
+      group.add(new T.Mesh(merged, hslMat(28, 0.40, 0.22)));
+    }
+    if (leafGeoms.length) {
+      const merged = mergeGeoms(leafGeoms);
+      merged.computeVertexNormals();
+      group.add(new T.Mesh(merged, hslMat(125, 0.55, 0.26)));
+    }
+    return group;
+  }
+
   // ─── Public API ───────────────────────────────────────────────────────────
   return {
     buildNeedlegrainMesh(growth01, col, row) {
@@ -519,6 +654,14 @@ window.FoliageGenerator = (() => {
     buildHeftrootMesh(growth01, col, row) {
       const seedU32 = xfnv1a(`hr_${col}_${row}`);
       return buildHeftrootGroup(growth01, seedU32);
+    },
+    buildWeedsMesh(col, row) {
+      const seedU32 = xfnv1a(`wd_${col}_${row}`);
+      return buildWeedsGroup(seedU32);
+    },
+    buildShrubMesh(col, row) {
+      const seedU32 = xfnv1a(`sh_${col}_${row}`);
+      return buildShrubGroup(seedU32);
     }
   };
 })();
