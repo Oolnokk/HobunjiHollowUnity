@@ -146,7 +146,7 @@ window.FoliageGenerator = (() => {
       for (let j = 0; j < radial; j++) {
         const a0 = r0 + j, a1 = r0 + (j + 1) % radial;
         const b0 = r1 + j, b1 = r1 + (j + 1) % radial;
-        indices.push(a0, b0, a1, a1, b0, b1);
+        indices.push(a0, a1, b0, b0, a1, b1);
       }
     }
     const geom = new T.BufferGeometry();

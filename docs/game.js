@@ -2669,7 +2669,7 @@
 
         if ((tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) && window.FoliageGenerator) {
           // Grass floor slab underneath the vegetation
-          const floorMesh = new THREE.Mesh(floorGeo, tileMats.grass);
+          const floorMesh = new THREE.Mesh(floorGeo, tileMats.weeds);
           floorMesh.castShadow = floorMesh.receiveShadow = true;
           floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
           scene.add(floorMesh);
