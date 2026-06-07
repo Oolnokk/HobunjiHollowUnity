@@ -2533,9 +2533,9 @@
       // Track all vegetation meshes for wind animation
       const vegMeshes = [];
 
-      // ── Crop cube system ───────────────────────────────────────────
-      // Each planted tile gets a small colored BoxGeometry that grows from
-      // tiny (just planted) to full size (ready to harvest).
+      // ── Crop mesh system ──────────────────────────────────────────
+      // Needlegrain and heftroot use procedural foliage geometry.
+      // All other crops use a simple colored cube (unchanged).
       const CROP_COLORS = {
         needlegrain:   { body: 0x8bc34a, ripe: 0xd4c526, sprout: 0x5a9e30 },
         heftroot:      { body: 0xcaa64a, ripe: 0xf0d15a, sprout: 0x7fae45 },
@@ -2549,9 +2549,31 @@
         blackMustard:  { body: 0x4a3b2f, ripe: 0x1f1812, sprout: 0x789b3a },
         greenMustard:  { body: 0x6da64a, ripe: 0x9bd66b, sprout: 0x75b957 },
       };
-      const CROP_MAX_SCALE = 0.48;  // world units at full size
-      const CROP_MIN_SCALE = 0.08;  // tiny seedling size
+      const CROP_MAX_SCALE = 0.48;
+      const CROP_MIN_SCALE = 0.08;
       const cropMeshes = new Array(ROWS * COLS).fill(null);
+
+      // Tracks which growth bucket (0–3) each foliage crop was built at,
+      // so we only rebuild when the plant crosses a threshold.
+      const cropGrowthBucket = new Array(ROWS * COLS).fill(-1);
+
+      const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot']);
+      const FG = window.FoliageGenerator;
+
+      function _growthBucket(growth) {
+        // Rebuild foliage at 4 thresholds to avoid per-frame rebuilds.
+        if (growth < 0.15) return 0;
+        if (growth < 0.45) return 1;
+        if (growth < 0.80) return 2;
+        return 3;
+      }
+
+      function _buildFoliageMesh(crop, growth, col, row) {
+        if (!FG) return null;
+        if (crop === 'needlegrain') return FG.buildNeedlegrainMesh(growth, col, row);
+        if (crop === 'heftroot')    return FG.buildHeftrootMesh(growth, col, row);
+        return null;
+      }
 
       function updateCropMeshes() {
         for (let row = 0; row < ROWS; row++) {
@@ -2561,36 +2583,66 @@
 
             if (!tile.crop) {
               if (cropMeshes[i]) { scene.remove(cropMeshes[i]); cropMeshes[i] = null; }
+              cropGrowthBucket[i] = -1;
               continue;
             }
 
             const data   = cropData[tile.crop];
-            const colors = CROP_COLORS[tile.crop] || CROP_COLORS.rice;
             const growth = Math.min(tile.cropAge / data.growDays, 1.0);
-            const size   = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
-            const color  = tile.cropReady ? colors.ripe
-                         : growth < 0.15  ? colors.sprout
-                         : colors.body;
-
             const surfY  = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
 
-            if (!cropMeshes[i]) {
-              const geo = new THREE.BoxGeometry(1, 1, 1); // unit cube, scaled
-              const mat = new THREE.MeshLambertMaterial({ color });
-              const mesh = new THREE.Mesh(geo, mat);
-              mesh.castShadow = true;
-              scene.add(mesh);
-              cropMeshes[i] = mesh;
-            }
+            if (FOLIAGE_CROPS.has(tile.crop)) {
+              // ── Procedural foliage mesh ──────────────────────────────
+              const bucket = _growthBucket(growth);
+              if (cropMeshes[i] && cropGrowthBucket[i] !== bucket) {
+                // Growth crossed a threshold — rebuild.
+                scene.remove(cropMeshes[i]);
+                cropMeshes[i] = null;
+              }
+              if (!cropMeshes[i]) {
+                const group = _buildFoliageMesh(tile.crop, growth, col, row);
+                if (group) {
+                  scene.add(group);
+                  cropMeshes[i]       = group;
+                  cropGrowthBucket[i] = bucket;
+                }
+              }
+              const mesh = cropMeshes[i];
+              if (!mesh) continue;
 
-            const mesh = cropMeshes[i];
-            mesh.material.color.setHex(color);
-            mesh.scale.setScalar(size);
-            // Sit on surface; bob slightly when ripe
-            const bobY = tile.cropReady ? Math.sin(performance.now() / 500 + col + row) * 0.03 : 0;
-            mesh.position.set(col + 0.5, surfY + size / 2 + 0.02 + bobY, row + 0.5);
-            // Gentle rotation when ripe
-            if (tile.cropReady) mesh.rotation.y = performance.now() / 1200 + col;
+              // Scale: foliage group base is at y=0, grows +Y about 0.5 units at full.
+              // Map to the same visual range as the old box (0.08..0.48).
+              const scale = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
+              mesh.scale.setScalar(scale);
+
+              const bobY = tile.cropReady ? Math.sin(performance.now() / 500 + col + row) * 0.025 : 0;
+              mesh.position.set(col + 0.5, surfY + 0.01 + bobY, row + 0.5);
+              if (tile.cropReady) mesh.rotation.y = performance.now() / 2200 + col;
+
+            } else {
+              // ── Simple colored cube (all other crops) ────────────────
+              const colors = CROP_COLORS[tile.crop] || CROP_COLORS.garlink;
+              const size   = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
+              const color  = tile.cropReady ? colors.ripe
+                           : growth < 0.15  ? colors.sprout
+                           : colors.body;
+
+              if (!cropMeshes[i]) {
+                const geo  = new THREE.BoxGeometry(1, 1, 1);
+                const mat  = new THREE.MeshLambertMaterial({ color });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.castShadow = true;
+                scene.add(mesh);
+                cropMeshes[i] = mesh;
+              }
+
+              const mesh = cropMeshes[i];
+              mesh.material.color.setHex(color);
+              mesh.scale.setScalar(size);
+              const bobY = tile.cropReady ? Math.sin(performance.now() / 500 + col + row) * 0.03 : 0;
+              mesh.position.set(col + 0.5, surfY + size / 2 + 0.02 + bobY, row + 0.5);
+              if (tile.cropReady) mesh.rotation.y = performance.now() / 1200 + col;
+            }
           }
         }
       }
@@ -2622,6 +2674,7 @@
             if (tileMeshes[i])  { scene.remove(tileMeshes[i]);  tileMeshes[i]  = null; }
             if (waterMeshes[i]) { scene.remove(waterMeshes[i]); waterMeshes[i] = null; }
             if (cropMeshes[i])  { scene.remove(cropMeshes[i]);  cropMeshes[i]  = null; }
+            cropGrowthBucket[i] = -1;
             _buildOneTileMesh(col, row);
           }
         }
@@ -2633,6 +2686,7 @@
         if (tileMeshes[i])  { scene.remove(tileMeshes[i]);  tileMeshes[i]  = null; }
         if (waterMeshes[i]) { scene.remove(waterMeshes[i]); waterMeshes[i] = null; }
         if (cropMeshes[i])  { scene.remove(cropMeshes[i]);  cropMeshes[i]  = null; }
+        cropGrowthBucket[i] = -1;
         _buildOneTileMesh(col, row);
       }
 
