@@ -3724,7 +3724,7 @@
           const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(playerData);
           if (!profile) { gameStarted = true; return; }
 
-          const MODEL_W = 0.75;
+          const MODEL_W = 1.125; // 0.75 * 1.5
           // portrait-utils.js uses PORTRAIT_CW/CH = 200 for all layer offsets;
           // rendering to any other size shifts off-center sprites.
           const PORTRAIT_SIZE = 200;
