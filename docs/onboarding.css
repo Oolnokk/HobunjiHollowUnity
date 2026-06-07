@@ -1,0 +1,268 @@
+/* ── Hobunii Hollow — Onboarding overlay ─────────────────────────────── */
+
+#ob-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.90);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 16px;
+  overflow-y: auto;
+  transition: opacity 0.4s;
+}
+
+#ob-overlay.ob-fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ob-card {
+  width: min(720px, 100%);
+  background: rgba(8, 18, 13, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 20px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.7);
+  font-family: 'DM Mono', ui-monospace, monospace;
+  color: #f0ffe6;
+}
+
+.ob-title {
+  font-family: 'Pixelify Sans', monospace;
+  font-size: 22px;
+  color: #f9e28a;
+  text-align: center;
+  letter-spacing: 0.06em;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────── */
+.ob-tabs {
+  display: flex;
+  gap: 5px;
+}
+.ob-tab {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 10px 10px 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: none;
+  background: rgba(255, 255, 255, 0.03);
+  color: #8aad8f;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, color 0.12s;
+}
+.ob-tab:hover { background: rgba(255, 255, 255, 0.07); color: #f0ffe6; }
+.ob-tab.ob-active {
+  background: rgba(249, 226, 138, 0.07);
+  border-color: rgba(249, 226, 138, 0.32);
+  color: #f9e28a;
+}
+
+/* ── Two-column body ─────────────────────────────────────────── */
+.ob-two-col {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  padding-top: 14px;
+  min-height: 0;
+}
+.ob-col-left {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.ob-col-right {
+  flex: 1;
+  min-width: 0;
+  max-height: min(58vh, 440px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding-right: 4px;
+}
+.ob-col-right::-webkit-scrollbar { width: 4px; }
+.ob-col-right::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+}
+
+/* ── Portrait preview ───────────────────────────────────────── */
+.ob-portrait {
+  width: 160px;
+  height: 160px;
+  border-radius: 10px;
+  background: rgba(249, 226, 138, 0.04);
+  border: 1px solid rgba(249, 226, 138, 0.14);
+  image-rendering: pixelated;
+}
+.ob-preview-hint {
+  font-size: 9px;
+  color: #8aad8f;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ── Labels ──────────────────────────────────────────────────── */
+.ob-section-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #8aad8f;
+  margin-bottom: 5px;
+}
+
+/* ── Selector button groups ──────────────────────────────────── */
+.ob-group {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+.ob-sel-btn {
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f0ffe6;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+.ob-sel-btn:hover { background: rgba(255, 255, 255, 0.09); }
+.ob-sel-btn.ob-active {
+  background: rgba(249, 226, 138, 0.11);
+  border-color: rgba(249, 226, 138, 0.42);
+  color: #f9e28a;
+}
+.ob-sel-btn.ob-disabled,
+.ob-sel-btn:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+}
+
+/* ── Cosmetic rows ────────────────────────────────────────────── */
+.ob-cosmetics {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ob-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ob-row-label {
+  font-size: 10px;
+  color: #8aad8f;
+  min-width: 90px;
+  flex-shrink: 0;
+  text-align: right;
+  letter-spacing: 0.03em;
+}
+.ob-select {
+  flex: 1;
+  background: rgba(8, 18, 13, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #f0ffe6;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.ob-select:focus { outline: none; border-color: rgba(249, 226, 138, 0.48); }
+.ob-select:disabled { opacity: 0.32; cursor: not-allowed; }
+
+/* ── Text input ───────────────────────────────────────────────── */
+.ob-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(8, 18, 13, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: #f0ffe6;
+  font-size: 12px;
+  font-family: inherit;
+  letter-spacing: 0.04em;
+}
+.ob-input:focus { outline: none; border-color: rgba(249, 226, 138, 0.48); }
+
+/* ── Color swatches ───────────────────────────────────────────── */
+.ob-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+.ob-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.1s, transform 0.1s;
+}
+.ob-swatch:hover { border-color: rgba(249, 226, 138, 0.45); transform: scale(1.1); }
+.ob-swatch.ob-active { border-color: #f9e28a; transform: scale(1.1); }
+
+/* ── Muted text ───────────────────────────────────────────────── */
+.ob-muted {
+  color: #8aad8f;
+  font-size: 10px;
+  opacity: 0.7;
+  padding: 4px 0;
+}
+
+/* ── Footer / start button ────────────────────────────────────── */
+.ob-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  gap: 12px;
+}
+.ob-footer-hint {
+  font-size: 10px;
+  color: #8aad8f;
+  opacity: 0.6;
+}
+.ob-start-btn {
+  padding: 11px 28px;
+  border-radius: 12px;
+  border: 1px solid rgba(127, 232, 154, 0.42);
+  background: rgba(127, 232, 154, 0.10);
+  color: #7fe89a;
+  font-size: 13px;
+  font-family: 'Pixelify Sans', inherit;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.ob-start-btn:hover {
+  background: rgba(127, 232, 154, 0.20);
+  box-shadow: 0 0 18px rgba(127, 232, 154, 0.18);
+}
+
+/* ── Responsive ───────────────────────────────────────────────── */
+@media (max-width: 560px) {
+  .ob-two-col { flex-direction: column; }
+  .ob-col-left { width: 100%; }
+  .ob-portrait { width: 130px; height: 130px; }
+  .ob-col-right { max-height: none; }
+  .ob-row-label { min-width: 70px; font-size: 9px; }
+}
