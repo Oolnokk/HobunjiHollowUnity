@@ -356,6 +356,7 @@
         needlegrainSeeds: 6, heftrootSeeds: 4, garlinkSeeds: 4, ongyumsSeeds: 4,
         redberrySeeds: 3, blueberrySeeds: 3, yellowberrySeeds: 3, whiteberrySeeds: 2, blackberrySeeds: 2,
         blackMustardSeed: 3, greenMustardSeed: 3,
+        uumkaoiiCrate: 1,
         gold: 40,
       };
 
