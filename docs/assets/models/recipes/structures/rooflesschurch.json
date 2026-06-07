@@ -1,0 +1,1743 @@
+{
+  "version": 2,
+  "kind": "structure_foundation",
+  "mesh": {
+    "vertices": [
+      [
+        -1.125,
+        -0.5,
+        -0.75
+      ],
+      [
+        1.125,
+        -0.5,
+        -0.75
+      ],
+      [
+        1.125,
+        0.5,
+        -0.5
+      ],
+      [
+        -0.890625,
+        0.5,
+        -0.5
+      ],
+      [
+        -1.125,
+        -0.5,
+        0.75
+      ],
+      [
+        1.125,
+        -0.5,
+        0.75
+      ],
+      [
+        1.125,
+        0.5,
+        0.5
+      ],
+      [
+        -0.890625,
+        0.5,
+        0.5
+      ],
+      [
+        1.125,
+        -0.16666666666666669,
+        -0.6666666666666666
+      ],
+      [
+        1.125,
+        0.16666666666666663,
+        -0.5833333333333334
+      ],
+      [
+        1.125,
+        -0.5,
+        -0.25
+      ],
+      [
+        1.125,
+        -0.16666666666666669,
+        -0.2222222222222222
+      ],
+      [
+        1.125,
+        0.16666666666666663,
+        -0.19444444444444448
+      ],
+      [
+        1.125,
+        0.5,
+        -0.16666666666666669
+      ],
+      [
+        1.125,
+        -0.5,
+        0.25
+      ],
+      [
+        1.125,
+        -0.16666666666666669,
+        0.2222222222222222
+      ],
+      [
+        1.125,
+        0.16666666666666663,
+        0.19444444444444442
+      ],
+      [
+        1.125,
+        0.5,
+        0.16666666666666663
+      ],
+      [
+        1.125,
+        -0.16666666666666669,
+        0.6666666666666666
+      ],
+      [
+        1.125,
+        0.16666666666666663,
+        0.5833333333333334
+      ],
+      [
+        -0.421875,
+        0.5,
+        -0.5
+      ],
+      [
+        -0.421875,
+        0.5,
+        0.5
+      ],
+      [
+        0.1875,
+        0.5,
+        -0.5
+      ],
+      [
+        0.1875,
+        0.5,
+        0.5
+      ],
+      [
+        0.4046875,
+        1,
+        -0.35
+      ],
+      [
+        0.4046875,
+        1,
+        0.35
+      ],
+      [
+        1.1078125,
+        1,
+        0.35
+      ],
+      [
+        1.1078125,
+        1,
+        -0.35
+      ],
+      [
+        0.4046875,
+        1.5,
+        -0.35
+      ],
+      [
+        0.4046875,
+        1.5,
+        0.35
+      ],
+      [
+        1.1078125,
+        1.5,
+        0.35
+      ],
+      [
+        1.1078125,
+        1.5,
+        -0.35
+      ],
+      [
+        0.4046875,
+        2,
+        -0.00035
+      ],
+      [
+        0.4046875,
+        2,
+        0.00035
+      ],
+      [
+        1.1078125,
+        2,
+        0.00035
+      ],
+      [
+        1.1078125,
+        2,
+        -0.00035
+      ]
+    ],
+    "quads": [
+      {
+        "id": "front",
+        "v": [
+          4,
+          5,
+          6,
+          7
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            -1.125,
+            -0.5,
+            0.75
+          ],
+          [
+            1.125,
+            -0.5,
+            0.75
+          ],
+          [
+            1.125,
+            0.5,
+            0.5
+          ],
+          [
+            -0.890625,
+            0.5,
+            0.5
+          ]
+        ]
+      },
+      {
+        "id": "back",
+        "v": [
+          0,
+          3,
+          2,
+          1
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            -1.125,
+            -0.5,
+            -0.75
+          ],
+          [
+            -0.890625,
+            0.5,
+            -0.5
+          ],
+          [
+            1.125,
+            0.5,
+            -0.5
+          ],
+          [
+            1.125,
+            -0.5,
+            -0.75
+          ]
+        ]
+      },
+      {
+        "id": "face_a97d79c3b86dd_19b857bb1fc",
+        "v": [
+          1,
+          8,
+          11,
+          10
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.125,
+            -0.5,
+            -0.75
+          ],
+          [
+            1.125,
+            -0.16666666666666669,
+            -0.6666666666666666
+          ],
+          [
+            1.125,
+            -0.16666666666666669,
+            -0.2222222222222222
+          ],
+          [
+            1.125,
+            -0.5,
+            -0.25
+          ]
+        ]
+      },
+      {
+        "id": "face_657549a7890f7_19b857bb1fc",
+        "v": [
+          8,
+          9,
+          12,
+          11
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.125,
+            -0.16666666666666669,
+            -0.6666666666666666
+          ],
+          [
+            1.125,
+            0.16666666666666663,
+            -0.5833333333333334
+          ],
+          [
+            1.125,
+            0.16666666666666663,
+            -0.19444444444444448
+          ],
+          [
+            1.125,
+            -0.16666666666666669,
+            -0.2222222222222222
+          ]
+        ]
+      },
+      {
+        "id": "face_ead1904db38c68_19b857bb1fc",
+        "v": [
+          9,
+          2,
+          13,
+          12
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.125,
+            0.16666666666666663,
+            -0.5833333333333334
+          ],
+          [
+            1.125,
+            0.5,
+            -0.5
+          ],
+          [
+            1.125,
+            0.5,
+            -0.16666666666666669
+          ],
+          [
+            1.125,
+            0.16666666666666663,
+            -0.19444444444444448
+          ]
+        ]
+      },
+      {
+        "id": "face_14996d367be668_19b857bb1fc",
+        "v": [
+          10,
+          11,
+          15,
+          14
+        ],
+        "color": "#9bb3d6",
+        "tag": null,
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.125,
+            -0.5,
+            -0.25
+          ],
+          [
+            1.125,
+            -0.16666666666666669,
+            -0.2222222222222222
+          ],
+          [
+            1.125,
+            -0.16666666666666669,
+            0.2222222222222222
+          ],
+          [
+            1.125,
+            -0.5,
+            0.25
+          ]
+        ]
+      },
+      {
+        "id": "face_d5bc4c57e99c18_19b857bb1fc",
+        "v": [
+          11,
+          12,
+          16,
+          15
+        ],
+        "color": "#9bb3d6",
+        "tag": null,
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.125,
+            -0.16666666666666669,
+            -0.2222222222222222
+          ],
+          [
+            1.125,
+            0.16666666666666663,
+            -0.19444444444444448
+          ],
+          [
+            1.125,
+            0.16666666666666663,
+            0.19444444444444442
+          ],
+          [
+            1.125,
+            -0.16666666666666669,
+            0.2222222222222222
+          ]
+        ]
+      },
+      {
+        "id": "face_b03a04e23e8a48_19b857bb1fc",
+        "v": [
+          12,
+          13,
+          17,
+          16
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.125,
+            0.16666666666666663,
+            -0.19444444444444448
+          ],
+          [
+            1.125,
+            0.5,
+            -0.16666666666666669
+          ],
+          [
+            1.125,
+            0.5,
+            0.16666666666666663
+          ],
+          [
+            1.125,
+            0.16666666666666663,
+            0.19444444444444442
+          ]
+        ]
+      },
+      {
+        "id": "face_ced26756a83a18_19b857bb1fc",
+        "v": [
+          14,
+          15,
+          18,
+          5
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.125,
+            -0.5,
+            0.25
+          ],
+          [
+            1.125,
+            -0.16666666666666669,
+            0.2222222222222222
+          ],
+          [
+            1.125,
+            -0.16666666666666669,
+            0.6666666666666666
+          ],
+          [
+            1.125,
+            -0.5,
+            0.75
+          ]
+        ]
+      },
+      {
+        "id": "face_079934f2e2d_19b857bb1fc",
+        "v": [
+          15,
+          16,
+          19,
+          18
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.125,
+            -0.16666666666666669,
+            0.2222222222222222
+          ],
+          [
+            1.125,
+            0.16666666666666663,
+            0.19444444444444442
+          ],
+          [
+            1.125,
+            0.16666666666666663,
+            0.5833333333333334
+          ],
+          [
+            1.125,
+            -0.16666666666666669,
+            0.6666666666666666
+          ]
+        ]
+      },
+      {
+        "id": "face_864b649e00a738_19b857bb1fc",
+        "v": [
+          16,
+          17,
+          6,
+          19
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.125,
+            0.16666666666666663,
+            0.19444444444444442
+          ],
+          [
+            1.125,
+            0.5,
+            0.16666666666666663
+          ],
+          [
+            1.125,
+            0.5,
+            0.5
+          ],
+          [
+            1.125,
+            0.16666666666666663,
+            0.5833333333333334
+          ]
+        ]
+      },
+      {
+        "id": "left",
+        "v": [
+          0,
+          4,
+          7,
+          3
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            -1.125,
+            -0.5,
+            -0.75
+          ],
+          [
+            -1.125,
+            -0.5,
+            0.75
+          ],
+          [
+            -0.890625,
+            0.5,
+            0.5
+          ],
+          [
+            -0.890625,
+            0.5,
+            -0.5
+          ]
+        ]
+      },
+      {
+        "id": "face_76a220bcfc0be8_19b85d35737",
+        "v": [
+          3,
+          7,
+          21,
+          20
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 0.5,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            -1.125,
+            0.5,
+            -0.5
+          ],
+          [
+            -1.125,
+            0.5,
+            0.5
+          ],
+          [
+            -0.1875,
+            0.5,
+            0.5
+          ],
+          [
+            -0.1875,
+            0.5,
+            -0.5
+          ]
+        ]
+      },
+      {
+        "id": "face_9bcf2dbd53d028_19b85d35737",
+        "v": [
+          20,
+          21,
+          23,
+          22
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 0.5,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            -0.375,
+            0.5,
+            -0.5
+          ],
+          [
+            -0.375,
+            0.5,
+            0.5
+          ],
+          [
+            0.375,
+            0.5,
+            0.5
+          ],
+          [
+            0.375,
+            0.5,
+            -0.5
+          ]
+        ]
+      },
+      {
+        "id": "face_e19cd7299b9ea8_19b97e5b6ce",
+        "v": [
+          32,
+          33,
+          34,
+          35
+        ],
+        "color": "#9bb3d6",
+        "tag": null,
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 0.001,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            0.4046875,
+            2,
+            -0.35
+          ],
+          [
+            0.4046875,
+            2,
+            0.35
+          ],
+          [
+            1.1078125,
+            2,
+            0.35
+          ],
+          [
+            1.1078125,
+            2,
+            -0.35
+          ]
+        ]
+      },
+      {
+        "id": "face_ae4882d71231e8_19b97e5b6ce",
+        "v": [
+          28,
+          29,
+          33,
+          32
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            0.4046875,
+            1.5,
+            -0.35
+          ],
+          [
+            0.4046875,
+            1.5,
+            0.35
+          ],
+          [
+            0.4046875,
+            2,
+            0.00035
+          ],
+          [
+            0.4046875,
+            2,
+            -0.00035
+          ]
+        ]
+      },
+      {
+        "id": "face_49217a0dea106_19b97e5b6ce",
+        "v": [
+          29,
+          30,
+          34,
+          33
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": "roofing1_recipe",
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            0.4046875,
+            1.5,
+            0.35
+          ],
+          [
+            1.1078125,
+            1.5,
+            0.35
+          ],
+          [
+            1.1078125,
+            2,
+            0.00035
+          ],
+          [
+            0.4046875,
+            2,
+            0.00035
+          ]
+        ]
+      },
+      {
+        "id": "face_141a6be6e7c13_19b97e5b6ce",
+        "v": [
+          30,
+          31,
+          35,
+          34
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.1078125,
+            1.5,
+            0.35
+          ],
+          [
+            1.1078125,
+            1.5,
+            -0.35
+          ],
+          [
+            1.1078125,
+            2,
+            -0.00035
+          ],
+          [
+            1.1078125,
+            2,
+            0.00035
+          ]
+        ]
+      },
+      {
+        "id": "face_7c2c06422e726_19b97e5b6ce",
+        "v": [
+          31,
+          28,
+          32,
+          35
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": "roofing1_recipe",
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.1078125,
+            1.5,
+            -0.35
+          ],
+          [
+            0.4046875,
+            1.5,
+            -0.35
+          ],
+          [
+            0.4046875,
+            2,
+            -0.00035
+          ],
+          [
+            1.1078125,
+            2,
+            -0.00035
+          ]
+        ]
+      },
+      {
+        "id": "face_c1a08f792c0d48_19b85dc3f3e",
+        "v": [
+          24,
+          25,
+          29,
+          28
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            0.4046875,
+            1,
+            -0.35
+          ],
+          [
+            0.4046875,
+            1,
+            0.35
+          ],
+          [
+            0.4046875,
+            1.5,
+            0.35
+          ],
+          [
+            0.4046875,
+            1.5,
+            -0.35
+          ]
+        ]
+      },
+      {
+        "id": "face_170317f41df83_19b85dc3f3e",
+        "v": [
+          25,
+          26,
+          30,
+          29
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            0.4046875,
+            1,
+            0.35
+          ],
+          [
+            1.1078125,
+            1,
+            0.35
+          ],
+          [
+            1.1078125,
+            1.5,
+            0.35
+          ],
+          [
+            0.4046875,
+            1.5,
+            0.35
+          ]
+        ]
+      },
+      {
+        "id": "face_3b835dda415c_19b85dc3f3e",
+        "v": [
+          26,
+          27,
+          31,
+          30
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.1078125,
+            1,
+            0.35
+          ],
+          [
+            1.1078125,
+            1,
+            -0.35
+          ],
+          [
+            1.1078125,
+            1.5,
+            -0.35
+          ],
+          [
+            1.1078125,
+            1.5,
+            0.35
+          ]
+        ]
+      },
+      {
+        "id": "face_dffe3de6fcc308_19b85dc3f3e",
+        "v": [
+          27,
+          24,
+          28,
+          31
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.1078125,
+            1,
+            -0.35
+          ],
+          [
+            0.4046875,
+            1,
+            -0.35
+          ],
+          [
+            0.4046875,
+            1.5,
+            -0.35
+          ],
+          [
+            1.1078125,
+            1.5,
+            -0.35
+          ]
+        ]
+      },
+      {
+        "id": "face_c5f51b05aa0cf8_19b85d8b447",
+        "v": [
+          22,
+          23,
+          25,
+          24
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            0.1875,
+            0.5,
+            -0.5
+          ],
+          [
+            0.1875,
+            0.5,
+            0.5
+          ],
+          [
+            0.4046875,
+            1,
+            0.35
+          ],
+          [
+            0.4046875,
+            1,
+            -0.35
+          ]
+        ]
+      },
+      {
+        "id": "face_b078c0d6a7ae8_19b85d8b447",
+        "v": [
+          23,
+          6,
+          26,
+          25
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            0.1875,
+            0.5,
+            0.5
+          ],
+          [
+            1.125,
+            0.5,
+            0.5
+          ],
+          [
+            1.1078125,
+            1,
+            0.35
+          ],
+          [
+            0.4046875,
+            1,
+            0.35
+          ]
+        ]
+      },
+      {
+        "id": "face_46612667d98eb8_19b85d8b447",
+        "v": [
+          6,
+          2,
+          27,
+          26
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.125,
+            0.5,
+            0.5
+          ],
+          [
+            1.125,
+            0.5,
+            -0.5
+          ],
+          [
+            1.1078125,
+            1,
+            -0.35
+          ],
+          [
+            1.1078125,
+            1,
+            0.35
+          ]
+        ]
+      },
+      {
+        "id": "face_cdeac277e6bfb_19b85d8b447",
+        "v": [
+          2,
+          22,
+          24,
+          27
+        ],
+        "color": "#9bb3d6",
+        "tag": "wall",
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 1,
+          "scaleV": 1,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            1.125,
+            0.5,
+            -0.5
+          ],
+          [
+            0.1875,
+            0.5,
+            -0.5
+          ],
+          [
+            0.4046875,
+            1,
+            -0.35
+          ],
+          [
+            1.1078125,
+            1,
+            -0.35
+          ]
+        ]
+      },
+      {
+        "id": "bottom",
+        "v": [
+          0,
+          1,
+          5,
+          4
+        ],
+        "color": "#9bb3d6",
+        "tag": null,
+        "wallRecipeId": null,
+        "transforms": {
+          "scaleU": 2.25,
+          "scaleV": 1.5,
+          "rotU": 0,
+          "rotV": 0,
+          "rotN": 0,
+          "translateX": 0,
+          "translateY": 0,
+          "translateZ": 0
+        },
+        "baseVertices": [
+          [
+            -0.5,
+            -0.5,
+            -0.5
+          ],
+          [
+            0.5,
+            -0.5,
+            -0.5
+          ],
+          [
+            0.5,
+            -0.5,
+            0.5
+          ],
+          [
+            -0.5,
+            -0.5,
+            0.5
+          ]
+        ]
+      }
+    ]
+  },
+  "selectedQuadId": "face_a97d79c3b86dd_19b857bb1fc",
+  "baseTransparent": false,
+  "wall": {
+    "recipes": [
+      {
+        "id": "builtin_default",
+        "recipe": {
+          "version": 1,
+          "seed": "builtin_default",
+          "meta": {
+            "name": "Default",
+            "glb": "Roughbrick1.glb"
+          },
+          "density": {
+            "value01": 0.5,
+            "overlapFrac": 0
+          },
+          "preTransform": {
+            "translate": [
+              0,
+              0,
+              0
+            ],
+            "rotateDegXYZ": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "settings": {
+            "kind": "wall",
+            "length": 1,
+            "height": 1,
+            "unitSize": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "gapBase": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "stagger": {
+              "enabled": false,
+              "amountInUnits": 0
+            },
+            "microJitter": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "random": {
+              "rotationDeg": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "translate": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "wallrecipe2",
+        "recipe": {
+          "version": 1,
+          "algoVersion": 1,
+          "seed": "seed-001",
+          "axisUp": "Y",
+          "model": {
+            "uri": "Roughbrick1.glb",
+            "nodeName": "rock"
+          },
+          "preTransform": {
+            "kind": "trs",
+            "translate": [
+              0,
+              0,
+              0
+            ],
+            "rotateDegXYZ": [
+              0.5,
+              1,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "density": {
+            "value01": 0.75,
+            "overlapFrac": 0.1,
+            "note": "effectiveGap = baseGap + (0.5-density)*2*overlapFrac*unit"
+          },
+          "settings": {
+            "kind": "wall",
+            "length": 14,
+            "height": 6,
+            "unitSize": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "gapBase": {
+              "x": 0.05,
+              "y": 0.05,
+              "z": 0.05
+            },
+            "gapEffective": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "stagger": {
+              "enabled": true,
+              "amountInUnits": 0.5
+            },
+            "microJitter": {
+              "x": 0.03,
+              "y": 0.02,
+              "z": 0.03
+            },
+            "random": {
+              "rotationDeg": {
+                "x": {
+                  "min": 2,
+                  "max": 4
+                },
+                "y": {
+                  "min": 0,
+                  "max": 0
+                },
+                "z": {
+                  "min": -1.5,
+                  "max": -0.5
+                }
+              },
+              "scale": {
+                "x": {
+                  "min": 0.9,
+                  "max": 1.39
+                },
+                "y": {
+                  "min": 0.9,
+                  "max": 1.33
+                },
+                "z": {
+                  "min": 0.8,
+                  "max": 1.19
+                }
+              },
+              "translate": {
+                "x": {
+                  "min": -0.02,
+                  "max": 0.02
+                },
+                "y": {
+                  "min": -0.01,
+                  "max": 0.01
+                },
+                "z": {
+                  "min": -0.02,
+                  "max": 0.02
+                }
+              }
+            },
+            "buildFromGround": true
+          },
+          "meta": {
+            "name": "wallrecipe2",
+            "sourceFile": "wallrecipe2.json"
+          }
+        }
+      },
+      {
+        "id": "roofing1_recipe",
+        "recipe": {
+          "version": 1,
+          "algoVersion": 1,
+          "seed": "seed-001",
+          "axisUp": "Y",
+          "model": {
+            "uri": "toribeam_model.glb",
+            "nodeName": "FOUNDATION"
+          },
+          "preTransform": {
+            "kind": "trs",
+            "translate": [
+              0,
+              0,
+              0
+            ],
+            "rotateDegXYZ": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "density": {
+            "value01": 1,
+            "overlapFrac": 0,
+            "note": "effectiveGap = baseGap + (0.5-density)*2*overlapFrac*unit"
+          },
+          "settings": {
+            "kind": "stacks",
+            "axis": "X",
+            "centered": true,
+            "count": 18,
+            "unitSize": {
+              "x": 2.54,
+              "y": 1,
+              "z": 1
+            },
+            "gapBase": {
+              "x": -0.562,
+              "y": 0.05,
+              "z": 0.05
+            },
+            "gapEffective": {
+              "x": -0.562,
+              "y": 0.05,
+              "z": 0.05
+            },
+            "stepMultiplier": 1,
+            "duplicates": {
+              "copies": 1,
+              "offset": {
+                "x": 0,
+                "y": 0,
+                "z": 2
+              }
+            },
+            "random": {
+              "rotationDeg": {
+                "x": {
+                  "min": 0,
+                  "max": 0
+                },
+                "y": {
+                  "min": 0,
+                  "max": 0
+                },
+                "z": {
+                  "min": 0,
+                  "max": 0
+                }
+              },
+              "scale": {
+                "x": {
+                  "min": 1.93,
+                  "max": 1.97
+                },
+                "y": {
+                  "min": 1.01,
+                  "max": 1.02
+                },
+                "z": {
+                  "min": 0.99,
+                  "max": 1.08
+                }
+              },
+              "translate": {
+                "x": {
+                  "min": -0.02,
+                  "max": 0.02
+                },
+                "y": {
+                  "min": -0.01,
+                  "max": 0.01
+                },
+                "z": {
+                  "min": -0.02,
+                  "max": 0.02
+                }
+              }
+            }
+          },
+          "meta": {
+            "name": "roofing1_recipe",
+            "sourceFile": "roofing1_recipe.json"
+          }
+        }
+      }
+    ],
+    "defaultRecipeId": "wallrecipe2",
+    "unitMultiplier": 0.25,
+    "rockScale": 2.1,
+    "loadedGlbs": [
+      "toribeam_model.glb",
+      "Roughbrick1.glb"
+    ],
+    "post": {
+      "scaleX": 1,
+      "scaleY": 1,
+      "tx": 0,
+      "ty": 0,
+      "tz": 0
+    }
+  }
+}

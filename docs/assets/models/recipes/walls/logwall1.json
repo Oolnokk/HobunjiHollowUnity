@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "algoVersion": 1,
+  "seed": "seed-001",
+  "axisUp": "Y",
+  "model": {
+    "uri": "wood_log.glb",
+    "nodeName": "tree"
+  },
+  "preTransform": {
+    "kind": "trs",
+    "translate": [
+      0,
+      0,
+      0
+    ],
+    "rotateDegXYZ": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "density": {
+    "value01": 0.85,
+    "overlapFrac": 0.4,
+    "note": "effectiveGap = baseGap + (0.5-density)*2*overlapFrac*unit"
+  },
+  "settings": {
+    "kind": "stacks",
+    "axis": "X",
+    "centered": true,
+    "count": 18,
+    "unitSize": {
+      "x": 0.64,
+      "y": 5,
+      "z": 0.56
+    },
+    "gapBase": {
+      "x": 0.05,
+      "y": 0.05,
+      "z": 0.05
+    },
+    "gapEffective": {
+      "x": -0.12919999999999998,
+      "y": -1.3499999999999999,
+      "z": -0.10679999999999999
+    },
+    "stepMultiplier": 1,
+    "duplicates": {
+      "copies": 1,
+      "offset": {
+        "x": 0,
+        "y": 0,
+        "z": 2
+      }
+    },
+    "random": {
+      "rotationDeg": {
+        "x": {
+          "min": -1,
+          "max": 9
+        },
+        "y": {
+          "min": 0,
+          "max": 360
+        },
+        "z": {
+          "min": 0,
+          "max": 1.5
+        }
+      },
+      "scale": {
+        "x": {
+          "min": 0.9,
+          "max": 1.1
+        },
+        "y": {
+          "min": 0.9,
+          "max": 1.1
+        },
+        "z": {
+          "min": 0.9,
+          "max": 1.1
+        }
+      },
+      "translate": {
+        "x": {
+          "min": -0.02,
+          "max": 0.02
+        },
+        "y": {
+          "min": -0.01,
+          "max": 0.01
+        },
+        "z": {
+          "min": -0.02,
+          "max": 0.02
+        }
+      }
+    }
+  }
+}
