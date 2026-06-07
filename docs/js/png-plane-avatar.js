@@ -85,10 +85,12 @@
     return group;
   }
 
-  // Mirror-only single-plane avatar for animals. No back plane, no rotation —
-  // the plane always faces the camera (which is permanently to the +Z / south).
-  // Uses TextureLoader so the image is fully decoded before rendering.
-  // Call setFlipped(true/false) to mirror via UV transform (no canvas re-draw).
+  // Two-plane side-view avatar for animals.
+  // The sprite is a side-on image (left edge = creature front/face).
+  // frontMesh rotation.y = +PI/2 → visible from camera when group faces west (rotation.y = -PI/2).
+  // backMesh  rotation.y = -PI/2 → visible from camera when group faces east (rotation.y = +PI/2).
+  // Back texture is the same sprite UV-flipped horizontally; no runtime setFlipped() needed.
+  // Returns { group, dispose() }.
   function buildAnimalPlaneAvatarModel(THREE, spriteUrl, options = {}) {
     if (!THREE) throw new Error('THREE is required.');
     if (!spriteUrl) throw new Error('A sprite URL is required.');
@@ -97,48 +99,46 @@
 
     const loader = new THREE.TextureLoader();
 
-    const normalTex = loader.load(spriteUrl);
-    normalTex.colorSpace = THREE.SRGBColorSpace;
+    const frontTex = loader.load(spriteUrl);
+    frontTex.colorSpace = THREE.SRGBColorSpace;
 
-    // Flipped: same image, mirrored horizontally via UV repeat/offset
-    const flippedTex = loader.load(spriteUrl);
-    flippedTex.colorSpace = THREE.SRGBColorSpace;
-    flippedTex.wrapS = THREE.RepeatWrapping;
-    flippedTex.repeat.set(-1, 1);
-    flippedTex.offset.set(1, 0);
+    const backTex = loader.load(spriteUrl);
+    backTex.colorSpace = THREE.SRGBColorSpace;
+    backTex.wrapS = THREE.RepeatWrapping;
+    backTex.repeat.set(-1, 1);
+    backTex.offset.set(1, 0);
 
-    const mat = new THREE.MeshBasicMaterial({
-      name: 'animal_sprite_mat',
-      map: normalTex,
-      transparent: true,
-      alphaTest: cfg().alphaTest ?? 0.001,
-      side: THREE.FrontSide,
-      depthWrite: false,
-    });
+    const matOpts = { transparent: true, alphaTest: cfg().alphaTest ?? 0.001, side: THREE.FrontSide, depthWrite: false };
+    const frontMat = new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_front_mat', map: frontTex });
+    const backMat  = new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_back_mat',  map: backTex  });
 
-    const geo  = new THREE.PlaneGeometry(modelWidth, modelHeight);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.renderOrder = 2;
-    mesh.name = options.name || 'animal_plane_mesh';
+    const frontGeo = new THREE.PlaneGeometry(modelWidth, modelHeight);
+    const backGeo  = frontGeo.clone();
+
+    const frontMesh = new THREE.Mesh(frontGeo, frontMat);
+    frontMesh.rotation.y = Math.PI / 2;
+    frontMesh.renderOrder = 2;
+    frontMesh.name = (options.name || 'animal') + '_front_plane';
+
+    const backMesh = new THREE.Mesh(backGeo, backMat);
+    backMesh.rotation.y = -Math.PI / 2;
+    backMesh.renderOrder = 2;
+    backMesh.name = (options.name || 'animal') + '_back_plane';
 
     const group = new THREE.Group();
     group.name = (options.name || 'animal_plane') + '_group';
-    group.add(mesh);
+    group.add(frontMesh);
+    group.add(backMesh);
 
-    let isFlipped = false;
     return {
       group,
-      setFlipped(flipped) {
-        if (flipped === isFlipped) return;
-        isFlipped = flipped;
-        mat.map = isFlipped ? flippedTex : normalTex;
-        mat.needsUpdate = true;
-      },
       dispose() {
-        geo.dispose();
-        mat.dispose();
-        normalTex.dispose();
-        flippedTex.dispose();
+        frontGeo.dispose();
+        backGeo.dispose();
+        frontMat.dispose();
+        backMat.dispose();
+        frontTex.dispose();
+        backTex.dispose();
       },
     };
   }

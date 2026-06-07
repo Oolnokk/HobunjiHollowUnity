@@ -742,11 +742,10 @@
       }
 
       function makeUumkaoiiAnimal(col, row) {
-        if (!uumkaoiiSpriteImage || !uumkaoiiSpriteImage.naturalWidth) return null;
-
-        const ANIMAL_W = 0.85;
-        const ANIMAL_H = ANIMAL_W * (uumkaoiiSpriteImage.naturalHeight / uumkaoiiSpriteImage.naturalWidth);
+        const ANIMAL_W = 1.275;
+        const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
         const halfH = ANIMAL_H / 2;
+        const CREATURE_PERPS = [0, Math.PI];
 
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, "assets/creaturesprites/uumkao'ii.png", {
           modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
@@ -755,6 +754,7 @@
 
         const initSurfY = tileSurfaceY(grid[row][col].type);
         avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
+        avatarRef.group.rotation.y = Math.PI / 2; // start facing east
         scene.add(avatarRef.group);
 
         let tickCounter = 0;
@@ -763,18 +763,20 @@
           type: 'animal', animalKey: 'uumkaoii',
           col, row, targetCol: col, targetRow: row,
           wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
-          halfHeight: halfH, lastMoveX: 0, avatarRef,
+          halfHeight: halfH, avatarRef,
+          groupRot: Math.PI / 2, targetRot: Math.PI / 2,
+          perpState: {},
 
           getButtons() {
-            return [{ icon: '🦆', label: "Uumkao'ii", action: 'obj_uumkaoii_' + this.id, style: 'secondary', allowed: false }];
+            return [{ icon: '\u{1F986}', label: "Uumkao’ii", action: 'obj_uumkaoii_' + this.id, style: 'secondary', allowed: false }];
           },
           onAction() {
-            return { ok: false, message: "The uumkao'ii ignores you." };
+            return { ok: false, message: "The uumkao’ii ignores you." };
           },
           tick() {
             tickCounter++;
-            if (tickCounter % 3 !== 0) return;   // move every ~3 ticks
-            if (Math.random() > 0.55) return;     // ~45 % chance to wander each opportunity
+            if (tickCounter % 3 !== 0) return;
+            if (Math.random() > 0.55) return;
 
             const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
             for (let i = dirs.length - 1; i > 0; i--) {
@@ -789,7 +791,7 @@
               this.col = nc; this.row = nr;
               this.targetCol = nc; this.targetRow = nr;
               worldObjects.set(nc + ',' + nr, this);
-              if (d.dc !== 0) this.lastMoveX = d.dc;
+              this.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
               break;
             }
           },
@@ -803,7 +805,11 @@
             this.wy += (ty - this.wy) * sp;
             this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
             this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
-            if (this.lastMoveX !== 0) this.avatarRef.setFlipped(this.lastMoveX > 0);
+
+            const { effectiveTarget, snapTo } = perpClamp(this.perpState, this.targetRot, CREATURE_PERPS);
+            if (snapTo !== null) this.groupRot = snapTo;
+            this.groupRot += angleDiff(effectiveTarget, this.groupRot) * 0.18;
+            this.avatarRef.group.rotation.y = this.groupRot;
           },
           reset() {
             scene.remove(avatarRef.group);
@@ -1978,6 +1984,33 @@
         return d;
       }
 
+      const PERP_DEAD_RAD = 15 * Math.PI / 180;
+
+      // Keeps model rotation outside ±15° dead zones around each perp angle.
+      // state: persistent object per entity (must survive across frames).
+      // Returns { effectiveTarget, snapTo } where snapTo is non-null when the model
+      // should teleport (raw target crossed through a perp to the far side).
+      function perpClamp(state, rawTarget, perps) {
+        if (!state.perpSides) state.perpSides = perps.map(() => null);
+        let effectiveTarget = rawTarget;
+        let snapTo = null;
+        for (let i = 0; i < perps.length; i++) {
+          const P = perps[i];
+          const dT = angleDiff(rawTarget, P);
+          if (Math.abs(dT) >= PERP_DEAD_RAD) {
+            const newSide = dT > 0 ? 1 : -1;
+            if (state.perpSides[i] !== null && state.perpSides[i] !== newSide) {
+              snapTo = P + newSide * PERP_DEAD_RAD;
+            }
+            state.perpSides[i] = newSide;
+          } else {
+            if (state.perpSides[i] === null) state.perpSides[i] = dT >= 0 ? 1 : -1;
+            effectiveTarget = P + state.perpSides[i] * PERP_DEAD_RAD;
+          }
+        }
+        return { effectiveTarget, snapTo };
+      }
+
       function nearestCardinalAngle(angle) {
         const cardinals = [0, Math.PI / 2, Math.PI, -Math.PI / 2]; // E S W N
         let best = cardinals[0], bestDiff = Infinity;
@@ -2965,14 +2998,12 @@
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
 
-        // Rotate to face movement direction
-        // facingAngle: 0=east, -PI/2=north in 2D game space
-        // Three.js Y rotation: 0=+Z, so we need to convert
-        const targetRotY = -facingAngle + Math.PI / 2;
-        let dRot = targetRotY - playerMesh.rotation.y;
-        while (dRot >  Math.PI) dRot -= Math.PI * 2;
-        while (dRot < -Math.PI) dRot += Math.PI * 2;
-        playerMesh.rotation.y += dRot * 0.18;
+        // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
+        if (!player.perpState) player.perpState = {};
+        const rawTargetRotY = -facingAngle + Math.PI / 2;
+        const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, [Math.PI / 2, -Math.PI / 2]);
+        if (pSnapTo !== null) playerMesh.rotation.y = pSnapTo;
+        playerMesh.rotation.y += angleDiff(pEffTarget, playerMesh.rotation.y) * 0.18;
 
         // Bob animation when moving
         const speed = Math.hypot(player.vx, player.vy);
