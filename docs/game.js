@@ -3098,6 +3098,7 @@
           // Plateau mound on top
           const rockMesh = new THREE.Mesh(buildRockTileGeo(col, row), tileMats.rock);
           rockMesh.castShadow = rockMesh.receiveShadow = true;
+          rockMesh._windAmp = 0;  // prevent NaN in wind rotation loop
           rockMesh.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
           scene.add(rockMesh);
           vegFoliageMeshes[i] = rockMesh;
