@@ -2188,6 +2188,8 @@
         rock:   new THREE.MeshLambertMaterial({ color: 0x79807c }),
         shrub:  new THREE.MeshLambertMaterial({ color: 0x356e36 }),
       };
+      // Floor material for vegetation tiles — matches weed foliage HSL color
+      const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
       // ── Water shader — flow lines + ripple rings ───────────────────
       // Each water plane gets its own ShaderMaterial instance with per-tile uniforms.
       // uFlow: vec2 flow direction (normalised), zero = still water → ripple mode
@@ -2329,7 +2331,26 @@
       }
 
       // Geometry — full 1.0×1.0 footprint, no gaps
-      const floorGeo  = new THREE.BoxGeometry(1.0, SLAB_H, 1.0);
+      // Per-tile floor: 2×2 top subdivisions with seam-free vertex displacement.
+      // Displacement key is (round(worldX*2), round(worldZ*2)) so shared edge
+      // vertices between adjacent tiles always hash to the same value.
+      function makeFloorGeo(col, row) {
+        const geo = new THREE.BoxGeometry(1.0, SLAB_H, 1.0, 2, 1, 2);
+        const pa  = geo.attributes.position;
+        const topY = SLAB_H / 2;
+        for (let vi = 0; vi < pa.count; vi++) {
+          if (Math.abs(pa.getY(vi) - topY) < 1e-4) {
+            const kx = Math.round((col + 0.5 + pa.getX(vi)) * 2) | 0;
+            const kz = Math.round((row + 0.5 + pa.getZ(vi)) * 2) | 0;
+            let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+            h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+            pa.setY(vi, topY + (h / 4294967296 - 0.5) * 0.026);
+          }
+        }
+        pa.needsUpdate = true;
+        geo.computeVertexNormals();
+        return geo;
+      }
       const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
       const waterGeo  = new THREE.PlaneGeometry(1.0, 1.0);
       waterGeo.rotateX(-Math.PI / 2);
@@ -2669,7 +2690,7 @@
 
         if ((tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) && window.FoliageGenerator) {
           // Grass floor slab underneath the vegetation
-          const floorMesh = new THREE.Mesh(floorGeo, tileMats.weeds);
+          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), vegFloorMat);
           floorMesh.castShadow = floorMesh.receiveShadow = true;
           floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
           scene.add(floorMesh);
@@ -2719,7 +2740,7 @@
           mesh = new THREE.Mesh(vegGeo, makeVegMaterial(color, phase));
           vegMeshes.push(mesh);
         } else {
-          mesh = new THREE.Mesh(tile.type === TileType.ROCK ? rockGeo : floorGeo, mat);
+          mesh = new THREE.Mesh(tile.type === TileType.ROCK ? rockGeo : makeFloorGeo(col, row), mat);
         }
         mesh.castShadow = mesh.receiveShadow = true;
         mesh.position.set(col + 0.5, tileYCenter(tile.type), row + 0.5);
