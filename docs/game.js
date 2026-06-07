@@ -2533,7 +2533,7 @@
       // Track all vegetation meshes for wind animation
       const vegMeshes = [];
       // Track foliage-generator groups by tile index for rotation-based sway
-      const vegFoliageGroups = {};
+      const vegFoliageMeshes = new Array(ROWS * COLS).fill(null);
 
       // ── Crop mesh system ──────────────────────────────────────────
       // Needlegrain and heftroot use procedural foliage geometry.
@@ -2551,8 +2551,8 @@
         blackMustard:  { body: 0x4a3b2f, ripe: 0x1f1812, sprout: 0x789b3a },
         greenMustard:  { body: 0x6da64a, ripe: 0x9bd66b, sprout: 0x75b957 },
       };
-      const CROP_MAX_SCALE = 0.48;
-      const CROP_MIN_SCALE = 0.08;
+      const CROP_MAX_SCALE = 0.96;
+      const CROP_MIN_SCALE = 0.16;
       const cropMeshes = new Array(ROWS * COLS).fill(null);
 
       // Tracks which growth bucket (0–3) each foliage crop was built at,
@@ -2573,7 +2573,19 @@
       function _buildFoliageMesh(crop, growth, col, row) {
         if (!FG) return null;
         if (crop === 'needlegrain') return FG.buildNeedlegrainMesh(growth, col, row);
-        if (crop === 'heftroot')    return FG.buildHeftrootMesh(growth, col, row);
+        if (crop === 'heftroot') {
+          // Three plants in a triangle cluster, each with a unique seed offset
+          const wrapper = new THREE.Group();
+          const offsets = [[-0.20, 0, 0.14], [0.22, 0, 0.14], [0.0, 0, -0.22]];
+          for (let idx = 0; idx < 3; idx++) {
+            const [ox, oy, oz] = offsets[idx];
+            const plant = FG.buildHeftrootMesh(growth, col + idx * 127, row + idx * 61);
+            plant.position.set(ox, oy, oz);
+            plant.scale.setScalar(0.68);
+            wrapper.add(plant);
+          }
+          return wrapper;
+        }
         return null;
       }
 
@@ -2656,16 +2668,46 @@
         const mat  = tileMats[tile.type] || tileMats.grass;
 
         if ((tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) && window.FoliageGenerator) {
-          const phase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
-          const group = tile.type === TileType.SHRUB
-            ? window.FoliageGenerator.buildShrubMesh(col, row)
-            : window.FoliageGenerator.buildWeedsMesh(col, row);
-          group._windPhase = phase;
-          group._windAmp   = tile.type === TileType.SHRUB ? 0.06 : 0.10;
-          group.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
-          scene.add(group);
-          tileMeshes[i]       = group;
-          vegFoliageGroups[i] = group;
+          // Grass floor slab underneath the vegetation
+          const floorMesh = new THREE.Mesh(floorGeo, tileMats.grass);
+          floorMesh.castShadow = floorMesh.receiveShadow = true;
+          floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
+          scene.add(floorMesh);
+          tileMeshes[i] = floorMesh;
+
+          const surfY = tileSurfaceY(tile.type);
+          let vegGroup;
+
+          if (tile.type === TileType.SHRUB) {
+            // Single shrub, 2x scale
+            vegGroup = window.FoliageGenerator.buildShrubMesh(col, row);
+            vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
+            vegGroup._windAmp   = 0.06;
+            vegGroup.scale.set(2, 2, 2);
+            vegGroup.position.set(col + 0.5, surfY, row + 0.5);
+          } else {
+            // WEEDS: scatter 3-5 plants across the tile with varied seeds
+            vegGroup = new THREE.Group();
+            vegGroup.position.set(col + 0.5, surfY, row + 0.5);
+            vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
+            vegGroup._windAmp   = 0.10;
+            const tileSeed = (col * 31337 + row * 1009) >>> 0;
+            const n = 3 + (tileSeed % 3);  // 3, 4 or 5 plants
+            for (let idx = 0; idx < n; idx++) {
+              const sx = ((tileSeed ^ (idx * 127)) % 1000) / 1000;
+              const sz = ((tileSeed ^ (idx * 61 + 17)) % 1000) / 1000;
+              const ox = (sx - 0.5) * 0.72;
+              const oz = (sz - 0.5) * 0.72;
+              const sc = 1.4 + (((tileSeed ^ (idx * 43)) % 100) / 100) * 0.8;
+              const plant = window.FoliageGenerator.buildWeedsMesh(col + idx * 127, row + idx * 61);
+              plant.position.set(ox, 0, oz);
+              plant.scale.setScalar(sc);
+              vegGroup.add(plant);
+            }
+          }
+
+          scene.add(vegGroup);
+          vegFoliageMeshes[i] = vegGroup;
           return;
         }
 
@@ -2689,10 +2731,10 @@
         for (let row = 0; row < ROWS; row++) {
           for (let col = 0; col < COLS; col++) {
             const i = row * COLS + col;
-            if (tileMeshes[i])  { scene.remove(tileMeshes[i]);  tileMeshes[i]  = null; }
-            if (waterMeshes[i]) { scene.remove(waterMeshes[i]); waterMeshes[i] = null; }
-            if (cropMeshes[i])  { scene.remove(cropMeshes[i]);  cropMeshes[i]  = null; }
-            delete vegFoliageGroups[i];
+            if (tileMeshes[i])       { scene.remove(tileMeshes[i]);       tileMeshes[i]       = null; }
+            if (waterMeshes[i])      { scene.remove(waterMeshes[i]);      waterMeshes[i]      = null; }
+            if (cropMeshes[i])       { scene.remove(cropMeshes[i]);       cropMeshes[i]       = null; }
+            if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); vegFoliageMeshes[i] = null; }
             cropGrowthBucket[i] = -1;
             _buildOneTileMesh(col, row);
           }
@@ -2702,10 +2744,10 @@
       // Update a single tile mesh (called after shovel actions)
       function refreshTileMesh(col, row) {
         const i = row * COLS + col;
-        if (tileMeshes[i])  { scene.remove(tileMeshes[i]);  tileMeshes[i]  = null; }
-        if (waterMeshes[i]) { scene.remove(waterMeshes[i]); waterMeshes[i] = null; }
-        if (cropMeshes[i])  { scene.remove(cropMeshes[i]);  cropMeshes[i]  = null; }
-        delete vegFoliageGroups[i];
+        if (tileMeshes[i])       { scene.remove(tileMeshes[i]);       tileMeshes[i]       = null; }
+        if (waterMeshes[i])      { scene.remove(waterMeshes[i]);      waterMeshes[i]      = null; }
+        if (cropMeshes[i])       { scene.remove(cropMeshes[i]);       cropMeshes[i]       = null; }
+        if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); vegFoliageMeshes[i] = null; }
         cropGrowthBucket[i] = -1;
         _buildOneTileMesh(col, row);
       }
@@ -2918,7 +2960,8 @@
         }
         // Rotation-based wind sway for procedural foliage groups
         const windScale = windStrBase / 0.03;
-        for (const fg of Object.values(vegFoliageGroups)) {
+        for (const fg of vegFoliageMeshes) {
+          if (!fg) continue;
           const amp = fg._windAmp * windScale;
           fg.rotation.z = amp * Math.sin(windTime * 1.6 + fg._windPhase);
           fg.rotation.x = amp * 0.45 * Math.cos(windTime * 1.1 + fg._windPhase * 1.3);
