@@ -2586,19 +2586,29 @@
           for (let vi = 0; vi < VERTS; vi++)
             positions.push(vi*STEP - 0.5, Y[vj*VERTS+vi], vj*STEP - 0.5);
 
-        const indices = [];
+        // Split cells: stone if any corner is elevated (plateau or cliff face),
+        // grass if all corners are at ground level. Threshold 0.05u sits above
+        // the ±0.013u seam noise so ground cells always go green.
+        const stoneIdx = [], grassIdx = [];
         for (let cj = 0; cj < CELLS; cj++)
           for (let ci = 0; ci < CELLS; ci++) {
             const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
             const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
-            indices.push(v00, v10, v11, v00, v11, v01);
+            const tgt = Math.max(Y[v00], Y[v10], Y[v01], Y[v11]) > 0.05
+              ? stoneIdx : grassIdx;
+            tgt.push(v00, v10, v11, v00, v11, v01);
           }
 
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        geo.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
-        geo.computeVertexNormals();
-        return geo;
+        const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+        const makeGeo = (idx) => {
+          if (!idx.length) return null;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', posAttr);
+          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          g.computeVertexNormals();
+          return g;
+        };
+        return { stoneGeo: makeGeo(stoneIdx), grassGeo: makeGeo(grassIdx) };
       }
 
       // ── Border terrain: plateau/cliff landscape beyond the playable grid ────────
@@ -3147,19 +3157,31 @@
         const mat  = tileMats[tile.type] || tileMats.grass;
 
         if (tile.type === TileType.ROCK) {
-          // Floor slab beneath the terrain mound
-          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), tileMats.rock);
+          // Floor slab — grass so it blends with surrounding tiles
+          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), tileMats.grass);
           floorMesh.castShadow = floorMesh.receiveShadow = true;
           floorMesh.position.set(col + 0.5, NORMAL_TOP - SLAB_H / 2, row + 0.5);
           scene.add(floorMesh);
           tileMeshes[i] = floorMesh;
-          // Plateau mound on top
-          const rockMesh = new THREE.Mesh(buildRockTileGeo(col, row), tileMats.rock);
-          rockMesh.castShadow = rockMesh.receiveShadow = true;
-          rockMesh._windAmp = 0;  // prevent NaN in wind rotation loop
-          rockMesh.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-          scene.add(rockMesh);
-          vegFoliageMeshes[i] = rockMesh;
+          // Plateau mound: stone for elevated/cliff cells, grass for ground-level base
+          const { stoneGeo, grassGeo } = buildRockTileGeo(col, row);
+          let moundRoot = null;
+          if (stoneGeo) {
+            const m = new THREE.Mesh(stoneGeo, tileMats.rock);
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            moundRoot = m;
+          }
+          if (grassGeo) {
+            const m = new THREE.Mesh(grassGeo, tileMats.grass);
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            if (!moundRoot) moundRoot = m;
+          }
+          if (moundRoot) moundRoot._windAmp = 0;  // wind loop skips _windAmp=0
+          vegFoliageMeshes[i] = moundRoot || { _windAmp: 0 };
           return;
         }
 
