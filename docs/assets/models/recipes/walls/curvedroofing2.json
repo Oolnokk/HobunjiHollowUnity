@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "algoVersion": 1,
+  "seed": "seed-001",
+  "axisUp": "Y",
+  "model": {
+    "uri": "curvedbeam1.glb",
+    "nodeName": "FOUNDATION"
+  },
+  "preTransform": {
+    "kind": "trs",
+    "translate": [
+      0,
+      0,
+      0
+    ],
+    "rotateDegXYZ": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "density": {
+    "value01": 0.75,
+    "overlapFrac": 0.1,
+    "note": "effectiveGap = baseGap + (0.5-density)*2*overlapFrac*unit"
+  },
+  "settings": {
+    "kind": "stacks",
+    "axis": "X",
+    "centered": true,
+    "count": 18,
+    "unitSize": {
+      "x": 1.08,
+      "y": 1.18,
+      "z": 5
+    },
+    "gapBase": {
+      "x": 0.27,
+      "y": 0.05,
+      "z": 0.05
+    },
+    "gapEffective": {
+      "x": 0.21600000000000003,
+      "y": -0.008999999999999994,
+      "z": -0.2
+    },
+    "stepMultiplier": 1,
+    "duplicates": {
+      "copies": 1,
+      "offset": {
+        "x": 0,
+        "y": 0,
+        "z": 2
+      }
+    },
+    "random": {
+      "rotationDeg": {
+        "x": {
+          "min": 0,
+          "max": 0
+        },
+        "y": {
+          "min": 0,
+          "max": 0
+        },
+        "z": {
+          "min": 0,
+          "max": 0
+        }
+      },
+      "scale": {
+        "x": {
+          "min": 1.29,
+          "max": 1.31
+        },
+        "y": {
+          "min": 1.2,
+          "max": 1.22
+        },
+        "z": {
+          "min": 0.94,
+          "max": 0.96
+        }
+      },
+      "translate": {
+        "x": {
+          "min": -0.02,
+          "max": 0.02
+        },
+        "y": {
+          "min": -0.01,
+          "max": 0.01
+        },
+        "z": {
+          "min": -0.02,
+          "max": 0.02
+        }
+      }
+    }
+  }
+}
