@@ -2496,13 +2496,13 @@
       const interiorScene = new THREE.Scene();
       interiorScene.background = new THREE.Color(0x000000);
 
-      // Interior lighting — warm lantern-style
-      const _intAmbient = new THREE.AmbientLight(0xffd090, 0.7);
+      // Interior lighting — dark room, single warm lantern
+      const _intAmbient = new THREE.AmbientLight(0xffd090, 0.15);
       interiorScene.add(_intAmbient);
-      const _intKey = new THREE.DirectionalLight(0xfff0cc, 0.5);
+      const _intKey = new THREE.DirectionalLight(0xfff0cc, 0.08);
       _intKey.position.set(2, 6, 3);
       interiorScene.add(_intKey);
-      const _intFill = new THREE.PointLight(0xff8833, 0.6, 12);
+      const _intFill = new THREE.PointLight(0xff8833, 0.8, 10);
       _intFill.position.set(3, 1.8, 2.5);  // centre of 6×5 main room
       interiorScene.add(_intFill);
 
@@ -2534,7 +2534,10 @@
         { id: 'e_wall',  width: 5, height: INTERIOR_WALL_HEIGHT, position: [6, 0, 2.5], rotationDeg: [0, -90, 0] },
         { id: 's_left',  width: 2, height: INTERIOR_WALL_HEIGHT, position: [1, 0, 5],   rotationDeg: [0, 180, 0] },
         { id: 's_right', width: 2, height: INTERIOR_WALL_HEIGHT, position: [5, 0, 5],   rotationDeg: [0, 180, 0] },
-        // exit_w / exit_e / exit_s omitted — corridor entrance kept open
+        // Corridor walls — entrance gap (z=5, x=2..4) kept clear; walls line the shaft
+        { id: 'exit_w',  width: 1, height: INTERIOR_WALL_HEIGHT, position: [2, 0, 5.5], rotationDeg: [0,  90, 0] },
+        { id: 'exit_e',  width: 1, height: INTERIOR_WALL_HEIGHT, position: [4, 0, 5.5], rotationDeg: [0, -90, 0] },
+        { id: 'exit_s',  width: 2, height: INTERIOR_WALL_HEIGHT, position: [3, 0, 6],   rotationDeg: [0, 180, 0] },
       ];
 
       // Built lazily on first entry to avoid blocking startup; called by enterInterior().
@@ -2544,7 +2547,6 @@
 
         // Floor — boards.png if present, warm brown placeholder otherwise
         const floorMat = new THREE.MeshLambertMaterial({ color: 0x8b6914 });
-        const exitMat  = new THREE.MeshLambertMaterial({ color: 0x8b1a1a });
         new THREE.TextureLoader().load(
           'assets/textures/boards.png',
           (tex) => {
@@ -2554,29 +2556,33 @@
             floorMat.needsUpdate = true;
           },
           undefined,
-          () => {} // missing → keep brown
+          () => {}
         );
 
-        // Floor tiles from JSON floorCells: main room 6×5 + south corridor 2×1
+        // Floor tiles: main room 6×5 + corridor 2×1; exit tiles use same material
         const floorCells = [];
         for (let r = 0; r < 5; r++) for (let c = 0; c < 6; c++) floorCells.push([c, r]);
         floorCells.push([2, 5], [3, 5]);
-
         for (const [c, r] of floorCells) {
-          const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), r === INTERIOR_EXIT_ROW ? exitMat : floorMat);
+          const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
           fl.position.set(c + 0.5, -0.05, r + 0.5);
           fl.receiveShadow = true;
           interiorScene.add(fl);
         }
 
-        // Pure-black backing planes sit just behind each wall panel surface.
-        // Gaps between bricks show through to these, giving a clean black outline effect.
-        const _backingMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        // Black backing planes — render first (renderOrder=-1), no depth write.
+        // Bricks overwrite them; pure black shows only through gaps between bricks.
+        // Each plane is slightly smaller than its panel to stay inside the brick boundary.
+        const _backingMat = new THREE.MeshBasicMaterial({
+          color: 0x000000, side: THREE.DoubleSide,
+          depthWrite: false, depthTest: false
+        });
         for (const p of INTERIOR_WALL_PANELS) {
-          const _bg = new THREE.Mesh(new THREE.PlaneGeometry(p.width, p.height), _backingMat);
-          // PlaneGeometry is centred; shift up by height/2 so bottom edge aligns with floor,
-          // and pull 0.02 behind the wall surface so bricks render in front.
-          _bg.position.set(0, p.height / 2, -0.02);
+          const bw = Math.max(0.2, p.width  - 0.3);
+          const bh = Math.max(0.2, p.height - 0.2);
+          const _bg = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), _backingMat);
+          _bg.renderOrder = -1;
+          _bg.position.set(0, p.height / 2, 0);
           const _pg = new THREE.Group();
           _pg.position.set(p.position[0], p.position[1], p.position[2]);
           _pg.rotation.set(
@@ -2587,6 +2593,13 @@
           _pg.add(_bg);
           interiorScene.add(_pg);
         }
+
+        // Outside ambient light seeping in through the corridor exit — cool daylight cone
+        const _exitSpot = new THREE.SpotLight(0xb4d8ff, 2.5, 6, 0.5, 0.7, 1.5);
+        _exitSpot.position.set(3, 3, 8);
+        _exitSpot.target.position.set(3, 0, 5.5);
+        interiorScene.add(_exitSpot);
+        interiorScene.add(_exitSpot.target);
 
         // Instanced walls: 50% brick size, 4x density, 60% depth, micro-jitter
         interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
