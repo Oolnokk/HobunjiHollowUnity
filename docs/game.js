@@ -235,15 +235,18 @@
       const SEASON_LENGTH_DAYS = 8;
 
       // ── Highland House — adjust these to fit the GLB and position it on the farm ──
-      const HOUSE_SCALE       = 0.015;  // GLB scale: increase to make it bigger
-      const HOUSE_Y_OFFSET    = 0.0;    // raise/lower the model (positive = up)
-      const HOUSE_ROTATION_Y  = Math.PI; // rotate model around Y axis (radians; try Math.PI if door faces wrong way)
-      const HOUSE_COL         = 25;     // top-left column of house footprint on farm grid
+      // Values sourced from Footprint_Highlandhouse_medium.json (footprint mapper v3)
+      const HOUSE_SCALE       = 1.854;  // uniform GLB scale from mapper
+      const HOUSE_ROTATION_Y  = 0;     // no rotation needed per mapper
+      const HOUSE_POS_X       = 27.741; // mapper translate.x (-1.259) + editor→game offset (29)
+      const HOUSE_POS_Y       = 0.915;  // mapper translate.y (ground lift)
+      const HOUSE_POS_Z       = 3.662;  // mapper translate.z (-0.338) + editor→game offset (4)
+      const HOUSE_COL         = 26;     // top-left column of house footprint on farm grid
       const HOUSE_ROW         = 2;      // top-left row of house footprint on farm grid
-      const HOUSE_FOOTPRINT_W = 5;      // footprint width in tiles  (cols HOUSE_COL .. HOUSE_COL+W-1)
-      const HOUSE_FOOTPRINT_D = 5;      // footprint depth in tiles  (rows HOUSE_ROW .. HOUSE_ROW+D-1)
-      const DOOR_COL          = 27;     // farm grid col of the door tile (reticle target to "Enter")
-      const DOOR_ROW          = 7;      // farm grid row of the door tile (just south of footprint)
+      const HOUSE_FOOTPRINT_W = 5;      // footprint width in tiles (cells x=9..13, 5 wide)
+      const HOUSE_FOOTPRINT_D = 4;      // footprint depth in tiles (cells y=10..13, 4 deep)
+      const DOOR_COL          = 28;     // farm grid col of door zone (mapper cell 11,14 → col 28)
+      const DOOR_ROW          = 6;      // farm grid row of door zone (mapper cell 11,14 → row 6)
       // Interior dimensions — the inside is bigger than the outside (Pokemon style)
       const INTERIOR_COLS      = 5;
       const INTERIOR_ROWS      = 10;
@@ -932,14 +935,14 @@
       function makeHighlandHouse() {
         // Load the GLB asynchronously; show fallback box until it arrives
         const loader = new THREE.GLTFLoader();
-        const centerX = HOUSE_COL + HOUSE_FOOTPRINT_W / 2;
-        const centerZ = HOUSE_ROW + HOUSE_FOOTPRINT_D / 2;
+        const footprintCenterX = HOUSE_COL + HOUSE_FOOTPRINT_W / 2;
+        const footprintCenterZ = HOUSE_ROW + HOUSE_FOOTPRINT_D / 2;
 
         // Fallback box shown while GLB loads
         const fallbackMat  = new THREE.MeshLambertMaterial({ color: 0x7a5030 });
         const fallbackGeo  = new THREE.BoxGeometry(HOUSE_FOOTPRINT_W * 0.9, 2.0, HOUSE_FOOTPRINT_D * 0.9);
         const fallbackMesh = new THREE.Mesh(fallbackGeo, fallbackMat);
-        fallbackMesh.position.set(centerX, 1.0 + HOUSE_Y_OFFSET, centerZ);
+        fallbackMesh.position.set(footprintCenterX, 1.0, footprintCenterZ);
         fallbackMesh.castShadow = true;
         scene.add(fallbackMesh);
 
@@ -951,7 +954,7 @@
             const model = gltf.scene;
             model.scale.setScalar(HOUSE_SCALE);
             model.rotation.y = HOUSE_ROTATION_Y;
-            model.position.set(centerX, HOUSE_Y_OFFSET, centerZ);
+            model.position.set(HOUSE_POS_X, HOUSE_POS_Y, HOUSE_POS_Z);
             model.traverse(m => {
               if (m.isMesh) {
                 m.castShadow    = true;
