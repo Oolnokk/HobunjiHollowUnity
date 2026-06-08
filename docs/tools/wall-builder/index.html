@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<title>FBSE6 Wall Generator — HobunjiHollow</title>
+<style>
+:root{--bg:#0b0f14;--panel:#121822;--panel2:#0f1520;--text:#e8eef7;--muted:#9fb0c8;--line:#253246;--acc:#6aa7ff;--danger:#fb7185;}
+*{box-sizing:border-box} body{margin:0;height:100vh;overflow:hidden;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif} #app{display:flex;height:100vh} #sidebar{width:420px;max-width:62vw;min-width:330px;background:linear-gradient(180deg,var(--panel),var(--panel2));border-right:1px solid var(--line);display:flex;flex-direction:column} #sidebarHeader{padding:10px;border-bottom:1px solid rgba(255,255,255,.08)} #sidebarScroll{padding:10px;overflow:auto;-webkit-overflow-scrolling:touch}.card{border:1px solid var(--line);border-radius:12px;padding:10px;background:rgba(255,255,255,.035);margin-bottom:10px}.section{border-left:6px solid var(--sec,#6aa7ff);background:linear-gradient(180deg,var(--secBg,rgba(106,167,255,.1)),rgba(255,255,255,.02))}.sectionTitle{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}.sectionTitle b{font-size:13px}.sectionTag{font-size:11px;color:var(--muted);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:3px 8px}h2{font-size:13px;color:var(--muted);letter-spacing:.3px;text-transform:uppercase;margin:10px 0 8px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.col{display:flex;flex-direction:column;gap:5px}label{font-size:12px;color:var(--muted)}input,select,textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:9px 10px;color:var(--text);font-size:15px;outline:none}textarea{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;min-height:110px}button{background:rgba(106,167,255,.18);border:1px solid rgba(106,167,255,.35);color:var(--text);padding:9px 10px;border-radius:11px;font-weight:650;cursor:pointer}button.secondary{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.13)}button.danger{background:rgba(251,113,133,.16);border-color:rgba(251,113,133,.35)}button:active{transform:translateY(1px)}.mini{font-size:12px;padding:7px 9px}.help{font-size:12px;color:var(--muted);line-height:1.35}.hr{height:1px;background:var(--line);margin:10px 0}.pill{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);font-size:12px;color:var(--muted)}#viewport{flex:1;position:relative;min-width:260px}canvas{display:block;width:100%;height:100%}#debug{position:absolute;left:10px;bottom:10px;max-width:min(640px,95vw);white-space:pre-wrap;background:rgba(0,0,0,.48);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:10px;font-size:12px;color:var(--text);pointer-events:none}#logPanel{position:absolute;right:10px;top:10px;width:min(390px,92vw);max-height:48vh;background:rgba(11,15,20,.96);border:1px solid rgba(255,255,255,.13);border-radius:12px;overflow:hidden;display:none;z-index:10}.visible{display:block!important}.logHead{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.25)}#logBody{max-height:calc(48vh - 42px);overflow:auto;padding:8px;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#bfdbfe}.logLine{padding:2px 4px;border-radius:4px}.logToggle{position:absolute;right:10px;top:10px;z-index:9}.panelItem{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:8px;background:rgba(255,255,255,.025);margin-top:6px}.panelItem.selected{outline:2px solid var(--acc);outline-offset:1px}@media(max-width:720px){#sidebar{width:360px;max-width:68vw;min-width:300px}.grid3{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
+</style>
+<!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="app">
+<aside id="sidebar">
+  <div id="sidebarHeader">
+    <div class="row">
+      <button id="buildWallsBtn">Build walls</button>
+      <button id="clearWallsBtn" class="danger">Clear walls</button>
+      <button id="resetBtn" class="secondary">Reset</button>
+    </div>
+    <div class="row" style="margin-top:8px"><span class="pill" id="statusPill">Ready</span><span class="pill" id="countPill">0 instances</span></div>
+  </div>
+  <div id="sidebarScroll">
+    <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
+      <div class="sectionTitle"><b>Wall target panels</b><span class="sectionTag">geometry</span></div>
+      <div class="help">Add wall panels here, import FBSE6 state JSON, or paste simple wall rectangles.</div>
+      <div class="hr"></div>
+      <div class="grid2">
+        <div class="col"><label>Panel width</label><input id="panelWidth" value="4" inputmode="decimal"></div>
+        <div class="col"><label>Panel height</label><input id="panelHeight" value="2.5" inputmode="decimal"></div>
+      </div>
+      <div class="grid3" style="margin-top:8px">
+        <div class="col"><label>X</label><input id="panelX" value="0" inputmode="decimal"></div>
+        <div class="col"><label>Y (bottom)</label><input id="panelY" value="0" inputmode="decimal"></div>
+        <div class="col"><label>Z</label><input id="panelZ" value="0" inputmode="decimal"></div>
+      </div>
+      <div class="grid3" style="margin-top:8px">
+        <div class="col"><label>Rot X°</label><input id="panelRotX" value="0" inputmode="decimal"></div>
+        <div class="col"><label>Rot Y°</label><input id="panelRotY" value="0" inputmode="decimal"></div>
+        <div class="col"><label>Rot Z°</label><input id="panelRotZ" value="0" inputmode="decimal"></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="addPanelBtn" class="secondary">Add panel</button>
+        <button id="updatePanelBtn" class="secondary">Update selected</button>
+        <button id="deletePanelBtn" class="danger">Delete selected</button>
+      </div>
+      <div id="panelList"></div>
+    </div>
+
+    <div class="card section" style="--sec:#fb7185;--secBg:rgba(251,113,133,.10)">
+      <div class="sectionTitle"><b>Recipes + GLBs</b><span class="sectionTag">FBSE6 wall core</span></div>
+      <div class="help">Accepts FBSE6/Wall Builder <b>wall</b> and <b>stacks</b> recipe JSON. Load the matching GLB by picker or URL.</div>
+      <div class="hr"></div>
+      <div class="row">
+        <button id="loadRecipeBtn" class="secondary">Load recipe JSON</button>
+        <button id="loadGlbBtn" class="secondary">Load GLB</button>
+        <input id="recipeFile" type="file" accept=".json,application/json" multiple hidden>
+        <input id="glbFile" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" multiple hidden>
+      </div>
+      <div class="grid2" style="margin-top:8px">
+        <!-- Path relative to this tool's location: ../../assets/models/Roughbrick1.glb -->
+        <div class="col"><label>GLB URL/path</label><input id="glbUrl" value="../../assets/models/Roughbrick1.glb"></div>
+        <div class="col"><label>&nbsp;</label><button id="loadGlbUrlBtn" class="secondary">Load GLB URL</button></div>
+      </div>
+      <div class="grid2" style="margin-top:8px">
+        <div class="col"><label>Default recipe</label><select id="defaultRecipeSel"></select></div>
+        <div class="col"><label>Selected panel recipe</label><select id="panelRecipeSel"></select></div>
+      </div>
+      <div class="row" style="margin-top:8px"><button id="assignRecipeBtn" class="secondary">Assign to selected panel</button><button id="clearRecipeBtn" class="secondary">Clear assignment</button></div>
+      <div class="help" style="margin-top:8px">Recipes: <span id="recipeCount">1</span> • GLBs: <span id="glbCount">0</span></div>
+    </div>
+
+    <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
+      <div class="sectionTitle"><b>Global wall transforms</b><span class="sectionTag">density/scale/debug</span></div>
+      <div class="grid2">
+        <div class="col"><label>Brick unit scale / density multiplier</label><input id="wallUnitMult" value="1" inputmode="decimal"></div>
+        <div class="col"><label>Rock scale</label><input id="wallRockScale" value="1" inputmode="decimal"></div>
+      </div>
+      <div class="help" style="margin-top:6px">Smaller unit multiplier = more pieces. Rock scale changes size after count is computed.</div>
+      <div class="hr"></div>
+      <h2>Pre-transform scale</h2>
+      <div class="grid3"><div class="col"><label>X</label><input id="wallPreScaleX" value="1"></div><div class="col"><label>Y</label><input id="wallPreScaleY" value="1"></div><div class="col"><label>Z</label><input id="wallPreScaleZ" value="1"></div></div>
+      <h2>Pre-transform rotation</h2>
+      <div class="grid3"><div class="col"><label>X°</label><input id="wallPreRotX" value="0"></div><div class="col"><label>Y°</label><input id="wallPreRotY" value="0"></div><div class="col"><label>Z°</label><input id="wallPreRotZ" value="0"></div></div>
+      <div class="hr"></div>
+      <h2>Whole-wall post transform</h2>
+      <div class="grid3"><div class="col"><label>Scale X</label><input id="wallPostScaleX" value="1"></div><div class="col"><label>Scale Y</label><input id="wallPostScaleY" value="1"></div><div class="col"><label>Scale Z</label><input id="wallPostScaleZ" value="1"></div></div>
+      <div class="grid3" style="margin-top:8px"><div class="col"><label>Translate X</label><input id="wallPostTx" value="0"></div><div class="col"><label>Translate Y</label><input id="wallPostTy" value="0"></div><div class="col"><label>Translate Z</label><input id="wallPostTz" value="0"></div></div>
+      <div class="row" style="margin-top:8px"><label><input id="showHitDebugChk" type="checkbox" checked> Surface hit debug dots</label><label><input id="placeholderChk" type="checkbox" checked> Placeholder cube if GLB missing</label></div>
+    </div>
+
+    <div class="card section" style="--sec:#94a3b8;--secBg:rgba(148,163,184,.10)">
+      <div class="sectionTitle"><b>Import / export</b><span class="sectionTag">state</span></div>
+      <div class="row"><button id="importStateBtn" class="secondary">Import FBSE6/state JSON</button><button id="downloadStateBtn" class="secondary">Download isolated state</button><button id="exportGlbBtn">Export GLB</button><input id="stateFile" type="file" accept=".json,application/json" hidden></div>
+      <div class="hr"></div>
+      <label>Paste panels JSON (optional)</label>
+      <textarea id="pastePanels" placeholder='[{"width":4,"height":2.5,"position":[0,1.25,0],"rotationDeg":[0,0,0]}]'></textarea>
+      <div class="row" style="margin-top:8px"><button id="importPastedPanelsBtn" class="secondary">Import pasted panels</button></div>
+    </div>
+  </div>
+</aside>
+<div id="viewport"><button id="logToggle" class="logToggle secondary mini">📋 Log</button><div id="logPanel"><div class="logHead"><b>Debug Log</b><div class="row"><button id="copyLogBtn" class="mini secondary">Copy</button><button id="clearLogBtn" class="mini secondary">Clear</button><button id="closeLogBtn" class="mini secondary">Close</button></div></div><div id="logBody"></div></div><div id="debug"></div></div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+const $ = id => document.getElementById(id);
+const logLines = [];
+function logDebug(msg){ const line = `[${new Date().toLocaleTimeString()}] ${msg}`; logLines.unshift(line); if(logLines.length>180)logLines.pop(); $('logBody').innerHTML = logLines.map(l=>`<div class="logLine">${escapeHtml(l)}</div>`).join(''); console.log(line); }
+function setDebug(msg){ $('debug').textContent = msg || ''; }
+function setStatus(msg){ $('statusPill').textContent = msg; logDebug(msg); }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+window.addEventListener('error', e=>logDebug(`ERROR: ${e.message} @ ${e.filename}:${e.lineno}`));
+window.addEventListener('unhandledrejection', e=>logDebug(`UNHANDLED: ${e.reason?.message||e.reason}`));
+
+$('logToggle').onclick=()=>{ $('logPanel').classList.add('visible'); $('logToggle').style.display='none'; };
+$('closeLogBtn').onclick=()=>{ $('logPanel').classList.remove('visible'); $('logToggle').style.display='block'; };
+$('clearLogBtn').onclick=()=>{ logLines.length=0; $('logBody').innerHTML=''; logDebug('Log cleared'); };
+$('copyLogBtn').onclick=async()=>{ const t=logLines.join('\n'); try{ await navigator.clipboard.writeText(t); logDebug('Copied log'); }catch{ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); logDebug('Copied log fallback'); } };
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0f14);
+const camera = new THREE.PerspectiveCamera(55,1,0.05,1000);
+camera.position.set(5,3.2,7);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+renderer.shadowMap.enabled = true;
+$('viewport').prepend(renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0,1.2,0); controls.update();
+scene.add(new THREE.HemisphereLight(0xffffff,0x223344,2.0));
+const dir = new THREE.DirectionalLight(0xffffff,2.1); dir.position.set(5,7,4); dir.castShadow=true; scene.add(dir);
+const grid = new THREE.GridHelper(10,10,0x335070,0x1d2a3a); scene.add(grid);
+
+const panels = [];
+let selectedPanelId = null;
+let nextPanelId = 1;
+let panelPreviewGroup = new THREE.Group();
+scene.add(panelPreviewGroup);
+let wallInstancedGroup = null;
+let debugHitGroup = new THREE.Group();
+scene.add(debugHitGroup);
+
+const WALL_DEFAULT_GLB_NAME = 'Roughbrick1.glb';
+const BUILTIN_DEFAULT_RECIPE_ID = 'builtin_default';
+const wallRecipeLibrary = new Map();
+const wallRecipeOriginalJsonText = new Map();
+const wallGlbLibrary = new Map();
+let wallDefaultRecipeId = BUILTIN_DEFAULT_RECIPE_ID;
+let lastBuildStats = {instances:0,culled:0,missingGlbs:[]};
+wallRecipeLibrary.set(BUILTIN_DEFAULT_RECIPE_ID, {version:1,seed:'builtin_default',meta:{name:'Default',instanceName:'Default',glb:WALL_DEFAULT_GLB_NAME,libraryBaseId:BUILTIN_DEFAULT_RECIPE_ID},density:{value01:0.5,overlapFrac:0},preTransform:{translate:[0,0,0],rotateDegXYZ:[0,0,0],scale:[1,1,1]},settings:{kind:'wall',length:1,height:1,unitSize:{x:1,y:1,z:1},gapBase:{x:0,y:0,z:0},stagger:{enabled:false,amountInUnits:0},microJitter:{x:0,y:0,z:0},random:{rotationDeg:{x:0,y:0,z:0},scale:{x:1,y:1,z:1},translate:{x:0,y:0,z:0}}}});
+
+function readNum(id,fallback=0){ let s=String($(id)?.value??'').trim(); if(s.includes(',')&&!s.includes('.'))s=s.replace(',','.'); const n=Number(s); return Number.isFinite(n)?n:fallback; }
+function v3(arr){ return new THREE.Vector3(Number(arr?.[0]??0),Number(arr?.[1]??0),Number(arr?.[2]??0)); }
+function degToEuler(a){ return new THREE.Euler(THREE.MathUtils.degToRad(a[0]||0),THREE.MathUtils.degToRad(a[1]||0),THREE.MathUtils.degToRad(a[2]||0),'XYZ'); }
+function panelMatrix(p){ return new THREE.Matrix4().compose(v3(p.position), new THREE.Quaternion().setFromEuler(degToEuler(p.rotationDeg||[0,0,0])), new THREE.Vector3(1,1,1)); }
+function panelCorners(p){ const w=p.width/2,h=p.height; const base=[new THREE.Vector3(-w,0,0),new THREE.Vector3(w,0,0),new THREE.Vector3(w,h,0),new THREE.Vector3(-w,h,0)]; const m=panelMatrix(p); return base.map(x=>x.applyMatrix4(m)); }
+function makePanelFromInputs(){ return {id:selectedPanelId||`wall_${nextPanelId++}`, width:Math.max(.01,readNum('panelWidth',4)), height:Math.max(.01,readNum('panelHeight',2.5)), position:[readNum('panelX',0),readNum('panelY',1.25),readNum('panelZ',0)], rotationDeg:[readNum('panelRotX',0),readNum('panelRotY',0),readNum('panelRotZ',0)], wallRecipeId:$('panelRecipeSel').value||''}; }
+function selectPanel(id){ selectedPanelId=id; const p=panels.find(x=>x.id===id); if(p){ $('panelWidth').value=p.width; $('panelHeight').value=p.height; $('panelX').value=p.position[0]; $('panelY').value=p.position[1]; $('panelZ').value=p.position[2]; $('panelRotX').value=p.rotationDeg?.[0]||0; $('panelRotY').value=p.rotationDeg?.[1]||0; $('panelRotZ').value=p.rotationDeg?.[2]||0; $('panelRecipeSel').value=p.wallRecipeId||''; } refreshPanels(); }
+function refreshPanels(){ panelPreviewGroup.clear(); $('panelList').innerHTML=''; for(const p of panels){ const [a,b,c,d]=panelCorners(p); const geo=new THREE.BufferGeometry().setFromPoints([a,b,c,d]); geo.setIndex([0,1,2,0,2,3]); geo.computeVertexNormals(); const mat=new THREE.MeshStandardMaterial({color:p.id===selectedPanelId?0x6aa7ff:0x60748e,transparent:true,opacity:.32,side:THREE.DoubleSide}); const mesh=new THREE.Mesh(geo,mat); mesh.name=`PANEL:${p.id}`; panelPreviewGroup.add(mesh); const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:p.id===selectedPanelId?0x9fc5ff:0x9fb0c8})); panelPreviewGroup.add(edges); const item=document.createElement('div'); item.className='panelItem'+(p.id===selectedPanelId?' selected':''); item.innerHTML=`<b>${escapeHtml(p.id)}</b><div class="help">${p.width}×${p.height} • recipe: ${escapeHtml(recipeLabel(p.wallRecipeId||wallDefaultRecipeId))}</div>`; item.onclick=()=>selectPanel(p.id); $('panelList').appendChild(item); } }
+
+$('addPanelBtn').onclick=()=>{ selectedPanelId=null; const p=makePanelFromInputs(); panels.push(p); selectPanel(p.id); setStatus(`Added panel ${p.id}`); };
+$('updatePanelBtn').onclick=()=>{ const i=panels.findIndex(p=>p.id===selectedPanelId); if(i<0)return setStatus('No selected panel to update'); const oldId=selectedPanelId; const p=makePanelFromInputs(); p.id=oldId; panels[i]=p; selectPanel(oldId); setStatus(`Updated panel ${oldId}`); };
+$('deletePanelBtn').onclick=()=>{ const i=panels.findIndex(p=>p.id===selectedPanelId); if(i>=0){ const id=panels[i].id; panels.splice(i,1); selectedPanelId=panels[0]?.id||null; refreshPanels(); setStatus(`Deleted panel ${id}`); }};
+$('resetBtn').onclick=()=>{ disposeWalls(); panels.length=0; selectedPanelId=null; nextPanelId=1; panels.push({id:`wall_${nextPanelId++}`,width:4,height:2.5,position:[0,0,0],rotationDeg:[0,0,0],wallRecipeId:''}); selectedPanelId=panels[0].id; refreshPanels(); setStatus('Reset wall scene'); };
+
+function hashStringToUint32(str){ let h=2166136261>>>0; for(let i=0;i<String(str??'').length;i++){ h^=String(str??'').charCodeAt(i); h=Math.imul(h,16777619)>>>0; } return h>>>0; }
+function makeRng(seedLike){ let x=(typeof seedLike==='number'&&Number.isFinite(seedLike))?seedLike>>>0:hashStringToUint32(seedLike); if(x===0)x=123456789; return {next(){x^=(x<<13)>>>0;x^=(x>>>17)>>>0;x^=(x<<5)>>>0;return (x>>>0)/4294967296;},range(a,b){return a+(b-a)*this.next();}}; }
+function orderedRange(a,b){ return a<=b?[a,b]:[b,a]; }
+function readMinMax(x,a,b){ if(Array.isArray(x)){const n0=Number(x[0]),n1=Number(x[1]); if(Number.isFinite(n0)&&Number.isFinite(n1))return orderedRange(n0,n1);} if(x&&typeof x==='object'){const n0=Number(x.min),n1=Number(x.max); if(Number.isFinite(n0)&&Number.isFinite(n1))return orderedRange(n0,n1);} if(typeof x==='number'&&Number.isFinite(x))return [x,x]; return [a,b]; }
+function applyRandomTRS(rng,random){ const r=random?.rotationDeg??{},s=random?.scale??{},t=random?.translate??{}; const rx=readMinMax(r.x,0,0),ry=readMinMax(r.y,0,0),rz=readMinMax(r.z,0,0),sx=readMinMax(s.x,1,1),sy=readMinMax(s.y,1,1),sz=readMinMax(s.z,1,1),tx=readMinMax(t.x,0,0),ty=readMinMax(t.y,0,0),tz=readMinMax(t.z,0,0); return {r:[THREE.MathUtils.degToRad(rng.range(rx[0],rx[1])),THREE.MathUtils.degToRad(rng.range(ry[0],ry[1])),THREE.MathUtils.degToRad(rng.range(rz[0],rz[1]))],s:[rng.range(sx[0],sx[1]),rng.range(sy[0],sy[1]),rng.range(sz[0],sz[1])],t:[rng.range(tx[0],tx[1]),rng.range(ty[0],ty[1]),rng.range(tz[0],tz[1])]}; }
+function preTRSToMatrix(translate,rotateDegXYZ,scale){ const pos=v3(translate||[0,0,0]); const quat=new THREE.Quaternion().setFromEuler(degToEuler(rotateDegXYZ||[0,0,0])); const scl=v3(scale||[1,1,1]); if(!scale)scl.set(1,1,1); return new THREE.Matrix4().compose(pos,quat,scl); }
+function computeEffectiveGap(recipe){ const s=recipe.settings??{}; if(s.gapEffective&&typeof s.gapEffective==='object')return {x:Number(s.gapEffective.x??0),y:Number(s.gapEffective.y??0),z:Number(s.gapEffective.z??0)}; const base=s.gapBase??{x:0,y:0,z:0},unit=s.unitSize??{x:1,y:1,z:1},d=recipe.density??{}; const k=(0.5-Number(d.value01??0.5))*2*Number(d.overlapFrac??0); return {x:Number(base.x??0)+k*Number(unit.x??1),y:Number(base.y??0)+k*Number(unit.y??1),z:Number(base.z??0)+k*Number(unit.z??1)}; }
+function generateWallMatricesFromRecipe(recipe,meshPerUnitScale,rockScaleMult=1){ if(recipe?.version!==1||recipe?.settings?.kind!=='wall')throw new Error("Recipe.settings.kind must be 'wall'."); const s=recipe.settings,rng=makeRng(recipe.seed),preM=preTRSToMatrix(recipe.preTransform?.translate,recipe.preTransform?.rotateDegXYZ,recipe.preTransform?.scale),gap=computeEffectiveGap(recipe),unit=s.unitSize??{x:1,y:1,z:1}; const stepX=Math.max(1e-6,Number(unit.x??1)+Number(gap.x??0)),stepY=Math.max(1e-6,Number(unit.y??1)+Number(gap.y??0)); const cols=Math.max(1,Math.floor((s.length??1)/stepX)),rows=Math.max(1,Math.floor((s.height??1)/stepY)); const perUnit=meshPerUnitScale??new THREE.Vector3(1,1,1); const unitScale=new THREE.Vector3(perUnit.x*Number(unit.x??1),perUnit.y*Number(unit.y??1),perUnit.z*Number(unit.z??1)); const mats=[]; for(let row=0;row<rows;row++){ const stagger=(s.stagger?.enabled&&row%2===1)?Number(s.stagger?.amountInUnits??0)*stepX:0; for(let col=0;col<cols;col++){ const x0=(col*stepX+stagger)-(cols*stepX)/2+stepX/2,y0=row*stepY+stepY/2,mj=s.microJitter??{x:0,y:0,z:0},rt=applyRandomTRS(rng,s.random); const pos=new THREE.Vector3(x0+rng.range(-Number(mj.x??0),Number(mj.x??0))+rt.t[0],y0+rng.range(-Number(mj.y??0),Number(mj.y??0))+rt.t[1],rng.range(-Number(mj.z??0),Number(mj.z??0))+rt.t[2]); const scl=new THREE.Vector3(unitScale.x*rt.s[0]*rockScaleMult,unitScale.y*rt.s[1]*rockScaleMult,unitScale.z*rt.s[2]*rockScaleMult); mats.push(new THREE.Matrix4().compose(pos,new THREE.Quaternion().setFromEuler(new THREE.Euler(rt.r[0],rt.r[1],rt.r[2],'XYZ')),scl).multiply(preM)); }} return mats; }
+function generateStacksMatricesFromRecipe(recipe,meshPerUnitScale,rockScaleMult=1){ if(recipe?.version!==1||recipe?.settings?.kind!=='stacks')throw new Error("Recipe.settings.kind must be 'stacks'."); const s=recipe.settings,rng=makeRng(recipe.seed),preM=preTRSToMatrix(recipe.preTransform?.translate,recipe.preTransform?.rotateDegXYZ,recipe.preTransform?.scale),gap=computeEffectiveGap(recipe),unit=s.unitSize??{x:1,y:1,z:1}; const stepMult=Number(s.stepMultiplier??1),stepX=(Number(unit.x??1)+Number(gap.x??0))*stepMult,stepY=(Number(unit.y??1)+Number(gap.y??0))*stepMult,stepZ=(Number(unit.z??1)+Number(gap.z??0))*stepMult,axis=String(s.axis??'X').toUpperCase(),step=axis==='Y'?stepY:(axis==='Z'?stepZ:stepX),count=Math.max(1,Math.floor(Number(s.count??1))),centered=!!s.centered,copies=Math.max(1,Math.floor(Number(s.duplicates?.copies??1))),off=s.duplicates?.offset??{x:0,y:0,z:0}; const perUnit=meshPerUnitScale??new THREE.Vector3(1,1,1),unitScale=new THREE.Vector3(perUnit.x*Number(unit.x??1),perUnit.y*Number(unit.y??1),perUnit.z*Number(unit.z??1)),lineStart=centered?(-(count*step)/2+step/2):0,mats=[]; for(let c=0;c<copies;c++){ for(let i=0;i<count;i++){ const d=lineStart+i*step; let x0=0,y0=0,z0=0; if(axis==='Y')y0=d; else if(axis==='Z')z0=d; else x0=d; const rt=applyRandomTRS(rng,s.random); const pos=new THREE.Vector3(Number(off.x??0)*c+x0+rt.t[0],Number(off.y??0)*c+y0+rt.t[1],Number(off.z??0)*c+z0+rt.t[2]); const scl=new THREE.Vector3(unitScale.x*rt.s[0]*rockScaleMult,unitScale.y*rt.s[1]*rockScaleMult,unitScale.z*rt.s[2]*rockScaleMult); mats.push(new THREE.Matrix4().compose(pos,new THREE.Quaternion().setFromEuler(new THREE.Euler(rt.r[0],rt.r[1],rt.r[2],'XYZ')),scl).multiply(preM)); }} return mats; }
+function cloneRecipeWithFaceDims(recipe,faceWidth,faceHeight,unitMult=1){ const r=JSON.parse(JSON.stringify(recipe)); r.settings=r.settings||{}; r.settings.unitSize=r.settings.unitSize??{x:1,y:1,z:1}; const m=Number(unitMult); if(Number.isFinite(m)&&m>0){ r.settings.unitSize.x=Number(r.settings.unitSize.x??1)*m; r.settings.unitSize.y=Number(r.settings.unitSize.y??1)*m; r.settings.unitSize.z=Number(r.settings.unitSize.z??1)*m; } if(r.settings.kind==='stacks'){ const axis=String(r.settings.axis??'X').toUpperCase(),gap=computeEffectiveGap(r),unit=r.settings.unitSize,stepMult=Number(r.settings.stepMultiplier??1); const step=(axis==='Y'?(Number(unit.y??1)+Number(gap.y??0)):(axis==='Z'?(Number(unit.z??1)+Number(gap.z??0)):(Number(unit.x??1)+Number(gap.x??0))))*stepMult; const target=axis==='Y'?faceHeight:faceWidth; r.settings.count=Math.max(1,Math.floor(target/Math.max(1e-6,step))); } else { r.settings.kind='wall'; r.settings.length=faceWidth; r.settings.height=faceHeight; } return r; }
+function applyWallPreScaleToMatrices(mats,sx,sy,sz){ const ax=Math.max(1e-8,Number(sx)||1),ay=Math.max(1e-8,Number(sy)||1),az=Math.max(1e-8,Number(sz)||1); const p=new THREE.Vector3(),q=new THREE.Quaternion(),s=new THREE.Vector3(); for(const m of mats){m.decompose(p,q,s);s.set(s.x*ax,s.y*ay,s.z*az);m.compose(p,q,s);} }
+function applyWallPreRotationToMatrices(mats,rx,ry,rz){ const qPre=new THREE.Quaternion().setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(Number(rx)||0),THREE.MathUtils.degToRad(Number(ry)||0),THREE.MathUtils.degToRad(Number(rz)||0),'XYZ')); const p=new THREE.Vector3(),q=new THREE.Quaternion(),s=new THREE.Vector3(); for(const m of mats){m.decompose(p,q,s);q.multiply(qPre);m.compose(p,q,s);} }
+function resolveRecipeGlbName(recipe){ return recipe?.glbName||recipe?.glb||recipe?.settings?.glb||recipe?.model?.uri||recipe?.meta?.glbName||recipe?.meta?.glb||WALL_DEFAULT_GLB_NAME; }
+function recipeLabel(id){ const r=wallRecipeLibrary.get(id); return r?.meta?.instanceName||r?.meta?.name||r?.name||id||'(default)'; }
+function normalizeIdFromFilename(filename,fallback){ const base=String(filename||fallback||'recipe').replace(/\.[^/.]+$/,''); return base.replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,64)||'recipe'; }
+function addRecipeObject(data,sourceName='',sourceUrl='',raw=''){ const kind=String(data?.settings?.kind||''); if(data?.version!==1||(kind!=='wall'&&kind!=='stacks'))throw new Error(`Unsupported recipe kind/version: ${kind}`); const base=normalizeIdFromFilename(data?.meta?.name||sourceName||data.seed||kind,'recipe'); let id=base,i=2; while(wallRecipeLibrary.has(id))id=`${base}_${i++}`; data.meta=data.meta||{}; data.meta.sourceFile=sourceName||data.meta.sourceFile||''; data.meta.sourceUrl=sourceUrl||data.meta.sourceUrl||''; data.meta.instanceName=data.meta.instanceName||data.meta.name||base; data.meta.libraryBaseId=data.meta.libraryBaseId||id; wallRecipeLibrary.set(id,data); if(raw)wallRecipeOriginalJsonText.set(id,raw); if(!wallDefaultRecipeId)wallDefaultRecipeId=id; refreshRecipeUi(); return id; }
+function refreshRecipeUi(){ for(const sel of [$('defaultRecipeSel'),$('panelRecipeSel')]){ const old=sel.value; sel.innerHTML = (sel.id==='panelRecipeSel'?'<option value="">(use default)</option>':'') + [...wallRecipeLibrary.keys()].map(id=>`<option value="${escapeHtml(id)}">${escapeHtml(recipeLabel(id))}</option>`).join(''); if([...sel.options].some(o=>o.value===old))sel.value=old; } $('defaultRecipeSel').value=wallDefaultRecipeId||BUILTIN_DEFAULT_RECIPE_ID; $('recipeCount').textContent=wallRecipeLibrary.size; $('glbCount').textContent=wallGlbLibrary.size; refreshPanels(); }
+$('defaultRecipeSel').onchange=()=>{ wallDefaultRecipeId=$('defaultRecipeSel').value; setStatus(`Default recipe: ${recipeLabel(wallDefaultRecipeId)}`); };
+$('assignRecipeBtn').onclick=()=>{ const p=panels.find(x=>x.id===selectedPanelId); if(!p)return setStatus('No selected panel'); p.wallRecipeId=$('panelRecipeSel').value||''; refreshPanels(); setStatus(`Assigned recipe to ${p.id}`); };
+$('clearRecipeBtn').onclick=()=>{ const p=panels.find(x=>x.id===selectedPanelId); if(!p)return; p.wallRecipeId=''; $('panelRecipeSel').value=''; refreshPanels(); setStatus(`Cleared recipe on ${p.id}`); };
+
+function findFirstMesh(root){ let found=null; root.traverse(o=>{ if(!found&&o?.isMesh)found=o; }); return found; }
+function cloneMaterial(mat){ return Array.isArray(mat)?mat.map(m=>m.clone()):mat.clone(); }
+function computePerUnitScaleFromMesh(mesh,name){ const box=new THREE.Box3().setFromObject(mesh),size=new THREE.Vector3(); box.getSize(size); const perUnit=new THREE.Vector3(size.x>1e-6?1/size.x:1,size.y>1e-6?1/size.y:1,size.z>1e-6?1/size.z:1); logDebug(`GLB '${name}' bbox=${size.x.toFixed(3)},${size.y.toFixed(3)},${size.z.toFixed(3)} perUnit=${perUnit.x.toFixed(3)},${perUnit.y.toFixed(3)},${perUnit.z.toFixed(3)}`); return perUnit; }
+
+// parseAsync fallback — r128 GLTFLoader uses parse(buf,'',onLoad,onError); newer versions have parseAsync.
+async function addGlbFromArrayBuffer(buf,name,sourceName){
+  const loader=new GLTFLoader();
+  const gltf = await (typeof loader.parseAsync==='function'
+    ? loader.parseAsync(buf,'')
+    : new Promise((res,rej)=>loader.parse(buf,'',res,rej)));
+  const mesh=findFirstMesh(gltf.scene);
+  if(!mesh)throw new Error('No mesh found in GLB');
+  const cloned=mesh.clone(); cloned.geometry=mesh.geometry.clone(); cloned.material=cloneMaterial(mesh.material); cloned.name=name;
+  wallGlbLibrary.set(name,{mesh:cloned,perUnitScale:computePerUnitScaleFromMesh(cloned,name),sourceName});
+  refreshRecipeUi(); return name;
+}
+
+function ensurePlaceholderGlb(){ if(wallGlbLibrary.has(WALL_DEFAULT_GLB_NAME))return; const geo=new THREE.BoxGeometry(1,1,.25); const mat=new THREE.MeshStandardMaterial({color:0xb47a4a,roughness:.85}); const mesh=new THREE.Mesh(geo,mat); wallGlbLibrary.set(WALL_DEFAULT_GLB_NAME,{mesh,perUnitScale:new THREE.Vector3(1,1,4),sourceName:'placeholder cube'}); refreshRecipeUi(); }
+$('loadRecipeBtn').onclick=()=>$('recipeFile').click();
+$('recipeFile').onchange=async()=>{ let ok=0,fail=0; for(const file of [...$('recipeFile').files]){ try{ const txt=await file.text(); addRecipeObject(JSON.parse(txt),file.name,'',txt); ok++; }catch(e){ fail++; logDebug(`Recipe failed ${file.name}: ${e.message}`); } } setStatus(`Loaded recipes: ${ok}`+(fail?` failed ${fail}`:'')); };
+$('loadGlbBtn').onclick=()=>$('glbFile').click();
+$('glbFile').onchange=async()=>{ let ok=0,fail=0; for(const file of [...$('glbFile').files]){ try{ await addGlbFromArrayBuffer(await file.arrayBuffer(),file.name,file.name); ok++; }catch(e){ fail++; logDebug(`GLB failed ${file.name}: ${e.message}`); } } setStatus(`Loaded GLBs: ${ok}`+(fail?` failed ${fail}`:'')); };
+$('loadGlbUrlBtn').onclick=async()=>{ const url=$('glbUrl').value.trim(); if(!url)return; try{ const resp=await fetch(url); if(!resp.ok)throw new Error(`HTTP ${resp.status}`); const name=url.split('/').pop()||WALL_DEFAULT_GLB_NAME; await addGlbFromArrayBuffer(await resp.arrayBuffer(),name,url); setStatus(`Loaded GLB URL: ${name}`); }catch(e){ setStatus(`GLB URL failed: ${e.message}`); } };
+
+function disposeWalls(){ if(wallInstancedGroup){ scene.remove(wallInstancedGroup); wallInstancedGroup=null; } debugHitGroup.clear(); lastBuildStats={instances:0,culled:0,missingGlbs:[]}; $('countPill').textContent='0 instances'; }
+$('clearWallsBtn').onclick=()=>{ disposeWalls(); setStatus('Cleared generated walls'); };
+function quadPoint(a,b,c,d,s,t){ return a.clone().lerp(b,s).lerp(d.clone().lerp(c,s),t); }
+function quadBasis(a,b,c,d,s,t){ const u=b.clone().sub(a).multiplyScalar(1-t).add(c.clone().sub(d).multiplyScalar(t)); const v=d.clone().sub(a).multiplyScalar(1-s).add(c.clone().sub(b).multiplyScalar(s)); if(u.lengthSq()<1e-10)u.set(1,0,0); else u.normalize(); if(v.lengthSq()<1e-10)v.set(0,1,0); else v.normalize(); let n=new THREE.Vector3().crossVectors(u,v); if(n.lengthSq()<1e-10)n.set(0,0,1); else n.normalize(); return {u,v,n}; }
+function makePostMatrix(){ return new THREE.Matrix4().makeTranslation(readNum('wallPostTx',0),readNum('wallPostTy',0),readNum('wallPostTz',0)).multiply(new THREE.Matrix4().makeScale(Math.max(.0001,readNum('wallPostScaleX',1)),Math.max(.0001,readNum('wallPostScaleY',1)),Math.max(.0001,readNum('wallPostScaleZ',1)))); }
+function buildWallsOnPanels(){ logDebug('Build walls start'); disposeWalls(); if($('placeholderChk').checked)ensurePlaceholderGlb(); if(!panels.length){ setStatus('No wall panels'); return; } wallInstancedGroup=new THREE.Group(); wallInstancedGroup.name='FBSE6_ISOLATED_WALL_INSTANCES'; scene.add(wallInstancedGroup); const perGlbWorld=new Map(), missing=new Set(); let requested=0,culled=0,accepted=0; const postM=makePostMatrix(), tmpPos=new THREE.Vector3(),tmpQuat=new THREE.Quaternion(),tmpScale=new THREE.Vector3(); const eps=0.002; for(const p of panels){ const recipeId=p.wallRecipeId||wallDefaultRecipeId||BUILTIN_DEFAULT_RECIPE_ID; const recipe=wallRecipeLibrary.get(recipeId); if(!recipe){ logDebug(`Panel ${p.id} missing recipe ${recipeId}`); continue; } const glbName=resolveRecipeGlbName(recipe); const model=wallGlbLibrary.get(glbName) || ($('placeholderChk').checked ? wallGlbLibrary.get(WALL_DEFAULT_GLB_NAME) : null); if(!model){ missing.add(glbName); continue; } const kind=String(recipe.settings?.kind||'wall'); const recipeForFace=cloneRecipeWithFaceDims(recipe,p.width,p.height,Math.max(.0001,readNum('wallUnitMult',1))); let mats=kind==='stacks'?generateStacksMatricesFromRecipe(recipeForFace,model.perUnitScale,Math.max(.0001,readNum('wallRockScale',1))):generateWallMatricesFromRecipe(recipeForFace,model.perUnitScale,Math.max(.0001,readNum('wallRockScale',1))); applyWallPreScaleToMatrices(mats,readNum('wallPreScaleX',1),readNum('wallPreScaleY',1),readNum('wallPreScaleZ',1)); applyWallPreRotationToMatrices(mats,readNum('wallPreRotX',0),readNum('wallPreRotY',0),readNum('wallPreRotZ',0)); requested+=mats.length; const [a,b,c,d]=panelCorners(p); for(const localM of mats){ const mLocal=postM.clone().multiply(localM); mLocal.decompose(tmpPos,tmpQuat,tmpScale); const s=(tmpPos.x+p.width*.5)/p.width, t=tmpPos.y/p.height; if(s<-.02||s>1.02||t<-.02||t>1.02){culled++; continue;} const wp=quadPoint(a,b,c,d,s,t); const basis=quadBasis(a,b,c,d,s,t); wp.addScaledVector(basis.n,(tmpPos.z||0)+eps); const basisM=new THREE.Matrix4().makeBasis(basis.u,basis.v,basis.n); const worldQ=new THREE.Quaternion().setFromRotationMatrix(basisM).multiply(tmpQuat); const wm=new THREE.Matrix4().compose(wp,worldQ,tmpScale); const key=model===wallGlbLibrary.get(WALL_DEFAULT_GLB_NAME)&&!wallGlbLibrary.has(glbName)?WALL_DEFAULT_GLB_NAME:glbName; if(!perGlbWorld.has(key))perGlbWorld.set(key,[]); perGlbWorld.get(key).push(wm); accepted++; if($('showHitDebugChk').checked){ const dot=new THREE.Mesh(new THREE.SphereGeometry(.025,8,6),new THREE.MeshBasicMaterial({color:0x7dd3fc})); dot.position.copy(wp); debugHitGroup.add(dot); } } }
+ for(const [glbName,mats] of perGlbWorld){ const model=wallGlbLibrary.get(glbName); const inst=new THREE.InstancedMesh(model.mesh.geometry,model.mesh.material,mats.length); inst.name=`WALL_INSTANCES:${glbName}`; inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mats.forEach((m,i)=>inst.setMatrixAt(i,m)); inst.instanceMatrix.needsUpdate=true; inst.castShadow=true; inst.receiveShadow=true; wallInstancedGroup.add(inst); }
+ lastBuildStats={instances:accepted,culled,missingGlbs:[...missing]}; $('countPill').textContent=`${accepted} instances`; setDebug(`Built walls: ${accepted} instance(s)\nRequested: ${requested}\nCulled: ${culled}\nPanels: ${panels.length}`+(missing.size?`\nMissing GLBs: ${[...missing].join(', ')}`:'')); setStatus(`Built ${accepted} wall instance(s)`); }
+$('buildWallsBtn').onclick=buildWallsOnPanels;
+
+function exportJson(name,obj){ const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+$('downloadStateBtn').onclick=()=>exportJson('WallBuilder_State.json',{version:1,kind:'fbse6_isolated_wall_generator',panels,wall:{recipes:[...wallRecipeLibrary.entries()].map(([id,recipe])=>({id,recipe,raw:wallRecipeOriginalJsonText.get(id)||''})),defaultRecipeId:wallDefaultRecipeId,settings:{unitMult:readNum('wallUnitMult',1),rockScale:readNum('wallRockScale',1),preScale:[readNum('wallPreScaleX',1),readNum('wallPreScaleY',1),readNum('wallPreScaleZ',1)],preRot:[readNum('wallPreRotX',0),readNum('wallPreRotY',0),readNum('wallPreRotZ',0)],postScale:[readNum('wallPostScaleX',1),readNum('wallPostScaleY',1),readNum('wallPostScaleZ',1)],postTranslate:[readNum('wallPostTx',0),readNum('wallPostTy',0),readNum('wallPostTz',0)]}}});
+$('importStateBtn').onclick=()=>$('stateFile').click();
+$('stateFile').onchange=async()=>{ const file=$('stateFile').files?.[0]; if(!file)return; try{ const data=JSON.parse(await file.text()); importStateData(data); setStatus(`Imported ${file.name}`); }catch(e){ setStatus(`Import failed: ${e.message}`); } };
+function importStateData(data){ disposeWalls(); if(data.kind==='fbse6_isolated_wall_generator'&&Array.isArray(data.panels)){ panels.length=0; panels.push(...data.panels); selectedPanelId=panels[0]?.id||null; if(Array.isArray(data.wall?.recipes)){ wallRecipeLibrary.clear(); for(const ent of data.wall.recipes){ wallRecipeLibrary.set(ent.id,ent.recipe); if(ent.raw)wallRecipeOriginalJsonText.set(ent.id,ent.raw); } } wallDefaultRecipeId=data.wall?.defaultRecipeId||BUILTIN_DEFAULT_RECIPE_ID; refreshRecipeUi(); refreshPanels(); return; }
+ const mesh=data.mesh||data; const verts=(mesh.vertices||[]).map(v=>v3(v)); const quads=(mesh.quads||[]).filter(q=>q.tag==='wall'||q.wallRecipeId); panels.length=0; for(const q of quads){ const pts=q.v.map(i=>verts[i]).filter(Boolean); if(pts.length!==4)continue; const bottomCenter=pts[0].clone().add(pts[1]).multiplyScalar(.5); const w=(pts[0].distanceTo(pts[1])+pts[3].distanceTo(pts[2]))*.5; const h=(pts[0].distanceTo(pts[3])+pts[1].distanceTo(pts[2]))*.5; const u=pts[1].clone().sub(pts[0]).normalize(); const v=pts[3].clone().sub(pts[0]).normalize(); const n=new THREE.Vector3().crossVectors(u,v).normalize(); const m=new THREE.Matrix4().makeBasis(u,v,n); const e=new THREE.Euler().setFromQuaternion(new THREE.Quaternion().setFromRotationMatrix(m),'XYZ'); panels.push({id:q.id||`wall_${nextPanelId++}`,width:w,height:h,position:bottomCenter.toArray(),rotationDeg:[THREE.MathUtils.radToDeg(e.x),THREE.MathUtils.radToDeg(e.y),THREE.MathUtils.radToDeg(e.z)],wallRecipeId:q.wallRecipeId||''}); }
+ if(data.wall?.recipes){ for(const ent of data.wall.recipes){ if(ent.id&&ent.recipe)wallRecipeLibrary.set(ent.id,ent.recipe); } wallDefaultRecipeId=data.wall.defaultRecipeId||wallDefaultRecipeId; } selectedPanelId=panels[0]?.id||null; refreshRecipeUi(); refreshPanels(); logDebug(`Imported FBSE6 wall-tagged quads: ${panels.length}`); }
+$('importPastedPanelsBtn').onclick=()=>{ try{ const arr=JSON.parse($('pastePanels').value); if(!Array.isArray(arr))throw new Error('Expected an array'); panels.length=0; for(const [i,p] of arr.entries())panels.push({id:p.id||`wall_${nextPanelId++}`,width:Number(p.width||4),height:Number(p.height||2.5),position:p.position||[0,0,0],rotationDeg:p.rotationDeg||[0,0,0],wallRecipeId:p.wallRecipeId||''}); selectedPanelId=panels[0]?.id||null; refreshPanels(); setStatus(`Imported pasted panels: ${panels.length}`); }catch(e){ setStatus(`Paste import failed: ${e.message}`); } };
+$('exportGlbBtn').onclick=()=>{ try{ if(!wallInstancedGroup||!wallInstancedGroup.children.length)buildWallsOnPanels(); const root=new THREE.Group(); root.name='WallBuilder_Export'; if(wallInstancedGroup)root.add(wallInstancedGroup.clone(true)); const exporter=new GLTFExporter(); exporter.parse(root,(res)=>{ const blob=res instanceof ArrayBuffer?new Blob([res],{type:'model/gltf-binary'}):new Blob([JSON.stringify(res,null,2)],{type:'model/gltf+json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='WallBuilder_Export.glb'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); },err=>setStatus(`Export failed: ${err.message}`),{binary:true,onlyVisible:true}); }catch(e){ setStatus(`Export failed: ${e.message}`); } };
+
+function resize(){ const r=$('viewport').getBoundingClientRect(); renderer.setSize(r.width,r.height,false); camera.aspect=r.width/Math.max(1,r.height); camera.updateProjectionMatrix(); }
+window.addEventListener('resize',resize); resize();
+function animate(){ requestAnimationFrame(animate); controls.update(); renderer.render(scene,camera); }
+animate();
+refreshRecipeUi(); $('resetBtn').click();
+setDebug('HobunjiHollow Wall Generator\nAssets: ../../assets/models/\n1) Load GLB URL (Roughbrick1.glb pre-filled)\n2) Load recipe JSON if needed\n3) Build walls');
+</script>
+</body>
+</html>
