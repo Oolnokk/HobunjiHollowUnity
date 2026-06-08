@@ -842,14 +842,63 @@
     }
     .inv-cat.active { color: var(--accent); border-color: rgba(249,226,138,0.4); background: rgba(249,226,138,0.08); }
 
-    /* Item grid area: sub x:1/54 y:6/28 w:33 h:21 */
-    .inv-grid-area {
+    /* Equipment slots: sub x:1/54 y:6/28 w:35 h:7 */
+    .inv-equip-section {
       position: absolute;
       left: calc(1 * var(--inv-col));   top:    calc(6 * var(--inv-row));
-      width: calc(33 * var(--inv-col)); height: calc(21 * var(--inv-row));
+      width: calc(35 * var(--inv-col)); height: calc(7 * var(--inv-row));
+      display: flex; flex-direction: column; gap: var(--inv-gap);
+      padding: calc(0.3 * var(--inv-gap)) var(--inv-pad);
+      border-bottom: 1px solid var(--border);
+      box-sizing: border-box;
+    }
+    .inv-equip-row {
+      display: flex; flex-direction: row; gap: var(--inv-gap);
+      flex: 1; min-height: 0;
+    }
+    .inv-equip-slot {
+      flex: 1; min-width: 0;
+      border-radius: var(--inv-radius);
+      background: rgba(255,255,255,0.04); border: 1.5px solid var(--border);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 1px; position: relative; overflow: hidden; cursor: pointer;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .inv-equip-slot:hover { background: rgba(255,255,255,0.09); }
+    .inv-equip-slot.active-slot { border-color: rgba(249,226,138,0.55); background: rgba(249,226,138,0.08); }
+    .inv-equip-slot.occupied { border-color: rgba(255,255,255,0.22); }
+    .inv-equip-slot.clothing-slot { opacity: 0.4; cursor: default; }
+    .ies-sprite {
+      width: calc(2.0 * var(--inv-row)); height: calc(2.0 * var(--inv-row));
+      object-fit: contain; image-rendering: pixelated;
+      pointer-events: none;
+    }
+    .ies-label {
+      font-size: var(--inv-font-xs); color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.04em;
+      line-height: 1; pointer-events: none;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+    }
+    .ies-unequip {
+      position: absolute; top: 1px; right: 2px;
+      font-size: calc(0.55 * var(--inv-font-xs)); color: var(--muted);
+      background: none; border: none; cursor: pointer; padding: 0; line-height: 1;
+      opacity: 0.55;
+    }
+    .ies-unequip:hover { color: var(--text); opacity: 1; }
+    .ii-btn.equip { border-color: rgba(80,200,120,0.42); color: #7ee8a2; }
+    .ii-btn.equip:hover { background: rgba(80,200,120,0.10); }
+
+    /* Item grid area: sub x:1/54 y:13/28 w:33 h:14 */
+    .inv-grid-area {
+      position: absolute;
+      left: calc(1 * var(--inv-col));   top:    calc(13 * var(--inv-row));
+      width: calc(33 * var(--inv-col)); height: calc(14 * var(--inv-row));
       overflow-y: auto; scrollbar-width: thin;
       min-width: 0;
     }
+    /* Short variant matches the new position (alias kept for compat) */
+    .inv-grid-area--short { top: calc(13 * var(--inv-row)); height: calc(14 * var(--inv-row)); }
     .inv-grid {
       display: grid;
       grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -887,15 +936,16 @@
     }
     .iib-count.zero { color: var(--danger); opacity: 0.45; }
 
-    /* Page scroller: sub x:34/54 y:6/28 w:2 h:21 */
+    /* Page scroller: sub x:34/54 y:13/28 w:2 h:14 */
     .inv-pgscroll {
       position: absolute;
-      left: calc(34 * var(--inv-col)); top:    calc(6 * var(--inv-row));
-      width: calc(2 * var(--inv-col)); height: calc(21 * var(--inv-row));
+      left: calc(34 * var(--inv-col)); top:    calc(13 * var(--inv-row));
+      width: calc(2 * var(--inv-col)); height: calc(14 * var(--inv-row));
       display: flex; flex-direction: column; align-items: center;
       padding: var(--inv-pad) 0; gap: var(--inv-gap);
       border-left: 1px solid var(--border);
     }
+    .inv-pgscroll--short { top: calc(13 * var(--inv-row)); height: calc(14 * var(--inv-row)); }
     .ips-btn { font-size: var(--inv-font-xs); color: var(--muted); cursor: pointer; width: 100%; text-align: center; background: none; border: none; font-family: inherit; }
     .ips-btn:hover { color: var(--text); }
     .ips-fill { flex: 1; }

@@ -118,6 +118,7 @@
         paused = true;
         switchMenuPanel(targetPanel);
         buildInventoryGrid();
+        buildEquipmentSlots();
         if (targetPanel === 'shipping') buildShippingTransferUI();
         if (targetPanel === 'supplies') renderSupplyPage();
         auditInventorySizing();
@@ -141,7 +142,7 @@
         document.querySelectorAll('.mp-pane').forEach(p =>
           p.classList.toggle('active',
             p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
-        if (id === 'inventory') buildInventoryGrid();
+        if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
         if (id === 'shipping') buildShippingTransferUI();
         if (id === 'supplies') renderSupplyPage();
       }
@@ -310,6 +311,10 @@
         shovel:  ['dig', 'raise', 'fill'],
         hoe:     ['till', 'smooth'],
         machete: ['cut', 'slash'],
+        axe:     ['cut', 'slash'],
+        pick:    ['dig', 'raise', 'fill'],
+        harpoon: ['cut', 'slash'],
+        weapon:  ['cut', 'slash'],
       };
 
       const actionLabels = {
@@ -385,6 +390,34 @@
 
       // Used by inventoryHud and planting/harvesting actions.
       const inventory = { ...STARTING_INVENTORY };
+
+      // Tool item definitions: sprite path, compatible slots, animation style
+      const TOOL_ITEM_DEFS = {
+        bronzehoe:    { label: 'Bronze Hoe',    icon: '🪓', sprite: 'assets/toolsprites/hoe_bronzehoe.png',        slots: ['hoe'],                    animStyle: 'chop'   },
+        hatchet:      { label: 'Hatchet',       icon: '🪓', sprite: 'assets/toolsprites/axe_hatchet.png',          slots: ['axe', 'weapon'],           animStyle: 'sweep'  },
+        fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep'  },
+        fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'sweep'  },
+        pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust' },
+      };
+
+      // Current item equipped in each tool slot (null = empty)
+      const equipmentSlots = {
+        hoe:     'bronzehoe',
+        shovel:  'pickshovel',
+        axe:     null,
+        pick:    null,
+        harpoon: null,
+        weapon:  'hatchet',
+      };
+
+      // Clothing slots (visual only for now — no items yet)
+      const CLOTHING_SLOT_DEFS = [
+        { key: 'head',  label: 'Head'  },
+        { key: 'chest', label: 'Chest' },
+        { key: 'legs',  label: 'Legs'  },
+        { key: 'feet',  label: 'Feet'  },
+      ];
+      const clothingSlots = { head: null, chest: null, legs: null, feet: null };
 
       // World object system handles sell+supply (see below)
 
@@ -1215,6 +1248,11 @@
         { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSTARD',     max: 99 },
         { key: 'mulch',              icon: '🍂', label: 'MULCH',            max: 99 },
         { key: 'uumkaoiiCrate',      icon: '🦆', label: 'UUMKAO\'II CRATE',  max: 9  },
+        { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
+        { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
+        { key: 'fishingmace',  icon: '🎣', label: 'FISHING MACE',  max: 9 },
+        { key: 'fishingspear', icon: '🎣', label: 'FISHING SPEAR', max: 9 },
+        { key: 'pickshovel',   icon: '⛏️', label: 'PICK-SHOVEL',   max: 9 },
       ];
 
       // ── Item definitions for Inventory panel ──────────────────────
@@ -1243,6 +1281,11 @@
         greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: 9, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
         uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
+        bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
+        hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
+        fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
+        fishingspear: { icon: '🎣', label: 'Fishing Spear', cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A slender fishing spear. Fits in the harpoon or weapon slot.' },
+        pickshovel:   { icon: '⛏️', label: 'Pick-Shovel',   cat: 'tool', sellPrice: 0, tags: ['Tool', 'Shovel', 'Pick', 'Weapon'],  desc: 'A combination pick-shovel for digging. Fits in the shovel, pick, or weapon slot.' },
       };
 
       Object.values(PROCESSING_FURNITURE_DEFS).forEach(def => {
@@ -1269,7 +1312,7 @@
       // ── Inventory panel state ──────────────────────────────────────
       let invSelectedKey = null;
       let invActiveCat   = 'all';
-      const INVENTORY_EMPTY_SLOT_FLOOR = 42; // Used by buildInventoryGrid() so the bag reads as open generic storage.
+      const INVENTORY_EMPTY_SLOT_FLOOR = 28; // Used by buildInventoryGrid() so the bag reads as open generic storage.
 
       function getKnownItemRank(key) {
         const idx = inventoryItems.findIndex(item => item.key === key);
@@ -1547,8 +1590,121 @@
               buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
             });
           }
+          // Equip buttons for tool items
+          const toolDef = TOOL_ITEM_DEFS[key];
+          if (toolDef && count > 0) {
+            for (const slot of toolDef.slots) {
+              const currently = equipmentSlots[slot];
+              const currentLabel = currently ? TOOL_ITEM_DEFS[currently]?.label || currently : 'empty';
+              const btnLabel = currently
+                ? `Equip as ${slot} (swap ${currentLabel})`
+                : `Equip as ${slot}`;
+              mkBtn(btnLabel, 'equip', () => {
+                equipItem(key, slot);
+                buildInventoryGrid();
+                buildEquipmentSlots();
+                if (invSelectedKey === key && (inventory[key] || 0) > 0) selectInventoryItem(key, false);
+                else clearInventoryDetail('← Select an item');
+              });
+            }
+          }
+
           mkBtn('Drop  (coming soon)', '', () => showToast('Dropping items — coming soon', false));
         }
+      }
+
+      // Equip a tool item from bag into a slot; displaced item returns to bag
+      function equipItem(itemKey, slot) {
+        const toolDef = TOOL_ITEM_DEFS[itemKey];
+        if (!toolDef || !toolDef.slots.includes(slot)) { showToast('Cannot equip that item in that slot.', false); return; }
+        if ((inventory[itemKey] || 0) < 1) { showToast('No ' + ITEM_DEFS[itemKey]?.label + ' in bag.', false); return; }
+        const displaced = equipmentSlots[slot];
+        if (displaced) {
+          inventory[displaced] = Math.min(9, (inventory[displaced] || 0) + 1);
+        }
+        inventory[itemKey]--;
+        clampInventoryStack(itemKey);
+        equipmentSlots[slot] = itemKey;
+        rebuildToolMeshes();
+        // Re-attach currently active tool's new mesh
+        Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+        if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+        showToast(`${toolDef.label} equipped as ${slot}.`, true);
+        refreshActionBar();
+      }
+
+      // Remove item from slot and return to bag
+      function unequipItem(slot) {
+        const itemKey = equipmentSlots[slot];
+        if (!itemKey) return;
+        inventory[itemKey] = Math.min(9, (inventory[itemKey] || 0) + 1);
+        equipmentSlots[slot] = null;
+        rebuildToolMeshes();
+        Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+        if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+        showToast(`${TOOL_ITEM_DEFS[itemKey]?.label || itemKey} unequipped.`, true);
+        buildInventoryGrid();
+        buildEquipmentSlots();
+        refreshActionBar();
+      }
+
+      // Build the equipment slots panel inside #invEquipSection
+      function buildEquipmentSlots() {
+        const sec = document.getElementById('invEquipSection');
+        if (!sec) return;
+        sec.innerHTML = '';
+
+        // Tool slots row
+        const toolRow = document.createElement('div');
+        toolRow.className = 'inv-equip-row';
+        const TOOL_SLOTS = ['hoe', 'shovel', 'axe', 'pick', 'harpoon', 'weapon'];
+        for (const slot of TOOL_SLOTS) {
+          const itemKey = equipmentSlots[slot];
+          const def = itemKey ? TOOL_ITEM_DEFS[itemKey] : null;
+          const cell = document.createElement('div');
+          cell.className = 'inv-equip-slot' + (activeTool === slot ? ' active-slot' : '') + (def ? ' occupied' : '');
+          cell.setAttribute('title', slot + (def ? ': ' + def.label : ' (empty)'));
+
+          // Sprite image if equipped
+          if (def) {
+            const img = document.createElement('img');
+            img.src = def.sprite;
+            img.className = 'ies-sprite';
+            img.alt = def.label;
+            cell.appendChild(img);
+            const unBtn = document.createElement('button');
+            unBtn.className = 'ies-unequip';
+            unBtn.textContent = '✕';
+            unBtn.title = 'Unequip ' + def.label;
+            unBtn.addEventListener('click', (e) => { e.stopPropagation(); unequipItem(slot); });
+            cell.appendChild(unBtn);
+          }
+
+          const lbl = document.createElement('span');
+          lbl.className = 'ies-label';
+          lbl.textContent = slot.charAt(0).toUpperCase() + slot.slice(1);
+          cell.appendChild(lbl);
+
+          // Click slot to switch active tool
+          cell.addEventListener('click', () => { setActiveTool(slot); buildEquipmentSlots(); });
+          toolRow.appendChild(cell);
+        }
+        sec.appendChild(toolRow);
+
+        // Clothing slots row (placeholder)
+        const clothRow = document.createElement('div');
+        clothRow.className = 'inv-equip-row';
+        for (const slotDef of CLOTHING_SLOT_DEFS) {
+          const cell = document.createElement('div');
+          cell.className = 'inv-equip-slot clothing-slot';
+          cell.setAttribute('title', slotDef.label + ' (coming soon)');
+          const lbl = document.createElement('span');
+          lbl.className = 'ies-label';
+          lbl.textContent = slotDef.label;
+          cell.appendChild(lbl);
+          clothRow.appendChild(cell);
+        }
+        sec.appendChild(clothRow);
       }
 
       let activeItemIndex = 0;
@@ -1836,12 +1992,20 @@
           if (action === 'till') return tile.type === TileType.GRASS && !tile.crop;
           if (action === 'smooth') return [TileType.TILLED, TileType.RAISED, TileType.PADDY].includes(tile.type) && !tile.crop;
         }
-        if (tool === 'machete') {
+        if (tool === 'machete' || tool === 'axe' || tool === 'harpoon' || tool === 'weapon') {
           const targets = getMacheteTargets(col, row, action);
           return targets.some(t => {
             const targetTile = grid[t.row]?.[t.col];
             return targetTile && !targetTile.crop && (targetTile.type === TileType.WEEDS || targetTile.type === TileType.SHRUB);
           });
+        }
+        if (tool === 'pick') {
+          if (action === 'dig') {
+            if (blocksDiggingUnder(tile)) return false;
+            return [TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type) || isDigRemovableVegetation(tile);
+          }
+          if (action === 'fill') return tile.type === TileType.TRENCH;
+          if (action === 'raise') return [TileType.GRASS, TileType.TILLED].includes(tile.type) && !tile.crop;
         }
         if (tool === 'seeds') {
           if (action === 'harvest') return Boolean(tile.crop && tile.cropReady);
@@ -2110,7 +2274,7 @@
           return { ok: true, message: action === 'till' ? 'Tilled a plantable bed.' : 'Smoothed the tile back into grass.' };
         }
 
-        if (tool === 'machete') {
+        if (tool === 'machete' || tool === 'axe' || tool === 'harpoon' || tool === 'weapon') {
           const result = clearVegetationAt(col, row, action);
           if (result.cleared <= 0) return { ok: false, message: action === 'slash' ? 'Slash cone found no overgrowth.' : 'No overgrowth to cut here.' };
           return {
@@ -2119,6 +2283,16 @@
               ? `Slashed ${result.cleared} tile${result.cleared === 1 ? '' : 's'} in the cone into mulch.`
               : 'Cut one tile of day-one overgrowth into mulch.'
           };
+        }
+
+        if (tool === 'pick') {
+          const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile);
+          if (action === 'dig')   tile.type = TileType.TRENCH;
+          if (action === 'fill')  tile.type = TileType.GRASS;
+          if (action === 'raise') tile.type = TileType.RAISED;
+          tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          const digMsg = dugVegetation ? 'Loosened the earth and cleared the vegetation.' : `${tileStyles[tile.type].label} — ${contextualActionLabel(action, tile)}.`;
+          return { ok: true, message: digMsg };
         }
 
         if (tool === 'seeds') {
@@ -2131,10 +2305,9 @@
       }
 
       function useActiveAction() {
-        // Per-tool swing duration: thrust fast, chop medium, sweep slow
-        toolSwingDur = activeTool === 'shovel' ? 0.18
-                     : activeTool === 'hoe'    ? 0.28
-                     : activeTool === 'machete'? 0.32 : 0.22;
+        // Per-anim swing duration: thrust fast, chop medium, sweep slow
+        const _anim = activeAnimStyle();
+        toolSwingDur = _anim === 'thrust' ? 0.18 : _anim === 'chop' ? 0.28 : 0.32;
         toolSwingT = toolSwingDur;
         const reticle = getReticleTile();
         const tile    = grid[reticle.row][reticle.col];
@@ -3424,75 +3597,77 @@
       scene.add(reticleRingMesh);
       scene.add(reticleWavyGroup);
 
-      // ── Tool meshes ───────────────────────────────────────────────
-      // ── Tool meshes (player cube = 0.5w × 0.65h × 0.5d, 1 tile = 1 world unit) ──
+      // ── Tool meshes (PNG sprite planes) ──────────────────────────────
       // toolSwingT counts down from toolSwingDur; progress = 1 - t/dur (0→1→0 arc).
-      // Per-tool swing durations: shovel fast jab, hoe medium chop, machete slow sweep.
+      // Per-tool swing durations: thrust fast, chop medium, sweep slow.
       let toolSwingT   = 0;
-      let toolSwingDur = 0.22; // set per-tool when swing is triggered
-      const TOOL_SWING_DUR = 0.22; // fallback
+      let toolSwingDur = 0.22;
 
-      function makeToolMesh(type) {
-        const g       = new THREE.Group();
-        const woodMat = new THREE.MeshLambertMaterial({ color: 0x7a4a28 });
-        const metalMat= new THREE.MeshLambertMaterial({ color: 0xa8aaa0 });
-        const bladeMat= new THREE.MeshLambertMaterial({ color: 0xd4d4c8 });
+      // Preload tool sprite textures
+      const _toolTexLoader = new THREE.TextureLoader();
+      const toolTextures = {};
+      for (const [key, def] of Object.entries(TOOL_ITEM_DEFS)) {
+        const tex = _toolTexLoader.load(def.sprite);
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        toolTextures[key] = tex;
+      }
 
-        if (type === 'shovel') {
-          // Haft: 0.5 tile (half-tile). Blade: wide flat cap at far end.
-          const haft  = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.50), woodMat);
-          haft.position.set(0, 0, 0.25);
-          const blade = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.065, 0.10), metalMat);
-          blade.position.set(0, 0, 0.53);
-          g.add(haft, blade);
-
-        } else if (type === 'hoe') {
-          // Haft: 0.5 tile. Head: horizontal cross-piece (T from above).
-          const haft = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.50), woodMat);
-          haft.position.set(0, 0, 0.25);
-          const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.10, 0.055), metalMat);
-          head.position.set(0, 0, 0.53);
-          g.add(haft, head);
-
-        } else if (type === 'machete') {
-          // Handle: 1/8 tile = 0.125. Blade: 3/8 tile = 0.375.
-          const grip  = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.085, 0.125), woodMat);
-          grip.position.set(0, 0, 0.0625);
-          const blade = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.055, 0.375), bladeMat);
-          blade.position.set(0, 0, 0.3125);
-          g.add(grip, blade);
-        }
-
-        g.traverse(m => { if (m.isMesh) m.castShadow = true; });
+      // Build a PNG plane mesh for a given tool item key
+      function makeToolPlaneMesh(itemKey) {
+        if (!itemKey || !toolTextures[itemKey]) return null;
+        const g   = new THREE.Group();
+        const geo = new THREE.PlaneGeometry(0.48, 0.48);
+        const mat = new THREE.MeshBasicMaterial({
+          map: toolTextures[itemKey],
+          transparent: true,
+          alphaTest: 0.08,
+          side: THREE.DoubleSide,
+        });
+        const plane = new THREE.Mesh(geo, mat);
+        // Lie flat in XZ plane so camera (above) always sees the full sprite
+        plane.rotation.x = -Math.PI / 2;
+        g.add(plane);
         return g;
       }
 
-      const toolMeshMap = {
-        shovel:  makeToolMesh('shovel'),
-        hoe:     makeToolMesh('hoe'),
-        machete: makeToolMesh('machete'),
-      };
+      // Build/rebuild the toolMeshMap from currently equipped items
+      const toolMeshMap = {};
+      function rebuildToolMeshes() {
+        // Remove old meshes from holder
+        Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+        for (const slot of Object.keys(toolActions)) {
+          const itemKey = equipmentSlots[slot] ?? null;
+          toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey) : null;
+        }
+        // machete alias → weapon mesh for legacy code paths
+        if (!toolMeshMap.machete) toolMeshMap.machete = toolMeshMap.weapon;
+        // Re-attach active tool
+        if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+      }
 
       const toolHolder = new THREE.Group();
       scene.add(toolHolder);
-      toolHolder.add(toolMeshMap.shovel);
 
       // Pre-allocated objects to avoid per-frame GC in updateToolMesh
       const _tUp    = new THREE.Vector3(0, 1, 0);
       const _qFac   = new THREE.Quaternion();  // facing rotation
       const _qAnim  = new THREE.Quaternion();  // animation rotation
-      const _swAxis = new THREE.Vector3();     // chop axis (player right in world)
+      const _swAxis = new THREE.Vector3();     // chop/tilt axis (player right in world)
+
+      // Resolve anim style for the active tool from equipped item or fallback
+      function activeAnimStyle() {
+        const itemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
+        return TOOL_ITEM_DEFS[itemKey]?.animStyle || 'thrust';
+      }
 
       function updateToolMesh(dt) {
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
 
-        // θ = playerMesh.rotation.y (smooth-lerped facing angle)
-        // facing dir in world  = (sin θ,  0, cos θ)
-        // player right in world = cross(facing, up) = (-cos θ, 0, sin θ)
-        const θ     = playerMesh.rotation.y;
-        const rightX = -Math.cos(θ),  rightZ =  Math.sin(θ);
-        const fwdX   =  Math.sin(θ),  fwdZ   =  Math.cos(θ);
+        const θ      = playerMesh.rotation.y;
+        const rightX = -Math.cos(θ), rightZ =  Math.sin(θ);
+        const fwdX   =  Math.sin(θ), fwdZ   =  Math.cos(θ);
 
         // Swing progress 0→1→0 over toolSwingDur
         let progress = 0;
@@ -3500,53 +3675,49 @@
           toolSwingT = Math.max(0, toolSwingT - dt);
           progress   = 1 - toolSwingT / toolSwingDur;
         }
-        const swing = Math.sin(progress * Math.PI); // 0 → 1 at mid → 0
+        const swing = Math.sin(progress * Math.PI);
 
-        // qFac: facing quaternion (world-Y rotation to match player direction)
         _qFac.setFromAxisAngle(_tUp, θ);
-        // _swAxis: player's right-side axis = the chop/tilt axis
         _swAxis.set(rightX, 0, rightZ);
 
-        if (activeTool === 'shovel') {
-          // THRUST — hold level with slight downward tilt; translate forward on use.
-          // _qAnim rotates around player's right axis in world space (tilt only, no swing).
-          _qAnim.setFromAxisAngle(_swAxis, 0.18); // constant slight downward tilt
+        const anim = activeAnimStyle();
+
+        if (anim === 'thrust') {
+          // THRUST — jab forward on use
+          _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
-          // Forward lunge: translate along facing direction
           toolHolder.position.set(
             playerMesh.position.x + rightX * 0.28 + fwdX * swing * 0.32,
-            playerMesh.position.y + 0.05,
+            playerMesh.position.y + 0.18,
             playerMesh.position.z + rightZ * 0.28 + fwdZ * swing * 0.32
           );
 
-        } else if (activeTool === 'hoe') {
-          // CHOP — raised high at rest (positive angle = tip up), slams down on use.
-          // multiplyQuaternions(qAnim, qFac): first face direction, then tilt in world space
-          // around player's right axis => tilt is always relative to facing direction.
+        } else if (anim === 'chop') {
+          // CHOP — raise high, slam down on use
           const chopAngle = 0.82 - swing * (Math.PI * 0.84);
           _qAnim.setFromAxisAngle(_swAxis, chopAngle);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
             playerMesh.position.x + rightX * 0.28,
-            playerMesh.position.y + 0.05,
+            playerMesh.position.y + 0.18,
             playerMesh.position.z + rightZ * 0.28
           );
 
-        } else if (activeTool === 'machete') {
-          // SWEEP — horizontal right-to-left arc around world Y.
-          // sweepOff adds extra Y rotation: +0.55 = cocked right, -1.00 = swept left.
-          // multiplyQuaternions(qAnim, qFac): qAnim rotates around world Y by sweepOff,
-          // which is additive to θ, keeping sweep relative to current facing direction.
+        } else {
+          // SWEEP — horizontal arc right-to-left around world Y
           const sweepOff = 0.55 - swing * 1.55;
           _qAnim.setFromAxisAngle(_tUp, sweepOff);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
             playerMesh.position.x + rightX * 0.20 + fwdX * 0.16,
-            playerMesh.position.y + 0.05,
+            playerMesh.position.y + 0.18,
             playerMesh.position.z + rightZ * 0.20 + fwdZ * 0.16
           );
         }
       }
+
+      // Initialize mesh map after toolHolder exists
+      rebuildToolMeshes();
 
 
 
@@ -4699,19 +4870,23 @@
       }
 
       function setActiveTool(tool) {
+        if (!toolActions[tool]) return;
         activeTool = tool;
         const actions = toolActions[tool];
         if (!actions.includes(activeAction)) activeAction = actions[0];
-        const info = { shovel:['🥄','Shovel'], hoe:['🪓','Hoe'], machete:['🗡️','Blade'] }[tool] || ['🔧',tool];
-        toolBtnIcon.textContent  = info[0];
-        toolBtnLabel.textContent = info[1];
+        const equipped = equipmentSlots[tool];
+        const def = TOOL_ITEM_DEFS[equipped];
+        const icon  = def?.icon  || { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', machete:'🗡️' }[tool] || '🔧';
+        const label = def?.label || { shovel:'Shovel', hoe:'Hoe', axe:'Axe', pick:'Pick', harpoon:'Harpoon', weapon:'Weapon', machete:'Weapon' }[tool] || tool;
+        toolBtnIcon.textContent  = icon;
+        toolBtnLabel.textContent = label;
         toolPickBtns.forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
         // Swap visible tool mesh
-        Object.values(toolMeshMap).forEach(m => toolHolder.remove(m));
+        Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[tool]) toolHolder.add(toolMeshMap[tool]);
         closeToolPicker();
         refreshActionBar();
-        const msg = `${toolName(tool)} selected.`;
+        const msg = `${label} selected.`;
         lastActionMessage = msg;
         showToast(msg, true);
       }
@@ -4892,7 +5067,10 @@
         const parts = [];
 
         // Tool
-        const toolInfo = { shovel:['🥄','Shovel'], hoe:['🪓','Hoe'], machete:['🗡️','Blade'] }[activeTool] || ['🔧', activeTool];
+        const _eqItem = equipmentSlots[activeTool];
+        const _eqDef  = _eqItem ? TOOL_ITEM_DEFS[_eqItem] : null;
+        const toolInfo = _eqDef ? [_eqDef.icon, _eqDef.label]
+          : ({ shovel:['⛏️','Shovel'], hoe:['🪓','Hoe'], axe:['🪓','Axe'], pick:['⛏️','Pick'], harpoon:['🎣','Harpoon'], weapon:['🗡️','Weapon'], machete:['🗡️','Weapon'] }[activeTool] || ['🔧', activeTool]);
         parts.push(`<div class="kh-group"><span class="kh-key">1/2/3</span><span class="kh-tool">${toolInfo[0]} ${toolInfo[1]}</span></div>`);
         parts.push('<div class="kh-div"></div>');
 
@@ -5070,7 +5248,9 @@
       function updateDebugPage() { /* debug panel removed from menu */ }
 
       function toolEmoji(tool) {
-        return { shovel: '🥄', hoe: '🪓', machete: '🗡️', seeds: '🌱' }[tool] || '❔';
+        const equipped = equipmentSlots[tool];
+        if (equipped && TOOL_ITEM_DEFS[equipped]) return TOOL_ITEM_DEFS[equipped].icon;
+        return { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
       }
 
       function nextRainText() {
@@ -5100,7 +5280,10 @@
       }
 
       function toolName(tool) {
-        return { shovel: '🥄 Shovel', hoe: '🪓 Hoe', machete: '🗡️ Machete', seeds: '🌱 Seeds' }[tool] || tool;
+        const equipped = equipmentSlots[tool];
+        const def = equipped ? TOOL_ITEM_DEFS[equipped] : null;
+        if (def) return `${def.icon} ${def.label}`;
+        return { shovel:'⛏️ Shovel', hoe:'🪓 Hoe', axe:'🪓 Axe', pick:'⛏️ Pick', harpoon:'🎣 Harpoon', weapon:'🗡️ Weapon', machete:'🗡️ Weapon', seeds:'🌱 Seeds' }[tool] || tool;
       }
 
       function seededRandom(seed) {
@@ -5223,6 +5406,14 @@
         lastMoveAngle = -Math.PI / 2;
         cardinalHoldTimer = 0;
         activeItemIndex = 0;
+        // Reset equipment to defaults
+        equipmentSlots.hoe = 'bronzehoe'; equipmentSlots.shovel = 'pickshovel';
+        equipmentSlots.axe = null; equipmentSlots.pick = null;
+        equipmentSlots.harpoon = null; equipmentSlots.weapon = 'hatchet';
+        Object.keys(clothingSlots).forEach(k => { clothingSlots[k] = null; });
+        rebuildToolMeshes();
+        Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+        if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
         lastActionMessage = 'Farm reset. First Rains — dig trenches to route the water.';
         showToast('Farm reset to First Rains.', true);
         debugLog('prototype reset');
@@ -5276,7 +5467,10 @@
 
         if (key === '1') setActiveTool('shovel');
         if (key === '2') setActiveTool('hoe');
-        if (key === '3') setActiveTool('machete');
+        if (key === '3') setActiveTool('weapon');
+        if (key === '4') setActiveTool('axe');
+        if (key === '5') setActiveTool('pick');
+        if (key === '6') setActiveTool('harpoon');
 
         // Item scroll: , / . or Tab/Shift+Tab
         if (key === ',' || key === 'shift') {
