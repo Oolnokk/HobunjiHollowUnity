@@ -1043,6 +1043,8 @@
         scene.remove(reticleMesh);
         scene.remove(reticleCircleMesh);
         scene.remove(reticleRingMesh);
+        scene.remove(reticleWavyGroup);
+        clearTargetHighlights();
         interiorScene.add(playerMesh);
         refreshActionBar();
       }
@@ -1067,6 +1069,7 @@
           scene.add(reticleMesh);
           scene.add(reticleCircleMesh);
           scene.add(reticleRingMesh);
+          scene.add(reticleWavyGroup);
           refreshActionBar();
         });
       }
@@ -2682,6 +2685,66 @@
         obj.traverse(child => { if (child.isMesh) child.layers.enable(1); });
       }
 
+      // Shared vertex shader used for coloured target outlines (supports instancing)
+      const _targetOutlineVert = `
+        #ifdef USE_INSTANCING
+          attribute mat4 instanceMatrix;
+        #endif
+        uniform float uThickness;
+        void main() {
+          #ifdef USE_INSTANCING
+            mat4 mvMatrix = modelViewMatrix * instanceMatrix;
+          #else
+            mat4 mvMatrix = modelViewMatrix;
+          #endif
+          vec4 clip  = projectionMatrix * mvMatrix * vec4(position, 1.0);
+          vec4 clipN = projectionMatrix * mvMatrix * vec4(position + normal, 1.0);
+          vec2 dir = clipN.xy / clipN.w - clip.xy / clip.w;
+          float len = length(dir);
+          dir = (len > 1e-5) ? dir / len : vec2(0.0, 0.0);
+          clip.xy += dir * uThickness * clip.w;
+          gl_Position = clip;
+        }
+      `;
+      const targetOutlineGreenMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        uniforms: { uThickness: { value: 0.009 } },
+        vertexShader: _targetOutlineVert,
+        fragmentShader: `void main() { gl_FragColor = vec4(0.08, 0.95, 0.18, 1.0); }`,
+        depthWrite: false, depthFunc: THREE.LessDepth,
+      });
+      const targetOutlineRedMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        uniforms: { uThickness: { value: 0.009 } },
+        vertexShader: _targetOutlineVert,
+        fragmentShader: `void main() { gl_FragColor = vec4(0.95, 0.12, 0.08, 1.0); }`,
+        depthWrite: false, depthFunc: THREE.LessDepth,
+      });
+      let _targetOutlineMeshes = [];
+      let _targetOutlineAllowed = true;
+      function clearTargetHighlights() {
+        for (const m of _targetOutlineMeshes) m.layers.disable(2);
+        _targetOutlineMeshes = [];
+      }
+      function findTargetMeshes(col, row) {
+        const i = row * COLS + col;
+        const out = [];
+        const obj = getWorldObjectAt(col, row);
+        if (obj && obj.mesh) {
+          out.push(obj.mesh);
+          if (obj.lid) out.push(obj.lid);
+          return out;
+        }
+        if (cropMeshes[i]) {
+          cropMeshes[i].traverse(m => { if (m.isMesh) out.push(m); });
+          if (out.length) return out;
+        }
+        if (vegFoliageMeshes[i]) {
+          vegFoliageMeshes[i].traverse(m => { if (m.isMesh) out.push(m); });
+        }
+        return out;
+      }
+
       // Camera — isometric-style: high angle, offset NW, looking SE toward map center
       const CAM_DIST   = 14;
       const CAM_ANGLE  = Math.PI / 5.5;  // ~33° from horizontal — classic 3/4 RPG tilt
@@ -3330,6 +3393,20 @@
       const reticleRingMesh = new THREE.Mesh(reticleRingGeo, reticleRingMat);
       reticleRingMesh.visible = false;
 
+      // Three wavy horizontal lines for hoe tile actions
+      const _wavyLineMat = new THREE.LineBasicMaterial({ color: 0xffffc8, transparent: true, opacity: 0.95 });
+      const reticleWavyGroup = new THREE.Group();
+      for (let _wi = 0; _wi < 3; _wi++) {
+        const _pts = [];
+        for (let _j = 0; _j <= 28; _j++) {
+          const _x = (_j / 28 - 0.5) * 0.72;
+          const _z = (_wi - 1) * 0.17 + 0.07 * Math.sin(_j / 28 * 4 * Math.PI);
+          _pts.push(new THREE.Vector3(_x, 0, _z));
+        }
+        reticleWavyGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(_pts), _wavyLineMat));
+      }
+      reticleWavyGroup.visible = false;
+
       // ── Mesh stores ───────────────────────────────────────────────
       // Tile meshes: indexed by row*COLS+col
       const tileMeshes  = new Array(ROWS * COLS).fill(null);
@@ -3345,6 +3422,7 @@
       scene.add(reticleMesh);
       scene.add(reticleCircleMesh);
       scene.add(reticleRingMesh);
+      scene.add(reticleWavyGroup);
 
       // ── Tool meshes ───────────────────────────────────────────────
       // ── Tool meshes (player cube = 0.5w × 0.65h × 0.5d, 1 tile = 1 world unit) ──
@@ -4091,21 +4169,33 @@
       // ── Update reticle ────────────────────────────────────────────
       function updateReticleMesh() {
         const reticle = getReticleTile();
-        const tile    = grid[reticle.row][reticle.col];
+        const tile    = grid[reticle.row]?.[reticle.col];
+        if (!tile) {
+          reticleCircleMesh.visible = false;
+          reticleRingMesh.visible   = false;
+          reticleWavyGroup.visible  = false;
+          clearTargetHighlights();
+          return;
+        }
         const surfY   = tileSurfaceY(tile.type) + 0.01
                       + (tile.water > 0.02 ? tile.water * WATER_UNIT + 0.04 : 0);
         const allowed = canUseAction(activeTool, activeAction, reticle.col, reticle.row);
         const t       = performance.now();
         const pulse   = 1 + 0.06 * Math.sin(t / 300);
 
-        const isExcavate = currentArea === 'farm' && allowed
-                        && (activeAction === 'dig' || activeAction === 'raise');
-        const isObjTarget = currentArea === 'farm' && allowed && !isExcavate;
+        const onFarm     = currentArea === 'farm';
+        const isExcavate = onFarm && allowed && (activeAction === 'dig' || activeAction === 'raise');
+        const isHoeWork  = onFarm && allowed && activeTool === 'hoe';
+        const showTile   = isExcavate || isHoeWork;
+        const isObjTarget = onFarm && allowed && !showTile;
+        const i = reticle.row * COLS + reticle.col;
+        const isWeedBlock = onFarm && !allowed && activeTool === 'hoe' && activeAction === 'till'
+                         && (tile.type === TileType.WEEDS || !!vegFoliageMeshes[i]);
 
         // Base tile box
         reticleMesh.position.set(reticle.col + 0.5, surfY, reticle.row + 0.5);
-        reticleMesh.material = isExcavate ? reticleIntenseMat
-                             : (allowed   ? reticleMat : reticleBlockedMat);
+        reticleMesh.material = showTile ? reticleIntenseMat
+                             : (allowed ? reticleMat : reticleBlockedMat);
         reticleMesh.scale.set(pulse, 1, pulse);
 
         // Floor circle — dig / raise only
@@ -4118,16 +4208,36 @@
           reticleCircleMesh.visible = false;
         }
 
-        // Floating ring — every allowed action that isn't dig/raise
-        if (isObjTarget) {
-          const worldObj = getWorldObjectAt(reticle.col, reticle.row);
-          const ringH    = worldObj ? 0.95 : (tile.crop ? 0.65 : 0.45);
-          const bob      = 0.06 * Math.sin(t / 600);
-          reticleRingMesh.visible = true;
-          reticleRingMesh.position.set(reticle.col + 0.5, surfY + ringH + bob, reticle.row + 0.5);
-          reticleRingMesh.rotation.y = t / 2500;
-          const rp = 0.92 + 0.08 * Math.sin(t / 500);
-          reticleRingMesh.scale.set(rp, rp, rp);
+        // Wavy lines — hoe only
+        if (isHoeWork) {
+          reticleWavyGroup.visible = true;
+          reticleWavyGroup.position.set(reticle.col + 0.5, surfY + 0.02, reticle.row + 0.5);
+          const wp = 1 + 0.08 * Math.sin(t / 270);
+          reticleWavyGroup.scale.set(wp, wp, wp);
+        } else {
+          reticleWavyGroup.visible = false;
+        }
+
+        // Object outline (layer 2) and fallback ring
+        clearTargetHighlights();
+        if (isObjTarget || isWeedBlock) {
+          const meshes = findTargetMeshes(reticle.col, reticle.row);
+          if (meshes.length > 0) {
+            for (const m of meshes) m.layers.enable(2);
+            _targetOutlineMeshes = meshes;
+            _targetOutlineAllowed = isObjTarget;
+            reticleRingMesh.visible = false;
+          } else {
+            // No specific mesh — fall back to floating ring
+            const worldObj = getWorldObjectAt(reticle.col, reticle.row);
+            const ringH    = worldObj ? 0.95 : (tile.crop ? 0.65 : 0.45);
+            const bob      = 0.06 * Math.sin(t / 600);
+            reticleRingMesh.visible = true;
+            reticleRingMesh.position.set(reticle.col + 0.5, surfY + ringH + bob, reticle.row + 0.5);
+            reticleRingMesh.rotation.y = t / 2500;
+            const rp = 0.92 + 0.08 * Math.sin(t / 500);
+            reticleRingMesh.scale.set(rp, rp, rp);
+          }
         } else {
           reticleRingMesh.visible = false;
         }
@@ -4295,6 +4405,18 @@
           renderer.render(_outlineScene, camera);
           camera.layers.enableAll();
           _outlineScene.overrideMaterial = null;
+          renderer.autoClearColor = true;
+          renderer.autoClearDepth = true;
+        }
+        // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
+        if (_targetOutlineMeshes.length > 0) {
+          renderer.autoClearColor = false;
+          renderer.autoClearDepth = false;
+          scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
+          camera.layers.set(2);
+          renderer.render(scene, camera);
+          camera.layers.enableAll();
+          scene.overrideMaterial = null;
           renderer.autoClearColor = true;
           renderer.autoClearDepth = true;
         }
