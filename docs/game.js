@@ -2494,7 +2494,7 @@
 
       // ── Interior scene (bigger-on-the-inside room) ────────────────
       const interiorScene = new THREE.Scene();
-      interiorScene.background = new THREE.Color(0x1a1008);
+      interiorScene.background = new THREE.Color(0x000000);
 
       // Interior lighting — warm lantern-style
       const _intAmbient = new THREE.AmbientLight(0xffd090, 0.7);
@@ -2517,7 +2517,7 @@
           if (interiorSceneBuilt && interiorWallGroup) {
             WallBuilder.disposeGroup(interiorWallGroup);
             interiorScene.remove(interiorWallGroup);
-            interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5 });
+            interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
             _markOutline(interiorWallGroup);
             interiorScene.add(interiorWallGroup);
             debugLog('Interior walls rebuilt with real GLB');
@@ -2542,10 +2542,20 @@
         if (interiorSceneBuilt) return;
         interiorSceneBuilt = true;
 
-        // Floor colours from JSON floorRecipes: "#33475f"
-        const floorMat  = new THREE.MeshLambertMaterial({ color: 0x33475f });
-        const floorMatB = new THREE.MeshLambertMaterial({ color: 0x2d3f52 });
-        const exitMat   = new THREE.MeshLambertMaterial({ color: 0x8b1a1a });
+        // Floor — boards.png if present, warm brown placeholder otherwise
+        const floorMat = new THREE.MeshLambertMaterial({ color: 0x8b6914 });
+        const exitMat  = new THREE.MeshLambertMaterial({ color: 0x8b1a1a });
+        new THREE.TextureLoader().load(
+          'assets/textures/boards.png',
+          (tex) => {
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            floorMat.map = tex;
+            floorMat.color.set(0xffffff);
+            floorMat.needsUpdate = true;
+          },
+          undefined,
+          () => {} // missing → keep brown
+        );
 
         // Floor tiles from JSON floorCells: main room 6×5 + south corridor 2×1
         const floorCells = [];
@@ -2553,16 +2563,14 @@
         floorCells.push([2, 5], [3, 5]);
 
         for (const [c, r] of floorCells) {
-          const isExit = (r === INTERIOR_EXIT_ROW);
-          const mat    = isExit ? exitMat : ((c + r) % 2 === 0 ? floorMat : floorMatB);
-          const fl     = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), mat);
+          const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), r === INTERIOR_EXIT_ROW ? exitMat : floorMat);
           fl.position.set(c + 0.5, -0.05, r + 0.5);
           fl.receiveShadow = true;
           interiorScene.add(fl);
         }
 
-        // Instanced walls: 50% brick size, 4x density (unitMult=0.5 → 2× per axis)
-        interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true,  unitMult: 0.5, rockScale: 1.5 });
+        // Instanced walls: 50% brick size, 4x density, 60% depth, micro-jitter
+        interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
         _markOutline(interiorWallGroup);
         interiorScene.add(interiorWallGroup);
 
@@ -2579,23 +2587,22 @@
           uThickness: { value: 0.006 },  // NDC units → constant screen-pixel width
         },
         vertexShader: `
+          #ifdef USE_INSTANCING
+            attribute mat4 instanceMatrix;
+          #endif
           uniform float uThickness;
           void main() {
-            // Project both the vertex and vertex+normal to clip space,
-            // then compute the 2D screen-space direction between them.
-            // This avoids the NaN that occurs when projecting a direction
-            // vector whose XY is near-zero (e.g. up-normals on flat tiles
-            // viewed near head-on), which caused the all-black screen.
-            vec4 clip  = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            vec4 clipN = projectionMatrix * modelViewMatrix * vec4(position + normal, 1.0);
+            #ifdef USE_INSTANCING
+              mat4 mvMatrix = modelViewMatrix * instanceMatrix;
+            #else
+              mat4 mvMatrix = modelViewMatrix;
+            #endif
+            vec4 clip  = projectionMatrix * mvMatrix * vec4(position, 1.0);
+            vec4 clipN = projectionMatrix * mvMatrix * vec4(position + normal, 1.0);
 
             vec2 dir = clipN.xy / clipN.w - clip.xy / clip.w;
             float len = length(dir);
-            // Safe normalize: if normal is perpendicular to screen, skip offset
-            // (those faces don't form silhouette edges anyway)
             dir = (len > 1e-5) ? dir / len : vec2(0.0, 0.0);
-
-            // Multiply by clip.w so after perspective division NDC offset = uThickness
             clip.xy    += dir * uThickness * clip.w;
             gl_Position = clip;
           }

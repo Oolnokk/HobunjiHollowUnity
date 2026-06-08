@@ -357,6 +357,9 @@
     const postTranslate  = opts.postTranslate  || [0, 0, 0];
     const usePlaceholder = opts.usePlaceholder !== false;
     const defaultId      = opts.defaultRecipeId || this.defaultRecipeId || BUILTIN_DEFAULT_RECIPE_ID;
+    const brickJitter    = opts.brickJitter || null;
+    const jRng           = brickJitter ? makeRng('brickJitter') : null;
+    const _jAxisY        = brickJitter ? new THREE.Vector3(0, 1, 0) : null;
 
     if (usePlaceholder) this.ensurePlaceholderGlb();
 
@@ -411,6 +414,12 @@
         const worldQ = new THREE.Quaternion()
           .setFromRotationMatrix(new THREE.Matrix4().makeBasis(basis.u, basis.v, basis.n))
           .multiply(tmpQuat);
+        if (brickJitter) {
+          const jRotY = THREE.MathUtils.degToRad(jRng.range(-(brickJitter.rotYDeg || 0), brickJitter.rotYDeg || 0));
+          worldQ.premultiply(new THREE.Quaternion().setFromAxisAngle(_jAxisY, jRotY));
+          wp.addScaledVector(basis.u, jRng.range(-(brickJitter.shiftU || 0), brickJitter.shiftU || 0));
+          wp.addScaledVector(basis.v, jRng.range(-(brickJitter.shiftV || 0), brickJitter.shiftV || 0));
+        }
         const wm = new THREE.Matrix4().compose(wp, worldQ, tmpScale);
 
         if (!perGlb.has(resolvedName)) perGlb.set(resolvedName, { model, wms: [] });
