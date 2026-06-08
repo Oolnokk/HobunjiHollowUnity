@@ -3191,6 +3191,16 @@
         return g;
       })();
 
+      // Weed blade: same shape but UV y flipped so the image appears upside down
+      // (grass tip/wide-end at the cluster anchor, root/narrow-end at the free tip).
+      const _weedBladeGeo = (() => {
+        const g = new THREE.PlaneGeometry(1, 1);
+        g.translate(0, 0.5, 0);
+        const uv = g.attributes.uv;
+        for (let i = 0; i < uv.count; i++) uv.setY(i, 1.0 - uv.getY(i));
+        return g;
+      })();
+
       const _grassBillVert = `
         uniform float uTime;
         uniform float uStrength;
@@ -3199,6 +3209,25 @@
           vUv = uv;
           vec4 worldPos = modelMatrix * vec4(position, 1.0);
           float topFactor = uv.y;
+          float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
+          float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
+          float sway2 = cos(uTime * 1.2 + phase * 1.3) * uStrength * 0.5 * topFactor;
+          worldPos.x += sway;
+          worldPos.z += sway2;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `;
+
+      // Wind vert for weed blades: UV y is flipped in the geometry, so
+      // topFactor must be inverted to keep free ends swaying (not the anchor).
+      const _weedBillVert = `
+        uniform float uTime;
+        uniform float uStrength;
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          float topFactor = 1.0 - uv.y;
           float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
           float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
           float sway2 = cos(uTime * 1.2 + phase * 1.3) * uStrength * 0.5 * topFactor;
@@ -3223,25 +3252,32 @@
 
       const _grassTint = new THREE.Color().setHSL(108 / 360, 0.58, 0.28);
       let grassBillboardMat = null;
+      let weedBillboardMat  = null;
 
       new THREE.TextureLoader().load('assets/leaves/grass_1.png', (tex) => {
         tex.magFilter = THREE.NearestFilter;
         tex.minFilter = THREE.NearestFilter;
+        const sharedUniforms = () => ({
+          uGrassTex: { value: tex },
+          uTint:     { value: _grassTint },
+          uTime:     { value: 0 },
+          uStrength: { value: 0.04 },
+        });
         grassBillboardMat = new THREE.ShaderMaterial({
-          uniforms: {
-            uGrassTex: { value: tex },
-            uTint:     { value: _grassTint },
-            uTime:     { value: 0 },
-            uStrength: { value: 0.04 },
-          },
+          uniforms:       sharedUniforms(),
           vertexShader:   _grassBillVert,
           fragmentShader: _grassBillFrag,
-          alphaTest:      0.5,
-          side:           THREE.DoubleSide,
-          depthWrite:     true,
+          alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
         });
-        // Spawn billboards on all existing GRASS tiles; also build weed clusters
-        // (they share this material, so they need it loaded first too)
+        // Weed clusters: same texture/tint but UV y is flipped in geometry,
+        // so wind uses 1-uv.y as topFactor to keep free ends swaying.
+        weedBillboardMat = new THREE.ShaderMaterial({
+          uniforms:       sharedUniforms(),
+          vertexShader:   _weedBillVert,
+          fragmentShader: _grassBillFrag,
+          alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
+        });
+        // Spawn billboards on GRASS tiles; build weed clusters now mat is ready
         for (let r = 0; r < ROWS; r++) {
           for (let c = 0; c < COLS; c++) {
             if (grid[r][c].type === TileType.GRASS) {
@@ -3305,7 +3341,7 @@
       // ground origin. Shares grassBillboardMat (same texture + tint + wind shader).
       // Blades are wider and taller than regular grass, with more spread.
       function _buildLeafClusterGroup(col, row) {
-        if (!grassBillboardMat) return null;
+        if (!weedBillboardMat) return null;
         const tileSeed = (col * 31337 + row * 1009) >>> 0;
         const rng      = _mbRng(tileSeed);
         const surfY    = tileSurfaceY(TileType.GRASS);
@@ -3326,7 +3362,7 @@
             const w           = 0.30 + rng() * 0.18;
             const h           = 0.52 + rng() * 0.24;  // taller than grass (0.52–0.76)
 
-            const m = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
+            const m = new THREE.Mesh(_weedBladeGeo, weedBillboardMat);
             m.position.set(cx, 0, cz);
             m.rotation.x = tilt;
             m.rotation.y = spreadAngle;
@@ -3826,6 +3862,10 @@
         if (grassBillboardMat) {
           grassBillboardMat.uniforms.uTime.value     = windTime;
           grassBillboardMat.uniforms.uStrength.value = windStrBase;
+        }
+        if (weedBillboardMat) {
+          weedBillboardMat.uniforms.uTime.value     = windTime;
+          weedBillboardMat.uniforms.uStrength.value = windStrBase;
         }
 
         renderer.render(scene, camera);
