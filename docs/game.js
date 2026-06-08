@@ -2299,15 +2299,23 @@
         vertexShader: `
           uniform float uThickness;
           void main() {
-            // Transform to clip space first, then offset in screen-space NDC
-            // so the outline is the same pixel width at any depth.
-            vec4 pos     = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            vec3 vNorm   = normalize(normalMatrix * normal);
-            // Project view-space normal to clip XY, normalize to a 2D direction
-            vec2 screenN = normalize((projectionMatrix * vec4(vNorm, 0.0)).xy);
-            // Multiply by pos.w so after perspective division the NDC offset = uThickness
-            pos.xy      += screenN * uThickness * pos.w;
-            gl_Position  = pos;
+            // Project both the vertex and vertex+normal to clip space,
+            // then compute the 2D screen-space direction between them.
+            // This avoids the NaN that occurs when projecting a direction
+            // vector whose XY is near-zero (e.g. up-normals on flat tiles
+            // viewed near head-on), which caused the all-black screen.
+            vec4 clip  = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            vec4 clipN = projectionMatrix * modelViewMatrix * vec4(position + normal, 1.0);
+
+            vec2 dir = clipN.xy / clipN.w - clip.xy / clip.w;
+            float len = length(dir);
+            // Safe normalize: if normal is perpendicular to screen, skip offset
+            // (those faces don't form silhouette edges anyway)
+            dir = (len > 1e-5) ? dir / len : vec2(0.0, 0.0);
+
+            // Multiply by clip.w so after perspective division NDC offset = uThickness
+            clip.xy    += dir * uThickness * clip.w;
+            gl_Position = clip;
           }
         `,
         fragmentShader: `
