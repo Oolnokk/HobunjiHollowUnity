@@ -3643,10 +3643,15 @@
           side: THREE.DoubleSide,
         });
         const plane = new THREE.Mesh(geo, mat);
-        // Lie flat in XZ plane so the overhead camera always sees the full sprite
-        plane.rotation.x = -Math.PI / 2;
+        if (itemKey === 'bronzehoe') {
+          // Stand upright — 90° around the handle (long-axis) axle from flat position.
+          // plane.rotation.y = PI faces the sprite toward the camera (which is behind the player).
+          plane.rotation.y = Math.PI;
+        } else {
+          // Lie flat in XZ plane so the overhead camera always sees the full sprite
+          plane.rotation.x = -Math.PI / 2;
+        }
         g.add(plane);
-        if (itemKey === 'bronzehoe') g.rotation.y = -Math.PI / 2;  // 90° CW around handle
         return g;
       }
 
