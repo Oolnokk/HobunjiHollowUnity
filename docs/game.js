@@ -3217,7 +3217,9 @@
           if (texel.a < 0.5) discard;
           // Treat grass_1.png as mint-toned; desaturate and re-tint to grass color
           float lum = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
-          vec3 col  = uTint * (0.7 + lum * 0.8);
+          vec3 tinted = uTint * (0.7 + lum * 0.8);
+          // Drawn outline pixels (near-black source) stay pure black; tint the rest
+          vec3 col = mix(vec3(0.0), tinted, smoothstep(0.0, 0.15, lum));
           gl_FragColor = vec4(col, texel.a);
         }
       `;
@@ -3288,6 +3290,7 @@
           group.add(cross);
         }
 
+        group.visible = s_grass;
         scene.add(group);
         grassBillboardGroups[i] = group;
       }
@@ -3777,7 +3780,7 @@
 
       // ── Visual feature toggles (Settings tab) ────────────────────
       let s_outlines  = true;
-      let s_grass     = true;
+      let s_grass     = false;
       let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
       let s_billWind  = true;
 
