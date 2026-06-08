@@ -2294,13 +2294,20 @@
       const shellOutlineMat = new THREE.ShaderMaterial({
         side: THREE.BackSide,
         uniforms: {
-          uThickness: { value: 0.025 },
+          uThickness: { value: 0.006 },  // NDC units → constant screen-pixel width
         },
         vertexShader: `
           uniform float uThickness;
           void main() {
-            vec3 pos    = position + normal * uThickness;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+            // Transform to clip space first, then offset in screen-space NDC
+            // so the outline is the same pixel width at any depth.
+            vec4 pos     = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            vec3 vNorm   = normalize(normalMatrix * normal);
+            // Project view-space normal to clip XY, normalize to a 2D direction
+            vec2 screenN = normalize((projectionMatrix * vec4(vNorm, 0.0)).xy);
+            // Multiply by pos.w so after perspective division the NDC offset = uThickness
+            pos.xy      += screenN * uThickness * pos.w;
+            gl_Position  = pos;
           }
         `,
         fragmentShader: `
