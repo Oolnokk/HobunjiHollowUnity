@@ -247,12 +247,15 @@
       const HOUSE_FOOTPRINT_D = 4;      // footprint depth in tiles (cells y=10..13, 4 deep)
       const DOOR_COL          = 28;     // farm grid col of door zone (mapper cell 11,14 → col 28)
       const DOOR_ROW          = 6;      // farm grid row of door zone (mapper cell 11,14 → row 6)
-      // Interior dimensions — the inside is bigger than the outside (Pokemon style)
-      const INTERIOR_COLS      = 5;
-      const INTERIOR_ROWS      = 10;
-      const INTERIOR_ENTRY_COL = 2;     // col player spawns at when entering
-      const INTERIOR_ENTRY_ROW = 1;     // row player spawns at (just inside north door)
-      const INTERIOR_EXIT_COL  = 2;     // south exit door col
+      // Interior dimensions from playerhouse_interior.json (house_interior_mapper.v1)
+      // Layout: 6×5 main room (cols 0-5, rows 0-4) + 2-cell south corridor (cols 2-3, row 5)
+      const INTERIOR_COLS        = 6;
+      const INTERIOR_ROWS        = 6;
+      const INTERIOR_ENTRY_COL   = 2;    // player spawns here when entering (left corridor col)
+      const INTERIOR_ENTRY_ROW   = 4;    // just inside the main room, north of the corridor
+      const INTERIOR_EXIT_COL    = 2;    // leftmost col of south exit corridor
+      const INTERIOR_EXIT_ROW    = 5;    // row of south exit corridor
+      const INTERIOR_WALL_HEIGHT = 2.5;  // wall height in world units
 
       // ── Voxel render constants ──
       // Each tile is drawn as a top-down oblique voxel stack.
@@ -1010,6 +1013,7 @@
 
       // ── Enter / exit the interior ─────────────────────────────────
       function enterInterior() {
+        buildInteriorScene();  // no-op after first call
         farmPlayerSave = { x: player.x, y: player.y, angle: player.angle };
         currentArea    = 'interior';
         player.x       = (INTERIOR_ENTRY_COL + 0.5) * TILE;
@@ -1550,19 +1554,18 @@
             && row >= HOUSE_ROW && row < HOUSE_ROW + HOUSE_FOOTPRINT_D;
       }
 
-      // Interior 5 × 10 grid: ROCK walls, GRASS floor, open north + south centre doors
+      // Interior grid from playerhouse_interior.json floorCells:
+      // main room cols 0-5 rows 0-4 + south corridor cols 2-3 row 5
       const interiorGrid = (() => {
-        const g = Array.from({ length: INTERIOR_ROWS }, (_, r) =>
+        const floor = (c, r) =>
+          (r <= 4 && c >= 0 && c <= 5) || (r === 5 && c >= 2 && c <= 3);
+        return Array.from({ length: INTERIOR_ROWS }, (_, r) =>
           Array.from({ length: INTERIOR_COLS }, (_, c) => ({
-            type: (r === 0 || c === 0 || c === INTERIOR_COLS - 1 || r === INTERIOR_ROWS - 1)
-              ? TileType.ROCK : TileType.GRASS,
+            type: floor(c, r) ? TileType.GRASS : TileType.ROCK,
             water: 0, flow: false, crop: CropType.NONE,
             cropAge: 0, cropReady: false, stress: '', variation: 0,
           }))
         );
-        g[0][INTERIOR_ENTRY_COL].type               = TileType.GRASS; // north entry
-        g[INTERIOR_ROWS - 1][INTERIOR_EXIT_COL].type = TileType.GRASS; // south exit
-        return g;
       })();
 
       let activeTool = 'shovel';
@@ -2500,60 +2503,77 @@
       _intKey.position.set(2, 6, 3);
       interiorScene.add(_intKey);
       const _intFill = new THREE.PointLight(0xff8833, 0.6, 12);
-      _intFill.position.set(INTERIOR_COLS / 2, 1.8, INTERIOR_ROWS / 2);
+      _intFill.position.set(3, 1.8, 2.5);  // centre of 6×5 main room
       interiorScene.add(_intFill);
 
-      // Build the room geometry
-      (function buildInteriorScene() {
-        const floorMats   = [
-          new THREE.MeshLambertMaterial({ color: 0x7a4e2a }),
-          new THREE.MeshLambertMaterial({ color: 0x8a5a30 }),
-        ];
-        const wallMat     = new THREE.MeshLambertMaterial({ color: 0x4a3010 });
-        const wallTopMat  = new THREE.MeshLambertMaterial({ color: 0x5e3c14 });
-        const ceilMat     = new THREE.MeshLambertMaterial({ color: 0x3a2206 });
-        const doorMarkerMat = new THREE.MeshLambertMaterial({ color: 0x7a5a10 });
-        const exitRug       = new THREE.MeshLambertMaterial({ color: 0x8b1a1a });
+      // WallBuilder instance — loads Roughbrick1.glb eagerly in background
+      const houseWallBuilder = new WallBuilder({ glbBasePath: 'assets/models/' });
+      let interiorSceneBuilt = false;
+      let interiorWallGroup  = null;
 
-        for (let r = 0; r < INTERIOR_ROWS; r++) {
-          for (let c = 0; c < INTERIOR_COLS; c++) {
-            const tile = interiorGrid[r][c];
-            const px   = c + 0.5, pz = r + 0.5;
-
-            if (tile.type === TileType.ROCK) {
-              // Wall column: base slab + upper block
-              const base = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 1), wallMat);
-              base.position.set(px, -0.25, pz);
-              interiorScene.add(base);
-              const top = new THREE.Mesh(new THREE.BoxGeometry(1, 2.5, 1), wallTopMat);
-              top.position.set(px, 1.25, pz);
-              interiorScene.add(top);
-            } else {
-              // Floor plank (alternating)
-              const flMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMats[(c + r) % 2]);
-              flMesh.position.set(px, -0.05, pz);
-              flMesh.receiveShadow = true;
-              interiorScene.add(flMesh);
-            }
+      houseWallBuilder.loadDefaultGlb()
+        .then(() => {
+          debugLog('Interior walls: Roughbrick1.glb loaded');
+          if (interiorSceneBuilt && interiorWallGroup) {
+            WallBuilder.disposeGroup(interiorWallGroup);
+            interiorScene.remove(interiorWallGroup);
+            interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: false });
+            interiorScene.add(interiorWallGroup);
+            debugLog('Interior walls rebuilt with real GLB');
           }
+        })
+        .catch(err => debugLog('Interior walls GLB error: ' + err.message));
+
+      // Wall panels derived from playerhouse_interior.json wallEdges, merged into rect panels.
+      // Coord origin: editor cell (9,9) → interior (0,0).
+      // N/S panels face along Z (rotY=0/180); W/E panels face along X (rotY=±90).
+      const INTERIOR_WALL_PANELS = [
+        { id: 'n_wall',  width: 6, height: INTERIOR_WALL_HEIGHT, position: [3, 0, 0],   rotationDeg: [0,   0, 0] },
+        { id: 'w_wall',  width: 5, height: INTERIOR_WALL_HEIGHT, position: [0, 0, 2.5], rotationDeg: [0,  90, 0] },
+        { id: 'e_wall',  width: 5, height: INTERIOR_WALL_HEIGHT, position: [6, 0, 2.5], rotationDeg: [0, -90, 0] },
+        { id: 's_left',  width: 2, height: INTERIOR_WALL_HEIGHT, position: [1, 0, 5],   rotationDeg: [0, 180, 0] },
+        { id: 's_right', width: 2, height: INTERIOR_WALL_HEIGHT, position: [5, 0, 5],   rotationDeg: [0, 180, 0] },
+        { id: 'exit_w',  width: 1, height: INTERIOR_WALL_HEIGHT, position: [2, 0, 5.5], rotationDeg: [0,  90, 0] },
+        { id: 'exit_e',  width: 1, height: INTERIOR_WALL_HEIGHT, position: [4, 0, 5.5], rotationDeg: [0, -90, 0] },
+        { id: 'exit_s',  width: 2, height: INTERIOR_WALL_HEIGHT, position: [3, 0, 6],   rotationDeg: [0, 180, 0] },
+      ];
+
+      // Built lazily on first entry to avoid blocking startup; called by enterInterior().
+      function buildInteriorScene() {
+        if (interiorSceneBuilt) return;
+        interiorSceneBuilt = true;
+
+        // Floor colours from JSON floorRecipes: "#33475f"
+        const floorMat  = new THREE.MeshLambertMaterial({ color: 0x33475f });
+        const floorMatB = new THREE.MeshLambertMaterial({ color: 0x2d3f52 });
+        const exitMat   = new THREE.MeshLambertMaterial({ color: 0x8b1a1a });
+        const ceilMat   = new THREE.MeshLambertMaterial({ color: 0x1a0e06 });
+
+        // Floor tiles from JSON floorCells: main room 6×5 + south corridor 2×1
+        const floorCells = [];
+        for (let r = 0; r < 5; r++) for (let c = 0; c < 6; c++) floorCells.push([c, r]);
+        floorCells.push([2, 5], [3, 5]);
+
+        for (const [c, r] of floorCells) {
+          const isExit = (r === INTERIOR_EXIT_ROW);
+          const mat    = isExit ? exitMat : ((c + r) % 2 === 0 ? floorMat : floorMatB);
+          const fl     = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), mat);
+          fl.position.set(c + 0.5, -0.05, r + 0.5);
+          fl.receiveShadow = true;
+          interiorScene.add(fl);
         }
 
-        // North entry door marker (door mat)
-        const entryMat = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.02, 0.82), doorMarkerMat);
-        entryMat.position.set(INTERIOR_ENTRY_COL + 0.5, 0.01, 0.5);
-        interiorScene.add(entryMat);
-
-        // South exit — red rug + small arrow pointers
-        const rug = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.02, 0.82), exitRug);
-        rug.position.set(INTERIOR_EXIT_COL + 0.5, 0.01, INTERIOR_ROWS - 0.5);
-        interiorScene.add(rug);
-
-        // Ceiling
-        const ceil = new THREE.Mesh(
-          new THREE.BoxGeometry(INTERIOR_COLS, 0.15, INTERIOR_ROWS), ceilMat);
-        ceil.position.set(INTERIOR_COLS / 2, 2.6, INTERIOR_ROWS / 2);
+        // Ceiling over main room only
+        const ceil = new THREE.Mesh(new THREE.BoxGeometry(6, 0.15, 5), ceilMat);
+        ceil.position.set(3, INTERIOR_WALL_HEIGHT + 0.075, 2.5);
         interiorScene.add(ceil);
-      })();
+
+        // Instanced walls via WallBuilder (uses placeholder cube until GLB loads)
+        interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true });
+        interiorScene.add(interiorWallGroup);
+
+        debugLog('buildInteriorScene complete');
+      }
 
       // ── Inverted shell outline ────────────────────────────────────
       // Second render pass: back faces only, vertices extruded along
@@ -4091,7 +4111,7 @@
           if (currentArea === 'interior' && sceneTransDir === 0) {
             const iyTile = player.y / TILE;
             const ixTile = player.x / TILE;
-            if (iyTile > INTERIOR_ROWS - 0.6 && Math.abs(ixTile - (INTERIOR_EXIT_COL + 0.5)) < 0.7) {
+            if (iyTile > INTERIOR_EXIT_ROW + 0.4 && ixTile > INTERIOR_EXIT_COL - 0.2 && ixTile < INTERIOR_EXIT_COL + 2.2) {
               exitInterior();
             }
           }
@@ -4506,7 +4526,7 @@
         // Interior: only show exit button near the south door
         if (currentArea === 'interior') {
           const reticle = getReticleTile();
-          const nearExit = reticle.row >= INTERIOR_ROWS - 2 && reticle.col === INTERIOR_EXIT_COL;
+          const nearExit = reticle.row >= INTERIOR_EXIT_ROW && reticle.col >= INTERIOR_EXIT_COL && reticle.col < INTERIOR_EXIT_COL + 2;
           return nearExit
             ? [{ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true }]
             : [];
