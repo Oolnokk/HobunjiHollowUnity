@@ -2287,74 +2287,29 @@
       renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
       threeContainer.appendChild(renderer.domElement);
 
-      // ── Depth-based black outline post-process ────────────────────
-      // Two-pass: render scene to a RT with depth texture, then
-      // composite color + outline on a full-screen quad.
-      const _outlineW = threeRect.width  || window.innerWidth;
-      const _outlineH = threeRect.height || window.innerHeight;
-      const outlineRT = new THREE.WebGLRenderTarget(_outlineW, _outlineH, {
-        minFilter: THREE.NearestFilter,
-        magFilter: THREE.NearestFilter,
-      });
-      outlineRT.depthTexture = new THREE.DepthTexture();
-      outlineRT.depthTexture.type = THREE.UnsignedShortType;
-
-      const ppCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-      const ppScene  = new THREE.Scene();
-
-      const outlineMat = new THREE.ShaderMaterial({
+      // ── Inverted shell outline ────────────────────────────────────
+      // Second render pass: back faces only, vertices extruded along
+      // normals → solid black border on every mesh edge. No render
+      // targets or screen-space sampling required.
+      const shellOutlineMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
         uniforms: {
-          tColor:           { value: outlineRT.texture },
-          tDepth:           { value: outlineRT.depthTexture },
-          resolution:       { value: new THREE.Vector2(_outlineW, _outlineH) },
-          cameraNear:       { value: 0.1 },
-          cameraFar:        { value: 200 },
-          outlineThreshold: { value: 0.004 },
+          uThickness: { value: 0.025 },
         },
         vertexShader: `
-          varying vec2 vUv;
-          void main() { vUv = uv; gl_Position = vec4(position, 1.0); }
+          uniform float uThickness;
+          void main() {
+            vec3 pos    = position + normal * uThickness;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
         `,
         fragmentShader: `
-          uniform sampler2D tColor;
-          uniform sampler2D tDepth;
-          uniform vec2  resolution;
-          uniform float cameraNear;
-          uniform float cameraFar;
-          uniform float outlineThreshold;
-          varying vec2 vUv;
-
-          float toLinear(float z) {
-            return (2.0 * cameraNear) / (cameraFar + cameraNear - z * (cameraFar - cameraNear));
-          }
-
-          float sampleDepth(vec2 uv) {
-            return toLinear(texture2D(tDepth, uv).x);
-          }
-
           void main() {
-            vec4 color  = texture2D(tColor, vUv);
-            vec2 texel  = 1.0 / resolution;
-
-            // 4-tap depth edge detection by stepping ±1 texel in each axis
-            float d0 = sampleDepth(vUv);
-            float d1 = sampleDepth(vUv + vec2( texel.x, 0.0));
-            float d2 = sampleDepth(vUv + vec2(-texel.x, 0.0));
-            float d3 = sampleDepth(vUv + vec2(0.0,  texel.y));
-            float d4 = sampleDepth(vUv + vec2(0.0, -texel.y));
-
-            float maxDelta = max(max(abs(d0-d1), abs(d0-d2)), max(abs(d0-d3), abs(d0-d4)));
-            float outline  = step(outlineThreshold, maxDelta);
-
-            gl_FragColor = vec4(mix(color.rgb, vec3(0.0), outline), 1.0);
+            gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
           }
         `,
-        depthTest: false,
-        depthWrite: false,
+        depthWrite: true,
       });
-      const ppQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), outlineMat);
-      ppQuad.frustumCulled = false;
-      ppScene.add(ppQuad);
 
       // Camera — isometric-style: high angle, offset NW, looking SE toward map center
       const CAM_DIST   = 14;
@@ -3718,8 +3673,6 @@
         const w = rect.width  || window.innerWidth;
         const h = rect.height || window.innerHeight;
         renderer.setSize(w, h);
-        outlineRT.setSize(w, h);
-        outlineMat.uniforms.resolution.value.set(w, h);
         overlayCanvas.width  = Math.round(w * dpr);
         overlayCanvas.height = Math.round(h * dpr);
         octx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -3736,10 +3689,7 @@
         lastTime = now;
 
         if (!gameStarted) {
-          renderer.setRenderTarget(outlineRT);
           renderer.render(scene, camera);
-          renderer.setRenderTarget(null);
-          renderer.render(ppScene, ppCamera);
           requestAnimationFrame(gameLoop);
           return;
         }
@@ -3808,10 +3758,15 @@
           grassBillboardMat.uniforms.uStrength.value = windStrBase;
         }
 
-        renderer.setRenderTarget(outlineRT);
         renderer.render(scene, camera);
-        renderer.setRenderTarget(null);
-        renderer.render(ppScene, ppCamera);
+        // Shell outline pass: hide alpha-tested billboards (crossed planes
+        // produce double-outlines at intersections), render everything else
+        // back-face-only with normals extruded → black border.
+        scene.overrideMaterial = shellOutlineMat;
+        for (const g of grassBillboardGroups) if (g) g.visible = false;
+        renderer.render(scene, camera);
+        scene.overrideMaterial = null;
+        for (const g of grassBillboardGroups) if (g) g.visible = true;
 
         // ── 2D overlays (rain, lighting) ─────────────────────────
         drawOverlays();
