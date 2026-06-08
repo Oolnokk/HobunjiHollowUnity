@@ -2534,10 +2534,9 @@
         { id: 'e_wall',  width: 5, height: INTERIOR_WALL_HEIGHT, position: [6, 0, 2.5], rotationDeg: [0, -90, 0] },
         { id: 's_left',  width: 2, height: INTERIOR_WALL_HEIGHT, position: [1, 0, 5],   rotationDeg: [0, 180, 0] },
         { id: 's_right', width: 2, height: INTERIOR_WALL_HEIGHT, position: [5, 0, 5],   rotationDeg: [0, 180, 0] },
-        // Corridor walls — entrance gap (z=5, x=2..4) kept clear; walls line the shaft
+        // Corridor side walls — south end kept open (no exit_s)
         { id: 'exit_w',  width: 1, height: INTERIOR_WALL_HEIGHT, position: [2, 0, 5.5], rotationDeg: [0,  90, 0] },
         { id: 'exit_e',  width: 1, height: INTERIOR_WALL_HEIGHT, position: [4, 0, 5.5], rotationDeg: [0, -90, 0] },
-        { id: 'exit_s',  width: 2, height: INTERIOR_WALL_HEIGHT, position: [3, 0, 6],   rotationDeg: [0, 180, 0] },
       ];
 
       // Built lazily on first entry to avoid blocking startup; called by enterInterior().
@@ -2578,7 +2577,7 @@
           depthWrite: false, depthTest: false
         });
         for (const p of INTERIOR_WALL_PANELS) {
-          const bw = Math.max(0.2, p.width  - 0.3);
+          const bw = Math.max(0.2, p.width  - (p.width <= 1.5 ? 0.08 : 0.3));
           const bh = Math.max(0.2, p.height - 0.2);
           const _bg = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), _backingMat);
           _bg.renderOrder = -1;
