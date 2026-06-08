@@ -2326,7 +2326,7 @@
 
       // ── Materials ─────────────────────────────────────────────────
       const tileMats = {
-        grass:  new THREE.MeshLambertMaterial({ color: 0x5ea75a }),
+        grass:  new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108/360, 0.58, 0.28) }),
         weeds:  new THREE.MeshLambertMaterial({ color: 0x247c3c }),
         tilled: new THREE.MeshLambertMaterial({ color: 0x8a5b34 }),
         trench: new THREE.MeshLambertMaterial({ color: 0x3a2510 }),
@@ -2498,6 +2498,422 @@
         geo.computeVertexNormals();
         return geo;
       }
+
+      // ── Rock tile: mini plateau heightfield (same pipeline as border terrain) ───
+      // 9×9 vertex grid (0.125u steps) over a 1×1 tile. Uses seam-safe FNV hash
+      // at tile edges so vertices match adjacent makeFloorGeo tiles exactly.
+      function buildRockTileGeo(col, row) {
+        const VERTS = 9, CELLS = 8;
+        const STEP = 1.0 / CELLS;
+
+        let _s = ((col * 374761393) ^ (row * 668265263)) >>> 0;
+        const rng = () => {
+          _s += 0x6D2B79F5;
+          let t = Math.imul(_s ^ _s>>>15, _s|1);
+          t ^= t + Math.imul(t ^ t>>>7, t|61);
+          return ((t ^ t>>>14) >>> 0) / 4294967296;
+        };
+
+        // Same hash formula as makeFloorGeo — seam-safe at tile edges
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0;
+          const kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+
+        // Finer roughness detail for the mound surface
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 8) | 0;
+          const kz = Math.round(vz * 8) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.05;
+        };
+
+        const Y = new Float32Array(VERTS * VERTS);
+        for (let vj = 0; vj < VERTS; vj++)
+          for (let vi = 0; vi < VERTS; vi++)
+            Y[vj*VERTS+vi] = seamDisp(col + vi*STEP, row + vj*STEP);
+
+        // BFS plateau from a random interior starting cell (never touches edge cells)
+        const startCi = 1 + Math.floor(rng() * (CELLS - 2));
+        const startCj = 1 + Math.floor(rng() * (CELLS - 2));
+        const maxSize = 6 + Math.floor(rng() * 20);
+        const group = new Set([startCj * CELLS + startCi]);
+        const front = [[startCi, startCj]];
+
+        while (front.length && group.size < maxSize) {
+          const fi = Math.floor(rng() * front.length);
+          const [ci, cj] = front.splice(fi, 1)[0];
+          for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+            const ni = ci+dc, nj = cj+dr;
+            if (ni < 1 || ni > CELLS-2 || nj < 1 || nj > CELLS-2) continue;
+            const nk = nj*CELLS+ni;
+            if (group.has(nk)) continue;
+            group.add(nk); front.push([ni, nj]);
+          }
+        }
+
+        // Collect plateau vertex indices and find peak
+        let maxY = -Infinity;
+        const raised = new Set();
+        for (const ck of group) {
+          const ci = ck % CELLS, cj = (ck / CELLS) | 0;
+          for (const vi of [cj*VERTS+ci, cj*VERTS+ci+1, (cj+1)*VERTS+ci, (cj+1)*VERTS+ci+1]) {
+            raised.add(vi);
+            if (Y[vi] > maxY) maxY = Y[vi];
+          }
+        }
+
+        const PEAK = 0.32 + rng() * 0.38;
+        const target = maxY + PEAK;
+
+        // Raise plateau verts, blending to zero at tile edges
+        for (const vi of raised) {
+          const vix = vi % VERTS, viy = (vi / VERTS) | 0;
+          const edgeDist = Math.min(vix, VERTS-1-vix, viy, VERTS-1-viy);
+          const blend = Math.min(1, edgeDist / 2);
+          if (blend <= 0) continue;
+          const vx = col + vix*STEP, vz = row + viy*STEP;
+          const h = seamDisp(vx, vz) + blend * target + roughDisp(vx, vz) * blend;
+          if (h > Y[vi]) Y[vi] = h;
+        }
+
+        const positions = [];
+        for (let vj = 0; vj < VERTS; vj++)
+          for (let vi = 0; vi < VERTS; vi++)
+            positions.push(vi*STEP - 0.5, Y[vj*VERTS+vi], vj*STEP - 0.5);
+
+        // Split cells: stone if any corner is elevated (plateau or cliff face),
+        // grass if all corners are at ground level. Threshold 0.05u sits above
+        // the ±0.013u seam noise so ground cells always go green.
+        const stoneIdx = [], grassIdx = [];
+        for (let cj = 0; cj < CELLS; cj++)
+          for (let ci = 0; ci < CELLS; ci++) {
+            const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
+            const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
+            const tgt = Math.max(Y[v00], Y[v10], Y[v01], Y[v11]) > 0.05
+              ? stoneIdx : grassIdx;
+            tgt.push(v00, v01, v11, v00, v11, v10);
+          }
+
+        const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+        const makeGeo = (idx) => {
+          if (!idx.length) return null;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', posAttr);
+          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          g.computeVertexNormals();
+          return g;
+        };
+        return { stoneGeo: makeGeo(stoneIdx), grassGeo: makeGeo(grassIdx) };
+      }
+
+      // ── Terrain tile heightfield: TRENCH ditch and RAISED bed ──────────────────
+      // Adjacency-driven shape with three refinements vs. the first version:
+      //   1. PLATEAU factor expands the fully-blended interior (more plateau, less peak)
+      //   2. Diagonal-corner correction fades the inner vertex of L-turns to NORMAL_TOP
+      //   3. Geometry is split into dirtGeo (depressed/raised cells) and grassGeo (flat
+      //      edge cells near NORMAL_TOP), mirroring the rock tile's stone/grass split.
+      function buildTerrainTileGeo(col, row, type) {
+        const VERTS = 9, CELLS = 8, STEP = 1.0 / CELLS;
+        const BLEND_V  = 3;
+        const PLATEAU  = type === TileType.RAISED ? 3.0 : 1.5;  // raised = wide flat top
+        const targetDY = type === TileType.TRENCH
+          ? TRENCH_TOP - NORMAL_TOP   // −0.5
+          : RAISED_TOP - NORMAL_TOP;  // +0.5
+
+        const openN = grid[row - 1]?.[col]?.type === type;
+        const openS = grid[row + 1]?.[col]?.type === type;
+        const openW = grid[row]?.[col - 1]?.type === type;
+        const openE = grid[row]?.[col + 1]?.type === type;
+
+        // Diagonal tiles — used to seal the inner corner of L-shaped turns
+        const diagNW = grid[row-1]?.[col-1]?.type === type;
+        const diagNE = grid[row-1]?.[col+1]?.type === type;
+        const diagSW = grid[row+1]?.[col-1]?.type === type;
+        const diagSE = grid[row+1]?.[col+1]?.type === type;
+
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 6) | 0, kz = Math.round(vz * 6) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.035;
+        };
+
+        const smooth = t => t * t * (3 - 2 * t);
+
+        const Y = new Float32Array(VERTS * VERTS);
+        for (let vj = 0; vj < VERTS; vj++) {
+          for (let vi = 0; vi < VERTS; vi++) {
+            const bW = openW ? 1 : smooth(Math.min(1, vi / BLEND_V));
+            const bE = openE ? 1 : smooth(Math.min(1, (CELLS - vi) / BLEND_V));
+            const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
+            const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
+
+            // Diagonal correction: if both open sides share an outer (non-matching) diagonal,
+            // fade the inner corner vertex back to NORMAL_TOP. Uses max() so only the exact
+            // corner region (within BLEND_V steps of BOTH adjacent open edges) is affected.
+            const bDiagNW = (openW && openN && !diagNW) ? smooth(Math.min(1, Math.max(vi, vj)           / BLEND_V)) : 1;
+            const bDiagNE = (openE && openN && !diagNE) ? smooth(Math.min(1, Math.max(CELLS-vi, vj)     / BLEND_V)) : 1;
+            const bDiagSW = (openW && openS && !diagSW) ? smooth(Math.min(1, Math.max(vi, CELLS-vj)     / BLEND_V)) : 1;
+            const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, Math.max(CELLS-vi, CELLS-vj) / BLEND_V)) : 1;
+
+            const blend = Math.min(1, bW * bE * bN * bS * bDiagNW * bDiagNE * bDiagSW * bDiagSE * PLATEAU);
+            const vx = col + vi * STEP, vz = row + vj * STEP;
+            Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * targetDY + blend * roughDisp(vx, vz);
+          }
+        }
+
+        const positions = [];
+        for (let vj = 0; vj < VERTS; vj++)
+          for (let vi = 0; vi < VERTS; vi++)
+            positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
+
+        // Split cells: dirt where significantly depressed (trench) or elevated (raised);
+        // grass on flat edge cells that blend back to ground level.
+        const DIRT_THRESH = 0.05;
+        const dirtIdx = [], grassIdx = [];
+        for (let cj = 0; cj < CELLS; cj++)
+          for (let ci = 0; ci < CELLS; ci++) {
+            const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
+            const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
+            const y00=Y[v00], y10=Y[v10], y01=Y[v01], y11=Y[v11];
+            const isDirt = type === TileType.TRENCH
+              ? Math.min(y00, y10, y01, y11) < -DIRT_THRESH
+              : Math.max(y00, y10, y01, y11) >  DIRT_THRESH;
+            (isDirt ? dirtIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+          }
+
+        const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+        const makeGeo = idx => {
+          if (!idx.length) return null;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', posAttr);
+          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          g.computeVertexNormals();
+          return g;
+        };
+        return { dirtGeo: makeGeo(dirtIdx), grassGeo: makeGeo(grassIdx) };
+      }
+
+
+      // Mirrors the procedural pipeline from HALandscapeGenV3:
+      //   1) Initialize all verts at seam height (same FNV hash as makeFloorGeo)
+      //   2) Rugged-plain passes: small connected-cell plateaus, low amplitude
+      //   3) Cliff passes: large edge-biased plateaus, tall amplitude
+      // Near-seam vertices are smoothly blended so the inner edge is gap-free.
+      function buildBorderTerrain() {
+        const BORDER_W   = 18;   // border tile width on each side
+        const SEED       = 2026;
+        const BLEND_STEPS = 8;   // seam-blend zone: 4 tiles = 8 vertex steps
+
+        // ── Grid dims (0.5-unit vertex spacing = makeFloorGeo 2×2 subdivision) ──
+        const BV  = BORDER_W * 2;
+        const PVW = COLS * 2, PVH = ROWS * 2;
+        const GW  = PVW + 2*BV + 1;       // 145 vertex columns
+        const GH  = PVH + 2*BV + 1;       // 125 vertex rows
+        const CW  = GW - 1, CH = GH - 1;
+
+        // ── Mulberry32 RNG ─────────────────────────────────────────────────────
+        let _s = SEED >>> 0;
+        const rng = () => {
+          _s += 0x6D2B79F5;
+          let t = Math.imul(_s ^ _s>>>15, _s|1);
+          t ^= t + Math.imul(t ^ t>>>7, t|61);
+          return ((t ^ t>>>14) >>> 0) / 4294967296;
+        };
+
+        // ── Seam hash — exact copy of makeFloorGeo ─────────────────────────────
+        const hashDisp = (vi, vj) => {
+          let h = (2166136261 ^ (vi * 374761393) ^ (vj * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+
+        // Distance (in 0.5-unit vertex steps) of grid vertex (gi,gj) from playable boundary
+        const vSteps = (gi, gj) => {
+          const vi = gi - BV, vj = gj - BV;
+          const dx = Math.max(0, -vi, vi - PVW);
+          const dz = Math.max(0, -vj, vj - PVH);
+          return Math.sqrt(dx*dx + dz*dz);
+        };
+
+        const isPlayable = (ci, cj) => ci>=BV && ci<BV+PVW && cj>=BV && cj<BV+PVH;
+
+        // ── Height map initialised to exact seam heights ───────────────────────
+        const Y = new Float32Array(GW * GH);
+        for (let gj = 0; gj < GH; gj++)
+          for (let gi = 0; gi < GW; gi++)
+            Y[gj*GW+gi] = NORMAL_TOP + hashDisp(gi-BV, gj-BV);
+
+        // ── Plateau operations ─────────────────────────────────────────────────
+        const cv4 = (ci, cj) => [cj*GW+ci, cj*GW+ci+1, (cj+1)*GW+ci, (cj+1)*GW+ci+1];
+
+        // Random-frontier connected group expansion (border cells only)
+        function pickGroup(ci0, cj0, maxSz) {
+          const group = [], seen = new Set([cj0*CW+ci0]);
+          const front = [[ci0, cj0]];
+          while (front.length && group.length < maxSz) {
+            const fi = Math.floor(rng() * front.length);
+            const [ci, cj] = front.splice(fi, 1)[0];
+            group.push([ci, cj]);
+            for (const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+              const ni=ci+dc, nj=cj+dr;
+              if (ni<0||ni>=CW||nj<0||nj>=CH) continue;
+              const nk = nj*CW+ni;
+              if (seen.has(nk) || isPlayable(ni,nj)) continue;
+              seen.add(nk); front.push([ni,nj]);
+            }
+          }
+          return group;
+        }
+
+        // Raise group verts to (max-in-group + amount).
+        // Verts within BLEND_STEPS of the seam are blended proportionally
+        // so the raised terrain ramps smoothly down to the seam edge.
+        function raiseGroup(group, amount) {
+          let maxY = -Infinity;
+          const verts = new Set();
+          for (const [ci,cj] of group)
+            for (const vi of cv4(ci,cj)) { verts.add(vi); if(Y[vi]>maxY) maxY=Y[vi]; }
+          const target = maxY + amount;
+          for (const vi of verts) {
+            const gi = vi%GW, gj = vi/GW|0;
+            const st = vSteps(gi, gj);
+            if (st === 0) continue;                          // seam — never touch
+            const blend  = Math.min(1, st / BLEND_STEPS);   // 0→1 over 4-tile zone
+            const raised = NORMAL_TOP + hashDisp(gi-BV, gj-BV) + blend*(target - NORMAL_TOP);
+            if (raised > Y[vi]) Y[vi] = raised;             // plateaus only go up
+          }
+        }
+
+        // Edge-biased seed cell picker (avoids playable area)
+        function pickCell(outerBias) {
+          const rim = BV >> 2; // outermost-quarter cells per side
+          for (let attempt = 0; attempt < 300; attempt++) {
+            let ci, cj;
+            if (rng() < outerBias) {
+              const side = Math.floor(rng() * 4);
+              if (side===0) { ci=Math.floor(rng()*CW); cj=Math.floor(rng()*rim); }
+              else if(side===1){ ci=Math.floor(rng()*CW); cj=(CH-1-Math.floor(rng()*rim))|0; }
+              else if(side===2){ ci=Math.floor(rng()*rim); cj=Math.floor(rng()*CH); }
+              else              { ci=(CW-1-Math.floor(rng()*rim))|0; cj=Math.floor(rng()*CH); }
+            } else {
+              ci=Math.floor(rng()*CW); cj=Math.floor(rng()*CH);
+            }
+            if (!isPlayable(ci,cj)) return [ci,cj];
+          }
+          return [0,0];
+        }
+
+        // ── Pass 1: rugged plain — small, low plateaus spread across the border ─
+        for (let p = 0; p < 55; p++) {
+          const [ci,cj] = pickCell(0.12);
+          raiseGroup(pickGroup(ci, cj, 4 + Math.floor(rng()*18)), 0.05 + rng()*0.32);
+        }
+
+        // ── Pass 2: distant cliffs — tall, strongly edge-biased plateaus ────────
+        for (let p = 0; p < 32; p++) {
+          const [ci,cj] = pickCell(0.88);
+          raiseGroup(pickGroup(ci, cj, 10 + Math.floor(rng()*38)), 0.9 + rng()*3.2);
+        }
+
+        // ── Pass 3: guarantee a continuous outer cliff ring ────────────────────
+        // Force-raise every vertex in the outermost RIM_V steps of each side
+        // so there are no skybox gaps regardless of where random groups landed.
+        const RIM_V   = 20;              // ~10 tile-widths from each outer edge
+        const RIM_MIN = NORMAL_TOP + 3.0;
+        for (let gj = 0; gj < GH; gj++) {
+          for (let gi = 0; gi < GW; gi++) {
+            if (gj >= RIM_V && gj <= GH-1-RIM_V &&
+                gi >= RIM_V && gi <= GW-1-RIM_V) continue; // interior — skip
+            const k = gj * GW + gi;
+            if (Y[k] < RIM_MIN) Y[k] = RIM_MIN;
+          }
+        }
+
+        // ── Build geometry (border ring only — playable interior skipped) ───────
+        const pos = new Float32Array(GW * GH * 3);
+        for (let gj = 0; gj < GH; gj++)
+          for (let gi = 0; gi < GW; gi++) {
+            const k = gj*GW+gi;
+            pos[k*3]   = (gi-BV)*0.5;
+            pos[k*3+1] = Y[k];
+            pos[k*3+2] = (gj-BV)*0.5;
+          }
+
+        const indices = [];
+        for (let cj = 0; cj < GH-1; cj++)
+          for (let ci = 0; ci < GW-1; ci++) {
+            if (isPlayable(ci,cj)) continue;
+            const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
+            indices.push(v00, v01, v11,  v00, v11, v10);
+          }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
+        geo.computeVertexNormals();
+
+        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+
+        // ── Stone cliff skin: normal-based overlay on border terrain ─────────────
+        // Matches the landscape generator's rule: faces with |normal.y| < 0.75
+        // (steeper than ~41° from horizontal) are stone; shallower faces are grass.
+        // For a 0.5×0.5 cell the diagonal cross product has cny=0.5 always, so the
+        // threshold reduces to cnx²+cnz² > 0.194 — no sqrt required.
+        const cliffMat = new THREE.MeshLambertMaterial({
+          color: 0x6a6460, side: THREE.DoubleSide,
+          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+        });
+
+        function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
+          const positions = [], idxArr = [];
+          let vi = 0;
+          for (let gj = gjMin; gj < gjMax; gj++) {
+            for (let gi = giMin; gi < giMax; gi++) {
+              const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
+              const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
+              // Cross product of quad diagonals (SE-NW) × (NE-SW); cny = 0.5 always.
+              const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+              const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
+              if (cnx * cnx + cnz * cnz <= 0.194) continue;  // near-horizontal → grass
+              const x0=(gi-BV)*0.5, x1=x0+0.5;
+              const z0=(gj-BV)*0.5, z1=z0+0.5;
+              positions.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
+              idxArr.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
+            }
+          }
+          if (!positions.length) return;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+          g.setIndex(new THREE.BufferAttribute(new Uint32Array(idxArr), 1));
+          g.computeVertexNormals();
+          scene.add(new THREE.Mesh(g, cliffMat));
+        }
+
+        // North border strip (full width)
+        elevStoneSkin(0,           BV,          0,          GW - 1);
+        // South border strip (full width)
+        elevStoneSkin(GH - 1 - BV, GH - 1,      0,          GW - 1);
+        // West border strip (middle rows — corners already covered by N/S)
+        elevStoneSkin(BV,          GH - 1 - BV, 0,          BV);
+        // East border strip (middle rows)
+        elevStoneSkin(BV,          GH - 1 - BV, GW - 1 - BV, GW - 1);
+      }
+
       const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
       const waterGeo  = new THREE.PlaneGeometry(1.0, 1.0);
       waterGeo.rotateX(-Math.PI / 2);
@@ -2835,6 +3251,35 @@
         const tile = grid[row][col];
         const mat  = tileMats[tile.type] || tileMats.grass;
 
+        if (tile.type === TileType.ROCK) {
+          // Floor slab — grass so it blends with surrounding tiles
+          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), tileMats.grass);
+          floorMesh.castShadow = floorMesh.receiveShadow = true;
+          floorMesh.position.set(col + 0.5, NORMAL_TOP - SLAB_H / 2, row + 0.5);
+          scene.add(floorMesh);
+          tileMeshes[i] = floorMesh;
+          // Plateau mound: stone for elevated/cliff cells, grass for ground-level base
+          const { stoneGeo, grassGeo } = buildRockTileGeo(col, row);
+          let moundRoot = null;
+          if (stoneGeo) {
+            const m = new THREE.Mesh(stoneGeo, tileMats.rock);
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            moundRoot = m;
+          }
+          if (grassGeo) {
+            const m = new THREE.Mesh(grassGeo, tileMats.grass);
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            if (!moundRoot) moundRoot = m;
+          }
+          if (moundRoot) moundRoot._windAmp = 0;  // wind loop skips _windAmp=0
+          vegFoliageMeshes[i] = moundRoot || { _windAmp: 0 };
+          return;
+        }
+
         if ((tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) && window.FoliageGenerator) {
           // Grass floor slab underneath the vegetation
           const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), vegFloorMat);
@@ -2876,6 +3321,30 @@
 
           scene.add(vegGroup);
           vegFoliageMeshes[i] = vegGroup;
+          return;
+        }
+
+        if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED) {
+          const { dirtGeo, grassGeo } = buildTerrainTileGeo(col, row, tile.type);
+          let primary = null;
+          if (dirtGeo) {
+            // Both types use trench brown — raised earth is the same dug-soil colour
+            const m = new THREE.Mesh(dirtGeo, tileMats.trench);
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            primary = m;
+          }
+          if (grassGeo) {
+            const m = new THREE.Mesh(grassGeo, tileMats.grass);
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            m._windAmp = 0;
+            scene.add(m);
+            vegFoliageMeshes[i] = m;
+            if (!primary) primary = m;
+          }
+          tileMeshes[i] = primary;
           return;
         }
 
@@ -3064,6 +3533,7 @@
       }
 
       buildTileMeshes();
+      buildBorderTerrain();
 
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
@@ -3128,7 +3598,7 @@
         // Rotation-based wind sway for procedural foliage groups
         const windScale = windStrBase / 0.03;
         for (const fg of vegFoliageMeshes) {
-          if (!fg) continue;
+          if (!fg || !fg._windAmp) continue;
           const amp = fg._windAmp * windScale;
           fg.rotation.z = amp * Math.sin(windTime * 1.6 + fg._windPhase);
           fg.rotation.x = amp * 0.45 * Math.cos(windTime * 1.1 + fg._windPhase * 1.3);
@@ -3189,9 +3659,15 @@
         }
       }
 
-      // Stub: tile mesh refresh called from applyAction
       function markTileDirty(col, row) {
         refreshTileMesh(col, row);
+        // TRENCH/RAISED shape depends on which neighbors share their type, so any
+        // change that could alter those connections must also refresh those neighbors.
+        for (const [dc, dr] of [[0,-1],[0,1],[-1,0],[1,0]]) {
+          const nt = grid[row + dr]?.[col + dc]?.type;
+          if (nt === TileType.TRENCH || nt === TileType.RAISED)
+            refreshTileMesh(col + dc, row + dr);
+        }
       }
 
       function updateCalendar(dt) {
