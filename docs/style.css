@@ -531,6 +531,47 @@
     .tool-pick-btn.active { background: rgba(249,226,138,0.15); border-color: rgba(249,226,138,0.42); }
     .tool-pick-btn:hover  { background: rgba(255,255,255,0.12); }
 
+    /* ── Tool wheel (radial picker overlay) ─────────────────── */
+    #toolWheelOverlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.52);
+      z-index: 190; touch-action: none;
+    }
+    #toolWheelOverlay.open { display: block; }
+    #toolWheel {
+      display: none; position: fixed; inset: 0;
+      pointer-events: none; z-index: 200;
+    }
+    #toolWheel.open { display: block; }
+    @keyframes tw-pop {
+      from { opacity: 0; transform: translate(-50%,-50%) scale(0.3); }
+      to   { opacity: 1; transform: translate(-50%,-50%) scale(1);   }
+    }
+    .tw-spoke {
+      position: absolute;
+      transform: translate(-50%,-50%);
+      display: flex; flex-direction: column; align-items: center;
+      pointer-events: auto;
+      animation: tw-pop 0.13s cubic-bezier(0.34,1.56,0.64,1) both;
+    }
+    .tw-btn {
+      width: 50px; height: 50px; border-radius: 50%;
+      background: var(--glass-2); border: 2px solid var(--border-bright);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      color: var(--text); font-size: 22px; display: grid; place-items: center;
+      cursor: pointer; font-family: inherit;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.45);
+      transition: transform 0.07s, background 0.07s;
+    }
+    .tw-btn.active { background: rgba(249,226,138,0.18); border-color: rgba(249,226,138,0.6); }
+    .tw-btn:active { transform: scale(0.84); }
+    .tw-chip {
+      margin-top: 4px;
+      font-size: 9px; color: var(--muted); letter-spacing: 0.05em;
+      text-transform: uppercase; white-space: nowrap; pointer-events: none;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
+
     /* ── Item scroll ─────────────────────────────────────────── */
     #itemScroll {
       bottom: 168px; left: 16px;

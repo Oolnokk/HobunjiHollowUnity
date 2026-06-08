@@ -3617,7 +3617,7 @@
       function makeToolPlaneMesh(itemKey) {
         if (!itemKey || !toolTextures[itemKey]) return null;
         const g   = new THREE.Group();
-        const geo = new THREE.PlaneGeometry(0.48, 0.48);
+        const geo = new THREE.PlaneGeometry(0.96, 0.96);
         const mat = new THREE.MeshBasicMaterial({
           map: toolTextures[itemKey],
           transparent: true,
@@ -4897,25 +4897,75 @@
         useActiveAction();
       }
 
-      // ── Tool picker open/close ─────────────────────────────
+      // ── Tool wheel (radial picker) ─────────────────────────
+      const toolWheelOverlay = document.getElementById('toolWheelOverlay');
+      const toolWheelEl      = document.getElementById('toolWheel');
+      const WHEEL_SLOTS  = ['shovel', 'hoe', 'weapon', 'axe', 'pick', 'harpoon'];
+      const WHEEL_RADIUS = 72; // px — distance from center to each spoke button
+
       let toolPickerOpen = false;
+
       function openToolPicker() {
         toolPickerOpen = true;
-        toolPicker.classList.add('open');
+        const rect = toolBtn.getBoundingClientRect();
+        const cx = rect.left + rect.width  / 2;
+        const cy = rect.top  + rect.height / 2;
+
+        // Clamp center so all spoke buttons stay fully on screen
+        const margin = WHEEL_RADIUS + 32;
+        const wcx = Math.max(margin, Math.min(window.innerWidth  - margin, cx));
+        const wcy = Math.max(margin, Math.min(window.innerHeight - margin, cy));
+
+        toolWheelEl.innerHTML = '';
+        const n = WHEEL_SLOTS.length;
+        WHEEL_SLOTS.forEach((slot, i) => {
+          const angle = (i / n) * Math.PI * 2 - Math.PI / 2; // 0 = top
+          const sx = wcx + Math.cos(angle) * WHEEL_RADIUS;
+          const sy = wcy + Math.sin(angle) * WHEEL_RADIUS;
+
+          const equippedKey = equipmentSlots[slot];
+          const eqDef = equippedKey ? TOOL_ITEM_DEFS[equippedKey] : null;
+          const icon  = eqDef?.icon  || ({shovel:'⛏️',hoe:'🪓',weapon:'🗡️',axe:'🪓',pick:'⛏️',harpoon:'🎣'})[slot] || '🔧';
+          const label = ({shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'})[slot] || slot;
+
+          const spoke = document.createElement('div');
+          spoke.className = 'tw-spoke';
+          spoke.style.cssText = `left:${sx}px;top:${sy}px;animation-delay:${i * 0.018}s`;
+
+          const btn = document.createElement('button');
+          btn.className = 'tw-btn' + (activeTool === slot ? ' active' : '');
+          btn.textContent = icon;
+
+          const chip = document.createElement('span');
+          chip.className = 'tw-chip';
+          chip.textContent = label;
+
+          spoke.appendChild(btn);
+          spoke.appendChild(chip);
+
+          const pick = () => { setActiveTool(slot); closeToolPicker(); };
+          btn.addEventListener('pointerup', (e) => { e.stopPropagation(); pick(); });
+
+          toolWheelEl.appendChild(spoke);
+        });
+
+        toolWheelOverlay.classList.add('open');
+        toolWheelEl.classList.add('open');
         toolBtn.setAttribute('aria-expanded', 'true');
         toolBtn.style.borderColor = 'rgba(249,226,138,0.6)';
       }
+
       function closeToolPicker() {
         toolPickerOpen = false;
-        toolPicker.classList.remove('open');
+        toolWheelOverlay.classList.remove('open');
+        toolWheelEl.classList.remove('open');
+        toolWheelEl.innerHTML = '';
         toolBtn.setAttribute('aria-expanded', 'false');
         toolBtn.style.borderColor = '';
       }
+
       toolBtn.addEventListener('click', () => toolPickerOpen ? closeToolPicker() : openToolPicker());
-      toolPickBtns.forEach(b => b.addEventListener('click', () => setActiveTool(b.dataset.tool)));
-      document.addEventListener('pointerdown', (e) => {
-        if (toolPickerOpen && !toolSelect.contains(e.target)) closeToolPicker();
-      }, { capture: true });
+      toolWheelOverlay.addEventListener('pointerup', closeToolPicker);
 
       // ── Action bar update ──────────────────────────────────
       // ── Dynamic action stack ────────────────────────────────────────
