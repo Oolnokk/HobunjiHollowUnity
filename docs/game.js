@@ -1041,6 +1041,8 @@
         scene.remove(playerMesh);
         scene.remove(toolHolder);
         scene.remove(reticleMesh);
+        scene.remove(reticleCircleMesh);
+        scene.remove(reticleRingMesh);
         interiorScene.add(playerMesh);
         refreshActionBar();
       }
@@ -1063,6 +1065,8 @@
           scene.add(playerMesh);
           scene.add(toolHolder);
           scene.add(reticleMesh);
+          scene.add(reticleCircleMesh);
+          scene.add(reticleRingMesh);
           refreshActionBar();
         });
       }
@@ -2825,6 +2829,9 @@
       const reticleMat = new THREE.MeshBasicMaterial({
         color: 0xf9e28a, wireframe: true, transparent: true, opacity: 0.85,
       });
+      const reticleIntenseMat = new THREE.MeshBasicMaterial({
+        color: 0xffffc8, wireframe: true, transparent: true, opacity: 1.0,
+      });
       const reticleBlockedMat = new THREE.MeshBasicMaterial({
         color: 0xff6040, wireframe: true, transparent: true, opacity: 0.85,
       });
@@ -3310,6 +3317,19 @@
       waterGeo.rotateX(-Math.PI / 2);
       const reticleGeo = new THREE.BoxGeometry(1.0, 0.06, 1.0);
 
+      // Flat circle indicator for dig/raise — torus baked horizontal
+      const reticleCircleGeo = new THREE.TorusGeometry(0.28, 0.04, 8, 40);
+      reticleCircleGeo.rotateX(-Math.PI / 2);
+      const reticleCircleMesh = new THREE.Mesh(reticleCircleGeo, reticleIntenseMat);
+      reticleCircleMesh.visible = false;
+
+      // Floating ring for object highlights — torus baked horizontal, bobs + spins
+      const reticleRingGeo = new THREE.TorusGeometry(0.38, 0.05, 8, 40);
+      reticleRingGeo.rotateX(-Math.PI / 2);
+      const reticleRingMat = new THREE.MeshBasicMaterial({ color: 0xffe588, transparent: true, opacity: 0.92 });
+      const reticleRingMesh = new THREE.Mesh(reticleRingGeo, reticleRingMat);
+      reticleRingMesh.visible = false;
+
       // ── Mesh stores ───────────────────────────────────────────────
       // Tile meshes: indexed by row*COLS+col
       const tileMeshes  = new Array(ROWS * COLS).fill(null);
@@ -3323,6 +3343,8 @@
       // ── Reticle mesh ──────────────────────────────────────────────
       const reticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
       scene.add(reticleMesh);
+      scene.add(reticleCircleMesh);
+      scene.add(reticleRingMesh);
 
       // ── Tool meshes ───────────────────────────────────────────────
       // ── Tool meshes (player cube = 0.5w × 0.65h × 0.5d, 1 tile = 1 world unit) ──
@@ -4068,16 +4090,47 @@
 
       // ── Update reticle ────────────────────────────────────────────
       function updateReticleMesh() {
-        const reticle  = getReticleTile();
-        const tile     = grid[reticle.row][reticle.col];
-        const surfY    = tileSurfaceY(tile.type) + 0.01
-                       + (tile.water > 0.02 ? tile.water * WATER_UNIT + 0.04 : 0);
-        const allowed  = canUseAction(activeTool, activeAction, reticle.col, reticle.row);
+        const reticle = getReticleTile();
+        const tile    = grid[reticle.row][reticle.col];
+        const surfY   = tileSurfaceY(tile.type) + 0.01
+                      + (tile.water > 0.02 ? tile.water * WATER_UNIT + 0.04 : 0);
+        const allowed = canUseAction(activeTool, activeAction, reticle.col, reticle.row);
+        const t       = performance.now();
+        const pulse   = 1 + 0.06 * Math.sin(t / 300);
+
+        const isExcavate = currentArea === 'farm' && allowed
+                        && (activeAction === 'dig' || activeAction === 'raise');
+        const isObjTarget = currentArea === 'farm' && allowed && !isExcavate;
+
+        // Base tile box
         reticleMesh.position.set(reticle.col + 0.5, surfY, reticle.row + 0.5);
-        reticleMesh.material = allowed ? reticleMat : reticleBlockedMat;
-        // Pulse scale
-        const pulse = 1 + 0.06 * Math.sin(performance.now() / 300);
+        reticleMesh.material = isExcavate ? reticleIntenseMat
+                             : (allowed   ? reticleMat : reticleBlockedMat);
         reticleMesh.scale.set(pulse, 1, pulse);
+
+        // Floor circle — dig / raise only
+        if (isExcavate) {
+          reticleCircleMesh.visible = true;
+          reticleCircleMesh.position.set(reticle.col + 0.5, surfY + 0.02, reticle.row + 0.5);
+          const cp = 1 + 0.09 * Math.sin(t / 250);
+          reticleCircleMesh.scale.set(cp, cp, cp);
+        } else {
+          reticleCircleMesh.visible = false;
+        }
+
+        // Floating ring — every allowed action that isn't dig/raise
+        if (isObjTarget) {
+          const worldObj = getWorldObjectAt(reticle.col, reticle.row);
+          const ringH    = worldObj ? 0.95 : (tile.crop ? 0.65 : 0.45);
+          const bob      = 0.06 * Math.sin(t / 600);
+          reticleRingMesh.visible = true;
+          reticleRingMesh.position.set(reticle.col + 0.5, surfY + ringH + bob, reticle.row + 0.5);
+          reticleRingMesh.rotation.y = t / 2500;
+          const rp = 0.92 + 0.08 * Math.sin(t / 500);
+          reticleRingMesh.scale.set(rp, rp, rp);
+        } else {
+          reticleRingMesh.visible = false;
+        }
       }
 
       // ── Update lighting from time-of-day ──────────────────────────
