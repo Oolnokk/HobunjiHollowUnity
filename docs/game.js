@@ -234,6 +234,23 @@
       const NIGHT_HOUR   = 22;
       const SEASON_LENGTH_DAYS = 8;
 
+      // ── Highland House — adjust these to fit the GLB and position it on the farm ──
+      const HOUSE_SCALE       = 0.015;  // GLB scale: increase to make it bigger
+      const HOUSE_Y_OFFSET    = 0.0;    // raise/lower the model (positive = up)
+      const HOUSE_ROTATION_Y  = Math.PI; // rotate model around Y axis (radians; try Math.PI if door faces wrong way)
+      const HOUSE_COL         = 25;     // top-left column of house footprint on farm grid
+      const HOUSE_ROW         = 2;      // top-left row of house footprint on farm grid
+      const HOUSE_FOOTPRINT_W = 5;      // footprint width in tiles  (cols HOUSE_COL .. HOUSE_COL+W-1)
+      const HOUSE_FOOTPRINT_D = 5;      // footprint depth in tiles  (rows HOUSE_ROW .. HOUSE_ROW+D-1)
+      const DOOR_COL          = 27;     // farm grid col of the door tile (reticle target to "Enter")
+      const DOOR_ROW          = 7;      // farm grid row of the door tile (just south of footprint)
+      // Interior dimensions — the inside is bigger than the outside (Pokemon style)
+      const INTERIOR_COLS      = 5;
+      const INTERIOR_ROWS      = 10;
+      const INTERIOR_ENTRY_COL = 2;     // col player spawns at when entering
+      const INTERIOR_ENTRY_ROW = 1;     // row player spawns at (just inside north door)
+      const INTERIOR_EXIT_COL  = 2;     // south exit door col
+
       // ── Voxel render constants ──
       // Each tile is drawn as a top-down oblique voxel stack.
       // VSKEW: how many px the top-face shifts up per Z unit (isometric feel)
@@ -906,6 +923,127 @@
         supplyBoxObject = sb;
         worldObjects.set(sc.col + ',' + sc.row, sc);
         worldObjects.set(sb.col + ',' + sb.row, sb);
+        // Highland House door object
+        const hh = makeHighlandHouse();
+        worldObjects.set(hh.col + ',' + hh.row, hh);
+      }
+
+      // ── Highland House world object + GLB loader ─────────────────
+      function makeHighlandHouse() {
+        // Load the GLB asynchronously; show fallback box until it arrives
+        const loader = new THREE.GLTFLoader();
+        const centerX = HOUSE_COL + HOUSE_FOOTPRINT_W / 2;
+        const centerZ = HOUSE_ROW + HOUSE_FOOTPRINT_D / 2;
+
+        // Fallback box shown while GLB loads
+        const fallbackMat  = new THREE.MeshLambertMaterial({ color: 0x7a5030 });
+        const fallbackGeo  = new THREE.BoxGeometry(HOUSE_FOOTPRINT_W * 0.9, 2.0, HOUSE_FOOTPRINT_D * 0.9);
+        const fallbackMesh = new THREE.Mesh(fallbackGeo, fallbackMat);
+        fallbackMesh.position.set(centerX, 1.0 + HOUSE_Y_OFFSET, centerZ);
+        fallbackMesh.castShadow = true;
+        scene.add(fallbackMesh);
+
+        loader.load(
+          'assets/models/HighlandHouse_medium.glb',
+          (gltf) => {
+            scene.remove(fallbackMesh);
+            fallbackGeo.dispose(); fallbackMat.dispose();
+            const model = gltf.scene;
+            model.scale.setScalar(HOUSE_SCALE);
+            model.rotation.y = HOUSE_ROTATION_Y;
+            model.position.set(centerX, HOUSE_Y_OFFSET, centerZ);
+            model.traverse(m => {
+              if (m.isMesh) {
+                m.castShadow    = true;
+                m.receiveShadow = true;
+                m.layers.enable(1); // shell outline
+              }
+            });
+            scene.add(model);
+            debugLog('Highland House GLB loaded');
+          },
+          undefined,
+          (err) => { debugLog('Highland House GLB load error: ' + err); }
+        );
+
+        return {
+          id: 'highland_house', type: 'highland_house',
+          col: DOOR_COL, row: DOOR_ROW,
+          label: '🏠 Highland House',
+          getButtons() {
+            return [{ icon: '🚪', label: 'Enter', action: 'obj_enter_house', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action === 'obj_enter_house') {
+              startSceneTransition(() => enterInterior());
+              return { ok: true, message: 'Entering the Highland House…' };
+            }
+            return { ok: false, message: 'Unknown house action.' };
+          },
+        };
+      }
+
+      // ── Scene transition fade ─────────────────────────────────────
+      function startSceneTransition(callback) {
+        sceneTransAlpha = 0;
+        sceneTransDir   = 1;
+        sceneTransCb    = callback;
+      }
+
+      function updateSceneTransition(dt) {
+        if (sceneTransDir === 0) return;
+        if (sceneTransDir === 1) {
+          sceneTransAlpha = Math.min(1, sceneTransAlpha + dt * 4);
+          if (sceneTransAlpha >= 1 && sceneTransCb) {
+            sceneTransCb();
+            sceneTransCb  = null;
+            sceneTransDir = -1;
+          }
+        } else {
+          sceneTransAlpha = Math.max(0, sceneTransAlpha - dt * 2.5);
+          if (sceneTransAlpha <= 0) sceneTransDir = 0;
+        }
+      }
+
+      // ── Enter / exit the interior ─────────────────────────────────
+      function enterInterior() {
+        farmPlayerSave = { x: player.x, y: player.y, angle: player.angle };
+        currentArea    = 'interior';
+        player.x       = (INTERIOR_ENTRY_COL + 0.5) * TILE;
+        player.y       = (INTERIOR_ENTRY_ROW + 0.5) * TILE;
+        player.vx      = 0;  player.vy = 0;
+        facingAngle    = Math.PI / 2;   // face south (into the room)
+        player.angle   = facingAngle;
+        camTargetX     = player.x / TILE;
+        camTargetZ     = player.y / TILE;
+        // Move player mesh into interior scene
+        scene.remove(playerMesh);
+        scene.remove(toolHolder);
+        scene.remove(reticleMesh);
+        interiorScene.add(playerMesh);
+        refreshActionBar();
+      }
+
+      function exitInterior() {
+        if (currentArea !== 'interior') return;
+        startSceneTransition(() => {
+          currentArea = 'farm';
+          if (farmPlayerSave) {
+            player.x     = farmPlayerSave.x;
+            player.y     = farmPlayerSave.y;
+            player.angle = farmPlayerSave.angle;
+            facingAngle  = farmPlayerSave.angle;
+          }
+          player.vx  = 0;  player.vy = 0;
+          camTargetX = player.x / TILE;
+          camTargetZ = player.y / TILE;
+          // Move player mesh back to farm scene
+          interiorScene.remove(playerMesh);
+          scene.add(playerMesh);
+          scene.add(toolHolder);
+          scene.add(reticleMesh);
+          refreshActionBar();
+        });
       }
 
       function getWorldObjectAt(col, row) {
@@ -1387,6 +1525,43 @@
 
       let activeItemIndex = 0;
       let grid = createInitialGrid();
+
+      // ── Area-switching state ───────────────────────────────────────
+      let currentArea     = 'farm';   // 'farm' | 'interior'
+      let farmPlayerSave  = null;     // {x,y,angle} saved when entering house
+      let sceneTransAlpha = 0;        // 0 = fully clear, 1 = fully black
+      let sceneTransDir   = 0;        // 0=idle  1=darkening  -1=brightening
+      let sceneTransCb    = null;     // fired once at peak darkness
+
+      function getActiveCols() { return currentArea === 'interior' ? INTERIOR_COLS : COLS; }
+      function getActiveRows() { return currentArea === 'interior' ? INTERIOR_ROWS : ROWS; }
+      function getActiveGrid() { return currentArea === 'interior' ? interiorGrid   : grid; }
+      function getActiveTileAt(col, row) {
+        const g = getActiveGrid();
+        return g[row]?.[col] || { type: TileType.ROCK, water: 0, crop: CropType.NONE, cropAge: 0, cropReady: false, stress: '', variation: 0 };
+      }
+
+      // Whether a farm-grid tile falls inside the house footprint
+      function isHouseFootprint(col, row) {
+        return col >= HOUSE_COL && col < HOUSE_COL + HOUSE_FOOTPRINT_W
+            && row >= HOUSE_ROW && row < HOUSE_ROW + HOUSE_FOOTPRINT_D;
+      }
+
+      // Interior 5 × 10 grid: ROCK walls, GRASS floor, open north + south centre doors
+      const interiorGrid = (() => {
+        const g = Array.from({ length: INTERIOR_ROWS }, (_, r) =>
+          Array.from({ length: INTERIOR_COLS }, (_, c) => ({
+            type: (r === 0 || c === 0 || c === INTERIOR_COLS - 1 || r === INTERIOR_ROWS - 1)
+              ? TileType.ROCK : TileType.GRASS,
+            water: 0, flow: false, crop: CropType.NONE,
+            cropAge: 0, cropReady: false, stress: '', variation: 0,
+          }))
+        );
+        g[0][INTERIOR_ENTRY_COL].type               = TileType.GRASS; // north entry
+        g[INTERIOR_ROWS - 1][INTERIOR_EXIT_COL].type = TileType.GRASS; // south exit
+        return g;
+      })();
+
       let activeTool = 'shovel';
       let activeAction = 'dig';
       let lastTime = performance.now();
@@ -1527,9 +1702,9 @@
         // ── Axis-separated collision ─────────────────────────
         // Tests the player center plus a tiny radius so corners feel less snaggy.
         const minX = PLAYER_RADIUS;
-        const maxX = COLS * TILE - PLAYER_RADIUS;
+        const maxX = getActiveCols() * TILE - PLAYER_RADIUS;
         const minY = PLAYER_RADIUS;
-        const maxY = ROWS * TILE - PLAYER_RADIUS;
+        const maxY = getActiveRows() * TILE - PLAYER_RADIUS;
         const desiredX = player.x + player.vx * dt;
         const desiredY = player.y + player.vy * dt;
         const nextX = clamp(desiredX, minX, maxX);
@@ -1571,13 +1746,14 @@
         }
 
         // ── Boundary clamp ────────────────────────────────────
-        player.x = clamp(player.x, PLAYER_RADIUS, COLS * TILE - PLAYER_RADIUS);
-        player.y = clamp(player.y, PLAYER_RADIUS, ROWS * TILE - PLAYER_RADIUS);
+        player.x = clamp(player.x, PLAYER_RADIUS, getActiveCols() * TILE - PLAYER_RADIUS);
+        player.y = clamp(player.y, PLAYER_RADIUS, getActiveRows() * TILE - PLAYER_RADIUS);
       }
 
       function canPlayerOccupy(wx, wy) {
-        const r = PLAYER_RADIUS * 0.72;
-        if (wx - r < 0 || wy - r < 0 || wx + r >= COLS * TILE || wy + r >= ROWS * TILE) return false;
+        const r  = PLAYER_RADIUS * 0.72;
+        const aC = getActiveCols(), aR = getActiveRows();
+        if (wx - r < 0 || wy - r < 0 || wx + r >= aC * TILE || wy + r >= aR * TILE) return false;
         return tileSpeedAt(wx - r, wy - r) !== null
             && tileSpeedAt(wx + r, wy - r) !== null
             && tileSpeedAt(wx - r, wy + r) !== null
@@ -1933,7 +2109,10 @@
         let result;
 
         // World object actions
-        if (activeAction.startsWith('obj_')) {
+        if (activeAction === 'obj_exit_house') {
+          exitInterior();
+          result = { ok: true, message: 'Stepped outside.' };
+        } else if (activeAction.startsWith('obj_')) {
           const obj = getWorldObjectAt(reticle.col, reticle.row);
           result = obj ? obj.onAction(activeAction) : { ok: false, message: 'No object here.' };
         } else if (activeAction.startsWith('place_')) {
@@ -1964,8 +2143,8 @@
         const probeX = player.x + dir.x * TILE * 0.7;
         const probeY = player.y + dir.y * TILE * 0.7;
         return {
-          col: clamp(Math.floor(probeX / TILE), 0, COLS - 1),
-          row: clamp(Math.floor(probeY / TILE), 0, ROWS - 1),
+          col: clamp(Math.floor(probeX / TILE), 0, getActiveCols() - 1),
+          row: clamp(Math.floor(probeY / TILE), 0, getActiveRows() - 1),
           dir
         };
       }
@@ -2057,6 +2236,17 @@
         const rect = threeContainer.getBoundingClientRect();
         lctx.clearRect(0, 0, rect.width, rect.height);
 
+        if (currentArea === 'interior') {
+          // Interior: no outdoor day/night overlay — just warm interior ambience
+          lctx.fillStyle = 'rgba(80,40,10,0.08)';
+          lctx.fillRect(0, 0, rect.width, rect.height);
+          if (sceneTransAlpha > 0) {
+            lctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
+            lctx.fillRect(0, 0, rect.width, rect.height);
+          }
+          return;
+        }
+
         const { r, g, b, a } = getLightingState();
         const hour = getHour();
         const W = rect.width;
@@ -2119,6 +2309,12 @@
         // Lightning flash on lighting canvas too
         if (lightningAlpha > 0) {
           lctx.fillStyle = `rgba(220, 240, 255, ${lightningAlpha * 0.45})`;
+          lctx.fillRect(0, 0, W, H);
+        }
+
+        // Scene transition fade-to-black
+        if (sceneTransAlpha > 0) {
+          lctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
           lctx.fillRect(0, 0, W, H);
         }
       }
@@ -2249,11 +2445,14 @@
       }
 
       function tileSpeedAt(wx, wy) {
-        if (wx < 0 || wy < 0 || wx >= COLS * TILE || wy >= ROWS * TILE) return null;
-        const col = Math.floor(wx / TILE);
-        const row = Math.floor(wy / TILE);
-        const type = grid[row][col].type;
+        const aC = getActiveCols(), aR = getActiveRows();
+        if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return null;
+        const col  = Math.floor(wx / TILE);
+        const row  = Math.floor(wy / TILE);
+        const type = getActiveGrid()[row][col].type;
         if (isSolid(type)) return null;
+        // Block the house footprint on the farm (player must use the door)
+        if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
         return {
           [TileType.GRASS]:   1.00,
           [TileType.TILLED]:  0.85,
@@ -2286,6 +2485,72 @@
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
       threeContainer.appendChild(renderer.domElement);
+
+      // ── Interior scene (bigger-on-the-inside room) ────────────────
+      const interiorScene = new THREE.Scene();
+      interiorScene.background = new THREE.Color(0x1a1008);
+
+      // Interior lighting — warm lantern-style
+      const _intAmbient = new THREE.AmbientLight(0xffd090, 0.7);
+      interiorScene.add(_intAmbient);
+      const _intKey = new THREE.DirectionalLight(0xfff0cc, 0.5);
+      _intKey.position.set(2, 6, 3);
+      interiorScene.add(_intKey);
+      const _intFill = new THREE.PointLight(0xff8833, 0.6, 12);
+      _intFill.position.set(INTERIOR_COLS / 2, 1.8, INTERIOR_ROWS / 2);
+      interiorScene.add(_intFill);
+
+      // Build the room geometry
+      (function buildInteriorScene() {
+        const floorMats   = [
+          new THREE.MeshLambertMaterial({ color: 0x7a4e2a }),
+          new THREE.MeshLambertMaterial({ color: 0x8a5a30 }),
+        ];
+        const wallMat     = new THREE.MeshLambertMaterial({ color: 0x4a3010 });
+        const wallTopMat  = new THREE.MeshLambertMaterial({ color: 0x5e3c14 });
+        const ceilMat     = new THREE.MeshLambertMaterial({ color: 0x3a2206 });
+        const doorMarkerMat = new THREE.MeshLambertMaterial({ color: 0x7a5a10 });
+        const exitRug       = new THREE.MeshLambertMaterial({ color: 0x8b1a1a });
+
+        for (let r = 0; r < INTERIOR_ROWS; r++) {
+          for (let c = 0; c < INTERIOR_COLS; c++) {
+            const tile = interiorGrid[r][c];
+            const px   = c + 0.5, pz = r + 0.5;
+
+            if (tile.type === TileType.ROCK) {
+              // Wall column: base slab + upper block
+              const base = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 1), wallMat);
+              base.position.set(px, -0.25, pz);
+              interiorScene.add(base);
+              const top = new THREE.Mesh(new THREE.BoxGeometry(1, 2.5, 1), wallTopMat);
+              top.position.set(px, 1.25, pz);
+              interiorScene.add(top);
+            } else {
+              // Floor plank (alternating)
+              const flMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMats[(c + r) % 2]);
+              flMesh.position.set(px, -0.05, pz);
+              flMesh.receiveShadow = true;
+              interiorScene.add(flMesh);
+            }
+          }
+        }
+
+        // North entry door marker (door mat)
+        const entryMat = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.02, 0.82), doorMarkerMat);
+        entryMat.position.set(INTERIOR_ENTRY_COL + 0.5, 0.01, 0.5);
+        interiorScene.add(entryMat);
+
+        // South exit — red rug + small arrow pointers
+        const rug = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.02, 0.82), exitRug);
+        rug.position.set(INTERIOR_EXIT_COL + 0.5, 0.01, INTERIOR_ROWS - 0.5);
+        interiorScene.add(rug);
+
+        // Ceiling
+        const ceil = new THREE.Mesh(
+          new THREE.BoxGeometry(INTERIOR_COLS, 0.15, INTERIOR_ROWS), ceilMat);
+        ceil.position.set(INTERIOR_COLS / 2, 2.6, INTERIOR_ROWS / 2);
+        interiorScene.add(ceil);
+      })();
 
       // ── Inverted shell outline ────────────────────────────────────
       // Second render pass: back faces only, vertices extruded along
@@ -3702,9 +3967,9 @@
         // Convert 2D grid coords to 3D world coords
         const wx = player.x / TILE;  // world X (col)
         const wz = player.y / TILE;  // world Z (row)
-        const col = clamp(Math.floor(wx), 0, COLS-1);
-        const row = clamp(Math.floor(wz), 0, ROWS-1);
-        const tile = grid[row][col];
+        const col = clamp(Math.floor(wx), 0, getActiveCols()-1);
+        const row = clamp(Math.floor(wz), 0, getActiveRows()-1);
+        const tile = getActiveTileAt(col, row);
         const standY = tileSurfaceY(tile.type);
 
         // Smooth vertical position (bob over water)
@@ -3813,18 +4078,32 @@
           return;
         }
 
+        updateSceneTransition(dt);
+
         if (!paused) {
           updateCalendar(dt);
           updateMovement(dt);
-          waterFlowPhase = (waterFlowPhase + dt * 3.2) % 1;
-          updateWaterParticles(dt);
-          updateRipples(dt);
+
+          // Interior exit detection: player walks south through exit door
+          if (currentArea === 'interior' && sceneTransDir === 0) {
+            const iyTile = player.y / TILE;
+            const ixTile = player.x / TILE;
+            if (iyTile > INTERIOR_ROWS - 0.6 && Math.abs(ixTile - (INTERIOR_EXIT_COL + 0.5)) < 0.7) {
+              exitInterior();
+            }
+          }
+
+          if (currentArea === 'farm') {
+            waterFlowPhase = (waterFlowPhase + dt * 3.2) % 1;
+            updateWaterParticles(dt);
+            updateRipples(dt);
+            updateLightningFlash(dt);
+          }
           updateActionParticles(dt);
-          updateLightningFlash(dt);
           // Water sim ticks every 1/8 game-hour (~9s real-time)
           // Uses game time so rain and drainage are clock-consistent
           simAccumulator += dt / DAY_LENGTH_SECONDS * (NIGHT_HOUR - MORNING_HOUR); // game-hours per sec
-          if (simAccumulator >= 0.125) {  // 1/8 hour
+          if (simAccumulator >= 0.125 && currentArea === 'farm') {
             simAccumulator -= 0.125;
             recomputeWater(false);
             spawnRipples();
@@ -3839,47 +4118,48 @@
         updateCameraPosition();
 
         // ── Three.js updates ─────────────────────────────────────
-        updateWaterMeshes();
-        updateCropMeshes();
         updatePlayerMesh(dt);
-        updateAnimalMeshes(dt);
-        updateToolMesh(dt);
-        updateReticleMesh();
-        updateThreeLighting();
+        if (currentArea === 'farm') {
+          updateWaterMeshes();
+          updateCropMeshes();
+          updateAnimalMeshes(dt);
+          updateToolMesh(dt);
+          updateReticleMesh();
+          updateThreeLighting();
 
-        // ── Wind animation on vegetation ─────────────────────────
-        const windTime = performance.now() / 1000;
-        const windStrBase = calendar.isRaining
-          ? (calendar.rainStrength >= 3 ? 0.10 : 0.06)
-          : 0.03;
-        for (const vm of vegMeshes) {
-          if (vm.material && vm.material.uniforms) {
-            vm.material.uniforms.uTime.value = windTime;
-            // Proximity boost: sway more when player is close
-            const dx = vm.position.x - player.x / TILE;
-            const dz = vm.position.z - player.y / TILE;
-            const dist = Math.hypot(dx, dz);
-            const proximityStr = dist < 1.2 ? windStrBase + 0.12 * (1.2 - dist) / 1.2 : windStrBase;
-            vm.material.uniforms.uStrength.value += (proximityStr - vm.material.uniforms.uStrength.value) * 0.15;
+          // Wind animation on vegetation
+          const windTime = performance.now() / 1000;
+          const windStrBase = calendar.isRaining
+            ? (calendar.rainStrength >= 3 ? 0.10 : 0.06)
+            : 0.03;
+          for (const vm of vegMeshes) {
+            if (vm.material && vm.material.uniforms) {
+              vm.material.uniforms.uTime.value = windTime;
+              const dx = vm.position.x - player.x / TILE;
+              const dz = vm.position.z - player.y / TILE;
+              const dist = Math.hypot(dx, dz);
+              const proximityStr = dist < 1.2 ? windStrBase + 0.12 * (1.2 - dist) / 1.2 : windStrBase;
+              vm.material.uniforms.uStrength.value += (proximityStr - vm.material.uniforms.uStrength.value) * 0.15;
+            }
+          }
+          const windScale = windStrBase / 0.03;
+          for (const fg of vegFoliageMeshes) {
+            if (!fg || !fg._windAmp) continue;
+            const amp = fg._windAmp * windScale;
+            fg.rotation.z = amp * Math.sin(windTime * 1.6 + fg._windPhase);
+            fg.rotation.x = amp * 0.45 * Math.cos(windTime * 1.1 + fg._windPhase * 1.3);
+          }
+          if (grassBillboardMat) {
+            grassBillboardMat.uniforms.uTime.value     = windTime;
+            grassBillboardMat.uniforms.uStrength.value = s_billWind ? windStrBase : 0;
           }
         }
-        // Rotation-based wind sway for procedural foliage groups
-        const windScale = windStrBase / 0.03;
-        for (const fg of vegFoliageMeshes) {
-          if (!fg || !fg._windAmp) continue;
-          const amp = fg._windAmp * windScale;
-          fg.rotation.z = amp * Math.sin(windTime * 1.6 + fg._windPhase);
-          fg.rotation.x = amp * 0.45 * Math.cos(windTime * 1.1 + fg._windPhase * 1.3);
-        }
-        // Grass billboard wind
-        if (grassBillboardMat) {
-          grassBillboardMat.uniforms.uTime.value     = windTime;
-          grassBillboardMat.uniforms.uStrength.value = s_billWind ? windStrBase : 0;
-        }
 
-        renderer.render(scene, camera);
-        // Selective shell outline pass (layer-1 objects only)
-        if (s_outlines) {
+        // ── Render active scene ──────────────────────────────────
+        const activeScene = currentArea === 'interior' ? interiorScene : scene;
+        renderer.render(activeScene, camera);
+        // Selective shell outline pass (layer-1 objects only, farm only)
+        if (s_outlines && currentArea === 'farm') {
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
           scene.overrideMaterial = shellOutlineMat;
@@ -3904,6 +4184,11 @@
         const rect = threeContainer.getBoundingClientRect();
         const W = rect.width, H = rect.height;
         octx.clearRect(0, 0, W, H);
+
+        if (currentArea === 'interior') {
+          drawActionParticles();
+          return;
+        }
 
         if (calendar.isRaining) {
           const str = calendar.rainStrength || 1;
@@ -4215,6 +4500,15 @@
 
 
       function computeActionButtons() {
+        // Interior: only show exit button near the south door
+        if (currentArea === 'interior') {
+          const reticle = getReticleTile();
+          const nearExit = reticle.row >= INTERIOR_ROWS - 2 && reticle.col === INTERIOR_EXIT_COL;
+          return nearExit
+            ? [{ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true }]
+            : [];
+        }
+
         const reticle = getReticleTile();
         const tile    = grid[reticle.row][reticle.col];
         const btns    = [];
@@ -4293,10 +4587,10 @@
 
       function refreshActionBar() {
         const reticle = getReticleTile();
-        const tile    = grid[reticle.row][reticle.col];
+        const tile    = getActiveTileAt(reticle.col, reticle.row);
 
-        const obj = getWorldObjectAt(reticle.col, reticle.row);
-        const key = `${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}`;
+        const obj = currentArea === 'farm' ? getWorldObjectAt(reticle.col, reticle.row) : null;
+        const key = `${currentArea}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -4485,10 +4779,10 @@
 
         // Reticle tile info
         const reticle  = getReticleTile();
-        const tile     = grid[reticle.row][reticle.col];
+        const tile     = getActiveTileAt(reticle.col, reticle.row);
         const tStyle   = tileStyles[tile.type] || tileStyles.grass;
         const cropStr  = tile.crop ? ` · ${tile.crop}${tile.cropReady ? ' ✓' : ''}` : '';
-        spTile.textContent = tStyle.label + cropStr;
+        spTile.textContent = (currentArea === 'interior' ? '🏠 ' : '') + tStyle.label + cropStr;
 
         const waterPct = Math.round((tile.water / MAX_WATER) * 100);
         const depthStr = tile.water > 0.01 ? `${waterPct}%` : 'dry';
