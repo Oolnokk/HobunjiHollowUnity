@@ -2569,6 +2569,25 @@
           interiorScene.add(fl);
         }
 
+        // Pure-black backing planes sit just behind each wall panel surface.
+        // Gaps between bricks show through to these, giving a clean black outline effect.
+        const _backingMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        for (const p of INTERIOR_WALL_PANELS) {
+          const _bg = new THREE.Mesh(new THREE.PlaneGeometry(p.width, p.height), _backingMat);
+          // PlaneGeometry is centred; shift up by height/2 so bottom edge aligns with floor,
+          // and pull 0.02 behind the wall surface so bricks render in front.
+          _bg.position.set(0, p.height / 2, -0.02);
+          const _pg = new THREE.Group();
+          _pg.position.set(p.position[0], p.position[1], p.position[2]);
+          _pg.rotation.set(
+            THREE.MathUtils.degToRad(p.rotationDeg[0] || 0),
+            THREE.MathUtils.degToRad(p.rotationDeg[1] || 0),
+            THREE.MathUtils.degToRad(p.rotationDeg[2] || 0)
+          );
+          _pg.add(_bg);
+          interiorScene.add(_pg);
+        }
+
         // Instanced walls: 50% brick size, 4x density, 60% depth, micro-jitter
         interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
         _markOutline(interiorWallGroup);
