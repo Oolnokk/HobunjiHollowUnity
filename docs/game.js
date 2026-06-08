@@ -2287,6 +2287,58 @@
       renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
       threeContainer.appendChild(renderer.domElement);
 
+      // ── Inverted shell outline ────────────────────────────────────
+      // Second render pass: back faces only, vertices extruded along
+      // normals → solid black border on every mesh edge. No render
+      // targets or screen-space sampling required.
+      const shellOutlineMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        uniforms: {
+          uThickness: { value: 0.006 },  // NDC units → constant screen-pixel width
+        },
+        vertexShader: `
+          uniform float uThickness;
+          void main() {
+            // Project both the vertex and vertex+normal to clip space,
+            // then compute the 2D screen-space direction between them.
+            // This avoids the NaN that occurs when projecting a direction
+            // vector whose XY is near-zero (e.g. up-normals on flat tiles
+            // viewed near head-on), which caused the all-black screen.
+            vec4 clip  = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            vec4 clipN = projectionMatrix * modelViewMatrix * vec4(position + normal, 1.0);
+
+            vec2 dir = clipN.xy / clipN.w - clip.xy / clip.w;
+            float len = length(dir);
+            // Safe normalize: if normal is perpendicular to screen, skip offset
+            // (those faces don't form silhouette edges anyway)
+            dir = (len > 1e-5) ? dir / len : vec2(0.0, 0.0);
+
+            // Multiply by clip.w so after perspective division NDC offset = uThickness
+            clip.xy    += dir * uThickness * clip.w;
+            gl_Position = clip;
+          }
+        `,
+        fragmentShader: `
+          void main() {
+            gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+          }
+        `,
+        // depthWrite off: shell only reads the scene depth, never corrupts it.
+        // LessDepth: coplanar back faces (adjacent tiles share the same Z plane)
+        // would pass LEQUAL and splat black everywhere — LESS rejects equal depth.
+        depthWrite: false,
+        depthFunc:  THREE.LessDepth,
+      });
+
+      // Enable layer 1 on a mesh (or every mesh inside a Group) so the
+      // selective outline pass picks it up. Flat floor slabs, water, and
+      // grass billboards stay on layer 0 only and are never outlined.
+      function _markOutline(obj) {
+        if (!obj || typeof obj.isMesh === 'undefined' && !obj.isGroup) return;
+        if (obj.isMesh) { obj.layers.enable(1); return; }
+        obj.traverse(child => { if (child.isMesh) child.layers.enable(1); });
+      }
+
       // Camera — isometric-style: high angle, offset NW, looking SE toward map center
       const CAM_DIST   = 14;
       const CAM_ANGLE  = Math.PI / 5.5;  // ~33° from horizontal — classic 3/4 RPG tilt
@@ -3119,6 +3171,179 @@
       // Track foliage-generator groups by tile index for rotation-based sway
       const vegFoliageMeshes = new Array(ROWS * COLS).fill(null);
 
+      // ── Grass billboard system (grass_1.png sprites on GRASS tiles) ─────────
+      const grassBillboardGroups = new Array(ROWS * COLS).fill(null);
+
+      function _mbRng(seed) {
+        let s = seed >>> 0;
+        return () => {
+          s += 0x6D2B79F5;
+          let t = Math.imul(s ^ (s >>> 15), s | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      // Shared blade geometry: 1×1 PlaneGeometry anchored at Y=0
+      const _grassBladeGeo = (() => {
+        const g = new THREE.PlaneGeometry(1, 1);
+        g.translate(0, 0.5, 0);
+        return g;
+      })();
+
+      const _grassBillVert = `
+        uniform float uTime;
+        uniform float uStrength;
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          float topFactor = uv.y;
+          float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
+          float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
+          float sway2 = cos(uTime * 1.2 + phase * 1.3) * uStrength * 0.5 * topFactor;
+          worldPos.x += sway;
+          worldPos.z += sway2;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `;
+
+      const _grassBillFrag = `
+        uniform sampler2D uGrassTex;
+        uniform vec3 uTint;
+        varying vec2 vUv;
+        void main() {
+          vec4 texel = texture2D(uGrassTex, vUv);
+          if (texel.a < 0.5) discard;
+          // Treat grass_1.png as mint-toned; desaturate and re-tint to grass color
+          float lum = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
+          vec3 tinted = uTint * (0.7 + lum * 0.8);
+          // Drawn outline pixels (near-black source) stay pure black; tint the rest
+          vec3 col = mix(vec3(0.0), tinted, smoothstep(0.0, 0.15, lum));
+          gl_FragColor = vec4(col, texel.a);
+        }
+      `;
+
+      const _grassTint = new THREE.Color().setHSL(108 / 360, 0.58, 0.28);
+      let grassBillboardMat = null;
+
+      new THREE.TextureLoader().load('assets/leaves/grass_1.png', (tex) => {
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        const sharedUniforms = () => ({
+          uGrassTex: { value: tex },
+          uTint:     { value: _grassTint },
+          uTime:     { value: 0 },
+          uStrength: { value: 0.04 },
+        });
+        grassBillboardMat = new THREE.ShaderMaterial({
+          uniforms:       sharedUniforms(),
+          vertexShader:   _grassBillVert,
+          fragmentShader: _grassBillFrag,
+          alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
+        });
+        // Spawn billboards on GRASS tiles; for WEEDS tiles in Mode A, build now
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            if (grid[r][c].type === TileType.GRASS) {
+              _buildGrassBillboardsForTile(c, r);
+            } else if (grid[r][c].type === TileType.WEEDS && !s_weed3D) {
+              const i = r * COLS + c;
+              if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); vegFoliageMeshes[i] = null; }
+              const grp = _buildWeedBillboardGroup(c, r);
+              if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; }
+            }
+          }
+        }
+      });
+
+      function _buildGrassBillboardsForTile(col, row) {
+        if (!grassBillboardMat) return;
+        const i = row * COLS + col;
+        if (grassBillboardGroups[i]) return;
+        if (grid[row][col].type !== TileType.GRASS) return;
+
+        const group = new THREE.Group();
+        const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
+        const baseY = tileSurfaceY(TileType.GRASS);
+
+        for (let b = 0; b < 14; b++) {
+          const ox  = (rand() - 0.5) * 0.9;
+          const oz  = (rand() - 0.5) * 0.9;
+          const w   = 0.16 + rand() * 0.10;
+          const h   = 0.22 + rand() * 0.14;
+          const rot = rand() * Math.PI;
+
+          const cross = new THREE.Group();
+          cross.position.set(col + 0.5 + ox, baseY, row + 0.5 + oz);
+
+          const m1 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
+          m1.scale.set(w, h, 1);
+          m1.rotation.y = rot;
+          cross.add(m1);
+
+          const m2 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
+          m2.scale.set(w, h, 1);
+          m2.rotation.y = rot + Math.PI * 0.5;
+          cross.add(m2);
+
+          group.add(cross);
+        }
+
+        group.visible = s_grass;
+        scene.add(group);
+        grassBillboardGroups[i] = group;
+      }
+
+      function _clearGrassBillboards(col, row) {
+        const i = row * COLS + col;
+        if (grassBillboardGroups[i]) {
+          scene.remove(grassBillboardGroups[i]);
+          grassBillboardGroups[i] = null;
+        }
+      }
+
+      // Mode A weeds: oversized grass billboards (2× blade size), same cross
+      // layout as GRASS tiles but larger — no outline, no 3D foliage.
+      function _buildWeedBillboardGroup(col, row) {
+        if (!grassBillboardMat) return null;
+        const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
+        const baseY = tileSurfaceY(TileType.GRASS);
+
+        const group = new THREE.Group();
+        for (let b = 0; b < 14; b++) {
+          const ox  = (rand() - 0.5) * 0.9;
+          const oz  = (rand() - 0.5) * 0.9;
+          const w   = 0.32 + rand() * 0.20;  // 2× grass width
+          const h   = 0.44 + rand() * 0.28;  // 2× grass height
+          const rot = rand() * Math.PI;
+
+          const cross = new THREE.Group();
+          cross.position.set(col + 0.5 + ox, baseY, row + 0.5 + oz);
+
+          const m1 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
+          m1.scale.set(w, h, 1);
+          m1.rotation.y = rot;
+          cross.add(m1);
+
+          const m2 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
+          m2.scale.set(w, h, 1);
+          m2.rotation.y = rot + Math.PI * 0.5;
+          cross.add(m2);
+
+          group.add(cross);
+        }
+        group._windAmp = 0;
+        return group;
+      }
+
+      function _rebuildWeedTiles() {
+        for (let r = 0; r < ROWS; r++)
+          for (let c = 0; c < COLS; c++)
+            if (grid[r][c].type === TileType.WEEDS)
+              refreshTileMesh(c, r);
+      }
+
       // ── Crop mesh system ──────────────────────────────────────────
       // Needlegrain and heftroot use procedural foliage geometry.
       // All other crops use a simple colored cube (unchanged).
@@ -3201,6 +3426,7 @@
                 const group = _buildFoliageMesh(tile.crop, growth, col, row);
                 if (group) {
                   scene.add(group);
+                  _markOutline(group);
                   cropMeshes[i]       = group;
                   cropGrowthBucket[i] = bucket;
                 }
@@ -3231,6 +3457,7 @@
                 const mesh = new THREE.Mesh(geo, mat);
                 mesh.castShadow = true;
                 scene.add(mesh);
+                mesh.layers.enable(1);
                 cropMeshes[i] = mesh;
               }
 
@@ -3277,50 +3504,60 @@
           }
           if (moundRoot) moundRoot._windAmp = 0;  // wind loop skips _windAmp=0
           vegFoliageMeshes[i] = moundRoot || { _windAmp: 0 };
+          _markOutline(moundRoot);
           return;
         }
 
-        if ((tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) && window.FoliageGenerator) {
-          // Grass floor slab underneath the vegetation
+        if (tile.type === TileType.SHRUB && window.FoliageGenerator) {
+          // Grass floor slab underneath the shrub
           const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), vegFloorMat);
           floorMesh.castShadow = floorMesh.receiveShadow = true;
           floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
           scene.add(floorMesh);
           tileMeshes[i] = floorMesh;
 
-          const surfY = tileSurfaceY(tile.type);
-          let vegGroup;
-
-          if (tile.type === TileType.SHRUB) {
-            // Single shrub, 2x scale
-            vegGroup = window.FoliageGenerator.buildShrubMesh(col, row);
-            vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
-            vegGroup._windAmp   = 0.06;
-            vegGroup.scale.set(2, 2, 2);
-            vegGroup.position.set(col + 0.5, surfY, row + 0.5);
-          } else {
-            // WEEDS: scatter 3-5 plants across the tile with varied seeds
-            vegGroup = new THREE.Group();
-            vegGroup.position.set(col + 0.5, surfY, row + 0.5);
-            vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
-            vegGroup._windAmp   = 0.10;
-            const tileSeed = (col * 31337 + row * 1009) >>> 0;
-            const n = 3 + (tileSeed % 3);  // 3, 4 or 5 plants
-            for (let idx = 0; idx < n; idx++) {
-              const sx = ((tileSeed ^ (idx * 127)) % 1000) / 1000;
-              const sz = ((tileSeed ^ (idx * 61 + 17)) % 1000) / 1000;
-              const ox = (sx - 0.5) * 0.72;
-              const oz = (sz - 0.5) * 0.72;
-              const sc = 1.4 + (((tileSeed ^ (idx * 43)) % 100) / 100) * 0.8;
-              const plant = window.FoliageGenerator.buildWeedsMesh(col + idx * 127, row + idx * 61);
-              plant.position.set(ox, 0, oz);
-              plant.scale.setScalar(sc);
-              vegGroup.add(plant);
-            }
-          }
-
+          const vegGroup = window.FoliageGenerator.buildShrubMesh(col, row);
+          vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
+          vegGroup._windAmp   = 0.06;
+          vegGroup.scale.set(2, 2, 2);
+          vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
           scene.add(vegGroup);
           vegFoliageMeshes[i] = vegGroup;
+          _markOutline(vegGroup);
+          return;
+        }
+
+        if (tile.type === TileType.WEEDS) {
+          // Grass floor slab underneath
+          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), vegFloorMat);
+          floorMesh.castShadow = floorMesh.receiveShadow = true;
+          floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
+          scene.add(floorMesh);
+          tileMeshes[i] = floorMesh;
+
+          if (!s_weed3D) {
+            // Mode A: oversized grass billboards (deferred if texture not yet loaded)
+            const grp = _buildWeedBillboardGroup(col, row);
+            if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; }
+          } else if (window.FoliageGenerator) {
+            // Mode B: procedural 3D weeds, subject to shell outline
+            const vegGroup = new THREE.Group();
+            vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
+            const rng   = _mbRng(((col * 31337 + row * 1009) >>> 0));
+            const count = 3 + ((col * 7 + row * 13) % 3);  // 3–5 plants
+            for (let p = 0; p < count; p++) {
+              const wm = window.FoliageGenerator.buildWeedsMesh(col * 50 + p, row * 50 + p);
+              if (wm) {
+                wm.position.set((rng() - 0.5) * 0.8, 0, (rng() - 0.5) * 0.8);
+                vegGroup.add(wm);
+              }
+            }
+            vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
+            vegGroup._windAmp   = 0.10;
+            scene.add(vegGroup);
+            vegFoliageMeshes[i] = vegGroup;
+            _markOutline(vegGroup);
+          }
           return;
         }
 
@@ -3333,6 +3570,7 @@
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
+            m.layers.enable(1);  // material transition outline
             primary = m;
           }
           if (grassGeo) {
@@ -3341,6 +3579,7 @@
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             m._windAmp = 0;
             scene.add(m);
+            m.layers.enable(1);  // material transition outline
             vegFoliageMeshes[i] = m;
             if (!primary) primary = m;
           }
@@ -3362,16 +3601,22 @@
         mesh.position.set(col + 0.5, tileYCenter(tile.type), row + 0.5);
         scene.add(mesh);
         tileMeshes[i] = mesh;
+        // Rock and fallback vegetation get outlines; flat floor tiles do not.
+        if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
+          mesh.layers.enable(1);
+        }
+        if (tile.type === TileType.GRASS) _buildGrassBillboardsForTile(col, row);
       }
 
       function buildTileMeshes() {
         for (let row = 0; row < ROWS; row++) {
           for (let col = 0; col < COLS; col++) {
             const i = row * COLS + col;
-            if (tileMeshes[i])       { scene.remove(tileMeshes[i]);       tileMeshes[i]       = null; }
-            if (waterMeshes[i])      { scene.remove(waterMeshes[i]);      waterMeshes[i]      = null; }
-            if (cropMeshes[i])       { scene.remove(cropMeshes[i]);       cropMeshes[i]       = null; }
-            if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); vegFoliageMeshes[i] = null; }
+            if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
+            if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         waterMeshes[i]         = null; }
+            if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
+            if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    vegFoliageMeshes[i]    = null; }
+            if (grassBillboardGroups[i]){ scene.remove(grassBillboardGroups[i]); grassBillboardGroups[i] = null; }
             cropGrowthBucket[i] = -1;
             _buildOneTileMesh(col, row);
           }
@@ -3381,10 +3626,11 @@
       // Update a single tile mesh (called after shovel actions)
       function refreshTileMesh(col, row) {
         const i = row * COLS + col;
-        if (tileMeshes[i])       { scene.remove(tileMeshes[i]);       tileMeshes[i]       = null; }
-        if (waterMeshes[i])      { scene.remove(waterMeshes[i]);      waterMeshes[i]      = null; }
-        if (cropMeshes[i])       { scene.remove(cropMeshes[i]);       cropMeshes[i]       = null; }
-        if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); vegFoliageMeshes[i] = null; }
+        if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
+        if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         waterMeshes[i]         = null; }
+        if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
+        if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    vegFoliageMeshes[i]    = null; }
+        _clearGrassBillboards(col, row);
         cropGrowthBucket[i] = -1;
         _buildOneTileMesh(col, row);
       }
@@ -3532,8 +3778,30 @@
         lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
 
+      // ── Visual feature toggles (Settings tab) ────────────────────
+      let s_outlines  = true;
+      let s_grass     = false;
+      let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
+      let s_billWind  = true;
+
       buildTileMeshes();
       buildBorderTerrain();
+
+      // ── Settings tab checkbox wiring ──────────────────────────────
+      document.getElementById('settingOutlines').addEventListener('change', e => {
+        s_outlines = e.target.checked;
+      });
+      document.getElementById('settingGrass').addEventListener('change', e => {
+        s_grass = e.target.checked;
+        for (const g of grassBillboardGroups) if (g) g.visible = s_grass;
+      });
+      document.getElementById('settingBillWind').addEventListener('change', e => {
+        s_billWind = e.target.checked;
+      });
+      document.getElementById('settingWeed3D').addEventListener('change', e => {
+        s_weed3D = e.target.checked;
+        _rebuildWeedTiles();
+      });
 
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
@@ -3603,8 +3871,25 @@
           fg.rotation.z = amp * Math.sin(windTime * 1.6 + fg._windPhase);
           fg.rotation.x = amp * 0.45 * Math.cos(windTime * 1.1 + fg._windPhase * 1.3);
         }
+        // Grass billboard wind
+        if (grassBillboardMat) {
+          grassBillboardMat.uniforms.uTime.value     = windTime;
+          grassBillboardMat.uniforms.uStrength.value = s_billWind ? windStrBase : 0;
+        }
 
         renderer.render(scene, camera);
+        // Selective shell outline pass (layer-1 objects only)
+        if (s_outlines) {
+          renderer.autoClearColor = false;
+          renderer.autoClearDepth = false;
+          scene.overrideMaterial = shellOutlineMat;
+          camera.layers.set(1);
+          renderer.render(scene, camera);
+          camera.layers.enableAll();
+          scene.overrideMaterial = null;
+          renderer.autoClearColor = true;
+          renderer.autoClearDepth = true;
+        }
 
         // ── 2D overlays (rain, lighting) ─────────────────────────
         drawOverlays();
