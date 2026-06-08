@@ -3603,21 +3603,39 @@
       let toolSwingT   = 0;
       let toolSwingDur = 0.22;
 
-      // Preload tool sprite textures
+      // Reference width in world units; height is derived from the image's aspect ratio,
+      // matching the pattern used by buildAnimalPlaneAvatarModel (modelWidth × h/w).
+      const TOOL_MODEL_WIDTH = 0.5;
+
+      // Preload tool sprite textures; capture pixel dimensions on load and rebuild meshes
       const _toolTexLoader = new THREE.TextureLoader();
       const toolTextures = {};
       for (const [key, def] of Object.entries(TOOL_ITEM_DEFS)) {
-        const tex = _toolTexLoader.load(def.sprite);
+        const tex = _toolTexLoader.load(def.sprite, (t) => {
+          const img = t.image;
+          def._imgW = img.naturalWidth  || img.width  || 1;
+          def._imgH = img.naturalHeight || img.height || 1;
+          // Rebuild with correct aspect ratio now that dimensions are known
+          rebuildToolMeshes();
+          const cur = toolMeshMap[activeTool];
+          Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+          if (cur) toolHolder.add(cur);
+        });
         tex.magFilter = THREE.NearestFilter;
         tex.minFilter = THREE.NearestFilter;
         toolTextures[key] = tex;
       }
 
-      // Build a PNG plane mesh for a given tool item key
+      // Build a PNG plane mesh sized to the sprite's pixel aspect ratio
       function makeToolPlaneMesh(itemKey) {
         if (!itemKey || !toolTextures[itemKey]) return null;
+        const def  = TOOL_ITEM_DEFS[itemKey];
+        const imgW = def?._imgW || 1;
+        const imgH = def?._imgH || 1;
+        const planeW = TOOL_MODEL_WIDTH;
+        const planeH = planeW * (imgH / imgW);   // e.g. 450×1204 → 0.5 × 1.338
         const g   = new THREE.Group();
-        const geo = new THREE.PlaneGeometry(0.96, 0.96);
+        const geo = new THREE.PlaneGeometry(planeW, planeH);
         const mat = new THREE.MeshBasicMaterial({
           map: toolTextures[itemKey],
           transparent: true,
@@ -3625,7 +3643,7 @@
           side: THREE.DoubleSide,
         });
         const plane = new THREE.Mesh(geo, mat);
-        // Lie flat in XZ plane so camera (above) always sees the full sprite
+        // Lie flat in XZ plane so the overhead camera always sees the full sprite
         plane.rotation.x = -Math.PI / 2;
         g.add(plane);
         return g;
