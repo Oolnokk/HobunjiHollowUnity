@@ -3240,10 +3240,18 @@
           side:           THREE.DoubleSide,
           depthWrite:     true,
         });
-        // Spawn on all existing GRASS tiles
+        // Spawn billboards on all existing GRASS tiles; also build weed clusters
+        // (they share this material, so they need it loaded first too)
         for (let r = 0; r < ROWS; r++) {
           for (let c = 0; c < COLS; c++) {
-            if (grid[r][c].type === TileType.GRASS) _buildGrassBillboardsForTile(c, r);
+            if (grid[r][c].type === TileType.GRASS) {
+              _buildGrassBillboardsForTile(c, r);
+            } else if (grid[r][c].type === TileType.WEEDS) {
+              const i = r * COLS + c;
+              if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); vegFoliageMeshes[i] = null; }
+              const grp = _buildLeafClusterGroup(c, r);
+              if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; }
+            }
           }
         }
       });
@@ -3258,11 +3266,11 @@
         const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
         const baseY = tileSurfaceY(TileType.GRASS);
 
-        for (let b = 0; b < 8; b++) {
+        for (let b = 0; b < 14; b++) {
           const ox  = (rand() - 0.5) * 0.9;
           const oz  = (rand() - 0.5) * 0.9;
-          const w   = 0.28 + rand() * 0.22;
-          const h   = 0.38 + rand() * 0.22;
+          const w   = 0.16 + rand() * 0.10;
+          const h   = 0.22 + rand() * 0.14;
           const rot = rand() * Math.PI;
 
           const cross = new THREE.Group();
@@ -3293,52 +3301,11 @@
         }
       }
 
-      // ── Leaf-cluster billboard system (WEEDS tiles) ───────────────────
-      // leaf_1.png is 40×97 with stem/origin at the TOP of the image.
-      // tex.flipY=false + bottom-anchor geometry makes UV y=0=stem at y=0,
-      // UV y=1=leaf tip at y>0, so the existing grass wind topFactor works.
-      const _leafAspect = 40 / 97;
-      const _leafBillGeo = (() => {
-        const g = new THREE.PlaneGeometry(_leafAspect, 1);
-        g.translate(0, 0.5, 0);  // bottom edge (stem) at y=0, tip at y=1
-        return g;
-      })();
-
-      let leafBillboardMat = null;
-
-      new THREE.TextureLoader().load('assets/leaves/leaf_1.png', (tex) => {
-        tex.magFilter = THREE.NearestFilter;
-        tex.minFilter = THREE.NearestFilter;
-        tex.flipY = false;  // PNG top row (stem) stays at UV y=0 (the anchor)
-        leafBillboardMat = new THREE.ShaderMaterial({
-          uniforms: {
-            uGrassTex: { value: tex },
-            uTint:     { value: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) },
-            uTime:     { value: 0 },
-            uStrength: { value: 0.04 },
-          },
-          vertexShader:   _grassBillVert,
-          fragmentShader: _grassBillFrag,
-          alphaTest:      0.5,
-          side:           THREE.DoubleSide,
-          depthWrite:     true,
-        });
-        // Rebuild any WEEDS tiles already on-screen (built before texture loaded)
-        for (let r = 0; r < ROWS; r++) {
-          for (let c = 0; c < COLS; c++) {
-            if (grid[r][c].type === TileType.WEEDS) {
-              const i = r * COLS + c;
-              if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); vegFoliageMeshes[i] = null; }
-              const grp = _buildLeafClusterGroup(c, r);
-              if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; _markOutline(grp); }
-            }
-          }
-        }
-      });
-
-      // Scatter 2–3 clusters of 4–6 tilted leaf planes from a single ground point.
+      // Scatter 2–3 clusters of 5–7 tilted grass-blade planes from a single
+      // ground origin. Shares grassBillboardMat (same texture + tint + wind shader).
+      // Blades are wider and taller than regular grass, with more spread.
       function _buildLeafClusterGroup(col, row) {
-        if (!leafBillboardMat) return null;
+        if (!grassBillboardMat) return null;
         const tileSeed = (col * 31337 + row * 1009) >>> 0;
         const rng      = _mbRng(tileSeed);
         const surfY    = tileSurfaceY(TileType.GRASS);
@@ -3346,23 +3313,24 @@
         const group = new THREE.Group();
         group.position.set(col + 0.5, surfY, row + 0.5);
         group._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
-        group._windAmp   = 0.03;  // subtle whole-cluster sway; leaf tips animate via shader
+        group._windAmp   = 0.03;
 
         const nClusters = 2 + (tileSeed % 2);  // 2 or 3 clusters per tile
         for (let cl = 0; cl < nClusters; cl++) {
-          const cx = (rng() - 0.5) * 0.68;
-          const cz = (rng() - 0.5) * 0.68;
-          const nLeaves = 4 + Math.floor(rng() * 3);  // 4–6 leaves per cluster
-          for (let l = 0; l < nLeaves; l++) {
-            const spreadAngle = (l / nLeaves) * Math.PI * 2 + (rng() - 0.5) * 0.45;
+          const cx = (rng() - 0.5) * 0.88;  // wider origin scatter than grass
+          const cz = (rng() - 0.5) * 0.88;
+          const nBlades = 5 + Math.floor(rng() * 3);  // 5–7 blades per cluster
+          for (let l = 0; l < nBlades; l++) {
+            const spreadAngle = (l / nBlades) * Math.PI * 2 + (rng() - 0.5) * 0.45;
             const tilt        = Math.PI * (0.30 + rng() * 0.15);  // 54°–81° from vertical
-            const leafScale   = 0.30 + rng() * 0.20;              // 0.30–0.50 world units tall
+            const w           = 0.30 + rng() * 0.18;
+            const h           = 0.52 + rng() * 0.24;  // taller than grass (0.52–0.76)
 
-            const m = new THREE.Mesh(_leafBillGeo, leafBillboardMat);
+            const m = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
             m.position.set(cx, 0, cz);
             m.rotation.x = tilt;
             m.rotation.y = spreadAngle;
-            m.scale.setScalar(leafScale);  // uniform scale preserves leaf_1.png aspect ratio
+            m.scale.set(w, h, 1);
             group.add(m);
           }
         }
@@ -3560,9 +3528,9 @@
           scene.add(floorMesh);
           tileMeshes[i] = floorMesh;
 
-          // Leaf-cluster billboards (PNG planes); deferred until texture loads
+          // Leaf-cluster billboards (share grassBillboardMat); deferred until texture loads
           const grp = _buildLeafClusterGroup(col, row);
-          if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; _markOutline(grp); }
+          if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; }
           return;
         }
 
@@ -3858,10 +3826,6 @@
         if (grassBillboardMat) {
           grassBillboardMat.uniforms.uTime.value     = windTime;
           grassBillboardMat.uniforms.uStrength.value = windStrBase;
-        }
-        if (leafBillboardMat) {
-          leafBillboardMat.uniforms.uTime.value     = windTime;
-          leafBillboardMat.uniforms.uStrength.value = windStrBase;
         }
 
         renderer.render(scene, camera);
