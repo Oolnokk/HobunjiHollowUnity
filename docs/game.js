@@ -255,7 +255,7 @@
       const INTERIOR_ENTRY_ROW   = 4;    // just inside the main room, north of the corridor
       const INTERIOR_EXIT_COL    = 2;    // leftmost col of south exit corridor
       const INTERIOR_EXIT_ROW    = 5;    // row of south exit corridor
-      const INTERIOR_WALL_HEIGHT = 2.5;  // wall height in world units
+      const INTERIOR_WALL_HEIGHT = 1.75; // wall height in world units (30% shorter than original 2.5)
 
       // ── Voxel render constants ──
       // Each tile is drawn as a top-down oblique voxel stack.
@@ -2517,7 +2517,7 @@
           if (interiorSceneBuilt && interiorWallGroup) {
             WallBuilder.disposeGroup(interiorWallGroup);
             interiorScene.remove(interiorWallGroup);
-            interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: false, unitMult: 0.5 });
+            interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5 });
             _markOutline(interiorWallGroup);
             interiorScene.add(interiorWallGroup);
             debugLog('Interior walls rebuilt with real GLB');
@@ -2534,9 +2534,7 @@
         { id: 'e_wall',  width: 5, height: INTERIOR_WALL_HEIGHT, position: [6, 0, 2.5], rotationDeg: [0, -90, 0] },
         { id: 's_left',  width: 2, height: INTERIOR_WALL_HEIGHT, position: [1, 0, 5],   rotationDeg: [0, 180, 0] },
         { id: 's_right', width: 2, height: INTERIOR_WALL_HEIGHT, position: [5, 0, 5],   rotationDeg: [0, 180, 0] },
-        { id: 'exit_w',  width: 1, height: INTERIOR_WALL_HEIGHT, position: [2, 0, 5.5], rotationDeg: [0,  90, 0] },
-        { id: 'exit_e',  width: 1, height: INTERIOR_WALL_HEIGHT, position: [4, 0, 5.5], rotationDeg: [0, -90, 0] },
-        { id: 'exit_s',  width: 2, height: INTERIOR_WALL_HEIGHT, position: [3, 0, 6],   rotationDeg: [0, 180, 0] },
+        // exit_w / exit_e / exit_s omitted — corridor entrance kept open
       ];
 
       // Built lazily on first entry to avoid blocking startup; called by enterInterior().
@@ -2564,7 +2562,7 @@
         }
 
         // Instanced walls: 50% brick size, 4x density (unitMult=0.5 → 2× per axis)
-        interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true, unitMult: 0.5 });
+        interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true,  unitMult: 0.5, rockScale: 1.5 });
         _markOutline(interiorWallGroup);
         interiorScene.add(interiorWallGroup);
 
