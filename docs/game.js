@@ -932,6 +932,20 @@
         // Highland House door object
         const hh = makeHighlandHouse();
         worldObjects.set(hh.col + ',' + hh.row, hh);
+        // Doorstep tiles — one row north of the door, also trigger entrance
+        const _doorstep = {
+          id: 'house_entrance', type: 'house_entrance',
+          getButtons() { return [{ icon: '🚪', label: 'Enter', action: 'obj_enter_house', style: 'primary', allowed: true }]; },
+          onAction(action) {
+            if (action === 'obj_enter_house') {
+              startSceneTransition(() => enterInterior());
+              return { ok: true, message: 'Entering the Highland House…' };
+            }
+            return { ok: false, message: 'Unknown house action.' };
+          },
+        };
+        worldObjects.set(DOOR_COL + ',' + (DOOR_ROW - 1), _doorstep);
+        worldObjects.set((DOOR_COL + 1) + ',' + (DOOR_ROW - 1), _doorstep);
       }
 
       // ── Highland House world object + GLB loader ─────────────────
@@ -1553,6 +1567,10 @@
         return col >= HOUSE_COL && col < HOUSE_COL + HOUSE_FOOTPRINT_W
             && row >= HOUSE_ROW && row < HOUSE_ROW + HOUSE_FOOTPRINT_D;
       }
+      // The two tiles immediately north of the door act as a second entrance
+      function isHouseEntranceTile(col, row) {
+        return row === DOOR_ROW - 1 && col >= DOOR_COL && col <= DOOR_COL + 1;
+      }
 
       // Interior grid from playerhouse_interior.json floorCells:
       // main room cols 0-5 rows 0-4 + south corridor cols 2-3 row 5
@@ -1798,6 +1816,7 @@
       function canUseAction(tool, action, col, row) {
         const tile = grid[row][col];
         if (tile.type === TileType.ROCK) return false;
+        if (currentArea === 'farm' && isHouseFootprint(col, row) && !isHouseEntranceTile(col, row)) return false;
         if (tool === 'shovel') {
           if (action === 'dig') {
             if (blocksDiggingUnder(tile)) return false;
