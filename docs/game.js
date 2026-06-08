@@ -2611,7 +2611,76 @@
         return { stoneGeo: makeGeo(stoneIdx), grassGeo: makeGeo(grassIdx) };
       }
 
-      // ── Border terrain: plateau/cliff landscape beyond the playable grid ────────
+      // ── Terrain tile heightfield: TRENCH ditch and RAISED bed ──────────────────
+      // Shape is purely adjacency-driven — no BFS randomness. Open edges (adjacent
+      // same-type tile) stay at the full target depth/height; closed edges blend
+      // back to NORMAL_TOP via smoothstep over BLEND_V vertex steps. Seam-safe
+      // FNV displacement at edges keeps joins with grass/tilled tiles gap-free.
+      function buildTerrainTileGeo(col, row, type) {
+        const VERTS = 9, CELLS = 8, STEP = 1.0 / CELLS;
+        const BLEND_V  = 3;   // vertex steps for closed-edge ramp (~0.375 world units)
+        const targetDY = type === TileType.TRENCH
+          ? TRENCH_TOP - NORMAL_TOP   // −0.5
+          : RAISED_TOP - NORMAL_TOP;  // +0.5
+
+        const openN = grid[row - 1]?.[col]?.type === type;
+        const openS = grid[row + 1]?.[col]?.type === type;
+        const openW = grid[row]?.[col - 1]?.type === type;
+        const openE = grid[row]?.[col + 1]?.type === type;
+
+        // Seam-safe edge displacement — same formula as makeFloorGeo
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+
+        // Subtle surface roughness (less aggressive than rock tile)
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 6) | 0, kz = Math.round(vz * 6) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.035;
+        };
+
+        const smooth = t => t * t * (3 - 2 * t);  // smoothstep
+
+        const Y = new Float32Array(VERTS * VERTS);
+        for (let vj = 0; vj < VERTS; vj++) {
+          for (let vi = 0; vi < VERTS; vi++) {
+            const bW = openW ? 1 : smooth(Math.min(1, vi / BLEND_V));
+            const bE = openE ? 1 : smooth(Math.min(1, (CELLS - vi) / BLEND_V));
+            const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
+            const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
+            const blend = bW * bE * bN * bS;
+            const vx = col + vi * STEP, vz = row + vj * STEP;
+            Y[vj * VERTS + vi] = seamDisp(vx, vz)
+              + blend * targetDY + blend * roughDisp(vx, vz);
+          }
+        }
+
+        const positions = [];
+        for (let vj = 0; vj < VERTS; vj++)
+          for (let vi = 0; vi < VERTS; vi++)
+            positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
+
+        const indices = [];
+        for (let cj = 0; cj < CELLS; cj++)
+          for (let ci = 0; ci < CELLS; ci++) {
+            const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
+            const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
+            indices.push(v00, v01, v11, v00, v11, v10);
+          }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geo.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
+        geo.computeVertexNormals();
+        return geo;
+      }
+
+
       // Mirrors the procedural pipeline from HALandscapeGenV3:
       //   1) Initialize all verts at seam height (same FNV hash as makeFloorGeo)
       //   2) Rugged-plain passes: small connected-cell plateaus, low amplitude
@@ -3229,6 +3298,20 @@
           return;
         }
 
+        if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED) {
+          // Adjacency-aware heightfield: natural sloped edges that connect smoothly
+          // when same-type tiles are adjacent, and seal back to NORMAL_TOP when isolated.
+          const surfMesh = new THREE.Mesh(
+            buildTerrainTileGeo(col, row, tile.type),
+            tileMats[tile.type]
+          );
+          surfMesh.castShadow = surfMesh.receiveShadow = true;
+          surfMesh.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+          scene.add(surfMesh);
+          tileMeshes[i] = surfMesh;
+          return;
+        }
+
         let mesh;
         if (tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
           // Fallback: foliage generator not available
@@ -3540,9 +3623,15 @@
         }
       }
 
-      // Stub: tile mesh refresh called from applyAction
       function markTileDirty(col, row) {
         refreshTileMesh(col, row);
+        // TRENCH/RAISED shape depends on which neighbors share their type, so any
+        // change that could alter those connections must also refresh those neighbors.
+        for (const [dc, dr] of [[0,-1],[0,1],[-1,0],[1,0]]) {
+          const nt = grid[row + dr]?.[col + dc]?.type;
+          if (nt === TileType.TRENCH || nt === TileType.RAISED)
+            refreshTileMesh(col + dc, row + dr);
+        }
       }
 
       function updateCalendar(dt) {
