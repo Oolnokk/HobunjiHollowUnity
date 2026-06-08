@@ -2330,12 +2330,6 @@
         depthFunc:  THREE.LessDepth,
       });
 
-      // ── Tile seam geometry ──────────────────────────────────────────
-      // Thin black boxes placed at edges where adjacent tile materials differ.
-      const _seamMat   = new THREE.MeshBasicMaterial({ color: 0x0a0a0a });
-      const seamGroup  = new THREE.Group();
-      scene.add(seamGroup);
-
       // Enable layer 1 on a mesh (or every mesh inside a Group) so the
       // selective outline pass picks it up. Flat floor slabs, water, and
       // grass billboards stay on layer 0 only and are never outlined.
@@ -3197,16 +3191,6 @@
         return g;
       })();
 
-      // Weed blade: same shape but UV y flipped so the image appears upside down
-      // (grass tip/wide-end at the cluster anchor, root/narrow-end at the free tip).
-      const _weedBladeGeo = (() => {
-        const g = new THREE.PlaneGeometry(1, 1);
-        g.translate(0, 0.5, 0);
-        const uv = g.attributes.uv;
-        for (let i = 0; i < uv.count; i++) uv.setY(i, 1.0 - uv.getY(i));
-        return g;
-      })();
-
       const _grassBillVert = `
         uniform float uTime;
         uniform float uStrength;
@@ -3224,24 +3208,6 @@
         }
       `;
 
-      // Wind vert for weed blades: UV y is flipped in the geometry, so
-      // topFactor must be inverted to keep free ends swaying (not the anchor).
-      const _weedBillVert = `
-        uniform float uTime;
-        uniform float uStrength;
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          vec4 worldPos = modelMatrix * vec4(position, 1.0);
-          float topFactor = 1.0 - uv.y;
-          float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
-          float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
-          float sway2 = cos(uTime * 1.2 + phase * 1.3) * uStrength * 0.5 * topFactor;
-          worldPos.x += sway;
-          worldPos.z += sway2;
-          gl_Position = projectionMatrix * viewMatrix * worldPos;
-        }
-      `;
       const _grassBillFrag = `
         uniform sampler2D uGrassTex;
         uniform vec3 uTint;
@@ -3258,7 +3224,6 @@
 
       const _grassTint = new THREE.Color().setHSL(108 / 360, 0.58, 0.28);
       let grassBillboardMat = null;
-      let weedBillboardMat  = null;
 
       new THREE.TextureLoader().load('assets/leaves/grass_1.png', (tex) => {
         tex.magFilter = THREE.NearestFilter;
@@ -3275,23 +3240,15 @@
           fragmentShader: _grassBillFrag,
           alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
         });
-        // Weed clusters: same texture/tint but UV y is flipped in geometry,
-        // so wind uses 1-uv.y as topFactor to keep free ends swaying.
-        weedBillboardMat = new THREE.ShaderMaterial({
-          uniforms:       sharedUniforms(),
-          vertexShader:   _weedBillVert,
-          fragmentShader: _grassBillFrag,
-          alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
-        });
-        // Spawn billboards on GRASS tiles; build weed clusters now mat is ready
+        // Spawn billboards on GRASS tiles; for WEEDS tiles in Mode A, build now
         for (let r = 0; r < ROWS; r++) {
           for (let c = 0; c < COLS; c++) {
             if (grid[r][c].type === TileType.GRASS) {
               _buildGrassBillboardsForTile(c, r);
-            } else if (grid[r][c].type === TileType.WEEDS) {
+            } else if (grid[r][c].type === TileType.WEEDS && !s_weed3D) {
               const i = r * COLS + c;
               if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); vegFoliageMeshes[i] = null; }
-              const grp = _buildLeafClusterGroup(c, r);
+              const grp = _buildWeedBillboardGroup(c, r);
               if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; }
             }
           }
@@ -3343,40 +3300,45 @@
         }
       }
 
-      // Scatter 2–3 clusters of 5–7 tilted grass-blade planes from a single
-      // ground origin. Shares grassBillboardMat (same texture + tint + wind shader).
-      // Blades are wider and taller than regular grass, with more spread.
-      function _buildLeafClusterGroup(col, row) {
-        if (!weedBillboardMat) return null;
-        const tileSeed = (col * 31337 + row * 1009) >>> 0;
-        const rng      = _mbRng(tileSeed);
-        const surfY    = tileSurfaceY(TileType.GRASS);
+      // Mode A weeds: oversized grass billboards (2× blade size), same cross
+      // layout as GRASS tiles but larger — no outline, no 3D foliage.
+      function _buildWeedBillboardGroup(col, row) {
+        if (!grassBillboardMat) return null;
+        const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
+        const baseY = tileSurfaceY(TileType.GRASS);
 
         const group = new THREE.Group();
-        group.position.set(col + 0.5, surfY, row + 0.5);
-        group._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
-        group._windAmp   = 0.03;
+        for (let b = 0; b < 14; b++) {
+          const ox  = (rand() - 0.5) * 0.9;
+          const oz  = (rand() - 0.5) * 0.9;
+          const w   = 0.32 + rand() * 0.20;  // 2× grass width
+          const h   = 0.44 + rand() * 0.28;  // 2× grass height
+          const rot = rand() * Math.PI;
 
-        const nClusters = 2 + (tileSeed % 2);  // 2 or 3 clusters per tile
-        for (let cl = 0; cl < nClusters; cl++) {
-          const cx = (rng() - 0.5) * 0.88;  // wider origin scatter than grass
-          const cz = (rng() - 0.5) * 0.88;
-          const nBlades = 5 + Math.floor(rng() * 3);  // 5–7 blades per cluster
-          for (let l = 0; l < nBlades; l++) {
-            const spreadAngle = (l / nBlades) * Math.PI * 2 + (rng() - 0.5) * 0.45;
-            const tilt        = Math.PI * (0.30 + rng() * 0.15);  // 54°–81° from vertical
-            const w           = 0.30 + rng() * 0.18;
-            const h           = 0.52 + rng() * 0.24;  // taller than grass (0.52–0.76)
+          const cross = new THREE.Group();
+          cross.position.set(col + 0.5 + ox, baseY, row + 0.5 + oz);
 
-            const m = new THREE.Mesh(_weedBladeGeo, weedBillboardMat);
-            m.position.set(cx, 0, cz);
-            m.rotation.x = tilt;
-            m.rotation.y = spreadAngle;
-            m.scale.set(w, h, 1);
-            group.add(m);
-          }
+          const m1 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
+          m1.scale.set(w, h, 1);
+          m1.rotation.y = rot;
+          cross.add(m1);
+
+          const m2 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
+          m2.scale.set(w, h, 1);
+          m2.rotation.y = rot + Math.PI * 0.5;
+          cross.add(m2);
+
+          group.add(cross);
         }
+        group._windAmp = 0;
         return group;
+      }
+
+      function _rebuildWeedTiles() {
+        for (let r = 0; r < ROWS; r++)
+          for (let c = 0; c < COLS; c++)
+            if (grid[r][c].type === TileType.WEEDS)
+              refreshTileMesh(c, r);
       }
 
       // ── Crop mesh system ──────────────────────────────────────────
@@ -3570,9 +3532,29 @@
           scene.add(floorMesh);
           tileMeshes[i] = floorMesh;
 
-          // Leaf-cluster billboards (share grassBillboardMat); deferred until texture loads
-          const grp = _buildLeafClusterGroup(col, row);
-          if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; }
+          if (!s_weed3D) {
+            // Mode A: oversized grass billboards (deferred if texture not yet loaded)
+            const grp = _buildWeedBillboardGroup(col, row);
+            if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; }
+          } else if (window.FoliageGenerator) {
+            // Mode B: procedural 3D weeds, subject to shell outline
+            const vegGroup = new THREE.Group();
+            vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
+            const rng   = _mbRng(((col * 31337 + row * 1009) >>> 0));
+            const count = 3 + ((col * 7 + row * 13) % 3);  // 3–5 plants
+            for (let p = 0; p < count; p++) {
+              const wm = window.FoliageGenerator.buildWeedsMesh(col * 50 + p, row * 50 + p);
+              if (wm) {
+                wm.position.set((rng() - 0.5) * 0.8, 0, (rng() - 0.5) * 0.8);
+                vegGroup.add(wm);
+              }
+            }
+            vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
+            vegGroup._windAmp   = 0.10;
+            scene.add(vegGroup);
+            vegFoliageMeshes[i] = vegGroup;
+            _markOutline(vegGroup);
+          }
           return;
         }
 
@@ -3648,7 +3630,6 @@
         _clearGrassBillboards(col, row);
         cropGrowthBucket[i] = -1;
         _buildOneTileMesh(col, row);
-        buildSeamMeshes();  // tile type changed; seam edges may have shifted
       }
 
       // ── Update water meshes each frame ─────────────────────────────
@@ -3797,38 +3778,11 @@
       // ── Visual feature toggles (Settings tab) ────────────────────
       let s_outlines  = true;
       let s_grass     = true;
-      let s_weeds     = true;
-      let s_seams     = true;
+      let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
       let s_billWind  = true;
-
-      // Rebuild thin seam quads wherever adjacent tile types differ.
-      function buildSeamMeshes() {
-        while (seamGroup.children.length) seamGroup.remove(seamGroup.children[0]);
-        for (let r = 0; r < ROWS; r++) {
-          for (let c = 0; c < COLS; c++) {
-            const tA = grid[r][c].type;
-            // South edge
-            if (r + 1 < ROWS && grid[r + 1][c].type !== tA) {
-              const sy = Math.max(tileSurfaceY(tA), tileSurfaceY(grid[r + 1][c].type));
-              const m = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 0.04), _seamMat);
-              m.position.set(c + 0.5, sy + 0.03, r + 1);
-              seamGroup.add(m);
-            }
-            // East edge
-            if (c + 1 < COLS && grid[r][c + 1].type !== tA) {
-              const sy = Math.max(tileSurfaceY(tA), tileSurfaceY(grid[r][c + 1].type));
-              const m = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 1.0), _seamMat);
-              m.position.set(c + 1, sy + 0.03, r + 0.5);
-              seamGroup.add(m);
-            }
-          }
-        }
-        seamGroup.visible = s_seams;
-      }
 
       buildTileMeshes();
       buildBorderTerrain();
-      buildSeamMeshes();
 
       // ── Settings tab checkbox wiring ──────────────────────────────
       document.getElementById('settingOutlines').addEventListener('change', e => {
@@ -3841,16 +3795,9 @@
       document.getElementById('settingBillWind').addEventListener('change', e => {
         s_billWind = e.target.checked;
       });
-      document.getElementById('settingWeeds').addEventListener('change', e => {
-        s_weeds = e.target.checked;
-        for (let r = 0; r < ROWS; r++)
-          for (let c = 0; c < COLS; c++)
-            if (grid[r][c].type === TileType.WEEDS && vegFoliageMeshes[r * COLS + c])
-              vegFoliageMeshes[r * COLS + c].visible = s_weeds;
-      });
-      document.getElementById('settingSeams').addEventListener('change', e => {
-        s_seams = e.target.checked;
-        seamGroup.visible = s_seams;
+      document.getElementById('settingWeed3D').addEventListener('change', e => {
+        s_weed3D = e.target.checked;
+        _rebuildWeedTiles();
       });
 
       function gameLoop(now) {
@@ -3925,10 +3872,6 @@
         if (grassBillboardMat) {
           grassBillboardMat.uniforms.uTime.value     = windTime;
           grassBillboardMat.uniforms.uStrength.value = s_billWind ? windStrBase : 0;
-        }
-        if (weedBillboardMat) {
-          weedBillboardMat.uniforms.uTime.value     = windTime;
-          weedBillboardMat.uniforms.uStrength.value = s_billWind ? windStrBase : 0;
         }
 
         renderer.render(scene, camera);
