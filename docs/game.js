@@ -2287,6 +2287,75 @@
       renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
       threeContainer.appendChild(renderer.domElement);
 
+      // ── Depth-based black outline post-process ────────────────────
+      // Two-pass: render scene to a RT with depth texture, then
+      // composite color + outline on a full-screen quad.
+      const _outlineW = threeRect.width  || window.innerWidth;
+      const _outlineH = threeRect.height || window.innerHeight;
+      const outlineRT = new THREE.WebGLRenderTarget(_outlineW, _outlineH, {
+        minFilter: THREE.NearestFilter,
+        magFilter: THREE.NearestFilter,
+      });
+      outlineRT.depthTexture = new THREE.DepthTexture();
+      outlineRT.depthTexture.type = THREE.UnsignedShortType;
+
+      const ppCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      const ppScene  = new THREE.Scene();
+
+      const outlineMat = new THREE.ShaderMaterial({
+        uniforms: {
+          tColor:           { value: outlineRT.texture },
+          tDepth:           { value: outlineRT.depthTexture },
+          resolution:       { value: new THREE.Vector2(_outlineW, _outlineH) },
+          cameraNear:       { value: 0.1 },
+          cameraFar:        { value: 200 },
+          outlineThreshold: { value: 0.004 },
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() { vUv = uv; gl_Position = vec4(position, 1.0); }
+        `,
+        fragmentShader: `
+          uniform sampler2D tColor;
+          uniform sampler2D tDepth;
+          uniform vec2  resolution;
+          uniform float cameraNear;
+          uniform float cameraFar;
+          uniform float outlineThreshold;
+          varying vec2 vUv;
+
+          float toLinear(float z) {
+            return (2.0 * cameraNear) / (cameraFar + cameraNear - z * (cameraFar - cameraNear));
+          }
+
+          float sampleDepth(vec2 uv) {
+            return toLinear(texture2D(tDepth, uv).x);
+          }
+
+          void main() {
+            vec4 color  = texture2D(tColor, vUv);
+            vec2 texel  = 1.0 / resolution;
+
+            // 4-tap depth edge detection by stepping ±1 texel in each axis
+            float d0 = sampleDepth(vUv);
+            float d1 = sampleDepth(vUv + vec2( texel.x, 0.0));
+            float d2 = sampleDepth(vUv + vec2(-texel.x, 0.0));
+            float d3 = sampleDepth(vUv + vec2(0.0,  texel.y));
+            float d4 = sampleDepth(vUv + vec2(0.0, -texel.y));
+
+            float maxDelta = max(max(abs(d0-d1), abs(d0-d2)), max(abs(d0-d3), abs(d0-d4)));
+            float outline  = step(outlineThreshold, maxDelta);
+
+            gl_FragColor = vec4(mix(color.rgb, vec3(0.0), outline), 1.0);
+          }
+        `,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const ppQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), outlineMat);
+      ppQuad.frustumCulled = false;
+      ppScene.add(ppQuad);
+
       // Camera — isometric-style: high angle, offset NW, looking SE toward map center
       const CAM_DIST   = 14;
       const CAM_ANGLE  = Math.PI / 5.5;  // ~33° from horizontal — classic 3/4 RPG tilt
@@ -3119,6 +3188,128 @@
       // Track foliage-generator groups by tile index for rotation-based sway
       const vegFoliageMeshes = new Array(ROWS * COLS).fill(null);
 
+      // ── Grass billboard system (grass_1.png sprites on GRASS tiles) ─────────
+      const grassBillboardGroups = new Array(ROWS * COLS).fill(null);
+
+      function _mbRng(seed) {
+        let s = seed >>> 0;
+        return () => {
+          s += 0x6D2B79F5;
+          let t = Math.imul(s ^ (s >>> 15), s | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      // Shared blade geometry: 1×1 PlaneGeometry anchored at Y=0
+      const _grassBladeGeo = (() => {
+        const g = new THREE.PlaneGeometry(1, 1);
+        g.translate(0, 0.5, 0);
+        return g;
+      })();
+
+      const _grassBillVert = `
+        uniform float uTime;
+        uniform float uStrength;
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          float topFactor = uv.y;
+          float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
+          float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
+          float sway2 = cos(uTime * 1.2 + phase * 1.3) * uStrength * 0.5 * topFactor;
+          worldPos.x += sway;
+          worldPos.z += sway2;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `;
+      const _grassBillFrag = `
+        uniform sampler2D uGrassTex;
+        uniform vec3 uTint;
+        varying vec2 vUv;
+        void main() {
+          vec4 texel = texture2D(uGrassTex, vUv);
+          if (texel.a < 0.5) discard;
+          // Treat grass_1.png as mint-toned; desaturate and re-tint to grass color
+          float lum = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
+          vec3 col  = uTint * (0.7 + lum * 0.8);
+          gl_FragColor = vec4(col, texel.a);
+        }
+      `;
+
+      const _grassTint = new THREE.Color().setHSL(108 / 360, 0.58, 0.28);
+      let grassBillboardMat = null;
+
+      new THREE.TextureLoader().load('assets/leaves/grass_1.png', (tex) => {
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        grassBillboardMat = new THREE.ShaderMaterial({
+          uniforms: {
+            uGrassTex: { value: tex },
+            uTint:     { value: _grassTint },
+            uTime:     { value: 0 },
+            uStrength: { value: 0.04 },
+          },
+          vertexShader:   _grassBillVert,
+          fragmentShader: _grassBillFrag,
+          alphaTest:      0.5,
+          side:           THREE.DoubleSide,
+          depthWrite:     true,
+        });
+        // Spawn on all existing GRASS tiles
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            if (grid[r][c].type === TileType.GRASS) _buildGrassBillboardsForTile(c, r);
+          }
+        }
+      });
+
+      function _buildGrassBillboardsForTile(col, row) {
+        if (!grassBillboardMat) return;
+        const i = row * COLS + col;
+        if (grassBillboardGroups[i]) return;
+        if (grid[row][col].type !== TileType.GRASS) return;
+
+        const group = new THREE.Group();
+        const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
+        const baseY = tileSurfaceY(TileType.GRASS);
+
+        for (let b = 0; b < 8; b++) {
+          const ox  = (rand() - 0.5) * 0.9;
+          const oz  = (rand() - 0.5) * 0.9;
+          const w   = 0.28 + rand() * 0.22;
+          const h   = 0.38 + rand() * 0.22;
+          const rot = rand() * Math.PI;
+
+          const cross = new THREE.Group();
+          cross.position.set(col + 0.5 + ox, baseY, row + 0.5 + oz);
+
+          const m1 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
+          m1.scale.set(w, h, 1);
+          m1.rotation.y = rot;
+          cross.add(m1);
+
+          const m2 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
+          m2.scale.set(w, h, 1);
+          m2.rotation.y = rot + Math.PI * 0.5;
+          cross.add(m2);
+
+          group.add(cross);
+        }
+
+        scene.add(group);
+        grassBillboardGroups[i] = group;
+      }
+
+      function _clearGrassBillboards(col, row) {
+        const i = row * COLS + col;
+        if (grassBillboardGroups[i]) {
+          scene.remove(grassBillboardGroups[i]);
+          grassBillboardGroups[i] = null;
+        }
+      }
+
       // ── Crop mesh system ──────────────────────────────────────────
       // Needlegrain and heftroot use procedural foliage geometry.
       // All other crops use a simple colored cube (unchanged).
@@ -3362,16 +3553,18 @@
         mesh.position.set(col + 0.5, tileYCenter(tile.type), row + 0.5);
         scene.add(mesh);
         tileMeshes[i] = mesh;
+        if (tile.type === TileType.GRASS) _buildGrassBillboardsForTile(col, row);
       }
 
       function buildTileMeshes() {
         for (let row = 0; row < ROWS; row++) {
           for (let col = 0; col < COLS; col++) {
             const i = row * COLS + col;
-            if (tileMeshes[i])       { scene.remove(tileMeshes[i]);       tileMeshes[i]       = null; }
-            if (waterMeshes[i])      { scene.remove(waterMeshes[i]);      waterMeshes[i]      = null; }
-            if (cropMeshes[i])       { scene.remove(cropMeshes[i]);       cropMeshes[i]       = null; }
-            if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); vegFoliageMeshes[i] = null; }
+            if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
+            if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         waterMeshes[i]         = null; }
+            if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
+            if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    vegFoliageMeshes[i]    = null; }
+            if (grassBillboardGroups[i]){ scene.remove(grassBillboardGroups[i]); grassBillboardGroups[i] = null; }
             cropGrowthBucket[i] = -1;
             _buildOneTileMesh(col, row);
           }
@@ -3381,10 +3574,11 @@
       // Update a single tile mesh (called after shovel actions)
       function refreshTileMesh(col, row) {
         const i = row * COLS + col;
-        if (tileMeshes[i])       { scene.remove(tileMeshes[i]);       tileMeshes[i]       = null; }
-        if (waterMeshes[i])      { scene.remove(waterMeshes[i]);      waterMeshes[i]      = null; }
-        if (cropMeshes[i])       { scene.remove(cropMeshes[i]);       cropMeshes[i]       = null; }
-        if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); vegFoliageMeshes[i] = null; }
+        if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
+        if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         waterMeshes[i]         = null; }
+        if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
+        if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    vegFoliageMeshes[i]    = null; }
+        _clearGrassBillboards(col, row);
         cropGrowthBucket[i] = -1;
         _buildOneTileMesh(col, row);
       }
@@ -3524,6 +3718,8 @@
         const w = rect.width  || window.innerWidth;
         const h = rect.height || window.innerHeight;
         renderer.setSize(w, h);
+        outlineRT.setSize(w, h);
+        outlineMat.uniforms.resolution.value.set(w, h);
         overlayCanvas.width  = Math.round(w * dpr);
         overlayCanvas.height = Math.round(h * dpr);
         octx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -3540,7 +3736,10 @@
         lastTime = now;
 
         if (!gameStarted) {
+          renderer.setRenderTarget(outlineRT);
           renderer.render(scene, camera);
+          renderer.setRenderTarget(null);
+          renderer.render(ppScene, ppCamera);
           requestAnimationFrame(gameLoop);
           return;
         }
@@ -3603,8 +3802,16 @@
           fg.rotation.z = amp * Math.sin(windTime * 1.6 + fg._windPhase);
           fg.rotation.x = amp * 0.45 * Math.cos(windTime * 1.1 + fg._windPhase * 1.3);
         }
+        // Grass billboard wind
+        if (grassBillboardMat) {
+          grassBillboardMat.uniforms.uTime.value     = windTime;
+          grassBillboardMat.uniforms.uStrength.value = windStrBase;
+        }
 
+        renderer.setRenderTarget(outlineRT);
         renderer.render(scene, camera);
+        renderer.setRenderTarget(null);
+        renderer.render(ppScene, ppCamera);
 
         // ── 2D overlays (rain, lighting) ─────────────────────────
         drawOverlays();
