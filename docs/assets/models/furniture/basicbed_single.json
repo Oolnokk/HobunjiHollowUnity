@@ -1,0 +1,123 @@
+{
+  "schema": "furniture_piece_mapper.v1",
+  "exportedAt": "2026-06-08T19:23:15.583Z",
+  "pieceId": "basicbed_single",
+  "notes": "",
+  "coordinateSystem": {
+    "grid": "2D cells use x,y with origin at top-left of editor grid.",
+    "world": "Three.js style: X right, Y up, Z forward/down-grid. Ground plane is Y=0.",
+    "tileToWorld": "worldX=(cellX+0.5)*tileSize-gridWorldSize/2; worldZ=(cellY+0.5)*tileSize-gridWorldSize/2"
+  },
+  "grid": {
+    "size": 16,
+    "tileSize": 1,
+    "gridWorldSize": 16
+  },
+  "footprint": {
+    "cells": [
+      {
+        "x": 8,
+        "y": 7
+      },
+      {
+        "x": 8,
+        "y": 8
+      }
+    ],
+    "count": 2,
+    "worldBounds": {
+      "min": {
+        "x": 0,
+        "z": -1
+      },
+      "max": {
+        "x": 1,
+        "z": 1
+      },
+      "size": {
+        "x": 1,
+        "z": 2
+      },
+      "center": {
+        "x": 0.5,
+        "z": 0
+      }
+    }
+  },
+  "furnitureModel": {
+    "fileName": "basicbed.glb",
+    "hasLoadedPreview": true,
+    "naturalBoundsBeforeMapperTransform": {
+      "min": {
+        "x": -0.263,
+        "y": -0.496,
+        "z": -0.5
+      },
+      "max": {
+        "x": 0.305,
+        "y": -0.164,
+        "z": 0.516
+      },
+      "size": {
+        "x": 0.568,
+        "y": 0.332,
+        "z": 1.016
+      },
+      "center": {
+        "x": 0.021,
+        "y": -0.33,
+        "z": 0.008
+      }
+    },
+    "transform": {
+      "translate": {
+        "x": 0.443,
+        "y": 0.722,
+        "z": -0.044
+      },
+      "rotateDeg": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "scale": {
+        "x": 1.686,
+        "y": 1.439,
+        "z": 1.918
+      }
+    }
+  },
+  "lightSource": {
+    "enabled": false,
+    "tile": null,
+    "rangeTiles": 4,
+    "intensity": 1,
+    "color": "#ffd36d"
+  },
+  "interactable": {
+    "enabled": true,
+    "kind": "Sleep",
+    "togglesPlayerToPose": true,
+    "playerPose": {
+      "placeholderName": "Player pose placeholder",
+      "transform": {
+        "translate": {
+          "x": 0.443,
+          "y": 0.74,
+          "z": -0.033
+        },
+        "rotateDeg": {
+          "x": 90.931,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    }
+  },
+  "itemModelPlaceholders": []
+}
