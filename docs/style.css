@@ -752,6 +752,54 @@
       color: var(--muted); font-size: 13px; opacity: 0.5; text-align: center;
     }
 
+    /* ── Settings pane ──────────────────────────────────────────── */
+    #mpSettings { overflow-y: auto; }
+    .settings-pane {
+      padding: clamp(6px, 1.2vmin, 16px) clamp(8px, 1.8vmin, 22px);
+      max-width: 420px;
+    }
+    .settings-section-title {
+      font-family: 'Pixelify Sans', monospace;
+      color: var(--accent); font-size: 10px;
+      letter-spacing: 0.07em; text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 3px; margin-bottom: 2px;
+    }
+    .settings-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .settings-row:last-child { border-bottom: none; }
+    .settings-label { flex: 1; min-width: 0; }
+    .settings-name  { font-size: 12px; color: var(--text); }
+    .settings-desc  { font-size: 10px; color: var(--muted); margin-top: 1px; }
+    /* Toggle switch */
+    .settings-toggle {
+      position: relative; display: inline-block;
+      width: 34px; height: 18px; flex-shrink: 0;
+    }
+    .settings-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-slider {
+      position: absolute; inset: 0; cursor: pointer;
+      background: rgba(255,255,255,0.10);
+      border: 1px solid var(--border-bright);
+      border-radius: 10px; transition: background 0.18s, border-color 0.18s;
+    }
+    .toggle-slider::before {
+      content: ''; position: absolute;
+      width: 12px; height: 12px; left: 2px; top: 2px;
+      background: var(--muted); border-radius: 50%;
+      transition: transform 0.18s, background 0.18s;
+    }
+    .settings-toggle input:checked + .toggle-slider {
+      background: rgba(249,226,138,0.18); border-color: var(--accent);
+    }
+    .settings-toggle input:checked + .toggle-slider::before {
+      transform: translateX(16px); background: var(--accent);
+    }
+
     /* ── Inventory pane ─────────────────────────────────────────
        Uses the same locked 16:9 grid math as gameplay controls.
        The panel is 27×14 parent cells; this pane is a 54×28 sub-grid. */

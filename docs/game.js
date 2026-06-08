@@ -2330,6 +2330,12 @@
         depthFunc:  THREE.LessDepth,
       });
 
+      // ── Tile seam geometry ──────────────────────────────────────────
+      // Thin black boxes placed at edges where adjacent tile materials differ.
+      const _seamMat   = new THREE.MeshBasicMaterial({ color: 0x0a0a0a });
+      const seamGroup  = new THREE.Group();
+      scene.add(seamGroup);
+
       // Enable layer 1 on a mesh (or every mesh inside a Group) so the
       // selective outline pass picks it up. Flat floor slabs, water, and
       // grass billboards stay on layer 0 only and are never outlined.
@@ -3642,6 +3648,7 @@
         _clearGrassBillboards(col, row);
         cropGrowthBucket[i] = -1;
         _buildOneTileMesh(col, row);
+        buildSeamMeshes();  // tile type changed; seam edges may have shifted
       }
 
       // ── Update water meshes each frame ─────────────────────────────
@@ -3787,8 +3794,64 @@
         lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
 
+      // ── Visual feature toggles (Settings tab) ────────────────────
+      let s_outlines  = true;
+      let s_grass     = true;
+      let s_weeds     = true;
+      let s_seams     = true;
+      let s_billWind  = true;
+
+      // Rebuild thin seam quads wherever adjacent tile types differ.
+      function buildSeamMeshes() {
+        while (seamGroup.children.length) seamGroup.remove(seamGroup.children[0]);
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const tA = grid[r][c].type;
+            // South edge
+            if (r + 1 < ROWS && grid[r + 1][c].type !== tA) {
+              const sy = Math.max(tileSurfaceY(tA), tileSurfaceY(grid[r + 1][c].type));
+              const m = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 0.04), _seamMat);
+              m.position.set(c + 0.5, sy + 0.03, r + 1);
+              seamGroup.add(m);
+            }
+            // East edge
+            if (c + 1 < COLS && grid[r][c + 1].type !== tA) {
+              const sy = Math.max(tileSurfaceY(tA), tileSurfaceY(grid[r][c + 1].type));
+              const m = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 1.0), _seamMat);
+              m.position.set(c + 1, sy + 0.03, r + 0.5);
+              seamGroup.add(m);
+            }
+          }
+        }
+        seamGroup.visible = s_seams;
+      }
+
       buildTileMeshes();
       buildBorderTerrain();
+      buildSeamMeshes();
+
+      // ── Settings tab checkbox wiring ──────────────────────────────
+      document.getElementById('settingOutlines').addEventListener('change', e => {
+        s_outlines = e.target.checked;
+      });
+      document.getElementById('settingGrass').addEventListener('change', e => {
+        s_grass = e.target.checked;
+        for (const g of grassBillboardGroups) if (g) g.visible = s_grass;
+      });
+      document.getElementById('settingBillWind').addEventListener('change', e => {
+        s_billWind = e.target.checked;
+      });
+      document.getElementById('settingWeeds').addEventListener('change', e => {
+        s_weeds = e.target.checked;
+        for (let r = 0; r < ROWS; r++)
+          for (let c = 0; c < COLS; c++)
+            if (grid[r][c].type === TileType.WEEDS && vegFoliageMeshes[r * COLS + c])
+              vegFoliageMeshes[r * COLS + c].visible = s_weeds;
+      });
+      document.getElementById('settingSeams').addEventListener('change', e => {
+        s_seams = e.target.checked;
+        seamGroup.visible = s_seams;
+      });
 
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
@@ -3861,26 +3924,26 @@
         // Grass billboard wind
         if (grassBillboardMat) {
           grassBillboardMat.uniforms.uTime.value     = windTime;
-          grassBillboardMat.uniforms.uStrength.value = windStrBase;
+          grassBillboardMat.uniforms.uStrength.value = s_billWind ? windStrBase : 0;
         }
         if (weedBillboardMat) {
           weedBillboardMat.uniforms.uTime.value     = windTime;
-          weedBillboardMat.uniforms.uStrength.value = windStrBase;
+          weedBillboardMat.uniforms.uStrength.value = s_billWind ? windStrBase : 0;
         }
 
         renderer.render(scene, camera);
-        // Selective shell outline pass: only layer-1 objects (rocks, vegetation,
-        // trench/raised terrain, crops). Flat floor slabs, water, and grass
-        // billboards stay on layer 0 and are skipped automatically.
-        renderer.autoClearColor = false;
-        renderer.autoClearDepth = false;
-        scene.overrideMaterial = shellOutlineMat;
-        camera.layers.set(1);
-        renderer.render(scene, camera);
-        camera.layers.enableAll();
-        scene.overrideMaterial = null;
-        renderer.autoClearColor = true;
-        renderer.autoClearDepth = true;
+        // Selective shell outline pass (layer-1 objects only)
+        if (s_outlines) {
+          renderer.autoClearColor = false;
+          renderer.autoClearDepth = false;
+          scene.overrideMaterial = shellOutlineMat;
+          camera.layers.set(1);
+          renderer.render(scene, camera);
+          camera.layers.enableAll();
+          scene.overrideMaterial = null;
+          renderer.autoClearColor = true;
+          renderer.autoClearDepth = true;
+        }
 
         // ── 2D overlays (rain, lighting) ─────────────────────────
         drawOverlays();
