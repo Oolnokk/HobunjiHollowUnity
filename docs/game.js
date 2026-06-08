@@ -3646,6 +3646,7 @@
         // Lie flat in XZ plane so the overhead camera always sees the full sprite
         plane.rotation.x = -Math.PI / 2;
         g.add(plane);
+        if (itemKey === 'bronzehoe') g.rotation.y = -Math.PI / 2;  // 90° CW around handle
         return g;
       }
 
@@ -3722,8 +3723,8 @@
           );
 
         } else {
-          // SWEEP — horizontal arc right-to-left around world Y
-          const sweepOff = 0.55 - swing * 1.55;
+          // SWEEP — reversed backhand: cocked far-right at rest, arcs left on swing
+          const sweepOff = -1.52 + swing * 2.07;   // rest ≈ −87° right, peak ≈ +0.55 left
           _qAnim.setFromAxisAngle(_tUp, sweepOff);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
