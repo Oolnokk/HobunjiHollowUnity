@@ -2323,8 +2323,21 @@
             gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
           }
         `,
-        depthWrite: true,
+        // depthWrite off: shell only reads the scene depth, never corrupts it.
+        // LessDepth: coplanar back faces (adjacent tiles share the same Z plane)
+        // would pass LEQUAL and splat black everywhere — LESS rejects equal depth.
+        depthWrite: false,
+        depthFunc:  THREE.LessDepth,
       });
+
+      // Enable layer 1 on a mesh (or every mesh inside a Group) so the
+      // selective outline pass picks it up. Flat floor slabs, water, and
+      // grass billboards stay on layer 0 only and are never outlined.
+      function _markOutline(obj) {
+        if (!obj || typeof obj.isMesh === 'undefined' && !obj.isGroup) return;
+        if (obj.isMesh) { obj.layers.enable(1); return; }
+        obj.traverse(child => { if (child.isMesh) child.layers.enable(1); });
+      }
 
       // Camera — isometric-style: high angle, offset NW, looking SE toward map center
       const CAM_DIST   = 14;
@@ -3362,6 +3375,7 @@
                 const group = _buildFoliageMesh(tile.crop, growth, col, row);
                 if (group) {
                   scene.add(group);
+                  _markOutline(group);
                   cropMeshes[i]       = group;
                   cropGrowthBucket[i] = bucket;
                 }
@@ -3392,6 +3406,7 @@
                 const mesh = new THREE.Mesh(geo, mat);
                 mesh.castShadow = true;
                 scene.add(mesh);
+                mesh.layers.enable(1);
                 cropMeshes[i] = mesh;
               }
 
@@ -3438,6 +3453,7 @@
           }
           if (moundRoot) moundRoot._windAmp = 0;  // wind loop skips _windAmp=0
           vegFoliageMeshes[i] = moundRoot || { _windAmp: 0 };
+          _markOutline(moundRoot);
           return;
         }
 
@@ -3482,6 +3498,7 @@
 
           scene.add(vegGroup);
           vegFoliageMeshes[i] = vegGroup;
+          _markOutline(vegGroup);
           return;
         }
 
@@ -3494,6 +3511,7 @@
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
+            m.layers.enable(1);  // material transition outline
             primary = m;
           }
           if (grassGeo) {
@@ -3502,6 +3520,7 @@
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             m._windAmp = 0;
             scene.add(m);
+            m.layers.enable(1);  // material transition outline
             vegFoliageMeshes[i] = m;
             if (!primary) primary = m;
           }
@@ -3523,6 +3542,10 @@
         mesh.position.set(col + 0.5, tileYCenter(tile.type), row + 0.5);
         scene.add(mesh);
         tileMeshes[i] = mesh;
+        // Rock and fallback vegetation get outlines; flat floor tiles do not.
+        if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
+          mesh.layers.enable(1);
+        }
         if (tile.type === TileType.GRASS) _buildGrassBillboardsForTile(col, row);
       }
 
@@ -3774,14 +3797,18 @@
         }
 
         renderer.render(scene, camera);
-        // Shell outline pass: hide alpha-tested billboards (crossed planes
-        // produce double-outlines at intersections), render everything else
-        // back-face-only with normals extruded → black border.
+        // Selective shell outline pass: only layer-1 objects (rocks, vegetation,
+        // trench/raised terrain, crops). Flat floor slabs, water, and grass
+        // billboards stay on layer 0 and are skipped automatically.
+        renderer.autoClearColor = false;
+        renderer.autoClearDepth = false;
         scene.overrideMaterial = shellOutlineMat;
-        for (const g of grassBillboardGroups) if (g) g.visible = false;
+        camera.layers.set(1);
         renderer.render(scene, camera);
+        camera.layers.enableAll();
         scene.overrideMaterial = null;
-        for (const g of grassBillboardGroups) if (g) g.visible = true;
+        renderer.autoClearColor = true;
+        renderer.autoClearDepth = true;
 
         // ── 2D overlays (rain, lighting) ─────────────────────────
         drawOverlays();
