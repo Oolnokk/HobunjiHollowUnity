@@ -2517,7 +2517,8 @@
           if (interiorSceneBuilt && interiorWallGroup) {
             WallBuilder.disposeGroup(interiorWallGroup);
             interiorScene.remove(interiorWallGroup);
-            interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: false });
+            interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: false, unitMult: 0.5 });
+            _markOutline(interiorWallGroup);
             interiorScene.add(interiorWallGroup);
             debugLog('Interior walls rebuilt with real GLB');
           }
@@ -2547,7 +2548,6 @@
         const floorMat  = new THREE.MeshLambertMaterial({ color: 0x33475f });
         const floorMatB = new THREE.MeshLambertMaterial({ color: 0x2d3f52 });
         const exitMat   = new THREE.MeshLambertMaterial({ color: 0x8b1a1a });
-        const ceilMat   = new THREE.MeshLambertMaterial({ color: 0x1a0e06 });
 
         // Floor tiles from JSON floorCells: main room 6×5 + south corridor 2×1
         const floorCells = [];
@@ -2563,13 +2563,9 @@
           interiorScene.add(fl);
         }
 
-        // Ceiling over main room only
-        const ceil = new THREE.Mesh(new THREE.BoxGeometry(6, 0.15, 5), ceilMat);
-        ceil.position.set(3, INTERIOR_WALL_HEIGHT + 0.075, 2.5);
-        interiorScene.add(ceil);
-
-        // Instanced walls via WallBuilder (uses placeholder cube until GLB loads)
-        interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true });
+        // Instanced walls: 50% brick size, 4x density (unitMult=0.5 → 2× per axis)
+        interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true, unitMult: 0.5 });
+        _markOutline(interiorWallGroup);
         interiorScene.add(interiorWallGroup);
 
         debugLog('buildInteriorScene complete');
@@ -4181,15 +4177,16 @@
         // ── Render active scene ──────────────────────────────────
         const activeScene = currentArea === 'interior' ? interiorScene : scene;
         renderer.render(activeScene, camera);
-        // Selective shell outline pass (layer-1 objects only, farm only)
-        if (s_outlines && currentArea === 'farm') {
+        // Selective shell outline pass (layer-1 objects only)
+        if (s_outlines) {
+          const _outlineScene = currentArea === 'interior' ? interiorScene : scene;
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
-          scene.overrideMaterial = shellOutlineMat;
+          _outlineScene.overrideMaterial = shellOutlineMat;
           camera.layers.set(1);
-          renderer.render(scene, camera);
+          renderer.render(_outlineScene, camera);
           camera.layers.enableAll();
-          scene.overrideMaterial = null;
+          _outlineScene.overrideMaterial = null;
           renderer.autoClearColor = true;
           renderer.autoClearDepth = true;
         }
