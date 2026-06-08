@@ -2612,13 +2612,15 @@
       }
 
       // ── Terrain tile heightfield: TRENCH ditch and RAISED bed ──────────────────
-      // Shape is purely adjacency-driven — no BFS randomness. Open edges (adjacent
-      // same-type tile) stay at the full target depth/height; closed edges blend
-      // back to NORMAL_TOP via smoothstep over BLEND_V vertex steps. Seam-safe
-      // FNV displacement at edges keeps joins with grass/tilled tiles gap-free.
+      // Adjacency-driven shape with three refinements vs. the first version:
+      //   1. PLATEAU factor expands the fully-blended interior (more plateau, less peak)
+      //   2. Diagonal-corner correction fades the inner vertex of L-turns to NORMAL_TOP
+      //   3. Geometry is split into dirtGeo (depressed/raised cells) and grassGeo (flat
+      //      edge cells near NORMAL_TOP), mirroring the rock tile's stone/grass split.
       function buildTerrainTileGeo(col, row, type) {
         const VERTS = 9, CELLS = 8, STEP = 1.0 / CELLS;
-        const BLEND_V  = 3;   // vertex steps for closed-edge ramp (~0.375 world units)
+        const BLEND_V  = 3;
+        const PLATEAU  = type === TileType.RAISED ? 3.0 : 1.5;  // raised = wide flat top
         const targetDY = type === TileType.TRENCH
           ? TRENCH_TOP - NORMAL_TOP   // −0.5
           : RAISED_TOP - NORMAL_TOP;  // +0.5
@@ -2628,7 +2630,12 @@
         const openW = grid[row]?.[col - 1]?.type === type;
         const openE = grid[row]?.[col + 1]?.type === type;
 
-        // Seam-safe edge displacement — same formula as makeFloorGeo
+        // Diagonal tiles — used to seal the inner corner of L-shaped turns
+        const diagNW = grid[row-1]?.[col-1]?.type === type;
+        const diagNE = grid[row-1]?.[col+1]?.type === type;
+        const diagSW = grid[row+1]?.[col-1]?.type === type;
+        const diagSE = grid[row+1]?.[col+1]?.type === type;
+
         const seamDisp = (vx, vz) => {
           const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
           let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
@@ -2636,7 +2643,6 @@
           return (h / 4294967296 - 0.5) * 0.026;
         };
 
-        // Subtle surface roughness (less aggressive than rock tile)
         const roughDisp = (vx, vz) => {
           const kx = Math.round(vx * 6) | 0, kz = Math.round(vz * 6) | 0;
           let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
@@ -2644,7 +2650,7 @@
           return (h / 4294967296 - 0.5) * 0.035;
         };
 
-        const smooth = t => t * t * (3 - 2 * t);  // smoothstep
+        const smooth = t => t * t * (3 - 2 * t);
 
         const Y = new Float32Array(VERTS * VERTS);
         for (let vj = 0; vj < VERTS; vj++) {
@@ -2653,10 +2659,18 @@
             const bE = openE ? 1 : smooth(Math.min(1, (CELLS - vi) / BLEND_V));
             const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
             const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
-            const blend = bW * bE * bN * bS;
+
+            // Diagonal correction: if both open sides share an outer (non-matching) diagonal,
+            // fade the inner corner vertex back to NORMAL_TOP. Uses max() so only the exact
+            // corner region (within BLEND_V steps of BOTH adjacent open edges) is affected.
+            const bDiagNW = (openW && openN && !diagNW) ? smooth(Math.min(1, Math.max(vi, vj)           / BLEND_V)) : 1;
+            const bDiagNE = (openE && openN && !diagNE) ? smooth(Math.min(1, Math.max(CELLS-vi, vj)     / BLEND_V)) : 1;
+            const bDiagSW = (openW && openS && !diagSW) ? smooth(Math.min(1, Math.max(vi, CELLS-vj)     / BLEND_V)) : 1;
+            const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, Math.max(CELLS-vi, CELLS-vj) / BLEND_V)) : 1;
+
+            const blend = Math.min(1, bW * bE * bN * bS * bDiagNW * bDiagNE * bDiagSW * bDiagSE * PLATEAU);
             const vx = col + vi * STEP, vz = row + vj * STEP;
-            Y[vj * VERTS + vi] = seamDisp(vx, vz)
-              + blend * targetDY + blend * roughDisp(vx, vz);
+            Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * targetDY + blend * roughDisp(vx, vz);
           }
         }
 
@@ -2665,19 +2679,31 @@
           for (let vi = 0; vi < VERTS; vi++)
             positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
 
-        const indices = [];
+        // Split cells: dirt where significantly depressed (trench) or elevated (raised);
+        // grass on flat edge cells that blend back to ground level.
+        const DIRT_THRESH = 0.05;
+        const dirtIdx = [], grassIdx = [];
         for (let cj = 0; cj < CELLS; cj++)
           for (let ci = 0; ci < CELLS; ci++) {
             const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
             const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
-            indices.push(v00, v01, v11, v00, v11, v10);
+            const y00=Y[v00], y10=Y[v10], y01=Y[v01], y11=Y[v11];
+            const isDirt = type === TileType.TRENCH
+              ? Math.min(y00, y10, y01, y11) < -DIRT_THRESH
+              : Math.max(y00, y10, y01, y11) >  DIRT_THRESH;
+            (isDirt ? dirtIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
           }
 
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        geo.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
-        geo.computeVertexNormals();
-        return geo;
+        const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+        const makeGeo = idx => {
+          if (!idx.length) return null;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', posAttr);
+          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          g.computeVertexNormals();
+          return g;
+        };
+        return { dirtGeo: makeGeo(dirtIdx), grassGeo: makeGeo(grassIdx) };
       }
 
 
@@ -3299,16 +3325,26 @@
         }
 
         if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED) {
-          // Adjacency-aware heightfield: natural sloped edges that connect smoothly
-          // when same-type tiles are adjacent, and seal back to NORMAL_TOP when isolated.
-          const surfMesh = new THREE.Mesh(
-            buildTerrainTileGeo(col, row, tile.type),
-            tileMats[tile.type]
-          );
-          surfMesh.castShadow = surfMesh.receiveShadow = true;
-          surfMesh.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-          scene.add(surfMesh);
-          tileMeshes[i] = surfMesh;
+          const { dirtGeo, grassGeo } = buildTerrainTileGeo(col, row, tile.type);
+          let primary = null;
+          if (dirtGeo) {
+            // Both types use trench brown — raised earth is the same dug-soil colour
+            const m = new THREE.Mesh(dirtGeo, tileMats.trench);
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            primary = m;
+          }
+          if (grassGeo) {
+            const m = new THREE.Mesh(grassGeo, tileMats.grass);
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            m._windAmp = 0;
+            scene.add(m);
+            vegFoliageMeshes[i] = m;
+            if (!primary) primary = m;
+          }
+          tileMeshes[i] = primary;
           return;
         }
 
