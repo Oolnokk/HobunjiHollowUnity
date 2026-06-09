@@ -5060,10 +5060,12 @@
         }
 
         let _arcEls = [], _arcBd = null, _arcOpen = null, _arcSlots = [], _arcActive = -1;
+        let _fadingEls = [];
 
         function _clearArc() {
           if (_arcBd) { _arcBd.remove(); _arcBd = null; }
           _arcEls.forEach(e => e.remove()); _arcEls = [];
+          _fadingEls.forEach(e => e.remove()); _fadingEls = [];
           _arcSlots = []; _arcActive = -1; _arcOpen = null;
           toolBtn.style.visibility = '';
           if (_itemBtn) _itemBtn.style.visibility = '';
@@ -5110,7 +5112,6 @@
         const ITEM_VIS = 5;
 
         function _buildItemSlots() {
-          _arcEls.forEach(e => e.remove()); _arcEls = []; _arcSlots = []; _arcActive = -1;
           const stacks = getInventoryStackItems(), total = stacks.length;
           const slots = [];
           if (_iScroll > 0) slots.push({ type:'arrow', dir:-1, icon:'◀', label:'' });
@@ -5118,13 +5119,47 @@
             slots.push({ type:'item', index:_iScroll+i, icon:stacks[_iScroll+i].icon, label:stacks[_iScroll+i].label });
           if (_iScroll + ITEM_VIS < total) slots.push({ type:'arrow', dir:1, icon:'▶', label:'' });
           const sn = slots.length, step = sn > 1 ? (ARC_S - ARC_E) / (sn - 1) : 0;
+
+          const oldByKey = new Map(_arcSlots.map(s => [
+            s.data.type === 'arrow' ? `a${s.data.dir}` : `i${s.data.index}`, s
+          ]));
+          const kept = new Set(), newSlots = [];
+
           slots.forEach((s, i) => {
-            const deg = ARC_S - i * step;
+            const deg = ARC_S - i * step, pt = _arcPt(deg);
+            const k = s.type === 'arrow' ? `a${s.dir}` : `i${s.index}`;
             const extra = s.type === 'arrow' ? 'arc-arrow' : (s.index === activeItemIndex ? 'arc-active' : '');
-            const el = _mkSlot(deg, s.icon, s.label, extra);
-            _arcSlots.push({ angle: deg, el, data: s });
-            if (s.type === 'item' && s.index === activeItemIndex) _arcActive = i;
+            if (oldByKey.has(k)) {
+              const old = oldByKey.get(k); kept.add(k);
+              old.el.style.left = pt.x + 'px'; old.el.style.top = pt.y + 'px';
+              old.el.className = 'arc-slot' + (extra ? ' ' + extra : '');
+              newSlots.push({ angle: deg, el: old.el, data: s });
+            } else {
+              const el = document.createElement('div');
+              el.className = 'arc-slot' + (extra ? ' ' + extra : '');
+              el.style.cssText = `position:fixed;left:${pt.x}px;top:${pt.y}px;z-index:201;pointer-events:none;opacity:0;`;
+              el.innerHTML = `<span class="arc-icon">${s.icon}</span>`
+                           + (s.label ? `<span class="arc-label">${s.label}</span>` : '');
+              document.body.appendChild(el);
+              _arcEls.push(el);
+              requestAnimationFrame(() => { el.style.opacity = '1'; });
+              newSlots.push({ angle: deg, el, data: s });
+            }
           });
+
+          _arcSlots.forEach(s => {
+            const k = s.data.type === 'arrow' ? `a${s.data.dir}` : `i${s.data.index}`;
+            if (!kept.has(k)) {
+              s.el.style.opacity = '0';
+              _arcEls = _arcEls.filter(e => e !== s.el);
+              _fadingEls.push(s.el);
+              const _el = s.el;
+              setTimeout(() => { _el.remove(); _fadingEls = _fadingEls.filter(f => f !== _el); }, 150);
+            }
+          });
+
+          _arcSlots = newSlots;
+          _arcActive = newSlots.findIndex(s => s.data.type === 'item' && s.data.index === activeItemIndex);
         }
 
         function _openItemArc() {
@@ -5152,7 +5187,7 @@
                 _iScrollT = setInterval(() => {
                   _iScroll = Math.max(0, Math.min(getInventoryStackItems().length - ITEM_VIS, _iScroll + _iScrollDir));
                   _buildItemSlots();
-                }, 350);
+                }, 200);
               }
             }
           }
@@ -5172,60 +5207,64 @@
           _clearArc();
         }
 
-        let _tPtId = null, _tHeld = false, _tTimer = null;
+        let _tPtId = null, _tHeld = false, _tTimer = null, _tDx = 0, _tDy = 0, _tMoved = false;
         toolBtn.addEventListener('pointerdown', ev => {
           if (_tPtId !== null) return;
-          _tPtId = ev.pointerId; _tHeld = false;
+          _tPtId = ev.pointerId; _tHeld = false; _tMoved = false;
+          _tDx = ev.clientX; _tDy = ev.clientY;
           toolBtn.setPointerCapture(ev.pointerId);
-          _tTimer = setTimeout(() => { _tHeld = true; _openToolArc(); }, 200);
+          _tTimer = setTimeout(() => { _tHeld = true; _openToolArc(); }, 350);
           ev.preventDefault();
         });
         toolBtn.addEventListener('pointermove', ev => {
-          if (ev.pointerId !== _tPtId || _arcOpen !== 'tool') return;
-          _arcMove(ev.clientX, ev.clientY);
+          if (ev.pointerId !== _tPtId) return;
+          if (!_tMoved && Math.hypot(ev.clientX - _tDx, ev.clientY - _tDy) > 6) _tMoved = true;
+          if (_arcOpen === 'tool') _arcMove(ev.clientX, ev.clientY);
         });
         toolBtn.addEventListener('pointerup', ev => {
           if (ev.pointerId !== _tPtId) return;
           _tPtId = null;
           if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
           if (_arcOpen === 'tool') _arcUp();
-          else if (!_tHeld) setActiveTool(WHEEL_SLOTS[(WHEEL_SLOTS.indexOf(activeTool) + 1) % WHEEL_SLOTS.length]);
-          _tHeld = false;
+          else if (!_tHeld && !_tMoved) setActiveTool(WHEEL_SLOTS[(WHEEL_SLOTS.indexOf(activeTool) + 1) % WHEEL_SLOTS.length]);
+          _tHeld = false; _tMoved = false;
         });
         toolBtn.addEventListener('pointercancel', ev => {
           if (ev.pointerId !== _tPtId) return;
           _tPtId = null;
           if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
-          _clearArc(); _tHeld = false;
+          _clearArc(); _tHeld = false; _tMoved = false;
         });
 
         if (_itemBtn) {
-          let _iPtId = null, _iHeld = false, _iTimer = null;
+          let _iPtId = null, _iHeld = false, _iTimer = null, _iDx = 0, _iDy = 0, _iMoved = false;
           _itemBtn.addEventListener('pointerdown', ev => {
             if (_iPtId !== null) return;
-            _iPtId = ev.pointerId; _iHeld = false;
+            _iPtId = ev.pointerId; _iHeld = false; _iMoved = false;
+            _iDx = ev.clientX; _iDy = ev.clientY;
             _itemBtn.setPointerCapture(ev.pointerId);
-            _iTimer = setTimeout(() => { _iHeld = true; _openItemArc(); }, 200);
+            _iTimer = setTimeout(() => { _iHeld = true; _openItemArc(); }, 350);
             ev.preventDefault();
           });
           _itemBtn.addEventListener('pointermove', ev => {
-            if (ev.pointerId !== _iPtId || _arcOpen !== 'item') return;
-            _arcMove(ev.clientX, ev.clientY);
+            if (ev.pointerId !== _iPtId) return;
+            if (!_iMoved && Math.hypot(ev.clientX - _iDx, ev.clientY - _iDy) > 6) _iMoved = true;
+            if (_arcOpen === 'item') _arcMove(ev.clientX, ev.clientY);
           });
           _itemBtn.addEventListener('pointerup', ev => {
             if (ev.pointerId !== _iPtId) return;
             _iPtId = null;
             if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
             if (_arcOpen === 'item') _arcUp();
-            else if (!_iHeld) { cycleActiveInventoryItem(1); refreshItemScroll(); refreshActionBar(); }
-            _iHeld = false;
+            else if (!_iHeld && !_iMoved) { cycleActiveInventoryItem(1); refreshItemScroll(); refreshActionBar(); }
+            _iHeld = false; _iMoved = false;
           });
           _itemBtn.addEventListener('pointercancel', ev => {
             if (ev.pointerId !== _iPtId) return;
             _iPtId = null;
             if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
             if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
-            _clearArc(); _iHeld = false;
+            _clearArc(); _iHeld = false; _iMoved = false;
           });
         }
       }

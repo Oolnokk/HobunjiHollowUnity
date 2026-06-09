@@ -430,7 +430,7 @@
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 2px;
       box-shadow: 0 3px 14px rgba(0,0,0,0.45);
-      transition: transform 0.08s, background 0.08s, border-color 0.08s;
+      transition: transform 0.08s, background 0.08s, border-color 0.08s, left 0.14s ease, top 0.14s ease, opacity 0.12s;
     }
     .arc-slot.arc-active {
       background: rgba(249,226,138,0.18);
@@ -479,34 +479,34 @@
     #btnItemAction1 {                                                 /* 9:10  175° */
       right:  calc(-1*cos(175deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
       bottom: calc(   sin(175deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
-      width:clamp(38px,7vmin,52px); height:clamp(38px,7vmin,52px);
+      width:clamp(44px,8.5vmin,60px); height:clamp(44px,8.5vmin,60px);
     }
     #btnAction2 {                                                     /* 9:50  155° */
       right:  calc(-1*cos(155deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
       bottom: calc(   sin(155deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
-      width:clamp(42px,7.8vmin,56px); height:clamp(42px,7.8vmin,56px);
+      width:clamp(44px,8.5vmin,60px); height:clamp(44px,8.5vmin,60px);
     }
     #btnAction1 {                                                     /* 10:30 135° primary */
       right:  calc(-1*cos(135deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
       bottom: calc(   sin(135deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
-      width:clamp(50px,9.5vmin,66px); height:clamp(50px,9.5vmin,66px);
+      width:clamp(46px,8.8vmin,62px); height:clamp(46px,8.8vmin,62px);
       border-color:rgba(249,226,138,0.44); background:rgba(249,226,138,0.09);
     }
     #btnAction3 {                                                     /* 11:10 115° */
       right:  calc(-1*cos(115deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
       bottom: calc(   sin(115deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
-      width:clamp(42px,7.8vmin,56px); height:clamp(42px,7.8vmin,56px);
+      width:clamp(44px,8.5vmin,60px); height:clamp(44px,8.5vmin,60px);
     }
     #btnItemAction2 {                                                 /* 11:50  95° */
       right:  calc(-1*cos(95deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
       bottom: calc(   sin(95deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
-      width:clamp(38px,7vmin,52px); height:clamp(38px,7vmin,52px);
+      width:clamp(44px,8.5vmin,60px); height:clamp(44px,8.5vmin,60px);
     }
     .abt-item { border-color:rgba(255,211,125,0.46)!important; background:rgba(255,211,125,0.09)!important; }
     .abt-key  { position:absolute; top:2px; right:3px; font-size:7px; color:rgba(255,255,255,0.42); font-family:'DM Mono',monospace; pointer-events:none; }
     .abt-icon { font-size:1.3em; line-height:1; pointer-events:none; }
     .abt-label { display:none; }
-    #btnAction1 .abt-icon { font-size:1.7em; }
+    #btnAction1 .abt-icon { font-size:1.5em; }
     /* Socket ring: appears under the held button, stays fixed at press position */
     .abt-socket {
       position: fixed;
