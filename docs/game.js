@@ -3713,11 +3713,15 @@
         const rightX = -Math.cos(θ), rightZ =  Math.sin(θ);
         const fwdX   =  Math.sin(θ), fwdZ   =  Math.cos(θ);
 
-        // Swing progress 0→1→0 over toolSwingDur
+        // Swing progress 0→1 over toolSwingDur; fire queued action when animation completes
         let progress = 0;
         if (toolSwingT > 0) {
           toolSwingT = Math.max(0, toolSwingT - dt);
           progress   = 1 - toolSwingT / toolSwingDur;
+          if (toolSwingT === 0 && pendingAction && !strikeFired) {
+            strikeFired = true;
+            firePendingAction();
+          }
         }
         const swing = Math.sin(progress * Math.PI);
 
@@ -3787,11 +3791,6 @@
           );
         }
 
-        // Fire queued action at the start of the strike phase
-        if (pendingAction && !strikeFired && progress >= WF) {
-          strikeFired = true;
-          firePendingAction();
-        }
       }
 
       // Initialize mesh map after toolHolder exists
