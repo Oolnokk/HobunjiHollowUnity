@@ -5226,7 +5226,6 @@
           _tPtId = null;
           if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
           if (_arcOpen === 'tool') _arcUp();
-          else if (!_tHeld && !_tMoved) setActiveTool(WHEEL_SLOTS[(WHEEL_SLOTS.indexOf(activeTool) + 1) % WHEEL_SLOTS.length]);
           _tHeld = false; _tMoved = false;
         });
         toolBtn.addEventListener('pointercancel', ev => {
@@ -5256,7 +5255,6 @@
             _iPtId = null;
             if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
             if (_arcOpen === 'item') _arcUp();
-            else if (!_iHeld && !_iMoved) { cycleActiveInventoryItem(1); refreshItemScroll(); refreshActionBar(); }
             _iHeld = false; _iMoved = false;
           });
           _itemBtn.addEventListener('pointercancel', ev => {
