@@ -371,71 +371,158 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 22px; pointer-events: none;
     }
-    /* ── Tool Select: grid x:28 y:10 w:3 h:2 ───────────── */
+    /* ── Outer arch (tool dial + item dial) ─────────────────── */
+    /* Same 0-size corner anchor as the inner action arch, larger radius.
+       #toolBtn at 150° (clock ~9:50), #itemBtn at 120° (clock ~10:30). */
     #toolSelect {
-      position: fixed;
-      left: calc(var(--play-right) - 4 * var(--col)); top: calc(var(--oy) + 10 * var(--row));
-      width: calc(3 * var(--col)); height: calc(2 * var(--row));
-      z-index: 30;
+      --ar2: clamp(148px, 27vmin, 210px);
+      position: fixed; right: 0; bottom: 0;
+      width: 0; height: 0; overflow: visible; z-index: 31; touch-action: none;
     }
-    .ts-btn {
-      width: 100%; height: 100%;
-      border-radius: 14px;
-      background: var(--glass); border: 1.5px solid var(--border-bright);
-      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-      color: var(--text);
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-      cursor: pointer; font-family: inherit;
-      box-shadow: 0 3px 12px rgba(0,0,0,0.3); transition: background 0.1s;
-    }
-    .ts-btn:active { background: rgba(255,255,255,0.12); }
-    .ts-icon { font-size: 20px; line-height: 1; pointer-events: none; }
-    .ts-lbl  { font-size: 8px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; pointer-events: none; }
-
-    /* ── Action Stack: grid x:25 y:12 w:6 h:5 ───────────── */
-    /* Sub-grid 19×17, button positions as % of container */
-    #actionStack {
-      position: fixed;
-      left: calc(var(--play-right) - 7 * var(--col)); top: calc(var(--oy) + 12 * var(--row));
-      width: calc(6 * var(--col)); height: calc(5 * var(--row));
-      z-index: 30;
-    }
-    .abt {
+    #toolPicker { display: none !important; }
+    #itemSelect { display: none !important; }
+    #toolBtn {
       position: absolute;
-      border-radius: 12px;
+      right:  calc(-1*cos(150deg)*var(--ar2) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(150deg)*var(--ar2) + max(18px,env(safe-area-inset-bottom)));
+      transform: translate(50%, 50%);
+      width: clamp(46px,8.8vmin,62px); height: clamp(46px,8.8vmin,62px);
+      border-radius: 50%;
       background: var(--glass); border: 1.5px solid var(--border-bright);
       backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
       color: var(--text);
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 2px; padding: 4px 2px;
-      font-family: inherit; cursor: pointer;
+      padding: 0; font-family: inherit; cursor: pointer;
       transition: transform 0.08s; overflow: hidden;
       box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
-    button.abt:active { transform: scale(0.92); }
+    #toolBtn:active { transform: translate(50%,50%) scale(0.92); }
+    .ts-icon { font-size: 1.4em; line-height: 1; pointer-events: none; }
+    .ts-lbl  { display: none; }
+    #itemBtn {
+      position: absolute;
+      right:  calc(-1*cos(120deg)*var(--ar2) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(120deg)*var(--ar2) + max(18px,env(safe-area-inset-bottom)));
+      transform: translate(50%, 50%);
+      width: clamp(46px,8.8vmin,62px); height: clamp(46px,8.8vmin,62px);
+      border-radius: 50%;
+      background: rgba(255,211,125,0.09); border: 1.5px solid rgba(255,211,125,0.46);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: var(--text); font-size: 1.4em;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; font-family: inherit; cursor: pointer;
+      transition: transform 0.08s; overflow: hidden;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+    }
+    #itemBtn:active { transform: translate(50%,50%) scale(0.92); }
+    /* ── Arc dial overlay elements ───────────────────────── */
+    .arc-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.42);
+      z-index: 200; pointer-events: auto;
+    }
+    .arc-slot {
+      transform: translate(-50%, -50%);
+      width: clamp(44px,8.5vmin,60px); height: clamp(44px,8.5vmin,60px);
+      border-radius: 50%;
+      background: var(--glass); border: 2px solid var(--border-bright);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.45);
+      transition: transform 0.08s, background 0.08s, border-color 0.08s, left 0.14s ease, top 0.14s ease, opacity 0.12s;
+    }
+    .arc-slot.arc-active {
+      background: rgba(249,226,138,0.18);
+      border-color: rgba(249,226,138,0.6);
+      transform: translate(-50%,-50%) scale(1.18);
+    }
+    .arc-slot.arc-arrow {
+      font-size: 1.5em; color: var(--muted);
+      background: rgba(255,255,255,0.06); border-style: dashed;
+    }
+    .arc-icon  { font-size: 1.4em; line-height: 1; pointer-events: none; }
+    .arc-label {
+      font-size: 6.5px; color: rgba(255,255,255,0.55);
+      letter-spacing: 0.04em; text-transform: uppercase;
+      white-space: nowrap; pointer-events: none;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+    }
+
+    /* ── Action Arch: 0-size anchor at the bottom-right corner ─ */
+    /* Clock-face model: corner = clock centre. Hours 9-12 are visible.
+       5 buttons placed at 9:10, 9:50, 10:30, 11:10, 11:50
+       = clock angles 275°,295°,315°,335°,355°
+       = math angles  175°,155°,135°,115°, 95° (CCW from east)
+       right = −cos(α)·R + margin,  bottom = sin(α)·R + margin          */
+    #actionStack {
+      --ar: clamp(88px, 16vmin, 124px);
+      position: fixed; right: 0; bottom: 0;
+      width: 0; height: 0;
+      overflow: visible; z-index: 30; touch-action: none;
+    }
+    .abt {
+      position: absolute;
+      transform: translate(50%, 50%);
+      border-radius: 50%;
+      background: var(--glass); border: 1.5px solid var(--border-bright);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: var(--text);
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; font-family: inherit; cursor: pointer;
+      transition: transform 0.08s; overflow: hidden;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+    }
+    button.abt:active { transform: translate(50%,50%) scale(0.92); }
     .abt.blocked { opacity: 0.38; }
     .abt.abt-hidden { visibility: hidden; }
-    /* Big primary: 12/19 wide × 11/17 tall */
-    #btnAction1 {
-      left: 0; top: 0;
-      width: calc(12/19 * 100%); height: calc(11/17 * 100%);
-      border-color: rgba(249,226,138,0.44); background: rgba(249,226,138,0.09);
-      border-radius: 16px;
+    #btnItemAction1 {                                                 /* 9:00  180° */
+      right:  calc(-1*cos(180deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(180deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+      width:clamp(44px,8.5vmin,60px); height:clamp(44px,8.5vmin,60px);
     }
-    /* Small secondary pair on right */
-    #btnAction2 { left: calc(13/19 * 100%); top: 0;              width: calc(6/19 * 100%); height: calc(6/17 * 100%); }
-    #btnAction3 { left: calc(13/19 * 100%); top: calc(7/17 * 100%); width: calc(6/19 * 100%); height: calc(6/17 * 100%); }
-    /* Item actions: bottom row, gold style */
-    #btnItemAction1 { left: 0;                   top: calc(12/17 * 100%); width: calc(5/19 * 100%); height: calc(5/17 * 100%); }
-    #btnItemAction2 { left: calc(6/19  * 100%); top: calc(12/17 * 100%); width: calc(5/19 * 100%); height: calc(5/17 * 100%); }
-    .abt-item { border-color: rgba(255,211,125,0.46) !important; background: rgba(255,211,125,0.09) !important; }
-    /* Button content */
-    .abt-key   { position: absolute; top: 3px; right: 4px; font-size: 8px; color: rgba(255,255,255,0.42); font-family: 'DM Mono', monospace; pointer-events: none; }
-    .abt-icon  { font-size: 1.3em; line-height: 1; pointer-events: none; }
-    .abt-label { font-size: 8px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; line-height: 1; pointer-events: none; }
-    #btnAction1 .abt-icon  { font-size: 1.7em; }
-    #btnAction1 .abt-label { color: rgba(249,226,138,0.7); }
-    .abt-item .abt-label   { color: rgba(255,211,125,0.8); }
+    #btnAction2 {                                                     /* 9:45  157.5° */
+      right:  calc(-1*cos(157.5deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(157.5deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+      width:clamp(44px,8.5vmin,60px); height:clamp(44px,8.5vmin,60px);
+    }
+    #btnAction1 {                                                     /* 10:30 135° primary */
+      right:  calc(-1*cos(135deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(135deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+      width:clamp(46px,8.8vmin,62px); height:clamp(46px,8.8vmin,62px);
+      border-color:rgba(249,226,138,0.44); background:rgba(249,226,138,0.09);
+    }
+    #btnAction3 {                                                     /* 11:15 112.5° */
+      right:  calc(-1*cos(112.5deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(112.5deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+      width:clamp(44px,8.5vmin,60px); height:clamp(44px,8.5vmin,60px);
+    }
+    #btnItemAction2 {                                                 /* 12:00  90° */
+      right:  calc(-1*cos(90deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(90deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+      width:clamp(44px,8.5vmin,60px); height:clamp(44px,8.5vmin,60px);
+    }
+    .abt-item { border-color:rgba(255,211,125,0.46)!important; background:rgba(255,211,125,0.09)!important; }
+    .abt-key  { position:absolute; top:2px; right:3px; font-size:7px; color:rgba(255,255,255,0.42); font-family:'DM Mono',monospace; pointer-events:none; }
+    .abt-icon { font-size:1.3em; line-height:1; pointer-events:none; }
+    .abt-label { display:none; }
+    #btnAction1 .abt-icon { font-size:1.5em; }
+    /* Socket ring: appears under the held button, stays fixed at press position */
+    .abt-socket {
+      position: fixed;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: rgba(255,255,255,0.04);
+      border: 2px solid rgba(255,255,255,0.22);
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.35);
+      z-index: 29;
+      pointer-events: none;
+      animation: sockIn 0.07s ease-out;
+    }
+    @keyframes sockIn {
+      from { opacity:0; transform:translate(-50%,-50%) scale(0.7); }
+      to   { opacity:1; transform:translate(-50%,-50%) scale(1); }
+    }
 
     /* ── Item Select: grid x:20 y:14 w:5 h:3 ────────────── */
     /* Sub-grid 14×6: arr=3cols, icons occupy rows 1-4, name row 5 */
@@ -530,6 +617,47 @@
     }
     .tool-pick-btn.active { background: rgba(249,226,138,0.15); border-color: rgba(249,226,138,0.42); }
     .tool-pick-btn:hover  { background: rgba(255,255,255,0.12); }
+
+    /* ── Tool wheel (radial picker overlay) ─────────────────── */
+    #toolWheelOverlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.52);
+      z-index: 190; touch-action: none;
+    }
+    #toolWheelOverlay.open { display: block; }
+    #toolWheel {
+      display: none; position: fixed; inset: 0;
+      pointer-events: none; z-index: 200;
+    }
+    #toolWheel.open { display: block; }
+    @keyframes tw-pop {
+      from { opacity: 0; transform: translate(-50%,-50%) scale(0.3); }
+      to   { opacity: 1; transform: translate(-50%,-50%) scale(1);   }
+    }
+    .tw-spoke {
+      position: absolute;
+      transform: translate(-50%,-50%);
+      display: flex; flex-direction: column; align-items: center;
+      pointer-events: auto;
+      animation: tw-pop 0.13s cubic-bezier(0.34,1.56,0.64,1) both;
+    }
+    .tw-btn {
+      width: 50px; height: 50px; border-radius: 50%;
+      background: var(--glass-2); border: 2px solid var(--border-bright);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      color: var(--text); font-size: 22px; display: grid; place-items: center;
+      cursor: pointer; font-family: inherit;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.45);
+      transition: transform 0.07s, background 0.07s;
+    }
+    .tw-btn.active { background: rgba(249,226,138,0.18); border-color: rgba(249,226,138,0.6); }
+    .tw-btn:active { transform: scale(0.84); }
+    .tw-chip {
+      margin-top: 4px;
+      font-size: 9px; color: var(--muted); letter-spacing: 0.05em;
+      text-transform: uppercase; white-space: nowrap; pointer-events: none;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
 
     /* ── Item scroll ─────────────────────────────────────────── */
     #itemScroll {
@@ -842,14 +970,63 @@
     }
     .inv-cat.active { color: var(--accent); border-color: rgba(249,226,138,0.4); background: rgba(249,226,138,0.08); }
 
-    /* Item grid area: sub x:1/54 y:6/28 w:33 h:21 */
-    .inv-grid-area {
+    /* Equipment slots: sub x:1/54 y:6/28 w:35 h:7 */
+    .inv-equip-section {
       position: absolute;
       left: calc(1 * var(--inv-col));   top:    calc(6 * var(--inv-row));
-      width: calc(33 * var(--inv-col)); height: calc(21 * var(--inv-row));
+      width: calc(35 * var(--inv-col)); height: calc(7 * var(--inv-row));
+      display: flex; flex-direction: column; gap: var(--inv-gap);
+      padding: calc(0.3 * var(--inv-gap)) var(--inv-pad);
+      border-bottom: 1px solid var(--border);
+      box-sizing: border-box;
+    }
+    .inv-equip-row {
+      display: flex; flex-direction: row; gap: var(--inv-gap);
+      flex: 1; min-height: 0;
+    }
+    .inv-equip-slot {
+      flex: 1; min-width: 0;
+      border-radius: var(--inv-radius);
+      background: rgba(255,255,255,0.04); border: 1.5px solid var(--border);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 1px; position: relative; overflow: hidden; cursor: pointer;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .inv-equip-slot:hover { background: rgba(255,255,255,0.09); }
+    .inv-equip-slot.active-slot { border-color: rgba(249,226,138,0.55); background: rgba(249,226,138,0.08); }
+    .inv-equip-slot.occupied { border-color: rgba(255,255,255,0.22); }
+    .inv-equip-slot.clothing-slot { opacity: 0.4; cursor: default; }
+    .ies-sprite {
+      width: calc(2.0 * var(--inv-row)); height: calc(2.0 * var(--inv-row));
+      object-fit: contain; image-rendering: pixelated;
+      pointer-events: none;
+    }
+    .ies-label {
+      font-size: var(--inv-font-xs); color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.04em;
+      line-height: 1; pointer-events: none;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+    }
+    .ies-unequip {
+      position: absolute; top: 1px; right: 2px;
+      font-size: calc(0.55 * var(--inv-font-xs)); color: var(--muted);
+      background: none; border: none; cursor: pointer; padding: 0; line-height: 1;
+      opacity: 0.55;
+    }
+    .ies-unequip:hover { color: var(--text); opacity: 1; }
+    .ii-btn.equip { border-color: rgba(80,200,120,0.42); color: #7ee8a2; }
+    .ii-btn.equip:hover { background: rgba(80,200,120,0.10); }
+
+    /* Item grid area: sub x:1/54 y:13/28 w:33 h:14 */
+    .inv-grid-area {
+      position: absolute;
+      left: calc(1 * var(--inv-col));   top:    calc(13 * var(--inv-row));
+      width: calc(33 * var(--inv-col)); height: calc(14 * var(--inv-row));
       overflow-y: auto; scrollbar-width: thin;
       min-width: 0;
     }
+    /* Short variant matches the new position (alias kept for compat) */
+    .inv-grid-area--short { top: calc(13 * var(--inv-row)); height: calc(14 * var(--inv-row)); }
     .inv-grid {
       display: grid;
       grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -886,16 +1063,18 @@
       font-family: 'DM Mono', monospace; pointer-events: none;
     }
     .iib-count.zero { color: var(--danger); opacity: 0.45; }
+    .iib-equip-badge { position:absolute; top:2px; left:2px; font-size:7px; line-height:1.3; background:rgba(249,226,138,0.82); color:#1a1a2e; border-radius:2px; padding:0 2px; pointer-events:none; font-family:'DM Mono',monospace; }
 
-    /* Page scroller: sub x:34/54 y:6/28 w:2 h:21 */
+    /* Page scroller: sub x:34/54 y:13/28 w:2 h:14 */
     .inv-pgscroll {
       position: absolute;
-      left: calc(34 * var(--inv-col)); top:    calc(6 * var(--inv-row));
-      width: calc(2 * var(--inv-col)); height: calc(21 * var(--inv-row));
+      left: calc(34 * var(--inv-col)); top:    calc(13 * var(--inv-row));
+      width: calc(2 * var(--inv-col)); height: calc(14 * var(--inv-row));
       display: flex; flex-direction: column; align-items: center;
       padding: var(--inv-pad) 0; gap: var(--inv-gap);
       border-left: 1px solid var(--border);
     }
+    .inv-pgscroll--short { top: calc(13 * var(--inv-row)); height: calc(14 * var(--inv-row)); }
     .ips-btn { font-size: var(--inv-font-xs); color: var(--muted); cursor: pointer; width: 100%; text-align: center; background: none; border: none; font-family: inherit; }
     .ips-btn:hover { color: var(--text); }
     .ips-fill { flex: 1; }

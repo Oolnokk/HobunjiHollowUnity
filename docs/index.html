@@ -105,13 +105,18 @@
           <button class="inv-cat" data-cat="processed">Processed</button>
         </div>
 
-        <!-- Item grid: x:1/54 y:6/28 w:33 h:21 -->
-        <div class="inv-grid-area">
+        <!-- Equipment slots: x:1/54 y:6/28 w:35 h:7 -->
+        <div class="inv-equip-section" id="invEquipSection">
+          <!-- Populated by buildEquipmentSlots() -->
+        </div>
+
+        <!-- Item grid: x:1/54 y:13/28 w:33 h:14 -->
+        <div class="inv-grid-area inv-grid-area--short">
           <div class="inv-grid" id="invGrid"></div>
         </div>
 
-        <!-- Page scroller: x:34/54 y:6/28 w:2 h:21 -->
-        <div class="inv-pgscroll" id="invPgScroll">
+        <!-- Page scroller: x:34/54 y:13/28 w:2 h:14 -->
+        <div class="inv-pgscroll inv-pgscroll--short" id="invPgScroll">
           <button class="ips-btn" id="invPgUp">▲</button>
           <div class="ips-fill"></div>
           <button class="ips-btn" id="invPgDown">▼</button>
@@ -272,29 +277,42 @@
     <div id="joystickKnob">🕹️</div>
   </div>
 
-  <!-- Tool Select: grid x:28 y:10 w:3 h:2 -->
+  <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
   <div id="toolSelect">
     <div id="toolPicker" role="menu" aria-label="Select tool">
       <div class="tool-pick-row">
         <span class="tool-pick-chip">Shovel</span>
-        <button class="tool-pick-btn active" data-tool="shovel" role="menuitem"><b>🥄</b></button>
+        <button class="tool-pick-btn active" data-tool="shovel" role="menuitem"><b>⛏️</b></button>
       </div>
       <div class="tool-pick-row">
         <span class="tool-pick-chip">Hoe</span>
         <button class="tool-pick-btn" data-tool="hoe" role="menuitem"><b>🪓</b></button>
       </div>
       <div class="tool-pick-row">
-        <span class="tool-pick-chip">Machete</span>
-        <button class="tool-pick-btn" data-tool="machete" role="menuitem"><b>🗡️</b></button>
+        <span class="tool-pick-chip">Weapon</span>
+        <button class="tool-pick-btn" data-tool="weapon" role="menuitem"><b>🗡️</b></button>
+      </div>
+      <div class="tool-pick-row">
+        <span class="tool-pick-chip">Axe</span>
+        <button class="tool-pick-btn" data-tool="axe" role="menuitem"><b>🪓</b></button>
+      </div>
+      <div class="tool-pick-row">
+        <span class="tool-pick-chip">Pick</span>
+        <button class="tool-pick-btn" data-tool="pick" role="menuitem"><b>⛏️</b></button>
+      </div>
+      <div class="tool-pick-row">
+        <span class="tool-pick-chip">Harpoon</span>
+        <button class="tool-pick-btn" data-tool="harpoon" role="menuitem"><b>🎣</b></button>
       </div>
     </div>
     <button class="ts-btn" id="toolBtn" aria-label="Select tool" aria-expanded="false">
-      <span class="ts-icon" id="toolBtnIcon">🥄</span>
+      <span class="ts-icon" id="toolBtnIcon">⛏️</span>
       <span class="ts-lbl" id="toolBtnLabel">Shovel</span>
     </button>
+    <button id="itemBtn" aria-label="Select item">🌾</button>
   </div>
 
-  <!-- Action Button Stack: grid x:25 y:12 w:6 h:5 · sub-grid 19×17 -->
+  <!-- Action Arch: 0-size anchor at bottom-right corner, buttons extend along clock 9:10–11:50 -->
   <div id="actionStack">
     <button class="abt" id="btnAction1" aria-label="Primary action"></button>
     <button class="abt" id="btnAction2" aria-label="Action 2"></button>
@@ -319,6 +337,10 @@
     </div>
     <button class="is-arr" id="itemNext" aria-label="Next item">›</button>
   </div>
+
+  <!-- Tool wheel overlay (radial picker) -->
+  <div id="toolWheelOverlay"></div>
+  <div id="toolWheel"></div>
 
   <script src="game.js"></script>
   <script>HobunjiOnboarding.init();</script>
