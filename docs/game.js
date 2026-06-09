@@ -2306,7 +2306,7 @@
 
       function useActiveAction() {
         const _anim = activeAnimStyle();
-        toolSwingDur = _anim === 'thrust' ? 0.40 : _anim === 'chop' ? 0.50 : 0.80;
+        toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
         toolSwingT = toolSwingDur;
         strikeFired = false;
         pendingAction = null;
@@ -3725,7 +3725,7 @@
         _swAxis.set(rightX, 0, rightZ);
 
         const anim = activeAnimStyle();
-        const WF = 0.16, SF = 0.65;  // windup-end and strike-end fractions shared by all anims
+        const WF = 0.16, SF = 0.28;  // windup 16%, strike 12%, return 72% — strike faster than windup
 
         if (anim === 'thrust') {
           // THRUST — windup (pull back) → jab forward → return
