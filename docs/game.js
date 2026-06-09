@@ -5199,6 +5199,7 @@
               const dx = ev.clientX - _ax, dy = ev.clientY - _ay;
               if (!_drag && Math.hypot(dx, dy) > DRAG_THRESH) {
                 _drag = true;
+                document.getElementById('actionStack').classList.add('drag-active');
                 _abtFire();
                 _rtimer = setInterval(_abtFire, 120);
               }
@@ -5214,6 +5215,7 @@
               if (ev.pointerId !== _ptId) return;
               _ptId = null;
               if (_rtimer) { clearInterval(_rtimer); _rtimer = null; }
+              document.getElementById('actionStack').classList.remove('drag-active');
               if (!_drag) _abtFire();
               _drag = false;
             }
