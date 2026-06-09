@@ -402,12 +402,12 @@
 
       // Current item equipped in each tool slot (null = empty)
       const equipmentSlots = {
-        hoe:     'bronzehoe',
-        shovel:  'pickshovel',
+        hoe:     null,
+        shovel:  null,
         axe:     null,
         pick:    null,
         harpoon: null,
-        weapon:  'hatchet',
+        weapon:  null,
       };
 
       // Clothing slots (visual only for now — no items yet)
