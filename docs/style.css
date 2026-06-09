@@ -446,6 +446,22 @@
     .abt-icon { font-size:1.3em; line-height:1; pointer-events:none; }
     .abt-label { display:none; }
     #btnAction1 .abt-icon { font-size:1.7em; }
+    /* Socket ring: appears under the held button, stays fixed at press position */
+    .abt-socket {
+      position: fixed;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: rgba(255,255,255,0.04);
+      border: 2px solid rgba(255,255,255,0.22);
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.35);
+      z-index: 29;
+      pointer-events: none;
+      animation: sockIn 0.07s ease-out;
+    }
+    @keyframes sockIn {
+      from { opacity:0; transform:translate(-50%,-50%) scale(0.7); }
+      to   { opacity:1; transform:translate(-50%,-50%) scale(1); }
+    }
 
     /* ── Item Select: grid x:20 y:14 w:5 h:3 ────────────── */
     /* Sub-grid 14×6: arr=3cols, icons occupy rows 1-4, name row 5 */

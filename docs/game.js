@@ -5175,8 +5175,10 @@
             `<span class="abt-label">${b.label}</span>`;
           if (!el._abtDragInit) {
             el._abtDragInit = true;
-            let _ptId = null, _ax = 0, _ay = 0, _drag = false, _rtimer = null;
-            const DRAG_THRESH = 20;
+            let _ptId = null, _cx = 0, _cy = 0, _sockR = 0;
+            let _drag = false, _rtimer = null, _socket = null;
+            const DRAG_THRESH = 10;
+            const _stack = document.getElementById('actionStack');
 
             function _abtFire() {
               const act = el.dataset.action;
@@ -5189,25 +5191,41 @@
               if (_ptId !== null) return;
               _ptId = ev.pointerId;
               el.setPointerCapture(ev.pointerId);
-              _ax = ev.clientX; _ay = ev.clientY;
+              const rect = el.getBoundingClientRect();
+              _cx = rect.left + rect.width / 2;
+              _cy = rect.top + rect.height / 2;
+              _sockR = rect.width * 0.70;
               _drag = false;
+              _socket = document.createElement('div');
+              _socket.className = 'abt-socket';
+              _socket.style.left   = _cx + 'px';
+              _socket.style.top    = _cy + 'px';
+              _socket.style.width  = (rect.width * 2.2) + 'px';
+              _socket.style.height = (rect.width * 2.2) + 'px';
+              document.body.appendChild(_socket);
+              el.style.transition = 'none';
               ev.preventDefault();
             });
 
             el.addEventListener('pointermove', ev => {
               if (ev.pointerId !== _ptId) return;
-              const dx = ev.clientX - _ax, dy = ev.clientY - _ay;
-              if (!_drag && Math.hypot(dx, dy) > DRAG_THRESH) {
-                _drag = true;
-                document.getElementById('actionStack').classList.add('drag-active');
-                _abtFire();
-                _rtimer = setInterval(_abtFire, 120);
-              }
-              if (_drag) {
+              const dx = ev.clientX - _cx, dy = ev.clientY - _cy;
+              const dist = Math.hypot(dx, dy);
+              const r = Math.min(dist, _sockR);
+              const nx = dist > 0.5 ? dx / dist * r : 0;
+              const ny = dist > 0.5 ? dy / dist * r : 0;
+              el.style.transform = `translate(calc(-50% + ${nx}px), calc(-50% + ${ny}px))`;
+              if (dist > DRAG_THRESH) {
                 const ang = Math.atan2(dy, dx);
                 facingAngle = ang;
                 lastMoveAngle = ang;
                 player.angle = ang;
+                if (!_drag) {
+                  _drag = true;
+                  _stack.classList.add('drag-active');
+                  _abtFire();
+                  _rtimer = setInterval(_abtFire, 120);
+                }
               }
             });
 
@@ -5215,7 +5233,11 @@
               if (ev.pointerId !== _ptId) return;
               _ptId = null;
               if (_rtimer) { clearInterval(_rtimer); _rtimer = null; }
-              document.getElementById('actionStack').classList.remove('drag-active');
+              _stack.classList.remove('drag-active');
+              if (_socket) { _socket.remove(); _socket = null; }
+              el.style.transition = 'transform 0.14s ease-out';
+              el.style.transform  = 'translate(-50%, -50%)';
+              setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
               if (!_drag) _abtFire();
               _drag = false;
             }
