@@ -2307,7 +2307,7 @@
       function useActiveAction() {
         // Per-anim swing duration: thrust fast, chop medium, sweep slow
         const _anim = activeAnimStyle();
-        toolSwingDur = _anim === 'thrust' ? 0.18 : _anim === 'chop' ? 0.28 : 0.32;
+        toolSwingDur = _anim === 'thrust' ? 0.18 : _anim === 'chop' ? 0.28 : 0.65;
         toolSwingT = toolSwingDur;
         const reticle = getReticleTile();
         const tile    = grid[reticle.row][reticle.col];
@@ -3732,17 +3732,28 @@
           );
 
         } else {
-          // SWEEP — rotate player body additively; toolHolder just tracks the visual facing
-          const sweepOff = -1.52 + swing * 2.07;   // rest ≈ −87° right, peak ≈ +0.55 left
+          // SWEEP — three-phase body rotation; axe locked in hand throughout.
+          // Phase 1: body cocks right (windup). Phase 2: sweeps through to far left (strike).
+          // Phase 3: returns to forward facing.
+          const WINDUP = 0.28, STRIKE = 0.62;
+          let sweepOff;
+          if (progress <= WINDUP) {
+            sweepOff = -1.52 * (progress / WINDUP);
+          } else if (progress <= STRIKE) {
+            sweepOff = -1.52 + 3.64 * ((progress - WINDUP) / (STRIKE - WINDUP));  // -1.52 → +2.12
+          } else {
+            sweepOff = 2.12 * (1.0 - (progress - STRIKE) / (1.0 - STRIKE));       // +2.12 → 0
+          }
           const vθ = θ + sweepOff;
           playerMesh.rotation.y = vθ;
           const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
           _qFac.setFromAxisAngle(_tUp, vθ);
           toolHolder.quaternion.copy(_qFac);
           toolHolder.position.set(
-            playerMesh.position.x + vRX * 0.28,
+            playerMesh.position.x + vRX * 0.20 + vFX * 0.16,
             playerMesh.position.y + 0.18,
-            playerMesh.position.z + vRZ * 0.28
+            playerMesh.position.z + vRZ * 0.20 + vFZ * 0.16
           );
         }
       }
