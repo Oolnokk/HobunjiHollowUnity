@@ -5046,10 +5046,24 @@
       // ── Outer arch — tool & item arc-dial ─────────────────
       {
         const _itemBtn = document.getElementById('itemBtn');
-        const ARC_S = 175, ARC_E = 95, SAFE_M = 18;
+        const ARC_S = 175, ARC_E = 95;
+        const mobileControls = window.SCRATCHBONES_CONFIG?.game?.mobileControls || {};
+        const configuredSafeMarginPx = Number(mobileControls.safeMarginPx);
+        const SAFE_M = Number.isFinite(configuredSafeMarginPx) ? configuredSafeMarginPx : 0;
+        const outerArchRadiusClamp = mobileControls.outerArch?.radiusClamp || {};
+
+        function _clampedVmin({ minPx, vmin, maxPx }) {
+          const viewportMin = Math.min(window.innerWidth, window.innerHeight);
+          const configuredVmin = Number(vmin);
+          const preferredPx = viewportMin * (Number.isFinite(configuredVmin) ? configuredVmin : 0) / 100;
+          const lowerPx = Number(minPx);
+          const upperPx = Number(maxPx);
+          if (![preferredPx, lowerPx, upperPx].every(Number.isFinite)) return 0;
+          return Math.min(upperPx, Math.max(lowerPx, preferredPx));
+        }
 
         function _outerR() {
-          return Math.min(210, Math.max(148, Math.min(window.innerWidth, window.innerHeight) * 0.27));
+          return _clampedVmin(outerArchRadiusClamp);
         }
         function _arcPt(deg) {
           const r = _outerR(), a = deg * Math.PI / 180;

@@ -31,6 +31,17 @@ window.SCRATCHBONES_CONFIG = {
         "selectExistingText": true
       }
     },
+    "mobileControls": {
+      "actionArch": {
+        "radiusClamp": { "minPx": 200, "vmin": 36, "maxPx": 260 },
+        "cssVar": "--scratchbones-action-arch-radius"
+      },
+      "outerArch": {
+        "radiusClamp": { "minPx": 300, "vmin": 54, "maxPx": 390 },
+        "cssVar": "--scratchbones-outer-arch-radius"
+      },
+      "safeMarginPx": 18
+    },
     "chat": {
       "messageMaxLength": 180,
       "inputFocusFontSizePx": 16,
@@ -3366,3 +3377,23 @@ window.SCRATCHBONES_CONFIG.game.layout.fitter = window.SCRATCHBONES_CONFIG.game.
     }
   ];
 })();
+(function applyScratchbonesCssConfig(root) {
+  const clampToCss = (clamp) => {
+    const minPx = Number(clamp?.minPx);
+    const vmin = Number(clamp?.vmin);
+    const maxPx = Number(clamp?.maxPx);
+    if (![minPx, vmin, maxPx].every(Number.isFinite)) return '';
+    return `clamp(${minPx}px, ${vmin}vmin, ${maxPx}px)`;
+  };
+
+  const controls = root.SCRATCHBONES_CONFIG?.game?.mobileControls || {};
+  const rootStyle = root.document?.documentElement?.style;
+  if (!rootStyle) return;
+
+  for (const key of ['actionArch', 'outerArch']) {
+    const entry = controls[key];
+    const cssVar = entry?.cssVar;
+    const radiusCss = clampToCss(entry?.radiusClamp);
+    if (cssVar && radiusCss) rootStyle.setProperty(cssVar, radiusCss);
+  }
+})(window);
