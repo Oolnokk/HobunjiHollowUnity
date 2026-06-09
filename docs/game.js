@@ -3589,6 +3589,9 @@
       const playerMesh = new THREE.Group();
       playerMesh.name = 'player_root';
       scene.add(playerMesh);
+      // Logical facing angle — decoupled from playerMesh.rotation.y so sweep can
+      // rotate the visual body without affecting movement/targeting math.
+      let playerFacing = 0;
 
       // ── Reticle mesh ──────────────────────────────────────────────
       const reticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
@@ -3644,9 +3647,9 @@
         });
         const plane = new THREE.Mesh(geo, mat);
         if (itemKey === 'bronzehoe') {
-          // Stand upright — 90° around the handle (long-axis) axle from flat position.
-          // plane.rotation.y = PI faces the sprite toward the camera (which is behind the player).
-          plane.rotation.y = Math.PI;
+          // Flat, but image spun 90° in the ground plane so the blade edge leads (not the flat face)
+          plane.rotation.x = -Math.PI / 2;
+          plane.rotation.z =  Math.PI / 2;
         } else {
           // Lie flat in XZ plane so the overhead camera always sees the full sprite
           plane.rotation.x = -Math.PI / 2;
@@ -3689,7 +3692,8 @@
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
 
-        const θ      = playerMesh.rotation.y;
+        // Use logical facing for game-logic vectors; sweep will additively rotate the body.
+        const θ      = playerFacing;
         const rightX = -Math.cos(θ), rightZ =  Math.sin(θ);
         const fwdX   =  Math.sin(θ), fwdZ   =  Math.cos(θ);
 
@@ -3728,14 +3732,17 @@
           );
 
         } else {
-          // SWEEP — reversed backhand: cocked far-right at rest, arcs left on swing
+          // SWEEP — rotate player body additively; toolHolder just tracks the visual facing
           const sweepOff = -1.52 + swing * 2.07;   // rest ≈ −87° right, peak ≈ +0.55 left
-          _qAnim.setFromAxisAngle(_tUp, sweepOff);
-          toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
+          const vθ = θ + sweepOff;
+          playerMesh.rotation.y = vθ;
+          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          _qFac.setFromAxisAngle(_tUp, vθ);
+          toolHolder.quaternion.copy(_qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * 0.20 + fwdX * 0.16,
+            playerMesh.position.x + vRX * 0.28,
             playerMesh.position.y + 0.18,
-            playerMesh.position.z + rightZ * 0.20 + fwdZ * 0.16
+            playerMesh.position.z + vRZ * 0.28
           );
         }
       }
@@ -4351,8 +4358,9 @@
         if (!player.perpState) player.perpState = {};
         const rawTargetRotY = -facingAngle + Math.PI / 2;
         const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, [Math.PI / 2, -Math.PI / 2]);
-        if (pSnapTo !== null) playerMesh.rotation.y = pEffTarget;
-        else playerMesh.rotation.y += angleDiff(pEffTarget, playerMesh.rotation.y) * 0.18;
+        if (pSnapTo !== null) playerFacing = pEffTarget;
+        else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
+        playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
 
         // Bob animation when moving
         const speed = Math.hypot(player.vx, player.vy);
