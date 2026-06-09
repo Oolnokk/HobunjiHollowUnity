@@ -1510,6 +1510,7 @@
         const keys = getInventoryStackKeys(invActiveCat);
         const visibleSlotCount = Math.max(INVENTORY_EMPTY_SLOT_FLOOR, Math.ceil(Math.max(keys.length, 1) / 7) * 7);
 
+        const _slotAbbr = { hoe:'H', shovel:'Sh', axe:'Ax', pick:'Pk', harpoon:'Hp', weapon:'W' };
         keys.forEach(key => {
           const def   = ITEM_DEFS[key];
           const count = inventory[key] || 0;
@@ -1519,6 +1520,16 @@
           box.innerHTML =
             `<span class="iib-icon">${def.icon}</span>` +
             `<span class="iib-count">×${count}</span>`;
+          // Corner badge listing every slot this item is assigned to
+          const badges = Object.entries(equipmentSlots)
+            .filter(([, v]) => v === key)
+            .map(([s]) => _slotAbbr[s] || s.charAt(0).toUpperCase());
+          if (badges.length) {
+            const badge = document.createElement('span');
+            badge.className = 'iib-equip-badge';
+            badge.textContent = badges.join('·');
+            box.appendChild(badge);
+          }
           box.addEventListener('click', () => selectInventoryItem(key));
           grid.appendChild(box);
         });
@@ -1590,21 +1601,17 @@
               buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
             });
           }
-          // Equip buttons for tool items
+          // Assign/unassign buttons for tool items (item stays in bag either way)
           const toolDef = TOOL_ITEM_DEFS[key];
           if (toolDef && count > 0) {
             for (const slot of toolDef.slots) {
-              const currently = equipmentSlots[slot];
-              const currentLabel = currently ? TOOL_ITEM_DEFS[currently]?.label || currently : 'empty';
-              const btnLabel = currently
-                ? `Equip as ${slot} (swap ${currentLabel})`
-                : `Equip as ${slot}`;
-              mkBtn(btnLabel, 'equip', () => {
-                equipItem(key, slot);
+              const isAssigned = equipmentSlots[slot] === key;
+              mkBtn(isAssigned ? `Unassign from ${slot}` : `Assign as ${slot}`, 'equip', () => {
+                if (isAssigned) unequipItem(slot);
+                else equipItem(key, slot);
                 buildInventoryGrid();
                 buildEquipmentSlots();
-                if (invSelectedKey === key && (inventory[key] || 0) > 0) selectInventoryItem(key, false);
-                else clearInventoryDetail('← Select an item');
+                selectInventoryItem(key, false);
               });
             }
           }
@@ -1613,36 +1620,28 @@
         }
       }
 
-      // Equip a tool item from bag into a slot; displaced item returns to bag
+      // Assign a tool item to a slot (item stays in bag; one slot, multiple items can share the item)
       function equipItem(itemKey, slot) {
         const toolDef = TOOL_ITEM_DEFS[itemKey];
-        if (!toolDef || !toolDef.slots.includes(slot)) { showToast('Cannot equip that item in that slot.', false); return; }
-        if ((inventory[itemKey] || 0) < 1) { showToast('No ' + ITEM_DEFS[itemKey]?.label + ' in bag.', false); return; }
-        const displaced = equipmentSlots[slot];
-        if (displaced) {
-          inventory[displaced] = Math.min(9, (inventory[displaced] || 0) + 1);
-        }
-        inventory[itemKey]--;
-        clampInventoryStack(itemKey);
+        if (!toolDef || !toolDef.slots.includes(slot)) { showToast('Cannot assign that item to that slot.', false); return; }
+        if ((inventory[itemKey] || 0) < 1) { showToast('No ' + (ITEM_DEFS[itemKey]?.label || itemKey) + ' in bag.', false); return; }
         equipmentSlots[slot] = itemKey;
         rebuildToolMeshes();
-        // Re-attach currently active tool's new mesh
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
-        showToast(`${toolDef.label} equipped as ${slot}.`, true);
+        showToast(`${toolDef.label} assigned as ${slot}.`, true);
         refreshActionBar();
       }
 
-      // Remove item from slot and return to bag
+      // Clear a slot assignment (item remains in bag)
       function unequipItem(slot) {
         const itemKey = equipmentSlots[slot];
         if (!itemKey) return;
-        inventory[itemKey] = Math.min(9, (inventory[itemKey] || 0) + 1);
         equipmentSlots[slot] = null;
         rebuildToolMeshes();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
-        showToast(`${TOOL_ITEM_DEFS[itemKey]?.label || itemKey} unequipped.`, true);
+        showToast(`${TOOL_ITEM_DEFS[itemKey]?.label || itemKey} unassigned from ${slot}.`, true);
         buildInventoryGrid();
         buildEquipmentSlots();
         refreshActionBar();
@@ -1675,7 +1674,7 @@
             const unBtn = document.createElement('button');
             unBtn.className = 'ies-unequip';
             unBtn.textContent = '✕';
-            unBtn.title = 'Unequip ' + def.label;
+            unBtn.title = 'Unassign ' + def.label;
             unBtn.addEventListener('click', (e) => { e.stopPropagation(); unequipItem(slot); });
             cell.appendChild(unBtn);
           }
@@ -3725,7 +3724,7 @@
         _swAxis.set(rightX, 0, rightZ);
 
         const anim = activeAnimStyle();
-        const WF = 0.28, SF = 0.62;  // windup-end and strike-end fractions shared by all anims
+        const WF = 0.16, SF = 0.65;  // windup-end and strike-end fractions shared by all anims
 
         if (anim === 'thrust') {
           // THRUST — windup (pull back) → jab forward → return

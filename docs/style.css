@@ -976,6 +976,7 @@
       font-family: 'DM Mono', monospace; pointer-events: none;
     }
     .iib-count.zero { color: var(--danger); opacity: 0.45; }
+    .iib-equip-badge { position:absolute; top:2px; left:2px; font-size:7px; line-height:1.3; background:rgba(249,226,138,0.82); color:#1a1a2e; border-radius:2px; padding:0 2px; pointer-events:none; font-family:'DM Mono',monospace; }
 
     /* Page scroller: sub x:34/54 y:13/28 w:2 h:14 */
     .inv-pgscroll {
