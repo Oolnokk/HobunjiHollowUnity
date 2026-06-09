@@ -2305,38 +2305,56 @@
       }
 
       function useActiveAction() {
-        // Per-anim swing duration: thrust fast, chop medium, sweep slow
         const _anim = activeAnimStyle();
-        toolSwingDur = _anim === 'thrust' ? 0.18 : _anim === 'chop' ? 0.28 : 0.65;
+        toolSwingDur = _anim === 'thrust' ? 0.40 : _anim === 'chop' ? 0.50 : 0.80;
         toolSwingT = toolSwingDur;
-        const reticle = getReticleTile();
-        const tile    = grid[reticle.row][reticle.col];
-        let result;
+        strikeFired = false;
+        pendingAction = null;
 
-        // World object actions
+        // Immediate actions (navigation / world-object interactions)
         if (activeAction === 'obj_exit_house') {
           exitInterior();
-          result = { ok: true, message: 'Stepped outside.' };
-        } else if (activeAction.startsWith('obj_')) {
-          const obj = getWorldObjectAt(reticle.col, reticle.row);
-          result = obj ? obj.onAction(activeAction) : { ok: false, message: 'No object here.' };
-        } else if (activeAction.startsWith('place_')) {
-          result = placeProcessingFurniture(reticle.col, reticle.row, activeAction.slice(6));
-        } else if (activeAction === 'spawn_uumkaoii') {
-          result = spawnUumkaoii(reticle.col, reticle.row);
-        } else if (activeAction.startsWith('plant_')) {
-          result = plantCrop(tile, activeAction.slice(6));
-        } else if (activeAction === 'harvest') {
+          lastActionMessage = 'Stepped outside.';
+          showToast(lastActionMessage, true);
+          return;
+        }
+        if (activeAction.startsWith('obj_')) {
+          const _r = getReticleTile();
+          const _o = getWorldObjectAt(_r.col, _r.row);
+          const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
+          lastActionMessage = _res.message;
+          showToast(_res.message, _res.ok !== false);
+          return;
+        }
+
+        // All other actions are queued to fire at the start of the strike phase
+        const reticle = getReticleTile();
+        pendingAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool };
+      }
+
+      function firePendingAction() {
+        if (!pendingAction) return;
+        const { col, row, action, tool } = pendingAction;
+        pendingAction = null;
+        const tile = grid[row][col];
+        let result;
+        if (action.startsWith('place_')) {
+          result = placeProcessingFurniture(col, row, action.slice(6));
+        } else if (action === 'spawn_uumkaoii') {
+          result = spawnUumkaoii(col, row);
+        } else if (action.startsWith('plant_')) {
+          result = plantCrop(tile, action.slice(6));
+        } else if (action === 'harvest') {
           result = harvestCrop(tile);
         } else {
-          result = applyAction(activeTool, activeAction, reticle.col, reticle.row);
+          result = applyAction(tool, action, col, row);
         }
         lastActionMessage = result.message;
         showToast(result.message, result.ok !== false);
-        spawnActionParticles(reticle.col, reticle.row, activeAction, result.ok !== false);
-        debugLog(`${result.ok ? 'ok' : 'blocked'} ${activeAction} @ c${reticle.col},r${reticle.row}: ${result.message}`);
+        spawnActionParticles(col, row, action, result.ok !== false);
+        debugLog(`${result.ok ? 'ok' : 'blocked'} ${action} @ c${col},r${row}: ${result.message}`);
         recomputeWater(false);
-        if (result.ok !== false) markTileDirty(reticle.col, reticle.row);
+        if (result.ok !== false) markTileDirty(col, row);
         refreshActionBar();
       }
 
@@ -3592,6 +3610,9 @@
       // Logical facing angle — decoupled from playerMesh.rotation.y so sweep can
       // rotate the visual body without affecting movement/targeting math.
       let playerFacing = 0;
+      // Pending tool action queued to fire at the strike phase of the current swing
+      let pendingAction = null;
+      let strikeFired   = false;
 
       // ── Reticle mesh ──────────────────────────────────────────────
       const reticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
@@ -3646,14 +3667,9 @@
           side: THREE.DoubleSide,
         });
         const plane = new THREE.Mesh(geo, mat);
-        if (itemKey === 'bronzehoe') {
-          // Flat, but image spun 90° in the ground plane so the blade edge leads (not the flat face)
-          plane.rotation.x = -Math.PI / 2;
-          plane.rotation.z =  Math.PI / 2;
-        } else {
-          // Lie flat in XZ plane so the overhead camera always sees the full sprite
-          plane.rotation.x = -Math.PI / 2;
-        }
+        plane.rotation.x = -Math.PI / 2;  // lie flat in XZ for all tools
+        // Sweep tools: rotate image 90° in the flat plane so blade aligns parallel to player body
+        if (TOOL_ITEM_DEFS[itemKey]?.animStyle === 'sweep') plane.rotation.z = -Math.PI / 2;
         g.add(plane);
         return g;
       }
@@ -3709,20 +3725,36 @@
         _swAxis.set(rightX, 0, rightZ);
 
         const anim = activeAnimStyle();
+        const WF = 0.28, SF = 0.62;  // windup-end and strike-end fractions shared by all anims
 
         if (anim === 'thrust') {
-          // THRUST — jab forward on use
+          // THRUST — windup (pull back) → jab forward → return
+          let jabOff;
+          if (progress <= WF) {
+            jabOff = -0.22 * (progress / WF);
+          } else if (progress <= SF) {
+            jabOff = -0.22 + 0.54 * ((progress - WF) / (SF - WF));  // −0.22 → +0.32
+          } else {
+            jabOff = 0.32 * (1.0 - (progress - SF) / (1.0 - SF));
+          }
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * 0.28 + fwdX * swing * 0.32,
+            playerMesh.position.x + rightX * 0.28 + fwdX * jabOff,
             playerMesh.position.y + 0.18,
-            playerMesh.position.z + rightZ * 0.28 + fwdZ * swing * 0.32
+            playerMesh.position.z + rightZ * 0.28 + fwdZ * jabOff
           );
 
         } else if (anim === 'chop') {
-          // CHOP — raise high, slam down on use
-          const chopAngle = 0.82 - swing * (Math.PI * 0.84);
+          // CHOP — windup (raise high) → slam down → return
+          let chopAngle;
+          if (progress <= WF) {
+            chopAngle = 0.82 + 0.98 * (progress / WF);               // raise: 0.82 → 1.80
+          } else if (progress <= SF) {
+            chopAngle = 1.80 - 3.30 * ((progress - WF) / (SF - WF)); // slam:  1.80 → −1.50
+          } else {
+            chopAngle = -1.50 + 2.32 * ((progress - SF) / (1.0 - SF));// return: −1.50 → 0.82
+          }
           _qAnim.setFromAxisAngle(_swAxis, chopAngle);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
@@ -3732,17 +3764,15 @@
           );
 
         } else {
-          // SWEEP — three-phase body rotation; axe locked in hand throughout.
-          // Phase 1: body cocks right (windup). Phase 2: sweeps through to far left (strike).
-          // Phase 3: returns to forward facing.
-          const WINDUP = 0.28, STRIKE = 0.62;
+          // SWEEP — body rotates through windup-strike-return arc; axe locked in hand.
+          const WINDUP_ANGLE = -2.20, STRIKE_ANGLE = 2.12;
           let sweepOff;
-          if (progress <= WINDUP) {
-            sweepOff = -1.52 * (progress / WINDUP);
-          } else if (progress <= STRIKE) {
-            sweepOff = -1.52 + 3.64 * ((progress - WINDUP) / (STRIKE - WINDUP));  // -1.52 → +2.12
+          if (progress <= WF) {
+            sweepOff = WINDUP_ANGLE * (progress / WF);
+          } else if (progress <= SF) {
+            sweepOff = WINDUP_ANGLE + (STRIKE_ANGLE - WINDUP_ANGLE) * ((progress - WF) / (SF - WF));
           } else {
-            sweepOff = 2.12 * (1.0 - (progress - STRIKE) / (1.0 - STRIKE));       // +2.12 → 0
+            sweepOff = STRIKE_ANGLE * (1.0 - (progress - SF) / (1.0 - SF));
           }
           const vθ = θ + sweepOff;
           playerMesh.rotation.y = vθ;
@@ -3755,6 +3785,12 @@
             playerMesh.position.y + 0.18,
             playerMesh.position.z + vRZ * 0.20 + vFZ * 0.16
           );
+        }
+
+        // Fire queued action at the start of the strike phase
+        if (pendingAction && !strikeFired && progress >= WF) {
+          strikeFired = true;
+          firePendingAction();
         }
       }
 
