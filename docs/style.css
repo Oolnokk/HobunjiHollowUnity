@@ -375,7 +375,7 @@
     /* Same 0-size corner anchor as the inner action arch, larger radius.
        #toolBtn at 150° (clock ~9:50), #itemBtn at 120° (clock ~10:30). */
     #toolSelect {
-      --ar2: clamp(148px, 27vmin, 210px);
+      --ar2: var(--scratchbones-outer-arch-radius);
       position: fixed; right: 0; bottom: 0;
       width: 0; height: 0; overflow: visible; z-index: 31; touch-action: none;
     }
@@ -456,7 +456,7 @@
        = math angles  175°,155°,135°,115°, 95° (CCW from east)
        right = −cos(α)·R + margin,  bottom = sin(α)·R + margin          */
     #actionStack {
-      --ar: clamp(88px, 16vmin, 124px);
+      --ar: var(--scratchbones-action-arch-radius);
       position: fixed; right: 0; bottom: 0;
       width: 0; height: 0;
       overflow: visible; z-index: 30; touch-action: none;
