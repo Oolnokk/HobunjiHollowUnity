@@ -5042,8 +5042,193 @@
         toolBtn.style.borderColor = '';
       }
 
-      toolBtn.addEventListener('click', () => toolPickerOpen ? closeToolPicker() : openToolPicker());
-      toolWheelOverlay.addEventListener('pointerup', closeToolPicker);
+      // ── Outer arch — tool & item arc-dial ─────────────────
+      {
+        const _itemBtn = document.getElementById('itemBtn');
+        const ARC_S = 175, ARC_E = 95, SAFE_M = 18;
+
+        function _outerR() {
+          return Math.min(210, Math.max(148, Math.min(window.innerWidth, window.innerHeight) * 0.27));
+        }
+        function _arcPt(deg) {
+          const r = _outerR(), a = deg * Math.PI / 180;
+          return { x: window.innerWidth  + Math.cos(a) * r - SAFE_M,
+                   y: window.innerHeight - Math.sin(a) * r - SAFE_M };
+        }
+        function _cornerAng(px, py) {
+          return Math.atan2(-(py - window.innerHeight), px - window.innerWidth) * 180 / Math.PI;
+        }
+
+        let _arcEls = [], _arcBd = null, _arcOpen = null, _arcSlots = [], _arcActive = -1;
+
+        function _clearArc() {
+          if (_arcBd) { _arcBd.remove(); _arcBd = null; }
+          _arcEls.forEach(e => e.remove()); _arcEls = [];
+          _arcSlots = []; _arcActive = -1; _arcOpen = null;
+          toolBtn.style.visibility = '';
+          if (_itemBtn) _itemBtn.style.visibility = '';
+        }
+
+        function _mkSlot(deg, icon, label, extra) {
+          const pt = _arcPt(deg);
+          const el = document.createElement('div');
+          el.className = 'arc-slot' + (extra ? ' ' + extra : '');
+          el.style.cssText = `position:fixed;left:${pt.x}px;top:${pt.y}px;z-index:201;pointer-events:none;`;
+          el.innerHTML = `<span class="arc-icon">${icon}</span>`
+                       + (label ? `<span class="arc-label">${label}</span>` : '');
+          document.body.appendChild(el);
+          _arcEls.push(el);
+          return el;
+        }
+
+        function _setActive(idx) {
+          if (_arcActive === idx) return;
+          if (_arcSlots[_arcActive]) _arcSlots[_arcActive].el.classList.remove('arc-active');
+          _arcActive = idx;
+          if (_arcSlots[idx]) _arcSlots[idx].el.classList.add('arc-active');
+        }
+
+        function _openToolArc() {
+          _clearArc(); _arcOpen = 'tool';
+          if (_itemBtn) _itemBtn.style.visibility = 'hidden';
+          _arcBd = document.createElement('div');
+          _arcBd.className = 'arc-backdrop';
+          document.body.appendChild(_arcBd);
+          const n = WHEEL_SLOTS.length, step = (ARC_S - ARC_E) / (n - 1);
+          WHEEL_SLOTS.forEach((slot, i) => {
+            const deg = ARC_S - i * step;
+            const eq = equipmentSlots[slot], def = eq ? TOOL_ITEM_DEFS[eq] : null;
+            const icon  = def?.icon  || {shovel:'⛏️',hoe:'🪓',weapon:'🗡️',axe:'🪓',pick:'⛏️',harpoon:'🎣'}[slot] || '🔧';
+            const label = {shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'}[slot] || slot;
+            const el = _mkSlot(deg, icon, label, activeTool === slot ? 'arc-active' : '');
+            _arcSlots.push({ angle: deg, el, data: slot });
+            if (activeTool === slot) _arcActive = i;
+          });
+        }
+
+        let _iScroll = 0, _iScrollT = null, _iScrollDir = 0;
+        const ITEM_VIS = 5;
+
+        function _buildItemSlots() {
+          _arcEls.forEach(e => e.remove()); _arcEls = []; _arcSlots = []; _arcActive = -1;
+          const stacks = getInventoryStackItems(), total = stacks.length;
+          const slots = [];
+          if (_iScroll > 0) slots.push({ type:'arrow', dir:-1, icon:'◀', label:'' });
+          for (let i = 0; i < ITEM_VIS && _iScroll + i < total; i++)
+            slots.push({ type:'item', index:_iScroll+i, icon:stacks[_iScroll+i].icon, label:stacks[_iScroll+i].label });
+          if (_iScroll + ITEM_VIS < total) slots.push({ type:'arrow', dir:1, icon:'▶', label:'' });
+          const sn = slots.length, step = sn > 1 ? (ARC_S - ARC_E) / (sn - 1) : 0;
+          slots.forEach((s, i) => {
+            const deg = ARC_S - i * step;
+            const extra = s.type === 'arrow' ? 'arc-arrow' : (s.index === activeItemIndex ? 'arc-active' : '');
+            const el = _mkSlot(deg, s.icon, s.label, extra);
+            _arcSlots.push({ angle: deg, el, data: s });
+            if (s.type === 'item' && s.index === activeItemIndex) _arcActive = i;
+          });
+        }
+
+        function _openItemArc() {
+          _clearArc(); _arcOpen = 'item';
+          toolBtn.style.visibility = 'hidden';
+          _arcBd = document.createElement('div');
+          _arcBd.className = 'arc-backdrop';
+          document.body.appendChild(_arcBd);
+          _iScroll = Math.max(0, activeItemIndex - Math.floor(ITEM_VIS / 2));
+          _iScrollDir = 0;
+          _buildItemSlots();
+        }
+
+        function _arcMove(px, py) {
+          if (!_arcOpen || !_arcSlots.length) return;
+          const ang = Math.max(ARC_E, Math.min(ARC_S, _cornerAng(px, py)));
+          let best = 0, bd = Infinity;
+          _arcSlots.forEach((s, i) => { const d = Math.abs(s.angle - ang); if (d < bd) { bd = d; best = i; } });
+          if (_arcOpen === 'item') {
+            const newDir = _arcSlots[best]?.data.type === 'arrow' ? _arcSlots[best].data.dir : 0;
+            if (newDir !== _iScrollDir) {
+              _iScrollDir = newDir;
+              if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
+              if (newDir !== 0) {
+                _iScrollT = setInterval(() => {
+                  _iScroll = Math.max(0, Math.min(getInventoryStackItems().length - ITEM_VIS, _iScroll + _iScrollDir));
+                  _buildItemSlots();
+                }, 350);
+              }
+            }
+          }
+          _setActive(best);
+        }
+
+        function _arcUp() {
+          if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
+          if (!_arcOpen) return;
+          const slot = _arcSlots[_arcActive];
+          if (_arcOpen === 'tool' && slot) {
+            setActiveTool(slot.data);
+          } else if (_arcOpen === 'item' && slot?.data.type === 'item') {
+            activeItemIndex = slot.data.index;
+            refreshItemScroll(); refreshActionBar();
+          }
+          _clearArc();
+        }
+
+        let _tPtId = null, _tHeld = false, _tTimer = null;
+        toolBtn.addEventListener('pointerdown', ev => {
+          if (_tPtId !== null) return;
+          _tPtId = ev.pointerId; _tHeld = false;
+          toolBtn.setPointerCapture(ev.pointerId);
+          _tTimer = setTimeout(() => { _tHeld = true; _openToolArc(); }, 200);
+          ev.preventDefault();
+        });
+        toolBtn.addEventListener('pointermove', ev => {
+          if (ev.pointerId !== _tPtId || _arcOpen !== 'tool') return;
+          _arcMove(ev.clientX, ev.clientY);
+        });
+        toolBtn.addEventListener('pointerup', ev => {
+          if (ev.pointerId !== _tPtId) return;
+          _tPtId = null;
+          if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
+          if (_arcOpen === 'tool') _arcUp();
+          else if (!_tHeld) setActiveTool(WHEEL_SLOTS[(WHEEL_SLOTS.indexOf(activeTool) + 1) % WHEEL_SLOTS.length]);
+          _tHeld = false;
+        });
+        toolBtn.addEventListener('pointercancel', ev => {
+          if (ev.pointerId !== _tPtId) return;
+          _tPtId = null;
+          if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
+          _clearArc(); _tHeld = false;
+        });
+
+        if (_itemBtn) {
+          let _iPtId = null, _iHeld = false, _iTimer = null;
+          _itemBtn.addEventListener('pointerdown', ev => {
+            if (_iPtId !== null) return;
+            _iPtId = ev.pointerId; _iHeld = false;
+            _itemBtn.setPointerCapture(ev.pointerId);
+            _iTimer = setTimeout(() => { _iHeld = true; _openItemArc(); }, 200);
+            ev.preventDefault();
+          });
+          _itemBtn.addEventListener('pointermove', ev => {
+            if (ev.pointerId !== _iPtId || _arcOpen !== 'item') return;
+            _arcMove(ev.clientX, ev.clientY);
+          });
+          _itemBtn.addEventListener('pointerup', ev => {
+            if (ev.pointerId !== _iPtId) return;
+            _iPtId = null;
+            if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
+            if (_arcOpen === 'item') _arcUp();
+            else if (!_iHeld) { cycleActiveInventoryItem(1); refreshItemScroll(); refreshActionBar(); }
+            _iHeld = false;
+          });
+          _itemBtn.addEventListener('pointercancel', ev => {
+            if (ev.pointerId !== _iPtId) return;
+            _iPtId = null;
+            if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
+            if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
+            _clearArc(); _iHeld = false;
+          });
+        }
+      }
 
       // ── Action bar update ──────────────────────────────────
       // ── Dynamic action stack ────────────────────────────────────────
@@ -5336,11 +5521,13 @@
       function refreshItemScroll() {
         const stacks = getInventoryStackItems();
         const n = stacks.length;
+        const iBtnEl = document.getElementById('itemBtn');
         if (n === 0) {
           itemIcon.textContent  = '□';
           itemName.textContent  = 'EMPTY';
           itemCount.textContent = '×0';
           itemCount.className   = 'is-count empty';
+          if (iBtnEl) iBtnEl.textContent = '□';
           const prevEl = document.getElementById('isPrevIcon');
           const nextEl = document.getElementById('isNextIcon');
           if (prevEl) prevEl.textContent = '□';
@@ -5356,6 +5543,7 @@
         // Current item
         itemIcon.textContent  = curr.icon;
         itemName.textContent  = curr.label;
+        if (iBtnEl) iBtnEl.textContent = curr.icon;
         itemCount.textContent = `×${count}`;
         itemCount.className   = 'is-count' + (count === 0 ? ' empty' : '');
         // Peek icons (prev/next previews)

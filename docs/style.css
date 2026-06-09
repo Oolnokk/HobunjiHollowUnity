@@ -371,26 +371,83 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 22px; pointer-events: none;
     }
-    /* ── Tool Select: grid x:28 y:10 w:3 h:2 ───────────── */
+    /* ── Outer arch (tool dial + item dial) ─────────────────── */
+    /* Same 0-size corner anchor as the inner action arch, larger radius.
+       #toolBtn at 150° (clock ~9:50), #itemBtn at 120° (clock ~10:30). */
     #toolSelect {
-      position: fixed;
-      left: calc(var(--play-right) - 4 * var(--col)); top: calc(var(--oy) + 10 * var(--row));
-      width: calc(3 * var(--col)); height: calc(2 * var(--row));
-      z-index: 30;
+      --ar2: clamp(148px, 27vmin, 210px);
+      position: fixed; right: 0; bottom: 0;
+      width: 0; height: 0; overflow: visible; z-index: 31; touch-action: none;
     }
-    .ts-btn {
-      width: 100%; height: 100%;
-      border-radius: 14px;
+    #toolPicker { display: none !important; }
+    #itemSelect { display: none !important; }
+    #toolBtn {
+      position: absolute;
+      right:  calc(-1*cos(150deg)*var(--ar2) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(150deg)*var(--ar2) + max(18px,env(safe-area-inset-bottom)));
+      transform: translate(50%, 50%);
+      width: clamp(46px,8.8vmin,62px); height: clamp(46px,8.8vmin,62px);
+      border-radius: 50%;
       background: var(--glass); border: 1.5px solid var(--border-bright);
-      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
       color: var(--text);
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-      cursor: pointer; font-family: inherit;
-      box-shadow: 0 3px 12px rgba(0,0,0,0.3); transition: background 0.1s;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 0; font-family: inherit; cursor: pointer;
+      transition: transform 0.08s; overflow: hidden;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
-    .ts-btn:active { background: rgba(255,255,255,0.12); }
-    .ts-icon { font-size: 20px; line-height: 1; pointer-events: none; }
-    .ts-lbl  { font-size: 8px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; pointer-events: none; }
+    #toolBtn:active { transform: translate(50%,50%) scale(0.92); }
+    .ts-icon { font-size: 1.4em; line-height: 1; pointer-events: none; }
+    .ts-lbl  { display: none; }
+    #itemBtn {
+      position: absolute;
+      right:  calc(-1*cos(120deg)*var(--ar2) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(120deg)*var(--ar2) + max(18px,env(safe-area-inset-bottom)));
+      transform: translate(50%, 50%);
+      width: clamp(46px,8.8vmin,62px); height: clamp(46px,8.8vmin,62px);
+      border-radius: 50%;
+      background: rgba(255,211,125,0.09); border: 1.5px solid rgba(255,211,125,0.46);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: var(--text); font-size: 1.4em;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; font-family: inherit; cursor: pointer;
+      transition: transform 0.08s; overflow: hidden;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+    }
+    #itemBtn:active { transform: translate(50%,50%) scale(0.92); }
+    /* ── Arc dial overlay elements ───────────────────────── */
+    .arc-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.42);
+      z-index: 200; pointer-events: auto;
+    }
+    .arc-slot {
+      transform: translate(-50%, -50%);
+      width: clamp(44px,8.5vmin,60px); height: clamp(44px,8.5vmin,60px);
+      border-radius: 50%;
+      background: var(--glass); border: 2px solid var(--border-bright);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.45);
+      transition: transform 0.08s, background 0.08s, border-color 0.08s;
+    }
+    .arc-slot.arc-active {
+      background: rgba(249,226,138,0.18);
+      border-color: rgba(249,226,138,0.6);
+      transform: translate(-50%,-50%) scale(1.18);
+    }
+    .arc-slot.arc-arrow {
+      font-size: 1.5em; color: var(--muted);
+      background: rgba(255,255,255,0.06); border-style: dashed;
+    }
+    .arc-icon  { font-size: 1.4em; line-height: 1; pointer-events: none; }
+    .arc-label {
+      font-size: 6.5px; color: rgba(255,255,255,0.55);
+      letter-spacing: 0.04em; text-transform: uppercase;
+      white-space: nowrap; pointer-events: none;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+    }
 
     /* ── Action Arch: 0-size anchor at the bottom-right corner ─ */
     /* Clock-face model: corner = clock centre. Hours 9-12 are visible.
