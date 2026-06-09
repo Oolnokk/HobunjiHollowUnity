@@ -5214,7 +5214,7 @@
               const r = Math.min(dist, _sockR);
               const nx = dist > 0.5 ? dx / dist * r : 0;
               const ny = dist > 0.5 ? dy / dist * r : 0;
-              el.style.transform = `translate(calc(-50% + ${nx}px), calc(-50% + ${ny}px))`;
+              el.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
               if (dist > DRAG_THRESH) {
                 const ang = Math.atan2(dy, dx);
                 facingAngle = ang;
@@ -5236,7 +5236,7 @@
               _stack.classList.remove('drag-active');
               if (_socket) { _socket.remove(); _socket = null; }
               el.style.transition = 'transform 0.14s ease-out';
-              el.style.transform  = 'translate(-50%, -50%)';
+              el.style.transform  = 'translate(50%, 50%)';
               setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
               if (!_drag) _abtFire();
               _drag = false;

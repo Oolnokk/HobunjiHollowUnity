@@ -392,55 +392,59 @@
     .ts-icon { font-size: 20px; line-height: 1; pointer-events: none; }
     .ts-lbl  { font-size: 8px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; pointer-events: none; }
 
-    /* ── Action Arch: viewport-anchored, bottom-right ───── */
+    /* ── Action Arch: 0-size anchor at the bottom-right corner ─ */
+    /* Clock-face model: corner = clock centre. Hours 9-12 are visible.
+       5 buttons placed at 9:10, 9:50, 10:30, 11:10, 11:50
+       = clock angles 275°,295°,315°,335°,355°
+       = math angles  175°,155°,135°,115°, 95° (CCW from east)
+       right = −cos(α)·R + margin,  bottom = sin(α)·R + margin          */
     #actionStack {
-      position: fixed;
-      right: max(12px, calc(env(safe-area-inset-right) + 12px));
-      bottom: max(18px, calc(env(safe-area-inset-bottom) + 18px));
-      width: clamp(140px, 26vmin, 188px);
-      height: clamp(140px, 26vmin, 188px);
-      z-index: 30;
-      touch-action: none;
-      overflow: visible;
+      --ar: clamp(88px, 16vmin, 124px);
+      position: fixed; right: 0; bottom: 0;
+      width: 0; height: 0;
+      overflow: visible; z-index: 30; touch-action: none;
     }
-    #actionRing {
-      position: absolute; inset: 0;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.05);
-      border: 2px solid rgba(255,255,255,0.12);
-      pointer-events: none;
-      transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
-    }
-    #actionStack.drag-active #actionRing {
-      background: rgba(249,226,138,0.09);
-      border-color: rgba(249,226,138,0.52);
-      box-shadow: 0 0 22px rgba(249,226,138,0.24);
-    }
-    /* Circular buttons, translate-centered on arch positions */
     .abt {
       position: absolute;
-      transform: translate(-50%, -50%);
+      transform: translate(50%, 50%);
       border-radius: 50%;
       background: var(--glass); border: 1.5px solid var(--border-bright);
       backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
       color: var(--text);
       display: flex; align-items: center; justify-content: center;
-      padding: 0;
-      font-family: inherit; cursor: pointer;
+      padding: 0; font-family: inherit; cursor: pointer;
       transition: transform 0.08s; overflow: hidden;
       box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
-    button.abt:active { transform: translate(-50%,-50%) scale(0.92); }
+    button.abt:active { transform: translate(50%,50%) scale(0.92); }
     .abt.blocked { opacity: 0.38; }
     .abt.abt-hidden { visibility: hidden; }
-    /* Arch: radius=40% of container, angles measured from east (right=0°, up=90°)
-       90°→top, 60°→upper-right, 120°→upper-left, 30°→right, 150°→left */
-    #btnAction1     { left:50%;    top:10%;   width:clamp(50px,9.5vmin,66px);  height:clamp(50px,9.5vmin,66px);
-                      border-color:rgba(249,226,138,0.44); background:rgba(249,226,138,0.09); }
-    #btnAction2     { left:70%;    top:15.4%; width:clamp(42px,7.8vmin,56px);  height:clamp(42px,7.8vmin,56px); }
-    #btnAction3     { left:30%;    top:15.4%; width:clamp(42px,7.8vmin,56px);  height:clamp(42px,7.8vmin,56px); }
-    #btnItemAction2 { left:84.6%;  top:30%;   width:clamp(38px,7vmin,50px);    height:clamp(38px,7vmin,50px); }
-    #btnItemAction1 { left:15.4%;  top:30%;   width:clamp(38px,7vmin,50px);    height:clamp(38px,7vmin,50px); }
+    #btnItemAction1 {                                                 /* 9:10  175° */
+      right:  calc(-1*cos(175deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(175deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+      width:clamp(38px,7vmin,52px); height:clamp(38px,7vmin,52px);
+    }
+    #btnAction2 {                                                     /* 9:50  155° */
+      right:  calc(-1*cos(155deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(155deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+      width:clamp(42px,7.8vmin,56px); height:clamp(42px,7.8vmin,56px);
+    }
+    #btnAction1 {                                                     /* 10:30 135° primary */
+      right:  calc(-1*cos(135deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(135deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+      width:clamp(50px,9.5vmin,66px); height:clamp(50px,9.5vmin,66px);
+      border-color:rgba(249,226,138,0.44); background:rgba(249,226,138,0.09);
+    }
+    #btnAction3 {                                                     /* 11:10 115° */
+      right:  calc(-1*cos(115deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(115deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+      width:clamp(42px,7.8vmin,56px); height:clamp(42px,7.8vmin,56px);
+    }
+    #btnItemAction2 {                                                 /* 11:50  95° */
+      right:  calc(-1*cos(95deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(95deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+      width:clamp(38px,7vmin,52px); height:clamp(38px,7vmin,52px);
+    }
     .abt-item { border-color:rgba(255,211,125,0.46)!important; background:rgba(255,211,125,0.09)!important; }
     .abt-key  { position:absolute; top:2px; right:3px; font-size:7px; color:rgba(255,255,255,0.42); font-family:'DM Mono',monospace; pointer-events:none; }
     .abt-icon { font-size:1.3em; line-height:1; pointer-events:none; }
