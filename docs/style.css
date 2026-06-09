@@ -476,14 +476,14 @@
     button.abt:active { transform: translate(50%,50%) scale(0.92); }
     .abt.blocked { opacity: 0.38; }
     .abt.abt-hidden { visibility: hidden; }
-    #btnItemAction1 {                                                 /* 9:10  175° */
-      right:  calc(-1*cos(175deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
-      bottom: calc(   sin(175deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+    #btnItemAction1 {                                                 /* 9:00  180° */
+      right:  calc(-1*cos(180deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(180deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
       width:clamp(44px,8.5vmin,60px); height:clamp(44px,8.5vmin,60px);
     }
-    #btnAction2 {                                                     /* 9:50  155° */
-      right:  calc(-1*cos(155deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
-      bottom: calc(   sin(155deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+    #btnAction2 {                                                     /* 9:45  157.5° */
+      right:  calc(-1*cos(157.5deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(157.5deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
       width:clamp(44px,8.5vmin,60px); height:clamp(44px,8.5vmin,60px);
     }
     #btnAction1 {                                                     /* 10:30 135° primary */
@@ -492,14 +492,14 @@
       width:clamp(46px,8.8vmin,62px); height:clamp(46px,8.8vmin,62px);
       border-color:rgba(249,226,138,0.44); background:rgba(249,226,138,0.09);
     }
-    #btnAction3 {                                                     /* 11:10 115° */
-      right:  calc(-1*cos(115deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
-      bottom: calc(   sin(115deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+    #btnAction3 {                                                     /* 11:15 112.5° */
+      right:  calc(-1*cos(112.5deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(112.5deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
       width:clamp(44px,8.5vmin,60px); height:clamp(44px,8.5vmin,60px);
     }
-    #btnItemAction2 {                                                 /* 11:50  95° */
-      right:  calc(-1*cos(95deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
-      bottom: calc(   sin(95deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
+    #btnItemAction2 {                                                 /* 12:00  90° */
+      right:  calc(-1*cos(90deg)*var(--ar) + max(18px,env(safe-area-inset-right)));
+      bottom: calc(   sin(90deg)*var(--ar) + max(18px,env(safe-area-inset-bottom)));
       width:clamp(44px,8.5vmin,60px); height:clamp(44px,8.5vmin,60px);
     }
     .abt-item { border-color:rgba(255,211,125,0.46)!important; background:rgba(255,211,125,0.09)!important; }

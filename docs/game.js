@@ -1751,6 +1751,7 @@
 
       let activeTool = 'shovel';
       let activeAction = 'dig';
+      let heldMode = 'tool'; // 'tool' | 'item'
       let lastTime = performance.now();
       let simAccumulator = 0;
       let waterFlowPhase = 0;
@@ -5108,6 +5109,7 @@
           });
         }
 
+        let _lastHeldTool = activeTool;
         let _iScroll = 0, _iScrollT = null, _iScrollDir = 0;
         const ITEM_VIS = 5;
 
@@ -5199,8 +5201,10 @@
           if (!_arcOpen) return;
           const slot = _arcSlots[_arcActive];
           if (_arcOpen === 'tool' && slot) {
-            setActiveTool(slot.data);
+            heldMode = 'tool'; _lastHeldTool = slot.data;
+            setActiveTool(slot.data); // calls refreshActionBar internally
           } else if (_arcOpen === 'item' && slot?.data.type === 'item') {
+            heldMode = 'item';
             activeItemIndex = slot.data.index;
             refreshItemScroll(); refreshActionBar();
           }
@@ -5226,6 +5230,11 @@
           _tPtId = null;
           if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
           if (_arcOpen === 'tool') _arcUp();
+          else if (!_tHeld && !_tMoved && heldMode === 'item') {
+            // Tap while in item mode → return to last held tool
+            heldMode = 'tool';
+            setActiveTool(_lastHeldTool); // calls refreshActionBar internally
+          }
           _tHeld = false; _tMoved = false;
         });
         toolBtn.addEventListener('pointercancel', ev => {
@@ -5255,6 +5264,12 @@
             _iPtId = null;
             if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
             if (_arcOpen === 'item') _arcUp();
+            else if (!_iHeld && !_iMoved && heldMode === 'tool') {
+              // Tap while in tool mode → switch to item mode
+              _lastHeldTool = activeTool;
+              heldMode = 'item';
+              refreshItemScroll(); refreshActionBar();
+            }
             _iHeld = false; _iMoved = false;
           });
           _itemBtn.addEventListener('pointercancel', ev => {
@@ -5295,16 +5310,18 @@
           objBtns.forEach(b => btns.push(b));
         }
 
-        // 1. Tool's own actions
-        const actions = toolActions[activeTool] || [];
-        actions.forEach((action, i) => {
-          const [icon] = actionLabels[action];
-          const allowed = canUseAction(activeTool, action, reticle.col, reticle.row);
-          btns.push({
-            icon, label: contextualActionLabel(action, tile),
-            action, style: i === 0 ? 'primary' : 'secondary', allowed,
+        // 1. Tool's own actions (suppressed in item mode)
+        if (heldMode === 'tool') {
+          const actions = toolActions[activeTool] || [];
+          actions.forEach((action, i) => {
+            const [icon] = actionLabels[action];
+            const allowed = canUseAction(activeTool, action, reticle.col, reticle.row);
+            btns.push({
+              icon, label: contextualActionLabel(action, tile),
+              action, style: i === 0 ? 'primary' : 'secondary', allowed,
+            });
           });
-        });
+        }
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
@@ -5365,7 +5382,7 @@
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 
         const obj = currentArea === 'farm' ? getWorldObjectAt(reticle.col, reticle.row) : null;
-        const key = `${currentArea}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}`;
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -5469,11 +5486,20 @@
           }
         }
 
-        applyAbt('btnAction1',    toolBtns[0], btns.indexOf(toolBtns[0]));
-        applyAbt('btnAction2',    toolBtns[1], btns.indexOf(toolBtns[1]));
-        applyAbt('btnAction3',    toolBtns[2], btns.indexOf(toolBtns[2]));
-        applyAbt('btnItemAction1', itemBtns[0], btns.indexOf(itemBtns[0]));
-        applyAbt('btnItemAction2', itemBtns[1], btns.indexOf(itemBtns[1]));
+        if (heldMode === 'item') {
+          // Item mode: all actions spread across all 5 arch positions
+          applyAbt('btnAction1',    btns[0], 0);
+          applyAbt('btnAction2',    btns[1], 1);
+          applyAbt('btnAction3',    btns[2], 2);
+          applyAbt('btnItemAction1', btns[3], 3);
+          applyAbt('btnItemAction2', btns[4], 4);
+        } else {
+          applyAbt('btnAction1',    toolBtns[0], btns.indexOf(toolBtns[0]));
+          applyAbt('btnAction2',    toolBtns[1], btns.indexOf(toolBtns[1]));
+          applyAbt('btnAction3',    toolBtns[2], btns.indexOf(toolBtns[2]));
+          applyAbt('btnItemAction1', itemBtns[0], btns.indexOf(itemBtns[0]));
+          applyAbt('btnItemAction2', itemBtns[1], btns.indexOf(itemBtns[1]));
+        }
 
         if (isDesktop) refreshKeyHud(btns);
       }
