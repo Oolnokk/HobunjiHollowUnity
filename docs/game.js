@@ -5323,6 +5323,9 @@
           });
         }
 
+        // 2+3. Item context actions — only in item mode
+        if (heldMode !== 'item') return btns;
+
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
         if (item && item.seedFor) {
