@@ -5173,7 +5173,54 @@
           el.innerHTML = keyBadge +
             `<span class="abt-icon">${b.icon}</span>` +
             `<span class="abt-label">${b.label}</span>`;
-          el.onclick = () => { activeAction = b.action; useActiveAction(); };
+          if (!el._abtDragInit) {
+            el._abtDragInit = true;
+            let _ptId = null, _ax = 0, _ay = 0, _drag = false, _rtimer = null;
+            const DRAG_THRESH = 20;
+
+            function _abtFire() {
+              const act = el.dataset.action;
+              if (!act || el.classList.contains('abt-hidden')) return;
+              activeAction = act;
+              if (toolSwingT <= 0) useActiveAction();
+            }
+
+            el.addEventListener('pointerdown', ev => {
+              if (_ptId !== null) return;
+              _ptId = ev.pointerId;
+              el.setPointerCapture(ev.pointerId);
+              _ax = ev.clientX; _ay = ev.clientY;
+              _drag = false;
+              ev.preventDefault();
+            });
+
+            el.addEventListener('pointermove', ev => {
+              if (ev.pointerId !== _ptId) return;
+              const dx = ev.clientX - _ax, dy = ev.clientY - _ay;
+              if (!_drag && Math.hypot(dx, dy) > DRAG_THRESH) {
+                _drag = true;
+                _abtFire();
+                _rtimer = setInterval(_abtFire, 120);
+              }
+              if (_drag) {
+                const ang = Math.atan2(dy, dx);
+                facingAngle = ang;
+                lastMoveAngle = ang;
+                player.angle = ang;
+              }
+            });
+
+            function _abtUp(ev) {
+              if (ev.pointerId !== _ptId) return;
+              _ptId = null;
+              if (_rtimer) { clearInterval(_rtimer); _rtimer = null; }
+              if (!_drag) _abtFire();
+              _drag = false;
+            }
+
+            el.addEventListener('pointerup', _abtUp);
+            el.addEventListener('pointercancel', _abtUp);
+          }
         }
 
         applyAbt('btnAction1',    toolBtns[0], btns.indexOf(toolBtns[0]));
