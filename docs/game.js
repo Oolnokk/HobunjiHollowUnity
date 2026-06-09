@@ -385,6 +385,7 @@
         redberrySeeds: 3, blueberrySeeds: 3, yellowberrySeeds: 3, whiteberrySeeds: 2, blackberrySeeds: 2,
         blackMustardSeed: 3, greenMustardSeed: 3,
         uumkaoiiCrate: 1,
+        bronzehoe: 1, hatchet: 1, fishingmace: 1, fishingspear: 1, pickshovel: 1,
         gold: 40,
       };
 
