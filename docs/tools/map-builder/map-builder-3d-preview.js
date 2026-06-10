@@ -5,6 +5,10 @@
   const THREE = window.THREE;
   if (!root || !THREE) return;
 
+  const HIGHLAND_BODY_TOP_SCALE = 0.85;
+  const BASE_HEIGHT = 2.0;
+  const MIN_RIDGE = 0.08;
+
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x071018);
   scene.fog = new THREE.Fog(0x071018, 38, 110);
@@ -30,11 +34,13 @@
     floor: new THREE.MeshLambertMaterial({ color: 0x6d5137 }),
     plaster: new THREE.MeshLambertMaterial({ color: 0xbda579 }),
     roof: new THREE.MeshLambertMaterial({ color: 0x5a3725 }),
+    ridgeCap: new THREE.MeshLambertMaterial({ color: 0x3c2418 }),
     gable: new THREE.MeshLambertMaterial({ color: 0x846344 }),
     door: new THREE.MeshLambertMaterial({ color: 0x4a2d1d }),
     glass: new THREE.MeshLambertMaterial({ color: 0x8fbcd4, transparent: true, opacity: 0.55 }),
     path: new THREE.MeshBasicMaterial({ color: 0x38bdf8 }),
-    shingleFallback: new THREE.MeshLambertMaterial({ color: 0x4b2d1e })
+    shingleFallback: new THREE.MeshLambertMaterial({ color: 0x4b2d1e }),
+    brick: new THREE.MeshLambertMaterial({ color: 0x9b6b48 })
   };
 
   scene.add(new THREE.HemisphereLight(0xddeeff, 0x22331f, 1.25));
@@ -43,7 +49,6 @@
   sun.castShadow = true;
   scene.add(sun);
 
-  let wallBuilder = null;
   let shingleSource = null;
   const npcModels = new Map();
   let lastSignature = '';
@@ -54,74 +59,165 @@
   function disposeObject(o) { o.traverse?.(c => { if (c.geometry) c.geometry.dispose?.(); const ms = c.material ? (Array.isArray(c.material) ? c.material : [c.material]) : []; ms.forEach(m => { if (!Object.values(mats).includes(m)) { m.map?.dispose?.(); m.dispose?.(); } }); }); }
   function tileToWorld(x, y) { return new THREE.Vector3(x + 0.5, 0, y + 0.5); }
   function makeBox(w, h, d, mat, x, y, z) { const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; return mesh; }
-  function makeTriPrism(width, depth, height, lengthAlongX, mat) {
-    const shape = new THREE.Shape();
-    shape.moveTo(-width / 2, 0); shape.lineTo(width / 2, 0); shape.lineTo(0, height); shape.lineTo(-width / 2, 0);
-    const geo = new THREE.ExtrudeGeometry(shape, { depth: lengthAlongX ? depth : width, bevelEnabled: false });
-    geo.center();
+  function rectCorners(rect, y) {
+    return {
+      a: new THREE.Vector3(rect.minX, y, rect.minZ),
+      b: new THREE.Vector3(rect.maxX, y, rect.minZ),
+      c: new THREE.Vector3(rect.maxX, y, rect.maxZ),
+      d: new THREE.Vector3(rect.minX, y, rect.maxZ)
+    };
+  }
+  function topRectFromBottom(rect, scale = HIGHLAND_BODY_TOP_SCALE) {
+    const cx = (rect.minX + rect.maxX) / 2;
+    const cz = (rect.minZ + rect.maxZ) / 2;
+    const hw = (rect.maxX - rect.minX) * scale / 2;
+    const hd = (rect.maxZ - rect.minZ) * scale / 2;
+    return { minX: cx - hw, maxX: cx + hw, minZ: cz - hd, maxZ: cz + hd };
+  }
+  function quadMesh(a, b, c, d, mat, name) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([
+      a.x,a.y,a.z, b.x,b.y,b.z, c.x,c.y,c.z,
+      a.x,a.y,a.z, c.x,c.y,c.z, d.x,d.y,d.z
+    ], 3));
+    geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, mat);
-    if (lengthAlongX) mesh.rotation.y = Math.PI / 2;
-    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.name = name || 'quad';
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     return mesh;
   }
-  function makeWallPanels(house) {
-    const x = house.x, z = house.y, w = house.width, d = house.depth, h = 2.2;
-    return [
-      { id: house.id + '_north', width: w, height: h, position: [x + w / 2, 0, z], rotationDeg: [0, 0, 0], wallRecipeId: house.wallRecipeId },
-      { id: house.id + '_south', width: w, height: h, position: [x + w / 2, 0, z + d], rotationDeg: [0, 180, 0], wallRecipeId: house.wallRecipeId },
-      { id: house.id + '_west', width: d, height: h, position: [x, 0, z + d / 2], rotationDeg: [0, 90, 0], wallRecipeId: house.wallRecipeId },
-      { id: house.id + '_east', width: d, height: h, position: [x + w, 0, z + d / 2], rotationDeg: [0, -90, 0], wallRecipeId: house.wallRecipeId }
-    ];
+  function continuousFrustumRidgeRect(bottomRect, eaveRect, axis) {
+    const bsW = bottomRect.maxX - bottomRect.minX, bsD = bottomRect.maxZ - bottomRect.minZ;
+    const esW = eaveRect.maxX - eaveRect.minX, esD = eaveRect.maxZ - eaveRect.minZ;
+    const cx = (eaveRect.minX + eaveRect.maxX) / 2, cz = (eaveRect.minZ + eaveRect.maxZ) / 2;
+    const longAxis = axis === 'z' ? 'z' : 'x';
+    const targetLongLen = longAxis === 'x' ? Math.max(MIN_RIDGE, esW * HIGHLAND_BODY_TOP_SCALE) : Math.max(MIN_RIDGE, esD * HIGHLAND_BODY_TOP_SCALE);
+    const longShrinkPerSide = longAxis === 'x' ? Math.max(0, (esW - targetLongLen) / 2) : Math.max(0, (esD - targetLongLen) / 2);
+    const insetXPerHeight = Math.max(0, (bsW - esW) / 2) / BASE_HEIGHT;
+    const insetZPerHeight = Math.max(0, (bsD - esD) / 2) / BASE_HEIGHT;
+    const longInsetPerHeight = longAxis === 'x' ? insetXPerHeight : insetZPerHeight;
+    let roofHeight = 1.18;
+    if (longInsetPerHeight > 1e-7 && longShrinkPerSide > 1e-7) roofHeight = Math.max(0.2, longShrinkPerSide / longInsetPerHeight);
+    if (longAxis === 'x') return { rect: { minX: cx - targetLongLen / 2, maxX: cx + targetLongLen / 2, minZ: cz - MIN_RIDGE / 2, maxZ: cz + MIN_RIDGE / 2 }, roofHeight };
+    return { rect: { minX: cx - MIN_RIDGE / 2, maxX: cx + MIN_RIDGE / 2, minZ: cz - targetLongLen / 2, maxZ: cz + targetLongLen / 2 }, roofHeight };
   }
+
   async function initAssets() {
-    if (!wallBuilder && window.WallBuilder) {
-      wallBuilder = new window.WallBuilder({ glbBasePath: '../../assets/models/' });
-      try { await wallBuilder.loadDefaultGlb(); log('Wall GLB loaded.'); } catch (e) { wallBuilder.ensurePlaceholderGlb(); log('Wall GLB missing; using placeholder wall units.', 'warn'); }
-    }
     if (!shingleSource) {
       const loader = new THREE.GLTFLoader();
-      const candidates = ['../../assets/models/highlandlongshingle_boned.glb','../../assets/highlandlongshingle_boned.glb','../../../assets/models/highlandlongshingle_boned.glb'];
+      const candidates = [
+        '../../assets/models/HighlandLongshingle_boned.glb',
+        '../../assets/models/highlandlongshingle_boned.glb',
+        '../../assets/HighlandLongshingle_boned.glb'
+      ];
       for (const url of candidates) {
-        try { shingleSource = await new Promise((res, rej) => loader.load(url, g => res(g.scene), undefined, rej)); log('Highland shingle GLB loaded.'); break; } catch (_e) {}
+        try { shingleSource = await new Promise((res, rej) => loader.load(url, g => res(g.scene), undefined, rej)); log('HighlandLongshingle_boned.glb loaded.'); break; } catch (_e) {}
       }
-      if (!shingleSource) log('highlandlongshingle_boned.glb not found; using procedural shingles.', 'warn');
+      if (!shingleSource) log('HighlandLongshingle_boned.glb not found; using procedural shingles.', 'warn');
     }
   }
-  function addShingles(group, house) {
-    const w = house.width, d = house.depth, x0 = house.x, z0 = house.y;
-    const rows = Math.max(3, Math.ceil(d * 1.7));
-    const cols = Math.max(4, Math.ceil(w * 1.2));
-    for (let side = -1; side <= 1; side += 2) {
-      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-        let obj;
-        if (shingleSource) obj = shingleSource.clone(true); else obj = makeBox(0.72, 0.055, 0.34, mats.shingleFallback, 0, 0, 0);
-        obj.scale.setScalar(shingleSource ? 0.42 : 1);
-        obj.position.set(x0 + 0.35 + c * (w - 0.7) / Math.max(1, cols - 1), 2.55 + r * 0.07, z0 + d / 2 + side * (0.12 + r * d / (rows * 2.15)));
-        obj.rotation.x = side * -0.72; obj.rotation.y = 0; obj.rotation.z = (Math.sin((r + 1) * (c + 3)) * 0.035);
-        group.add(obj);
-      }
+
+  function addHighlandBody(group, bottomRect, eaveRect) {
+    const bottom = rectCorners(bottomRect, 0);
+    const top = rectCorners(eaveRect, BASE_HEIGHT);
+    group.add(quadMesh(bottom.a, bottom.b, bottom.c, bottom.d, mats.floor, 'highland_frustum_floor'));
+    group.add(quadMesh(top.d, top.c, top.b, top.a, mats.plaster, 'highland_frustum_ceiling'));
+    group.add(quadMesh(bottom.a, top.a, top.b, bottom.b, mats.plaster, 'highland_frustum_wall_north'));
+    group.add(quadMesh(bottom.b, top.b, top.c, bottom.c, mats.plaster, 'highland_frustum_wall_east'));
+    group.add(quadMesh(bottom.c, top.c, top.d, bottom.d, mats.plaster, 'highland_frustum_wall_south'));
+    group.add(quadMesh(bottom.d, top.d, top.a, bottom.a, mats.plaster, 'highland_frustum_wall_west'));
+    addBrickFace(group, bottom.a, top.a, top.b, bottom.b, bottomRect.maxX - bottomRect.minX, BASE_HEIGHT, 'north');
+    addBrickFace(group, bottom.b, top.b, top.c, bottom.c, bottomRect.maxZ - bottomRect.minZ, BASE_HEIGHT, 'east');
+    addBrickFace(group, bottom.c, top.c, top.d, bottom.d, bottomRect.maxX - bottomRect.minX, BASE_HEIGHT, 'south');
+    addBrickFace(group, bottom.d, top.d, top.a, bottom.a, bottomRect.maxZ - bottomRect.minZ, BASE_HEIGHT, 'west');
+  }
+  function addBrickFace(group, bl, tl, tr, br, width, height, name) {
+    const cols = Math.max(3, Math.floor(width / 0.32));
+    const rows = Math.max(3, Math.floor(height / 0.24));
+    const geo = new THREE.BoxGeometry(0.24, 0.14, 0.08);
+    const inst = new THREE.InstancedMesh(geo, mats.brick, cols * rows);
+    inst.name = 'highland_wall_units_' + name;
+    const u = br.clone().sub(bl).normalize();
+    const v = tl.clone().sub(bl).normalize();
+    const n = new THREE.Vector3().crossVectors(u, v).normalize().multiplyScalar(0.035);
+    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, v, n.clone().normalize()));
+    let k = 0;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const s = (c + 0.5 + (r % 2) * 0.5) / cols;
+      const t = (r + 0.5) / rows;
+      const p0 = bl.clone().lerp(br, s);
+      const p1 = tl.clone().lerp(tr, s);
+      const p = p0.lerp(p1, t).add(n);
+      const scale = new THREE.Vector3(width / cols * 0.78, height / rows * 0.58, 0.08);
+      inst.setMatrixAt(k++, new THREE.Matrix4().compose(p, q, scale));
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    inst.castShadow = true;
+    inst.receiveShadow = true;
+    group.add(inst);
+  }
+
+  function addHighlandRoof(group, bottomRect, eaveRect, axis) {
+    const base = rectCorners(eaveRect, BASE_HEIGHT);
+    const solved = continuousFrustumRidgeRect(bottomRect, eaveRect, axis);
+    const top = rectCorners(solved.rect, BASE_HEIGHT + solved.roofHeight);
+    group.add(quadMesh(top.d, top.c, top.b, top.a, mats.ridgeCap, 'highland_roof_ridge_cap'));
+    if (axis === 'x') {
+      group.add(quadMesh(base.a, top.a, top.b, base.b, mats.roof, 'highland_roof_slope_north'));
+      group.add(quadMesh(base.c, top.c, top.d, base.d, mats.roof, 'highland_roof_slope_south'));
+      group.add(quadMesh(base.b, top.b, top.c, base.c, mats.gable, 'highland_gable_east'));
+      group.add(quadMesh(base.d, top.d, top.a, base.a, mats.gable, 'highland_gable_west'));
+      addShinglesOnQuad(group, base.a, top.a, top.b, base.b, eaveRect.maxX - eaveRect.minX, eaveRect.maxZ - eaveRect.minZ, 'north');
+      addShinglesOnQuad(group, base.c, top.c, top.d, base.d, eaveRect.maxX - eaveRect.minX, eaveRect.maxZ - eaveRect.minZ, 'south');
+    } else {
+      group.add(quadMesh(base.b, top.b, top.c, base.c, mats.roof, 'highland_roof_slope_east'));
+      group.add(quadMesh(base.d, top.d, top.a, base.a, mats.roof, 'highland_roof_slope_west'));
+      group.add(quadMesh(base.a, top.a, top.b, base.b, mats.gable, 'highland_gable_north'));
+      group.add(quadMesh(base.c, top.c, top.d, base.d, mats.gable, 'highland_gable_south'));
+      addShinglesOnQuad(group, base.b, top.b, top.c, base.c, eaveRect.maxZ - eaveRect.minZ, eaveRect.maxX - eaveRect.minX, 'east');
+      addShinglesOnQuad(group, base.d, top.d, top.a, base.a, eaveRect.maxZ - eaveRect.minZ, eaveRect.maxX - eaveRect.minX, 'west');
     }
   }
+  function addShinglesOnQuad(group, e0, r0, r1, e1, longLen, acrossLen, sideName) {
+    const cols = Math.max(4, Math.ceil(longLen * 1.25));
+    const rows = Math.max(3, Math.ceil(acrossLen * 1.8));
+    const u = e1.clone().sub(e0).normalize();
+    const v = r0.clone().sub(e0).normalize();
+    const n = new THREE.Vector3().crossVectors(u, v).normalize();
+    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, v, n));
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const s = (c + 0.5) / cols;
+      const t = (r + 0.35) / rows;
+      const a = e0.clone().lerp(e1, s);
+      const b = r0.clone().lerp(r1, s);
+      const p = a.lerp(b, t).addScaledVector(n, 0.025 + (r % 2) * 0.006);
+      let obj;
+      if (shingleSource) obj = shingleSource.clone(true); else obj = makeBox(0.62, 0.05, 0.28, mats.shingleFallback, 0, 0, 0);
+      obj.name = 'highland_shingle_' + sideName;
+      obj.position.copy(p);
+      obj.quaternion.copy(q);
+      obj.rotateX(-0.08);
+      obj.rotateZ((Math.sin((r + 1) * (c + 3)) * 0.035));
+      obj.scale.setScalar(shingleSource ? 0.42 : 1);
+      group.add(obj);
+    }
+  }
+
   function buildHouse(house) {
-    const group = new THREE.Group(); group.name = 'HighlandFootprint_' + house.id;
-    const x = house.x, z = house.y, w = house.width, d = house.depth;
-    group.add(makeBox(w, 0.16, d, mats.floor, x + w / 2, 0.08, z + d / 2));
-    group.add(makeBox(w * 0.88, 2.0, d * 0.88, mats.plaster, x + w / 2, 1.08, z + d / 2));
-    const gableA = makeTriPrism(d * 0.92, w * 0.92, 1.15, true, mats.gable); gableA.position.set(x + w / 2, 2.2, z + d / 2); group.add(gableA);
-    const roofA = makeBox(w * 1.08, 0.18, d * 0.64, mats.roof, x + w / 2, 2.62, z + d * 0.33); roofA.rotation.x = -0.62; group.add(roofA);
-    const roofB = makeBox(w * 1.08, 0.18, d * 0.64, mats.roof, x + w / 2, 2.62, z + d * 0.67); roofB.rotation.x = 0.62; group.add(roofB);
-    addShingles(group, house);
+    const group = new THREE.Group(); group.name = 'HighlandArchitecturePreset_' + house.id;
+    const bottomRect = { minX: house.x, maxX: house.x + house.width, minZ: house.y, maxZ: house.y + house.depth };
+    const eaveRect = topRectFromBottom(bottomRect, HIGHLAND_BODY_TOP_SCALE);
+    const axis = house.width >= house.depth ? 'x' : 'z';
+    addHighlandBody(group, bottomRect, eaveRect);
+    addHighlandRoof(group, bottomRect, eaveRect, axis);
     const door = window.HobunjiMapBuilder.deriveDoorTile(house);
     group.add(makeBox(0.8, 1.25, 0.08, mats.door, door.x + .5, .72, door.y + .05));
-    group.add(makeBox(0.56, 0.45, 0.06, mats.glass, x + w * .27, 1.28, z + d + .04));
-    group.add(makeBox(0.56, 0.45, 0.06, mats.glass, x + w * .73, 1.28, z + d + .04));
-    if (wallBuilder) {
-      const walls = wallBuilder.build(makeWallPanels(house), { preScale: [0.25, 0.25, 0.1], rockScale: 1, usePlaceholder: true, brickJitter: { rotYDeg: 4, shiftU: 0.015, shiftV: 0.015 } });
-      walls.name = 'WallBuilder_shell_' + house.id;
-      group.add(walls);
-    }
+    group.add(makeBox(0.52, 0.42, 0.06, mats.glass, house.x + house.width * .27, 1.25, house.y + house.depth + .04));
+    group.add(makeBox(0.52, 0.42, 0.06, mats.glass, house.x + house.width * .73, 1.25, house.y + house.depth + .04));
     return group;
   }
+
   function rebuildWorld(runtime) {
     const state = runtime?.state; if (!state) return;
     clearGroup(buildingLayer); clearGroup(pathLayer); clearGroup(landscapeLayer);
