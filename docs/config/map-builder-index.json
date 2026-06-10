@@ -8,7 +8,15 @@
     "wallBuilder": "../tools/wall-builder/index.html",
     "modularHouseReference": "../references/ModularHouseBuilderV1.html"
   },
-  "npcDatabases": [],
+  "npcDatabases": [
+    {
+      "id": "hobunji_starter_npc_database",
+      "label": "Hobunji Starter NPC Database",
+      "kind": "npcDatabase",
+      "jsonUrl": "../config/npcs/hobunji-starter-npc-database.json",
+      "tags": ["npc", "starter", "hobunji"]
+    }
+  ],
   "townMaps": [],
   "housePieces": [],
   "wallRecipes": [
@@ -24,7 +32,9 @@
   "furniture": [],
   "distantLandscape": [],
   "generatedIndexes": {
-    "npcById": {},
+    "npcDatabaseById": {
+      "hobunji_starter_npc_database": 0
+    },
     "housePieceById": {},
     "wallRecipeById": {
       "roughbrick_default": 0
