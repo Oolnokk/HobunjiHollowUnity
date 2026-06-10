@@ -5,6 +5,13 @@
   const canvas = $('mapCanvas');
   const ctx = canvas.getContext('2d');
   const logger = H.makeLogger($('logBody'));
+  const DEFAULT_NPC_DB_ENTRY = {
+    id: 'hobunji_starter_npc_database',
+    label: 'Hobunji Starter NPC Database',
+    kind: 'npcDatabase',
+    jsonUrl: '../../config/npcs/hobunji-starter-npc-database.json',
+    tags: ['npc', 'starter', 'hobunji', 'fallback']
+  };
   let index = null;
   let npcDb = { npcs: [], npcById: {} };
   let mode = 'house';
@@ -22,6 +29,15 @@
   function optionRows(items, emptyLabel) {
     return [`<option value="">${emptyLabel}</option>`].concat((items || []).map(item => `<option value="${item.id}">${item.label || item.name || item.id}</option>`)).join('');
   }
+  function ensureNpcDbFallback(targetIndex) {
+    if (!targetIndex) targetIndex = H.normalizeIndex({});
+    if (!Array.isArray(targetIndex.npcDatabases)) targetIndex.npcDatabases = [];
+    if (!targetIndex.npcDatabases.some(db => db.id === DEFAULT_NPC_DB_ENTRY.id)) {
+      targetIndex.npcDatabases.unshift({ ...DEFAULT_NPC_DB_ENTRY });
+      log('NPC DB fallback injected because the manifest had none or was cached stale.', 'warn');
+    }
+    return H.normalizeIndex(targetIndex, text('indexUrl') || '../../config/map-builder-index.json');
+  }
 
   function syncMapForm() {
     state.map.id = norm(text('mapId'), 'map');
@@ -32,33 +48,38 @@
   async function reloadIndex() {
     try {
       index = await H.loadIndex(text('indexUrl') || '../../config/map-builder-index.json');
+      index = ensureNpcDbFallback(index);
       $('npcDbSelect').innerHTML = optionRows(index.npcDatabases, 'No NPC DB indexed');
       $('housePieceSel').innerHTML = optionRows(index.housePieces, 'Placement-derived highland');
       $('wallRecipeSel').innerHTML = optionRows(index.wallRecipes, 'roughbrick_default');
       $('indexSummary').textContent = `${index.npcDatabases.length} NPC DBs · ${index.housePieces.length} house pieces · ${index.wallRecipes.length} wall recipes · ${index.furniture.length} furniture · ${index.distantLandscape.length} distant landscape`;
+      if (!$('npcDbSelect').value && index.npcDatabases[0]) $('npcDbSelect').value = index.npcDatabases[0].id;
       log('Loaded map-builder index.');
     } catch (err) {
-      log(err.message, 'error');
+      index = ensureNpcDbFallback(null);
+      $('npcDbSelect').innerHTML = optionRows(index.npcDatabases, 'No NPC DB indexed');
+      $('housePieceSel').innerHTML = optionRows(index.housePieces, 'Placement-derived highland');
+      $('wallRecipeSel').innerHTML = optionRows(index.wallRecipes, 'roughbrick_default');
+      $('indexSummary').textContent = `Fallback active · ${index.npcDatabases.length} NPC DBs`;
+      log(`Index load failed, using fallback DB entry: ${err.message}`, 'warn');
     }
+    await loadNpcDb(true);
     updateAll();
   }
 
-  async function loadNpcDb() {
-    const selectedId = $('npcDbSelect').value;
-    const entry = (index?.npcDatabases || []).find(db => db.id === selectedId) || index?.npcDatabases?.[0];
-    if (!entry) {
-      npcDb = { npcs: [], npcById: {} };
-      $('npcSelect').innerHTML = '<option value="npc_001">npc_001</option>';
-      log('No NPC database indexed yet.', 'warn');
-      updateAll();
-      return;
-    }
+  async function loadNpcDb(silent = false) {
+    index = ensureNpcDbFallback(index);
+    const selectedId = $('npcDbSelect').value || DEFAULT_NPC_DB_ENTRY.id;
+    const entry = (index?.npcDatabases || []).find(db => db.id === selectedId) || index?.npcDatabases?.[0] || DEFAULT_NPC_DB_ENTRY;
     try {
       npcDb = await H.loadNpcDatabase(entry);
       $('npcSelect').innerHTML = optionRows(npcDb.npcs, 'npc_001');
-      log(`Loaded NPC DB with ${npcDb.npcs.length} NPCs.`);
+      if (!silent) log(`Loaded NPC DB with ${npcDb.npcs.length} NPCs.`);
+      else logger.log(`Loaded NPC DB with ${npcDb.npcs.length} NPCs.`);
     } catch (err) {
-      log(err.message, 'error');
+      npcDb = { npcs: [], npcById: {} };
+      $('npcSelect').innerHTML = '<option value="npc_001">npc_001</option>';
+      log(`NPC database load failed: ${err.message}`, 'error');
     }
     updateAll();
   }
@@ -131,7 +152,7 @@
 
   function makeBundle() {
     syncMapForm();
-    return H.buildMapBundle(state, index || H.normalizeIndex({}), npcDb);
+    return H.buildMapBundle(state, index || ensureNpcDbFallback(null), npcDb);
   }
 
   function updateLists() {
@@ -144,7 +165,7 @@
     const missing = bundle.derived?.missing || {};
     const missingCount = Object.values(missing).flat().filter(Boolean).length;
     $('missingPill').textContent = missingCount ? `Missing refs: ${missingCount}` : 'Missing: none';
-    $('countPill').textContent = `${state.houses.length} houses · ${state.npcPaths.length} paths`;
+    $('countPill').textContent = `${state.houses.length} houses · ${state.npcPaths.length} paths · ${npcDb.npcs?.length || 0} NPCs`;
     $('jsonPreview').value = JSON.stringify(bundle, null, 2);
   }
 
@@ -194,7 +215,7 @@
   });
 
   $('reloadIndexBtn').addEventListener('click', reloadIndex);
-  $('loadNpcDbBtn').addEventListener('click', loadNpcDb);
+  $('loadNpcDbBtn').addEventListener('click', () => loadNpcDb(false));
   $('seedBtn').addEventListener('click', loadStarter);
   $('addHouseBtn').addEventListener('click', () => addHouseAt());
   $('newPathBtn').addEventListener('click', newPath);
