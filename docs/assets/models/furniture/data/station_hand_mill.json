@@ -1,0 +1,147 @@
+{
+  "schema": "furniture_piece_mapper.v1",
+  "exportedAt": "2026-06-10T03:17:23.377093+00:00",
+  "pieceId": "station_hand_mill",
+  "notes": "Hand Mill for grinding flour/powder.",
+  "coordinateSystem": {
+    "grid": "2D cells use x,y with origin at top-left of editor grid.",
+    "world": "Three.js style: X right, Y up, Z forward/down-grid. Ground plane is Y=0.",
+    "tileToWorld": "worldX=(cellX+0.5)*tileSize-gridWorldSize/2; worldZ=(cellY+0.5)*tileSize-gridWorldSize/2"
+  },
+  "grid": {
+    "size": 16,
+    "tileSize": 1,
+    "gridWorldSize": 16
+  },
+  "footprint": {
+    "cells": [
+      {
+        "x": 8,
+        "y": 8
+      }
+    ],
+    "count": 1,
+    "worldBounds": {
+      "min": {
+        "x": 0.0,
+        "z": 0.0
+      },
+      "max": {
+        "x": 1.0,
+        "z": 1.0
+      },
+      "size": {
+        "x": 1.0,
+        "z": 1.0
+      },
+      "center": {
+        "x": 0.5,
+        "z": 0.5
+      }
+    }
+  },
+  "furnitureModel": {
+    "fileName": "station_hand_mill.glb",
+    "hasLoadedPreview": true,
+    "naturalBoundsBeforeMapperTransform": {
+      "min": {
+        "x": -0.44,
+        "y": 0.0,
+        "z": -0.44
+      },
+      "max": {
+        "x": 0.565,
+        "y": 0.96,
+        "z": 0.44
+      },
+      "size": {
+        "x": 1.005,
+        "y": 0.96,
+        "z": 0.88
+      },
+      "center": {
+        "x": 0.062,
+        "y": 0.48,
+        "z": 0.0
+      }
+    },
+    "transform": {
+      "translate": {
+        "x": 0.5,
+        "y": 0,
+        "z": 0.5
+      },
+      "rotateDeg": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    }
+  },
+  "lightSource": {
+    "enabled": false,
+    "tile": null,
+    "rangeTiles": 4,
+    "intensity": 1,
+    "color": "#ffd36d"
+  },
+  "interactable": {
+    "enabled": true,
+    "kind": "ProcessGrind",
+    "method": "grinding",
+    "togglesPlayerToPose": false,
+    "playerPose": null
+  },
+  "itemModelPlaceholders": [
+    {
+      "id": "input_grain",
+      "label": "input grain",
+      "transform": {
+        "translate": {
+          "x": -0.22,
+          "y": 0.9,
+          "z": -0.15
+        },
+        "rotateDeg": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    },
+    {
+      "id": "flour_output",
+      "label": "flour output",
+      "transform": {
+        "translate": {
+          "x": 0.0,
+          "y": 0.9,
+          "z": -0.15
+        },
+        "rotateDeg": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    }
+  ],
+  "tags": [
+    "processing_station"
+  ]
+}

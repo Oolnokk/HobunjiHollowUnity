@@ -1,0 +1,147 @@
+{
+  "schema": "furniture_piece_mapper.v1",
+  "exportedAt": "2026-06-10T03:17:23.419656+00:00",
+  "pieceId": "station_aging_barrel",
+  "notes": "Aging Barrel for liquor and other barrel-aged liquids. This replaces the earlier liquid-aging vase concept.",
+  "coordinateSystem": {
+    "grid": "2D cells use x,y with origin at top-left of editor grid.",
+    "world": "Three.js style: X right, Y up, Z forward/down-grid. Ground plane is Y=0.",
+    "tileToWorld": "worldX=(cellX+0.5)*tileSize-gridWorldSize/2; worldZ=(cellY+0.5)*tileSize-gridWorldSize/2"
+  },
+  "grid": {
+    "size": 16,
+    "tileSize": 1,
+    "gridWorldSize": 16
+  },
+  "footprint": {
+    "cells": [
+      {
+        "x": 8,
+        "y": 8
+      }
+    ],
+    "count": 1,
+    "worldBounds": {
+      "min": {
+        "x": 0.0,
+        "z": 0.0
+      },
+      "max": {
+        "x": 1.0,
+        "z": 1.0
+      },
+      "size": {
+        "x": 1.0,
+        "z": 1.0
+      },
+      "center": {
+        "x": 0.5,
+        "z": 0.5
+      }
+    }
+  },
+  "furnitureModel": {
+    "fileName": "station_aging_barrel.glb",
+    "hasLoadedPreview": true,
+    "naturalBoundsBeforeMapperTransform": {
+      "min": {
+        "x": -0.67,
+        "y": -0.101,
+        "z": -0.46
+      },
+      "max": {
+        "x": 0.67,
+        "y": 1.221,
+        "z": 0.46
+      },
+      "size": {
+        "x": 1.34,
+        "y": 1.322,
+        "z": 0.92
+      },
+      "center": {
+        "x": 0.0,
+        "y": 0.56,
+        "z": 0.0
+      }
+    },
+    "transform": {
+      "translate": {
+        "x": 0.5,
+        "y": 0,
+        "z": 0.5
+      },
+      "rotateDeg": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    }
+  },
+  "lightSource": {
+    "enabled": false,
+    "tile": null,
+    "rangeTiles": 4,
+    "intensity": 1,
+    "color": "#ffd36d"
+  },
+  "interactable": {
+    "enabled": true,
+    "kind": "ProcessAgeLiquids",
+    "method": "barrelAging",
+    "togglesPlayerToPose": false,
+    "playerPose": null
+  },
+  "itemModelPlaceholders": [
+    {
+      "id": "juice_or_dew_input",
+      "label": "juice or dew input",
+      "transform": {
+        "translate": {
+          "x": -0.22,
+          "y": 0.9,
+          "z": -0.15
+        },
+        "rotateDeg": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    },
+    {
+      "id": "aged_liquor_output",
+      "label": "aged liquor output",
+      "transform": {
+        "translate": {
+          "x": 0.0,
+          "y": 0.9,
+          "z": -0.15
+        },
+        "rotateDeg": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    }
+  ],
+  "tags": [
+    "processing_station"
+  ]
+}

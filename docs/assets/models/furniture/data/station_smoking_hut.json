@@ -1,0 +1,159 @@
+{
+  "schema": "furniture_piece_mapper.v1",
+  "exportedAt": "2026-06-10T03:17:23.393862+00:00",
+  "pieceId": "station_smoking_hut",
+  "notes": "Smoking Hut for meat/fish/mollusk loops.",
+  "coordinateSystem": {
+    "grid": "2D cells use x,y with origin at top-left of editor grid.",
+    "world": "Three.js style: X right, Y up, Z forward/down-grid. Ground plane is Y=0.",
+    "tileToWorld": "worldX=(cellX+0.5)*tileSize-gridWorldSize/2; worldZ=(cellY+0.5)*tileSize-gridWorldSize/2"
+  },
+  "grid": {
+    "size": 16,
+    "tileSize": 1,
+    "gridWorldSize": 16
+  },
+  "footprint": {
+    "cells": [
+      {
+        "x": 7,
+        "y": 7
+      },
+      {
+        "x": 8,
+        "y": 7
+      },
+      {
+        "x": 7,
+        "y": 8
+      },
+      {
+        "x": 8,
+        "y": 8
+      }
+    ],
+    "count": 4,
+    "worldBounds": {
+      "min": {
+        "x": -1.0,
+        "z": -1.0
+      },
+      "max": {
+        "x": 1.0,
+        "z": 1.0
+      },
+      "size": {
+        "x": 2.0,
+        "z": 2.0
+      },
+      "center": {
+        "x": 0.0,
+        "z": 0.0
+      }
+    }
+  },
+  "furnitureModel": {
+    "fileName": "station_smoking_hut.glb",
+    "hasLoadedPreview": true,
+    "naturalBoundsBeforeMapperTransform": {
+      "min": {
+        "x": -0.775,
+        "y": 0.005,
+        "z": -0.83
+      },
+      "max": {
+        "x": 0.775,
+        "y": 1.78,
+        "z": 0.725
+      },
+      "size": {
+        "x": 1.55,
+        "y": 1.775,
+        "z": 1.555
+      },
+      "center": {
+        "x": 0.0,
+        "y": 0.892,
+        "z": -0.052
+      }
+    },
+    "transform": {
+      "translate": {
+        "x": 0.0,
+        "y": 0,
+        "z": 0.0
+      },
+      "rotateDeg": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    }
+  },
+  "lightSource": {
+    "enabled": false,
+    "tile": null,
+    "rangeTiles": 4,
+    "intensity": 1,
+    "color": "#ffd36d"
+  },
+  "interactable": {
+    "enabled": true,
+    "kind": "ProcessSmoke",
+    "method": "smoking",
+    "togglesPlayerToPose": false,
+    "playerPose": null
+  },
+  "itemModelPlaceholders": [
+    {
+      "id": "meat_fish_input",
+      "label": "meat fish input",
+      "transform": {
+        "translate": {
+          "x": -0.22,
+          "y": 0.9,
+          "z": -0.15
+        },
+        "rotateDeg": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    },
+    {
+      "id": "smoked_output",
+      "label": "smoked output",
+      "transform": {
+        "translate": {
+          "x": 0.0,
+          "y": 0.9,
+          "z": -0.15
+        },
+        "rotateDeg": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    }
+  ],
+  "tags": [
+    "processing_station"
+  ]
+}

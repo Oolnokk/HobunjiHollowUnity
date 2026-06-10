@@ -1,0 +1,134 @@
+{
+  "schema": "furniture_piece_mapper.v1",
+  "exportedAt": "2026-06-10T03:17:23.201004+00:00",
+  "pieceId": "basicbed_double_refined",
+  "notes": "Double bed matching the single bed style.",
+  "coordinateSystem": {
+    "grid": "2D cells use x,y with origin at top-left of editor grid.",
+    "world": "Three.js style: X right, Y up, Z forward/down-grid. Ground plane is Y=0.",
+    "tileToWorld": "worldX=(cellX+0.5)*tileSize-gridWorldSize/2; worldZ=(cellY+0.5)*tileSize-gridWorldSize/2"
+  },
+  "grid": {
+    "size": 16,
+    "tileSize": 1,
+    "gridWorldSize": 16
+  },
+  "footprint": {
+    "cells": [
+      {
+        "x": 7,
+        "y": 7
+      },
+      {
+        "x": 8,
+        "y": 7
+      },
+      {
+        "x": 7,
+        "y": 8
+      },
+      {
+        "x": 8,
+        "y": 8
+      }
+    ],
+    "count": 4,
+    "worldBounds": {
+      "min": {
+        "x": -1.0,
+        "z": -1.0
+      },
+      "max": {
+        "x": 1.0,
+        "z": 1.0
+      },
+      "size": {
+        "x": 2.0,
+        "z": 2.0
+      },
+      "center": {
+        "x": 0.0,
+        "z": 0.0
+      }
+    }
+  },
+  "furnitureModel": {
+    "fileName": "basicbed_double_refined.glb",
+    "hasLoadedPreview": true,
+    "naturalBoundsBeforeMapperTransform": {
+      "min": {
+        "x": -0.9,
+        "y": 0.0,
+        "z": -0.9
+      },
+      "max": {
+        "x": 0.9,
+        "y": 0.81,
+        "z": 0.9
+      },
+      "size": {
+        "x": 1.8,
+        "y": 0.81,
+        "z": 1.8
+      },
+      "center": {
+        "x": 0.0,
+        "y": 0.405,
+        "z": 0.0
+      }
+    },
+    "transform": {
+      "translate": {
+        "x": 0.0,
+        "y": 0,
+        "z": 0.0
+      },
+      "rotateDeg": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    }
+  },
+  "lightSource": {
+    "enabled": false,
+    "tile": null,
+    "rangeTiles": 4,
+    "intensity": 1,
+    "color": "#ffd36d"
+  },
+  "interactable": {
+    "enabled": true,
+    "kind": "Sleep",
+    "togglesPlayerToPose": true,
+    "playerPose": {
+      "placeholderName": "Player pose placeholder",
+      "transform": {
+        "translate": {
+          "x": 0,
+          "y": 0.74,
+          "z": 0
+        },
+        "rotateDeg": {
+          "x": 90,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    }
+  },
+  "itemModelPlaceholders": [],
+  "tags": [
+    "bed"
+  ]
+}

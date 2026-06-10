@@ -1,0 +1,147 @@
+{
+  "schema": "furniture_piece_mapper.v1",
+  "exportedAt": "2026-06-10T03:17:23.408059+00:00",
+  "pieceId": "station_aging_vase",
+  "notes": "Aging Vase for cheese and other solids. The vessel is intentionally laid awkwardly on its side and buried partway below ground height like a trench-aged container.",
+  "coordinateSystem": {
+    "grid": "2D cells use x,y with origin at top-left of editor grid.",
+    "world": "Three.js style: X right, Y up, Z forward/down-grid. Ground plane is Y=0.",
+    "tileToWorld": "worldX=(cellX+0.5)*tileSize-gridWorldSize/2; worldZ=(cellY+0.5)*tileSize-gridWorldSize/2"
+  },
+  "grid": {
+    "size": 16,
+    "tileSize": 1,
+    "gridWorldSize": 16
+  },
+  "footprint": {
+    "cells": [
+      {
+        "x": 8,
+        "y": 8
+      }
+    ],
+    "count": 1,
+    "worldBounds": {
+      "min": {
+        "x": 0.0,
+        "z": 0.0
+      },
+      "max": {
+        "x": 1.0,
+        "z": 1.0
+      },
+      "size": {
+        "x": 1.0,
+        "z": 1.0
+      },
+      "center": {
+        "x": 0.5,
+        "z": 0.5
+      }
+    }
+  },
+  "furnitureModel": {
+    "fileName": "station_aging_vase.glb",
+    "hasLoadedPreview": true,
+    "naturalBoundsBeforeMapperTransform": {
+      "min": {
+        "x": -0.54,
+        "y": -0.484,
+        "z": -0.46
+      },
+      "max": {
+        "x": 0.54,
+        "y": 0.82,
+        "z": 0.475
+      },
+      "size": {
+        "x": 1.08,
+        "y": 1.304,
+        "z": 0.935
+      },
+      "center": {
+        "x": 0.0,
+        "y": 0.168,
+        "z": 0.007
+      }
+    },
+    "transform": {
+      "translate": {
+        "x": 0.5,
+        "y": 0,
+        "z": 0.5
+      },
+      "rotateDeg": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    }
+  },
+  "lightSource": {
+    "enabled": false,
+    "tile": null,
+    "rangeTiles": 4,
+    "intensity": 1,
+    "color": "#ffd36d"
+  },
+  "interactable": {
+    "enabled": true,
+    "kind": "ProcessAgeSolids",
+    "method": "vaseAging",
+    "togglesPlayerToPose": false,
+    "playerPose": null
+  },
+  "itemModelPlaceholders": [
+    {
+      "id": "curd_or_solid_input",
+      "label": "curd or solid input",
+      "transform": {
+        "translate": {
+          "x": -0.22,
+          "y": 0.9,
+          "z": -0.15
+        },
+        "rotateDeg": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    },
+    {
+      "id": "aged_solid_output",
+      "label": "aged solid output",
+      "transform": {
+        "translate": {
+          "x": 0.0,
+          "y": 0.9,
+          "z": -0.15
+        },
+        "rotateDeg": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    }
+  ],
+  "tags": [
+    "processing_station"
+  ]
+}
