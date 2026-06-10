@@ -1,0 +1,35 @@
+{
+  "schema": "hobunji-map-builder-index/v1",
+  "createdBy": "ChatGPT",
+  "notes": "Single indexed manifest for HTML-stage map building. Tools load this file instead of asking for manual URLs. Add exported JSON/assets here as they become real repo files.",
+  "paths": {
+    "npcDatabaseEditor": "../tools/npc-authoring-editor/index.html",
+    "townMapEditor": "../tools/town-map-editor/index.html",
+    "wallBuilder": "../tools/wall-builder/index.html",
+    "modularHouseReference": "../references/ModularHouseBuilderV1.html"
+  },
+  "npcDatabases": [],
+  "townMaps": [],
+  "housePieces": [],
+  "wallRecipes": [
+    {
+      "id": "roughbrick_default",
+      "label": "Roughbrick default wall recipe",
+      "kind": "wallRecipe",
+      "recipeUrl": "../assets/models/Roughbrick1.wallrecipe.json",
+      "modelUrl": "../assets/models/Roughbrick1.glb",
+      "tags": ["wall", "roughbrick", "default"]
+    }
+  ],
+  "furniture": [],
+  "distantLandscape": [],
+  "generatedIndexes": {
+    "npcById": {},
+    "housePieceById": {},
+    "wallRecipeById": {
+      "roughbrick_default": 0
+    },
+    "furnitureById": {},
+    "landscapeById": {}
+  }
+}
