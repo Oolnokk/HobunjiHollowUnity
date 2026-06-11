@@ -55,10 +55,13 @@
     asArray(items).forEach((item, index) => {
       if (!item || typeof item !== 'object') return;
       idKeys.forEach(key => {
-        const id = normalizeId(item[key]);
+        const rawId = item[key];
+        if (rawId === undefined || rawId === null || String(rawId).trim() === '') return;
+        const id = normalizeId(rawId);
         if (id && lookup[id] === undefined) lookup[id] = index;
       });
       asArray(item.aliases).forEach(alias => {
+        if (alias === undefined || alias === null || String(alias).trim() === '') return;
         const id = normalizeId(alias);
         if (id && lookup[id] === undefined) lookup[id] = index;
       });
@@ -130,7 +133,7 @@
       width: clampInt(h.width || h.w, 1, map.cols, 4),
       depth: clampInt(h.depth || h.d || h.height, 1, map.rows, 4),
       rotationDeg: Number(h.rotationDeg ?? h.rotation ?? 0) || 0,
-      pieceId: normalizeId(h.pieceId || h.housePieceId || h.footprintType || 'highland_room_default', 'house_piece'),
+      pieceId: normalizeId(h.pieceId || h.housePieceId || h.footprintType || 'placement_derived_highland', 'house_piece'),
       wallRecipeId: normalizeId(h.wallRecipeId || h.wallRecipe || 'roughbrick_default', 'wall_recipe'),
       furnitureSetId: normalizeId(h.furnitureSetId || h.furnitureSet || '', 'furniture_set')
     }));
@@ -215,13 +218,32 @@
     return { ...db, npcs, npcById: buildLookup(npcs, ['id', 'npcId', 'name']) };
   }
 
+  function isPlacementDerivedHousePiece(housePiece) {
+    const id = normalizeId(housePiece?.id || housePiece?.pieceId || housePiece);
+    return id === 'placement_derived_highland' || housePiece?.kind === 'derivedHousePiece';
+  }
+
+  function resolveHousePiece(index, house) {
+    const indexedPiece = resolveEntry(index, 'housePieces', 'housePieceById', house.pieceId);
+    if (indexedPiece && !isPlacementDerivedHousePiece(indexedPiece)) return indexedPiece;
+    if (indexedPiece || isPlacementDerivedHousePiece(house.pieceId)) {
+      return {
+        ...(indexedPiece || {}),
+        ...makeHouseFootprintFromPlacement(house),
+        id: house.pieceId,
+        source: indexedPiece ? 'indexed-derived-placement' : 'placement-derived-fallback'
+      };
+    }
+    return null;
+  }
+
   function buildMapBundle(mapState, index, npcDatabase = null) {
     const normalized = normalizeTownMap(mapState);
     const npcById = npcDatabase?.npcById || buildLookup(asArray(npcDatabase?.npcs), ['id', 'npcId', 'name']);
     const housePlans = normalized.houses.map(house => ({
       house,
       doorTile: deriveDoorTile(house),
-      housePiece: resolveEntry(index, 'housePieces', 'housePieceById', house.pieceId),
+      housePiece: resolveHousePiece(index, house),
       wallRecipe: resolveEntry(index, 'wallRecipes', 'wallRecipeById', house.wallRecipeId),
       furniture: normalized.furniture.filter(f => f.houseId === house.id)
     }));
