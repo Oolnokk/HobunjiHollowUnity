@@ -12,7 +12,7 @@
 <div id="app">
   <aside id="sidebar">
     <div id="topbar">
-      <div class="row"><button id="exportBtn" class="good">Download JSON</button><button id="copyBtn" class="secondary">Copy JSON</button><button id="importBtn" class="secondary">Import</button><input id="importFile" type="file" hidden accept=".json,application/json"></div>
+      <div class="row"><button id="exportBtn" class="good">Download JSON</button><button id="copyBtn" class="secondary">Copy JSON</button><button id="importBtn" class="secondary">Import</button><button id="walkPreviewBtn" class="warn">▶ Walk Preview</button><input id="importFile" type="file" hidden accept=".json,application/json"></div>
       <div class="row" style="margin-top:8px"><span class="pill" id="statusPill">Ready</span><span class="pill" id="countPill">0 houses · 0 paths · 0 schedules</span></div>
     </div>
     <div id="scroll">
@@ -503,6 +503,7 @@ $('addHouseBtn').addEventListener('click', () => addHouseAt()); $('updateHouseBt
 $('newPathBtn').addEventListener('click', newPath); $('addNodeBtn').addEventListener('click', () => addNodeAt()); $('updatePathBtn').addEventListener('click', updatePathInfo); $('deletePathBtn').addEventListener('click', deleteSelectedPath);
 $('addScheduleBtn').addEventListener('click', addSchedule); $('deleteScheduleBtn').addEventListener('click', deleteSchedule);
 $('exportBtn').addEventListener('click', downloadJson); $('copyBtn').addEventListener('click', () => copyText(jsonText(), 'JSON'));
+$('walkPreviewBtn').addEventListener('click', () => { syncMapFormToState(); localStorage.setItem('walkPreviewMap', jsonText()); window.open('walk-preview.html', '_blank'); setStatus('Walk preview launched in new tab.'); });
 $('importBtn').addEventListener('click', () => $('importFile').click());
 $('importFile').addEventListener('change', async e => { const f = e.target.files?.[0]; if(!f) return; try{ importJsonObject(JSON.parse(await f.text())); } catch(err){ setStatus('Import failed.'); log(err.stack || err.message, 'error'); } finally { e.target.value=''; } });
 $('logToggle').addEventListener('click', () => $('logPanel').classList.toggle('visible')); $('closeLogBtn').addEventListener('click', () => $('logPanel').classList.remove('visible')); $('clearLogBtn').addEventListener('click', () => { logLines.length=0; $('logBody').textContent=''; }); $('copyLogBtn').addEventListener('click', () => copyText(logLines.join('\n'), 'log'));
