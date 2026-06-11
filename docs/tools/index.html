@@ -6,60 +6,50 @@
 <title>Hobunji Hollow — Dev Tools</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;overflow:hidden;background:#07101a;color:#edf5ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+html,body{height:100%;overflow:hidden;background:#07101a;color:#edf5ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:13px}
 :root{--bg:#07101a;--panel:#111b28;--border:rgba(255,255,255,.12);--acc:#6aa7ff;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185;--text:#edf5ff;--muted:#9fb4cf}
+button{border:1px solid rgba(106,167,255,.3);background:rgba(106,167,255,.12);color:var(--text);border-radius:8px;padding:6px 11px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .1s}
+button:hover{background:rgba(106,167,255,.22)}
+button.sec{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.05)}
+button.sec:hover{background:rgba(255,255,255,.1)}
+input{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:7px;color:var(--text);padding:6px 9px;outline:none;width:100%}
+
 #shell{display:flex;flex-direction:column;height:100%}
-#tabbar{
-  display:flex;align-items:stretch;gap:2px;
-  background:var(--panel);
-  border-bottom:1px solid var(--border);
-  padding:0 8px;
-  flex-shrink:0;
-  overflow-x:auto;
-  -webkit-overflow-scrolling:touch;
-}
-.tab{
-  display:flex;align-items:center;gap:6px;
-  padding:10px 14px;
-  font-size:13px;font-weight:700;
-  background:none;border:none;color:var(--muted);cursor:pointer;
-  border-bottom:3px solid transparent;
-  white-space:nowrap;
-  transition:color .12s,border-color .12s;
-  flex-shrink:0;
-}
+#titlebar{display:flex;align-items:center;gap:10px;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0}
+#titlebar h1{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.4px}
+#titlebar a{margin-left:auto;font-size:11px;color:var(--acc);text-decoration:none;border:1px solid rgba(106,167,255,.3);border-radius:7px;padding:4px 8px}
+#titlebar a:hover{background:rgba(106,167,255,.1)}
+
+#body{display:flex;flex:1;min-height:0}
+
+/* NPC sidebar */
+#npc-sidebar{width:230px;min-width:180px;flex-shrink:0;display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--border)}
+#npc-header{padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+#npc-header h2{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px}
+#npc-search{margin-bottom:0}
+#npc-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px}
+.npc-item{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);border-radius:7px;padding:7px 9px;cursor:pointer;margin-bottom:4px;transition:background .1s}
+.npc-item:hover{background:rgba(106,167,255,.1)}
+.npc-item.sel{outline:2px solid var(--acc);outline-offset:1px}
+.npc-name{font-weight:700;font-size:12px}
+.npc-meta{font-size:10px;color:var(--muted);margin-top:2px}
+.npc-links{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
+.npc-links a{font-size:10px;color:var(--acc);text-decoration:none;border:1px solid rgba(106,167,255,.25);border-radius:999px;padding:2px 6px;cursor:pointer}
+.npc-links a:hover{background:rgba(106,167,255,.12)}
+#npc-status{font-size:10px;color:var(--muted);padding:4px 10px;border-top:1px solid var(--border);flex-shrink:0}
+
+/* Tab area */
+#tab-area{display:flex;flex-direction:column;flex:1;min-width:0}
+#tabbar{display:flex;align-items:stretch;gap:2px;background:var(--panel);border-bottom:1px solid var(--border);padding:0 8px;flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tab{display:flex;align-items:center;gap:6px;padding:9px 13px;font-size:12px;font-weight:700;background:none;border:none;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;transition:color .12s,border-color .12s;flex-shrink:0}
 .tab:hover{color:var(--text)}
 .tab.active{color:var(--text);border-bottom-color:var(--acc)}
-.tab-dot{
-  width:7px;height:7px;border-radius:50%;
-  background:rgba(255,255,255,.2);
-  flex-shrink:0;transition:background .12s;
-}
+.tab-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.18);flex-shrink:0;transition:background .12s}
 .tab.active .tab-dot{background:var(--ok)}
 #frames{flex:1;position:relative;min-height:0}
-.frame-wrap{
-  position:absolute;inset:0;
-  display:none;
-}
+.frame-wrap{position:absolute;inset:0;display:none}
 .frame-wrap.active{display:block}
-iframe{
-  width:100%;height:100%;border:none;display:block;
-  background:var(--bg);
-}
-/* Title bar for the hub itself */
-#titlebar{
-  display:flex;align-items:center;gap:10px;
-  padding:7px 12px 0;
-  background:var(--bg);
-  flex-shrink:0;
-}
-#titlebar h1{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.3px}
-#titlebar a{
-  margin-left:auto;font-size:11px;color:var(--acc);
-  text-decoration:none;border:1px solid rgba(106,167,255,.3);
-  border-radius:8px;padding:4px 8px;
-}
-#titlebar a:hover{background:rgba(106,167,255,.1)}
+iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
 </style>
 </head>
 <body>
@@ -68,51 +58,61 @@ iframe{
     <h1>HOBUNJI HOLLOW — DEV TOOLS</h1>
     <a href="../index.html" target="_blank">▶ Open Game</a>
   </div>
-  <div id="tabbar">
-    <button class="tab active" data-target="map-builder">
-      <span class="tab-dot"></span>Map Builder
-    </button>
-    <button class="tab" data-target="town-map-editor">
-      <span class="tab-dot"></span>Town Map Editor
-    </button>
-    <button class="tab" data-target="npc-authoring-editor">
-      <span class="tab-dot"></span>NPC Authoring
-    </button>
-    <button class="tab" data-target="npc-portrait-editor">
-      <span class="tab-dot"></span>Portrait Editor
-    </button>
-    <button class="tab" data-target="npc-avatar-preview">
-      <span class="tab-dot"></span>Avatar Preview
-    </button>
-    <button class="tab" data-target="wall-builder">
-      <span class="tab-dot"></span>Wall Builder
-    </button>
-  </div>
-  <div id="frames">
-    <div class="frame-wrap active" id="fw-map-builder">
-      <iframe src="map-builder/index.html" title="Map Builder"></iframe>
+  <div id="body">
+
+    <!-- NPC Database Sidebar -->
+    <div id="npc-sidebar">
+      <div id="npc-header">
+        <h2>NPC Database</h2>
+        <input id="npc-search" type="search" placeholder="Search NPCs…">
+      </div>
+      <div id="npc-list"><div style="color:var(--muted);font-size:11px;padding:8px">Loading NPC database…</div></div>
+      <div id="npc-status">0 NPCs loaded</div>
     </div>
-    <div class="frame-wrap" id="fw-town-map-editor">
-      <iframe src="town-map-editor/index.html" title="Town Map Editor"></iframe>
-    </div>
-    <div class="frame-wrap" id="fw-npc-authoring-editor">
-      <iframe src="npc-authoring-editor/index.html" title="NPC Authoring Editor"></iframe>
-    </div>
-    <div class="frame-wrap" id="fw-npc-portrait-editor">
-      <iframe src="npc-portrait-editor/index.html" title="NPC Portrait Editor"></iframe>
-    </div>
-    <div class="frame-wrap" id="fw-npc-avatar-preview">
-      <iframe src="npc-avatar-preview/index.html" title="Avatar Preview"></iframe>
-    </div>
-    <div class="frame-wrap" id="fw-wall-builder">
-      <iframe src="wall-builder/index.html" title="Wall Builder"></iframe>
+
+    <!-- Main tab area -->
+    <div id="tab-area">
+      <div id="tabbar">
+        <button class="tab active" data-target="unified-map-editor">
+          <span class="tab-dot"></span>Map Editor
+        </button>
+        <button class="tab" data-target="npc-authoring-editor">
+          <span class="tab-dot"></span>NPC Authoring
+        </button>
+        <button class="tab" data-target="npc-portrait-editor">
+          <span class="tab-dot"></span>Portrait Editor
+        </button>
+        <button class="tab" data-target="npc-avatar-preview">
+          <span class="tab-dot"></span>Avatar Preview
+        </button>
+        <button class="tab" data-target="wall-builder">
+          <span class="tab-dot"></span>Wall Builder
+        </button>
+      </div>
+      <div id="frames">
+        <div class="frame-wrap active" id="fw-unified-map-editor">
+          <iframe src="unified-map-editor/index.html" title="Unified Map Editor" id="if-unified-map-editor"></iframe>
+        </div>
+        <div class="frame-wrap" id="fw-npc-authoring-editor">
+          <iframe src="npc-authoring-editor/index.html" title="NPC Authoring Editor" id="if-npc-authoring-editor"></iframe>
+        </div>
+        <div class="frame-wrap" id="fw-npc-portrait-editor">
+          <iframe src="npc-portrait-editor/index.html" title="NPC Portrait Editor" id="if-npc-portrait-editor"></iframe>
+        </div>
+        <div class="frame-wrap" id="fw-npc-avatar-preview">
+          <iframe src="npc-avatar-preview/index.html" title="Avatar Preview" id="if-npc-avatar-preview"></iframe>
+        </div>
+        <div class="frame-wrap" id="fw-wall-builder">
+          <iframe src="wall-builder/index.html" title="Wall Builder" id="if-wall-builder"></iframe>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 <script>
+// ── Tab switching ─────────────────────────────────────────────────────────────
 const tabs = document.querySelectorAll('.tab');
 const frames = document.querySelectorAll('.frame-wrap');
-
 tabs.forEach(tab => {
   tab.addEventListener('click', () => {
     const target = tab.dataset.target;
@@ -120,6 +120,93 @@ tabs.forEach(tab => {
     frames.forEach(f => f.classList.toggle('active', f.id === 'fw-' + target));
   });
 });
+
+// ── NPC Database ──────────────────────────────────────────────────────────────
+const NPC_DB_URL = '../config/npcs/hobunji-starter-npc-database.json';
+let allNpcs = [];
+let selectedNpcId = null;
+
+async function loadNpcDb() {
+  try {
+    const res = await fetch(NPC_DB_URL);
+    const json = await res.json();
+    allNpcs = (json.npcs || json) || [];
+    document.getElementById('npc-status').textContent = `${allNpcs.length} NPCs loaded`;
+    renderNpcList(allNpcs);
+  } catch (e) {
+    document.getElementById('npc-list').innerHTML = `<div style="color:var(--bad);font-size:11px;padding:8px">Failed to load NPC DB: ${e.message}</div>`;
+    document.getElementById('npc-status').textContent = 'Load failed';
+  }
+}
+
+function renderNpcList(npcs) {
+  const container = document.getElementById('npc-list');
+  if (!npcs.length) { container.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:8px">No NPCs found.</div>'; return; }
+  container.innerHTML = npcs.map(npc => `
+    <div class="npc-item ${npc.id === selectedNpcId ? 'sel' : ''}" data-id="${npc.id}">
+      <div class="npc-name">${npc.name || npc.id}</div>
+      <div class="npc-meta">${npc.id}${npc.species ? ' · ' + npc.species : ''}${npc.role ? ' · ' + npc.role : ''}</div>
+      <div class="npc-links">
+        <a data-bridge="map" data-npc="${npc.id}">Map</a>
+        <a data-bridge="author" data-npc="${npc.id}">Author</a>
+        <a data-bridge="portrait" data-npc="${npc.id}">Portrait</a>
+        <a data-bridge="avatar" data-npc="${npc.id}">Avatar</a>
+      </div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('.npc-item').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.closest('[data-bridge]')) return;
+      selectNpc(el.dataset.id);
+    });
+  });
+
+  container.querySelectorAll('[data-bridge]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.stopPropagation();
+      bridgeTo(a.dataset.bridge, a.dataset.npc);
+    });
+  });
+}
+
+function selectNpc(npcId) {
+  selectedNpcId = npcId;
+  const search = document.getElementById('npc-search').value.toLowerCase();
+  const filtered = allNpcs.filter(n => !search || matchNpc(n, search));
+  renderNpcList(filtered);
+}
+
+function bridgeTo(target, npcId) {
+  selectNpc(npcId);
+  const tabMap = { map:'unified-map-editor', author:'npc-authoring-editor', portrait:'npc-portrait-editor', avatar:'npc-avatar-preview' };
+  const tabTarget = tabMap[target];
+  if (!tabTarget) return;
+  // Switch to the correct tab
+  tabs.forEach(t => t.classList.toggle('active', t.dataset.target === tabTarget));
+  frames.forEach(f => f.classList.toggle('active', f.id === 'fw-' + tabTarget));
+  // Call _editorBridge on the iframe
+  const iframe = document.getElementById('if-' + tabTarget);
+  if (!iframe) return;
+  const tryBridge = (attempts=0) => {
+    const bridge = iframe.contentWindow?._editorBridge;
+    if (bridge?.selectNpc) { bridge.selectNpc(npcId); return; }
+    if (attempts < 12) setTimeout(() => tryBridge(attempts+1), 300);
+  };
+  tryBridge();
+}
+
+function matchNpc(n, q) {
+  return (n.id||'').includes(q) || (n.name||'').toLowerCase().includes(q) ||
+    (n.species||'').toLowerCase().includes(q) || (n.role||'').toLowerCase().includes(q);
+}
+
+document.getElementById('npc-search').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase();
+  renderNpcList(q ? allNpcs.filter(n => matchNpc(n, q)) : allNpcs);
+});
+
+loadNpcDb();
 </script>
 </body>
 </html>
