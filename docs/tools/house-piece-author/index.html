@@ -18,6 +18,7 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
 .listActions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.roofStatus{font-size:11px;color:var(--muted);line-height:1.3;margin-top:6px}
 @media(max-width:1050px){body{overflow:auto}.app{height:auto;min-height:100vh;grid-template-columns:1fr;grid-template-rows:auto auto 58vh auto 130px}.viewer{height:58vh}.debug{height:130px}}
 </style>
+<script src="../../js/repo-picker.js"></script>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 </head>
 <body>
@@ -199,6 +200,14 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
       <div class="row"><button id="applyAssetTransformBtn" type="button">Apply asset transform</button><button id="snapAssetGroundBtn" type="button">Snap asset bottom to ground</button></div>
       <div class="assetList" id="assetList"></div>
       <p class="hint">Imported GLBs are stored as separate named detail elements with position/rotation/scale metadata. Browser security prevents re-exporting the binary inside JSON, so the file name is stored as the source reference.</p>
+    </div>
+
+    <div class="section" id="interiorFurnitureSection">
+      <h2>5. Interior furniture</h2>
+      <div class="row">
+        <button id="interiorModeBtn" type="button" onclick="setInteriorMode(!interiorMode)">Interior View Off</button>
+      </div>
+      <p class="hint">Toggle interior view to make walls transparent, then place furniture from the repo. Use transform controls to position each piece.</p>
     </div>
 
     <div class="section">
@@ -2155,6 +2164,97 @@ for(const id of ['pieceName','pieceType','basePreset','baseHeight','wallThicknes
 
 try{ updateUndoRedoButtons(); syncSetsFromPiece(); syncRoofInputsFromPiece(); if(!state.piece.base.faces.length && !footprintSet.size) applyBasePreset('highland', false); drawGrid(); rebuildFootprintOverlay(); rebuildFaceMeshes(); rebuildRoofPreview(); renderAssetList(); renderPieceList(); refreshExport(); resize(); renderer.setClearColor(0x0b0f16,1); renderer.clear(true,true,true); renderer.render(scene,camera); animate(); window.__MHPA_READY__ = true; log('Ready. Default Highland architecture preset loaded. Blue footprint cells drive a tapered Highland frustum shell; green/gray/brown/tan/railing extension tiles generate solidified hollow entry tunnels with exposed-side orientation, real Highland wall portal cuts, structure-continuation support, wonky ground-running chimneys, porches, porch-facing stairs, and wonky auto-connecting railings; cross-gable branches clip to the primary ridge line; peak-center shingle rotation uses the scaled shingle center, completed shingle groups recenter on each eave plane, entry tunnels have closed skyward faces, per-layer peak-away controls are active, and Highland defaults include layer-1 -10° local X tilt plus layer-2 away-from-peak fan rotation.'); }catch(err){ log('BOOT ERROR: '+(err?.stack||err?.message||err),'error'); resize(); try{ renderer.setClearColor(0x0b0f16,1); renderer.clear(true,true,true); renderer.render(scene,camera); }catch(e){ log('FALLBACK RENDER ERROR: '+(e?.message||e),'error'); } }
 
+// ── Interior furniture mode ───────────────────────────────────────────────────
+let interiorMode = false;
+
+function addGlbFromUrl(url, name) {
+  const id = `asset_${state.nextAssetId++}`;
+  log(`Loading furniture: ${name}…`);
+  loader.load(url, gltf => {
+    const obj = gltf.scene;
+    obj.name = name;
+    obj.userData.assetId = id;
+    obj.traverse(o => { o.userData.assetId = id; if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    const b = boundsFromFootprint();
+    const cx = b ? (b.minX + b.maxX) / 2 : 0;
+    const cz = b ? (b.minZ + b.maxZ) / 2 : 0;
+    obj.position.set(cx, 0, cz);
+    assetGroup.add(obj);
+    assetMeshes.set(id, obj);
+    state.piece.assets.push({ id, name, source: url, position: { x: cx, y: 0, z: cz }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 }, kind: 'furniture' });
+    selectAsset(id);
+    renderAssetList();
+    refreshExport();
+    log(`Added furniture: ${name}`);
+  }, undefined, err => log(`Furniture load failed for ${name}: ${err.message || err}`, 'error'));
+}
+
+function setInteriorMode(on) {
+  interiorMode = on;
+  // Adjust wall opacity for interior viewing
+  const wallOpacity = on ? 0.12 : 0.82;
+  const ceilOpacity = on ? 0.04 : 0.72;
+  matWall.opacity = wallOpacity;
+  matFace.opacity = on ? 0.07 : 0.72;
+  matRoof.opacity = on ? 0.08 : 0.86;
+  matEntry.opacity = on ? 0.10 : 0.84;
+  matChimney.opacity = on ? 0.10 : 0.90;
+  [matWall, matFace, matRoof, matEntry, matChimney].forEach(m => { m.needsUpdate = true; });
+  const intBtn = document.getElementById('interiorModeBtn');
+  if (intBtn) { intBtn.classList.toggle('active', on); intBtn.textContent = on ? 'Interior View ON' : 'Interior View OFF'; }
+}
+
+// ── Repo pickers ──────────────────────────────────────────────────────────────
+(function initRepoPickers() {
+  if (!window.RepoPicker) return;
+  const rp = new RepoPicker({ docsBase: '../../' });
+
+  // Shingle GLB picker
+  const shinglePicker = rp.makePicker({
+    category: 'models',
+    filter: e => e.category === 'shingle',
+    label: '☷ Repo Shingles',
+    fetchAs: 'arraybuffer',
+    showDisk: false,
+    onLoad: async (entry, buf) => {
+      const blob = new Blob([buf], { type: 'model/gltf-binary' });
+      const file = new File([blob], entry.name, { type: 'model/gltf-binary' });
+      loadRoofShingleFile(file);
+    }
+  });
+  const shingleBtn = document.getElementById('roofShingleGlbInput');
+  if (shingleBtn && shingleBtn.previousElementSibling) shingleBtn.previousElementSibling.after(shinglePicker);
+
+  // Detail GLB picker
+  const glbPicker = rp.makePicker({
+    category: 'models',
+    label: '☷ Repo Models',
+    fetchAs: 'arraybuffer',
+    showDisk: false,
+    onLoad: async (entry, buf) => {
+      const blob = new Blob([buf], { type: 'model/gltf-binary' });
+      const file = new File([blob], entry.name, { type: 'model/gltf-binary' });
+      addGlbFile(file);
+    }
+  });
+  const glbBtn = document.getElementById('glbInput');
+  if (glbBtn && glbBtn.previousElementSibling) glbBtn.previousElementSibling.after(glbPicker);
+
+  // Furniture picker for interior mode
+  const furnPicker = rp.makePicker({
+    category: 'models',
+    filter: e => e.category === 'furniture',
+    label: '☷ Place Furniture',
+    fetchAs: 'arraybuffer',
+    showDisk: false,
+    onLoad: async (entry, buf) => {
+      const url = '../../' + entry.path;
+      addGlbFromUrl(url, entry.name);
+    }
+  });
+  const intSection = document.getElementById('interiorFurnitureSection');
+  if (intSection) intSection.appendChild(furnPicker);
+})();
 </script>
 </body>
 </html>

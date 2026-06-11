@@ -368,6 +368,7 @@
     </div>
   </div>
 
+  <script src="../../js/repo-picker.js"></script>
   <script src="../../config/scratchbones-config.js"></script>
   <script src="../../js/portrait-utils.js"></script>
   <script src="../../js/portrait-breathing.js"></script>
@@ -2033,6 +2034,25 @@
       document.getElementById('npe-import-btn')?.addEventListener('click', () => {
         document.getElementById('npe-import-file')?.click();
       });
+
+      if (window.RepoPicker) {
+        const rp = new RepoPicker({ docsBase: '../../' });
+        const dbPicker = rp.makePicker({
+          category: 'npcDatabases',
+          label: '☷ Load NPC DB',
+          fetchAs: 'json',
+          onLoad: (entry, data) => {
+            try {
+              // database has .npcs array — import the first NPC or let user pick
+              const npcs = Array.isArray(data) ? data : (data.npcs || []);
+              if (npcs.length) { importNpcFromData(npcs[0]); }
+              else importNpcFromData(data);
+            } catch(e) { alert('Load failed: ' + e.message); }
+          }
+        });
+        const importBtn = document.getElementById('npe-import-btn');
+        if (importBtn) importBtn.after(dbPicker);
+      }
 
       document.getElementById('npe-import-file')?.addEventListener('change', (e) => {
         const file = e.target.files?.[0];

@@ -247,6 +247,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="../../js/GLTFLoader.js"></script>
 <script src="../../js/WallBuilder.js"></script>
+<script src="../../js/repo-picker.js"></script>
 <script>
 (() => {
 'use strict';
@@ -1364,6 +1365,45 @@ window._editorBridge = {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 resizeCanvas(); fitView(); loadStarter(); requestAnimationFrame(tickClock);
+
+// ── Repo Pickers ──────────────────────────────────────────────────────────────
+(function() {
+  if (!window.RepoPicker) return;
+  const rp = new RepoPicker({ docsBase: '../../' });
+  // Map JSON loader
+  const mapPicker = rp.makePicker({
+    category: 'maps',
+    label: '☷ Load Map',
+    fetchAs: 'json',
+    onLoad: (entry, data) => { try { importJson(data); setStatus('Loaded: ' + entry.name); } catch(e) { setStatus('Load failed: ' + e.message); } }
+  });
+  const importBtn = $('importBtn');
+  if (importBtn) importBtn.after(mapPicker);
+  // House piece picker for placing from index
+  const piecePicker = rp.makePicker({
+    category: 'housePieces',
+    label: '☷ Place Piece',
+    fetchAs: 'json',
+    onLoad: (entry, data) => {
+      // Extract bounding box from piece footprint and add as house
+      try {
+        const tile = data.tileSize || 1;
+        const footprint = data.footprint || [];
+        if (!footprint.length) { setStatus('No footprint in piece JSON'); return; }
+        const xs = footprint.map(c => c.x), zs = footprint.map(c => c.y || c.z || 0);
+        const minX = Math.min(...xs), maxX = Math.max(...xs) + 1;
+        const minZ = Math.min(...zs), maxZ = Math.max(...zs) + 1;
+        const w = (maxX - minX) * tile, d = (maxZ - minZ) * tile;
+        const newHouse = { id: uid('h'), x: 24, y: 16, width: Math.max(2, w), depth: Math.max(2, d), label: entry.name, pieceUrl: '../../' + entry.path };
+        state.houses.push(newHouse);
+        activeHouseId = newHouse.id; fillHouseForm(newHouse); selectThing('house', newHouse.id);
+        updateAll(); setStatus('Placed piece: ' + entry.name + '. Drag to reposition.');
+      } catch(e) { setStatus('Piece load failed: ' + e.message); }
+    }
+  });
+  const modeHouseBtn = $('modeHouse');
+  if (modeHouseBtn) modeHouseBtn.after(piecePicker);
+})();
 })();
 </script>
 </body>

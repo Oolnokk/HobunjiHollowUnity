@@ -8,6 +8,7 @@
 :root{--bg:#0b0f14;--panel:#121822;--panel2:#0f1520;--text:#e8eef7;--muted:#9fb0c8;--line:#253246;--acc:#6aa7ff;--danger:#fb7185;}
 *{box-sizing:border-box} body{margin:0;height:100vh;overflow:hidden;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif} #app{display:flex;height:100vh} #sidebar{width:420px;max-width:62vw;min-width:330px;background:linear-gradient(180deg,var(--panel),var(--panel2));border-right:1px solid var(--line);display:flex;flex-direction:column} #sidebarHeader{padding:10px;border-bottom:1px solid rgba(255,255,255,.08)} #sidebarScroll{padding:10px;overflow:auto;-webkit-overflow-scrolling:touch}.card{border:1px solid var(--line);border-radius:12px;padding:10px;background:rgba(255,255,255,.035);margin-bottom:10px}.section{border-left:6px solid var(--sec,#6aa7ff);background:linear-gradient(180deg,var(--secBg,rgba(106,167,255,.1)),rgba(255,255,255,.02))}.sectionTitle{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}.sectionTitle b{font-size:13px}.sectionTag{font-size:11px;color:var(--muted);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:3px 8px}h2{font-size:13px;color:var(--muted);letter-spacing:.3px;text-transform:uppercase;margin:10px 0 8px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.col{display:flex;flex-direction:column;gap:5px}label{font-size:12px;color:var(--muted)}input,select,textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:9px 10px;color:var(--text);font-size:15px;outline:none}textarea{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;min-height:110px}button{background:rgba(106,167,255,.18);border:1px solid rgba(106,167,255,.35);color:var(--text);padding:9px 10px;border-radius:11px;font-weight:650;cursor:pointer}button.secondary{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.13)}button.danger{background:rgba(251,113,133,.16);border-color:rgba(251,113,133,.35)}button:active{transform:translateY(1px)}.mini{font-size:12px;padding:7px 9px}.help{font-size:12px;color:var(--muted);line-height:1.35}.hr{height:1px;background:var(--line);margin:10px 0}.pill{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);font-size:12px;color:var(--muted)}#viewport{flex:1;position:relative;min-width:260px}canvas{display:block;width:100%;height:100%}#debug{position:absolute;left:10px;bottom:10px;max-width:min(640px,95vw);white-space:pre-wrap;background:rgba(0,0,0,.48);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:10px;font-size:12px;color:var(--text);pointer-events:none}#logPanel{position:absolute;right:10px;top:10px;width:min(390px,92vw);max-height:48vh;background:rgba(11,15,20,.96);border:1px solid rgba(255,255,255,.13);border-radius:12px;overflow:hidden;display:none;z-index:10}.visible{display:block!important}.logHead{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.25)}#logBody{max-height:calc(48vh - 42px);overflow:auto;padding:8px;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#bfdbfe}.logLine{padding:2px 4px;border-radius:4px}.logToggle{position:absolute;right:10px;top:10px;z-index:9}.panelItem{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:8px;background:rgba(255,255,255,.025);margin-top:6px}.panelItem.selected{outline:2px solid var(--acc);outline-offset:1px}@media(max-width:720px){#sidebar{width:360px;max-width:68vw;min-width:300px}.grid3{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
 </style>
+<script src="../../js/repo-picker.js"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -213,6 +214,37 @@ $('recipeFile').onchange=async()=>{ let ok=0,fail=0; for(const file of [...$('re
 $('loadGlbBtn').onclick=()=>$('glbFile').click();
 $('glbFile').onchange=async()=>{ let ok=0,fail=0; for(const file of [...$('glbFile').files]){ try{ await addGlbFromArrayBuffer(await file.arrayBuffer(),file.name,file.name); ok++; }catch(e){ fail++; logDebug(`GLB failed ${file.name}: ${e.message}`); } } setStatus(`Loaded GLBs: ${ok}`+(fail?` failed ${fail}`:'')); };
 $('loadGlbUrlBtn').onclick=async()=>{ const url=$('glbUrl').value.trim(); if(!url)return; try{ const resp=await fetch(url); if(!resp.ok)throw new Error(`HTTP ${resp.status}`); const name=url.split('/').pop()||WALL_DEFAULT_GLB_NAME; await addGlbFromArrayBuffer(await resp.arrayBuffer(),name,url); setStatus(`Loaded GLB URL: ${name}`); }catch(e){ setStatus(`GLB URL failed: ${e.message}`); } };
+
+// ── Repo Pickers ──────────────────────────────────────────────────────────────
+setTimeout(function() {
+  if (!window.RepoPicker) return;
+  const rp = new RepoPicker({ docsBase: '../../' });
+  // GLB model picker
+  const glbPicker = rp.makePicker({
+    category: 'models',
+    filter: e => ['wall','structural','building'].includes(e.category),
+    label: '☷ Repo Models',
+    fetchAs: 'arraybuffer',
+    onLoad: async (entry, buf) => {
+      try { await addGlbFromArrayBuffer(buf, entry.name, entry.path); setStatus('Loaded: ' + entry.name); }
+      catch(e) { setStatus('GLB load failed: ' + e.message); }
+    }
+  });
+  const glbBtn = document.getElementById('loadGlbBtn');
+  if (glbBtn) glbBtn.after(glbPicker);
+  // Recipe picker
+  const recPicker = rp.makePicker({
+    category: 'wallRecipes',
+    label: '☷ Repo Recipes',
+    fetchAs: 'json',
+    onLoad: (entry, data) => {
+      try { addRecipeObject(data, entry.name, '', JSON.stringify(data)); setStatus('Loaded recipe: ' + entry.name); }
+      catch(e) { setStatus('Recipe load failed: ' + e.message); }
+    }
+  });
+  const recBtn = document.getElementById('loadRecipeBtn');
+  if (recBtn) recBtn.after(recPicker);
+}, 200);
 
 function disposeWalls(){ if(wallInstancedGroup){ scene.remove(wallInstancedGroup); wallInstancedGroup=null; } debugHitGroup.clear(); lastBuildStats={instances:0,culled:0,missingGlbs:[]}; $('countPill').textContent='0 instances'; }
 $('clearWallsBtn').onclick=()=>{ disposeWalls(); setStatus('Cleared generated walls'); };
