@@ -133,7 +133,7 @@
       width: clampInt(h.width || h.w, 1, map.cols, 4),
       depth: clampInt(h.depth || h.d || h.height, 1, map.rows, 4),
       rotationDeg: Number(h.rotationDeg ?? h.rotation ?? 0) || 0,
-      pieceId: normalizeId(h.pieceId || h.housePieceId || h.footprintType || 'placement_derived_highland', 'house_piece'),
+      pieceId: normalizeId(h.pieceId || h.housePieceId || 'placement_derived_highland', 'house_piece'),
       wallRecipeId: normalizeId(h.wallRecipeId || h.wallRecipe || 'roughbrick_default', 'wall_recipe'),
       furnitureSetId: normalizeId(h.furnitureSetId || h.furnitureSet || '', 'furniture_set')
     }));
