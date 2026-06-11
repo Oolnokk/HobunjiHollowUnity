@@ -246,6 +246,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="../../js/GLTFLoader.js"></script>
+<script src="../../js/WallBuilder.js"></script>
 <script>
 (() => {
 'use strict';
@@ -722,7 +723,8 @@ function setView(v) {
 const wrap3d = $('wrap3d');
 let renderer3d, scene3d, camera3d;
 let buildingLayer, pathLayer, groundLayer;
-let shingleSrc = null, brickSrc = null;
+let shingleTemplate = null;
+let wallBuilder = null;
 let glbLoadDone = false;
 let orbitCtrl = { drag:false, lx:0, ly:0, yaw:-0.72, pitch:0.72, dist:52, target:null };
 
@@ -784,12 +786,283 @@ async function loadGlbs() {
   if (!window.THREE?.GLTFLoader) return;
   const loader = new THREE.GLTFLoader();
   for (const url of ['../../assets/models/HighlandLongshingle_boned.glb', '../../assets/models/highlandlongshingle_boned.glb']) {
-    try { shingleSrc = await new Promise((r,j) => loader.load(url, g => r(g.scene), undefined, j)); break; } catch(_) {}
+    try {
+      const scene = await new Promise((r,j) => loader.load(url, g => r(g.scene), undefined, j));
+      shingleTemplate = analyzeShingleTemplate(scene);
+      setStatus(shingleTemplate.bone ? 'Shingle GLB loaded (shinglebone found).' : 'Shingle GLB loaded (no shinglebone; using bounding box).');
+      break;
+    } catch(_) {}
   }
-  if (!shingleSrc) setStatus('Shingle GLB not found; using flat fallback.');
-  try { brickSrc = await new Promise((r,j) => loader.load('../../assets/models/Roughbrick1.glb', g => r(g.scene), undefined, j)); }
-  catch(_) { setStatus('Roughbrick1.glb not found; using box bricks.'); }
+  if (!shingleTemplate) setStatus('Shingle GLB not found — using tube preview.');
+  if (window.WallBuilder) {
+    wallBuilder = new WallBuilder({ glbBasePath: '../../assets/models/' });
+    try { await wallBuilder.loadDefaultGlb(); }
+    catch(_) { wallBuilder.ensurePlaceholderGlb(); }
+  }
   emit3d();
+}
+
+// ── Shingle pipeline (ported from HAModularHouseBuilderV1) ──────────────────
+
+function finite(v, d) { return Number.isFinite(Number(v)) ? Number(v) : d; }
+
+function findObjectByNameLoose(rootObj, name) {
+  let found = null; const want = String(name).toLowerCase();
+  rootObj.traverse(o => { if (!found && String(o.name||'').toLowerCase() === want) found = o; });
+  return found;
+}
+
+function analyzeShingleTemplate(sceneObj) {
+  const T = window.THREE;
+  const bone = findObjectByNameLoose(sceneObj, 'shinglebone');
+  let boneLength = 1, boneFrameInverse = null;
+  if (bone) {
+    bone.visible = false;
+    sceneObj.updateWorldMatrix(true, true);
+    bone.updateWorldMatrix(true, true);
+    const pos = new T.Vector3(), quat = new T.Quaternion(), scale = new T.Vector3();
+    bone.matrixWorld.decompose(pos, quat, scale);
+    boneLength = Math.max(Math.abs(scale.x), 0.001);
+    const frame = new T.Matrix4().compose(pos, quat, new T.Vector3(1,1,1));
+    boneFrameInverse = frame.clone().invert();
+  } else {
+    const box = new T.Box3().setFromObject(sceneObj);
+    const size = box.getSize(new T.Vector3());
+    boneLength = Math.max(size.x, size.y, size.z, 1);
+  }
+  return { scene: sceneObj, bone, boneLength, boneFrameInverse };
+}
+
+function faceNormalFromVerts(v) {
+  const T = window.THREE;
+  const a = new T.Vector3(...v[0]), b = new T.Vector3(...v[1]), c = new T.Vector3(...v[2]);
+  return b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+}
+
+function faceCenterFromVerts(v) {
+  const T = window.THREE;
+  const c = new T.Vector3();
+  for (const p of v) c.add(new T.Vector3(...p));
+  return c.multiplyScalar(1 / v.length);
+}
+
+function roofFaceFrame(face, config) {
+  const T = window.THREE;
+  const p0 = new T.Vector3(...face.v[0]), p1 = new T.Vector3(...face.v[1]),
+        p2 = new T.Vector3(...face.v[2]), p3 = new T.Vector3(...face.v[3]);
+  const n = faceNormalFromVerts(face.v);
+  const uMidA = p0.clone().lerp(p3, 0.5), uMidB = p1.clone().lerp(p2, 0.5);
+  const vMidA = p0.clone().lerp(p1, 0.5), vMidB = p3.clone().lerp(p2, 0.5);
+  const uVec = uMidB.clone().sub(uMidA), vVec = vMidB.clone().sub(vMidA);
+  const lengthA = config.direction === 'v' ? vMidA : uMidA;
+  const lengthB = config.direction === 'v' ? vMidB : uMidB;
+  const acrossVec = config.direction === 'v' ? uVec : vVec;
+  const spineOrigin = (lengthA.y >= lengthB.y ? lengthA : lengthB).clone();
+  const eaveEnd = (lengthA.y >= lengthB.y ? lengthB : lengthA).clone();
+  const spineToEave = eaveEnd.clone().sub(spineOrigin);
+  const baseLength = Math.max(0.001, spineToEave.length());
+  let dir = spineToEave.clone();
+  if (dir.lengthSq() < 1e-10) dir = (config.direction === 'v' ? vVec : uVec).clone();
+  if (dir.lengthSq() < 1e-10) dir = new T.Vector3(1, 0, 0);
+  dir.normalize();
+  const useWallOrigin = !!config.wallOriginReach;
+  const reachOrigin = useWallOrigin ? eaveEnd.clone() : spineOrigin.clone();
+  const reachDir = useWallOrigin ? dir.clone().multiplyScalar(-1) : dir.clone();
+  const reach = Math.max(0, finite(config.overhang, 1));
+  const length = Math.max(0.001, baseLength * reach);
+  const center = reachOrigin.clone().add(reachDir.clone().multiplyScalar(length * 0.5));
+  const scaleOrigin = spineOrigin.clone().add(dir.clone().multiplyScalar(baseLength * 0.5));
+  let across = acrossVec.clone();
+  const acrossLen = Math.max(0.001, across.length());
+  if (across.lengthSq() < 1e-10) across = new T.Vector3(0, 0, 1);
+  across.normalize();
+  return { center, n, dir: reachDir, spineToEaveDir: dir, across, length, baseLength, reach, acrossLen, spineOrigin, eaveEnd, reachOrigin, scaleOrigin };
+}
+
+function roofTargetsForFace(face, config) {
+  const T = window.THREE;
+  const frame = roofFaceFrame(face, config);
+  const count = Math.max(1, Math.floor(frame.acrossLen / config.tubeSpacing) + 1);
+  const step = count > 1 ? frame.acrossLen / (count - 1) : 0;
+  const faceOffset = finite(face.roofAcrossOffset, 0);
+  const targets = [];
+  for (let i = 0; i < count; i++) {
+    const offset = (i - (count - 1) / 2) * step + faceOffset;
+    const liftedOffset = frame.across.clone().multiplyScalar(offset)
+      .add(frame.n.clone().multiplyScalar(config.lift + config.tubeRadius));
+    targets.push({
+      position: frame.center.clone().add(liftedOffset),
+      scaleOrigin: frame.scaleOrigin.clone().add(liftedOffset),
+      spineOrigin: frame.spineOrigin.clone().add(liftedOffset),
+      eaveEnd: frame.eaveEnd.clone().add(liftedOffset),
+      direction: frame.dir.clone(),
+      spineToEaveDirection: frame.spineToEaveDir.clone(),
+      reachOrigin: frame.reachOrigin.clone(),
+      normal: frame.n.clone(),
+      across: frame.across.clone(),
+      length: frame.length, baseLength: frame.baseLength, reach: frame.reach,
+      radius: config.tubeRadius, index: i, layer: 1
+    });
+  }
+  return targets;
+}
+
+function shingleLayerSettings(target, config) {
+  const second = target?.layer === 2;
+  return {
+    reach:    second ? Math.max(0,    finite(config.secondLayerOverhang,       config.overhang))      : Math.max(0,    finite(config.overhang, 1)),
+    scaleX:   second ? Math.max(0.01, finite(config.secondLayerShingleScaleX,  config.shingleScaleX)) : Math.max(0.01, finite(config.shingleScaleX, 1)),
+    scaleY:   second ? Math.max(0.01, finite(config.secondLayerShingleScaleY,  config.shingleScaleY)) : Math.max(0.01, finite(config.shingleScaleY, 1)),
+    scaleZ:   second ? Math.max(0.01, finite(config.secondLayerShingleScaleZ,  config.shingleScaleZ)) : Math.max(0.01, finite(config.shingleScaleZ, 1)),
+    rotX:     second ? finite(config.secondLayerShingleRotX, 0)                                       : finite(config.shingleRotX, 0),
+    flipX:    second ? !!config.secondLayerFlipX : !!config.flipX,
+    flipY:    second ? !!config.secondLayerFlipY : !!config.flipY,
+    flipZ:    second ? !!config.secondLayerFlipZ : !!config.flipZ,
+    wallOriginReach: second ? !!config.secondLayerWallOriginReach : !!config.wallOriginReach
+  };
+}
+
+function standardLengthScalePlacement(target, config) {
+  const T = window.THREE;
+  const layer = shingleLayerSettings(target, config);
+  const sx = layer.scaleX;
+  const origin = (target.scaleOrigin || target.position || new T.Vector3()).clone();
+  const pos = (target.position || origin).clone();
+  const scaledPosition = origin.clone().add(pos.clone().sub(origin).multiplyScalar(sx));
+  const scaledLength = Math.max(0.001, finite(target.length, 1) * sx);
+  return { sx, origin, scaledPosition, scaledLength };
+}
+
+function targetQuaternionForRoofTarget(target, config) {
+  const T = window.THREE;
+  const layer = shingleLayerSettings(target, config);
+  const flips = { flipX: layer.flipX, flipY: layer.flipY, flipZ: layer.flipZ };
+  const x = (target.direction || new T.Vector3(1,0,0)).clone().normalize();
+  let z = (target.normal || new T.Vector3(0,1,0)).clone().normalize();
+  let y = z.clone().cross(x).normalize();
+  if (y.lengthSq() < 1e-8) y = new T.Vector3(0,0,1).cross(x).normalize();
+  z = x.clone().cross(y).normalize();
+  const q = new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(x, y, z));
+  const qLocal = new T.Quaternion();
+  if (flips.flipX) q.multiply(qLocal.setFromAxisAngle(new T.Vector3(1,0,0), Math.PI));
+  if (flips.flipY) q.multiply(qLocal.setFromAxisAngle(new T.Vector3(0,1,0), Math.PI));
+  if (flips.flipZ) q.multiply(qLocal.setFromAxisAngle(new T.Vector3(0,0,1), Math.PI));
+  const rx = T.MathUtils.degToRad(finite(layer.rotX, 0));
+  if (Math.abs(rx) > 1e-8) q.multiply(qLocal.setFromAxisAngle(new T.Vector3(1,0,0), rx));
+  const zRotSign = flips.flipX ? -1 : 1;
+  const rz = T.MathUtils.degToRad(finite(config.shingleRotZ, 0)) * zRotSign;
+  if (Math.abs(rz) > 1e-8) q.multiply(qLocal.setFromAxisAngle(new T.Vector3(0,0,1), rz));
+  return q;
+}
+
+function makeTubePreview(target, config) {
+  const T = window.THREE;
+  const placement = standardLengthScalePlacement(target, config);
+  const mesh = new T.Mesh(
+    new T.CylinderGeometry(target.radius, target.radius, placement.scaledLength, 8, 1, true),
+    new T.MeshLambertMaterial({ color: 0xd8bd7d })
+  );
+  mesh.position.copy(placement.scaledPosition);
+  mesh.quaternion.setFromUnitVectors(new T.Vector3(0,1,0), target.direction.clone().normalize());
+  return mesh;
+}
+
+function makeShingleInstance(target, config) {
+  const T = window.THREE;
+  const tpl = shingleTemplate;
+  if (!tpl) return makeTubePreview(target, config);
+  const wrapper = new T.Group();
+  const clone = tpl.scene.clone(true);
+  clone.traverse(o => { if (String(o.name||'').toLowerCase() === 'shinglebone') o.visible = false; });
+  const placement = standardLengthScalePlacement(target, config);
+  const stretch = target.length / Math.max(0.001, tpl.boneLength);
+  const q = targetQuaternionForRoofTarget({...target, rotationOrigin: placement.scaledPosition}, config);
+  wrapper.position.copy(placement.scaledPosition);
+  wrapper.quaternion.copy(q);
+  const layer = shingleLayerSettings(target, config);
+  wrapper.scale.set(stretch * placement.sx, layer.scaleY, layer.scaleZ);
+  if (tpl.boneFrameInverse) {
+    clone.matrix.copy(tpl.boneFrameInverse);
+    clone.matrixAutoUpdate = false;
+  }
+  wrapper.add(clone);
+  return wrapper;
+}
+
+function cloneRoofTargetWithLayerOffset(target, config) {
+  const T = window.THREE;
+  const across = (target.across || new T.Vector3(0,0,1)).clone().normalize();
+  const normal = (target.normal || new T.Vector3(0,1,0)).clone().normalize();
+  const spineToEaveDir = (target.spineToEaveDirection || target.direction || new T.Vector3(1,0,0)).clone().normalize();
+  const layerOffset = across.clone().multiplyScalar(config.secondLayerAcross)
+    .add(normal.clone().multiplyScalar(config.secondLayerLift));
+  const spine = (target.spineOrigin || target.position || new T.Vector3()).clone().add(layerOffset);
+  const eave = target.eaveEnd
+    ? target.eaveEnd.clone().add(layerOffset)
+    : spine.clone().add(spineToEaveDir.clone().multiplyScalar(finite(target.baseLength, target.length || 1)));
+  const baseLength = Math.max(0.001, finite(target.baseLength, target.length || 1));
+  const useWallOrigin = !!config.secondLayerWallOriginReach;
+  const reachOrigin = useWallOrigin ? eave.clone() : spine.clone();
+  const dir = useWallOrigin ? spineToEaveDir.clone().multiplyScalar(-1) : spineToEaveDir.clone();
+  const reach = Math.max(0, finite(config.secondLayerOverhang, config.overhang));
+  const length = Math.max(0.001, baseLength * reach);
+  const position = reachOrigin.clone().add(dir.clone().multiplyScalar(length * 0.5));
+  const scaleOrigin = spine.clone().add(spineToEaveDir.clone().multiplyScalar(baseLength * 0.5));
+  return { ...target, position, scaleOrigin, spineOrigin: spine, eaveEnd: eave, reachOrigin,
+    length, reach, normal: normal.clone(), across: across.clone(),
+    direction: dir.clone(), spineToEaveDirection: spineToEaveDir.clone(), layer: 2 };
+}
+
+function alignRoofFaceGroupToEavePlaneCenter(face, group, config) {
+  const T = window.THREE;
+  if (!group || !group.children.length) return;
+  const frame = roofFaceFrame(face, config);
+  const dir = frame.dir.clone().normalize();
+  const across = frame.across.clone().normalize();
+  const desired = faceCenterFromVerts(face.v);
+  group.updateWorldMatrix(true, true);
+  const box = new T.Box3().setFromObject(group);
+  if (!Number.isFinite(box.min.x) || !Number.isFinite(box.max.x)) return;
+  const actual = box.getCenter(new T.Vector3());
+  const deltaDir = desired.dot(dir) - actual.dot(dir);
+  const deltaAcross = desired.dot(across) - actual.dot(across);
+  const move = dir.multiplyScalar(deltaDir).add(across.multiplyScalar(deltaAcross));
+  if (move.lengthSq() > 1e-12) group.position.add(move);
+}
+
+const HIGHLAND_SHINGLE_CONFIG = {
+  tubeRadius: 0.08, tubeSpacing: 0.5, overhang: 1.25, wallOriginReach: true,
+  direction: 'u', lift: 0.04,
+  flipX: true, flipY: false, flipZ: false,
+  shingleScaleX: 1.2, shingleScaleY: 1.2, shingleScaleZ: 2, shingleRotX: -10, shingleRotZ: 0,
+  peakRotate: false, peakRotateAway: false, peakRotateStrength: 0, peakRotateFalloff: 0,
+  secondLayer: true, secondLayerAcross: 0.25, secondLayerLift: 0,
+  secondLayerWallOriginReach: false, secondLayerOverhang: 1,
+  secondLayerShingleScaleX: 1.5, secondLayerShingleScaleY: 1.2, secondLayerShingleScaleZ: 2,
+  secondLayerShingleRotX: 0, secondLayerPeakRotateAway: false,
+  secondLayerFlipX: true, secondLayerFlipY: false, secondLayerFlipZ: false,
+  highlandInterlockOffset: 0.25
+};
+
+function addShinglesForRoofFace(parentGroup, eaveLeft, ridgeLeft, ridgeRight, eaveRight) {
+  // eaveLeft/ridgeLeft/ridgeRight/eaveRight are THREE.Vector3 corners of the roof slope.
+  // face.v winding: [eaveLeft, ridgeLeft, ridgeRight, eaveRight]
+  // roofFaceFrame with direction:'u' treats v0-v3 edge as "u" axis → uMidA=eave center, uMidB=ridge center.
+  const face = {
+    v: [[eaveLeft.x,eaveLeft.y,eaveLeft.z],[ridgeLeft.x,ridgeLeft.y,ridgeLeft.z],
+        [ridgeRight.x,ridgeRight.y,ridgeRight.z],[eaveRight.x,eaveRight.y,eaveRight.z]],
+    roofAcrossOffset: 0
+  };
+  const config = HIGHLAND_SHINGLE_CONFIG;
+  const faceGroup = new window.THREE.Group();
+  for (const t of roofTargetsForFace(face, config)) {
+    faceGroup.add(makeShingleInstance(t, config));
+    if (config.secondLayer) {
+      faceGroup.add(makeShingleInstance(cloneRoofTargetWithLayerOffset(t, config), config));
+    }
+  }
+  alignRoofFaceGroupToEavePlaneCenter(face, faceGroup, config);
+  parentGroup.add(faceGroup);
 }
 
 const mats3d = () => {
@@ -837,58 +1110,23 @@ function ridgeRect(bottom, eave, axis) {
   return { rect:{minX:cx-MIN_RIDGE/2,maxX:cx+MIN_RIDGE/2,minZ:cz-tLen/2,maxZ:cz+tLen/2}, rh };
 }
 
-function addBrickFace(group, bl, tl, tr, br, faceW, faceH, name) {
+function addBrickFallback(group, bl, tl, tr, br, faceW, faceH, name) {
   const T=window.THREE, m=getMats();
-  if (brickSrc) {
-    const cols=Math.max(3,Math.floor(faceW/0.32)), rows=Math.max(3,Math.floor(faceH/0.24));
-    const u=br.clone().sub(bl).normalize(), v=tl.clone().sub(bl).normalize();
-    const n=new T.Vector3().crossVectors(u,v).normalize().multiplyScalar(0.035);
-    for (let r=0;r<rows;r++) for (let c=0;c<cols;c++) {
-      const s=(c+0.5+(r%2)*0.5)/cols, t=(r+0.5)/rows;
-      const p0=bl.clone().lerp(br,s), p1=tl.clone().lerp(tr,s);
-      const p=p0.lerp(p1,t).add(n);
-      const obj=brickSrc.clone(true); obj.position.copy(p);
-      const q=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(u,v,n.clone().normalize()));
-      obj.quaternion.copy(q);
-      obj.scale.setScalar(faceW/cols*0.55);
-      obj.castShadow=true; obj.receiveShadow=true;
-      group.add(obj);
-    }
-  } else {
-    const cols=Math.max(3,Math.floor(faceW/0.32)), rows=Math.max(3,Math.floor(faceH/0.24));
-    const geo=new T.BoxGeometry(0.24,0.14,0.08);
-    const inst=new T.InstancedMesh(geo,m.brick,cols*rows); inst.name='bricks_'+name;
-    const u=br.clone().sub(bl).normalize(), v=tl.clone().sub(bl).normalize();
-    const n=new T.Vector3().crossVectors(u,v).normalize().multiplyScalar(0.035);
-    const q=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(u,v,n.clone().normalize()));
-    let k=0;
-    for (let r=0;r<rows;r++) for (let c=0;c<cols;c++) {
-      const s=(c+0.5+(r%2)*0.5)/cols, t=(r+0.5)/rows;
-      const p0=bl.clone().lerp(br,s), p1=tl.clone().lerp(tr,s);
-      const p=p0.lerp(p1,t).add(n);
-      const scl=new T.Vector3(faceW/cols*0.78,faceH/rows*0.58,0.08);
-      inst.setMatrixAt(k++,new T.Matrix4().compose(p,q,scl));
-    }
-    inst.instanceMatrix.needsUpdate=true; inst.castShadow=true; group.add(inst);
-  }
-}
-
-function addShingles(group, e0, r0, r1, e1, longLen, acrossLen, side) {
-  const T=window.THREE, m=getMats();
-  const cols=Math.max(4,Math.ceil(longLen*1.25)), rows=Math.max(3,Math.ceil(acrossLen*1.8));
-  const u=e1.clone().sub(e0).normalize(), v=r0.clone().sub(e0).normalize();
-  const n=new T.Vector3().crossVectors(u,v).normalize();
-  const q=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(u,v,n));
+  const cols=Math.max(3,Math.floor(faceW/0.32)), rows=Math.max(3,Math.floor(faceH/0.24));
+  const geo=new T.BoxGeometry(0.24,0.14,0.08);
+  const inst=new T.InstancedMesh(geo,m.brick,cols*rows); inst.name='bricks_'+name;
+  const u=br.clone().sub(bl).normalize(), v=tl.clone().sub(bl).normalize();
+  const n=new T.Vector3().crossVectors(u,v).normalize().multiplyScalar(0.035);
+  const q=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(u,v,n.clone().normalize()));
+  let k=0;
   for (let r=0;r<rows;r++) for (let c=0;c<cols;c++) {
-    const s=(c+0.5)/cols, t=(r+0.35)/rows;
-    const a=e0.clone().lerp(e1,s), b=r0.clone().lerp(r1,s);
-    const p=a.lerp(b,t).addScaledVector(n,0.025+(r%2)*0.006);
-    let obj = shingleSrc ? shingleSrc.clone(true) : mkBox(0.62,0.05,0.28,m.shingleFb,0,0,0);
-    obj.position.copy(p); obj.quaternion.copy(q);
-    obj.rotateX(-0.08); obj.rotateZ(Math.sin((r+1)*(c+3))*0.035);
-    obj.scale.setScalar(shingleSrc ? 0.42 : 1);
-    group.add(obj);
+    const s=(c+0.5+(r%2)*0.5)/cols, t=(r+0.5)/rows;
+    const p0=bl.clone().lerp(br,s), p1=tl.clone().lerp(tr,s);
+    const p=p0.lerp(p1,t).add(n);
+    const scl=new T.Vector3(faceW/cols*0.78,faceH/rows*0.58,0.08);
+    inst.setMatrixAt(k++,new T.Matrix4().compose(p,q,scl));
   }
+  inst.instanceMatrix.needsUpdate=true; inst.castShadow=true; group.add(inst);
 }
 
 function build3dHouse(h) {
@@ -897,16 +1135,38 @@ function build3dHouse(h) {
   const eave = eaveRect(bot);
   const axis = h.width >= h.depth ? 'x' : 'z';
   const b=corners(bot,0), e=corners(eave,BASE_H);
+
+  // Structure shell (plaster under bricks)
   group.add(qMesh(b.a,b.b,b.c,b.d,m.plaster,'floor'));
   group.add(qMesh(e.d,e.c,e.b,e.a,m.plaster,'ceil'));
   group.add(qMesh(b.a,e.a,e.b,b.b,m.plaster,'wall_n'));
   group.add(qMesh(b.b,e.b,e.c,b.c,m.plaster,'wall_e'));
   group.add(qMesh(b.c,e.c,e.d,b.d,m.plaster,'wall_s'));
   group.add(qMesh(b.d,e.d,e.a,b.a,m.plaster,'wall_w'));
-  addBrickFace(group,b.a,e.a,e.b,b.b,bot.maxX-bot.minX,BASE_H,'n');
-  addBrickFace(group,b.b,e.b,e.c,b.c,bot.maxZ-bot.minZ,BASE_H,'e');
-  addBrickFace(group,b.c,e.c,e.d,b.d,bot.maxX-bot.minX,BASE_H,'s');
-  addBrickFace(group,b.d,e.d,e.a,b.a,bot.maxZ-bot.minZ,BASE_H,'w');
+
+  // Brick walls — WallBuilder if loaded, InstancedMesh box bricks as fallback
+  if (wallBuilder) {
+    const panels = [
+      { id:'n', width:h.width, height:BASE_H, position:[bot.minX+h.width/2, 0, bot.minZ], rotationDeg:[0,0,0] },
+      { id:'e', width:h.depth, height:BASE_H, position:[bot.maxX, 0, bot.minZ+h.depth/2], rotationDeg:[0,-90,0] },
+      { id:'s', width:h.width, height:BASE_H, position:[bot.minX+h.width/2, 0, bot.maxZ], rotationDeg:[0,180,0] },
+      { id:'w', width:h.depth, height:BASE_H, position:[bot.minX, 0, bot.minZ+h.depth/2], rotationDeg:[0,90,0] }
+    ];
+    try { group.add(wallBuilder.build(panels, { unitMult:0.3, usePlaceholder:true })); }
+    catch(_) {
+      addBrickFallback(group,b.a,e.a,e.b,b.b,h.width,BASE_H,'n');
+      addBrickFallback(group,b.b,e.b,e.c,b.c,h.depth,BASE_H,'e');
+      addBrickFallback(group,b.c,e.c,e.d,b.d,h.width,BASE_H,'s');
+      addBrickFallback(group,b.d,e.d,e.a,b.a,h.depth,BASE_H,'w');
+    }
+  } else {
+    addBrickFallback(group,b.a,e.a,e.b,b.b,h.width,BASE_H,'n');
+    addBrickFallback(group,b.b,e.b,e.c,b.c,h.depth,BASE_H,'e');
+    addBrickFallback(group,b.c,e.c,e.d,b.d,h.width,BASE_H,'s');
+    addBrickFallback(group,b.d,e.d,e.a,b.a,h.depth,BASE_H,'w');
+  }
+
+  // Roof structure
   const { rect:rRect, rh } = ridgeRect(bot, eave, axis);
   const top = corners(rRect, BASE_H+rh);
   group.add(qMesh(top.d,top.c,top.b,top.a,m.ridge,'ridge'));
@@ -915,16 +1175,18 @@ function build3dHouse(h) {
     group.add(qMesh(e.c,top.c,top.d,e.d,m.roof,'roof_s'));
     group.add(qMesh(e.b,top.b,top.c,e.c,m.gable,'gable_e'));
     group.add(qMesh(e.d,top.d,top.a,e.a,m.gable,'gable_w'));
-    addShingles(group,e.a,top.a,top.b,e.b,eave.maxX-eave.minX,eave.maxZ-eave.minZ,'n');
-    addShingles(group,e.c,top.c,top.d,e.d,eave.maxX-eave.minX,eave.maxZ-eave.minZ,'s');
+    // Shingles via proper shinglebone pipeline
+    addShinglesForRoofFace(group, e.a, top.a, top.b, e.b);
+    addShinglesForRoofFace(group, e.c, top.c, top.d, e.d);
   } else {
     group.add(qMesh(e.b,top.b,top.c,e.c,m.roof,'roof_e'));
     group.add(qMesh(e.d,top.d,top.a,e.a,m.roof,'roof_w'));
     group.add(qMesh(e.a,top.a,top.b,e.b,m.gable,'gable_n'));
     group.add(qMesh(e.c,top.c,top.d,e.d,m.gable,'gable_s'));
-    addShingles(group,e.b,top.b,top.c,e.c,eave.maxZ-eave.minZ,eave.maxX-eave.minX,'e');
-    addShingles(group,e.d,top.d,top.a,e.a,eave.maxZ-eave.minZ,eave.maxX-eave.minX,'w');
+    addShinglesForRoofFace(group, e.b, top.b, top.c, e.c);
+    addShinglesForRoofFace(group, e.d, top.d, top.a, e.a);
   }
+
   const door = deriveDoor(h); group.add(mkBox(0.8,1.25,0.08,m.door,door.x+.5,.72,door.y+.05));
   group.add(mkBox(0.52,0.42,0.06,m.glass,h.x+h.width*.27,1.25,h.y+h.depth+.04));
   group.add(mkBox(0.52,0.42,0.06,m.glass,h.x+h.width*.73,1.25,h.y+h.depth+.04));

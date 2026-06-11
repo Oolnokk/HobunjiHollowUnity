@@ -1,0 +1,2160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Modular House Piece Author v37</title>
+<style>
+:root{
+  --bg:#0d121a; --panel:#151d2a; --panel2:#1b2637; --text:#eaf1ff; --muted:#9eacc3;
+  --line:#2b3a51; --accent:#76b8ff; --ok:#85e09b; --warn:#ffd26e; --danger:#ff8383;
+  --face:#5fa9ff; --foot:#4cc8ff; --grid:#34445b;
+}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;height:100vh;overflow:hidden}
+button,input,select,textarea{font:inherit} button,label.fileButton{border:1px solid #3b4c67;background:#243149;color:var(--text);border-radius:10px;padding:8px 10px;cursor:pointer;user-select:none} button:hover,label.fileButton:hover{background:#2d3d5b} button:disabled{opacity:.45;cursor:not-allowed} button.active{outline:2px solid var(--accent);background:#203c5c} button.danger{background:#43252d;border-color:#874850} button.ok{background:#23442d;border-color:#41724b}
+input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394a63;border-radius:8px;padding:7px 8px;min-width:0} input[type=checkbox]{width:auto}.hidden{display:none!important}
+.app{display:grid;grid-template-columns:minmax(320px,34vw) 1fr minmax(300px,24vw);grid-template-rows:auto 1fr 112px;height:100vh;gap:8px;padding:8px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;min-height:0;overflow:auto}.viewer{position:relative;padding:0;overflow:hidden;background:radial-gradient(circle at 50% 32%,#1b2638,#0b0f16 70%)}header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px}.title h1{font-size:16px;margin:0}.status{font-size:12px;color:var(--muted);margin-top:2px}.debug{grid-column:1/-1;background:#06090e;border:1px solid #26364d;border-radius:12px;padding:8px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:#c7d8f2;white-space:pre-wrap}.section{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px;margin-bottom:10px}.section h2{font-size:13px;margin:0 0 8px;color:#c9d8f3}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.field label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}.field input,.field select,.field textarea{width:100%}.hint{color:var(--muted);font-size:12px;line-height:1.35}.pill{display:inline-flex;align-items:center;gap:6px;background:rgba(6,10,16,.78);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:6px 10px;color:#cfe0fa;font-size:12px;backdrop-filter:blur(6px)}
+#gridCanvas{width:100%;aspect-ratio:1/1;background:#0b1018;border:1px solid #2b3548;border-radius:14px;touch-action:none;image-rendering:pixelated}#threeCanvas{display:block;width:100%;height:100%;min-height:360px;background:#0b0f16!important;background-color:#0b0f16!important}.viewer{background-color:#0b0f16!important}.overlayTop{position:absolute;left:10px;right:10px;top:10px;display:flex;justify-content:space-between;gap:8px;pointer-events:none}.surfaceDebug{position:absolute;left:10px;top:52px;max-width:min(760px,calc(100% - 20px));white-space:normal;pointer-events:none}.modeButtons{position:absolute;right:12px;top:92px;display:flex;flex-direction:column;gap:8px;z-index:5}.modeButtons button{width:98px;background:rgba(7,11,18,.82);backdrop-filter:blur(6px)}.assetList,.pieceList{display:flex;flex-direction:column;gap:6px;margin-top:6px}.listItem{display:flex;justify-content:space-between;gap:8px;align-items:center;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);border-radius:10px;padding:7px 8px;font-size:12px}.listItem.selected{outline:2px solid var(--accent)}.chip{font-size:11px;color:var(--muted)}textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}.swatch{width:16px;height:16px;border-radius:4px;display:inline-block;border:1px solid rgba(255,255,255,.35)}
+.listActions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.roofStatus{font-size:11px;color:var(--muted);line-height:1.3;margin-top:6px}
+@media(max-width:1050px){body{overflow:auto}.app{height:auto;min-height:100vh;grid-template-columns:1fr;grid-template-rows:auto auto 58vh auto 130px}.viewer{height:58vh}.debug{height:130px}}
+</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<div class="app">
+  <header class="panel">
+    <div class="title"><h1>Modular House Piece Author v37</h1><div class="status" id="statusLine">Booting...</div></div>
+    <div class="row">
+      <button id="newPieceBtn" type="button">New piece</button>
+      <button id="undoBtn" type="button" disabled>Undo</button>
+      <button id="redoBtn" type="button" disabled>Redo</button>
+      <button id="copyJsonBtn" type="button">Copy JSON</button>
+      <button id="downloadJsonBtn" class="ok" type="button">Download JSON</button>
+    </div>
+  </header>
+
+  <aside class="panel">
+    <div class="section">
+      <h2>1. Piece + footprint grid</h2>
+      <div class="grid2">
+        <div class="field"><label>Piece name</label><input id="pieceName" value="room_01"></div>
+        <div class="field"><label>Piece type</label><select id="pieceType"><option>room</option><option>entryway</option><option>corner</option><option>hall</option><option>custom</option></select></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Grid size</label><input id="gridSize" type="number" min="4" max="80" step="1" value="18"></div>
+        <div class="field"><label>Tile world size</label><input id="tileSize" type="number" min="0.05" step="0.05" value="1"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Base shape preset</label><select id="basePreset"><option value="highland" selected>Highland architecture</option><option value="plain">Plain rectangular prism</option><option value="flat">Flat footprint slab</option><option value="empty">Empty / manual</option></select></div>
+        <div class="field"><label>&nbsp;</label><button id="applyPresetBtn" type="button">Apply preset shape</button></div>
+      </div>
+      <div class="row"><button id="applyGridBtn" type="button">Apply grid</button><button id="clearFootprintBtn" class="danger" type="button">Clear footprint</button></div>
+      <canvas id="gridCanvas" width="900" height="900"></canvas>
+      <div class="row">
+        <button id="toolFootprint" class="active" type="button">Paint footprint</button>
+        <button id="toolEntrance" type="button">Mark entrance</button>
+        <button id="toolConnector" type="button">Mark connector</button>
+        <button id="toolEntryTunnel" type="button">Entry tunnel</button>
+        <button id="toolChimney" type="button">Chimney</button>
+        <button id="toolPorch" type="button">Porch</button>
+        <button id="toolPorchStair" type="button">Porch stair</button>
+        <button id="toolRailing" type="button">Fence/railing</button>
+        <button id="toolErase" type="button">Erase</button>
+      </div>
+      <p class="hint">The 2D grid is the modular footprint contract. Blue cells drive the house shell. Green cells generate roofless entryway tunnels with a door at the far end; gray cells generate chimneys; brown cells generate porches; tan cells generate porch stairs; dark posts generate fences/railings with auto-connectors. The white dashed box is only a measuring/debug guide.</p>
+    </div>
+
+    <div class="section">
+      <h2>2. Generate / edit base shape</h2>
+      <div class="grid3">
+        <div class="field"><label>Height</label><input id="baseHeight" type="number" min="0.05" step="0.05" value="2.6"></div>
+        <div class="field"><label>Wall thickness</label><input id="wallThickness" type="number" min="0" step="0.05" value="0.15"></div>
+        <div class="field"><label>Ground Y</label><input id="groundY" type="number" step="0.05" value="0"></div>
+      </div>
+      <div class="row"><button id="generateBaseBtn" type="button">Generate base from footprint</button><button id="resetBaseBtn" class="danger" type="button">Reset faces</button></div>
+      <p class="hint">Generation uses the selected preset. Blue painted cells are the main shell; extension tiles are generated as attached add-ons after the main body so they can stay rectangular/roofless even when the Highland body is a frustum.</p>
+    </div>
+
+    <div class="section">
+      <h2>3. Face tools</h2>
+      <div class="hint" id="faceInfo">Selected face: none</div>
+      <div class="row"><button id="selectModeBtn" class="active" type="button">Select faces</button><button id="multiSelectBtn" type="button">Multi off</button></div>
+      <div class="row"><button id="subdivide2Btn" type="button">Subdivide 2×2</button><button id="subdivide3Btn" type="button">Subdivide 3×3</button></div>
+      <div class="grid2">
+        <div class="field"><label>Extrude distance</label><input id="extrudeDist" type="number" step="0.05" value="0.35"></div>
+        <div class="field"><label>&nbsp;</label><button id="extrudeBtn" type="button">Extrude selected</button></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Move X</label><input id="moveX" type="number" step="0.05" value="0"></div>
+        <div class="field"><label>Move Y</label><input id="moveY" type="number" step="0.05" value="0"></div>
+        <div class="field"><label>Move Z</label><input id="moveZ" type="number" step="0.05" value="0"></div>
+      </div>
+      <div class="row"><button id="moveFaceBtn" type="button">Move face vertices</button></div>
+      <div class="grid3">
+        <div class="field"><label>Scale U × grid span</label><input id="scaleU" type="number" step="0.01" value="0.9"></div>
+        <div class="field"><label>Scale V × grid span</label><input id="scaleV" type="number" step="0.01" value="0.9"></div>
+        <div class="field"><label>&nbsp;</label><button id="scaleFaceBtn" type="button">Set tile-relative size</button></div>
+      </div>
+      <div class="row"><button id="markWallBtn" type="button">Tag selected as wall</button><button id="markDoorBtn" type="button">Tag selected as door/entry</button><button id="markRoofBtn" type="button">Tag selected as roof</button><button id="clearFaceTagBtn" type="button">Clear tag</button></div>
+      <p class="hint">Face edits are vertex-level and remain part of the main shape. Numeric Scale U/V is tile-relative: 0.9 means 90% of the selected face's nearest grid-aligned span, not 90% of its current size. GLBs are separate detail assets and keep their own transforms.</p>
+    </div>
+
+    <div class="section">
+      <h2>4. Roof repeaters / bamboo shingles</h2>
+      <div class="grid3">
+        <div class="field"><label>Tube radius</label><input id="roofTubeRadius" type="number" min="0.01" step="0.01" value="0.08"></div>
+        <div class="field"><label>Spacing across face</label><input id="roofTubeSpacing" type="number" min="0.02" step="0.02" value="0.18"></div>
+        <div class="field"><label>Spine-origin reach</label><input id="roofTubeOverhang" type="number" min="0" step="0.05" value="1"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Tube length direction</label><select id="roofTubeDirection"><option value="u">Face U / first edge</option><option value="v">Face V / fourth edge</option></select></div>
+        <div class="field"><label>Lift from face</label><input id="roofTubeLift" type="number" min="0" step="0.01" value="0.04"></div>
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <label><input id="roofFlipX" type="checkbox" checked> Flip shingle X</label>
+        <label><input id="roofFlipY" type="checkbox"> Flip shingle Y</label>
+        <label><input id="roofFlipZ" type="checkbox"> Flip shingle Z</label>
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <label><input id="roofWallOriginReachChk" type="checkbox"> Layer 1 reach starts at wall/eave edge</label>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Shingle scale X</label><input id="roofShingleScaleX" type="number" min="0.01" step="0.05" value="1"></div>
+        <div class="field"><label>Shingle scale Y</label><input id="roofShingleScaleY" type="number" min="0.01" step="0.05" value="1"></div>
+        <div class="field"><label>Shingle scale Z</label><input id="roofShingleScaleZ" type="number" min="0.01" step="0.05" value="1"></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Layer 1 X-axis rotation °</label><input id="roofShingleRotX" type="number" step="1" value="-10"></div>
+        <div class="field"><label>Face-relative Z rotation °</label><input id="roofShingleRotZ" type="number" step="1" value="0"></div>
+        <div class="field"><label>Second layer across offset</label><input id="roofSecondLayerAcross" type="number" step="0.05" value="0.25"></div>
+        <div class="field"><label>Second layer lift offset</label><input id="roofSecondLayerLift" type="number" step="0.01" value="0.04"></div>
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <label><input id="roofSecondLayerChk" type="checkbox"> Add second shingle layer</label>
+        <label><input id="roofSecondLayerWallOriginReachChk" type="checkbox"> Layer 2 reach starts at wall/eave edge</label>
+      </div>
+      <div class="grid2" id="roofSecondLayerReachRow">
+        <div class="field"><label>Second layer reach amount</label><input id="roofSecondLayerOverhang" type="number" min="0" step="0.05" value="1"></div>
+        <div class="field"><label>Second layer scale X</label><input id="roofSecondLayerScaleX" type="number" min="0.01" step="0.05" value="1"></div>
+      </div>
+      <div class="grid2" id="roofSecondLayerScaleRow">
+        <div class="field"><label>Second layer scale Y</label><input id="roofSecondLayerScaleY" type="number" min="0.01" step="0.05" value="1"></div>
+        <div class="field"><label>Second layer scale Z</label><input id="roofSecondLayerScaleZ" type="number" min="0.01" step="0.05" value="1"></div>
+      </div>
+      <div class="grid2" id="roofSecondLayerRotationRow">
+        <div class="field"><label>Second layer X-axis rotation °</label><input id="roofSecondLayerRotX" type="number" step="1" value="0"></div>
+        <div class="field"><label>&nbsp;</label><span class="hint">Layer-2 local X tilt after flips.</span></div>
+      </div>
+      <div class="row" id="roofSecondLayerFlipRow" style="margin-top:6px;">
+        <label><input id="roofSecondLayerFlipX" type="checkbox"> Second layer flip X</label>
+        <label><input id="roofSecondLayerFlipY" type="checkbox"> Second layer flip Y</label>
+        <label><input id="roofSecondLayerFlipZ" type="checkbox"> Second layer flip Z</label>
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <label><input id="roofPeakRotateChk" type="checkbox"> Rotate shingles toward peak center</label>
+        <label><input id="roofPeakRotateAwayChk" type="checkbox"> Layer 1 rotates away from peak</label>
+        <label><input id="roofSecondLayerPeakRotateAwayChk" type="checkbox"> Layer 2 rotates away from peak</label>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Peak-center rotation strength</label><input id="roofPeakRotateStrength" type="number" min="0" max="1" step="0.05" value="0.5"></div>
+        <div class="field"><label>Peak-center falloff (0 = none)</label><input id="roofPeakRotateFalloff" type="number" min="0" step="0.05" value="0"></div>
+      </div>
+      <div class="row"><button id="markRoofBtn2" type="button">Tag selected as roof</button><button id="rebuildRoofBtn" type="button">Rebuild roof preview</button><button id="clearRoofPreviewBtn" class="danger" type="button">Hide roof preview</button></div>
+      <div class="row"><label class="fileButton" for="roofShingleGlbInput">Import shingle GLB with shinglebone</label><input id="roofShingleGlbInput" class="hidden" type="file" accept=".glb,model/gltf-binary"><button id="useTubePreviewBtn" type="button">Use tube preview</button></div>
+      <div class="roofStatus" id="roofStatus">No shingle GLB loaded. Roof faces preview as bamboo-like tubes that overhang the face edges.</div>
+      <p class="hint">A roof-tagged face generates repeaters along the face. Imported shingle GLBs are cloned onto those repeaters; a hidden object named <b>shinglebone</b> supplies the alignment/stretch axis. Author that marker in the companion shinglebone editor.</p>
+    </div>
+  </aside>
+
+  <main class="panel viewer">
+    <canvas id="threeCanvas"></canvas>
+    <div class="overlayTop"><div class="pill" id="viewStats">No footprint</div><div class="pill" id="selectionStats">Selection: none</div></div>
+    <div class="pill surfaceDebug" id="surfaceDebug">Surface hit: none yet</div>
+    <div class="modeButtons">
+      <button id="modeTranslate" class="active" type="button">Translate</button>
+      <button id="modeRotate" type="button">Rotate</button>
+      <button id="modeScale" type="button">Scale</button>
+    </div>
+  </main>
+
+  <aside class="panel">
+    <div class="section">
+      <h2>4. Detail GLB assets</h2>
+      <div class="row"><label class="fileButton" for="glbInput">Import detail GLB</label><input id="glbInput" class="hidden" type="file" accept=".glb,model/gltf-binary" multiple><button id="removeAssetBtn" class="danger" type="button">Remove selected</button></div>
+      <div class="grid3">
+        <div class="field"><label>X</label><input id="assetX" type="number" step="0.05" value="0"></div>
+        <div class="field"><label>Y</label><input id="assetY" type="number" step="0.05" value="0"></div>
+        <div class="field"><label>Z</label><input id="assetZ" type="number" step="0.05" value="0"></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Rot X°</label><input id="assetRX" type="number" step="1" value="0"></div>
+        <div class="field"><label>Rot Y°</label><input id="assetRY" type="number" step="1" value="0"></div>
+        <div class="field"><label>Rot Z°</label><input id="assetRZ" type="number" step="1" value="0"></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Scale X</label><input id="assetSX" type="number" step="0.01" value="1"></div>
+        <div class="field"><label>Scale Y</label><input id="assetSY" type="number" step="0.01" value="1"></div>
+        <div class="field"><label>Scale Z</label><input id="assetSZ" type="number" step="0.01" value="1"></div>
+      </div>
+      <div class="row"><button id="applyAssetTransformBtn" type="button">Apply asset transform</button><button id="snapAssetGroundBtn" type="button">Snap asset bottom to ground</button></div>
+      <div class="assetList" id="assetList"></div>
+      <p class="hint">Imported GLBs are stored as separate named detail elements with position/rotation/scale metadata. Browser security prevents re-exporting the binary inside JSON, so the file name is stored as the source reference.</p>
+    </div>
+
+    <div class="section">
+      <h2>6. Piece library</h2>
+      <div class="row"><button id="savePieceBtn" type="button">Save current to library</button><button id="duplicatePieceBtn" type="button">Duplicate selected</button><button id="deletePieceBtn" class="danger" type="button">Delete selected</button></div>
+      <div class="pieceList" id="pieceList"></div>
+    </div>
+
+    <div class="section">
+      <h2>7. Import / export</h2>
+      <div class="row"><label class="fileButton" for="jsonInput">Import JSON</label><input id="jsonInput" class="hidden" type="file" accept=".json,application/json"><button id="refreshExportBtn" type="button">Refresh export text</button></div>
+      <textarea id="exportText" spellcheck="false"></textarea>
+    </div>
+  </aside>
+
+  <pre id="debugLog" class="debug">booting...</pre>
+</div>
+
+<script>
+(function(){
+  // Mobile/debug fallback: if the ES module fails to import from the CDN, keep the viewport dark and show why.
+  setTimeout(function(){
+    if(window.__MHPA_READY__) return;
+    var c=document.getElementById('threeCanvas');
+    if(c){ c.style.background='#0b0f16'; c.style.backgroundColor='#0b0f16'; }
+    var log=document.getElementById('debugLog');
+    if(log && (!window.__MHPA_MODULE_STARTED__ || log.textContent === 'booting...')){
+      log.textContent='[boot] The 3D module did not finish booting. If this page is opened through a restrictive mobile content:// viewer, the remote three.js module import may be blocked. Try opening the file in Chrome, or check for BOOT ERROR lines here if the module started.';
+    }
+  }, 3500);
+})();
+</script>
+
+<script type="module">
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const $ = id => document.getElementById(id);
+const logEl = $('debugLog');
+const statusLine = $('statusLine');
+function log(msg, level='info'){
+  const line = `[${new Date().toLocaleTimeString()}] ${level}: ${msg}`;
+  logEl.textContent = (logEl.textContent === 'booting...' ? '' : logEl.textContent + '\n') + line;
+  logEl.scrollTop = logEl.scrollHeight;
+  statusLine.textContent = msg;
+}
+window.addEventListener('error', e => log(`${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`, 'error'));
+window.addEventListener('unhandledrejection', e => log(`Unhandled promise: ${e.reason?.message || e.reason}`, 'error'));
+
+function newId(prefix='id'){
+  // Used for pieces/assets/faces when randomUUID is unavailable in mobile content:// contexts.
+  try{ if(globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') return globalThis.crypto.randomUUID(); }catch(_err){}
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2,9)}`;
+}
+window.__MHPA_MODULE_STARTED__ = true;
+
+const state = {
+  gridSize: 18,
+  tileSize: 1,
+  tool: 'footprint',
+  multi: false,
+  selectedFaceIds: new Set(), // Used by face tools and selection UI.
+  selectedAssetId: null, // Used by transform controls and asset numeric panel.
+  roofShingleTemplate: null, // Used by roof preview replacement; stores the imported GLB scene and shinglebone metadata.
+  selectedPieceId: null, // Used by library list actions.
+  nextFaceId: 1,
+  nextAssetId: 1,
+  nextPieceId: 1,
+  piece: makeBlankPiece(),
+  library: []
+};
+function makeBlankPiece(){
+  return { id: newId('piece'), name:'highland_room_01', type:'room', preset:'highland', gridSize:18, tileSize:1, footprint:{cells:[], entrances:[], connectors:[], extensions:{entryTunnels:[], chimneys:[], porches:[], porchStairs:[], railings:[]}}, base:{height:2, wallThickness:.15, groundY:0, faces:[]}, roof:{tubeRadius:0.08,tubeSpacing:0.4,overhang:1,wallOriginReach:false,direction:'u',lift:0.04,flipX:true,flipY:false,flipZ:true,shingleScaleX:1.2,shingleScaleY:1.2,shingleScaleZ:2,shingleRotX:-10,shingleRotZ:0,peakRotateAway:false,secondLayer:true,secondLayerAcross:0.25,secondLayerLift:0.15,secondLayerOverhang:1,secondLayerWallOriginReach:false,secondLayerShingleScaleX:1.2,secondLayerShingleScaleY:1.2,secondLayerShingleScaleZ:2,secondLayerShingleRotX:0,secondLayerPeakRotateAway:true,secondLayerFlipX:true,secondLayerFlipY:false,secondLayerFlipZ:true,peakRotate:true,peakRotateStrength:0.05,peakRotateFalloff:0,highlandInterlockOffset:0.25,shingleSource:''}, assets:[] };
+}
+function cellKey(x,y){ return `${x},${y}`; }
+function parseCellKey(k){ const [x,y]=k.split(',').map(Number); return {x,y}; }
+function toSet(arr){ return new Set((arr||[]).map(c => cellKey(c.x,c.y))); }
+function fromSet(set){ return [...set].map(parseCellKey).sort((a,b)=>a.y-b.y||a.x-b.x); }
+function deg(v){ return THREE.MathUtils.degToRad(Number(v)||0); }
+function finite(v, fallback=0){ const n=Number(v); return Number.isFinite(n) ? n : fallback; }
+
+const footprintSet = new Set();
+const entranceSet = new Set();
+const connectorSet = new Set();
+const entryTunnelSet = new Set(); // Used by the green grid tool and generated roofless entryway tunnels.
+const chimneySet = new Set(); // Used by the gray grid tool and generated chimney stacks.
+const porchSet = new Set(); // Used by the brown grid tool and generated porch deck slabs.
+const porchStairSet = new Set(); // Used by the tan grid tool and generated porch stair blocks.
+const railingSet = new Set(); // Used by the fence/railing grid tool; generates posts and automatic horizontal connectors.
+
+const HISTORY_LIMIT = 80;
+const history = { undo: [], redo: [], pending: null };
+function captureSnapshot(label='snapshot'){
+  syncPieceFromInputs();
+  return {
+    label,
+    state: JSON.stringify({
+      gridSize: state.gridSize,
+      tileSize: state.tileSize,
+      selectedFaceIds: [...state.selectedFaceIds],
+      selectedAssetId: state.selectedAssetId,
+      selectedPieceId: state.selectedPieceId,
+      nextFaceId: state.nextFaceId,
+      nextAssetId: state.nextAssetId,
+      nextPieceId: state.nextPieceId,
+      piece: state.piece,
+      library: state.library
+    })
+  };
+}
+function updateUndoRedoButtons(){
+  const undoBtn = $('undoBtn'), redoBtn = $('redoBtn');
+  if(undoBtn) undoBtn.disabled = history.undo.length === 0;
+  if(redoBtn) redoBtn.disabled = history.redo.length === 0;
+}
+function pushUndo(label='Edit'){
+  try{
+    const snap = captureSnapshot(label);
+    const last = history.undo[history.undo.length-1];
+    if(last && last.state === snap.state) return;
+    history.undo.push(snap);
+    if(history.undo.length > HISTORY_LIMIT) history.undo.shift();
+    history.redo.length = 0;
+    updateUndoRedoButtons();
+  }catch(err){ log(`Undo snapshot failed: ${err.message||err}`, 'warn'); }
+}
+function beginUndo(label='Drag edit'){
+  if(!history.pending) history.pending = captureSnapshot(label);
+}
+function commitUndo(){
+  if(!history.pending) return;
+  const before = history.pending;
+  history.pending = null;
+  const after = captureSnapshot(before.label);
+  if(before.state !== after.state){
+    history.undo.push(before);
+    if(history.undo.length > HISTORY_LIMIT) history.undo.shift();
+    history.redo.length = 0;
+    updateUndoRedoButtons();
+    log(`${before.label} recorded for undo.`);
+  }
+}
+function restoreSnapshot(snap, directionLabel){
+  if(!snap) return;
+  const payload = JSON.parse(snap.state);
+  state.gridSize = payload.gridSize;
+  state.tileSize = payload.tileSize;
+  state.selectedFaceIds = new Set(payload.selectedFaceIds || []);
+  state.selectedAssetId = payload.selectedAssetId || null;
+  state.selectedPieceId = payload.selectedPieceId || null;
+  state.nextFaceId = payload.nextFaceId || 1;
+  state.nextAssetId = payload.nextAssetId || 1;
+  state.nextPieceId = payload.nextPieceId || 1;
+  state.piece = payload.piece || makeBlankPiece();
+  state.library = Array.isArray(payload.library) ? payload.library : [];
+  state.gridSize = state.piece.gridSize || state.gridSize;
+  state.tileSize = state.piece.tileSize || state.tileSize;
+  $('gridSize').value = state.gridSize;
+  $('tileSize').value = state.tileSize;
+  $('pieceName').value = state.piece.name || 'unnamed_piece';
+  $('pieceType').value = state.piece.type || 'custom';
+  $('baseHeight').value = state.piece.base?.height ?? 2.6;
+  $('wallThickness').value = state.piece.base?.wallThickness ?? .15;
+  $('groundY').value = state.piece.base?.groundY ?? 0;
+  transform.detach();
+  activeTransformTarget = null;
+  faceGizmoProxy.visible = false;
+  syncSetsFromPiece();
+  syncRoofInputsFromPiece();
+  drawGrid();
+  rebuildFootprintOverlay();
+  rebuildFaceMeshes();
+  rebuildAssetsFromMetadata();
+  rebuildRoofPreview();
+  renderAssetList();
+  renderPieceList();
+  updateSelectionUi();
+  refreshFaceGizmoAfterEdit();
+  if(state.selectedAssetId) selectAsset(state.selectedAssetId);
+  refreshExport();
+  updateUndoRedoButtons();
+  log(`${directionLabel}: ${snap.label}.`);
+}
+function undo(){
+  history.pending = null;
+  const snap = history.undo.pop();
+  if(!snap){ log('Nothing to undo.', 'warn'); updateUndoRedoButtons(); return; }
+  history.redo.push(captureSnapshot('Redo point'));
+  restoreSnapshot(snap, 'Undo');
+}
+function redo(){
+  history.pending = null;
+  const snap = history.redo.pop();
+  if(!snap){ log('Nothing to redo.', 'warn'); updateUndoRedoButtons(); return; }
+  history.undo.push(captureSnapshot('Undo point'));
+  restoreSnapshot(snap, 'Redo');
+}
+
+function ensureFootprintExtensions(piece=state.piece){
+  // Used by import/new/export so v29 JSONs without extension layers still load safely.
+  if(!piece.footprint) piece.footprint = { cells:[], entrances:[], connectors:[] };
+  if(!piece.footprint.extensions) piece.footprint.extensions = {};
+  for(const key of ['entryTunnels','chimneys','porches','porchStairs','railings']) if(!Array.isArray(piece.footprint.extensions[key])) piece.footprint.extensions[key]=[];
+  return piece.footprint.extensions;
+}
+function syncSetsFromPiece(){
+  ensureFootprintExtensions();
+  footprintSet.clear(); entranceSet.clear(); connectorSet.clear(); entryTunnelSet.clear(); chimneySet.clear(); porchSet.clear(); porchStairSet.clear(); railingSet.clear();
+  for(const c of state.piece.footprint.cells||[]) footprintSet.add(cellKey(c.x,c.y));
+  for(const c of state.piece.footprint.entrances||[]) entranceSet.add(cellKey(c.x,c.y));
+  for(const c of state.piece.footprint.connectors||[]) connectorSet.add(cellKey(c.x,c.y));
+  const ext=state.piece.footprint.extensions;
+  for(const c of ext.entryTunnels||[]) entryTunnelSet.add(cellKey(c.x,c.y));
+  for(const c of ext.chimneys||[]) chimneySet.add(cellKey(c.x,c.y));
+  for(const c of ext.porches||[]) porchSet.add(cellKey(c.x,c.y));
+  for(const c of ext.porchStairs||[]) porchStairSet.add(cellKey(c.x,c.y));
+  for(const c of ext.railings||[]) railingSet.add(cellKey(c.x,c.y));
+}
+function syncPieceFromSets(){
+  state.piece.footprint.cells = fromSet(footprintSet);
+  state.piece.footprint.entrances = fromSet(entranceSet);
+  state.piece.footprint.connectors = fromSet(connectorSet);
+  const ext=ensureFootprintExtensions();
+  ext.entryTunnels = fromSet(entryTunnelSet);
+  ext.chimneys = fromSet(chimneySet);
+  ext.porches = fromSet(porchSet);
+  ext.porchStairs = fromSet(porchStairSet);
+  ext.railings = fromSet(railingSet);
+}
+
+const gridCanvas = $('gridCanvas');
+const gridCtx = gridCanvas.getContext('2d');
+function gridWorld(x,y){ const half = state.gridSize * state.tileSize / 2; return { x: x*state.tileSize - half + state.tileSize/2, z: y*state.tileSize - half + state.tileSize/2 }; }
+function boundsFromFootprint(){
+  const cells = [...footprintSet].map(parseCellKey);
+  if(!cells.length) return null;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for(const c of cells){ minX=Math.min(minX,c.x); minY=Math.min(minY,c.y); maxX=Math.max(maxX,c.x); maxY=Math.max(maxY,c.y); }
+  const half=state.gridSize*state.tileSize/2;
+  return { minX:minX*state.tileSize-half, maxX:(maxX+1)*state.tileSize-half, minZ:minY*state.tileSize-half, maxZ:(maxY+1)*state.tileSize-half, cells };
+}
+
+function footprintInfo(){
+  // Used by all generators so the blue painted cells, not the old white bounding box, define the generated shell.
+  const cells = [...footprintSet].map(parseCellKey);
+  if(!cells.length) return null;
+  const set = new Set(cells.map(c => cellKey(c.x,c.y)));
+  const half = state.gridSize * state.tileSize / 2;
+  const tile = Math.max(0.0001, state.tileSize || 1);
+  const cellRect = (x,y) => ({
+    minX: x * tile - half,
+    maxX: (x + 1) * tile - half,
+    minZ: y * tile - half,
+    maxZ: (y + 1) * tile - half
+  });
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for(const c of cells){ minX=Math.min(minX,c.x); minY=Math.min(minY,c.y); maxX=Math.max(maxX,c.x); maxY=Math.max(maxY,c.y); }
+  return { cells, set, tile, half, cellRect, minCellX:minX, minCellY:minY, maxCellX:maxX, maxCellY:maxY,
+    minX:minX*tile-half, maxX:(maxX+1)*tile-half, minZ:minY*tile-half, maxZ:(maxY+1)*tile-half };
+}
+function addFootprintShellFaces(info, y0, y1, wallTag='wall', topTag='ceiling', floorTag='floor'){
+  // Builds one exact rectilinear prism from all blue cells: per-cell floor/ceiling, exterior perimeter walls only.
+  const faces=[];
+  const p=(x,y,z)=>new THREE.Vector3(x,y,z);
+  for(const c of info.cells){
+    const r=info.cellRect(c.x,c.y);
+    faces.push(addFace([p(r.minX,y0,r.minZ),p(r.maxX,y0,r.minZ),p(r.maxX,y0,r.maxZ),p(r.minX,y0,r.maxZ)], floorTag));
+    faces.push(addFace([p(r.minX,y1,r.maxZ),p(r.maxX,y1,r.maxZ),p(r.maxX,y1,r.minZ),p(r.minX,y1,r.minZ)], topTag));
+    if(!info.set.has(cellKey(c.x,c.y-1))) faces.push(addFace([p(r.minX,y0,r.minZ),p(r.minX,y1,r.minZ),p(r.maxX,y1,r.minZ),p(r.maxX,y0,r.minZ)], wallTag));
+    if(!info.set.has(cellKey(c.x+1,c.y))) faces.push(addFace([p(r.maxX,y0,r.minZ),p(r.maxX,y1,r.minZ),p(r.maxX,y1,r.maxZ),p(r.maxX,y0,r.maxZ)], wallTag));
+    if(!info.set.has(cellKey(c.x,c.y+1))) faces.push(addFace([p(r.maxX,y0,r.maxZ),p(r.maxX,y1,r.maxZ),p(r.minX,y1,r.maxZ),p(r.minX,y0,r.maxZ)], wallTag));
+    if(!info.set.has(cellKey(c.x-1,c.y))) faces.push(addFace([p(r.minX,y0,r.maxZ),p(r.minX,y1,r.maxZ),p(r.minX,y1,r.minZ),p(r.minX,y0,r.minZ)], wallTag));
+  }
+  return faces;
+}
+
+const HIGHLAND_BODY_TOP_SCALE = 0.85; // Used by Highland bodies: section top/eave edges are inset so every section reads as a frustum.
+function addFootprintFrustumShellFaces(info, y0, y1, topScale=HIGHLAND_BODY_TOP_SCALE, wallTag='wall', topTag='ceiling', floorTag='floor'){
+  // Builds the exact blue footprint as a tapered Highland body instead of a vertical rectangle/prism.
+  // Each exterior top edge is inset toward the footprint interior; interior shared edges remain welded on the grid.
+  const faces=[];
+  const p=(x,y,z)=>new THREE.Vector3(x,y,z);
+  const inset=Math.max(0, (1-Math.max(0.001, Math.min(1, topScale))) * info.tile / 2);
+  const has=(x,y)=>info.set.has(cellKey(x,y));
+  const topCorner=(c, corner)=>{
+    const r=info.cellRect(c.x,c.y);
+    let x = corner.includes('w') ? r.minX : r.maxX;
+    let z = corner.includes('n') ? r.minZ : r.maxZ;
+    if(corner.includes('w') && !has(c.x-1,c.y)) x += inset;
+    if(corner.includes('e') && !has(c.x+1,c.y)) x -= inset;
+    if(corner.includes('n') && !has(c.x,c.y-1)) z += inset;
+    if(corner.includes('s') && !has(c.x,c.y+1)) z -= inset;
+    return p(x,y1,z);
+  };
+  for(const c of info.cells){
+    const r=info.cellRect(c.x,c.y);
+    const ba=p(r.minX,y0,r.minZ), bb=p(r.maxX,y0,r.minZ), bc=p(r.maxX,y0,r.maxZ), bd=p(r.minX,y0,r.maxZ);
+    const ta=topCorner(c,'wn'), tb=topCorner(c,'en'), tc=topCorner(c,'es'), td=topCorner(c,'ws');
+    faces.push(addFace([ba,bb,bc,bd], floorTag, { highlandFrustumBottom:true }));
+    faces.push(addFace([td,tc,tb,ta], topTag, { highlandFrustumTop:true, highlandTopScale:topScale }));
+    if(!has(c.x,c.y-1)) faces.push(addFace([ba,ta,tb,bb], wallTag, { highlandFrustumWall:true, highlandTopScale:topScale }));
+    if(!has(c.x+1,c.y)) faces.push(addFace([bb,tb,tc,bc], wallTag, { highlandFrustumWall:true, highlandTopScale:topScale }));
+    if(!has(c.x,c.y+1)) faces.push(addFace([bc,tc,td,bd], wallTag, { highlandFrustumWall:true, highlandTopScale:topScale }));
+    if(!has(c.x-1,c.y)) faces.push(addFace([bd,td,ta,ba], wallTag, { highlandFrustumWall:true, highlandTopScale:topScale }));
+  }
+  return faces;
+}
+function scaleRectAroundCenter(rect, scaleX=1, scaleZ=1){
+  // Used by Highland roof sections so each roof starts on the inset top/eave rectangle of its frustum body.
+  const cx=(rect.minX+rect.maxX)/2, cz=(rect.minZ+rect.maxZ)/2;
+  const hw=(rect.maxX-rect.minX)*Math.max(0.001,scaleX)/2;
+  const hd=(rect.maxZ-rect.minZ)*Math.max(0.001,scaleZ)/2;
+  return { minX:cx-hw, maxX:cx+hw, minZ:cz-hd, maxZ:cz+hd };
+}
+function segmentOverlaps(a0,a1,b0,b1){ return Math.max(a0,b0) < Math.min(a1,b1); }
+function footprintIsFilledRectangle(info){
+  // Used by roof sectioning: a true rectangular blue footprint gets exactly one gable, never per-row/per-column strips.
+  const expected=(info.maxCellX-info.minCellX+1)*(info.maxCellY-info.minCellY+1);
+  return info.cells.length === expected;
+}
+function contiguousIntervalsForLine(info, fixed, axis){
+  // Used by collectRoofBands(); returns filled intervals along a single grid row or column.
+  const out=[];
+  if(axis==='x'){
+    let x=info.minCellX;
+    while(x<=info.maxCellX){
+      while(x<=info.maxCellX && !info.set.has(cellKey(x,fixed))) x++;
+      const start=x;
+      while(x<=info.maxCellX && info.set.has(cellKey(x,fixed))) x++;
+      if(x>start) out.push([start,x]);
+    }
+  }else{
+    let y=info.minCellY;
+    while(y<=info.maxCellY){
+      while(y<=info.maxCellY && !info.set.has(cellKey(fixed,y))) y++;
+      const start=y;
+      while(y<=info.maxCellY && info.set.has(cellKey(fixed,y))) y++;
+      if(y>start) out.push([start,y]);
+    }
+  }
+  return out;
+}
+function collectRoofBands(info, axis){
+  // Groups adjacent rows/columns with the same filled interval into broad roof bars.
+  // This is the key fix: a 6x4 rectangle becomes one 6x4 band, not four 6x1 gables.
+  const bands=[];
+  const active=new Map();
+  if(axis==='x'){
+    for(let y=info.minCellY;y<=info.maxCellY;y++){
+      const intervals=contiguousIntervalsForLine(info,y,'x');
+      const seen=new Set();
+      for(const [x0,x1] of intervals){
+        const key=`${x0},${x1}`;
+        seen.add(key);
+        if(active.has(key)) active.get(key).y1=y+1;
+        else active.set(key,{ axis:'x', x0, x1, y0:y, y1:y+1 });
+      }
+      for(const [key,band] of [...active.entries()]){
+        if(!seen.has(key)){ bands.push(band); active.delete(key); }
+      }
+    }
+  }else{
+    for(let x=info.minCellX;x<=info.maxCellX;x++){
+      const intervals=contiguousIntervalsForLine(info,x,'z');
+      const seen=new Set();
+      for(const [y0,y1] of intervals){
+        const key=`${y0},${y1}`;
+        seen.add(key);
+        if(active.has(key)) active.get(key).x1=x+1;
+        else active.set(key,{ axis:'z', x0:x, x1:x+1, y0, y1 });
+      }
+      for(const [key,band] of [...active.entries()]){
+        if(!seen.has(key)){ bands.push(band); active.delete(key); }
+      }
+    }
+  }
+  bands.push(...active.values());
+  return bands.map(b=>{
+    const width=b.x1-b.x0, depth=b.y1-b.y0;
+    b.len = b.axis==='x' ? width : depth; // Ridge direction length, used to choose dominant runs.
+    b.thickness = b.axis==='x' ? depth : width; // Span perpendicular to ridge; controls ridge height by pitch.
+    b.area = width*depth;
+    return b;
+  }).filter(b=>b.len>=1 && b.thickness>=1);
+}
+function choosePrimaryRoofBand(info, bands){
+  // Architects usually establish the dominant/main roof first, then frame smaller intersecting roofs into it.
+  return bands.slice().sort((a,b)=>
+    b.area-a.area || b.len-a.len || b.thickness-a.thickness || (b.axis==='x')-(a.axis==='x')
+  )[0];
+}
+function branchProtrusionTiles(branch, primary){
+  // Used by chooseCrossGableRoofSections(); branch roofs are only valid if they actually extend beyond the main roof.
+  if(branch.axis==='x'){
+    const left=Math.max(0, primary.x0-branch.x0);
+    const right=Math.max(0, branch.x1-primary.x1);
+    return left+right;
+  }
+  const up=Math.max(0, primary.y0-branch.y0);
+  const down=Math.max(0, branch.y1-primary.y1);
+  return up+down;
+}
+function roofSectionSpanTiles(sec){
+  // Perpendicular-to-ridge span. With equal pitch: roofRise = pitch * span / 2.
+  return Math.max(1, sec.axis==='x' ? (sec.y1-sec.y0) : (sec.x1-sec.x0));
+}
+function clipBranchToPrimaryRidge(branch, primary){
+  // Used by chooseCrossGableRoofSections(); intersecting roofs should die into the larger/main ridge,
+  // not run across the far slope. This is the plan-view version of framing a cross-gable into a main roof.
+  const out={ ...branch };
+  out.originalX0=branch.x0; out.originalX1=branch.x1; out.originalY0=branch.y0; out.originalY1=branch.y1;
+  out.clipToPrimaryRidge=true;
+  if(primary.axis==='x' && branch.axis==='z'){
+    const ridgeY=(primary.y0+primary.y1)/2; // Main ridge line runs along X through this Y.
+    const northProtrusion=Math.max(0, primary.y0-branch.y0);
+    const southProtrusion=Math.max(0, branch.y1-primary.y1);
+    if(northProtrusion >= southProtrusion && northProtrusion>0){ out.y1=Math.min(out.y1, ridgeY); out.clipSide='north_to_main_ridge'; }
+    else if(southProtrusion>0){ out.y0=Math.max(out.y0, ridgeY); out.clipSide='south_to_main_ridge'; }
+  }else if(primary.axis==='z' && branch.axis==='x'){
+    const ridgeX=(primary.x0+primary.x1)/2; // Main ridge line runs along Z through this X.
+    const westProtrusion=Math.max(0, primary.x0-branch.x0);
+    const eastProtrusion=Math.max(0, branch.x1-primary.x1);
+    if(westProtrusion >= eastProtrusion && westProtrusion>0){ out.x1=Math.min(out.x1, ridgeX); out.clipSide='west_to_main_ridge'; }
+    else if(eastProtrusion>0){ out.x0=Math.max(out.x0, ridgeX); out.clipSide='east_to_main_ridge'; }
+  }
+  out.len = out.axis==='x' ? (out.x1-out.x0) : (out.y1-out.y0);
+  out.thickness = out.axis==='x' ? (out.y1-out.y0) : (out.x1-out.x0);
+  out.area = Math.max(0,out.x1-out.x0)*Math.max(0,out.y1-out.y0);
+  return out;
+}
+function chooseCrossGableRoofSections(info){
+  // Cross-gable plan logic: one dominant gabled bar; add only perpendicular bars that protrude as real L/T branches.
+  if(footprintIsFilledRectangle(info)){
+    const width=info.maxCellX-info.minCellX+1, depth=info.maxCellY-info.minCellY+1;
+    return [{ axis: width>=depth ? 'x':'z', x0:info.minCellX, x1:info.maxCellX+1, y0:info.minCellY, y1:info.maxCellY+1, role:'single_rectangle' }];
+  }
+  const bands=collectRoofBands(info,'x').concat(collectRoofBands(info,'z'));
+  if(!bands.length){
+    return [{ axis:'x', x0:info.minCellX, x1:info.maxCellX+1, y0:info.minCellY, y1:info.maxCellY+1, role:'single_cell' }];
+  }
+  const primary={ ...choosePrimaryRoofBand(info,bands), role:'primary' };
+  const sections=[primary];
+  const candidates=bands
+    .filter(b=>b.axis!==primary.axis)
+    .map(b=>({ ...b, protrusion:branchProtrusionTiles(b,primary) }))
+    .filter(b=>b.protrusion>=1 && segmentOverlaps(b.x0,b.x1,primary.x0,primary.x1) && segmentOverlaps(b.y0,b.y1,primary.y0,primary.y1))
+    .sort((a,b)=>b.protrusion-a.protrusion || b.area-a.area || b.len-a.len);
+  for(const b of candidates){
+    if(sections.length>=4) break;
+    const clipped=clipBranchToPrimaryRidge(b, primary);
+    if(clipped.len<=0.1 || clipped.thickness<=0.1) continue;
+    const duplicate=sections.some(s=>s.axis===clipped.axis && s.x0===clipped.x0 && s.x1===clipped.x1 && s.y0===clipped.y0 && s.y1===clipped.y1);
+    if(!duplicate) sections.push({ ...clipped, role:clipped.thickness < primary.thickness ? 'thin_cross_gable_clipped_to_main_ridge' : 'cross_gable_clipped_to_main_ridge' });
+  }
+  return sections;
+}
+function sectionWorldRect(info, sec, padTiles=0){
+  const t=info.tile, h=info.half, pad=Math.max(0,padTiles)*t;
+  return { minX:sec.x0*t-h-pad, maxX:sec.x1*t-h+pad, minZ:sec.y0*t-h-pad, maxZ:sec.y1*t-h+pad };
+}
+function rectSize(rect){
+  // Used by Highland frustum math to compare bottom/eave/ridge spans.
+  return { w:Math.max(0,rect.maxX-rect.minX), d:Math.max(0,rect.maxZ-rect.minZ) };
+}
+function sectionTopRectFromBottomRect(bottomRect, topScale=HIGHLAND_BODY_TOP_SCALE){
+  // Used by Highland sections: the eave/ceiling edge is the scaled top of the whole section frustum, not each tile separately.
+  return scaleRectAroundCenter(bottomRect, topScale, topScale);
+}
+function cellIndexRangeFromWorldRect(info, rect){
+  // Used by Highland entry cuts: converts a generated section rectangle back into its covered grid cells.
+  const eps=1e-5, t=info.tile, h=info.half;
+  const minX=Math.round((rect.minX+h)/t+eps);
+  const maxX=Math.round((rect.maxX+h)/t-eps)-1;
+  const minY=Math.round((rect.minZ+h)/t+eps);
+  const maxY=Math.round((rect.maxZ+h)/t-eps)-1;
+  return {minX,maxX,minY,maxY};
+}
+function entryRunsOnSectionWall(info, bottomRect, side){
+  // Used by Highland body walls so green entry tunnels punch a real continuous portal through the blue structure wall.
+  // Runs are detected from blue boundary cells that touch any generated green tunnel cell.
+  const tunnels=makeEntryTunnelCells();
+  if(!tunnels.size) return [];
+  const r=cellIndexRangeFromWorldRect(info, bottomRect);
+  const hits=[];
+  if(side==='north'){
+    const y=r.minY;
+    for(let x=r.minX;x<=r.maxX;x++) if(footprintSet.has(cellKey(x,y)) && tunnels.has(cellKey(x,y-1))) hits.push({x,y});
+  }else if(side==='south'){
+    const y=r.maxY;
+    for(let x=r.minX;x<=r.maxX;x++) if(footprintSet.has(cellKey(x,y)) && tunnels.has(cellKey(x,y+1))) hits.push({x,y});
+  }else if(side==='east'){
+    const x=r.maxX;
+    for(let y=r.minY;y<=r.maxY;y++) if(footprintSet.has(cellKey(x,y)) && tunnels.has(cellKey(x+1,y))) hits.push({x,y});
+  }else if(side==='west'){
+    const x=r.minX;
+    for(let y=r.minY;y<=r.maxY;y++) if(footprintSet.has(cellKey(x,y)) && tunnels.has(cellKey(x-1,y))) hits.push({x,y});
+  }
+  return contiguousBoundaryRuns(hits, side);
+}
+function uRangeForWallOpening(info, bottomRect, side, run){
+  // Used by addHighlandWallFaceWithEntryCuts(); maps a grid-cell run into the local 0..1 span of one frustum wall.
+  const rect=rectForCellRun(info, run);
+  const w=Math.max(0.0001,bottomRect.maxX-bottomRect.minX);
+  const d=Math.max(0.0001,bottomRect.maxZ-bottomRect.minZ);
+  let u0=0, u1=1;
+  if(side==='north'){ u0=(rect.minX-bottomRect.minX)/w; u1=(rect.maxX-bottomRect.minX)/w; }
+  else if(side==='south'){ u0=(bottomRect.maxX-rect.maxX)/w; u1=(bottomRect.maxX-rect.minX)/w; }
+  else if(side==='east'){ u0=(rect.minZ-bottomRect.minZ)/d; u1=(rect.maxZ-bottomRect.minZ)/d; }
+  else { u0=(bottomRect.maxZ-rect.maxZ)/d; u1=(bottomRect.maxZ-rect.minZ)/d; }
+  return { u0:THREE.MathUtils.clamp(Math.min(u0,u1),0,1), u1:THREE.MathUtils.clamp(Math.max(u0,u1),0,1), tiles:run.length };
+}
+function addHighlandWallFaceWithEntryCuts(faces, bottomRect, topRect, y0, y1, side, tag, extra, info=null){
+  // Used by Highland frustum bodies. It replaces one solid wall quad with wall pieces around continuous entry portals.
+  const bottom=rectCorners(bottomRect.minX,bottomRect.maxX,bottomRect.minZ,bottomRect.maxZ,y0);
+  const top=rectCorners(topRect.minX,topRect.maxX,topRect.minZ,topRect.maxZ,y1);
+  const edgeBySide={
+    north:{ b0:bottom.a, b1:bottom.b, t0:top.a, t1:top.b },
+    east:{ b0:bottom.b, b1:bottom.c, t0:top.b, t1:top.c },
+    south:{ b0:bottom.c, b1:bottom.d, t0:top.c, t1:top.d },
+    west:{ b0:bottom.d, b1:bottom.a, t0:top.d, t1:top.a }
+  }[side];
+  const point=(u,v)=>{
+    const bottomPoint=edgeBySide.b0.clone().lerp(edgeBySide.b1,u);
+    const topPoint=edgeBySide.t0.clone().lerp(edgeBySide.t1,u);
+    return bottomPoint.lerp(topPoint,v);
+  };
+  const addSeg=(u0,u1,v0,v1,part)=>{
+    if(u1-u0<0.001 || v1-v0<0.001) return;
+    faces.push(addFace([point(u0,v0),point(u0,v1),point(u1,v1),point(u1,v0)], tag, { ...extra, entryPortalCut:!!part, entryPortalPart:part||'' }));
+  };
+  const runs=info ? entryRunsOnSectionWall(info, bottomRect, side).map(run=>uRangeForWallOpening(info,bottomRect,side,run)).filter(r=>r.u1-r.u0>0.01) : [];
+  if(!runs.length){ addSeg(0,1,0,1,''); return; }
+  runs.sort((a,b)=>a.u0-b.u0);
+  const merged=[];
+  for(const r of runs){
+    const last=merged[merged.length-1];
+    if(last && r.u0<=last.u1+0.001){ last.u1=Math.max(last.u1,r.u1); last.tiles+=r.tiles; }
+    else merged.push({...r});
+  }
+  const openTop=0.92;
+  let cursor=0;
+  for(const r of merged){
+    addSeg(cursor,r.u0,0,1,'solidBesideEntryPortal');
+    addSeg(r.u0,r.u1,openTop,1,'nearFullHeightEntryLintel');
+    cursor=r.u1;
+  }
+  addSeg(cursor,1,0,1,'solidBesideEntryPortal');
+}
+function addHighlandSectionFrustumBodyFaces(faces, bottomRect, topRect, y0, y1, role, info=null){
+  // Used by Highland mode so each architectural section is a tapered frustum mass. Entry tunnels can cut continuous portals through its outer walls.
+  const bottom=rectCorners(bottomRect.minX,bottomRect.maxX,bottomRect.minZ,bottomRect.maxZ,y0);
+  const top=rectCorners(topRect.minX,topRect.maxX,topRect.minZ,topRect.maxZ,y1);
+  const wallExtra={ highlandSectionRole:role, highlandFrustumWall:true, highlandTopScale:HIGHLAND_BODY_TOP_SCALE };
+  faces.push(addFace([bottom.a,bottom.b,bottom.c,bottom.d], 'floor', { highlandSectionRole:role, highlandFrustumBottom:true }));
+  faces.push(addFace([top.d,top.c,top.b,top.a], 'ceiling', { highlandSectionRole:role, highlandFrustumTop:true, highlandTopScale:HIGHLAND_BODY_TOP_SCALE }));
+  addHighlandWallFaceWithEntryCuts(faces, bottomRect, topRect, y0, y1, 'north', 'wall', wallExtra, info);
+  addHighlandWallFaceWithEntryCuts(faces, bottomRect, topRect, y0, y1, 'east', 'wall', wallExtra, info);
+  addHighlandWallFaceWithEntryCuts(faces, bottomRect, topRect, y0, y1, 'south', 'wall', wallExtra, info);
+  addHighlandWallFaceWithEntryCuts(faces, bottomRect, topRect, y0, y1, 'west', 'wall', wallExtra, info);
+}
+function continuousFrustumRidgeRect(bottomRect, eaveRect, yBaseTop, baseHeight, axis){
+  // Extends Highland roof sections without collapsing the ridge into a pyramid.
+  // v28 applied the lower-wall taper for the full height needed to make the cross-span almost zero;
+  // on a 6×4 rectangle that also erased the long axis, so the gable became pyramid-like.
+  // v29 keeps a true triangular-prism contract: the ridge is thin across the span, but remains long
+  // along the roof axis. Long-axis shortening is only one additional Highland taper step.
+  const tile=Math.max(0.0001,state.tileSize||1);
+  const minRidge=0.08*tile;
+  const bs=rectSize(bottomRect), es=rectSize(eaveRect);
+  const insetXPerHeight=Math.max(0,(bs.w-es.w)/2) / Math.max(0.0001,baseHeight);
+  const insetZPerHeight=Math.max(0,(bs.d-es.d)/2) / Math.max(0.0001,baseHeight);
+  const longAxis=axis==='z' ? 'z' : 'x';
+  const longScale=Math.min(0.995, Math.max(0.15, HIGHLAND_BODY_TOP_SCALE));
+  const cx=(eaveRect.minX+eaveRect.maxX)/2, cz=(eaveRect.minZ+eaveRect.maxZ)/2;
+  const targetLongLen = longAxis==='x' ? Math.max(minRidge, es.w*longScale) : Math.max(minRidge, es.d*longScale);
+  const longShrinkPerSide = longAxis==='x' ? Math.max(0,(es.w-targetLongLen)/2) : Math.max(0,(es.d-targetLongLen)/2);
+  const longInsetPerHeight = longAxis==='x' ? insetXPerHeight : insetZPerHeight;
+  let roofHeight = 1.18*tile;
+  if(longInsetPerHeight>1e-7 && longShrinkPerSide>1e-7){
+    roofHeight = Math.max(0.2*tile, longShrinkPerSide / longInsetPerHeight);
+  }
+  const yRoofTop=yBaseTop+roofHeight;
+  let ridgeMinX, ridgeMaxX, ridgeMinZ, ridgeMaxZ;
+  if(longAxis==='x'){
+    ridgeMinX=cx-targetLongLen/2; ridgeMaxX=cx+targetLongLen/2;
+    ridgeMinZ=cz-minRidge/2; ridgeMaxZ=cz+minRidge/2;
+  }else{
+    ridgeMinX=cx-minRidge/2; ridgeMaxX=cx+minRidge/2;
+    ridgeMinZ=cz-targetLongLen/2; ridgeMaxZ=cz+targetLongLen/2;
+  }
+  return {
+    rect:{ minX:ridgeMinX, maxX:ridgeMaxX, minZ:ridgeMinZ, maxZ:ridgeMaxZ },
+    roofHeight,
+    yRoofTop,
+    ridgeLongScale:longScale,
+    triangularPrismRidge:true
+  };
+}
+function addGableRoofSectionFaces(faces, eaveRect, yBaseTop, roofHeight, axis, roofCfg, role, bottomRect=null, baseHeight=1.4){
+  // A Highland roof wing continues the frustum slope: eave edges match the ceiling, and the spine is scaled/raised by the same wall angle.
+  const base=rectCorners(eaveRect.minX,eaveRect.maxX,eaveRect.minZ,eaveRect.maxZ,yBaseTop);
+  let ridgeRect, yRoofTop, resolvedRoofHeight=roofHeight;
+  if(bottomRect){
+    const solved=continuousFrustumRidgeRect(bottomRect, eaveRect, yBaseTop, baseHeight, axis);
+    ridgeRect=solved.rect; yRoofTop=solved.yRoofTop; resolvedRoofHeight=solved.roofHeight;
+  }else{
+    const tile=Math.max(0.0001,state.tileSize||1);
+    const minRidge=0.08*tile;
+    yRoofTop=yBaseTop+roofHeight;
+    const w=eaveRect.maxX-eaveRect.minX, d=eaveRect.maxZ-eaveRect.minZ;
+    if(axis==='x'){
+      const ridgeD=Math.max(minRidge, d*0.08);
+      const cz=(eaveRect.minZ+eaveRect.maxZ)/2;
+      ridgeRect={ minX:eaveRect.minX, maxX:eaveRect.maxX, minZ:cz-ridgeD/2, maxZ:cz+ridgeD/2 };
+    }else{
+      const ridgeW=Math.max(minRidge, w*0.08);
+      const cx=(eaveRect.minX+eaveRect.maxX)/2;
+      ridgeRect={ minX:cx-ridgeW/2, maxX:cx+ridgeW/2, minZ:eaveRect.minZ, maxZ:eaveRect.maxZ };
+    }
+  }
+  const top=rectCorners(ridgeRect.minX,ridgeRect.maxX,ridgeRect.minZ,ridgeRect.maxZ,yRoofTop);
+  faces.push(addFace([top.d,top.c,top.b,top.a], 'ceiling', { roofSectionRole:role, roofRidgeCap:true, resolvedRoofHeight:Number(resolvedRoofHeight.toFixed(4)), continuousFrustumSlope:!!bottomRect, triangularPrismRidge:!!bottomRect, highlandRidgeLongScale:bottomRect ? HIGHLAND_BODY_TOP_SCALE : undefined }));
+  const edgewardOffset=-Math.abs(roofCfg.highlandInterlockOffset || 0.25);
+  if(axis==='x'){
+    faces.push(addFace([base.a,top.a,top.b,base.b], 'roof', { roofAcrossOffset: edgewardOffset, roofOffsetRole:'cross_gable_edgeward', roofSectionRole:role, continuousFrustumSlope:!!bottomRect, triangularPrismRidge:!!bottomRect, highlandRidgeLongScale:bottomRect ? HIGHLAND_BODY_TOP_SCALE : undefined }));
+    faces.push(addFace([base.b,top.b,top.c,base.c], 'wall', { roofSectionRole:role, gableEnd:true, continuousFrustumSlope:!!bottomRect, triangularPrismRidge:!!bottomRect, highlandRidgeLongScale:bottomRect ? HIGHLAND_BODY_TOP_SCALE : undefined }));
+    faces.push(addFace([base.c,top.c,top.d,base.d], 'roof', { roofAcrossOffset: 0, roofOffsetRole:'cross_gable_reference', roofSectionRole:role, continuousFrustumSlope:!!bottomRect, triangularPrismRidge:!!bottomRect, highlandRidgeLongScale:bottomRect ? HIGHLAND_BODY_TOP_SCALE : undefined }));
+    faces.push(addFace([base.d,top.d,top.a,base.a], 'wall', { roofSectionRole:role, gableEnd:true, continuousFrustumSlope:!!bottomRect, triangularPrismRidge:!!bottomRect, highlandRidgeLongScale:bottomRect ? HIGHLAND_BODY_TOP_SCALE : undefined }));
+  }else{
+    faces.push(addFace([base.a,top.a,top.b,base.b], 'wall', { roofSectionRole:role, gableEnd:true, continuousFrustumSlope:!!bottomRect, triangularPrismRidge:!!bottomRect, highlandRidgeLongScale:bottomRect ? HIGHLAND_BODY_TOP_SCALE : undefined }));
+    faces.push(addFace([base.b,top.b,top.c,base.c], 'roof', { roofAcrossOffset: edgewardOffset, roofOffsetRole:'cross_gable_edgeward', roofSectionRole:role, continuousFrustumSlope:!!bottomRect, triangularPrismRidge:!!bottomRect, highlandRidgeLongScale:bottomRect ? HIGHLAND_BODY_TOP_SCALE : undefined }));
+    faces.push(addFace([base.c,top.c,top.d,base.d], 'wall', { roofSectionRole:role, gableEnd:true, continuousFrustumSlope:!!bottomRect, triangularPrismRidge:!!bottomRect, highlandRidgeLongScale:bottomRect ? HIGHLAND_BODY_TOP_SCALE : undefined }));
+    faces.push(addFace([base.d,top.d,top.a,base.a], 'roof', { roofAcrossOffset: 0, roofOffsetRole:'cross_gable_reference', roofSectionRole:role, continuousFrustumSlope:!!bottomRect, triangularPrismRidge:!!bottomRect, highlandRidgeLongScale:bottomRect ? HIGHLAND_BODY_TOP_SCALE : undefined }));
+  }
+  return resolvedRoofHeight;
+}
+function drawGrid(){
+  const w=gridCanvas.width,h=gridCanvas.height,s=state.gridSize,cell=w/s;
+  gridCtx.clearRect(0,0,w,h); gridCtx.fillStyle='#0b1018'; gridCtx.fillRect(0,0,w,h);
+  for(let y=0;y<s;y++) for(let x=0;x<s;x++){
+    const px=x*cell,py=y*cell,k=cellKey(x,y);
+    gridCtx.fillStyle = footprintSet.has(k) ? 'rgba(76,200,255,.78)' : '#101827';
+    gridCtx.fillRect(px,py,cell-1,cell-1);
+    if(entryTunnelSet.has(k)){ gridCtx.fillStyle='rgba(86,220,126,.82)'; gridCtx.fillRect(px+cell*.08,py+cell*.08,cell*.84,cell*.84); }
+    if(chimneySet.has(k)){ gridCtx.fillStyle='rgba(165,174,184,.88)'; gridCtx.fillRect(px+cell*.14,py+cell*.14,cell*.72,cell*.72); }
+    if(porchSet.has(k)){ gridCtx.fillStyle='rgba(139,91,49,.88)'; gridCtx.fillRect(px+cell*.08,py+cell*.08,cell*.84,cell*.84); }
+    if(porchStairSet.has(k)){ gridCtx.fillStyle='rgba(218,184,128,.92)'; gridCtx.fillRect(px+cell*.12,py+cell*.12,cell*.76,cell*.76); }
+    if(railingSet.has(k)){ gridCtx.fillStyle='rgba(91,70,48,.96)'; gridCtx.beginPath(); gridCtx.arc(px+cell*.5, py+cell*.5, Math.max(3,cell*.16), 0, Math.PI*2); gridCtx.fill(); }
+    if(entranceSet.has(k)){ gridCtx.fillStyle='rgba(255,184,77,.95)'; gridCtx.fillRect(px+cell*.2,py+cell*.2,cell*.6,cell*.6); }
+    if(connectorSet.has(k)){ gridCtx.strokeStyle='rgba(139,255,166,.95)'; gridCtx.lineWidth=Math.max(2,cell*.10); gridCtx.strokeRect(px+cell*.22,py+cell*.22,cell*.56,cell*.56); }
+  }
+  gridCtx.strokeStyle='rgba(255,255,255,.10)'; gridCtx.lineWidth=1;
+  for(let i=0;i<=s;i++){ gridCtx.beginPath(); gridCtx.moveTo(i*cell,0); gridCtx.lineTo(i*cell,h); gridCtx.stroke(); gridCtx.beginPath(); gridCtx.moveTo(0,i*cell); gridCtx.lineTo(w,i*cell); gridCtx.stroke(); }
+  const b=boundsFromFootprint();
+  if(b){ gridCtx.strokeStyle='rgba(255,255,255,.95)'; gridCtx.lineWidth=Math.max(2,cell*.08); gridCtx.setLineDash([8,6]); gridCtx.strokeRect((b.minX/state.tileSize+s/2)*cell,(b.minZ/state.tileSize+s/2)*cell,(b.maxX-b.minX)/state.tileSize*cell,(b.maxZ-b.minZ)/state.tileSize*cell); gridCtx.setLineDash([]); }
+  $('viewStats').textContent = b ? `${b.cells.length} footprint cells · ${entryTunnelSet.size} entries · ${chimneySet.size} chimneys · ${porchSet.size} porches · ${porchStairSet.size} stairs · ${railingSet.size} rails` : `${entryTunnelSet.size} entries · ${chimneySet.size} chimneys · ${porchSet.size} porches · ${porchStairSet.size} stairs · ${railingSet.size} rails`;
+}
+function gridCellFromEvent(ev){ const r=gridCanvas.getBoundingClientRect(); const x=Math.floor((ev.clientX-r.left)/r.width*state.gridSize); const y=Math.floor((ev.clientY-r.top)/r.height*state.gridSize); return {x:THREE.MathUtils.clamp(x,0,state.gridSize-1), y:THREE.MathUtils.clamp(y,0,state.gridSize-1)}; }
+function paintCell(ev){
+  const c=gridCellFromEvent(ev), k=cellKey(c.x,c.y);
+  if(state.tool==='footprint') footprintSet.add(k);
+  if(state.tool==='entrance'){ footprintSet.add(k); entranceSet.add(k); }
+  if(state.tool==='connector'){ footprintSet.add(k); connectorSet.add(k); }
+  if(state.tool==='entryTunnel') entryTunnelSet.add(k);
+  if(state.tool==='chimney') chimneySet.add(k);
+  if(state.tool==='porch') porchSet.add(k);
+  if(state.tool==='porchStair') porchStairSet.add(k);
+  if(state.tool==='railing') railingSet.add(k);
+  if(state.tool==='erase'){ footprintSet.delete(k); entranceSet.delete(k); connectorSet.delete(k); entryTunnelSet.delete(k); chimneySet.delete(k); porchSet.delete(k); porchStairSet.delete(k); railingSet.delete(k); }
+  syncPieceFromSets(); drawGrid(); rebuildFootprintOverlay(); refreshExport();
+}
+let painting=false; gridCanvas.addEventListener('pointerdown',ev=>{pushUndo('Paint grid footprint');painting=true;gridCanvas.setPointerCapture(ev.pointerId);paintCell(ev)}); gridCanvas.addEventListener('pointermove',ev=>{if(painting)paintCell(ev)}); gridCanvas.addEventListener('pointerup',()=>painting=false); gridCanvas.addEventListener('pointercancel',()=>painting=false);
+
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0b0f16);
+const camera = new THREE.PerspectiveCamera(55,1,.01,1000); camera.position.set(8,7,9);
+const renderer = new THREE.WebGLRenderer({canvas:$('threeCanvas'), antialias:true, alpha:false, preserveDrawingBuffer:false});
+renderer.setClearColor(0x0b0f16, 1);
+renderer.domElement.style.backgroundColor = '#0b0f16';
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+const controls = new OrbitControls(camera, renderer.domElement); controls.target.set(0,1,0); controls.enableDamping=true;
+scene.add(new THREE.HemisphereLight(0xffffff,0x223344,1.8)); const dir=new THREE.DirectionalLight(0xffffff,1.6); dir.position.set(4,8,5); scene.add(dir);
+const ground = new THREE.GridHelper(80,80,0x546782,0x253246); ground.position.y=0; scene.add(ground);
+const root = new THREE.Group(); scene.add(root);
+const faceGroup = new THREE.Group(); root.add(faceGroup);
+const assetGroup = new THREE.Group(); root.add(assetGroup);
+const roofGroup = new THREE.Group(); root.add(roofGroup);
+const footprintOverlay = new THREE.Group(); root.add(footprintOverlay);
+const loader = new GLTFLoader();
+const raycaster = new THREE.Raycaster(); const pointer = new THREE.Vector2();
+const transform = new TransformControls(camera, renderer.domElement);
+transform.setSize(1.15);
+transform.addEventListener('dragging-changed',e=>controls.enabled=!e.value);
+transform.addEventListener('mouseDown',()=>beginUndo(activeTransformTarget==='face'?'Gizmo face transform':'Gizmo asset transform'));
+transform.addEventListener('mouseUp',commitUndo);
+transform.addEventListener('objectChange',onTransformObjectChanged);
+scene.add(transform);
+
+// Visible proxy used by the viewport gizmo when one or more base faces are selected.
+// The proxy is transformed by TransformControls, then its delta is applied to the selected face vertices.
+const faceGizmoProxy = new THREE.Mesh(
+  new THREE.SphereGeometry(0.09, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest:false, transparent:true, opacity:0.9 })
+);
+faceGizmoProxy.name = 'selected-face-transform-proxy';
+faceGizmoProxy.renderOrder = 999;
+faceGizmoProxy.visible = false;
+scene.add(faceGizmoProxy);
+let activeTransformTarget = null; // Used by objectChange to route gizmo deltas to either faces or imported assets.
+let faceGizmoLastMatrix = new THREE.Matrix4(); // Previous proxy matrix used to compute per-drag deltas.
+
+let assetMeshes = new Map(); let faceMeshes = new Map();
+const matFace = new THREE.MeshStandardMaterial({color:0x4a95e8, metalness:.05, roughness:.8, side:THREE.DoubleSide, transparent:true, opacity:.72});
+const matWall = new THREE.MeshStandardMaterial({color:0x70d6ff, metalness:.05, roughness:.8, side:THREE.DoubleSide, transparent:true, opacity:.82});
+const matDoor = new THREE.MeshStandardMaterial({color:0xffb84d, metalness:.05, roughness:.8, side:THREE.DoubleSide, transparent:true, opacity:.85});
+const matRoof = new THREE.MeshStandardMaterial({color:0xc68bff, metalness:.05, roughness:.72, side:THREE.DoubleSide, transparent:true, opacity:.86});
+const matRoofTube = new THREE.MeshStandardMaterial({color:0xd8bd7d, metalness:.02, roughness:.88, side:THREE.DoubleSide, transparent:true, opacity:.92});
+const matSelected = new THREE.MeshStandardMaterial({color:0xffffff, metalness:.05, roughness:.55, side:THREE.DoubleSide, transparent:true, opacity:.92});
+const matOverlay = new THREE.MeshBasicMaterial({color:0x4cc8ff, transparent:true, opacity:.22, side:THREE.DoubleSide, depthWrite:false});
+const matEntryOverlay = new THREE.MeshBasicMaterial({color:0x56dc7e, transparent:true, opacity:.28, side:THREE.DoubleSide, depthWrite:false});
+const matChimneyOverlay = new THREE.MeshBasicMaterial({color:0xa5aeb8, transparent:true, opacity:.28, side:THREE.DoubleSide, depthWrite:false});
+const matPorchOverlay = new THREE.MeshBasicMaterial({color:0x8b5b31, transparent:true, opacity:.30, side:THREE.DoubleSide, depthWrite:false});
+const matStairOverlay = new THREE.MeshBasicMaterial({color:0xdab880, transparent:true, opacity:.32, side:THREE.DoubleSide, depthWrite:false});
+const matRailingOverlay = new THREE.MeshBasicMaterial({color:0x5b4630, transparent:true, opacity:.36, side:THREE.DoubleSide, depthWrite:false});
+const matEntry = new THREE.MeshStandardMaterial({color:0x59d884, metalness:.02, roughness:.78, side:THREE.DoubleSide, transparent:true, opacity:.84});
+const matChimney = new THREE.MeshStandardMaterial({color:0x9ca6b0, metalness:.02, roughness:.9, side:THREE.DoubleSide, transparent:true, opacity:.9});
+const matPorch = new THREE.MeshStandardMaterial({color:0x8a5a33, metalness:.02, roughness:.85, side:THREE.DoubleSide, transparent:true, opacity:.88});
+const matStair = new THREE.MeshStandardMaterial({color:0xd6b17b, metalness:.02, roughness:.84, side:THREE.DoubleSide, transparent:true, opacity:.9});
+const matRailing = new THREE.MeshStandardMaterial({color:0x5b3f24, metalness:.02, roughness:.82, side:THREE.DoubleSide, transparent:true, opacity:.94});
+function resize(){ const c=$('threeCanvas'), r=c.getBoundingClientRect(); const w=Math.max(2,Math.floor(r.width||c.clientWidth||640)); const h=Math.max(2,Math.floor(r.height||c.clientHeight||360)); renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+window.addEventListener('resize',resize);
+function animate(){ requestAnimationFrame(animate); try{ controls.update(); renderer.render(scene,camera); }catch(err){ log('RENDER ERROR: '+(err?.message||err),'error'); } }
+
+function faceMaterial(face){ if(state.selectedFaceIds.has(face.id)) return matSelected; if(face.tag==='wall') return matWall; if(face.tag==='door') return matDoor; if(face.tag==='roof') return matRoof; if(face.tag==='entryTunnel') return matEntry; if(face.tag==='chimney') return matChimney; if(face.tag==='porch') return matPorch; if(face.tag==='porchStair') return matStair; if(face.tag==='railing') return matRailing; return matFace; }
+function faceNormal(face){ const a=new THREE.Vector3(...face.v[0]), b=new THREE.Vector3(...face.v[1]), c=new THREE.Vector3(...face.v[2]); return b.clone().sub(a).cross(c.clone().sub(a)).normalize(); }
+function faceCenter(face){ const c=new THREE.Vector3(); for(const v of face.v)c.add(new THREE.Vector3(...v)); return c.multiplyScalar(1/face.v.length); }
+function faceBasis(face){
+  const v0=new THREE.Vector3(...face.v[0]), v1=new THREE.Vector3(...face.v[1]), v3=new THREE.Vector3(...face.v[3]);
+  const u=v1.clone().sub(v0).normalize(); const n=faceNormal(face); const vv=v3.clone().sub(v0).normalize(); return {u,v:vv,n};
+}
+function addFace(v, tag='', extra={}){ return { id: state.nextFaceId++, v: v.map(p=>[p.x,p.y,p.z]), tag, color:null, ...extra }; }
+function rebuildFaceMeshes(){
+  faceGroup.clear(); faceMeshes.clear();
+  for(const face of state.piece.base.faces){
+    const geom = new THREE.BufferGeometry();
+    const pts = [face.v[0],face.v[1],face.v[2], face.v[0],face.v[2],face.v[3]].flat();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(pts,3)); geom.computeVertexNormals();
+    const mesh = new THREE.Mesh(geom, faceMaterial(face)); mesh.userData.faceId=face.id; faceGroup.add(mesh); faceMeshes.set(face.id,mesh);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geom), new THREE.LineBasicMaterial({color: state.selectedFaceIds.has(face.id)?0xffffff:0x162333, transparent:true, opacity:.9})); mesh.add(edges);
+  }
+  updateSelectionUi(); rebuildRoofPreview(); refreshExport();
+}
+function rebuildFootprintOverlay(){
+  footprintOverlay.clear();
+  const addOverlayCell=(k, mat, yLift=0.012, scale=.96)=>{ const c=parseCellKey(k), w=gridWorld(c.x,c.y); const geom=new THREE.PlaneGeometry(state.tileSize*scale,state.tileSize*scale); const m=new THREE.Mesh(geom,mat); m.rotation.x=-Math.PI/2; m.position.set(w.x,yLift,w.z); footprintOverlay.add(m); };
+  for(const k of footprintSet) addOverlayCell(k, matOverlay, .012, .96);
+  for(const k of entryTunnelSet) addOverlayCell(k, matEntryOverlay, .016, .86);
+  for(const k of chimneySet) addOverlayCell(k, matChimneyOverlay, .020, .76);
+  for(const k of porchSet) addOverlayCell(k, matPorchOverlay, .018, .88);
+  for(const k of porchStairSet) addOverlayCell(k, matStairOverlay, .022, .78);
+  for(const k of railingSet) addOverlayCell(k, matRailingOverlay, .026, .64);
+}
+
+function rectCorners(minX,maxX,minZ,maxZ,y){
+  return {
+    a:new THREE.Vector3(minX,y,minZ), b:new THREE.Vector3(maxX,y,minZ),
+    c:new THREE.Vector3(maxX,y,maxZ), d:new THREE.Vector3(minX,y,maxZ)
+  };
+}
+function scaledRectFromBounds(minX,maxX,minZ,maxZ,y,scaleX,scaleZ){
+  const cx=(minX+maxX)/2, cz=(minZ+maxZ)/2;
+  const hw=(maxX-minX)*Math.max(0.001,scaleX)/2;
+  const hd=(maxZ-minZ)*Math.max(0.001,scaleZ)/2;
+  return rectCorners(cx-hw,cx+hw,cz-hd,cz+hd,y);
+}
+function addFrustumFaces(bottom, top, sideTag='wall', topTag='ceiling'){
+  // Used by presets: a closed trapezoid/frustum section with welded shared vertex coordinates.
+  const faces=[];
+  faces.push(addFace([bottom.a,bottom.b,bottom.c,bottom.d], 'floor'));
+  faces.push(addFace([top.d,top.c,top.b,top.a], topTag));
+  faces.push(addFace([bottom.a,top.a,top.b,bottom.b], sideTag));
+  faces.push(addFace([bottom.b,top.b,top.c,bottom.c], sideTag));
+  faces.push(addFace([bottom.c,top.c,top.d,bottom.d], sideTag));
+  faces.push(addFace([bottom.d,top.d,top.a,bottom.a], sideTag));
+  return faces;
+}
+function seedDefaultHighlandFootprint(){
+  // Used by default boot/preset so the user opens onto a visible Highland starter piece.
+  footprintSet.clear(); entranceSet.clear(); connectorSet.clear(); entryTunnelSet.clear(); chimneySet.clear(); porchSet.clear(); porchStairSet.clear(); railingSet.clear();
+  const w=6, d=4;
+  const x0=Math.floor((state.gridSize-w)/2), y0=Math.floor((state.gridSize-d)/2);
+  for(let y=0;y<d;y++) for(let x=0;x<w;x++) footprintSet.add(cellKey(x0+x,y0+y));
+  entranceSet.add(cellKey(x0+Math.floor(w/2), y0+d-1));
+  connectorSet.add(cellKey(x0+Math.floor(w/2), y0));
+  syncPieceFromSets();
+}
+
+function cellBounds(info, x, y){ return info.cellRect(x,y); }
+const CARDINAL_DIRS = [
+  { name:'north', dx:0, dy:-1 },
+  { name:'east', dx:1, dy:0 },
+  { name:'south', dx:0, dy:1 },
+  { name:'west', dx:-1, dy:0 }
+];
+function addBoxFacesTo(faces, rect, y0, y1, tag='wall', extra={}){
+  // Used by extension generators for simple rectangular add-ons that should not inherit Highland frustum taper.
+  const p=(x,y,z)=>new THREE.Vector3(x,y,z);
+  faces.push(addFace([p(rect.minX,y0,rect.minZ),p(rect.maxX,y0,rect.minZ),p(rect.maxX,y0,rect.maxZ),p(rect.minX,y0,rect.maxZ)], tag, { extensionFace:'floor', ...extra }));
+  faces.push(addFace([p(rect.minX,y1,rect.maxZ),p(rect.maxX,y1,rect.maxZ),p(rect.maxX,y1,rect.minZ),p(rect.minX,y1,rect.minZ)], tag, { extensionFace:'top', ...extra }));
+  faces.push(addFace([p(rect.minX,y0,rect.minZ),p(rect.minX,y1,rect.minZ),p(rect.maxX,y1,rect.minZ),p(rect.maxX,y0,rect.minZ)], tag, { extensionFace:'north', ...extra }));
+  faces.push(addFace([p(rect.maxX,y0,rect.minZ),p(rect.maxX,y1,rect.minZ),p(rect.maxX,y1,rect.maxZ),p(rect.maxX,y0,rect.maxZ)], tag, { extensionFace:'east', ...extra }));
+  faces.push(addFace([p(rect.maxX,y0,rect.maxZ),p(rect.maxX,y1,rect.maxZ),p(rect.minX,y1,rect.maxZ),p(rect.minX,y0,rect.maxZ)], tag, { extensionFace:'south', ...extra }));
+  faces.push(addFace([p(rect.minX,y0,rect.maxZ),p(rect.minX,y1,rect.maxZ),p(rect.minX,y1,rect.minZ),p(rect.minX,y0,rect.minZ)], tag, { extensionFace:'west', ...extra }));
+}
+function addPerimeterWallFace(faces, rect, side, y0, y1, tag, extra={}){
+  // Used by fused hollow extensions. Interior shared tile edges are skipped, leaving one connected cavity.
+  const p=(x,y,z)=>new THREE.Vector3(x,y,z);
+  const verts={
+    north:[p(rect.minX,y0,rect.minZ),p(rect.minX,y1,rect.minZ),p(rect.maxX,y1,rect.minZ),p(rect.maxX,y0,rect.minZ)],
+    east:[p(rect.maxX,y0,rect.minZ),p(rect.maxX,y1,rect.minZ),p(rect.maxX,y1,rect.maxZ),p(rect.maxX,y0,rect.maxZ)],
+    south:[p(rect.maxX,y0,rect.maxZ),p(rect.maxX,y1,rect.maxZ),p(rect.minX,y1,rect.maxZ),p(rect.minX,y0,rect.maxZ)],
+    west:[p(rect.minX,y0,rect.maxZ),p(rect.minX,y1,rect.maxZ),p(rect.minX,y1,rect.minZ),p(rect.minX,y0,rect.minZ)]
+  };
+  faces.push(addFace(verts[side], tag, { extensionFace:side, fusedPerimeter:true, ...extra }));
+}
+function seededUnit(seed){
+  // Used by wonky extension geometry; deterministic so exported JSON does not wiggle every rebuild.
+  let h=2166136261;
+  const str=String(seed);
+  for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,16777619); }
+  h^=h>>>13; h=Math.imul(h,1274126177); h^=h>>>16;
+  return (h>>>0)/4294967295;
+}
+function seededRange(seed, min, max){ return min + (max-min)*seededUnit(seed); }
+function jitteredRect(rect, amount, seed){
+  // Used by unprofessional chimney/railing parts while keeping them readable on a tile grid.
+  return {
+    minX: rect.minX + seededRange(seed+':minX', -amount, amount),
+    maxX: rect.maxX + seededRange(seed+':maxX', -amount, amount),
+    minZ: rect.minZ + seededRange(seed+':minZ', -amount, amount),
+    maxZ: rect.maxZ + seededRange(seed+':maxZ', -amount, amount)
+  };
+}
+function addSolidWallRun(faces, rect, side, y0, y1, thickness, tag, extra={}){
+  // Used by tunnels/chimneys so hollows have actual wall thickness instead of paper-thin single faces.
+  const t=Math.max(0.01, thickness);
+  let wallRect;
+  if(side==='north') wallRect={ minX:rect.minX, maxX:rect.maxX, minZ:rect.minZ, maxZ:rect.minZ+t };
+  else if(side==='south') wallRect={ minX:rect.minX, maxX:rect.maxX, minZ:rect.maxZ-t, maxZ:rect.maxZ };
+  else if(side==='east') wallRect={ minX:rect.maxX-t, maxX:rect.maxX, minZ:rect.minZ, maxZ:rect.maxZ };
+  else wallRect={ minX:rect.minX, maxX:rect.minX+t, minZ:rect.minZ, maxZ:rect.maxZ };
+  if(extra.wonkySeed) wallRect=jitteredRect(wallRect, t*0.28, extra.wonkySeed+':wall:'+side);
+  const topY=y1 + (extra.wonkySeed ? seededRange(extra.wonkySeed+':top:'+side, -t*0.18, t*0.34) : 0);
+  addBoxFacesTo(faces, wallRect, y0, topY, tag, { extensionFace:side, solidifiedWall:true, wallThickness:t, ...extra });
+}
+function addWallOpeningFrame(faces, rect, side, y0, y1, thickness, tag, extra={}){
+  // Used by entry tunnels: far/exterior side becomes a thick frame around a near-full-height opening.
+  const t=Math.max(0.01, thickness);
+  const openH=(y1-y0)*0.92;
+  const topY=y1;
+  const lintelBottom=y0+openH;
+  const openW=(side==='north'||side==='south') ? (rect.maxX-rect.minX)*0.82 : (rect.maxZ-rect.minZ)*0.82;
+  const cx=(rect.minX+rect.maxX)/2, cz=(rect.minZ+rect.maxZ)/2;
+  const addFrameBox=(r,a,b,part)=>addBoxFacesTo(faces,r,a,b,tag,{ extensionFace:side, solidifiedWall:true, doorwayFrame:true, doorwayFramePart:part, wallThickness:t, ...extra });
+  if(side==='north' || side==='south'){
+    const z0=side==='north'?rect.minZ:rect.maxZ-t, z1=side==='north'?rect.minZ+t:rect.maxZ;
+    const o0=cx-openW/2, o1=cx+openW/2;
+    if(o0>rect.minX) addFrameBox({minX:rect.minX,maxX:o0,minZ:z0,maxZ:z1},y0,topY,'leftJamb');
+    if(o1<rect.maxX) addFrameBox({minX:o1,maxX:rect.maxX,minZ:z0,maxZ:z1},y0,topY,'rightJamb');
+    addFrameBox({minX:o0,maxX:o1,minZ:z0,maxZ:z1},lintelBottom,topY,'lowLintel');
+  }else{
+    const x0=side==='west'?rect.minX:rect.maxX-t, x1=side==='west'?rect.minX+t:rect.maxX;
+    const o0=cz-openW/2, o1=cz+openW/2;
+    if(o0>rect.minZ) addFrameBox({minX:x0,maxX:x1,minZ:rect.minZ,maxZ:o0},y0,topY,'leftJamb');
+    if(o1<rect.maxZ) addFrameBox({minX:x0,maxX:x1,minZ:o1,maxZ:rect.maxZ},y0,topY,'rightJamb');
+    addFrameBox({minX:x0,maxX:x1,minZ:o0,maxZ:o1},lintelBottom,topY,'lowLintel');
+  }
+}
+function addEntryTunnelTopRimCap(faces, rect, side, y, thickness, tag, extra={}){
+  // Used by roofless entry tunnels: adds the skyward horizontal cap on a wall/portal rim without roofing over the hollow center.
+  const t=Math.max(0.01, thickness);
+  let capRect;
+  if(side==='north') capRect={ minX:rect.minX, maxX:rect.maxX, minZ:rect.minZ, maxZ:rect.minZ+t };
+  else if(side==='south') capRect={ minX:rect.minX, maxX:rect.maxX, minZ:rect.maxZ-t, maxZ:rect.maxZ };
+  else if(side==='east') capRect={ minX:rect.maxX-t, maxX:rect.maxX, minZ:rect.minZ, maxZ:rect.maxZ };
+  else capRect={ minX:rect.minX, maxX:rect.minX+t, minZ:rect.minZ, maxZ:rect.maxZ };
+  const p=(x,y,z)=>new THREE.Vector3(x,y,z);
+  faces.push(addFace([p(capRect.minX,y,capRect.maxZ),p(capRect.maxX,y,capRect.maxZ),p(capRect.maxX,y,capRect.minZ),p(capRect.minX,y,capRect.minZ)], tag, { extensionFace:'topRimCap', rimSide:side, explicitSkywardCap:true, rooflessCenterStillOpen:true, wallThickness:t, ...extra }));
+}
+
+function addFloorCellFace(faces, rect, y, tag, extra={}){
+  // Used by hollow tunnel floors; chimneys intentionally omit floors so the flue continues to ground.
+  const p=(x,y,z)=>new THREE.Vector3(x,y,z);
+  faces.push(addFace([p(rect.minX,y,rect.minZ),p(rect.maxX,y,rect.minZ),p(rect.maxX,y,rect.maxZ),p(rect.minX,y,rect.maxZ)], tag, { extensionFace:'floor', ...extra }));
+}
+function addCeilingCellFace(faces, rect, y, tag, extra={}){
+  // Used by entry tunnels so the tube has a true skyward face after the hollow walls are generated.
+  // The horizontal door/opening faces stay open; only the upward side of each tunnel tile is capped.
+  const p=(x,y,z)=>new THREE.Vector3(x,y,z);
+  faces.push(addFace([p(rect.minX,y,rect.maxZ),p(rect.maxX,y,rect.maxZ),p(rect.maxX,y,rect.minZ),p(rect.minX,y,rect.minZ)], tag, { extensionFace:'ceiling', tunnelSkywardCap:true, ...extra }));
+}
+function nearestBlueCellTo(cells, fromCell){
+  let best=null;
+  for(const k of cells){
+    const c=parseCellKey(k); const d=Math.abs(c.x-fromCell.x)+Math.abs(c.y-fromCell.y);
+    if(!best || d<best.d){ best={...c,d}; }
+  }
+  return best;
+}
+function directionName(dx,dy){ if(dx>0) return 'east'; if(dx<0) return 'west'; if(dy>0) return 'south'; return 'north'; }
+function oppositeSide(side){ return {north:'south',south:'north',east:'west',west:'east'}[side] || 'south'; }
+function makeEntryTunnelCells(){
+  // Green painted cells may be separated from the blue shell by a gap; this fills a straight Manhattan run to the closest blue wall.
+  // Painted green cells are preserved even when they are inside blue structure cells, so an entryway can continue into a room.
+  const out=new Set(entryTunnelSet);
+  const blue=[...footprintSet];
+  if(!blue.length) return out;
+  for(const k of [...entryTunnelSet]){
+    const start=parseCellKey(k), near=nearestBlueCellTo(blue,start);
+    if(!near) continue;
+    let x=start.x, y=start.y;
+    while(x!==near.x){ out.add(cellKey(x,y)); x += near.x>x ? 1 : -1; }
+    while(y!==near.y){ out.add(cellKey(x,y)); y += near.y>y ? 1 : -1; }
+    out.add(cellKey(x,y));
+  }
+  return out;
+}
+function blueAdjacencySides(c){
+  // Used by entry tunnels to decide which end should become the exterior opening.
+  return CARDINAL_DIRS.filter(d=>footprintSet.has(cellKey(c.x+d.dx,c.y+d.dy))).map(d=>d.name);
+}
+function sideAwayFromBlue(c){
+  const adjacent=blueAdjacencySides(c);
+  if(adjacent.length) return oppositeSide(adjacent[0]);
+  const near=nearestBlueCellTo(footprintSet,c);
+  return near ? oppositeSide(directionName(near.x-c.x, near.y-c.y)) : 'south';
+}
+function entryOpeningCandidateForGroup(parsed, groupSet){
+  // Used by entry tunnels so the exterior doorway is chosen from actual exposed sides,
+  // not by picking a far cell and falling back to north/up when the layout is ambiguous.
+  const blueCells=[...footprintSet].map(parseCellKey);
+  const blueCenter=blueCells.length ? blueCells.reduce((acc,c)=>{ acc.x+=c.x+0.5; acc.y+=c.y+0.5; return acc; }, {x:0,y:0}) : null;
+  if(blueCenter){ blueCenter.x/=blueCells.length; blueCenter.y/=blueCells.length; }
+  const groupCenter=parsed.reduce((acc,c)=>{ acc.x+=c.x+0.5; acc.y+=c.y+0.5; return acc; }, {x:0,y:0});
+  groupCenter.x/=Math.max(1,parsed.length); groupCenter.y/=Math.max(1,parsed.length);
+  let best=null;
+  for(const c of parsed){
+    const k=cellKey(c.x,c.y);
+    const inBlue=footprintSet.has(k);
+    const near=nearestBlueCellTo(footprintSet,c);
+    const desiredSide=sideAwayFromBlue(c);
+    for(const d of CARDINAL_DIRS){
+      const nk=cellKey(c.x+d.dx,c.y+d.dy);
+      if(groupSet.has(nk)) continue;
+      if(footprintSet.has(nk)) continue; // never put the exterior opening against a structure wall
+      const sideX=c.x+0.5+d.dx*0.55, sideY=c.y+0.5+d.dy*0.55;
+      const awaySource=near ? {x:near.x+0.5,y:near.y+0.5} : (blueCenter || groupCenter);
+      const vx=sideX-awaySource.x, vy=sideY-awaySource.y;
+      const mag=Math.max(0.0001, Math.hypot(vx,vy));
+      const dot=(vx/mag)*d.dx + (vy/mag)*d.dy;
+      const dist=near ? Math.abs(c.x-near.x)+Math.abs(c.y-near.y) : 0;
+      let score=0;
+      score += dot*12; // side must point away from the structure, not just be open
+      score += dist*3; // exterior end beats the wall-adjacent end
+      score += entryTunnelSet.has(k) ? 5 : 0; // user's painted green tile beats auto-filled connector cells
+      score += inBlue ? -25 : 0; // avoid placing the exterior frame inside the blue structure
+      score += d.name===desiredSide ? 6 : 0;
+      score += d.name==='north' ? -1.5 : 0; // avoid the old upward-looking tie unless north truly scores best
+      const candidate={ c, side:d.name, score, dist, dot };
+      if(!best || candidate.score>best.score) best=candidate;
+    }
+  }
+  if(best) return best;
+  const fallback=parsed.find(c=>!footprintSet.has(cellKey(c.x,c.y))) || parsed[0];
+  return { c:fallback, side:sideAwayFromBlue(fallback), score:-Infinity, fallback:true };
+}
+function groupedCellsByAdjacency(keys){
+  const remaining=new Set(keys), groups=[];
+  while(remaining.size){
+    const first=remaining.values().next().value; remaining.delete(first);
+    const group=[first], stack=[first];
+    while(stack.length){
+      const c=parseCellKey(stack.pop());
+      for(const {dx,dy} of CARDINAL_DIRS){
+        const nk=cellKey(c.x+dx,c.y+dy);
+        if(remaining.has(nk)){ remaining.delete(nk); stack.push(nk); group.push(nk); }
+      }
+    }
+    groups.push(group);
+  }
+  return groups;
+}
+function nearestPorchDirection(c){
+  // Used by tan stair tiles: the high side of the stair faces the adjacent porch/deck tile.
+  for(const d of CARDINAL_DIRS){ if(porchSet.has(cellKey(c.x+d.dx,c.y+d.dy))) return d; }
+  for(const d of CARDINAL_DIRS){ if(footprintSet.has(cellKey(c.x+d.dx,c.y+d.dy))) return d; }
+  return { name:'south', dx:0, dy:1 };
+}
+function boundaryRunCellsThroughAnchor(parsed, groupSet, side, anchor){
+  // Used by entry tunnels: a multi-tile mouth becomes one continuous framed opening, not one tiny door per cell.
+  const exposed = parsed.filter(c=>{
+    const d=CARDINAL_DIRS.find(dd=>dd.name===side);
+    const nk=cellKey(c.x+d.dx,c.y+d.dy);
+    return !groupSet.has(nk) && !footprintSet.has(nk) && !footprintSet.has(cellKey(c.x,c.y));
+  });
+  const anchorKey=cellKey(anchor.x, anchor.y);
+  if(!exposed.some(c=>cellKey(c.x,c.y)===anchorKey)) return [anchor];
+  if(side==='north' || side==='south'){
+    const y=anchor.y;
+    const xs=new Set(exposed.filter(c=>c.y===y).map(c=>c.x));
+    let minX=anchor.x, maxX=anchor.x;
+    while(xs.has(minX-1)) minX--;
+    while(xs.has(maxX+1)) maxX++;
+    return Array.from({length:maxX-minX+1},(_,i)=>({x:minX+i,y}));
+  }
+  const x=anchor.x;
+  const ys=new Set(exposed.filter(c=>c.x===x).map(c=>c.y));
+  let minY=anchor.y, maxY=anchor.y;
+  while(ys.has(minY-1)) minY--;
+  while(ys.has(maxY+1)) maxY++;
+  return Array.from({length:maxY-minY+1},(_,i)=>({x,y:minY+i}));
+}
+function rectForCellRun(info, cells){
+  // Used by continuous extension wall runs to turn adjacent grid cells into one uninterrupted rectangle.
+  let minX=Infinity,minZ=Infinity,maxX=-Infinity,maxZ=-Infinity;
+  for(const c of cells){
+    const r=info.cellRect(c.x,c.y);
+    minX=Math.min(minX,r.minX); maxX=Math.max(maxX,r.maxX);
+    minZ=Math.min(minZ,r.minZ); maxZ=Math.max(maxZ,r.maxZ);
+  }
+  return {minX,maxX,minZ,maxZ};
+}
+function contiguousBoundaryRuns(cells, side){
+  // Used by entry tunnel side walls: adjacent boundary cells fuse into one long wall block.
+  const out=[];
+  if(side==='north' || side==='south'){
+    const byY=new Map();
+    for(const c of cells){ if(!byY.has(c.y)) byY.set(c.y,[]); byY.get(c.y).push(c); }
+    for(const [y,row] of byY){
+      const xs=[...new Set(row.map(c=>c.x))].sort((a,b)=>a-b);
+      let run=[];
+      for(const x of xs){
+        if(!run.length || x===run[run.length-1].x+1) run.push({x,y});
+        else { out.push(run); run=[{x,y}]; }
+      }
+      if(run.length) out.push(run);
+    }
+  }else{
+    const byX=new Map();
+    for(const c of cells){ if(!byX.has(c.x)) byX.set(c.x,[]); byX.get(c.x).push(c); }
+    for(const [x,col] of byX){
+      const ys=[...new Set(col.map(c=>c.y))].sort((a,b)=>a-b);
+      let run=[];
+      for(const y of ys){
+        if(!run.length || y===run[run.length-1].y+1) run.push({x,y});
+        else { out.push(run); run=[{x,y}]; }
+      }
+      if(run.length) out.push(run);
+    }
+  }
+  return out;
+}
+function addEntryTunnelExtensions(faces, info, y0, y1){
+  const tunnelCells=makeEntryTunnelCells();
+  const groups=groupedCellsByAdjacency([...tunnelCells]);
+  const wallT=Math.max(0.06, info.tile*0.13);
+  for(const group of groups){
+    const groupSet=new Set(group);
+    const parsed=group.map(parseCellKey);
+    const opening=entryOpeningCandidateForGroup(parsed, groupSet);
+    const openingSide=opening.side;
+    const openingRun=boundaryRunCellsThroughAnchor(parsed, groupSet, openingSide, opening.c);
+    const openingRunSet=new Set(openingRun.map(c=>cellKey(c.x,c.y)));
+    const openingRect=rectForCellRun(info, openingRun);
+    for(const c of parsed){
+      const k=cellKey(c.x,c.y);
+      const inBlue=footprintSet.has(k);
+      const rect=info.cellRect(c.x,c.y);
+      addFloorCellFace(faces, rect, y0+0.006, 'entryTunnel', { extensionType:'entryTunnel', sourceTile:{x:c.x,y:c.y}, generatedConnectionRun:!entryTunnelSet.has(k), continuesIntoStructure:inBlue, fusedHollow:true, continuousWhenAdjacent:true, solidifiedWalls:true, openTop:false });
+      addCeilingCellFace(faces, rect, y1+0.008, 'entryTunnel', { extensionType:'entryTunnel', sourceTile:{x:c.x,y:c.y}, generatedConnectionRun:!entryTunnelSet.has(k), continuesIntoStructure:inBlue, fusedHollow:true, continuousWhenAdjacent:true, solidifiedWalls:true, skywardFaceClosed:true, horizontalOpeningsRemainOpen:true, openTop:false });
+    }
+    addWallOpeningFrame(faces, openingRect, openingSide, y0, y1, wallT, 'entryTunnel', { extensionType:'entryTunnel', sourceTile:{x:opening.c.x,y:opening.c.y}, exteriorEntryOpening:true, continuousMultiTileOpening:openingRun.length>1, openingRunTiles:openingRun.length, openingFacesAwayFromAdjacentWall:true, nearFullHeightOpening:true, generatedConnectionRun:!entryTunnelSet.has(cellKey(opening.c.x,opening.c.y)), fusedHollow:true, continuousWhenAdjacent:true, solidifiedWalls:true, openTop:true });
+    addEntryTunnelTopRimCap(faces, openingRect, openingSide, y1+0.006, wallT, 'entryTunnel', { extensionType:'entryTunnel', sourceTile:{x:opening.c.x,y:opening.c.y}, exteriorEntryOpening:true, continuousMultiTileOpening:openingRun.length>1, openingRunTiles:openingRun.length, explicitOpeningTopCap:true, fusedHollow:true, continuousWhenAdjacent:true, solidifiedWalls:true, openTop:true });
+    for(const d of CARDINAL_DIRS){
+      const sideCells=[];
+      const openTransitionCapCells=[]; // Used where the tunnel continues through a blue wall: keep the top rim visible even though the doorway is open.
+      for(const c of parsed){
+        const k=cellKey(c.x,c.y);
+        const inBlue=footprintSet.has(k);
+        const nk=cellKey(c.x+d.dx,c.y+d.dy);
+        if(groupSet.has(nk)) continue; // shared green/auto-run edge: keep the hollow continuous
+        const neighborIsBlue=footprintSet.has(nk);
+        if(neighborIsBlue && !inBlue){
+          openTransitionCapCells.push(c);
+          continue; // outside-to-blue edge stays open; the blue wall gets its own portal cut.
+        }
+        if(d.name===openingSide && openingRunSet.has(k)) continue; // one continuous framed mouth already handles this edge
+        sideCells.push(c); // includes blue interior tunnel cells, so painted entries can visibly continue into the body.
+      }
+      for(const run of contiguousBoundaryRuns(sideCells, d.name)){
+        const rect=rectForCellRun(info, run);
+        addSolidWallRun(faces, rect, d.name, y0, y1, wallT, 'entryTunnel', { extensionType:'entryTunnel', sourceTile:{x:run[0].x,y:run[0].y}, wallRunTiles:run.length, continuousWhenAdjacent:run.length>1, generatedConnectionRun:run.some(c=>!entryTunnelSet.has(cellKey(c.x,c.y))), fusedHollow:true, solidifiedWalls:true, openTop:true });
+        addEntryTunnelTopRimCap(faces, rect, d.name, y1+0.002, wallT, 'entryTunnel', { extensionType:'entryTunnel', sourceTile:{x:run[0].x,y:run[0].y}, wallRunTiles:run.length, continuousWhenAdjacent:run.length>1, generatedConnectionRun:run.some(c=>!entryTunnelSet.has(cellKey(c.x,c.y))), fusedHollow:true, solidifiedWalls:true, openTop:true, duplicateSafeTopRim:true });
+      }
+      for(const run of contiguousBoundaryRuns(openTransitionCapCells, d.name)){
+        const rect=rectForCellRun(info, run);
+        addEntryTunnelTopRimCap(faces, rect, d.name, y1+0.004, wallT, 'entryTunnel', { extensionType:'entryTunnel', sourceTile:{x:run[0].x,y:run[0].y}, wallRunTiles:run.length, openTransitionIntoBlueStructure:true, portalContinuesIntoStructure:true, fusedHollow:true, solidifiedWalls:true, openTop:true });
+      }
+    }
+  }
+  return groups.length;
+}
+function addChimneyExtensions(faces, info, y0, yBaseTop, yRoofTop){
+  const groups=groupedCellsByAdjacency([...chimneySet]);
+  const wallT=Math.max(0.07, info.tile*0.15);
+  for(const group of groups){
+    const groupSet=new Set(group);
+    for(const k of group){
+      const c=parseCellKey(k), rect=info.cellRect(c.x,c.y);
+      const wonkySeed=`chimney:${c.x},${c.y}`;
+      for(const d of CARDINAL_DIRS){
+        const nk=cellKey(c.x+d.dx,c.y+d.dy);
+        if(groupSet.has(nk)) continue;
+        addSolidWallRun(faces, rect, d.name, y0, yRoofTop + info.tile*0.9, wallT, 'chimney', { extensionType:'chimney', sourceTile:{x:c.x,y:c.y}, fusedHollow:true, solidifiedWalls:true, flueContinuesToGround:true, openTop:true, wonkySeed });
+      }
+    }
+  }
+  return groups.length;
+}
+function addPorchExtensions(faces, info, y0){
+  const deckH=Math.max(0.08, info.tile*0.18);
+  for(const k of porchSet){ const c=parseCellKey(k); addBoxFacesTo(faces, info.cellRect(c.x,c.y), y0, y0+deckH, 'porch', { extensionType:'porch', sourceTile:{x:c.x,y:c.y}, deckHeight:deckH }); }
+  return porchSet.size;
+}
+function addPorchStairExtensions(faces, info, y0){
+  const steps=3, totalH=Math.max(0.08, info.tile*0.18);
+  for(const k of porchStairSet){
+    const c=parseCellKey(k), r=info.cellRect(c.x,c.y), dir=nearestPorchDirection(c);
+    const w=r.maxX-r.minX, d=r.maxZ-r.minZ;
+    for(let i=0;i<steps;i++){
+      const t0=i/steps, t1=(i+1)/steps;
+      let rect;
+      if(dir.name==='east') rect={ minX:r.minX+w*t0, maxX:r.minX+w*t1, minZ:r.minZ, maxZ:r.maxZ };
+      else if(dir.name==='west') rect={ minX:r.maxX-w*t1, maxX:r.maxX-w*t0, minZ:r.minZ, maxZ:r.maxZ };
+      else if(dir.name==='south') rect={ minX:r.minX, maxX:r.maxX, minZ:r.minZ+d*t0, maxZ:r.minZ+d*t1 };
+      else rect={ minX:r.minX, maxX:r.maxX, minZ:r.maxZ-d*t1, maxZ:r.maxZ-d*t0 };
+      addBoxFacesTo(faces, rect, y0, y0+totalH*(i+1)/steps, 'porchStair', { extensionType:'porchStair', sourceTile:{x:c.x,y:c.y}, stairStep:i+1, stairFacesToward:dir.name });
+    }
+  }
+  return porchStairSet.size;
+}
+function addRailingExtensions(faces, info, y0){
+  const deckH=Math.max(0.08, info.tile*0.18);
+  const postW=info.tile*0.16, railW=info.tile*0.12;
+  const railGap=Math.max(info.tile*0.10, railW*1.35);
+  const lowerRailCenter=info.tile*0.40;
+  const upperRailCenter=info.tile*0.62;
+  const postBottomExtra=railGap;
+  const postTopExtra=railGap;
+  const postH=upperRailCenter + postTopExtra + railW/2;
+  const addWonkyRectCentered=(cx,cz,w,d,base,top,extra)=>{
+    const seed=extra.wonkySeed || `${extra.railingPart||'rail'}:${cx.toFixed(2)},${cz.toFixed(2)}`;
+    const offsetX=seededRange(seed+':offsetX',-info.tile*0.025,info.tile*0.025);
+    const offsetZ=seededRange(seed+':offsetZ',-info.tile*0.025,info.tile*0.025);
+    const rect=jitteredRect({minX:cx-w/2+offsetX,maxX:cx+w/2+offsetX,minZ:cz-d/2+offsetZ,maxZ:cz+d/2+offsetZ}, info.tile*0.018, seed+':rect');
+    addBoxFacesTo(faces, rect, base+seededRange(seed+':base',-info.tile*0.01,info.tile*0.012), top+seededRange(seed+':top',-info.tile*0.018,info.tile*0.024), 'railing', extra);
+  };
+  const postBaseFor=(x,y)=>y0+(porchSet.has(cellKey(x,y))?deckH:0);
+  for(const k of railingSet){
+    const c=parseCellKey(k), r=info.cellRect(c.x,c.y), cx=(r.minX+r.maxX)/2, cz=(r.minZ+r.maxZ)/2;
+    const base=postBaseFor(c.x,c.y);
+    const postSeed=`railing:post:${c.x},${c.y}`;
+    addWonkyRectCentered(cx,cz,postW,postW,base,base+postH,{ extensionType:'railing', sourceTile:{x:c.x,y:c.y}, railingPart:'post', raisedOnPorch:porchSet.has(k), shortenedBelowRails:true, wonkyHandBuilt:true, wonkySeed:postSeed });
+    for(const d of CARDINAL_DIRS){
+      const nk=cellKey(c.x+d.dx,c.y+d.dy);
+      if(!railingSet.has(nk)) continue;
+      if(d.dx<0 || d.dy<0) continue; // Draw each connector once from west/north tile to east/south neighbor.
+      const nb=parseCellKey(nk);
+      const nBase=postBaseFor(nb.x,nb.y);
+      const railBase=Math.max(base,nBase);
+      const low=railBase+lowerRailCenter-railW/2, high=railBase+upperRailCenter-railW/2;
+      const connectorSeed=`railing:connector:${c.x},${c.y}->${nb.x},${nb.y}`;
+      if(d.dx!==0){
+        const x0=cx, x1=cx+info.tile*d.dx, mid=(x0+x1)/2;
+        addWonkyRectCentered(mid,cz,Math.abs(x1-x0),railW,low,low+railW,{ extensionType:'railing', sourceTile:{x:c.x,y:c.y}, railingPart:'horizontalConnectorLow', connectsTo:{x:nb.x,y:nb.y}, raisedOnPorch:porchSet.has(k)||porchSet.has(nk), shortenedPostReference:true, wonkyHandBuilt:true, wonkySeed:connectorSeed+':low' });
+        addWonkyRectCentered(mid,cz,Math.abs(x1-x0),railW,high,high+railW,{ extensionType:'railing', sourceTile:{x:c.x,y:c.y}, railingPart:'horizontalConnectorHigh', connectsTo:{x:nb.x,y:nb.y}, raisedOnPorch:porchSet.has(k)||porchSet.has(nk), shortenedPostReference:true, wonkyHandBuilt:true, wonkySeed:connectorSeed+':high' });
+      }else{
+        const z0=cz, z1=cz+info.tile*d.dy, mid=(z0+z1)/2;
+        addWonkyRectCentered(cx,mid,railW,Math.abs(z1-z0),low,low+railW,{ extensionType:'railing', sourceTile:{x:c.x,y:c.y}, railingPart:'horizontalConnectorLow', connectsTo:{x:nb.x,y:nb.y}, raisedOnPorch:porchSet.has(k)||porchSet.has(nk), shortenedPostReference:true, wonkyHandBuilt:true, wonkySeed:connectorSeed+':low' });
+        addWonkyRectCentered(cx,mid,railW,Math.abs(z1-z0),high,high+railW,{ extensionType:'railing', sourceTile:{x:c.x,y:c.y}, railingPart:'horizontalConnectorHigh', connectsTo:{x:nb.x,y:nb.y}, raisedOnPorch:porchSet.has(k)||porchSet.has(nk), shortenedPostReference:true, wonkyHandBuilt:true, wonkySeed:connectorSeed+':high' });
+      }
+    }
+  }
+  return railingSet.size;
+}
+function addHouseExtensionsToFaces(faces, info, y0, baseHeight, roofHeight){
+  // Central extension pass used by plain/flat/Highland generation. Keeps add-ons out of the roof sectioning math.
+  const yBaseTop=y0+baseHeight;
+  const yRoofTop=yBaseTop+Math.max(0,roofHeight||0);
+  const entryCount=addEntryTunnelExtensions(faces, info, y0, y0+Math.max(info.tile*1.05, baseHeight*0.82));
+  const chimneyCount=addChimneyExtensions(faces, info, y0, yBaseTop, yRoofTop);
+  const porchCount=addPorchExtensions(faces, info, y0);
+  const stairCount=addPorchStairExtensions(faces, info, y0);
+  const railingCount=addRailingExtensions(faces, info, y0);
+  state.piece.extensionGeneration={ entryTunnelGroups:entryCount, chimneyGroups:chimneyCount, porches:porchCount, porchStairs:stairCount, railings:railingCount, generatedAt:new Date().toISOString() };
+}
+function generatePlainBaseFromFootprint(recordUndo=true){
+  const info=footprintInfo(); if(!info){ log('Paint footprint cells before generating a base.', 'warn'); return false; }
+  if(recordUndo) pushUndo('Generate plain base from blue footprint');
+  const y0=finite($('groundY').value,0), y1=y0+finite($('baseHeight').value,2.6);
+  state.piece.base.height=finite($('baseHeight').value,2.6); state.piece.base.wallThickness=finite($('wallThickness').value,.15); state.piece.base.groundY=y0;
+  state.piece.base.faces = addFootprintShellFaces(info,y0,y1,'wall','ceiling','floor');
+  addHouseExtensionsToFaces(state.piece.base.faces, info, y0, y1-y0, 0);
+  state.selectedFaceIds.clear(); rebuildFaceMeshes(); frameScene(); log(`Generated exact blue-footprint prism plus extensions: ${info.cells.length} blue cells, ${entryTunnelSet.size} green entry tiles, ${chimneySet.size} chimneys, ${porchSet.size} porches, ${porchStairSet.size} stair tiles, ${railingSet.size} railing tiles.`); return true;
+}
+function generateFlatSlabFromFootprint(recordUndo=true){
+  const info=footprintInfo(); if(!info){ log('Paint footprint cells before generating a slab.', 'warn'); return false; }
+  if(recordUndo) pushUndo('Generate flat slab from blue footprint');
+  const h=Math.max(0.08,state.tileSize*0.12), y0=finite($('groundY').value,0), y1=y0+h;
+  $('baseHeight').value=h.toFixed(2);
+  state.piece.base.height=h; state.piece.base.wallThickness=0; state.piece.base.groundY=y0;
+  state.piece.base.faces=addFootprintShellFaces(info,y0,y1,'wall','ceiling','floor');
+  addHouseExtensionsToFaces(state.piece.base.faces, info, y0, y1-y0, 0);
+  state.selectedFaceIds.clear(); rebuildFaceMeshes(); frameScene(); log(`Generated exact blue-footprint slab plus extensions: ${info.cells.length} blue cells, ${entryTunnelSet.size} green entry tiles, ${chimneySet.size} chimneys, ${porchSet.size} porches, ${porchStairSet.size} stair tiles, ${railingSet.size} railing tiles.`); return true;
+}
+function generateHighlandBaseFromFootprint(recordUndo=true){
+  const info=footprintInfo(); if(!info){ log('Paint footprint cells before generating Highland architecture.', 'warn'); return false; }
+  if(recordUndo) pushUndo('Generate Highland architecture from blue footprint');
+  const tile=Math.max(0.0001,state.tileSize||1);
+  const y0=finite($('groundY').value,0);
+  const baseHeight=1.4*tile; // Highland default: shortened body, now following the exact blue footprint perimeter.
+  const roofHeight=1.18*tile;
+  $('baseHeight').value=baseHeight.toFixed(2);
+  $('scaleU').value='0.85'; $('scaleV').value='0.85';
+  const roofCfg=ensureRoofConfig();
+  // Highland default roof tuning. These match the latest user-approved Highland settings.
+  Object.assign(roofCfg, {
+    tubeRadius:0.08,
+    tubeSpacing:0.5,
+    overhang:1.25,
+    wallOriginReach:true,
+    direction:'u',
+    lift:0.04,
+    flipX:true,
+    flipY:false,
+    flipZ:false,
+    shingleScaleX:1.2,
+    shingleScaleY:1.2,
+    shingleScaleZ:2,
+    shingleRotX:-10,
+    shingleRotZ:0,
+    peakRotateAway:true,
+    secondLayer:true,
+    secondLayerAcross:0.25,
+    secondLayerLift:0,
+    secondLayerWallOriginReach:false,
+    secondLayerOverhang:1,
+    secondLayerShingleScaleX:1.5,
+    secondLayerShingleScaleY:1.2,
+    secondLayerShingleScaleZ:2,
+    secondLayerShingleRotX:0,
+    secondLayerPeakRotateAway:false,
+    secondLayerFlipX:true,
+    secondLayerFlipY:false,
+    secondLayerFlipZ:false,
+    peakRotate:true,
+    peakRotateStrength:0.05,
+    peakRotateFalloff:0,
+    highlandInterlockOffset:0.25
+  });
+  syncRoofInputsFromPiece();
+  state.piece.base.height=baseHeight; state.piece.base.wallThickness=finite($('wallThickness').value,.15); state.piece.base.groundY=y0;
+  const yBaseTop=y0+baseHeight;
+  const faces=[];
+  const roofSections=chooseCrossGableRoofSections(info);
+  for(const sec of roofSections){
+    const bottomRect=sectionWorldRect(info, sec, 0);
+    const eaveRect=sectionTopRectFromBottomRect(bottomRect, HIGHLAND_BODY_TOP_SCALE);
+    addHighlandSectionFrustumBodyFaces(faces, bottomRect, eaveRect, y0, yBaseTop, sec.role || 'roof_wing', info);
+    const sectionSpan=roofSectionSpanTiles(sec);
+    const sectionRoofHeight=addGableRoofSectionFaces(faces, eaveRect, yBaseTop, roofHeight, sec.axis, roofCfg, sec.role || 'roof_wing', bottomRect, baseHeight);
+    sec.roofHeight=Number(sectionRoofHeight.toFixed(4));
+    sec.roofSpan=sectionSpan;
+    sec.highlandBodyTopScale=HIGHLAND_BODY_TOP_SCALE; // Used by export/debug to show the body/roof section was generated as a frustum.
+    sec.roofBaseAlignedToCeiling=true;
+    sec.continuousFrustumSlope=true;
+    sec.triangularPrismRidge=true;
+  }
+  addHouseExtensionsToFaces(faces, info, y0, baseHeight, roofHeight);
+  state.piece.base.faces=faces;
+  state.piece.preset='highland';
+  state.piece.roof.crossGableSections = roofSections.map(sec => ({
+    axis:sec.axis, x0:sec.x0, x1:sec.x1, y0:sec.y0, y1:sec.y1, role:sec.role,
+    roofSpan:sec.roofSpan, roofHeight:sec.roofHeight, highlandBodyTopScale:sec.highlandBodyTopScale, roofBaseAlignedToCeiling:!!sec.roofBaseAlignedToCeiling, continuousFrustumSlope:!!sec.continuousFrustumSlope, triangularPrismRidge:!!sec.triangularPrismRidge,
+    clipToPrimaryRidge:!!sec.clipToPrimaryRidge, clipSide:sec.clipSide || '',
+    originalX0:sec.originalX0, originalX1:sec.originalX1, originalY0:sec.originalY0, originalY1:sec.originalY1
+  }));
+  state.selectedFaceIds.clear();
+  syncRoofFromInputs(); rebuildFaceMeshes(); frameScene();
+  log(`Generated Highland frustum architecture plus extensions: ${info.cells.length} blue cells, ${roofSections.length} roof section(s), ${entryTunnelSet.size} green entry tiles, ${chimneySet.size} chimneys, ${porchSet.size} porches, ${porchStairSet.size} stair tiles, ${railingSet.size} railing tiles. Entry tunnels are open-top rectangular runs with continuous exterior mouths, explicit skyward rim caps, visible blue-interior corridor walls, and near-full-height portal cuts through Highland body walls.`);
+  return true;
+}
+function applyBasePreset(preset=$('basePreset')?.value || 'highland', recordUndo=true){
+  if(recordUndo) pushUndo(`Apply ${preset} preset`);
+  if(!footprintSet.size && preset!=='empty') seedDefaultHighlandFootprint();
+  state.piece.preset=preset;
+  if($('basePreset')) $('basePreset').value=preset;
+  drawGrid(); rebuildFootprintOverlay();
+  if(preset==='empty'){
+    state.piece.base.faces=[]; state.selectedFaceIds.clear(); rebuildFaceMeshes(); refreshExport(); log('Applied empty/manual preset.'); return true;
+  }
+  if(preset==='plain') return generatePlainBaseFromFootprint(false);
+  if(preset==='flat') return generateFlatSlabFromFootprint(false);
+  return generateHighlandBaseFromFootprint(false);
+}
+function generateBaseFromFootprint(){
+  const preset = $('basePreset')?.value || 'highland';
+  return applyBasePreset(preset, true);
+}
+function frameScene(){ const b=new THREE.Box3().setFromObject(root); if(!b.isEmpty()){ const s=b.getSize(new THREE.Vector3()).length(); const c=b.getCenter(new THREE.Vector3()); controls.target.copy(c); camera.position.copy(c.clone().add(new THREE.Vector3(s*.55, s*.45, s*.65))); camera.near=Math.max(.01,s/1000); camera.far=Math.max(100,s*10); camera.updateProjectionMatrix(); } }
+function selectedFaceGizmoCenter(){
+  const faces=selectedFaces();
+  if(!faces.length) return null;
+  const c=new THREE.Vector3(); let count=0;
+  for(const f of faces){ for(const p of f.v){ c.add(new THREE.Vector3(...p)); count++; } }
+  return count ? c.multiplyScalar(1/count) : null;
+}
+function detachFaceGizmo(){
+  if(activeTransformTarget==='face') transform.detach();
+  faceGizmoProxy.visible=false;
+  activeTransformTarget = activeTransformTarget==='face' ? null : activeTransformTarget;
+}
+function attachFaceGizmo(){
+  const c=selectedFaceGizmoCenter();
+  if(!c){ detachFaceGizmo(); return; }
+  faceGizmoProxy.position.copy(c);
+  faceGizmoProxy.rotation.set(0,0,0);
+  faceGizmoProxy.scale.set(1,1,1);
+  faceGizmoProxy.visible=true;
+  faceGizmoProxy.updateMatrixWorld(true);
+  faceGizmoLastMatrix.copy(faceGizmoProxy.matrixWorld);
+  activeTransformTarget='face';
+  transform.setSpace('world');
+  transform.attach(faceGizmoProxy);
+}
+function refreshFaceGizmoAfterEdit(){
+  if(state.selectedFaceIds.size && !transform.dragging) attachFaceGizmo();
+}
+function applyFaceGizmoDelta(){
+  const faces=selectedFaces();
+  if(!faces.length) return;
+  faceGizmoProxy.updateMatrixWorld(true);
+  const current=faceGizmoProxy.matrixWorld.clone();
+  const previousInv=faceGizmoLastMatrix.clone().invert();
+  const delta=current.clone().multiply(previousInv);
+  transformSelectedFacesLinked(old => old.clone().applyMatrix4(delta));
+  faceGizmoLastMatrix.copy(current);
+  rebuildFaceMeshes();
+  updateSelectionUi();
+  refreshExport();
+}
+function selectFace(id, additive=false){ if(!additive) state.selectedFaceIds.clear(); if(state.selectedFaceIds.has(id) && additive) state.selectedFaceIds.delete(id); else state.selectedFaceIds.add(id); state.selectedAssetId=null; rebuildFaceMeshes(); renderAssetList(); attachFaceGizmo(); }
+function updateSelectionUi(){ const ids=[...state.selectedFaceIds]; $('faceInfo').textContent = ids.length ? `Selected face(s): ${ids.join(', ')}` : 'Selected face: none'; $('selectionStats').textContent = state.selectedAssetId ? `Asset: ${selectedAsset()?.name||state.selectedAssetId}` : (ids.length ? `Faces: ${ids.length}` : 'Selection: none'); }
+function selectedFaces(){ return state.piece.base.faces.filter(f=>state.selectedFaceIds.has(f.id)); }
+function replaceFace(id, newFaces){ const ix=state.piece.base.faces.findIndex(f=>f.id===id); if(ix<0)return; state.piece.base.faces.splice(ix,1,...newFaces); }
+
+// Treat coincident face vertices as welded while editing.
+// Used by: move/scale/gizmo face transforms so scaling a ceiling also pulls the shared wall-top corners.
+const WELD_EPS = 1e-5;
+function vertexKey(v){ return `${Math.round(v.x/WELD_EPS)},${Math.round(v.y/WELD_EPS)},${Math.round(v.z/WELD_EPS)}`; }
+function averageVectorList(list){ const out=new THREE.Vector3(); for(const v of list) out.add(v); return out.multiplyScalar(1/Math.max(1,list.length)); }
+function applyLinkedVertexTargets(targetLists){
+  const targets = new Map();
+  for(const [key,list] of targetLists.entries()) targets.set(key, averageVectorList(list));
+  let linkedTouched = 0;
+  for(const f of state.piece.base.faces){
+    f.v = f.v.map(p=>{
+      const old = new THREE.Vector3(...p);
+      const next = targets.get(vertexKey(old));
+      if(next){ linkedTouched++; return [next.x,next.y,next.z]; }
+      return p;
+    });
+  }
+  return linkedTouched;
+}
+function transformSelectedFacesLinked(transformPoint){
+  const faces = selectedFaces();
+  const targetLists = new Map();
+  for(const f of faces){
+    for(let i=0;i<f.v.length;i++){
+      const old = new THREE.Vector3(...f.v[i]);
+      const next = transformPoint(old, f, i);
+      const key = vertexKey(old);
+      if(!targetLists.has(key)) targetLists.set(key, []);
+      targetLists.get(key).push(next);
+    }
+  }
+  return applyLinkedVertexTargets(targetLists);
+}
+function subdivideFace(face,nx,ny){
+  const v00=new THREE.Vector3(...face.v[0]), v10=new THREE.Vector3(...face.v[1]), v11=new THREE.Vector3(...face.v[2]), v01=new THREE.Vector3(...face.v[3]);
+  const interp=(u,v)=>v00.clone().multiplyScalar((1-u)*(1-v)).add(v10.clone().multiplyScalar(u*(1-v))).add(v11.clone().multiplyScalar(u*v)).add(v01.clone().multiplyScalar((1-u)*v));
+  const out=[]; for(let y=0;y<ny;y++) for(let x=0;x<nx;x++){ const u0=x/nx,u1=(x+1)/nx,v0=y/ny,v1=(y+1)/ny; out.push(addFace([interp(u0,v0),interp(u1,v0),interp(u1,v1),interp(u0,v1)], face.tag)); } return out;
+}
+function subdivideSelected(nx,ny){ const faces=selectedFaces(); if(!faces.length){log('Select at least one face first.','warn');return;} pushUndo(`Subdivide ${nx}×${ny}`); state.selectedFaceIds.clear(); for(const f of faces){ const children=subdivideFace(f,nx,ny); replaceFace(f.id,children); children.forEach(c=>state.selectedFaceIds.add(c.id)); } rebuildFaceMeshes(); refreshFaceGizmoAfterEdit(); log(`Subdivided ${faces.length} face(s) into ${nx}×${ny}.`); }
+function extrudeSelected(){ const dist=finite($('extrudeDist').value,.35); const faces=selectedFaces(); if(!faces.length){log('Select at least one face first.','warn');return;} pushUndo('Extrude selected faces'); state.selectedFaceIds.clear(); for(const f of faces){ const n=faceNormal(f).multiplyScalar(dist); const old=f.v.map(p=>new THREE.Vector3(...p)); const nu=old.map(p=>p.clone().add(n)); const cap=addFace(nu,f.tag); const sides=[]; for(let i=0;i<4;i++){ const j=(i+1)%4; sides.push(addFace([old[i],old[j],nu[j],nu[i]], f.tag==='door'?'door':'wall')); } replaceFace(f.id,[f,cap,...sides]); state.selectedFaceIds.add(cap.id); } rebuildFaceMeshes(); refreshFaceGizmoAfterEdit(); log(`Extruded ${faces.length} face(s) by ${dist}.`); }
+function moveSelected(){ const delta=new THREE.Vector3(finite($('moveX').value,0),finite($('moveY').value,0),finite($('moveZ').value,0)); const faces=selectedFaces(); if(!faces.length){log('Select at least one face first.','warn');return;} pushUndo('Move selected face vertices'); const linkedTouched=transformSelectedFacesLinked(old=>old.clone().add(delta)); rebuildFaceMeshes(); refreshFaceGizmoAfterEdit(); log(`Moved ${faces.length} face(s) and ${linkedTouched} linked vertices by ${delta.toArray().map(n=>n.toFixed(2)).join(', ')}.`); }
+function nearestGridSpan(length){
+  // Used by tileRelativeScaleFactors() to find the grid-aligned size this face most likely represents.
+  const tile = Math.max(0.0001, state.tileSize || 1);
+  return Math.max(tile, Math.round(Math.abs(length) / tile) * tile);
+}
+function faceLocalDimensions(face){
+  // Used by tile-relative face scaling to measure the current selected face along local U and V.
+  const v0 = new THREE.Vector3(...face.v[0]);
+  const v1 = new THREE.Vector3(...face.v[1]);
+  const v3 = new THREE.Vector3(...face.v[3]);
+  return { uLen: v1.distanceTo(v0), vLen: v3.distanceTo(v0) };
+}
+function tileRelativeScaleFactors(face, targetUGridRatio, targetVGridRatio){
+  // Used by scaleSelected(); converts grid-relative target values into actual current-geometry multipliers.
+  const { uLen, vLen } = faceLocalDimensions(face);
+  const targetULen = nearestGridSpan(uLen) * targetUGridRatio;
+  const targetVLen = nearestGridSpan(vLen) * targetVGridRatio;
+  return {
+    uFactor: uLen > 1e-7 ? targetULen / uLen : 1,
+    vFactor: vLen > 1e-7 ? targetVLen / vLen : 1,
+    targetULen,
+    targetVLen
+  };
+}
+function scaleSelected(){
+  const targetUGridRatio = finite($('scaleU').value,1);
+  const targetVGridRatio = finite($('scaleV').value,1);
+  const faces=selectedFaces();
+  if(!faces.length){log('Select at least one face first.','warn');return;}
+  pushUndo('Scale selected face vertices');
+  const targetSummaries = [];
+  const linkedTouched=transformSelectedFacesLinked((old,f)=>{
+    const c=faceCenter(f), {u,v}=faceBasis(f);
+    const {uFactor, vFactor, targetULen, targetVLen} = tileRelativeScaleFactors(f, targetUGridRatio, targetVGridRatio);
+    if(targetSummaries.length < faces.length) targetSummaries.push(`${targetULen.toFixed(2)}×${targetVLen.toFixed(2)}`);
+    const rel=old.clone().sub(c);
+    const du=rel.dot(u), dv=rel.dot(v);
+    const rest=rel.clone().sub(u.clone().multiplyScalar(du)).sub(v.clone().multiplyScalar(dv));
+    return c.clone().add(u.clone().multiplyScalar(du*uFactor)).add(v.clone().multiplyScalar(dv*vFactor)).add(rest);
+  });
+  rebuildFaceMeshes();
+  refreshFaceGizmoAfterEdit();
+  log(`Set ${faces.length} face(s) to ${targetUGridRatio}×/${targetVGridRatio}× of nearest grid span (${targetSummaries.join('; ')} world units) and updated ${linkedTouched} linked vertices.`);
+}
+function setSelectedTag(tag){ const faces=selectedFaces(); if(!faces.length){log('Select at least one face first.','warn');return;} pushUndo(tag ? `Tag faces as ${tag}` : 'Clear face tags'); for(const f of faces) f.tag=tag; rebuildFaceMeshes(); refreshFaceGizmoAfterEdit(); log(tag ? `Tagged ${faces.length} face(s) as ${tag}.` : `Cleared tag on ${faces.length} face(s).`); }
+
+function ensureRoofConfig(){
+  // Used by roof preview/export so old v1-v4 JSON files get safe defaults.
+  if(!state.piece.roof) state.piece.roof={};
+  const r=state.piece.roof;
+  r.tubeRadius = finite(r.tubeRadius,0.08);
+  r.tubeSpacing = finite(r.tubeSpacing,0.18);
+  r.overhang = finite(r.overhang,1);
+  if(typeof r.wallOriginReach !== 'boolean') r.wallOriginReach = false; // When true, layer-1 reach starts at the wall/eave edge instead of the roof-spine edge.
+  r.direction = r.direction === 'v' ? 'v' : 'u';
+  r.lift = finite(r.lift,0.04);
+  if(typeof r.flipX !== 'boolean') r.flipX = true; // Used by shinglebone placement; preserves v10 upside-down correction by default.
+  if(typeof r.flipY !== 'boolean') r.flipY = false; // Used by shinglebone placement for per-axis authoring fixes.
+  if(typeof r.flipZ !== 'boolean') r.flipZ = false; // Used by shinglebone placement for per-axis authoring fixes.
+  r.highlandInterlockOffset = finite(r.highlandInterlockOffset,0.25); // Used by Highland preset roof face phase offsets.
+  r.shingleScaleX = Math.max(0.01, finite(r.shingleScaleX,1)); // Used by shingle placement after bone-length stretch.
+  r.shingleScaleY = Math.max(0.01, finite(r.shingleScaleY,1)); // Used by shingle placement after bone-length stretch.
+  r.shingleScaleZ = Math.max(0.01, finite(r.shingleScaleZ,1)); // Used by shingle placement after bone-length stretch.
+  r.shingleRotX = finite(r.shingleRotX, state.piece?.preset === 'highland' ? -10 : 0); // Layer-1 local X-axis shingle tilt; applied after flips and before peak fan rotation.
+  r.shingleRotZ = finite(r.shingleRotZ,0); // Face-relative rotation around local shingle/tube Z.
+  if(typeof r.peakRotateAway !== 'boolean') r.peakRotateAway = false; // Layer-1 option to invert peak-center fan direction.
+  if(typeof r.secondLayer !== 'boolean') r.secondLayer = false; // Adds an extra offset copy per roof repeater.
+  r.secondLayerAcross = finite(r.secondLayerAcross,0.25); // Offset along roof face across-axis for layer 2.
+  r.secondLayerLift = finite(r.secondLayerLift,0.04); // Offset along roof normal for layer 2.
+  r.secondLayerOverhang = Math.max(0, finite(r.secondLayerOverhang,r.overhang)); // Layer-2 reach; defaults to layer 1 for older JSON.
+  if(typeof r.secondLayerWallOriginReach !== 'boolean') r.secondLayerWallOriginReach = !!r.wallOriginReach; // When true, layer-2 reach starts at the wall/eave edge.
+  r.secondLayerShingleScaleX = Math.max(0.01, finite(r.secondLayerShingleScaleX,r.shingleScaleX)); // Layer-2 centered length scale after its reach is calculated.
+  r.secondLayerShingleScaleY = Math.max(0.01, finite(r.secondLayerShingleScaleY,r.shingleScaleY)); // Layer-2 local Y scale; separate from layer 1.
+  r.secondLayerShingleScaleZ = Math.max(0.01, finite(r.secondLayerShingleScaleZ,r.shingleScaleZ)); // Layer-2 local Z scale; separate from layer 1.
+  r.secondLayerShingleRotX = finite(r.secondLayerShingleRotX,0); // Layer-2 local X-axis shingle tilt; separate from layer 1.
+  if(typeof r.secondLayerPeakRotateAway !== 'boolean') r.secondLayerPeakRotateAway = state.piece?.preset === 'highland'; // Highland layer 2 defaults to fanning away from the peak.
+  if(typeof r.secondLayerFlipX !== 'boolean') r.secondLayerFlipX = !!r.flipX; // Used only by layer-2 shingle orientation after the layer offset is applied.
+  if(typeof r.secondLayerFlipY !== 'boolean') r.secondLayerFlipY = !!r.flipY; // Used only by layer-2 shingle orientation after the layer offset is applied.
+  if(typeof r.secondLayerFlipZ !== 'boolean') r.secondLayerFlipZ = !!r.flipZ; // Used only by layer-2 shingle orientation after the layer offset is applied.
+  if(typeof r.peakRotate !== 'boolean') r.peakRotate = false; // Rotates shingles toward the center of the ridge/peak face.
+  r.peakRotateStrength = Math.min(1, Math.max(0, finite(r.peakRotateStrength,0.5))); // Blend factor toward the peak-center target angle.
+  r.peakRotateFalloff = Math.max(0, finite(r.peakRotateFalloff,0)); // 0 disables falloff; otherwise measured in world units.
+  r.shingleSource = r.shingleSource || '';
+  return r;
+}
+function syncRoofFromInputs(){
+  const r=ensureRoofConfig();
+  r.tubeRadius=Math.max(0.005,finite($('roofTubeRadius')?.value,r.tubeRadius));
+  r.tubeSpacing=Math.max(0.01,finite($('roofTubeSpacing')?.value,r.tubeSpacing));
+  r.overhang=Math.max(0,finite($('roofTubeOverhang')?.value,r.overhang));
+  if($('roofWallOriginReachChk')) r.wallOriginReach=!!$('roofWallOriginReachChk').checked;
+  r.direction=$('roofTubeDirection')?.value === 'v' ? 'v' : 'u';
+  r.lift=Math.max(0,finite($('roofTubeLift')?.value,r.lift));
+  r.flipX=!!$('roofFlipX')?.checked;
+  r.flipY=!!$('roofFlipY')?.checked;
+  r.flipZ=!!$('roofFlipZ')?.checked;
+  r.shingleScaleX=Math.max(0.01,finite($('roofShingleScaleX')?.value,r.shingleScaleX));
+  r.shingleScaleY=Math.max(0.01,finite($('roofShingleScaleY')?.value,r.shingleScaleY));
+  r.shingleScaleZ=Math.max(0.01,finite($('roofShingleScaleZ')?.value,r.shingleScaleZ));
+  r.shingleRotX=finite($('roofShingleRotX')?.value,r.shingleRotX);
+  r.shingleRotZ=finite($('roofShingleRotZ')?.value,r.shingleRotZ);
+  if($('roofPeakRotateAwayChk')) r.peakRotateAway=!!$('roofPeakRotateAwayChk').checked;
+  r.secondLayer=!!$('roofSecondLayerChk')?.checked;
+  r.secondLayerAcross=finite($('roofSecondLayerAcross')?.value,r.secondLayerAcross);
+  r.secondLayerLift=finite($('roofSecondLayerLift')?.value,r.secondLayerLift);
+  r.secondLayerOverhang=Math.max(0,finite($('roofSecondLayerOverhang')?.value,r.secondLayerOverhang));
+  if($('roofSecondLayerWallOriginReachChk')) r.secondLayerWallOriginReach=!!$('roofSecondLayerWallOriginReachChk').checked;
+  r.secondLayerShingleScaleX=Math.max(0.01,finite($('roofSecondLayerScaleX')?.value,r.secondLayerShingleScaleX));
+  r.secondLayerShingleScaleY=Math.max(0.01,finite($('roofSecondLayerScaleY')?.value,r.secondLayerShingleScaleY));
+  r.secondLayerShingleScaleZ=Math.max(0.01,finite($('roofSecondLayerScaleZ')?.value,r.secondLayerShingleScaleZ));
+  r.secondLayerShingleRotX=finite($('roofSecondLayerRotX')?.value,r.secondLayerShingleRotX);
+  if($('roofSecondLayerPeakRotateAwayChk')) r.secondLayerPeakRotateAway=!!$('roofSecondLayerPeakRotateAwayChk').checked;
+  if($('roofSecondLayerFlipX')) r.secondLayerFlipX=!!$('roofSecondLayerFlipX').checked;
+  if($('roofSecondLayerFlipY')) r.secondLayerFlipY=!!$('roofSecondLayerFlipY').checked;
+  if($('roofSecondLayerFlipZ')) r.secondLayerFlipZ=!!$('roofSecondLayerFlipZ').checked;
+  updateSecondLayerFlipUi();
+  r.peakRotate=!!$('roofPeakRotateChk')?.checked;
+  r.peakRotateStrength=Math.min(1,Math.max(0,finite($('roofPeakRotateStrength')?.value,r.peakRotateStrength)));
+  r.peakRotateFalloff=Math.max(0,finite($('roofPeakRotateFalloff')?.value,r.peakRotateFalloff));
+  return r;
+}
+function updateSecondLayerFlipUi(){
+  // Used by the second-layer UI so independent layer-2 flips are visible but inactive unless the layer exists.
+  const active=!!$('roofSecondLayerChk')?.checked;
+  for(const id of ['roofSecondLayerWallOriginReachChk','roofSecondLayerOverhang','roofSecondLayerScaleX','roofSecondLayerScaleY','roofSecondLayerScaleZ','roofSecondLayerRotX','roofSecondLayerPeakRotateAwayChk','roofSecondLayerFlipX','roofSecondLayerFlipY','roofSecondLayerFlipZ']){
+    const el=$(id);
+    if(!el) continue;
+    el.disabled=!active;
+    const holder=el.closest('label') || el.closest('.field');
+    if(holder) holder.style.opacity=active ? '1' : '.55';
+  }
+}
+function syncRoofInputsFromPiece(){
+  const r=ensureRoofConfig();
+  if($('roofTubeRadius')) $('roofTubeRadius').value=r.tubeRadius;
+  if($('roofTubeSpacing')) $('roofTubeSpacing').value=r.tubeSpacing;
+  if($('roofTubeOverhang')) $('roofTubeOverhang').value=r.overhang;
+  if($('roofWallOriginReachChk')) $('roofWallOriginReachChk').checked=!!r.wallOriginReach;
+  if($('roofTubeDirection')) $('roofTubeDirection').value=r.direction;
+  if($('roofTubeLift')) $('roofTubeLift').value=r.lift;
+  if($('roofFlipX')) $('roofFlipX').checked=!!r.flipX;
+  if($('roofFlipY')) $('roofFlipY').checked=!!r.flipY;
+  if($('roofFlipZ')) $('roofFlipZ').checked=!!r.flipZ;
+  if($('roofShingleScaleX')) $('roofShingleScaleX').value=r.shingleScaleX;
+  if($('roofShingleScaleY')) $('roofShingleScaleY').value=r.shingleScaleY;
+  if($('roofShingleScaleZ')) $('roofShingleScaleZ').value=r.shingleScaleZ;
+  if($('roofShingleRotX')) $('roofShingleRotX').value=r.shingleRotX;
+  if($('roofShingleRotZ')) $('roofShingleRotZ').value=r.shingleRotZ;
+  if($('roofPeakRotateAwayChk')) $('roofPeakRotateAwayChk').checked=!!r.peakRotateAway;
+  if($('roofSecondLayerChk')) $('roofSecondLayerChk').checked=!!r.secondLayer;
+  if($('roofSecondLayerAcross')) $('roofSecondLayerAcross').value=r.secondLayerAcross;
+  if($('roofSecondLayerLift')) $('roofSecondLayerLift').value=r.secondLayerLift;
+  if($('roofSecondLayerOverhang')) $('roofSecondLayerOverhang').value=r.secondLayerOverhang;
+  if($('roofSecondLayerWallOriginReachChk')) $('roofSecondLayerWallOriginReachChk').checked=!!r.secondLayerWallOriginReach;
+  if($('roofSecondLayerScaleX')) $('roofSecondLayerScaleX').value=r.secondLayerShingleScaleX;
+  if($('roofSecondLayerScaleY')) $('roofSecondLayerScaleY').value=r.secondLayerShingleScaleY;
+  if($('roofSecondLayerScaleZ')) $('roofSecondLayerScaleZ').value=r.secondLayerShingleScaleZ;
+  if($('roofSecondLayerRotX')) $('roofSecondLayerRotX').value=r.secondLayerShingleRotX;
+  if($('roofSecondLayerPeakRotateAwayChk')) $('roofSecondLayerPeakRotateAwayChk').checked=!!r.secondLayerPeakRotateAway;
+  if($('roofSecondLayerFlipX')) $('roofSecondLayerFlipX').checked=!!r.secondLayerFlipX;
+  if($('roofSecondLayerFlipY')) $('roofSecondLayerFlipY').checked=!!r.secondLayerFlipY;
+  if($('roofSecondLayerFlipZ')) $('roofSecondLayerFlipZ').checked=!!r.secondLayerFlipZ;
+  updateSecondLayerFlipUi();
+  if($('roofPeakRotateChk')) $('roofPeakRotateChk').checked=!!r.peakRotate;
+  if($('roofPeakRotateStrength')) $('roofPeakRotateStrength').value=r.peakRotateStrength;
+  if($('roofPeakRotateFalloff')) $('roofPeakRotateFalloff').value=r.peakRotateFalloff;
+  if($('roofStatus')) $('roofStatus').textContent = r.shingleSource ? `Loaded shingle template: ${r.shingleSource}. Roof preview uses shinglebone alignment/stretch.` : 'No shingle GLB loaded. Roof faces preview as bamboo-like tubes that overhang the face edges.';
+}
+function roofFaceFrame(face, config){
+  // Used by roof tube/shingle generation to convert a quad face into repeatable target segments.
+  // The shingle length axis is now anchored at the high roof-spine/ridge edge of the roof face.
+  // `overhang` is treated as a reach multiplier: 1.0 reaches exactly across the roof/eave plane,
+  // 0.5 reaches halfway from the spine toward the opposite eave edge. Standard length scale is
+  // applied later around the center of the full roof/eave plane, not around this reached segment.
+  const p0=new THREE.Vector3(...face.v[0]), p1=new THREE.Vector3(...face.v[1]), p2=new THREE.Vector3(...face.v[2]), p3=new THREE.Vector3(...face.v[3]);
+  const n=faceNormal(face);
+  const uMidA=p0.clone().lerp(p3,0.5), uMidB=p1.clone().lerp(p2,0.5);
+  const vMidA=p0.clone().lerp(p1,0.5), vMidB=p3.clone().lerp(p2,0.5);
+  const uVec=uMidB.clone().sub(uMidA); const vVec=vMidB.clone().sub(vMidA);
+  const lengthA=config.direction==='v' ? vMidA : uMidA; // One end of the selected shingle length axis.
+  const lengthB=config.direction==='v' ? vMidB : uMidB; // Opposite end of the selected shingle length axis.
+  const acrossVec=config.direction==='v' ? uVec : vVec;
+  const spineOrigin=(lengthA.y >= lengthB.y ? lengthA : lengthB).clone();
+  const eaveEnd=(lengthA.y >= lengthB.y ? lengthB : lengthA).clone();
+  const spineToEave=eaveEnd.clone().sub(spineOrigin);
+  const baseLength=Math.max(0.001,spineToEave.length());
+  let dir=spineToEave.clone();
+  if(dir.lengthSq()<1e-10) dir=(config.direction==='v'?vVec:uVec).clone();
+  if(dir.lengthSq()<1e-10) dir=new THREE.Vector3(1,0,0);
+  dir.normalize();
+  const useWallOrigin=!!config.wallOriginReach;
+  const reachOrigin=useWallOrigin ? eaveEnd.clone() : spineOrigin.clone(); // Used by the reach amount; wall mode starts at the roof/wall edge.
+  const reachDir=useWallOrigin ? dir.clone().multiplyScalar(-1) : dir.clone(); // Used by wall-origin mode to reach back toward the spine.
+  const reach=Math.max(0,finite(config.overhang,1));
+  const length=Math.max(0.001,baseLength*reach);
+  const center=reachOrigin.clone().add(reachDir.clone().multiplyScalar(length*0.5));
+  const scaleOrigin=spineOrigin.clone().add(dir.clone().multiplyScalar(baseLength*0.5)); // Used after reach: standard length scale grows/shrinks around the full roof/eave-plane center.
+  let across=acrossVec.clone();
+  const acrossLen=Math.max(0.001,across.length());
+  if(across.lengthSq()<1e-10) across=new THREE.Vector3(0,0,1);
+  across.normalize();
+  return {center,n,dir:reachDir,spineToEaveDir:dir,across,length,baseLength,reach,acrossLen,spineOrigin,eaveEnd,reachOrigin,scaleOrigin,originMode:useWallOrigin?'wall_edge_then_eave_center_scale':'spine_edge_then_eave_center_scale'};
+}
+function roofTargetsForFace(face, config){
+  const frame=roofFaceFrame(face, config);
+  const count=Math.max(1,Math.floor(frame.acrossLen/config.tubeSpacing)+1);
+  const step=count>1 ? frame.acrossLen/(count-1) : 0;
+  const targets=[];
+  const faceOffset=finite(face.roofAcrossOffset,0); // Used by Highland interlocking eaves; measured in world/tile units along the face-across axis.
+  for(let i=0;i<count;i++){
+    const offset=(i-(count-1)/2)*step + faceOffset;
+    const liftedOffset=frame.across.clone().multiplyScalar(offset).add(frame.n.clone().multiplyScalar(config.lift+config.tubeRadius));
+    targets.push({ position:frame.center.clone().add(liftedOffset), scaleOrigin:frame.scaleOrigin.clone().add(liftedOffset), spineOrigin:frame.spineOrigin.clone().add(liftedOffset), eaveEnd:frame.eaveEnd.clone().add(liftedOffset), direction:frame.dir.clone(), spineToEaveDirection:frame.spineToEaveDir.clone(), reachOrigin:frame.reachOrigin.clone(), normal:frame.n.clone(), across:frame.across.clone(), length:frame.length, baseLength:frame.baseLength, reach:frame.reach, radius:config.tubeRadius, faceId:face.id, index:i, roofAcrossOffset:faceOffset, originMode:frame.originMode, layer:1 });
+  }
+  return targets;
+}
+function shingleLayerSettings(target, config=ensureRoofConfig()){
+  // Used by placement/orientation so layer 2 can have separate reach and scale values while preserving layer-1 axis meanings.
+  const second=target?.layer===2;
+  return {
+    reach: second ? Math.max(0,finite(config.secondLayerOverhang,config.overhang)) : Math.max(0,finite(config.overhang,1)),
+    scaleX: second ? Math.max(0.01,finite(config.secondLayerShingleScaleX,config.shingleScaleX)) : Math.max(0.01,finite(config.shingleScaleX,1)),
+    scaleY: second ? Math.max(0.01,finite(config.secondLayerShingleScaleY,config.shingleScaleY)) : Math.max(0.01,finite(config.shingleScaleY,1)),
+    scaleZ: second ? Math.max(0.01,finite(config.secondLayerShingleScaleZ,config.shingleScaleZ)) : Math.max(0.01,finite(config.shingleScaleZ,1)),
+    rotX: second ? finite(config.secondLayerShingleRotX,0) : finite(config.shingleRotX,0),
+    peakRotateAway: second ? !!config.secondLayerPeakRotateAway : !!config.peakRotateAway,
+    flipX: second ? !!config.secondLayerFlipX : !!config.flipX,
+    flipY: second ? !!config.secondLayerFlipY : !!config.flipY,
+    flipZ: second ? !!config.secondLayerFlipZ : !!config.flipZ,
+    wallOriginReach: second ? !!config.secondLayerWallOriginReach : !!config.wallOriginReach
+  };
+}
+function standardLengthScalePlacement(target, config=ensureRoofConfig()){
+  // Used by tube preview and GLB shingles. Overhang defines a spine-origin base segment;
+  // the existing length scale is then applied around the full eave-plane center so values
+  // above 1.0 can grow back through the spine instead of only stretching away from it.
+  const layer=shingleLayerSettings(target, config);
+  const sx=layer.scaleX;
+  const origin=(target.scaleOrigin||target.position||new THREE.Vector3()).clone();
+  const pos=(target.position||origin).clone();
+  const scaledPosition=origin.clone().add(pos.sub(origin).multiplyScalar(sx));
+  const scaledLength=Math.max(0.001,finite(target.length,1)*sx);
+  return {sx, origin, scaledPosition, scaledLength};
+}
+function makeTubePreview(target, config=ensureRoofConfig()){
+  const placement=standardLengthScalePlacement(target, config);
+  const geom=new THREE.CylinderGeometry(target.radius,target.radius,placement.scaledLength,14,1,true);
+  const mesh=new THREE.Mesh(geom,matRoofTube);
+  mesh.position.copy(placement.scaledPosition);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), target.direction.clone().normalize());
+  mesh.userData.roofTarget={...target, standardScaleOrigin:placement.origin, standardScaledLength:placement.scaledLength};
+  return mesh;
+}
+function findObjectByNameLoose(rootObj, name){
+  let found=null; const want=String(name).toLowerCase();
+  rootObj.traverse(o=>{ if(!found && String(o.name||'').toLowerCase()===want) found=o; });
+  return found;
+}
+function analyzeShingleTemplate(sceneObj, sourceName=''){
+  const bone=findObjectByNameLoose(sceneObj,'shinglebone');
+  let boneLength=1;
+  let boneFrameInverse=null;
+  if(bone){
+    // Used by roof replacement placement. The shinglebone's *position and rotation* define
+    // the alignment frame; its local X scale defines the stretch baseline. We deliberately
+    // strip scale out of the inverse frame so Y/Z marker thickness does not squash the GLB.
+    bone.visible=false;
+    sceneObj.updateWorldMatrix(true,true);
+    bone.updateWorldMatrix(true,true);
+    const pos=new THREE.Vector3();
+    const quat=new THREE.Quaternion();
+    const scale=new THREE.Vector3();
+    bone.matrixWorld.decompose(pos, quat, scale);
+    boneLength=Math.max(Math.abs(scale.x), 0.001);
+    const frame=new THREE.Matrix4().compose(pos, quat, new THREE.Vector3(1,1,1));
+    boneFrameInverse=frame.clone().invert();
+  }else{
+    const box=new THREE.Box3().setFromObject(sceneObj);
+    const size=box.getSize(new THREE.Vector3());
+    boneLength=Math.max(size.x,size.y,size.z,1);
+  }
+  return { scene:sceneObj, bone, boneLength, boneFrameInverse, sourceName };
+}
+function highestPeakFaceCenter(){
+  // Used by shingle rotation pattern. Prefers the highest ceiling-like cap/ridge face.
+  const faces=state.piece?.base?.faces || [];
+  let peakFace=null, peakY=-Infinity;
+  for(const f of faces){
+    if(f.tag!=='ceiling') continue;
+    const c=faceCenter(f);
+    if(c.y>peakY){ peakY=c.y; peakFace=f; }
+  }
+  if(!peakFace){
+    for(const f of faces){
+      const c=faceCenter(f);
+      if(c.y>peakY){ peakY=c.y; peakFace=f; }
+    }
+  }
+  return peakFace ? faceCenter(peakFace) : null;
+}
+function peakCenterRotationRad(target, config=ensureRoofConfig()){
+  // Used by the optional fan/interlock pattern. Computes a signed in-plane angle from the
+  // shingle's current length axis toward the center of the peak face, then blends it.
+  if(!config.peakRotate) return 0;
+  const peak=highestPeakFaceCenter();
+  if(!peak) return 0;
+  const normal=(target.normal||new THREE.Vector3(0,1,0)).clone().normalize();
+  const dir=(target.direction||new THREE.Vector3(1,0,0)).clone().normalize();
+  const rotationOrigin=(target.rotationOrigin||target.scaledPosition||target.position||new THREE.Vector3()).clone(); // Uses the actual shingle center after centered standard scaling.
+  const toPeak=peak.clone().sub(rotationOrigin);
+  const projected=toPeak.sub(normal.clone().multiplyScalar(toPeak.dot(normal)));
+  if(projected.lengthSq()<1e-10) return 0;
+  projected.normalize();
+  let angle=dir.angleTo(projected);
+  const cross=dir.clone().cross(projected);
+  const sign=Math.sign(cross.dot(normal)) || 1;
+  angle*=sign;
+  let weight=Math.min(1, Math.max(0, finite(config.peakRotateStrength,0.5)));
+  const falloff=Math.max(0, finite(config.peakRotateFalloff,0));
+  if(falloff>0){
+    const dist=peak.distanceTo(rotationOrigin);
+    weight*=Math.max(0, 1 - dist/falloff);
+  }
+  return angle * weight;
+}
+function shingleFlipStateForTarget(target, config=ensureRoofConfig()){
+  // Used by targetQuaternionForRoofTarget(); both layers use the same canonical local shingle axes.
+  const layer=shingleLayerSettings(target, config);
+  return { flipX:layer.flipX, flipY:layer.flipY, flipZ:layer.flipZ };
+}
+function targetQuaternionForRoofTarget(target, config=ensureRoofConfig()){
+  // Used by shinglebone alignment. Local +X follows the bamboo/tube length. Optional
+  // flip checkboxes and face-relative Z rotation apply in the shinglebone target's local frame.
+  // Flip X inverts the apparent sense of later local-Z rotations, so we compensate to keep
+  // shingle rotation controls and peak-center aiming visually consistent.
+  const flips=shingleFlipStateForTarget(target, config);
+  const x=(target.direction||new THREE.Vector3(1,0,0)).clone().normalize();
+  let z=(target.normal||new THREE.Vector3(0,1,0)).clone().normalize();
+  let y=z.clone().cross(x).normalize();
+  if(y.lengthSq()<1e-8){ y=new THREE.Vector3(0,0,1).cross(x).normalize(); }
+  z=x.clone().cross(y).normalize();
+  const m=new THREE.Matrix4().makeBasis(x,y,z);
+  const q=new THREE.Quaternion().setFromRotationMatrix(m);
+  const qLocal=new THREE.Quaternion();
+  if(flips.flipX) q.multiply(qLocal.setFromAxisAngle(new THREE.Vector3(1,0,0), Math.PI));
+  if(flips.flipY) q.multiply(qLocal.setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI));
+  if(flips.flipZ) q.multiply(qLocal.setFromAxisAngle(new THREE.Vector3(0,0,1), Math.PI));
+  const layer=shingleLayerSettings(target, config); // Used for per-layer X tilt and peak-fan inversion.
+  const rx=THREE.MathUtils.degToRad(finite(layer.rotX,0));
+  if(Math.abs(rx)>1e-8) q.multiply(qLocal.setFromAxisAngle(new THREE.Vector3(1,0,0), rx));
+  const zRotSign = flips.flipX ? -1 : 1; // Used by shingleRotZ and peak-center rotation so X-flipped shingles turn the expected way.
+  const rz=THREE.MathUtils.degToRad(finite(config.shingleRotZ,0)) * zRotSign;
+  if(Math.abs(rz)>1e-8) q.multiply(qLocal.setFromAxisAngle(new THREE.Vector3(0,0,1), rz));
+  let peakRad=-peakCenterRotationRad(target, config) * zRotSign; // Negative fixes the previous away-from-peak turn; positive local Z was mirrored from the visual fan direction.
+  if(layer.peakRotateAway) peakRad *= -1;
+  if(Math.abs(peakRad)>1e-8) q.multiply(qLocal.setFromAxisAngle(new THREE.Vector3(0,0,1), peakRad));
+  return q;
+}
+function makeShingleInstance(target, config=ensureRoofConfig()){
+  const tpl=state.roofShingleTemplate;
+  if(!tpl) return makeTubePreview(target);
+  const wrapper=new THREE.Group();
+  const clone=tpl.scene.clone(true);
+  clone.traverse(o=>{ if(String(o.name||'').toLowerCase()==='shinglebone') o.visible=false; });
+  const placement=standardLengthScalePlacement(target, config);
+  const stretch=target.length/Math.max(0.001,tpl.boneLength);
+  const q=targetQuaternionForRoofTarget({...target, rotationOrigin:placement.scaledPosition}, config);
+  wrapper.position.copy(placement.scaledPosition);
+  wrapper.quaternion.copy(q);
+  const layer=shingleLayerSettings(target, config);
+  wrapper.scale.set(stretch*placement.sx,layer.scaleY,layer.scaleZ);
+  if(tpl.boneFrameInverse){
+    // Rebase the GLB so the hidden shinglebone frame, not the model origin, lands exactly on
+    // the generated tube target. This is the important bone-wise alignment step.
+    clone.matrix.copy(tpl.boneFrameInverse);
+    clone.matrixAutoUpdate=false;
+  }
+  wrapper.add(clone);
+  wrapper.userData.roofTarget=target;
+  return wrapper;
+}
+function cloneRoofTargetWithLayerOffset(target, config){
+  // Used by optional second layer: offset one extra copy, then recompute its own
+  // spine-origin reach from the same local roof axes as layer 1. This makes layer-2
+  // reach/scale independent without changing what Flip X/Y/Z mean.
+  const across=(target.across||new THREE.Vector3(0,0,1)).clone().normalize();
+  const normal=(target.normal||new THREE.Vector3(0,1,0)).clone().normalize();
+  const spineToEaveDir=(target.spineToEaveDirection||target.direction||new THREE.Vector3(1,0,0)).clone().normalize();
+  const layerOffset=across.clone().multiplyScalar(config.secondLayerAcross).add(normal.clone().multiplyScalar(config.secondLayerLift));
+  const spine=(target.spineOrigin||target.position||new THREE.Vector3()).clone().add(layerOffset);
+  const eave=target.eaveEnd ? target.eaveEnd.clone().add(layerOffset) : spine.clone().add(spineToEaveDir.clone().multiplyScalar(finite(target.baseLength,target.length||1)));
+  const baseLength=Math.max(0.001,finite(target.baseLength,target.length||1));
+  const useWallOrigin=!!config.secondLayerWallOriginReach;
+  const reachOrigin=useWallOrigin ? eave.clone() : spine.clone(); // Used by layer-2 reach; optional wall/eave origin mirrors layer 1.
+  const dir=useWallOrigin ? spineToEaveDir.clone().multiplyScalar(-1) : spineToEaveDir.clone();
+  const reach=Math.max(0,finite(config.secondLayerOverhang,config.overhang));
+  const length=Math.max(0.001,baseLength*reach);
+  const position=reachOrigin.clone().add(dir.clone().multiplyScalar(length*0.5));
+  const scaleOrigin=spine.clone().add(spineToEaveDir.clone().multiplyScalar(baseLength*0.5));
+  return {
+    ...target,
+    position,
+    scaleOrigin,
+    spineOrigin:spine,
+    eaveEnd:eave,
+    reachOrigin,
+    length,
+    reach,
+    normal:normal.clone(),
+    across:across.clone(),
+    direction:dir.clone(),
+    spineToEaveDirection:spineToEaveDir.clone(),
+    layer: 2,
+    originMode:useWallOrigin?'layer2_wall_edge_then_eave_center_scale':'layer2_spine_edge_then_eave_center_scale'
+  };
+}
+function alignRoofFaceGroupToEavePlaneCenter(face, group, config){
+  // Final per-roof-face centering pass. After all offsets, layer offsets, flips,
+  // stretch, and rotations are applied, move the whole shingle/tube set as one group.
+  // Only slide in the eave/roof face plane; do not erase normal lift/stacking height.
+  if(!group || !group.children.length) return;
+  const frame=roofFaceFrame(face, config);
+  const dir=frame.dir.clone().normalize(); // Used here to center between the two gable ends.
+  const across=frame.across.clone().normalize(); // Used here to center against the attached eave-plane span.
+  const desired=faceCenter(face);
+  group.updateWorldMatrix(true,true);
+  const box=new THREE.Box3().setFromObject(group);
+  if(!Number.isFinite(box.min.x) || !Number.isFinite(box.max.x)) return;
+  const actual=box.getCenter(new THREE.Vector3());
+  const deltaDir=desired.dot(dir)-actual.dot(dir);
+  const deltaAcross=desired.dot(across)-actual.dot(across);
+  const move=dir.multiplyScalar(deltaDir).add(across.multiplyScalar(deltaAcross));
+  if(move.lengthSq()>1e-12) group.position.add(move);
+}
+function rebuildRoofPreview(){
+  if(!roofGroup) return;
+  roofGroup.clear();
+  const config=syncRoofFromInputs();
+  const roofFaces=state.piece.base.faces.filter(f=>f.tag==='roof');
+  let count=0;
+  for(const f of roofFaces){
+    const faceRoofGroup=new THREE.Group();
+    faceRoofGroup.userData.roofFaceId=f.id;
+    for(const t of roofTargetsForFace(f,config)){
+      faceRoofGroup.add(state.roofShingleTemplate ? makeShingleInstance(t,config) : makeTubePreview(t,config));
+      count++;
+      if(config.secondLayer){
+        const t2=cloneRoofTargetWithLayerOffset(t,config);
+        faceRoofGroup.add(state.roofShingleTemplate ? makeShingleInstance(t2,config) : makeTubePreview(t2,config));
+        count++;
+      }
+    }
+    // Overhang/reach math stays local to each shingle; this final group pass recenters the whole set on its eave plane.
+    alignRoofFaceGroupToEavePlaneCenter(f, faceRoofGroup, config);
+    roofGroup.add(faceRoofGroup);
+  }
+  if($('roofStatus')){
+    const mode=state.roofShingleTemplate ? `shingle GLB (${state.roofShingleTemplate.sourceName})` : 'tube preview';
+    $('roofStatus').textContent=`Roof preview: ${roofFaces.length} roof face(s), ${count} generated ${mode} repeater(s), layer 1 ${config.wallOriginReach?'wall':'spine'} reach ${finite(config.overhang,1).toFixed(2)}× / scale ${finite(config.shingleScaleX,1).toFixed(2)}×, layer 2 ${config.secondLayerWallOriginReach?'wall':'spine'} reach ${finite(config.secondLayerOverhang,config.overhang).toFixed(2)}× / scale ${finite(config.secondLayerShingleScaleX,config.shingleScaleX).toFixed(2)}×`;
+  }
+}
+function hideRoofPreview(){ roofGroup.clear(); if($('roofStatus')) $('roofStatus').textContent='Roof preview hidden. Roof tags and settings remain in JSON.'; }
+function loadRoofShingleFile(file){ pushUndo(`Import roof shingle GLB ${file.name}`);
+  const url=URL.createObjectURL(file);
+  loader.load(url,gltf=>{
+    const template=analyzeShingleTemplate(gltf.scene,file.name);
+    state.roofShingleTemplate=template;
+    const cfg=ensureRoofConfig(); cfg.shingleSource=file.name;
+    syncRoofInputsFromPiece(); rebuildRoofPreview(); refreshExport();
+    log(`Imported roof shingle GLB ${file.name}; ${template.bone ? 'found' : 'did not find'} hidden shinglebone, stretch length ${template.boneLength.toFixed(3)}.`);
+    URL.revokeObjectURL(url);
+  },undefined,err=>{ log(`Shingle GLB import failed for ${file.name}: ${err.message||err}`,'error'); URL.revokeObjectURL(url); });
+}
+
+renderer.domElement.addEventListener('pointerdown', ev=>{
+  if(transform.dragging || transform.axis) return;
+  const r=renderer.domElement.getBoundingClientRect(); pointer.x=((ev.clientX-r.left)/r.width)*2-1; pointer.y=-((ev.clientY-r.top)/r.height)*2+1; raycaster.setFromCamera(pointer,camera);
+  const faceHits=raycaster.intersectObjects([...faceMeshes.values()],false);
+  const assetHits=raycaster.intersectObjects([...assetMeshes.values()],true);
+  if(faceHits[0]){ const id=faceHits[0].object.userData.faceId; $('surfaceDebug').textContent=`Surface hit: face ${id} · point ${faceHits[0].point.toArray().map(n=>n.toFixed(2)).join(', ')}`; selectFace(id,state.multi||ev.shiftKey); return; }
+  if(assetHits[0]){ let obj=assetHits[0].object; while(obj && !obj.userData.assetId) obj=obj.parent; if(obj?.userData.assetId){ selectAsset(obj.userData.assetId); $('surfaceDebug').textContent=`Surface hit: asset ${selectedAsset()?.name || obj.userData.assetId}`; } }
+});
+
+function selectedAsset(){ return state.piece.assets.find(a=>a.id===state.selectedAssetId); }
+function selectAsset(id){ state.selectedAssetId=id; state.selectedFaceIds.clear(); detachFaceGizmo(); const mesh=assetMeshes.get(id); if(mesh){ activeTransformTarget='asset'; transform.attach(mesh); } rebuildFaceMeshes(); renderAssetList(); updateAssetInputs(); updateSelectionUi(); }
+function updateAssetInputs(){ const a=selectedAsset(); if(!a)return; $('assetX').value=a.position.x; $('assetY').value=a.position.y; $('assetZ').value=a.position.z; $('assetRX').value=a.rotation.x; $('assetRY').value=a.rotation.y; $('assetRZ').value=a.rotation.z; $('assetSX').value=a.scale.x; $('assetSY').value=a.scale.y; $('assetSZ').value=a.scale.z; }
+function onTransformObjectChanged(){
+  if(activeTransformTarget==='face'){ applyFaceGizmoDelta(); return; }
+  const a=selectedAsset(); const obj=state.selectedAssetId && assetMeshes.get(state.selectedAssetId); if(!a||!obj)return;
+  a.position={x:+obj.position.x.toFixed(4),y:+obj.position.y.toFixed(4),z:+obj.position.z.toFixed(4)};
+  a.rotation={x:+THREE.MathUtils.radToDeg(obj.rotation.x).toFixed(3),y:+THREE.MathUtils.radToDeg(obj.rotation.y).toFixed(3),z:+THREE.MathUtils.radToDeg(obj.rotation.z).toFixed(3)};
+  a.scale={x:+obj.scale.x.toFixed(4),y:+obj.scale.y.toFixed(4),z:+obj.scale.z.toFixed(4)};
+  updateAssetInputs(); refreshExport();
+}
+function applyAssetTransform(){ const a=selectedAsset(), obj=a&&assetMeshes.get(a.id); if(!a||!obj){log('Select an imported asset first.','warn');return;} pushUndo('Apply asset transform'); a.position={x:finite($('assetX').value,0),y:finite($('assetY').value,0),z:finite($('assetZ').value,0)}; a.rotation={x:finite($('assetRX').value,0),y:finite($('assetRY').value,0),z:finite($('assetRZ').value,0)}; a.scale={x:finite($('assetSX').value,1),y:finite($('assetSY').value,1),z:finite($('assetSZ').value,1)}; obj.position.set(a.position.x,a.position.y,a.position.z); obj.rotation.set(deg(a.rotation.x),deg(a.rotation.y),deg(a.rotation.z)); obj.scale.set(a.scale.x,a.scale.y,a.scale.z); refreshExport(); log(`Applied transform to ${a.name}.`); }
+function snapAssetGround(){ const a=selectedAsset(), obj=a&&assetMeshes.get(a.id); if(!a||!obj){log('Select an imported asset first.','warn');return;} pushUndo('Snap asset to ground'); const box=new THREE.Box3().setFromObject(obj); const dy=finite($('groundY').value,0)-box.min.y; obj.position.y += dy; onTransformObjectChanged(); log(`Snapped ${a.name} bottom to ground.`); }
+function addGlbFile(file){
+  const url=URL.createObjectURL(file); loader.load(url,gltf=>{
+    pushUndo(`Import detail GLB ${file.name}`);
+    const id=`asset_${state.nextAssetId++}`; const obj=gltf.scene; obj.name=file.name; obj.userData.assetId=id; obj.traverse(o=>{o.userData.assetId=id; if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+    const b=boundsFromFootprint(); const c=b?new THREE.Vector3((b.minX+b.maxX)/2,finite($('groundY').value,0),(b.minZ+b.maxZ)/2):new THREE.Vector3(); obj.position.copy(c);
+    assetGroup.add(obj); assetMeshes.set(id,obj); state.piece.assets.push({id,name:file.name,source:file.name,position:{x:c.x,y:c.y,z:c.z},rotation:{x:0,y:0,z:0},scale:{x:1,y:1,z:1},kind:'detail-glb'});
+    selectAsset(id); renderAssetList(); refreshExport(); log(`Imported detail GLB: ${file.name}`); URL.revokeObjectURL(url);
+  }, undefined, err=>{ log(`GLB import failed for ${file.name}: ${err.message||err}`, 'error'); URL.revokeObjectURL(url); });
+}
+function removeSelectedAsset(){ const a=selectedAsset(); if(!a){log('Select an asset first.','warn');return;} pushUndo('Remove selected asset'); const obj=assetMeshes.get(a.id); if(obj){ assetGroup.remove(obj); obj.traverse(o=>{if(o.geometry)o.geometry.dispose?.();}); } assetMeshes.delete(a.id); state.piece.assets=state.piece.assets.filter(x=>x.id!==a.id); state.selectedAssetId=null; transform.detach(); activeTransformTarget=null; renderAssetList(); updateSelectionUi(); refreshExport(); log(`Removed asset ${a.name}.`); }
+function renderAssetList(){ const el=$('assetList'); el.innerHTML=''; for(const a of state.piece.assets){ const div=document.createElement('div'); div.className='listItem'+(a.id===state.selectedAssetId?' selected':''); div.innerHTML=`<span><b>${escapeHtml(a.name)}</b><br><span class="chip">${a.kind} · ${a.source}</span></span><button type="button">Select</button>`; div.querySelector('button').onclick=()=>selectAsset(a.id); el.appendChild(div); } if(!state.piece.assets.length) el.innerHTML='<div class="hint">No detail GLBs imported.</div>'; }
+function rebuildAssetsFromMetadata(){ assetGroup.clear(); assetMeshes.clear(); transform.detach(); for(const a of state.piece.assets){ const placeholder=new THREE.Mesh(new THREE.BoxGeometry(.8,.8,.8), new THREE.MeshStandardMaterial({color:0xffd26e,transparent:true,opacity:.55})); placeholder.name=a.name||a.source||a.id; placeholder.userData.assetId=a.id; placeholder.position.set(a.position.x,a.position.y,a.position.z); placeholder.rotation.set(deg(a.rotation.x),deg(a.rotation.y),deg(a.rotation.z)); placeholder.scale.set(a.scale.x,a.scale.y,a.scale.z); assetGroup.add(placeholder); assetMeshes.set(a.id,placeholder); } renderAssetList(); }
+
+function saveCurrentPiece(){ pushUndo('Save current piece to library'); syncPieceFromInputs(); const copy=deepCleanPiece(state.piece); const existing=state.library.findIndex(p=>p.id===copy.id); if(existing>=0) state.library[existing]=copy; else state.library.push(copy); state.selectedPieceId=copy.id; renderPieceList(); refreshExport(); log(`Saved ${copy.name} to piece library.`); }
+function loadPiece(piece){ state.piece=JSON.parse(JSON.stringify(piece)); state.gridSize=state.piece.gridSize; state.tileSize=state.piece.tileSize; $('gridSize').value=state.gridSize; $('tileSize').value=state.tileSize; $('pieceName').value=state.piece.name; $('pieceType').value=state.piece.type; if($('basePreset')) $('basePreset').value=state.piece.preset || 'custom'; $('baseHeight').value=state.piece.base.height; $('wallThickness').value=state.piece.base.wallThickness; $('groundY').value=state.piece.base.groundY; state.selectedFaceIds.clear(); state.selectedAssetId=null; transform.detach(); activeTransformTarget=null; faceGizmoProxy.visible=false; syncSetsFromPiece(); syncRoofInputsFromPiece(); drawGrid(); rebuildFootprintOverlay(); rebuildFaceMeshes(); rebuildAssetsFromMetadata(); rebuildRoofPreview(); frameScene(); log(`Loaded piece ${state.piece.name}.`); }
+function renderPieceList(){ const el=$('pieceList'); el.innerHTML=''; for(const p of state.library){ const div=document.createElement('div'); div.className='listItem'+(p.id===state.selectedPieceId?' selected':''); div.innerHTML=`<span><b>${escapeHtml(p.name)}</b><br><span class="chip">${p.type} · ${p.footprint.cells.length} cells · ${p.base.faces.length} faces · ${p.assets.length} assets</span></span><button type="button">Load</button>`; div.onclick=()=>{state.selectedPieceId=p.id;renderPieceList();}; div.querySelector('button').onclick=(ev)=>{ev.stopPropagation(); pushUndo(`Load library piece ${p.name}`); state.selectedPieceId=p.id; loadPiece(p); renderPieceList();}; el.appendChild(div); } if(!state.library.length) el.innerHTML='<div class="hint">No saved pieces yet.</div>'; }
+function duplicateSelectedPiece(){ const p=state.library.find(x=>x.id===state.selectedPieceId); if(!p){log('Select a library piece first.','warn');return;} pushUndo('Duplicate library piece'); const copy=JSON.parse(JSON.stringify(p)); copy.id=newId('piece'); copy.name=`${copy.name}_copy`; state.library.push(copy); state.selectedPieceId=copy.id; renderPieceList(); refreshExport(); log(`Duplicated ${p.name}.`); }
+function deleteSelectedPiece(){ const p=state.library.find(x=>x.id===state.selectedPieceId); if(!p){log('Select a library piece first.','warn');return;} pushUndo('Delete library piece'); state.library=state.library.filter(x=>x.id!==p.id); state.selectedPieceId=null; renderPieceList(); refreshExport(); log(`Deleted library piece ${p.name}.`); }
+function deepCleanPiece(piece){ return JSON.parse(JSON.stringify(piece)); }
+function syncPieceFromInputs(){ state.piece.name=$('pieceName').value.trim()||'unnamed_piece'; state.piece.type=$('pieceType').value; state.piece.preset=$('basePreset')?.value || state.piece.preset || 'custom'; state.piece.gridSize=state.gridSize; state.piece.tileSize=state.tileSize; state.piece.base.height=finite($('baseHeight').value,2.6); state.piece.base.wallThickness=finite($('wallThickness').value,.15); state.piece.base.groundY=finite($('groundY').value,0); syncRoofFromInputs(); syncPieceFromSets(); }
+function exportPayload(){ syncPieceFromInputs(); return { schema:'modular-house-piece-author/v37', createdAt:new Date().toISOString(), notes:'Footprints are 2D grid contracts. Base faces are editable quads. Detail GLBs are separate assets referenced by source filename. Roof faces generate tube/shingle repeaters; replacement shingles use a hidden shinglebone node for alignment/stretch. v37 closes the upward-facing entry tunnel side with real ceiling faces while leaving horizontal portals open, and recenters each completed shingle group on its attached eave plane. v36 restores explicit skyward top-rim cap faces on entry tunnel mouths, wall runs, and blue-structure transition portals. v35 cuts continuous entry portals through Highland body walls and lets green tunnel cells generate visible corridor walls inside blue structure cells. v34 makes adjacent entry tunnel mouths/walls continuous as fused boundary runs and fixes missing skyward wall caps on multi-tile openings. v33 fixes entry tunnel orientation by selecting the best exposed cell-side pair instead of defaulting to the north/up side. v32 solidifies hollow extension walls, adds wonky chimneys/railings, shortens railing posts around rails, frames near-full-height exterior entry openings, and allows green entry tunnels to continue into blue structures. v31 added fused hollow extension generation: green roofless entry tunnels and gray chimneys merge across adjacent tiles, chimneys run down to ground, tan porch stairs face adjacent porch tiles, and railing tiles generate Minecraft-like posts/connectors raised onto porch decks. v30 added extension grid layers: green roofless entryway tunnels with far-end doors and auto-runs to the nearest blue wall, gray chimneys, brown porches, and tan porch stairs. v29 set Highland sections to 0.85 frustums and fixed the v28 pyramid regression by keeping ridge spines thin across the span but long along the roof axis.', currentPiece:deepCleanPiece(state.piece), library:state.library.map(deepCleanPiece) }; }
+function refreshExport(){ $('exportText').value=JSON.stringify(exportPayload(),null,2); }
+function importPayload(payload){ if(!payload) throw new Error('Empty JSON.'); pushUndo('Import JSON'); if(payload.currentPiece) state.piece=payload.currentPiece; else if(payload.schema && payload.library?.[0]) state.piece=payload.library[0]; else if(payload.base && payload.footprint) state.piece=payload; else throw new Error('Unrecognized piece JSON.'); ensureFootprintExtensions(state.piece); state.library=Array.isArray(payload.library)?payload.library:[]; for(const p of state.library) ensureFootprintExtensions(p); loadPiece(state.piece); renderPieceList(); refreshExport(); log('Imported modular piece JSON. GLB binaries are represented as placeholders until re-imported.'); }
+function downloadJson(){ const blob=new Blob([JSON.stringify(exportPayload(),null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`${(state.piece.name||'modular_house_piece').replace(/[^a-z0-9_-]+/gi,'_')}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+function escapeHtml(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function setTool(tool){ state.tool=tool; const toolIds={footprint:'toolFootprint',entrance:'toolEntrance',connector:'toolConnector',entryTunnel:'toolEntryTunnel',chimney:'toolChimney',porch:'toolPorch',porchStair:'toolPorchStair',railing:'toolRailing',erase:'toolErase'}; for(const id of Object.values(toolIds)) $(id).classList.toggle('active', id===toolIds[tool]); log(`Grid tool: ${tool}`); }
+$('toolFootprint').onclick=()=>setTool('footprint'); $('toolEntrance').onclick=()=>setTool('entrance'); $('toolConnector').onclick=()=>setTool('connector'); $('toolEntryTunnel').onclick=()=>setTool('entryTunnel'); $('toolChimney').onclick=()=>setTool('chimney'); $('toolPorch').onclick=()=>setTool('porch'); $('toolPorchStair').onclick=()=>setTool('porchStair'); $('toolRailing').onclick=()=>setTool('railing'); $('toolErase').onclick=()=>setTool('erase');
+$('applyGridBtn').onclick=()=>{ pushUndo('Apply grid settings'); state.gridSize=THREE.MathUtils.clamp(Math.round(finite($('gridSize').value,18)),4,80); state.tileSize=Math.max(.05,finite($('tileSize').value,1)); state.piece.gridSize=state.gridSize; state.piece.tileSize=state.tileSize; drawGrid(); rebuildFootprintOverlay(); refreshExport(); log('Applied grid settings.'); };
+$('clearFootprintBtn').onclick=()=>{ pushUndo('Clear footprint markers'); footprintSet.clear(); entranceSet.clear(); connectorSet.clear(); entryTunnelSet.clear(); chimneySet.clear(); porchSet.clear(); porchStairSet.clear(); railingSet.clear(); syncPieceFromSets(); drawGrid(); rebuildFootprintOverlay(); refreshExport(); log('Cleared all grid markers.'); };
+$('generateBaseBtn').onclick=generateBaseFromFootprint; $('applyPresetBtn').onclick=()=>applyBasePreset($('basePreset').value,true); $('resetBaseBtn').onclick=()=>{ pushUndo('Reset base faces'); state.piece.base.faces=[]; state.selectedFaceIds.clear(); rebuildFaceMeshes(); log('Cleared editable base faces.'); };
+$('multiSelectBtn').onclick=()=>{ state.multi=!state.multi; $('multiSelectBtn').textContent=state.multi?'Multi on':'Multi off'; $('multiSelectBtn').classList.toggle('active',state.multi); };
+$('subdivide2Btn').onclick=()=>subdivideSelected(2,2); $('subdivide3Btn').onclick=()=>subdivideSelected(3,3); $('extrudeBtn').onclick=extrudeSelected; $('moveFaceBtn').onclick=moveSelected; $('scaleFaceBtn').onclick=scaleSelected; $('markWallBtn').onclick=()=>setSelectedTag('wall'); $('markDoorBtn').onclick=()=>setSelectedTag('door'); $('markRoofBtn').onclick=()=>setSelectedTag('roof'); $('markRoofBtn2').onclick=()=>setSelectedTag('roof'); $('clearFaceTagBtn').onclick=()=>setSelectedTag('');
+$('glbInput').onchange=e=>{ for(const file of e.target.files||[]) addGlbFile(file); e.target.value=''; };
+$('roofShingleGlbInput').onchange=e=>{ const file=e.target.files?.[0]; if(file) loadRoofShingleFile(file); e.target.value=''; };
+$('rebuildRoofBtn').onclick=()=>{ rebuildRoofPreview(); refreshExport(); log('Rebuilt roof preview.'); };
+$('clearRoofPreviewBtn').onclick=hideRoofPreview;
+$('useTubePreviewBtn').onclick=()=>{ pushUndo('Use tube roof preview'); state.roofShingleTemplate=null; ensureRoofConfig().shingleSource=''; rebuildRoofPreview(); refreshExport(); log('Roof preview switched back to generated tubes.'); };
+for(const id of ['roofTubeRadius','roofTubeSpacing','roofTubeOverhang','roofWallOriginReachChk','roofTubeDirection','roofTubeLift','roofFlipX','roofFlipY','roofFlipZ','roofShingleScaleX','roofShingleScaleY','roofShingleScaleZ','roofShingleRotX','roofShingleRotZ','roofPeakRotateAwayChk','roofSecondLayerChk','roofSecondLayerWallOriginReachChk','roofSecondLayerAcross','roofSecondLayerLift','roofSecondLayerWallOriginReachChk','roofSecondLayerOverhang','roofSecondLayerScaleX','roofSecondLayerScaleY','roofSecondLayerScaleZ','roofSecondLayerRotX','roofSecondLayerPeakRotateAwayChk','roofSecondLayerFlipX','roofSecondLayerFlipY','roofSecondLayerFlipZ','roofPeakRotateChk','roofPeakRotateStrength','roofPeakRotateFalloff']) $(id).addEventListener('change',()=>{ pushUndo('Change roof repeater setting'); syncRoofFromInputs(); rebuildRoofPreview(); refreshExport(); });
+$('removeAssetBtn').onclick=removeSelectedAsset; $('applyAssetTransformBtn').onclick=applyAssetTransform; $('snapAssetGroundBtn').onclick=snapAssetGround;
+for(const id of ['modeTranslate','modeRotate','modeScale']) $(id).onclick=()=>{ const mode=id.replace('mode','').toLowerCase(); transform.setMode(mode); for(const bid of ['modeTranslate','modeRotate','modeScale']) $(bid).classList.toggle('active',bid===id); };
+$('savePieceBtn').onclick=saveCurrentPiece; $('duplicatePieceBtn').onclick=duplicateSelectedPiece; $('deletePieceBtn').onclick=deleteSelectedPiece;
+$('newPieceBtn').onclick=()=>{ pushUndo('Start new piece'); state.piece=makeBlankPiece(); state.gridSize=18; state.tileSize=1; $('gridSize').value=18; $('tileSize').value=1; $('pieceName').value=state.piece.name; $('pieceType').value=state.piece.type; if($('basePreset')) $('basePreset').value='highland'; state.selectedFaceIds.clear(); state.selectedAssetId=null; footprintSet.clear(); entranceSet.clear(); connectorSet.clear(); entryTunnelSet.clear(); chimneySet.clear(); porchSet.clear(); porchStairSet.clear(); railingSet.clear(); faceGroup.clear(); assetGroup.clear(); roofGroup.clear(); faceMeshes.clear(); assetMeshes.clear(); transform.detach(); activeTransformTarget=null; faceGizmoProxy.visible=false; applyBasePreset('highland', false); renderAssetList(); refreshExport(); log('Started a new Highland architecture piece.'); };
+$('undoBtn').onclick=undo; $('redoBtn').onclick=redo;
+window.addEventListener('keydown', ev=>{ const key=(ev.key||'').toLowerCase(); if((ev.ctrlKey||ev.metaKey) && key==='z'){ ev.preventDefault(); if(ev.shiftKey) redo(); else undo(); } if((ev.ctrlKey||ev.metaKey) && key==='y'){ ev.preventDefault(); redo(); } });
+$('refreshExportBtn').onclick=refreshExport; $('downloadJsonBtn').onclick=downloadJson; $('copyJsonBtn').onclick=async()=>{ refreshExport(); try{ await navigator.clipboard.writeText($('exportText').value); log('Copied JSON to clipboard.'); }catch{ $('exportText').select(); document.execCommand('copy'); log('Copied JSON using fallback selection.'); } };
+$('jsonInput').onchange=e=>{ const file=e.target.files?.[0]; if(!file)return; const reader=new FileReader(); reader.onload=()=>{ try{ importPayload(JSON.parse(reader.result)); }catch(err){ log(`JSON import failed: ${err.message}`, 'error'); } }; reader.readAsText(file); e.target.value=''; };
+for(const id of ['pieceName','pieceType','basePreset','baseHeight','wallThickness','groundY']) $(id).addEventListener('input',()=>{ syncPieceFromInputs(); refreshExport(); });
+
+try{ updateUndoRedoButtons(); syncSetsFromPiece(); syncRoofInputsFromPiece(); if(!state.piece.base.faces.length && !footprintSet.size) applyBasePreset('highland', false); drawGrid(); rebuildFootprintOverlay(); rebuildFaceMeshes(); rebuildRoofPreview(); renderAssetList(); renderPieceList(); refreshExport(); resize(); renderer.setClearColor(0x0b0f16,1); renderer.clear(true,true,true); renderer.render(scene,camera); animate(); window.__MHPA_READY__ = true; log('Ready. Default Highland architecture preset loaded. Blue footprint cells drive a tapered Highland frustum shell; green/gray/brown/tan/railing extension tiles generate solidified hollow entry tunnels with exposed-side orientation, real Highland wall portal cuts, structure-continuation support, wonky ground-running chimneys, porches, porch-facing stairs, and wonky auto-connecting railings; cross-gable branches clip to the primary ridge line; peak-center shingle rotation uses the scaled shingle center, completed shingle groups recenter on each eave plane, entry tunnels have closed skyward faces, per-layer peak-away controls are active, and Highland defaults include layer-1 -10° local X tilt plus layer-2 away-from-peak fan rotation.'); }catch(err){ log('BOOT ERROR: '+(err?.stack||err?.message||err),'error'); resize(); try{ renderer.setClearColor(0x0b0f16,1); renderer.clear(true,true,true); renderer.render(scene,camera); }catch(e){ log('FALLBACK RENDER ERROR: '+(e?.message||e),'error'); } }
+
+</script>
+</body>
+</html>
