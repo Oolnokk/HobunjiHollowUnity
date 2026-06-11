@@ -95,6 +95,7 @@
     </main>
   </div>
 
+  <script src="../../js/repo-picker.js"></script>
   <script src="../../config/scratchbones-config.js"></script>
   <script src="../../js/portrait-utils.js"></script>
   <script src="../../js/portrait-breathing.js"></script>
@@ -337,6 +338,23 @@
       if (!file) return;
       importJsonFile(file).catch(err => log('Import failed: ' + err.message)).finally(() => { event.target.value = ''; });
     });
+    if (window.RepoPicker) {
+      const rp = new RepoPicker({ docsBase: '../../' });
+      const dbPicker = rp.makePicker({
+        category: 'npcDatabases',
+        label: '☷ Load NPC DB',
+        fetchAs: 'json',
+        onLoad: async (entry, data) => {
+          try {
+            const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+            const file = new File([blob], entry.name, { type: 'application/json' });
+            await importJsonFile(file);
+          } catch(e) { log('Load failed: ' + e.message); }
+        }
+      });
+      const jf = document.getElementById('json-file');
+      if (jf) jf.after(dbPicker);
+    }
     window.addEventListener('resize', resize);
     init().catch(err => log('Startup failed: ' + err.message));
   })();

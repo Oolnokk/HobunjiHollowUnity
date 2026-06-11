@@ -95,6 +95,105 @@
     #menuBtn:hover { background: rgba(255,255,255,0.12); }
     #menuBtn.open  { background: var(--accent-dim); border-color: rgba(249,226,138,0.5); }
 
+    /* ── Farm editor toggle button ───────────────────────── */
+    #farmEditBtn {
+      position: fixed;
+      left: calc(var(--play-right) - 10 * var(--col)); top: calc(var(--oy) + 2 * var(--row));
+      width: calc(4 * var(--col)); height: calc(2 * var(--row));
+      z-index: 60;
+      border-radius: 0 0 14px 14px;
+      background: var(--glass);
+      border: 1px solid var(--border-bright);
+      border-top: none;
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      color: var(--text); font-size: 15px;
+      display: grid; place-items: center;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+      transition: background 0.15s; cursor: pointer;
+    }
+    #farmEditBtn:hover { background: rgba(255,255,255,0.12); }
+    #farmEditBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
+
+    /* ── Farm editor panel ───────────────────────────────── */
+    #farmEditorPanel {
+      position: fixed;
+      right: 2px;
+      top: calc(var(--oy) + 4 * var(--row));
+      width: clamp(220px, 26vw, 320px);
+      max-height: calc(var(--gh) - 4 * var(--row) - 16px);
+      z-index: 55;
+      display: flex;
+      flex-direction: column;
+      background: var(--glass-2);
+      border: 1px solid var(--border-bright);
+      border-radius: 14px;
+      box-shadow: 0 6px 28px rgba(0,0,0,0.55);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      overflow: hidden;
+    }
+    .fed-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.05);
+      border-bottom: 1px solid var(--border);
+      font-size: 13px; font-weight: 700; letter-spacing: 0.3px;
+      flex-shrink: 0;
+    }
+    .fed-close {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 14px; padding: 2px 6px; border-radius: 6px;
+    }
+    .fed-close:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+    .fed-scroll {
+      overflow-y: auto; overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      flex: 1;
+      padding: 6px 8px 10px;
+    }
+    .fed-section { margin-bottom: 8px; }
+    .fed-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
+      color: var(--muted); margin-bottom: 4px; padding: 0 2px;
+    }
+    .fed-grid {
+      display: flex; flex-wrap: wrap; gap: 4px;
+    }
+    .fed-btn {
+      font-family: inherit; font-size: 11px; cursor: pointer;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--text);
+      border-radius: 8px; padding: 5px 7px;
+      transition: background 0.12s, border-color 0.12s;
+      white-space: nowrap;
+    }
+    .fed-btn:hover { background: rgba(255,255,255,0.12); }
+    .fed-btn.fed-active {
+      background: rgba(100,220,130,0.22);
+      border-color: rgba(100,220,130,0.55);
+      color: #7fffaa;
+    }
+    .fed-btn.fed-erase.fed-active {
+      background: rgba(255,100,80,0.22);
+      border-color: rgba(255,100,80,0.55);
+      color: #ff8060;
+    }
+    .fed-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .fed-action-btn {
+      font-family: inherit; font-size: 11px; cursor: pointer;
+      background: rgba(100,220,130,0.14);
+      border: 1px solid rgba(100,220,130,0.3);
+      color: var(--ok); border-radius: 8px; padding: 5px 9px;
+      transition: background 0.12s;
+    }
+    .fed-action-btn:hover { background: rgba(100,220,130,0.24); }
+    .fed-action-btn.fed-danger {
+      background: rgba(255,100,80,0.12);
+      border-color: rgba(255,100,80,0.3);
+      color: var(--danger);
+    }
+    .fed-action-btn.fed-danger:hover { background: rgba(255,100,80,0.22); }
+
     /* ── Menu overlay (backdrop) ────────────────────────── */
     #menuOverlay { display: none; z-index: -1; } /* removed — see #menuBackdrop */
     #menuDrawer   { display: none; } /* removed — see #menuPanel */

@@ -58,6 +58,69 @@
     <span class="sb-gold" id="spGold">💰 0g</span>
   </div>
 
+  <!-- Farm editor toggle button (top-right, beside menu) -->
+  <button id="farmEditBtn" aria-label="Toggle farm editor" title="Farm Editor" onclick="window._farmEditor?.toggle()">✏️</button>
+
+  <!-- Farm Editor Panel -->
+  <div id="farmEditorPanel" style="display:none;" aria-label="Farm editor">
+    <div class="fed-header">
+      <span>✏️ Farm Editor</span>
+      <button class="fed-close" onclick="window._farmEditor?.toggle()" title="Close editor">✕</button>
+    </div>
+    <div class="fed-scroll">
+      <div class="fed-section">
+        <div class="fed-label">Terrain</div>
+        <div class="fed-grid">
+          <button class="fed-btn fed-active" data-btype="terrain" data-bval="grass"   onclick="window._farmEditor?.setBrush('terrain','grass')">🟩 Grass</button>
+          <button class="fed-btn"            data-btype="terrain" data-bval="weeds"   onclick="window._farmEditor?.setBrush('terrain','weeds')">🌿 Weeds</button>
+          <button class="fed-btn"            data-btype="terrain" data-bval="rock"    onclick="window._farmEditor?.setBrush('terrain','rock')">🪨 Rock</button>
+          <button class="fed-btn"            data-btype="terrain" data-bval="shrub"   onclick="window._farmEditor?.setBrush('terrain','shrub')">🌳 Shrub</button>
+          <button class="fed-btn"            data-btype="terrain" data-bval="tilled"  onclick="window._farmEditor?.setBrush('terrain','tilled')">🟫 Tilled</button>
+          <button class="fed-btn"            data-btype="terrain" data-bval="raised"  onclick="window._farmEditor?.setBrush('terrain','raised')">⬛ Raised</button>
+          <button class="fed-btn"            data-btype="terrain" data-bval="trench"  onclick="window._farmEditor?.setBrush('terrain','trench')">🔵 Trench</button>
+        </div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Vegetation (auto-tills soil)</div>
+        <div class="fed-grid">
+          <button class="fed-btn" data-btype="crop" data-bval="needlegrain"  onclick="window._farmEditor?.setBrush('crop','needlegrain')">🌾 Needlegrain</button>
+          <button class="fed-btn" data-btype="crop" data-bval="heftroot"     onclick="window._farmEditor?.setBrush('crop','heftroot')">🟡 Heftroot</button>
+          <button class="fed-btn" data-btype="crop" data-bval="garlink"      onclick="window._farmEditor?.setBrush('crop','garlink')">🧄 Garlink</button>
+          <button class="fed-btn" data-btype="crop" data-bval="ongyums"      onclick="window._farmEditor?.setBrush('crop','ongyums')">🧅 Ongyums</button>
+          <button class="fed-btn" data-btype="crop" data-bval="redberries"   onclick="window._farmEditor?.setBrush('crop','redberries')">🍓 Redberries</button>
+          <button class="fed-btn" data-btype="crop" data-bval="blueberries"  onclick="window._farmEditor?.setBrush('crop','blueberries')">🫐 Blueberries</button>
+          <button class="fed-btn" data-btype="crop" data-bval="yellowberries"onclick="window._farmEditor?.setBrush('crop','yellowberries')">🟡 Yellowberries</button>
+          <button class="fed-btn" data-btype="crop" data-bval="blackMustard" onclick="window._farmEditor?.setBrush('crop','blackMustard')">⚫ Black Mustard</button>
+          <button class="fed-btn" data-btype="crop" data-bval="greenMustard" onclick="window._farmEditor?.setBrush('crop','greenMustard')">🥬 Green Mustard</button>
+        </div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Objects (click to move)</div>
+        <div class="fed-grid">
+          <button class="fed-btn" data-btype="object" data-bval="sellCrate"  onclick="window._farmEditor?.setBrush('object','sellCrate')">📦 Sell Box</button>
+          <button class="fed-btn" data-btype="object" data-bval="supplyBox"  onclick="window._farmEditor?.setBrush('object','supplyBox')">🧺 Supply Box</button>
+        </div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Processing Furniture (free in editor)</div>
+        <div class="fed-grid">
+          <button class="fed-btn" data-btype="furniture" data-bval="pestle"      onclick="window._farmEditor?.setBrush('furniture','pestle')">🥣 Pestle</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="squeezer"    onclick="window._farmEditor?.setBrush('furniture','squeezer')">🧃 Squeezer</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="handMill"    onclick="window._farmEditor?.setBrush('furniture','handMill')">⚙️ Hand Mill</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="dryingRack"  onclick="window._farmEditor?.setBrush('furniture','dryingRack')">☀️ Drying Rack</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="smoker"      onclick="window._farmEditor?.setBrush('furniture','smoker')">💨 Smoker</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="agingBarrel" onclick="window._farmEditor?.setBrush('furniture','agingBarrel')">🛢️ Aging Barrel</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="agingVase"   onclick="window._farmEditor?.setBrush('furniture','agingVase')">🏺 Aging Vase</button>
+        </div>
+      </div>
+      <div class="fed-section fed-actions">
+        <button class="fed-btn fed-erase" data-btype="erase" data-bval="erase" onclick="window._farmEditor?.setBrush('erase','erase')">🗑️ Erase</button>
+        <button class="fed-action-btn" onclick="window._farmEditor?.save()">💾 Save</button>
+        <button class="fed-action-btn fed-danger" onclick="window._farmEditor?.clearLayout()">🗑 Clear Saved</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Menu button (top-right) -->
   <button id="menuBtn" aria-label="Open menu" aria-expanded="false">☰</button>
 
@@ -258,6 +321,14 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingWeed3D"><span class="toggle-slider"></span></span>
           </label>
+          <div class="settings-section-title" style="margin-top:10px">Dev Tools</div>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Editor Hub</div>
+              <div class="settings-desc">Map Builder, Town Editor, NPC tools, Wall Builder</div>
+            </div>
+            <a href="tools/index.html" target="_blank" style="font-size:12px;padding:6px 10px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.3);border-radius:8px;color:#6aa7ff;text-decoration:none;white-space:nowrap;align-self:center">Open Tools ↗</a>
+          </div>
         </div>
       </div><!-- /mpSettings -->
 

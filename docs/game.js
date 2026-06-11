@@ -483,6 +483,42 @@
         category: 'furniture'
       }));
 
+      // ── Decorative / interior furniture ─────────────────────────────
+      // These are placed inside the house. Each has a GLB model in assets/models/furniture/.
+      // area: 'interior' = house only, 'farm' = farm only, 'any' = either
+      const DECORATIVE_FURNITURE_DEFS = {
+        basicBed:      { itemKey: 'basicBedFurniture',      icon: '🛏️', name: 'Single Bed',          modelFile: 'basicbed_single_refined.glb',  price: 35, fw: 1, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A comfortable single bed for restful sleep.' },
+        doubleBed:     { itemKey: 'doubleBedFurniture',     icon: '🛏️', name: 'Double Bed',           modelFile: 'basicbed_double_refined.glb',  price: 55, fw: 2, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A spacious double bed.' },
+        bedroll:       { itemKey: 'bedrollFurniture',       icon: '🛌', name: 'Bedroll',              modelFile: 'bedroll_folded.glb',            price: 12, fw: 1, fd: 1, color: 0x6b8c5e, area: 'interior', desc: 'A simple folded bedroll for sleeping rough.' },
+        bench:         { itemKey: 'benchFurniture',         icon: '🪑', name: 'Short Bench',          modelFile: 'bench_short.glb',              price: 18, fw: 2, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A short wooden bench.' },
+        bookshelf:     { itemKey: 'bookshelfFurniture',     icon: '📚', name: 'Bookshelf',            modelFile: 'bookshelf_low.glb',            price: 28, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low bookshelf.' },
+        bucket:        { itemKey: 'bucketFurniture',        icon: '🪣', name: 'Tin Bucket',           modelFile: 'bucket_tin.glb',               price: 8,  fw: 1, fd: 1, color: 0x888888, area: 'any',      desc: 'A utilitarian tin bucket.' },
+        candleTable:   { itemKey: 'candleTableFurniture',   icon: '🕯️', name: 'Candle Table',         modelFile: 'candle_table.glb',             price: 15, fw: 1, fd: 1, color: 0x5a4020, area: 'interior', desc: 'Small table with a candle for warm light.' },
+        chairSimple:   { itemKey: 'chairSimpleFurniture',   icon: '🪑', name: 'Simple Chair',         modelFile: 'chair_simple.glb',             price: 12, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A plain wooden chair.' },
+        chairCushion:  { itemKey: 'chairCushionFurniture',  icon: '🪑', name: 'Cushioned Chair',      modelFile: 'chair_with_blue_cushion.glb',  price: 22, fw: 1, fd: 1, color: 0x3a5c8a, area: 'interior', desc: 'A chair with a soft blue cushion.' },
+        chest:         { itemKey: 'chestFurniture',         icon: '📦', name: 'Storage Chest',        modelFile: 'chest_storage.glb',            price: 32, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'Sturdy wooden chest for storage.' },
+        crateStack:    { itemKey: 'crateStackFurniture',    icon: '📦', name: 'Crate Stack',          modelFile: 'crate_stack.glb',              price: 14, fw: 1, fd: 1, color: 0x8a6a3a, area: 'any',      desc: 'A stack of wooden crates.' },
+        copperBarrel:  { itemKey: 'copperBarrelFurniture',  icon: '🛢️', name: 'Copper Barrel',        modelFile: 'barrel_copper_hoop.glb',       price: 20, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A sturdy copper-hooped barrel.' },
+        desk:          { itemKey: 'deskFurniture',          icon: '✍️', name: 'Writing Desk',         modelFile: 'desk_writing.glb',             price: 38, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A fine writing desk with drawers.' },
+        dresser:       { itemKey: 'dresserFurniture',       icon: '🗄️', name: 'Low Dresser',          modelFile: 'dresser_low.glb',              price: 30, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low dresser with drawers.' },
+        hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.' },
+        loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
+        nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.' },
+        rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', desc: 'A small decorative woven rug.' },
+        standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.' },
+        stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.' },
+        tableLong:     { itemKey: 'tableLongFurniture',     icon: '🍽️', name: 'Long Table',           modelFile: 'table_long.glb',               price: 42, fw: 4, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A long communal dining table.' },
+        tableRound:    { itemKey: 'tableRoundFurniture',    icon: '🍽️', name: 'Round Table',          modelFile: 'table_round.glb',              price: 28, fw: 2, fd: 2, color: 0x7a5c3a, area: 'interior', desc: 'A round wooden dining table.' },
+        tableSmall:    { itemKey: 'tableSmallFurniture',    icon: '🍽️', name: 'Small Table',          modelFile: 'table_small.glb',              price: 18, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A small side table.' },
+        wardrobe:      { itemKey: 'wardrobeFurniture',      icon: '🚪', name: 'Tall Wardrobe',        modelFile: 'wardrobe_tall.glb',            price: 48, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A tall wardrobe for clothing storage.' },
+        washTub:       { itemKey: 'washTubFurniture',       icon: '🛁', name: 'Copper Wash Tub',      modelFile: 'wash_tub_copper.glb',          price: 25, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A copper tub for bathing or laundry.' },
+      };
+
+      const DECORATIVE_FURNITURE_CATALOG = Object.entries(DECORATIVE_FURNITURE_DEFS).map(([, def]) => ({
+        key: def.itemKey, icon: def.icon, name: def.name, desc: def.desc,
+        price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture'
+      }));
+
       const LIVESTOCK_CATALOG = [
         { key: 'puktuk',   icon: '🐐', name: 'Puktuk',   desc: 'Coming soon: meat, milk, and wool livestock.', price: 120, comingSoon: true },
         { key: 'nelk',     icon: '🐔', name: 'Nelk',     desc: 'Coming soon: meat, eggs, and mayonnaise chain.', price: 90,  comingSoon: true },
@@ -507,6 +543,7 @@
         { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mustard Seed',  desc: 'Fresh mustard crop. Ideal water 30–65%.', price: 6, gives: { greenMustardSeed: 2 } },
         { key: 'mulchBag',           icon: '🍂', name: 'Mulch Bag',           desc: 'Boosts soil recovery and gives clearing material.', price: 3, gives: { mulch: 5 } },
         ...PROCESSING_FURNITURE_CATALOG,
+        ...DECORATIVE_FURNITURE_CATALOG,
         ...LIVESTOCK_CATALOG
       ];
 
@@ -520,6 +557,7 @@
       let shippingBoxObject = null; // Used by the Shipping menu pane to read/write the active sell crate contents.
       let supplyBoxObject = null; // Used by the Supplies menu pane to read/write supply order quantities.
       const processingFurnitureObjects = new Set(); // Used by reset and debug to track player-placed processing furniture.
+      const interiorFurnitureObjects = []; // Tracks decorative furniture placed inside the house.
       const animalObjects = new Set(); // Tracks all live animal world objects for update loop and reset.
 
       // Preload uumkao'ii sprite; animals check this before spawning.
@@ -788,6 +826,247 @@
           obj.reset && obj.reset();
         });
         processingFurnitureObjects.clear();
+      }
+
+      // ── Decorative furniture (interior) ──────────────────────────
+      function getDecorativeFurnitureKeyByItemKey(itemKey) {
+        const entry = Object.entries(DECORATIVE_FURNITURE_DEFS).find(([, def]) => def.itemKey === itemKey);
+        return entry ? entry[0] : null;
+      }
+
+      function canPlaceDecorativeFurnitureAt(col, row) {
+        const g = currentArea === 'interior' ? interiorGrid : grid;
+        const tile = g[row]?.[col];
+        if (!tile || tile.type === TileType.ROCK) return false;
+        if (currentArea === 'farm' && isHouseFootprint(col, row)) return false;
+        return !interiorFurnitureObjects.find(o => o.col === col && o.row === row);
+      }
+
+      function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene) {
+        const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
+        if (!def) return null;
+        const w = Math.min(def.fw || 1, 1.0) * 0.85;
+        const d = Math.min(def.fd || 1, 1.0) * 0.85;
+        const geo = new THREE.BoxGeometry(w, 0.4, d);
+        const mat = new THREE.MeshLambertMaterial({ color: def.color || 0x8b6540 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.castShadow = true;
+        mesh.position.set(col + 0.5, 0.2, row + 0.5);
+        targetScene.add(mesh);
+
+        // Load GLB async and swap placeholder
+        const loader = new THREE.GLTFLoader();
+        loader.load(`assets/models/furniture/${def.modelFile}`, (gltf) => {
+          const model = gltf.scene;
+          model.position.set(col + 0.5, 0, row + 0.5);
+          model.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+          targetScene.remove(mesh);
+          mesh.geometry.dispose(); mesh.material.dispose();
+          targetScene.add(model);
+          const entry = interiorFurnitureObjects.find(o => o.mesh === mesh);
+          if (entry) entry.mesh = model;
+        }, undefined, () => {});
+        return mesh;
+      }
+
+      function placeDecorativeFurniture(col, row, furnitureKey) {
+        const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
+        if (!def) return { ok: false, message: 'Unknown furniture type.' };
+        const isInInterior = currentArea === 'interior';
+        const isOnFarm = currentArea === 'farm';
+        if (def.area === 'interior' && !isInInterior) return { ok: false, message: `${def.name} must be placed inside the house.` };
+        if (def.area === 'farm' && !isOnFarm) return { ok: false, message: `${def.name} must be placed on the farm.` };
+        if (!canPlaceDecorativeFurnitureAt(col, row)) return { ok: false, message: 'Cannot place furniture here.' };
+        const itemKey = def.itemKey;
+        if ((inventory[itemKey] || 0) < 1) return { ok: false, message: `No ${def.name} in inventory.` };
+        const targetScene = isInInterior ? interiorScene : scene;
+        const mesh = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene);
+        if (!mesh) return { ok: false, message: 'Could not create furniture mesh.' };
+        inventory[itemKey]--;
+        clampInventoryStack(itemKey);
+        interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh, area: currentArea });
+        refreshItemScroll();
+        saveFarmLayout();
+        return { ok: true, message: `${def.icon} ${def.name} placed.` };
+      }
+
+      function clearInteriorFurniture() {
+        interiorFurnitureObjects.forEach(obj => {
+          const s = obj.area === 'interior' ? interiorScene : scene;
+          s.remove(obj.mesh);
+          if (obj.mesh.geometry) obj.mesh.geometry.dispose();
+          if (obj.mesh.material) obj.mesh.material.dispose();
+        });
+        interiorFurnitureObjects.length = 0;
+      }
+
+      // ── Farm editor ───────────────────────────────────────────────
+      let farmEditMode = false;
+      let farmEditBrushType = 'terrain'; // 'terrain'|'crop'|'object'|'furniture'|'decor'|'erase'
+      let farmEditBrush = 'grass';
+      let _editorPainting = false;
+
+      function toggleFarmEditMode() {
+        farmEditMode = !farmEditMode;
+        const panel = document.getElementById('farmEditorPanel');
+        const btn   = document.getElementById('farmEditBtn');
+        if (panel) panel.style.display = farmEditMode ? 'flex' : 'none';
+        if (btn)   btn.classList.toggle('fed-open', farmEditMode);
+        if (farmEditMode) showToast('Farm editor active — click tiles to paint.', true);
+      }
+
+      function farmEditorSetBrush(type, value) {
+        farmEditBrushType = type;
+        farmEditBrush = value;
+        document.querySelectorAll('.fed-btn').forEach(b => b.classList.remove('fed-active'));
+        const sel = document.querySelector(`.fed-btn[data-btype="${type}"][data-bval="${value}"]`);
+        if (sel) sel.classList.add('fed-active');
+      }
+
+      function applyFarmEditBrush(col, row) {
+        if (!farmEditMode) return;
+        if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+        if (currentArea === 'farm' && isHouseFootprint(col, row)) return;
+        const tile = grid[row]?.[col];
+        if (!tile) return;
+
+        if (farmEditBrushType === 'terrain') {
+          const typeMap = {
+            grass: TileType.GRASS, weeds: TileType.WEEDS, rock: TileType.ROCK,
+            shrub: TileType.SHRUB, tilled: TileType.TILLED, raised: TileType.RAISED, trench: TileType.TRENCH
+          };
+          tile.type = typeMap[farmEditBrush] ?? TileType.GRASS;
+          tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
+        } else if (farmEditBrushType === 'crop') {
+          if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB) tile.type = TileType.TILLED;
+          if (tile.type !== TileType.TILLED && tile.type !== TileType.GRASS && tile.type !== TileType.RAISED) tile.type = TileType.TILLED;
+          tile.crop = farmEditBrush; tile.cropAge = 50; tile.cropReady = false;
+          markTileDirty(col, row); saveFarmLayout();
+        } else if (farmEditBrushType === 'object') {
+          _editorMoveObject(col, row, farmEditBrush);
+        } else if (farmEditBrushType === 'furniture') {
+          // Place processing furniture without consuming inventory (editor mode)
+          if (!canPlaceFurnitureAt(col, row)) { showToast('Cannot place furniture here.', false); return; }
+          const def = PROCESSING_FURNITURE_DEFS[farmEditBrush];
+          if (!def) return;
+          const obj = makeProcessingFurniture(col, row, farmEditBrush);
+          if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); saveFarmLayout(); }
+        } else if (farmEditBrushType === 'erase') {
+          const obj = getWorldObjectAt(col, row);
+          if (obj && obj.type === 'processing_furniture') {
+            worldObjects.delete(col + ',' + row); obj.reset && obj.reset(); processingFurnitureObjects.delete(obj);
+          }
+          // Also remove decorative furniture at this tile
+          const decIdx = interiorFurnitureObjects.findIndex(o => o.col === col && o.row === row && o.area === 'farm');
+          if (decIdx >= 0) {
+            const d = interiorFurnitureObjects.splice(decIdx, 1)[0];
+            scene.remove(d.mesh);
+            if (d.mesh.geometry) d.mesh.geometry.dispose();
+          }
+          tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
+        }
+      }
+
+      function _editorMoveObject(col, row, objectType) {
+        if (isHouseFootprint(col, row)) { showToast('Cannot place objects on house footprint.', false); return; }
+        if (getWorldObjectAt(col, row)) { showToast('Tile already occupied.', false); return; }
+        if (objectType === 'sellCrate' && shippingBoxObject) {
+          const old = shippingBoxObject;
+          worldObjects.delete(old.col + ',' + old.row);
+          if (old.mesh) scene.remove(old.mesh);
+          if (old.lid)  scene.remove(old.lid);
+          const nc = makeSellCrate(col, row);
+          shippingBoxObject = nc; worldObjects.set(col + ',' + row, nc);
+          saveFarmLayout(); showToast('Shipping box moved.', true);
+        } else if (objectType === 'supplyBox' && supplyBoxObject) {
+          const old = supplyBoxObject;
+          worldObjects.delete(old.col + ',' + old.row);
+          if (old.mesh) scene.remove(old.mesh);
+          if (old.lid)  scene.remove(old.lid);
+          const nb = makeSupplyBox(col, row);
+          supplyBoxObject = nb; worldObjects.set(col + ',' + row, nb);
+          saveFarmLayout(); showToast('Supply box moved.', true);
+        }
+      }
+
+      // ── Farm layout persistence ───────────────────────────────────
+      const FARM_LAYOUT_KEY = 'hobunji_farm_layout_v3';
+
+      function saveFarmLayout() {
+        try {
+          const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [] };
+          if (shippingBoxObject) layout.objects.sellCrate = [shippingBoxObject.col, shippingBoxObject.row];
+          if (supplyBoxObject)   layout.objects.supplyBox = [supplyBoxObject.col, supplyBoxObject.row];
+          for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+              const t = grid[r][c];
+              const def = createDayOneTile(c, r);
+              if (t.type !== def.type || (t.crop && t.crop !== CropType.NONE)) {
+                layout.tiles.push({ c, r, type: t.type, crop: t.crop || '' });
+              }
+            }
+          }
+          processingFurnitureObjects.forEach(obj => {
+            layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row });
+          });
+          interiorFurnitureObjects.forEach(obj => {
+            layout.decor.push({ key: obj.key, col: obj.col, row: obj.row, area: obj.area });
+          });
+          localStorage.setItem(FARM_LAYOUT_KEY, JSON.stringify(layout));
+        } catch {}
+      }
+
+      function loadFarmLayout() {
+        try {
+          const raw = localStorage.getItem(FARM_LAYOUT_KEY);
+          return raw ? JSON.parse(raw) : null;
+        } catch { return null; }
+      }
+
+      function applyFarmLayoutToGrid(layout) {
+        if (!layout || layout.version !== 3) return;
+        (layout.tiles || []).forEach(({ c, r, type, crop }) => {
+          if (grid[r]?.[c]) {
+            grid[r][c].type = type;
+            grid[r][c].crop = crop || CropType.NONE;
+            if (crop) { grid[r][c].cropAge = 50; grid[r][c].cropReady = false; }
+          }
+        });
+      }
+
+      function applyFarmLayoutObjects(layout) {
+        if (!layout || layout.version !== 3) return;
+        if (layout.objects?.sellCrate) {
+          const [c, r] = layout.objects.sellCrate;
+          if (shippingBoxObject && (shippingBoxObject.col !== c || shippingBoxObject.row !== r)) {
+            worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
+            shippingBoxObject.reset && shippingBoxObject.reset();
+            const nc = makeSellCrate(c, r); shippingBoxObject = nc; worldObjects.set(c + ',' + r, nc);
+          }
+        }
+        if (layout.objects?.supplyBox) {
+          const [c, r] = layout.objects.supplyBox;
+          if (supplyBoxObject && (supplyBoxObject.col !== c || supplyBoxObject.row !== r)) {
+            worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
+            supplyBoxObject.reset && supplyBoxObject.reset();
+            const nb = makeSupplyBox(c, r); supplyBoxObject = nb; worldObjects.set(c + ',' + r, nb);
+          }
+        }
+        (layout.furniture || []).forEach(({ key, col, row }) => {
+          if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
+            const obj = makeProcessingFurniture(col, row, key);
+            if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
+          }
+        });
+        (layout.decor || []).forEach(({ key, col, row, area }) => {
+          const def = DECORATIVE_FURNITURE_DEFS[key];
+          if (!def) return;
+          const targetScene = area === 'interior' ? interiorScene : scene;
+          const mesh = makeDecorativeFurnitureMesh(col, row, key, targetScene);
+          if (mesh) interiorFurnitureObjects.push({ key, col, row, mesh, area });
+        });
       }
 
       // ── Animal system ─────────────────────────────────────────────
@@ -1306,6 +1585,18 @@
         }
       });
 
+      Object.values(DECORATIVE_FURNITURE_DEFS).forEach(def => {
+        if (!inventoryItems.some(item => item.key === def.itemKey)) {
+          inventoryItems.push({ key: def.itemKey, icon: def.icon, label: def.name.toUpperCase(), max: 99 });
+        }
+        if (!ITEM_DEFS[def.itemKey]) {
+          ITEM_DEFS[def.itemKey] = {
+            icon: def.icon, label: def.name, cat: 'furniture', sellPrice: 0,
+            tags: ['Furniture', 'Decorative', def.area || 'interior'], desc: def.desc
+          };
+        }
+      });
+
       function itemIconForKey(key) {
         return ITEM_DEFS[key]?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon || '□';
       }
@@ -1709,6 +2000,8 @@
 
       let activeItemIndex = 0;
       let grid = createInitialGrid();
+      // Apply any saved farm layout (tile overrides only; object positions applied after initWorldObjects)
+      { const _savedLayout = loadFarmLayout(); if (_savedLayout) applyFarmLayoutToGrid(_savedLayout); }
 
       // ── Area-switching state ───────────────────────────────────────
       let currentArea     = 'farm';   // 'farm' | 'interior'
@@ -1778,6 +2071,21 @@
       const _mouseNDC      = isDesktop ? new THREE.Vector2()   : null;
       const _groundPlane   = isDesktop ? new THREE.Plane(new THREE.Vector3(0,1,0), 0) : null;
       const _mouseWorld    = isDesktop ? new THREE.Vector3()   : null;
+      // Editor-specific raycaster (always available, used by farm editor on both desktop and touch)
+      const _edRay = new THREE.Raycaster();
+      const _edNDC = new THREE.Vector2();
+      const _edPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const _edHit  = new THREE.Vector3();
+      function _screenToFarmTile(clientX, clientY) {
+        const rect = threeContainer.getBoundingClientRect();
+        _edNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        _edNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+        _edRay.setFromCamera(_edNDC, camera);
+        if (_edRay.ray.intersectPlane(_edPlane, _edHit)) {
+          return { col: clamp(Math.floor(_edHit.x), 0, COLS - 1), row: clamp(Math.floor(_edHit.z), 0, ROWS - 1) };
+        }
+        return null;
+      }
 
       // Water particle system: bubbles / foam on flowing trenches
       const waterParticles = [];
@@ -2339,7 +2647,9 @@
         pendingAction = null;
         const tile = grid[row][col];
         let result;
-        if (action.startsWith('place_')) {
+        if (action.startsWith('place_decor_')) {
+          result = placeDecorativeFurniture(col, row, action.slice(12));
+        } else if (action.startsWith('place_')) {
           result = placeProcessingFurniture(col, row, action.slice(6));
         } else if (action === 'spawn_uumkaoii') {
           result = spawnUumkaoii(col, row);
@@ -5365,6 +5675,19 @@
               allowed: count > 0 && canPlaceFurnitureAt(reticle.col, reticle.row),
             });
           }
+          const decorKey = getDecorativeFurnitureKeyByItemKey(item.key);
+          if (decorKey) {
+            const def = DECORATIVE_FURNITURE_DEFS[decorKey];
+            const count = inventory[item.key] || 0;
+            const areaOk = def.area === 'any' || (def.area === 'interior' && currentArea === 'interior') || (def.area === 'farm' && currentArea === 'farm');
+            btns.push({
+              icon: item.icon,
+              label: count > 0 ? `Place (${count})` : 'No furniture',
+              action: 'place_decor_' + decorKey,
+              style: 'plant',
+              allowed: count > 0 && areaOk && canPlaceDecorativeFurnitureAt(reticle.col, reticle.row),
+            });
+          }
           if (item.key === 'uumkaoiiCrate') {
             const count = inventory.uumkaoiiCrate || 0;
             btns.push({
@@ -5862,9 +6185,11 @@
         Object.keys(inventory).forEach(key => { delete inventory[key]; });
         Object.assign(inventory, { ...STARTING_INVENTORY });
         clearPlacedProcessingFurniture();
+        clearInteriorFurniture();
         clearAnimalObjects();
         worldObjects.forEach(o => o.reset && o.reset());
         grid = createInitialGrid();
+        { const _sl = loadFarmLayout(); if (_sl) applyFarmLayoutToGrid(_sl); }
         player.x = COLS * TILE * 0.5;
         player.y = ROWS * TILE * 0.72;
         player.angle = -Math.PI / 2;
@@ -5881,6 +6206,25 @@
         rebuildToolMeshes();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+        // Re-apply saved processing furniture from layout (crates keep their current position)
+        try {
+          const _rl = loadFarmLayout();
+          if (_rl) {
+            (_rl.furniture || []).forEach(({ key, col, row }) => {
+              if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
+                const obj = makeProcessingFurniture(col, row, key);
+                if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
+              }
+            });
+            (_rl.decor || []).forEach(({ key, col, row, area }) => {
+              const def = DECORATIVE_FURNITURE_DEFS[key];
+              if (!def) return;
+              const tgt = area === 'interior' ? interiorScene : scene;
+              const m = makeDecorativeFurnitureMesh(col, row, key, tgt);
+              if (m) interiorFurnitureObjects.push({ key, col, row, mesh: m, area });
+            });
+          }
+        } catch {}
         lastActionMessage = 'Farm reset. First Rains — dig trenches to route the water.';
         showToast('Farm reset to First Rains.', true);
         debugLog('prototype reset');
@@ -5972,12 +6316,41 @@
           }
         });
       }
+      // ── Farm editor pointer handlers ──────────────────────────────
+      threeContainer.addEventListener('pointerdown', (e) => {
+        if (!farmEditMode || currentArea !== 'farm') return;
+        e.stopPropagation();
+        _editorPainting = true;
+        const t = _screenToFarmTile(e.clientX, e.clientY);
+        if (t) applyFarmEditBrush(t.col, t.row);
+      });
+      threeContainer.addEventListener('pointermove', (e) => {
+        if (!farmEditMode || currentArea !== 'farm' || !_editorPainting) return;
+        e.stopPropagation();
+        const t = _screenToFarmTile(e.clientX, e.clientY);
+        if (t) applyFarmEditBrush(t.col, t.row);
+      });
+      window.addEventListener('pointerup', () => { _editorPainting = false; });
+
+      // Expose farm editor to the HTML panel buttons
+      window._farmEditor = {
+        toggle: toggleFarmEditMode,
+        setBrush: farmEditorSetBrush,
+        save: saveFarmLayout,
+        clearLayout: () => {
+          try { localStorage.removeItem(FARM_LAYOUT_KEY); } catch {}
+          showToast('Saved layout cleared. Reset the farm to apply.', true);
+        },
+      };
+
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
       fitToAspect();
       resizeCanvas();
       refreshActionBar();
       refreshItemScroll();
       try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
+      // Apply saved object positions and furniture after world objects are created
+      try { applyFarmLayoutObjects(loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
       debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
 
       // ── Onboarding gate ────────────────────────────────────────────
