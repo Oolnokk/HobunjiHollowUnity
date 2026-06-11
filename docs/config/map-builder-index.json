@@ -1,7 +1,7 @@
 {
   "schema": "hobunji-map-builder-index/v1",
   "createdBy": "ChatGPT",
-  "notes": "Single indexed manifest for HTML-stage map building. Tools load this file instead of asking for manual URLs. Add exported JSON/assets here as they become real repo files.",
+  "notes": "Single indexed manifest for HTML-stage map building. Tools load this file instead of asking for manual URLs. Derived house pieces are virtual config entries expanded by docs/js/hobunji-map-builder-module.js.",
   "paths": {
     "npcDatabaseEditor": "../tools/npc-authoring-editor/index.html",
     "townMapEditor": "../tools/town-map-editor/index.html",
@@ -14,19 +14,40 @@
       "label": "Hobunji Starter NPC Database",
       "kind": "npcDatabase",
       "jsonUrl": "../config/npcs/hobunji-starter-npc-database.json",
-      "tags": ["npc", "starter", "hobunji"]
+      "tags": [
+        "npc",
+        "starter",
+        "hobunji"
+      ]
     }
   ],
   "townMaps": [],
-  "housePieces": [],
+  "housePieces": [
+    {
+      "id": "placement_derived_highland",
+      "label": "Placement-derived highland footprint",
+      "kind": "derivedHousePiece",
+      "generatedBy": "makeHouseFootprintFromPlacement",
+      "tags": [
+        "house",
+        "highland",
+        "derived",
+        "default"
+      ]
+    }
+  ],
   "wallRecipes": [
     {
       "id": "roughbrick_default",
       "label": "Roughbrick default wall recipe",
       "kind": "wallRecipe",
-      "recipeUrl": "../assets/models/Roughbrick1.wallrecipe.json",
+      "recipeUrl": "../assets/models/recipes/walls/wallrecipe2.json",
       "modelUrl": "../assets/models/Roughbrick1.glb",
-      "tags": ["wall", "roughbrick", "default"]
+      "tags": [
+        "wall",
+        "roughbrick",
+        "default"
+      ]
     }
   ],
   "furniture": [],
@@ -35,7 +56,9 @@
     "npcDatabaseById": {
       "hobunji_starter_npc_database": 0
     },
-    "housePieceById": {},
+    "housePieceById": {
+      "placement_derived_highland": 0
+    },
     "wallRecipeById": {
       "roughbrick_default": 0
     },
