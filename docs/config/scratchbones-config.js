@@ -42,6 +42,20 @@ window.SCRATCHBONES_CONFIG = {
       },
       "safeMarginPx": 18
     },
+    "mapBuilder": {
+      "editor2d": {
+        "zoom": { "min": 6, "fitMin": 8, "max": 70, "fitMarginPx": 48, "wheelInScale": 1.12, "wheelOutScale": 0.89 }
+      },
+      "previewCamera": {
+        "fovDegrees": 48,
+        "nearClip": 0.1,
+        "farClip": 220,
+        "gameplayAngle": { "yawRadians": -0.72, "pitchRadians": 0.72 },
+        "distance": { "default": 48, "min": 12, "max": 95, "wheelStep": 3 },
+        "focus": { "distance": 20, "targetYOffset": 1.0, "followLerp": 0.18 },
+        "touch": { "pinchEpsilonPx": 2 }
+      }
+    },
     "chat": {
       "messageMaxLength": 180,
       "inputFocusFontSizePx": 16,

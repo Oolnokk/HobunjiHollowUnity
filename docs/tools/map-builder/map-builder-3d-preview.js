@@ -12,9 +12,17 @@
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x071018);
   scene.fog = new THREE.Fog(0x071018, 38, 110);
-  const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 220);
-  camera.position.set(26, 26, 34);
-  camera.lookAt(24, 0, 16);
+  const cameraConfig = window.SCRATCHBONES_CONFIG?.game?.mapBuilder?.previewCamera || {};
+  const angleConfig = cameraConfig.gameplayAngle || {};
+  const distanceConfig = cameraConfig.distance || {};
+  const focusConfig = cameraConfig.focus || {};
+  const touchConfig = cameraConfig.touch || {};
+  const camera = new THREE.PerspectiveCamera(
+    Number(cameraConfig.fovDegrees) || 48,
+    1,
+    Number(cameraConfig.nearClip) || 0.1,
+    Number(cameraConfig.farClip) || 220
+  );
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.shadowMap.enabled = true;
@@ -51,10 +59,39 @@
 
   let shingleSource = null;
   const npcModels = new Map();
+  const pointerState = new Map();
   let lastSignature = '';
-  let controls = { dragging: false, lastX: 0, lastY: 0, yaw: -0.72, pitch: 0.72, dist: 48, target: new THREE.Vector3(24, 0, 16) };
+  let selectedNpcId = '';
+  let pinchStart = null;
+  const controls = {
+    panning: false,
+    lastX: 0,
+    lastY: 0,
+    yaw: Number(angleConfig.yawRadians ?? -0.72),
+    pitch: Number(angleConfig.pitchRadians ?? 0.72),
+    dist: Number(distanceConfig.default ?? 48),
+    target: new THREE.Vector3(24, 0, 16)
+  };
+  const npcFocusSelect = document.getElementById('npcFocusSelect');
 
   function log(message, level = 'info') { ui()?.log?.(`[3D] ${message}`, level); }
+  function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+  function cameraDistanceMin() { return Number(distanceConfig.min ?? 12); }
+  function cameraDistanceMax() { return Number(distanceConfig.max ?? 95); }
+  function focusDistance() { return clamp(Number(focusConfig.distance ?? 20), cameraDistanceMin(), cameraDistanceMax()); }
+  function activeNpcIds(runtime) { return [...new Set((runtime?.state?.npcPaths || []).map(path => path.npcId).filter(Boolean))]; }
+  function npcLabel(runtime, id) {
+    const npc = (runtime?.npcDb?.npcs || []).find(item => item.id === id);
+    return npc?.name || npc?.label || id;
+  }
+  function syncFocusSelect(runtime) {
+    if (!npcFocusSelect) return;
+    const ids = activeNpcIds(runtime);
+    const current = selectedNpcId;
+    npcFocusSelect.innerHTML = ['<option value="">Focus: free camera</option>'].concat(ids.map(id => `<option value="${id}">Focus: ${npcLabel(runtime, id)}</option>`)).join('');
+    if (current && ids.includes(current)) npcFocusSelect.value = current;
+    else { selectedNpcId = ''; npcFocusSelect.value = ''; }
+  }
   function clearGroup(g) { while (g.children.length) { const c = g.children.pop(); disposeObject(c); } }
   function disposeObject(o) { o.traverse?.(c => { if (c.geometry) c.geometry.dispose?.(); const ms = c.material ? (Array.isArray(c.material) ? c.material : [c.material]) : []; ms.forEach(m => { if (!Object.values(mats).includes(m)) { m.map?.dispose?.(); m.dispose?.(); } }); }); }
   function tileToWorld(x, y) { return new THREE.Vector3(x + 0.5, 0, y + 0.5); }
@@ -255,9 +292,15 @@
   }
   async function ensureNpcModels(runtime) {
     const npcs = runtime?.npcDb?.npcs || [];
-    const pathIds = new Set((runtime?.state?.npcPaths || []).map(p => p.npcId));
-    for (const npc of npcs) if (pathIds.has(npc.id) && !npcModels.has(npc.id)) {
-      const model = await makeNpcAvatar(npc); npcModels.set(npc.id, model); npcLayer.add(model);
+    const pathIds = new Set(activeNpcIds(runtime));
+    for (const [id, model] of npcModels.entries()) if (!pathIds.has(id)) {
+      npcModels.delete(id);
+      npcLayer.remove(model);
+      disposeObject(model);
+    }
+    for (const id of pathIds) if (!npcModels.has(id)) {
+      const npc = npcs.find(item => item.id === id) || { id, name: id };
+      const model = await makeNpcAvatar(npc); npcModels.set(id, model); npcLayer.add(model);
     }
   }
   function pathPosition(path, mins) {
@@ -280,16 +323,61 @@
       const dx = model.position.x - old.x, dz = model.position.z - old.z;
       if (Math.abs(dx) + Math.abs(dz) > 0.0001) model.rotation.y = Math.atan2(dx, dz);
     });
+    followSelectedNpc();
+  }
+  function followSelectedNpc() {
+    const model = selectedNpcId ? npcModels.get(selectedNpcId) : null;
+    if (!model) return;
+    const desired = new THREE.Vector3(model.position.x, Number(focusConfig.targetYOffset ?? 1), model.position.z);
+    controls.target.lerp(desired, clamp(Number(focusConfig.followLerp ?? 0.18), 0.01, 1));
+    controls.dist = Math.min(controls.dist, focusDistance());
   }
   function resize() { const r = root.getBoundingClientRect(); renderer.setSize(Math.max(1, r.width), Math.max(1, r.height), false); camera.aspect = Math.max(1, r.width) / Math.max(1, r.height); camera.updateProjectionMatrix(); }
-  function updateCamera() { camera.position.set(controls.target.x + Math.sin(controls.yaw) * Math.cos(controls.pitch) * controls.dist, controls.target.y + Math.sin(controls.pitch) * controls.dist, controls.target.z + Math.cos(controls.yaw) * Math.cos(controls.pitch) * controls.dist); camera.lookAt(controls.target); }
-  root.addEventListener('pointerdown', e => { controls.dragging = true; controls.lastX = e.clientX; controls.lastY = e.clientY; root.setPointerCapture?.(e.pointerId); });
-  root.addEventListener('pointermove', e => { if (!controls.dragging) return; const dx = e.clientX - controls.lastX, dy = e.clientY - controls.lastY; controls.lastX = e.clientX; controls.lastY = e.clientY; controls.yaw -= dx * 0.006; controls.pitch = Math.max(0.18, Math.min(1.25, controls.pitch + dy * 0.004)); updateCamera(); });
-  root.addEventListener('pointerup', e => { controls.dragging = false; root.releasePointerCapture?.(e.pointerId); });
-  root.addEventListener('wheel', e => { e.preventDefault(); controls.dist = Math.max(12, Math.min(95, controls.dist + Math.sign(e.deltaY) * 3)); updateCamera(); }, { passive: false });
+  function updateCamera() {
+    controls.yaw = Number(angleConfig.yawRadians ?? controls.yaw);
+    controls.pitch = Number(angleConfig.pitchRadians ?? controls.pitch);
+    camera.position.set(controls.target.x + Math.sin(controls.yaw) * Math.cos(controls.pitch) * controls.dist, controls.target.y + Math.sin(controls.pitch) * controls.dist, controls.target.z + Math.cos(controls.yaw) * Math.cos(controls.pitch) * controls.dist); camera.lookAt(controls.target);
+  }
+  function setZoomDistance(next) { controls.dist = clamp(next, cameraDistanceMin(), cameraDistanceMax()); updateCamera(); }
+  function pointerDistance(points) { return Math.hypot(points[0].clientX - points[1].clientX, points[0].clientY - points[1].clientY); }
+  function updatePinchStart() { const points = [...pointerState.values()]; pinchStart = points.length === 2 ? { dist: pointerDistance(points), cameraDist: controls.dist } : null; }
+  root.addEventListener('pointerdown', e => {
+    pointerState.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+    root.setPointerCapture?.(e.pointerId);
+    if (pointerState.size === 2) { controls.panning = false; updatePinchStart(); return; }
+    controls.panning = !selectedNpcId;
+    controls.lastX = e.clientX; controls.lastY = e.clientY;
+  });
+  root.addEventListener('pointermove', e => {
+    if (!pointerState.has(e.pointerId)) return;
+    pointerState.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+    if (pointerState.size === 2 && pinchStart) {
+      const points = [...pointerState.values()];
+      const delta = pointerDistance(points) - pinchStart.dist;
+      if (Math.abs(delta) >= Number(touchConfig.pinchEpsilonPx ?? 2)) setZoomDistance(pinchStart.cameraDist * (pinchStart.dist / Math.max(1, pointerDistance(points))));
+      return;
+    }
+    if (!controls.panning) return;
+    const dx = e.clientX - controls.lastX, dy = e.clientY - controls.lastY;
+    controls.lastX = e.clientX; controls.lastY = e.clientY;
+    const panScale = controls.dist * 0.0018;
+    const right = new THREE.Vector3(Math.cos(controls.yaw), 0, -Math.sin(controls.yaw));
+    const forward = new THREE.Vector3(Math.sin(controls.yaw), 0, Math.cos(controls.yaw));
+    controls.target.addScaledVector(right, -dx * panScale).addScaledVector(forward, dy * panScale);
+    updateCamera();
+  });
+  function endPointer(e) { pointerState.delete(e.pointerId); root.releasePointerCapture?.(e.pointerId); controls.panning = false; updatePinchStart(); }
+  root.addEventListener('pointerup', endPointer);
+  root.addEventListener('pointercancel', endPointer);
+  root.addEventListener('wheel', e => { e.preventDefault(); setZoomDistance(controls.dist + Math.sign(e.deltaY) * Number(distanceConfig.wheelStep ?? 3)); }, { passive: false });
+  npcFocusSelect?.addEventListener('change', () => {
+    selectedNpcId = npcFocusSelect.value;
+    if (selectedNpcId) { setZoomDistance(focusDistance()); log(`Camera following NPC ${selectedNpcId}.`); }
+    else log('Camera focus released.');
+  });
 
   async function handleUpdate(ev) {
-    const runtime = ev.detail; await initAssets(); if (signature(runtime) !== lastSignature) rebuildWorld(runtime); await ensureNpcModels(runtime); updateNpcPositions(runtime);
+    const runtime = ev.detail; await initAssets(); if (signature(runtime) !== lastSignature) rebuildWorld(runtime); syncFocusSelect(runtime); await ensureNpcModels(runtime); updateNpcPositions(runtime);
   }
   function animate() { resize(); updateCamera(); renderer.render(scene, camera); requestAnimationFrame(animate); }
   window.addEventListener('hobunji-map-builder:update', handleUpdate);
