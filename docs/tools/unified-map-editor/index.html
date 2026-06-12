@@ -222,10 +222,10 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
             <button class="sec" data-brush="shrub">🌱 Shrub</button>
           </div>
           <div class="row" style="margin-top:6px">
-            <button class="bad" id="clearTerrainBtn">Clear all tiles</button>
-            <span class="muted">Farm grid: 36×26</span>
+            <button class="sec" id="fillFarmBtn">Fill farm 36×26</button>
+            <button class="bad" id="clearTerrainBtn">Clear all</button>
           </div>
-          <p class="muted" style="margin-top:5px">Select <b>Paint Tile</b> mode then click or drag on the map. Tiles outside col 0–35 / row 0–25 are ignored by the game.</p>
+          <p class="muted" style="margin-top:5px">Select <b>Paint Tile</b> mode then click or drag. The green dashed rectangle on the 2D map is the farm area. Tiles outside it are ignored by the game. <b>Fill farm</b> floods the entire 36×26 area with the active brush.</p>
         </div>
 
         <!-- SIM CLOCK -->
@@ -449,9 +449,18 @@ function draw2d() {
 }
 
 function drawTerrain() {
-  const keys = Object.keys(state.farmTiles);
-  if (!keys.length) return;
-  keys.forEach(key => {
+  // Farm boundary overlay — always drawn so user can see the 36×26 area
+  const farmTL = w2s(0, 0);
+  const farmW = FARM_COLS * cam.zoom, farmH = FARM_ROWS * cam.zoom;
+  ctx.strokeStyle = 'rgba(52,211,153,.55)'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+  ctx.strokeRect(farmTL.x, farmTL.y, farmW, farmH);
+  ctx.setLineDash([]);
+  if (cam.zoom > 8) {
+    ctx.fillStyle = 'rgba(52,211,153,.7)'; ctx.font = `${clamp(cam.zoom * .3, 9, 12)}px system-ui`;
+    ctx.fillText('FARM 36×26', farmTL.x + 4, farmTL.y + clamp(cam.zoom * .35, 11, 13));
+  }
+  // Painted tiles
+  Object.keys(state.farmTiles).forEach(key => {
     const [c, r] = key.split(',').map(Number);
     const type = state.farmTiles[key];
     const color = TILE_COLORS[type] || 'rgba(255,255,255,.3)';
@@ -1492,9 +1501,21 @@ $('resetClockBtn').addEventListener('click', () => { simMinutes = 480; $('clockR
 
 $('playInGameBtn').addEventListener('click', () => {
   try {
-    localStorage.setItem('hobunji_farm_layout_v3', JSON.stringify(buildFarmLayout()));
+    const layout = buildFarmLayout();
+    localStorage.setItem('hobunji_farm_layout_v3', JSON.stringify(layout));
+    const n = layout.tiles.length;
+    setStatus(n > 0 ? `Wrote ${n} tiles → opening game…` : 'No farm tiles painted — game will show default farm.');
     window.open('../../index.html', '_blank');
   } catch(e) { setStatus('Could not open game: ' + e.message); }
+});
+
+$('fillFarmBtn').addEventListener('click', () => {
+  for (let r = 0; r < FARM_ROWS; r++) {
+    for (let c = 0; c < FARM_COLS; c++) {
+      state.farmTiles[`${c},${r}`] = terrainBrush;
+    }
+  }
+  updateLists(); draw2d(); setStatus(`Filled ${FARM_COLS * FARM_ROWS} tiles with ${terrainBrush}.`);
 });
 
 document.querySelectorAll('#terrainBrushBar button[data-brush]').forEach(b =>
