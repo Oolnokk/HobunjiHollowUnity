@@ -83,6 +83,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
       <button class="vtab" id="btnWalk">🚶 Walk Preview</button>
     </div>
     <div id="topbar-right">
+      <button class="ok" id="playInGameBtn">🎮 Play in Game</button>
       <button class="ok" id="exportBtn">⬇ Export JSON</button>
       <button class="sec" id="copyBtn">Copy JSON</button>
       <button class="sec" id="importBtn">Import JSON</button>
@@ -98,6 +99,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <button class="sec act" id="modeSelect" data-mode="select">Select</button>
         <button class="sec" id="modeHouse" data-mode="house">+ House</button>
         <button class="sec" id="modePath" data-mode="path">+ Path Node</button>
+        <button class="sec" id="modeTerrain" data-mode="terrain">Paint Tile</button>
         <button class="sec" id="modeErase" data-mode="erase">Erase</button>
         <button class="sec" id="fitBtn" style="margin-left:auto">Fit</button>
       </div>
@@ -208,6 +210,24 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <div class="itemlist" id="schedList"><div class="muted">No schedule blocks yet.</div></div>
         </div>
 
+        <!-- FARM TERRAIN -->
+        <div class="section" style="--sec:#34d399;--secBg:rgba(52,211,153,.08)">
+          <div class="sect-head"><b>Farm Terrain</b><span class="sect-tag" id="terrainCountTag">0 tiles</span></div>
+          <div class="row" id="terrainBrushBar" style="flex-wrap:wrap">
+            <button class="sec" data-brush="grass">🌿 Grass</button>
+            <button class="sec act" data-brush="trench">🟫 Trench</button>
+            <button class="sec" data-brush="raised">🟧 Raised</button>
+            <button class="sec" data-brush="paddy">💧 Paddy</button>
+            <button class="sec" data-brush="rock">🪨 Rock</button>
+            <button class="sec" data-brush="shrub">🌱 Shrub</button>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <button class="bad" id="clearTerrainBtn">Clear all tiles</button>
+            <span class="muted">Farm grid: 36×26</span>
+          </div>
+          <p class="muted" style="margin-top:5px">Select <b>Paint Tile</b> mode then click or drag on the map. Tiles outside col 0–35 / row 0–25 are ignored by the game.</p>
+        </div>
+
         <!-- SIM CLOCK -->
         <div class="section" style="--sec:#6aa7ff;--secBg:rgba(106,167,255,.06)">
           <div class="sect-head"><b>Sim Clock</b><span class="sect-tag" id="clockReadout">08:00</span></div>
@@ -276,11 +296,24 @@ function nextId(prefix, list) {
 
 // ── State ────────────────────────────────────────────────────────────────────
 
+const TILE_COLORS = {
+  grass:  'rgba(74,222,128,.55)',
+  trench: 'rgba(110,70,42,.75)',
+  raised: 'rgba(190,150,90,.65)',
+  paddy:  'rgba(56,189,248,.55)',
+  rock:   'rgba(148,163,184,.65)',
+  shrub:  'rgba(34,197,94,.65)',
+  tilled: 'rgba(139,90,43,.65)',
+  weeds:  'rgba(132,204,22,.55)'
+};
+const FARM_COLS = 36, FARM_ROWS = 26;
+
 const state = {
   map: { id: 'hobunji_main_town', name: 'Hobunji Main Town', cols: 48, rows: 32 },
   houses: [],
   npcPaths: [],
   npcSchedules: [],
+  farmTiles: {},
   implementationHints: [
     'House footprint rectangles are blocked building tiles.',
     'Door tile derived from door.side and door.offset relative to footprint.',
@@ -312,6 +345,7 @@ function tickClock(now) {
 let mode = 'select';
 let selected = null;
 let activePathId = null;
+let terrainBrush = 'trench';
 
 function setMode(m) {
   mode = m;
@@ -411,6 +445,38 @@ function draw2d() {
     });
     ctx.lineWidth = 1;
   });
+  drawTerrain();
+}
+
+function drawTerrain() {
+  const keys = Object.keys(state.farmTiles);
+  if (!keys.length) return;
+  keys.forEach(key => {
+    const [c, r] = key.split(',').map(Number);
+    const type = state.farmTiles[key];
+    const color = TILE_COLORS[type] || 'rgba(255,255,255,.3)';
+    const p = w2s(c, r);
+    ctx.fillStyle = color;
+    ctx.fillRect(p.x + 1, p.y + 1, cam.zoom - 2, cam.zoom - 2);
+  });
+}
+
+function setTerrainBrush(brush) {
+  terrainBrush = brush;
+  document.querySelectorAll('#terrainBrushBar button[data-brush]').forEach(b =>
+    b.classList.toggle('act', b.dataset.brush === brush)
+  );
+}
+
+function buildFarmLayout() {
+  const tiles = [];
+  Object.keys(state.farmTiles).forEach(key => {
+    const [c, r] = key.split(',').map(Number);
+    if (c >= 0 && c < FARM_COLS && r >= 0 && r < FARM_ROWS) {
+      tiles.push({ c, r, type: state.farmTiles[key] });
+    }
+  });
+  return { version: 3, tiles, objects: {}, furniture: [], decor: [] };
 }
 
 function hitTest(tile) {
@@ -428,8 +494,15 @@ function onTap(tile) {
   if (tile.x < 0 || tile.y < 0 || tile.x >= state.map.cols || tile.y >= state.map.rows) return;
   if (mode === 'house') { addHouseAt(tile.x, tile.y); return; }
   if (mode === 'path') { addNodeAt(tile.x, tile.y); return; }
+  if (mode === 'terrain') {
+    const key = `${tile.x},${tile.y}`;
+    state.farmTiles[key] = terrainBrush;
+    updateLists(); draw2d(); return;
+  }
   const hit = hitTest(tile);
   if (mode === 'erase') {
+    const key = `${tile.x},${tile.y}`;
+    if (state.farmTiles[key]) { delete state.farmTiles[key]; updateLists(); draw2d(); return; }
     if (!hit) return;
     selected = hit;
     if (hit.kind === 'house') deleteHouse();
@@ -457,9 +530,21 @@ canvas.addEventListener('pointermove', e => {
     movedDuringPointer = true; draw2d(); return;
   }
   if (drag && dragStart) {
-    const dx = p.x - dragStart.p.x, dy = p.y - dragStart.p.y;
-    if (Math.abs(dx) + Math.abs(dy) > 4) movedDuringPointer = true;
-    cam.x = dragStart.cx + dx; cam.y = dragStart.cy + dy; draw2d();
+    if (mode === 'terrain') {
+      if (tile.x >= 0 && tile.y >= 0 && tile.x < state.map.cols && tile.y < state.map.rows) {
+        const key = `${tile.x},${tile.y}`;
+        if (state.farmTiles[key] !== terrainBrush) { state.farmTiles[key] = terrainBrush; draw2d(); }
+      }
+      movedDuringPointer = true;
+    } else if (mode === 'erase') {
+      const key = `${tile.x},${tile.y}`;
+      if (state.farmTiles[key]) { delete state.farmTiles[key]; draw2d(); }
+      movedDuringPointer = true;
+    } else {
+      const dx = p.x - dragStart.p.x, dy = p.y - dragStart.p.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) movedDuringPointer = true;
+      cam.x = dragStart.cx + dx; cam.y = dragStart.cy + dy; draw2d();
+    }
   }
 });
 canvas.addEventListener('pointerup', e => {
@@ -632,7 +717,10 @@ function updateLists() {
   document.querySelectorAll('.item[data-kind]').forEach(el =>
     el.addEventListener('click', () => selectThing(el.dataset.kind, el.dataset.id))
   );
+  const tileCount = Object.keys(state.farmTiles).length;
   $('countPill').textContent = `${state.houses.length} houses · ${state.npcPaths.length} paths · ${state.npcSchedules.length} schedules`;
+  const terrainTag = $('terrainCountTag');
+  if (terrainTag) terrainTag.textContent = `${tileCount} tile${tileCount !== 1 ? 's' : ''}`;
   $('selPill').textContent = selText();
 }
 
@@ -648,8 +736,9 @@ function buildExport() {
     houses: state.houses,
     npcPaths: state.npcPaths,
     npcSchedules: state.npcSchedules,
+    farmTiles: state.farmTiles,
     implementationHints: state.implementationHints,
-    summary: { houseCount: state.houses.length, pathCount: state.npcPaths.length, scheduleCount: state.npcSchedules.length },
+    summary: { houseCount: state.houses.length, pathCount: state.npcPaths.length, scheduleCount: state.npcSchedules.length, farmTileCount: Object.keys(state.farmTiles).length },
     derived: {
       houseDoorTiles: state.houses.map(h => ({ houseId: h.id, ...deriveDoor(h) }))
     }
@@ -677,6 +766,7 @@ function importJson(obj) {
   state.houses = Array.isArray(obj.houses) ? obj.houses : [];
   state.npcPaths = Array.isArray(obj.npcPaths) ? obj.npcPaths : [];
   state.npcSchedules = Array.isArray(obj.npcSchedules) ? obj.npcSchedules : [];
+  state.farmTiles = (obj.farmTiles && typeof obj.farmTiles === 'object' && !Array.isArray(obj.farmTiles)) ? obj.farmTiles : {};
   $('mapId').value = state.map.id || ''; $('mapName').value = state.map.name || '';
   $('mapCols').value = state.map.cols || 48; $('mapRows').value = state.map.rows || 32;
   activePathId = state.npcPaths[0]?.id || null; selected = null;
@@ -1399,6 +1489,22 @@ $('deletePathBtn').addEventListener('click', deletePathOrNode);
 $('addSchedBtn').addEventListener('click', addSched);
 $('deleteSchedBtn').addEventListener('click', deleteSched);
 $('resetClockBtn').addEventListener('click', () => { simMinutes = 480; $('clockReadout').textContent = '08:00'; });
+
+$('playInGameBtn').addEventListener('click', () => {
+  try {
+    localStorage.setItem('hobunji_farm_layout_v3', JSON.stringify(buildFarmLayout()));
+    window.open('../../index.html', '_blank');
+  } catch(e) { setStatus('Could not open game: ' + e.message); }
+});
+
+document.querySelectorAll('#terrainBrushBar button[data-brush]').forEach(b =>
+  b.addEventListener('click', () => setTerrainBrush(b.dataset.brush))
+);
+$('clearTerrainBtn').addEventListener('click', () => {
+  if (Object.keys(state.farmTiles).length === 0 || confirm('Clear all farm tiles?')) {
+    state.farmTiles = {}; updateLists(); draw2d();
+  }
+});
 
 $('exportBtn').addEventListener('click', exportJson);
 $('copyBtn').addEventListener('click', copyJson);
