@@ -120,6 +120,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <div class="sect-head"><b>Game Link</b><span class="sect-tag">hobunji_farm_layout_v3</span></div>
           <div><label>Farm map (exterior, sent as tile layout)</label><select id="linkExterior"></select></div>
           <div style="margin-top:6px"><label>Farmhouse map (interior, sent as decor)</label><select id="linkInterior"></select></div>
+          <div style="margin-top:6px"><label>Town map (exterior, sent as <code>hobunji_town_v1</code>)</label><select id="linkTown"></select></div>
           <div class="row" style="margin-top:6px">
             <button class="sec" id="loadFromGameBtn">⟲ Load current game farm</button>
           </div>
@@ -162,6 +163,7 @@ const uid = p => `${p}_${Math.random().toString(36).slice(2,7)}`;
 // ── Game contracts (single source of truth: docs/game.js) ────────────────────
 const GAME = {
   layoutKey: 'hobunji_farm_layout_v3',
+  townKey:   'hobunji_town_v1',
   farm: { cols: 36, rows: 26 },
   house: { col: 26, row: 2, w: 5, d: 4, doorCol: 28, doorRow: 6 },
   interior: { cols: 6, rows: 6, entry: [2,4], exit: [2,5] },
@@ -273,7 +275,8 @@ function loadWorkspace() {
           m.transitions = Array.isArray(m.transitions) ? m.transitions : [];
           delete m.markers;
         });
-        w.gameLink = w.gameLink || { exteriorId: '', interiorId: '' };
+        w.gameLink = w.gameLink || { exteriorId: '', interiorId: '', townId: '' };
+        w.gameLink.townId = w.gameLink.townId || '';
         return w;
       }
     }
@@ -281,7 +284,7 @@ function loadWorkspace() {
   const farm = makeMap('Farm', 'exterior', GAME.farm.cols, GAME.farm.rows);
   const house = makeMap('Farmhouse', 'interior', GAME.interior.cols, GAME.interior.rows);
   applyFarmhouseFloor(house);
-  return { maps: [farm, house], activeId: farm.id, gameLink: { exteriorId: farm.id, interiorId: house.id } };
+  return { maps: [farm, house], activeId: farm.id, gameLink: { exteriorId: farm.id, interiorId: house.id, townId: '' } };
 }
 let _saveT = null;
 function saveWorkspace() {
@@ -776,6 +779,7 @@ function renderMapList() {
   const ints = ws.maps.filter(m => m.category === 'interior');
   $('linkExterior').innerHTML = '<option value="">— none —</option>' + exts.map(m => `<option value="${m.id}" ${ws.gameLink.exteriorId===m.id?'selected':''}>${m.name}</option>`).join('');
   $('linkInterior').innerHTML = '<option value="">— none —</option>' + ints.map(m => `<option value="${m.id}" ${ws.gameLink.interiorId===m.id?'selected':''}>${m.name}</option>`).join('');
+  $('linkTown').innerHTML = '<option value="">— none —</option>' + exts.map(m => `<option value="${m.id}" ${ws.gameLink.townId===m.id?'selected':''}>${m.name}</option>`).join('');
 }
 
 function fillSettings() {
@@ -801,7 +805,7 @@ function updateAll() { renderMapList(); fillSettings(); renderPalette(); refresh
 function buildFarmLayoutV3() {
   const ext = mapById(ws.gameLink.exteriorId);
   const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], npcPaths: [], transitions: [] };
-  const areaOf = id => id === ws.gameLink.interiorId ? 'interior' : (id === ws.gameLink.exteriorId ? 'farm' : '');
+  const areaOf = id => id === ws.gameLink.interiorId ? 'interior' : id === ws.gameLink.exteriorId ? 'farm' : id === ws.gameLink.townId ? 'town' : '';
   const pushTravel = (m, area) => {
     (m.npcPaths || []).forEach(p => {
       if (!p.nodes.length) return;
@@ -839,6 +843,50 @@ function buildFarmLayoutV3() {
     (intM.decor || []).forEach(d => layout.decor.push({ key: d.key, col: d.col, row: d.row, area: 'interior' }));
     pushTravel(intM, 'interior');
   }
+  return layout;
+}
+
+// ── Game bridge: hobunji_town_v1 ─────────────────────────────────────────────
+function buildTownLayout() {
+  const townM = mapById(ws.gameLink.townId);
+  if (!townM) return null;
+  const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [] };
+  // Tiles
+  for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
+    const t = townM.tiles[`${c},${r}`];
+    if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
+  }
+  // NPC paths
+  (townM.npcPaths || []).forEach(p => {
+    if (!p.nodes.length) return;
+    layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
+  });
+  // Transitions — resolve farm side: target 'farm', targetCol/Row from the farm-side spot
+  const farmM = mapById(ws.gameLink.exteriorId);
+  (townM.transitions || []).forEach(t => {
+    const isFarmTarget = !t.targetMapId || t.targetMapId === ws.gameLink.exteriorId;
+    let targetArea = '';
+    let targetCol = null, targetRow = null;
+    if (isFarmTarget) {
+      targetArea = 'farm';
+      // Find matching spot on farm map
+      if (farmM) {
+        const fspot = (farmM.transitions || []).find(s => s.targetMapId === townM.id && s.targetSpotId === t.id)
+          || (farmM.transitions || []).find(s => s.targetMapId === townM.id);
+        if (fspot) { targetCol = fspot.col; targetRow = fspot.row; }
+      }
+    } else {
+      const target = mapById(t.targetMapId);
+      targetArea = t.targetMapId === ws.gameLink.interiorId ? 'interior' : '';
+      if (target) {
+        const sp = (target.transitions || []).find(s => s.id === t.targetSpotId);
+        if (sp) { targetCol = sp.col; targetRow = sp.row; }
+      }
+    }
+    if (targetArea && targetCol !== null) {
+      layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: targetArea, targetCol, targetRow });
+    }
+  });
   return layout;
 }
 
@@ -978,6 +1026,7 @@ $('delMapBtn').addEventListener('click', () => {
   ws.maps = ws.maps.filter(x => x.id !== m.id);
   if (ws.gameLink.exteriorId === m.id) ws.gameLink.exteriorId = '';
   if (ws.gameLink.interiorId === m.id) ws.gameLink.interiorId = '';
+  if (ws.gameLink.townId     === m.id) ws.gameLink.townId     = '';
   ws.activeId = ws.maps[0].id; undoStack.length = 0;
   updateAll(); fitView(); setStatus('Deleted.');
 });
@@ -993,6 +1042,7 @@ $('applyMapBtn').addEventListener('click', () => {
     if (newCat === 'interior') { m.objects = {}; m.furniture = []; Object.keys(m.tiles).forEach(k => { if (m.tiles[k].crop) m.tiles[k].crop = ''; }); }
     if (ws.gameLink.exteriorId === m.id && newCat !== 'exterior') ws.gameLink.exteriorId = '';
     if (ws.gameLink.interiorId === m.id && newCat !== 'interior') ws.gameLink.interiorId = '';
+    if (ws.gameLink.townId     === m.id && newCat !== 'exterior') ws.gameLink.townId     = '';
   }
   const nc = clamp(Math.round(Number($('mapCols').value)||m.cols), 2, 400);
   const nr = clamp(Math.round(Number($('mapRows').value)||m.rows), 2, 400);
@@ -1016,6 +1066,7 @@ $('floorTemplateBtn').addEventListener('click', () => {
 
 $('linkExterior').addEventListener('change', e => { ws.gameLink.exteriorId = e.target.value; updateAll(); });
 $('linkInterior').addEventListener('change', e => { ws.gameLink.interiorId = e.target.value; updateAll(); });
+$('linkTown').addEventListener('change', e => { ws.gameLink.townId = e.target.value; updateAll(); });
 $('showBaseChk').addEventListener('change', draw);
 $('loadFromGameBtn').addEventListener('click', loadFromGame);
 
@@ -1024,7 +1075,12 @@ $('playBtn').addEventListener('click', () => {
   const layout = buildFarmLayoutV3();
   try {
     localStorage.setItem(GAME.layoutKey, JSON.stringify(layout));
-    setStatus(`Sent ${layout.tiles.length} tiles, ${layout.furniture.length} processors, ${layout.decor.length} decor, ${layout.npcPaths.length} paths, ${layout.transitions.length} spots → game`);
+    let townMsg = '';
+    if (ws.gameLink.townId) {
+      const tl = buildTownLayout();
+      if (tl) { localStorage.setItem(GAME.townKey, JSON.stringify(tl)); townMsg = ` + town (${tl.tiles.length} tiles)`; }
+    }
+    setStatus(`Sent ${layout.tiles.length} tiles, ${layout.furniture.length} processors, ${layout.decor.length} decor, ${layout.npcPaths.length} paths, ${layout.transitions.length} spots${townMsg} → game`);
     window.open(GAME.gamePath, '_blank');
   } catch(e) { setStatus('Failed: ' + e.message); }
 });
@@ -1047,6 +1103,32 @@ $('loadTownBtn').addEventListener('click', async () => {
     const res = await fetch('../../config/town-workspace-v1.json');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     importAny(await res.json());
+    // Auto-link: find the town map and set gameLink.townId
+    const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
+    if (townM && !ws.gameLink.townId) {
+      ws.gameLink.townId = townM.id;
+      // Wire farm ↔ town transition spots
+      const farmM = mapById(ws.gameLink.exteriorId);
+      const townSpot = (townM.transitions || []).find(t => t.id === 'sp_town_farm');
+      if (farmM && townSpot) {
+        // Add farm-side spot pointing back to town if not already present
+        const existing = (farmM.transitions || []).find(t => t.targetMapId === townM.id);
+        if (!existing) {
+          farmM.transitions = farmM.transitions || [];
+          const farmSpotId = 'sp_farm_to_town';
+          farmM.transitions.push({
+            id: farmSpotId, label: 'To Town',
+            col: 17, row: 0,
+            targetMapId: townM.id, targetSpotId: townSpot.id,
+          });
+          // Link the town spot back to the farm spot
+          townSpot.targetMapId  = farmM.id;
+          townSpot.targetSpotId = farmSpotId;
+        }
+      }
+      updateAll();
+      setStatus('Town workspace loaded and linked to farm.');
+    }
   } catch(e) { setStatus('Load Town failed: ' + e.message); }
 });
 $('importFile').addEventListener('change', async e => {

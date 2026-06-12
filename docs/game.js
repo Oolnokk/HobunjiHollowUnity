@@ -1185,10 +1185,16 @@
       // ── World travel: transition spots + NPC paths (map editor data) ─
       // Authored in docs/tools/map-editor and carried in hobunji_farm_layout_v3
       // as `transitions` and `npcPaths`. area: 'farm' | 'interior'.
-      let worldTransitions = [];   // { id, label, area, col, row, target, targetCol, targetRow }
-      let worldNpcPaths    = [];   // { id, label, npcId, area, nodes: [[c,r],...] }
-      const npcWalkers     = [];
-      let _transitionLatch = null; // 'area:c,r' — player must leave this tile before spots re-arm
+      let worldTransitions     = [];   // farm+interior: { id, label, area, col, row, target, targetCol, targetRow }
+      let worldTownTransitions = [];   // town: same shape
+      let worldNpcPaths        = [];   // { id, label, npcId, area, nodes: [[c,r],...] }
+      const npcWalkers         = [];
+      let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
+      // ── Town zone ──────────────────────────────────────────────────
+      let _townZone       = null;   // parsed hobunji_town_v1 layout
+      let townGrid        = [];     // 2-D tile array for the town map
+      let townScene       = null;   // THREE.Scene, built lazily
+      let _townSceneBuilt = false;
 
       function initWorldTravel(layout) {
         if (!layout || layout.version !== 3) return;
@@ -1203,20 +1209,19 @@
       }
 
       function travelAreaKey() {
-        const area = currentArea === 'interior' ? 'interior' : 'farm';
+        const area = currentArea === 'interior' ? 'interior' : currentArea === 'town' ? 'town' : 'farm';
         return area + ':' + Math.floor(player.x / TILE) + ',' + Math.floor(player.y / TILE);
       }
 
       function buildTransitionMarkers() {
+        const _ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
+        const _ringMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
         for (const t of worldTransitions) {
           const interior = t.area === 'interior';
           const g = interior ? interiorGrid : grid;
           const tile = g[t.row]?.[t.col];
           if (!tile) continue;
-          const ring = new THREE.Mesh(
-            new THREE.RingGeometry(0.22, 0.36, 24),
-            new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false })
-          );
+          const ring = new THREE.Mesh(_ringGeo, _ringMat);
           ring.rotation.x = -Math.PI / 2;
           ring.position.set(t.col + 0.5, tileSurfaceY(tile.type) + 0.02, t.row + 0.5);
           (interior ? interiorScene : scene).add(ring);
@@ -1224,17 +1229,30 @@
       }
 
       function checkTransitionSpots() {
-        const area = currentArea === 'interior' ? 'interior' : 'farm';
+        const area = currentArea === 'interior' ? 'interior' : currentArea === 'town' ? 'town' : 'farm';
         const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
         const key = area + ':' + pc + ',' + pr;
         if (key === _transitionLatch) return;
         _transitionLatch = null;
-        const t = worldTransitions.find(x =>
+        const pool = area === 'town' ? worldTownTransitions : worldTransitions;
+        const t = pool.find(x =>
           x.area === area && x.col === pc && x.row === pr &&
-          (x.target === 'farm' || x.target === 'interior') &&
           Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow));
         if (!t) return;
         startSceneTransition(() => performTravel(t));
+      }
+
+      function _returnToFarmMeshes() {
+        if (currentArea === 'interior') interiorScene.remove(playerMesh);
+        else if (currentArea === 'town' && townScene) townScene.remove(playerMesh);
+        scene.add(playerMesh);
+        scene.add(toolHolder);
+        scene.add(reticleMesh);
+        scene.add(reticleCircleMesh);
+        scene.add(reticleRingMesh);
+        scene.add(reticleWavyGroup);
+        currentArea = 'farm';
+        refreshActionBar();
       }
 
       function performTravel(t) {
@@ -1244,18 +1262,13 @@
           const r = clamp(t.targetRow, 0, INTERIOR_ROWS - 1);
           player.x = (c + 0.5) * TILE;
           player.y = (r + 0.5) * TILE;
-        } else {
-          if (currentArea === 'interior') {
-            currentArea = 'farm';
-            interiorScene.remove(playerMesh);
-            scene.add(playerMesh);
-            scene.add(toolHolder);
-            scene.add(reticleMesh);
-            scene.add(reticleCircleMesh);
-            scene.add(reticleRingMesh);
-            scene.add(reticleWavyGroup);
-            refreshActionBar();
-          }
+        } else if (t.target === 'town') {
+          const tcols = _townZone?.cols || 60, trows = _townZone?.rows || 50;
+          const c = clamp(t.targetCol, 0, tcols - 1);
+          const r = clamp(t.targetRow, 0, trows - 1);
+          enterTown(c, r);
+        } else { // 'farm'
+          _returnToFarmMeshes();
           const c = clamp(t.targetCol, 0, COLS - 1);
           const r = clamp(t.targetRow, 0, ROWS - 1);
           player.x = (c + 0.5) * TILE;
@@ -1321,7 +1334,9 @@
         root.add(avatarGroup);
 
         const interior = path.area === 'interior';
-        const g = interior ? interiorGrid : grid;
+        const isTown   = path.area === 'town';
+        const g = interior ? interiorGrid : isTown ? townGrid : grid;
+        const targetSceneForPath = () => interior ? interiorScene : isTown ? townScene : scene;
         const nodes = path.nodes.map(([c, r]) => [c, r]);
         const [c0, r0] = nodes[0];
         const surfY = (c, r) => {
@@ -1329,7 +1344,10 @@
           return tile ? tileSurfaceY(tile.type) : 0;
         };
         root.position.set(c0 + 0.5, surfY(c0, r0), r0 + 0.5);
-        (interior ? interiorScene : scene).add(root);
+        // Town walkers are added to the scene lazily when town scene exists
+        const sc = targetSceneForPath();
+        if (sc) sc.add(root);
+        else root._pendingTownAdd = true; // buildTownScene will pick these up
 
         const NPC_SPEED = 1.25;   // tiles per second
         const PAUSE_SEC = 1.6;    // idle at route endpoints
@@ -1376,6 +1394,138 @@
 
       function updateNpcWalkers(dt) {
         for (const w of npcWalkers) w.update(dt);
+      }
+
+      // ── Town zone ──────────────────────────────────────────────────
+      function loadTownLayout() {
+        try {
+          const raw = localStorage.getItem('hobunji_town_v1');
+          if (!raw) return null;
+          return JSON.parse(raw);
+        } catch(_) { return null; }
+      }
+
+      function initTownTravel(layout) {
+        if (!layout || layout.version !== 1) return;
+        _townZone = layout;
+        const TCOLS = layout.cols || 60, TROWS = layout.rows || 50;
+        townGrid = Array.from({ length: TROWS }, (_, r) =>
+          Array.from({ length: TCOLS }, (_, c) => ({
+            type: TileType.GRASS, water: 0, crop: CropType.NONE,
+            cropAge: 0, cropReady: false, stress: '', variation: 0,
+          }))
+        );
+        for (const { c, r, type } of (layout.tiles || [])) {
+          if (townGrid[r]?.[c]) townGrid[r][c].type = type || TileType.GRASS;
+        }
+        worldTownTransitions = (layout.transitions || []).filter(t =>
+          t && Number.isFinite(t.col) && Number.isFinite(t.row) &&
+          Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow));
+        const townPaths = (layout.npcPaths || []).filter(p =>
+          p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
+        worldNpcPaths.push(...townPaths);
+      }
+
+      function buildTownScene() {
+        if (_townSceneBuilt) return;
+        _townSceneBuilt = true;
+
+        townScene = new THREE.Scene();
+        townScene.background = new THREE.Color(0x7da87b);
+        townScene.fog = new THREE.Fog(0x7da87b, 8, 22);
+        townScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
+        const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
+        sun.position.set(4, 8, 2);
+        townScene.add(sun);
+
+        const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
+
+        // Count tiles per type to size InstancedMeshes
+        const typeCounts = {};
+        for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
+          const tp = townGrid[r]?.[c]?.type || TileType.GRASS;
+          typeCounts[tp] = (typeCounts[tp] || 0) + 1;
+        }
+
+        // One InstancedMesh per tile type
+        const slabGeo = new THREE.BoxGeometry(1, SLAB_H, 1);
+        const dummy = new THREE.Object3D();
+        const instances = {};
+        for (const [tp, count] of Object.entries(typeCounts)) {
+          const mat = tileMats[tp] || tileMats.grass;
+          const im = new THREE.InstancedMesh(slabGeo, mat, count);
+          im.receiveShadow = true;
+          instances[tp] = { mesh: im, idx: 0 };
+          townScene.add(im);
+          // Rock type also gets a taller block
+          if (tp === TileType.ROCK) {
+            const rockGeo = new THREE.BoxGeometry(1, ROCK_H, 1);
+            const rim = new THREE.InstancedMesh(rockGeo, tileMats.rock, count);
+            rim.castShadow = rim.receiveShadow = true;
+            instances[tp + '_top'] = { mesh: rim, idx: 0 };
+            townScene.add(rim);
+          }
+        }
+
+        for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
+          const tile = townGrid[r]?.[c];
+          const tp = tile?.type || TileType.GRASS;
+          const inst = instances[tp];
+          if (inst) {
+            dummy.position.set(c + 0.5, tileYCenter(tp), r + 0.5);
+            dummy.updateMatrix();
+            inst.mesh.setMatrixAt(inst.idx++, dummy.matrix);
+          }
+          const instTop = instances[tp + '_top'];
+          if (instTop) {
+            dummy.position.set(c + 0.5, NORMAL_TOP + ROCK_H / 2, r + 0.5);
+            dummy.updateMatrix();
+            instTop.mesh.setMatrixAt(instTop.idx++, dummy.matrix);
+          }
+        }
+        for (const { mesh } of Object.values(instances)) mesh.instanceMatrix.needsUpdate = true;
+
+        // Gold ring markers for town transitions
+        const ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+        for (const t of worldTownTransitions) {
+          const tile = townGrid[t.row]?.[t.col];
+          const ring = new THREE.Mesh(ringGeo, ringMat);
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.set(t.col + 0.5, tileSurfaceY((tile?.type) || TileType.GRASS) + 0.02, t.row + 0.5);
+          townScene.add(ring);
+        }
+
+        // Add any NPC walkers that were spawned before town scene was built
+        for (const w of npcWalkers) {
+          if (w.root._pendingTownAdd) {
+            w.root._pendingTownAdd = false;
+            townScene.add(w.root);
+          }
+        }
+
+        debugLog('buildTownScene complete');
+      }
+
+      function enterTown(col, row) {
+        buildTownScene();
+        farmPlayerSave = { x: player.x, y: player.y, angle: player.angle };
+        currentArea = 'town';
+        player.x = (col + 0.5) * TILE;
+        player.y = (row + 0.5) * TILE;
+        player.vx = 0; player.vy = 0;
+        facingAngle = -Math.PI / 2;
+        player.angle = facingAngle;
+        camTargetX = player.x / TILE;
+        camTargetZ = player.y / TILE;
+        scene.remove(playerMesh);
+        scene.remove(toolHolder);
+        scene.remove(reticleMesh);
+        scene.remove(reticleCircleMesh);
+        scene.remove(reticleRingMesh);
+        scene.remove(reticleWavyGroup);
+        if (townScene) townScene.add(playerMesh);
+        refreshActionBar();
       }
 
       function processButtonLabel(methodId, inputKey, output) {
@@ -2209,9 +2359,9 @@
       let sceneTransDir   = 0;        // 0=idle  1=darkening  -1=brightening
       let sceneTransCb    = null;     // fired once at peak darkness
 
-      function getActiveCols() { return currentArea === 'interior' ? INTERIOR_COLS : COLS; }
-      function getActiveRows() { return currentArea === 'interior' ? INTERIOR_ROWS : ROWS; }
-      function getActiveGrid() { return currentArea === 'interior' ? interiorGrid   : grid; }
+      function getActiveCols() { return currentArea === 'interior' ? INTERIOR_COLS : currentArea === 'town' ? (_townZone?.cols || 60) : COLS; }
+      function getActiveRows() { return currentArea === 'interior' ? INTERIOR_ROWS : currentArea === 'town' ? (_townZone?.rows || 50) : ROWS; }
+      function getActiveGrid() { return currentArea === 'interior' ? interiorGrid   : currentArea === 'town' ? townGrid : grid; }
       function getActiveTileAt(col, row) {
         const g = getActiveGrid();
         return g[row]?.[col] || { type: TileType.ROCK, water: 0, crop: CropType.NONE, cropAge: 0, cropReady: false, stress: '', variation: 0 };
@@ -5156,10 +5306,10 @@
         }
 
         // ── Render active scene ──────────────────────────────────
-        const activeScene = currentArea === 'interior' ? interiorScene : scene;
+        const activeScene = currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene;
         renderer.render(activeScene, camera);
         // Selective shell outline pass (layer-1 objects only)
-        if (s_outlines) {
+        if (s_outlines && currentArea !== 'town') {
           const _outlineScene = currentArea === 'interior' ? interiorScene : scene;
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
@@ -6556,6 +6706,8 @@
       try { applyFarmLayoutObjects(loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
       // Transition spots + NPC paths from the map editor
       try { initWorldTravel(loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
+      // Town zone (written by Map Editor "Send to Game" when a town map is linked)
+      try { const _tl = loadTownLayout(); if (_tl) initTownTravel(_tl); } catch(e) { console.error('initTownTravel:', e); }
       debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
 
       // ── Onboarding gate ────────────────────────────────────────────
