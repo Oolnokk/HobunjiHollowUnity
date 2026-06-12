@@ -66,6 +66,9 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(255,255,255,.7);border-radius:1px}
 #crosshair::before{width:2px;height:16px;left:7px;top:0}
 #crosshair::after{width:16px;height:2px;left:0;top:7px}
+#walkEntry{position:absolute;bottom:16px;right:16px;z-index:4;display:none}
+#wrap3d.active #walkEntry{display:block}
+#walkMousePill.locked{background:rgba(52,211,153,.14);border-color:rgba(52,211,153,.42);color:#34d399}
 
 #modeBar{display:flex;gap:4px;padding:6px 8px;background:var(--panel2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
 </style>
@@ -225,7 +228,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 
     <div id="view">
       <canvas id="canvas2d"></canvas>
-      <div id="wrap3d"></div>
+      <div id="wrap3d"><div id="walkEntry"><button class="ok" id="enterWalkFromBtn">🚶 Walk Mode</button></div></div>
       <div id="wrapWalk"></div>
       <div id="hud">
         <span class="pill" id="modePill">Mode: select</span>
@@ -233,12 +236,12 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <span class="pill" id="selPill">Selected: none</span>
       </div>
       <div id="walkHud">
-        <span class="pill">WASD / Arrow Keys to move · Esc to exit walk</span>
+        <span class="pill" id="walkMousePill">Click to capture mouse · WASD to move · Esc to exit</span>
         <span class="pill" id="walkPosPill">pos: 0, 0</span>
       </div>
       <div id="crosshair"></div>
       <div id="walkControls">
-        <button class="sec" id="exitWalkBtn">Exit Walk Preview</button>
+        <button class="sec" id="exitWalkBtn">Exit Walk</button>
       </div>
     </div>
   </div>
@@ -1225,23 +1228,46 @@ function emit3d() {
 
 const wrapWalk = $('wrapWalk');
 let rendererW, sceneW, cameraW;
-let walkPlayer = { x:24, z:16, angle:0 };
+let walkPlayer = { x:24, z:16, yaw:0, pitch:0 };
 const walkKeys = {};
-const WALK_SPEED = 0.07;
+const WALK_SPEED = 0.09;
+const EYE_H = 1.65;
+let walkMouseDX = 0, walkMouseDY = 0, pointerLocked = false;
 
 function initWalk() {
   if (rendererW) return;
   const T=window.THREE;
-  sceneW = new T.Scene(); sceneW.background=new T.Color(0x071018); sceneW.fog=new T.Fog(0x071018,20,60);
-  cameraW = new T.PerspectiveCamera(68, 1, 0.05, 120);
-  rendererW = new T.WebGLRenderer({ antialias:true }); rendererW.setPixelRatio(Math.min(2,window.devicePixelRatio||1)); rendererW.shadowMap.enabled=true;
-  wrapWalk.appendChild(rendererW.domElement); rendererW.domElement.style.cssText='width:100%;height:100%;display:block;cursor:none';
+  sceneW = new T.Scene(); sceneW.background=new T.Color(0x071018); sceneW.fog=new T.Fog(0x071018,22,65);
+  cameraW = new T.PerspectiveCamera(72, 1, 0.05, 130);
+  rendererW = new T.WebGLRenderer({ antialias:true });
+  rendererW.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  rendererW.shadowMap.enabled=true;
+  wrapWalk.appendChild(rendererW.domElement);
+  rendererW.domElement.style.cssText='width:100%;height:100%;display:block;cursor:crosshair';
   sceneW.add(new T.HemisphereLight(0xddeeff,0x22331f,1.1));
   const sun=new T.DirectionalLight(0xffffff,1.0); sun.position.set(12,28,10); sun.castShadow=true; sceneW.add(sun);
+  // Pointer lock
+  rendererW.domElement.addEventListener('click', () => {
+    if (currentView === 'walk') rendererW.domElement.requestPointerLock();
+  });
+  document.addEventListener('pointerlockchange', () => {
+    pointerLocked = document.pointerLockElement === rendererW.domElement;
+    const pill = $('walkMousePill');
+    if (pill) pill.classList.toggle('locked', pointerLocked);
+    if (pill) pill.textContent = pointerLocked
+      ? 'Mouse captured · WASD to move · Esc to release'
+      : 'Click canvas to capture mouse · WASD to move · Esc to exit';
+    rendererW.domElement.style.cursor = pointerLocked ? 'none' : 'crosshair';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!pointerLocked) return;
+    walkMouseDX += e.movementX; walkMouseDY += e.movementY;
+  });
   animateWalk();
 }
+
 function resizeWalk() {
-  if (!rendererW) { initWalk(); }
+  if (!rendererW) { initWalk(); return; }
   const r=wrapWalk.getBoundingClientRect();
   rendererW.setSize(Math.max(1,r.width),Math.max(1,r.height),false);
   cameraW.aspect=Math.max(1,r.width)/Math.max(1,r.height); cameraW.updateProjectionMatrix();
@@ -1249,67 +1275,111 @@ function resizeWalk() {
 
 function rebuildWalkScene() {
   if (!sceneW) return;
-  while (sceneW.children.length > 3) sceneW.remove(sceneW.children[sceneW.children.length-1]);
+  // Clear scene down to lights (first 3 children)
+  while (sceneW.children.length > 2) sceneW.remove(sceneW.children[sceneW.children.length-1]);
   const T=window.THREE, m=getMats();
-  const gnd=new T.Mesh(new T.PlaneGeometry(state.map.cols,state.map.rows),m.ground);
+  const gnd=new T.Mesh(new T.PlaneGeometry(state.map.cols+4,state.map.rows+4),m.ground);
   gnd.rotation.x=-Math.PI/2; gnd.position.set(state.map.cols/2,0,state.map.rows/2); gnd.receiveShadow=true; sceneW.add(gnd);
   const grid=new T.GridHelper(Math.max(state.map.cols,state.map.rows),Math.max(state.map.cols,state.map.rows),0x31516b,0x1b2e3f);
   grid.position.set(state.map.cols/2,0.01,state.map.rows/2); sceneW.add(grid);
   state.houses.forEach(h => sceneW.add(build3dHouse(h)));
+  // Path markers as glowing lines on ground
+  state.npcPaths.forEach(p => {
+    if (!p.nodes || p.nodes.length < 2) return;
+    const pts = p.nodes.map(n => new T.Vector3(n.x+.5, 0.05, n.y+.5));
+    const geo = new T.BufferGeometry().setFromPoints(pts);
+    sceneW.add(new T.Line(geo, new T.LineBasicMaterial({ color:0x38bdf8, opacity:0.6, transparent:true })));
+  });
 }
+
 function startWalk() {
   if (!rendererW) initWalk();
   rebuildWalkScene();
-  walkPlayer.x = state.map.cols / 2; walkPlayer.z = state.map.rows * 0.75;
-  walkPlayer.angle = 0;
+  // Find a clear start tile near center-bottom of map
+  let sx = state.map.cols / 2, sz = state.map.rows * 0.75;
+  for (let r=0; r<20; r++) {
+    if (!isInsideHouse(sx, sz)) break;
+    sz += 1;
+  }
+  walkPlayer.x = sx; walkPlayer.z = sz;
+  walkPlayer.yaw = 0; walkPlayer.pitch = 0;
+  walkMouseDX = 0; walkMouseDY = 0;
 }
 
 function houseAABBs() {
   return state.houses.map(h => ({ minX:h.x, maxX:h.x+h.width, minZ:h.y, maxZ:h.y+h.depth }));
 }
 function isInsideHouse(x, z) {
-  return houseAABBs().some(b => x > b.minX+.2 && x < b.maxX-.2 && z > b.minZ+.2 && z < b.maxZ-.2);
+  const R = 0.3;
+  return houseAABBs().some(b => x > b.minX+R && x < b.maxX-R && z > b.minZ+R && z < b.maxZ-R);
 }
 
 function animateWalk() {
-  if (currentView !== 'walk') { requestAnimationFrame(animateWalk); return; }
-  const T=window.THREE;
-  let moved=false, dx=0, dz=0;
-  if (walkKeys['KeyW']||walkKeys['ArrowUp'])    { dz -= Math.cos(walkPlayer.angle); dx -= Math.sin(walkPlayer.angle); moved=true; }
-  if (walkKeys['KeyS']||walkKeys['ArrowDown'])  { dz += Math.cos(walkPlayer.angle); dx += Math.sin(walkPlayer.angle); moved=true; }
-  if (walkKeys['KeyA']||walkKeys['ArrowLeft'])  { walkPlayer.angle += 0.04; }
-  if (walkKeys['KeyD']||walkKeys['ArrowRight']) { walkPlayer.angle -= 0.04; }
-  if (moved) {
-    const nx = walkPlayer.x + dx*WALK_SPEED, nz = walkPlayer.z + dz*WALK_SPEED;
-    const inBounds = nx > 0 && nx < state.map.cols && nz > 0 && nz < state.map.rows;
-    if (inBounds && !isInsideHouse(nx, nz)) { walkPlayer.x = nx; walkPlayer.z = nz; }
+  requestAnimationFrame(animateWalk);
+  if (currentView !== 'walk') return;
+  const T = window.THREE;
+  const SENS = 0.0018;
+  walkPlayer.yaw   -= walkMouseDX * SENS;
+  walkPlayer.pitch  = clamp(walkPlayer.pitch - walkMouseDY * SENS, -1.2, 1.2);
+  walkMouseDX = 0; walkMouseDY = 0;
+
+  // FPS movement: W/S forward/back, A/D strafe
+  const fwd   = walkKeys['KeyW'] || walkKeys['ArrowUp'];
+  const back  = walkKeys['KeyS'] || walkKeys['ArrowDown'];
+  const left  = walkKeys['KeyA'] || walkKeys['ArrowLeft'];
+  const right = walkKeys['KeyD'] || walkKeys['ArrowRight'];
+  let dx = 0, dz = 0;
+  const cy = Math.cos(walkPlayer.yaw), sy = Math.sin(walkPlayer.yaw);
+  if (fwd)   { dx -= sy; dz -= cy; }
+  if (back)  { dx += sy; dz += cy; }
+  if (left)  { dx -= cy; dz += sy; }
+  if (right) { dx += cy; dz -= sy; }
+  if (dx || dz) {
+    const len = Math.hypot(dx, dz);
+    const nx = walkPlayer.x + dx/len*WALK_SPEED;
+    const nz = walkPlayer.z + dz/len*WALK_SPEED;
+    if (!isInsideHouse(nx, walkPlayer.z) && nx > 0 && nx < state.map.cols) walkPlayer.x = nx;
+    if (!isInsideHouse(walkPlayer.x, nz) && nz > 0 && nz < state.map.rows) walkPlayer.z = nz;
   }
-  const camDist=3.2, camHeight=1.8;
-  cameraW.position.set(
-    walkPlayer.x + Math.sin(walkPlayer.angle)*camDist,
-    camHeight,
-    walkPlayer.z + Math.cos(walkPlayer.angle)*camDist
-  );
-  cameraW.lookAt(new T.Vector3(walkPlayer.x, 1.0, walkPlayer.z));
-  $('walkPosPill').textContent = `pos: ${walkPlayer.x.toFixed(1)}, ${walkPlayer.z.toFixed(1)}`;
+
+  // First-person camera
+  cameraW.position.set(walkPlayer.x, EYE_H, walkPlayer.z);
+  const lookDist = 4;
+  const lx = walkPlayer.x - Math.sin(walkPlayer.yaw) * Math.cos(walkPlayer.pitch) * lookDist;
+  const ly = EYE_H + Math.sin(walkPlayer.pitch) * lookDist;
+  const lz = walkPlayer.z - Math.cos(walkPlayer.yaw) * Math.cos(walkPlayer.pitch) * lookDist;
+  cameraW.lookAt(new T.Vector3(lx, ly, lz));
+
+  const tile = `${Math.floor(walkPlayer.x)}, ${Math.floor(walkPlayer.z)}`;
+  $('walkPosPill').textContent = `tile: ${tile}`;
   resizeWalk();
   rendererW.render(sceneW, cameraW);
-  requestAnimationFrame(animateWalk);
 }
 
 window.addEventListener('keydown', e => {
   walkKeys[e.code] = true;
-  if (e.code === 'Escape' && currentView === 'walk') { setView('3d'); }
+  if (e.code === 'Escape' && currentView === 'walk') {
+    if (document.pointerLockElement) document.exitPointerLock();
+    else setView('3d');
+  }
   if (e.code === 'Escape' && currentView === '3d') { setView('2d'); }
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key) && currentView === 'walk') e.preventDefault();
 });
 window.addEventListener('keyup', e => { walkKeys[e.code] = false; });
+document.addEventListener('pointerlockchange', () => {
+  if (!document.pointerLockElement && currentView === 'walk') {
+    // Pointer lock released by Esc — exit walk
+    setTimeout(() => { if (!document.pointerLockElement && currentView === 'walk') setView('3d'); }, 80);
+  }
+});
 
 // ── Wire up UI ────────────────────────────────────────────────────────────────
 
 $('btn2d').addEventListener('click', () => setView('2d'));
 $('btn3d').addEventListener('click', () => { init3d(); setView('3d'); });
 $('btnWalk').addEventListener('click', () => { initWalk(); setView('walk'); });
-$('exitWalkBtn').addEventListener('click', () => setView('3d'));
+$('enterWalkFromBtn').addEventListener('click', () => { initWalk(); setView('walk'); });
+$('exitWalkBtn').addEventListener('click', () => { if (document.pointerLockElement) document.exitPointerLock(); setView('3d'); });
 
 document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 $('fitBtn').addEventListener('click', fitView);
