@@ -5,6 +5,9 @@
   const canvas = $('mapCanvas');
   const ctx = canvas.getContext('2d');
   const logger = H.makeLogger($('logBody'));
+  const builderConfig = window.SCRATCHBONES_CONFIG?.game?.mapBuilder || {};
+  const editor2dConfig = builderConfig.editor2d || {};
+  const editorZoomConfig = editor2dConfig.zoom || {};
   const DEFAULT_NPC_DB_ENTRY = {
     id: 'hobunji_starter_npc_database',
     label: 'Hobunji Starter NPC Database',
@@ -17,6 +20,9 @@
   let mode = 'house';
   let activePathId = null;
   let cam = { x: 0, y: 0, zoom: 22 };
+  const pointers = new Map();
+  let pinchStart = null;
+  let movedDuringPointer = false;
   let simMinutes = 8 * 60;
   let lastTickMs = performance.now();
   const state = H.normalizeTownMap({
@@ -238,9 +244,53 @@
 
   function updateAll(reason = 'state') { updateLists(); updatePreview(); draw(); emitState(reason); }
   function resizeCanvas() { const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1)); const r = canvas.getBoundingClientRect(); canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); draw(); }
-  function fitView() { const r = canvas.getBoundingClientRect(); cam.zoom = Math.max(8, Math.min((r.width - 48) / state.map.cols, (r.height - 48) / state.map.rows)); cam.x = Math.round((r.width - state.map.cols * cam.zoom) / 2); cam.y = Math.round((r.height - state.map.rows * cam.zoom) / 2); draw(); }
+  function fitView() { const r = canvas.getBoundingClientRect(); const margin = Number(editorZoomConfig.fitMarginPx ?? 48); cam.zoom = Math.max(Number(editorZoomConfig.fitMin ?? 8), Math.min((r.width - margin) / state.map.cols, (r.height - margin) / state.map.rows)); cam.x = Math.round((r.width - state.map.cols * cam.zoom) / 2); cam.y = Math.round((r.height - state.map.rows * cam.zoom) / 2); draw(); }
+  function clampZoom(zoom) { return Math.max(Number(editorZoomConfig.min ?? 6), Math.min(Number(editorZoomConfig.max ?? 70), zoom)); }
+  function zoomAt(screenX, screenY, nextZoom) {
+    const oldZoom = cam.zoom;
+    const world = screenToWorld(screenX, screenY);
+    cam.zoom = clampZoom(nextZoom);
+    cam.x = screenX - world.x * cam.zoom;
+    cam.y = screenY - world.y * cam.zoom;
+    movedDuringPointer = movedDuringPointer || Math.abs(oldZoom - cam.zoom) > 0.01;
+    draw();
+  }
+
+  canvas.addEventListener('pointerdown', event => {
+    const r = canvas.getBoundingClientRect();
+    pointers.set(event.pointerId, { x: event.clientX - r.left, y: event.clientY - r.top });
+    canvas.setPointerCapture?.(event.pointerId);
+    if (pointers.size === 2) {
+      const pts = [...pointers.values()];
+      pinchStart = {
+        dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y),
+        zoom: cam.zoom,
+        mid: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }
+      };
+      movedDuringPointer = false;
+    }
+  });
+  canvas.addEventListener('pointermove', event => {
+    if (!pointers.has(event.pointerId)) return;
+    const r = canvas.getBoundingClientRect();
+    pointers.set(event.pointerId, { x: event.clientX - r.left, y: event.clientY - r.top });
+    if (pointers.size === 2 && pinchStart) {
+      const pts = [...pointers.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      zoomAt(pinchStart.mid.x, pinchStart.mid.y, pinchStart.zoom * (dist / Math.max(1, pinchStart.dist)));
+    }
+  });
+  function endCanvasPointer(event) { pointers.delete(event.pointerId); canvas.releasePointerCapture?.(event.pointerId); if (pointers.size < 2) pinchStart = null; }
+  canvas.addEventListener('pointerup', endCanvasPointer);
+  canvas.addEventListener('pointercancel', endCanvasPointer);
+  canvas.addEventListener('wheel', event => {
+    event.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    zoomAt(event.clientX - r.left, event.clientY - r.top, cam.zoom * (event.deltaY < 0 ? Number(editorZoomConfig.wheelInScale ?? 1.12) : Number(editorZoomConfig.wheelOutScale ?? 0.89)));
+  }, { passive: false });
 
   canvas.addEventListener('click', event => {
+    if (movedDuringPointer) { movedDuringPointer = false; return; }
     const r = canvas.getBoundingClientRect();
     const p = screenToWorld(event.clientX - r.left, event.clientY - r.top);
     const x = Math.max(0, Math.min(state.map.cols - 1, Math.floor(p.x)));
