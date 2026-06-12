@@ -59,6 +59,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
       <button class="ok" id="playBtn">🎮 Send to Game &amp; Play</button>
       <button class="sec" id="exportMapBtn">⬇ Map JSON</button>
       <button class="sec" id="exportLayoutBtn">⬇ Farm Layout</button>
+      <button class="sec" id="loadTownBtn">🏘 Load Town</button>
       <button class="sec" id="importBtn">Import</button>
       <input id="importFile" type="file" hidden accept=".json,application/json">
     </div>
@@ -917,7 +918,40 @@ function importAny(obj) {
     updateAll(); fitView(); setStatus('Imported map: ' + m.name);
     return;
   }
-  throw new Error('Unrecognized JSON (expected hobunji_map.v1 or farm layout v3).');
+  // Workspace format {maps:[...], activeId, gameLink}
+  if (obj && Array.isArray(obj.maps) && obj.maps.length) {
+    const merge = ws.maps.length > 1 || Object.keys(ws.maps[0]?.tiles||{}).length > 0;
+    const doMerge = merge && confirm(
+      `Merge ${obj.maps.length} maps into your current workspace?\n\nOK = merge (keep your maps)\nCancel = replace workspace`);
+    // Sanitise incoming maps
+    const incoming = obj.maps.map(src => {
+      const m = makeMap(src.name || 'Imported', src.category === 'interior' ? 'interior' : 'exterior',
+        clamp(Math.round(src.cols||36),2,400), clamp(Math.round(src.rows||26),2,400));
+      m.id = src.id || m.id;  // keep authored IDs so transitions link correctly
+      if (Array.isArray(src.tiles))
+        src.tiles.forEach(t => { if (t && Number.isFinite(t.c) && Number.isFinite(t.r)) m.tiles[`${t.c},${t.r}`] = { type: t.type||'grass', crop: t.crop||'' }; });
+      else if (src.tiles && typeof src.tiles === 'object') m.tiles = src.tiles;
+      m.objects = src.objects || {}; m.furniture = src.furniture || []; m.decor = src.decor || [];
+      m.npcPaths = Array.isArray(src.npcPaths) ? src.npcPaths : [];
+      m.transitions = Array.isArray(src.transitions) ? src.transitions : [];
+      return m;
+    });
+    if (doMerge) {
+      // Add only maps whose IDs aren't already present
+      const existing = new Set(ws.maps.map(m => m.id));
+      incoming.forEach(m => { if (!existing.has(m.id)) ws.maps.push(m); });
+      setStatus(`Merged ${incoming.filter(m => !existing.has(m.id)).length} new maps.`);
+    } else {
+      ws.maps = incoming;
+      ws.activeId = obj.activeId || incoming[0].id;
+      ws.gameLink = obj.gameLink || { exteriorId:'', interiorId:'' };
+      setStatus(`Loaded workspace: ${incoming.length} maps.`);
+    }
+    undoStack.length = 0;
+    updateAll(); fitView();
+    return;
+  }
+  throw new Error('Unrecognized JSON (expected hobunji_map.v1, farm layout v3, or workspace).');
 }
 
 // ── Wire up ───────────────────────────────────────────────────────────────────
@@ -1007,6 +1041,14 @@ $('exportLayoutBtn').addEventListener('click', () => {
   setStatus('Farm layout downloaded.');
 });
 $('importBtn').addEventListener('click', () => $('importFile').click());
+$('loadTownBtn').addEventListener('click', async () => {
+  try {
+    setStatus('Fetching town workspace…');
+    const res = await fetch('../../config/town-workspace-v1.json');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    importAny(await res.json());
+  } catch(e) { setStatus('Load Town failed: ' + e.message); }
+});
 $('importFile').addEventListener('change', async e => {
   const f = e.target.files?.[0]; if (!f) return;
   try { importAny(JSON.parse(await f.text())); }
