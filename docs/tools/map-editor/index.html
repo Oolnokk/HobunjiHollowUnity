@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Hobunji Hollow — Map Editor</title>
+<style>
+:root{--bg:#07101a;--panel:#111b28;--panel2:#0c141e;--border:rgba(255,255,255,.12);--acc:#6aa7ff;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185;--text:#edf5ff;--muted:#9fb4cf}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:13px}
+button,input,select,textarea{font:inherit}
+button{border:1px solid rgba(106,167,255,.38);background:rgba(106,167,255,.16);color:var(--text);border-radius:9px;padding:7px 11px;font-weight:700;cursor:pointer}
+button:hover{background:rgba(106,167,255,.26)}
+button:active{transform:translateY(1px)}
+button.sec{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.06)}
+button.ok{border-color:rgba(52,211,153,.42);background:rgba(52,211,153,.14)}
+button.warn{border-color:rgba(251,191,36,.42);background:rgba(251,191,36,.12)}
+button.bad{border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.12)}
+button.act{outline:2px solid var(--acc);outline-offset:1px}
+input,select,textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:var(--text);padding:7px 9px;outline:none}
+textarea{min-height:60px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.35}
+label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.muted{color:var(--muted);font-size:11px;line-height:1.4}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);border-radius:999px;padding:3px 8px;color:var(--muted);font-size:11px;white-space:nowrap}
+.item{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);border-radius:8px;padding:6px 9px;cursor:pointer;margin-bottom:4px}
+.item:hover{background:rgba(255,255,255,.07)}
+.item.sel{outline:2px solid var(--acc);outline-offset:1px}
+.item-name{font-weight:700;font-size:12px}
+.item-meta{color:var(--muted);font-size:11px;margin-top:2px}
+#shell{display:flex;flex-direction:column;height:100%}
+#topbar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#topbar h1{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.3px;margin-right:4px}
+#topbar-right{margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#main{display:flex;flex:1;min-height:0}
+#sidebar{width:340px;min-width:250px;max-width:50vw;display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--border);flex-shrink:0}
+#sidebar-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 0 16px;-webkit-overflow-scrolling:touch}
+.section{border-left:4px solid var(--sec,var(--acc));background:linear-gradient(180deg,var(--secBg,rgba(106,167,255,.08)),transparent);margin:8px;border-radius:0 8px 8px 0;padding:8px}
+.sect-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
+.sect-head b{font-size:12px;text-transform:uppercase;letter-spacing:.3px}
+.sect-tag{font-size:10px;color:var(--muted);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:2px 7px}
+#modeBar{display:flex;gap:4px;padding:6px 8px;background:var(--panel2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#view{flex:1;position:relative;min-width:0;min-height:0}
+#canvas2d{display:block;width:100%;height:100%;touch-action:none}
+#hud{position:absolute;left:8px;top:8px;display:flex;gap:5px;flex-wrap:wrap;pointer-events:none;max-width:calc(100% - 16px)}
+.palBtn{display:flex;align-items:center;gap:6px;width:100%;text-align:left;margin-bottom:4px;padding:6px 9px}
+.palSw{width:14px;height:14px;border-radius:4px;border:1px solid rgba(255,255,255,.4);flex:0 0 auto}
+.itemlist{max-height:200px;overflow-y:auto;padding-right:2px}
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="topbar">
+    <h1>MAP EDITOR</h1>
+    <span class="pill" id="activeMapPill">no map</span>
+    <div id="topbar-right">
+      <button class="ok" id="playBtn">🎮 Send to Game &amp; Play</button>
+      <button class="sec" id="exportMapBtn">⬇ Map JSON</button>
+      <button class="sec" id="exportLayoutBtn">⬇ Farm Layout</button>
+      <button class="sec" id="importBtn">Import</button>
+      <input id="importFile" type="file" hidden accept=".json,application/json">
+    </div>
+  </div>
+
+  <div id="main">
+    <aside id="sidebar">
+      <div id="modeBar">
+        <button class="sec act" data-mode="pan">✋ Pan</button>
+        <button class="sec" data-mode="tile">🖌 Tile</button>
+        <button class="sec" data-mode="crop">🌱 Crop</button>
+        <button class="sec" data-mode="object">📦 Object</button>
+        <button class="sec" data-mode="furniture">⚙️ Processor</button>
+        <button class="sec" data-mode="decor">🪑 Decor</button>
+        <button class="sec" data-mode="path">🛤 Path</button>
+        <button class="sec" data-mode="spot">🔁 Spot</button>
+        <button class="sec" data-mode="erase">⌫ Erase</button>
+        <button class="sec" id="fitBtn" style="margin-left:auto">Fit</button>
+      </div>
+      <div id="sidebar-scroll">
+
+        <!-- MAPS -->
+        <div class="section" style="--sec:#94a3b8;--secBg:rgba(148,163,184,.08)">
+          <div class="sect-head"><b>Maps</b><span class="sect-tag" id="mapCountTag">0</span></div>
+          <div class="itemlist" id="mapList"></div>
+          <div class="row" style="margin-top:6px">
+            <button class="ok" id="newMapBtn">+ New</button>
+            <button class="sec" id="dupMapBtn">Duplicate</button>
+            <button class="bad" id="delMapBtn">Delete</button>
+          </div>
+        </div>
+
+        <!-- MAP SETTINGS -->
+        <div class="section" style="--sec:#6aa7ff;--secBg:rgba(106,167,255,.08)">
+          <div class="sect-head"><b>Map Settings</b><span class="sect-tag" id="catTag">—</span></div>
+          <div class="g2">
+            <div><label>Name</label><input id="mapName"></div>
+            <div><label>Category</label><select id="mapCategory"><option value="exterior">exterior</option><option value="interior">interior</option></select></div>
+          </div>
+          <div class="g3" style="margin-top:6px">
+            <div><label>Columns</label><input id="mapCols" type="number" min="2" max="400"></div>
+            <div><label>Rows</label><input id="mapRows" type="number" min="2" max="400"></div>
+            <div style="display:flex;align-items:flex-end"><button class="sec" id="applyMapBtn" style="width:100%">Apply</button></div>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <button class="sec" id="floorTemplateBtn" title="Interior only">Farmhouse floor template</button>
+          </div>
+        </div>
+
+        <!-- PALETTE -->
+        <div class="section" style="--sec:#34d399;--secBg:rgba(52,211,153,.08)">
+          <div class="sect-head"><b>Palette</b><span class="sect-tag" id="paletteTag">tile</span></div>
+          <div id="paletteBox"></div>
+        </div>
+
+        <!-- GAME LINK -->
+        <div class="section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.08)">
+          <div class="sect-head"><b>Game Link</b><span class="sect-tag">hobunji_farm_layout_v3</span></div>
+          <div><label>Farm map (exterior, sent as tile layout)</label><select id="linkExterior"></select></div>
+          <div style="margin-top:6px"><label>Farmhouse map (interior, sent as decor)</label><select id="linkInterior"></select></div>
+          <div class="row" style="margin-top:6px">
+            <button class="sec" id="loadFromGameBtn">⟲ Load current game farm</button>
+          </div>
+          <div class="row" style="margin-top:4px">
+            <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer">
+              <input type="checkbox" id="showBaseChk" checked style="width:auto"> Show game base farm under edits
+            </label>
+          </div>
+          <p class="muted" style="margin-top:5px">The game farm is <b id="farmDimsNote">36×26</b>. Tiles outside that range are clipped when sending. Unpainted tiles keep the game's day-one terrain.</p>
+        </div>
+
+        <!-- STATUS / JSON -->
+        <div class="section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.06)">
+          <div class="sect-head"><b>Active Map JSON</b><span class="sect-tag" id="statusPill">Ready</span></div>
+          <textarea id="jsonPreview" rows="8" readonly></textarea>
+        </div>
+
+      </div>
+    </aside>
+
+    <div id="view">
+      <canvas id="canvas2d"></canvas>
+      <div id="hud">
+        <span class="pill" id="modePill">Mode: pan</span>
+        <span class="pill" id="cursorPill">—</span>
+        <span class="pill" id="brushPill">—</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const uid = p => `${p}_${Math.random().toString(36).slice(2,7)}`;
+
+// ── Game contracts (single source of truth: docs/game.js) ────────────────────
+const GAME = {
+  layoutKey: 'hobunji_farm_layout_v3',
+  farm: { cols: 36, rows: 26 },
+  house: { col: 26, row: 2, w: 5, d: 4, doorCol: 28, doorRow: 6 },
+  interior: { cols: 6, rows: 6, entry: [2,4], exit: [2,5] },
+  gamePath: '../../index.html'
+};
+
+const TILE_INFO = {
+  grass:  { label:'Grass',  color:'#4a7c43' },
+  weeds:  { label:'Weeds',  color:'#6b8c3a' },
+  tilled: { label:'Tilled', color:'#7a5230' },
+  trench: { label:'Trench', color:'#3d2c1e' },
+  raised: { label:'Raised', color:'#a8835a' },
+  paddy:  { label:'Paddy',  color:'#3f7fae' },
+  rock:   { label:'Rock',   color:'#8a8f98' },
+  shrub:  { label:'Shrub',  color:'#2f6f3f' }
+};
+const TILE_SETS = {
+  exterior: ['grass','weeds','tilled','trench','raised','paddy','rock','shrub'],
+  // Interior grid in game.js uses grass = walkable floor, rock = blocked.
+  interior: ['grass','rock']
+};
+const INTERIOR_TILE_LABELS = { grass: 'Floor (walkable)', rock: 'Blocked' };
+
+const CROPS = {
+  needlegrain:'🌾', heftroot:'🟡', garlink:'🧄', ongyums:'🧅',
+  redberries:'🍓', blueberries:'🫐', yellowberries:'🟡',
+  whiteberries:'⚪', blackberries:'⚫', blackMustard:'⚫', greenMustard:'🥬'
+};
+
+const OBJECTS = {
+  sellCrate: { icon:'📤', label:'Sell Crate',  color:'#d97706' },
+  supplyBox: { icon:'📥', label:'Supply Box',  color:'#2563eb' }
+};
+
+const PROCESSORS = {
+  pestle:     { icon:'🥣', label:'Pestle Station' },
+  squeezer:   { icon:'🧃', label:'Hand Squeezer' },
+  handMill:   { icon:'⚙️', label:'Hand Mill' },
+  dryingRack: { icon:'☀️', label:'Drying Rack' },
+  smoker:     { icon:'💨', label:'Smoking Hut' },
+  agingBarrel:{ icon:'🛢️', label:'Aging Barrel' },
+  agingVase:  { icon:'🏺', label:'Aging Vase' }
+};
+
+const DECOR = {
+  basicBed:{icon:'🛏️',label:'Single Bed',fw:1,fd:2,area:'interior'}, doubleBed:{icon:'🛏️',label:'Double Bed',fw:2,fd:2,area:'interior'},
+  bedroll:{icon:'🛌',label:'Bedroll',fw:1,fd:1,area:'interior'}, bench:{icon:'🪑',label:'Short Bench',fw:2,fd:1,area:'interior'},
+  bookshelf:{icon:'📚',label:'Bookshelf',fw:2,fd:1,area:'interior'}, bucket:{icon:'🪣',label:'Tin Bucket',fw:1,fd:1,area:'any'},
+  candleTable:{icon:'🕯️',label:'Candle Table',fw:1,fd:1,area:'interior'}, chairSimple:{icon:'🪑',label:'Simple Chair',fw:1,fd:1,area:'interior'},
+  chairCushion:{icon:'🪑',label:'Cushioned Chair',fw:1,fd:1,area:'interior'}, chest:{icon:'📦',label:'Storage Chest',fw:1,fd:1,area:'interior'},
+  crateStack:{icon:'📦',label:'Crate Stack',fw:1,fd:1,area:'any'}, copperBarrel:{icon:'🛢️',label:'Copper Barrel',fw:1,fd:1,area:'any'},
+  desk:{icon:'✍️',label:'Writing Desk',fw:2,fd:1,area:'interior'}, dresser:{icon:'🗄️',label:'Low Dresser',fw:2,fd:1,area:'interior'},
+  hearth:{icon:'🔥',label:'Hearth Fireplace',fw:2,fd:1,area:'interior'}, loom:{icon:'🧶',label:'Small Loom',fw:1,fd:2,area:'interior'},
+  nightstand:{icon:'🕯️',label:'Nightstand',fw:1,fd:1,area:'interior'}, rug:{icon:'🧶',label:'Woven Rug',fw:2,fd:2,area:'interior'},
+  standingLamp:{icon:'💡',label:'Standing Lamp',fw:1,fd:1,area:'interior'}, stool:{icon:'🪑',label:'Round Stool',fw:1,fd:1,area:'any'},
+  tableLong:{icon:'🍽️',label:'Long Table',fw:4,fd:1,area:'interior'}, tableRound:{icon:'🍽️',label:'Round Table',fw:2,fd:2,area:'interior'},
+  tableSmall:{icon:'🍽️',label:'Small Table',fw:1,fd:1,area:'interior'}, wardrobe:{icon:'🚪',label:'Tall Wardrobe',fw:2,fd:1,area:'interior'},
+  washTub:{icon:'🛁',label:'Copper Wash Tub',fw:1,fd:1,area:'any'}
+};
+
+// NPC paths and transition spots are supported on BOTH map categories.
+// They are persisted in hobunji_map.v1 JSON for the game to consume as those
+// systems come online (the current game build does not read them yet).
+
+// Day-one farm generation — mirrors createInitialGrid()/createDayOneTile() in game.js.
+const DAYONE_ROCKS  = [[1,1],[10,1],[15,2],[3,7],[13,9],[16,11],[20,2],[28,4],[33,1],[22,8],[30,10],[25,14],[7,18],[18,20],[31,22],[5,24],[14,16],[26,6],[32,18],[8,12]];
+const DAYONE_SHRUBS = [[6,1],[7,2],[2,4],[14,4],[4,10],[9,11],[19,3],[24,2],[29,7],[21,12],[27,15],[11,19],[23,21],[34,16],[3,22],[16,24],[12,6],[35,9],[17,13],[28,23]];
+const DAYONE_CLEAR  = [[8,9],[9,9],[8,10],[9,10],[10,10]];
+const _dayOneCache = new Map();
+function dayOneType(c, r) {
+  const key = c + ',' + r;
+  if (_dayOneCache.has(key)) return _dayOneCache.get(key);
+  let t;
+  if (DAYONE_CLEAR.some(([x,y]) => x===c && y===r)) t = 'grass';
+  else if (DAYONE_ROCKS.some(([x,y]) => x===c && y===r)) t = 'rock';
+  else if (DAYONE_SHRUBS.some(([x,y]) => x===c && y===r)) t = 'shrub';
+  else t = ((c*17 + r*31 + c*r*7) % 10) < 7 ? 'weeds' : 'grass';
+  _dayOneCache.set(key, t);
+  return t;
+}
+
+// ── Workspace ─────────────────────────────────────────────────────────────────
+const WS_KEY = 'hobunji_map_editor_workspace_v1';
+
+function makeMap(name, category, cols, rows) {
+  return {
+    schema: 'hobunji_map.v1',
+    id: uid('map'), name, category, cols, rows,
+    tiles: {},        // "c,r" -> { type, crop }
+    objects: {},      // objectKey -> [c, r]
+    furniture: [],    // { key, col, row }
+    decor: [],        // { key, col, row }
+    npcPaths: [],     // { id, label, npcId, nodes: [[c,r],...] }
+    transitions: []   // { id, label, col, row, targetMapId, targetSpotId }
+  };
+}
+
+let ws = loadWorkspace();
+function loadWorkspace() {
+  try {
+    const raw = localStorage.getItem(WS_KEY);
+    if (raw) {
+      const w = JSON.parse(raw);
+      if (Array.isArray(w.maps) && w.maps.length) {
+        w.maps.forEach(m => {
+          m.npcPaths = Array.isArray(m.npcPaths) ? m.npcPaths : [];
+          m.transitions = Array.isArray(m.transitions) ? m.transitions : [];
+          delete m.markers;
+        });
+        w.gameLink = w.gameLink || { exteriorId: '', interiorId: '' };
+        return w;
+      }
+    }
+  } catch(_) {}
+  const farm = makeMap('Farm', 'exterior', GAME.farm.cols, GAME.farm.rows);
+  const house = makeMap('Farmhouse', 'interior', GAME.interior.cols, GAME.interior.rows);
+  applyFarmhouseFloor(house);
+  return { maps: [farm, house], activeId: farm.id, gameLink: { exteriorId: farm.id, interiorId: house.id } };
+}
+let _saveT = null;
+function saveWorkspace() {
+  clearTimeout(_saveT);
+  _saveT = setTimeout(() => { try { localStorage.setItem(WS_KEY, JSON.stringify(ws)); } catch(_) {} }, 300);
+}
+function activeMap() { return ws.maps.find(m => m.id === ws.activeId) || ws.maps[0]; }
+function mapById(id) { return ws.maps.find(m => m.id === id) || null; }
+
+function applyFarmhouseFloor(m) {
+  // Mirrors interiorGrid in game.js: floor where (r<=4 && c<=5) or (r==5 && 2<=c<=3).
+  m.tiles = {};
+  for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+    const floor = (r <= Math.min(4, m.rows-2) && c < m.cols) || (r === m.rows-1 && c >= 2 && c <= 3);
+    m.tiles[`${c},${r}`] = { type: floor ? 'grass' : 'rock', crop: '' };
+  }
+  if (!m.transitions.some(t => t.label === 'door')) {
+    m.transitions.push({ id: uid('spot'), label: 'door', col: GAME.interior.exit[0], row: GAME.interior.exit[1], targetMapId: '', targetSpotId: '' });
+  }
+}
+
+// ── Undo ──────────────────────────────────────────────────────────────────────
+const undoStack = [];
+function pushUndo() {
+  undoStack.push(JSON.stringify(activeMap()));
+  if (undoStack.length > 40) undoStack.shift();
+}
+function undo() {
+  if (!undoStack.length) return;
+  const snap = JSON.parse(undoStack.pop());
+  const i = ws.maps.findIndex(m => m.id === snap.id);
+  if (i >= 0) { ws.maps[i] = snap; updateAll(); setStatus('Undid.'); }
+}
+
+// ── Mode / brush state ────────────────────────────────────────────────────────
+let mode = 'pan';
+let brush = { tile: 'grass', crop: 'needlegrain', object: 'sellCrate', furniture: 'pestle', decor: 'basicBed' };
+let activePathId = null;   // path being extended in path mode
+let activeSpotId = null;   // transition spot selected in spot mode
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.classList.toggle('act', b.dataset.mode === m));
+  $('modePill').textContent = `Mode: ${m}`;
+  renderPalette();
+  updateBrushPill();
+}
+function updateBrushPill() {
+  let t = '—';
+  if (mode === 'tile') t = `tile: ${brush.tile}`;
+  if (mode === 'crop') t = `crop: ${CROPS[brush.crop] || ''} ${brush.crop}`;
+  if (mode === 'object') t = `object: ${OBJECTS[brush.object]?.label}`;
+  if (mode === 'furniture') t = `processor: ${PROCESSORS[brush.furniture]?.label}`;
+  if (mode === 'decor') t = `decor: ${DECOR[brush.decor]?.label}`;
+  if (mode === 'path') { const p = activeMap().npcPaths.find(x => x.id === activePathId); t = p ? `path: ${p.label}` : 'path: (click to start one)'; }
+  if (mode === 'spot') t = 'spot: click map to place';
+  $('brushPill').textContent = t;
+}
+
+// ── Palette UI ────────────────────────────────────────────────────────────────
+function renderPalette() {
+  const m = activeMap();
+  const box = $('paletteBox');
+  $('paletteTag').textContent = mode;
+  let html = '';
+  if (mode === 'tile') {
+    const set = TILE_SETS[m.category] || TILE_SETS.exterior;
+    html = set.map(t => {
+      const info = TILE_INFO[t];
+      const label = m.category === 'interior' ? (INTERIOR_TILE_LABELS[t] || info.label) : info.label;
+      return `<button class="sec palBtn ${brush.tile===t?'act':''}" data-pal="tile" data-val="${t}"><span class="palSw" style="background:${info.color}"></span>${label}</button>`;
+    }).join('');
+  } else if (mode === 'crop') {
+    if (m.category !== 'exterior') html = '<p class="muted">Crops are exterior-only.</p>';
+    else html = Object.keys(CROPS).map(c =>
+      `<button class="sec palBtn ${brush.crop===c?'act':''}" data-pal="crop" data-val="${c}">${CROPS[c]} ${c}</button>`).join('')
+      + '<p class="muted" style="margin-top:4px">Paints a crop onto the tile (game spawns it half-grown). Crop requires a painted tile.</p>';
+  } else if (mode === 'object') {
+    if (m.category !== 'exterior') html = '<p class="muted">Objects are exterior-only.</p>';
+    else html = Object.keys(OBJECTS).map(k =>
+      `<button class="sec palBtn ${brush.object===k?'act':''}" data-pal="object" data-val="${k}">${OBJECTS[k].icon} ${OBJECTS[k].label}</button>`).join('')
+      + '<p class="muted" style="margin-top:4px">One of each per map — clicking moves it.</p>';
+  } else if (mode === 'furniture') {
+    if (m.category !== 'exterior') html = '<p class="muted">Processing furniture is exterior-only.</p>';
+    else html = Object.keys(PROCESSORS).map(k =>
+      `<button class="sec palBtn ${brush.furniture===k?'act':''}" data-pal="furniture" data-val="${k}">${PROCESSORS[k].icon} ${PROCESSORS[k].label}</button>`).join('');
+  } else if (mode === 'decor') {
+    const want = m.category === 'interior' ? ['interior','any'] : ['farm','any'];
+    html = Object.keys(DECOR).filter(k => want.includes(DECOR[k].area)).map(k =>
+      `<button class="sec palBtn ${brush.decor===k?'act':''}" data-pal="decor" data-val="${k}">${DECOR[k].icon} ${DECOR[k].label} <span class="muted" style="margin-left:auto">${DECOR[k].fw}×${DECOR[k].fd}</span></button>`).join('');
+  } else if (mode === 'path') {
+    html = `<button class="ok" id="newPathBtn" style="width:100%;margin-bottom:6px">+ New path</button>` +
+      m.npcPaths.map(p =>
+        `<div class="item ${p.id===activePathId?'sel':''}" data-pathsel="${p.id}">
+          <div class="item-name">🛤 ${p.label}</div>
+          <div class="item-meta">${p.npcId || 'no npc'} · ${p.nodes.length} nodes <button class="bad" data-pathdel="${p.id}" style="float:right;padding:1px 7px;font-size:10px">✕</button></div>
+        </div>`).join('');
+    const ap = m.npcPaths.find(p => p.id === activePathId);
+    if (ap) {
+      html += `<div class="g2" style="margin-top:6px">
+        <div><label>Label</label><input id="pathLabelIn" value="${ap.label.replace(/"/g,'&quot;')}"></div>
+        <div><label>NPC id</label><input id="pathNpcIn" value="${(ap.npcId||'').replace(/"/g,'&quot;')}"></div>
+      </div>`;
+    }
+    html += '<p class="muted" style="margin-top:5px">Select a path, then click the map to append nodes. Erase mode removes nodes.</p>';
+  } else if (mode === 'spot') {
+    html = m.transitions.map(t => {
+      const others = ws.maps.filter(x => x.id !== m.id);
+      const target = mapById(t.targetMapId);
+      const spotOpts = (target?.transitions || []).map(s =>
+        `<option value="${s.id}" ${t.targetSpotId===s.id?'selected':''}>${s.label}</option>`).join('');
+      return `<div class="item ${t.id===activeSpotId?'sel':''}" data-spotsel="${t.id}">
+        <div class="row"><input data-spotlabel="${t.id}" value="${t.label.replace(/"/g,'&quot;')}" style="flex:1">
+          <button class="bad" data-spotdel="${t.id}" style="padding:3px 8px">✕</button></div>
+        <div class="g2" style="margin-top:4px">
+          <select data-spottarget="${t.id}"><option value="">→ target map…</option>${others.map(x =>
+            `<option value="${x.id}" ${t.targetMapId===x.id?'selected':''}>${x.name}</option>`).join('')}</select>
+          <select data-spotspot="${t.id}"><option value="">→ arrive at…</option>${spotOpts}</select>
+        </div>
+        <div class="item-meta">at (${t.col}, ${t.row})</div>
+      </div>`;
+    }).join('') || '<p class="muted">No transition spots yet.</p>';
+    html += '<p class="muted" style="margin-top:5px">Click the map to place a spot, then pick which map (and which spot on it) it leads to. Spots work on both exterior and interior maps.</p>';
+  } else if (mode === 'erase') {
+    html = '<p class="muted">Click or drag to remove tiles, crops, objects, furniture, decor, path nodes, and spots under the cursor.</p>';
+  } else {
+    html = '<p class="muted">Drag to pan, scroll/pinch to zoom.</p>';
+  }
+  box.innerHTML = html;
+  box.querySelectorAll('button[data-pal]').forEach(b => b.addEventListener('click', () => {
+    brush[b.dataset.pal] = b.dataset.val;
+    renderPalette(); updateBrushPill();
+  }));
+  // Path palette wiring
+  const npb = box.querySelector('#newPathBtn');
+  if (npb) npb.addEventListener('click', () => {
+    pushUndo();
+    const p = { id: uid('path'), label: `Path ${m.npcPaths.length+1}`, npcId: '', nodes: [] };
+    m.npcPaths.push(p); activePathId = p.id;
+    renderPalette(); updateBrushPill(); refreshPreview(); saveWorkspace();
+  });
+  box.querySelectorAll('[data-pathsel]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-pathdel]')) return;
+    activePathId = el.dataset.pathsel; renderPalette(); updateBrushPill();
+  }));
+  box.querySelectorAll('[data-pathdel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); pushUndo();
+    m.npcPaths = m.npcPaths.filter(p => p.id !== el.dataset.pathdel);
+    if (activePathId === el.dataset.pathdel) activePathId = null;
+    renderPalette(); draw(); refreshPreview(); saveWorkspace();
+  }));
+  const pl = box.querySelector('#pathLabelIn'), pn = box.querySelector('#pathNpcIn');
+  if (pl) pl.addEventListener('change', () => { const p = m.npcPaths.find(x => x.id === activePathId); if (p) { p.label = pl.value.trim() || p.label; renderPalette(); draw(); refreshPreview(); saveWorkspace(); } });
+  if (pn) pn.addEventListener('change', () => { const p = m.npcPaths.find(x => x.id === activePathId); if (p) { p.npcId = pn.value.trim(); refreshPreview(); saveWorkspace(); } });
+  // Spot palette wiring
+  box.querySelectorAll('[data-spotsel]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('button,select,input')) return;
+    activeSpotId = el.dataset.spotsel; renderPalette(); draw();
+  }));
+  box.querySelectorAll('[data-spotdel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); pushUndo();
+    m.transitions = m.transitions.filter(t => t.id !== el.dataset.spotdel);
+    if (activeSpotId === el.dataset.spotdel) activeSpotId = null;
+    renderPalette(); draw(); refreshPreview(); saveWorkspace();
+  }));
+  box.querySelectorAll('[data-spotlabel]').forEach(el => el.addEventListener('change', () => {
+    const t = m.transitions.find(x => x.id === el.dataset.spotlabel);
+    if (t) { t.label = el.value.trim() || t.label; renderPalette(); draw(); refreshPreview(); saveWorkspace(); }
+  }));
+  box.querySelectorAll('[data-spottarget]').forEach(el => el.addEventListener('change', () => {
+    const t = m.transitions.find(x => x.id === el.dataset.spottarget);
+    if (t) { t.targetMapId = el.value; t.targetSpotId = ''; renderPalette(); refreshPreview(); saveWorkspace(); }
+  }));
+  box.querySelectorAll('[data-spotspot]').forEach(el => el.addEventListener('change', () => {
+    const t = m.transitions.find(x => x.id === el.dataset.spotspot);
+    if (t) { t.targetSpotId = el.value; refreshPreview(); saveWorkspace(); }
+  }));
+}
+
+// ── Canvas ────────────────────────────────────────────────────────────────────
+const canvas = $('canvas2d');
+const ctx = canvas.getContext('2d');
+let cam = { x: 0, y: 0, zoom: 24 };
+let drag = false, dragStart = null, painting = false;
+const ptrs = new Map();
+let pinchStart = null;
+
+const w2s = (x,y) => ({ x: x*cam.zoom + cam.x, y: y*cam.zoom + cam.y });
+const s2w = (x,y) => ({ x: (x-cam.x)/cam.zoom, y: (y-cam.y)/cam.zoom });
+const canvasPt = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX-r.left, y: e.clientY-r.top }; };
+
+function fitView() {
+  const m = activeMap(); const r = canvas.getBoundingClientRect();
+  cam.zoom = Math.max(6, Math.min((r.width-48)/m.cols, (r.height-48)/m.rows));
+  cam.x = (r.width - m.cols*cam.zoom)/2;
+  cam.y = (r.height - m.rows*cam.zoom)/2;
+  draw();
+}
+function resizeCanvas() {
+  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio||1));
+  const r = canvas.getBoundingClientRect();
+  canvas.width = Math.round(r.width*dpr); canvas.height = Math.round(r.height*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+
+function draw() {
+  const m = activeMap();
+  const r = canvas.getBoundingClientRect();
+  ctx.clearRect(0,0,r.width,r.height);
+  ctx.fillStyle = '#07101a'; ctx.fillRect(0,0,r.width,r.height);
+  const z = cam.zoom;
+
+  const isFarmLinked = m.category === 'exterior' && ws.gameLink.exteriorId === m.id;
+  const showBase = isFarmLinked && $('showBaseChk').checked;
+
+  // Base day-one farm underlay (real game terrain)
+  if (showBase) {
+    const maxC = Math.min(m.cols, GAME.farm.cols), maxR = Math.min(m.rows, GAME.farm.rows);
+    for (let rr = 0; rr < maxR; rr++) for (let cc = 0; cc < maxC; cc++) {
+      const p = w2s(cc, rr);
+      ctx.fillStyle = TILE_INFO[dayOneType(cc, rr)].color;
+      ctx.globalAlpha = 0.42;
+      ctx.fillRect(p.x, p.y, z, z);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Painted tiles
+  Object.keys(m.tiles).forEach(key => {
+    const [c, rr] = key.split(',').map(Number);
+    const t = m.tiles[key];
+    const p = w2s(c, rr);
+    ctx.fillStyle = (TILE_INFO[t.type] || { color:'#888' }).color;
+    ctx.fillRect(p.x, p.y, z, z);
+    if (t.crop && z > 10) {
+      ctx.font = `${Math.floor(z*0.55)}px system-ui`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(CROPS[t.crop] || '🌱', p.x + z/2, p.y + z/2);
+    }
+  });
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = 1;
+  for (let x = 0; x <= m.cols; x++) { const p = w2s(x,0); ctx.beginPath(); ctx.moveTo(p.x, cam.y); ctx.lineTo(p.x, cam.y + m.rows*z); ctx.stroke(); }
+  for (let y = 0; y <= m.rows; y++) { const p = w2s(0,y); ctx.beginPath(); ctx.moveTo(cam.x, p.y); ctx.lineTo(cam.x + m.cols*z, p.y); ctx.stroke(); }
+  ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 2;
+  ctx.strokeRect(cam.x, cam.y, m.cols*z, m.rows*z);
+
+  // Game farm bounds + house footprint when linked
+  if (isFarmLinked) {
+    const fb = w2s(0,0);
+    ctx.strokeStyle = 'rgba(52,211,153,.55)'; ctx.lineWidth = 2; ctx.setLineDash([6,4]);
+    ctx.strokeRect(fb.x, fb.y, GAME.farm.cols*z, GAME.farm.rows*z);
+    ctx.setLineDash([]);
+    const h = GAME.house, hp = w2s(h.col, h.row);
+    ctx.fillStyle = 'rgba(139,92,246,.30)';
+    ctx.fillRect(hp.x, hp.y, h.w*z, h.d*z);
+    ctx.strokeStyle = 'rgba(139,92,246,.8)'; ctx.lineWidth = 1.5;
+    ctx.strokeRect(hp.x, hp.y, h.w*z, h.d*z);
+    const dp = w2s(h.doorCol, h.doorRow);
+    ctx.fillStyle = '#fef08a'; ctx.fillRect(dp.x + z*.25, dp.y + z*.25, z*.5, z*.5);
+    if (z > 9) {
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = `${clamp(z*.32,9,12)}px system-ui`;
+      ctx.fillText('HOUSE', hp.x + 3, hp.y + 12);
+      ctx.fillStyle = 'rgba(52,211,153,.8)';
+      ctx.fillText(`FARM ${GAME.farm.cols}×${GAME.farm.rows}`, fb.x + 4, fb.y - 4);
+    }
+  }
+
+  // Objects
+  ctx.font = `${Math.floor(z*0.62)}px system-ui`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  Object.keys(m.objects || {}).forEach(k => {
+    const [c, rr] = m.objects[k]; const info = OBJECTS[k]; if (!info) return;
+    const p = w2s(c, rr);
+    ctx.fillStyle = info.color; ctx.globalAlpha = .45; ctx.fillRect(p.x+1, p.y+1, z-2, z-2); ctx.globalAlpha = 1;
+    if (z > 9) ctx.fillText(info.icon, p.x + z/2, p.y + z/2);
+  });
+  // Processing furniture
+  (m.furniture || []).forEach(f => {
+    const info = PROCESSORS[f.key]; if (!info) return;
+    const p = w2s(f.col, f.row);
+    ctx.fillStyle = 'rgba(202,164,94,.4)'; ctx.fillRect(p.x+1, p.y+1, z-2, z-2);
+    if (z > 9) ctx.fillText(info.icon, p.x + z/2, p.y + z/2);
+  });
+  // Decor (with footprints)
+  (m.decor || []).forEach(d => {
+    const info = DECOR[d.key]; if (!info) return;
+    const p = w2s(d.col, d.row);
+    ctx.fillStyle = 'rgba(167,139,250,.35)'; ctx.fillRect(p.x+1, p.y+1, info.fw*z-2, info.fd*z-2);
+    ctx.strokeStyle = 'rgba(167,139,250,.7)'; ctx.lineWidth = 1;
+    ctx.strokeRect(p.x+1, p.y+1, info.fw*z-2, info.fd*z-2);
+    if (z > 9) ctx.fillText(info.icon, p.x + info.fw*z/2, p.y + info.fd*z/2);
+  });
+  // NPC paths
+  (m.npcPaths || []).forEach(pa => {
+    const isActive = pa.id === activePathId;
+    if (pa.nodes.length > 1) {
+      ctx.strokeStyle = isActive ? '#7dd3fc' : 'rgba(56,189,248,.55)';
+      ctx.lineWidth = isActive ? 3 : 2;
+      ctx.beginPath();
+      pa.nodes.forEach(([c, rr], i) => { const s = w2s(c+.5, rr+.5); i === 0 ? ctx.moveTo(s.x, s.y) : ctx.lineTo(s.x, s.y); });
+      ctx.stroke();
+    }
+    pa.nodes.forEach(([c, rr], i) => {
+      const s = w2s(c+.5, rr+.5);
+      ctx.fillStyle = isActive ? '#fff' : '#38bdf8';
+      ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(3.5, z*.18), 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#082f49'; ctx.lineWidth = 1.5; ctx.stroke();
+      if (z > 13) { ctx.fillStyle = '#e0f2fe'; ctx.font = `${clamp(z*.28,9,12)}px system-ui`; ctx.fillText(String(i+1), s.x + z*.22, s.y - z*.18); }
+    });
+    ctx.lineWidth = 1;
+  });
+  // Transition spots (gold diamonds)
+  ctx.font = `${Math.floor(z*0.5)}px system-ui`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  (m.transitions || []).forEach(t => {
+    const p = w2s(t.col + .5, t.row + .5);
+    const s = z * .42;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y - s); ctx.lineTo(p.x + s, p.y); ctx.lineTo(p.x, p.y + s); ctx.lineTo(p.x - s, p.y); ctx.closePath();
+    ctx.fillStyle = t.id === activeSpotId ? 'rgba(251,191,36,.7)' : 'rgba(251,191,36,.4)';
+    ctx.fill();
+    ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = t.id === activeSpotId ? 2.5 : 1.5; ctx.stroke();
+    if (z > 11) {
+      ctx.fillStyle = '#fef3c7';
+      ctx.fillText('🔁', p.x, p.y);
+      const target = mapById(t.targetMapId);
+      ctx.font = `${clamp(z*.26,8,11)}px system-ui`;
+      ctx.fillText(t.label + (target ? ` → ${target.name}` : ''), p.x, p.y + s + clamp(z*.3,7,10));
+      ctx.font = `${Math.floor(z*0.5)}px system-ui`;
+    }
+  });
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+}
+
+// ── Edit application ──────────────────────────────────────────────────────────
+function applyAt(tile) {
+  const m = activeMap();
+  const { x: c, y: r } = tile;
+  if (c < 0 || r < 0 || c >= m.cols || r >= m.rows) return;
+  const key = `${c},${r}`;
+
+  if (mode === 'tile') {
+    const set = TILE_SETS[m.category] || TILE_SETS.exterior;
+    const t = set.includes(brush.tile) ? brush.tile : set[0];
+    const existing = m.tiles[key];
+    if (!existing || existing.type !== t) m.tiles[key] = { type: t, crop: existing?.crop || '' };
+  } else if (mode === 'crop' && m.category === 'exterior') {
+    if (!m.tiles[key]) m.tiles[key] = { type: 'tilled', crop: '' };
+    m.tiles[key].crop = brush.crop;
+  } else if (mode === 'object' && m.category === 'exterior') {
+    m.objects[brush.object] = [c, r];
+  } else if (mode === 'furniture' && m.category === 'exterior') {
+    if (!m.furniture.some(f => f.col === c && f.row === r)) m.furniture.push({ key: brush.furniture, col: c, row: r });
+  } else if (mode === 'decor') {
+    const info = DECOR[brush.decor];
+    if (info && c + info.fw <= m.cols && r + info.fd <= m.rows
+        && !m.decor.some(d => overlaps(d, c, r, info.fw, info.fd))) {
+      m.decor.push({ key: brush.decor, col: c, row: r });
+    }
+  } else if (mode === 'path') {
+    let p = m.npcPaths.find(x => x.id === activePathId);
+    if (!p) { p = { id: uid('path'), label: `Path ${m.npcPaths.length+1}`, npcId: '', nodes: [] }; m.npcPaths.push(p); activePathId = p.id; }
+    p.nodes.push([c, r]);
+    renderPalette(); updateBrushPill();
+  } else if (mode === 'spot') {
+    const existing = m.transitions.find(t => t.col === c && t.row === r);
+    if (existing) { activeSpotId = existing.id; }
+    else {
+      const t = { id: uid('spot'), label: `spot_${m.transitions.length+1}`, col: c, row: r, targetMapId: '', targetSpotId: '' };
+      m.transitions.push(t); activeSpotId = t.id;
+    }
+    renderPalette();
+  } else if (mode === 'erase') {
+    let did = false;
+    if (m.tiles[key]) { delete m.tiles[key]; did = true; }
+    Object.keys(m.objects).forEach(k => { const [oc,or] = m.objects[k]; if (oc===c && or===r) { delete m.objects[k]; did = true; } });
+    const fi = m.furniture.findIndex(f => f.col===c && f.row===r); if (fi >= 0) { m.furniture.splice(fi,1); did = true; }
+    const di = m.decor.findIndex(d => { const inf = DECOR[d.key]; return inf && c >= d.col && c < d.col+inf.fw && r >= d.row && r < d.row+inf.fd; });
+    if (di >= 0) { m.decor.splice(di,1); did = true; }
+    (m.npcPaths || []).forEach(p => {
+      for (let i = p.nodes.length-1; i >= 0; i--) if (p.nodes[i][0] === c && p.nodes[i][1] === r) { p.nodes.splice(i,1); did = true; }
+    });
+    const ti = (m.transitions || []).findIndex(t => t.col === c && t.row === r);
+    if (ti >= 0) { if (m.transitions[ti].id === activeSpotId) activeSpotId = null; m.transitions.splice(ti,1); did = true; }
+    if (!did) return;
+    if (mode === 'erase') renderPalette();
+  } else return;
+
+  draw(); refreshPreview(); saveWorkspace();
+}
+function overlaps(d, c, r, fw, fd) {
+  const inf = DECOR[d.key]; if (!inf) return false;
+  return d.col < c+fw && d.col+inf.fw > c && d.row < r+fd && d.row+inf.fd > r;
+}
+
+const PAINT_MODES = ['tile','crop','erase'];   // drag-paintable
+const TAP_MODES = ['object','furniture','decor','path','spot'];
+
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture?.(e.pointerId); ptrs.set(e.pointerId, canvasPt(e));
+  if (ptrs.size === 2) {
+    const a = [...ptrs.values()];
+    pinchStart = { dist: Math.hypot(a[0].x-a[1].x, a[0].y-a[1].y), zoom: cam.zoom, x: cam.x, y: cam.y, mid:{x:(a[0].x+a[1].x)/2, y:(a[0].y+a[1].y)/2} };
+    painting = false; drag = false;
+    return;
+  }
+  const p = canvasPt(e);
+  if (mode === 'pan') { drag = true; dragStart = { p, cx: cam.x, cy: cam.y }; return; }
+  pushUndo();
+  const w = s2w(p.x, p.y);
+  if (PAINT_MODES.includes(mode)) { painting = true; applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) }); }
+  else if (TAP_MODES.includes(mode)) applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) });
+});
+canvas.addEventListener('pointermove', e => {
+  const p = canvasPt(e); ptrs.set(e.pointerId, p);
+  const w = s2w(p.x, p.y);
+  $('cursorPill').textContent = `${Math.floor(w.x)}, ${Math.floor(w.y)}`;
+  if (ptrs.size === 2 && pinchStart) {
+    const a = [...ptrs.values()]; const dist = Math.hypot(a[0].x-a[1].x, a[0].y-a[1].y);
+    const nz = clamp(pinchStart.zoom * (dist/Math.max(1,pinchStart.dist)), 4, 90);
+    const wx = (pinchStart.mid.x-pinchStart.x)/pinchStart.zoom, wy = (pinchStart.mid.y-pinchStart.y)/pinchStart.zoom;
+    cam.zoom = nz; cam.x = pinchStart.mid.x - wx*nz; cam.y = pinchStart.mid.y - wy*nz;
+    draw(); return;
+  }
+  if (drag && dragStart) { cam.x = dragStart.cx + (p.x-dragStart.p.x); cam.y = dragStart.cy + (p.y-dragStart.p.y); draw(); return; }
+  if (painting) applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) });
+});
+function endPtr(e) { ptrs.delete(e.pointerId); drag = false; painting = false; pinchStart = null; }
+canvas.addEventListener('pointerup', endPtr);
+canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', e => {
+  e.preventDefault(); const p = canvasPt(e); const old = cam.zoom;
+  const nz = clamp(cam.zoom * (e.deltaY < 0 ? 1.12 : .89), 4, 90);
+  const wx = (p.x-cam.x)/old, wy = (p.y-cam.y)/old;
+  cam.zoom = nz; cam.x = p.x - wx*nz; cam.y = p.y - wy*nz; draw();
+}, { passive:false });
+
+window.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); }
+});
+
+// ── Map management UI ────────────────────────────────────────────────────────
+function renderMapList() {
+  $('mapList').innerHTML = ws.maps.map(m =>
+    `<div class="item ${m.id===ws.activeId?'sel':''}" data-id="${m.id}">
+      <div class="item-name">${m.category==='interior'?'🏠':'🗺'} ${m.name}</div>
+      <div class="item-meta">${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.npcPaths||[]).length} paths · ${(m.transitions||[]).length} spots</div>
+    </div>`).join('');
+  $('mapList').querySelectorAll('.item').forEach(el => el.addEventListener('click', () => {
+    ws.activeId = el.dataset.id; undoStack.length = 0; activePathId = null; activeSpotId = null; updateAll(); fitView();
+  }));
+  $('mapCountTag').textContent = String(ws.maps.length);
+  // Game link dropdowns
+  const exts = ws.maps.filter(m => m.category === 'exterior');
+  const ints = ws.maps.filter(m => m.category === 'interior');
+  $('linkExterior').innerHTML = '<option value="">— none —</option>' + exts.map(m => `<option value="${m.id}" ${ws.gameLink.exteriorId===m.id?'selected':''}>${m.name}</option>`).join('');
+  $('linkInterior').innerHTML = '<option value="">— none —</option>' + ints.map(m => `<option value="${m.id}" ${ws.gameLink.interiorId===m.id?'selected':''}>${m.name}</option>`).join('');
+}
+
+function fillSettings() {
+  const m = activeMap();
+  $('mapName').value = m.name;
+  $('mapCategory').value = m.category;
+  $('mapCols').value = m.cols; $('mapRows').value = m.rows;
+  $('catTag').textContent = m.category;
+  $('activeMapPill').textContent = `${m.name} (${m.cols}×${m.rows})`;
+  $('floorTemplateBtn').style.display = m.category === 'interior' ? '' : 'none';
+}
+
+function refreshPreview() {
+  const m = activeMap();
+  const out = { ...m, tiles: Object.keys(m.tiles).map(k => { const [c,r] = k.split(',').map(Number); return { c, r, ...m.tiles[k] }; }) };
+  $('jsonPreview').value = JSON.stringify(out, null, 2);
+}
+
+function setStatus(msg) { $('statusPill').textContent = msg; }
+function updateAll() { renderMapList(); fillSettings(); renderPalette(); refreshPreview(); updateBrushPill(); draw(); saveWorkspace(); }
+
+// ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
+function buildFarmLayoutV3() {
+  const ext = mapById(ws.gameLink.exteriorId);
+  const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [] };
+  if (ext) {
+    Object.keys(ext.tiles).forEach(key => {
+      const [c, r] = key.split(',').map(Number);
+      if (c < 0 || r < 0 || c >= GAME.farm.cols || r >= GAME.farm.rows) return;
+      const t = ext.tiles[key];
+      // Match game's own save behavior: store only diffs from day-one terrain, or any tile with a crop.
+      if (t.type !== dayOneType(c, r) || t.crop) layout.tiles.push({ c, r, type: t.type, crop: t.crop || '' });
+    });
+    Object.keys(ext.objects || {}).forEach(k => {
+      const [c, r] = ext.objects[k];
+      if (c >= 0 && r >= 0 && c < GAME.farm.cols && r < GAME.farm.rows) layout.objects[k] = [c, r];
+    });
+    (ext.furniture || []).forEach(f => {
+      if (f.col < GAME.farm.cols && f.row < GAME.farm.rows) layout.furniture.push({ key: f.key, col: f.col, row: f.row });
+    });
+    (ext.decor || []).forEach(d => layout.decor.push({ key: d.key, col: d.col, row: d.row, area: 'farm' }));
+  }
+  const intM = mapById(ws.gameLink.interiorId);
+  if (intM) (intM.decor || []).forEach(d => layout.decor.push({ key: d.key, col: d.col, row: d.row, area: 'interior' }));
+  return layout;
+}
+
+function loadFromGame() {
+  let layout = null;
+  try { layout = JSON.parse(localStorage.getItem(GAME.layoutKey) || 'null'); } catch(_) {}
+  if (!layout || layout.version !== 3) { setStatus('No saved game farm found.'); return; }
+  let ext = mapById(ws.gameLink.exteriorId);
+  if (!ext) { ext = makeMap('Farm', 'exterior', GAME.farm.cols, GAME.farm.rows); ws.maps.push(ext); ws.gameLink.exteriorId = ext.id; }
+  ext.tiles = {}; ext.objects = {}; ext.furniture = []; ext.decor = [];
+  (layout.tiles || []).forEach(t => { ext.tiles[`${t.c},${t.r}`] = { type: t.type, crop: t.crop || '' }; });
+  Object.keys(layout.objects || {}).forEach(k => { ext.objects[k] = [...layout.objects[k]]; });
+  (layout.furniture || []).forEach(f => ext.furniture.push({ key: f.key, col: f.col, row: f.row }));
+  let intM = mapById(ws.gameLink.interiorId);
+  (layout.decor || []).forEach(d => {
+    if (d.area === 'interior') {
+      if (!intM) { intM = makeMap('Farmhouse', 'interior', GAME.interior.cols, GAME.interior.rows); applyFarmhouseFloor(intM); ws.maps.push(intM); ws.gameLink.interiorId = intM.id; }
+      intM.decor.push({ key: d.key, col: d.col, row: d.row });
+    } else {
+      ext.decor.push({ key: d.key, col: d.col, row: d.row });
+    }
+  });
+  ws.activeId = ext.id; undoStack.length = 0;
+  updateAll(); fitView(); setStatus('Loaded game farm.');
+}
+
+// ── Export / import ───────────────────────────────────────────────────────────
+function download(name, obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function importAny(obj) {
+  if (obj && obj.version === 3 && Array.isArray(obj.tiles)) {
+    // farm layout v3 → load into linked maps
+    localStorage.setItem(GAME.layoutKey, JSON.stringify(obj));
+    loadFromGame();
+    setStatus('Imported farm layout.');
+    return;
+  }
+  if (obj && obj.schema === 'hobunji_map.v1') {
+    const m = makeMap(obj.name || 'Imported', obj.category === 'interior' ? 'interior' : 'exterior',
+      clamp(Math.round(obj.cols||36),2,400), clamp(Math.round(obj.rows||26),2,400));
+    if (Array.isArray(obj.tiles)) obj.tiles.forEach(t => { if (t && Number.isFinite(t.c) && Number.isFinite(t.r)) m.tiles[`${t.c},${t.r}`] = { type: t.type || 'grass', crop: t.crop || '' }; });
+    else if (obj.tiles && typeof obj.tiles === 'object') m.tiles = obj.tiles;
+    m.objects = obj.objects || {}; m.furniture = obj.furniture || []; m.decor = obj.decor || [];
+    m.npcPaths = Array.isArray(obj.npcPaths) ? obj.npcPaths : [];
+    m.transitions = Array.isArray(obj.transitions) ? obj.transitions : [];
+    ws.maps.push(m); ws.activeId = m.id;
+    updateAll(); fitView(); setStatus('Imported map: ' + m.name);
+    return;
+  }
+  throw new Error('Unrecognized JSON (expected hobunji_map.v1 or farm layout v3).');
+}
+
+// ── Wire up ───────────────────────────────────────────────────────────────────
+document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+$('fitBtn').addEventListener('click', fitView);
+
+$('newMapBtn').addEventListener('click', () => {
+  const cat = confirm('OK = exterior map, Cancel = interior map') ? 'exterior' : 'interior';
+  const m = cat === 'exterior' ? makeMap('New exterior', 'exterior', GAME.farm.cols, GAME.farm.rows)
+                               : makeMap('New interior', 'interior', GAME.interior.cols, GAME.interior.rows);
+  ws.maps.push(m); ws.activeId = m.id; undoStack.length = 0;
+  updateAll(); fitView(); setStatus('Created ' + m.name);
+});
+$('dupMapBtn').addEventListener('click', () => {
+  const src = activeMap(); const copy = JSON.parse(JSON.stringify(src));
+  copy.id = uid('map'); copy.name = src.name + ' copy';
+  ws.maps.push(copy); ws.activeId = copy.id; undoStack.length = 0;
+  updateAll(); setStatus('Duplicated.');
+});
+$('delMapBtn').addEventListener('click', () => {
+  if (ws.maps.length <= 1) { setStatus('Cannot delete the last map.'); return; }
+  const m = activeMap();
+  if (!confirm(`Delete map "${m.name}"?`)) return;
+  ws.maps = ws.maps.filter(x => x.id !== m.id);
+  if (ws.gameLink.exteriorId === m.id) ws.gameLink.exteriorId = '';
+  if (ws.gameLink.interiorId === m.id) ws.gameLink.interiorId = '';
+  ws.activeId = ws.maps[0].id; undoStack.length = 0;
+  updateAll(); fitView(); setStatus('Deleted.');
+});
+
+$('applyMapBtn').addEventListener('click', () => {
+  const m = activeMap();
+  pushUndo();
+  m.name = $('mapName').value.trim() || m.name;
+  const newCat = $('mapCategory').value;
+  if (newCat !== m.category) {
+    m.category = newCat;
+    // Drop palette items not valid in the new category (paths and spots are valid in both)
+    if (newCat === 'interior') { m.objects = {}; m.furniture = []; Object.keys(m.tiles).forEach(k => { if (m.tiles[k].crop) m.tiles[k].crop = ''; }); }
+    if (ws.gameLink.exteriorId === m.id && newCat !== 'exterior') ws.gameLink.exteriorId = '';
+    if (ws.gameLink.interiorId === m.id && newCat !== 'interior') ws.gameLink.interiorId = '';
+  }
+  const nc = clamp(Math.round(Number($('mapCols').value)||m.cols), 2, 400);
+  const nr = clamp(Math.round(Number($('mapRows').value)||m.rows), 2, 400);
+  if (nc !== m.cols || nr !== m.rows) {
+    m.cols = nc; m.rows = nr;
+    Object.keys(m.tiles).forEach(k => { const [c,r] = k.split(',').map(Number); if (c >= nc || r >= nr) delete m.tiles[k]; });
+    Object.keys(m.objects).forEach(k => { const [c,r] = m.objects[k]; if (c >= nc || r >= nr) delete m.objects[k]; });
+    m.furniture = m.furniture.filter(f => f.col < nc && f.row < nr);
+    m.decor = m.decor.filter(d => { const inf = DECOR[d.key]; return inf && d.col + inf.fw <= nc && d.row + inf.fd <= nr; });
+    (m.npcPaths || []).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c < nc && r < nr); });
+    m.transitions = (m.transitions || []).filter(t => t.col < nc && t.row < nr);
+  }
+  updateAll(); fitView(); setStatus('Applied.');
+});
+
+$('floorTemplateBtn').addEventListener('click', () => {
+  const m = activeMap();
+  if (m.category !== 'interior') return;
+  pushUndo(); applyFarmhouseFloor(m); updateAll(); setStatus('Farmhouse floor template applied.');
+});
+
+$('linkExterior').addEventListener('change', e => { ws.gameLink.exteriorId = e.target.value; updateAll(); });
+$('linkInterior').addEventListener('change', e => { ws.gameLink.interiorId = e.target.value; updateAll(); });
+$('showBaseChk').addEventListener('change', draw);
+$('loadFromGameBtn').addEventListener('click', loadFromGame);
+
+$('playBtn').addEventListener('click', () => {
+  if (!ws.gameLink.exteriorId) { setStatus('Pick a Farm map in Game Link first.'); return; }
+  const layout = buildFarmLayoutV3();
+  try {
+    localStorage.setItem(GAME.layoutKey, JSON.stringify(layout));
+    setStatus(`Sent ${layout.tiles.length} tiles, ${layout.furniture.length} processors, ${layout.decor.length} decor → game`);
+    window.open(GAME.gamePath, '_blank');
+  } catch(e) { setStatus('Failed: ' + e.message); }
+});
+
+$('exportMapBtn').addEventListener('click', () => {
+  const m = activeMap();
+  const out = { ...m, tiles: Object.keys(m.tiles).map(k => { const [c,r] = k.split(',').map(Number); return { c, r, ...m.tiles[k] }; }) };
+  download(`${m.name.toLowerCase().replace(/[^a-z0-9]+/g,'_')}.map.json`, out);
+  setStatus('Map JSON downloaded.');
+});
+$('exportLayoutBtn').addEventListener('click', () => {
+  if (!ws.gameLink.exteriorId) { setStatus('Pick a Farm map in Game Link first.'); return; }
+  download('farm_layout_v3.json', buildFarmLayoutV3());
+  setStatus('Farm layout downloaded.');
+});
+$('importBtn').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', async e => {
+  const f = e.target.files?.[0]; if (!f) return;
+  try { importAny(JSON.parse(await f.text())); }
+  catch(err) { setStatus('Import failed: ' + err.message); }
+  finally { e.target.value = ''; }
+});
+
+window.addEventListener('resize', resizeCanvas);
+window.addEventListener('error', e => setStatus('Error: ' + e.message));
+
+$('farmDimsNote').textContent = `${GAME.farm.cols}×${GAME.farm.rows}`;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+resizeCanvas(); updateAll(); fitView();
+})();
+</script>
+</body>
+</html>
