@@ -5,9 +5,14 @@
   const THREE = window.THREE;
   if (!root || !THREE) return;
 
-  const HIGHLAND_BODY_TOP_SCALE = 0.85;
-  const BASE_HEIGHT = 2.0;
-  const MIN_RIDGE = 0.08;
+  const cfg = () => window.HOBUNJI_MAP_BUILDER_CONFIG?.preview3d || {};
+  const highlandCfg = () => cfg().architecture?.highland || {};
+  const shingleCfg = () => highlandCfg().shingle || {};
+  const roughbrickCfg = () => highlandCfg().roughbrick || {};
+  const matColor = (name, fallback) => cfg().materials?.[name] ?? fallback;
+  const bodyTopScale = () => Number(highlandCfg().bodyTopScale) || 0.85;
+  const baseHeight = () => Number(highlandCfg().baseHeight) || 2;
+  const minRidge = () => Number(highlandCfg().minRidge) || 0.08;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x071018);
@@ -30,17 +35,17 @@
   world.add(landscapeLayer, buildingLayer, pathLayer, npcLayer);
 
   const mats = {
-    ground: new THREE.MeshLambertMaterial({ color: 0x28402d }),
-    floor: new THREE.MeshLambertMaterial({ color: 0x6d5137 }),
-    plaster: new THREE.MeshLambertMaterial({ color: 0xbda579 }),
-    roof: new THREE.MeshLambertMaterial({ color: 0x5a3725 }),
-    ridgeCap: new THREE.MeshLambertMaterial({ color: 0x3c2418 }),
-    gable: new THREE.MeshLambertMaterial({ color: 0x846344 }),
-    door: new THREE.MeshLambertMaterial({ color: 0x4a2d1d }),
-    glass: new THREE.MeshLambertMaterial({ color: 0x8fbcd4, transparent: true, opacity: 0.55 }),
-    path: new THREE.MeshBasicMaterial({ color: 0x38bdf8 }),
-    shingleFallback: new THREE.MeshLambertMaterial({ color: 0x4b2d1e }),
-    brick: new THREE.MeshLambertMaterial({ color: 0x9b6b48 })
+    ground: new THREE.MeshLambertMaterial({ color: matColor('ground', 0x28402d) }),
+    floor: new THREE.MeshLambertMaterial({ color: matColor('floor', 0x6d5137) }),
+    plaster: new THREE.MeshLambertMaterial({ color: matColor('plaster', 0xbda579) }),
+    roof: new THREE.MeshLambertMaterial({ color: matColor('roof', 0x5a3725) }),
+    ridgeCap: new THREE.MeshLambertMaterial({ color: matColor('ridgeCap', 0x3c2418) }),
+    gable: new THREE.MeshLambertMaterial({ color: matColor('gable', 0x846344) }),
+    door: new THREE.MeshLambertMaterial({ color: matColor('door', 0x4a2d1d) }),
+    glass: new THREE.MeshLambertMaterial({ color: matColor('glass', 0x8fbcd4), transparent: true, opacity: 0.55 }),
+    path: new THREE.MeshBasicMaterial({ color: matColor('path', 0x38bdf8) }),
+    shingleFallback: new THREE.MeshLambertMaterial({ color: matColor('shingleFallback', 0x4b2d1e) }),
+    brick: new THREE.MeshLambertMaterial({ color: matColor('brickFallback', 0x9b6b48) })
   };
 
   scene.add(new THREE.HemisphereLight(0xddeeff, 0x22331f, 1.25));
@@ -49,7 +54,9 @@
   sun.castShadow = true;
   scene.add(sun);
 
-  let shingleSource = null;
+  let shingleModel = null;
+  let roughbrickModel = null;
+  let loadedRoughbrickUrl = '';
   const npcModels = new Map();
   let lastSignature = '';
   let controls = { dragging: false, lastX: 0, lastY: 0, yaw: -0.72, pitch: 0.72, dist: 48, target: new THREE.Vector3(24, 0, 16) };
@@ -67,7 +74,7 @@
       d: new THREE.Vector3(rect.minX, y, rect.maxZ)
     };
   }
-  function topRectFromBottom(rect, scale = HIGHLAND_BODY_TOP_SCALE) {
+  function topRectFromBottom(rect, scale = bodyTopScale()) {
     const cx = (rect.minX + rect.maxX) / 2;
     const cz = (rect.minZ + rect.maxZ) / 2;
     const hw = (rect.maxX - rect.minX) * scale / 2;
@@ -92,56 +99,118 @@
     const esW = eaveRect.maxX - eaveRect.minX, esD = eaveRect.maxZ - eaveRect.minZ;
     const cx = (eaveRect.minX + eaveRect.maxX) / 2, cz = (eaveRect.minZ + eaveRect.maxZ) / 2;
     const longAxis = axis === 'z' ? 'z' : 'x';
-    const targetLongLen = longAxis === 'x' ? Math.max(MIN_RIDGE, esW * HIGHLAND_BODY_TOP_SCALE) : Math.max(MIN_RIDGE, esD * HIGHLAND_BODY_TOP_SCALE);
+    const ridgeMin = minRidge();
+    const topScale = bodyTopScale();
+    const targetLongLen = longAxis === 'x' ? Math.max(ridgeMin, esW * topScale) : Math.max(ridgeMin, esD * topScale);
     const longShrinkPerSide = longAxis === 'x' ? Math.max(0, (esW - targetLongLen) / 2) : Math.max(0, (esD - targetLongLen) / 2);
-    const insetXPerHeight = Math.max(0, (bsW - esW) / 2) / BASE_HEIGHT;
-    const insetZPerHeight = Math.max(0, (bsD - esD) / 2) / BASE_HEIGHT;
+    const insetXPerHeight = Math.max(0, (bsW - esW) / 2) / baseHeight();
+    const insetZPerHeight = Math.max(0, (bsD - esD) / 2) / baseHeight();
     const longInsetPerHeight = longAxis === 'x' ? insetXPerHeight : insetZPerHeight;
-    let roofHeight = 1.18;
+    let roofHeight = Number(highlandCfg().defaultRoofHeight) || 1.18;
     if (longInsetPerHeight > 1e-7 && longShrinkPerSide > 1e-7) roofHeight = Math.max(0.2, longShrinkPerSide / longInsetPerHeight);
-    if (longAxis === 'x') return { rect: { minX: cx - targetLongLen / 2, maxX: cx + targetLongLen / 2, minZ: cz - MIN_RIDGE / 2, maxZ: cz + MIN_RIDGE / 2 }, roofHeight };
-    return { rect: { minX: cx - MIN_RIDGE / 2, maxX: cx + MIN_RIDGE / 2, minZ: cz - targetLongLen / 2, maxZ: cz + targetLongLen / 2 }, roofHeight };
+    if (longAxis === 'x') return { rect: { minX: cx - targetLongLen / 2, maxX: cx + targetLongLen / 2, minZ: cz - ridgeMin / 2, maxZ: cz + ridgeMin / 2 }, roofHeight };
+    return { rect: { minX: cx - ridgeMin / 2, maxX: cx + ridgeMin / 2, minZ: cz - targetLongLen / 2, maxZ: cz + targetLongLen / 2 }, roofHeight };
   }
 
-  async function initAssets() {
-    if (!shingleSource) {
-      const loader = new THREE.GLTFLoader();
-      const candidates = [
-        '../../assets/models/HighlandLongshingle_boned.glb',
-        '../../assets/models/highlandlongshingle_boned.glb',
-        '../../assets/HighlandLongshingle_boned.glb'
-      ];
+  function firstMesh(rootObject) {
+    let found = null;
+    rootObject?.traverse?.(obj => { if (!found && obj?.isMesh) found = obj; });
+    return found;
+  }
+  function cloneMaterial(material) {
+    if (Array.isArray(material)) return material.map(m => m.clone());
+    return material?.clone?.() || mats.brick.clone();
+  }
+  function meshAsset(mesh, name) {
+    const cloned = mesh.clone();
+    cloned.geometry = mesh.geometry.clone();
+    cloned.material = cloneMaterial(mesh.material);
+    const box = new THREE.Box3().setFromObject(cloned);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    return {
+      name,
+      geometry: cloned.geometry,
+      material: cloned.material,
+      perUnitScale: new THREE.Vector3(
+        size.x > 1e-6 ? 1 / size.x : 1,
+        size.y > 1e-6 ? 1 / size.y : 1,
+        size.z > 1e-6 ? 1 / size.z : 1
+      )
+    };
+  }
+  function loadGltf(url) {
+    const loader = new THREE.GLTFLoader();
+    return new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
+  }
+  async function loadFirstMeshAsset(url, name) {
+    const gltf = await loadGltf(url);
+    const mesh = firstMesh(gltf.scene);
+    if (!mesh) throw new Error(`No mesh found in ${url}`);
+    return meshAsset(mesh, name || url.split('/').pop() || 'model.glb');
+  }
+  function selectedWallRecipe(runtime) {
+    const recipes = runtime?.index?.wallRecipes || [];
+    const selectedId = runtime?.state?.houses?.find(h => h?.wallRecipeId)?.wallRecipeId;
+    return recipes.find(recipe => recipe.id === selectedId) || recipes[0] || null;
+  }
+  async function initAssets(runtime = window.HobunjiMapBuilderRuntime) {
+    if (!shingleModel) {
+      const candidates = shingleCfg().candidateUrls || [];
       for (const url of candidates) {
-        try { shingleSource = await new Promise((res, rej) => loader.load(url, g => res(g.scene), undefined, rej)); log('HighlandLongshingle_boned.glb loaded.'); break; } catch (_e) {}
+        try {
+          shingleModel = await loadFirstMeshAsset(url, url.split('/').pop());
+          log(`${shingleModel.name} loaded for highland shingles.`);
+          break;
+        } catch (_e) {}
       }
-      if (!shingleSource) log('HighlandLongshingle_boned.glb not found; using procedural shingles.', 'warn');
+      if (!shingleModel) log('HighlandLongshingle_boned.glb not found; using procedural shingles.', 'warn');
+    }
+
+    const recipe = selectedWallRecipe(runtime);
+    const modelUrl = recipe?.modelUrl || roughbrickCfg().fallbackModelUrl;
+    const modelName = recipe?.modelUrl?.split('/').pop() || roughbrickCfg().fallbackModelName || 'Roughbrick1.glb';
+    if (modelUrl && (!roughbrickModel || loadedRoughbrickUrl !== modelUrl)) {
+      try {
+        roughbrickModel = await loadFirstMeshAsset(modelUrl, modelName);
+        loadedRoughbrickUrl = modelUrl;
+        log(`${roughbrickModel.name} loaded for roughbrick house walls.`);
+      } catch (err) {
+        roughbrickModel = null;
+        loadedRoughbrickUrl = '';
+        log(`Roughbrick wall GLB failed to load from ${modelUrl}: ${err.message}; using procedural bricks.`, 'warn');
+      }
     }
   }
 
   function addHighlandBody(group, bottomRect, eaveRect) {
     const bottom = rectCorners(bottomRect, 0);
-    const top = rectCorners(eaveRect, BASE_HEIGHT);
+    const top = rectCorners(eaveRect, baseHeight());
     group.add(quadMesh(bottom.a, bottom.b, bottom.c, bottom.d, mats.floor, 'highland_frustum_floor'));
     group.add(quadMesh(top.d, top.c, top.b, top.a, mats.plaster, 'highland_frustum_ceiling'));
     group.add(quadMesh(bottom.a, top.a, top.b, bottom.b, mats.plaster, 'highland_frustum_wall_north'));
     group.add(quadMesh(bottom.b, top.b, top.c, bottom.c, mats.plaster, 'highland_frustum_wall_east'));
     group.add(quadMesh(bottom.c, top.c, top.d, bottom.d, mats.plaster, 'highland_frustum_wall_south'));
     group.add(quadMesh(bottom.d, top.d, top.a, bottom.a, mats.plaster, 'highland_frustum_wall_west'));
-    addBrickFace(group, bottom.a, top.a, top.b, bottom.b, bottomRect.maxX - bottomRect.minX, BASE_HEIGHT, 'north');
-    addBrickFace(group, bottom.b, top.b, top.c, bottom.c, bottomRect.maxZ - bottomRect.minZ, BASE_HEIGHT, 'east');
-    addBrickFace(group, bottom.c, top.c, top.d, bottom.d, bottomRect.maxX - bottomRect.minX, BASE_HEIGHT, 'south');
-    addBrickFace(group, bottom.d, top.d, top.a, bottom.a, bottomRect.maxZ - bottomRect.minZ, BASE_HEIGHT, 'west');
+    addBrickFace(group, bottom.a, top.a, top.b, bottom.b, bottomRect.maxX - bottomRect.minX, baseHeight(), 'north');
+    addBrickFace(group, bottom.b, top.b, top.c, bottom.c, bottomRect.maxZ - bottomRect.minZ, baseHeight(), 'east');
+    addBrickFace(group, bottom.c, top.c, top.d, bottom.d, bottomRect.maxX - bottomRect.minX, baseHeight(), 'south');
+    addBrickFace(group, bottom.d, top.d, top.a, bottom.a, bottomRect.maxZ - bottomRect.minZ, baseHeight(), 'west');
   }
   function addBrickFace(group, bl, tl, tr, br, width, height, name) {
-    const cols = Math.max(3, Math.floor(width / 0.32));
-    const rows = Math.max(3, Math.floor(height / 0.24));
-    const geo = new THREE.BoxGeometry(0.24, 0.14, 0.08);
-    const inst = new THREE.InstancedMesh(geo, mats.brick, cols * rows);
-    inst.name = 'highland_wall_units_' + name;
+    const brick = roughbrickCfg();
+    const cols = Math.max(brick.minColumns || 3, Math.floor(width * (brick.columnsPerUnit || 3.125)));
+    const rows = Math.max(brick.minRows || 3, Math.floor(height * (brick.rowsPerUnit || 4.1667)));
+    const size = brick.fallbackSize || [0.24, 0.14, 0.08];
+    const geometry = roughbrickModel ? roughbrickModel.geometry.clone() : new THREE.BoxGeometry(size[0], size[1], size[2]);
+    const material = roughbrickModel ? cloneMaterial(roughbrickModel.material) : mats.brick;
+    const inst = new THREE.InstancedMesh(geometry, material, cols * rows);
+    inst.name = roughbrickModel ? `highland_roughbrick_glb_${name}` : `highland_wall_units_${name}`;
     const u = br.clone().sub(bl).normalize();
     const v = tl.clone().sub(bl).normalize();
-    const n = new THREE.Vector3().crossVectors(u, v).normalize().multiplyScalar(0.035);
-    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, v, n.clone().normalize()));
+    const normal = new THREE.Vector3().crossVectors(u, v).normalize();
+    const n = normal.clone().multiplyScalar(brick.surfaceOffset ?? 0.035);
+    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, v, normal));
     let k = 0;
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const s = (c + 0.5 + (r % 2) * 0.5) / cols;
@@ -149,7 +218,13 @@
       const p0 = bl.clone().lerp(br, s);
       const p1 = tl.clone().lerp(tr, s);
       const p = p0.lerp(p1, t).add(n);
-      const scale = new THREE.Vector3(width / cols * 0.78, height / rows * 0.58, 0.08);
+      const targetScale = new THREE.Vector3(
+        width / cols * (brick.widthFill ?? 0.78),
+        height / rows * (brick.heightFill ?? 0.58),
+        brick.depth ?? 0.08
+      );
+      const assetScale = roughbrickModel ? roughbrickModel.perUnitScale : new THREE.Vector3(1, 1, 1);
+      const scale = targetScale.multiply(assetScale);
       inst.setMatrixAt(k++, new THREE.Matrix4().compose(p, q, scale));
     }
     inst.instanceMatrix.needsUpdate = true;
@@ -159,9 +234,9 @@
   }
 
   function addHighlandRoof(group, bottomRect, eaveRect, axis) {
-    const base = rectCorners(eaveRect, BASE_HEIGHT);
+    const base = rectCorners(eaveRect, baseHeight());
     const solved = continuousFrustumRidgeRect(bottomRect, eaveRect, axis);
-    const top = rectCorners(solved.rect, BASE_HEIGHT + solved.roofHeight);
+    const top = rectCorners(solved.rect, baseHeight() + solved.roofHeight);
     group.add(quadMesh(top.d, top.c, top.b, top.a, mats.ridgeCap, 'highland_roof_ridge_cap'));
     if (axis === 'x') {
       group.add(quadMesh(base.a, top.a, top.b, base.b, mats.roof, 'highland_roof_slope_north'));
@@ -180,34 +255,42 @@
     }
   }
   function addShinglesOnQuad(group, e0, r0, r1, e1, longLen, acrossLen, sideName) {
-    const cols = Math.max(4, Math.ceil(longLen * 1.25));
-    const rows = Math.max(3, Math.ceil(acrossLen * 1.8));
+    const shingle = shingleCfg();
+    const cols = Math.max(shingle.minColumns || 4, Math.ceil(longLen * (shingle.columnsPerUnit || 1.25)));
+    const rows = Math.max(shingle.minRows || 3, Math.ceil(acrossLen * (shingle.rowsPerUnit || 1.8)));
     const u = e1.clone().sub(e0).normalize();
     const v = r0.clone().sub(e0).normalize();
     const n = new THREE.Vector3().crossVectors(u, v).normalize();
-    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, v, n));
+    const baseQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, v, n));
+    const size = shingle.fallbackSize || [0.62, 0.05, 0.28];
+    const geometry = shingleModel ? shingleModel.geometry.clone() : new THREE.BoxGeometry(size[0], size[1], size[2]);
+    const material = shingleModel ? cloneMaterial(shingleModel.material) : mats.shingleFallback;
+    const inst = new THREE.InstancedMesh(geometry, material, cols * rows);
+    inst.name = shingleModel ? `highland_shingle_glb_${sideName}` : `highland_shingle_fallback_${sideName}`;
+    const assetScale = shingleModel ? shingleModel.perUnitScale : new THREE.Vector3(1, 1, 1);
+    const scaleScalar = shingleModel ? (shingle.scale || 0.42) : 1;
+    let k = 0;
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const s = (c + 0.5) / cols;
       const t = (r + 0.35) / rows;
       const a = e0.clone().lerp(e1, s);
       const b = r0.clone().lerp(r1, s);
-      const p = a.lerp(b, t).addScaledVector(n, 0.025 + (r % 2) * 0.006);
-      let obj;
-      if (shingleSource) obj = shingleSource.clone(true); else obj = makeBox(0.62, 0.05, 0.28, mats.shingleFallback, 0, 0, 0);
-      obj.name = 'highland_shingle_' + sideName;
-      obj.position.copy(p);
-      obj.quaternion.copy(q);
-      obj.rotateX(-0.08);
-      obj.rotateZ((Math.sin((r + 1) * (c + 3)) * 0.035));
-      obj.scale.setScalar(shingleSource ? 0.42 : 1);
-      group.add(obj);
+      const p = a.lerp(b, t).addScaledVector(n, (shingle.surfaceOffset ?? 0.025) + (r % 2) * (shingle.staggeredSurfaceOffset ?? 0.006));
+      const q = baseQ.clone();
+      q.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(shingle.pitchRadians ?? -0.08, 0, Math.sin((r + 1) * (c + 3)) * (shingle.randomRollRadians ?? 0.035), 'XYZ')));
+      const scale = new THREE.Vector3(scaleScalar, scaleScalar, scaleScalar).multiply(assetScale);
+      inst.setMatrixAt(k++, new THREE.Matrix4().compose(p, q, scale));
     }
+    inst.instanceMatrix.needsUpdate = true;
+    inst.castShadow = true;
+    inst.receiveShadow = true;
+    group.add(inst);
   }
 
   function buildHouse(house) {
     const group = new THREE.Group(); group.name = 'HighlandArchitecturePreset_' + house.id;
     const bottomRect = { minX: house.x, maxX: house.x + house.width, minZ: house.y, maxZ: house.y + house.depth };
-    const eaveRect = topRectFromBottom(bottomRect, HIGHLAND_BODY_TOP_SCALE);
+    const eaveRect = topRectFromBottom(bottomRect, bodyTopScale());
     const axis = house.width >= house.depth ? 'x' : 'z';
     addHighlandBody(group, bottomRect, eaveRect);
     addHighlandRoof(group, bottomRect, eaveRect, axis);
@@ -234,7 +317,7 @@
     });
     lastSignature = signature(runtime);
   }
-  function signature(runtime) { const s = runtime?.state || {}; return JSON.stringify({ houses: s.houses, paths: s.npcPaths }); }
+  function signature(runtime) { const s = runtime?.state || {}; return JSON.stringify({ houses: s.houses, paths: s.npcPaths, shingleAsset: shingleModel?.name || 'fallback', roughbrickAsset: loadedRoughbrickUrl || 'fallback' }); }
 
   function normalizeSpecies(species) { const s = String(species || '').toLowerCase(); if (s.includes('kenkari')) return 'kenkari'; if (s.includes('engh')) return 'engh-sho'; if (s.includes('mashtzarr')) return 'engh-sho'; return 'mao-ao'; }
   function normalizeGender(gender) { const g = String(gender || '').toLowerCase(); return g.includes('female') || g === 'f' ? 'female' : 'male'; }
@@ -289,7 +372,7 @@
   root.addEventListener('wheel', e => { e.preventDefault(); controls.dist = Math.max(12, Math.min(95, controls.dist + Math.sign(e.deltaY) * 3)); updateCamera(); }, { passive: false });
 
   async function handleUpdate(ev) {
-    const runtime = ev.detail; await initAssets(); if (signature(runtime) !== lastSignature) rebuildWorld(runtime); await ensureNpcModels(runtime); updateNpcPositions(runtime);
+    const runtime = ev.detail; await initAssets(runtime); if (signature(runtime) !== lastSignature) rebuildWorld(runtime); await ensureNpcModels(runtime); updateNpcPositions(runtime);
   }
   function animate() { resize(); updateCamera(); renderer.render(scene, camera); requestAnimationFrame(animate); }
   window.addEventListener('hobunji-map-builder:update', handleUpdate);
