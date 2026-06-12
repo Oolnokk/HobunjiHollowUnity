@@ -1014,6 +1014,9 @@
           interiorFurnitureObjects.forEach(obj => {
             layout.decor.push({ key: obj.key, col: obj.col, row: obj.row, area: obj.area });
           });
+          // Preserve map-editor-authored travel data through in-game saves
+          if (worldNpcPaths.length)    layout.npcPaths    = worldNpcPaths;
+          if (worldTransitions.length) layout.transitions = worldTransitions;
           localStorage.setItem(FARM_LAYOUT_KEY, JSON.stringify(layout));
         } catch {}
       }
@@ -1177,6 +1180,202 @@
 
       function updateAnimalMeshes(dt) {
         for (const animal of animalObjects) animal.update(dt);
+      }
+
+      // ── World travel: transition spots + NPC paths (map editor data) ─
+      // Authored in docs/tools/map-editor and carried in hobunji_farm_layout_v3
+      // as `transitions` and `npcPaths`. area: 'farm' | 'interior'.
+      let worldTransitions = [];   // { id, label, area, col, row, target, targetCol, targetRow }
+      let worldNpcPaths    = [];   // { id, label, npcId, area, nodes: [[c,r],...] }
+      const npcWalkers     = [];
+      let _transitionLatch = null; // 'area:c,r' — player must leave this tile before spots re-arm
+
+      function initWorldTravel(layout) {
+        if (!layout || layout.version !== 3) return;
+        worldTransitions = (layout.transitions || []).filter(t =>
+          t && Number.isFinite(t.col) && Number.isFinite(t.row));
+        worldNpcPaths = (layout.npcPaths || []).filter(p =>
+          p && Array.isArray(p.nodes) && p.nodes.length > 0);
+        // Don't fire a spot the player happens to spawn on
+        _transitionLatch = travelAreaKey();
+        buildTransitionMarkers();
+        spawnPathNpcs().catch(e => console.warn('spawnPathNpcs failed:', e));
+      }
+
+      function travelAreaKey() {
+        const area = currentArea === 'interior' ? 'interior' : 'farm';
+        return area + ':' + Math.floor(player.x / TILE) + ',' + Math.floor(player.y / TILE);
+      }
+
+      function buildTransitionMarkers() {
+        for (const t of worldTransitions) {
+          const interior = t.area === 'interior';
+          const g = interior ? interiorGrid : grid;
+          const tile = g[t.row]?.[t.col];
+          if (!tile) continue;
+          const ring = new THREE.Mesh(
+            new THREE.RingGeometry(0.22, 0.36, 24),
+            new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false })
+          );
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.set(t.col + 0.5, tileSurfaceY(tile.type) + 0.02, t.row + 0.5);
+          (interior ? interiorScene : scene).add(ring);
+        }
+      }
+
+      function checkTransitionSpots() {
+        const area = currentArea === 'interior' ? 'interior' : 'farm';
+        const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
+        const key = area + ':' + pc + ',' + pr;
+        if (key === _transitionLatch) return;
+        _transitionLatch = null;
+        const t = worldTransitions.find(x =>
+          x.area === area && x.col === pc && x.row === pr &&
+          (x.target === 'farm' || x.target === 'interior') &&
+          Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow));
+        if (!t) return;
+        startSceneTransition(() => performTravel(t));
+      }
+
+      function performTravel(t) {
+        if (t.target === 'interior') {
+          if (currentArea !== 'interior') enterInterior();
+          const c = clamp(t.targetCol, 0, INTERIOR_COLS - 1);
+          const r = clamp(t.targetRow, 0, INTERIOR_ROWS - 1);
+          player.x = (c + 0.5) * TILE;
+          player.y = (r + 0.5) * TILE;
+        } else {
+          if (currentArea === 'interior') {
+            currentArea = 'farm';
+            interiorScene.remove(playerMesh);
+            scene.add(playerMesh);
+            scene.add(toolHolder);
+            scene.add(reticleMesh);
+            scene.add(reticleCircleMesh);
+            scene.add(reticleRingMesh);
+            scene.add(reticleWavyGroup);
+            refreshActionBar();
+          }
+          const c = clamp(t.targetCol, 0, COLS - 1);
+          const r = clamp(t.targetRow, 0, ROWS - 1);
+          player.x = (c + 0.5) * TILE;
+          player.y = (r + 0.5) * TILE;
+        }
+        player.vx = 0;  player.vy = 0;
+        camTargetX = player.x / TILE;
+        camTargetZ = player.y / TILE;
+        _transitionLatch = travelAreaKey();
+      }
+
+      // ── Path NPCs: avatars that walk authored routes ──────────────
+      const NPC_SPECIES_IDS = ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'];
+
+      async function spawnPathNpcs() {
+        if (!worldNpcPaths.length || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        let dbNpcs = [];
+        try {
+          const res = await fetch('config/npcs/hobunji-starter-npc-database.json');
+          const json = await res.json();
+          dbNpcs = json.npcs || [];
+        } catch {}
+        await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+        for (const path of worldNpcPaths) {
+          try {
+            const rec = dbNpcs.find(n => n.id === path.npcId) || null;
+            const w = await makeNpcWalker(path, rec);
+            if (w) npcWalkers.push(w);
+          } catch (e) { console.warn('NPC walker failed for path', path.label, e); }
+        }
+      }
+
+      async function makeNpcWalker(path, rec) {
+        const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
+        const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
+          speciesId: NPC_SPECIES_IDS.includes(guessSpecies) ? guessSpecies : undefined,
+          gender: rec?.gender === 'female' ? 'female' : 'male',
+          cosmetics: {},
+        };
+        const profile = window.NpcAvatarPreview.buildProfileFromNpcExport({
+          name: rec?.name || path.npcId || path.label || 'npc',
+          appearance,
+          equippedCosmetics: rec?.equippedCosmetics || [],
+          appliedDyes: rec?.appliedDyes || {},
+        });
+        if (!profile) return null;
+
+        const MODEL_W = 0.9, PORTRAIT_SIZE = 200;
+        const frontCanvas = document.createElement('canvas');
+        frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+        const backCanvas = document.createElement('canvas');
+        backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+
+        const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
+          THREE, frontCanvas,
+          { backCanvas, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: 0.01 }
+        );
+        avatarGroup.position.set(0, MODEL_W / 2, 0);
+        const root = new THREE.Group();
+        root.name = 'npc_walker_' + (path.id || path.label || '');
+        root.add(avatarGroup);
+
+        const interior = path.area === 'interior';
+        const g = interior ? interiorGrid : grid;
+        const nodes = path.nodes.map(([c, r]) => [c, r]);
+        const [c0, r0] = nodes[0];
+        const surfY = (c, r) => {
+          const tile = g[r]?.[c];
+          return tile ? tileSurfaceY(tile.type) : 0;
+        };
+        root.position.set(c0 + 0.5, surfY(c0, r0), r0 + 0.5);
+        (interior ? interiorScene : scene).add(root);
+
+        const NPC_SPEED = 1.25;   // tiles per second
+        const PAUSE_SEC = 1.6;    // idle at route endpoints
+        const walker = {
+          root, nodes,
+          seg: 0, dir: 1, progress: 0, pause: 0,
+          rot: Math.PI / 2, perpState: {},
+          update(dt) {
+            if (this.nodes.length < 2) {
+              root.position.y = surfY(this.nodes[0][0], this.nodes[0][1])
+                + Math.sin(performance.now() / 600) * 0.005;
+              return;
+            }
+            if (this.pause > 0) { this.pause -= dt; return; }
+            const [ac, ar] = this.nodes[this.seg];
+            const [bc, br] = this.nodes[this.seg + this.dir];
+            const segLen = Math.max(0.001, Math.hypot(bc - ac, br - ar));
+            this.progress += dt * NPC_SPEED / segLen;
+            if (this.progress >= 1) {
+              this.progress = 0;
+              this.seg += this.dir;
+              // Ping-pong at route ends
+              if (this.seg >= this.nodes.length - 1 || this.seg <= 0) {
+                this.dir = -this.dir;
+                this.pause = PAUSE_SEC;
+              }
+            }
+            const cx = ac + (bc - ac) * this.progress;
+            const rz = ar + (br - ar) * this.progress;
+            const ty = surfY(Math.round(cx), Math.round(rz));
+            root.position.x = cx + 0.5;
+            root.position.z = rz + 0.5;
+            root.position.y += (ty - root.position.y) * 0.2;
+            root.position.y += Math.sin(performance.now() / 140) * 0.012;
+            const rawRot = -Math.atan2(br - ar, bc - ac) + Math.PI / 2;
+            const { effectiveTarget, snapTo } = perpClamp(this.perpState, rawRot, [Math.PI / 2, -Math.PI / 2]);
+            if (snapTo !== null) this.rot = effectiveTarget;
+            else this.rot += angleDiff(effectiveTarget, this.rot) * 0.15;
+            root.rotation.y = this.rot;
+          },
+        };
+        return walker;
+      }
+
+      function updateNpcWalkers(dt) {
+        for (const w of npcWalkers) w.update(dt);
       }
 
       function processButtonLabel(methodId, inputKey, output) {
@@ -4890,6 +5089,9 @@
             }
           }
 
+          // Map-editor transition spots (farm ↔ interior warps)
+          if (sceneTransDir === 0 && worldTransitions.length) checkTransitionSpots();
+
           if (currentArea === 'farm') {
             waterFlowPhase = (waterFlowPhase + dt * 3.2) % 1;
             updateWaterParticles(dt);
@@ -4916,6 +5118,7 @@
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
+        if (!paused) updateNpcWalkers(dt);
         if (currentArea === 'farm') {
           updateWaterMeshes();
           updateCropMeshes();
@@ -6351,6 +6554,8 @@
       try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
       // Apply saved object positions and furniture after world objects are created
       try { applyFarmLayoutObjects(loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
+      // Transition spots + NPC paths from the map editor
+      try { initWorldTravel(loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
       debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
 
       // ── Onboarding gate ────────────────────────────────────────────

@@ -222,8 +222,10 @@ const DECOR = {
 };
 
 // NPC paths and transition spots are supported on BOTH map categories.
-// They are persisted in hobunji_map.v1 JSON for the game to consume as those
-// systems come online (the current game build does not read them yet).
+// They are persisted in hobunji_map.v1 JSON and sent to the game inside
+// hobunji_farm_layout_v3 (npcPaths / transitions). The game spawns walker
+// NPCs on paths and warps the player at transition spots whose target
+// resolves to the linked farm or farmhouse map.
 
 // Day-one farm generation — mirrors createInitialGrid()/createDayOneTile() in game.js.
 const DAYONE_ROCKS  = [[1,1],[10,1],[15,2],[3,7],[13,9],[16,11],[20,2],[28,4],[33,1],[22,8],[30,10],[25,14],[7,18],[18,20],[31,22],[5,24],[14,16],[26,6],[32,18],[8,12]];
@@ -389,7 +391,7 @@ function renderPalette() {
         <div><label>NPC id</label><input id="pathNpcIn" value="${(ap.npcId||'').replace(/"/g,'&quot;')}"></div>
       </div>`;
     }
-    html += '<p class="muted" style="margin-top:5px">Select a path, then click the map to append nodes. Erase mode removes nodes.</p>';
+    html += '<p class="muted" style="margin-top:5px">Select a path, then click the map to append nodes. Erase mode removes nodes. In-game, each path spawns a walker NPC that ping-pongs along it; an NPC id matching the NPC database gives the walker that character’s appearance.</p>';
   } else if (mode === 'spot') {
     html = m.transitions.map(t => {
       const others = ws.maps.filter(x => x.id !== m.id);
@@ -407,7 +409,7 @@ function renderPalette() {
         <div class="item-meta">at (${t.col}, ${t.row})</div>
       </div>`;
     }).join('') || '<p class="muted">No transition spots yet.</p>';
-    html += '<p class="muted" style="margin-top:5px">Click the map to place a spot, then pick which map (and which spot on it) it leads to. Spots work on both exterior and interior maps.</p>';
+    html += '<p class="muted" style="margin-top:5px">Click the map to place a spot, then pick which map (and which spot on it) it leads to. In-game, spots warp the player when their target is the linked Farm or Farmhouse map; other targets are kept in the map JSON for future zones.</p>';
   } else if (mode === 'erase') {
     html = '<p class="muted">Click or drag to remove tiles, crops, objects, furniture, decor, path nodes, and spots under the cursor.</p>';
   } else {
@@ -797,7 +799,22 @@ function updateAll() { renderMapList(); fillSettings(); renderPalette(); refresh
 // ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
 function buildFarmLayoutV3() {
   const ext = mapById(ws.gameLink.exteriorId);
-  const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [] };
+  const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], npcPaths: [], transitions: [] };
+  const areaOf = id => id === ws.gameLink.interiorId ? 'interior' : (id === ws.gameLink.exteriorId ? 'farm' : '');
+  const pushTravel = (m, area) => {
+    (m.npcPaths || []).forEach(p => {
+      if (!p.nodes.length) return;
+      layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area, nodes: p.nodes.map(n => [n[0], n[1]]) });
+    });
+    (m.transitions || []).forEach(t => {
+      const target = areaOf(t.targetMapId);
+      const spot = mapById(t.targetMapId)?.transitions.find(s => s.id === t.targetSpotId) || null;
+      layout.transitions.push({
+        id: t.id, label: t.label, area, col: t.col, row: t.row,
+        target, targetCol: spot ? spot.col : null, targetRow: spot ? spot.row : null
+      });
+    });
+  };
   if (ext) {
     Object.keys(ext.tiles).forEach(key => {
       const [c, r] = key.split(',').map(Number);
@@ -814,9 +831,13 @@ function buildFarmLayoutV3() {
       if (f.col < GAME.farm.cols && f.row < GAME.farm.rows) layout.furniture.push({ key: f.key, col: f.col, row: f.row });
     });
     (ext.decor || []).forEach(d => layout.decor.push({ key: d.key, col: d.col, row: d.row, area: 'farm' }));
+    pushTravel(ext, 'farm');
   }
   const intM = mapById(ws.gameLink.interiorId);
-  if (intM) (intM.decor || []).forEach(d => layout.decor.push({ key: d.key, col: d.col, row: d.row, area: 'interior' }));
+  if (intM) {
+    (intM.decor || []).forEach(d => layout.decor.push({ key: d.key, col: d.col, row: d.row, area: 'interior' }));
+    pushTravel(intM, 'interior');
+  }
   return layout;
 }
 
@@ -831,13 +852,39 @@ function loadFromGame() {
   Object.keys(layout.objects || {}).forEach(k => { ext.objects[k] = [...layout.objects[k]]; });
   (layout.furniture || []).forEach(f => ext.furniture.push({ key: f.key, col: f.col, row: f.row }));
   let intM = mapById(ws.gameLink.interiorId);
+  const needInterior = (layout.decor || []).some(d => d.area === 'interior')
+    || (layout.npcPaths || []).some(p => p.area === 'interior')
+    || (layout.transitions || []).some(t => t.area === 'interior');
+  if (!intM && needInterior) {
+    intM = makeMap('Farmhouse', 'interior', GAME.interior.cols, GAME.interior.rows);
+    applyFarmhouseFloor(intM); ws.maps.push(intM); ws.gameLink.interiorId = intM.id;
+  }
   (layout.decor || []).forEach(d => {
-    if (d.area === 'interior') {
-      if (!intM) { intM = makeMap('Farmhouse', 'interior', GAME.interior.cols, GAME.interior.rows); applyFarmhouseFloor(intM); ws.maps.push(intM); ws.gameLink.interiorId = intM.id; }
-      intM.decor.push({ key: d.key, col: d.col, row: d.row });
-    } else {
-      ext.decor.push({ key: d.key, col: d.col, row: d.row });
-    }
+    if (d.area === 'interior') intM.decor.push({ key: d.key, col: d.col, row: d.row });
+    else ext.decor.push({ key: d.key, col: d.col, row: d.row });
+  });
+  // Restore NPC paths and transition spots authored for the game
+  ext.npcPaths = []; ext.transitions = [];
+  if (intM) { intM.npcPaths = []; intM.transitions = []; }
+  (layout.npcPaths || []).forEach(p => {
+    const m = p.area === 'interior' ? intM : ext;
+    if (!m || !Array.isArray(p.nodes) || !p.nodes.length) return;
+    m.npcPaths.push({ id: p.id || uid('path'), label: p.label || 'Path', npcId: p.npcId || '', nodes: p.nodes.map(n => [n[0], n[1]]) });
+  });
+  const pendingTargets = [];
+  (layout.transitions || []).forEach(t => {
+    const m = t.area === 'interior' ? intM : ext;
+    if (!m || !Number.isFinite(t.col) || !Number.isFinite(t.row)) return;
+    const targetMapId = t.target === 'interior' ? ws.gameLink.interiorId : (t.target === 'farm' ? ws.gameLink.exteriorId : '');
+    const spot = { id: t.id || uid('spot'), label: t.label || 'spot', col: t.col, row: t.row, targetMapId, targetSpotId: '' };
+    m.transitions.push(spot);
+    if (targetMapId && Number.isFinite(t.targetCol)) pendingTargets.push({ spot, targetMapId, c: t.targetCol, r: t.targetRow });
+  });
+  // Second pass: link arrival spots by position once all spots exist
+  pendingTargets.forEach(({ spot, targetMapId, c, r }) => {
+    const tm = mapById(targetMapId);
+    const arrive = tm?.transitions.find(s => s.col === c && s.row === r);
+    if (arrive) spot.targetSpotId = arrive.id;
   });
   ws.activeId = ext.id; undoStack.length = 0;
   updateAll(); fitView(); setStatus('Loaded game farm.');
@@ -943,7 +990,7 @@ $('playBtn').addEventListener('click', () => {
   const layout = buildFarmLayoutV3();
   try {
     localStorage.setItem(GAME.layoutKey, JSON.stringify(layout));
-    setStatus(`Sent ${layout.tiles.length} tiles, ${layout.furniture.length} processors, ${layout.decor.length} decor → game`);
+    setStatus(`Sent ${layout.tiles.length} tiles, ${layout.furniture.length} processors, ${layout.decor.length} decor, ${layout.npcPaths.length} paths, ${layout.transitions.length} spots → game`);
     window.open(GAME.gamePath, '_blank');
   } catch(e) { setStatus('Failed: ' + e.message); }
 });
