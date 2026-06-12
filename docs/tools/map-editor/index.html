@@ -351,6 +351,12 @@ function renderPalette() {
       const label = m.category === 'interior' ? (INTERIOR_TILE_LABELS[t] || info.label) : info.label;
       return `<button class="sec palBtn ${brush.tile===t?'act':''}" data-pal="tile" data-val="${t}"><span class="palSw" style="background:${info.color}"></span>${label}</button>`;
     }).join('');
+    const isFarmLinked2 = m.category === 'exterior' && ws.gameLink.exteriorId === m.id;
+    html += `<div class="row" style="margin-top:6px;gap:4px">
+      <button class="sec" id="fillMapBtn" style="flex:1" title="Fill every cell in this map with the active tile">Fill map</button>
+      ${isFarmLinked2 ? `<button class="sec" id="fillFarmBtn" style="flex:1" title="Fill only the game farm area (${GAME.farm.cols}×${GAME.farm.rows}) with the active tile">Fill farm</button>` : ''}
+      <button class="bad" id="clearTilesBtn" style="flex:1" title="Remove all painted tiles from this map">Clear tiles</button>
+    </div>`;
   } else if (mode === 'crop') {
     if (m.category !== 'exterior') html = '<p class="muted">Crops are exterior-only.</p>';
     else html = Object.keys(CROPS).map(c =>
@@ -412,6 +418,35 @@ function renderPalette() {
     brush[b.dataset.pal] = b.dataset.val;
     renderPalette(); updateBrushPill();
   }));
+  // Tile fill / clear wiring
+  const fillMapBtn = box.querySelector('#fillMapBtn');
+  if (fillMapBtn) fillMapBtn.addEventListener('click', () => {
+    const fm = activeMap();
+    const set = TILE_SETS[fm.category] || TILE_SETS.exterior;
+    const t = set.includes(brush.tile) ? brush.tile : set[0];
+    pushUndo();
+    for (let r = 0; r < fm.rows; r++) for (let c = 0; c < fm.cols; c++) {
+      const k = `${c},${r}`; fm.tiles[k] = { type: t, crop: (fm.tiles[k]?.crop || '') };
+    }
+    draw(); refreshPreview(); saveWorkspace(); setStatus(`Filled ${fm.cols}×${fm.rows} with ${t}.`);
+  });
+  const fillFarmBtn2 = box.querySelector('#fillFarmBtn');
+  if (fillFarmBtn2) fillFarmBtn2.addEventListener('click', () => {
+    const fm = activeMap();
+    const set = TILE_SETS[fm.category] || TILE_SETS.exterior;
+    const t = set.includes(brush.tile) ? brush.tile : set[0];
+    pushUndo();
+    for (let r = 0; r < GAME.farm.rows; r++) for (let c = 0; c < GAME.farm.cols; c++) {
+      const k = `${c},${r}`; fm.tiles[k] = { type: t, crop: (fm.tiles[k]?.crop || '') };
+    }
+    draw(); refreshPreview(); saveWorkspace(); setStatus(`Filled farm ${GAME.farm.cols}×${GAME.farm.rows} with ${t}.`);
+  });
+  const clearTilesBtn = box.querySelector('#clearTilesBtn');
+  if (clearTilesBtn) clearTilesBtn.addEventListener('click', () => {
+    if (!confirm('Clear all painted tiles from this map?')) return;
+    pushUndo(); activeMap().tiles = {};
+    draw(); refreshPreview(); saveWorkspace(); setStatus('Tiles cleared.');
+  });
   // Path palette wiring
   const npb = box.querySelector('#newPathBtn');
   if (npb) npb.addEventListener('click', () => {

@@ -1798,7 +1798,7 @@ function exp() {
       romanceableCount: db.npcs.filter(n => n.relationship?.canDate).length,
       placeholderCount: JSON.stringify(db).split('<suggestion:').length - 1,
     },
-    townMapEditorNote: 'Import this file into the town map editor as the global NPC database. Map paths/schedules reference npc.id.',
+    mapEditorNote: 'NPC ids and paths are used by the Map Editor (docs/tools/map-editor). NPC paths reference npc.id.',
   };
 }
 
