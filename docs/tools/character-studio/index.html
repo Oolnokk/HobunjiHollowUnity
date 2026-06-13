@@ -1,0 +1,2047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hobunji Character Studio</title>
+<style>
+:root{
+  --bg:#07101a; --panel:#111b28; --panel2:#0c141e; --text:#edf4ff; --muted:#9fb2cc;
+  --line:#26384f; --acc:#6aa7ff; --good:#34d399; --warn:#fbbf24; --bad:#fb7185;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+body{overflow:hidden}
+button,input,select,textarea{font:inherit}
+button{border:1px solid rgba(106,167,255,.38);background:rgba(106,167,255,.16);color:var(--text);
+  border-radius:11px;padding:9px 10px;font-weight:750;cursor:pointer}
+button.secondary{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.06)}
+button.good{border-color:rgba(52,211,153,.42);background:rgba(52,211,153,.14)}
+button.warn{border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.14)}
+button.danger{border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.14)}
+button.active{outline:2px solid var(--acc);outline-offset:1px}
+button:disabled{opacity:.35;cursor:not-allowed}
+input,select,textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);
+  border-radius:10px;color:var(--text);padding:9px 10px;outline:none}
+textarea{min-height:92px;resize:vertical;font:12px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.help{color:var(--muted);font-size:12px;line-height:1.35}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.13);
+  background:rgba(255,255,255,.045);border-radius:999px;padding:4px 8px;color:var(--muted);font-size:12px}
+.card{border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.035);padding:10px;margin:10px}
+.section{border-left:6px solid var(--sec,var(--acc));
+  background:linear-gradient(180deg,var(--secBg,rgba(106,167,255,.1)),rgba(255,255,255,.02))}
+.sectionTitle{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}
+.sectionTitle b{font-size:13px;text-transform:uppercase;letter-spacing:.3px}
+.sectionTag{font-size:11px;color:var(--muted);border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:3px 8px}
+.hr{height:1px;background:var(--line);margin:10px 0}
+
+/* ── App frame ─────────────────────────────────────────── */
+#app{height:100%;display:flex;flex-direction:column}
+#mainbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;
+  border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2))}
+#mainbar h1{margin:0;font-size:15px;letter-spacing:.4px;color:var(--acc);white-space:nowrap}
+.mainTabBtn{border-radius:9px;padding:7px 16px}
+#mainContent{flex:1;min-height:0;display:flex;flex-direction:column}
+.mainPane{display:none;flex:1;min-height:0}
+.mainPane.activePane{display:flex}
+
+/* ── Appearance pane ───────────────────────────────────── */
+#appearancePane{gap:0}
+#apLeft{width:300px;min-width:260px;max-width:80vw;overflow:auto;-webkit-overflow-scrolling:touch;
+  border-right:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2));padding:10px}
+#apRight{flex:1;min-width:0;overflow:auto;-webkit-overflow-scrolling:touch;padding:4px 4px 40px}
+.portraitFrame{width:220px;height:220px;margin:0 auto;border:1px solid rgba(255,255,255,.16);border-radius:16px;
+  background:radial-gradient(circle at 50% 28%,rgba(255,255,255,.12),rgba(255,255,255,.02));
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+#apCanvas{width:200px;height:200px;image-rendering:pixelated}
+#view3dWrap{display:none;margin-top:8px}
+#view3dWrap.visible3d{display:block}
+#view3d{width:100%;height:260px;display:block;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:#060c14}
+.selGroup{display:flex;gap:6px;flex-wrap:wrap}
+.selBtn{padding:6px 12px;border-radius:8px;font-weight:650;font-size:13px;
+  border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:var(--text);cursor:pointer}
+.selBtn:hover{background:rgba(106,167,255,.12)}
+.selBtn.selected{background:rgba(106,167,255,.22);border-color:var(--acc)}
+.selBtn.disabled,.selBtn:disabled{opacity:.3;cursor:not-allowed}
+.cosmeticRow{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.cosmeticLabel{font-size:12px;color:var(--muted);min-width:96px;text-align:right;flex-shrink:0}
+.cosmeticSelect{flex:1;min-width:0;padding:6px 8px;border-radius:8px}
+.colorSwatch{width:26px;height:26px;border-radius:8px;border:1px solid rgba(255,255,255,.22);
+  cursor:pointer;flex:0 0 auto;transition:transform .1s}
+.colorSwatch:hover{transform:scale(1.18);z-index:1;position:relative}
+.swatchActive{outline:2px solid #fff;outline-offset:2px}
+.slotRow{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.slotLabel{font-size:12px;color:var(--muted);min-width:72px;flex-shrink:0;text-align:right}
+.dyeToggle{flex-shrink:0;font-size:12px;padding:5px 10px;border-radius:8px}
+.dyeToggle.active{outline:2px solid var(--acc);outline-offset:1px}
+.dyePanel{margin:4px 0 8px 80px;padding:8px 10px;background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.1);border-radius:10px;display:flex;flex-direction:column;gap:4px;
+  max-height:300px;overflow:auto}
+.dyeRow{display:flex;align-items:center;gap:7px}
+.dyeDot{width:18px;height:18px;border-radius:50%;flex-shrink:0;border:1px solid rgba(255,255,255,.18)}
+.dyeName{flex:1;font-size:12px;color:var(--muted)}
+.applyBtn{border-radius:6px;font-size:11px;padding:3px 8px;font-weight:700}
+.applyBtn.applied{outline:2px solid var(--acc);outline-offset:1px}
+.dyeCategory{margin:7px 0 3px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.dyeClears{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap}
+
+/* ── Database pane ─────────────────────────────────────── */
+#databasePane{display:none}
+#databasePane.activePane{display:flex}
+#sidebar{width:390px;max-width:76vw;min-width:300px;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,var(--panel),var(--panel2));border-right:1px solid var(--line)}
+#topbar{padding:10px;border-bottom:1px solid rgba(255,255,255,.09)}
+#npcList{overflow:auto;-webkit-overflow-scrolling:touch;padding:8px;flex:1}
+.npcCard{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.035);border-radius:12px;
+  padding:10px;margin-bottom:8px;cursor:pointer;display:grid;grid-template-columns:46px 1fr;gap:9px;align-items:center}
+.npcCard.selected{outline:2px solid var(--acc);outline-offset:1px}
+.npcName{font-weight:850}
+.npcMeta{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.25}
+#editor{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:8px 8px 40px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;position:sticky;top:0;z-index:2;background:rgba(7,16,26,.94);
+  padding:8px;border-bottom:1px solid rgba(255,255,255,.08)}
+.tabPanel{display:none}
+.tabPanel.active{display:block}
+.jsonBox{min-height:360px}
+.preview{display:grid;grid-template-columns:84px 1fr;gap:10px;align-items:center}
+.avatarFrame{width:46px;height:46px;border:1px solid rgba(255,255,255,.16);border-radius:14px;
+  background:radial-gradient(circle at 50% 28%,rgba(255,255,255,.14),rgba(255,255,255,.03));
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+.avatarFrame.big{width:76px;height:76px;border-radius:18px}
+.avatarCanvas{width:100%;height:100%;display:block;image-rendering:pixelated}
+.portraitStatus{font-size:10px;color:var(--muted);text-align:center;padding:3px}
+
+/* ── Log panel ─────────────────────────────────────────── */
+#logPanel{position:fixed;right:10px;bottom:10px;width:min(460px,92vw);max-height:46vh;
+  background:rgba(9,16,24,.97);border:1px solid rgba(255,255,255,.14);border-radius:13px;
+  overflow:hidden;display:none;z-index:8}
+.visible{display:block!important}
+.logHead{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 10px;
+  border-bottom:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.24)}
+#logBody{max-height:calc(46vh - 43px);overflow:auto;padding:8px;
+  font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#c7ddff;white-space:pre-wrap}
+
+@media(max-width:860px){
+  body{overflow:auto}
+  #app{height:auto;min-height:100dvh}
+  #appearancePane,#databasePane{flex-direction:column}
+  #apLeft{width:auto;max-width:none;border-right:none;border-bottom:1px solid var(--line)}
+  #sidebar{width:auto;max-width:none;min-width:0;border-right:none;border-bottom:1px solid var(--line)}
+  #npcList{max-height:40vh}
+  .grid2,.grid3{grid-template-columns:1fr}
+  .preview{grid-template-columns:84px 1fr}
+  .tabs{position:static}
+  .dyePanel{margin-left:0}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="mainbar">
+    <h1>Hobunji Character Studio</h1>
+    <button class="mainTabBtn active" id="mainTabAppearance" data-main-tab="appearance">Appearance</button>
+    <button class="mainTabBtn secondary" id="mainTabDatabase" data-main-tab="database">NPC Database</button>
+    <span class="pill" id="statusPill">Booting…</span>
+    <span style="flex:1"></span>
+    <button id="logToggle" class="secondary">📋 Log</button>
+  </div>
+
+  <div id="mainContent">
+    <!-- ════════ Tab 1: Appearance ════════ -->
+    <section id="appearancePane" class="mainPane activePane">
+      <aside id="apLeft">
+        <div class="row" style="justify-content:center;margin-bottom:8px">
+          <span class="pill" id="targetPill" style="border-color:rgba(106,167,255,.5);color:var(--text)">Editing: Player</span>
+        </div>
+        <div class="portraitFrame"><canvas id="apCanvas" width="200" height="200"></canvas></div>
+        <div class="help" style="text-align:center;margin-top:5px" id="apPreviewStatus">Loading portrait assets…</div>
+        <div class="row" style="margin-top:8px">
+          <button id="toggle3dBtn" class="secondary" style="flex:1">Enable 3D plane preview</button>
+        </div>
+        <div id="view3dWrap">
+          <canvas id="view3d"></canvas>
+          <div class="row" style="margin-top:6px">
+            <button id="resetCamBtn" class="secondary" style="flex:1">Reset camera</button>
+          </div>
+        </div>
+        <div class="hr"></div>
+        <label>Nickname</label>
+        <input id="nickname" maxlength="48" autocomplete="off" spellcheck="false" placeholder="Farmer">
+        <div class="row" style="margin-top:8px">
+          <button id="setPlayerBtn" class="good" style="flex:1">★ Set as my player</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="loadPlayerBtn" class="secondary" style="flex:1">Load my player</button>
+          <button id="applyNpcBtn" class="warn" style="flex:1" disabled>Apply to NPC</button>
+        </div>
+        <div class="hr"></div>
+        <div class="row">
+          <button id="exportApBtn" class="secondary" style="flex:1">Export JSON</button>
+          <button id="importApBtn" class="secondary" style="flex:1">Import JSON</button>
+          <input id="importApFile" type="file" hidden accept=".json,application/json">
+        </div>
+        <div class="help" style="margin-top:8px">
+          Exports use the <b>npc_avatar_editor_export.v1</b> shape understood by the NPC database and avatar preview pipelines.
+          “Set as my player” writes the <b>hobunjiPlayerProfile</b> localStorage key read by the game's onboarding.
+        </div>
+      </aside>
+      <div id="apRight">
+        <div class="card section" style="--sec:#6aa7ff;--secBg:rgba(106,167,255,.10)">
+          <div class="sectionTitle"><b>Species &amp; gender</b><span class="sectionTag" id="speciesTag">—</span></div>
+          <div id="speciesControls"></div>
+        </div>
+        <div class="card section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.10)">
+          <div class="sectionTitle"><b>Cosmetic slots</b><span class="sectionTag">hair · eyes · face</span></div>
+          <div id="cosmeticControls"></div>
+        </div>
+        <div class="card section" style="--sec:#f472b6;--secBg:rgba(244,114,182,.10)">
+          <div class="sectionTitle"><b>Body colors</b><span class="sectionTag" id="colorPickerSpeciesLabel">—</span></div>
+          <div class="help" style="margin-bottom:8px">Swatches show the valid color range for this species and gender (slots A/B/C as h/s/v offsets). The base preview color is warm-neutral — the in-game tint depends on the portrait sprite.</div>
+          <div id="colorPickerSection"><div class="help">Loading color ranges…</div></div>
+        </div>
+        <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
+          <div class="sectionTitle"><b>Clothing &amp; dyes</b><span class="sectionTag">shop catalog</span></div>
+          <div id="collectionsControls"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════ Tab 2: NPC Database ════════ -->
+    <section id="databasePane" class="mainPane">
+      <aside id="sidebar">
+        <div id="topbar">
+          <div class="row">
+            <button id="addNpcBtn" class="good">New NPC</button>
+            <button id="dupNpcBtn" class="secondary">Duplicate</button>
+            <button id="deleteNpcBtn" class="danger">Delete</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button id="downloadBtn" class="good">Download DB</button>
+            <button id="copyBtn" class="secondary">Copy DB</button>
+            <button id="importBtn" class="secondary">Import DB</button>
+            <button id="avatarBtn" class="secondary">Import Avatar JSON</button>
+            <input id="importFile" type="file" hidden accept=".json,application/json">
+            <input id="avatarFile" type="file" hidden accept=".json,application/json">
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button id="resetStarterBtn" class="warn">Reload starter DB</button>
+            <span class="pill" id="countPill">0 NPCs</span>
+          </div>
+        </div>
+        <div id="npcList"></div>
+      </aside>
+      <main id="editor">
+        <div class="tabs">
+          <button class="tabBtn active" data-tab="identity">Identity</button>
+          <button class="tabBtn" data-tab="social">Social</button>
+          <button class="tabBtn" data-tab="gifts">Gifts</button>
+          <button class="tabBtn" data-tab="dialogue">Dialogue</button>
+          <button class="tabBtn" data-tab="avatar">Avatar</button>
+          <button class="tabBtn" data-tab="world">World</button>
+          <button class="tabBtn" data-tab="json">JSON</button>
+        </div>
+        <section id="identity" class="tabPanel active">
+          <div class="card section" style="--sec:#6aa7ff;--secBg:rgba(106,167,255,.10)">
+            <div class="sectionTitle"><b>Core identity</b><span class="sectionTag">doc facts only</span></div>
+            <div class="preview">
+              <div id="portraitPreview" class="avatarFrame big"></div>
+              <div>
+                <div class="npcName" id="previewName">Unnamed NPC</div>
+                <div class="npcMeta" id="previewMeta">npc_001</div>
+                <div class="help">Selecting an NPC also loads its avatar into the Appearance tab, where “Apply to NPC” writes edits back to this record.</div>
+              </div>
+            </div>
+            <div class="hr"></div>
+            <div class="grid3">
+              <div><label>ID</label><input id="npcId"></div>
+              <div><label>Name</label><input id="npcName"></div>
+              <div><label>House / location</label><input id="homeId"></div>
+            </div>
+            <div class="grid3" style="margin-top:8px">
+              <div><label>Species</label><input id="npcSpecies"></div>
+              <div><label>Gender / presentation</label><input id="npcGender"></div>
+              <div><label>Age band</label><input id="npcAge"></div>
+            </div>
+            <div class="grid2" style="margin-top:8px">
+              <div><label>Role / job</label><input id="npcRole"></div>
+              <div><label>Romanceable (can date)</label><select id="romanceable"><option>false</option><option>true</option></select></div>
+            </div>
+            <div style="margin-top:8px"><label>Tags</label><input id="npcTags"></div>
+            <div style="margin-top:8px"><label>Bio / notes</label><textarea id="npcBio"></textarea></div>
+          </div>
+        </section>
+        <section id="social" class="tabPanel">
+          <div class="card section" style="--sec:#22c55e;--secBg:rgba(34,197,94,.10)">
+            <div class="sectionTitle"><b>Relationship model</b><span class="sectionTag">editable JSON</span></div>
+            <div class="grid3">
+              <div><label>Can befriend</label><select id="canBefriend"><option>true</option><option>false</option></select></div>
+              <div><label>Can marry</label><select id="canMarry"><option>false</option><option>true</option></select></div>
+              <div><label>Max hearts</label><input id="maxHearts" type="number"></div>
+            </div>
+            <div class="grid2" style="margin-top:8px">
+              <div><label>Base disposition</label><input id="baseDisposition" type="number"></div>
+              <div><label>Decay rule</label><select id="decayRule"><option>normal</option><option>none</option><option>slow</option><option>quest_only</option><option>unknown</option></select></div>
+            </div>
+            <div style="margin-top:8px"><label>Species-based starting disposition JSON</label><textarea id="speciesDispositionJson"></textarea></div>
+            <div style="margin-top:8px"><label>Friendship unlocks JSON</label><textarea id="friendUnlocksJson"></textarea></div>
+          </div>
+        </section>
+        <section id="gifts" class="tabPanel">
+          <div class="card section" style="--sec:#f472b6;--secBg:rgba(244,114,182,.10)">
+            <div class="sectionTitle"><b>Gift tastes / likes</b><span class="sectionTag">suggestions only unless doc says</span></div>
+            <div class="grid2">
+              <div><label>Loved</label><textarea id="lovedGifts"></textarea></div>
+              <div><label>Liked</label><textarea id="likedGifts"></textarea></div>
+            </div>
+            <div class="grid3" style="margin-top:8px">
+              <div><label>Neutral</label><textarea id="neutralGifts"></textarea></div>
+              <div><label>Disliked</label><textarea id="dislikedGifts"></textarea></div>
+              <div><label>Hated</label><textarea id="hatedGifts"></textarea></div>
+            </div>
+            <div style="margin-top:8px"><label>Gift category notes JSON</label><textarea id="giftCategoriesJson"></textarea></div>
+          </div>
+        </section>
+        <section id="dialogue" class="tabPanel">
+          <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
+            <div class="sectionTitle"><b>Dialogue trees</b><span class="sectionTag">full tree JSON</span></div>
+            <div class="help">No one-way conversations: every entry should include choices. Tokens: {{npcName}}, {{playerName}}, {{npcSpecies}}, {{playerSpecies}}, {{giftName}}, {{role}}, and any character variable.</div>
+            <textarea id="dialogueJson" class="jsonBox"></textarea>
+          </div>
+        </section>
+        <section id="avatar" class="tabPanel">
+          <div class="card section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.10)">
+            <div class="sectionTitle"><b>Avatar JSON bridge</b><span class="sectionTag">shared portrait renderer</span></div>
+            <div class="help" style="margin-bottom:8px">This NPC's avatar is edited visually in the <b>Appearance</b> tab. The raw JSON below is the same data; paste or import portrait/avatar editor JSON to override it.</div>
+            <div class="row" style="margin-bottom:8px"><button id="editAvatarBtn" class="good">Edit in Appearance tab →</button></div>
+            <div class="grid2">
+              <div><label>Appearance JSON</label><textarea id="appearanceJson">{}</textarea></div>
+              <div><label>Equipped cosmetics JSON</label><textarea id="cosmeticsJson">[]</textarea></div>
+            </div>
+            <div style="margin-top:8px"><label>Applied dyes JSON</label><textarea id="dyesJson">{}</textarea></div>
+            <div style="margin-top:8px"><label>Raw avatar editor export JSON</label><textarea id="avatarRawJson">{}</textarea></div>
+          </div>
+        </section>
+        <section id="world" class="tabPanel">
+          <div class="card section" style="--sec:#38bdf8;--secBg:rgba(56,189,248,.10)">
+            <div class="sectionTitle"><b>World context</b><span class="sectionTag">exported metadata</span></div>
+            <textarea id="worldJson" class="jsonBox"></textarea>
+          </div>
+        </section>
+        <section id="json" class="tabPanel">
+          <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
+            <div class="sectionTitle"><b>Database preview</b><span class="sectionTag">hobunji_npc_database.v2</span></div>
+            <textarea id="jsonPreview" class="jsonBox" readonly></textarea>
+          </div>
+        </section>
+      </main>
+    </section>
+  </div>
+</div>
+
+<div id="logPanel">
+  <div class="logHead"><b>Debug Log</b>
+    <div class="row">
+      <button id="copyLogBtn" class="secondary">Copy</button>
+      <button id="clearLogBtn" class="secondary">Clear</button>
+      <button id="closeLogBtn" class="secondary">Close</button>
+    </div>
+  </div>
+  <div id="logBody"></div>
+</div>
+
+<script src="../../js/repo-picker.js"></script>
+<script src="../../config/scratchbones-config.js"></script>
+<script src="../../js/portrait-utils.js"></script>
+<script src="../../js/portrait-breathing.js"></script>
+<script src="../../js/npc-avatar-preview-utils.js"></script>
+<script src="../../js/png-plane-avatar.js"></script>
+<script>
+(() => {
+'use strict';
+
+// Alias compatibility (same as npc-authoring-editor / npc-portrait-editor)
+if (window.renderProfile && !window.renderPortraitProfile) window.renderPortraitProfile = window.renderProfile;
+window.randomProfileSeeded = window.randomProfileSeeded || window.randomPortraitProfileSeeded;
+
+const STORAGE_KEY = 'hobunjiPlayerProfile';   // must match docs/onboarding.js
+const STARTER_DB_URL = '../../config/npcs/hobunji-starter-npc-database.json';
+
+// ── Generic helpers (from npc-authoring-editor) ─────────────────────────────
+const $ = id => document.getElementById(id);
+const logs = [];
+function log(m, l = 'info') {
+  const line = `[${new Date().toLocaleTimeString()}] ${l}: ${m}`;
+  logs.push(line); if (logs.length > 200) logs.shift();
+  const body = $('logBody'); if (body) body.textContent = logs.slice(-100).join('\n');
+  console[l === 'error' ? 'error' : 'log'](line);
+}
+window.addEventListener('error', e => log(`${e.message} @ ${e.lineno}:${e.colno}`, 'error'));
+window.addEventListener('unhandledrejection', e => log(e.reason?.stack || String(e.reason), 'error'));
+
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function cap(s) { return String(s).charAt(0).toUpperCase() + String(s).slice(1); }
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
+function norm(s, p = 'id') { return String(s || '').trim().toLowerCase().replace(/[^a-z0-9_\-]+/g, '_').replace(/^_+|_+$/g, '') || `${p}_${Date.now().toString(36)}`; }
+function split(s) { return String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean); }
+function num(id, d = 0) { const v = Number($(id).value); return Number.isFinite(v) ? v : d; }
+function parse(id, fb) { try { return JSON.parse($(id).value || 'null') ?? fb; } catch (e) { log(`Bad JSON in ${id}: ${e.message}`, 'error'); return fb; } }
+function setJ(id, v) { $(id).value = JSON.stringify(v ?? {}, null, 2); }
+function setStatus(m) { $('statusPill').textContent = m; log(m); }
+async function copyText(v, l) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(v); setStatus(`Copied ${l}`); return; }
+  } catch (e) {}
+  const ta = document.createElement('textarea');
+  ta.value = v; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+  document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  setStatus(`Copied ${l}`);
+}
+function downloadJson(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ── Species data (from npc-portrait-editor) ─────────────────────────────────
+const BASE_SPECIES_DATA = {
+  'mao-ao': {
+    label: 'Mao-ao', genders: ['male', 'female'], swatchBase: '#7dc89a',
+    male: {
+      slots: [
+        { slot: 'hairFront', label: 'Front Hair', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Mao-ao_M::mao-ao_smooth_striped',    label: 'Smooth Striped' },
+          { id: 'appearance::Mao-ao_M::mao-ao_tuft',              label: 'Tuft' },
+          { id: 'appearance::Mao-ao_M::mao-ao_forwardtuft_short', label: 'Forward Tuft (Short)' },
+          { id: 'appearance::Mao-ao_M::mao-ao_forwardtuft_long',  label: 'Forward Tuft (Long)' },
+        ]},
+        { slot: 'hairBack', label: 'Back Hair', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Mao-ao_M::mao-ao_splayedknot_medium', label: 'Splayed Knot' },
+          { id: 'appearance::Mao-ao_M::mao-ao_long_ponytail',      label: 'Long Ponytail' },
+        ]},
+        { slot: 'hairSide', label: 'Side Hair (R)', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Mao-ao_M::mao-ao_shoulder_length_drape', label: 'Shoulder Drape' },
+          { id: 'appearance::Mao-ao_M::mao-ao_braid-R',               label: 'Braid (Right)' },
+          { id: 'appearance::Mao-ao_M::mao-ao_braidcluster-R',        label: 'Braid Cluster (Right)' },
+        ]},
+        { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Mao-ao_M::mao-ao_braid-L', label: 'Braid (Left)' },
+        ]},
+        { slot: 'eyes', label: 'Eyes', options: [
+          { id: null, label: 'Default' },
+          { id: 'appearance::Mao-ao_M::mao-ao_circled_eyes',  label: 'Circled Eyes' },
+          { id: 'appearance::Mao-ao_M::mao-ao_circled_eye_L', label: 'Circled Eye (L)' },
+        ]},
+        { slot: 'facialHair', label: 'Facial Hair', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Mao-ao_M::mao-ao_wildbeard', label: 'Wild Beard' },
+        ]},
+      ],
+      colorOptions: [
+        { label: 'Earth',   h:-70,  s:-0.80, v:-0.55 },
+        { label: 'Olive',   h:-40,  s:-0.70, v:-0.45 },
+        { label: 'Sage',    h:  0,  s:-0.70, v:-0.30 },
+        { label: 'Seafoam', h: 30,  s:-0.60, v:-0.15 },
+        { label: 'Ash',     h: 10,  s:-0.90, v: 0.25 },
+        { label: 'Onyx',    h:  0,  s:-0.90, v:-0.85 },
+        { label: 'Brown',   h:-113, s:-0.45, v:-0.45 },
+        { label: 'Rust',    h:-143, s:-0.40, v:-0.40 },
+        { label: 'Amber',   h:-113, s:-0.35, v:-0.25 },
+        { label: 'Ochre',   h: -83, s:-0.45, v:-0.20 },
+        { label: 'Lichen',  h: -23, s:-0.55, v:-0.25 },
+        { label: 'Slate',   h:  77, s:-0.75, v:-0.20 },
+      ],
+    },
+    female: {
+      slots: [
+        { slot: 'hairFront', label: 'Front Hair', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Mao-ao_F::mao-ao_smooth_striped',    label: 'Smooth Striped' },
+          { id: 'appearance::Mao-ao_F::mao-ao_tuft',              label: 'Tuft' },
+          { id: 'appearance::Mao-ao_F::mao-ao_forwardtuft_short', label: 'Forward Tuft (Short)' },
+          { id: 'appearance::Mao-ao_F::mao-ao_forwardtuft_long',  label: 'Forward Tuft (Long)' },
+        ]},
+        { slot: 'hairBack', label: 'Back Hair', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Mao-ao_F::mao-ao_splayedknot_medium', label: 'Splayed Knot' },
+          { id: 'appearance::Mao-ao_F::mao-ao_long_ponytail',      label: 'Long Ponytail' },
+        ]},
+        { slot: 'hairSide', label: 'Side Hair (R)', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Mao-ao_F::mao-ao_shoulder_length_drape', label: 'Shoulder Drape' },
+          { id: 'appearance::Mao-ao_F::mao-ao_braid-R',               label: 'Braid (Right)' },
+          { id: 'appearance::Mao-ao_F::mao-ao_braidcluster-R',        label: 'Braid Cluster (Right)' },
+        ]},
+        { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Mao-ao_F::mao-ao_braid-L', label: 'Braid (Left)' },
+        ]},
+        { slot: 'eyes', label: 'Eyes', options: [
+          { id: null, label: 'Default' },
+          { id: 'appearance::Mao-ao_F::mao-ao_circled_eyes',   label: 'Circled Eyes' },
+          { id: 'appearance::Mao-ao_F::mao-ao_circled_eyes_f', label: 'Circled Eyes F' },
+          { id: 'appearance::Mao-ao_F::mao-ao_circled_eye_L',  label: 'Circled Eye (L)' },
+        ]},
+      ],
+      colorOptions: [
+        { label: 'Earth',   h:-70,  s:-0.80, v:-0.55 },
+        { label: 'Olive',   h:-40,  s:-0.70, v:-0.45 },
+        { label: 'Sage',    h:  0,  s:-0.70, v:-0.30 },
+        { label: 'Seafoam', h: 30,  s:-0.60, v:-0.15 },
+        { label: 'Ash',     h: 10,  s:-0.90, v: 0.25 },
+        { label: 'Onyx',    h:  0,  s:-0.90, v:-0.85 },
+        { label: 'Brown',   h:-113, s:-0.45, v:-0.45 },
+        { label: 'Rust',    h:-143, s:-0.40, v:-0.40 },
+        { label: 'Amber',   h:-113, s:-0.35, v:-0.25 },
+        { label: 'Ochre',   h: -83, s:-0.45, v:-0.20 },
+        { label: 'Lichen',  h: -23, s:-0.55, v:-0.25 },
+        { label: 'Slate',   h:  77, s:-0.75, v:-0.20 },
+      ],
+    },
+  },
+  'tletingan': {
+    label: 'Tletingan', genders: ['male'], swatchBase: '#7dc89a',
+    male: {
+      slots: [
+        { slot: 'hairFront', label: 'Front Hair', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Tletingan_M::tl_forwardtuft_short', label: 'Forward Tuft (Short)' },
+          { id: 'appearance::Tletingan_M::tl_forwardtuft_long',  label: 'Forward Tuft (Long)' },
+        ]},
+        { slot: 'hairBack', label: 'Back Hair', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Tletingan_M::tl_longponytail', label: 'Long Ponytail' },
+          { id: 'appearance::Tletingan_M::tl_splayedknot',  label: 'Splayed Knot' },
+        ]},
+        { slot: 'hairSide', label: 'Side Hair (R)', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Tletingan_M::tl_braid-R',        label: 'Braid (Right)' },
+          { id: 'appearance::Tletingan_M::tl_braidcluster-R', label: 'Braid Cluster (Right)' },
+        ]},
+        { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Tletingan_M::tl_braid-L', label: 'Braid (Left)' },
+        ]},
+        { slot: 'facialHair', label: 'Facial Hair', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Tletingan_M::tl_wildbeard', label: 'Wild Beard' },
+        ]},
+      ],
+      colorOptions: [
+        { label: 'Umber',  h:-85,  s:-0.30, v:-0.40 },
+        { label: 'Khaki',  h:-60,  s:-0.20, v:-0.35 },
+        { label: 'Olive',  h:-40,  s:-0.10, v:-0.30 },
+        { label: 'Forest', h:-20,  s: 0.00, v:-0.20 },
+        { label: 'Fern',   h:  0,  s: 0.10, v:-0.15 },
+        { label: 'Ash',    h:-80,  s:-0.40, v:-0.45 },
+        { label: 'Brown',  h:-113, s:-0.30, v:-0.42 },
+        { label: 'Rust',   h:-143, s:-0.20, v:-0.35 },
+        { label: 'Amber',  h:-113, s:-0.20, v:-0.28 },
+        { label: 'Ochre',  h: -83, s:-0.35, v:-0.20 },
+        { label: 'Lichen', h: -23, s:-0.45, v:-0.25 },
+        { label: 'Slate',  h:  77, s:-0.60, v:-0.22 },
+      ],
+    },
+  },
+  'kenkari': {
+    label: 'Kenkari', genders: ['male', 'female'], swatchBase: '#7dc89a',
+    male: {
+      forcedCosmetics: { eyes: 'kenk_eyedisks' },
+      slots: [
+        { slot: 'hairFront', label: 'Front Hair', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Kenkari_M::kenk_forwardtuft_long', label: 'Forward Tuft (Long)' },
+          { id: 'appearance::Kenkari_M::kenk_fowardtuft',       label: 'Forward Tuft' },
+        ]},
+        { slot: 'hairBack', label: 'Back Hair', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Kenkari_M::kenk_splayedknot_high_m', label: 'Splayed Knot (High)' },
+          { id: 'appearance::Kenkari_M::kenk_splayedknot_low_m',  label: 'Splayed Knot (Low)' },
+        ]},
+        { slot: 'hairSide', label: 'Side Hair (R)', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Kenkari_M::kenk_braid-R_m',        label: 'Braid (Right)' },
+          { id: 'appearance::Kenkari_M::kenk_braidcluster-R_m', label: 'Braid Cluster (Right)' },
+        ]},
+        { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Kenkari_M::kenk_braid-L_m', label: 'Braid (Left)' },
+        ]},
+        { slot: 'facialHair', label: 'Facial Hair', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Kenkari_M::kenk_wildbeard', label: 'Wild Beard' },
+        ]},
+      ],
+      colorOptions: [
+        { label: 'Jade',       h: -20,  s:0.80, v: 0.00 },
+        { label: 'Lime',       h: -80,  s:0.90, v: 0.00 },
+        { label: 'Teal',       h:  40,  s:1.00, v: 0.10 },
+        { label: 'Amethyst',   h: 120,  s:0.90, v: 0.00 },
+        { label: 'Fuchsia',    h: 160,  s:0.80, v:-0.10 },
+        { label: 'Ember',      h:-120,  s:0.80, v:-0.10 },
+        { label: 'Chartreuse', h: -40,  s:0.70, v: 0.10 },
+        { label: 'Azure',      h:  60,  s:0.90, v: 0.10 },
+        { label: 'Red',        h:-143,  s:1.00, v: 0.00 },
+        { label: 'Orange',     h:-113,  s:1.00, v: 0.10 },
+        { label: 'Yellow',     h: -83,  s:1.20, v: 0.25 },
+        { label: 'Green',      h: -23,  s:1.00, v: 0.05 },
+        { label: 'Blue',       h:  77,  s:1.00, v: 0.00 },
+        { label: 'Brown',      h:-113,  s:0.10, v:-0.38 },
+      ],
+    },
+    female: {
+      forcedCosmetics: { eyes: 'none' },
+      slots: [
+        { slot: 'hairBack', label: 'Back Hair', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Kenkari_F::kenk_longponytail_f',     label: 'Long Ponytail' },
+          { id: 'appearance::Kenkari_F::kenk_splayedknot_high_f', label: 'Splayed Knot (High)' },
+          { id: 'appearance::Kenkari_F::kenk_splayedknot_low_f',  label: 'Splayed Knot (Low)' },
+        ]},
+        { slot: 'hairSide', label: 'Side Hair (R)', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Kenkari_F::kenk_braid-R_f',        label: 'Braid (Right)' },
+          { id: 'appearance::Kenkari_F::kenk_braidcluster-R_f', label: 'Braid Cluster (Right)' },
+        ]},
+        { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+          { id: null, label: 'None' },
+          { id: 'appearance::Kenkari_F::kenk_braid-L_f', label: 'Braid (Left)' },
+        ]},
+      ],
+      colorOptions: [
+        { label: 'Ember',      h: -115, s: 0.20,  v: 0.05 },
+        { label: 'Copper',     h: -105, s: 0.25,  v: 0.10 },
+        { label: 'Gold',       h: -92,  s: 0.40,  v: 0.15 },
+        { label: 'Honey',      h: -80,  s: 0.45,  v: 0.20 },
+        { label: 'Yellow',     h: -75,  s: 0.50,  v: 0.20 },
+        { label: 'Saffron',    h: -65,  s: 0.52,  v: 0.15 },
+        { label: 'Chartreuse', h: -53,  s: 0.58,  v: 0.05 },
+        { label: 'Lime',       h: -42,  s: 0.62,  v: 0.00 },
+        { label: 'Spring',     h: -32,  s: 0.68,  v: 0.05 },
+        { label: 'Umber',      h: -100, s: -0.30, v: -0.40 },
+        { label: 'Ochre',      h: -80,  s: -0.20, v: -0.25 },
+        { label: 'Straw',      h: -65,  s: -0.10, v: -0.15 },
+      ],
+    },
+  },
+};
+
+const CONFIG_SPECIES_DATA = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {};
+const CONFIG_SPECIES_AVAILABILITY = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.availability || {};
+
+function normalizeSpeciesKey(speciesId) {
+  return String(speciesId || '').trim().toLowerCase().replace(/_/g, '-');
+}
+function withConfiguredSpeciesAvailability(speciesData) {
+  const result = { ...speciesData };
+  for (const [speciesId, availability] of Object.entries(CONFIG_SPECIES_AVAILABILITY)) {
+    const key = normalizeSpeciesKey(speciesId);
+    const existing = result[key] || result[speciesId];
+    if (!existing || !Array.isArray(availability?.genders) || !availability.genders.length) continue;
+    result[key] = { ...existing, genders: availability.genders.map(g => String(g).toLowerCase()).filter(Boolean) };
+  }
+  return result;
+}
+const SPECIES_DATA = withConfiguredSpeciesAvailability({ ...BASE_SPECIES_DATA, ...CONFIG_SPECIES_DATA });
+
+const DEFAULT_BODY_COLORS = { A: { h: 0, s: -0.70, v: -0.30 }, B: { h: 0, s: -0.70, v: -0.50 }, C: { h: 0, s: -0.65, v: -0.12 } };
+
+function deriveCFromA(a) {
+  return { h: a.h, s: Math.max(-1, Math.min(1, a.s + 0.05)), v: Math.max(-1, Math.min(1, a.v + 0.18)) };
+}
+function defaultCosmeticsFor(speciesId, gender) {
+  const genderData = SPECIES_DATA[speciesId]?.[gender];
+  if (!genderData) return {};
+  const cosmetics = { ...(genderData.defaultCosmetics || {}) };
+  for (const slotDef of genderData.slots || []) {
+    if (cosmetics[slotDef.slot] !== undefined) continue;
+    const hasNoneOption = (slotDef.options || []).some(option => option.id == null || option.id === '');
+    if (!hasNoneOption && slotDef.options?.[0]?.id) cosmetics[slotDef.slot] = slotDef.options[0].id;
+  }
+  return cosmetics;
+}
+function swatchStyle(base, h, s, v) {
+  const hueOffset   = (window.SCRATCHBONES_CONFIG?.clothingHueOffset)   ?? 0;
+  const satOffset   = (window.SCRATCHBONES_CONFIG?.clothingSatOffset)   ?? 0;
+  const lightOffset = (window.SCRATCHBONES_CONFIG?.clothingLightOffset) ?? 0;
+  const sat = Math.max(0, 1 + (Number(s) || 0) + satOffset).toFixed(3);
+  const bri = Math.max(0, 1 + (Number(v) || 0) + lightOffset).toFixed(3);
+  const finalH = (Number(h) || 0) + hueOffset;
+  return `background:${base || '#c8c8c8'};filter:hue-rotate(${finalH}deg) saturate(${sat}) brightness(${bri})`;
+}
+
+// Species/gender mapping helpers (from npc-authoring-editor)
+function avatarSpeciesFor(species) {
+  const s = String(species || '').toLowerCase().replace(/[’']/g, '').replace(/_/g, '-');
+  if (s.includes('rakako')) return SPECIES_DATA['rakakoan'] ? 'rakakoan' : 'kenkari';
+  if (s.includes('kenkari')) return 'kenkari';
+  if (s.includes('engh')) return 'engh-sho';
+  if (s.includes('tletingan')) return 'tletingan';
+  return SPECIES_DATA[s] ? s : 'mao-ao';
+}
+function avatarGenderFor(gender) {
+  const g = String(gender || '').toLowerCase();
+  return g.includes('female') || g.includes('woman') || g.includes('girl') || g === 'f' ? 'female' : 'male';
+}
+function defaultAppearanceFor(src = {}) {
+  const speciesId = avatarSpeciesFor(src.species || src.speciesId);
+  const gender = avatarGenderFor(src.gender || src.ageBand);
+  const spec = SPECIES_DATA[speciesId] || SPECIES_DATA['mao-ao'];
+  const g = spec.genders.includes(gender) ? gender : spec.genders[0];
+  const opts = spec[g]?.colorOptions || [];
+  const base = opts[0] || { h: 0, s: -0.70, v: -0.30 };
+  return {
+    speciesId, gender: g,
+    cosmetics: { ...defaultCosmeticsFor(speciesId, g) },
+    bodyColors: { A: { h: base.h, s: base.s, v: base.v }, B: { h: base.h, s: base.s, v: base.v }, C: deriveCFromA(base) },
+    chatColor: { h: 210, s: 75, l: 68 },
+  };
+}
+function defaultAvatarExportFor(src = {}) {
+  const appearance = defaultAppearanceFor(src);
+  return { schema: 'npc_avatar_editor_export.v1', source: 'character-studio default', appearance, equippedCosmetics: [], appliedDyes: {} };
+}
+function asEquipArray(v) {
+  if (Array.isArray(v)) return v.filter(Boolean);
+  if (v && typeof v === 'object') return Object.values(v).filter(x => typeof x === 'string' && x && x !== 'none');
+  return [];
+}
+
+// ── Appearance working state ─────────────────────────────────────────────────
+// target: { kind:'player' } or { kind:'npc', id }
+let target = { kind: 'player' };
+let work = makeWork('mao-ao', 'male');
+
+function makeWork(speciesId, gender) {
+  const ap = defaultAppearanceFor({ speciesId, gender });
+  return { name: '', appearance: ap, equippedCosmetics: [], appliedDyes: {} };
+}
+function workRenderAppearance() {
+  return { ...work.appearance, equippedCosmetics: work.equippedCosmetics, appliedDyes: work.appliedDyes };
+}
+
+// ── Account mock (from npc-portrait-editor, wired to the working record) ────
+const StudioAccount = {
+  getShopCatalog:  () => window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [],
+  getDyeCatalog:   () => window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [],
+  getDyeCategories:() => window.SCRATCHBONES_CONFIG?.game?.dyes?.categories || [],
+  getAppliedDyes:  () => work.appliedDyes || {},
+  getAppearance:   () => work.appearance || { speciesId: 'mao-ao', gender: 'male', cosmetics: {} },
+  isUnlocked:      () => true,
+  isDyeOwned:      () => true,
+  getEquippedForCategory: (cat) => {
+    const catalog = StudioAccount.getShopCatalog();
+    return catalog.find(i => i.category === cat && work.equippedCosmetics.includes(i.id))?.id ?? null;
+  },
+  setAppearance: (ap) => { work.appearance = { ...ap }; },
+  equipCosmetic: (id) => {
+    const catalog = StudioAccount.getShopCatalog();
+    const item = catalog.find(i => i.id === id);
+    if (!item) return;
+    work.equippedCosmetics = work.equippedCosmetics.filter(eid => {
+      const ei = catalog.find(i => i.id === eid);
+      return ei?.category !== item.category;
+    });
+    work.equippedCosmetics.push(id);
+  },
+  unequipCosmetic: (id) => { work.equippedCosmetics = work.equippedCosmetics.filter(eid => eid !== id); },
+  applyDye:  (dyeId, tintKey) => { work.appliedDyes[tintKey] = dyeId; },
+  removeDye: (tintKey) => { delete work.appliedDyes[tintKey]; },
+};
+window.ScratchbonesAccount = StudioAccount;
+
+// npc-avatar-preview-utils installs its own account shim inside
+// buildProfileFromNpcExport — wrap it so StudioAccount stays authoritative.
+function npcProfileFor(npcExport) {
+  let profile = null;
+  try { profile = window.NpcAvatarPreview.buildProfileFromNpcExport(npcExport); }
+  finally { window.ScratchbonesAccount = StudioAccount; }
+  return profile;
+}
+
+// ── Portrait cosmetics loading (shared init sequence) ────────────────────────
+let _cosmetics = null;
+async function ensureCosmetics() {
+  if (_cosmetics) return _cosmetics;
+  _cosmetics = await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: '../../assets/', configBase: '../../config/' });
+  window.ScratchbonesAccount = StudioAccount;
+  return _cosmetics;
+}
+
+// ── Preview profile builder (from npc-portrait-editor, verbatim logic) ──────
+function _previewRng() {
+  let s = 0x9e3779b9;
+  return function () {
+    s = (Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0);
+    s = (Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0);
+    return (s >>> 0) / 0x100000000;
+  };
+}
+
+function buildPreviewProfile(appearance) {
+  const cosmetics = _cosmetics;
+  if (!cosmetics || !window.getPortraitFighters || !window.randomProfileSeeded) return null;
+  const { optionCache, hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions,
+          upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions,
+          bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter,
+          forcedCosmeticsByFighter, conditionalCosmeticsByFighter } = cosmetics;
+  const fighters = window.getPortraitFighters();
+  if (!fighters || !fighters.length) return null;
+
+  const { speciesId, gender, cosmetics: savedCosmetics, bodyColors } = appearance;
+  const normalize = s => String(s || '').replace(/-/g, '_');
+  const fighterGender = f => f.gender ?? (f.id === 'M' ? 'male' : f.id === 'F' ? 'female' : null);
+  const fighter = fighters.find(f =>
+    (f.speciesId === speciesId || f.speciesId === normalize(speciesId)) && fighterGender(f) === gender
+  ) || fighters[0];
+  if (!fighter) return null;
+
+  const rng = _previewRng();
+  const forced = forcedCosmeticsByFighter?.[fighter.id] ?? {};
+  const forcedSlots = new Set(Object.keys(forced));
+
+  const profile = window.randomProfileSeeded(rng, [fighter], hairFrontOptions, hairBackOptions,
+    hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions,
+    bodyColorRangesByGender, allowedCosmeticsByFighter, hatOptions, hoodOptions,
+    cosmeticWeightsByFighter, torsoPortraitOptions, armPortraitOptions,
+    forcedCosmeticsByFighter, conditionalCosmeticsByFighter);
+  if (!profile) return null;
+
+  const lookup = id => id ? (optionCache?.get(id) ?? null) : null;
+  if (savedCosmetics) {
+    if (savedCosmetics.hairFront  !== undefined && !forcedSlots.has('hairFront'))  profile.hairFront  = lookup(savedCosmetics.hairFront);
+    if (savedCosmetics.hairBack   !== undefined && !forcedSlots.has('hairBack'))   profile.hairBack   = lookup(savedCosmetics.hairBack);
+    if (savedCosmetics.hairSide   !== undefined && !forcedSlots.has('hairSide'))   profile.hairSide   = lookup(savedCosmetics.hairSide);
+    if (savedCosmetics.hairSideL  !== undefined && !forcedSlots.has('hairSideL'))  profile.hairSideL  = lookup(savedCosmetics.hairSideL);
+    if (savedCosmetics.eyes       !== undefined && !forcedSlots.has('eyes'))       profile.eyes       = lookup(savedCosmetics.eyes);
+    if (savedCosmetics.upperFace  !== undefined && !forcedSlots.has('upperFace'))  profile.upperFace  = lookup(savedCosmetics.upperFace);
+    if (savedCosmetics.facialHair !== undefined && !forcedSlots.has('facialHair')) profile.facialHair = lookup(savedCosmetics.facialHair);
+  }
+  if (bodyColors) profile.bodyColors = { ...(profile.bodyColors || {}), ...bodyColors };
+  if (Array.isArray(appearance.bodyDeform) && appearance.bodyDeform.length > 0) {
+    profile.bodyDeform = appearance.bodyDeform;
+  }
+
+  // Apply equipped items and dyes via the account mock
+  const acc = StudioAccount;
+  const none = { id: 'none', tintSlot: null, layers: [] };
+  const equippedFromAppearance = Array.isArray(appearance?.equippedCosmetics) ? appearance.equippedCosmetics : null;
+  const appliedDyesFromAppearance = appearance && Object.prototype.hasOwnProperty.call(appearance, 'appliedDyes')
+    ? (appearance.appliedDyes || {}) : null;
+  const resolveVariantId = (category, equippedId) => {
+    if (!equippedId) return null;
+    const shopCatalog = acc.getShopCatalog();
+    const base = shopCatalog.find(i => i.id === equippedId);
+    if (!base) return equippedId;
+    const candidates = shopCatalog.filter(i =>
+      i.category === category && i.label === base.label &&
+      (i.material || null) === (base.material || null) &&
+      i.species === speciesId && (!i.gender || i.gender === gender)
+    );
+    const ids = [equippedId, ...candidates.map(i => i.id)];
+    return ids.find(id => optionCache?.has(id)) ?? equippedId;
+  };
+  const applyEquip = (cat, key, noneOpt) => {
+    let id = null;
+    if (equippedFromAppearance) {
+      const shopCatalog = acc.getShopCatalog();
+      id = shopCatalog.find(i => i.category === cat && equippedFromAppearance.includes(i.id))?.id ?? null;
+    } else {
+      id = acc.getEquippedForCategory(cat);
+    }
+    const resolvedId = resolveVariantId(cat, id);
+    profile[key] = (resolvedId && optionCache?.has(resolvedId)) ? optionCache.get(resolvedId) : (noneOpt ?? none);
+  };
+  applyEquip('hat', 'hat', hatOptions[0]);
+  applyEquip('hood', 'hood', hoodOptions[0]);
+  applyEquip('torso', 'torsoCosmetic', torsoPortraitOptions[0]);
+  applyEquip('overwear', 'armCosmetic', armPortraitOptions[0]);
+
+  const collaredTag = window.SCRATCHBONES_CONFIG?.game?.portrait?.cosmetics?.collaredTag || 'collared';
+  const collarLockedFacialHairIds = window.SCRATCHBONES_CONFIG?.game?.portrait?.cosmetics?.collarLockedFacialHairIds
+    || window.SCRATCHBONES_CONFIG?.game?.portrait?.cosmetics?.shirtbeardIds
+    || ['kenk_shirtbeard', 'kenk_shirtbeard_f'];
+  const hasCollaredClothing = [profile.torsoCosmetic, profile.armCosmetic].some(c => c?.tags?.includes(collaredTag));
+  if (!hasCollaredClothing && collarLockedFacialHairIds.includes(profile.facialHair?.id)) {
+    profile.facialHair = optionCache?.get('none') || { id: 'none', label: 'No Facial Hair', tintSlot: null, layers: [] };
+  }
+
+  const defaultTintColors = window.SCRATCHBONES_CONFIG?.game?.portrait?.cosmetics?.defaultTintColors || {};
+  for (const option of [profile.upperFace]) {
+    const defaults = option?.id ? defaultTintColors[option.id] : null;
+    if (!defaults) continue;
+    for (const [tintKey, color] of Object.entries(defaults)) {
+      profile.bodyColors = { ...(profile.bodyColors || {}), [tintKey]: { ...color } };
+    }
+  }
+
+  const dyeIds = appliedDyesFromAppearance ?? acc.getAppliedDyes();
+  const catalog = acc.getDyeCatalog();
+  for (const [tintKey, dyeId] of Object.entries(dyeIds)) {
+    if (dyeId) {
+      const dye = catalog.find(d => d.id === dyeId);
+      if (dye) profile.bodyColors = { ...(profile.bodyColors || {}), [tintKey]: { ...dye.color } };
+    }
+  }
+  return profile;
+}
+
+// ── Live preview with breathing animation ────────────────────────────────────
+let _previewProfile = null;
+let _previewDirty = true;
+let _previewBusy = false;
+let _update3dTimer = null;
+
+function invalidatePreview() {
+  _previewDirty = true;
+  if (threeD.enabled) {
+    clearTimeout(_update3dTimer);
+    _update3dTimer = setTimeout(() => { update3DModel().catch(e => log('3D update failed: ' + e.message, 'error')); }, 350);
+  }
+}
+
+function previewLoop() {
+  requestAnimationFrame(previewLoop);
+  if (!_cosmetics || _previewBusy) return;
+  if (_previewDirty) {
+    try { _previewProfile = buildPreviewProfile(workRenderAppearance()); } catch (e) { log('profile build failed: ' + e.message, 'error'); }
+    _previewDirty = false;
+  }
+  if (!_previewProfile || !window.renderProfile) return;
+  _previewBusy = true;
+  Promise.resolve(window.renderProfile($('apCanvas'), _previewProfile, { seatId: 'studio-preview' }))
+    .catch(() => {})
+    .finally(() => { _previewBusy = false; });
+}
+
+// ── 3D PNG-plane preview (from npc-avatar-preview) ───────────────────────────
+const threeD = { enabled: false, loading: false, THREE: null, renderer: null, scene: null, camera: null, controls: null, model: null };
+const cfg3d = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+
+function resize3d() {
+  if (!threeD.renderer || !threeD.camera) return;
+  const canvas3d = $('view3d');
+  const rect = canvas3d.getBoundingClientRect();
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  threeD.renderer.setSize(w, h, false);
+  threeD.camera.aspect = w / h;
+  threeD.camera.updateProjectionMatrix();
+}
+function frameCamera3d() {
+  if (!threeD.camera) return;
+  const d = cfg3d.previewCameraDistance || 3.2;
+  threeD.camera.position.set(d * 0.55, d * 0.28, d * 0.88);
+  threeD.camera.lookAt(0, 0, 0);
+  threeD.controls?.target.set(0, 0, 0);
+  threeD.controls?.update();
+}
+function tick3d() {
+  if (!threeD.enabled) return;
+  threeD.renderer?.render(threeD.scene, threeD.camera);
+  threeD.controls?.update();
+  requestAnimationFrame(tick3d);
+}
+async function init3dScene() {
+  const THREE = threeD.THREE;
+  const canvas3d = $('view3d');
+  threeD.renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true, alpha: true, preserveDrawingBuffer: true });
+  threeD.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  threeD.renderer.outputColorSpace = THREE.SRGBColorSpace;
+  threeD.scene = new THREE.Scene();
+  threeD.scene.background = new THREE.Color(0x060c14);
+  threeD.camera = new THREE.PerspectiveCamera(cfg3d.previewCameraFovDeg || 45, 1, 0.01, 100);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x182435, 1.8);
+  threeD.scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+  dir.position.set(2.5, 3.5, 4);
+  threeD.scene.add(dir);
+  const grid = new THREE.GridHelper(cfg3d.previewGridSize || 5, cfg3d.previewGridDivisions || 10, 0x33538a, 0x1a2638);
+  grid.position.y = -0.55;
+  threeD.scene.add(grid);
+  resize3d();
+  frameCamera3d();
+  requestAnimationFrame(tick3d);
+}
+async function update3DModel() {
+  if (!threeD.enabled || !threeD.THREE || !_cosmetics) return;
+  const profile = _previewProfile || buildPreviewProfile(workRenderAppearance());
+  if (!profile) return;
+  const size = cfg3d.previewPortraitCanvasSize || 200;
+  const frontCanvas = document.createElement('canvas');
+  frontCanvas.width = size; frontCanvas.height = size;
+  await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+  const backCanvas = document.createElement('canvas');
+  backCanvas.width = size; backCanvas.height = size;
+  await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+  if (threeD.model) {
+    threeD.scene.remove(threeD.model);
+    window.PNGPlaneAvatar.disposeAvatarModel(threeD.model);
+  }
+  threeD.model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(threeD.THREE, frontCanvas, {
+    backCanvas,
+    name: 'Studio_Preview_Avatar',
+    userData: { source: 'character-studio' },
+  });
+  threeD.scene.add(threeD.model);
+}
+async function toggle3d() {
+  if (threeD.enabled) {
+    threeD.enabled = false;
+    $('view3dWrap').classList.remove('visible3d');
+    $('toggle3dBtn').textContent = 'Enable 3D plane preview';
+    return;
+  }
+  if (threeD.loading) return;
+  if (!threeD.THREE) {
+    threeD.loading = true;
+    $('toggle3dBtn').textContent = 'Loading Three.js…';
+    try {
+      const mods = await window.PNGPlaneAvatar.loadThreeModules();
+      threeD.THREE = mods.THREE;
+      threeD.enabled = true;
+      $('view3dWrap').classList.add('visible3d');
+      await init3dScene();
+      if (mods.OrbitControls) {
+        threeD.controls = new mods.OrbitControls(threeD.camera, $('view3d'));
+        threeD.controls.enableDamping = true;
+        threeD.controls.dampingFactor = 0.08;
+      }
+    } catch (e) {
+      log('Three.js load failed: ' + e.message, 'error');
+      $('toggle3dBtn').textContent = 'Enable 3D plane preview';
+      threeD.loading = false;
+      return;
+    }
+    threeD.loading = false;
+  } else {
+    threeD.enabled = true;
+    $('view3dWrap').classList.add('visible3d');
+    resize3d();
+    requestAnimationFrame(tick3d);
+  }
+  $('toggle3dBtn').textContent = 'Hide 3D plane preview';
+  await ensureCosmetics();
+  await update3DModel();
+}
+
+// ── Appearance controls UI ───────────────────────────────────────────────────
+let _activeDyeSlot = null;
+
+function updateTargetPill() {
+  const pill = $('targetPill');
+  if (target.kind === 'npc') {
+    const n = db.npcs.find(x => x.id === target.id);
+    pill.textContent = `Editing NPC: ${n?.name || target.id}`;
+    pill.style.borderColor = 'rgba(251,191,36,.6)';
+    $('applyNpcBtn').disabled = false;
+  } else {
+    pill.textContent = 'Editing: Player';
+    pill.style.borderColor = 'rgba(106,167,255,.5)';
+    $('applyNpcBtn').disabled = true;
+  }
+}
+
+function renderSpeciesControls() {
+  const ap = work.appearance;
+  const speciesId = ap.speciesId || 'mao-ao';
+  const gender = ap.gender || 'male';
+  const specData = SPECIES_DATA[speciesId];
+  $('speciesTag').textContent = `${speciesId} · ${gender}`;
+
+  const subSpeciesMap = {};
+  for (const [sid, sd] of Object.entries(SPECIES_DATA)) {
+    if (sd.parentSpecies) {
+      if (!subSpeciesMap[sd.parentSpecies]) subSpeciesMap[sd.parentSpecies] = [];
+      subSpeciesMap[sd.parentSpecies].push(sid);
+    }
+  }
+  const effectiveParentId = SPECIES_DATA[speciesId]?.parentSpecies || speciesId;
+
+  const speciesBtns = Object.entries(SPECIES_DATA)
+    .filter(([sid, sd]) => !sd.parentSpecies)
+    .map(([sid, sd]) =>
+      `<button class="selBtn${effectiveParentId === sid ? ' selected' : ''}" data-species="${sid}">${esc(sd.label)}</button>`
+    ).join('');
+
+  const subSpeciesIds = subSpeciesMap[effectiveParentId] || [];
+  const subSpeciesHtml = subSpeciesIds.length
+    ? `<label style="margin-top:8px">Variant</label><div class="selGroup">${
+        subSpeciesIds.map(childId => {
+          const childData = SPECIES_DATA[childId];
+          const isActive = speciesId === childId;
+          return `<button class="selBtn${isActive ? ' selected' : ''}" data-subspecies="${childId}" data-parent-species="${effectiveParentId}">${esc(childData?.label || childId)}</button>`;
+        }).join('')
+      }</div>`
+    : '';
+
+  const availGenders = specData ? specData.genders : ['male'];
+  const genderBtns = ['male', 'female'].map(g => {
+    const avail = availGenders.includes(g);
+    return `<button class="selBtn${gender === g ? ' selected' : ''}${!avail ? ' disabled' : ''}" data-gender="${g}"${!avail ? ' disabled' : ''}>${cap(g)}</button>`;
+  }).join('');
+
+  const el = $('speciesControls');
+  el.innerHTML = `
+    <label>Species</label>
+    <div class="selGroup">${speciesBtns}</div>
+    ${subSpeciesHtml}
+    <label style="margin-top:8px">Gender</label>
+    <div class="selGroup">${genderBtns}</div>`;
+
+  // Species switch (from npc-portrait-editor bind())
+  el.querySelectorAll('[data-species]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sid = btn.dataset.species;
+      const spec = SPECIES_DATA[sid];
+      work.appearance.speciesId = sid;
+      if (spec && !spec.genders.includes(work.appearance.gender)) work.appearance.gender = spec.genders[0];
+      work.appearance.cosmetics = defaultCosmeticsFor(sid, work.appearance.gender);
+      const gData = spec && spec[work.appearance.gender];
+      const opts = gData ? gData.colorOptions : [];
+      if (opts[0]) {
+        work.appearance.bodyColors.A = { h: opts[0].h, s: opts[0].s, v: opts[0].v };
+        work.appearance.bodyColors.B = { h: opts[0].h, s: opts[0].s, v: opts[0].v };
+        work.appearance.bodyColors.C = deriveCFromA(opts[0]);
+      }
+      refreshAppearanceUI();
+    });
+  });
+  el.querySelectorAll('[data-subspecies]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const childId = btn.dataset.subspecies;
+      const parentId = btn.dataset.parentSpecies;
+      const wasActive = work.appearance.speciesId === childId;
+      const newSpeciesId = wasActive ? parentId : childId;
+      const newGenderData = SPECIES_DATA[newSpeciesId]?.[work.appearance.gender];
+      const validSlots = new Set((newGenderData?.slots || []).map(s => s.slot));
+      const oldCosmetics = { ...work.appearance.cosmetics };
+      const newCosmetics = defaultCosmeticsFor(newSpeciesId, work.appearance.gender);
+      for (const [slot, val] of Object.entries(oldCosmetics)) {
+        if (validSlots.has(slot)) newCosmetics[slot] = val;
+      }
+      work.appearance.speciesId = newSpeciesId;
+      work.appearance.cosmetics = newCosmetics;
+      refreshAppearanceUI();
+    });
+  });
+  el.querySelectorAll('[data-gender]:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', () => {
+      work.appearance.gender = btn.dataset.gender;
+      work.appearance.cosmetics = defaultCosmeticsFor(work.appearance.speciesId, work.appearance.gender);
+      const gData = SPECIES_DATA[work.appearance.speciesId]?.[work.appearance.gender];
+      const opts = gData ? gData.colorOptions : [];
+      if (opts[0]) {
+        work.appearance.bodyColors.A = { h: opts[0].h, s: opts[0].s, v: opts[0].v };
+        work.appearance.bodyColors.B = { h: opts[0].h, s: opts[0].s, v: opts[0].v };
+        work.appearance.bodyColors.C = deriveCFromA(opts[0]);
+      }
+      refreshAppearanceUI();
+    });
+  });
+}
+
+function renderCosmeticControls() {
+  const ap = work.appearance;
+  const genderData = SPECIES_DATA[ap.speciesId]?.[ap.gender];
+  const cosmetics = ap.cosmetics || {};
+  let slotsHtml = '';
+  if (genderData && genderData.slots) {
+    for (const slotDef of genderData.slots) {
+      const cur = cosmetics[slotDef.slot] || '';
+      const opts = slotDef.options.map(o =>
+        `<option value="${esc(o.id || '')}"${cur === (o.id || '') ? ' selected' : ''}>${esc(o.label)}</option>`
+      ).join('');
+      slotsHtml += `
+        <div class="cosmeticRow">
+          <span class="cosmeticLabel">${esc(slotDef.label)}</span>
+          <select class="cosmeticSelect" data-slot="${slotDef.slot}">${opts}</select>
+        </div>`;
+    }
+  }
+  const el = $('cosmeticControls');
+  el.innerHTML = slotsHtml || '<div class="help">No cosmetic slots for this species/gender.</div>';
+  el.querySelectorAll('.cosmeticSelect[data-slot]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      work.appearance.cosmetics[sel.dataset.slot] = sel.value || null;
+      invalidatePreview();
+    });
+  });
+}
+
+// ── Species-range-constrained body color picker (from npc-authoring-editor) ──
+let _colorRangesCache = null;
+async function _ensureColorRanges() {
+  if (_colorRangesCache) return _colorRangesCache;
+  const cosmetics = await ensureCosmetics();
+  _colorRangesCache = cosmetics?.bodyColorRangesByGender || {};
+  return _colorRangesCache;
+}
+function _interpAtH(stops, h) {
+  if (!stops || !stops.length) return { sMin: -0.7, sMax: -0.7, vMin: -0.3, vMax: -0.3 };
+  if (stops.length === 1) return stops[0];
+  let lo = stops[0], hi = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) { if (h >= stops[i].h && h <= stops[i + 1].h) { lo = stops[i]; hi = stops[i + 1]; break; } }
+  const span = hi.h - lo.h, t = span === 0 ? 0 : Math.max(0, Math.min(1, (h - lo.h) / span));
+  return { sMin: lo.sMin + (hi.sMin - lo.sMin) * t, sMax: lo.sMax + (hi.sMax - lo.sMax) * t, vMin: lo.vMin + (hi.vMin - lo.vMin) * t, vMax: lo.vMax + (hi.vMax - lo.vMax) * t };
+}
+function _swatchesForRange(spec, cols, rows) {
+  if (spec?.choices) {
+    const out = []; const pc = Math.max(2, Math.ceil(cols / spec.choices.length));
+    for (const c of spec.choices) out.push(..._swatchesForRange(c.range, pc, rows));
+    return out;
+  }
+  if (!spec?.stops?.length) return [];
+  const minH = spec.minH ?? spec.stops[0].h, maxH = spec.maxH ?? spec.stops[spec.stops.length - 1].h;
+  const out = [];
+  for (let ci = 0; ci < cols; ci++) {
+    const ht = cols <= 1 ? 0.5 : ci / (cols - 1);
+    const h = minH + ht * (maxH - minH);
+    const { sMin, sMax, vMin, vMax } = _interpAtH(spec.stops, h);
+    const sMid = (sMin + sMax) / 2;
+    for (let ri = 0; ri < rows; ri++) {
+      const vt = rows <= 1 ? 0.5 : ri / (rows - 1);
+      const v = vMin + vt * (vMax - vMin);
+      out.push({ h: Math.round(h * 10) / 10, s: Math.round(sMid * 1000) / 1000, v: Math.round(v * 1000) / 1000 });
+    }
+  }
+  return out;
+}
+function _swatchFilter(h, s, v) {
+  const sat = Math.max(0, 1 + (Number(s) || 0)), bri = Math.max(0, 1 + (Number(v) || 0));
+  const parts = [];
+  if (Math.abs(Number(h) || 0) > 0.05) parts.push(`hue-rotate(${h}deg)`);
+  if (Math.abs(sat - 1) > 0.005) parts.push(`saturate(${sat.toFixed(3)})`);
+  if (Math.abs(bri - 1) > 0.005) parts.push(`brightness(${bri.toFixed(3)})`);
+  return parts.length ? parts.join(' ') : 'none';
+}
+function _colorMatch(a, b) {
+  if (!a || !b) return false;
+  return Math.abs((a.h || 0) - (b.h || 0)) <= 2 && Math.abs((a.s || 0) - (b.s || 0)) <= 0.04 && Math.abs((a.v || 0) - (b.v || 0)) <= 0.04;
+}
+function _normalizeSpecies(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+
+function _renderPicker(ranges) {
+  const bodyColors = work.appearance.bodyColors || clone(DEFAULT_BODY_COLORS);
+  const slots = [['A', 'Body A · primary'], ['B', 'Body B · secondary'], ['C', 'Body C · accent']];
+  const sec = $('colorPickerSection'); if (!sec) return;
+  sec.innerHTML = '';
+  for (const [slot, label] of slots) {
+    const spec = ranges?.[slot]; const current = bodyColors[slot];
+    const row = document.createElement('div'); row.style.cssText = 'margin-bottom:12px';
+    row.innerHTML = `<label style="display:block;color:var(--muted);font-size:11px;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px">${label}</label>`;
+    if (!spec) { row.insertAdjacentHTML('beforeend', '<div class="help">No range for this species/slot.</div>'); sec.appendChild(row); continue; }
+    const swatches = _swatchesForRange(spec, 7, 4);
+    const grid = document.createElement('div'); grid.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px';
+    for (const sw of swatches) {
+      const el = document.createElement('div');
+      el.className = 'colorSwatch' + (_colorMatch(current, sw) ? ' swatchActive' : '');
+      el.style.cssText = `background:#c87847;filter:${_swatchFilter(sw.h, sw.s, sw.v)}`;
+      el.title = `h:${sw.h} s:${sw.s} v:${sw.v}`;
+      el.addEventListener('click', () => {
+        if (!work.appearance.bodyColors) work.appearance.bodyColors = clone(DEFAULT_BODY_COLORS);
+        work.appearance.bodyColors[slot] = { h: sw.h, s: sw.s, v: sw.v };
+        invalidatePreview();
+        refreshColorPicker();
+      });
+      grid.appendChild(el);
+    }
+    row.appendChild(grid);
+    if (current) {
+      const cf = _swatchFilter(current.h || 0, current.s || 0, current.v || 0);
+      row.insertAdjacentHTML('beforeend', `<div style="display:flex;align-items:center;gap:6px;margin-top:5px"><span style="font-size:11px;color:var(--muted)">Current:</span><div style="width:22px;height:22px;border-radius:7px;border:2px solid rgba(255,255,255,.5);background:#c87847;filter:${cf}"></div><span style="font-size:11px;color:var(--muted)">h:${current.h || 0} s:${current.s || 0} v:${current.v || 0}</span></div>`);
+    }
+    sec.appendChild(row);
+  }
+}
+async function refreshColorPicker() {
+  const lbl = $('colorPickerSpeciesLabel'); if (!lbl) return;
+  try {
+    const ranges = await _ensureColorRanges();
+    const speciesId = work.appearance.speciesId;
+    const gender = work.appearance.gender;
+    const fighters = window.getPortraitFighters?.() || [];
+    const match = fighters.find(f => f.speciesId && f.gender && _normalizeSpecies(f.speciesId) === _normalizeSpecies(speciesId) && String(f.gender).toLowerCase() === String(gender).toLowerCase());
+    const fid = match?.id || `${speciesId}_${gender}`;
+    lbl.textContent = `${speciesId} · ${gender}`;
+    _renderPicker(ranges[fid] || null);
+  } catch (e) { log('Color picker: ' + e.message, 'error'); }
+}
+
+// ── Clothing & dyes (from npc-portrait-editor renderCollections) ─────────────
+function renderCollections() {
+  const acc = StudioAccount;
+  const fullCatalog = acc.getShopCatalog();
+  const dyes = acc.getDyeCatalog();
+  const dyeCategories = acc.getDyeCategories();
+  const appliedDyes = acc.getAppliedDyes();
+
+  const CLOTHING_SLOTS = [
+    { key: 'hat',      label: 'Hat',      category: 'hat',      tintKeys: ['HAT',   'HAT_B',   'HAT_C'] },
+    { key: 'hood',     label: 'Hood',     category: 'hood',     tintKeys: ['HOOD',  'HOOD_B',  'HOOD_C'] },
+    { key: 'torso',    label: 'Torso',    category: 'torso',    tintKeys: ['TORSO', 'TORSO_B', 'TORSO_C'] },
+    { key: 'overwear', label: 'Overwear', category: 'overwear', tintKeys: ['CLOTH', 'CLOTH_B', 'CLOTH_C'] },
+  ];
+  const DYE_SWATCH_BASE = window.SCRATCHBONES_CONFIG?.game?.dyes?.swatchBase;
+  const ownedDyes = dyes; // dev tool: all dyes available
+  const appearance = acc.getAppearance();
+  const appearanceSlotDefs = window.SCRATCHBONES_CONFIG?.game?.collections?.appearanceSlots || [];
+  const genderData = SPECIES_DATA[appearance.speciesId]?.[appearance.gender] || null;
+  const appearanceSlots = appearanceSlotDefs
+    .filter(slot => !Array.isArray(slot.species) || slot.species.includes(appearance.speciesId))
+    .map(slot => ({ ...slot, options: (genderData?.slots || []).find(def => def.slot === slot.slot)?.options || [] }))
+    .filter(slot => slot.options.length);
+
+  const entitlementKey = (item) => [item.category || '', item.label || '', item.material || ''].join('::');
+
+  let slotsHtml = '';
+
+  // Appearance-linked slots (e.g. upperFace for rakakoan)
+  for (const slot of appearanceSlots) {
+    const equippedId = appearance.cosmetics?.[slot.slot] || slot.options[0]?.id || '';
+    const opts = slot.options.map(item =>
+      `<option value="${esc(item.id || '')}"${(item.id || '') === equippedId ? ' selected' : ''}>${esc(item.label)}</option>`
+    ).join('');
+    const isDyeOpen = _activeDyeSlot === slot.key;
+    slotsHtml += `
+      <div class="slotRow">
+        <span class="slotLabel">${esc(slot.label)}</span>
+        <select class="cosmeticSelect" data-appearance-slot="${esc(slot.slot)}">${opts}</select>
+        <button class="secondary dyeToggle${isDyeOpen ? ' active' : ''}" data-toggle-dye="${esc(slot.key)}">Dye ▾</button>
+      </div>`;
+    if (isDyeOpen) {
+      const tintKeys = slot.tintKeys || [];
+      const dyesForSlot = ownedDyes.filter(d => (d.group || 'cloth') === (slot.dyeGroup || 'cloth'));
+      const dyeRowHtml = (d) => {
+        const color = d.color || { h: 0, s: 0, v: 0 };
+        const style = swatchStyle(DYE_SWATCH_BASE, color.h, color.s, color.v);
+        return `
+          <div class="dyeRow">
+            <span class="dyeDot" style="${style}"></span>
+            <span class="dyeName">${esc(d.label)}</span>
+            ${tintKeys.map((key, index) => `<button class="secondary applyBtn${appliedDyes[key] === d.id ? ' applied' : ''}" data-apply-dye="${esc(d.id)}" data-tint-key="${esc(key)}">${['A','B','C'][index] || index + 1}</button>`).join('')}
+          </div>`;
+      };
+      const sortDyes = list => [...list].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      const dyeRows = sortDyes(dyesForSlot).map(dyeRowHtml).join('') || '<div class="help">No dyes.</div>';
+      const clearBtns = tintKeys.filter(k => appliedDyes[k]).map((k, i) =>
+        `<button class="secondary applyBtn" data-clear-channel="${esc(k)}">Clear ${['A','B','C'][i] || i + 1}</button>`
+      ).join('');
+      slotsHtml += `
+        <div class="dyePanel">
+          ${dyeRows}
+          ${clearBtns ? `<div class="dyeClears">${clearBtns}</div>` : ''}
+        </div>`;
+    }
+  }
+
+  // Clothing slots (hat, hood, torso, overwear) — all items unlocked
+  for (const slot of CLOTHING_SLOTS) {
+    const equippedId = acc.getEquippedForCategory(slot.category);
+    const ownedByCategory = fullCatalog.filter(item => item.category === slot.category);
+    const ownedMap = new Map();
+    for (const item of ownedByCategory) {
+      const key = entitlementKey(item);
+      const prev = ownedMap.get(key);
+      if (!prev) { ownedMap.set(key, item); continue; }
+      const score = (x) => (x.species === appearance.speciesId ? 2 : 0) + (x.gender === appearance.gender ? 1 : 0);
+      const prevIsEquipped = prev.id === equippedId;
+      const itemIsEquipped = item.id === equippedId;
+      if ((itemIsEquipped && !prevIsEquipped) || (itemIsEquipped === prevIsEquipped && score(item) > score(prev))) {
+        ownedMap.set(key, item);
+      }
+    }
+    const ownedItems = [...ownedMap.values()];
+    const equippedItem = fullCatalog.find(c => c.id === equippedId);
+    const equippedMaterial = equippedItem?.material || 'cloth';
+    const opts = [
+      `<option value="">None</option>`,
+      ...ownedItems.map(item =>
+        `<option value="${esc(item.id)}"${item.id === equippedId ? ' selected' : ''}>${esc(item.label)}</option>`
+      ),
+    ].join('');
+    const slotEmpty = !ownedItems.length && !equippedId;
+    const isDyeOpen = _activeDyeSlot === slot.key;
+    slotsHtml += `
+      <div class="slotRow">
+        <span class="slotLabel">${esc(slot.label)}</span>
+        <select class="cosmeticSelect" data-slot-cat="${slot.category}"${slotEmpty ? ' disabled' : ''}>${opts}</select>
+        <button class="secondary dyeToggle${isDyeOpen ? ' active' : ''}" data-toggle-dye="${slot.key}"${slotEmpty ? ' disabled' : ''}>Dye ▾</button>
+      </div>`;
+    if (isDyeOpen) {
+      const [keyA, keyB, keyC] = slot.tintKeys;
+      const dyesForSlot = ownedDyes.filter(d => (d.group || 'cloth') === equippedMaterial);
+      const dyeRowHtml = (d) => {
+        const color = d.color || { h: 0, s: 0, v: 0 };
+        const style = swatchStyle(DYE_SWATCH_BASE, color.h, color.s, color.v);
+        return `
+          <div class="dyeRow">
+            <span class="dyeDot" style="${style}"></span>
+            <span class="dyeName">${esc(d.label)}</span>
+            <button class="secondary applyBtn${appliedDyes[keyA] === d.id ? ' applied' : ''}" data-apply-dye="${esc(d.id)}" data-tint-key="${keyA}">A</button>
+            <button class="secondary applyBtn${appliedDyes[keyB] === d.id ? ' applied' : ''}" data-apply-dye="${esc(d.id)}" data-tint-key="${keyB}">B</button>
+            <button class="secondary applyBtn${appliedDyes[keyC] === d.id ? ' applied' : ''}" data-apply-dye="${esc(d.id)}" data-tint-key="${keyC}">C</button>
+          </div>`;
+      };
+      let dyeRows = '';
+      const categoriesById = new Map(dyeCategories.map(c => [c.id, c]));
+      const sortDyes = list => [...list].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      if (equippedMaterial === 'cloth' && dyeCategories.length) {
+        dyeRows = dyeCategories.map(category => {
+          const categoryDyes = sortDyes(dyesForSlot.filter(d => d.dyeCategory === category.id));
+          if (!categoryDyes.length) return '';
+          return `<div class="dyeCategory">${esc(category.label)}</div>${categoryDyes.map(dyeRowHtml).join('')}`;
+        }).join('');
+        const uncategorized = sortDyes(dyesForSlot.filter(d => !d.dyeCategory || !categoriesById.has(d.dyeCategory)));
+        if (uncategorized.length) dyeRows += uncategorized.map(dyeRowHtml).join('');
+      } else {
+        dyeRows = sortDyes(dyesForSlot).map(dyeRowHtml).join('');
+      }
+      if (!dyeRows) dyeRows = '<div class="help">No dyes.</div>';
+      const clearBtns = slot.tintKeys.filter(k => appliedDyes[k]).map((k, i) =>
+        `<button class="secondary applyBtn" data-clear-channel="${k}">Clear ${['A','B','C'][i]}</button>`
+      ).join('');
+      slotsHtml += `
+        <div class="dyePanel">
+          <div class="help" style="margin-bottom:5px">A: primary · B/C: sub-channels</div>
+          ${dyeRows}
+          ${clearBtns ? `<div class="dyeClears">${clearBtns}</div>` : ''}
+        </div>`;
+    }
+  }
+
+  const el = $('collectionsControls');
+  el.innerHTML = slotsHtml || '<div class="help">No clothing items configured.</div>';
+
+  el.querySelectorAll('[data-appearance-slot]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      work.appearance.cosmetics = { ...(work.appearance.cosmetics || {}), [sel.dataset.appearanceSlot]: sel.value || null };
+      invalidatePreview();
+      renderCollections();
+    });
+  });
+  el.querySelectorAll('[data-slot-cat]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const cat = sel.dataset.slotCat;
+      const id = sel.value;
+      if (!id) {
+        const equipped = StudioAccount.getEquippedForCategory(cat);
+        if (equipped) StudioAccount.unequipCosmetic(equipped);
+      } else {
+        StudioAccount.equipCosmetic(id);
+      }
+      invalidatePreview();
+      renderCollections();
+    });
+  });
+  el.querySelectorAll('[data-toggle-dye]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.toggleDye;
+      _activeDyeSlot = (_activeDyeSlot === key) ? null : key;
+      renderCollections();
+    });
+  });
+  el.querySelectorAll('[data-apply-dye]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      StudioAccount.applyDye(btn.dataset.applyDye, btn.dataset.tintKey);
+      invalidatePreview();
+      renderCollections();
+    });
+  });
+  el.querySelectorAll('[data-clear-channel]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      StudioAccount.removeDye(btn.dataset.clearChannel);
+      invalidatePreview();
+      renderCollections();
+    });
+  });
+}
+
+function refreshAppearanceUI() {
+  renderSpeciesControls();
+  renderCosmeticControls();
+  renderCollections();
+  refreshColorPicker();
+  updateTargetPill();
+  invalidatePreview();
+}
+
+// ── Player profile (matches docs/onboarding.js exactly) ──────────────────────
+function readStoredPlayer() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) { return null; }
+}
+function setAsPlayer() {
+  const existing = readStoredPlayer();
+  const typed = $('nickname').value.trim();
+  const nickname = typed || existing?.nickname || 'Farmer';
+  const ap = work.appearance;
+  const playerData = {
+    nickname,
+    appearance: {
+      ...ap,
+      speciesId: ap.speciesId || 'mao-ao',
+      gender: ap.gender || 'male',
+      cosmetics: {
+        hairFront: null, hairBack: null, hairSide: null, hairSideL: null,
+        eyes: null, facialHair: null, upperFace: null,
+        ...(ap.cosmetics || {}),
+      },
+      bodyColors: {
+        A: { h: 0, s: 0, v: 0, ...(ap.bodyColors?.A || {}) },
+        B: { h: 0, s: 0, v: 0, ...(ap.bodyColors?.B || {}) },
+        C: { h: 0, s: 0, v: 0, ...(ap.bodyColors?.C || {}) },
+      },
+    },
+    equippedCosmetics: [...work.equippedCosmetics],
+    appliedDyes: { ...work.appliedDyes },
+  };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(playerData));
+    window.__hobunjiPlayerProfile = playerData;
+    $('nickname').value = nickname;
+    setStatus(`Saved ${STORAGE_KEY} for "${nickname}" ✓`);
+    const pill = $('targetPill');
+    pill.textContent = '✓ Saved as player profile';
+    setTimeout(() => updateTargetPill(), 1600);
+  } catch (e) {
+    log('localStorage write failed: ' + e.message, 'error');
+    setStatus('Could not save player profile');
+  }
+}
+function loadPlayerIntoEditor() {
+  const saved = readStoredPlayer();
+  target = { kind: 'player' };
+  if (saved && saved.appearance) {
+    work = {
+      name: saved.nickname || '',
+      appearance: { ...defaultAppearanceFor(saved.appearance), ...clone(saved.appearance) },
+      equippedCosmetics: asEquipArray(saved.equippedCosmetics),
+      appliedDyes: (saved.appliedDyes && typeof saved.appliedDyes === 'object') ? clone(saved.appliedDyes) : {},
+    };
+    work.appearance.cosmetics = { ...(saved.appearance.cosmetics || {}) };
+    work.appearance.bodyColors = { ...clone(DEFAULT_BODY_COLORS), ...clone(saved.appearance.bodyColors || {}) };
+    $('nickname').value = saved.nickname || '';
+    setStatus('Loaded saved player profile');
+  } else {
+    work = makeWork('mao-ao', 'male');
+    setStatus(saved ? 'Saved profile had no appearance — using defaults' : 'No saved player profile — using defaults');
+  }
+  _activeDyeSlot = null;
+  refreshAppearanceUI();
+}
+
+// ── Appearance import / export ────────────────────────────────────────────────
+function exportAppearance() {
+  const data = {
+    schema: 'npc_avatar_editor_export.v1',
+    source: 'character-studio',
+    name: (target.kind === 'npc' ? (db.npcs.find(n => n.id === target.id)?.name || '') : ($('nickname').value.trim() || 'Player')),
+    appearance: clone(work.appearance),
+    equippedCosmetics: [...work.equippedCosmetics],
+    appliedDyes: { ...work.appliedDyes },
+  };
+  const fname = (String(data.name || 'character').replace(/[^a-z0-9_\-]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'character') + '.json';
+  downloadJson(fname, data);
+  setStatus('Exported appearance JSON');
+}
+function importAppearance(obj) {
+  // Flexible parsing like npc-authoring-editor importAvatarJson / portraitExportFor
+  const p = obj.profile || obj.avatarProfile || obj.npcProfile || obj;
+  const appearance = obj.appearance || p.appearance || p.visuals?.appearance || null;
+  if (!appearance) throw new Error('JSON does not contain an appearance object');
+  const fallback = defaultAppearanceFor(appearance);
+  work.appearance = { ...fallback, ...clone(appearance) };
+  work.appearance.cosmetics = { ...(appearance.cosmetics || {}) };
+  work.appearance.bodyColors = { ...clone(DEFAULT_BODY_COLORS), ...clone(appearance.bodyColors || {}) };
+  work.equippedCosmetics = asEquipArray(obj.equippedCosmetics || p.equippedCosmetics || p.cosmetics || p.equipment);
+  work.appliedDyes = clone(obj.appliedDyes || p.appliedDyes || p.dyes || {});
+  if (obj.name && target.kind === 'player') $('nickname').value = obj.name;
+  _activeDyeSlot = null;
+  refreshAppearanceUI();
+  setStatus('Imported appearance JSON');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Tab 2: NPC Database (ported from npc-authoring-editor)
+// ════════════════════════════════════════════════════════════════════════════
+let portraitPass = 0;
+const db = {
+  schema: 'hobunji_npc_database.v2',
+  editor: {
+    name: 'Hobunji Character Studio',
+    standalone: false,
+    contentPolicy: 'Use design-doc facts only. Unknowns use specific suggestion placeholders.',
+    avatarImport: 'Import Avatar JSON expects export JSON from the character studio / portrait editor.',
+  },
+  worldContext: {},
+  npcs: [],
+};
+let selectedId = null;
+
+function sugg(kind, text) { return `<suggestion: ${kind} — ${text}>`; }
+
+function makeNpcRecord(o = {}) {
+  const romance = !!o.romanceable;
+  const ap = defaultAppearanceFor(o);
+  return {
+    id: o.id || norm(o.name || 'npc_new', 'npc'),
+    name: o.name || 'New NPC',
+    homeId: o.home || o.homeId || '',
+    species: o.species || '<unknown species>',
+    gender: o.gender || 'male',
+    ageBand: o.age || o.ageBand || '<unknown age>',
+    role: o.role || '<unknown role>',
+    tags: Array.isArray(o.tags) ? o.tags : [o.home, o.role, romance ? 'romanceable' : 'villager'].filter(Boolean),
+    bio: o.notes || o.bio || sugg('bio', 'fill in from future design notes'),
+    portrait: { asset: '', avatarKey: '' },
+    avatarEditor: { sourceFormat: 'npc_avatar_editor_export', rawExport: defaultAvatarExportFor(o) },
+    appearance: ap,
+    equippedCosmetics: [],
+    appliedDyes: {},
+    relationship: {
+      canBefriend: true, canDate: romance, canMarry: romance,
+      maxHearts: romance ? 14 : 10, decayRule: 'unknown', baseDisposition: o.baseDisposition ?? 0,
+      speciesStartingDisposition: [], friendshipUnlocks: [],
+    },
+    gifts: { loved: [], liked: [], neutral: [], disliked: [], hated: [], categoryNotes: [] },
+    dialogueTrees: o.dialogue || [],
+    events: o.events || [],
+    scheduleHooks: { defaultMapId: 'hobunji_main_town', defaultPathId: '', workBuildingId: o.home || o.homeId || '', shopHours: '', rules: [] },
+  };
+}
+
+function ensureNpcDefaults(n) {
+  if (!n || typeof n !== 'object') return n;
+  const hadRelationship = !!n.relationship;
+  n.id = n.id || norm(n.name || 'npc', 'npc');
+  n.name = n.name || n.id;
+  n.tags = Array.isArray(n.tags) ? n.tags : [];
+  n.portrait = n.portrait || { asset: '', avatarKey: '' };
+  if (!n.appearance) n.appearance = defaultAppearanceFor(n);
+  if (!n.appearance.cosmetics) n.appearance.cosmetics = {};
+  if (!n.appearance.bodyColors) n.appearance.bodyColors = clone(DEFAULT_BODY_COLORS);
+  n.equippedCosmetics = asEquipArray(n.equippedCosmetics);
+  n.appliedDyes = (n.appliedDyes && typeof n.appliedDyes === 'object') ? n.appliedDyes : {};
+  if (!n.avatarEditor) n.avatarEditor = { sourceFormat: 'npc_avatar_editor_export', rawExport: defaultAvatarExportFor(n) };
+  const romance = n.tags.includes('romanceable');
+  n.relationship = Object.assign({
+    canBefriend: true, canDate: romance, canMarry: romance,
+    maxHearts: romance ? 14 : 10, decayRule: 'unknown', baseDisposition: 0,
+    speciesStartingDisposition: [], friendshipUnlocks: [],
+  }, n.relationship || {});
+  if (!hadRelationship && romance) { n.relationship.canDate = true; n.relationship.canMarry = true; }
+  n.gifts = Object.assign({ loved: [], liked: [], neutral: [], disliked: [], hated: [], categoryNotes: [] }, n.gifts || {});
+  if (!Array.isArray(n.dialogueTrees)) n.dialogueTrees = n.dialogueTrees ? [n.dialogueTrees] : [];
+  if (!Array.isArray(n.events)) n.events = n.events ? [n.events] : [];
+  n.scheduleHooks = n.scheduleHooks || { defaultMapId: 'hobunji_main_town', defaultPathId: '', workBuildingId: n.homeId || '', shopHours: '', rules: [] };
+  return n;
+}
+
+function cur() { return db.npcs.find(n => n.id === selectedId) || db.npcs[0]; }
+
+// Flexible export shape for the shared portrait renderer (from npc-authoring-editor)
+function portraitExportFor(n) {
+  n = n || {};
+  const raw = n.avatarEditor?.rawExport || {};
+  const p = raw.profile || raw.avatarProfile || raw.npcProfile || raw;
+  const fallback = defaultAppearanceFor(n);
+  const appearance = { ...fallback, ...(p.appearance || {}), ...(p.visuals?.appearance || {}), ...(raw.appearance || {}), ...(n.appearance || {}) };
+  appearance.cosmetics = { ...(fallback.cosmetics || {}), ...(p.appearance?.cosmetics || {}), ...(p.visuals?.appearance?.cosmetics || {}), ...(raw.appearance?.cosmetics || {}), ...(n.appearance?.cosmetics || {}) };
+  appearance.bodyColors = { ...clone(DEFAULT_BODY_COLORS), ...(fallback.bodyColors || {}), ...(appearance.bodyColors || {}) };
+  return {
+    name: n.name || 'NPC',
+    appearance,
+    equippedCosmetics: asEquipArray(raw.equippedCosmetics || p.equippedCosmetics || p.cosmetics || p.equipment || n.equippedCosmetics),
+    appliedDyes: raw.appliedDyes || p.appliedDyes || p.dyes || n.appliedDyes || {},
+    portrait: n.portrait || {},
+    rawExport: raw,
+  };
+}
+
+function avatarHtml(n, big = false) {
+  return `<div class="avatarFrame ${big ? 'big' : ''}"><canvas class="avatarCanvas" width="200" height="200" data-portrait-id="${n?.id || '__none'}"></canvas></div>`;
+}
+
+async function renderPortraitCanvases() {
+  const pass = ++portraitPass;
+  if (!window.NpcAvatarPreview || !window.renderProfile) {
+    document.querySelectorAll('#databasePane .avatarFrame').forEach(f => f.innerHTML = '<div class="portraitStatus">portrait js missing</div>');
+    return;
+  }
+  try {
+    await ensureCosmetics();
+    if (pass !== portraitPass) return;
+    for (const canvas of document.querySelectorAll('#databasePane canvas[data-portrait-id]')) {
+      const id = canvas.dataset.portraitId;
+      const n = db.npcs.find(x => x.id === id) || cur() || db.npcs[0];
+      if (!n) continue;
+      const exportNpc = portraitExportFor(n);
+      const profile = npcProfileFor(exportNpc)
+        || window.NpcAvatarPreview.randomProfile(`fallback:${n?.id || 'default'}`, { speciesId: exportNpc.appearance.speciesId, gender: exportNpc.appearance.gender });
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (profile) await window.renderProfile(canvas, profile, { seatId: id });
+    }
+  } catch (e) { log(`Portrait render failed: ${e.message}`, 'error'); }
+}
+
+function fillFields(n) {
+  selectedId = n.id;
+  $('npcId').value = n.id;
+  $('npcName').value = n.name;
+  $('homeId').value = n.homeId || '';
+  $('npcSpecies').value = n.species || '';
+  $('npcGender').value = n.gender || '';
+  $('npcAge').value = n.ageBand || '';
+  $('npcRole').value = n.role || '';
+  $('romanceable').value = String(!!n.relationship?.canDate);
+  $('canBefriend').value = String(n.relationship?.canBefriend !== false);
+  $('canMarry').value = String(!!n.relationship?.canMarry);
+  $('npcTags').value = (n.tags || []).join(', ');
+  $('npcBio').value = n.bio || '';
+  $('maxHearts').value = n.relationship?.maxHearts ?? 10;
+  $('baseDisposition').value = n.relationship?.baseDisposition ?? 0;
+  $('decayRule').value = n.relationship?.decayRule || 'unknown';
+  setJ('speciesDispositionJson', n.relationship?.speciesStartingDisposition || []);
+  setJ('friendUnlocksJson', n.relationship?.friendshipUnlocks || []);
+  setJ('appearanceJson', n.appearance || defaultAppearanceFor(n));
+  setJ('cosmeticsJson', n.equippedCosmetics || []);
+  setJ('dyesJson', n.appliedDyes || {});
+  setJ('avatarRawJson', n.avatarEditor?.rawExport || defaultAvatarExportFor(n));
+  $('lovedGifts').value = (n.gifts?.loved || []).join('\n');
+  $('likedGifts').value = (n.gifts?.liked || []).join('\n');
+  $('neutralGifts').value = (n.gifts?.neutral || []).join('\n');
+  $('dislikedGifts').value = (n.gifts?.disliked || []).join('\n');
+  $('hatedGifts').value = (n.gifts?.hated || []).join('\n');
+  setJ('giftCategoriesJson', n.gifts?.categoryNotes || []);
+  setJ('dialogueJson', n.dialogueTrees || []);
+  setJ('worldJson', db.worldContext);
+}
+
+function loadWorkFromNpc(n) {
+  const exportNpc = portraitExportFor(n);
+  target = { kind: 'npc', id: n.id };
+  work = {
+    name: n.name || '',
+    appearance: clone(exportNpc.appearance),
+    equippedCosmetics: [...exportNpc.equippedCosmetics],
+    appliedDyes: clone(exportNpc.appliedDyes || {}),
+  };
+  _activeDyeSlot = null;
+  refreshAppearanceUI();
+}
+
+function fill(n) {
+  if (!n) return;
+  fillFields(n);
+  loadWorkFromNpc(n);
+  renderDb(false);
+}
+
+function read() {
+  const n = cur();
+  if (!n) return;
+  n.id = norm($('npcId').value, 'npc');
+  selectedId = n.id;
+  n.name = $('npcName').value || n.id;
+  n.homeId = $('homeId').value;
+  n.species = $('npcSpecies').value;
+  n.gender = $('npcGender').value;
+  n.ageBand = $('npcAge').value;
+  n.role = $('npcRole').value;
+  n.relationship.canDate = $('romanceable').value === 'true';
+  n.relationship.canBefriend = $('canBefriend').value === 'true';
+  n.relationship.canMarry = $('canMarry').value === 'true';
+  n.relationship.maxHearts = num('maxHearts', n.relationship.canDate ? 14 : 10);
+  n.relationship.baseDisposition = num('baseDisposition', 0);
+  n.relationship.decayRule = $('decayRule').value;
+  n.relationship.speciesStartingDisposition = parse('speciesDispositionJson', []);
+  n.relationship.friendshipUnlocks = parse('friendUnlocksJson', []);
+  n.bio = $('npcBio').value;
+  n.tags = split($('npcTags').value);
+  n.appearance = parse('appearanceJson', n.appearance || {});
+  n.equippedCosmetics = parse('cosmeticsJson', n.equippedCosmetics || []);
+  n.appliedDyes = parse('dyesJson', n.appliedDyes || {});
+  n.avatarEditor = n.avatarEditor || { sourceFormat: 'npc_avatar_editor_export', rawExport: {} };
+  n.avatarEditor.rawExport = parse('avatarRawJson', defaultAvatarExportFor(n));
+  n.gifts = {
+    loved: split($('lovedGifts').value), liked: split($('likedGifts').value),
+    neutral: split($('neutralGifts').value), disliked: split($('dislikedGifts').value),
+    hated: split($('hatedGifts').value), categoryNotes: parse('giftCategoriesJson', []),
+  };
+  n.dialogueTrees = parse('dialogueJson', []);
+  db.worldContext = parse('worldJson', db.worldContext);
+  renderDb(false);
+}
+
+function exp() {
+  try { read(); } catch (e) {}
+  return {
+    ...db,
+    exportedAt: new Date().toISOString(),
+    summary: {
+      npcCount: db.npcs.length,
+      romanceableCount: db.npcs.filter(n => n.relationship?.canDate).length,
+      placeholderCount: JSON.stringify(db).split('<suggestion:').length - 1,
+    },
+    mapEditorNote: 'NPC ids and paths are used by the Map Editor (docs/tools/map-editor). NPC paths reference npc.id.',
+  };
+}
+
+function renderDb(preview = true) {
+  const n = cur();
+  $('npcList').innerHTML = db.npcs.map(x =>
+    `<div class="npcCard ${x.id === selectedId ? 'selected' : ''}" data-id="${x.id}">${avatarHtml(x, false)}<div><div class="npcName">${esc(x.name)}</div><div class="npcMeta">${esc(x.id)} · ${esc(x.homeId || 'no home')} · ${esc(x.species || '')} · ${esc(x.gender || '')} · ${esc(x.role || '')}${x.relationship?.canDate ? ' · romanceable' : ''}</div></div></div>`
+  ).join('');
+  document.querySelectorAll('.npcCard').forEach(el => el.onclick = () => fill(db.npcs.find(x => x.id === el.dataset.id)));
+  $('countPill').textContent = `${db.npcs.length} NPCs · ${db.npcs.filter(x => x.relationship?.canDate).length} romanceable`;
+  $('previewName').textContent = n?.name || '—';
+  $('previewMeta').textContent = n ? `${n.id} · ${n.species} · ${n.gender} · ${n.homeId}` : '—';
+  $('portraitPreview').outerHTML = `<div id="portraitPreview" class="avatarFrame big"><canvas class="avatarCanvas" width="200" height="200" data-portrait-id="${n?.id || '__none'}"></canvas></div>`;
+  if (preview) $('jsonPreview').value = JSON.stringify(exp(), null, 2);
+  requestAnimationFrame(renderPortraitCanvases);
+}
+
+function addNpc() {
+  const n = makeNpcRecord({ id: 'npc_new_' + Date.now().toString(36), name: 'New NPC' });
+  db.npcs.push(n);
+  fill(n);
+  setStatus('Added NPC');
+}
+function dupNpc() {
+  const c = clone(cur());
+  if (!c) return;
+  c.id = norm(c.id + '_copy', 'npc');
+  c.name += ' Copy';
+  db.npcs.push(c);
+  fill(c);
+  setStatus('Duplicated NPC');
+}
+function delNpc() {
+  if (db.npcs.length <= 1) return setStatus('Keep at least one NPC.');
+  db.npcs = db.npcs.filter(n => n.id !== selectedId);
+  fill(db.npcs[0]);
+  setStatus('Deleted NPC');
+}
+
+function importDb(obj) {
+  const npcs = Array.isArray(obj) ? obj : (obj.npcs || obj.npcDatabase || [obj]);
+  db.npcs = npcs.filter(n => n && typeof n === 'object').map(ensureNpcDefaults);
+  if (!db.npcs.length) db.npcs = [makeNpcRecord({ name: 'New NPC' })];
+  db.worldContext = obj.worldContext || db.worldContext || {};
+  if (obj.schema) db.schema = obj.schema;
+  fill(db.npcs[0]);
+  setStatus(`Imported DB (${db.npcs.length} NPCs)`);
+}
+
+function importAvatarJson(obj) {
+  const n = cur();
+  if (!n) return;
+  n.avatarEditor = { sourceFormat: 'npc_avatar_editor_export', rawExport: obj };
+  const profile = obj.profile || obj.avatarProfile || obj.npcProfile || obj;
+  n.appearance = obj.appearance || profile.appearance || profile.visuals?.appearance || {};
+  n.equippedCosmetics = asEquipArray(obj.equippedCosmetics || profile.equippedCosmetics || profile.cosmetics || profile.equipment || []);
+  n.appliedDyes = obj.appliedDyes || profile.appliedDyes || profile.dyes || {};
+  n.portrait = n.portrait || { asset: '', avatarKey: '' };
+  n.portrait.asset = obj.portraitAsset || obj.headImage || obj.avatarHeadImage || profile.portraitAsset || profile.headImage || profile.avatarHeadImage || n.portrait.asset || '';
+  n.portrait.avatarKey = obj.avatarKey || profile.avatarKey || profile.presetId || n.portrait.avatarKey || '';
+  fill(n);
+  setStatus('Imported Avatar JSON into selected NPC');
+}
+
+function applyWorkToNpc() {
+  if (target.kind !== 'npc') return;
+  const n = db.npcs.find(x => x.id === target.id);
+  if (!n) { setStatus('Selected NPC no longer exists'); return; }
+  n.appearance = clone(work.appearance);
+  n.equippedCosmetics = [...work.equippedCosmetics];
+  n.appliedDyes = clone(work.appliedDyes);
+  n.avatarEditor = {
+    sourceFormat: 'npc_avatar_editor_export',
+    rawExport: {
+      schema: 'npc_avatar_editor_export.v1',
+      source: 'character-studio',
+      appearance: clone(work.appearance),
+      equippedCosmetics: [...work.equippedCosmetics],
+      appliedDyes: clone(work.appliedDyes),
+    },
+  };
+  fillFields(n);
+  renderDb(false);
+  setStatus(`Applied appearance to NPC "${n.name}" ✓`);
+}
+
+async function loadStarterDb() {
+  try {
+    const r = await fetch(STARTER_DB_URL);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    importDb(await r.json());
+    setStatus(`Loaded starter DB (${db.npcs.length} NPCs)`);
+  } catch (e) {
+    log('Starter DB fetch failed: ' + e.message, 'error');
+    importDb({ schema: 'hobunji_npc_database.v2', npcs: [makeNpcRecord({ id: 'npc_001', name: 'New NPC' })] });
+    setStatus('Starter DB unavailable — started with a blank NPC');
+  }
+}
+
+// ── Top-level tab switching + editor bridge ──────────────────────────────────
+function switchMainTab(which) {
+  const isAp = which === 'appearance';
+  $('appearancePane').classList.toggle('activePane', isAp);
+  $('databasePane').classList.toggle('activePane', !isAp);
+  $('mainTabAppearance').classList.toggle('active', isAp);
+  $('mainTabAppearance').classList.toggle('secondary', !isAp);
+  $('mainTabDatabase').classList.toggle('active', !isAp);
+  $('mainTabDatabase').classList.toggle('secondary', isAp);
+  if (!isAp) requestAnimationFrame(renderPortraitCanvases);
+  if (isAp && threeD.enabled) resize3d();
+}
+
+window._editorBridge = {
+  selectNpc(npcId) {
+    const n = db.npcs.find(x => x.id === npcId);
+    if (!n) return false;
+    switchMainTab('database');
+    fill(n);
+    return true;
+  },
+};
+
+// ── Wire static UI ───────────────────────────────────────────────────────────
+$('mainTabAppearance').onclick = () => switchMainTab('appearance');
+$('mainTabDatabase').onclick = () => switchMainTab('database');
+
+$('setPlayerBtn').onclick = setAsPlayer;
+$('loadPlayerBtn').onclick = loadPlayerIntoEditor;
+$('applyNpcBtn').onclick = applyWorkToNpc;
+$('toggle3dBtn').onclick = () => { toggle3d().catch(e => log('3D toggle failed: ' + e.message, 'error')); };
+$('resetCamBtn').onclick = frameCamera3d;
+$('exportApBtn').onclick = exportAppearance;
+$('importApBtn').onclick = () => $('importApFile').click();
+$('importApFile').onchange = async e => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  try { importAppearance(JSON.parse(await f.text())); }
+  catch (err) { log('Appearance import failed: ' + (err.stack || err.message), 'error'); setStatus('Appearance import failed'); }
+  e.target.value = '';
+};
+
+// NPC DB sub-tabs
+document.querySelectorAll('.tabBtn').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabBtn').forEach(x => x.classList.toggle('active', x === b));
+  document.querySelectorAll('.tabPanel').forEach(p => p.classList.toggle('active', p.id === b.dataset.tab));
+  renderDb();
+});
+
+['npcId','npcName','homeId','npcSpecies','npcGender','npcAge','npcRole','romanceable','canBefriend','canMarry',
+ 'npcTags','npcBio','maxHearts','baseDisposition','decayRule','speciesDispositionJson','friendUnlocksJson',
+ 'appearanceJson','cosmeticsJson','dyesJson','avatarRawJson','lovedGifts','likedGifts','neutralGifts',
+ 'dislikedGifts','hatedGifts','giftCategoriesJson','dialogueJson','worldJson'
+].forEach(id => { const el = $(id); if (el) el.addEventListener('input', read); });
+
+$('addNpcBtn').onclick = addNpc;
+$('dupNpcBtn').onclick = dupNpc;
+$('deleteNpcBtn').onclick = delNpc;
+$('downloadBtn').onclick = () => { downloadJson('hobunji_starter_npc_database.json', exp()); setStatus('Download started'); };
+$('copyBtn').onclick = () => copyText(JSON.stringify(exp(), null, 2), 'database');
+$('resetStarterBtn').onclick = () => {
+  if (confirm('Reload the starter DB from the repo and lose current edits?')) loadStarterDb();
+};
+$('importBtn').onclick = () => $('importFile').click();
+$('avatarBtn').onclick = () => $('avatarFile').click();
+$('importFile').onchange = async e => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  try { importDb(JSON.parse(await f.text())); }
+  catch (err) { log(err.stack || err.message, 'error'); }
+  e.target.value = '';
+};
+$('avatarFile').onchange = async e => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  try { importAvatarJson(JSON.parse(await f.text())); }
+  catch (err) { log(err.stack || err.message, 'error'); }
+  e.target.value = '';
+};
+$('editAvatarBtn').onclick = () => {
+  const n = cur();
+  if (n) { loadWorkFromNpc(n); switchMainTab('appearance'); }
+};
+
+$('logToggle').onclick = () => $('logPanel').classList.toggle('visible');
+$('closeLogBtn').onclick = () => $('logPanel').classList.remove('visible');
+$('clearLogBtn').onclick = () => { logs.length = 0; $('logBody').textContent = ''; };
+$('copyLogBtn').onclick = () => copyText(logs.join('\n'), 'log');
+
+window.addEventListener('resize', () => { if (threeD.enabled) resize3d(); });
+
+// Repo pickers (optional)
+if (window.RepoPicker) {
+  try {
+    const rp = new RepoPicker({ docsBase: '../../' });
+    const dbPicker = rp.makePicker({
+      category: 'npcDatabases',
+      label: '☷ Load DB',
+      fetchAs: 'json',
+      onLoad: (entry, data) => {
+        try { importDb(data); setStatus('Loaded: ' + entry.name); }
+        catch (e) { log('Load failed: ' + e.message, 'error'); }
+      },
+    });
+    $('importBtn').after(dbPicker);
+    $('importBtn').style.display = 'none';
+  } catch (e) { log('RepoPicker init failed: ' + e.message, 'error'); }
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  setStatus('Loading…');
+  // The auto-installed breathing composer guesses a config base that is wrong
+  // from inside docs/tools/* — load the breathing animation explicitly.
+  try { window.portraitBreathingComposer?.load('../../config/'); } catch (e) {}
+
+  // Start the live preview loop immediately; it renders once assets arrive.
+  requestAnimationFrame(previewLoop);
+
+  // Appearance pane initial state: the saved player (or defaults).
+  loadPlayerIntoEditor();
+
+  // Shared portrait init sequence (same as the old tools).
+  ensureCosmetics()
+    .then(() => {
+      $('apPreviewStatus').textContent = 'Live preview · breathing enabled';
+      invalidatePreview();
+      refreshColorPicker();
+      requestAnimationFrame(renderPortraitCanvases);
+    })
+    .catch(e => {
+      $('apPreviewStatus').textContent = 'Portrait assets failed to load';
+      log('Cosmetics load failed: ' + e.message, 'error');
+    });
+
+  await loadStarterDb();
+  // loadStarterDb -> fill() retargets the appearance pane at NPC #1;
+  // boot should start on the player instead.
+  loadPlayerIntoEditor();
+  setStatus('Ready');
+}
+
+init().catch(e => { log('Startup failed: ' + (e.stack || e.message), 'error'); setStatus('Startup failed'); });
+})();
+</script>
+</body>
+</html>
