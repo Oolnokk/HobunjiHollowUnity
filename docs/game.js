@@ -145,6 +145,7 @@
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
         if (id === 'shipping') buildShippingTransferUI();
         if (id === 'supplies') renderSupplyPage();
+        if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
       }
 
       document.querySelectorAll('.mp-tab').forEach(tab => {
@@ -156,6 +157,12 @@
       // Close button
       const mpClose = document.getElementById('mpClose');
       if (mpClose) mpClose.addEventListener('click', closeMenu);
+      // Debug log clear button
+      const _dbgClear = document.getElementById('debugClearBtn');
+      if (_dbgClear) _dbgClear.addEventListener('click', () => {
+        window.__farmDebugLog = [];
+        if (window._renderDebugPanel) window._renderDebugPanel();
+      });
       // Inventory category filter
       document.querySelectorAll('.inv-cat').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1712,7 +1719,7 @@
             const _cb = sceneTransCb;
             sceneTransCb  = null;
             sceneTransDir = -1;
-            try { _cb(); } catch(e) { console.error('scene transition error:', e); }
+            try { _cb(); } catch(e) { debugLog('scene transition error: ' + (e?.stack || e), 'error'); }
           }
         } else {
           sceneTransAlpha = Math.max(0, sceneTransAlpha - dt * 2.5);

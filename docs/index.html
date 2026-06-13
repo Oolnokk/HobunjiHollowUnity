@@ -141,6 +141,7 @@
         <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
         <button class="mp-tab"        data-mpanel="settings"      role="tab">⚙ Settings</button>
+        <button class="mp-tab"        data-mpanel="debug"         role="tab">🐛 Debug</button>
       </div>
       <div class="mp-ctrls">
         <button class="mp-ctrl-btn"        id="menuPauseBtn" title="Pause/Resume">⏸</button>
@@ -412,6 +413,17 @@
           </div>
         </div>
       </div><!-- /mpSettings -->
+
+      <!-- ── Debug log pane ────────────────────────────────── -->
+      <div class="mp-pane" id="mpDebug">
+        <div style="display:flex;flex-direction:column;position:absolute;inset:0">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 4px;flex-shrink:0">
+            <span style="font-size:12px;color:#9ca3af">Game log — last 200 entries</span>
+            <button id="debugClearBtn" style="font-size:11px;padding:3px 10px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.35);border-radius:6px;color:#f87171;cursor:pointer">Clear</button>
+          </div>
+          <pre id="debugLog" style="flex:1;overflow-y:auto;margin:0;padding:8px 12px 12px;font-size:11px;line-height:1.55;color:#d1d5db;white-space:pre-wrap;word-break:break-all;background:transparent"></pre>
+        </div>
+      </div><!-- /mpDebug -->
 
     </div><!-- /mp-body -->
   </div><!-- /menuPanel -->
