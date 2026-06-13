@@ -1200,10 +1200,13 @@
       const npcWalkers         = [];
       let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
       // ── Town zone ──────────────────────────────────────────────────
-      let _townZone       = null;   // parsed hobunji_town_v1 layout
-      let townGrid        = [];     // 2-D tile array for the town map
-      let townScene       = null;   // THREE.Scene, built lazily
-      let _townSceneBuilt = false;
+      let _townZone          = null;   // parsed hobunji_town_v1 layout
+      let townGrid           = [];     // 2-D tile array for the town map
+      let townScene          = null;   // THREE.Scene, built lazily
+      let _townSceneBuilt    = false;
+      let _townBuildingDefs  = [];     // detected building footprints
+      let _townBuildingWalls = [];     // THREE.Group[] — one WallBuilder group per building
+      let _townBuildingRoofs = [];     // THREE.Mesh[]  — one roof slab per building
 
       function initWorldTravel(layout) {
         if (!layout || layout.version !== 3) return;
@@ -1463,6 +1466,136 @@
         const townPaths = (layout.npcPaths || []).filter(p =>
           p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
         worldNpcPaths.push(...townPaths);
+        // If town scene was already built before this layout arrived, spawn buildings now
+        if (_townSceneBuilt && townScene) {
+          _townBuildingDefs = _detectTownBuildings();
+          _spawnTownBuildings();
+        }
+      }
+
+      // ── Town building detection ──────────────────────────────────────
+      // Finds connected rock-tile clusters large enough to be buildings,
+      // computes each building's bounding box and south-edge doorway,
+      // and returns panel specs for WallBuilder.
+      function _detectTownBuildings() {
+        const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
+        const KEY = (c, r) => r * 10000 + c;
+        const rockSet = new Set();
+        for (let r = 0; r < TROWS; r++)
+          for (let c = 0; c < TCOLS; c++)
+            if (townGrid[r]?.[c]?.type === TileType.ROCK) rockSet.add(KEY(c, r));
+
+        const visited = new Set();
+        const buildings = [];
+        const WALL_H = 2.0;
+
+        for (let r = 0; r < TROWS; r++) {
+          for (let c = 0; c < TCOLS; c++) {
+            const k = KEY(c, r);
+            if (!rockSet.has(k) || visited.has(k)) continue;
+
+            // Flood-fill cluster
+            const cluster = [];
+            const queue = [[c, r]];
+            while (queue.length) {
+              const [cc, rr] = queue.pop();
+              const kk = KEY(cc, rr);
+              if (visited.has(kk) || !rockSet.has(kk)) continue;
+              visited.add(kk); cluster.push([cc, rr]);
+              queue.push([cc+1,rr],[cc-1,rr],[cc,rr+1],[cc,rr-1]);
+            }
+            if (cluster.length < 20) continue;
+
+            const cs = cluster.map(([c]) => c), rs = cluster.map(([,r]) => r);
+            const minC = Math.min(...cs), maxC = Math.max(...cs);
+            const minR = Math.min(...rs), maxR = Math.max(...rs);
+            const W = maxC - minC + 1, D = maxR - minR + 1;
+            const clSet = new Set(cluster.map(([c, r]) => KEY(c, r)));
+
+            // Find 2-tile doorway — scan south edge first, then others
+            let doorC = -1;
+            for (let dc = minC; dc < maxC; dc++) {
+              if (!clSet.has(KEY(dc, maxR)) && !clSet.has(KEY(dc + 1, maxR))) { doorC = dc; break; }
+            }
+
+            // Build wall panels (outer faces visible from outside)
+            const panels = [
+              { id: 'n', width: W, height: WALL_H,
+                position: [minC + W / 2, 0, minR],     rotationDeg: [0, 180, 0] },
+              { id: 'w', width: D, height: WALL_H,
+                position: [minC,         0, minR + D / 2], rotationDeg: [0, -90, 0] },
+              { id: 'e', width: D, height: WALL_H,
+                position: [maxC + 1,     0, minR + D / 2], rotationDeg: [0, 90, 0] },
+            ];
+            if (doorC >= 0) {
+              const dl = doorC - minC;           // tiles left of door
+              const dr = doorC + 2 - minC;       // offset of right panel start
+              const rw = W - dr;                 // tiles right of door
+              if (dl > 0) panels.push({ id: 's_l', width: dl, height: WALL_H,
+                position: [minC + dl / 2,         0, maxR + 1], rotationDeg: [0, 0, 0] });
+              if (rw > 0) panels.push({ id: 's_r', width: rw, height: WALL_H,
+                position: [minC + dr + rw / 2,    0, maxR + 1], rotationDeg: [0, 0, 0] });
+            } else {
+              panels.push({ id: 's', width: W, height: WALL_H,
+                position: [minC + W / 2, 0, maxR + 1], rotationDeg: [0, 0, 0] });
+            }
+
+            buildings.push({ panels, minC, maxC, minR, maxR, W, D });
+          }
+        }
+        debugLog('_detectTownBuildings: found ' + buildings.length + ' buildings');
+        return buildings;
+      }
+
+      // Spawns (or re-spawns) WallBuilder wall groups + roof slabs for all
+      // detected town buildings. Call after townScene exists.
+      function _spawnTownBuildings() {
+        if (!townScene || !_townBuildingDefs.length) return;
+        const WALL_H = 2.0;
+
+        // Dispose previous walls (but not roofs — only re-created on first call)
+        for (const g of _townBuildingWalls) {
+          townScene.remove(g);
+          if (typeof WallBuilder !== 'undefined' && WallBuilder.disposeGroup) WallBuilder.disposeGroup(g);
+        }
+        _townBuildingWalls = [];
+
+        function buildWalls(usePlaceholder) {
+          for (const g of _townBuildingWalls) {
+            townScene.remove(g);
+            if (typeof WallBuilder !== 'undefined' && WallBuilder.disposeGroup) WallBuilder.disposeGroup(g);
+          }
+          _townBuildingWalls = [];
+          for (const bldg of _townBuildingDefs) {
+            const g = houseWallBuilder.build(bldg.panels, {
+              usePlaceholder, unitMult: 0.5, rockScale: 1.5,
+              preScale: [1, 1, 0.6],
+              brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 },
+            });
+            townScene.add(g);
+            _townBuildingWalls.push(g);
+          }
+        }
+
+        buildWalls(true); // placeholder boxes until GLB loads
+
+        // First call: also create roof slabs (they don't change when GLB loads)
+        if (_townBuildingRoofs.length === 0) {
+          const roofMat = new THREE.MeshLambertMaterial({ color: 0x5a4030 });
+          for (const bldg of _townBuildingDefs) {
+            const geo  = new THREE.BoxGeometry(bldg.W + 0.4, 0.25, bldg.D + 0.4);
+            const mesh = new THREE.Mesh(geo, roofMat);
+            mesh.position.set(bldg.minC + bldg.W / 2, WALL_H + 0.125, bldg.minR + bldg.D / 2);
+            mesh.castShadow = mesh.receiveShadow = true;
+            townScene.add(mesh);
+            _townBuildingRoofs.push(mesh);
+          }
+        }
+
+        // Replace placeholders with real bricks once GLB is ready
+        houseWallBuilder.loadDefaultGlb()
+          .then(() => { if (townScene) { buildWalls(false); debugLog('Town buildings: real bricks applied'); } })
+          .catch(e => debugLog('Town building GLB error: ' + e, 'warn'));
       }
 
       function buildTownScene() {
@@ -1471,7 +1604,7 @@
 
         townScene = new THREE.Scene();
         townScene.background = new THREE.Color(0x7da87b);
-        townScene.fog = new THREE.Fog(0x7da87b, 8, 22);
+        townScene.fog = new THREE.FogExp2(0x7da87b, 0.018); // match farm fog density
         townScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
         const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
         sun.position.set(4, 8, 2);
@@ -1486,7 +1619,7 @@
           typeCounts[tp] = (typeCounts[tp] || 0) + 1;
         }
 
-        // One InstancedMesh per tile type
+        // One InstancedMesh per tile type (rock tiles render as ground — walls added separately)
         const slabGeo = new THREE.BoxGeometry(1, SLAB_H, 1);
         const dummy = new THREE.Object3D();
         const instances = {};
@@ -1496,14 +1629,6 @@
           im.receiveShadow = true;
           instances[tp] = { mesh: im, idx: 0 };
           townScene.add(im);
-          // Rock type also gets a taller block
-          if (tp === TileType.ROCK) {
-            const rockGeo = new THREE.BoxGeometry(1, ROCK_H, 1);
-            const rim = new THREE.InstancedMesh(rockGeo, tileMats.rock, count);
-            rim.castShadow = rim.receiveShadow = true;
-            instances[tp + '_top'] = { mesh: rim, idx: 0 };
-            townScene.add(rim);
-          }
         }
 
         for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
@@ -1514,12 +1639,6 @@
             dummy.position.set(c + 0.5, tileYCenter(tp), r + 0.5);
             dummy.updateMatrix();
             inst.mesh.setMatrixAt(inst.idx++, dummy.matrix);
-          }
-          const instTop = instances[tp + '_top'];
-          if (instTop) {
-            dummy.position.set(c + 0.5, NORMAL_TOP + ROCK_H / 2, r + 0.5);
-            dummy.updateMatrix();
-            instTop.mesh.setMatrixAt(instTop.idx++, dummy.matrix);
           }
         }
         for (const { mesh } of Object.values(instances)) mesh.instanceMatrix.needsUpdate = true;
@@ -1542,6 +1661,10 @@
             townScene.add(w.root);
           }
         }
+
+        // Generate 3D buildings from rock-tile clusters
+        _townBuildingDefs = _detectTownBuildings();
+        _spawnTownBuildings();
 
         debugLog('buildTownScene complete');
       }
