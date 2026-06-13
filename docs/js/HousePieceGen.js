@@ -148,17 +148,37 @@
   }
 
   // ── Wall panel specs for WallBuilder ────────────────────────────────────────
+  // Panels use the actual frustum face corners so bricks tile on the tapered walls.
+  // Corner order [a,b,c,d] chosen so u×v points outward (matches WallBuilder quadBasis convention).
   function _wallPanels(minC, maxC, minR, maxR, y0, baseH, tile) {
-    var W  = (maxC - minC + 1) * tile, D = (maxR - minR + 1) * tile;
-    var cx = (minC * tile + (maxC + 1) * tile) / 2;
-    var cz = (minR * tile + (maxR + 1) * tile) / 2;
-    var x0 = minC * tile, x1 = (maxC + 1) * tile;
-    var z0 = minR * tile, z1 = (maxR + 1) * tile;
+    var bMinX = minC * tile, bMaxX = (maxC + 1) * tile;
+    var bMinZ = minR * tile, bMaxZ = (maxR + 1) * tile;
+    var bRect = { minX: bMinX, maxX: bMaxX, minZ: bMinZ, maxZ: bMaxZ };
+    var eRect = _scaleRect(bRect, HIGHLAND_BODY_TOP_SCALE, HIGHLAND_BODY_TOP_SCALE);
+    var eMinX = eRect.minX, eMaxX = eRect.maxX, eMinZ = eRect.minZ, eMaxZ = eRect.maxZ;
+    var yEave = y0 + baseH;
+    var W = bMaxX - bMinX, D = bMaxZ - bMinZ;
     return [
-      { id: 'n', width: W, height: baseH, position: [cx, y0, z0], rotationDeg: [0, 180, 0] },
-      { id: 's', width: W, height: baseH, position: [cx, y0, z1], rotationDeg: [0,   0, 0] },
-      { id: 'w', width: D, height: baseH, position: [x0, y0, cz], rotationDeg: [0, -90, 0] },
-      { id: 'e', width: D, height: baseH, position: [x1, y0, cz], rotationDeg: [0,  90, 0] },
+      {
+        id: 'n', width: W, height: baseH,
+        position: [(bMinX + bMaxX) / 2, y0, bMinZ], rotationDeg: [0, 180, 0],
+        corners: [[bMaxX, y0, bMinZ], [bMinX, y0, bMinZ], [eMinX, yEave, eMinZ], [eMaxX, yEave, eMinZ]],
+      },
+      {
+        id: 's', width: W, height: baseH,
+        position: [(bMinX + bMaxX) / 2, y0, bMaxZ], rotationDeg: [0, 0, 0],
+        corners: [[bMinX, y0, bMaxZ], [bMaxX, y0, bMaxZ], [eMaxX, yEave, eMaxZ], [eMinX, yEave, eMaxZ]],
+      },
+      {
+        id: 'e', width: D, height: baseH,
+        position: [bMaxX, y0, (bMinZ + bMaxZ) / 2], rotationDeg: [0, 90, 0],
+        corners: [[bMaxX, y0, bMaxZ], [bMaxX, y0, bMinZ], [eMaxX, yEave, eMinZ], [eMaxX, yEave, eMaxZ]],
+      },
+      {
+        id: 'w', width: D, height: baseH,
+        position: [bMinX, y0, (bMinZ + bMaxZ) / 2], rotationDeg: [0, -90, 0],
+        corners: [[bMinX, y0, bMinZ], [bMinX, y0, bMaxZ], [eMinX, yEave, eMaxZ], [eMinX, yEave, eMinZ]],
+      },
     ];
   }
 

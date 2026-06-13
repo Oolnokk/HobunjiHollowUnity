@@ -35,6 +35,9 @@
     );
   }
   function panelCorners(p) {
+    if (Array.isArray(p.corners) && p.corners.length === 4) {
+      return p.corners.map(c => new THREE.Vector3(c[0] || 0, c[1] || 0, c[2] || 0));
+    }
     const w = p.width / 2, h = p.height;
     const base = [
       new THREE.Vector3(-w, 0, 0), new THREE.Vector3(w, 0, 0),

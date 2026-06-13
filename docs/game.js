@@ -1294,8 +1294,9 @@
       // ── Path NPCs: avatars that walk authored routes ──────────────
       const NPC_SPECIES_IDS = ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'];
 
-      async function spawnPathNpcs() {
-        if (!worldNpcPaths.length || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+      async function spawnPathNpcs(pathsToSpawn) {
+        const paths = pathsToSpawn || worldNpcPaths;
+        if (!paths.length || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         let dbNpcs = [];
         try {
           const res = await fetch('config/npcs/hobunji-starter-npc-database.json');
@@ -1303,7 +1304,7 @@
           dbNpcs = json.npcs || [];
         } catch {}
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
-        for (const path of worldNpcPaths) {
+        for (const path of paths) {
           try {
             const rec = dbNpcs.find(n => n.id === path.npcId) || null;
             const w = await makeNpcWalker(path, rec);
@@ -1465,6 +1466,7 @@
         const townPaths = (layout.npcPaths || []).filter(p =>
           p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
         worldNpcPaths.push(...townPaths);
+        if (townPaths.length) spawnPathNpcs(townPaths).catch(e => console.warn('Town NPC paths failed:', e));
         // If town scene was already built before this layout arrived, spawn buildings now
         if (_townSceneBuilt && townScene) {
           _townBuildingDefs = _detectTownBuildings();
