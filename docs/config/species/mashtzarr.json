@@ -1,0 +1,200 @@
+{
+  "speciesId": "mashtzarr",
+  "label": "Mashtzarr",
+  "male": {
+    "headSprite": "fightersprites/mashtzarr-m/head.png",
+    "headUrLayers": [
+      {
+        "url": "fightersprites/mashtzarr-m/untinted_regions/ur-head.png",
+        "renderOrder": "topLayer"
+      }
+    ],
+    "headXform": {
+      "ax": 0,
+      "ay": 0,
+      "sx": 1,
+      "sy": 1
+    },
+    "allowedCosmetics": [
+      "fine_hood",
+      "tankan_tunic",
+      "bandolier1",
+      "tankan_bodywrap",
+      "rugged_poncho",
+      "fine_poncho"
+    ],
+    "cosmeticWeights": {
+      "hood": {
+        "none": 80,
+        "fine_hood": 20
+      }
+    },
+    "bodyColorRanges": {
+      "A": {
+        "minH": -180,
+        "maxH": 180,
+        "stops": [
+          {
+            "h": -180,
+            "sMin": 0.35,
+            "sMax": 1.5,
+            "vMin": -0.27,
+            "vMax": 0.23
+          },
+          {
+            "h": 0,
+            "sMin": 0.35,
+            "sMax": 1.5,
+            "vMin": -0.27,
+            "vMax": 0.23
+          },
+          {
+            "h": 180,
+            "sMin": 0.35,
+            "sMax": 1.5,
+            "vMin": -0.27,
+            "vMax": 0.23
+          }
+        ]
+      },
+      "B": {
+        "minH": -180,
+        "maxH": 180,
+        "stops": [
+          {
+            "h": -180,
+            "sMin": 0.45,
+            "sMax": 1.5,
+            "vMin": -0.37,
+            "vMax": 0.13
+          },
+          {
+            "h": 0,
+            "sMin": 0.45,
+            "sMax": 1.5,
+            "vMin": -0.37,
+            "vMax": 0.13
+          },
+          {
+            "h": 180,
+            "sMin": 0.45,
+            "sMax": 1.5,
+            "vMin": -0.37,
+            "vMax": 0.13
+          }
+        ]
+      },
+      "C": {
+        "minH": -180,
+        "maxH": 180,
+        "stops": [
+          {
+            "h": -180,
+            "sMin": 0.3,
+            "sMax": 1.4,
+            "vMin": -0.22,
+            "vMax": 0.33
+          },
+          {
+            "h": 0,
+            "sMin": 0.3,
+            "sMax": 1.4,
+            "vMin": -0.22,
+            "vMax": 0.33
+          },
+          {
+            "h": 180,
+            "sMin": 0.3,
+            "sMax": 1.4,
+            "vMin": -0.22,
+            "vMax": 0.33
+          }
+        ]
+      }
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm-L_mashtz_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_mashtz_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm-r_mashtz_m.png",
+        "tintSlot": "A",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ],
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    },
+    "randomizationRules": {
+      "clothingColors": {
+        "syncAcrossPieces": false,
+        "range": {
+          "minH": -40,
+          "maxH": 65,
+          "stops": [
+            {
+              "h": -40,
+              "sMin": -0.85,
+              "sMax": -0.35,
+              "vMin": -0.82,
+              "vMax": -0.22
+            },
+            {
+              "h": 10,
+              "sMin": -0.8,
+              "sMax": -0.25,
+              "vMin": -0.87,
+              "vMax": -0.27
+            },
+            {
+              "h": 65,
+              "sMin": -0.7,
+              "sMax": -0.2,
+              "vMin": -0.77,
+              "vMax": -0.17
+            }
+          ]
+        }
+      }
+    }
+  }
+}

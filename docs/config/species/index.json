@@ -24,6 +24,11 @@
       "speciesId": "engh-sho",
       "label": "Engh-sho",
       "path": "./engh-sho.json"
+    },
+    {
+      "speciesId": "mashtzarr",
+      "label": "Mashtzarr",
+      "path": "./mashtzarr.json"
     }
   ]
 }
