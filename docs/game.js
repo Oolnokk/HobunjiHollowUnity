@@ -6845,6 +6845,11 @@
       try { applyFarmLayoutObjects(loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
       // Transition spots + NPC paths from the map editor
       try { initWorldTravel(loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
+      // Ensure a farm→town transition always exists even without map editor data
+      if (!worldTransitions.some(t => t.target === 'town')) {
+        worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
+        buildTransitionMarkers();
+      }
       // Town zone (written by Map Editor "Send to Game" when a town map is linked)
       try { const _tl = loadTownLayout(); if (_tl) initTownTravel(_tl); } catch(e) { console.error('initTownTravel:', e); }
       // If no localStorage town data, fall back to loading from the workspace config file
