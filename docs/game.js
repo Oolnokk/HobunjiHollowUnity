@@ -1407,6 +1407,36 @@
         } catch(_) { return null; }
       }
 
+      // Fallback: if no localStorage town data, load from the workspace JSON file.
+      // Mirrors the map editor's buildTownLayout() conversion.
+      async function _loadTownFromWorkspace() {
+        if (_townZone) return; // already loaded via localStorage
+        try {
+          const resp = await fetch('config/town-workspace-v1.json');
+          if (!resp.ok) return;
+          const ws = await resp.json();
+          if (_townZone) return; // race: loaded since fetch started
+          const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
+          if (!townM) return;
+          const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [] };
+          for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
+            const t = townM.tiles[`${c},${r}`];
+            if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
+          }
+          (townM.npcPaths || []).forEach(p => {
+            if (!p.nodes?.length) return;
+            layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
+          });
+          (townM.transitions || []).forEach(t => {
+            // Farm spot (no targetMapId) — returns player to farm exit at col 17, row 0
+            if (!t.targetMapId) {
+              layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'farm', targetCol: 17, targetRow: 0 });
+            }
+          });
+          initTownTravel(layout);
+        } catch(e) { debugLog('Town workspace load failed: ' + e.message, 'warn'); }
+      }
+
       function initTownTravel(layout) {
         if (!layout || layout.version !== 1) return;
         _townZone = layout;
@@ -3824,14 +3854,22 @@
         return geo;
       }
 
-      // ── Path tile: flat centre with rough torn edges ──────────────────────────
-      // 9×9 vertex heightfield. Seam vertices use the same FNV hash as makeFloorGeo
-      // so shared edges with adjacent tiles are always gap-free.
-      // An edge-weight term adds extra displacement strongest at the tile perimeter
-      // (within ~3 vertex steps of any edge) and zero at the centre, giving the
-      // "worn dirt path with ragged grass border" look.
+      // ── Path tile: worn depression with adjacency-aware torn edges ───────────
+      // Same heightfield pipeline as buildTerrainTileGeo (TRENCH/RAISED) but with
+      // a shallow depth (-0.09) so it reads as a foot-worn groove in the earth.
+      // Adjacent PATH tiles open the blend so connected tiles flow into each other.
+      // Geometry is split into pathGeo (depressed cells, path material) and
+      // grassGeo (edge cells blending back to NORMAL_TOP, grass material) — the
+      // same dual-mesh pattern used by rock and trench tiles.
       function buildPathTileGeo(col, row) {
         const VERTS = 9, CELLS = 8, STEP = 1.0 / CELLS;
+        const BLEND_V  = 3;
+        const PATH_DY  = -0.09;  // depression depth (shallower than trench's -0.5)
+
+        const openN = grid[row - 1]?.[col]?.type === TileType.PATH;
+        const openS = grid[row + 1]?.[col]?.type === TileType.PATH;
+        const openW = grid[row]?.[col - 1]?.type === TileType.PATH;
+        const openE = grid[row]?.[col + 1]?.type === TileType.PATH;
 
         const seamDisp = (vx, vz) => {
           const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
@@ -3840,33 +3878,55 @@
           return (h / 4294967296 - 0.5) * 0.026;
         };
 
-        const edgeDisp = (vi, vj) => {
-          const edgeDist = Math.min(vi, VERTS - 1 - vi, vj, VERTS - 1 - vj);
-          const w = Math.max(0, 1 - edgeDist / 3);
-          const kx = Math.round((col + vi * STEP) * 8) | 0;
-          const kz = Math.round((row + vj * STEP) * 8) | 0;
+        // Extra roughness along the path edge — stronger than trench to get ragged border
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 7) | 0, kz = Math.round(vz * 7) | 0;
           let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
           h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.065 * w * w;
+          return (h / 4294967296 - 0.5) * 0.045;
         };
+
+        const smooth = t => t * t * (3 - 2 * t);
+
+        const Y = new Float32Array(VERTS * VERTS);
+        for (let vj = 0; vj < VERTS; vj++) {
+          for (let vi = 0; vi < VERTS; vi++) {
+            const bW = openW ? 1 : smooth(Math.min(1, vi / BLEND_V));
+            const bE = openE ? 1 : smooth(Math.min(1, (CELLS - vi) / BLEND_V));
+            const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
+            const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
+            const blend = Math.min(1, bW * bE * bN * bS);
+            const vx = col + vi * STEP, vz = row + vj * STEP;
+            Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
+          }
+        }
+
+        // Split: path material where the depression is visible, grass at shallow edges
+        const PATH_THRESH = -0.018;
+        const pathIdx = [], grassIdx = [];
+        for (let cj = 0; cj < CELLS; cj++)
+          for (let ci = 0; ci < CELLS; ci++) {
+            const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
+            const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
+            const isPath = Math.min(Y[v00], Y[v10], Y[v01], Y[v11]) < PATH_THRESH;
+            (isPath ? pathIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+          }
 
         const positions = [];
         for (let vj = 0; vj < VERTS; vj++)
-          for (let vi = 0; vi < VERTS; vi++) {
-            const vx = col + vi * STEP, vz = row + vj * STEP;
-            positions.push(vi * STEP - 0.5, seamDisp(vx, vz) + edgeDisp(vi, vj), vj * STEP - 0.5);
-          }
+          for (let vi = 0; vi < VERTS; vi++)
+            positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
 
-        const indices = [];
-        for (let cj = 0; cj < CELLS; cj++)
-          for (let ci = 0; ci < CELLS; ci++)
-            indices.push(cj*VERTS+ci, (cj+1)*VERTS+ci, (cj+1)*VERTS+ci+1, cj*VERTS+ci, (cj+1)*VERTS+ci+1, cj*VERTS+ci+1);
-
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        g.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
-        g.computeVertexNormals();
-        return g;
+        const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+        const makeGeo = idx => {
+          if (!idx.length) return null;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', posAttr);
+          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          g.computeVertexNormals();
+          return g;
+        };
+        return { pathGeo: makeGeo(pathIdx), grassGeo: makeGeo(grassIdx) };
       }
 
       // ── Rock tile: mini plateau heightfield (same pipeline as border terrain) ───
@@ -4993,11 +5053,23 @@
         }
 
         if (tile.type === TileType.PATH) {
-          const mesh = new THREE.Mesh(buildPathTileGeo(col, row), tileMats.path);
-          mesh.castShadow = mesh.receiveShadow = true;
-          mesh.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-          scene.add(mesh);
-          tileMeshes[i] = mesh;
+          const { pathGeo, grassGeo } = buildPathTileGeo(col, row);
+          let primary = null;
+          if (pathGeo) {
+            const m = new THREE.Mesh(pathGeo, tileMats.path);
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            primary = m;
+          }
+          if (grassGeo) {
+            const m = new THREE.Mesh(grassGeo, tileMats.grass);
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            if (!primary) primary = m;
+          }
+          tileMeshes[i] = primary;
           return;
         }
 
@@ -6775,6 +6847,8 @@
       try { initWorldTravel(loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
       // Town zone (written by Map Editor "Send to Game" when a town map is linked)
       try { const _tl = loadTownLayout(); if (_tl) initTownTravel(_tl); } catch(e) { console.error('initTownTravel:', e); }
+      // If no localStorage town data, fall back to loading from the workspace config file
+      _loadTownFromWorkspace().catch(() => {});
       debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
 
       // ── Onboarding gate ────────────────────────────────────────────
