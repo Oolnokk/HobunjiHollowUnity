@@ -24,6 +24,9 @@ window.SCRATCHBONES_CONFIG = {
         "actions": true
       }
     },
+    "movement": {
+      "perpRotDeadzoneDeg": 40
+    },
     "gameplayShortcuts": {
       "focusChat": {
         "enabled": true,

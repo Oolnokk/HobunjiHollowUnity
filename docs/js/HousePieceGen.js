@@ -132,11 +132,13 @@
     var roofFaces = faces.filter(function (f) { return f.tag === 'roof'; });
     _addShingles(group, roofFaces, faces, opts);
 
-    // WallBuilder bricks on all body walls (non-roof)
+    // WallBuilder bricks on frustum body walls + gable end triangles
     if (opts.wallBuilder) {
-      var panels  = _wallPanels(minC, maxC, minR, maxR, y0, baseH, tile);
+      var bodyPanels  = _wallPanels(minC, maxC, minR, maxR, y0, baseH, tile);
+      var gablePanels = _gablePanels(faces);
+      var panels      = bodyPanels.concat(gablePanels);
       var wbUse   = opts.wbUsePlaceholder !== false;
-      var wbExtra = opts.wbOpts || { unitMult: 0.5, rockScale: 1.5,
+      var wbExtra = opts.wbOpts || { unitMult: 0.35, rockScale: 1.5,
                                      preScale: [1, 1, 0.6],
                                      brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
       var wbGroup = opts.wallBuilder.build(panels, Object.assign({ usePlaceholder: wbUse }, wbExtra));
@@ -180,6 +182,37 @@
         corners: [[bMinX, y0, bMinZ], [bMinX, y0, bMaxZ], [eMinX, yEave, eMaxZ], [eMinX, yEave, eMinZ]],
       },
     ];
+  }
+
+  // Convert gable end faces to WallBuilder panels with outward-normal corner ordering.
+  // Automatically selects winding by checking sign of (v[3]-v[0])×(v[1]-v[0]) vs face normal.
+  function _gablePanels(faces) {
+    var panels = [];
+    var gIdx   = 0;
+    for (var fi = 0; fi < faces.length; fi++) {
+      var face = faces[fi];
+      if (!face.gableEnd) continue;
+      var v = face.v.map(function (p) { return new THREE.Vector3(p[0], p[1], p[2]); });
+      var N     = _faceNormal(face);
+      var u0    = v[3].clone().sub(v[0]);
+      var vv0   = v[1].clone().sub(v[0]);
+      var nTest = u0.clone().cross(vv0);
+      var corners;
+      if (nTest.dot(N) > 0) {
+        corners = [[v[0].x,v[0].y,v[0].z],[v[3].x,v[3].y,v[3].z],[v[2].x,v[2].y,v[2].z],[v[1].x,v[1].y,v[1].z]];
+      } else {
+        corners = [[v[3].x,v[3].y,v[3].z],[v[0].x,v[0].y,v[0].z],[v[1].x,v[1].y,v[1].z],[v[2].x,v[2].y,v[2].z]];
+      }
+      var bottomW = v[0].distanceTo(v[3]);
+      var ridgeH  = Math.abs(v[1].y - v[0].y);
+      panels.push({
+        id: 'gable_' + (gIdx++),
+        width: bottomW, height: ridgeH,
+        position: [0, 0, 0], rotationDeg: [0, 0, 0],
+        corners: corners,
+      });
+    }
+    return panels;
   }
 
   // ── Geometry helpers ────────────────────────────────────────────────────────

@@ -1536,7 +1536,7 @@
         }
         _townBuildingGroups = [];
 
-        const wbOpts = { unitMult: 0.5, rockScale: 1.5,
+        const wbOpts = { unitMult: 0.35, rockScale: 1.5,
                          preScale: [1, 1, 0.6],
                          brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
@@ -1551,6 +1551,28 @@
         }
 
         debugLog('_spawnTownBuildings: spawned ' + _townBuildingGroups.length + ' highland buildings');
+
+        // Add entrance transitions at the south edge of each building (once only).
+        const TROWS_ENT = _townZone?.rows || 50;
+        const _entranceRingGeo = new THREE.RingGeometry(0.22, 0.36, 24);
+        const _entranceMat = new THREE.MeshBasicMaterial({ color: 0x7c3008, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
+        for (let bi = 0; bi < _townBuildingDefs.length; bi++) {
+          const bldg = _townBuildingDefs[bi];
+          const eCol = Math.floor((bldg.minC + bldg.maxC + 1) / 2);
+          const eRow = Math.min(TROWS_ENT - 1, bldg.maxR + 1);
+          const eid  = 'bldg_entrance_' + bi;
+          if (!worldTownTransitions.find(t => t.id === eid)) {
+            worldTownTransitions.push({
+              id: eid, area: 'town', col: eCol, row: eRow,
+              target: 'interior',
+              targetCol: Math.floor(INTERIOR_COLS / 2), targetRow: INTERIOR_ROWS - 2,
+            });
+            const ring = new THREE.Mesh(_entranceRingGeo, _entranceMat);
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.set(eCol + 0.5, tileSurfaceY(TileType.GRASS) + 0.02, eRow + 0.5);
+            townScene.add(ring);
+          }
+        }
 
         // Upgrade to real bricks + GLB shingles once both assets are ready.
         if (!_townBuildingsGlbUpgradePending) {
@@ -1595,11 +1617,13 @@
 
         const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
 
-        // Count tiles per type to size InstancedMeshes
+        // Count tiles per type to size InstancedMeshes.
+        // Rock tiles render as grass — buildings cover those footprints.
         const typeCounts = {};
         for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
           const tp = townGrid[r]?.[c]?.type || TileType.GRASS;
-          typeCounts[tp] = (typeCounts[tp] || 0) + 1;
+          const rtp = tp === TileType.ROCK ? TileType.GRASS : tp;
+          typeCounts[rtp] = (typeCounts[rtp] || 0) + 1;
         }
 
         // One InstancedMesh per tile type (rock tiles render as ground — walls added separately)
@@ -1616,10 +1640,11 @@
 
         for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
           const tile = townGrid[r]?.[c];
-          const tp = tile?.type || TileType.GRASS;
-          const inst = instances[tp];
+          const tp  = tile?.type || TileType.GRASS;
+          const rtp = tp === TileType.ROCK ? TileType.GRASS : tp;
+          const inst = instances[rtp];
           if (inst) {
-            dummy.position.set(c + 0.5, tileYCenter(tp), r + 0.5);
+            dummy.position.set(c + 0.5, tileYCenter(rtp), r + 0.5);
             dummy.updateMatrix();
             inst.mesh.setMatrixAt(inst.idx++, dummy.matrix);
           }
@@ -3202,7 +3227,8 @@
         return d;
       }
 
-      const PERP_DEAD_RAD = 30 * Math.PI / 180;
+      const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
+      const PERP_DEAD_RAD = PERP_DEAD_DEG * Math.PI / 180;
 
       // Keeps model rotation outside ±15° dead zones around each perp angle.
       // state: persistent object per entity (must survive across frames).
