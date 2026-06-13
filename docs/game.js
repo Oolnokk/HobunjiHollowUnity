@@ -1709,9 +1709,10 @@
         if (sceneTransDir === 1) {
           sceneTransAlpha = Math.min(1, sceneTransAlpha + dt * 4);
           if (sceneTransAlpha >= 1 && sceneTransCb) {
-            sceneTransCb();
+            const _cb = sceneTransCb;
             sceneTransCb  = null;
             sceneTransDir = -1;
+            try { _cb(); } catch(e) { console.error('scene transition error:', e); }
           }
         } else {
           sceneTransAlpha = Math.max(0, sceneTransAlpha - dt * 2.5);
@@ -6114,6 +6115,9 @@
             ? [{ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true }]
             : [];
         }
+
+        // Town has no tile-based tool actions yet
+        if (currentArea === 'town') return [];
 
         const reticle = getReticleTile();
         const tile    = grid[reticle.row][reticle.col];
