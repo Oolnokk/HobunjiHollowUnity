@@ -1237,6 +1237,7 @@ function portraitOptionFromJson(entry, json) {
       || null;
   const resolvedTintSlot = json.slot === 'hat' && colorRange ? 'HAT'
                          : json.slot === 'hood' && colorRange ? 'HOOD'
+                         : json.slot === 'torso' && colorRange ? 'TORSO'
                          : !json.appearance && colorRange ? 'CLOTH'
                          : json.slot === 'hood' && !json.appearance ? (json.tintSlot ?? 'HOOD')
                          : !json.appearance && json.tintSlot != null ? json.tintSlot
