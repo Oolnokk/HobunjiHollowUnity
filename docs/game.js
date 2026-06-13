@@ -145,6 +145,7 @@
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
         if (id === 'shipping') buildShippingTransferUI();
         if (id === 'supplies') renderSupplyPage();
+        if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
       }
 
       document.querySelectorAll('.mp-tab').forEach(tab => {
@@ -156,6 +157,12 @@
       // Close button
       const mpClose = document.getElementById('mpClose');
       if (mpClose) mpClose.addEventListener('click', closeMenu);
+      // Debug log clear button
+      const _dbgClear = document.getElementById('debugClearBtn');
+      if (_dbgClear) _dbgClear.addEventListener('click', () => {
+        window.__farmDebugLog = [];
+        if (window._renderDebugPanel) window._renderDebugPanel();
+      });
       // Inventory category filter
       document.querySelectorAll('.inv-cat').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -204,7 +211,7 @@
       const TileType = Object.freeze({
         GRASS: 'grass', WEEDS: 'weeds', TILLED: 'tilled',
         TRENCH: 'trench', RAISED: 'raised', PADDY: 'paddy',
-        ROCK: 'rock', SHRUB: 'shrub'
+        ROCK: 'rock', SHRUB: 'shrub', PATH: 'path'
       });
 
       const CropType = Object.freeze({
@@ -280,6 +287,7 @@
         [TileType.TRENCH]: 0.000,  // sealed clay — no absorption, only flow
         [TileType.ROCK]:   0,
         [TileType.SHRUB]:  0,
+        [TileType.PATH]:   0.006, // hard-packed surface drains slowly
       };
       const EVAP_RATE    = 0.002;  // evapotranspiration — drains all tiles slowly even when dry
       const FLOW_RATE         = 0.45;  // fraction of head difference transferred per tick
@@ -338,6 +346,7 @@
         paddy:  { topColor: '#6aa263', sideColor: '#458040', label: 'paddy'    },
         rock:   { topColor: '#79807c', sideColor: '#50554f', label: 'rock'     },
         shrub:  { topColor: '#356e36', sideColor: '#204d20', label: 'shrub'    },
+        path:   { topColor: '#b8956a', sideColor: '#8a6a3a', label: 'path'     },
       };
 
       // Helper: floor Z for a tile type
@@ -1191,10 +1200,12 @@
       const npcWalkers         = [];
       let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
       // ── Town zone ──────────────────────────────────────────────────
-      let _townZone       = null;   // parsed hobunji_town_v1 layout
-      let townGrid        = [];     // 2-D tile array for the town map
-      let townScene       = null;   // THREE.Scene, built lazily
-      let _townSceneBuilt = false;
+      let _townZone          = null;   // parsed hobunji_town_v1 layout
+      let townGrid           = [];     // 2-D tile array for the town map
+      let townScene          = null;   // THREE.Scene, built lazily
+      let _townSceneBuilt    = false;
+      let _townBuildingDefs  = [];     // detected building footprints
+      let _townBuildingGroups = [];    // THREE.Group[] — one HousePieceGen group per building
 
       function initWorldTravel(layout) {
         if (!layout || layout.version !== 3) return;
@@ -1283,8 +1294,9 @@
       // ── Path NPCs: avatars that walk authored routes ──────────────
       const NPC_SPECIES_IDS = ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'];
 
-      async function spawnPathNpcs() {
-        if (!worldNpcPaths.length || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+      async function spawnPathNpcs(pathsToSpawn) {
+        const paths = pathsToSpawn || worldNpcPaths;
+        if (!paths.length || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         let dbNpcs = [];
         try {
           const res = await fetch('config/npcs/hobunji-starter-npc-database.json');
@@ -1292,7 +1304,7 @@
           dbNpcs = json.npcs || [];
         } catch {}
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
-        for (const path of worldNpcPaths) {
+        for (const path of paths) {
           try {
             const rec = dbNpcs.find(n => n.id === path.npcId) || null;
             const w = await makeNpcWalker(path, rec);
@@ -1405,6 +1417,36 @@
         } catch(_) { return null; }
       }
 
+      // Fallback: if no localStorage town data, load from the workspace JSON file.
+      // Mirrors the map editor's buildTownLayout() conversion.
+      async function _loadTownFromWorkspace() {
+        if (_townZone) return; // already loaded via localStorage
+        try {
+          const resp = await fetch('config/town-workspace-v1.json');
+          if (!resp.ok) return;
+          const ws = await resp.json();
+          if (_townZone) return; // race: loaded since fetch started
+          const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
+          if (!townM) return;
+          const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [] };
+          for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
+            const t = townM.tiles[`${c},${r}`];
+            if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
+          }
+          (townM.npcPaths || []).forEach(p => {
+            if (!p.nodes?.length) return;
+            layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
+          });
+          (townM.transitions || []).forEach(t => {
+            // Farm spot (no targetMapId) — returns player to farm exit at col 17, row 0
+            if (!t.targetMapId) {
+              layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'farm', targetCol: 17, targetRow: 0 });
+            }
+          });
+          initTownTravel(layout);
+        } catch(e) { debugLog('Town workspace load failed: ' + e.message, 'warn'); }
+      }
+
       function initTownTravel(layout) {
         if (!layout || layout.version !== 1) return;
         _townZone = layout;
@@ -1424,6 +1466,141 @@
         const townPaths = (layout.npcPaths || []).filter(p =>
           p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
         worldNpcPaths.push(...townPaths);
+        if (townPaths.length) spawnPathNpcs(townPaths).catch(e => console.warn('Town NPC paths failed:', e));
+        // If town scene was already built before this layout arrived, spawn buildings now
+        if (_townSceneBuilt && townScene) {
+          _townBuildingDefs = _detectTownBuildings();
+          _spawnTownBuildings();
+        }
+      }
+
+      // ── Town building detection ──────────────────────────────────────
+      // Finds connected rock-tile clusters large enough to be buildings,
+      // computes each building's bounding box and south-edge doorway.
+      function _detectTownBuildings() {
+        const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
+        const KEY = (c, r) => r * 10000 + c;
+        const rockSet = new Set();
+        for (let r = 0; r < TROWS; r++)
+          for (let c = 0; c < TCOLS; c++)
+            if (townGrid[r]?.[c]?.type === TileType.ROCK) rockSet.add(KEY(c, r));
+
+        const visited = new Set();
+        const buildings = [];
+
+        for (let r = 0; r < TROWS; r++) {
+          for (let c = 0; c < TCOLS; c++) {
+            const k = KEY(c, r);
+            if (!rockSet.has(k) || visited.has(k)) continue;
+
+            // Flood-fill rock cluster
+            const cluster = [];
+            const queue = [[c, r]];
+            while (queue.length) {
+              const [cc, rr] = queue.pop();
+              const kk = KEY(cc, rr);
+              if (visited.has(kk) || !rockSet.has(kk)) continue;
+              visited.add(kk); cluster.push([cc, rr]);
+              queue.push([cc+1,rr],[cc-1,rr],[cc,rr+1],[cc,rr-1]);
+            }
+            if (cluster.length < 20) continue;
+
+            const cs = cluster.map(([c]) => c), rs = cluster.map(([,r]) => r);
+            const minC = Math.min(...cs), maxC = Math.max(...cs);
+            const minR = Math.min(...rs), maxR = Math.max(...rs);
+            const W = maxC - minC + 1, D = maxR - minR + 1;
+
+            buildings.push({ minC, maxC, minR, maxR, W, D });
+          }
+        }
+        debugLog('_detectTownBuildings: found ' + buildings.length + ' buildings');
+        return buildings;
+      }
+
+      // Spawns (or re-spawns) Highland house pieces for all detected town buildings.
+      // Uses HousePieceGen (highland frustum body + gable roof + shingle GLB / tube fallback)
+      // plus WallBuilder brick geometry on every non-roof surface.
+      // `_glbsReady` flag prevents multiple redundant rebuilds while GLBs load.
+      let _townBuildingsGlbUpgradePending = false;
+      function _spawnTownBuildings() {
+        if (!townScene || !_townBuildingDefs.length) return;
+        if (typeof HousePieceGen === 'undefined') {
+          debugLog('HousePieceGen not loaded — skipping town buildings', 'warn');
+          return;
+        }
+
+        // Dispose previous groups
+        for (const g of _townBuildingGroups) {
+          townScene.remove(g);
+          g.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+        }
+        _townBuildingGroups = [];
+
+        const wbOpts = { unitMult: 0.35, rockScale: 1.5,
+                         preScale: [1, 1, 0.6],
+                         brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
+
+        for (const bldg of _townBuildingDefs) {
+          const g = HousePieceGen.buildGroup(THREE, bldg.minC, bldg.maxC, bldg.minR, bldg.maxR, {
+            wallBuilder:      houseWallBuilder,
+            wbUsePlaceholder: true,   // upgraded below once GLBs are ready
+            wbOpts,
+          });
+          townScene.add(g);
+          _townBuildingGroups.push(g);
+        }
+
+        debugLog('_spawnTownBuildings: spawned ' + _townBuildingGroups.length + ' highland buildings');
+
+        // Add entrance transitions at the south edge of each building (once only).
+        const TROWS_ENT = _townZone?.rows || 50;
+        const _entranceRingGeo = new THREE.RingGeometry(0.22, 0.36, 24);
+        const _entranceMat = new THREE.MeshBasicMaterial({ color: 0x7c3008, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
+        for (let bi = 0; bi < _townBuildingDefs.length; bi++) {
+          const bldg = _townBuildingDefs[bi];
+          const eCol = Math.floor((bldg.minC + bldg.maxC + 1) / 2);
+          const eRow = Math.min(TROWS_ENT - 1, bldg.maxR + 1);
+          const eid  = 'bldg_entrance_' + bi;
+          if (!worldTownTransitions.find(t => t.id === eid)) {
+            worldTownTransitions.push({
+              id: eid, area: 'town', col: eCol, row: eRow,
+              target: 'interior',
+              targetCol: Math.floor(INTERIOR_COLS / 2), targetRow: INTERIOR_ROWS - 2,
+            });
+            const ring = new THREE.Mesh(_entranceRingGeo, _entranceMat);
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.set(eCol + 0.5, tileSurfaceY(TileType.GRASS) + 0.02, eRow + 0.5);
+            townScene.add(ring);
+          }
+        }
+
+        // Upgrade to real bricks + GLB shingles once both assets are ready.
+        if (!_townBuildingsGlbUpgradePending) {
+          _townBuildingsGlbUpgradePending = true;
+          Promise.all([
+            houseWallBuilder.loadDefaultGlb(),
+            HousePieceGen.loadShingleGlb('assets/models/'),
+          ]).then(() => {
+            _townBuildingsGlbUpgradePending = false;
+            if (!townScene) return;
+            debugLog('Town buildings: upgrading to real bricks + shingle GLB');
+            // Dispose placeholder groups and rebuild with real assets
+            for (const g of _townBuildingGroups) {
+              townScene.remove(g);
+              g.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+            }
+            _townBuildingGroups = [];
+            for (const bldg of _townBuildingDefs) {
+              const g = HousePieceGen.buildGroup(THREE, bldg.minC, bldg.maxC, bldg.minR, bldg.maxR, {
+                wallBuilder:      houseWallBuilder,
+                wbUsePlaceholder: false,
+                wbOpts,
+              });
+              townScene.add(g);
+              _townBuildingGroups.push(g);
+            }
+          }).catch(e => debugLog('Town building GLB error: ' + e, 'warn'));
+        }
       }
 
       function buildTownScene() {
@@ -1432,7 +1609,7 @@
 
         townScene = new THREE.Scene();
         townScene.background = new THREE.Color(0x7da87b);
-        townScene.fog = new THREE.Fog(0x7da87b, 8, 22);
+        townScene.fog = new THREE.FogExp2(0x7da87b, 0.018); // match farm fog density
         townScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
         const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
         sun.position.set(4, 8, 2);
@@ -1440,14 +1617,16 @@
 
         const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
 
-        // Count tiles per type to size InstancedMeshes
+        // Count tiles per type to size InstancedMeshes.
+        // Rock tiles render as grass — buildings cover those footprints.
         const typeCounts = {};
         for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
           const tp = townGrid[r]?.[c]?.type || TileType.GRASS;
-          typeCounts[tp] = (typeCounts[tp] || 0) + 1;
+          const rtp = tp === TileType.ROCK ? TileType.GRASS : tp;
+          typeCounts[rtp] = (typeCounts[rtp] || 0) + 1;
         }
 
-        // One InstancedMesh per tile type
+        // One InstancedMesh per tile type (rock tiles render as ground — walls added separately)
         const slabGeo = new THREE.BoxGeometry(1, SLAB_H, 1);
         const dummy = new THREE.Object3D();
         const instances = {};
@@ -1457,30 +1636,17 @@
           im.receiveShadow = true;
           instances[tp] = { mesh: im, idx: 0 };
           townScene.add(im);
-          // Rock type also gets a taller block
-          if (tp === TileType.ROCK) {
-            const rockGeo = new THREE.BoxGeometry(1, ROCK_H, 1);
-            const rim = new THREE.InstancedMesh(rockGeo, tileMats.rock, count);
-            rim.castShadow = rim.receiveShadow = true;
-            instances[tp + '_top'] = { mesh: rim, idx: 0 };
-            townScene.add(rim);
-          }
         }
 
         for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
           const tile = townGrid[r]?.[c];
-          const tp = tile?.type || TileType.GRASS;
-          const inst = instances[tp];
+          const tp  = tile?.type || TileType.GRASS;
+          const rtp = tp === TileType.ROCK ? TileType.GRASS : tp;
+          const inst = instances[rtp];
           if (inst) {
-            dummy.position.set(c + 0.5, tileYCenter(tp), r + 0.5);
+            dummy.position.set(c + 0.5, tileYCenter(rtp), r + 0.5);
             dummy.updateMatrix();
             inst.mesh.setMatrixAt(inst.idx++, dummy.matrix);
-          }
-          const instTop = instances[tp + '_top'];
-          if (instTop) {
-            dummy.position.set(c + 0.5, NORMAL_TOP + ROCK_H / 2, r + 0.5);
-            dummy.updateMatrix();
-            instTop.mesh.setMatrixAt(instTop.idx++, dummy.matrix);
           }
         }
         for (const { mesh } of Object.values(instances)) mesh.instanceMatrix.needsUpdate = true;
@@ -1503,6 +1669,10 @@
             townScene.add(w.root);
           }
         }
+
+        // Generate 3D buildings from rock-tile clusters
+        _townBuildingDefs = _detectTownBuildings();
+        _spawnTownBuildings();
 
         debugLog('buildTownScene complete');
       }
@@ -1677,9 +1847,10 @@
         if (sceneTransDir === 1) {
           sceneTransAlpha = Math.min(1, sceneTransAlpha + dt * 4);
           if (sceneTransAlpha >= 1 && sceneTransCb) {
-            sceneTransCb();
+            const _cb = sceneTransCb;
             sceneTransCb  = null;
             sceneTransDir = -1;
+            try { _cb(); } catch(e) { debugLog('scene transition error: ' + (e?.stack || e), 'error'); }
           }
         } else {
           sceneTransAlpha = Math.max(0, sceneTransAlpha - dt * 2.5);
@@ -2461,6 +2632,16 @@
         rocks.forEach(([col, row]) => { nextGrid[row][col].type = TileType.ROCK; });
         shrubs.forEach(([col, row]) => { nextGrid[row][col].type = TileType.SHRUB; });
 
+        // Path from farm (col 17, row 0 = north exit to town) going south into the farmstead
+        const farmPathTiles = [
+          [16,0],[17,0],[18,0],
+          [16,1],[17,1],[18,1],
+          [16,2],[17,2],[18,2],
+          [16,3],[17,3],[18,3],
+          [16,4],[17,4],[18,4],
+        ];
+        farmPathTiles.forEach(([c, r]) => { nextGrid[r][c].type = TileType.PATH; });
+
         // Used as a tiny player-spawn clearing so movement and the reticle are immediately readable.
         [[8, 9], [9, 9], [8, 10], [9, 10], [10, 10]].forEach(([col, row]) => {
           nextGrid[row][col].type = TileType.GRASS;
@@ -3046,7 +3227,8 @@
         return d;
       }
 
-      const PERP_DEAD_RAD = 30 * Math.PI / 180;
+      const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
+      const PERP_DEAD_RAD = PERP_DEAD_DEG * Math.PI / 180;
 
       // Keeps model rotation outside ±15° dead zones around each perp angle.
       // state: persistent object per entity (must survive across frames).
@@ -3643,6 +3825,7 @@
         paddy:  new THREE.MeshLambertMaterial({ color: 0x6aa263 }),
         rock:   new THREE.MeshLambertMaterial({ color: 0x79807c }),
         shrub:  new THREE.MeshLambertMaterial({ color: 0x356e36 }),
+        path:   new THREE.MeshLambertMaterial({ color: 0xb8956a }),
       };
       // Floor material for vegetation tiles — matches weed foliage HSL color
       const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
@@ -3809,6 +3992,81 @@
         pa.needsUpdate = true;
         geo.computeVertexNormals();
         return geo;
+      }
+
+      // ── Path tile: worn depression with adjacency-aware torn edges ───────────
+      // Same heightfield pipeline as buildTerrainTileGeo (TRENCH/RAISED) but with
+      // a shallow depth (-0.09) so it reads as a foot-worn groove in the earth.
+      // Adjacent PATH tiles open the blend so connected tiles flow into each other.
+      // Geometry is split into pathGeo (depressed cells, path material) and
+      // grassGeo (edge cells blending back to NORMAL_TOP, grass material) — the
+      // same dual-mesh pattern used by rock and trench tiles.
+      function buildPathTileGeo(col, row) {
+        const VERTS = 9, CELLS = 8, STEP = 1.0 / CELLS;
+        const BLEND_V  = 3;
+        const PATH_DY  = -0.09;  // depression depth (shallower than trench's -0.5)
+
+        const openN = grid[row - 1]?.[col]?.type === TileType.PATH;
+        const openS = grid[row + 1]?.[col]?.type === TileType.PATH;
+        const openW = grid[row]?.[col - 1]?.type === TileType.PATH;
+        const openE = grid[row]?.[col + 1]?.type === TileType.PATH;
+
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+
+        // Extra roughness along the path edge — stronger than trench to get ragged border
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 7) | 0, kz = Math.round(vz * 7) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.045;
+        };
+
+        const smooth = t => t * t * (3 - 2 * t);
+
+        const Y = new Float32Array(VERTS * VERTS);
+        for (let vj = 0; vj < VERTS; vj++) {
+          for (let vi = 0; vi < VERTS; vi++) {
+            const bW = openW ? 1 : smooth(Math.min(1, vi / BLEND_V));
+            const bE = openE ? 1 : smooth(Math.min(1, (CELLS - vi) / BLEND_V));
+            const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
+            const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
+            const blend = Math.min(1, bW * bE * bN * bS);
+            const vx = col + vi * STEP, vz = row + vj * STEP;
+            Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
+          }
+        }
+
+        // Split: path material where the depression is visible, grass at shallow edges
+        const PATH_THRESH = -0.018;
+        const pathIdx = [], grassIdx = [];
+        for (let cj = 0; cj < CELLS; cj++)
+          for (let ci = 0; ci < CELLS; ci++) {
+            const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
+            const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
+            const isPath = Math.min(Y[v00], Y[v10], Y[v01], Y[v11]) < PATH_THRESH;
+            (isPath ? pathIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+          }
+
+        const positions = [];
+        for (let vj = 0; vj < VERTS; vj++)
+          for (let vi = 0; vi < VERTS; vi++)
+            positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
+
+        const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+        const makeGeo = idx => {
+          if (!idx.length) return null;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', posAttr);
+          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          g.computeVertexNormals();
+          return g;
+        };
+        return { pathGeo: makeGeo(pathIdx), grassGeo: makeGeo(grassIdx) };
       }
 
       // ── Rock tile: mini plateau heightfield (same pipeline as border terrain) ───
@@ -4934,6 +5192,27 @@
           return;
         }
 
+        if (tile.type === TileType.PATH) {
+          const { pathGeo, grassGeo } = buildPathTileGeo(col, row);
+          let primary = null;
+          if (pathGeo) {
+            const m = new THREE.Mesh(pathGeo, tileMats.path);
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            primary = m;
+          }
+          if (grassGeo) {
+            const m = new THREE.Mesh(grassGeo, tileMats.grass);
+            m.castShadow = m.receiveShadow = true;
+            m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            scene.add(m);
+            if (!primary) primary = m;
+          }
+          tileMeshes[i] = primary;
+          return;
+        }
+
         let mesh;
         if (tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
           // Fallback: foliage generator not available
@@ -5976,6 +6255,9 @@
             : [];
         }
 
+        // Town has no tile-based tool actions yet
+        if (currentArea === 'town') return [];
+
         const reticle = getReticleTile();
         const tile    = grid[reticle.row][reticle.col];
         const btns    = [];
@@ -6706,8 +6988,15 @@
       try { applyFarmLayoutObjects(loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
       // Transition spots + NPC paths from the map editor
       try { initWorldTravel(loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
+      // Ensure a farm→town transition always exists even without map editor data
+      if (!worldTransitions.some(t => t.target === 'town')) {
+        worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
+        buildTransitionMarkers();
+      }
       // Town zone (written by Map Editor "Send to Game" when a town map is linked)
       try { const _tl = loadTownLayout(); if (_tl) initTownTravel(_tl); } catch(e) { console.error('initTownTravel:', e); }
+      // If no localStorage town data, fall back to loading from the workspace config file
+      _loadTownFromWorkspace().catch(() => {});
       debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
 
       // ── Onboarding gate ────────────────────────────────────────────

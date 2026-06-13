@@ -202,6 +202,15 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
         <div class="card section" style="--sec:#f472b6;--secBg:rgba(244,114,182,.10)">
           <div class="sectionTitle"><b>Body colors</b><span class="sectionTag" id="colorPickerSpeciesLabel">—</span></div>
           <div class="help" style="margin-bottom:8px">Swatches show the valid color range for this species and gender (slots A/B/C as h/s/v offsets). The base preview color is warm-neutral — the in-game tint depends on the portrait sprite.</div>
+          <div style="margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.03);border-radius:6px;border:1px solid rgba(255,255,255,.08)">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Swatch offset calibration <span style="opacity:.5;text-transform:none;letter-spacing:0">(match swatches to in-game tint)</span></div>
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--fg)">
+              <label>Hue&nbsp;<input type="range" id="offsetHue" min="-180" max="180" step="1" value="0" style="width:80px;vertical-align:middle">&nbsp;<span id="offsetHueVal" style="display:inline-block;min-width:28px;text-align:right;color:var(--muted)">0</span>°</label>
+              <label>Sat&nbsp;<input type="range" id="offsetSat" min="-1" max="1" step="0.01" value="0" style="width:80px;vertical-align:middle">&nbsp;<span id="offsetSatVal" style="display:inline-block;min-width:36px;text-align:right;color:var(--muted)">0.00</span></label>
+              <label>Light&nbsp;<input type="range" id="offsetLight" min="-1" max="1" step="0.01" value="0" style="width:80px;vertical-align:middle">&nbsp;<span id="offsetLightVal" style="display:inline-block;min-width:36px;text-align:right;color:var(--muted)">0.00</span></label>
+              <button id="offsetReset" class="secondary" style="font-size:10px;padding:2px 8px">Reset</button>
+            </div>
+          </div>
           <div id="colorPickerSection"><div class="help">Loading color ranges…</div></div>
         </div>
         <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
@@ -1219,9 +1228,14 @@ function _swatchesForRange(spec, cols, rows) {
   return out;
 }
 function _swatchFilter(h, s, v) {
-  const sat = Math.max(0, 1 + (Number(s) || 0)), bri = Math.max(0, 1 + (Number(v) || 0));
+  const hueOffset   = (window.SCRATCHBONES_CONFIG?.clothingHueOffset)   ?? 0;
+  const satOffset   = (window.SCRATCHBONES_CONFIG?.clothingSatOffset)   ?? 0;
+  const lightOffset = (window.SCRATCHBONES_CONFIG?.clothingLightOffset) ?? 0;
+  const sat = Math.max(0, 1 + (Number(s) || 0) + satOffset);
+  const bri = Math.max(0, 1 + (Number(v) || 0) + lightOffset);
+  const finalH = (Number(h) || 0) + hueOffset;
   const parts = [];
-  if (Math.abs(Number(h) || 0) > 0.05) parts.push(`hue-rotate(${h}deg)`);
+  if (Math.abs(finalH) > 0.05) parts.push(`hue-rotate(${finalH}deg)`);
   if (Math.abs(sat - 1) > 0.005) parts.push(`saturate(${sat.toFixed(3)})`);
   if (Math.abs(bri - 1) > 0.005) parts.push(`brightness(${bri.toFixed(3)})`);
   return parts.length ? parts.join(' ') : 'none';
@@ -1241,7 +1255,30 @@ function _renderPicker(ranges) {
     const spec = ranges?.[slot]; const current = bodyColors[slot];
     const row = document.createElement('div'); row.style.cssText = 'margin-bottom:12px';
     row.innerHTML = `<label style="display:block;color:var(--muted);font-size:11px;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px">${label}</label>`;
-    if (!spec) { row.insertAdjacentHTML('beforeend', '<div class="help">No range for this species/slot.</div>'); sec.appendChild(row); continue; }
+    if (!spec) {
+      const curH = current?.h ?? 0, curS = current?.s ?? 0, curV = current?.v ?? 0;
+      const inStyle = 'width:58px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.18);border-radius:4px;color:inherit;padding:2px 5px;font-family:inherit;font-size:11px';
+      row.insertAdjacentHTML('beforeend', `
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <label style="font-size:10px;color:var(--muted)">H&nbsp;<input type="number" step="1" min="-180" max="180" value="${curH}" data-bc-slot="${slot}" data-bc-field="h" style="${inStyle}"></label>
+          <label style="font-size:10px;color:var(--muted)">S&nbsp;<input type="number" step="0.01" min="-1" max="1" value="${curS}" data-bc-slot="${slot}" data-bc-field="s" style="${inStyle}"></label>
+          <label style="font-size:10px;color:var(--muted)">V&nbsp;<input type="number" step="0.01" min="-1" max="1" value="${curV}" data-bc-slot="${slot}" data-bc-field="v" style="${inStyle}"></label>
+          <div data-bc-preview="${slot}" style="width:22px;height:22px;border-radius:7px;border:2px solid rgba(255,255,255,.5);background:#c87847;filter:${_swatchFilter(curH, curS, curV)}"></div>
+        </div>`);
+      row.querySelectorAll('[data-bc-field]').forEach(inp => {
+        inp.addEventListener('input', () => {
+          const sl = inp.dataset.bcSlot, fi = inp.dataset.bcField;
+          if (!work.appearance.bodyColors) work.appearance.bodyColors = clone(DEFAULT_BODY_COLORS);
+          work.appearance.bodyColors[sl][fi] = Number(inp.value);
+          const cur = work.appearance.bodyColors[sl];
+          const preview = row.querySelector(`[data-bc-preview="${sl}"]`);
+          if (preview) preview.style.filter = _swatchFilter(cur.h || 0, cur.s || 0, cur.v || 0);
+          invalidatePreview();
+        });
+      });
+      sec.appendChild(row);
+      continue;
+    }
     const swatches = _swatchesForRange(spec, 7, 4);
     const grid = document.createElement('div'); grid.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px';
     for (const sw of swatches) {
@@ -2007,6 +2044,28 @@ if (window.RepoPicker) {
   } catch (e) { log('RepoPicker init failed: ' + e.message, 'error'); }
 }
 
+// ── Offset calibration sliders ────────────────────────────────────────────────
+function initOffsetSliders() {
+  const hSlider = $('offsetHue'), sSlider = $('offsetSat'), lSlider = $('offsetLight');
+  if (!hSlider) return;
+  function apply() {
+    const h = Number(hSlider.value), s = Number(sSlider.value), l = Number(lSlider.value);
+    $('offsetHueVal').textContent = h;
+    $('offsetSatVal').textContent = s.toFixed(2);
+    $('offsetLightVal').textContent = l.toFixed(2);
+    if (!window.SCRATCHBONES_CONFIG) window.SCRATCHBONES_CONFIG = {};
+    window.SCRATCHBONES_CONFIG.clothingHueOffset = h;
+    window.SCRATCHBONES_CONFIG.clothingSatOffset = s;
+    window.SCRATCHBONES_CONFIG.clothingLightOffset = l;
+    refreshColorPicker();
+    invalidatePreview();
+  }
+  hSlider.addEventListener('input', apply);
+  sSlider.addEventListener('input', apply);
+  lSlider.addEventListener('input', apply);
+  $('offsetReset')?.addEventListener('click', () => { hSlider.value = 0; sSlider.value = 0; lSlider.value = 0; apply(); });
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 async function init() {
   setStatus('Loading…');
@@ -2033,6 +2092,7 @@ async function init() {
       log('Cosmetics load failed: ' + e.message, 'error');
     });
 
+  initOffsetSliders();
   await loadStarterDb();
   // loadStarterDb -> fill() retargets the appearance pane at NPC #1;
   // boot should start on the player instead.

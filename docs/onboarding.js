@@ -4,7 +4,8 @@
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'hobunjiPlayerProfile';
+  const STORAGE_KEY    = 'hobunjiPlayerProfile';
+  const SAVE_META_KEY  = 'hobunjiSaveMeta';
 
   // ── Species / cosmetic slot definitions ──────────────────────────────────
   // Adapted from ScratchbonesGame BASE_SPECIES_DATA.
@@ -241,14 +242,20 @@
   ];
 
   // ── Module state ──────────────────────────────────────────────────────
-  let _state      = null;
-  let _cosmetics  = null;
-  let _cosLoading = false;
-  let _activeTab  = 'appearance';
-  let _colorAIdx  = 0;
-  let _colorBIdx  = 0;
-  let _el         = null;
+  let _state       = null;
+  let _cosmetics   = null;
+  let _cosLoading  = false;
+  let _activeTab   = 'appearance';
+  let _colorAIdx   = 0;
+  let _colorBIdx   = 0;
+  let _el          = null;
   let _renderTimer = null;
+
+  // Save/load screen state
+  let _saveMeta    = null;   // loaded hobunjiSaveMeta object
+  let _selCharId   = null;   // selected character id in save-select
+  let _selWorldId  = null;   // selected world id, or 'new' for new world
+  let _flowStep    = null;   // 'save-select' | 'char-create'
 
   // ── Utilities ─────────────────────────────────────────────────────────
   function esc(s) {
@@ -289,6 +296,58 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch (_) { return null; }
+  }
+
+  // ── Save Meta (multi-save system) ─────────────────────────────────────
+  function makeSaveMeta() {
+    return { version: 1, characters: [], worlds: [] };
+  }
+
+  function loadSaveMeta() {
+    try { const r = localStorage.getItem(SAVE_META_KEY); return r ? JSON.parse(r) : null; } catch (_) { return null; }
+  }
+
+  function saveSaveMeta(m) {
+    try { localStorage.setItem(SAVE_META_KEY, JSON.stringify(m)); } catch (_) {}
+  }
+
+  function uid(pfx) {
+    return pfx + '_' + Math.random().toString(36).slice(2, 10);
+  }
+
+  function specLabel(sid) {
+    return SPECIES_DATA[sid]?.label ?? (sid ? String(sid) : 'Unknown');
+  }
+
+  function relDate(ts) {
+    if (!ts) return 'never';
+    const d = Date.now() - ts;
+    if (d < 60000)    return 'just now';
+    if (d < 3600000)  return Math.floor(d / 60000) + 'm ago';
+    if (d < 86400000) return Math.floor(d / 3600000) + 'h ago';
+    return Math.floor(d / 86400000) + 'd ago';
+  }
+
+  function makeDefaultGear() {
+    return { tools: {}, clothing: { head: null, chest: null, legs: null, feet: null }, charms: [], whistles: [] };
+  }
+
+  function makeDefaultSkills() {
+    return { combat: 0, farming: 0, fishing: 0, foraging: 0, alchemy: 0, cooking: 0 };
+  }
+
+  function makeDefaultWorld(characterId) {
+    return {
+      id:           uid('world'),
+      label:        'Hobunji Hollow',
+      characterId,
+      packInventory: {},
+      keyItems:     [],
+      lastDay:      1,
+      lastSeason:   'First Rains',
+      createdAt:    Date.now(),
+      lastPlayed:   Date.now(),
+    };
   }
 
   // ── Default state ─────────────────────────────────────────────────────
@@ -448,6 +507,206 @@
     }
   }
 
+  // Build a portrait profile for a given appearance object (used for save-select cards)
+  function buildPreviewProfileFromAppearance(appearance, equippedCosmetics, appliedDyes) {
+    const prev = _state;
+    _state = { appearance: appearance || {}, equippedCosmetics: equippedCosmetics || [], appliedDyes: appliedDyes || {} };
+    const profile = buildPreviewProfile();
+    _state = prev;
+    return profile;
+  }
+
+  // ── Save Select Screen ─────────────────────────────────────────────────
+  function buildSaveSelectHTML() {
+    const meta     = _saveMeta || makeSaveMeta();
+    const chars    = meta.characters || [];
+    const selChar  = chars.find(c => c.id === _selCharId) || null;
+    const worlds   = selChar ? (meta.worlds || []).filter(w => w.characterId === selChar.id) : [];
+    const selWorld = (_selWorldId && _selWorldId !== 'new') ? worlds.find(w => w.id === _selWorldId) : null;
+
+    const charCardsHtml = chars.map(c => `
+      <button class="sl-char-card${c.id === _selCharId ? ' sl-selected' : ''}" data-sl-char="${esc(c.id)}" type="button">
+        <div class="sl-char-portrait-wrap">
+          <canvas class="sl-portrait-canvas" data-char-id="${esc(c.id)}" width="80" height="80"></canvas>
+        </div>
+        <div class="sl-char-name">${esc(c.nickname || 'Farmer')}</div>
+        <div class="sl-char-meta">${esc(specLabel(c.appearance?.speciesId))} · ${c.appearance?.gender === 'female' ? '♀' : '♂'}</div>
+      </button>`
+    ).join('');
+
+    const newCharHtml = `<button class="sl-char-card sl-new-card" id="slNewChar" type="button">
+      <div class="sl-new-plus">＋</div>
+      <div class="sl-char-name">New Farmer</div>
+    </button>`;
+
+    let worldSectionHtml = '';
+    if (selChar) {
+      const worldCardsHtml = worlds.map(w => `
+        <button class="sl-world-card${w.id === _selWorldId ? ' sl-selected' : ''}" data-sl-world="${esc(w.id)}" type="button">
+          <div class="sl-world-icon">🌿</div>
+          <div class="sl-world-info">
+            <div class="sl-world-name">${esc(w.label || 'Hobunji Hollow')}</div>
+            <div class="sl-world-meta">Day ${w.lastDay ?? 1} · ${esc(w.lastSeason ?? '—')}</div>
+            <div class="sl-world-date">${relDate(w.lastPlayed)}</div>
+          </div>
+        </button>`
+      ).join('');
+
+      const newWorldSelected = _selWorldId === 'new';
+      const newWorldHtml = `<button class="sl-world-card${newWorldSelected ? ' sl-selected' : ''}" id="slNewWorld" type="button">
+        <div class="sl-world-icon">＋</div>
+        <div class="sl-world-info">
+          <div class="sl-world-name">New World</div>
+          <div class="sl-world-meta">Fresh start</div>
+        </div>
+      </button>`;
+
+      worldSectionHtml = `
+        <div class="sl-section">
+          <div class="sl-section-label">Choose Your World <span class="sl-char-ref">— ${esc(selChar.nickname || 'Farmer')}</span></div>
+          <div class="sl-world-grid">${worldCardsHtml}${newWorldHtml}</div>
+        </div>`;
+    }
+
+    const canPlay = selChar && (_selWorldId === 'new' || selWorld || worlds.length === 0);
+    const playLabel = (!selWorld && _selWorldId !== 'new' && worlds.length === 0) ? '🌱 Start New World' : '▶ Play';
+
+    return `<div class="ob-card sl-card">
+      <div class="ob-title">🌿 Hobunji Hollow</div>
+      <div class="sl-section">
+        <div class="sl-section-label">Choose Your Farmer</div>
+        <div class="sl-char-grid">${charCardsHtml}${newCharHtml}</div>
+      </div>
+      ${worldSectionHtml}
+      <div class="sl-footer">
+        ${selChar ? `<button class="sl-delete-btn" id="slDeleteChar" type="button">🗑 Delete Character</button>` : '<span></span>'}
+        <button class="ob-start-btn" id="slPlay" type="button"${canPlay ? '' : ' disabled'}>${playLabel}</button>
+      </div>
+    </div>`;
+  }
+
+  function _renderSaveSelectPortraits() {
+    if (!_el || !_saveMeta || !_cosmetics) return;
+    (_saveMeta.characters || []).forEach(char => {
+      const canvas = _el.querySelector(`[data-char-id="${esc(char.id)}"]`);
+      if (!canvas) return;
+      const profile = buildPreviewProfileFromAppearance(char.appearance, char.equippedCosmetics, char.appliedDyes);
+      if (!profile) return;
+      const renderFn = window.renderPortraitProfile || window.renderProfile;
+      if (renderFn) { try { renderFn(canvas, profile).catch(() => {}); } catch (_) {} }
+    });
+  }
+
+  function attachSaveSelectListeners() {
+    if (!_el) return;
+
+    _el.querySelectorAll('[data-sl-char]').forEach(btn => btn.addEventListener('click', () => {
+      const newId = btn.dataset.slChar;
+      if (_selCharId !== newId) { _selCharId = newId; _selWorldId = null; }
+      rerenderSaveSelect();
+    }));
+
+    _el.querySelectorAll('[data-sl-world]').forEach(btn => btn.addEventListener('click', () => {
+      _selWorldId = btn.dataset.slWorld;
+      rerenderSaveSelect();
+    }));
+
+    const newWorldBtn = _el.querySelector('#slNewWorld');
+    if (newWorldBtn) newWorldBtn.addEventListener('click', () => {
+      _selWorldId = 'new';
+      rerenderSaveSelect();
+    });
+
+    const newCharBtn = _el.querySelector('#slNewChar');
+    if (newCharBtn) newCharBtn.addEventListener('click', () => {
+      _state     = makeDefaultState('mao-ao', 'male');
+      _activeTab = 'appearance';
+      _colorAIdx = 0;
+      _colorBIdx = 0;
+      _flowStep  = 'char-create';
+      rerender();
+      ensureCosmetics().then(() => schedulePreviewRender());
+    });
+
+    const deleteBtn = _el.querySelector('#slDeleteChar');
+    if (deleteBtn) deleteBtn.addEventListener('click', () => {
+      if (!_selCharId || !_saveMeta) return;
+      if (!confirm('Delete this character and all their worlds? This cannot be undone.')) return;
+      _saveMeta.characters = (_saveMeta.characters || []).filter(c => c.id !== _selCharId);
+      _saveMeta.worlds     = (_saveMeta.worlds     || []).filter(w => w.characterId !== _selCharId);
+      saveSaveMeta(_saveMeta);
+      _selCharId  = _saveMeta.characters[0]?.id ?? null;
+      _selWorldId = null;
+      if (!_saveMeta.characters.length) {
+        _state = makeDefaultState('mao-ao', 'male');
+        _activeTab = 'appearance'; _colorAIdx = 0; _colorBIdx = 0;
+        _flowStep = 'char-create';
+        rerender();
+        ensureCosmetics().then(() => schedulePreviewRender());
+      } else {
+        rerenderSaveSelect();
+      }
+    });
+
+    const playBtn = _el.querySelector('#slPlay');
+    if (playBtn) playBtn.addEventListener('click', _playSaveSelect);
+  }
+
+  function rerenderSaveSelect() {
+    if (!_el) return;
+    _el.innerHTML = buildSaveSelectHTML();
+    attachSaveSelectListeners();
+    if (_cosmetics) {
+      _renderSaveSelectPortraits();
+    } else {
+      ensureCosmetics().then(cos => { if (cos) _renderSaveSelectPortraits(); });
+    }
+  }
+
+  function _showSaveSelect() {
+    _flowStep = 'save-select';
+    rerenderSaveSelect();
+  }
+
+  function _playSaveSelect() {
+    if (!_selCharId || !_saveMeta) return;
+    const char = (_saveMeta.characters || []).find(c => c.id === _selCharId);
+    if (!char) return;
+
+    const worlds = (_saveMeta.worlds || []).filter(w => w.characterId === char.id);
+    let world;
+    if (_selWorldId === 'new' || (!_selWorldId && worlds.length === 0)) {
+      world = makeDefaultWorld(char.id);
+      _saveMeta.worlds.push(world);
+    } else {
+      world = worlds.find(w => w.id === _selWorldId);
+      if (!world) return;
+      world.lastPlayed = Date.now();
+    }
+    char.lastPlayed = Date.now();
+    saveSaveMeta(_saveMeta);
+
+    const playerData = {
+      nickname:          char.nickname || 'Farmer',
+      appearance:        { ...(char.appearance || {}) },
+      equippedCosmetics: [...(char.equippedCosmetics || [])],
+      appliedDyes:       { ...(char.appliedDyes || {}) },
+      gearInventory:     { ...(char.gearInventory  || makeDefaultGear()) },
+      skillLevels:       { ...(char.skillLevels    || makeDefaultSkills()) },
+      npcFavor:          { ...(char.npcFavor       || {}) },
+      characterId:       char.id,
+      worldId:           world.id,
+      worldLabel:        world.label,
+      isNewWorld:        _selWorldId === 'new' || (!_selWorldId && worlds.length === 0),
+    };
+    saveProfile(playerData);
+    window.__hobunjiPlayerProfile = playerData;
+
+    _el.classList.add('ob-fade-out');
+    setTimeout(() => { _el?.remove(); _el = null; }, 420);
+    document.dispatchEvent(new CustomEvent('hobunjiPlayerReady', { detail: playerData }));
+  }
+
   // ── HTML renderers ────────────────────────────────────────────────────
   function renderAppearanceBody() {
     const ap        = _state.appearance;
@@ -553,10 +812,12 @@
   }
 
   function renderOverlay() {
+    const hasExistingChars = _saveMeta && (_saveMeta.characters || []).length > 0;
     const body = _activeTab === 'appearance' ? renderAppearanceBody() : renderCollectionsBody();
     return `<div class="ob-card">
       <div class="ob-title">🌿 Create Your Farmer</div>
       <div class="ob-tabs">
+        ${hasExistingChars ? `<button class="ob-tab ob-back-tab" id="ob-back-btn" type="button">← Back</button>` : ''}
         <button class="ob-tab${_activeTab === 'appearance'   ? ' ob-active' : ''}" data-ob-tab="appearance">✨ Appearance</button>
         <button class="ob-tab${_activeTab === 'collections'  ? ' ob-active' : ''}" data-ob-tab="collections">🧺 Collections</button>
       </div>
@@ -570,6 +831,7 @@
 
   function rerender() {
     if (!_el) return;
+    if (_flowStep === 'save-select') { rerenderSaveSelect(); return; }
     _el.innerHTML = renderOverlay();
     attachListeners();
     schedulePreviewRender();
@@ -578,6 +840,12 @@
   // ── Event binding ─────────────────────────────────────────────────────
   function attachListeners() {
     if (!_el) return;
+
+    const backBtn = _el.querySelector('#ob-back-btn');
+    if (backBtn) backBtn.addEventListener('click', () => {
+      _flowStep = 'save-select';
+      rerender();
+    });
 
     _el.querySelectorAll('[data-ob-tab]').forEach(btn => btn.addEventListener('click', () => {
       _activeTab = btn.dataset.obTab;
@@ -679,6 +947,36 @@
       equippedCosmetics: [..._state.equippedCosmetics],
       appliedDyes:       { ..._state.appliedDyes },
     };
+
+    // Register new character + world in save meta
+    if (_saveMeta) {
+      const charId = uid('char');
+      const worldId = uid('world');
+      const newChar = {
+        id:               charId,
+        nickname:         playerData.nickname,
+        appearance:       playerData.appearance,
+        equippedCosmetics: playerData.equippedCosmetics,
+        appliedDyes:      playerData.appliedDyes,
+        gearInventory:    makeDefaultGear(),
+        skillLevels:      makeDefaultSkills(),
+        npcFavor:         {},
+        createdAt:        Date.now(),
+        lastPlayed:       Date.now(),
+      };
+      const newWorld = makeDefaultWorld(charId);
+      _saveMeta.characters.push(newChar);
+      _saveMeta.worlds.push(newWorld);
+      saveSaveMeta(_saveMeta);
+      playerData.characterId    = charId;
+      playerData.worldId        = newWorld.id;
+      playerData.worldLabel     = newWorld.label;
+      playerData.gearInventory  = newChar.gearInventory;
+      playerData.skillLevels    = newChar.skillLevels;
+      playerData.npcFavor       = newChar.npcFavor;
+      playerData.isNewWorld     = true;
+    }
+
     saveProfile(playerData);
     window.__hobunjiPlayerProfile = playerData;
 
@@ -692,16 +990,61 @@
 
   // ── Public API ────────────────────────────────────────────────────────
   function init(options) {
-    // If there is already a saved profile, skip straight to game
     if (!options?.resetProfile) {
+      // New multi-save system: show save select if any characters exist
+      const meta = loadSaveMeta();
+      if (meta && (meta.characters || []).length > 0) {
+        _saveMeta   = meta;
+        // Auto-select: most recently played character + their most recent world
+        const sortedChars = [...(meta.characters || [])].sort((a, b) => (b.lastPlayed ?? 0) - (a.lastPlayed ?? 0));
+        _selCharId  = sortedChars[0]?.id ?? null;
+        _selWorldId = null;
+        if (_selCharId) {
+          const charWorlds = (meta.worlds || [])
+            .filter(w => w.characterId === _selCharId)
+            .sort((a, b) => (b.lastPlayed ?? 0) - (a.lastPlayed ?? 0));
+          if (charWorlds.length) _selWorldId = charWorlds[0].id;
+        }
+        _el = document.createElement('div');
+        _el.id = 'ob-overlay';
+        document.body.appendChild(_el);
+        _showSaveSelect();
+        return;
+      }
+
+      // Legacy migration: old single-profile key exists, no save meta yet
       const saved = loadProfile();
       if (saved) {
-        window.__hobunjiPlayerProfile = saved;
-        document.dispatchEvent(new CustomEvent('hobunjiPlayerReady', { detail: saved }));
+        _saveMeta = makeSaveMeta();
+        const charId = uid('char');
+        _saveMeta.characters.push({
+          id:               charId,
+          nickname:         saved.nickname || 'Farmer',
+          appearance:       saved.appearance || {},
+          equippedCosmetics: saved.equippedCosmetics || [],
+          appliedDyes:      saved.appliedDyes || {},
+          gearInventory:    makeDefaultGear(),
+          skillLevels:      makeDefaultSkills(),
+          npcFavor:         {},
+          createdAt:        Date.now(),
+          lastPlayed:       Date.now(),
+        });
+        const newWorld = makeDefaultWorld(charId);
+        _saveMeta.worlds.push(newWorld);
+        saveSaveMeta(_saveMeta);
+        _selCharId  = charId;
+        _selWorldId = newWorld.id;
+        _el = document.createElement('div');
+        _el.id = 'ob-overlay';
+        document.body.appendChild(_el);
+        _showSaveSelect();
         return;
       }
     }
 
+    // Fresh start: no saves — go straight to character creation
+    _saveMeta  = makeSaveMeta();
+    _flowStep  = 'char-create';
     _state     = makeDefaultState('mao-ao', 'male');
     _activeTab = 'appearance';
     _colorAIdx = 0;
@@ -716,9 +1059,14 @@
   }
 
   function reset() {
-    try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+    try { localStorage.removeItem(STORAGE_KEY); }   catch (_) {}
+    try { localStorage.removeItem(SAVE_META_KEY); } catch (_) {}
     window.__hobunjiPlayerProfile = null;
+    _saveMeta   = null;
+    _selCharId  = null;
+    _selWorldId = null;
+    _flowStep   = null;
   }
 
-  window.HobunjiOnboarding = { init, reset, loadProfile };
+  window.HobunjiOnboarding = { init, reset, loadProfile, loadSaveMeta };
 })();

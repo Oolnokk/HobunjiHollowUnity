@@ -7,7 +7,7 @@ window.SCRATCHBONES_CONFIG = {
 
 
   // Global clothing color tuning offsets.
-  clothingHueOffset: 0,
+  clothingHueOffset: 34,
   clothingSatOffset: 0,
   clothingLightOffset: 0,
 
@@ -23,6 +23,9 @@ window.SCRATCHBONES_CONFIG = {
         "candlelight": false,
         "actions": true
       }
+    },
+    "movement": {
+      "perpRotDeadzoneDeg": 40
     },
     "gameplayShortcuts": {
       "focusChat": {
