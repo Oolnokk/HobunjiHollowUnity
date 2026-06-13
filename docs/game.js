@@ -6928,9 +6928,43 @@
           cycleActiveInventoryItem(1);
           refreshItemScroll(); refreshActionBar();
         }
+
+        // R: cycle active tool's action mode (equivalent to Q on mobile)
+        if (key === 'r') {
+          const actions = toolActions[activeTool];
+          const idx = actions.indexOf(activeAction);
+          activeAction = actions[(idx + 1) % actions.length];
+          refreshActionBar();
+          return;
+        }
       });
 
       window.addEventListener('keyup', (event) => input.keys.delete(event.key.toLowerCase()));
+
+      // Scroll wheel: cycle tools forward/backward
+      threeContainer.addEventListener('wheel', (e) => {
+        if (menuOpen || farmEditMode) return;
+        e.preventDefault();
+        const tools = ['shovel', 'hoe', 'weapon', 'axe', 'pick', 'harpoon'];
+        const idx = tools.indexOf(activeTool);
+        const next = (idx + (e.deltaY > 0 ? 1 : -1) + tools.length) % tools.length;
+        setActiveTool(tools[next]);
+      }, { passive: false });
+
+      // Left click = primary action, right click = secondary action (desktop play)
+      if (isDesktop) {
+        threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
+        threeContainer.addEventListener('pointerdown', (e) => {
+          if (menuOpen || farmEditMode) return;
+          if (e.button === 0) {
+            useActiveAction();
+          } else if (e.button === 2) {
+            const btns = computeActionButtons();
+            const second = btns.find((b, i) => i > 0 && b.allowed);
+            if (second) { activeAction = second.action; useActiveAction(); }
+          }
+        });
+      }
 
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
