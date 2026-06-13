@@ -207,6 +207,46 @@
         _toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2800);
       }
 
+      // ── NPC Dialogue ───────────────────────────────────────────
+      const _npcDialogueEl      = document.getElementById('npcDialogue');
+      const _npcPortraitCanvas  = document.getElementById('npcPortraitCanvas');
+      const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
+      const _npcDialogueTextEl  = document.getElementById('npcDialogueText');
+
+      function _npcDialogueLines(rec) {
+        if (!rec) return ['...'];
+        if (rec.bio) return [rec.bio];
+        return ['...'];
+      }
+
+      async function openNpcDialogue(walker) {
+        const rec = walker.rec;
+        dialogueOpen = true;
+        _dialogueLines = _npcDialogueLines(rec);
+        _dialogueLineIdx = 0;
+        _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
+        _npcDialogueTextEl.textContent = _dialogueLines[0];
+        _npcDialogueEl.classList.add('open');
+        _npcDialogueEl.setAttribute('aria-hidden', 'false');
+        if (walker.profile && window.NpcAvatarPreview) {
+          window.NpcAvatarPreview.renderProfileToCanvas(_npcPortraitCanvas, walker.profile);
+        }
+      }
+
+      function advanceNpcDialogue() {
+        _dialogueLineIdx++;
+        if (_dialogueLineIdx >= _dialogueLines.length) { closeNpcDialogue(); return; }
+        _npcDialogueTextEl.textContent = _dialogueLines[_dialogueLineIdx];
+      }
+
+      function closeNpcDialogue() {
+        dialogueOpen = false;
+        _dialogueLines = [];
+        _dialogueLineIdx = 0;
+        _npcDialogueEl.classList.remove('open');
+        _npcDialogueEl.setAttribute('aria-hidden', 'true');
+      }
+
       // ── Tile / crop enums (must come first — referenced by everything below) ──
       const TileType = Object.freeze({
         GRASS: 'grass', WEEDS: 'weeds', TILLED: 'tilled',
@@ -1198,6 +1238,10 @@
       let worldTownTransitions = [];   // town: same shape
       let worldNpcPaths        = [];   // { id, label, npcId, area, nodes: [[c,r],...] }
       const npcWalkers         = [];
+      let dialogueOpen       = false;
+      let _dialogueLines     = [];
+      let _dialogueLineIdx   = 0;
+      let nearbyNpcWalker    = null;
       let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
       // ── Town zone ──────────────────────────────────────────────────
       let _townZone          = null;   // parsed hobunji_town_v1 layout
@@ -1364,7 +1408,7 @@
         const NPC_SPEED = 1.25;   // tiles per second
         const PAUSE_SEC = 1.6;    // idle at route endpoints
         const walker = {
-          root, nodes,
+          root, nodes, rec, profile,
           seg: 0, dir: 1, progress: 0, pause: 0,
           rot: Math.PI / 2, perpState: {},
           update(dt) {
@@ -1406,6 +1450,13 @@
 
       function updateNpcWalkers(dt) {
         for (const w of npcWalkers) w.update(dt);
+        let closest = null, closestDist = 2.0;
+        const px = player.x / TILE, pz = player.y / TILE;
+        for (const w of npcWalkers) {
+          const d = Math.hypot(w.root.position.x - px, w.root.position.z - pz);
+          if (d < closestDist) { closestDist = d; closest = w; }
+        }
+        nearbyNpcWalker = closest;
       }
 
       // ── Town zone ──────────────────────────────────────────────────
@@ -2668,6 +2719,7 @@
       }
 
       function updateMovement(dt) {
+        if (dialogueOpen) { player.vx *= 0.75; player.vy *= 0.75; return; }
         const keyboardVector = getKeyboardVector();
         const usingKeyboard = keyboardVector.active;
         let ix = usingKeyboard ? keyboardVector.x : input.x;
@@ -3144,6 +3196,8 @@
       }
 
       function useActiveAction() {
+        if (dialogueOpen) { advanceNpcDialogue(); return; }
+        if (nearbyNpcWalker && !farmEditMode) { openNpcDialogue(nearbyNpcWalker); return; }
         const _anim = activeAnimStyle();
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
         toolSwingT = toolSwingDur;
@@ -6883,7 +6937,7 @@
 
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
-        if (key === 'escape') { event.preventDefault(); menuOpen ? closeMenu() : openMenu(); return; }
+        if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
         if (menuOpen) return;
         if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd'].includes(key)) {
           event.preventDefault(); input.keys.add(key);

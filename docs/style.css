@@ -900,6 +900,94 @@
       transform: translateY(0);
     }
 
+    /* ── NPC Dialogue Window ─────────────────────────────────── */
+    #npcDialogue {
+      position: fixed;
+      left: var(--play-left);
+      top: calc(var(--oy) + var(--gh) - 5.8 * var(--row));
+      width: calc(var(--play-right) - var(--play-left));
+      height: calc(5.8 * var(--row));
+      z-index: 40;
+      display: flex;
+      align-items: flex-end;
+      padding: 0 calc(1.2 * var(--col)) 0;
+      gap: calc(0.6 * var(--col));
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    #npcDialogue.open {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+    #npcPortraitWrap {
+      flex-shrink: 0;
+      width: calc(4.6 * var(--row));
+      align-self: flex-end;
+      border-radius: 12px 12px 0 0;
+      border: 1px solid var(--border-bright);
+      border-bottom: none;
+      overflow: hidden;
+      background: var(--glass-2);
+      box-shadow: 0 -4px 18px rgba(0,0,0,0.45);
+    }
+    #npcPortraitCanvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      image-rendering: pixelated;
+    }
+    #npcDialoguePanel {
+      flex: 1;
+      background: var(--glass-2);
+      border: 1px solid var(--border-bright);
+      border-bottom: none;
+      border-radius: 16px 16px 0 0;
+      backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 -4px 28px rgba(0,0,0,0.5);
+      display: flex;
+      flex-direction: column;
+      padding: 14px 20px 12px;
+      min-height: calc(4.2 * var(--row));
+    }
+    #npcDialogueName {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    #npcDialogueText {
+      flex: 1;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--text);
+    }
+    #npcDialogueContinue {
+      font-size: 11px;
+      color: var(--muted);
+      text-align: right;
+      margin-top: 8px;
+      animation: dlg-blink 1.1s ease-in-out infinite;
+    }
+    #npcDialogueContinue kbd {
+      font: inherit;
+      font-size: 10px;
+      color: var(--accent);
+      padding: 1px 5px;
+      border: 1px solid var(--border-bright);
+      border-radius: 4px;
+    }
+    @keyframes dlg-blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
 
     /* ══ NEW MENU PANEL ══════════════════════════════════════════
        Replaces old bottom drawer. Grid x:3 y:2 w:27 h:14 (32×18)
