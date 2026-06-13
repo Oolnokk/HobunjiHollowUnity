@@ -1516,9 +1516,16 @@
       }
 
       // Spawns (or re-spawns) Highland house pieces for all detected town buildings.
-      // Uses HousePieceGen (highland frustum body + gable roof + shingle tubes).
+      // Uses HousePieceGen (highland frustum body + gable roof + shingle GLB / tube fallback)
+      // plus WallBuilder brick geometry on every non-roof surface.
+      // `_glbsReady` flag prevents multiple redundant rebuilds while GLBs load.
+      let _townBuildingsGlbUpgradePending = false;
       function _spawnTownBuildings() {
         if (!townScene || !_townBuildingDefs.length) return;
+        if (typeof HousePieceGen === 'undefined') {
+          debugLog('HousePieceGen not loaded — skipping town buildings', 'warn');
+          return;
+        }
 
         // Dispose previous groups
         for (const g of _townBuildingGroups) {
@@ -1527,18 +1534,49 @@
         }
         _townBuildingGroups = [];
 
-        if (typeof HousePieceGen === 'undefined') {
-          debugLog('HousePieceGen not loaded — skipping town buildings', 'warn');
-          return;
-        }
+        const wbOpts = { unitMult: 0.5, rockScale: 1.5,
+                         preScale: [1, 1, 0.6],
+                         brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
         for (const bldg of _townBuildingDefs) {
-          const g = HousePieceGen.buildGroup(THREE, bldg.minC, bldg.maxC, bldg.minR, bldg.maxR);
+          const g = HousePieceGen.buildGroup(THREE, bldg.minC, bldg.maxC, bldg.minR, bldg.maxR, {
+            wallBuilder:      houseWallBuilder,
+            wbUsePlaceholder: true,   // upgraded below once GLBs are ready
+            wbOpts,
+          });
           townScene.add(g);
           _townBuildingGroups.push(g);
         }
 
         debugLog('_spawnTownBuildings: spawned ' + _townBuildingGroups.length + ' highland buildings');
+
+        // Upgrade to real bricks + GLB shingles once both assets are ready.
+        if (!_townBuildingsGlbUpgradePending) {
+          _townBuildingsGlbUpgradePending = true;
+          Promise.all([
+            houseWallBuilder.loadDefaultGlb(),
+            HousePieceGen.loadShingleGlb('assets/models/'),
+          ]).then(() => {
+            _townBuildingsGlbUpgradePending = false;
+            if (!townScene) return;
+            debugLog('Town buildings: upgrading to real bricks + shingle GLB');
+            // Dispose placeholder groups and rebuild with real assets
+            for (const g of _townBuildingGroups) {
+              townScene.remove(g);
+              g.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+            }
+            _townBuildingGroups = [];
+            for (const bldg of _townBuildingDefs) {
+              const g = HousePieceGen.buildGroup(THREE, bldg.minC, bldg.maxC, bldg.minR, bldg.maxR, {
+                wallBuilder:      houseWallBuilder,
+                wbUsePlaceholder: false,
+                wbOpts,
+              });
+              townScene.add(g);
+              _townBuildingGroups.push(g);
+            }
+          }).catch(e => debugLog('Town building GLB error: ' + e, 'warn'));
+        }
       }
 
       function buildTownScene() {
