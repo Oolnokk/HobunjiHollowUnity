@@ -204,7 +204,7 @@
       const TileType = Object.freeze({
         GRASS: 'grass', WEEDS: 'weeds', TILLED: 'tilled',
         TRENCH: 'trench', RAISED: 'raised', PADDY: 'paddy',
-        ROCK: 'rock', SHRUB: 'shrub'
+        ROCK: 'rock', SHRUB: 'shrub', PATH: 'path'
       });
 
       const CropType = Object.freeze({
@@ -280,6 +280,7 @@
         [TileType.TRENCH]: 0.000,  // sealed clay — no absorption, only flow
         [TileType.ROCK]:   0,
         [TileType.SHRUB]:  0,
+        [TileType.PATH]:   0.006, // hard-packed surface drains slowly
       };
       const EVAP_RATE    = 0.002;  // evapotranspiration — drains all tiles slowly even when dry
       const FLOW_RATE         = 0.45;  // fraction of head difference transferred per tick
@@ -338,6 +339,7 @@
         paddy:  { topColor: '#6aa263', sideColor: '#458040', label: 'paddy'    },
         rock:   { topColor: '#79807c', sideColor: '#50554f', label: 'rock'     },
         shrub:  { topColor: '#356e36', sideColor: '#204d20', label: 'shrub'    },
+        path:   { topColor: '#b8956a', sideColor: '#8a6a3a', label: 'path'     },
       };
 
       // Helper: floor Z for a tile type
@@ -2461,6 +2463,16 @@
         rocks.forEach(([col, row]) => { nextGrid[row][col].type = TileType.ROCK; });
         shrubs.forEach(([col, row]) => { nextGrid[row][col].type = TileType.SHRUB; });
 
+        // Path from farm (col 17, row 0 = north exit to town) going south into the farmstead
+        const farmPathTiles = [
+          [16,0],[17,0],[18,0],
+          [16,1],[17,1],[18,1],
+          [16,2],[17,2],[18,2],
+          [16,3],[17,3],[18,3],
+          [16,4],[17,4],[18,4],
+        ];
+        farmPathTiles.forEach(([c, r]) => { nextGrid[r][c].type = TileType.PATH; });
+
         // Used as a tiny player-spawn clearing so movement and the reticle are immediately readable.
         [[8, 9], [9, 9], [8, 10], [9, 10], [10, 10]].forEach(([col, row]) => {
           nextGrid[row][col].type = TileType.GRASS;
@@ -3643,6 +3655,7 @@
         paddy:  new THREE.MeshLambertMaterial({ color: 0x6aa263 }),
         rock:   new THREE.MeshLambertMaterial({ color: 0x79807c }),
         shrub:  new THREE.MeshLambertMaterial({ color: 0x356e36 }),
+        path:   new THREE.MeshLambertMaterial({ color: 0xb8956a }),
       };
       // Floor material for vegetation tiles — matches weed foliage HSL color
       const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
@@ -3809,6 +3822,51 @@
         pa.needsUpdate = true;
         geo.computeVertexNormals();
         return geo;
+      }
+
+      // ── Path tile: flat centre with rough torn edges ──────────────────────────
+      // 9×9 vertex heightfield. Seam vertices use the same FNV hash as makeFloorGeo
+      // so shared edges with adjacent tiles are always gap-free.
+      // An edge-weight term adds extra displacement strongest at the tile perimeter
+      // (within ~3 vertex steps of any edge) and zero at the centre, giving the
+      // "worn dirt path with ragged grass border" look.
+      function buildPathTileGeo(col, row) {
+        const VERTS = 9, CELLS = 8, STEP = 1.0 / CELLS;
+
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+
+        const edgeDisp = (vi, vj) => {
+          const edgeDist = Math.min(vi, VERTS - 1 - vi, vj, VERTS - 1 - vj);
+          const w = Math.max(0, 1 - edgeDist / 3);
+          const kx = Math.round((col + vi * STEP) * 8) | 0;
+          const kz = Math.round((row + vj * STEP) * 8) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.065 * w * w;
+        };
+
+        const positions = [];
+        for (let vj = 0; vj < VERTS; vj++)
+          for (let vi = 0; vi < VERTS; vi++) {
+            const vx = col + vi * STEP, vz = row + vj * STEP;
+            positions.push(vi * STEP - 0.5, seamDisp(vx, vz) + edgeDisp(vi, vj), vj * STEP - 0.5);
+          }
+
+        const indices = [];
+        for (let cj = 0; cj < CELLS; cj++)
+          for (let ci = 0; ci < CELLS; ci++)
+            indices.push(cj*VERTS+ci, (cj+1)*VERTS+ci, (cj+1)*VERTS+ci+1, cj*VERTS+ci, (cj+1)*VERTS+ci+1, cj*VERTS+ci+1);
+
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        g.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
+        g.computeVertexNormals();
+        return g;
       }
 
       // ── Rock tile: mini plateau heightfield (same pipeline as border terrain) ───
@@ -4931,6 +4989,15 @@
             if (!primary) primary = m;
           }
           tileMeshes[i] = primary;
+          return;
+        }
+
+        if (tile.type === TileType.PATH) {
+          const mesh = new THREE.Mesh(buildPathTileGeo(col, row), tileMats.path);
+          mesh.castShadow = mesh.receiveShadow = true;
+          mesh.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+          scene.add(mesh);
+          tileMeshes[i] = mesh;
           return;
         }
 
