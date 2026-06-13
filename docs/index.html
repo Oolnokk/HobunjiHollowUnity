@@ -153,13 +153,20 @@
     <div class="mp-body">
 
       <!-- ── Inventory pane ─────────────────────────────────
-           All sub-elements positioned to sub-grid 54×28      -->
-      <div class="mp-pane active" id="mpInventory">
+           All sub-elements positioned to sub-grid 54×28
+           Two sub-tabs: Gear (character-saved) and Pack (world-saved) -->
+      <div class="mp-pane active inv-mode-pack" id="mpInventory">
 
         <!-- Wallet: x:1/54 y:1/28 w:13 h:2 -->
         <div class="inv-wallet">💰 <span id="invWalletDisplay">0g</span></div>
 
-        <!-- Category tab bar: x:1/54 y:3/28 w:35 h:3 -->
+        <!-- Gear / Pack sub-tab toggle: x:15/54 y:1/28 w:20 h:2 -->
+        <div class="inv-sub-tabs">
+          <button class="inv-sub-tab active" id="invTabPack">🎒 Pack</button>
+          <button class="inv-sub-tab" id="invTabGear">⚙️ Gear</button>
+        </div>
+
+        <!-- Category tab bar (Pack only): x:1/54 y:3/28 w:35 h:3 -->
         <div class="inv-cats">
           <button class="inv-cat active" data-cat="all">All</button>
           <button class="inv-cat" data-cat="seed">Seeds</button>
@@ -169,21 +176,42 @@
           <button class="inv-cat" data-cat="processed">Processed</button>
         </div>
 
-        <!-- Equipment slots: x:1/54 y:6/28 w:35 h:7 -->
+        <!-- Key Items (Pack only): x:1/54 y:6/28 w:35 h:7 -->
+        <div class="inv-key-section" id="invKeySection">
+          <div class="inv-key-header">🗝️ Key Items <span class="inv-key-badge">World unlocks</span></div>
+          <div class="inv-key-list" id="invKeyList">
+            <div class="inv-key-empty">No key items yet.</div>
+          </div>
+        </div>
+
+        <!-- Equipment slots (Gear only): x:1/54 y:6/28 w:35 h:7 -->
         <div class="inv-equip-section" id="invEquipSection">
           <!-- Populated by buildEquipmentSlots() -->
         </div>
 
-        <!-- Item grid: x:1/54 y:13/28 w:33 h:14 -->
+        <!-- Item grid (Pack only): x:1/54 y:13/28 w:33 h:14 -->
         <div class="inv-grid-area inv-grid-area--short">
           <div class="inv-grid" id="invGrid"></div>
         </div>
 
-        <!-- Page scroller: x:34/54 y:13/28 w:2 h:14 -->
+        <!-- Page scroller (Pack only): x:34/54 y:13/28 w:2 h:14 -->
         <div class="inv-pgscroll inv-pgscroll--short" id="invPgScroll">
           <button class="ips-btn" id="invPgUp">▲</button>
           <div class="ips-fill"></div>
           <button class="ips-btn" id="invPgDown">▼</button>
+        </div>
+
+        <!-- Charms + Whistles placeholders (Gear only): x:1/54 y:13/28 w:35 h:14 -->
+        <div class="inv-gear-extras" id="invGearExtras">
+          <div class="inv-gear-extra-section">
+            <div class="inv-gear-extra-label">✨ Charms</div>
+            <div class="inv-gear-extra-empty">No charms equipped. <span class="inv-gear-coming">Not yet implemented.</span></div>
+          </div>
+          <div class="inv-gear-extra-section">
+            <div class="inv-gear-extra-label">🎵 Whistles</div>
+            <div class="inv-gear-extra-empty">No whistles equipped. <span class="inv-gear-coming">Not yet implemented.</span></div>
+          </div>
+          <div class="inv-gear-carry-note">Gear Inventory saves with your character and carries between worlds.</div>
         </div>
 
         <!-- Item info box: x:37/54 y:0 w:17 h:full -->
@@ -208,7 +236,7 @@
            middle transfer controls, right shipping box.          -->
       <div class="mp-pane" id="mpShipping">
         <div class="ship-pane ship-left">
-          <div class="ship-title-row"><div class="ship-title">🎒 Player Bag</div><div class="ship-capacity" id="shipLeftCap">0 stacks</div></div>
+          <div class="ship-title-row"><div class="ship-title">🎒 Pack</div><div class="ship-capacity" id="shipLeftCap">0 stacks</div></div>
           <div class="ship-cats">
             <button class="ship-cat active" data-side="left" data-cat="all">All</button>
             <button class="ship-cat" data-side="left" data-cat="seed">Seeds</button>
@@ -282,8 +310,61 @@
         </div>
       </div><!-- /mpSupplies -->
 
+      <!-- ── Progress pane ──────────────────────────────── -->
+      <div class="mp-pane" id="mpProgress">
+        <div class="progress-pane">
+          <div class="progress-section-header">
+            <span class="progress-section-title">Skills</span>
+            <span class="progress-save-badge">Character-saved</span>
+          </div>
+          <div class="progress-skills">
+            <div class="skill-row">
+              <span class="skill-icon">⚔️</span>
+              <div class="skill-name">Combat</div>
+              <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:0%"></div></div>
+              <div class="skill-level">—</div>
+              <span class="skill-stub-tag">Coming soon</span>
+            </div>
+            <div class="skill-row">
+              <span class="skill-icon">🌾</span>
+              <div class="skill-name">Farming</div>
+              <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:0%"></div></div>
+              <div class="skill-level">—</div>
+              <span class="skill-stub-tag">Coming soon</span>
+            </div>
+            <div class="skill-row">
+              <span class="skill-icon">🎣</span>
+              <div class="skill-name">Fishing</div>
+              <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:0%"></div></div>
+              <div class="skill-level">—</div>
+              <span class="skill-stub-tag">Coming soon</span>
+            </div>
+            <div class="skill-row">
+              <span class="skill-icon">🌿</span>
+              <div class="skill-name">Foraging</div>
+              <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:0%"></div></div>
+              <div class="skill-level">—</div>
+              <span class="skill-stub-tag">Coming soon</span>
+            </div>
+            <div class="skill-row">
+              <span class="skill-icon">⚗️</span>
+              <div class="skill-name">Alchemy</div>
+              <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:0%"></div></div>
+              <div class="skill-level">—</div>
+              <span class="skill-stub-tag">Coming soon</span>
+            </div>
+            <div class="skill-row">
+              <span class="skill-icon">🍳</span>
+              <div class="skill-name">Cooking</div>
+              <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:0%"></div></div>
+              <div class="skill-level">—</div>
+              <span class="skill-stub-tag">Coming soon</span>
+            </div>
+          </div>
+        </div>
+      </div><!-- /mpProgress -->
+
       <!-- ── Stub panes ──────────────────────────────────── -->
-      <div class="mp-pane" id="mpProgress">     <div class="mp-stub">⭐ Progress — coming soon</div></div>
       <div class="mp-pane" id="mpTasks">        <div class="mp-stub">📋 Tasks — coming soon</div></div>
       <div class="mp-pane" id="mpRelationships"><div class="mp-stub">💬 Relationships — coming soon</div></div>
 
@@ -415,6 +496,22 @@
   <div id="toolWheel"></div>
 
   <script src="game.js"></script>
+  <script>
+    // Inventory Gear / Pack sub-tab toggle
+    (function () {
+      var packTab = document.getElementById('invTabPack');
+      var gearTab = document.getElementById('invTabGear');
+      var pane    = document.getElementById('mpInventory');
+      function setMode(mode) {
+        pane.classList.toggle('inv-mode-pack', mode === 'pack');
+        pane.classList.toggle('inv-mode-gear', mode === 'gear');
+        packTab.classList.toggle('active', mode === 'pack');
+        gearTab.classList.toggle('active', mode === 'gear');
+      }
+      packTab.addEventListener('click', function () { setMode('pack'); });
+      gearTab.addEventListener('click', function () { setMode('gear'); });
+    })();
+  </script>
   <script>HobunjiOnboarding.init();</script>
 </body>
 </html>

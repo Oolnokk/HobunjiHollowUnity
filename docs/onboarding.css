@@ -266,3 +266,199 @@
   .ob-col-right { max-height: none; }
   .ob-row-label { min-width: 70px; font-size: 9px; }
 }
+
+/* ── Save Select screen ─────────────────────────────────────── */
+.sl-card {
+  width: min(820px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.sl-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sl-section-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #8aad8f;
+}
+.sl-char-ref {
+  color: #f9e28a;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 10px;
+}
+
+/* Character grid */
+.sl-char-grid {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sl-char-card {
+  width: 116px;
+  min-height: 160px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 8px 10px;
+  font-family: inherit;
+  color: #f0ffe6;
+  text-align: center;
+  transition: background 0.12s, border-color 0.12s;
+}
+.sl-char-card:hover { background: rgba(255, 255, 255, 0.08); }
+.sl-char-card.sl-selected {
+  background: rgba(249, 226, 138, 0.09);
+  border-color: rgba(249, 226, 138, 0.48);
+}
+.sl-char-portrait-wrap {
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.sl-portrait-canvas {
+  image-rendering: pixelated;
+  width: 80px;
+  height: 80px;
+}
+.sl-char-name {
+  font-size: 12px;
+  font-weight: bold;
+  color: #f0ffe6;
+  line-height: 1.2;
+}
+.sl-char-meta {
+  font-size: 9px;
+  color: #8aad8f;
+}
+
+/* New card variant */
+.sl-new-card {
+  background: rgba(255, 255, 255, 0.02);
+  border-style: dashed;
+}
+.sl-new-card:hover {
+  background: rgba(127, 232, 154, 0.07);
+  border-color: rgba(127, 232, 154, 0.38);
+}
+.sl-new-plus {
+  font-size: 26px;
+  color: #8aad8f;
+  opacity: 0.55;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+/* World grid */
+.sl-world-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sl-world-card {
+  min-width: 180px;
+  max-width: 240px;
+  flex: 1 0 180px;
+  min-height: 72px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-family: inherit;
+  color: #f0ffe6;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+}
+.sl-world-card:hover { background: rgba(255, 255, 255, 0.08); }
+.sl-world-card.sl-selected {
+  background: rgba(249, 226, 138, 0.09);
+  border-color: rgba(249, 226, 138, 0.48);
+}
+.sl-world-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.sl-world-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sl-world-name {
+  font-size: 12px;
+  font-weight: bold;
+  color: #f0ffe6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sl-world-meta {
+  font-size: 10px;
+  color: #8aad8f;
+}
+.sl-world-date {
+  font-size: 9px;
+  color: #8aad8f;
+  opacity: 0.5;
+}
+
+/* Footer */
+.sl-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+}
+.sl-delete-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 100, 100, 0.25);
+  background: rgba(255, 60, 60, 0.06);
+  color: rgba(255, 130, 130, 0.85);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.sl-delete-btn:hover {
+  background: rgba(255, 60, 60, 0.14);
+  border-color: rgba(255, 100, 100, 0.48);
+}
+
+/* Back tab button in char-create when returning from save select */
+.ob-back-tab {
+  flex: 0 !important;
+  padding: 8px 14px !important;
+  color: #8aad8f !important;
+}
+.ob-back-tab:hover { color: #f0ffe6 !important; }
+
+/* Responsive */
+@media (max-width: 560px) {
+  .sl-char-grid { gap: 7px; }
+  .sl-char-card { width: 94px; min-height: 140px; }
+  .sl-char-portrait-wrap { width: 64px; height: 64px; }
+  .sl-portrait-canvas { width: 64px; height: 64px; }
+  .sl-world-card { min-width: 150px; }
+}

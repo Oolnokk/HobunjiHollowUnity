@@ -1434,3 +1434,130 @@
       #mpSupplies .wallet-display { display: none; }
     }
 
+
+    /* ── Inventory sub-tabs: x:15/54 y:1/28 w:20 h:2 ───── */
+    .inv-sub-tabs {
+      position: absolute;
+      left: calc(15 * var(--inv-col)); top: calc(1 * var(--inv-row));
+      width: calc(20 * var(--inv-col)); height: calc(2 * var(--inv-row));
+      display: flex; gap: var(--inv-gap); align-items: center;
+      padding: 0 var(--inv-pad);
+    }
+    .inv-sub-tab {
+      height: calc(1.6 * var(--inv-row));
+      padding: 0 clamp(5px, calc(0.18 * var(--col)), 10px);
+      border-radius: calc(0.8 * var(--inv-row));
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--muted); font-size: var(--inv-font-xs);
+      font-family: inherit; letter-spacing: 0.04em;
+      cursor: pointer; white-space: nowrap;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .inv-sub-tab:hover { background: rgba(255,255,255,0.09); color: var(--text); }
+    .inv-sub-tab.active {
+      color: var(--accent); border-color: rgba(249,226,138,0.4);
+      background: rgba(249,226,138,0.08);
+    }
+
+    /* ── Key Items (Pack mode): x:1/54 y:6/28 w:35 h:7 ─── */
+    .inv-key-section {
+      position: absolute;
+      left: calc(1 * var(--inv-col)); top: calc(6 * var(--inv-row));
+      width: calc(35 * var(--inv-col)); height: calc(7 * var(--inv-row));
+      display: none; flex-direction: column; gap: var(--inv-gap);
+      padding: calc(0.4 * var(--inv-gap)) var(--inv-pad);
+      border-bottom: 1px solid var(--border); box-sizing: border-box; overflow: hidden;
+    }
+    .inv-key-header {
+      display: flex; align-items: center; gap: calc(0.5 * var(--inv-gap));
+      font-size: var(--inv-font-xs); color: var(--text); font-weight: bold; flex-shrink: 0;
+    }
+    .inv-key-badge {
+      font-size: var(--inv-font-xs); color: var(--muted); opacity: 0.6;
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 0 4px; font-weight: normal; letter-spacing: 0.05em;
+    }
+    .inv-key-list {
+      flex: 1; min-height: 0; overflow-y: auto;
+      display: flex; flex-wrap: wrap; gap: var(--inv-gap); align-content: flex-start;
+    }
+    .inv-key-empty { font-size: var(--inv-font-xs); color: var(--muted); opacity: 0.45; padding: var(--inv-pad) 0; }
+
+    /* ── Gear Extras (Gear mode): x:1/54 y:13/28 w:35 h:14 */
+    .inv-gear-extras {
+      position: absolute;
+      left: calc(1 * var(--inv-col)); top: calc(13 * var(--inv-row));
+      width: calc(35 * var(--inv-col)); height: calc(14 * var(--inv-row));
+      display: none; flex-direction: column; gap: calc(1.5 * var(--inv-gap));
+      padding: var(--inv-pad); box-sizing: border-box; overflow: hidden;
+    }
+    .inv-gear-extra-section {
+      display: flex; flex-direction: column; gap: calc(0.6 * var(--inv-gap));
+      padding: var(--inv-pad);
+      border: 1px solid var(--border); border-radius: var(--inv-radius);
+      background: rgba(255,255,255,0.025);
+    }
+    .inv-gear-extra-label { font-size: var(--inv-font-xs); font-weight: bold; color: var(--text); letter-spacing: 0.04em; }
+    .inv-gear-extra-empty { font-size: var(--inv-font-xs); color: var(--muted); opacity: 0.55; }
+    .inv-gear-coming { color: var(--accent); opacity: 0.7; }
+    .inv-gear-carry-note {
+      font-size: var(--inv-font-xs); color: var(--muted); opacity: 0.4;
+      line-height: 1.4; padding: 0 var(--inv-pad); text-align: center; margin-top: auto;
+    }
+
+    /* ── Inventory mode toggles ─────────────────────────── */
+    /* Pack mode: item grid visible, equip/gear hidden */
+    #mpInventory.inv-mode-pack .inv-equip-section { display: none; }
+    #mpInventory.inv-mode-pack .inv-cats          { display: flex; }
+    #mpInventory.inv-mode-pack .inv-grid-area     { display: block; }
+    #mpInventory.inv-mode-pack .inv-pgscroll      { display: flex; }
+    #mpInventory.inv-mode-pack .inv-key-section   { display: flex; }
+    #mpInventory.inv-mode-pack .inv-gear-extras   { display: none; }
+    /* Gear mode: equipment visible, item grid hidden */
+    #mpInventory.inv-mode-gear .inv-equip-section { display: flex; }
+    #mpInventory.inv-mode-gear .inv-cats          { display: none; }
+    #mpInventory.inv-mode-gear .inv-grid-area     { display: none; }
+    #mpInventory.inv-mode-gear .inv-pgscroll      { display: none; }
+    #mpInventory.inv-mode-gear .inv-key-section   { display: none; }
+    #mpInventory.inv-mode-gear .inv-gear-extras   { display: flex; }
+
+    /* ── Progress pane ───────────────────────────────────── */
+    #mpProgress { overflow-y: auto; }
+    .progress-pane {
+      padding: clamp(6px, 1.2vmin, 16px) clamp(8px, 1.8vmin, 22px);
+      max-width: 460px; display: flex; flex-direction: column; gap: 14px;
+    }
+    .progress-section-header {
+      display: flex; align-items: center; gap: 8px;
+      border-bottom: 1px solid var(--border); padding-bottom: 4px;
+    }
+    .progress-section-title {
+      font-family: 'Pixelify Sans', monospace;
+      color: var(--accent); font-size: 10px;
+      letter-spacing: 0.07em; text-transform: uppercase;
+    }
+    .progress-save-badge {
+      font-size: 9px; color: var(--muted); opacity: 0.6;
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 1px 5px; letter-spacing: 0.05em;
+    }
+    .progress-skills { display: flex; flex-direction: column; gap: 6px; }
+    .skill-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; border-radius: 8px;
+      background: rgba(255,255,255,0.025); border: 1px solid var(--border);
+    }
+    .skill-icon { font-size: 14px; flex-shrink: 0; }
+    .skill-name { flex: 1; font-size: 12px; color: var(--text); }
+    .skill-bar-wrap {
+      width: 80px; height: 6px;
+      background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; flex-shrink: 0;
+    }
+    .skill-bar-fill { height: 100%; border-radius: 3px; background: rgba(249,226,138,0.35); transition: width 0.3s; }
+    .skill-level { font-size: 11px; color: var(--muted); min-width: 24px; text-align: right; flex-shrink: 0; }
+    .skill-stub-tag {
+      font-size: 9px; color: var(--muted); opacity: 0.45;
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 1px 5px; letter-spacing: 0.04em; flex-shrink: 0;
+    }
