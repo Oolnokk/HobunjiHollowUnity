@@ -74,7 +74,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <button class="sec" data-mode="object">📦 Object</button>
         <button class="sec" data-mode="furniture">⚙️ Processor</button>
         <button class="sec" data-mode="decor">🪑 Decor</button>
-        <button class="sec" data-mode="path">🛤 Path</button>
+        <button class="sec" data-mode="path">🛤 Route</button>
         <button class="sec" data-mode="spot">🔁 Spot</button>
         <button class="sec" data-mode="erase">⌫ Erase</button>
         <button class="sec" id="fitBtn" style="margin-left:auto">Fit</button>
@@ -248,11 +248,11 @@ const DECOR = {
   counter:{icon:'🏪',label:'Shop Counter',fw:3,fd:1,area:'interior'}
 };
 
-// NPC paths and transition spots are supported on BOTH map categories.
+// Shared routes and transition spots are supported on BOTH map categories.
 // They are persisted in hobunji_map.v1 JSON and sent to the game inside
-// hobunji_farm_layout_v3 (npcPaths / transitions). The game spawns walker
-// NPCs on paths and warps the player at transition spots whose target
-// resolves to the linked farm or farmhouse map.
+// hobunji_farm_layout_v3 (routes / legacy npcPaths / transitions). NPC schedules
+// choose target positions; NPCs beeline first, then use shared routes around blockers.
+// Transition spots warp the player to the linked farm, town, or farmhouse map.
 
 // Day-one farm generation — mirrors createInitialGrid()/createDayOneTile() in game.js.
 const DAYONE_ROCKS  = [[1,1],[10,1],[15,2],[3,7],[13,9],[16,11],[20,2],[28,4],[33,1],[22,8],[30,10],[25,14],[7,18],[18,20],[31,22],[5,24],[14,16],[26,6],[32,18],[8,12]];
@@ -282,7 +282,8 @@ function makeMap(name, category, cols, rows) {
     objects: {},      // objectKey -> [c, r]
     furniture: [],    // { key, col, row }
     decor: [],        // { key, col, row }
-    npcPaths: [],     // { id, label, npcId, nodes: [[c,r],...] }
+    routes: [],       // { id, label, nodes: [[c,r],...] }
+    npcPaths: [],     // legacy compatibility only: { id, label, npcId, nodes: [[c,r],...] }
     transitions: [],  // { id, label, col, row, targetMapId, targetSpotId }
     buildings: [],    // { id, label, pieceFile, gridX, gridZ, footprintW, footprintD, wbOpts, wbGableOpts }
   };
@@ -296,6 +297,7 @@ function loadWorkspace() {
       const w = JSON.parse(raw);
       if (Array.isArray(w.maps) && w.maps.length) {
         w.maps.forEach(m => {
+          m.routes = Array.isArray(m.routes) ? m.routes : (Array.isArray(m.npcPaths) ? m.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
           m.npcPaths = Array.isArray(m.npcPaths) ? m.npcPaths : [];
           m.transitions = Array.isArray(m.transitions) ? m.transitions : [];
           // Migrate old houseLibrary/houseAssignments → buildings array
@@ -443,7 +445,7 @@ function renderBuildingPanel() {
 // ── Mode / brush state ────────────────────────────────────────────────────────
 let mode = 'pan';
 let brush = { tile: 'grass', crop: 'needlegrain', object: 'sellCrate', furniture: 'pestle', decor: 'basicBed' };
-let activePathId = null;   // path being extended in path mode
+let activePathId = null;   // route being extended in route mode
 let activeSpotId = null;   // transition spot selected in spot mode
 
 function setMode(m) {
@@ -460,7 +462,7 @@ function updateBrushPill() {
   if (mode === 'object') t = `object: ${OBJECTS[brush.object]?.label}`;
   if (mode === 'furniture') t = `processor: ${PROCESSORS[brush.furniture]?.label}`;
   if (mode === 'decor') t = `decor: ${DECOR[brush.decor]?.label}`;
-  if (mode === 'path') { const p = activeMap().npcPaths.find(x => x.id === activePathId); t = p ? `path: ${p.label}` : 'path: (click to start one)'; }
+  if (mode === 'path') { const p = (activeMap().routes || activeMap().npcPaths || []).find(x => x.id === activePathId); t = p ? `route: ${p.label}` : 'route: (click to start one)'; }
   if (mode === 'spot') t = 'spot: click map to place';
   $('brushPill').textContent = t;
 }
@@ -503,20 +505,19 @@ function renderPalette() {
     html = Object.keys(DECOR).filter(k => want.includes(DECOR[k].area)).map(k =>
       `<button class="sec palBtn ${brush.decor===k?'act':''}" data-pal="decor" data-val="${k}">${DECOR[k].icon} ${DECOR[k].label} <span class="muted" style="margin-left:auto">${DECOR[k].fw}×${DECOR[k].fd}</span></button>`).join('');
   } else if (mode === 'path') {
-    html = `<button class="ok" id="newPathBtn" style="width:100%;margin-bottom:6px">+ New path</button>` +
-      m.npcPaths.map(p =>
+    html = `<button class="ok" id="newPathBtn" style="width:100%;margin-bottom:6px">+ New route</button>` +
+      (m.routes || []).map(p =>
         `<div class="item ${p.id===activePathId?'sel':''}" data-pathsel="${p.id}">
           <div class="item-name">🛤 ${p.label}</div>
-          <div class="item-meta">${p.npcId || 'no npc'} · ${p.nodes.length} nodes <button class="bad" data-pathdel="${p.id}" style="float:right;padding:1px 7px;font-size:10px">✕</button></div>
+          <div class="item-meta">shared route · ${p.nodes.length} nodes <button class="bad" data-pathdel="${p.id}" style="float:right;padding:1px 7px;font-size:10px">✕</button></div>
         </div>`).join('');
-    const ap = m.npcPaths.find(p => p.id === activePathId);
+    const ap = (m.routes || []).find(p => p.id === activePathId);
     if (ap) {
       html += `<div class="g2" style="margin-top:6px">
         <div><label>Label</label><input id="pathLabelIn" value="${ap.label.replace(/"/g,'&quot;')}"></div>
-        <div><label>NPC id</label><input id="pathNpcIn" value="${(ap.npcId||'').replace(/"/g,'&quot;')}"></div>
-      </div>`;
+              </div>`;
     }
-    html += '<p class="muted" style="margin-top:5px">Select a path, then click the map to append nodes. Erase mode removes nodes. In-game, each path spawns a walker NPC that ping-pongs along it; an NPC id matching the NPC database gives the walker that character’s appearance.</p>';
+    html += '<p class="muted" style="margin-top:5px">Select a route, then click the map to append nodes. Erase mode removes nodes. In-game, NPC schedules choose target positions; NPCs beeline unless blocked, use shared interconnected routes to get around blockers, and leave routes once they stop improving progress.</p>';
   } else if (mode === 'spot') {
     html = m.transitions.map(t => {
       const others = ws.maps.filter(x => x.id !== m.id);
@@ -536,7 +537,7 @@ function renderPalette() {
     }).join('') || '<p class="muted">No transition spots yet.</p>';
     html += '<p class="muted" style="margin-top:5px">Click the map to place a spot, then pick which map (and which spot on it) it leads to. In-game, spots warp the player when their target is the linked Farm or Farmhouse map; other targets are kept in the map JSON for future zones.</p>';
   } else if (mode === 'erase') {
-    html = '<p class="muted">Click or drag to remove tiles, crops, objects, furniture, decor, path nodes, and spots under the cursor.</p>';
+    html = '<p class="muted">Click or drag to remove tiles, crops, objects, furniture, decor, route nodes, and spots under the cursor.</p>';
   } else {
     html = '<p class="muted">Drag to pan, scroll/pinch to zoom.</p>';
   }
@@ -574,12 +575,13 @@ function renderPalette() {
     pushUndo(); activeMap().tiles = {};
     draw(); refreshPreview(); saveWorkspace(); setStatus('Tiles cleared.');
   });
-  // Path palette wiring
+  // Route palette wiring
   const npb = box.querySelector('#newPathBtn');
   if (npb) npb.addEventListener('click', () => {
     pushUndo();
-    const p = { id: uid('path'), label: `Path ${m.npcPaths.length+1}`, npcId: '', nodes: [] };
-    m.npcPaths.push(p); activePathId = p.id;
+    m.routes = m.routes || [];
+    const p = { id: uid('route'), label: `Route ${m.routes.length+1}`, nodes: [] };
+    m.routes.push(p); activePathId = p.id;
     renderPalette(); updateBrushPill(); refreshPreview(); saveWorkspace();
   });
   box.querySelectorAll('[data-pathsel]').forEach(el => el.addEventListener('click', e => {
@@ -588,13 +590,12 @@ function renderPalette() {
   }));
   box.querySelectorAll('[data-pathdel]').forEach(el => el.addEventListener('click', e => {
     e.stopPropagation(); pushUndo();
-    m.npcPaths = m.npcPaths.filter(p => p.id !== el.dataset.pathdel);
+    m.routes = (m.routes || []).filter(p => p.id !== el.dataset.pathdel);
     if (activePathId === el.dataset.pathdel) activePathId = null;
     renderPalette(); draw(); refreshPreview(); saveWorkspace();
   }));
-  const pl = box.querySelector('#pathLabelIn'), pn = box.querySelector('#pathNpcIn');
-  if (pl) pl.addEventListener('change', () => { const p = m.npcPaths.find(x => x.id === activePathId); if (p) { p.label = pl.value.trim() || p.label; renderPalette(); draw(); refreshPreview(); saveWorkspace(); } });
-  if (pn) pn.addEventListener('change', () => { const p = m.npcPaths.find(x => x.id === activePathId); if (p) { p.npcId = pn.value.trim(); refreshPreview(); saveWorkspace(); } });
+  const pl = box.querySelector('#pathLabelIn');
+  if (pl) pl.addEventListener('change', () => { const p = (m.routes || []).find(x => x.id === activePathId); if (p) { p.label = pl.value.trim() || p.label; renderPalette(); draw(); refreshPreview(); saveWorkspace(); } });
   // Spot palette wiring
   box.querySelectorAll('[data-spotsel]').forEach(el => el.addEventListener('click', e => {
     if (e.target.closest('button,select,input')) return;
@@ -779,8 +780,8 @@ function draw() {
     ctx.strokeRect(p.x+1, p.y+1, info.fw*z-2, info.fd*z-2);
     if (z > 9) ctx.fillText(info.icon, p.x + info.fw*z/2, p.y + info.fd*z/2);
   });
-  // NPC paths
-  (m.npcPaths || []).forEach(pa => {
+  // Shared routes
+  (m.routes || []).forEach(pa => {
     const isActive = pa.id === activePathId;
     if (pa.nodes.length > 1) {
       ctx.strokeStyle = isActive ? '#7dd3fc' : 'rgba(56,189,248,.55)';
@@ -846,8 +847,9 @@ function applyAt(tile) {
       m.decor.push({ key: brush.decor, col: c, row: r });
     }
   } else if (mode === 'path') {
-    let p = m.npcPaths.find(x => x.id === activePathId);
-    if (!p) { p = { id: uid('path'), label: `Path ${m.npcPaths.length+1}`, npcId: '', nodes: [] }; m.npcPaths.push(p); activePathId = p.id; }
+    m.routes = m.routes || [];
+    let p = m.routes.find(x => x.id === activePathId);
+    if (!p) { p = { id: uid('route'), label: `Route ${m.routes.length+1}`, nodes: [] }; m.routes.push(p); activePathId = p.id; }
     p.nodes.push([c, r]);
     renderPalette(); updateBrushPill();
   } else if (mode === 'spot') {
@@ -865,7 +867,7 @@ function applyAt(tile) {
     const fi = m.furniture.findIndex(f => f.col===c && f.row===r); if (fi >= 0) { m.furniture.splice(fi,1); did = true; }
     const di = m.decor.findIndex(d => { const inf = DECOR[d.key]; return inf && c >= d.col && c < d.col+inf.fw && r >= d.row && r < d.row+inf.fd; });
     if (di >= 0) { m.decor.splice(di,1); did = true; }
-    (m.npcPaths || []).forEach(p => {
+    ((m.routes || []).concat(m.npcPaths || [])).forEach(p => {
       for (let i = p.nodes.length-1; i >= 0; i--) if (p.nodes[i][0] === c && p.nodes[i][1] === r) { p.nodes.splice(i,1); did = true; }
     });
     const ti = (m.transitions || []).findIndex(t => t.col === c && t.row === r);
@@ -982,7 +984,7 @@ function renderMapList() {
   $('mapList').innerHTML = ws.maps.map(m =>
     `<div class="item ${m.id===ws.activeId?'sel':''}" data-id="${m.id}">
       <div class="item-name">${m.category==='interior'?'🏠':'🗺'} ${m.name}</div>
-      <div class="item-meta">${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.npcPaths||[]).length} paths · ${(m.transitions||[]).length} spots</div>
+      <div class="item-meta">${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.transitions||[]).length} spots</div>
     </div>`).join('');
   $('mapList').querySelectorAll('.item').forEach(el => el.addEventListener('click', () => {
     ws.activeId = el.dataset.id; undoStack.length = 0; activePathId = null; activeSpotId = null; updateAll(); fitView();
@@ -1018,9 +1020,13 @@ function updateAll() { renderMapList(); fillSettings(); renderPalette(); refresh
 // ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
 function buildFarmLayoutV3() {
   const ext = mapById(ws.gameLink.exteriorId);
-  const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], npcPaths: [], transitions: [] };
+  const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], routes: [], npcPaths: [], transitions: [] };
   const areaOf = id => id === ws.gameLink.interiorId ? 'interior' : id === ws.gameLink.exteriorId ? 'farm' : id === ws.gameLink.townId ? 'town' : '';
   const pushTravel = (m, area) => {
+    (m.routes || []).forEach(p => {
+      if (!p.nodes.length) return;
+      layout.routes.push({ id: p.id, label: p.label, area, nodes: p.nodes.map(n => [n[0], n[1]]) });
+    });
     (m.npcPaths || []).forEach(p => {
       if (!p.nodes.length) return;
       layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area, nodes: p.nodes.map(n => [n[0], n[1]]) });
@@ -1064,16 +1070,21 @@ function buildFarmLayoutV3() {
 function buildTownLayout() {
   const townM = mapById(ws.gameLink.townId);
   if (!townM) return null;
-  const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [],
+  const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], routes: [], npcPaths: [], transitions: [],
                    buildings: townM.buildings || [] };
   // Tiles
   for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
     const t = townM.tiles[`${c},${r}`];
     if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
   }
-  // NPC paths
+  // Shared routes (legacy NPC paths are preserved below for compatibility)
+  (townM.routes || []).forEach(p => {
+    if (!p.nodes.length) return;
+    layout.routes.push({ id: p.id, label: p.label, area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
+  });
   (townM.npcPaths || []).forEach(p => {
     if (!p.nodes.length) return;
+    if (!(townM.routes || []).length) layout.routes.push({ id: p.id, label: p.label, area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
     layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
   });
   // Transitions — resolve farm side: target 'farm', targetCol/Row from the farm-side spot
@@ -1117,6 +1128,7 @@ function loadFromGame() {
   (layout.furniture || []).forEach(f => ext.furniture.push({ key: f.key, col: f.col, row: f.row }));
   let intM = mapById(ws.gameLink.interiorId);
   const needInterior = (layout.decor || []).some(d => d.area === 'interior')
+    || (layout.routes || []).some(p => p.area === 'interior')
     || (layout.npcPaths || []).some(p => p.area === 'interior')
     || (layout.transitions || []).some(t => t.area === 'interior');
   if (!intM && needInterior) {
@@ -1127,13 +1139,19 @@ function loadFromGame() {
     if (d.area === 'interior') intM.decor.push({ key: d.key, col: d.col, row: d.row });
     else ext.decor.push({ key: d.key, col: d.col, row: d.row });
   });
-  // Restore NPC paths and transition spots authored for the game
-  ext.npcPaths = []; ext.transitions = [];
-  if (intM) { intM.npcPaths = []; intM.transitions = []; }
+  // Restore shared routes, legacy NPC paths, and transition spots authored for the game
+  ext.routes = []; ext.npcPaths = []; ext.transitions = [];
+  if (intM) { intM.routes = []; intM.npcPaths = []; intM.transitions = []; }
+  (layout.routes || []).forEach(p => {
+    const m = p.area === 'interior' ? intM : ext;
+    if (!m || !Array.isArray(p.nodes) || !p.nodes.length) return;
+    m.routes.push({ id: p.id || uid('route'), label: p.label || 'Route', nodes: p.nodes.map(n => [n[0], n[1]]) });
+  });
   (layout.npcPaths || []).forEach(p => {
     const m = p.area === 'interior' ? intM : ext;
     if (!m || !Array.isArray(p.nodes) || !p.nodes.length) return;
-    m.npcPaths.push({ id: p.id || uid('path'), label: p.label || 'Path', npcId: p.npcId || '', nodes: p.nodes.map(n => [n[0], n[1]]) });
+    m.npcPaths.push({ id: p.id || uid('path'), label: p.label || 'Legacy path', npcId: p.npcId || '', nodes: p.nodes.map(n => [n[0], n[1]]) });
+    if (!(layout.routes || []).length) m.routes.push({ id: p.id || uid('route'), label: p.label || 'Legacy route', nodes: p.nodes.map(n => [n[0], n[1]]) });
   });
   const pendingTargets = [];
   (layout.transitions || []).forEach(t => {
@@ -1175,7 +1193,8 @@ function importAny(obj) {
     if (Array.isArray(obj.tiles)) obj.tiles.forEach(t => { if (t && Number.isFinite(t.c) && Number.isFinite(t.r)) m.tiles[`${t.c},${t.r}`] = { type: t.type || 'grass', crop: t.crop || '' }; });
     else if (obj.tiles && typeof obj.tiles === 'object') m.tiles = obj.tiles;
     m.objects = obj.objects || {}; m.furniture = obj.furniture || []; m.decor = obj.decor || [];
-    m.npcPaths = Array.isArray(obj.npcPaths) ? obj.npcPaths : [];
+    m.routes = Array.isArray(obj.routes) ? obj.routes : (Array.isArray(obj.npcPaths) ? obj.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
+      m.npcPaths = Array.isArray(obj.npcPaths) ? obj.npcPaths : [];
     m.transitions = Array.isArray(obj.transitions) ? obj.transitions : [];
     ws.maps.push(m); ws.activeId = m.id;
     updateAll(); fitView(); setStatus('Imported map: ' + m.name);
@@ -1195,6 +1214,7 @@ function importAny(obj) {
         src.tiles.forEach(t => { if (t && Number.isFinite(t.c) && Number.isFinite(t.r)) m.tiles[`${t.c},${t.r}`] = { type: t.type||'grass', crop: t.crop||'' }; });
       else if (src.tiles && typeof src.tiles === 'object') m.tiles = src.tiles;
       m.objects = src.objects || {}; m.furniture = src.furniture || []; m.decor = src.decor || [];
+      m.routes = Array.isArray(src.routes) ? src.routes : (Array.isArray(src.npcPaths) ? src.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(src.npcPaths) ? src.npcPaths : [];
       m.transitions = Array.isArray(src.transitions) ? src.transitions : [];
       return m;
@@ -1253,7 +1273,7 @@ $('applyMapBtn').addEventListener('click', () => {
   const newCat = $('mapCategory').value;
   if (newCat !== m.category) {
     m.category = newCat;
-    // Drop palette items not valid in the new category (paths and spots are valid in both)
+    // Drop palette items not valid in the new category (routes and spots are valid in both)
     if (newCat === 'interior') { m.objects = {}; m.furniture = []; Object.keys(m.tiles).forEach(k => { if (m.tiles[k].crop) m.tiles[k].crop = ''; }); }
     if (ws.gameLink.exteriorId === m.id && newCat !== 'exterior') ws.gameLink.exteriorId = '';
     if (ws.gameLink.interiorId === m.id && newCat !== 'interior') ws.gameLink.interiorId = '';
@@ -1267,7 +1287,7 @@ $('applyMapBtn').addEventListener('click', () => {
     Object.keys(m.objects).forEach(k => { const [c,r] = m.objects[k]; if (c >= nc || r >= nr) delete m.objects[k]; });
     m.furniture = m.furniture.filter(f => f.col < nc && f.row < nr);
     m.decor = m.decor.filter(d => { const inf = DECOR[d.key]; return inf && d.col + inf.fw <= nc && d.row + inf.fd <= nr; });
-    (m.npcPaths || []).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c < nc && r < nr); });
+    ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c < nc && r < nr); });
     m.transitions = (m.transitions || []).filter(t => t.col < nc && t.row < nr);
   }
   updateAll(); fitView(); setStatus('Applied.');
@@ -1295,7 +1315,7 @@ $('playBtn').addEventListener('click', () => {
       const tl = buildTownLayout();
       if (tl) { localStorage.setItem(GAME.townKey, JSON.stringify(tl)); townMsg = ` + town (${tl.tiles.length} tiles)`; }
     }
-    setStatus(`Sent ${layout.tiles.length} tiles, ${layout.furniture.length} processors, ${layout.decor.length} decor, ${layout.npcPaths.length} paths, ${layout.transitions.length} spots${townMsg} → game`);
+    setStatus(`Sent ${layout.tiles.length} tiles, ${layout.furniture.length} processors, ${layout.decor.length} decor, ${layout.routes.length} routes, ${layout.transitions.length} spots${townMsg} → game`);
     window.open(GAME.gamePath, '_blank');
   } catch(e) { setStatus('Failed: ' + e.message); }
 });

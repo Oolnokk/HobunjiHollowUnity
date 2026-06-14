@@ -25,7 +25,15 @@ window.SCRATCHBONES_CONFIG = {
       }
     },
     "movement": {
-      "perpRotDeadzoneDeg": 40
+      "perpRotDeadzoneDeg": 40,
+      "npc": {
+        "speedTilesPerSecond": 1.25,
+        "endpointPauseSeconds": 1.6,
+        "arrivalRadiusTiles": 0.18,
+        "interactionRadiusTiles": 2.0,
+        "routeSnapRadiusTiles": 8,
+        "beelineSampleStepTiles": 0.25
+      }
     },
     "gameplayShortcuts": {
       "focusChat": {
