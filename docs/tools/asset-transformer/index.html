@@ -9,83 +9,87 @@
 html,body{height:100%;background:#07101a;color:#edf5ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:13px;overflow:hidden}
 :root{
   --bg:#07101a;--panel:#111b28;--panel2:#0d1620;--border:rgba(255,255,255,.11);
-  --acc:#6aa7ff;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185;--text:#edf5ff;--muted:#9fb4cf
+  --acc:#6aa7ff;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185;--text:#edf5ff;--muted:#9fb4cf;--sel:#1a2d45
 }
-button{border:1px solid rgba(106,167,255,.3);background:rgba(106,167,255,.12);color:var(--text);border-radius:7px;padding:5px 11px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .1s;white-space:nowrap}
+button{border:1px solid rgba(106,167,255,.3);background:rgba(106,167,255,.12);color:var(--text);border-radius:6px;padding:4px 10px;font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background .1s;white-space:nowrap}
 button:hover{background:rgba(106,167,255,.22)}
-button:disabled{opacity:.4;cursor:default}
-button.danger{border-color:rgba(251,113,133,.3);background:rgba(251,113,133,.12)}
-button.danger:hover{background:rgba(251,113,133,.22)}
-button.ok{border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.14)}
-button.ok:hover{background:rgba(52,211,153,.24)}
-input[type=text],input[type=number]{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);padding:5px 8px;outline:none;width:100%}
-input[type=number]{width:72px}
-input[type=range]{width:100%;accent-color:var(--acc)}
-input[type=checkbox]{accent-color:var(--acc);width:14px;height:14px;cursor:pointer}
-input[type=search]{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);padding:5px 8px;outline:none;width:100%}
-label{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;cursor:pointer}
-select{font:inherit;background:#111b28;border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);padding:5px 8px;outline:none;cursor:pointer}
+button:disabled{opacity:.38;cursor:default}
+button.danger{border-color:rgba(251,113,133,.3);background:rgba(251,113,133,.1)}
+button.danger:hover{background:rgba(251,113,133,.2)}
+button.ok{border-color:rgba(52,211,153,.35);background:rgba(52,211,153,.13)}
+button.ok:hover{background:rgba(52,211,153,.23)}
+button.icon{padding:3px 7px;font-size:13px}
+input[type=text],input[type=number],input[type=search]{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.13);border-radius:5px;color:var(--text);padding:4px 7px;outline:none;width:100%}
+input[type=number]{width:58px}
+input[type=range]{width:100%;accent-color:var(--acc);cursor:pointer}
+input[type=checkbox]{accent-color:var(--acc);width:13px;height:13px;cursor:pointer;flex-shrink:0}
+select{font:inherit;background:#111b28;border:1px solid rgba(255,255,255,.13);border-radius:5px;color:var(--text);padding:4px 7px;outline:none;cursor:pointer;width:100%}
+label{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:12px;cursor:pointer}
 
 #shell{display:flex;flex-direction:column;height:100%}
-#titlebar{display:flex;align-items:center;gap:10px;padding:6px 12px;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0}
-#titlebar h1{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.4px}
-#titlebar a{margin-left:auto;font-size:11px;color:var(--acc);text-decoration:none;border:1px solid rgba(106,167,255,.3);border-radius:6px;padding:3px 8px}
+#titlebar{display:flex;align-items:center;gap:8px;padding:5px 12px;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0}
+#titlebar h1{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.5px}
+#titlebar a{margin-left:auto;font-size:11px;color:var(--acc);text-decoration:none;border:1px solid rgba(106,167,255,.3);border-radius:5px;padding:2px 8px}
 
 #layout{display:flex;flex:1;min-height:0}
 
-/* ── LEFT: repo browser ── */
-#browser-panel{width:220px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--panel)}
-#browser-header{padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
-#browser-header h2{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px}
-#browser-search{width:100%}
-#browser-list{flex:1;overflow-y:auto;padding:4px}
-.b-item{padding:5px 7px;border-radius:5px;cursor:pointer;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px}
-.b-item:hover{background:rgba(106,167,255,.1);color:var(--text)}
-.b-item.sel{background:rgba(106,167,255,.18);color:var(--text)}
-.b-item img{width:18px;height:18px;object-fit:contain;flex-shrink:0;image-rendering:pixelated;border-radius:2px;background:rgba(255,255,255,.05)}
-#browser-status{padding:5px 10px;font-size:10px;color:var(--muted);border-top:1px solid var(--border);flex-shrink:0}
-#browser-import-btn{width:100%;margin-top:0}
+/* ── REPO BROWSER ── */
+#browser{width:200px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--panel)}
+#browser h2{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;padding:7px 9px 5px;border-bottom:1px solid var(--border)}
+#browser-search{padding:5px 7px;border-bottom:1px solid var(--border)}
+#browser-list{flex:1;overflow-y:auto;padding:3px}
+.b-item{display:flex;align-items:center;gap:5px;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px;color:var(--muted)}
+.b-item:hover{background:rgba(106,167,255,.09);color:var(--text)}
+.b-item.sel{background:var(--sel);color:var(--text)}
+.b-item img{width:20px;height:20px;object-fit:contain;flex-shrink:0;image-rendering:pixelated;border-radius:2px;background:rgba(255,255,255,.04)}
+.b-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#browser-foot{padding:6px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:5px;flex-shrink:0}
+#browser-status{padding:3px 8px 5px;font-size:10px;color:var(--muted)}
 
-/* ── QUEUE: far left of the right side ── */
-#queue-panel{width:200px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--panel2)}
-#queue-header{padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:6px}
-#queue-header h2{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;flex:1}
-#queue-list{flex:1;overflow-y:auto;padding:6px}
-.q-item{display:flex;align-items:center;gap:6px;padding:5px 7px;border:1px solid rgba(255,255,255,.09);border-radius:6px;margin-bottom:4px;cursor:pointer;background:rgba(255,255,255,.03);transition:background .1s}
-.q-item:hover{background:rgba(106,167,255,.08)}
-.q-item.sel{outline:2px solid var(--acc);outline-offset:1px;background:rgba(106,167,255,.1)}
-.q-thumb{width:26px;height:26px;object-fit:contain;border-radius:3px;background:rgba(255,255,255,.06);image-rendering:pixelated;flex-shrink:0}
-.q-name{flex:1;font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.q-del{flex-shrink:0;font-size:10px;border-radius:4px;padding:2px 5px}
-#queue-footer{padding:8px;border-top:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;gap:6px}
+/* ── LAYERS ── */
+#layers-panel{width:200px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--panel2)}
+#layers-head{display:flex;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);gap:6px;flex-shrink:0}
+#layers-head h2{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;flex:1}
+#layer-list{flex:1;overflow-y:auto;padding:4px}
+.ly-item{display:flex;align-items:center;gap:6px;padding:5px 6px;border:1px solid transparent;border-radius:5px;cursor:pointer;margin-bottom:3px}
+.ly-item:hover{border-color:rgba(106,167,255,.2);background:rgba(106,167,255,.05)}
+.ly-item.sel{border-color:rgba(106,167,255,.5);background:var(--sel)}
+.ly-thumb{width:28px;height:28px;object-fit:contain;flex-shrink:0;border-radius:3px;background:rgba(255,255,255,.05);image-rendering:pixelated}
+.ly-info{flex:1;min-width:0}
+.ly-name{font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ly-sub{font-size:10px;color:var(--muted)}
+.ly-btns{display:flex;gap:3px;flex-shrink:0}
+.ly-vis{font-size:12px;opacity:.8;width:18px;text-align:center;cursor:pointer;padding:1px 2px;border-radius:3px}
+.ly-vis:hover{background:rgba(255,255,255,.1)}
+#layers-foot{padding:7px;border-top:1px solid var(--border);flex-shrink:0}
 
-/* ── CENTRE: preview ── */
+/* ── CANVAS ── */
 #preview-panel{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);position:relative;overflow:hidden;min-width:0}
-#drop-zone{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);font-size:13px;pointer-events:none;transition:opacity .2s}
-#drop-zone svg{opacity:.3}
-#drop-zone.hidden{opacity:0}
-#canvas-wrap{position:relative}
-#checkerboard{position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.12;border-radius:2px;
+#drop-hint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted);font-size:12px;pointer-events:none;transition:opacity .15s}
+#drop-hint.hidden{opacity:0}
+#canvas-wrap{position:relative;display:none}
+#checker{position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.1;
   background-image:linear-gradient(45deg,#fff 25%,transparent 25%),linear-gradient(-45deg,#fff 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#fff 75%),linear-gradient(-45deg,transparent 75%,#fff 75%);
-  background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}
-#canvas-wrap canvas{position:relative;z-index:1}
-#size-info{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--muted);background:rgba(7,16,26,.8);padding:2px 8px;border-radius:4px;pointer-events:none}
-#preview-toolbar{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;gap:6px;background:rgba(11,20,32,.85);border:1px solid var(--border);border-radius:8px;padding:5px 8px}
+  background-size:14px 14px;background-position:0 0,0 7px,7px -7px,-7px 0}
+#preview-canvas{position:relative;z-index:1;display:block;image-rendering:pixelated}
+#canvas-info{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--muted);background:rgba(7,16,26,.85);padding:2px 8px;border-radius:4px;pointer-events:none;display:none}
+#canvas-toolbar{position:absolute;top:8px;right:8px;display:none;gap:5px;flex-direction:column}
+#canvas-toolbar button{font-size:11px;padding:3px 7px}
 
-/* ── RIGHT: controls ── */
-#controls-panel{width:248px;flex-shrink:0;display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--panel);overflow-y:auto}
-.ctrl-section{padding:10px;border-bottom:1px solid var(--border)}
-.ctrl-section h3{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:8px}
-.ctrl-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
-.ctrl-row label{width:76px;flex-shrink:0;font-size:11px;color:var(--muted)}
-.ctrl-row input[type=range]{flex:1}
-.ctrl-row input[type=number]{width:58px}
-.ctrl-row input[type=text]{flex:1}
-.flag-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:4px}
-.path-row{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}
-.path-row span{font-size:11px;color:var(--muted)}
-.out-size-row{display:flex;gap:6px;align-items:center;margin-bottom:8px}
-.out-size-row span{font-size:11px;color:var(--muted)}
+/* ── CONTROLS ── */
+#ctrl-panel{width:244px;flex-shrink:0;display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--panel);overflow-y:auto}
+.cs{padding:9px 10px;border-bottom:1px solid var(--border)}
+.cs h3{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px}
+.cr{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.cr label{width:70px;flex-shrink:0;font-size:11px;color:var(--muted)}
+.cr input[type=range]{flex:1}
+.cr input[type=number]{width:54px;flex-shrink:0}
+.flags{display:flex;gap:10px;margin-bottom:6px}
+.size-row{display:flex;gap:5px;align-items:center;margin-bottom:7px;flex-wrap:wrap}
+.size-row span{font-size:11px;color:var(--muted);flex-shrink:0}
+.path-block{display:flex;flex-direction:column;gap:5px;margin-bottom:7px}
+.path-block span{font-size:11px;color:var(--muted)}
+#no-layer-msg{padding:16px 10px;font-size:12px;color:var(--muted);text-align:center}
 </style>
 </head>
 <body>
@@ -97,292 +101,188 @@ select{font:inherit;background:#111b28;border:1px solid rgba(255,255,255,.14);bo
   <div id="layout">
 
     <!-- Repo browser -->
-    <div id="browser-panel">
-      <div id="browser-header">
-        <h2>Repo Assets</h2>
-        <input type="search" id="browser-search" placeholder="Filter…" oninput="filterBrowser()">
+    <div id="browser">
+      <h2>Repo Assets</h2>
+      <div id="browser-search"><input type="search" placeholder="Filter…" oninput="filterBrowser(this.value)"></div>
+      <div id="browser-list"><div style="padding:8px;font-size:11px;color:var(--muted)">Loading…</div></div>
+      <div id="browser-foot">
+        <button onclick="addLayerFromBrowser()" id="add-from-repo-btn" disabled>+ Add as Layer</button>
+        <button onclick="document.getElementById('file-input').click()">+ Upload File</button>
+        <input type="file" id="file-input" accept="image/*" style="display:none" multiple>
       </div>
-      <div id="browser-list"><div style="padding:8px;font-size:11px;color:var(--muted)">Loading manifest…</div></div>
-      <div style="padding:6px 8px;border-top:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;gap:5px">
-        <button id="browser-import-btn" onclick="importSelected()" disabled>Load Selected</button>
+      <div id="browser-status"></div>
+    </div>
+
+    <!-- Layers -->
+    <div id="layers-panel">
+      <div id="layers-head">
+        <h2>Layers</h2>
+        <button class="icon" onclick="moveLayer(-1)" title="Move up">↑</button>
+        <button class="icon" onclick="moveLayer(1)"  title="Move down">↓</button>
+        <button class="icon danger" onclick="deleteLayer()" title="Delete">✕</button>
+      </div>
+      <div id="layer-list"></div>
+      <div id="layers-foot">
         <div style="display:flex;gap:5px">
-          <button onclick="document.getElementById('file-input').click()" style="flex:1;font-size:11px">Upload File</button>
-          <input type="file" id="file-input" accept="image/*" style="display:none" multiple>
+          <button class="ok" onclick="exportActiveLayer()" style="flex:1" id="export-one-btn" disabled>Export Layer</button>
+          <button class="ok" onclick="exportAllLayers()" title="Export all layers as separate files in one ZIP" id="export-all-btn" disabled>All</button>
         </div>
       </div>
-      <div id="browser-status">—</div>
     </div>
 
-    <!-- Queue -->
-    <div id="queue-panel">
-      <div id="queue-header">
-        <h2>Queue</h2>
-        <span id="q-count" style="font-size:11px;color:var(--muted)">0</span>
-      </div>
-      <div id="queue-list"></div>
-      <div id="queue-footer">
-        <button id="export-btn" class="ok" disabled>Export ZIP</button>
-      </div>
-    </div>
-
-    <!-- Preview -->
+    <!-- Canvas -->
     <div id="preview-panel">
-      <div id="drop-zone">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#6aa7ff" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        <span>Select from repo or upload a file</span>
+      <div id="drop-hint">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#6aa7ff" stroke-width="1.5" opacity=".4"><path d="M12 5v14M5 12l7-7 7 7"/></svg>
+        <span>Add layers from the repo browser or upload files</span>
       </div>
-      <div id="canvas-wrap" style="display:none">
-        <div id="checkerboard"></div>
+      <div id="canvas-wrap">
+        <div id="checker"></div>
         <canvas id="preview-canvas"></canvas>
       </div>
-      <div id="preview-toolbar" style="display:none">
-        <button onclick="resetTransforms()" style="font-size:11px;padding:3px 8px">Reset</button>
-        <button onclick="zoomFit()" style="font-size:11px;padding:3px 8px">Fit</button>
-        <button onclick="zoom(2)" style="font-size:11px;padding:3px 8px">2×</button>
-        <button onclick="zoom(4)" style="font-size:11px;padding:3px 8px">4×</button>
+      <div id="canvas-info"></div>
+      <div id="canvas-toolbar">
+        <button onclick="zoomFit()">Fit</button>
+        <button onclick="zoomSet(1)">1×</button>
+        <button onclick="zoomSet(2)">2×</button>
+        <button onclick="zoomSet(4)">4×</button>
       </div>
-      <div id="size-info" style="display:none"></div>
     </div>
 
     <!-- Controls -->
-    <div id="controls-panel">
+    <div id="ctrl-panel">
+      <div id="no-layer-msg">Select a layer to edit its transforms.</div>
+      <div id="ctrl-body" style="display:none">
 
-      <div class="ctrl-section">
-        <h3>Source</h3>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:3px">File: <span id="src-name" style="color:var(--text)">—</span></div>
-        <div style="font-size:11px;color:var(--muted)">Size: <span id="src-size" style="color:var(--text)">—</span></div>
+        <div class="cs">
+          <h3>Layer</h3>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:3px">File: <span id="c-name" style="color:var(--text)">—</span></div>
+          <div style="font-size:11px;color:var(--muted)">Size: <span id="c-size" style="color:var(--text)">—</span></div>
+        </div>
+
+        <div class="cs">
+          <h3>Output Canvas</h3>
+          <div class="size-row">
+            <span>W</span><input type="number" id="c-ow" min="1" max="4096" value="200" onchange="onCtrlChange()">
+            <span>H</span><input type="number" id="c-oh" min="1" max="4096" value="200" onchange="onCtrlChange()">
+            <button onclick="sizeFromSrc()" style="font-size:11px;padding:3px 6px">Src</button>
+          </div>
+          <select id="c-preset" onchange="applyPreset()">
+            <option value="">Custom…</option>
+            <option value="200,200">Portrait 200×200</option>
+            <option value="96,96">Head 96×96</option>
+            <option value="128,128">128×128</option>
+            <option value="256,256">256×256</option>
+          </select>
+        </div>
+
+        <div class="cs">
+          <h3>Source Crop <span style="font-weight:400;color:var(--muted);font-size:10px">(0 = full image)</span></h3>
+          <div class="cr"><label>X</label><input type="number" id="c-cx" value="0" min="0" oninput="onCtrlChange()" style="width:54px"><label style="width:auto;margin-left:8px">Y</label><input type="number" id="c-cy" value="0" min="0" oninput="onCtrlChange()" style="width:54px"></div>
+          <div class="cr"><label>W</label><input type="number" id="c-cw" value="0" min="0" oninput="onCtrlChange()" style="width:54px"><label style="width:auto;margin-left:8px">H</label><input type="number" id="c-ch" value="0" min="0" oninput="onCtrlChange()" style="width:54px"></div>
+        </div>
+
+        <div class="cs">
+          <h3>Transform</h3>
+          <div class="cr"><label>Scale X</label><input type="range" id="c-sx" min="0.05" max="4" step="0.01" value="1" oninput="sliderToNum('c-sx','c-sx-n');onCtrlChange()"><input type="number" id="c-sx-n" step="0.01" value="1" oninput="numToSlider('c-sx-n','c-sx');onCtrlChange()"></div>
+          <div class="cr"><label>Scale Y</label><input type="range" id="c-sy" min="0.05" max="4" step="0.01" value="1" oninput="sliderToNum('c-sy','c-sy-n');onCtrlChange()"><input type="number" id="c-sy-n" step="0.01" value="1" oninput="numToSlider('c-sy-n','c-sy');onCtrlChange()"></div>
+          <div class="cr"><label>Trans X</label><input type="range" id="c-tx" min="-512" max="512" step="1" value="0" oninput="sliderToNum('c-tx','c-tx-n');onCtrlChange()"><input type="number" id="c-tx-n" value="0" oninput="numToSlider('c-tx-n','c-tx');onCtrlChange()"></div>
+          <div class="cr"><label>Trans Y</label><input type="range" id="c-ty" min="-512" max="512" step="1" value="0" oninput="sliderToNum('c-ty','c-ty-n');onCtrlChange()"><input type="number" id="c-ty-n" value="0" oninput="numToSlider('c-ty-n','c-ty');onCtrlChange()"></div>
+          <div class="cr"><label>Rotate °</label><input type="range" id="c-rot" min="-180" max="180" step="1" value="0" oninput="sliderToNum('c-rot','c-rot-n');onCtrlChange()"><input type="number" id="c-rot-n" value="0" oninput="numToSlider('c-rot-n','c-rot');onCtrlChange()"></div>
+          <div class="cr"><label>Skew X</label><input type="range" id="c-skx" min="-1" max="1" step="0.01" value="0" oninput="sliderToNum('c-skx','c-skx-n');onCtrlChange()"><input type="number" id="c-skx-n" step="0.01" value="0" oninput="numToSlider('c-skx-n','c-skx');onCtrlChange()"></div>
+          <div class="cr"><label>Skew Y</label><input type="range" id="c-sky" min="-1" max="1" step="0.01" value="0" oninput="sliderToNum('c-sky','c-sky-n');onCtrlChange()"><input type="number" id="c-sky-n" step="0.01" value="0" oninput="numToSlider('c-sky-n','c-sky');onCtrlChange()"></div>
+          <div class="flags">
+            <label><input type="checkbox" id="c-fh" onchange="onCtrlChange()"> Flip H</label>
+            <label><input type="checkbox" id="c-fv" onchange="onCtrlChange()"> Flip V</label>
+          </div>
+          <div style="display:flex;gap:5px;margin-top:2px">
+            <button onclick="resetTransform()" style="flex:1;font-size:11px">Reset</button>
+            <button onclick="copyTransform()" style="flex:1;font-size:11px">Copy JSON</button>
+          </div>
+        </div>
+
+        <div class="cs">
+          <h3>Tint / Adjust</h3>
+          <div class="cr"><label>Hue °</label><input type="range" id="c-hue" min="-180" max="180" step="1" value="0" oninput="sliderToNum('c-hue','c-hue-n');onCtrlChange()"><input type="number" id="c-hue-n" value="0" oninput="numToSlider('c-hue-n','c-hue');onCtrlChange()"></div>
+          <div class="cr"><label>Saturate</label><input type="range" id="c-sat" min="0" max="300" step="1" value="100" oninput="sliderToNum('c-sat','c-sat-n');onCtrlChange()"><input type="number" id="c-sat-n" value="100" oninput="numToSlider('c-sat-n','c-sat');onCtrlChange()"></div>
+          <div class="cr"><label>Brightness</label><input type="range" id="c-bri" min="0" max="300" step="1" value="100" oninput="sliderToNum('c-bri','c-bri-n');onCtrlChange()"><input type="number" id="c-bri-n" value="100" oninput="numToSlider('c-bri-n','c-bri');onCtrlChange()"></div>
+          <div class="cr"><label>Contrast</label><input type="range" id="c-con" min="0" max="300" step="1" value="100" oninput="sliderToNum('c-con','c-con-n');onCtrlChange()"><input type="number" id="c-con-n" value="100" oninput="numToSlider('c-con-n','c-con');onCtrlChange()"></div>
+          <div class="cr"><label>Opacity</label><input type="range" id="c-opa" min="0" max="100" step="1" value="100" oninput="sliderToNum('c-opa','c-opa-n');onCtrlChange()"><input type="number" id="c-opa-n" value="100" oninput="numToSlider('c-opa-n','c-opa');onCtrlChange()"></div>
+        </div>
+
+        <div class="cs">
+          <h3>Levels</h3>
+          <div class="cr"><label>In Black</label><input type="range" id="c-lin" min="0" max="254" step="1" value="0" oninput="sliderToNum('c-lin','c-lin-n');onCtrlChange()"><input type="number" id="c-lin-n" value="0" oninput="numToSlider('c-lin-n','c-lin');onCtrlChange()"></div>
+          <div class="cr"><label>In White</label><input type="range" id="c-lhi" min="1" max="255" step="1" value="255" oninput="sliderToNum('c-lhi','c-lhi-n');onCtrlChange()"><input type="number" id="c-lhi-n" value="255" oninput="numToSlider('c-lhi-n','c-lhi');onCtrlChange()"></div>
+          <div class="cr"><label>Gamma</label><input type="range" id="c-lgam" min="0.1" max="4" step="0.05" value="1" oninput="sliderToNum('c-lgam','c-lgam-n');onCtrlChange()"><input type="number" id="c-lgam-n" step="0.05" value="1" oninput="numToSlider('c-lgam-n','c-lgam');onCtrlChange()"></div>
+          <div class="cr"><label>Out Black</label><input type="range" id="c-lout0" min="0" max="255" step="1" value="0" oninput="sliderToNum('c-lout0','c-lout0-n');onCtrlChange()"><input type="number" id="c-lout0-n" value="0" oninput="numToSlider('c-lout0-n','c-lout0');onCtrlChange()"></div>
+          <div class="cr"><label>Out White</label><input type="range" id="c-lout1" min="0" max="255" step="1" value="255" oninput="sliderToNum('c-lout1','c-lout1-n');onCtrlChange()"><input type="number" id="c-lout1-n" value="255" oninput="numToSlider('c-lout1-n','c-lout1');onCtrlChange()"></div>
+        </div>
+
+        <div class="cs">
+          <h3>Blend Mode</h3>
+          <select id="c-blend" onchange="onCtrlChange()" style="width:100%">
+            <option value="source-over">Normal</option>
+            <option value="multiply">Multiply</option>
+            <option value="screen">Screen</option>
+            <option value="overlay">Overlay</option>
+            <option value="darken">Darken</option>
+            <option value="lighten">Lighten</option>
+            <option value="color-dodge">Color Dodge</option>
+            <option value="color-burn">Color Burn</option>
+            <option value="hard-light">Hard Light</option>
+            <option value="soft-light">Soft Light</option>
+            <option value="difference">Difference</option>
+            <option value="exclusion">Exclusion</option>
+            <option value="hue">Hue</option>
+            <option value="saturation">Saturation</option>
+            <option value="color">Color</option>
+            <option value="luminosity">Luminosity</option>
+          </select>
+        </div>
+
+        <div class="cs">
+          <h3>Export</h3>
+          <div class="path-block">
+            <span>Output path (repo-relative from docs/)</span>
+            <input type="text" id="c-outpath" placeholder="assets/portraitsprites/head_mashtz_m.png" oninput="onCtrlChange()">
+          </div>
+          <div style="display:flex;gap:5px">
+            <button onclick="exportActiveLayer()" class="ok" style="flex:1">Export This Layer</button>
+          </div>
+        </div>
+
       </div>
-
-      <div class="ctrl-section">
-        <h3>Output Canvas</h3>
-        <div class="out-size-row">
-          <span>W</span><input type="number" id="out-w" min="1" max="4096" value="200" onchange="scheduleRender()">
-          <span>H</span><input type="number" id="out-h" min="1" max="4096" value="200" onchange="scheduleRender()">
-          <button onclick="sizeFromSource()" style="font-size:11px;padding:3px 7px">Src</button>
-        </div>
-        <select id="size-preset" onchange="applySizePreset()" style="width:100%">
-          <option value="">Custom size…</option>
-          <option value="200,200">Portrait 200×200</option>
-          <option value="96,96">Head 96×96</option>
-          <option value="128,128">128×128</option>
-          <option value="256,256">256×256</option>
-        </select>
-      </div>
-
-      <div class="ctrl-section">
-        <h3>Transform</h3>
-        <div class="ctrl-row">
-          <label>Scale X</label>
-          <input type="range" id="sx" min="0.05" max="4" step="0.01" value="1" oninput="syncNum('sx','sx-n');scheduleRender()">
-          <input type="number" id="sx-n" min="0.05" max="4" step="0.01" value="1" oninput="syncRange('sx-n','sx');scheduleRender()">
-        </div>
-        <div class="ctrl-row">
-          <label>Scale Y</label>
-          <input type="range" id="sy" min="0.05" max="4" step="0.01" value="1" oninput="syncNum('sy','sy-n');scheduleRender()">
-          <input type="number" id="sy-n" min="0.05" max="4" step="0.01" value="1" oninput="syncRange('sy-n','sy');scheduleRender()">
-        </div>
-        <div class="ctrl-row">
-          <label>Translate X</label>
-          <input type="range" id="tx" min="-512" max="512" step="1" value="0" oninput="syncNum('tx','tx-n');scheduleRender()">
-          <input type="number" id="tx-n" value="0" oninput="syncRange('tx-n','tx');scheduleRender()">
-        </div>
-        <div class="ctrl-row">
-          <label>Translate Y</label>
-          <input type="range" id="ty" min="-512" max="512" step="1" value="0" oninput="syncNum('ty','ty-n');scheduleRender()">
-          <input type="number" id="ty-n" value="0" oninput="syncRange('ty-n','ty');scheduleRender()">
-        </div>
-        <div class="ctrl-row">
-          <label>Rotate °</label>
-          <input type="range" id="rot" min="-180" max="180" step="1" value="0" oninput="syncNum('rot','rot-n');scheduleRender()">
-          <input type="number" id="rot-n" value="0" oninput="syncRange('rot-n','rot');scheduleRender()">
-        </div>
-        <div class="flag-row" style="margin-bottom:8px">
-          <label><input type="checkbox" id="flip-h" onchange="scheduleRender()"> Flip H</label>
-          <label><input type="checkbox" id="flip-v" onchange="scheduleRender()"> Flip V</label>
-        </div>
-        <div style="display:flex;gap:6px">
-          <button onclick="resetTransforms()" style="flex:1;font-size:11px">Reset</button>
-          <button onclick="copyTransforms()" style="flex:1;font-size:11px">Copy JSON</button>
-        </div>
-      </div>
-
-      <div class="ctrl-section">
-        <h3>Tint / Adjust</h3>
-        <div class="ctrl-row">
-          <label>Hue °</label>
-          <input type="range" id="hue" min="-180" max="180" step="1" value="0" oninput="syncNum('hue','hue-n');scheduleRender()">
-          <input type="number" id="hue-n" value="0" oninput="syncRange('hue-n','hue');scheduleRender()">
-        </div>
-        <div class="ctrl-row">
-          <label>Saturate</label>
-          <input type="range" id="sat" min="0" max="300" step="1" value="100" oninput="syncNum('sat','sat-n');scheduleRender()">
-          <input type="number" id="sat-n" value="100" oninput="syncRange('sat-n','sat');scheduleRender()">
-        </div>
-        <div class="ctrl-row">
-          <label>Brightness</label>
-          <input type="range" id="bri" min="0" max="300" step="1" value="100" oninput="syncNum('bri','bri-n');scheduleRender()">
-          <input type="number" id="bri-n" value="100" oninput="syncRange('bri-n','bri');scheduleRender()">
-        </div>
-        <div class="ctrl-row">
-          <label>Contrast</label>
-          <input type="range" id="con" min="0" max="300" step="1" value="100" oninput="syncNum('con','con-n');scheduleRender()">
-          <input type="number" id="con-n" value="100" oninput="syncRange('con-n','con');scheduleRender()">
-        </div>
-        <div class="ctrl-row">
-          <label>Opacity</label>
-          <input type="range" id="opa" min="0" max="100" step="1" value="100" oninput="syncNum('opa','opa-n');scheduleRender()">
-          <input type="number" id="opa-n" value="100" oninput="syncRange('opa-n','opa');scheduleRender()">
-        </div>
-      </div>
-
-      <div class="ctrl-section">
-        <h3>Output Path</h3>
-        <div class="path-row">
-          <span>Path inside ZIP (repo-relative from docs/)</span>
-          <input type="text" id="out-path" placeholder="assets/portraitsprites/head_mashtz_m.png">
-        </div>
-        <button onclick="addToQueue()" style="width:100%">Add to Queue</button>
-      </div>
-
     </div>
+
   </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
-// ── Base URL detection ────────────────────────────────────────────────────────
-// Works whether loaded standalone or inside an iframe from /docs/tools/
-const _here = new URL(window.location.href);
-// Navigate up from /docs/tools/asset-transformer/ to /docs/
-const DOCS_BASE = new URL('../../', _here).href;
+// ── Base URL ──────────────────────────────────────────────────────────────────
+const DOCS_BASE = new URL('../../', new URL(window.location.href)).href;
 
-// ── State ─────────────────────────────────────────────────────────────────────
-let srcImg = null;
-let srcName = '';
-let allAssets = [];
-let filteredAssets = [];
-let selectedBrowserPath = null;
+// ── Layers state ──────────────────────────────────────────────────────────────
+let layers = [];
+let activeIdx = -1;
+let allAssets = [], filteredAssets = [], selectedBrowserPath = null;
 let renderPending = false;
-const queue = [];
-let selQIdx = -1;
 
+function activeLayer() { return layers[activeIdx] ?? null; }
+
+const DEFAULT_T = () => ({
+  sx:1, sy:1, tx:0, ty:0, rot:0, skx:0, sky:0, fh:false, fv:false,
+  hue:0, sat:100, bri:100, con:100, opa:100,
+  lin:0, lhi:255, lgam:1, lout0:0, lout1:255,
+  cx:0, cy:0, cw:0, ch:0,
+  blend:'source-over',
+  ow:0, oh:0, outPath:''
+});
+
+// ── Canvas setup ──────────────────────────────────────────────────────────────
 const canvas = document.getElementById('preview-canvas');
-const ctx = canvas.getContext('2d');
-
-// ── Manifest loading ──────────────────────────────────────────────────────────
-async function loadManifest() {
-  const list = document.getElementById('browser-list');
-  try {
-    const resp = await fetch(DOCS_BASE + 'assets/manifest.json');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    allAssets = data.files || [];
-    filteredAssets = allAssets;
-    document.getElementById('browser-status').textContent = allAssets.length + ' assets';
-    renderBrowserList();
-  } catch (e) {
-    list.innerHTML = `<div style="padding:8px;font-size:11px;color:var(--bad)">Failed to load manifest: ${e.message}</div>`;
-  }
-}
-
-function filterBrowser() {
-  const q = document.getElementById('browser-search').value.trim().toLowerCase();
-  filteredAssets = q ? allAssets.filter(p => p.toLowerCase().includes(q)) : allAssets;
-  renderBrowserList();
-}
-
-function renderBrowserList() {
-  const list = document.getElementById('browser-list');
-  // Virtual list — only render visible chunk for performance
-  const MAX = 300;
-  const visible = filteredAssets.slice(0, MAX);
-  list.innerHTML = '';
-  for (const path of visible) {
-    const name = path.split('/').pop();
-    const el = document.createElement('div');
-    el.className = 'b-item' + (path === selectedBrowserPath ? ' sel' : '');
-    el.title = path;
-    el.innerHTML = `<img src="${DOCS_BASE}${path}" loading="lazy"><span>${name}</span>`;
-    el.addEventListener('click', () => selectBrowserItem(path, el));
-    list.appendChild(el);
-  }
-  if (filteredAssets.length > MAX) {
-    const more = document.createElement('div');
-    more.style.cssText = 'padding:6px 8px;font-size:11px;color:var(--muted)';
-    more.textContent = `…and ${filteredAssets.length - MAX} more. Refine filter to see them.`;
-    list.appendChild(more);
-  }
-  if (!filteredAssets.length) {
-    list.innerHTML = '<div style="padding:8px;font-size:11px;color:var(--muted)">No matches</div>';
-  }
-}
-
-function selectBrowserItem(path, el) {
-  selectedBrowserPath = path;
-  document.querySelectorAll('.b-item').forEach(e => e.classList.remove('sel'));
-  el.classList.add('sel');
-  document.getElementById('browser-import-btn').disabled = false;
-  // Auto-suggest output path
-  const outPath = document.getElementById('out-path');
-  if (!outPath.value || outPath.value === srcName) outPath.value = path;
-}
-
-function importSelected() {
-  if (!selectedBrowserPath) return;
-  loadImageUrl(DOCS_BASE + selectedBrowserPath, selectedBrowserPath.split('/').pop(), selectedBrowserPath);
-}
-
-// ── Image loading ─────────────────────────────────────────────────────────────
-function loadImageUrl(url, name, repoPath) {
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    srcImg = img;
-    srcName = name;
-    document.getElementById('src-name').textContent = name;
-    document.getElementById('src-size').textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
-    document.getElementById('drop-zone').classList.add('hidden');
-    document.getElementById('canvas-wrap').style.display = '';
-    document.getElementById('preview-toolbar').style.display = '';
-    document.getElementById('size-info').style.display = '';
-    document.getElementById('out-w').value = img.naturalWidth;
-    document.getElementById('out-h').value = img.naturalHeight;
-    if (repoPath) document.getElementById('out-path').value = repoPath;
-    render();
-  };
-  img.onerror = () => {
-    alert('Could not load image: ' + url + '\n\nIf this is a CORS issue, use "Upload File" instead.');
-  };
-  img.src = url;
-}
-
-function loadImageFile(file) {
-  const url = URL.createObjectURL(file);
-  loadImageUrl(url, file.name, null);
-  if (!document.getElementById('out-path').value) {
-    document.getElementById('out-path').value = file.name;
-  }
-}
-
-document.getElementById('file-input').addEventListener('change', e => {
-  const files = Array.from(e.target.files);
-  if (files.length) loadImageFile(files[0]);
-  e.target.value = '';
-});
-
-// Drag-and-drop onto preview
-document.getElementById('preview-panel').addEventListener('dragover', e => e.preventDefault());
-document.getElementById('preview-panel').addEventListener('drop', e => {
-  e.preventDefault();
-  const file = e.dataTransfer.files[0];
-  if (file && file.type.startsWith('image/')) loadImageFile(file);
-});
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function syncNum(rangeId, numId)  { document.getElementById(numId).value   = document.getElementById(rangeId).value; }
-function syncRange(numId, rangeId){ document.getElementById(rangeId).value  = document.getElementById(numId).value; }
-function n(id){ return parseFloat(document.getElementById(id).value) || 0; }
-function b(id){ return document.getElementById(id).checked; }
+const ctx    = canvas.getContext('2d');
 
 function scheduleRender() {
   if (renderPending) return;
@@ -390,134 +290,415 @@ function scheduleRender() {
   requestAnimationFrame(() => { renderPending = false; render(); });
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
 function render() {
-  if (!srcImg) return;
-  const ow = Math.max(1, Math.round(n('out-w')));
-  const oh = Math.max(1, Math.round(n('out-h')));
+  if (!layers.length) return;
+  // Canvas size = active layer's output size
+  const al = activeLayer();
+  const ow = al ? (al.t.ow || al.img.naturalWidth)  : 200;
+  const oh = al ? (al.t.oh || al.img.naturalHeight) : 200;
   canvas.width  = ow;
   canvas.height = oh;
   ctx.clearRect(0, 0, ow, oh);
 
-  const filterParts = [];
-  const hue = n('hue'), sat = n('sat'), bri = n('bri'), con = n('con');
-  if (hue !== 0)   filterParts.push(`hue-rotate(${hue}deg)`);
-  if (sat !== 100) filterParts.push(`saturate(${sat}%)`);
-  if (bri !== 100) filterParts.push(`brightness(${bri}%)`);
-  if (con !== 100) filterParts.push(`contrast(${con}%)`);
+  // Draw bottom→top
+  for (const ly of layers) {
+    if (!ly.visible || !ly.img) continue;
+    drawLayerOnto(ctx, ly, ow, oh);
+  }
 
-  ctx.save();
-  ctx.globalAlpha = n('opa') / 100;
-  if (filterParts.length) ctx.filter = filterParts.join(' ');
-  ctx.translate(ow / 2 + n('tx'), oh / 2 + n('ty'));
-  ctx.rotate(n('rot') * Math.PI / 180);
-  ctx.scale(n('sx') * (b('flip-h') ? -1 : 1), n('sy') * (b('flip-v') ? -1 : 1));
-  ctx.drawImage(srcImg, -srcImg.naturalWidth / 2, -srcImg.naturalHeight / 2, srcImg.naturalWidth, srcImg.naturalHeight);
-  ctx.restore();
-
-  document.getElementById('size-info').textContent = `${ow} × ${oh} px`;
-  syncCanvasDisplay();
+  document.getElementById('canvas-info').textContent = `${ow} × ${oh} px`;
+  syncDisplayScale();
 }
 
-function syncCanvasDisplay() {
+function syncDisplayScale() {
   const panel = document.getElementById('preview-panel');
-  const pw = panel.clientWidth - 32;
-  const ph = panel.clientHeight - 32;
-  const scale = Math.min(pw / canvas.width, ph / canvas.height);
-  const css = Math.min(8, Math.max(0.25, scale));
-  canvas.style.width  = (canvas.width  * css) + 'px';
-  canvas.style.height = (canvas.height * css) + 'px';
+  const pw = panel.clientWidth - 24, ph = panel.clientHeight - 24;
+  const s = Math.min(pw / canvas.width, ph / canvas.height, 8);
+  canvas.style.width  = (canvas.width  * Math.max(0.25, s)) + 'px';
+  canvas.style.height = (canvas.height * Math.max(0.25, s)) + 'px';
 }
 
-// ── Transform controls ────────────────────────────────────────────────────────
-function resetTransforms() {
-  [['sx',1],['sy',1],['tx',0],['ty',0],['rot',0],['hue',0],['sat',100],['bri',100],['con',100],['opa',100]].forEach(([id, v]) => {
-    const el = document.getElementById(id); if (el) el.value = v;
-    const en = document.getElementById(id+'-n'); if (en) en.value = v;
-  });
-  document.getElementById('flip-h').checked = false;
-  document.getElementById('flip-v').checked = false;
+function zoomFit() { syncDisplayScale(); }
+function zoomSet(s) {
+  canvas.style.width  = (canvas.width  * s) + 'px';
+  canvas.style.height = (canvas.height * s) + 'px';
+}
+
+// Drop onto canvas
+document.getElementById('preview-panel').addEventListener('dragover', e => e.preventDefault());
+document.getElementById('preview-panel').addEventListener('drop', e => {
+  e.preventDefault();
+  Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/')).forEach(addLayerFromFile);
+});
+
+// ── Layer management ──────────────────────────────────────────────────────────
+function createLayer(img, name, repoPath) {
+  const ow = img.naturalWidth, oh = img.naturalHeight;
+  return { img, name, repoPath, visible: true, t: { ...DEFAULT_T(), ow, oh, outPath: repoPath || name } };
+}
+
+function addLayer(img, name, repoPath) {
+  const ly = createLayer(img, name, repoPath);
+  layers.push(ly);
+  setActive(layers.length - 1);
+  refreshLayerUI();
+  showCanvas();
   scheduleRender();
 }
 
-function copyTransforms() {
-  const obj = {
-    scaleX: n('sx'), scaleY: n('sy'), translateX: n('tx'), translateY: n('ty'), rotateDeg: n('rot'),
-    flipH: b('flip-h'), flipV: b('flip-v'),
-    hue: n('hue'), saturate: n('sat'), brightness: n('bri'), contrast: n('con'), opacity: n('opa'),
-    outputW: n('out-w'), outputH: n('out-h'),
-  };
+function setActive(idx) {
+  activeIdx = idx;
+  refreshLayerUI();
+  pushToControls();
+}
+
+function deleteLayer() {
+  if (activeIdx < 0 || !layers.length) return;
+  layers.splice(activeIdx, 1);
+  activeIdx = Math.min(activeIdx, layers.length - 1);
+  refreshLayerUI();
+  if (layers.length) { pushToControls(); scheduleRender(); }
+  else { hideCanvas(); document.getElementById('ctrl-body').style.display = 'none'; document.getElementById('no-layer-msg').style.display = ''; }
+}
+
+function moveLayer(dir) {
+  const i = activeIdx, j = i + dir;
+  if (j < 0 || j >= layers.length) return;
+  [layers[i], layers[j]] = [layers[j], layers[i]];
+  activeIdx = j;
+  refreshLayerUI();
+  scheduleRender();
+}
+
+function toggleVisible(idx) {
+  layers[idx].visible = !layers[idx].visible;
+  refreshLayerUI();
+  scheduleRender();
+}
+
+function showCanvas() {
+  document.getElementById('canvas-wrap').style.display = '';
+  document.getElementById('canvas-info').style.display = '';
+  document.getElementById('canvas-toolbar').style.display = 'flex';
+  document.getElementById('drop-hint').classList.add('hidden');
+  document.getElementById('export-one-btn').disabled = false;
+  document.getElementById('export-all-btn').disabled = false;
+}
+function hideCanvas() {
+  document.getElementById('canvas-wrap').style.display = 'none';
+  document.getElementById('canvas-info').style.display = 'none';
+  document.getElementById('canvas-toolbar').style.display = 'none';
+  document.getElementById('drop-hint').classList.remove('hidden');
+  document.getElementById('export-one-btn').disabled = true;
+  document.getElementById('export-all-btn').disabled = true;
+}
+
+function refreshLayerUI() {
+  const list = document.getElementById('layer-list');
+  list.innerHTML = '';
+  // Show top→bottom (reverse of draw order)
+  [...layers].reverse().forEach((ly, ri) => {
+    const i = layers.length - 1 - ri;
+    const el = document.createElement('div');
+    el.className = 'ly-item' + (i === activeIdx ? ' sel' : '');
+    const thumb = ly.img ? `<img class="ly-thumb" src="${ly.img.src}">` : `<div class="ly-thumb"></div>`;
+    el.innerHTML = `
+      ${thumb}
+      <div class="ly-info">
+        <div class="ly-name">${ly.name}</div>
+        <div class="ly-sub">${ly.t.ow}×${ly.t.oh}</div>
+      </div>
+      <div class="ly-btns">
+        <span class="ly-vis" title="${ly.visible ? 'Hide' : 'Show'}" onclick="event.stopPropagation();toggleVisible(${i})">${ly.visible ? '👁' : '🚫'}</span>
+      </div>`;
+    el.addEventListener('click', () => setActive(i));
+    list.appendChild(el);
+  });
+}
+
+// ── Controls ↔ layer sync ─────────────────────────────────────────────────────
+const CTRL_MAP = [
+  ['c-sx','sx',false],['c-sy','sy',false],
+  ['c-tx','tx',false],['c-ty','ty',false],
+  ['c-rot','rot',false],['c-skx','skx',false],['c-sky','sky',false],
+  ['c-fh','fh',true],['c-fv','fv',true],
+  ['c-hue','hue',false],['c-sat','sat',false],['c-bri','bri',false],['c-con','con',false],['c-opa','opa',false],
+  ['c-lin','lin',false],['c-lhi','lhi',false],['c-lgam','lgam',false],['c-lout0','lout0',false],['c-lout1','lout1',false],
+  ['c-cx','cx',false],['c-cy','cy',false],['c-cw','cw',false],['c-ch','ch',false],
+  ['c-ow','ow',false],['c-oh','oh',false],
+];
+
+function pushToControls() {
+  const ly = activeLayer();
+  document.getElementById('no-layer-msg').style.display = ly ? 'none' : '';
+  document.getElementById('ctrl-body').style.display = ly ? '' : 'none';
+  if (!ly) return;
+  document.getElementById('c-name').textContent = ly.name;
+  document.getElementById('c-size').textContent = `${ly.img.naturalWidth} × ${ly.img.naturalHeight}`;
+  document.getElementById('c-outpath').value = ly.t.outPath;
+  document.getElementById('c-blend').value = ly.t.blend || 'source-over';
+  for (const [cid, key, isChk] of CTRL_MAP) {
+    const el = document.getElementById(cid);
+    if (!el) continue;
+    if (isChk) { el.checked = !!ly.t[key]; }
+    else {
+      el.value = ly.t[key];
+      const n = document.getElementById(cid + '-n');
+      if (n) n.value = ly.t[key];
+    }
+  }
+}
+
+function onCtrlChange() {
+  const ly = activeLayer();
+  if (!ly) return;
+  for (const [cid, key, isChk] of CTRL_MAP) {
+    const el = document.getElementById(cid);
+    if (!el) continue;
+    ly.t[key] = isChk ? el.checked : (parseFloat(el.value) || 0);
+  }
+  ly.t.outPath = document.getElementById('c-outpath').value;
+  ly.t.blend   = document.getElementById('c-blend').value;
+  refreshLayerUI();
+  scheduleRender();
+}
+
+function sliderToNum(sid, nid) { document.getElementById(nid).value = document.getElementById(sid).value; }
+function numToSlider(nid, sid) { document.getElementById(sid).value = document.getElementById(nid).value; }
+
+function resetTransform() {
+  const ly = activeLayer(); if (!ly) return;
+  const { ow, oh, outPath } = ly.t;
+  ly.t = { ...DEFAULT_T(), ow, oh, outPath };
+  pushToControls();
+  scheduleRender();
+}
+
+function sizeFromSrc() {
+  const ly = activeLayer(); if (!ly) return;
+  ly.t.ow = ly.img.naturalWidth;
+  ly.t.oh = ly.img.naturalHeight;
+  pushToControls();
+  scheduleRender();
+}
+
+function applyPreset() {
+  const val = document.getElementById('c-preset').value;
+  if (!val) return;
+  const [w, h] = val.split(',').map(Number);
+  const ly = activeLayer(); if (!ly) return;
+  ly.t.ow = w; ly.t.oh = h;
+  pushToControls();
+  scheduleRender();
+}
+
+function copyTransform() {
+  const ly = activeLayer(); if (!ly) return;
+  const t = ly.t;
+  const obj = { scaleX:t.sx, scaleY:t.sy, translateX:t.tx, translateY:t.ty, rotateDeg:t.rot, flipH:t.fh, flipV:t.fv, hue:t.hue, saturate:t.sat, brightness:t.bri, contrast:t.con, opacity:t.opa, outputW:t.ow, outputH:t.oh };
   navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).then(() => {
     const btn = event.target; btn.textContent = 'Copied!';
     setTimeout(() => btn.textContent = 'Copy JSON', 1200);
   });
 }
 
-function sizeFromSource() {
-  if (!srcImg) return;
-  document.getElementById('out-w').value = srcImg.naturalWidth;
-  document.getElementById('out-h').value = srcImg.naturalHeight;
-  scheduleRender();
+// ── Core draw function ────────────────────────────────────────────────────────
+function buildLUT(lin, lhi, gam, out0, out1) {
+  const lut = new Uint8ClampedArray(256);
+  const inRange  = Math.max(1, lhi - lin);
+  const outRange = out1 - out0;
+  const gamInv   = gam > 0 ? 1 / gam : 1;
+  for (let i = 0; i < 256; i++) {
+    let v = (i - lin) / inRange;
+    v = Math.max(0, Math.min(1, v));
+    if (gamInv !== 1) v = Math.pow(v, gamInv);
+    lut[i] = Math.round(out0 + v * outRange);
+  }
+  return lut;
 }
 
-function applySizePreset() {
-  const val = document.getElementById('size-preset').value;
-  if (!val) return;
-  const [w, h] = val.split(',').map(Number);
-  document.getElementById('out-w').value = w;
-  document.getElementById('out-h').value = h;
-  scheduleRender();
+function needsLevels(t) {
+  return t.lin !== 0 || t.lhi !== 255 || t.lgam !== 1 || t.lout0 !== 0 || t.lout1 !== 255;
 }
 
-function zoomFit() { syncCanvasDisplay(); }
-function zoom(s) {
-  canvas.style.width  = (canvas.width  * s) + 'px';
-  canvas.style.height = (canvas.height * s) + 'px';
+// Apply levels to an offscreen canvas and return the processed canvas
+function applyLevels(srcCanvas, t) {
+  const lut = buildLUT(t.lin, t.lhi, t.lgam, t.lout0, t.lout1);
+  const off = document.createElement('canvas');
+  off.width = srcCanvas.width; off.height = srcCanvas.height;
+  const oc = off.getContext('2d');
+  oc.drawImage(srcCanvas, 0, 0);
+  const id = oc.getImageData(0, 0, off.width, off.height);
+  const d = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i]   = lut[d[i]];
+    d[i+1] = lut[d[i+1]];
+    d[i+2] = lut[d[i+2]];
+    // alpha unchanged
+  }
+  oc.putImageData(id, 0, 0);
+  return off;
 }
 
-// ── Queue ─────────────────────────────────────────────────────────────────────
-function addToQueue() {
-  if (!srcImg) return;
-  const path = document.getElementById('out-path').value.trim();
-  if (!path) { alert('Set an output path first.'); return; }
-  canvas.toBlob(blob => {
-    const name = path.split('/').pop();
-    const thumbUrl = URL.createObjectURL(blob);
-    queue.push({ name, path, blob, thumbUrl });
-    selQIdx = queue.length - 1;
-    renderQueue();
-    document.getElementById('export-btn').disabled = false;
-  }, 'image/png');
+function drawLayerOnto(targetCtx, ly, canvasW, canvasH) {
+  const t   = ly.t;
+  const img = ly.img;
+
+  // Source crop region
+  const useCrop = t.cw > 0 && t.ch > 0;
+  const srcX = useCrop ? t.cx : 0;
+  const srcY = useCrop ? t.cy : 0;
+  const srcW = useCrop ? t.cw : img.naturalWidth;
+  const srcH = useCrop ? t.ch : img.naturalHeight;
+
+  // CSS filters
+  const fp = [];
+  if (t.hue !== 0)   fp.push(`hue-rotate(${t.hue}deg)`);
+  if (t.sat !== 100) fp.push(`saturate(${t.sat}%)`);
+  if (t.bri !== 100) fp.push(`brightness(${t.bri}%)`);
+  if (t.con !== 100) fp.push(`contrast(${t.con}%)`);
+
+  // Draw the layer (potentially with levels) to an offscreen first if needed
+  let drawSrc = img;
+  let drawSrcX = srcX, drawSrcY = srcY, drawSrcW = srcW, drawSrcH = srcH;
+
+  if (needsLevels(t)) {
+    // Render crop to a tmp canvas, apply levels pixel-by-pixel, use as source
+    const tmp = document.createElement('canvas');
+    tmp.width = srcW; tmp.height = srcH;
+    const tc = tmp.getContext('2d');
+    tc.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+    const leveled = applyLevels(tmp, t);
+    drawSrc = leveled;
+    drawSrcX = 0; drawSrcY = 0; drawSrcW = srcW; drawSrcH = srcH;
+  }
+
+  targetCtx.save();
+  targetCtx.globalAlpha = t.opa / 100;
+  targetCtx.globalCompositeOperation = t.blend || 'source-over';
+  if (fp.length) targetCtx.filter = fp.join(' ');
+  targetCtx.translate(canvasW / 2 + t.tx, canvasH / 2 + t.ty);
+  targetCtx.rotate(t.rot * Math.PI / 180);
+  targetCtx.scale(t.sx * (t.fh ? -1 : 1), t.sy * (t.fv ? -1 : 1));
+  if (t.skx !== 0 || t.sky !== 0) targetCtx.transform(1, t.sky, t.skx, 1, 0, 0);
+  targetCtx.drawImage(drawSrc, drawSrcX, drawSrcY, drawSrcW, drawSrcH, -srcW / 2, -srcH / 2, srcW, srcH);
+  targetCtx.restore();
 }
 
-function removeFromQueue(idx) {
-  queue.splice(idx, 1);
-  if (selQIdx >= queue.length) selQIdx = queue.length - 1;
-  renderQueue();
-  document.getElementById('export-btn').disabled = queue.length === 0;
-}
-
-function renderQueue() {
-  const list = document.getElementById('queue-list');
-  document.getElementById('q-count').textContent = queue.length;
-  list.innerHTML = '';
-  queue.forEach((item, i) => {
-    const el = document.createElement('div');
-    el.className = 'q-item' + (i === selQIdx ? ' sel' : '');
-    el.innerHTML = `<img class="q-thumb" src="${item.thumbUrl}"><div class="q-name" title="${item.path}">${item.name}</div><button class="q-del danger" onclick="event.stopPropagation();removeFromQueue(${i})">✕</button>`;
-    el.addEventListener('click', () => { selQIdx = i; renderQueue(); });
-    list.appendChild(el);
+// ── Render a single layer to a blob ──────────────────────────────────────────
+function renderLayerToBlob(ly) {
+  return new Promise(resolve => {
+    const off = document.createElement('canvas');
+    off.width  = ly.t.ow || ly.img.naturalWidth;
+    off.height = ly.t.oh || ly.img.naturalHeight;
+    const oc = off.getContext('2d');
+    // Export always uses normal blend so output is isolated
+    const exportLayer = { ...ly, t: { ...ly.t, blend: 'source-over' } };
+    drawLayerOnto(oc, exportLayer, off.width, off.height);
+    off.toBlob(resolve, 'image/png');
   });
 }
 
-// ── Export ZIP ────────────────────────────────────────────────────────────────
-document.getElementById('export-btn').addEventListener('click', async () => {
-  if (!queue.length) return;
+async function exportActiveLayer() {
+  const ly = activeLayer(); if (!ly) return;
+  const blob = await renderLayerToBlob(ly);
+  const path = ly.t.outPath || ly.name;
   const zip = new JSZip();
-  for (const item of queue) zip.file(item.path, item.blob);
-  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'assets-export.zip'; a.click();
+  zip.file(path, blob);
+  const out = await zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
+  dl(out, (path.split('/').pop().replace(/\.png$/i,'') || 'export') + '.zip');
+}
+
+async function exportAllLayers() {
+  if (!layers.length) return;
+  const zip = new JSZip();
+  for (const ly of layers) {
+    const path = ly.t.outPath || ly.name;
+    if (!path) continue;
+    const blob = await renderLayerToBlob(ly);
+    zip.file(path, blob);
+  }
+  const out = await zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
+  dl(out, 'assets-export.zip');
+}
+
+function dl(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+}
+
+// ── Image loading helpers ─────────────────────────────────────────────────────
+function addLayerFromFile(file) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => addLayer(img, file.name, null);
+  img.onerror = () => alert('Could not load: ' + file.name);
+  img.src = url;
+}
+
+function addLayerFromUrl(url, name, repoPath) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => addLayer(img, name, repoPath);
+  img.onerror = () => alert('Could not load (CORS?): ' + url + '\n\nTry "Upload File" instead.');
+  img.src = url;
+}
+
+document.getElementById('file-input').addEventListener('change', e => {
+  Array.from(e.target.files).forEach(addLayerFromFile);
+  e.target.value = '';
 });
+
+// ── Repo browser ──────────────────────────────────────────────────────────────
+async function loadManifest() {
+  try {
+    const r = await fetch(DOCS_BASE + 'assets/manifest.json');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    allAssets = d.files || [];
+    filteredAssets = allAssets;
+    document.getElementById('browser-status').textContent = allAssets.length + ' assets';
+    renderBrowser();
+  } catch(e) {
+    document.getElementById('browser-list').innerHTML = `<div style="padding:8px;font-size:11px;color:var(--bad)">Manifest load failed: ${e.message}</div>`;
+  }
+}
+
+function filterBrowser(q) {
+  const lq = q.trim().toLowerCase();
+  filteredAssets = lq ? allAssets.filter(p => p.toLowerCase().includes(lq)) : allAssets;
+  renderBrowser();
+}
+
+function renderBrowser() {
+  const list = document.getElementById('browser-list');
+  const MAX = 300;
+  const slice = filteredAssets.slice(0, MAX);
+  list.innerHTML = '';
+  for (const path of slice) {
+    const name = path.split('/').pop();
+    const el = document.createElement('div');
+    el.className = 'b-item' + (path === selectedBrowserPath ? ' sel' : '');
+    el.title = path;
+    el.innerHTML = `<img src="${DOCS_BASE}${path}" loading="lazy"><span>${name}</span>`;
+    el.addEventListener('click', () => { selectedBrowserPath = path; document.querySelectorAll('.b-item').forEach(e=>e.classList.remove('sel')); el.classList.add('sel'); document.getElementById('add-from-repo-btn').disabled = false; });
+    el.addEventListener('dblclick', () => addLayerFromBrowser());
+    list.appendChild(el);
+  }
+  if (filteredAssets.length > MAX) {
+    const more = document.createElement('div');
+    more.style.cssText = 'padding:5px 8px;font-size:10px;color:var(--muted)';
+    more.textContent = `…${filteredAssets.length - MAX} more. Refine filter.`;
+    list.appendChild(more);
+  }
+  if (!filteredAssets.length) list.innerHTML = '<div style="padding:8px;font-size:11px;color:var(--muted)">No matches</div>';
+}
+
+function addLayerFromBrowser() {
+  if (!selectedBrowserPath) return;
+  const url = DOCS_BASE + selectedBrowserPath;
+  const name = selectedBrowserPath.split('/').pop();
+  addLayerFromUrl(url, name, selectedBrowserPath);
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadManifest();
