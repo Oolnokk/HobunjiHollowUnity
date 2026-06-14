@@ -3098,9 +3098,9 @@ window.SCRATCHBONES_CONFIG = {
         "worldAlphaTest": 0.01,
         "portraitScaleBySpecies": {
           "mao-ao": 1,
-          "engh-sho": 1,
+          "engh-sho": 0.95,
           "kenkari": 0.75,
-          "tletingan": 0.75,
+          "tletingan": 0.85,
           "mashtzarr": 1
         },
         "childScaleMultiplier": 0.5,
