@@ -930,14 +930,14 @@
       border: 1px solid var(--border-bright);
       border-bottom: none;
       overflow: hidden;
-      background: var(--glass-2);
+      background: #1b3529;
       box-shadow: 0 -4px 18px rgba(0,0,0,0.45);
     }
     #npcPortraitCanvas {
       display: block;
       width: 100%;
       height: auto;
-      image-rendering: pixelated;
+      image-rendering: auto;
     }
     #npcDialoguePanel {
       flex: 1;

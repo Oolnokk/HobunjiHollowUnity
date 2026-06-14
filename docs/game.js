@@ -226,11 +226,15 @@
         _dialogueLineIdx = 0;
         _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
         _npcDialogueTextEl.textContent = _dialogueLines[0];
+        // Paint portrait before showing panel so it doesn't pop in after fade-in
+        if (walker.profile && window.NpcAvatarPreview) {
+          const ctx = _npcPortraitCanvas.getContext('2d');
+          ctx.fillStyle = '#1b3529';
+          ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
+          await window.NpcAvatarPreview.renderProfileToCanvas(_npcPortraitCanvas, walker.profile);
+        }
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
-        if (walker.profile && window.NpcAvatarPreview) {
-          window.NpcAvatarPreview.renderProfileToCanvas(_npcPortraitCanvas, walker.profile);
-        }
       }
 
       function advanceNpcDialogue() {
