@@ -1385,7 +1385,9 @@
         });
         if (!profile) return null;
 
-        const MODEL_W = 0.9, PORTRAIT_SIZE = 200;
+        const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+        const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
+        const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
         const frontCanvas = document.createElement('canvas');
         frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
@@ -1395,7 +1397,7 @@
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: 0.01 }
+          { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
         );
         avatarGroup.position.set(0, MODEL_W / 2, 0);
         const root = new THREE.Group();
@@ -7124,10 +7126,11 @@
           const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(playerData);
           if (!profile) { gameStarted = true; return; }
 
-          const MODEL_W = 0.9; // 0.75 * 1.2
+          const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+          const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
           // portrait-utils.js uses PORTRAIT_CW/CH = 200 for all layer offsets;
           // rendering to any other size shifts off-center sprites.
-          const PORTRAIT_SIZE = 200;
+          const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
 
           const frontCanvas = document.createElement('canvas');
           frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
@@ -7140,7 +7143,7 @@
           const MODEL_H = MODEL_W * (PORTRAIT_SIZE / PORTRAIT_SIZE); // square canvas
           const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
             THREE, frontCanvas,
-            { backCanvas, modelWidth: MODEL_W, modelHeight: MODEL_H, anchorZ: 0, alphaTest: 0.01 }
+            { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_H, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
           );
           avatarGroup.name = 'player_avatar';
           // PlaneGeometry is origin-centered; lift by half height so bottom = tile surface
