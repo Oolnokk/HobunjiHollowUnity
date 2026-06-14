@@ -1311,9 +1311,15 @@
       }
 
       function _returnToFarmMeshes() {
-        if (currentArea === 'interior') interiorScene.remove(playerMesh);
-        else if (currentArea === 'town' && townScene) townScene.remove(playerMesh);
+        if (currentArea === 'interior') {
+          interiorScene.remove(playerMesh);
+          interiorScene.remove(playerGroundShadow);
+        } else if (currentArea === 'town' && townScene) {
+          townScene.remove(playerMesh);
+          townScene.remove(playerGroundShadow);
+        }
         scene.add(playerMesh);
+        scene.add(playerGroundShadow);
         scene.add(toolHolder);
         scene.add(reticleMesh);
         scene.add(reticleCircleMesh);
@@ -1346,6 +1352,32 @@
         camTargetX = player.x / TILE;
         camTargetZ = player.y / TILE;
         _transitionLatch = travelAreaKey();
+      }
+
+
+      function pngAvatarGroundShadowConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.groundShadow || {};
+      }
+
+      function makeCharacterGroundShadow(name = 'character_ground_shadow') {
+        const cfg = pngAvatarGroundShadowConfig();
+        const geo = new THREE.CircleGeometry(1, 40);
+        geo.rotateX(-Math.PI / 2);
+        const mat = new THREE.MeshBasicMaterial({
+          color: new THREE.Color(cfg.color || '#1b1712'),
+          transparent: true,
+          opacity: cfg.opacity ?? 0.28,
+          depthWrite: false,
+        });
+        const shadow = new THREE.Mesh(geo, mat);
+        shadow.name = name;
+        shadow.renderOrder = -1;
+        shadow.scale.set(cfg.radiusX ?? 0.34, 1, cfg.radiusZ ?? 0.22);
+        return shadow;
+      }
+
+      function characterGroundShadowSurfaceOffset() {
+        return pngAvatarGroundShadowConfig().surfaceOffsetY ?? 0.018;
       }
 
       // ── Path NPCs: avatars that walk authored routes ──────────────
@@ -1402,6 +1434,8 @@
         avatarGroup.position.set(0, MODEL_W / 2, 0);
         const root = new THREE.Group();
         root.name = 'npc_walker_' + (path.id || path.label || '');
+        const groundShadow = makeCharacterGroundShadow('npc_ground_shadow');
+        root.add(groundShadow);
         root.add(avatarGroup);
 
         const interior = path.area === 'interior';
@@ -1430,8 +1464,9 @@
           rot: Math.PI / 2, perpState: {},
           update(dt) {
             if (this.nodes.length < 2) {
-              root.position.y = surfY(this.nodes[0][0], this.nodes[0][1])
-                + Math.sin(performance.now() / 600) * 0.005;
+              const groundY = surfY(this.nodes[0][0], this.nodes[0][1]);
+              root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
+              groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
             if (this.pause === Infinity) return; // held for dialogue
@@ -1460,6 +1495,7 @@
             root.position.z = rz + 0.5;
             root.position.y += (ty - root.position.y) * 0.2;
             root.position.y += Math.sin(performance.now() / 140) * 0.012;
+            groundShadow.position.y = ty - root.position.y + characterGroundShadowSurfaceOffset();
             const rawRot = -Math.atan2(br - ar, bc - ac) + Math.PI / 2;
             const { effectiveTarget, snapTo } = perpClamp(this.perpState, rawRot, [Math.PI / 2, -Math.PI / 2]);
             if (snapTo !== null) this.rot = effectiveTarget;
@@ -1763,12 +1799,16 @@
         camTargetX = player.x / TILE;
         camTargetZ = player.y / TILE;
         scene.remove(playerMesh);
+        scene.remove(playerGroundShadow);
         scene.remove(toolHolder);
         scene.remove(reticleMesh);
         scene.remove(reticleCircleMesh);
         scene.remove(reticleRingMesh);
         scene.remove(reticleWavyGroup);
-        if (townScene) townScene.add(playerMesh);
+        if (townScene) {
+          townScene.add(playerMesh);
+          townScene.add(playerGroundShadow);
+        }
         refreshActionBar();
       }
 
@@ -1947,6 +1987,7 @@
         camTargetZ     = player.y / TILE;
         // Move player mesh into interior scene
         fromScene.remove(playerMesh);
+        fromScene.remove(playerGroundShadow);
         fromScene.remove(toolHolder);
         fromScene.remove(reticleMesh);
         fromScene.remove(reticleCircleMesh);
@@ -1954,6 +1995,7 @@
         fromScene.remove(reticleWavyGroup);
         clearTargetHighlights();
         interiorScene.add(playerMesh);
+        interiorScene.add(playerGroundShadow);
         refreshActionBar();
       }
 
@@ -1974,7 +2016,9 @@
           // Move player mesh back to the scene they came from
           const toScene = returnArea === 'town' ? townScene : scene;
           interiorScene.remove(playerMesh);
+          interiorScene.remove(playerGroundShadow);
           toScene.add(playerMesh);
+          toScene.add(playerGroundShadow);
           toScene.add(toolHolder);
           toScene.add(reticleMesh);
           toScene.add(reticleCircleMesh);
@@ -4605,6 +4649,8 @@
       const playerMesh = new THREE.Group();
       playerMesh.name = 'player_root';
       scene.add(playerMesh);
+      const playerGroundShadow = makeCharacterGroundShadow('player_ground_shadow');
+      scene.add(playerGroundShadow);
       // Logical facing angle — decoupled from playerMesh.rotation.y so sweep can
       // rotate the visual body without affecting movement/targeting math.
       let playerFacing = 0;
@@ -5418,6 +5464,7 @@
         playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
+        playerGroundShadow.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
 
         // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
         if (!player.perpState) player.perpState = {};
