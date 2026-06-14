@@ -27,6 +27,10 @@ The game is `docs/index.html` (+ `docs/game.js`, `docs/onboarding.js`). All tool
 - `docs/js/png-plane-avatar.js` feeds that canvas through the PNG reference pipeline's single-plane path, building a temporary Three.js `Group` with a front portrait plane and a rear silhouette plane. It does not export a GLB; the generated object is meant to stand in as a demo NPC model at runtime.
 - Three.js module URLs and temporary plane defaults live in `docs/config/scratchbones-config.js` under `game.assets.pngPlaneAvatar`.
 
+## Tools (pinned)
+
+[`docs/tools/index.html` @ 8eb721d](https://rawcdn.githack.com/oolnokk/hobunjihollowunity/8eb721d477016c11b55c2c9df5d4c9b3177157ec/docs/tools/index.html)
+
 ## Setup note
 
 Serve this repository as static files and load portrait scripts from `docs/js/` so the runtime can fetch configs from `docs/config/` and image assets from `docs/assets/`.

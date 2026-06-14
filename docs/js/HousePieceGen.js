@@ -90,7 +90,7 @@
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
-  global.HousePieceGen = { buildGroup: buildGroup, loadShingleGlb: loadShingleGlb, shingleReady: shingleReady };
+  global.HousePieceGen = { buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece, loadShingleGlb: loadShingleGlb, shingleReady: shingleReady };
 
   /**
    * Build a Highland house group for one rectangular building footprint.
@@ -136,14 +136,20 @@
     if (opts.wallBuilder) {
       var bodyPanels  = _wallPanels(minC, maxC, minR, maxR, y0, baseH, tile);
       var gablePanels = _gablePanels(faces);
-      var panels      = bodyPanels.concat(gablePanels);
       var wbUse   = opts.wbUsePlaceholder !== false;
       var wbExtra = opts.wbOpts || { unitMult: 0.35, rockScale: 1.5,
                                      preScale: [1, 1, 0.6],
                                      brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
-      var wbGroup = opts.wallBuilder.build(panels, Object.assign({ usePlaceholder: wbUse }, wbExtra));
+
+      var wbGroup = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse }, wbExtra));
       wbGroup.userData.isWallBricks = true;
       group.add(wbGroup);
+
+      // Gable triangles are smaller — use denser, smaller bricks so they fill properly.
+      var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.22, rockScale: 1.1 });
+      var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gableExtra));
+      gableGroup.userData.isWallBricks = true;
+      group.add(gableGroup);
     }
 
     return group;
@@ -311,15 +317,15 @@
 
   // ── Face mesh building ──────────────────────────────────────────────────────
   function _buildFaceMeshes(group, faces, opts) {
-    var matWall  = opts.matWall  || new THREE.MeshLambertMaterial({ color: 0xd4c4a8, side: THREE.FrontSide });
     var matRoof  = opts.matRoof  || new THREE.MeshLambertMaterial({ color: 0x6b3e26, side: THREE.FrontSide });
     var matFloor = opts.matFloor || new THREE.MeshLambertMaterial({ color: 0xa89878, side: THREE.FrontSide });
+    var hideWalls = !!opts.wallBuilder;
 
     for (var i = 0; i < faces.length; i++) {
       var f   = faces[i];
-      var mat = f.tag === 'roof' ? matRoof
-              : (f.tag === 'floor' || f.tag === 'ceiling') ? matFloor
-              : matWall;
+      // Wall faces are covered by WallBuilder bricks — skip the base mesh planes.
+      if (hideWalls && f.tag === 'wall') continue;
+      var mat = f.tag === 'roof' ? matRoof : matFloor;
       var geom = new THREE.BufferGeometry();
       var pts  = [f.v[0], f.v[1], f.v[2], f.v[0], f.v[2], f.v[3]].flat();
       geom.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
@@ -602,6 +608,163 @@
       _alignGroup(face, faceGroup, cfg);
       group.add(faceGroup);
     }
+  }
+
+  // ── buildGroupFromPiece ─────────────────────────────────────────────────────
+  // Builds a Three.js Group from a house piece JSON exported by the house editor.
+  // Reads piece.base.faces directly — same geometry as the house editor's 3D preview,
+  // with WallBuilder bricks added on top of wall/gable faces when opts.wallBuilder is set.
+  //
+  // @param piece     Parsed piece JSON (schema modular-house-piece-author/v*)
+  // @param bldgMinC  World grid column of the building's footprint top-left corner
+  // @param bldgMinR  World grid row    of the building's footprint top-left corner
+  // @param opts      Same options as buildGroup (wallBuilder, wbOpts, wbGableOpts,
+  //                  wbUsePlaceholder, matRoof, matFloor, matBoards, matStone, matTube)
+  function buildGroupFromPiece(THREE, piece, bldgMinC, bldgMinR, opts) {
+    opts = opts || {};
+    var faces   = (piece.base && piece.base.faces) ? piece.base.faces : [];
+    var pcells  = (piece.footprint && piece.footprint.cells) ? piece.footprint.cells : [];
+    var gc      = Math.floor((piece.gridSize || 18) / 2);
+    var minCX   = pcells.length ? Math.min.apply(null, pcells.map(function(c) { return c.x; })) : gc;
+    var minCZ   = pcells.length ? Math.min.apply(null, pcells.map(function(c) { return c.y; })) : gc;
+    var offX    = bldgMinC + (gc - minCX);
+    var offZ    = bldgMinR + (gc - minCZ);
+
+    // Optional CW rotation (viewed from above) around piece footprint centre
+    var rotDeg  = opts.rotationDeg || 0;
+    var rotRad  = -rotDeg * Math.PI / 180;   // negative = CW in XZ plane
+    var cosR = 1, sinR = 0, pivX = 0, pivZ = 0, txAdj = 0, tzAdj = 0;
+    if (rotDeg) {
+      cosR = Math.cos(rotRad); sinR = Math.sin(rotRad);
+      var maxCXp = pcells.length ? Math.max.apply(null, pcells.map(function(c){return c.x;})) : gc + 3;
+      var maxCZp = pcells.length ? Math.max.apply(null, pcells.map(function(c){return c.y;})) : gc + 3;
+      var fw0 = maxCXp - minCX + 1, fd0 = maxCZp - minCZ + 1;
+      pivX = bldgMinC + fw0 / 2;
+      pivZ = bldgMinR + fd0 / 2;
+      // Keep gridX/gridZ = top-left of rotated bounding box
+      if (rotDeg === 90 || rotDeg === 270) { txAdj = (fd0 - fw0) / 2; tzAdj = (fw0 - fd0) / 2; }
+    }
+
+    var matRoof   = opts.matRoof   || new THREE.MeshLambertMaterial({ color: 0x6b3e26, side: THREE.FrontSide });
+    var matFloor  = opts.matFloor  || new THREE.MeshLambertMaterial({ color: 0xa89878, side: THREE.FrontSide });
+    var matBoards = opts.matBoards || new THREE.MeshLambertMaterial({ color: 0x8b6914, side: THREE.DoubleSide });
+    var matStone  = opts.matStone  || new THREE.MeshLambertMaterial({ color: 0x888888, side: THREE.DoubleSide });
+    var matTube   = opts.matTube   || new THREE.MeshLambertMaterial({ color: 0x9c6240, side: THREE.FrontSide });
+
+    var BOARD_TAGS = { porch: 1, porchStair: 1, railing: 1 };
+    var STONE_TAGS = { entryTunnel: 1, chimney: 1 };
+
+    var group       = new THREE.Group();
+    var bodyPanels  = [];
+    var gablePanels = [];
+    var roofFaces   = [];
+    var allOff      = [];  // offset copies of all faces — for peak-center detection
+
+    var hideWalls = !!opts.wallBuilder;
+
+    for (var i = 0; i < faces.length; i++) {
+      var f   = faces[i];
+      var tag = f.tag;
+
+      // Offset vertices to world space, then apply rotation if any
+      var vOff = f.v.map(function(p) {
+        var wx = p[0] + offX, wz = p[2] + offZ;
+        if (rotDeg) {
+          var px = wx - pivX, pz = wz - pivZ;
+          wx = px * cosR - pz * sinR + pivX + txAdj;
+          wz = px * sinR + pz * cosR + pivZ + tzAdj;
+        }
+        return [wx, p[1], wz];
+      });
+      var fOff = { v: vOff, tag: tag, id: f.id,
+                   gableEnd: f.gableEnd, highlandFrustumWall: f.highlandFrustumWall,
+                   roofAcrossOffset: f.roofAcrossOffset, roofOffsetRole: f.roofOffsetRole,
+                   extensionFace: f.extensionFace };
+      allOff.push(fOff);
+
+      // Wall faces → WallBuilder panels
+      if (hideWalls && tag === 'wall') {
+        var panel = _faceToPanel(fOff);
+        if (f.gableEnd) gablePanels.push(panel);
+        else bodyPanels.push(panel);
+        continue;
+      }
+
+      // Skip interior-only faces: extension floor undersides, main building floor/ceiling
+      if (f.extensionFace === 'floor') continue;
+      if (tag === 'floor' || tag === 'ceiling') continue;
+
+      // Collect roof faces for shingle generation
+      if (tag === 'roof') roofFaces.push(fOff);
+
+      // Select material
+      var mat;
+      if (tag === 'roof')          mat = matRoof;
+      else if (BOARD_TAGS[tag])    mat = matBoards;
+      else if (STONE_TAGS[tag])    mat = matStone;
+      else                         mat = matFloor;
+
+      // Build quad mesh
+      var pts = [
+        vOff[0][0], vOff[0][1], vOff[0][2],
+        vOff[1][0], vOff[1][1], vOff[1][2],
+        vOff[2][0], vOff[2][1], vOff[2][2],
+        vOff[0][0], vOff[0][1], vOff[0][2],
+        vOff[2][0], vOff[2][1], vOff[2][2],
+        vOff[3][0], vOff[3][1], vOff[3][2],
+      ];
+      var geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      geom.computeVertexNormals();
+      var mesh = new THREE.Mesh(geom, mat);
+      mesh.castShadow = mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+
+    // Shingles on roof faces (same as buildGroup)
+    _addShingles(group, roofFaces, allOff, Object.assign({ matTube: matTube }, opts));
+
+    // WallBuilder bricks on body walls and gable triangles
+    if (opts.wallBuilder) {
+      var wbUse   = opts.wbUsePlaceholder !== false;
+      var wbExtra = opts.wbOpts || { unitMult: 0.35, rockScale: 1.5,
+                                     preScale: [1, 1, 0.6],
+                                     brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
+      if (bodyPanels.length) {
+        var wbGrp = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse }, wbExtra));
+        wbGrp.userData.isWallBricks = true;
+        group.add(wbGrp);
+      }
+      if (gablePanels.length) {
+        var gblExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.22, rockScale: 1.1 });
+        var gblGrp   = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gblExtra));
+        gblGrp.userData.isWallBricks = true;
+        group.add(gblGrp);
+      }
+    }
+
+    return group;
+  }
+
+  // Converts an already-world-space face quad to a WallBuilder panel object.
+  // Selects winding so the outward normal faces away from the building.
+  function _faceToPanel(face) {
+    var v   = face.v.map(function(p) { return new THREE.Vector3(p[0], p[1], p[2]); });
+    var N   = _faceNormal({ v: face.v });
+    var u0  = v[3].clone().sub(v[0]);
+    var vv0 = v[1].clone().sub(v[0]);
+    var nTest = u0.clone().cross(vv0);
+    var corners;
+    if (nTest.dot(N) > 0) {
+      corners = [[v[0].x,v[0].y,v[0].z],[v[3].x,v[3].y,v[3].z],[v[2].x,v[2].y,v[2].z],[v[1].x,v[1].y,v[1].z]];
+    } else {
+      corners = [[v[3].x,v[3].y,v[3].z],[v[0].x,v[0].y,v[0].z],[v[1].x,v[1].y,v[1].z],[v[2].x,v[2].y,v[2].z]];
+    }
+    var w = v[0].distanceTo(v[3]);
+    var h = Math.abs(v[1].y - v[0].y);
+    if (h < 0.001) h = v[0].distanceTo(v[1]);
+    return { id: String(face.id || 'fp'), width: w, height: h,
+             position: [0, 0, 0], rotationDeg: [0, 0, 0], corners: corners };
   }
 
 })(window);

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<title>Modular House Piece Author v37</title>
+<title>House Editor</title>
 <style>
 :root{
   --bg:#0d121a; --panel:#151d2a; --panel2:#1b2637; --text:#eaf1ff; --muted:#9eacc3;
@@ -24,12 +24,13 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
 <body>
 <div class="app">
   <header class="panel">
-    <div class="title"><h1>Modular House Piece Author v37</h1><div class="status" id="statusLine">Booting...</div></div>
+    <div class="title"><h1>House Editor</h1><div class="status" id="statusLine">Booting...</div></div>
     <div class="row">
       <button id="newPieceBtn" type="button">New piece</button>
       <button id="undoBtn" type="button" disabled>Undo</button>
       <button id="redoBtn" type="button" disabled>Redo</button>
-      <button id="copyJsonBtn" type="button">Copy JSON</button>
+      <button id="copyPieceBtn" type="button">Copy piece</button>
+      <button id="copyJsonBtn" type="button">Copy full JSON</button>
       <button id="downloadJsonBtn" class="ok" type="button">Download JSON</button>
     </div>
   </header>
@@ -217,7 +218,27 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
     </div>
 
     <div class="section">
-      <h2>7. Import / export</h2>
+      <h2>7. Game wall settings</h2>
+      <p class="hint">Set the WallBuilder options used when this piece is placed in the game world. Copy the library entry and paste it into the map editor's House Library.</p>
+      <div class="g2">
+        <div><label>unitMult</label><input id="gwUnitMult" type="number" step="0.01" value="0.35"></div>
+        <div><label>rockScale</label><input id="gwRockScale" type="number" step="0.1" value="1.5"></div>
+      </div>
+      <div class="g2" style="margin-top:6px">
+        <div><label>preScale Z</label><input id="gwPreScaleZ" type="number" step="0.05" value="0.6"></div>
+      </div>
+      <p class="hint" style="margin-top:6px">Gable opts</p>
+      <div class="g2">
+        <div><label>unitMult</label><input id="gwGableUnitMult" type="number" step="0.01" value="0.22"></div>
+        <div><label>rockScale</label><input id="gwGableRockScale" type="number" step="0.1" value="1.1"></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="copyLibEntryBtn" type="button" class="ok">Copy library entry</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>8. Import / export</h2>
       <div class="row"><label class="fileButton" for="jsonInput">Import JSON</label><input id="jsonInput" class="hidden" type="file" accept=".json,application/json"><button id="refreshExportBtn" type="button">Refresh export text</button></div>
       <textarea id="exportText" spellcheck="false"></textarea>
     </div>
@@ -2133,8 +2154,9 @@ function duplicateSelectedPiece(){ const p=state.library.find(x=>x.id===state.se
 function deleteSelectedPiece(){ const p=state.library.find(x=>x.id===state.selectedPieceId); if(!p){log('Select a library piece first.','warn');return;} pushUndo('Delete library piece'); state.library=state.library.filter(x=>x.id!==p.id); state.selectedPieceId=null; renderPieceList(); refreshExport(); log(`Deleted library piece ${p.name}.`); }
 function deepCleanPiece(piece){ return JSON.parse(JSON.stringify(piece)); }
 function syncPieceFromInputs(){ state.piece.name=$('pieceName').value.trim()||'unnamed_piece'; state.piece.type=$('pieceType').value; state.piece.preset=$('basePreset')?.value || state.piece.preset || 'custom'; state.piece.gridSize=state.gridSize; state.piece.tileSize=state.tileSize; state.piece.base.height=finite($('baseHeight').value,2.6); state.piece.base.wallThickness=finite($('wallThickness').value,.15); state.piece.base.groundY=finite($('groundY').value,0); syncRoofFromInputs(); syncPieceFromSets(); }
-function exportPayload(){ syncPieceFromInputs(); return { schema:'modular-house-piece-author/v37', createdAt:new Date().toISOString(), notes:'Footprints are 2D grid contracts. Base faces are editable quads. Detail GLBs are separate assets referenced by source filename. Roof faces generate tube/shingle repeaters; replacement shingles use a hidden shinglebone node for alignment/stretch. v37 closes the upward-facing entry tunnel side with real ceiling faces while leaving horizontal portals open, and recenters each completed shingle group on its attached eave plane. v36 restores explicit skyward top-rim cap faces on entry tunnel mouths, wall runs, and blue-structure transition portals. v35 cuts continuous entry portals through Highland body walls and lets green tunnel cells generate visible corridor walls inside blue structure cells. v34 makes adjacent entry tunnel mouths/walls continuous as fused boundary runs and fixes missing skyward wall caps on multi-tile openings. v33 fixes entry tunnel orientation by selecting the best exposed cell-side pair instead of defaulting to the north/up side. v32 solidifies hollow extension walls, adds wonky chimneys/railings, shortens railing posts around rails, frames near-full-height exterior entry openings, and allows green entry tunnels to continue into blue structures. v31 added fused hollow extension generation: green roofless entry tunnels and gray chimneys merge across adjacent tiles, chimneys run down to ground, tan porch stairs face adjacent porch tiles, and railing tiles generate Minecraft-like posts/connectors raised onto porch decks. v30 added extension grid layers: green roofless entryway tunnels with far-end doors and auto-runs to the nearest blue wall, gray chimneys, brown porches, and tan porch stairs. v29 set Highland sections to 0.85 frustums and fixed the v28 pyramid regression by keeping ridge spines thin across the span but long along the roof axis.', currentPiece:deepCleanPiece(state.piece), library:state.library.map(deepCleanPiece) }; }
-function refreshExport(){ $('exportText').value=JSON.stringify(exportPayload(),null,2); }
+function exportPiecePayload(){ syncPieceFromInputs(); return { schema:'modular-house-piece-author/v37', createdAt:new Date().toISOString(), currentPiece:deepCleanPiece(state.piece) }; }
+function exportPayload(){ syncPieceFromInputs(); return { schema:'modular-house-piece-author/v37', createdAt:new Date().toISOString(), currentPiece:deepCleanPiece(state.piece), library:state.library.map(deepCleanPiece) }; }
+function refreshExport(){ $('exportText').value=JSON.stringify(exportPiecePayload(),null,2); }
 function importPayload(payload){ if(!payload) throw new Error('Empty JSON.'); pushUndo('Import JSON'); if(payload.currentPiece) state.piece=payload.currentPiece; else if(payload.schema && payload.library?.[0]) state.piece=payload.library[0]; else if(payload.base && payload.footprint) state.piece=payload; else throw new Error('Unrecognized piece JSON.'); ensureFootprintExtensions(state.piece); state.library=Array.isArray(payload.library)?payload.library:[]; for(const p of state.library) ensureFootprintExtensions(p); loadPiece(state.piece); renderPieceList(); refreshExport(); log('Imported modular piece JSON. GLB binaries are represented as placeholders until re-imported.'); }
 function downloadJson(){ const blob=new Blob([JSON.stringify(exportPayload(),null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`${(state.piece.name||'modular_house_piece').replace(/[^a-z0-9_-]+/gi,'_')}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 function escapeHtml(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -2158,7 +2180,8 @@ $('savePieceBtn').onclick=saveCurrentPiece; $('duplicatePieceBtn').onclick=dupli
 $('newPieceBtn').onclick=()=>{ pushUndo('Start new piece'); state.piece=makeBlankPiece(); state.gridSize=18; state.tileSize=1; $('gridSize').value=18; $('tileSize').value=1; $('pieceName').value=state.piece.name; $('pieceType').value=state.piece.type; if($('basePreset')) $('basePreset').value='highland'; state.selectedFaceIds.clear(); state.selectedAssetId=null; footprintSet.clear(); entranceSet.clear(); connectorSet.clear(); entryTunnelSet.clear(); chimneySet.clear(); porchSet.clear(); porchStairSet.clear(); railingSet.clear(); faceGroup.clear(); assetGroup.clear(); roofGroup.clear(); faceMeshes.clear(); assetMeshes.clear(); transform.detach(); activeTransformTarget=null; faceGizmoProxy.visible=false; applyBasePreset('highland', false); renderAssetList(); refreshExport(); log('Started a new Highland architecture piece.'); };
 $('undoBtn').onclick=undo; $('redoBtn').onclick=redo;
 window.addEventListener('keydown', ev=>{ const key=(ev.key||'').toLowerCase(); if((ev.ctrlKey||ev.metaKey) && key==='z'){ ev.preventDefault(); if(ev.shiftKey) redo(); else undo(); } if((ev.ctrlKey||ev.metaKey) && key==='y'){ ev.preventDefault(); redo(); } });
-$('refreshExportBtn').onclick=refreshExport; $('downloadJsonBtn').onclick=downloadJson; $('copyJsonBtn').onclick=async()=>{ refreshExport(); try{ await navigator.clipboard.writeText($('exportText').value); log('Copied JSON to clipboard.'); }catch{ $('exportText').select(); document.execCommand('copy'); log('Copied JSON using fallback selection.'); } };
+$('copyLibEntryBtn').onclick=async()=>{ const p=state.piece; const hid=(p.id||'house_'+p.name||'house_custom').toLowerCase().replace(/[^a-z0-9_]+/g,'_'); const entry={ [hid]:{ label:p.name||hid, wbOpts:{ unitMult:parseFloat($('gwUnitMult').value)||0.35, rockScale:parseFloat($('gwRockScale').value)||1.5, preScale:[1,1,parseFloat($('gwPreScaleZ').value)||0.6], brickJitter:{rotYDeg:8,shiftU:0.04,shiftV:0.03} }, wbGableOpts:{ unitMult:parseFloat($('gwGableUnitMult').value)||0.22, rockScale:parseFloat($('gwGableRockScale').value)||1.1 } } }; const txt=JSON.stringify(entry,null,2); try{ await navigator.clipboard.writeText(txt); log('Copied library entry for "'+hid+'" — paste into map editor House Library.'); }catch{ log('Copy failed.','warn'); } };
+$('refreshExportBtn').onclick=refreshExport; $('downloadJsonBtn').onclick=downloadJson; $('copyJsonBtn').onclick=async()=>{ refreshExport(); try{ await navigator.clipboard.writeText($('exportText').value); log('Copied full JSON to clipboard.'); }catch{ $('exportText').select(); document.execCommand('copy'); log('Copied full JSON using fallback selection.'); } }; $('copyPieceBtn').onclick=async()=>{ const txt=JSON.stringify(exportPiecePayload(),null,2); try{ await navigator.clipboard.writeText(txt); log('Copied current piece JSON to clipboard.'); }catch{ log('Copy piece failed — use Download JSON instead.','warn'); } };
 $('jsonInput').onchange=e=>{ const file=e.target.files?.[0]; if(!file)return; const reader=new FileReader(); reader.onload=()=>{ try{ importPayload(JSON.parse(reader.result)); }catch(err){ log(`JSON import failed: ${err.message}`, 'error'); } }; reader.readAsText(file); e.target.value=''; };
 for(const id of ['pieceName','pieceType','basePreset','baseHeight','wallThickness','groundY']) $(id).addEventListener('input',()=>{ syncPieceFromInputs(); refreshExport(); });
 

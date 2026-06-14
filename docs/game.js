@@ -121,6 +121,7 @@
         buildEquipmentSlots();
         if (targetPanel === 'shipping') buildShippingTransferUI();
         if (targetPanel === 'supplies') renderSupplyPage();
+        if (targetPanel === 'generalStore') renderGeneralStorePage();
         auditInventorySizing();
       }
       function closeMenu() {
@@ -145,6 +146,7 @@
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
         if (id === 'shipping') buildShippingTransferUI();
         if (id === 'supplies') renderSupplyPage();
+        if (id === 'generalStore') renderGeneralStorePage();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
       }
 
@@ -307,14 +309,14 @@
       const HOUSE_FOOTPRINT_D = 4;      // footprint depth in tiles (cells y=10..13, 4 deep)
       const DOOR_COL          = 28;     // farm grid col of door zone (mapper cell 11,14 → col 28)
       const DOOR_ROW          = 6;      // farm grid row of door zone (mapper cell 11,14 → row 6)
-      // Interior dimensions from playerhouse_interior.json (house_interior_mapper.v1)
-      // Layout: 6×5 main room (cols 0-5, rows 0-4) + 2-cell south corridor (cols 2-3, row 5)
-      const INTERIOR_COLS        = 6;
-      const INTERIOR_ROWS        = 6;
-      const INTERIOR_ENTRY_COL   = 2;    // player spawns here when entering (left corridor col)
-      const INTERIOR_ENTRY_ROW   = 4;    // just inside the main room, north of the corridor
-      const INTERIOR_EXIT_COL    = 2;    // leftmost col of south exit corridor
-      const INTERIOR_EXIT_ROW    = 5;    // row of south exit corridor
+      // Interior dimensions — 12×12 (doubled from original 6×6).
+      // Layout: 12×10 main room (cols 0-11, rows 0-9) + 4-cell wide south corridor (cols 4-7, rows 10-11)
+      const INTERIOR_COLS        = 12;
+      const INTERIOR_ROWS        = 12;
+      const INTERIOR_ENTRY_COL   = 5;    // player spawns here when entering (center corridor col)
+      const INTERIOR_ENTRY_ROW   = 9;    // just inside the main room, north of the corridor
+      const INTERIOR_EXIT_COL    = 5;    // center col of south exit corridor
+      const INTERIOR_EXIT_ROW    = 11;   // last row of south exit corridor
       const INTERIOR_WALL_HEIGHT = 1.75; // wall height in world units (30% shorter than original 2.5)
 
       // ── Voxel render constants ──
@@ -573,6 +575,7 @@
         tableSmall:    { itemKey: 'tableSmallFurniture',    icon: '🍽️', name: 'Small Table',          modelFile: 'table_small.glb',              price: 18, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A small side table.' },
         wardrobe:      { itemKey: 'wardrobeFurniture',      icon: '🚪', name: 'Tall Wardrobe',        modelFile: 'wardrobe_tall.glb',            price: 48, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A tall wardrobe for clothing storage.' },
         washTub:       { itemKey: 'washTubFurniture',       icon: '🛁', name: 'Copper Wash Tub',      modelFile: 'wash_tub_copper.glb',          price: 25, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A copper tub for bathing or laundry.' },
+        counter:       { itemKey: 'counterFurniture',       icon: '🏪', name: 'Shop Counter',          modelFile: 'counter_shop.glb',             price: 40, fw: 3, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A sturdy shop counter for conducting business.' },
       };
 
       const DECORATIVE_FURNITURE_CATALOG = Object.entries(DECORATIVE_FURNITURE_DEFS).map(([, def]) => ({
@@ -608,13 +611,27 @@
         ...LIVESTOCK_CATALOG
       ];
 
+      // ── General Store catalog (Funji & Son's) ─────────────────────
+      const GENERAL_STORE_CATALOG = [
+        { key: 'mulchBag',      icon: '🍂', name: 'Mulch Bag',      desc: 'Boosts soil recovery and clears weeds.',        price: 3,  gives: { mulch: 5 } },
+        { key: 'bucket',        icon: '🪣', name: 'Tin Bucket',     desc: 'A utilitarian tin bucket for hauling water.',   price: 8,  gives: { bucketFurniture: 1 }, category: 'goods' },
+        { key: 'copperBarrel',  icon: '🛢️', name: 'Copper Barrel',  desc: 'A sturdy copper-hooped storage barrel.',       price: 20, gives: { copperBarrelFurniture: 1 }, category: 'goods' },
+        { key: 'crateStack',    icon: '📦', name: 'Crate Stack',    desc: 'Stacked wooden crates for storing loose goods.',price: 14, gives: { crateStackFurniture: 1 }, category: 'goods' },
+        { key: 'stool',         icon: '🪑', name: 'Round Stool',    desc: 'A simple round stool — good for any space.',    price: 10, gives: { stoolFurniture: 1 }, category: 'goods' },
+        { key: 'candleTable',   icon: '🕯️', name: 'Candle Table',   desc: 'Small table with a candle for warm light.',    price: 15, gives: { candleTableFurniture: 1 }, category: 'goods' },
+        { key: 'washTub',       icon: '🛁', name: 'Copper Wash Tub',desc: 'A copper tub for bathing or laundry.',         price: 25, gives: { washTubFurniture: 1 }, category: 'goods' },
+        { key: 'counter',       icon: '🏪', name: 'Shop Counter',   desc: 'A sturdy counter for conducting business.',    price: 40, gives: { counterFurniture: 1 }, category: 'goods' },
+      ];
+
       // Pending orders: [{catalogKey, qty, arrivalDay, name}]
       let pendingOrders  = [];
       let deliveryLog    = [];
       const SELL_INTERVAL_HOURS = 4;  // sell crate empties every N game-hours
 
-      // worldObjects: Map<"col,row", object>
+      // worldObjects: Map<"col,row", object> (farm scene only)
       const worldObjects = new Map();
+      // interiorWorldObjects: Map<"col,row", object> (interior scene)
+      const interiorWorldObjects = new Map();
       let shippingBoxObject = null; // Used by the Shipping menu pane to read/write the active sell crate contents.
       let supplyBoxObject = null; // Used by the Supplies menu pane to read/write supply order quantities.
       const processingFurnitureObjects = new Set(); // Used by reset and debug to track player-placed processing furniture.
@@ -1261,8 +1278,8 @@
       let townGrid           = [];     // 2-D tile array for the town map
       let townScene          = null;   // THREE.Scene, built lazily
       let _townSceneBuilt    = false;
-      let _townBuildingDefs  = [];     // detected building footprints
-      let _townBuildingGroups = [];    // THREE.Group[] — one HousePieceGen group per building
+      let _townBuildingDefs  = [];     // building entries from _townZone.buildings
+      let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
 
       function initWorldTravel(layout) {
         if (!layout || layout.version !== 3) return;
@@ -1586,53 +1603,19 @@
       }
 
       // ── Town building detection ──────────────────────────────────────
-      // Finds connected rock-tile clusters large enough to be buildings,
-      // computes each building's bounding box and south-edge doorway.
+      // Reads explicit building entries from the town layout (placed by map editor).
       function _detectTownBuildings() {
-        const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
-        const KEY = (c, r) => r * 10000 + c;
-        const rockSet = new Set();
-        for (let r = 0; r < TROWS; r++)
-          for (let c = 0; c < TCOLS; c++)
-            if (townGrid[r]?.[c]?.type === TileType.ROCK) rockSet.add(KEY(c, r));
-
-        const visited = new Set();
-        const buildings = [];
-
-        for (let r = 0; r < TROWS; r++) {
-          for (let c = 0; c < TCOLS; c++) {
-            const k = KEY(c, r);
-            if (!rockSet.has(k) || visited.has(k)) continue;
-
-            // Flood-fill rock cluster
-            const cluster = [];
-            const queue = [[c, r]];
-            while (queue.length) {
-              const [cc, rr] = queue.pop();
-              const kk = KEY(cc, rr);
-              if (visited.has(kk) || !rockSet.has(kk)) continue;
-              visited.add(kk); cluster.push([cc, rr]);
-              queue.push([cc+1,rr],[cc-1,rr],[cc,rr+1],[cc,rr-1]);
-            }
-            if (cluster.length < 20) continue;
-
-            const cs = cluster.map(([c]) => c), rs = cluster.map(([,r]) => r);
-            const minC = Math.min(...cs), maxC = Math.max(...cs);
-            const minR = Math.min(...rs), maxR = Math.max(...rs);
-            const W = maxC - minC + 1, D = maxR - minR + 1;
-
-            buildings.push({ minC, maxC, minR, maxR, W, D });
-          }
-        }
-        debugLog('_detectTownBuildings: found ' + buildings.length + ' buildings');
+        const buildings = _townZone?.buildings || [];
+        debugLog('_detectTownBuildings: ' + buildings.length + ' placed buildings');
         return buildings;
       }
 
-      // Spawns (or re-spawns) Highland house pieces for all detected town buildings.
-      // Uses HousePieceGen (highland frustum body + gable roof + shingle GLB / tube fallback)
-      // plus WallBuilder brick geometry on every non-roof surface.
-      // `_glbsReady` flag prevents multiple redundant rebuilds while GLBs load.
+      // Spawns Highland house pieces for all placed town buildings.
+      // Fetches each building's piece JSON then calls HousePieceGen.buildGroupFromPiece(),
+      // which reads piece.base.faces directly (same geometry as the house editor preview)
+      // plus WallBuilder bricks on wall/gable faces.
       let _townBuildingsGlbUpgradePending = false;
+      // Each entry: { group, bldg, piece, wbOpts, wbGableOpts }
       function _spawnTownBuildings() {
         if (!townScene || !_townBuildingDefs.length) return;
         if (typeof HousePieceGen === 'undefined') {
@@ -1641,77 +1624,105 @@
         }
 
         // Dispose previous groups
-        for (const g of _townBuildingGroups) {
-          townScene.remove(g);
-          g.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+        for (const entry of _townBuildingGroups) {
+          townScene.remove(entry.group);
+          entry.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
         }
         _townBuildingGroups = [];
 
-        const wbOpts = { unitMult: 0.35, rockScale: 1.5,
-                         preScale: [1, 1, 0.6],
-                         brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
+        const _wbDefaults = { unitMult: 0.35, rockScale: 1.5,
+                              preScale: [1, 1, 0.6],
+                              brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
-        for (const bldg of _townBuildingDefs) {
-          const g = HousePieceGen.buildGroup(THREE, bldg.minC, bldg.maxC, bldg.minR, bldg.maxR, {
-            wallBuilder:      houseWallBuilder,
-            wbUsePlaceholder: true,   // upgraded below once GLBs are ready
-            wbOpts,
-          });
-          townScene.add(g);
-          _townBuildingGroups.push(g);
-        }
+        // Preload boards.png for porch/stair/railing faces (shared across all buildings)
+        const _boardsMat = new THREE.MeshLambertMaterial({ color: 0x8b6914, side: THREE.DoubleSide });
+        new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          _boardsMat.map = tex; _boardsMat.color.set(0xffffff); _boardsMat.needsUpdate = true;
+        }, undefined, () => {});
 
-        debugLog('_spawnTownBuildings: spawned ' + _townBuildingGroups.length + ' highland buildings');
+        // Async-load all piece files in parallel, then build scene
+        Promise.all(_townBuildingDefs.map(bldg => {
+          if (!bldg.pieceFile) return Promise.resolve({ bldg, piece: null });
+          return fetch(bldg.pieceFile)
+            .then(r => r.json())
+            .then(piece => ({ bldg, piece }))
+            .catch(e => { debugLog('Piece load error (' + bldg.id + '): ' + e, 'warn'); return { bldg, piece: null }; });
+        })).then(results => {
+          if (!townScene) return;
+          const TROWS_ENT = _townZone?.rows || 50;
+          const _entranceRingGeo = new THREE.RingGeometry(0.22, 0.36, 24);
+          const _entranceMat = new THREE.MeshBasicMaterial({ color: 0x7c3008, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
 
-        // Add entrance transitions at the south edge of each building (once only).
-        const TROWS_ENT = _townZone?.rows || 50;
-        const _entranceRingGeo = new THREE.RingGeometry(0.22, 0.36, 24);
-        const _entranceMat = new THREE.MeshBasicMaterial({ color: 0x7c3008, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
-        for (let bi = 0; bi < _townBuildingDefs.length; bi++) {
-          const bldg = _townBuildingDefs[bi];
-          const eCol = Math.floor((bldg.minC + bldg.maxC + 1) / 2);
-          const eRow = Math.min(TROWS_ENT - 1, bldg.maxR + 1);
-          const eid  = 'bldg_entrance_' + bi;
-          if (!worldTownTransitions.find(t => t.id === eid)) {
-            worldTownTransitions.push({
-              id: eid, area: 'town', col: eCol, row: eRow,
-              target: 'interior',
-              targetCol: Math.floor(INTERIOR_COLS / 2), targetRow: INTERIOR_ROWS - 2,
-            });
-            const ring = new THREE.Mesh(_entranceRingGeo, _entranceMat);
-            ring.rotation.x = -Math.PI / 2;
-            ring.position.set(eCol + 0.5, tileSurfaceY(TileType.GRASS) + 0.02, eRow + 0.5);
-            townScene.add(ring);
-          }
-        }
+          for (const { bldg, piece } of results) {
+            const wbOpts      = bldg.wbOpts      || _wbDefaults;
+            const wbGableOpts = bldg.wbGableOpts || undefined;
 
-        // Upgrade to real bricks + GLB shingles once both assets are ready.
-        if (!_townBuildingsGlbUpgradePending) {
-          _townBuildingsGlbUpgradePending = true;
-          Promise.all([
-            houseWallBuilder.loadDefaultGlb(),
-            HousePieceGen.loadShingleGlb('assets/models/'),
-          ]).then(() => {
-            _townBuildingsGlbUpgradePending = false;
-            if (!townScene) return;
-            debugLog('Town buildings: upgrading to real bricks + shingle GLB');
-            // Dispose placeholder groups and rebuild with real assets
-            for (const g of _townBuildingGroups) {
-              townScene.remove(g);
-              g.traverse(o => { if (o.geometry) o.geometry.dispose(); });
-            }
-            _townBuildingGroups = [];
-            for (const bldg of _townBuildingDefs) {
-              const g = HousePieceGen.buildGroup(THREE, bldg.minC, bldg.maxC, bldg.minR, bldg.maxR, {
-                wallBuilder:      houseWallBuilder,
-                wbUsePlaceholder: false,
-                wbOpts,
+            let g = new THREE.Group();
+            if (piece) {
+              g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
+                wallBuilder: houseWallBuilder, wbUsePlaceholder: true,
+                wbOpts, wbGableOpts, matBoards: _boardsMat,
+                rotationDeg: bldg.rotationDeg || 0,
               });
-              townScene.add(g);
-              _townBuildingGroups.push(g);
             }
-          }).catch(e => debugLog('Town building GLB error: ' + e, 'warn'));
-        }
+            townScene.add(g);
+            _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
+
+            // Entrance ring at south edge of piece footprint
+            const pcells = piece?.footprint?.cells || [];
+            const gc = Math.floor((piece?.gridSize || 18) / 2);
+            const maxCX = pcells.length ? Math.max.apply(null, pcells.map(c => c.x)) : gc + 3;
+            const minCX = pcells.length ? Math.min.apply(null, pcells.map(c => c.x)) : gc - 3;
+            const maxCZ = pcells.length ? Math.max.apply(null, pcells.map(c => c.y)) : gc + 3;
+            const minCZ = pcells.length ? Math.min.apply(null, pcells.map(c => c.y)) : gc - 3;
+            const worldMinC = bldg.gridX, worldMaxC = bldg.gridX + (maxCX - minCX);
+            const worldMaxR = bldg.gridZ + (maxCZ - minCZ);
+            const eCol = Math.floor((worldMinC + worldMaxC + 1) / 2);
+            const eRow = Math.min(TROWS_ENT - 1, worldMaxR + 1);
+            const eid  = 'bldg_entrance_' + bldg.id;
+            if (!worldTownTransitions.find(t => t.id === eid)) {
+              worldTownTransitions.push({
+                id: eid, area: 'town', col: eCol, row: eRow,
+                target: 'interior',
+                targetCol: Math.floor(INTERIOR_COLS / 2), targetRow: INTERIOR_ROWS - 2,
+              });
+              const ring = new THREE.Mesh(_entranceRingGeo, _entranceMat);
+              ring.rotation.x = -Math.PI / 2;
+              ring.position.set(eCol + 0.5, tileSurfaceY(TileType.GRASS) + 0.02, eRow + 0.5);
+              townScene.add(ring);
+            }
+          }
+
+          debugLog('_spawnTownBuildings: built ' + _townBuildingGroups.length + ' buildings from piece JSON');
+
+          // Upgrade to real bricks + shingle GLB once assets are ready
+          if (!_townBuildingsGlbUpgradePending) {
+            _townBuildingsGlbUpgradePending = true;
+            Promise.all([
+              houseWallBuilder.loadDefaultGlb(),
+              HousePieceGen.loadShingleGlb('assets/models/'),
+            ]).then(() => {
+              _townBuildingsGlbUpgradePending = false;
+              if (!townScene) return;
+              debugLog('Town buildings: upgrading to real bricks + shingle GLB');
+              const prev = _townBuildingGroups.slice();
+              _townBuildingGroups = [];
+              for (const { group, bldg, piece, wbOpts, wbGableOpts } of prev) {
+                townScene.remove(group);
+                group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+                if (!piece) continue;
+                const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
+                  wallBuilder: houseWallBuilder, wbUsePlaceholder: false,
+                  wbOpts, wbGableOpts, matBoards: _boardsMat,
+                  rotationDeg: bldg.rotationDeg || 0,
+                });
+                townScene.add(g);
+                _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
+              }
+            }).catch(e => debugLog('Town building GLB error: ' + e, 'warn'));
+          }
+        });
       }
 
       function buildTownScene() {
@@ -2030,6 +2041,7 @@
       }
 
       function getWorldObjectAt(col, row) {
+        if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
         return worldObjects.get(col + ',' + row) || null;
       }
 
@@ -2143,6 +2155,42 @@
 
       // ── Market page render ─────────────────────────────────────────
       function renderMarketPage() { /* market UI removed — sell from Inventory panel */ }
+
+      // ── General Store page render ───────────────────────────────────
+      function renderGeneralStorePage() {
+        const list   = document.getElementById('generalStoreList');
+        const goldEl = document.getElementById('gsGoldDisplay');
+        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
+        if (!list) return;
+        list.innerHTML = '';
+        GENERAL_STORE_CATALOG.forEach(item => {
+          const row = document.createElement('div');
+          row.className = 'shop-row';
+          row.innerHTML = `
+            <div class="sh-icon">${item.icon}</div>
+            <div class="sh-info">
+              <div class="sh-name">${item.name}</div>
+              <div class="sh-desc">${item.desc}</div>
+              <div class="sh-price">${item.price}g</div>
+            </div>
+            <button class="shop-buy-btn" data-key="${item.key}">Buy</button>
+          `;
+          row.querySelector('[data-key]')?.addEventListener('click', () => {
+            const gold = inventory.gold || 0;
+            if (gold < item.price) { showToast('Not enough gold.', false); return; }
+            inventory.gold = gold - item.price;
+            if (item.gives) {
+              Object.entries(item.gives).forEach(([k, v]) => {
+                inventory[k] = Math.min(99, (inventory[k] || 0) + v);
+              });
+            }
+            showToast('Bought ' + item.name + '!', true);
+            renderGeneralStorePage();
+            buildInventoryGrid();
+          });
+          list.appendChild(row);
+        });
+      }
 
             // Item scroll — ordered list of scrollable inventory slots
       const inventoryItems = [
@@ -2674,11 +2722,10 @@
         return row === DOOR_ROW - 1 && col >= DOOR_COL && col <= DOOR_COL + 1;
       }
 
-      // Interior grid from playerhouse_interior.json floorCells:
-      // main room cols 0-5 rows 0-4 + south corridor cols 2-3 row 5
+      // Interior grid: 12×12 — main room cols 0-11 rows 0-9, south corridor cols 4-7 rows 10-11
       const interiorGrid = (() => {
         const floor = (c, r) =>
-          (r <= 4 && c >= 0 && c <= 5) || (r === 5 && c >= 2 && c <= 3);
+          (r <= 9 && c >= 0 && c <= 11) || (r >= 10 && r <= 11 && c >= 4 && c <= 7);
         return Array.from({ length: INTERIOR_ROWS }, (_, r) =>
           Array.from({ length: INTERIOR_COLS }, (_, c) => ({
             type: floor(c, r) ? TileType.GRASS : TileType.ROCK,
@@ -3717,15 +3764,47 @@
       // Coord origin: editor cell (9,9) → interior (0,0).
       // N/S panels face along Z (rotY=0/180); W/E panels face along X (rotY=±90).
       const INTERIOR_WALL_PANELS = [
-        { id: 'n_wall',  width: 6, height: INTERIOR_WALL_HEIGHT, position: [3, 0, 0],   rotationDeg: [0,   0, 0] },
-        { id: 'w_wall',  width: 5, height: INTERIOR_WALL_HEIGHT, position: [0, 0, 2.5], rotationDeg: [0,  90, 0] },
-        { id: 'e_wall',  width: 5, height: INTERIOR_WALL_HEIGHT, position: [6, 0, 2.5], rotationDeg: [0, -90, 0] },
-        { id: 's_left',  width: 2, height: INTERIOR_WALL_HEIGHT, position: [1, 0, 5],   rotationDeg: [0, 180, 0] },
-        { id: 's_right', width: 2, height: INTERIOR_WALL_HEIGHT, position: [5, 0, 5],   rotationDeg: [0, 180, 0] },
+        { id: 'n_wall',  width: 12, height: INTERIOR_WALL_HEIGHT, position: [6,  0, 0],    rotationDeg: [0,   0, 0] },
+        { id: 'w_wall',  width: 10, height: INTERIOR_WALL_HEIGHT, position: [0,  0, 5],    rotationDeg: [0,  90, 0] },
+        { id: 'e_wall',  width: 10, height: INTERIOR_WALL_HEIGHT, position: [12, 0, 5],    rotationDeg: [0, -90, 0] },
+        { id: 's_left',  width: 4,  height: INTERIOR_WALL_HEIGHT, position: [2,  0, 10],   rotationDeg: [0, 180, 0] },
+        { id: 's_right', width: 4,  height: INTERIOR_WALL_HEIGHT, position: [10, 0, 10],   rotationDeg: [0, 180, 0] },
         // Corridor side walls — south end kept open (no exit_s)
-        { id: 'exit_w',  width: 1, height: INTERIOR_WALL_HEIGHT, position: [2, 0, 5.5], rotationDeg: [0,  90, 0] },
-        { id: 'exit_e',  width: 1, height: INTERIOR_WALL_HEIGHT, position: [4, 0, 5.5], rotationDeg: [0, -90, 0] },
+        { id: 'exit_w',  width: 2,  height: INTERIOR_WALL_HEIGHT, position: [4,  0, 11],   rotationDeg: [0,  90, 0] },
+        { id: 'exit_e',  width: 2,  height: INTERIOR_WALL_HEIGHT, position: [8,  0, 11],   rotationDeg: [0, -90, 0] },
       ];
+
+      // ── Shop Bell ─────────────────────────────────────────────────────
+      // Places a small bell mesh at (col, row) in the interior scene.
+      // Interaction: if Foroji or Furunji NPC exists in npcWalkers, opens General Store.
+      function makeShopBell(col, row) {
+        const bellGeo  = new THREE.CylinderGeometry(0.12, 0.18, 0.22, 10);
+        const bellMat  = new THREE.MeshLambertMaterial({ color: 0xd4a800 });
+        const bell     = new THREE.Mesh(bellGeo, bellMat);
+        bell.position.set(col + 0.5, 0.6, row + 0.5);
+        bell.castShadow = true;
+        interiorScene.add(bell);
+
+        // Small post
+        const postGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.55, 6);
+        const postMat = new THREE.MeshLambertMaterial({ color: 0x6b4a28 });
+        const post    = new THREE.Mesh(postGeo, postMat);
+        post.position.set(col + 0.5, 0.28, row + 0.5);
+        interiorScene.add(post);
+
+        const SHOPKEEPER_IDS = new Set(['foroji_funji', 'furunji_funji']);
+        interiorWorldObjects.set(col + ',' + row, {
+          onAction(action) {
+            if (action !== 'obj_interact') return { ok: false, message: 'Ring the shop bell.' };
+            const shopkeeperPresent = npcWalkers.some(w => SHOPKEEPER_IDS.has(w.npcId));
+            if (!shopkeeperPresent) {
+              return { ok: false, message: 'No one is at the counter. Come back later.' };
+            }
+            openMenu('generalStore');
+            return { ok: true, message: 'Funji shuffles over to help.' };
+          }
+        });
+      }
 
       // Built lazily on first entry to avoid blocking startup; called by enterInterior().
       function buildInteriorScene() {
@@ -3746,10 +3825,10 @@
           () => {}
         );
 
-        // Floor tiles: main room 6×5 + corridor 2×1; exit tiles use same material
+        // Floor tiles: main room 12×10 + corridor 4×2; exit tiles use same material
         const floorCells = [];
-        for (let r = 0; r < 5; r++) for (let c = 0; c < 6; c++) floorCells.push([c, r]);
-        floorCells.push([2, 5], [3, 5]);
+        for (let r = 0; r < 10; r++) for (let c = 0; c < 12; c++) floorCells.push([c, r]);
+        for (let r = 10; r <= 11; r++) for (let c = 4; c <= 7; c++) floorCells.push([c, r]);
         for (const [c, r] of floorCells) {
           const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
           fl.position.set(c + 0.5, -0.05, r + 0.5);
@@ -3782,9 +3861,9 @@
         }
 
         // Outside ambient light seeping in through the corridor exit — cool daylight cone
-        const _exitSpot = new THREE.SpotLight(0xb4d8ff, 2.5, 6, 0.5, 0.7, 1.5);
-        _exitSpot.position.set(3, 3, 8);
-        _exitSpot.target.position.set(3, 0, 5.5);
+        const _exitSpot = new THREE.SpotLight(0xb4d8ff, 2.5, 12, 0.5, 0.7, 1.5);
+        _exitSpot.position.set(6, 3, 14);
+        _exitSpot.target.position.set(6, 0, 11);
         interiorScene.add(_exitSpot);
         interiorScene.add(_exitSpot.target);
 
@@ -3792,6 +3871,9 @@
         interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
         _markOutline(interiorWallGroup);
         interiorScene.add(interiorWallGroup);
+
+        // Shop bell at the counter position (row 3, col 6 — center-north of the room)
+        makeShopBell(6, 3);
 
         debugLog('buildInteriorScene complete');
       }
@@ -6436,13 +6518,15 @@
 
 
       function computeActionButtons() {
-        // Interior: only show exit button near the south door
+        // Interior: exit button near south door + interact button for interior world objects
         if (currentArea === 'interior') {
-          const reticle = getReticleTile();
+          const reticle  = getReticleTile();
           const nearExit = reticle.row >= INTERIOR_EXIT_ROW && reticle.col >= INTERIOR_EXIT_COL && reticle.col < INTERIOR_EXIT_COL + 2;
-          return nearExit
-            ? [{ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true }]
-            : [];
+          const btns     = [];
+          if (nearExit) btns.push({ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true });
+          const iObj = getWorldObjectAt(reticle.col, reticle.row);
+          if (iObj) btns.push({ icon: '🔔', label: 'Interact', action: 'obj_interact', style: 'primary', allowed: true });
+          return btns;
         }
 
         // Town has no tile-based tool actions yet

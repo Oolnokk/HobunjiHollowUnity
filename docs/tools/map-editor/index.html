@@ -132,6 +132,27 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <p class="muted" style="margin-top:5px">The game farm is <b id="farmDimsNote">36×26</b>. Tiles outside that range are clipped when sending. Unpainted tiles keep the game's day-one terrain.</p>
         </div>
 
+        <!-- BUILDINGS (town maps only) -->
+        <div class="section" id="buildingsSection" style="--sec:#f59e0b;--secBg:rgba(245,158,11,.08);display:none">
+          <div class="sect-head"><b>Buildings</b><span class="sect-tag" id="buildingCountTag">0</span></div>
+          <div id="addBuildingPicker"></div>
+          <div class="itemlist" id="buildingList" style="margin-top:6px"></div>
+          <div id="selectedBuildingPanel" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.1)">
+            <div class="g2" style="margin-bottom:5px">
+              <div><label>Label</label><input id="bldgLabel" placeholder="Inn"></div>
+              <div><label>Piece file</label><input id="bldgPieceFile" placeholder="config/pieces/inn.json" readonly style="cursor:default"></div>
+            </div>
+            <div class="g2" style="margin-bottom:8px">
+              <div><label>Grid X</label><input id="bldgGridX" type="number" step="1" value="0"></div>
+              <div><label>Grid Z</label><input id="bldgGridZ" type="number" step="1" value="0"></div>
+            </div>
+            <div class="row" style="gap:4px">
+              <button class="ok" id="saveBldgBtn" style="flex:1">Save</button>
+              <button class="bad" id="delBldgBtn">Remove</button>
+            </div>
+          </div>
+        </div>
+
         <!-- STATUS / JSON -->
         <div class="section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.06)">
           <div class="sect-head"><b>Active Map JSON</b><span class="sect-tag" id="statusPill">Ready</span></div>
@@ -152,6 +173,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
   </div>
 </div>
 
+<script src="../../js/repo-picker.js"></script>
 <script>
 (() => {
 'use strict';
@@ -222,7 +244,8 @@ const DECOR = {
   standingLamp:{icon:'💡',label:'Standing Lamp',fw:1,fd:1,area:'interior'}, stool:{icon:'🪑',label:'Round Stool',fw:1,fd:1,area:'any'},
   tableLong:{icon:'🍽️',label:'Long Table',fw:4,fd:1,area:'interior'}, tableRound:{icon:'🍽️',label:'Round Table',fw:2,fd:2,area:'interior'},
   tableSmall:{icon:'🍽️',label:'Small Table',fw:1,fd:1,area:'interior'}, wardrobe:{icon:'🚪',label:'Tall Wardrobe',fw:2,fd:1,area:'interior'},
-  washTub:{icon:'🛁',label:'Copper Wash Tub',fw:1,fd:1,area:'any'}
+  washTub:{icon:'🛁',label:'Copper Wash Tub',fw:1,fd:1,area:'any'},
+  counter:{icon:'🏪',label:'Shop Counter',fw:3,fd:1,area:'interior'}
 };
 
 // NPC paths and transition spots are supported on BOTH map categories.
@@ -260,7 +283,8 @@ function makeMap(name, category, cols, rows) {
     furniture: [],    // { key, col, row }
     decor: [],        // { key, col, row }
     npcPaths: [],     // { id, label, npcId, nodes: [[c,r],...] }
-    transitions: []   // { id, label, col, row, targetMapId, targetSpotId }
+    transitions: [],  // { id, label, col, row, targetMapId, targetSpotId }
+    buildings: [],    // { id, label, pieceFile, gridX, gridZ, footprintW, footprintD, wbOpts, wbGableOpts }
   };
 }
 
@@ -274,7 +298,21 @@ function loadWorkspace() {
         w.maps.forEach(m => {
           m.npcPaths = Array.isArray(m.npcPaths) ? m.npcPaths : [];
           m.transitions = Array.isArray(m.transitions) ? m.transitions : [];
-          delete m.markers;
+          // Migrate old houseLibrary/houseAssignments → buildings array
+          if (!Array.isArray(m.buildings)) {
+            m.buildings = [];
+            const lib = m.houseLibrary || {};
+            const asgn = m.houseAssignments || {};
+            for (const [bldgId, hid] of Object.entries(asgn)) {
+              const entry = lib[hid]; if (!entry) continue;
+              const parts = bldgId.split('_');
+              const gridX = parseInt(parts[1]) || 0, gridZ = parseInt(parts[2]) || 0;
+              m.buildings.push({ id: uid('bldg'), label: entry.label || hid,
+                pieceFile: entry.pieceFile || '', gridX, gridZ,
+                wbOpts: entry.wbOpts || null, wbGableOpts: entry.wbGableOpts || null });
+            }
+          }
+          delete m.houseLibrary; delete m.houseAssignments; delete m.markers;
         });
         w.gameLink = w.gameLink || { exteriorId: '', interiorId: '', townId: '' };
         w.gameLink.townId = w.gameLink.townId || '';
@@ -318,6 +356,88 @@ function undo() {
   const snap = JSON.parse(undoStack.pop());
   const i = ws.maps.findIndex(m => m.id === snap.id);
   if (i >= 0) { ws.maps[i] = snap; updateAll(); setStatus('Undid.'); }
+}
+
+// ── Building panel ────────────────────────────────────────────────────────────
+let _selectedBuildingId = null;
+let _gizmos   = [];       // [{type,sx,sy,r}] rebuilt each draw(); used for hit-testing
+let _bldgDrag = null;     // {bid,ox,oz,px0,py0} during drag-move of a building
+
+// Canvas-space gizmo button
+function _drawGizmoBtn(type, sx, sy, R) {
+  ctx.save();
+  ctx.fillStyle   = type === 'rot' ? 'rgba(52,211,153,.92)' : 'rgba(106,167,255,.92)';
+  ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(sx, sy, R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${Math.round(R * 1.15)}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText({ N:'▲', S:'▼', W:'◀', E:'▶', rot:'↻' }[type] || type, sx, sy + 1);
+  ctx.restore();
+}
+
+let _addBuildingPickerMounted = false;
+function refreshBuildingDetection() {
+  const m = activeMap();
+  const isTown = m.category === 'exterior' && m.id === ws.gameLink.townId;
+  $('buildingsSection').style.display = isTown ? '' : 'none';
+  if (!isTown) return;
+  if (!Array.isArray(m.buildings)) m.buildings = [];
+  $('buildingCountTag').textContent = m.buildings.length;
+  if (!_addBuildingPickerMounted && typeof RepoPicker !== 'undefined') {
+    _addBuildingPickerMounted = true;
+    const rp = new RepoPicker({ docsBase: '../../' });
+    const picker = rp.makePicker({
+      category: 'housePieces', label: '+ Add building', fetchAs: 'json',
+      showDisk: true, diskAccept: '.json,application/json',
+      onLoad(entry, pieceData) {
+        const am = activeMap();
+        if (!Array.isArray(am.buildings)) am.buildings = [];
+        const pcells = pieceData?.footprint?.cells || [];
+        const xs = pcells.map(c => c.x), zs = pcells.map(c => c.y);
+        const fw = xs.length ? Math.max(...xs) - Math.min(...xs) + 1 : 7;
+        const fd = zs.length ? Math.max(...zs) - Math.min(...zs) + 1 : 5;
+        const newB = {
+          id: uid('bldg'), label: pieceData?.name || entry.name || 'Building',
+          pieceFile: entry.path || entry.name,
+          gridX: 0, gridZ: 0,
+          footprintW: fw, footprintD: fd,
+          wbOpts: null, wbGableOpts: null,
+        };
+        am.buildings.push(newB);
+        _selectedBuildingId = newB.id;
+        $('buildingCountTag').textContent = am.buildings.length;
+        renderBuildingPanel(); draw(); saveWorkspace();
+        setStatus('Added building: ' + newB.label + '. Set its Grid X/Z and save.');
+      },
+    });
+    $('addBuildingPicker').appendChild(picker);
+  }
+  renderBuildingPanel();
+}
+
+function renderBuildingPanel() {
+  const m = activeMap();
+  const buildings = m.buildings || [];
+  $('buildingList').innerHTML = buildings.map(b => {
+    const sel = b.id === _selectedBuildingId;
+    const pf  = b.pieceFile ? b.pieceFile.split('/').pop() : '—';
+    return `<div class="item${sel?' sel':''}" data-bid="${b.id}">
+      <div class="item-name">${b.label || b.id}</div>
+      <div class="item-meta">${pf} · (${b.gridX}, ${b.gridZ})</div>
+    </div>`;
+  }).join('') || '<p class="muted">No buildings placed. Use the ☷ Repo button to add one.</p>';
+  $('buildingList').querySelectorAll('[data-bid]').forEach(el => {
+    el.addEventListener('click', () => { _selectedBuildingId = el.dataset.bid; renderBuildingPanel(); draw(); });
+  });
+  const selB = buildings.find(b => b.id === _selectedBuildingId);
+  $('selectedBuildingPanel').style.display = selB ? '' : 'none';
+  if (selB) {
+    $('bldgLabel').value   = selB.label   || '';
+    $('bldgGridX').value   = selB.gridX   ?? 0;
+    $('bldgGridZ').value   = selB.gridZ   ?? 0;
+    $('bldgPieceFile').value = selB.pieceFile || '';
+  }
 }
 
 // ── Mode / brush state ────────────────────────────────────────────────────────
@@ -564,6 +684,49 @@ function draw() {
   });
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
+  // Building overlays (placed buildings from map.buildings)
+  _gizmos = [];
+  if (m.id === ws.gameLink.townId) {
+    (m.buildings || []).forEach(b => {
+      const isSel = b.id === _selectedBuildingId;
+      const rot = b.rotationDeg || 0;
+      const raw_w = b.footprintW || 7, raw_d = b.footprintD || 5;
+      // Swap displayed dims for 90°/270° rotations
+      const bw = (rot === 90 || rot === 270) ? raw_d : raw_w;
+      const bh = (rot === 90 || rot === 270) ? raw_w : raw_d;
+      const p  = w2s(b.gridX, b.gridZ);
+      const pw = bw * z, ph = bh * z;
+      ctx.fillStyle   = isSel ? 'rgba(251,191,36,.22)' : 'rgba(245,158,11,.10)';
+      ctx.fillRect(p.x, p.y, pw, ph);
+      ctx.strokeStyle = isSel ? 'rgba(251,191,36,.9)' : 'rgba(245,158,11,.5)';
+      ctx.lineWidth   = isSel ? 2 : 1.5; ctx.setLineDash([]);
+      ctx.strokeRect(p.x, p.y, pw, ph);
+      if (z > 6) {
+        ctx.fillStyle = isSel ? '#fef08a' : 'rgba(251,191,36,.7)';
+        ctx.font = `${clamp(z*.3,8,11)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        const rotLabel = rot ? ` ${rot}°` : '';
+        ctx.fillText((b.label || b.id) + rotLabel, p.x + pw/2, p.y + 3);
+      }
+      // Gizmos on selected building (only when zoomed in enough)
+      if (isSel && z >= 7) {
+        const G = 13, GAP = G + 5;
+        const cx = p.x + pw / 2, cy = p.y + ph / 2;
+        const btns = [
+          { type:'N',   sx: cx,            sy: p.y - GAP        },
+          { type:'S',   sx: cx,            sy: p.y + ph + GAP   },
+          { type:'W',   sx: p.x - GAP,     sy: cy               },
+          { type:'E',   sx: p.x + pw + GAP, sy: cy              },
+          { type:'rot', sx: p.x + pw + GAP, sy: p.y - GAP       },
+        ];
+        for (const btn of btns) {
+          _gizmos.push({ ...btn, r: G });
+          _drawGizmoBtn(btn.type, btn.sx, btn.sy, G);
+        }
+      }
+    });
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+
   // Grid
   ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = 1;
   for (let x = 0; x <= m.cols; x++) { const p = w2s(x,0); ctx.beginPath(); ctx.moveTo(p.x, cam.y); ctx.lineTo(p.x, cam.y + m.rows*z); ctx.stroke(); }
@@ -730,7 +893,43 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   const p = canvasPt(e);
-  if (mode === 'pan') { drag = true; dragStart = { p, cx: cam.x, cy: cam.y }; return; }
+  if (mode === 'pan') {
+    // ── Gizmo button priority ─────────────────────────────────────────────
+    const gHit = _gizmos.find(g => Math.hypot(p.x - g.sx, p.y - g.sy) <= g.r + 4);
+    if (gHit && _selectedBuildingId) {
+      const selB = (activeMap().buildings || []).find(b => b.id === _selectedBuildingId);
+      if (selB) {
+        pushUndo();
+        if      (gHit.type === 'N')   selB.gridZ--;
+        else if (gHit.type === 'S')   selB.gridZ++;
+        else if (gHit.type === 'W')   selB.gridX--;
+        else if (gHit.type === 'E')   selB.gridX++;
+        else if (gHit.type === 'rot') selB.rotationDeg = ((selB.rotationDeg || 0) + 90) % 360;
+        saveWorkspace(); renderBuildingPanel(); draw();
+      }
+      return; // consume — no camera pan
+    }
+    // ── Building drag / select ────────────────────────────────────────────
+    const w = s2w(p.x, p.y);
+    const bldgs = activeMap().buildings || [];
+    const effW = b => { const r = b.rotationDeg||0; return (r===90||r===270) ? (b.footprintD||5) : (b.footprintW||7); };
+    const effD = b => { const r = b.rotationDeg||0; return (r===90||r===270) ? (b.footprintW||7) : (b.footprintD||5); };
+    const inside = (b, wx, wz) => wx >= b.gridX && wx < b.gridX + effW(b) && wz >= b.gridZ && wz < b.gridZ + effD(b);
+    // Drag already-selected building
+    if (_selectedBuildingId) {
+      const selB = bldgs.find(b => b.id === _selectedBuildingId);
+      if (selB && inside(selB, w.x, w.y)) {
+        pushUndo();
+        _bldgDrag = { bid: selB.id, ox: selB.gridX, oz: selB.gridZ, px0: p.x, py0: p.y };
+        return; // don't pan
+      }
+    }
+    // Select a building (or deselect)
+    const hit = bldgs.find(b => inside(b, w.x, w.y));
+    if (hit) { _selectedBuildingId = hit.id; renderBuildingPanel(); draw(); }
+    else if (_selectedBuildingId) { _selectedBuildingId = null; renderBuildingPanel(); draw(); }
+    drag = true; dragStart = { p, cx: cam.x, cy: cam.y }; return;
+  }
   pushUndo();
   const w = s2w(p.x, p.y);
   if (PAINT_MODES.includes(mode)) { painting = true; applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) }); }
@@ -747,10 +946,24 @@ canvas.addEventListener('pointermove', e => {
     cam.zoom = nz; cam.x = pinchStart.mid.x - wx*nz; cam.y = pinchStart.mid.y - wy*nz;
     draw(); return;
   }
+  if (_bldgDrag) {
+    const selB = (activeMap().buildings || []).find(b => b.id === _bldgDrag.bid);
+    if (selB) {
+      selB.gridX = _bldgDrag.ox + Math.round((p.x - _bldgDrag.px0) / cam.zoom);
+      selB.gridZ = _bldgDrag.oz + Math.round((p.y - _bldgDrag.py0) / cam.zoom);
+      $('bldgGridX').value = selB.gridX; $('bldgGridZ').value = selB.gridZ;
+      draw();
+    }
+    return;
+  }
   if (drag && dragStart) { cam.x = dragStart.cx + (p.x-dragStart.p.x); cam.y = dragStart.cy + (p.y-dragStart.p.y); draw(); return; }
   if (painting) applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) });
 });
-function endPtr(e) { ptrs.delete(e.pointerId); drag = false; painting = false; pinchStart = null; }
+function endPtr(e) {
+  ptrs.delete(e.pointerId);
+  if (_bldgDrag) { saveWorkspace(); renderBuildingPanel(); _bldgDrag = null; }
+  drag = false; painting = false; pinchStart = null;
+}
 canvas.addEventListener('pointerup', endPtr);
 canvas.addEventListener('pointercancel', endPtr);
 canvas.addEventListener('wheel', e => {
@@ -800,7 +1013,7 @@ function refreshPreview() {
 }
 
 function setStatus(msg) { $('statusPill').textContent = msg; }
-function updateAll() { renderMapList(); fillSettings(); renderPalette(); refreshPreview(); updateBrushPill(); draw(); saveWorkspace(); }
+function updateAll() { renderMapList(); fillSettings(); renderPalette(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
 
 // ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
 function buildFarmLayoutV3() {
@@ -851,7 +1064,8 @@ function buildFarmLayoutV3() {
 function buildTownLayout() {
   const townM = mapById(ws.gameLink.townId);
   if (!townM) return null;
-  const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [] };
+  const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [],
+                   buildings: townM.buildings || [] };
   // Tiles
   for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
     const t = townM.tiles[`${c},${r}`];
@@ -1137,6 +1351,26 @@ $('importFile').addEventListener('change', async e => {
   try { importAny(JSON.parse(await f.text())); }
   catch(err) { setStatus('Import failed: ' + err.message); }
   finally { e.target.value = ''; }
+});
+
+// ── Building panel handlers ───────────────────────────────────────────────────
+$('saveBldgBtn').addEventListener('click', () => {
+  const m = activeMap();
+  const b = (m.buildings || []).find(b => b.id === _selectedBuildingId);
+  if (!b) return;
+  b.label  = $('bldgLabel').value.trim() || b.label;
+  b.gridX  = parseInt($('bldgGridX').value) || 0;
+  b.gridZ  = parseInt($('bldgGridZ').value) || 0;
+  renderBuildingPanel(); draw(); saveWorkspace(); setStatus('Building saved.');
+});
+
+$('delBldgBtn').addEventListener('click', () => {
+  const m = activeMap();
+  if (!_selectedBuildingId) return;
+  m.buildings = (m.buildings || []).filter(b => b.id !== _selectedBuildingId);
+  _selectedBuildingId = null;
+  $('buildingCountTag').textContent = m.buildings.length;
+  renderBuildingPanel(); draw(); saveWorkspace(); setStatus('Building removed.');
 });
 
 window.addEventListener('resize', resizeCanvas);
