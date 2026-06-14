@@ -360,6 +360,21 @@ function undo() {
 
 // ── Building panel ────────────────────────────────────────────────────────────
 let _selectedBuildingId = null;
+let _gizmos   = [];       // [{type,sx,sy,r}] rebuilt each draw(); used for hit-testing
+let _bldgDrag = null;     // {bid,ox,oz,px0,py0} during drag-move of a building
+
+// Canvas-space gizmo button
+function _drawGizmoBtn(type, sx, sy, R) {
+  ctx.save();
+  ctx.fillStyle   = type === 'rot' ? 'rgba(52,211,153,.92)' : 'rgba(106,167,255,.92)';
+  ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(sx, sy, R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${Math.round(R * 1.15)}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText({ N:'▲', S:'▼', W:'◀', E:'▶', rot:'↻' }[type] || type, sx, sy + 1);
+  ctx.restore();
+}
 
 let _addBuildingPickerMounted = false;
 function refreshBuildingDetection() {
@@ -670,22 +685,43 @@ function draw() {
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
   // Building overlays (placed buildings from map.buildings)
-  if (m.id === ws.gameLink.townId && (m.buildings || []).length) {
+  _gizmos = [];
+  if (m.id === ws.gameLink.townId) {
     (m.buildings || []).forEach(b => {
       const isSel = b.id === _selectedBuildingId;
-      // Show a placeholder bbox at (gridX, gridZ); default 7×5 if no size stored
-      const bw = b.footprintW || 7, bh = b.footprintD || 5;
-      const p = w2s(b.gridX, b.gridZ);
+      const rot = b.rotationDeg || 0;
+      const raw_w = b.footprintW || 7, raw_d = b.footprintD || 5;
+      // Swap displayed dims for 90°/270° rotations
+      const bw = (rot === 90 || rot === 270) ? raw_d : raw_w;
+      const bh = (rot === 90 || rot === 270) ? raw_w : raw_d;
+      const p  = w2s(b.gridX, b.gridZ);
       const pw = bw * z, ph = bh * z;
-      ctx.fillStyle = isSel ? 'rgba(251,191,36,.22)' : 'rgba(245,158,11,.10)';
+      ctx.fillStyle   = isSel ? 'rgba(251,191,36,.22)' : 'rgba(245,158,11,.10)';
       ctx.fillRect(p.x, p.y, pw, ph);
       ctx.strokeStyle = isSel ? 'rgba(251,191,36,.9)' : 'rgba(245,158,11,.5)';
-      ctx.lineWidth = isSel ? 2 : 1.5; ctx.setLineDash([]);
+      ctx.lineWidth   = isSel ? 2 : 1.5; ctx.setLineDash([]);
       ctx.strokeRect(p.x, p.y, pw, ph);
       if (z > 6) {
         ctx.fillStyle = isSel ? '#fef08a' : 'rgba(251,191,36,.7)';
         ctx.font = `${clamp(z*.3,8,11)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-        ctx.fillText(b.label || b.id, p.x + pw/2, p.y + 3);
+        const rotLabel = rot ? ` ${rot}°` : '';
+        ctx.fillText((b.label || b.id) + rotLabel, p.x + pw/2, p.y + 3);
+      }
+      // Gizmos on selected building (only when zoomed in enough)
+      if (isSel && z >= 7) {
+        const G = 13, GAP = G + 5;
+        const cx = p.x + pw / 2, cy = p.y + ph / 2;
+        const btns = [
+          { type:'N',   sx: cx,            sy: p.y - GAP        },
+          { type:'S',   sx: cx,            sy: p.y + ph + GAP   },
+          { type:'W',   sx: p.x - GAP,     sy: cy               },
+          { type:'E',   sx: p.x + pw + GAP, sy: cy              },
+          { type:'rot', sx: p.x + pw + GAP, sy: p.y - GAP       },
+        ];
+        for (const btn of btns) {
+          _gizmos.push({ ...btn, r: G });
+          _drawGizmoBtn(btn.type, btn.sx, btn.sy, G);
+        }
       }
     });
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -858,10 +894,40 @@ canvas.addEventListener('pointerdown', e => {
   }
   const p = canvasPt(e);
   if (mode === 'pan') {
-    const w = s2w(p.x, p.y); const wc = Math.floor(w.x), wr = Math.floor(w.y);
+    // ── Gizmo button priority ─────────────────────────────────────────────
+    const gHit = _gizmos.find(g => Math.hypot(p.x - g.sx, p.y - g.sy) <= g.r + 4);
+    if (gHit && _selectedBuildingId) {
+      const selB = (activeMap().buildings || []).find(b => b.id === _selectedBuildingId);
+      if (selB) {
+        pushUndo();
+        if      (gHit.type === 'N')   selB.gridZ--;
+        else if (gHit.type === 'S')   selB.gridZ++;
+        else if (gHit.type === 'W')   selB.gridX--;
+        else if (gHit.type === 'E')   selB.gridX++;
+        else if (gHit.type === 'rot') selB.rotationDeg = ((selB.rotationDeg || 0) + 90) % 360;
+        saveWs(); renderBuildingPanel(); draw();
+      }
+      return; // consume — no camera pan
+    }
+    // ── Building drag / select ────────────────────────────────────────────
+    const w = s2w(p.x, p.y);
     const bldgs = activeMap().buildings || [];
-    const hit = bldgs.find(b => wc >= b.gridX && wc < b.gridX + (b.footprintW || 7) && wr >= b.gridZ && wr < b.gridZ + (b.footprintD || 5));
+    const effW = b => { const r = b.rotationDeg||0; return (r===90||r===270) ? (b.footprintD||5) : (b.footprintW||7); };
+    const effD = b => { const r = b.rotationDeg||0; return (r===90||r===270) ? (b.footprintW||7) : (b.footprintD||5); };
+    const inside = (b, wx, wz) => wx >= b.gridX && wx < b.gridX + effW(b) && wz >= b.gridZ && wz < b.gridZ + effD(b);
+    // Drag already-selected building
+    if (_selectedBuildingId) {
+      const selB = bldgs.find(b => b.id === _selectedBuildingId);
+      if (selB && inside(selB, w.x, w.y)) {
+        pushUndo();
+        _bldgDrag = { bid: selB.id, ox: selB.gridX, oz: selB.gridZ, px0: p.x, py0: p.y };
+        return; // don't pan
+      }
+    }
+    // Select a building (or deselect)
+    const hit = bldgs.find(b => inside(b, w.x, w.y));
     if (hit) { _selectedBuildingId = hit.id; renderBuildingPanel(); draw(); }
+    else if (_selectedBuildingId) { _selectedBuildingId = null; renderBuildingPanel(); draw(); }
     drag = true; dragStart = { p, cx: cam.x, cy: cam.y }; return;
   }
   pushUndo();
@@ -880,10 +946,24 @@ canvas.addEventListener('pointermove', e => {
     cam.zoom = nz; cam.x = pinchStart.mid.x - wx*nz; cam.y = pinchStart.mid.y - wy*nz;
     draw(); return;
   }
+  if (_bldgDrag) {
+    const selB = (activeMap().buildings || []).find(b => b.id === _bldgDrag.bid);
+    if (selB) {
+      selB.gridX = _bldgDrag.ox + Math.round((p.x - _bldgDrag.px0) / cam.zoom);
+      selB.gridZ = _bldgDrag.oz + Math.round((p.y - _bldgDrag.py0) / cam.zoom);
+      $('bldgGridX').value = selB.gridX; $('bldgGridZ').value = selB.gridZ;
+      draw();
+    }
+    return;
+  }
   if (drag && dragStart) { cam.x = dragStart.cx + (p.x-dragStart.p.x); cam.y = dragStart.cy + (p.y-dragStart.p.y); draw(); return; }
   if (painting) applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) });
 });
-function endPtr(e) { ptrs.delete(e.pointerId); drag = false; painting = false; pinchStart = null; }
+function endPtr(e) {
+  ptrs.delete(e.pointerId);
+  if (_bldgDrag) { saveWs(); renderBuildingPanel(); _bldgDrag = null; }
+  drag = false; painting = false; pinchStart = null;
+}
 canvas.addEventListener('pointerup', endPtr);
 canvas.addEventListener('pointercancel', endPtr);
 canvas.addEventListener('wheel', e => {

@@ -630,6 +630,21 @@
     var offX    = bldgMinC + (gc - minCX);
     var offZ    = bldgMinR + (gc - minCZ);
 
+    // Optional CW rotation (viewed from above) around piece footprint centre
+    var rotDeg  = opts.rotationDeg || 0;
+    var rotRad  = -rotDeg * Math.PI / 180;   // negative = CW in XZ plane
+    var cosR = 1, sinR = 0, pivX = 0, pivZ = 0, txAdj = 0, tzAdj = 0;
+    if (rotDeg) {
+      cosR = Math.cos(rotRad); sinR = Math.sin(rotRad);
+      var maxCXp = pcells.length ? Math.max.apply(null, pcells.map(function(c){return c.x;})) : gc + 3;
+      var maxCZp = pcells.length ? Math.max.apply(null, pcells.map(function(c){return c.y;})) : gc + 3;
+      var fw0 = maxCXp - minCX + 1, fd0 = maxCZp - minCZ + 1;
+      pivX = bldgMinC + fw0 / 2;
+      pivZ = bldgMinR + fd0 / 2;
+      // Keep gridX/gridZ = top-left of rotated bounding box
+      if (rotDeg === 90 || rotDeg === 270) { txAdj = (fd0 - fw0) / 2; tzAdj = (fw0 - fd0) / 2; }
+    }
+
     var matRoof   = opts.matRoof   || new THREE.MeshLambertMaterial({ color: 0x6b3e26, side: THREE.FrontSide });
     var matFloor  = opts.matFloor  || new THREE.MeshLambertMaterial({ color: 0xa89878, side: THREE.FrontSide });
     var matBoards = opts.matBoards || new THREE.MeshLambertMaterial({ color: 0x8b6914, side: THREE.DoubleSide });
@@ -651,8 +666,16 @@
       var f   = faces[i];
       var tag = f.tag;
 
-      // Offset vertices to world space
-      var vOff = f.v.map(function(p) { return [p[0] + offX, p[1], p[2] + offZ]; });
+      // Offset vertices to world space, then apply rotation if any
+      var vOff = f.v.map(function(p) {
+        var wx = p[0] + offX, wz = p[2] + offZ;
+        if (rotDeg) {
+          var px = wx - pivX, pz = wz - pivZ;
+          wx = px * cosR - pz * sinR + pivX + txAdj;
+          wz = px * sinR + pz * cosR + pivZ + tzAdj;
+        }
+        return [wx, p[1], wz];
+      });
       var fOff = { v: vOff, tag: tag, id: f.id,
                    gableEnd: f.gableEnd, highlandFrustumWall: f.highlandFrustumWall,
                    roofAcrossOffset: f.roofAcrossOffset, roofOffsetRole: f.roofOffsetRole,

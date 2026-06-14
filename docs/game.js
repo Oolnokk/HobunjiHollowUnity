@@ -1624,6 +1624,7 @@
               g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
                 wallBuilder: houseWallBuilder, wbUsePlaceholder: true,
                 wbOpts, wbGableOpts, matBoards: _boardsMat,
+                rotationDeg: bldg.rotationDeg || 0,
               });
             }
             townScene.add(g);
@@ -1675,6 +1676,7 @@
                 const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
                   wallBuilder: houseWallBuilder, wbUsePlaceholder: false,
                   wbOpts, wbGableOpts, matBoards: _boardsMat,
+                  rotationDeg: bldg.rotationDeg || 0,
                 });
                 townScene.add(g);
                 _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
