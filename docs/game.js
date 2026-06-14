@@ -1413,6 +1413,7 @@
         const PAUSE_SEC = 1.6;    // idle at route endpoints
         const walker = {
           root, nodes, rec, profile,
+          area: path.area || 'farm',
           seg: 0, dir: 1, progress: 0, pause: 0,
           rot: Math.PI / 2, perpState: {},
           update(dt) {
@@ -1457,6 +1458,7 @@
         let closest = null, closestDist = 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
         for (const w of npcWalkers) {
+          if (w.area !== currentArea) continue;
           const d = Math.hypot(w.root.position.x - px, w.root.position.z - pz);
           if (d < closestDist) { closestDist = d; closest = w; }
         }
@@ -1916,7 +1918,8 @@
       // ── Enter / exit the interior ─────────────────────────────────
       function enterInterior() {
         buildInteriorScene();  // no-op after first call
-        farmPlayerSave = { x: player.x, y: player.y, angle: player.angle };
+        const fromScene = currentArea === 'town' ? townScene : scene;
+        farmPlayerSave = { x: player.x, y: player.y, angle: player.angle, area: currentArea };
         currentArea    = 'interior';
         player.x       = (INTERIOR_ENTRY_COL + 0.5) * TILE;
         player.y       = (INTERIOR_ENTRY_ROW + 0.5) * TILE;
@@ -1926,12 +1929,12 @@
         camTargetX     = player.x / TILE;
         camTargetZ     = player.y / TILE;
         // Move player mesh into interior scene
-        scene.remove(playerMesh);
-        scene.remove(toolHolder);
-        scene.remove(reticleMesh);
-        scene.remove(reticleCircleMesh);
-        scene.remove(reticleRingMesh);
-        scene.remove(reticleWavyGroup);
+        fromScene.remove(playerMesh);
+        fromScene.remove(toolHolder);
+        fromScene.remove(reticleMesh);
+        fromScene.remove(reticleCircleMesh);
+        fromScene.remove(reticleRingMesh);
+        fromScene.remove(reticleWavyGroup);
         clearTargetHighlights();
         interiorScene.add(playerMesh);
         refreshActionBar();
@@ -1940,7 +1943,8 @@
       function exitInterior() {
         if (currentArea !== 'interior') return;
         startSceneTransition(() => {
-          currentArea = 'farm';
+          const returnArea = farmPlayerSave?.area ?? 'farm';
+          currentArea = returnArea;
           if (farmPlayerSave) {
             player.x     = farmPlayerSave.x;
             player.y     = farmPlayerSave.y;
@@ -1950,14 +1954,15 @@
           player.vx  = 0;  player.vy = 0;
           camTargetX = player.x / TILE;
           camTargetZ = player.y / TILE;
-          // Move player mesh back to farm scene
+          // Move player mesh back to the scene they came from
+          const toScene = returnArea === 'town' ? townScene : scene;
           interiorScene.remove(playerMesh);
-          scene.add(playerMesh);
-          scene.add(toolHolder);
-          scene.add(reticleMesh);
-          scene.add(reticleCircleMesh);
-          scene.add(reticleRingMesh);
-          scene.add(reticleWavyGroup);
+          toScene.add(playerMesh);
+          toScene.add(toolHolder);
+          toScene.add(reticleMesh);
+          toScene.add(reticleCircleMesh);
+          toScene.add(reticleRingMesh);
+          toScene.add(reticleWavyGroup);
           refreshActionBar();
         });
       }
