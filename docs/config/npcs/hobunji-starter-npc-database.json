@@ -1119,24 +1119,24 @@
         "avatarKey": ""
       },
       "appearance": {
-        "speciesId": "mao-ao",
+        "speciesId": "mashtzarr",
         "gender": "male",
         "cosmetics": {},
         "bodyColors": {
           "A": {
-            "h": -70,
-            "s": -0.8,
-            "v": -0.55
+            "h": -85,
+            "s": -0.30,
+            "v": -0.40
           },
           "B": {
-            "h": -70,
-            "s": -0.8,
-            "v": -0.55
+            "h": -85,
+            "s": -0.35,
+            "v": -0.50
           },
           "C": {
-            "h": -70,
-            "s": -0.75,
-            "v": -0.37000000000000005
+            "h": -85,
+            "s": -0.20,
+            "v": -0.30
           }
         },
         "chatColor": {
@@ -1153,24 +1153,24 @@
           "schema": "npc_avatar_editor_export.v1",
           "source": "character-studio default",
           "appearance": {
-            "speciesId": "mao-ao",
+            "speciesId": "mashtzarr",
             "gender": "male",
             "cosmetics": {},
             "bodyColors": {
               "A": {
-                "h": -70,
-                "s": -0.8,
-                "v": -0.55
+                "h": -85,
+                "s": -0.30,
+                "v": -0.40
               },
               "B": {
-                "h": -70,
-                "s": -0.8,
-                "v": -0.55
+                "h": -85,
+                "s": -0.35,
+                "v": -0.50
               },
               "C": {
-                "h": -70,
-                "s": -0.75,
-                "v": -0.37000000000000005
+                "h": -85,
+                "s": -0.20,
+                "v": -0.30
               }
             },
             "chatColor": {
@@ -1240,24 +1240,24 @@
         "avatarKey": ""
       },
       "appearance": {
-        "speciesId": "mao-ao",
-        "gender": "female",
+        "speciesId": "mashtzarr",
+        "gender": "male",
         "cosmetics": {},
         "bodyColors": {
           "A": {
-            "h": -70,
-            "s": -0.8,
-            "v": -0.55
+            "h": -113,
+            "s":  0.30,
+            "v": -0.15
           },
           "B": {
-            "h": -70,
-            "s": -0.8,
-            "v": -0.55
+            "h": -113,
+            "s":  0.25,
+            "v": -0.25
           },
           "C": {
-            "h": -70,
-            "s": -0.75,
-            "v": -0.37000000000000005
+            "h": -113,
+            "s":  0.35,
+            "v": -0.05
           }
         },
         "chatColor": {
@@ -1274,24 +1274,24 @@
           "schema": "npc_avatar_editor_export.v1",
           "source": "character-studio default",
           "appearance": {
-            "speciesId": "mao-ao",
-            "gender": "female",
+            "speciesId": "mashtzarr",
+            "gender": "male",
             "cosmetics": {},
             "bodyColors": {
               "A": {
-                "h": -70,
-                "s": -0.8,
-                "v": -0.55
+                "h": -113,
+                "s":  0.30,
+                "v": -0.15
               },
               "B": {
-                "h": -70,
-                "s": -0.8,
-                "v": -0.55
+                "h": -113,
+                "s":  0.25,
+                "v": -0.25
               },
               "C": {
-                "h": -70,
-                "s": -0.75,
-                "v": -0.37000000000000005
+                "h": -113,
+                "s":  0.35,
+                "v": -0.05
               }
             },
             "chatColor": {
@@ -1341,24 +1341,24 @@
         "avatarKey": ""
       },
       "appearance": {
-        "speciesId": "mao-ao",
+        "speciesId": "mashtzarr",
         "gender": "male",
         "cosmetics": {},
         "bodyColors": {
           "A": {
-            "h": -70,
-            "s": -0.8,
-            "v": -0.55
+            "h": -40,
+            "s": -0.10,
+            "v": -0.30
           },
           "B": {
-            "h": -70,
-            "s": -0.8,
-            "v": -0.55
+            "h": -40,
+            "s": -0.15,
+            "v": -0.40
           },
           "C": {
-            "h": -70,
-            "s": -0.75,
-            "v": -0.37000000000000005
+            "h": -40,
+            "s": -0.05,
+            "v": -0.20
           }
         },
         "chatColor": {
@@ -1375,24 +1375,24 @@
           "schema": "npc_avatar_editor_export.v1",
           "source": "character-studio default",
           "appearance": {
-            "speciesId": "mao-ao",
+            "speciesId": "mashtzarr",
             "gender": "male",
             "cosmetics": {},
             "bodyColors": {
               "A": {
-                "h": -70,
-                "s": -0.8,
-                "v": -0.55
+                "h": -40,
+                "s": -0.10,
+                "v": -0.30
               },
               "B": {
-                "h": -70,
-                "s": -0.8,
-                "v": -0.55
+                "h": -40,
+                "s": -0.15,
+                "v": -0.40
               },
               "C": {
-                "h": -70,
-                "s": -0.75,
-                "v": -0.37000000000000005
+                "h": -40,
+                "s": -0.05,
+                "v": -0.20
               }
             },
             "chatColor": {

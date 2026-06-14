@@ -3058,6 +3058,9 @@ window.SCRATCHBONES_CONFIG = {
             "engh-sho": {
               "male": "fightersprites/special_cases/head-behind_engh_m.png",
               "female": "fightersprites/special_cases/head-behind_engh_f.png"
+            },
+            "mashtzarr": {
+              "male": "fightersprites/special_cases/head-behind_mashtz_m.png"
             }
           },
           "layerReplacements": [
