@@ -1581,8 +1581,9 @@
             const minC = Math.min(...cs), maxC = Math.max(...cs);
             const minR = Math.min(...rs), maxR = Math.max(...rs);
             const W = maxC - minC + 1, D = maxR - minR + 1;
-
-            buildings.push({ minC, maxC, minR, maxR, W, D });
+            const id = 'bldg_' + minC + '_' + minR;
+            const houseId = _townZone?.houseAssignments?.[id] || null;
+            buildings.push({ minC, maxC, minR, maxR, W, D, id, houseId });
           }
         }
         debugLog('_detectTownBuildings: found ' + buildings.length + ' buildings');
@@ -1608,15 +1609,20 @@
         }
         _townBuildingGroups = [];
 
-        const wbOpts = { unitMult: 0.35, rockScale: 1.5,
-                         preScale: [1, 1, 0.6],
-                         brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
+        const _wbDefaults = { unitMult: 0.35, rockScale: 1.5,
+                              preScale: [1, 1, 0.6],
+                              brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
+        const _houseLib = _townZone?.houseLibrary || {};
 
         for (const bldg of _townBuildingDefs) {
+          const libEntry  = bldg.houseId ? _houseLib[bldg.houseId] : null;
+          const wbOpts    = libEntry?.wbOpts     || _wbDefaults;
+          const wbGableOpts = libEntry?.wbGableOpts || undefined;
           const g = HousePieceGen.buildGroup(THREE, bldg.minC, bldg.maxC, bldg.minR, bldg.maxR, {
             wallBuilder:      houseWallBuilder,
             wbUsePlaceholder: true,   // upgraded below once GLBs are ready
             wbOpts,
+            wbGableOpts,
           });
           townScene.add(g);
           _townBuildingGroups.push(g);
@@ -1663,10 +1669,12 @@
             }
             _townBuildingGroups = [];
             for (const bldg of _townBuildingDefs) {
+              const _le    = bldg.houseId ? _houseLib[bldg.houseId] : null;
               const g = HousePieceGen.buildGroup(THREE, bldg.minC, bldg.maxC, bldg.minR, bldg.maxR, {
                 wallBuilder:      houseWallBuilder,
                 wbUsePlaceholder: false,
-                wbOpts,
+                wbOpts:      _le?.wbOpts      || _wbDefaults,
+                wbGableOpts: _le?.wbGableOpts || undefined,
               });
               townScene.add(g);
               _townBuildingGroups.push(g);

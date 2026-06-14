@@ -132,6 +132,42 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <p class="muted" style="margin-top:5px">The game farm is <b id="farmDimsNote">36×26</b>. Tiles outside that range are clipped when sending. Unpainted tiles keep the game's day-one terrain.</p>
         </div>
 
+        <!-- BUILDINGS (town maps only) -->
+        <div class="section" id="buildingsSection" style="--sec:#f59e0b;--secBg:rgba(245,158,11,.08);display:none">
+          <div class="sect-head"><b>Buildings</b><span class="sect-tag" id="buildingCountTag">0</span></div>
+          <div class="itemlist" id="buildingList"></div>
+          <div id="selectedBuildingPanel" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.1)">
+            <label>House type</label>
+            <select id="buildingHouseSelect" style="margin-bottom:0"></select>
+          </div>
+          <div style="margin-top:12px;padding-top:8px;border-top:1px solid rgba(255,255,255,.1)">
+            <div class="sect-head" style="margin-bottom:4px"><b style="font-size:11px;text-transform:uppercase;letter-spacing:.3px">House Library</b></div>
+            <div class="itemlist" id="houseLibList"></div>
+            <div class="row" style="margin-top:6px">
+              <button class="sec" id="addHouseTypeBtn" style="flex:1">+ Add type</button>
+              <button class="bad" id="delHouseTypeBtn">Delete</button>
+            </div>
+            <div id="houseTypeForm" style="display:none;margin-top:8px">
+              <div class="g2" style="margin-bottom:5px">
+                <div><label>ID</label><input id="htId" placeholder="house_inn"></div>
+                <div><label>Label</label><input id="htLabel" placeholder="Inn"></div>
+              </div>
+              <p class="muted" style="margin-bottom:4px">Body wall opts</p>
+              <div class="g3" style="margin-bottom:5px">
+                <div><label>unitMult</label><input id="htUnitMult" type="number" step="0.01" value="0.35"></div>
+                <div><label>rockScale</label><input id="htRockScale" type="number" step="0.1" value="1.5"></div>
+                <div><label>preScale Z</label><input id="htPreScaleZ" type="number" step="0.05" value="0.6"></div>
+              </div>
+              <p class="muted" style="margin-bottom:4px">Gable opts (denser bricks)</p>
+              <div class="g2" style="margin-bottom:8px">
+                <div><label>unitMult</label><input id="htGableUnitMult" type="number" step="0.01" value="0.22"></div>
+                <div><label>rockScale</label><input id="htGableRockScale" type="number" step="0.1" value="1.1"></div>
+              </div>
+              <button class="ok" id="saveHouseTypeBtn" style="width:100%">Save type</button>
+            </div>
+          </div>
+        </div>
+
         <!-- STATUS / JSON -->
         <div class="section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.06)">
           <div class="sect-head"><b>Active Map JSON</b><span class="sect-tag" id="statusPill">Ready</span></div>
@@ -274,6 +310,8 @@ function loadWorkspace() {
         w.maps.forEach(m => {
           m.npcPaths = Array.isArray(m.npcPaths) ? m.npcPaths : [];
           m.transitions = Array.isArray(m.transitions) ? m.transitions : [];
+          if (!m.houseLibrary) m.houseLibrary = {};
+          if (!m.houseAssignments) m.houseAssignments = {};
           delete m.markers;
         });
         w.gameLink = w.gameLink || { exteriorId: '', interiorId: '', townId: '' };
@@ -318,6 +356,101 @@ function undo() {
   const snap = JSON.parse(undoStack.pop());
   const i = ws.maps.findIndex(m => m.id === snap.id);
   if (i >= 0) { ws.maps[i] = snap; updateAll(); setStatus('Undid.'); }
+}
+
+// ── Building detection ────────────────────────────────────────────────────────
+function detectBuildings(m) {
+  const KEY = (c, r) => r * 10000 + c;
+  const rockSet = new Set();
+  for (let r = 0; r < m.rows; r++)
+    for (let c = 0; c < m.cols; c++)
+      if ((m.tiles[`${c},${r}`]?.type || 'grass') === 'rock') rockSet.add(KEY(c, r));
+  const visited = new Set(), buildings = [];
+  for (let r = 0; r < m.rows; r++) {
+    for (let c = 0; c < m.cols; c++) {
+      const k = KEY(c, r);
+      if (!rockSet.has(k) || visited.has(k)) continue;
+      const cluster = [], queue = [[c, r]];
+      while (queue.length) {
+        const [cc, rr] = queue.pop(), kk = KEY(cc, rr);
+        if (visited.has(kk) || !rockSet.has(kk)) continue;
+        visited.add(kk); cluster.push([cc, rr]);
+        queue.push([cc+1,rr],[cc-1,rr],[cc,rr+1],[cc,rr-1]);
+      }
+      if (cluster.length < 20) continue;
+      const cs = cluster.map(([c]) => c), rs = cluster.map(([,r]) => r);
+      const minC = Math.min(...cs), maxC = Math.max(...cs);
+      const minR = Math.min(...rs), maxR = Math.max(...rs);
+      buildings.push({ id: 'bldg_'+minC+'_'+minR, minC, maxC, minR, maxR });
+    }
+  }
+  return buildings;
+}
+
+let _detectedBuildings = [];  // cached for canvas overlay + panel
+let _selectedBuildingId = null;
+let _selectedHouseTypeId = null;
+
+function refreshBuildingDetection() {
+  const m = activeMap();
+  const isTown = m.category === 'exterior' && m.id === ws.gameLink.townId;
+  $('buildingsSection').style.display = isTown ? '' : 'none';
+  if (!isTown) return;
+  if (!m.houseLibrary) m.houseLibrary = {};
+  if (!m.houseAssignments) m.houseAssignments = {};
+  _detectedBuildings = detectBuildings(m);
+  $('buildingCountTag').textContent = _detectedBuildings.length;
+  renderBuildingPanel();
+}
+
+function renderBuildingPanel() {
+  const m = activeMap();
+  const lib = m.houseLibrary || {};
+  // Building list
+  $('buildingList').innerHTML = _detectedBuildings.map(b => {
+    const hid = m.houseAssignments?.[b.id] || '';
+    const label = hid ? (lib[hid]?.label || hid) : '—';
+    const sel = b.id === _selectedBuildingId;
+    return `<div class="item${sel?' sel':''}" data-bid="${b.id}">
+      <div class="item-name">${b.id}</div>
+      <div class="item-meta">${b.maxC-b.minC+1}×${b.maxR-b.minR+1} tiles · ${label}</div>
+    </div>`;
+  }).join('');
+  $('buildingList').querySelectorAll('[data-bid]').forEach(el => {
+    el.addEventListener('click', () => { _selectedBuildingId = el.dataset.bid; renderBuildingPanel(); draw(); });
+  });
+  // Selected building assignment
+  const selB = _detectedBuildings.find(b => b.id === _selectedBuildingId);
+  $('selectedBuildingPanel').style.display = selB ? '' : 'none';
+  if (selB) {
+    const curHid = m.houseAssignments?.[selB.id] || '';
+    $('buildingHouseSelect').innerHTML = '<option value="">— none —</option>' +
+      Object.entries(lib).map(([k, v]) => `<option value="${k}"${k===curHid?' selected':''}>${v.label||k}</option>`).join('');
+  }
+  // House library list
+  $('houseLibList').innerHTML = Object.entries(lib).map(([k, v]) => {
+    const sel = k === _selectedHouseTypeId;
+    return `<div class="item${sel?' sel':''}" data-hid="${k}">
+      <div class="item-name">${v.label||k}</div>
+      <div class="item-meta">${k} · unitMult ${v.wbOpts?.unitMult??'?'} · rockScale ${v.wbOpts?.rockScale??'?'}</div>
+    </div>`;
+  }).join('');
+  $('houseLibList').querySelectorAll('[data-hid]').forEach(el => {
+    el.addEventListener('click', () => { _selectedHouseTypeId = el.dataset.hid; loadHouseTypeToForm(el.dataset.hid); renderBuildingPanel(); });
+  });
+}
+
+function loadHouseTypeToForm(hid) {
+  const m = activeMap(), e = m.houseLibrary?.[hid];
+  if (!e) return;
+  $('htId').value = hid;
+  $('htLabel').value = e.label || '';
+  $('htUnitMult').value = e.wbOpts?.unitMult ?? 0.35;
+  $('htRockScale').value = e.wbOpts?.rockScale ?? 1.5;
+  $('htPreScaleZ').value = e.wbOpts?.preScale?.[2] ?? 0.6;
+  $('htGableUnitMult').value = e.wbGableOpts?.unitMult ?? 0.22;
+  $('htGableRockScale').value = e.wbGableOpts?.rockScale ?? 1.1;
+  $('houseTypeForm').style.display = '';
 }
 
 // ── Mode / brush state ────────────────────────────────────────────────────────
@@ -564,6 +697,28 @@ function draw() {
   });
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
+  // Building overlays (detected rock clusters with assigned house types)
+  if (_detectedBuildings.length && m.id === ws.gameLink.townId) {
+    const lib = m.houseLibrary || {};
+    _detectedBuildings.forEach(b => {
+      const p = w2s(b.minC, b.minR);
+      const pw = (b.maxC - b.minC + 1) * z, ph = (b.maxR - b.minR + 1) * z;
+      const isSel = b.id === _selectedBuildingId;
+      const hid = m.houseAssignments?.[b.id];
+      ctx.fillStyle = isSel ? 'rgba(251,191,36,.22)' : 'rgba(245,158,11,.10)';
+      ctx.fillRect(p.x, p.y, pw, ph);
+      ctx.strokeStyle = isSel ? 'rgba(251,191,36,.9)' : 'rgba(245,158,11,.5)';
+      ctx.lineWidth = isSel ? 2 : 1.5; ctx.setLineDash([]);
+      ctx.strokeRect(p.x, p.y, pw, ph);
+      if (z > 6) {
+        ctx.fillStyle = isSel ? '#fef08a' : 'rgba(251,191,36,.7)';
+        ctx.font = `${clamp(z*.3,8,11)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(hid ? (lib[hid]?.label || hid) : b.id, p.x + pw/2, p.y + 3);
+      }
+    });
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+
   // Grid
   ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = 1;
   for (let x = 0; x <= m.cols; x++) { const p = w2s(x,0); ctx.beginPath(); ctx.moveTo(p.x, cam.y); ctx.lineTo(p.x, cam.y + m.rows*z); ctx.stroke(); }
@@ -730,7 +885,12 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   const p = canvasPt(e);
-  if (mode === 'pan') { drag = true; dragStart = { p, cx: cam.x, cy: cam.y }; return; }
+  if (mode === 'pan') {
+    const w = s2w(p.x, p.y); const wc = Math.floor(w.x), wr = Math.floor(w.y);
+    const hit = _detectedBuildings.find(b => wc >= b.minC && wc <= b.maxC && wr >= b.minR && wr <= b.maxR);
+    if (hit) { _selectedBuildingId = hit.id; renderBuildingPanel(); draw(); }
+    drag = true; dragStart = { p, cx: cam.x, cy: cam.y }; return;
+  }
   pushUndo();
   const w = s2w(p.x, p.y);
   if (PAINT_MODES.includes(mode)) { painting = true; applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) }); }
@@ -800,7 +960,7 @@ function refreshPreview() {
 }
 
 function setStatus(msg) { $('statusPill').textContent = msg; }
-function updateAll() { renderMapList(); fillSettings(); renderPalette(); refreshPreview(); updateBrushPill(); draw(); saveWorkspace(); }
+function updateAll() { renderMapList(); fillSettings(); renderPalette(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
 
 // ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
 function buildFarmLayoutV3() {
@@ -851,7 +1011,8 @@ function buildFarmLayoutV3() {
 function buildTownLayout() {
   const townM = mapById(ws.gameLink.townId);
   if (!townM) return null;
-  const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [] };
+  const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [],
+                   houseLibrary: townM.houseLibrary || {}, houseAssignments: townM.houseAssignments || {} };
   // Tiles
   for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
     const t = townM.tiles[`${c},${r}`];
@@ -1137,6 +1298,58 @@ $('importFile').addEventListener('change', async e => {
   try { importAny(JSON.parse(await f.text())); }
   catch(err) { setStatus('Import failed: ' + err.message); }
   finally { e.target.value = ''; }
+});
+
+// ── Building panel handlers ───────────────────────────────────────────────────
+$('buildingHouseSelect').addEventListener('change', () => {
+  const m = activeMap();
+  if (!_selectedBuildingId) return;
+  const hid = $('buildingHouseSelect').value;
+  if (hid) m.houseAssignments[_selectedBuildingId] = hid;
+  else delete m.houseAssignments[_selectedBuildingId];
+  renderBuildingPanel(); draw(); saveWorkspace();
+});
+
+$('addHouseTypeBtn').addEventListener('click', () => {
+  $('htId').value = 'house_' + Math.random().toString(36).slice(2,6);
+  $('htLabel').value = 'New type';
+  $('htUnitMult').value = 0.35; $('htRockScale').value = 1.5; $('htPreScaleZ').value = 0.6;
+  $('htGableUnitMult').value = 0.22; $('htGableRockScale').value = 1.1;
+  $('houseTypeForm').style.display = '';
+});
+
+$('delHouseTypeBtn').addEventListener('click', () => {
+  const m = activeMap();
+  if (!_selectedHouseTypeId || !m.houseLibrary) return;
+  delete m.houseLibrary[_selectedHouseTypeId];
+  // Remove stale assignments
+  for (const [bid, hid] of Object.entries(m.houseAssignments || {}))
+    if (hid === _selectedHouseTypeId) delete m.houseAssignments[bid];
+  _selectedHouseTypeId = null;
+  $('houseTypeForm').style.display = 'none';
+  renderBuildingPanel(); saveWorkspace(); setStatus('Deleted house type.');
+});
+
+$('saveHouseTypeBtn').addEventListener('click', () => {
+  const m = activeMap();
+  const id = $('htId').value.trim();
+  if (!id) { setStatus('House type ID required.'); return; }
+  if (!m.houseLibrary) m.houseLibrary = {};
+  m.houseLibrary[id] = {
+    label: $('htLabel').value.trim() || id,
+    wbOpts: {
+      unitMult:  parseFloat($('htUnitMult').value)  || 0.35,
+      rockScale: parseFloat($('htRockScale').value) || 1.5,
+      preScale:  [1, 1, parseFloat($('htPreScaleZ').value) || 0.6],
+      brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 }
+    },
+    wbGableOpts: {
+      unitMult:  parseFloat($('htGableUnitMult').value)  || 0.22,
+      rockScale: parseFloat($('htGableRockScale').value) || 1.1,
+    }
+  };
+  _selectedHouseTypeId = id;
+  renderBuildingPanel(); saveWorkspace(); setStatus(`Saved house type "${id}".`);
 });
 
 window.addEventListener('resize', resizeCanvas);
