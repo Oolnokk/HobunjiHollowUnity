@@ -136,14 +136,20 @@
     if (opts.wallBuilder) {
       var bodyPanels  = _wallPanels(minC, maxC, minR, maxR, y0, baseH, tile);
       var gablePanels = _gablePanels(faces);
-      var panels      = bodyPanels.concat(gablePanels);
       var wbUse   = opts.wbUsePlaceholder !== false;
       var wbExtra = opts.wbOpts || { unitMult: 0.35, rockScale: 1.5,
                                      preScale: [1, 1, 0.6],
                                      brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
-      var wbGroup = opts.wallBuilder.build(panels, Object.assign({ usePlaceholder: wbUse }, wbExtra));
+
+      var wbGroup = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse }, wbExtra));
       wbGroup.userData.isWallBricks = true;
       group.add(wbGroup);
+
+      // Gable triangles are smaller — use denser, smaller bricks so they fill properly.
+      var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.22, rockScale: 1.1 });
+      var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gableExtra));
+      gableGroup.userData.isWallBricks = true;
+      group.add(gableGroup);
     }
 
     return group;
@@ -311,15 +317,15 @@
 
   // ── Face mesh building ──────────────────────────────────────────────────────
   function _buildFaceMeshes(group, faces, opts) {
-    var matWall  = opts.matWall  || new THREE.MeshLambertMaterial({ color: 0xd4c4a8, side: THREE.FrontSide });
     var matRoof  = opts.matRoof  || new THREE.MeshLambertMaterial({ color: 0x6b3e26, side: THREE.FrontSide });
     var matFloor = opts.matFloor || new THREE.MeshLambertMaterial({ color: 0xa89878, side: THREE.FrontSide });
+    var hideWalls = !!opts.wallBuilder;
 
     for (var i = 0; i < faces.length; i++) {
       var f   = faces[i];
-      var mat = f.tag === 'roof' ? matRoof
-              : (f.tag === 'floor' || f.tag === 'ceiling') ? matFloor
-              : matWall;
+      // Wall faces are covered by WallBuilder bricks — skip the base mesh planes.
+      if (hideWalls && f.tag === 'wall') continue;
+      var mat = f.tag === 'roof' ? matRoof : matFloor;
       var geom = new THREE.BufferGeometry();
       var pts  = [f.v[0], f.v[1], f.v[2], f.v[0], f.v[2], f.v[3]].flat();
       geom.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
