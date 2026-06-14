@@ -2641,6 +2641,10 @@
       }
 
       let activeItemIndex = 0;
+      // Declared before createInitialGrid() because recomputeWater() (called
+      // inside createInitialGrid) sets these — they must not be in TDZ.
+      let _waterSimDirty = true;
+      let _flowingTrenchTiles = [];
       let grid = createInitialGrid();
       // Apply any saved farm layout (tile overrides only; object positions applied after initWorldObjects)
       { const _savedLayout = loadFarmLayout(); if (_savedLayout) applyFarmLayoutToGrid(_savedLayout); }
@@ -3143,10 +3147,9 @@
       function worldToOverlay(x, y, z) {
         const v = new THREE.Vector3(x, y, z);
         v.project(camera);
-        const rect = threeContainer.getBoundingClientRect();
         return {
-          x: (v.x * 0.5 + 0.5) * rect.width,
-          y: (-v.y * 0.5 + 0.5) * rect.height,
+          x: (v.x * 0.5 + 0.5) * _threeRect.width,
+          y: (-v.y * 0.5 + 0.5) * _threeRect.height,
           visible: v.z >= -1 && v.z <= 1
         };
       }
@@ -3422,8 +3425,12 @@
         debugLog(`major storm: ${name} — ${dmgText || 'no damage'}`);
       }
 
+      let _lastLightingOverlayTime = 0;
       function drawLightingOverlay() {
-        const rect = threeContainer.getBoundingClientRect();
+        const now = performance.now();
+        if (now - _lastLightingOverlayTime < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0) return;
+        _lastLightingOverlayTime = now;
+        const rect = _threeRect;
         lctx.clearRect(0, 0, rect.width, rect.height);
 
         if (currentArea === 'interior') {
@@ -3553,25 +3560,22 @@
       }
 
       function updateWaterParticles(dt) {
-        // Spawn particles on flowing trench tiles
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const tile = grid[row][col];
-            if (tile.type !== TileType.TRENCH || !tile.flow) continue;
-            if (waterParticles.length < MAX_PARTICLES && Math.random() < 0.12) {
-              const tx = col * TILE + 10 + Math.random() * (TILE - 20);
-              const ty = row * TILE + 8 + Math.random() * (TILE - 16);
-              waterParticles.push({
-                wx: tx, wy: ty,
-                vx: (Math.random() - 0.5) * 4,
-                vy: 4 + Math.random() * 12, // flow south
-                alpha: 0.7 + Math.random() * 0.3,
-                radius: 1 + Math.random() * 2.5,
-                life: 0,
-                maxLife: 0.4 + Math.random() * 0.6,
-                type: Math.random() < 0.6 ? 'bubble' : 'foam'
-              });
-            }
+        // Spawn particles on flowing trench tiles.
+        // _flowingTrenchTiles is rebuilt each sim tick so no full grid scan is needed.
+        for (const { col, row } of _flowingTrenchTiles) {
+          if (waterParticles.length < MAX_PARTICLES && Math.random() < 0.12) {
+            const tx = col * TILE + 10 + Math.random() * (TILE - 20);
+            const ty = row * TILE + 8 + Math.random() * (TILE - 16);
+            waterParticles.push({
+              wx: tx, wy: ty,
+              vx: (Math.random() - 0.5) * 4,
+              vy: 4 + Math.random() * 12,
+              alpha: 0.7 + Math.random() * 0.3,
+              radius: 1 + Math.random() * 2.5,
+              life: 0,
+              maxLife: 0.4 + Math.random() * 0.6,
+              type: Math.random() < 0.6 ? 'bubble' : 'foam'
+            });
           }
         }
         // Update existing particles
@@ -3646,7 +3650,7 @@
         return {
           [TileType.GRASS]:   1.00,
           [TileType.TILLED]:  0.85,
-          [TileType.WEEDS]:   0.58,
+          [TileType.WEEDS]:   1.00,
           [TileType.RAISED]:  0.90,
           [TileType.PADDY]:   0.70,
           [TileType.TRENCH]:  0.30,
@@ -3929,7 +3933,7 @@
       const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.1);
       sunLight.position.set(8, 16, -6);
       sunLight.castShadow = true;
-      sunLight.shadow.mapSize.set(2048, 2048);
+      sunLight.shadow.mapSize.set(1024, 1024);
       sunLight.shadow.camera.near = 0.5;
       sunLight.shadow.camera.far  = 80;
       sunLight.shadow.camera.left = sunLight.shadow.camera.bottom = -30;
@@ -5100,6 +5104,18 @@
       // so we only rebuild when the plant crosses a threshold.
       const cropGrowthBucket = new Array(ROWS * COLS).fill(-1);
 
+      // Indices of tiles that currently have a crop — rebuilt lazily whenever
+      // a tile changes so updateCropMeshes() doesn't scan all 936 tiles.
+      let _cropTileIndices = null;
+      function _invalidateCropList() { _cropTileIndices = null; }
+      function _ensureCropList() {
+        if (_cropTileIndices !== null) return;
+        _cropTileIndices = [];
+        for (let row = 0; row < ROWS; row++)
+          for (let col = 0; col < COLS; col++)
+            if (grid[row][col].crop) _cropTileIndices.push(row * COLS + col);
+      }
+
       const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot']);
       const FG = window.FoliageGenerator;
 
@@ -5131,16 +5147,19 @@
       }
 
       function updateCropMeshes() {
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const i    = row * COLS + col;
-            const tile = grid[row][col];
+        _ensureCropList();
+        for (const i of _cropTileIndices) {
+          const col  = i % COLS;
+          const row  = (i / COLS) | 0;
+          const tile = grid[row][col];
 
-            if (!tile.crop) {
-              if (cropMeshes[i]) { scene.remove(cropMeshes[i]); cropMeshes[i] = null; }
-              cropGrowthBucket[i] = -1;
-              continue;
-            }
+          // Stale entry (crop was harvested since last list rebuild) — clean up.
+          if (!tile.crop) {
+            if (cropMeshes[i]) { scene.remove(cropMeshes[i]); cropMeshes[i] = null; }
+            cropGrowthBucket[i] = -1;
+            _invalidateCropList();
+            continue;
+          }
 
             const data   = cropData[tile.crop];
             const growth = Math.min(tile.cropAge / data.growDays, 1.0);
@@ -5200,7 +5219,6 @@
               mesh.position.set(col + 0.5, surfY + size / 2 + 0.02 + bobY, row + 0.5);
               if (tile.cropReady) mesh.rotation.y = performance.now() / 1200 + col;
             }
-          }
         }
       }
 
@@ -5391,61 +5409,79 @@
       // ── Update water meshes each frame ─────────────────────────────
       function updateWaterMeshes() {
         waterTime += 0.016; // ~60fps accumulation; matches visual speed regardless of frame rate
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const i    = row * COLS + col;
-            const tile = grid[row][col];
 
-            if (isSolid(tile.type) || tile.water < 0.003) {
-              if (waterMeshes[i]) { scene.remove(waterMeshes[i]); waterMeshes[i] = null; }
-              continue;
+        if (_waterSimDirty) {
+          // Full refresh: recompute flow direction, colour, depth, position.
+          // Runs only after recomputeWater() (~every 9 real seconds).
+          _waterSimDirty = false;
+          _flowingTrenchTiles = [];
+          for (let row = 0; row < ROWS; row++) {
+            for (let col = 0; col < COLS; col++) {
+              const i    = row * COLS + col;
+              const tile = grid[row][col];
+
+              if (isSolid(tile.type) || tile.water < 0.003) {
+                if (waterMeshes[i]) { scene.remove(waterMeshes[i]); waterMeshes[i] = null; }
+                tile._wCached = false;
+                continue;
+              }
+
+              if (tile.type === TileType.TRENCH && tile.flow) _flowingTrenchTiles.push({ col, row });
+
+              const depthFrac = tile.water / MAX_WATER;
+              const surfaceA  = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
+
+              let fx = 0, fz = 0;
+              const nbrs = [
+                { dc:  0, dr:  1, ax: 0, az:  1 },
+                { dc:  0, dr: -1, ax: 0, az: -1 },
+                { dc:  1, dr:  0, ax: 1, az:  0 },
+                { dc: -1, dr:  0, ax: -1,az:  0 },
+              ];
+              for (const { dc, dr, ax, az } of nbrs) {
+                const nc = col + dc, nr = row + dr;
+                if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+                const nt = grid[nr][nc];
+                if (isSolid(nt.type)) continue;
+                const surfB = tileSurfaceY(nt.type) + nt.water * WATER_UNIT;
+                const head  = surfaceA - surfB;
+                if (head > 0.01) { fx += ax * head; fz += az * head; }
+              }
+              const flowLen = Math.hypot(fx, fz);
+              const flowNX  = flowLen > 0.001 ? fx / flowLen : 0;
+              const flowNZ  = flowLen > 0.001 ? fz / flowLen : 0;
+              const r = clamp(180 - depthFrac * 160, 20, 180) / 255;
+              const g = clamp(220 - depthFrac * 100, 100, 220) / 255;
+
+              tile._wCached   = true;
+              tile._wSurfA    = surfaceA;
+              tile._wDepth    = depthFrac;
+              tile._wFlowNX   = flowNX;
+              tile._wFlowNZ   = flowNZ;
+              tile._wR        = r;
+              tile._wG        = g;
+
+              if (!waterMeshes[i]) {
+                const wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
+                wm.receiveShadow = false;
+                scene.add(wm);
+                waterMeshes[i] = wm;
+              }
+              const wm = waterMeshes[i];
+              wm.position.set(col + 0.5, surfaceA + 0.015, row + 0.5);
+              const u = wm.material.uniforms;
+              u.uTime.value  = waterTime;
+              u.uDepth.value = depthFrac;
+              u.uFlow.value.set(flowNX, flowNZ);
+              u.uColor.value.setRGB(r, g, 1.0);
             }
-
-            const depthFrac = tile.water / MAX_WATER;
-            const surfaceA  = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
-
-            // ── Compute flow direction from surface-height gradient ──
-            // Check each cardinal neighbour: flow goes toward lowest surface
-            let fx = 0, fz = 0;
-            const nbrs = [
-              { dc:  0, dr:  1, ax: 0, az:  1 },
-              { dc:  0, dr: -1, ax: 0, az: -1 },
-              { dc:  1, dr:  0, ax: 1, az:  0 },
-              { dc: -1, dr:  0, ax: -1,az:  0 },
-            ];
-            for (const { dc, dr, ax, az } of nbrs) {
-              const nc = col + dc, nr = row + dr;
-              if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
-              const nt = grid[nr][nc];
-              if (isSolid(nt.type)) continue;
-              const surfB = tileSurfaceY(nt.type) + nt.water * WATER_UNIT;
-              const head  = surfaceA - surfB;
-              if (head > 0.01) { fx += ax * head; fz += az * head; }
-            }
-            const flowLen = Math.hypot(fx, fz);
-            const flowNX  = flowLen > 0.001 ? fx / flowLen : 0;
-            const flowNZ  = flowLen > 0.001 ? fz / flowLen : 0;
-
-            // Colour: pale cyan → deep blue with depth
-            const r = clamp(180 - depthFrac * 160, 20, 180) / 255;
-            const g = clamp(220 - depthFrac * 100, 100, 220) / 255;
-            const b = 1.0;
-
-            if (!waterMeshes[i]) {
-              const wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
-              wm.receiveShadow = false;
-              scene.add(wm);
-              waterMeshes[i] = wm;
-            }
+          }
+        } else {
+          // Fast path: only push updated time uniform — all other values are stable
+          // between sim ticks so no recomputation is needed.
+          for (let i = 0; i < waterMeshes.length; i++) {
             const wm = waterMeshes[i];
-            wm.position.set(col + 0.5, surfaceA + 0.015, row + 0.5);
-
-            // Update shader uniforms
-            const u = wm.material.uniforms;
-            u.uTime.value  = waterTime;
-            u.uDepth.value = depthFrac;
-            u.uFlow.value.set(flowNX, flowNZ);
-            u.uColor.value.setRGB(r, g, b);
+            if (wm) wm.material.uniforms.uTime.value = waterTime;
           }
         }
       }
@@ -5560,7 +5596,13 @@
       }
 
       // ── Update lighting from time-of-day ──────────────────────────
+      let _lastLightUpdateTime = 0;
       function updateThreeLighting() {
+        // Lighting changes on a 72-second game day — pushing uniforms every
+        // frame wastes ~1 ms. Throttle to every 500 ms; imperceptible.
+        const now = performance.now();
+        if (now - _lastLightUpdateTime < 500) return;
+        _lastLightUpdateTime = now;
         const { r, g, b, a } = getLightingState();
         // Ambient: dimmer at night, brighter at noon
         const brightnessMul = 1 - a * 0.7;
@@ -5581,10 +5623,15 @@
         scene.fog.color.copy(scene.background);
       }
 
+      // ── Cached container rect — avoids repeated layout reflows per frame ─
+      // Updated in resizeCanvas(); used by drawing functions and worldToOverlay.
+      let _threeRect = { width: window.innerWidth, height: window.innerHeight };
+
       // ── Resize handler ────────────────────────────────────────────
       function resizeCanvas() {
         const dpr  = Math.min(window.devicePixelRatio, 2);
         const rect = threeContainer.getBoundingClientRect();
+        _threeRect = rect;
         const w = rect.width  || window.innerWidth;
         const h = rect.height || window.innerHeight;
         renderer.setSize(w, h);
@@ -5689,19 +5736,30 @@
           const windStrBase = calendar.isRaining
             ? (calendar.rainStrength >= 3 ? 0.10 : 0.06)
             : 0.03;
+          const _playerTX = player.x / TILE;
+          const _playerTZ = player.y / TILE;
           for (const vm of vegMeshes) {
             if (vm.material && vm.material.uniforms) {
               vm.material.uniforms.uTime.value = windTime;
-              const dx = vm.position.x - player.x / TILE;
-              const dz = vm.position.z - player.y / TILE;
-              const dist = Math.hypot(dx, dz);
-              const proximityStr = dist < 1.2 ? windStrBase + 0.12 * (1.2 - dist) / 1.2 : windStrBase;
+              // Proximity boost only triggers within 1.2 tiles. Use cheap
+              // Manhattan pre-check to skip Math.hypot for distant meshes.
+              const adx = Math.abs(vm.position.x - _playerTX);
+              const adz = Math.abs(vm.position.z - _playerTZ);
+              let proximityStr;
+              if (adx < 1.4 && adz < 1.4) {
+                const dist = Math.hypot(adx, adz);
+                proximityStr = dist < 1.2 ? windStrBase + 0.12 * (1.2 - dist) / 1.2 : windStrBase;
+              } else {
+                proximityStr = windStrBase;
+              }
               vm.material.uniforms.uStrength.value += (proximityStr - vm.material.uniforms.uStrength.value) * 0.15;
             }
           }
           const windScale = windStrBase / 0.03;
           for (const fg of vegFoliageMeshes) {
             if (!fg || !fg._windAmp) continue;
+            // Skip foliage well outside the camera view — it won't be visible.
+            if (Math.abs(fg.position.x - _playerTX) > 14 || Math.abs(fg.position.z - _playerTZ) > 11) continue;
             const amp = fg._windAmp * windScale;
             fg.rotation.z = amp * Math.sin(windTime * 1.6 + fg._windPhase);
             fg.rotation.x = amp * 0.45 * Math.cos(windTime * 1.1 + fg._windPhase * 1.3);
@@ -5751,7 +5809,7 @@
 
       // ── 2D overlay draw (rain curtain + ripples on overlay canvas) ─
       function drawOverlays() {
-        const rect = threeContainer.getBoundingClientRect();
+        const rect = _threeRect;
         const W = rect.width, H = rect.height;
         octx.clearRect(0, 0, W, H);
 
@@ -5800,6 +5858,7 @@
       }
 
       function markTileDirty(col, row) {
+        _invalidateCropList();
         refreshTileMesh(col, row);
         // TRENCH/RAISED shape depends on which neighbors share their type, so any
         // change that could alter those connections must also refresh those neighbors.
@@ -5993,6 +6052,9 @@
             t.water = clamp(t.water, 0, MAX_WATER);
           }
         }
+
+        // Signal updateWaterMeshes to do a full refresh this frame.
+        _waterSimDirty = true;
       }
 
       function trenchNeighbors(col, row) {
