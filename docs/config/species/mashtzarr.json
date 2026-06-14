@@ -65,86 +65,23 @@
     },
     "bodyColorRanges": {
       "A": {
-        "minH": -180,
-        "maxH": 180,
-        "stops": [
-          {
-            "h": -180,
-            "sMin": -0.50,
-            "sMax": 0.80,
-            "vMin": -0.60,
-            "vMax": 0.30
-          },
-          {
-            "h": 0,
-            "sMin": -0.50,
-            "sMax": 0.80,
-            "vMin": -0.60,
-            "vMax": 0.30
-          },
-          {
-            "h": 180,
-            "sMin": -0.50,
-            "sMax": 0.80,
-            "vMin": -0.60,
-            "vMax": 0.30
-          }
+        "choices": [
+          { "weight": 1, "range": { "minH": -77, "maxH": -63, "stops": [{ "h": -77, "sMin": -0.87, "sMax": -0.73, "vMin": -0.63, "vMax": -0.47 }, { "h": -63, "sMin": -0.87, "sMax": -0.73, "vMin": -0.63, "vMax": -0.47 }] } },
+          { "weight": 1, "range": { "minH": -47, "maxH": -33, "stops": [{ "h": -47, "sMin": -0.77, "sMax": -0.63, "vMin": -0.53, "vMax": -0.37 }, { "h": -33, "sMin": -0.77, "sMax": -0.63, "vMin": -0.53, "vMax": -0.37 }] } },
+          { "weight": 1, "range": { "minH": -7, "maxH": 7, "stops": [{ "h": -7, "sMin": -0.77, "sMax": -0.63, "vMin": -0.38, "vMax": -0.22 }, { "h": 7, "sMin": -0.77, "sMax": -0.63, "vMin": -0.38, "vMax": -0.22 }] } },
+          { "weight": 1, "range": { "minH": 23, "maxH": 37, "stops": [{ "h": 23, "sMin": -0.67, "sMax": -0.53, "vMin": -0.23, "vMax": -0.07 }, { "h": 37, "sMin": -0.67, "sMax": -0.53, "vMin": -0.23, "vMax": -0.07 }] } },
+          { "weight": 1, "range": { "minH": 3, "maxH": 17, "stops": [{ "h": 3, "sMin": -0.97, "sMax": -0.83, "vMin": 0.17, "vMax": 0.33 }, { "h": 17, "sMin": -0.97, "sMax": -0.83, "vMin": 0.17, "vMax": 0.33 }] } },
+          { "weight": 1, "range": { "minH": -7, "maxH": 7, "stops": [{ "h": -7, "sMin": -0.97, "sMax": -0.83, "vMin": -0.93, "vMax": -0.77 }, { "h": 7, "sMin": -0.97, "sMax": -0.83, "vMin": -0.93, "vMax": -0.77 }] } },
+          { "weight": 1, "range": { "minH": -120, "maxH": -106, "stops": [{ "h": -120, "sMin": -0.52, "sMax": -0.38, "vMin": -0.53, "vMax": -0.37 }, { "h": -106, "sMin": -0.52, "sMax": -0.38, "vMin": -0.53, "vMax": -0.37 }] } },
+          { "weight": 1, "range": { "minH": -150, "maxH": -136, "stops": [{ "h": -150, "sMin": -0.47, "sMax": -0.33, "vMin": -0.48, "vMax": -0.32 }, { "h": -136, "sMin": -0.47, "sMax": -0.33, "vMin": -0.48, "vMax": -0.32 }] } },
+          { "weight": 1, "range": { "minH": -120, "maxH": -106, "stops": [{ "h": -120, "sMin": -0.42, "sMax": -0.28, "vMin": -0.33, "vMax": -0.17 }, { "h": -106, "sMin": -0.42, "sMax": -0.28, "vMin": -0.33, "vMax": -0.17 }] } },
+          { "weight": 1, "range": { "minH": -90, "maxH": -76, "stops": [{ "h": -90, "sMin": -0.52, "sMax": -0.38, "vMin": -0.28, "vMax": -0.12 }, { "h": -76, "sMin": -0.52, "sMax": -0.38, "vMin": -0.28, "vMax": -0.12 }] } },
+          { "weight": 1, "range": { "minH": -30, "maxH": -16, "stops": [{ "h": -30, "sMin": -0.62, "sMax": -0.48, "vMin": -0.33, "vMax": -0.17 }, { "h": -16, "sMin": -0.62, "sMax": -0.48, "vMin": -0.33, "vMax": -0.17 }] } },
+          { "weight": 1, "range": { "minH": 70, "maxH": 84, "stops": [{ "h": 70, "sMin": -0.82, "sMax": -0.68, "vMin": -0.28, "vMax": -0.12 }, { "h": 84, "sMin": -0.82, "sMax": -0.68, "vMin": -0.28, "vMax": -0.12 }] } }
         ]
       },
-      "B": {
-        "minH": -180,
-        "maxH": 180,
-        "stops": [
-          {
-            "h": -180,
-            "sMin": -0.55,
-            "sMax": 0.75,
-            "vMin": -0.70,
-            "vMax": 0.20
-          },
-          {
-            "h": 0,
-            "sMin": -0.55,
-            "sMax": 0.75,
-            "vMin": -0.70,
-            "vMax": 0.20
-          },
-          {
-            "h": 180,
-            "sMin": -0.55,
-            "sMax": 0.75,
-            "vMin": -0.70,
-            "vMax": 0.20
-          }
-        ]
-      },
-      "C": {
-        "minH": -180,
-        "maxH": 180,
-        "stops": [
-          {
-            "h": -180,
-            "sMin": -0.40,
-            "sMax": 0.85,
-            "vMin": -0.45,
-            "vMax": 0.45
-          },
-          {
-            "h": 0,
-            "sMin": -0.40,
-            "sMax": 0.85,
-            "vMin": -0.45,
-            "vMax": 0.45
-          },
-          {
-            "h": 180,
-            "sMin": -0.40,
-            "sMax": 0.85,
-            "vMin": -0.45,
-            "vMax": 0.45
-          }
-        ]
-      }
+      "deriveBFromA": true,
+      "deriveCFromA": true
     },
     "portraitBodyLayers": [
       {
