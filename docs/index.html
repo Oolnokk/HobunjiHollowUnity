@@ -437,6 +437,18 @@
   <!-- Gameplay Text Box: grid x:5 y:14 w:15 h:3 -->
   <div id="gameTextBox" role="status" aria-live="polite"></div>
 
+  <!-- NPC Dialogue Window -->
+  <div id="npcDialogue" role="dialog" aria-modal="true" aria-label="NPC Dialogue" aria-hidden="true">
+    <div id="npcPortraitWrap">
+      <canvas id="npcPortraitCanvas" width="256" height="256"></canvas>
+    </div>
+    <div id="npcDialoguePanel">
+      <div id="npcDialogueName"></div>
+      <div id="npcDialogueText"></div>
+      <div id="npcDialogueContinue">&#x25BC; <kbd>E</kbd></div>
+    </div>
+  </div>
+
   <!-- Joystick -->
   <div id="joystickZone" class="control-zone" aria-label="Movement joystick">
     <div id="joystickBase"></div>

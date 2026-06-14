@@ -207,6 +207,58 @@
         _toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2800);
       }
 
+      // ── NPC Dialogue ───────────────────────────────────────────
+      const _npcDialogueEl      = document.getElementById('npcDialogue');
+      const _npcPortraitCanvas  = document.getElementById('npcPortraitCanvas');
+      const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
+      const _npcDialogueTextEl  = document.getElementById('npcDialogueText');
+
+      function _npcDialogueLines(rec) {
+        if (!rec) return ['...'];
+        if (rec.bio) return [rec.bio];
+        return ['...'];
+      }
+
+      async function openNpcDialogue(walker) {
+        const rec = walker.rec;
+        dialogueOpen = true;
+        _dialogueWalker = walker;
+        walker.pause = Infinity; // freeze in place
+        _dialogueLines = _npcDialogueLines(rec);
+        _dialogueLineIdx = 0;
+        _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
+        _npcDialogueTextEl.textContent = _dialogueLines[0];
+        // Paint portrait before showing panel so it doesn't pop in after fade-in
+        if (walker.profile && window.NpcAvatarPreview) {
+          const ctx = _npcPortraitCanvas.getContext('2d');
+          ctx.fillStyle = '#1b3529';
+          ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
+          await window.NpcAvatarPreview.renderProfileToCanvas(_npcPortraitCanvas, walker.profile);
+        }
+        _npcDialogueEl.classList.add('open');
+        _npcDialogueEl.setAttribute('aria-hidden', 'false');
+      }
+
+      function advanceNpcDialogue() {
+        _dialogueLineIdx++;
+        if (_dialogueLineIdx >= _dialogueLines.length) { closeNpcDialogue(); return; }
+        _npcDialogueTextEl.textContent = _dialogueLines[_dialogueLineIdx];
+      }
+
+      function closeNpcDialogue() {
+        dialogueOpen = false;
+        _dialogueLines = [];
+        _dialogueLineIdx = 0;
+        if (_dialogueWalker) {
+          _dialogueWalker.pause = 0;
+          _dialogueWalker.catchup = 3.5;
+          _dialogueWalker.catchupDur = 8;
+          _dialogueWalker = null;
+        }
+        _npcDialogueEl.classList.remove('open');
+        _npcDialogueEl.setAttribute('aria-hidden', 'true');
+      }
+
       // ── Tile / crop enums (must come first — referenced by everything below) ──
       const TileType = Object.freeze({
         GRASS: 'grass', WEEDS: 'weeds', TILLED: 'tilled',
@@ -1198,6 +1250,11 @@
       let worldTownTransitions = [];   // town: same shape
       let worldNpcPaths        = [];   // { id, label, npcId, area, nodes: [[c,r],...] }
       const npcWalkers         = [];
+      let dialogueOpen       = false;
+      let _dialogueLines     = [];
+      let _dialogueLineIdx   = 0;
+      let _dialogueWalker    = null;
+      let nearbyNpcWalker    = null;
       let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
       // ── Town zone ──────────────────────────────────────────────────
       let _townZone          = null;   // parsed hobunji_town_v1 layout
@@ -1364,8 +1421,10 @@
         const NPC_SPEED = 1.25;   // tiles per second
         const PAUSE_SEC = 1.6;    // idle at route endpoints
         const walker = {
-          root, nodes,
+          root, nodes, rec, profile,
+          area: path.area || 'farm',
           seg: 0, dir: 1, progress: 0, pause: 0,
+          catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {},
           update(dt) {
             if (this.nodes.length < 2) {
@@ -1373,11 +1432,16 @@
                 + Math.sin(performance.now() / 600) * 0.005;
               return;
             }
+            if (this.pause === Infinity) return; // held for dialogue
             if (this.pause > 0) { this.pause -= dt; return; }
+            if (this.catchupDur > 0) {
+              this.catchupDur -= dt;
+              if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; }
+            }
             const [ac, ar] = this.nodes[this.seg];
             const [bc, br] = this.nodes[this.seg + this.dir];
             const segLen = Math.max(0.001, Math.hypot(bc - ac, br - ar));
-            this.progress += dt * NPC_SPEED / segLen;
+            this.progress += dt * NPC_SPEED * this.catchup / segLen;
             if (this.progress >= 1) {
               this.progress = 0;
               this.seg += this.dir;
@@ -1406,6 +1470,14 @@
 
       function updateNpcWalkers(dt) {
         for (const w of npcWalkers) w.update(dt);
+        let closest = null, closestDist = 2.0;
+        const px = player.x / TILE, pz = player.y / TILE;
+        for (const w of npcWalkers) {
+          if (w.area !== currentArea) continue;
+          const d = Math.hypot(w.root.position.x - px, w.root.position.z - pz);
+          if (d < closestDist) { closestDist = d; closest = w; }
+        }
+        nearbyNpcWalker = closest;
       }
 
       // ── Town zone ──────────────────────────────────────────────────
@@ -1861,7 +1933,8 @@
       // ── Enter / exit the interior ─────────────────────────────────
       function enterInterior() {
         buildInteriorScene();  // no-op after first call
-        farmPlayerSave = { x: player.x, y: player.y, angle: player.angle };
+        const fromScene = currentArea === 'town' ? townScene : scene;
+        farmPlayerSave = { x: player.x, y: player.y, angle: player.angle, area: currentArea };
         currentArea    = 'interior';
         player.x       = (INTERIOR_ENTRY_COL + 0.5) * TILE;
         player.y       = (INTERIOR_ENTRY_ROW + 0.5) * TILE;
@@ -1871,12 +1944,12 @@
         camTargetX     = player.x / TILE;
         camTargetZ     = player.y / TILE;
         // Move player mesh into interior scene
-        scene.remove(playerMesh);
-        scene.remove(toolHolder);
-        scene.remove(reticleMesh);
-        scene.remove(reticleCircleMesh);
-        scene.remove(reticleRingMesh);
-        scene.remove(reticleWavyGroup);
+        fromScene.remove(playerMesh);
+        fromScene.remove(toolHolder);
+        fromScene.remove(reticleMesh);
+        fromScene.remove(reticleCircleMesh);
+        fromScene.remove(reticleRingMesh);
+        fromScene.remove(reticleWavyGroup);
         clearTargetHighlights();
         interiorScene.add(playerMesh);
         refreshActionBar();
@@ -1885,7 +1958,8 @@
       function exitInterior() {
         if (currentArea !== 'interior') return;
         startSceneTransition(() => {
-          currentArea = 'farm';
+          const returnArea = farmPlayerSave?.area ?? 'farm';
+          currentArea = returnArea;
           if (farmPlayerSave) {
             player.x     = farmPlayerSave.x;
             player.y     = farmPlayerSave.y;
@@ -1895,14 +1969,15 @@
           player.vx  = 0;  player.vy = 0;
           camTargetX = player.x / TILE;
           camTargetZ = player.y / TILE;
-          // Move player mesh back to farm scene
+          // Move player mesh back to the scene they came from
+          const toScene = returnArea === 'town' ? townScene : scene;
           interiorScene.remove(playerMesh);
-          scene.add(playerMesh);
-          scene.add(toolHolder);
-          scene.add(reticleMesh);
-          scene.add(reticleCircleMesh);
-          scene.add(reticleRingMesh);
-          scene.add(reticleWavyGroup);
+          toScene.add(playerMesh);
+          toScene.add(toolHolder);
+          toScene.add(reticleMesh);
+          toScene.add(reticleCircleMesh);
+          toScene.add(reticleRingMesh);
+          toScene.add(reticleWavyGroup);
           refreshActionBar();
         });
       }
@@ -2668,6 +2743,7 @@
       }
 
       function updateMovement(dt) {
+        if (dialogueOpen) { player.vx *= 0.75; player.vy *= 0.75; return; }
         const keyboardVector = getKeyboardVector();
         const usingKeyboard = keyboardVector.active;
         let ix = usingKeyboard ? keyboardVector.x : input.x;
@@ -3144,6 +3220,8 @@
       }
 
       function useActiveAction() {
+        if (dialogueOpen) { advanceNpcDialogue(); return; }
+        if (nearbyNpcWalker && !farmEditMode) { openNpcDialogue(nearbyNpcWalker); return; }
         const _anim = activeAnimStyle();
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
         toolSwingT = toolSwingDur;
@@ -6883,7 +6961,7 @@
 
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
-        if (key === 'escape') { event.preventDefault(); menuOpen ? closeMenu() : openMenu(); return; }
+        if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
         if (menuOpen) return;
         if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd'].includes(key)) {
           event.preventDefault(); input.keys.add(key);
@@ -6928,9 +7006,43 @@
           cycleActiveInventoryItem(1);
           refreshItemScroll(); refreshActionBar();
         }
+
+        // R: cycle active tool's action mode (equivalent to Q on mobile)
+        if (key === 'r') {
+          const actions = toolActions[activeTool];
+          const idx = actions.indexOf(activeAction);
+          activeAction = actions[(idx + 1) % actions.length];
+          refreshActionBar();
+          return;
+        }
       });
 
       window.addEventListener('keyup', (event) => input.keys.delete(event.key.toLowerCase()));
+
+      // Scroll wheel: cycle tools forward/backward
+      threeContainer.addEventListener('wheel', (e) => {
+        if (menuOpen || farmEditMode) return;
+        e.preventDefault();
+        const tools = ['shovel', 'hoe', 'weapon', 'axe', 'pick', 'harpoon'];
+        const idx = tools.indexOf(activeTool);
+        const next = (idx + (e.deltaY > 0 ? 1 : -1) + tools.length) % tools.length;
+        setActiveTool(tools[next]);
+      }, { passive: false });
+
+      // Left click = primary action, right click = secondary action (desktop play)
+      if (isDesktop) {
+        threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
+        threeContainer.addEventListener('pointerdown', (e) => {
+          if (menuOpen || farmEditMode) return;
+          if (e.button === 0) {
+            useActiveAction();
+          } else if (e.button === 2) {
+            const btns = computeActionButtons();
+            const second = btns.find((b, i) => i > 0 && b.allowed);
+            if (second) { activeAction = second.action; useActiveAction(); }
+          }
+        });
+      }
 
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
