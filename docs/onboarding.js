@@ -231,6 +231,139 @@
         ],
       },
     },
+    'engh-sho': {
+      label: 'Engh-sho', genders: ['male', 'female'],
+      male: {
+        forcedCosmetics: { eyes: 'appearance::Engh-sho_M::engh_snowgoggles' },
+        slots: [
+          { slot: 'hairFront', label: 'Front Hair', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_M::mao-ao_tuft',              label: 'Tuft' },
+            { id: 'appearance::Mao-ao_M::mao-ao_forwardtuft_short', label: 'Forward Tuft (Short)' },
+            { id: 'appearance::Mao-ao_M::mao-ao_forwardtuft_long',  label: 'Forward Tuft (Long)' },
+          ]},
+          { slot: 'hairBack', label: 'Back Hair', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_M::mao-ao_splayedknot_medium', label: 'Splayed Knot' },
+            { id: 'appearance::Mao-ao_M::mao-ao_long_ponytail',      label: 'Long Ponytail' },
+          ]},
+          { slot: 'hairSide', label: 'Side Hair (R)', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_M::mao-ao_shoulder_length_drape', label: 'Shoulder Drape' },
+            { id: 'appearance::Mao-ao_M::mao-ao_braid-R',               label: 'Braid (Right)' },
+            { id: 'appearance::Mao-ao_M::mao-ao_braidcluster-R',        label: 'Braid Cluster (Right)' },
+          ]},
+          { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_M::mao-ao_braid-L', label: 'Braid (Left)' },
+          ]},
+          { slot: 'facialHair', label: 'Facial Hair', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_M::mao-ao_wildbeard', label: 'Wild Beard' },
+          ]},
+        ],
+        colorOptions: [
+          { label: 'Earth',   h: -70,  s: -0.80, v: -0.55 },
+          { label: 'Olive',   h: -40,  s: -0.70, v: -0.45 },
+          { label: 'Sage',    h:   0,  s: -0.70, v: -0.30 },
+          { label: 'Seafoam', h:  30,  s: -0.60, v: -0.15 },
+          { label: 'Ash',     h:  10,  s: -0.90, v:  0.25 },
+          { label: 'Onyx',    h:   0,  s: -0.90, v: -0.85 },
+          { label: 'Brown',   h: -113, s: -0.45, v: -0.45 },
+          { label: 'Rust',    h: -143, s: -0.40, v: -0.40 },
+          { label: 'Amber',   h: -113, s: -0.35, v: -0.25 },
+          { label: 'Ochre',   h:  -83, s: -0.45, v: -0.20 },
+          { label: 'Lichen',  h:  -23, s: -0.55, v: -0.25 },
+          { label: 'Slate',   h:   77, s: -0.75, v: -0.20 },
+        ],
+      },
+      female: {
+        forcedCosmetics: { eyes: 'appearance::Engh-sho_F::engh_snowgoggles' },
+        slots: [
+          { slot: 'hairFront', label: 'Front Hair', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_F::mao-ao_tuft',              label: 'Tuft' },
+            { id: 'appearance::Mao-ao_F::mao-ao_forwardtuft_short', label: 'Forward Tuft (Short)' },
+            { id: 'appearance::Mao-ao_F::mao-ao_forwardtuft_long',  label: 'Forward Tuft (Long)' },
+          ]},
+          { slot: 'hairBack', label: 'Back Hair', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_F::mao-ao_splayedknot_medium', label: 'Splayed Knot' },
+            { id: 'appearance::Mao-ao_F::mao-ao_long_ponytail',      label: 'Long Ponytail' },
+          ]},
+          { slot: 'hairSide', label: 'Side Hair (R)', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_F::mao-ao_shoulder_length_drape', label: 'Shoulder Drape' },
+            { id: 'appearance::Mao-ao_F::mao-ao_braid-R',               label: 'Braid (Right)' },
+            { id: 'appearance::Mao-ao_F::mao-ao_braidcluster-R',        label: 'Braid Cluster (Right)' },
+          ]},
+          { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_F::mao-ao_braid-L', label: 'Braid (Left)' },
+          ]},
+        ],
+        colorOptions: [
+          { label: 'Earth',   h: -70,  s: -0.80, v: -0.55 },
+          { label: 'Olive',   h: -40,  s: -0.70, v: -0.45 },
+          { label: 'Sage',    h:   0,  s: -0.70, v: -0.30 },
+          { label: 'Seafoam', h:  30,  s: -0.60, v: -0.15 },
+          { label: 'Ash',     h:  10,  s: -0.90, v:  0.25 },
+          { label: 'Onyx',    h:   0,  s: -0.90, v: -0.85 },
+          { label: 'Brown',   h: -113, s: -0.45, v: -0.45 },
+          { label: 'Rust',    h: -143, s: -0.40, v: -0.40 },
+          { label: 'Amber',   h: -113, s: -0.35, v: -0.25 },
+          { label: 'Ochre',   h:  -83, s: -0.45, v: -0.20 },
+          { label: 'Lichen',  h:  -23, s: -0.55, v: -0.25 },
+          { label: 'Slate',   h:   77, s: -0.75, v: -0.20 },
+        ],
+      },
+    },
+    'mashtzarr': {
+      label: 'Mashtzarr', genders: ['male'],
+      male: {
+        slots: [
+          { slot: 'hairFront', label: 'Front Hair', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_M::mao-ao_tuft',              label: 'Tuft' },
+            { id: 'appearance::Mao-ao_M::mao-ao_forwardtuft_short', label: 'Forward Tuft (Short)' },
+            { id: 'appearance::Mao-ao_M::mao-ao_forwardtuft_long',  label: 'Forward Tuft (Long)' },
+          ]},
+          { slot: 'hairBack', label: 'Back Hair', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_M::mao-ao_splayedknot_medium', label: 'Splayed Knot' },
+            { id: 'appearance::Mao-ao_M::mao-ao_long_ponytail',      label: 'Long Ponytail' },
+          ]},
+          { slot: 'hairSide', label: 'Side Hair (R)', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_M::mao-ao_shoulder_length_drape', label: 'Shoulder Drape' },
+            { id: 'appearance::Mao-ao_M::mao-ao_braid-R',               label: 'Braid (Right)' },
+            { id: 'appearance::Mao-ao_M::mao-ao_braidcluster-R',        label: 'Braid Cluster (Right)' },
+          ]},
+          { slot: 'hairSideL', label: 'Side Hair (L)', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mao-ao_M::mao-ao_braid-L', label: 'Braid (Left)' },
+          ]},
+          { slot: 'facialHair', label: 'Facial Hair', options: [
+            { id: null,  label: 'None' },
+            { id: 'appearance::Mashtzarr_M::mashtz_wildbeard', label: 'Wild Beard' },
+          ]},
+        ],
+        colorOptions: [
+          { label: 'Earth',   h: -70,  s: -0.80, v: -0.55 },
+          { label: 'Olive',   h: -40,  s: -0.70, v: -0.45 },
+          { label: 'Sage',    h:   0,  s: -0.70, v: -0.30 },
+          { label: 'Seafoam', h:  30,  s: -0.60, v: -0.15 },
+          { label: 'Ash',     h:  10,  s: -0.90, v:  0.25 },
+          { label: 'Onyx',    h:   0,  s: -0.90, v: -0.85 },
+          { label: 'Brown',   h: -113, s: -0.45, v: -0.45 },
+          { label: 'Rust',    h: -143, s: -0.40, v: -0.40 },
+          { label: 'Amber',   h: -113, s: -0.35, v: -0.25 },
+          { label: 'Ochre',   h:  -83, s: -0.45, v: -0.20 },
+          { label: 'Lichen',  h:  -23, s: -0.55, v: -0.25 },
+          { label: 'Slate',   h:   77, s: -0.75, v: -0.20 },
+        ],
+      },
+    },
   };
 
   // Clothing slots for collections tab (mirrors scratchbones shop catalog categories)

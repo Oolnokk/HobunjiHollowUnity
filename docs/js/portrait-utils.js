@@ -576,9 +576,12 @@ const _MOUTH_SPECIES_MAP = {
   'engh-sho': { sprite: 'engh',     gendered: true,  masked: false },
   'engh_sho': { sprite: 'engh',     gendered: true,  masked: false },
   'tletingan':{ sprite: 'tletingan',gendered: true,   masked: false },
-  'kenkari':  { sprite: 'kenkari',  gendered: false,  masked: true  },
-  'rakakoan': { sprite: 'kenkari',  gendered: false,  masked: true  },
+  'kenkari':   { sprite: 'kenkari',   gendered: false, masked: true  },
+  'rakakoan':  { sprite: 'kenkari',   gendered: false, masked: true  },
+  'mashtzarr': { sprite: 'mashtz',    gendered: true,  masked: true  },
 };
+
+const _BEARD_BELOW_HEAD_SPECIES = new Set(['mashtzarr']);
 
 /**
  * Returns the relative path to the mouth expression sprite, or null.
@@ -1005,11 +1008,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawBreathingLayers(baseRightArmLayers);
   drawBreathingLayers(torsoClothingLayers);
   drawBreathingLayers(overwearLayers);
+  const _beardBelowHead = _BEARD_BELOW_HEAD_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-'));
   drawEmoteLayers(sideLeftLayers);
+  if (_beardBelowHead) drawEmoteLayers(facialHairLayers);
   if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), filterA); }
   const _isMaskSpecies = mouthImg && _isMouthMask(speciesId);
   drawEmoteLayers(rightSideHairLayers);
-  drawEmoteLayers(facialHairLayers);
+  if (!_beardBelowHead) drawEmoteLayers(facialHairLayers);
   drawEmoteLayers(frontHairLayers);
   drawEmoteLayers(eyesLayers);
   // Kenkari mask species: draw ur-head layers onto an offscreen canvas then punch out the

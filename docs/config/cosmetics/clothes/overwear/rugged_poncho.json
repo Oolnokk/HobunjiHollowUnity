@@ -521,6 +521,58 @@
           }
         }
       }
+    },
+    "mashtzarr_male": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "back": {
+              "layerRole": "poncho",
+              "image": {
+                "url": "./assets/cosmetics/clothes/overwear/portrait/poncho1_mashtz_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "back_wrap": {
+              "layerRole": "wrap",
+              "image": {
+                "url": "./assets/cosmetics/clothes/overwear/portrait/ruggedshoulders_mashtz_m.png",
+                "colors": [
+                  "B"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

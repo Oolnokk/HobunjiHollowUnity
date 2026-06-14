@@ -361,6 +361,10 @@
     {
       "id": "appearance::Rakakoan_F::rakakoan_wrapped_eyepatch",
       "path": "./appearance/kenkari/rakakoan_wrapped_eyepatch.json"
+    },
+    {
+      "id": "appearance::Mashtzarr_M::mashtz_wildbeard",
+      "path": "./appearance/mashtzarr-m/wildbeard.json"
     }
   ]
 }
