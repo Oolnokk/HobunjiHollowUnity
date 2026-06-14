@@ -1278,8 +1278,8 @@
       let townGrid           = [];     // 2-D tile array for the town map
       let townScene          = null;   // THREE.Scene, built lazily
       let _townSceneBuilt    = false;
-      let _townBuildingDefs  = [];     // detected building footprints
-      let _townBuildingGroups = [];    // THREE.Group[] — one HousePieceGen group per building
+      let _townBuildingDefs  = [];     // building entries from _townZone.buildings
+      let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
 
       function initWorldTravel(layout) {
         if (!layout || layout.version !== 3) return;
@@ -1564,54 +1564,19 @@
       }
 
       // ── Town building detection ──────────────────────────────────────
-      // Finds connected rock-tile clusters large enough to be buildings,
-      // computes each building's bounding box and south-edge doorway.
+      // Reads explicit building entries from the town layout (placed by map editor).
       function _detectTownBuildings() {
-        const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
-        const KEY = (c, r) => r * 10000 + c;
-        const rockSet = new Set();
-        for (let r = 0; r < TROWS; r++)
-          for (let c = 0; c < TCOLS; c++)
-            if (townGrid[r]?.[c]?.type === TileType.ROCK) rockSet.add(KEY(c, r));
-
-        const visited = new Set();
-        const buildings = [];
-
-        for (let r = 0; r < TROWS; r++) {
-          for (let c = 0; c < TCOLS; c++) {
-            const k = KEY(c, r);
-            if (!rockSet.has(k) || visited.has(k)) continue;
-
-            // Flood-fill rock cluster
-            const cluster = [];
-            const queue = [[c, r]];
-            while (queue.length) {
-              const [cc, rr] = queue.pop();
-              const kk = KEY(cc, rr);
-              if (visited.has(kk) || !rockSet.has(kk)) continue;
-              visited.add(kk); cluster.push([cc, rr]);
-              queue.push([cc+1,rr],[cc-1,rr],[cc,rr+1],[cc,rr-1]);
-            }
-            if (cluster.length < 20) continue;
-
-            const cs = cluster.map(([c]) => c), rs = cluster.map(([,r]) => r);
-            const minC = Math.min(...cs), maxC = Math.max(...cs);
-            const minR = Math.min(...rs), maxR = Math.max(...rs);
-            const W = maxC - minC + 1, D = maxR - minR + 1;
-            const id = 'bldg_' + minC + '_' + minR;
-            const houseId = _townZone?.houseAssignments?.[id] || null;
-            buildings.push({ minC, maxC, minR, maxR, W, D, id, houseId });
-          }
-        }
-        debugLog('_detectTownBuildings: found ' + buildings.length + ' buildings');
+        const buildings = _townZone?.buildings || [];
+        debugLog('_detectTownBuildings: ' + buildings.length + ' placed buildings');
         return buildings;
       }
 
-      // Spawns (or re-spawns) Highland house pieces for all detected town buildings.
-      // Uses HousePieceGen (highland frustum body + gable roof + shingle GLB / tube fallback)
-      // plus WallBuilder brick geometry on every non-roof surface.
-      // `_glbsReady` flag prevents multiple redundant rebuilds while GLBs load.
+      // Spawns Highland house pieces for all placed town buildings.
+      // Fetches each building's piece JSON then calls HousePieceGen.buildGroupFromPiece(),
+      // which reads piece.base.faces directly (same geometry as the house editor preview)
+      // plus WallBuilder bricks on wall/gable faces.
       let _townBuildingsGlbUpgradePending = false;
+      // Each entry: { group, bldg, piece, wbOpts, wbGableOpts }
       function _spawnTownBuildings() {
         if (!townScene || !_townBuildingDefs.length) return;
         if (typeof HousePieceGen === 'undefined') {
@@ -1620,95 +1585,103 @@
         }
 
         // Dispose previous groups
-        for (const g of _townBuildingGroups) {
-          townScene.remove(g);
-          g.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+        for (const entry of _townBuildingGroups) {
+          townScene.remove(entry.group);
+          entry.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
         }
         _townBuildingGroups = [];
 
         const _wbDefaults = { unitMult: 0.35, rockScale: 1.5,
                               preScale: [1, 1, 0.6],
                               brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
-        const _houseLib = _townZone?.houseLibrary || {};
 
-        for (const bldg of _townBuildingDefs) {
-          const libEntry  = bldg.houseId ? _houseLib[bldg.houseId] : null;
-          const wbOpts    = libEntry?.wbOpts     || _wbDefaults;
-          const wbGableOpts = libEntry?.wbGableOpts || undefined;
-          const g = HousePieceGen.buildGroup(THREE, bldg.minC, bldg.maxC, bldg.minR, bldg.maxR, {
-            wallBuilder:      houseWallBuilder,
-            wbUsePlaceholder: true,   // upgraded below once GLBs are ready
-            wbOpts,
-            wbGableOpts,
-          });
-          townScene.add(g);
-          _townBuildingGroups.push(g);
-        }
+        // Preload boards.png for porch/stair/railing faces (shared across all buildings)
+        const _boardsMat = new THREE.MeshLambertMaterial({ color: 0x8b6914, side: THREE.DoubleSide });
+        new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          _boardsMat.map = tex; _boardsMat.color.set(0xffffff); _boardsMat.needsUpdate = true;
+        }, undefined, () => {});
 
-        debugLog('_spawnTownBuildings: spawned ' + _townBuildingGroups.length + ' highland buildings');
+        // Async-load all piece files in parallel, then build scene
+        Promise.all(_townBuildingDefs.map(bldg => {
+          if (!bldg.pieceFile) return Promise.resolve({ bldg, piece: null });
+          return fetch(bldg.pieceFile)
+            .then(r => r.json())
+            .then(piece => ({ bldg, piece }))
+            .catch(e => { debugLog('Piece load error (' + bldg.id + '): ' + e, 'warn'); return { bldg, piece: null }; });
+        })).then(results => {
+          if (!townScene) return;
+          const TROWS_ENT = _townZone?.rows || 50;
+          const _entranceRingGeo = new THREE.RingGeometry(0.22, 0.36, 24);
+          const _entranceMat = new THREE.MeshBasicMaterial({ color: 0x7c3008, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
 
-        // Add entrance transitions at the south edge of each building (once only).
-        const TROWS_ENT = _townZone?.rows || 50;
-        const _entranceRingGeo = new THREE.RingGeometry(0.22, 0.36, 24);
-        const _entranceMat = new THREE.MeshBasicMaterial({ color: 0x7c3008, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
-        for (let bi = 0; bi < _townBuildingDefs.length; bi++) {
-          const bldg = _townBuildingDefs[bi];
-          const eCol = Math.floor((bldg.minC + bldg.maxC + 1) / 2);
-          const eRow = Math.min(TROWS_ENT - 1, bldg.maxR + 1);
-          const eid  = 'bldg_entrance_' + bi;
-          if (!worldTownTransitions.find(t => t.id === eid)) {
-            worldTownTransitions.push({
-              id: eid, area: 'town', col: eCol, row: eRow,
-              target: 'interior',
-              targetCol: Math.floor(INTERIOR_COLS / 2), targetRow: INTERIOR_ROWS - 2,
-            });
-            const ring = new THREE.Mesh(_entranceRingGeo, _entranceMat);
-            ring.rotation.x = -Math.PI / 2;
-            ring.position.set(eCol + 0.5, tileSurfaceY(TileType.GRASS) + 0.02, eRow + 0.5);
-            townScene.add(ring);
-          }
-        }
+          for (const { bldg, piece } of results) {
+            const wbOpts      = bldg.wbOpts      || _wbDefaults;
+            const wbGableOpts = bldg.wbGableOpts || undefined;
 
-        // Load and render piece extensions (porch/stair/railing) for buildings with pieceFile
-        for (const bldg of _townBuildingDefs) {
-          const _le = bldg.houseId ? _houseLib[bldg.houseId] : null;
-          if (_le?.pieceFile) {
-            fetch(_le.pieceFile)
-              .then(r => r.json())
-              .then(pieceData => buildPieceExtensions(pieceData, bldg.minC, bldg.minR))
-              .catch(e => debugLog('Piece extensions load error: ' + e, 'warn'));
-          }
-        }
-
-        // Upgrade to real bricks + GLB shingles once both assets are ready.
-        if (!_townBuildingsGlbUpgradePending) {
-          _townBuildingsGlbUpgradePending = true;
-          Promise.all([
-            houseWallBuilder.loadDefaultGlb(),
-            HousePieceGen.loadShingleGlb('assets/models/'),
-          ]).then(() => {
-            _townBuildingsGlbUpgradePending = false;
-            if (!townScene) return;
-            debugLog('Town buildings: upgrading to real bricks + shingle GLB');
-            // Dispose placeholder groups and rebuild with real assets
-            for (const g of _townBuildingGroups) {
-              townScene.remove(g);
-              g.traverse(o => { if (o.geometry) o.geometry.dispose(); });
-            }
-            _townBuildingGroups = [];
-            for (const bldg of _townBuildingDefs) {
-              const _le    = bldg.houseId ? _houseLib[bldg.houseId] : null;
-              const g = HousePieceGen.buildGroup(THREE, bldg.minC, bldg.maxC, bldg.minR, bldg.maxR, {
-                wallBuilder:      houseWallBuilder,
-                wbUsePlaceholder: false,
-                wbOpts:      _le?.wbOpts      || _wbDefaults,
-                wbGableOpts: _le?.wbGableOpts || undefined,
+            let g = new THREE.Group();
+            if (piece) {
+              g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
+                wallBuilder: houseWallBuilder, wbUsePlaceholder: true,
+                wbOpts, wbGableOpts, matBoards: _boardsMat,
               });
-              townScene.add(g);
-              _townBuildingGroups.push(g);
             }
-          }).catch(e => debugLog('Town building GLB error: ' + e, 'warn'));
-        }
+            townScene.add(g);
+            _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
+
+            // Entrance ring at south edge of piece footprint
+            const pcells = piece?.footprint?.cells || [];
+            const gc = Math.floor((piece?.gridSize || 18) / 2);
+            const maxCX = pcells.length ? Math.max.apply(null, pcells.map(c => c.x)) : gc + 3;
+            const minCX = pcells.length ? Math.min.apply(null, pcells.map(c => c.x)) : gc - 3;
+            const maxCZ = pcells.length ? Math.max.apply(null, pcells.map(c => c.y)) : gc + 3;
+            const minCZ = pcells.length ? Math.min.apply(null, pcells.map(c => c.y)) : gc - 3;
+            const worldMinC = bldg.gridX, worldMaxC = bldg.gridX + (maxCX - minCX);
+            const worldMaxR = bldg.gridZ + (maxCZ - minCZ);
+            const eCol = Math.floor((worldMinC + worldMaxC + 1) / 2);
+            const eRow = Math.min(TROWS_ENT - 1, worldMaxR + 1);
+            const eid  = 'bldg_entrance_' + bldg.id;
+            if (!worldTownTransitions.find(t => t.id === eid)) {
+              worldTownTransitions.push({
+                id: eid, area: 'town', col: eCol, row: eRow,
+                target: 'interior',
+                targetCol: Math.floor(INTERIOR_COLS / 2), targetRow: INTERIOR_ROWS - 2,
+              });
+              const ring = new THREE.Mesh(_entranceRingGeo, _entranceMat);
+              ring.rotation.x = -Math.PI / 2;
+              ring.position.set(eCol + 0.5, tileSurfaceY(TileType.GRASS) + 0.02, eRow + 0.5);
+              townScene.add(ring);
+            }
+          }
+
+          debugLog('_spawnTownBuildings: built ' + _townBuildingGroups.length + ' buildings from piece JSON');
+
+          // Upgrade to real bricks + shingle GLB once assets are ready
+          if (!_townBuildingsGlbUpgradePending) {
+            _townBuildingsGlbUpgradePending = true;
+            Promise.all([
+              houseWallBuilder.loadDefaultGlb(),
+              HousePieceGen.loadShingleGlb('assets/models/'),
+            ]).then(() => {
+              _townBuildingsGlbUpgradePending = false;
+              if (!townScene) return;
+              debugLog('Town buildings: upgrading to real bricks + shingle GLB');
+              const prev = _townBuildingGroups.slice();
+              _townBuildingGroups = [];
+              for (const { group, bldg, piece, wbOpts, wbGableOpts } of prev) {
+                townScene.remove(group);
+                group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+                if (!piece) continue;
+                const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
+                  wallBuilder: houseWallBuilder, wbUsePlaceholder: false,
+                  wbOpts, wbGableOpts, matBoards: _boardsMat,
+                });
+                townScene.add(g);
+                _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
+              }
+            }).catch(e => debugLog('Town building GLB error: ' + e, 'warn'));
+          }
+        });
       }
 
       function buildTownScene() {
@@ -3778,84 +3751,6 @@
             return { ok: true, message: 'Funji shuffles over to help.' };
           }
         });
-      }
-
-      // ── Piece Extension Renderer ───────────────────────────────────────
-      // Renders porch/porchStair/railing faces from a house piece JSON into townScene.
-      // boards.png material for porch/stair/railing; stone for entryTunnel.
-      function buildPieceExtensions(piece, bldgMinC, bldgMinR) {
-        if (!townScene || !piece?.base?.faces) return;
-        const faces      = piece.base.faces;
-        // Piece local coords: vertex[x] = (mapCell.x - gridCenter); offset back to world = bldgMinC + (gridCenter - footprintMinX)
-        const _pcells    = piece.footprint?.cells || [];
-        const _gc        = Math.floor((piece.gridSize || 18) / 2);
-        const _minCX     = _pcells.length ? Math.min(..._pcells.map(c => c.x)) : 6;
-        const _minCY     = _pcells.length ? Math.min(..._pcells.map(c => c.y)) : 7;
-        const offsetX    = bldgMinC + (_gc - _minCX);
-        const offsetZ    = bldgMinR + (_gc - _minCY);
-
-        const boardsMat = new THREE.MeshLambertMaterial({ color: 0x8b6914, side: THREE.DoubleSide });
-        new THREE.TextureLoader().load(
-          'assets/textures/boards.png',
-          (tex) => {
-            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-            boardsMat.map = tex;
-            boardsMat.color.set(0xffffff);
-            boardsMat.needsUpdate = true;
-          },
-          undefined, () => {}
-        );
-        const stoneMat = new THREE.MeshLambertMaterial({ color: 0x888888, side: THREE.DoubleSide });
-
-        const BOARD_TAGS   = new Set(['porch', 'porchStair', 'railing']);
-        const SKIP_EXT     = new Set(['floor']); // skip invisible ground-contact underside
-
-        // Separate position/uv/index arrays per material bucket
-        const buckets = {
-          board: { pos: [], uv: [], idx: [] },
-          stone: { pos: [], uv: [], idx: [] },
-        };
-
-        for (const f of faces) {
-          const tag = f.tag;
-          if (!BOARD_TAGS.has(tag) && tag !== 'entryTunnel') continue;
-          if (SKIP_EXT.has(f.extensionFace)) continue;
-          const verts = f.v;
-          if (!verts || verts.length < 4) continue;
-
-          const bk   = BOARD_TAGS.has(tag) ? 'board' : 'stone';
-          const b    = buckets[bk];
-          const base = b.pos.length / 3;
-
-          // UV axis selection by face direction
-          const ef = f.extensionFace || 'top';
-          let ua, ub; // local coord indices used for UV
-          if (ef === 'north' || ef === 'south') { ua = 0; ub = 1; }
-          else if (ef === 'east' || ef === 'west') { ua = 2; ub = 1; }
-          else { ua = 0; ub = 2; } // top / ceiling / railing floor
-
-          for (let i = 0; i < 4; i++) {
-            const v = verts[i];
-            b.pos.push(v[0] + offsetX, v[1], v[2] + offsetZ);
-            b.uv.push(v[ua], v[ub]);
-          }
-          // Quad → two triangles
-          b.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-        }
-
-        // Build one merged mesh per material
-        for (const [bk, mat] of [['board', boardsMat], ['stone', stoneMat]]) {
-          const b = buckets[bk];
-          if (!b.pos.length) continue;
-          const geo = new THREE.BufferGeometry();
-          geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(b.pos), 3));
-          geo.setAttribute('uv',       new THREE.BufferAttribute(new Float32Array(b.uv),  2));
-          geo.setIndex(b.idx);
-          geo.computeVertexNormals();
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.receiveShadow = true;
-          townScene.add(mesh);
-        }
       }
 
       // Built lazily on first entry to avoid blocking startup; called by enterInterior().

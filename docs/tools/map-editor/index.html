@@ -135,35 +135,20 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <!-- BUILDINGS (town maps only) -->
         <div class="section" id="buildingsSection" style="--sec:#f59e0b;--secBg:rgba(245,158,11,.08);display:none">
           <div class="sect-head"><b>Buildings</b><span class="sect-tag" id="buildingCountTag">0</span></div>
-          <div class="itemlist" id="buildingList"></div>
+          <div id="addBuildingPicker"></div>
+          <div class="itemlist" id="buildingList" style="margin-top:6px"></div>
           <div id="selectedBuildingPanel" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.1)">
-            <label>House type</label>
-            <select id="buildingHouseSelect" style="margin-bottom:0"></select>
-          </div>
-          <div style="margin-top:12px;padding-top:8px;border-top:1px solid rgba(255,255,255,.1)">
-            <div class="sect-head" style="margin-bottom:4px"><b style="font-size:11px;text-transform:uppercase;letter-spacing:.3px">House Library</b></div>
-            <div class="itemlist" id="houseLibList"></div>
-            <div class="row" style="margin-top:6px">
-              <button class="sec" id="addHouseTypeBtn" style="flex:1">+ Add type</button>
-              <button class="bad" id="delHouseTypeBtn">Delete</button>
+            <div class="g2" style="margin-bottom:5px">
+              <div><label>Label</label><input id="bldgLabel" placeholder="Inn"></div>
+              <div><label>Piece file</label><input id="bldgPieceFile" placeholder="config/pieces/inn.json" readonly style="cursor:default"></div>
             </div>
-            <div id="houseTypeForm" style="display:none;margin-top:8px">
-              <div class="g2" style="margin-bottom:5px">
-                <div><label>ID</label><input id="htId" placeholder="house_inn"></div>
-                <div><label>Label</label><input id="htLabel" placeholder="Inn"></div>
-              </div>
-              <p class="muted" style="margin-bottom:4px">Body wall opts</p>
-              <div class="g3" style="margin-bottom:5px">
-                <div><label>unitMult</label><input id="htUnitMult" type="number" step="0.01" value="0.35"></div>
-                <div><label>rockScale</label><input id="htRockScale" type="number" step="0.1" value="1.5"></div>
-                <div><label>preScale Z</label><input id="htPreScaleZ" type="number" step="0.05" value="0.6"></div>
-              </div>
-              <p class="muted" style="margin-bottom:4px">Gable opts (denser bricks)</p>
-              <div class="g2" style="margin-bottom:8px">
-                <div><label>unitMult</label><input id="htGableUnitMult" type="number" step="0.01" value="0.22"></div>
-                <div><label>rockScale</label><input id="htGableRockScale" type="number" step="0.1" value="1.1"></div>
-              </div>
-              <button class="ok" id="saveHouseTypeBtn" style="width:100%">Save type</button>
+            <div class="g2" style="margin-bottom:8px">
+              <div><label>Grid X</label><input id="bldgGridX" type="number" step="1" value="0"></div>
+              <div><label>Grid Z</label><input id="bldgGridZ" type="number" step="1" value="0"></div>
+            </div>
+            <div class="row" style="gap:4px">
+              <button class="ok" id="saveBldgBtn" style="flex:1">Save</button>
+              <button class="bad" id="delBldgBtn">Remove</button>
             </div>
           </div>
         </div>
@@ -297,7 +282,8 @@ function makeMap(name, category, cols, rows) {
     furniture: [],    // { key, col, row }
     decor: [],        // { key, col, row }
     npcPaths: [],     // { id, label, npcId, nodes: [[c,r],...] }
-    transitions: []   // { id, label, col, row, targetMapId, targetSpotId }
+    transitions: [],  // { id, label, col, row, targetMapId, targetSpotId }
+    buildings: [],    // { id, label, pieceFile, gridX, gridZ, footprintW, footprintD, wbOpts, wbGableOpts }
   };
 }
 
@@ -311,9 +297,21 @@ function loadWorkspace() {
         w.maps.forEach(m => {
           m.npcPaths = Array.isArray(m.npcPaths) ? m.npcPaths : [];
           m.transitions = Array.isArray(m.transitions) ? m.transitions : [];
-          if (!m.houseLibrary) m.houseLibrary = {};
-          if (!m.houseAssignments) m.houseAssignments = {};
-          delete m.markers;
+          // Migrate old houseLibrary/houseAssignments → buildings array
+          if (!Array.isArray(m.buildings)) {
+            m.buildings = [];
+            const lib = m.houseLibrary || {};
+            const asgn = m.houseAssignments || {};
+            for (const [bldgId, hid] of Object.entries(asgn)) {
+              const entry = lib[hid]; if (!entry) continue;
+              const parts = bldgId.split('_');
+              const gridX = parseInt(parts[1]) || 0, gridZ = parseInt(parts[2]) || 0;
+              m.buildings.push({ id: uid('bldg'), label: entry.label || hid,
+                pieceFile: entry.pieceFile || '', gridX, gridZ,
+                wbOpts: entry.wbOpts || null, wbGableOpts: entry.wbGableOpts || null });
+            }
+          }
+          delete m.houseLibrary; delete m.houseAssignments; delete m.markers;
         });
         w.gameLink = w.gameLink || { exteriorId: '', interiorId: '', townId: '' };
         w.gameLink.townId = w.gameLink.townId || '';
@@ -359,99 +357,71 @@ function undo() {
   if (i >= 0) { ws.maps[i] = snap; updateAll(); setStatus('Undid.'); }
 }
 
-// ── Building detection ────────────────────────────────────────────────────────
-function detectBuildings(m) {
-  const KEY = (c, r) => r * 10000 + c;
-  const rockSet = new Set();
-  for (let r = 0; r < m.rows; r++)
-    for (let c = 0; c < m.cols; c++)
-      if ((m.tiles[`${c},${r}`]?.type || 'grass') === 'rock') rockSet.add(KEY(c, r));
-  const visited = new Set(), buildings = [];
-  for (let r = 0; r < m.rows; r++) {
-    for (let c = 0; c < m.cols; c++) {
-      const k = KEY(c, r);
-      if (!rockSet.has(k) || visited.has(k)) continue;
-      const cluster = [], queue = [[c, r]];
-      while (queue.length) {
-        const [cc, rr] = queue.pop(), kk = KEY(cc, rr);
-        if (visited.has(kk) || !rockSet.has(kk)) continue;
-        visited.add(kk); cluster.push([cc, rr]);
-        queue.push([cc+1,rr],[cc-1,rr],[cc,rr+1],[cc,rr-1]);
-      }
-      if (cluster.length < 20) continue;
-      const cs = cluster.map(([c]) => c), rs = cluster.map(([,r]) => r);
-      const minC = Math.min(...cs), maxC = Math.max(...cs);
-      const minR = Math.min(...rs), maxR = Math.max(...rs);
-      buildings.push({ id: 'bldg_'+minC+'_'+minR, minC, maxC, minR, maxR });
-    }
-  }
-  return buildings;
-}
-
-let _detectedBuildings = [];  // cached for canvas overlay + panel
+// ── Building panel ────────────────────────────────────────────────────────────
 let _selectedBuildingId = null;
-let _selectedHouseTypeId = null;
 
+let _addBuildingPickerMounted = false;
 function refreshBuildingDetection() {
   const m = activeMap();
   const isTown = m.category === 'exterior' && m.id === ws.gameLink.townId;
   $('buildingsSection').style.display = isTown ? '' : 'none';
   if (!isTown) return;
-  if (!m.houseLibrary) m.houseLibrary = {};
-  if (!m.houseAssignments) m.houseAssignments = {};
-  _detectedBuildings = detectBuildings(m);
-  $('buildingCountTag').textContent = _detectedBuildings.length;
+  if (!Array.isArray(m.buildings)) m.buildings = [];
+  $('buildingCountTag').textContent = m.buildings.length;
+  if (!_addBuildingPickerMounted && typeof RepoPicker !== 'undefined') {
+    _addBuildingPickerMounted = true;
+    const rp = new RepoPicker({ docsBase: '../../' });
+    const picker = rp.makePicker({
+      category: 'housePieces', label: '+ Add building', fetchAs: 'json',
+      showDisk: true, diskAccept: '.json,application/json',
+      onLoad(entry, pieceData) {
+        const am = activeMap();
+        if (!Array.isArray(am.buildings)) am.buildings = [];
+        const pcells = pieceData?.footprint?.cells || [];
+        const xs = pcells.map(c => c.x), zs = pcells.map(c => c.y);
+        const fw = xs.length ? Math.max(...xs) - Math.min(...xs) + 1 : 7;
+        const fd = zs.length ? Math.max(...zs) - Math.min(...zs) + 1 : 5;
+        const newB = {
+          id: uid('bldg'), label: pieceData?.name || entry.name || 'Building',
+          pieceFile: entry.path || entry.name,
+          gridX: 0, gridZ: 0,
+          footprintW: fw, footprintD: fd,
+          wbOpts: null, wbGableOpts: null,
+        };
+        am.buildings.push(newB);
+        _selectedBuildingId = newB.id;
+        $('buildingCountTag').textContent = am.buildings.length;
+        renderBuildingPanel(); draw(); saveWorkspace();
+        setStatus('Added building: ' + newB.label + '. Set its Grid X/Z and save.');
+      },
+    });
+    $('addBuildingPicker').appendChild(picker);
+  }
   renderBuildingPanel();
 }
 
 function renderBuildingPanel() {
   const m = activeMap();
-  const lib = m.houseLibrary || {};
-  // Building list
-  $('buildingList').innerHTML = _detectedBuildings.map(b => {
-    const hid = m.houseAssignments?.[b.id] || '';
-    const label = hid ? (lib[hid]?.label || hid) : '—';
+  const buildings = m.buildings || [];
+  $('buildingList').innerHTML = buildings.map(b => {
     const sel = b.id === _selectedBuildingId;
+    const pf  = b.pieceFile ? b.pieceFile.split('/').pop() : '—';
     return `<div class="item${sel?' sel':''}" data-bid="${b.id}">
-      <div class="item-name">${b.id}</div>
-      <div class="item-meta">${b.maxC-b.minC+1}×${b.maxR-b.minR+1} tiles · ${label}</div>
+      <div class="item-name">${b.label || b.id}</div>
+      <div class="item-meta">${pf} · (${b.gridX}, ${b.gridZ})</div>
     </div>`;
-  }).join('');
+  }).join('') || '<p class="muted">No buildings placed. Use the ☷ Repo button to add one.</p>';
   $('buildingList').querySelectorAll('[data-bid]').forEach(el => {
     el.addEventListener('click', () => { _selectedBuildingId = el.dataset.bid; renderBuildingPanel(); draw(); });
   });
-  // Selected building assignment
-  const selB = _detectedBuildings.find(b => b.id === _selectedBuildingId);
+  const selB = buildings.find(b => b.id === _selectedBuildingId);
   $('selectedBuildingPanel').style.display = selB ? '' : 'none';
   if (selB) {
-    const curHid = m.houseAssignments?.[selB.id] || '';
-    $('buildingHouseSelect').innerHTML = '<option value="">— none —</option>' +
-      Object.entries(lib).map(([k, v]) => `<option value="${k}"${k===curHid?' selected':''}>${v.label||k}</option>`).join('');
+    $('bldgLabel').value   = selB.label   || '';
+    $('bldgGridX').value   = selB.gridX   ?? 0;
+    $('bldgGridZ').value   = selB.gridZ   ?? 0;
+    $('bldgPieceFile').value = selB.pieceFile || '';
   }
-  // House library list
-  $('houseLibList').innerHTML = Object.entries(lib).map(([k, v]) => {
-    const sel = k === _selectedHouseTypeId;
-    return `<div class="item${sel?' sel':''}" data-hid="${k}">
-      <div class="item-name">${v.label||k}</div>
-      <div class="item-meta">${k} · unitMult ${v.wbOpts?.unitMult??'?'} · rockScale ${v.wbOpts?.rockScale??'?'}</div>
-    </div>`;
-  }).join('');
-  $('houseLibList').querySelectorAll('[data-hid]').forEach(el => {
-    el.addEventListener('click', () => { _selectedHouseTypeId = el.dataset.hid; loadHouseTypeToForm(el.dataset.hid); renderBuildingPanel(); });
-  });
-}
-
-function loadHouseTypeToForm(hid) {
-  const m = activeMap(), e = m.houseLibrary?.[hid];
-  if (!e) return;
-  $('htId').value = hid;
-  $('htLabel').value = e.label || '';
-  $('htUnitMult').value = e.wbOpts?.unitMult ?? 0.35;
-  $('htRockScale').value = e.wbOpts?.rockScale ?? 1.5;
-  $('htPreScaleZ').value = e.wbOpts?.preScale?.[2] ?? 0.6;
-  $('htGableUnitMult').value = e.wbGableOpts?.unitMult ?? 0.22;
-  $('htGableRockScale').value = e.wbGableOpts?.rockScale ?? 1.1;
-  $('houseTypeForm').style.display = '';
 }
 
 // ── Mode / brush state ────────────────────────────────────────────────────────
@@ -698,14 +668,14 @@ function draw() {
   });
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
-  // Building overlays (detected rock clusters with assigned house types)
-  if (_detectedBuildings.length && m.id === ws.gameLink.townId) {
-    const lib = m.houseLibrary || {};
-    _detectedBuildings.forEach(b => {
-      const p = w2s(b.minC, b.minR);
-      const pw = (b.maxC - b.minC + 1) * z, ph = (b.maxR - b.minR + 1) * z;
+  // Building overlays (placed buildings from map.buildings)
+  if (m.id === ws.gameLink.townId && (m.buildings || []).length) {
+    (m.buildings || []).forEach(b => {
       const isSel = b.id === _selectedBuildingId;
-      const hid = m.houseAssignments?.[b.id];
+      // Show a placeholder bbox at (gridX, gridZ); default 7×5 if no size stored
+      const bw = b.footprintW || 7, bh = b.footprintD || 5;
+      const p = w2s(b.gridX, b.gridZ);
+      const pw = bw * z, ph = bh * z;
       ctx.fillStyle = isSel ? 'rgba(251,191,36,.22)' : 'rgba(245,158,11,.10)';
       ctx.fillRect(p.x, p.y, pw, ph);
       ctx.strokeStyle = isSel ? 'rgba(251,191,36,.9)' : 'rgba(245,158,11,.5)';
@@ -714,7 +684,7 @@ function draw() {
       if (z > 6) {
         ctx.fillStyle = isSel ? '#fef08a' : 'rgba(251,191,36,.7)';
         ctx.font = `${clamp(z*.3,8,11)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-        ctx.fillText(hid ? (lib[hid]?.label || hid) : b.id, p.x + pw/2, p.y + 3);
+        ctx.fillText(b.label || b.id, p.x + pw/2, p.y + 3);
       }
     });
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -1013,7 +983,7 @@ function buildTownLayout() {
   const townM = mapById(ws.gameLink.townId);
   if (!townM) return null;
   const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [],
-                   houseLibrary: townM.houseLibrary || {}, houseAssignments: townM.houseAssignments || {} };
+                   buildings: townM.buildings || [] };
   // Tiles
   for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
     const t = townM.tiles[`${c},${r}`];
@@ -1302,55 +1272,23 @@ $('importFile').addEventListener('change', async e => {
 });
 
 // ── Building panel handlers ───────────────────────────────────────────────────
-$('buildingHouseSelect').addEventListener('change', () => {
+$('saveBldgBtn').addEventListener('click', () => {
+  const m = activeMap();
+  const b = (m.buildings || []).find(b => b.id === _selectedBuildingId);
+  if (!b) return;
+  b.label  = $('bldgLabel').value.trim() || b.label;
+  b.gridX  = parseInt($('bldgGridX').value) || 0;
+  b.gridZ  = parseInt($('bldgGridZ').value) || 0;
+  renderBuildingPanel(); draw(); saveWorkspace(); setStatus('Building saved.');
+});
+
+$('delBldgBtn').addEventListener('click', () => {
   const m = activeMap();
   if (!_selectedBuildingId) return;
-  const hid = $('buildingHouseSelect').value;
-  if (hid) m.houseAssignments[_selectedBuildingId] = hid;
-  else delete m.houseAssignments[_selectedBuildingId];
-  renderBuildingPanel(); draw(); saveWorkspace();
-});
-
-$('addHouseTypeBtn').addEventListener('click', () => {
-  $('htId').value = 'house_' + Math.random().toString(36).slice(2,6);
-  $('htLabel').value = 'New type';
-  $('htUnitMult').value = 0.35; $('htRockScale').value = 1.5; $('htPreScaleZ').value = 0.6;
-  $('htGableUnitMult').value = 0.22; $('htGableRockScale').value = 1.1;
-  $('houseTypeForm').style.display = '';
-});
-
-$('delHouseTypeBtn').addEventListener('click', () => {
-  const m = activeMap();
-  if (!_selectedHouseTypeId || !m.houseLibrary) return;
-  delete m.houseLibrary[_selectedHouseTypeId];
-  // Remove stale assignments
-  for (const [bid, hid] of Object.entries(m.houseAssignments || {}))
-    if (hid === _selectedHouseTypeId) delete m.houseAssignments[bid];
-  _selectedHouseTypeId = null;
-  $('houseTypeForm').style.display = 'none';
-  renderBuildingPanel(); saveWorkspace(); setStatus('Deleted house type.');
-});
-
-$('saveHouseTypeBtn').addEventListener('click', () => {
-  const m = activeMap();
-  const id = $('htId').value.trim();
-  if (!id) { setStatus('House type ID required.'); return; }
-  if (!m.houseLibrary) m.houseLibrary = {};
-  m.houseLibrary[id] = {
-    label: $('htLabel').value.trim() || id,
-    wbOpts: {
-      unitMult:  parseFloat($('htUnitMult').value)  || 0.35,
-      rockScale: parseFloat($('htRockScale').value) || 1.5,
-      preScale:  [1, 1, parseFloat($('htPreScaleZ').value) || 0.6],
-      brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 }
-    },
-    wbGableOpts: {
-      unitMult:  parseFloat($('htGableUnitMult').value)  || 0.22,
-      rockScale: parseFloat($('htGableRockScale').value) || 1.1,
-    }
-  };
-  _selectedHouseTypeId = id;
-  renderBuildingPanel(); saveWorkspace(); setStatus(`Saved house type "${id}".`);
+  m.buildings = (m.buildings || []).filter(b => b.id !== _selectedBuildingId);
+  _selectedBuildingId = null;
+  $('buildingCountTag').textContent = m.buildings.length;
+  renderBuildingPanel(); draw(); saveWorkspace(); setStatus('Building removed.');
 });
 
 window.addEventListener('resize', resizeCanvas);
