@@ -123,18 +123,18 @@ window.SCRATCHBONES_CONFIG = {
               ]}
             ],
             "colorOptions": [
-              { "label": "Glacier", "h": -85, "s": -0.90, "v": 0.35 },
-              { "label": "Frost", "h": -60, "s": -0.85, "v": 0.25 },
-              { "label": "Ash", "h": 0, "s": -0.90, "v": 0.15 },
-              { "label": "Cloud", "h": 70, "s": -0.85, "v": 0.30 },
-              { "label": "Slate", "h": -85, "s": -0.65, "v": -0.20 },
-              { "label": "Storm", "h": -60, "s": -0.60, "v": -0.35 },
-              { "label": "Charcoal", "h": 0, "s": -0.75, "v": -0.45 },
-              { "label": "Moraine", "h": 70, "s": -0.70, "v": -0.30 },
-              { "label": "Sandy", "h": 26, "s": 0.33, "v": 0.19 },
-              { "label": "Chestnut", "h": 20, "s": 0.47, "v": 0.03 },
-              { "label": "Amber", "h": 32, "s": 0.63, "v": 0.26 },
-              { "label": "Blonde", "h": 45, "s": 0.26, "v": 0.36 }
+              { "label": "Earth",   "h": -70,  "s": -0.80, "v": -0.55 },
+              { "label": "Olive",   "h": -40,  "s": -0.70, "v": -0.45 },
+              { "label": "Sage",    "h":   0,  "s": -0.70, "v": -0.30 },
+              { "label": "Seafoam", "h":  30,  "s": -0.60, "v": -0.15 },
+              { "label": "Ash",     "h":  10,  "s": -0.90, "v":  0.25 },
+              { "label": "Onyx",    "h":   0,  "s": -0.90, "v": -0.85 },
+              { "label": "Brown",   "h": -113, "s": -0.45, "v": -0.45 },
+              { "label": "Rust",    "h": -143, "s": -0.40, "v": -0.40 },
+              { "label": "Amber",   "h": -113, "s": -0.35, "v": -0.25 },
+              { "label": "Ochre",   "h":  -83, "s": -0.45, "v": -0.20 },
+              { "label": "Lichen",  "h":  -23, "s": -0.55, "v": -0.25 },
+              { "label": "Slate",   "h":   77, "s": -0.75, "v": -0.20 }
             ]
           },
           "female": {
@@ -165,17 +165,65 @@ window.SCRATCHBONES_CONFIG = {
               ]}
             ],
             "colorOptions": [
-              { "label": "Glacier", "h": -85, "s": -0.90, "v": 0.35 },
-              { "label": "Frost", "h": -60, "s": -0.85, "v": 0.25 },
-              { "label": "Ash", "h": 0, "s": -0.90, "v": 0.15 },
-              { "label": "Cloud", "h": 70, "s": -0.85, "v": 0.30 },
-              { "label": "Slate", "h": -85, "s": -0.65, "v": -0.20 },
-              { "label": "Storm", "h": -60, "s": -0.60, "v": -0.35 },
-              { "label": "Charcoal", "h": 0, "s": -0.75, "v": -0.45 },
-              { "label": "Moraine", "h": 70, "s": -0.70, "v": -0.30 },
-              { "label": "Sandy", "h": 26, "s": 0.33, "v": 0.19 },
-              { "label": "Chestnut", "h": 20, "s": 0.47, "v": 0.03 },
-              { "label": "Blonde", "h": 45, "s": 0.26, "v": 0.36 }
+              { "label": "Earth",   "h": -70,  "s": -0.80, "v": -0.55 },
+              { "label": "Olive",   "h": -40,  "s": -0.70, "v": -0.45 },
+              { "label": "Sage",    "h":   0,  "s": -0.70, "v": -0.30 },
+              { "label": "Seafoam", "h":  30,  "s": -0.60, "v": -0.15 },
+              { "label": "Ash",     "h":  10,  "s": -0.90, "v":  0.25 },
+              { "label": "Onyx",    "h":   0,  "s": -0.90, "v": -0.85 },
+              { "label": "Brown",   "h": -113, "s": -0.45, "v": -0.45 },
+              { "label": "Rust",    "h": -143, "s": -0.40, "v": -0.40 },
+              { "label": "Amber",   "h": -113, "s": -0.35, "v": -0.25 },
+              { "label": "Ochre",   "h":  -83, "s": -0.45, "v": -0.20 },
+              { "label": "Lichen",  "h":  -23, "s": -0.55, "v": -0.25 },
+              { "label": "Slate",   "h":   77, "s": -0.75, "v": -0.20 }
+            ]
+          }
+        },
+        "mashtzarr": {
+          "label": "Mashtzarr",
+          "genders": ["male"],
+          "male": {
+            "slots": [
+              { "slot": "hairFront", "label": "Front Hair", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Mao-ao_M::mao-ao_tuft", "label": "Tuft" },
+                { "id": "appearance::Mao-ao_M::mao-ao_forwardtuft_short", "label": "Forward Tuft (Short)" },
+                { "id": "appearance::Mao-ao_M::mao-ao_forwardtuft_long", "label": "Forward Tuft (Long)" }
+              ]},
+              { "slot": "hairBack", "label": "Back Hair", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Mao-ao_M::mao-ao_splayedknot_medium", "label": "Splayed Knot" },
+                { "id": "appearance::Mao-ao_M::mao-ao_long_ponytail", "label": "Long Ponytail" }
+              ]},
+              { "slot": "hairSide", "label": "Side Hair (R)", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Mao-ao_M::mao-ao_shoulder_length_drape", "label": "Shoulder Drape" },
+                { "id": "appearance::Mao-ao_M::mao-ao_braid-R", "label": "Braid (Right)" },
+                { "id": "appearance::Mao-ao_M::mao-ao_braidcluster-R", "label": "Braid Cluster (Right)" }
+              ]},
+              { "slot": "hairSideL", "label": "Side Hair (L)", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Mao-ao_M::mao-ao_braid-L", "label": "Braid (Left)" }
+              ]},
+              { "slot": "facialHair", "label": "Facial Hair", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Mashtzarr_M::mashtz_wildbeard", "label": "Wild Beard" }
+              ]}
+            ],
+            "colorOptions": [
+              { "label": "Earth",   "h": -70,  "s": -0.80, "v": -0.55 },
+              { "label": "Olive",   "h": -40,  "s": -0.70, "v": -0.45 },
+              { "label": "Sage",    "h":   0,  "s": -0.70, "v": -0.30 },
+              { "label": "Seafoam", "h":  30,  "s": -0.60, "v": -0.15 },
+              { "label": "Ash",     "h":  10,  "s": -0.90, "v":  0.25 },
+              { "label": "Onyx",    "h":   0,  "s": -0.90, "v": -0.85 },
+              { "label": "Brown",   "h": -113, "s": -0.45, "v": -0.45 },
+              { "label": "Rust",    "h": -143, "s": -0.40, "v": -0.40 },
+              { "label": "Amber",   "h": -113, "s": -0.35, "v": -0.25 },
+              { "label": "Ochre",   "h":  -83, "s": -0.45, "v": -0.20 },
+              { "label": "Lichen",  "h":  -23, "s": -0.55, "v": -0.25 },
+              { "label": "Slate",   "h":   77, "s": -0.75, "v": -0.20 }
             ]
           }
         }

@@ -18,7 +18,17 @@
     "allowedCosmetics": [
       "rugged_poncho",
       "fine_poncho",
-      "tankan_bodywrap"
+      "tankan_bodywrap",
+      "appearance::Mao-ao_M::mao-ao_tuft",
+      "appearance::Mao-ao_M::mao-ao_forwardtuft_short",
+      "appearance::Mao-ao_M::mao-ao_forwardtuft_long",
+      "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
+      "appearance::Mao-ao_M::mao-ao_long_ponytail",
+      "appearance::Mao-ao_M::mao-ao_shoulder_length_drape",
+      "appearance::Mao-ao_M::mao-ao_braid-R",
+      "appearance::Mao-ao_M::mao-ao_braidcluster-R",
+      "appearance::Mao-ao_M::mao-ao_braid-L",
+      "appearance::Mashtzarr_M::mashtz_wildbeard"
     ],
     "cosmeticWeights": {
       "overwear": {
@@ -26,6 +36,31 @@
         "rugged_poncho": 30,
         "fine_poncho": 20,
         "tankan_bodywrap": 10
+      },
+      "hairFront": {
+        "none": 5,
+        "tuft": 30,
+        "forwardtuft_short": 30,
+        "forwardtuft_long": 30
+      },
+      "hairBack": {
+        "none": 50,
+        "long_ponytail": 25,
+        "splayedknot_medium": 25
+      },
+      "hairSide": {
+        "none": 60,
+        "shoulder_length_drape": 10,
+        "braid-R": 15,
+        "braidcluster-R": 15
+      },
+      "hairSideL": {
+        "none": 60,
+        "braid-L": 40
+      },
+      "facialHair": {
+        "none": 60,
+        "mashtz_wildbeard": 40
       }
     },
     "bodyColorRanges": {
