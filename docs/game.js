@@ -3147,10 +3147,9 @@
       function worldToOverlay(x, y, z) {
         const v = new THREE.Vector3(x, y, z);
         v.project(camera);
-        const rect = threeContainer.getBoundingClientRect();
         return {
-          x: (v.x * 0.5 + 0.5) * rect.width,
-          y: (-v.y * 0.5 + 0.5) * rect.height,
+          x: (v.x * 0.5 + 0.5) * _threeRect.width,
+          y: (-v.y * 0.5 + 0.5) * _threeRect.height,
           visible: v.z >= -1 && v.z <= 1
         };
       }
@@ -3426,8 +3425,12 @@
         debugLog(`major storm: ${name} — ${dmgText || 'no damage'}`);
       }
 
+      let _lastLightingOverlayTime = 0;
       function drawLightingOverlay() {
-        const rect = threeContainer.getBoundingClientRect();
+        const now = performance.now();
+        if (now - _lastLightingOverlayTime < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0) return;
+        _lastLightingOverlayTime = now;
+        const rect = _threeRect;
         lctx.clearRect(0, 0, rect.width, rect.height);
 
         if (currentArea === 'interior') {
@@ -3647,7 +3650,7 @@
         return {
           [TileType.GRASS]:   1.00,
           [TileType.TILLED]:  0.85,
-          [TileType.WEEDS]:   0.58,
+          [TileType.WEEDS]:   1.00,
           [TileType.RAISED]:  0.90,
           [TileType.PADDY]:   0.70,
           [TileType.TRENCH]:  0.30,
@@ -3930,7 +3933,7 @@
       const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.1);
       sunLight.position.set(8, 16, -6);
       sunLight.castShadow = true;
-      sunLight.shadow.mapSize.set(2048, 2048);
+      sunLight.shadow.mapSize.set(1024, 1024);
       sunLight.shadow.camera.near = 0.5;
       sunLight.shadow.camera.far  = 80;
       sunLight.shadow.camera.left = sunLight.shadow.camera.bottom = -30;
@@ -5101,6 +5104,18 @@
       // so we only rebuild when the plant crosses a threshold.
       const cropGrowthBucket = new Array(ROWS * COLS).fill(-1);
 
+      // Indices of tiles that currently have a crop — rebuilt lazily whenever
+      // a tile changes so updateCropMeshes() doesn't scan all 936 tiles.
+      let _cropTileIndices = null;
+      function _invalidateCropList() { _cropTileIndices = null; }
+      function _ensureCropList() {
+        if (_cropTileIndices !== null) return;
+        _cropTileIndices = [];
+        for (let row = 0; row < ROWS; row++)
+          for (let col = 0; col < COLS; col++)
+            if (grid[row][col].crop) _cropTileIndices.push(row * COLS + col);
+      }
+
       const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot']);
       const FG = window.FoliageGenerator;
 
@@ -5132,16 +5147,19 @@
       }
 
       function updateCropMeshes() {
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const i    = row * COLS + col;
-            const tile = grid[row][col];
+        _ensureCropList();
+        for (const i of _cropTileIndices) {
+          const col  = i % COLS;
+          const row  = (i / COLS) | 0;
+          const tile = grid[row][col];
 
-            if (!tile.crop) {
-              if (cropMeshes[i]) { scene.remove(cropMeshes[i]); cropMeshes[i] = null; }
-              cropGrowthBucket[i] = -1;
-              continue;
-            }
+          // Stale entry (crop was harvested since last list rebuild) — clean up.
+          if (!tile.crop) {
+            if (cropMeshes[i]) { scene.remove(cropMeshes[i]); cropMeshes[i] = null; }
+            cropGrowthBucket[i] = -1;
+            _invalidateCropList();
+            continue;
+          }
 
             const data   = cropData[tile.crop];
             const growth = Math.min(tile.cropAge / data.growDays, 1.0);
@@ -5201,7 +5219,6 @@
               mesh.position.set(col + 0.5, surfY + size / 2 + 0.02 + bobY, row + 0.5);
               if (tile.cropReady) mesh.rotation.y = performance.now() / 1200 + col;
             }
-          }
         }
       }
 
@@ -5606,10 +5623,15 @@
         scene.fog.color.copy(scene.background);
       }
 
+      // ── Cached container rect — avoids repeated layout reflows per frame ─
+      // Updated in resizeCanvas(); used by drawing functions and worldToOverlay.
+      let _threeRect = { width: window.innerWidth, height: window.innerHeight };
+
       // ── Resize handler ────────────────────────────────────────────
       function resizeCanvas() {
         const dpr  = Math.min(window.devicePixelRatio, 2);
         const rect = threeContainer.getBoundingClientRect();
+        _threeRect = rect;
         const w = rect.width  || window.innerWidth;
         const h = rect.height || window.innerHeight;
         renderer.setSize(w, h);
@@ -5787,7 +5809,7 @@
 
       // ── 2D overlay draw (rain curtain + ripples on overlay canvas) ─
       function drawOverlays() {
-        const rect = threeContainer.getBoundingClientRect();
+        const rect = _threeRect;
         const W = rect.width, H = rect.height;
         octx.clearRect(0, 0, W, H);
 
@@ -5836,6 +5858,7 @@
       }
 
       function markTileDirty(col, row) {
+        _invalidateCropList();
         refreshTileMesh(col, row);
         // TRENCH/RAISED shape depends on which neighbors share their type, so any
         // change that could alter those connections must also refresh those neighbors.
