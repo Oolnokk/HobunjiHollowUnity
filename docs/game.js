@@ -222,6 +222,8 @@
       async function openNpcDialogue(walker) {
         const rec = walker.rec;
         dialogueOpen = true;
+        _dialogueWalker = walker;
+        walker.pause = Infinity; // freeze in place
         _dialogueLines = _npcDialogueLines(rec);
         _dialogueLineIdx = 0;
         _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
@@ -247,6 +249,12 @@
         dialogueOpen = false;
         _dialogueLines = [];
         _dialogueLineIdx = 0;
+        if (_dialogueWalker) {
+          _dialogueWalker.pause = 0;
+          _dialogueWalker.catchup = 3.5;
+          _dialogueWalker.catchupDur = 8;
+          _dialogueWalker = null;
+        }
         _npcDialogueEl.classList.remove('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'true');
       }
@@ -1245,6 +1253,7 @@
       let dialogueOpen       = false;
       let _dialogueLines     = [];
       let _dialogueLineIdx   = 0;
+      let _dialogueWalker    = null;
       let nearbyNpcWalker    = null;
       let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
       // ── Town zone ──────────────────────────────────────────────────
@@ -1415,6 +1424,7 @@
           root, nodes, rec, profile,
           area: path.area || 'farm',
           seg: 0, dir: 1, progress: 0, pause: 0,
+          catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {},
           update(dt) {
             if (this.nodes.length < 2) {
@@ -1422,11 +1432,16 @@
                 + Math.sin(performance.now() / 600) * 0.005;
               return;
             }
+            if (this.pause === Infinity) return; // held for dialogue
             if (this.pause > 0) { this.pause -= dt; return; }
+            if (this.catchupDur > 0) {
+              this.catchupDur -= dt;
+              if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; }
+            }
             const [ac, ar] = this.nodes[this.seg];
             const [bc, br] = this.nodes[this.seg + this.dir];
             const segLen = Math.max(0.001, Math.hypot(bc - ac, br - ar));
-            this.progress += dt * NPC_SPEED / segLen;
+            this.progress += dt * NPC_SPEED * this.catchup / segLen;
             if (this.progress >= 1) {
               this.progress = 0;
               this.seg += this.dir;
