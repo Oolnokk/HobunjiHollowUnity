@@ -7,7 +7,7 @@ window.SCRATCHBONES_CONFIG = {
 
 
   // Global clothing color tuning offsets.
-  clothingHueOffset: -5,
+  clothingHueOffset: 29,
   clothingSatOffset: 0,
   clothingLightOffset: 0,
 
