@@ -1,41 +1,3600 @@
 {
   "schema": "hobunji_npc_database.v2",
   "editor": {
-    "name": "Hobunji Hollow NPC Database Editor",
+    "name": "Hobunji Character Studio",
     "standalone": false,
     "contentPolicy": "Use design-doc facts only. Unknowns use specific suggestion placeholders.",
-    "avatarImport": "Import Avatar JSON expects export JSON from the NPC portrait/avatar editor tool.",
-    "source": "Extracted from docs/tools/npc-authoring-editor/index.html starterNpcs()."
+    "avatarImport": "Import Avatar JSON expects export JSON from the character studio / portrait editor."
   },
+  "worldContext": {},
   "npcs": [
-    {"id":"garanki_gabu","name":"Garanki Gabu","homeId":"researchers_tent","species":"<unknown species>","gender":"<unknown gender>","ageBand":"<carter’s age>","role":"researcher","tags":["researchers_tent","researcher","villager"],"bio":"Researcher’s Tent resident. Age noted as <carter’s age>."},
-    {"id":"gorobi_ginju","name":"Gorobi Ginju","homeId":"ginju_farmstead","species":"<unknown species>","gender":"male","ageBand":"middle aged","role":"farmer","tags":["ginju_farmstead","farmer","villager"],"bio":"Middle aged man; friendly, but <unspecified complication>."},
-    {"id":"gikali_ginju","name":"Gikali Ginju","homeId":"ginju_farmstead","species":"<unknown species>","gender":"female","ageBand":"middle aged","role":"farmer","tags":["ginju_farmstead","farmer","villager"],"bio":"Middle aged woman; kind, but anxious."},
-    {"id":"aliri_ginju","name":"Aliri Ginju","homeId":"ginju_farmstead","species":"mao-ao","gender":"female","ageBand":"young woman","role":"farmstead resident","tags":["ginju_farmstead","farmstead resident","romanceable"],"bio":"Romanceable; young woman; dutiful.","relationship":{"canBefriend":true,"canDate":true,"canMarry":true,"maxHearts":14},"appearance":{"speciesId":"mao-ao","gender":"female","cosmetics":{"hairFront":"appearance::Mao-ao_F::mao-ao_forwardtuft_long","hairBack":null,"hairSide":"appearance::Mao-ao_F::mao-ao_shoulder_length_drape","hairSideL":"appearance::Mao-ao_F::mao-ao_braid-L","eyes":null},"bodyColors":{"A":{"h":-106,"s":-0.45,"v":-0.37},"B":{"h":-7,"s":-0.7,"v":-0.38},"C":{"h":-70,"s":-0.75,"v":-0.37000000000000005}},"chatColor":{"h":210,"s":75,"l":68}},"equippedCosmetics":["tankan_tunic"],"appliedDyes":{"TORSO":"dye:CLOTH:bright_orange"},"avatarEditor":{"rawExport":{"schema":"npc_avatar_editor_export.v1","source":"character-studio","name":"Aliri Ginju","appearance":{"speciesId":"mao-ao","gender":"female","cosmetics":{"hairFront":"appearance::Mao-ao_F::mao-ao_forwardtuft_long","hairBack":null,"hairSide":"appearance::Mao-ao_F::mao-ao_shoulder_length_drape","hairSideL":"appearance::Mao-ao_F::mao-ao_braid-L","eyes":null},"bodyColors":{"A":{"h":-106,"s":-0.45,"v":-0.37},"B":{"h":-7,"s":-0.7,"v":-0.38},"C":{"h":-70,"s":-0.75,"v":-0.37000000000000005}},"chatColor":{"h":210,"s":75,"l":68}},"equippedCosmetics":["tankan_tunic"],"appliedDyes":{"TORSO":"dye:CLOTH:bright_orange"}}}},
-    {"id":"gantami_ginju","name":"Gantami Ginju","homeId":"ginju_farmstead","species":"<unknown species>","gender":"male","ageBand":"little boy","role":"child","tags":["ginju_farmstead","child","villager"],"bio":"Little boy; rascal."},
-    {"id":"leaf","name":"Leaf","homeId":"little_swamp_house","species":"Engh Sho","gender":"male","ageBand":"old","role":"swamp resident","tags":["little_swamp_house","swamp resident","villager"],"bio":"Old Engh Sho man; quiet, grumpy but restrained."},
-    {"id":"pahu","name":"Pahu","homeId":"little_swamp_house","species":"Kenkari","gender":"male","ageBand":"old","role":"festival lover","tags":["little_swamp_house","festival lover","villager"],"bio":"Old Kenkari man; silly, friendly, loves festivals and dragging Leaf out of his shell."},
-    {"id":"furunji_funji","name":"Furunji Funji","homeId":"general_store","species":"<unknown species>","gender":"male","ageBand":"middle aged","role":"shopkeep","tags":["general_store","shopkeep","villager"],"bio":"Middle aged shopkeep; friendly but overworked; always looks tired.","shopHours":"<suggestion: general store hours should be decided here>"},
-    {"id":"foroji_funji","name":"Foroji Funji","homeId":"general_store","species":"<unknown species>","gender":"male","ageBand":"<unknown age>","role":"bard","tags":["general_store","bard","romanceable"],"bio":"Romanceable son; bard; only living family member of Furunji but does not want to inherit.","relationship":{"canBefriend":true,"canDate":true,"canMarry":true,"maxHearts":14}},
-    {"id":"kzubug","name":"Kzubug","homeId":"smithy","species":"Mashtzarr","gender":"male","ageBand":"late middle aged","role":"smith","tags":["smithy","smith","villager"],"bio":"Late middle aged Mashtzarr smith; very kind, but very protective of Sloomi."},
-    {"id":"sloomi","name":"Sloomi","homeId":"smithy","species":"Mashtzarr","gender":"female","ageBand":"<unknown age>","role":"apprentice smith","tags":["smithy","apprentice smith","romanceable"],"bio":"Romanceable adopted daughter and apprentice smith; nice but quiet; aggressive when people she cares about are hurt physically or emotionally.","relationship":{"canBefriend":true,"canDate":true,"canMarry":true,"maxHearts":14}},
-    {"id":"hreesh","name":"Hreesh","homeId":"inn","species":"Mashtzarr","gender":"male","ageBand":"<unknown age>","role":"innkeeper","tags":["inn","innkeeper","villager"],"bio":"Amicable but blunt Mashtzarr innkeeper."},
-    {"id":"jubmir","name":"Jubmir","homeId":"inn","species":"<unknown species>","gender":"<unknown gender>","ageBand":"<unknown age>","role":"visitor","tags":["inn","visitor","romanceable"],"bio":"Romanceable when in town.","relationship":{"canBefriend":true,"canDate":true,"canMarry":true,"maxHearts":14}},
-    {"id":"father_hunundi_hodu","name":"Father Hunundi Hodu","homeId":"temple","species":"Mao-ao","gender":"male","ageBand":"late middle aged","role":"priest","tags":["temple","priest","villager"],"bio":"Late middle aged priest; gets player fixed up and suggests settling in abandoned farmstead after player does not remember home.","appearance":{"speciesId":"mao-ao","gender":"male","cosmetics":{"hairBack":"appearance::Mao-ao_M::mao-ao_long_ponytail","hairSide":"appearance::Mao-ao_M::mao-ao_braidcluster-R","hairSideL":null,"facialHair":"appearance::Mao-ao_M::mao-ao_wildbeard","eyes":"appearance::Mao-ao_M::mao-ao_circled_eyes","hairFront":"appearance::Mao-ao_M::mao-ao_forwardtuft_short"},"bodyColors":{"A":{"h":37,"s":-0.6,"v":-0.07},"B":{"h":-70,"s":-0.8,"v":-0.55},"C":{"h":-70,"s":-0.75,"v":-0.37}}},"equippedCosmetics":["tankan_tunic","rugged_poncho","appearance::hat::basic_headband"],"appliedDyes":{"TORSO_B":"dye:CLOTH:dark_muted_orange","TORSO":"dye:CLOTH:dark_muted_orange","CLOTH":"dye:CLOTH:smoky_yellow_orange","CLOTH_B":"dye:CLOTH:muted_green","HAT":"dye:CLOTH:dark_muted_green","HOOD_B":"dye:CLOTH:smoky_yellow_green"},"avatarEditor":{"rawExport":{"schema":"npc_avatar_editor_export.v1","source":"character-studio","name":"Father Hunundi Hodu","appearance":{"speciesId":"mao-ao","gender":"male","cosmetics":{"hairBack":"appearance::Mao-ao_M::mao-ao_long_ponytail","hairSide":"appearance::Mao-ao_M::mao-ao_braidcluster-R","hairSideL":null,"facialHair":"appearance::Mao-ao_M::mao-ao_wildbeard","eyes":"appearance::Mao-ao_M::mao-ao_circled_eyes","hairFront":"appearance::Mao-ao_M::mao-ao_forwardtuft_short"},"bodyColors":{"A":{"h":37,"s":-0.6,"v":-0.07},"B":{"h":-70,"s":-0.8,"v":-0.55},"C":{"h":-70,"s":-0.75,"v":-0.37}},"chatColor":{"h":210,"s":75,"l":68}},"equippedCosmetics":["tankan_tunic","rugged_poncho","appearance::hat::basic_headband"],"appliedDyes":{"TORSO_B":"dye:CLOTH:dark_muted_orange","TORSO":"dye:CLOTH:dark_muted_orange","CLOTH":"dye:CLOTH:smoky_yellow_orange","CLOTH_B":"dye:CLOTH:muted_green","HAT":"dye:CLOTH:dark_muted_green","HOOD_B":"dye:CLOTH:smoky_yellow_green"}}}},
-    {"id":"namui_u_hakaru","name":"Namu’i u Hakaru","homeId":"temple","species":"<unknown species>","gender":"<unknown gender>","ageBand":"<unknown age>","role":"<unknown role>","tags":["temple","romanceable"],"bio":"Romanceable temple resident.","relationship":{"canBefriend":true,"canDate":true,"canMarry":true,"maxHearts":14}},
-    {"id":"takua_ao_hakaru","name":"Taku’a ao Hakaru","homeId":"temple","species":"<unknown species>","gender":"<unknown gender>","ageBand":"<unknown age>","role":"<unknown role>","tags":["temple","romanceable"],"bio":"Romanceable temple resident.","relationship":{"canBefriend":true,"canDate":true,"canMarry":true,"maxHearts":14}},
-    {"id":"kaboku_kunji","name":"Kaboku Kunji","homeId":"potion_shop","species":"<unknown species>","gender":"male","ageBand":"old","role":"potion shop resident","tags":["potion_shop","potion shop resident","villager"],"bio":"Old man at Potion Shop."},
-    {"id":"kinami_kunji","name":"Kinami Kunji","homeId":"potion_shop","species":"<unknown species>","gender":"<unknown gender>","ageBand":"<unknown age>","role":"potion shop resident","tags":["potion_shop","potion shop resident","villager"],"bio":"Potion Shop resident. Design doc provides hostile/prejudiced dialogue lines."},
-    {"id":"dzibim_khibu","name":"Dzibim Khibu","homeId":"carpenters","species":"<unknown species>","gender":"male","ageBand":"<unknown age>","role":"carpenter","tags":["carpenters","carpenter","villager"],"bio":"Carpenter. Design doc gives house-building family history dialogue."},
-    {"id":"dzahiri_khibu","name":"Dzahiri Khibu","homeId":"carpenters","species":"<unknown species>","gender":"<unknown gender>","ageBand":"<unknown age>","role":"carpenter / roofing family connection","tags":["carpenters","carpenter / roofing family connection","villager"],"bio":"Carpenter’s household. Connected to Dzibim and the old Manji roofing side by the provided Dzibim line."},
-    {"id":"nashka_khibu","name":"Nashka Khibu","homeId":"carpenters","species":"<unknown species>","gender":"<unknown gender>","ageBand":"<unknown age>","role":"carpenter household member","tags":["carpenters","carpenter household member","villager"],"bio":"Named under Carpenter’s; no further details provided."},
-    {"id":"teacup_unumanuk","name":"Teacup Unumanuk","homeId":"engh_sho_clans","species":"Engh-Sho","gender":"female","ageBand":"elder","role":"eldress","tags":["engh_sho_clans","eldress","villager"],"bio":"Unumanuk Clan eldress."},
-    {"id":"binding_hatayap","name":"Binding Hatayap","homeId":"ginju_farmstead","species":"Engh-Sho","gender":"female","ageBand":"<unknown age>","role":"farm worker","tags":["ginju_farmstead","farm worker","villager"],"bio":"Single mother whose husband died fighting off the wyrm. Works on Ginju farm to support family and establish themselves as welcome residents."},
-    {"id":"spearhead_unumanuk","name":"Spearhead Unumanuk","homeId":"watch","species":"Engh-Sho","gender":"male","ageBand":"<unknown age>","role":"watch captain","tags":["watch","watch captain","villager"],"bio":"Watch Captain. Son of Teacup. Father of Oddclaw."},
-    {"id":"oddclaw_unumanuk","name":"Oddclaw Unumanuk","homeId":"watch","species":"Engh-Sho","gender":"male","ageBand":"<unknown age>","role":"single member of the Watch","tags":["watch","single member of the Watch","villager"],"bio":"Only Watch member. Thinks his name means more than being a fighter. Loves animals and wants to train them to protect town; father thinks that is stupid and dangerous. Found claw came from invasive Nazgraku, escaped mounts of the thwarted Cleaver’s Edge horde."},
-    {"id":"tooth_hatayap","name":"Tooth Hatayap","homeId":"inn","species":"Engh-Sho","gender":"female","ageBand":"<unknown age>","role":"waitress","tags":["inn","waitress","villager"],"bio":"Waitress. Binding’s husband’s sister’s daughter; Spearhead’s sister’s husband’s sister’s daughter; Oddclaw’s aunt’s husband’s sister’s daughter. Once held Tuhupnuk surname before Hammerhead murdered Sand and was banished."},
-    {"id":"hammerhead_tuhupnuk","name":"Hammerhead Tuhupnuk","homeId":"tuhupnuk_clan","species":"Engh-Sho","gender":"male","ageBand":"<unknown age>","role":"bonehewer / banished","tags":["tuhupnuk_clan","bonehewer / banished","villager"],"bio":"Bonehewer who murdered his brother Sand and was banished."},
-    {"id":"talisman_hatayap","name":"Talisman Hatayap","homeId":"hatayap_clan_deceased","species":"Engh-Sho","gender":"male","ageBand":"<unknown age>","role":"deceased snow-watcher","tags":["hatayap_clan_deceased","deceased snow-watcher","villager"],"bio":"Binding’s husband. Village snow-watcher who sacrificed himself to distract the wyrm."},
-    {"id":"bowstring_hatayap","name":"Bowstring Hatayap","homeId":"hatayap_clan_deceased","species":"Engh-Sho","gender":"female","ageBand":"<unknown age>","role":"deceased bowyer","tags":["hatayap_clan_deceased","deceased bowyer","villager"],"bio":"A bowyer who helped her brother distract the Wyrm using one of her bows in her last moments."}
-  ]
+    {
+      "id": "garanki_gabu",
+      "name": "Garanki Gabu",
+      "homeId": "researchers_tent",
+      "species": "<unknown species>",
+      "gender": "<unknown gender>",
+      "ageBand": "<carter’s age>",
+      "role": "researcher",
+      "tags": [
+        "researchers_tent",
+        "researcher",
+        "villager"
+      ],
+      "bio": "Researcher’s Tent resident. Age noted as <carter’s age>.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "researchers_tent",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "gorobi_ginju",
+      "name": "Gorobi Ginju",
+      "homeId": "ginju_farmstead",
+      "species": "<unknown species>",
+      "gender": "male",
+      "ageBand": "middle aged",
+      "role": "farmer",
+      "tags": [
+        "ginju_farmstead",
+        "farmer",
+        "villager"
+      ],
+      "bio": "Middle aged man; friendly, but <unspecified complication>.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {
+          "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short",
+          "hairBack": "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
+          "hairSide": null,
+          "hairSideL": null,
+          "eyes": null,
+          "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard"
+        },
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "tankan_tunic",
+        "tankan_bodywrap",
+        "appearance::hat::riverlandskasa_wide"
+      ],
+      "appliedDyes": {
+        "TORSO": "dye:CLOTH:muted_red_orange",
+        "CLOTH": "dye:CLOTH:dusty_red_orange"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {
+              "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short",
+              "hairBack": "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
+              "hairSide": null,
+              "hairSideL": null,
+              "eyes": null,
+              "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard"
+            },
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "tankan_tunic",
+            "tankan_bodywrap",
+            "appearance::hat::riverlandskasa_wide"
+          ],
+          "appliedDyes": {
+            "TORSO": "dye:CLOTH:muted_red_orange",
+            "CLOTH": "dye:CLOTH:dusty_red_orange"
+          }
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "ginju_farmstead",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "gikali_ginju",
+      "name": "Gikali Ginju",
+      "homeId": "ginju_farmstead",
+      "species": "<unknown species>",
+      "gender": "female",
+      "ageBand": "middle aged",
+      "role": "farmer",
+      "tags": [
+        "ginju_farmstead",
+        "farmer",
+        "villager"
+      ],
+      "bio": "Middle aged woman; kind, but anxious.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "female",
+        "cosmetics": {
+          "hairFront": "appearance::Mao-ao_F::mao-ao_forwardtuft_short",
+          "hairBack": null,
+          "hairSide": "appearance::Mao-ao_F::mao-ao_braid-R",
+          "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L",
+          "eyes": null
+        },
+        "bodyColors": {
+          "A": {
+            "h": -106,
+            "s": -0.45,
+            "v": -0.37
+          },
+          "B": {
+            "h": -7,
+            "s": -0.7,
+            "v": -0.38
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "tankan_tunic",
+        "tankan_bodywrap"
+      ],
+      "appliedDyes": {
+        "TORSO": "dye:CLOTH:pure_green_blue",
+        "CLOTH": "dye:CLOTH:pale_yellow"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "female",
+            "cosmetics": {
+              "hairFront": "appearance::Mao-ao_F::mao-ao_forwardtuft_short",
+              "hairBack": null,
+              "hairSide": "appearance::Mao-ao_F::mao-ao_braid-R",
+              "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L",
+              "eyes": null
+            },
+            "bodyColors": {
+              "A": {
+                "h": -106,
+                "s": -0.45,
+                "v": -0.37
+              },
+              "B": {
+                "h": -7,
+                "s": -0.7,
+                "v": -0.38
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "tankan_tunic",
+            "tankan_bodywrap"
+          ],
+          "appliedDyes": {
+            "TORSO": "dye:CLOTH:pure_green_blue",
+            "CLOTH": "dye:CLOTH:pale_yellow"
+          }
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "ginju_farmstead",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "aliri_ginju",
+      "name": "Aliri Ginju",
+      "homeId": "ginju_farmstead",
+      "species": "<unknown species>",
+      "gender": "female",
+      "ageBand": "young woman",
+      "role": "farmstead resident",
+      "tags": [
+        "ginju_farmstead",
+        "farmstead resident",
+        "romanceable"
+      ],
+      "bio": "Romanceable; young woman; dutiful.",
+      "relationship": {
+        "canBefriend": true,
+        "canDate": true,
+        "canMarry": true,
+        "maxHearts": 14,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "female",
+        "cosmetics": {
+          "hairFront": "appearance::Mao-ao_F::mao-ao_forwardtuft_long",
+          "hairBack": null,
+          "hairSide": "appearance::Mao-ao_F::mao-ao_shoulder_length_drape",
+          "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L",
+          "eyes": null
+        },
+        "bodyColors": {
+          "A": {
+            "h": -90,
+            "s": -0.45,
+            "v": -0.28
+          },
+          "B": {
+            "h": -7,
+            "s": -0.7,
+            "v": -0.38
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "tankan_tunic"
+      ],
+      "appliedDyes": {
+        "TORSO": "dye:CLOTH:bright_yellow"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "female",
+            "cosmetics": {
+              "hairFront": "appearance::Mao-ao_F::mao-ao_forwardtuft_long",
+              "hairBack": null,
+              "hairSide": "appearance::Mao-ao_F::mao-ao_shoulder_length_drape",
+              "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L",
+              "eyes": null
+            },
+            "bodyColors": {
+              "A": {
+                "h": -90,
+                "s": -0.45,
+                "v": -0.28
+              },
+              "B": {
+                "h": -7,
+                "s": -0.7,
+                "v": -0.38
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "tankan_tunic"
+          ],
+          "appliedDyes": {
+            "TORSO": "dye:CLOTH:bright_yellow"
+          }
+        }
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "ginju_farmstead",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "gantami_ginju",
+      "name": "Gantami Ginju",
+      "homeId": "ginju_farmstead",
+      "species": "<unknown species>",
+      "gender": "male",
+      "ageBand": "little boy",
+      "role": "child",
+      "tags": [
+        "ginju_farmstead",
+        "child",
+        "villager"
+      ],
+      "bio": "Little boy; rascal.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {
+          "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short",
+          "hairBack": "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
+          "hairSide": null,
+          "hairSideL": null,
+          "eyes": "appearance::Mao-ao_M::mao-ao_circled_eyes"
+        },
+        "bodyColors": {
+          "A": {
+            "h": -33,
+            "s": -0.7,
+            "v": -0.53
+          },
+          "B": {
+            "h": -30,
+            "s": -0.55,
+            "v": -0.17
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "bandolier1"
+      ],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {
+              "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short",
+              "hairBack": "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
+              "hairSide": null,
+              "hairSideL": null,
+              "eyes": "appearance::Mao-ao_M::mao-ao_circled_eyes"
+            },
+            "bodyColors": {
+              "A": {
+                "h": -33,
+                "s": -0.7,
+                "v": -0.53
+              },
+              "B": {
+                "h": -30,
+                "s": -0.55,
+                "v": -0.17
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "bandolier1"
+          ],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "ginju_farmstead",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "leaf",
+      "name": "Leaf",
+      "homeId": "little_swamp_house",
+      "species": "Engh Sho",
+      "gender": "male",
+      "ageBand": "old",
+      "role": "swamp resident",
+      "tags": [
+        "little_swamp_house",
+        "swamp resident",
+        "villager"
+      ],
+      "bio": "Old Engh Sho man; quiet, grumpy but restrained.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "male",
+        "cosmetics": {
+          "eyes": "appearance::Engh-sho_M::engh_snowgoggles"
+        },
+        "bodyColors": {
+          "A": {
+            "h": -85,
+            "s": -0.9,
+            "v": 0.35
+          },
+          "B": {
+            "h": -85,
+            "s": -0.9,
+            "v": 0.35
+          },
+          "C": {
+            "h": -85,
+            "s": -0.85,
+            "v": 0.53
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "male",
+            "cosmetics": {
+              "eyes": "appearance::Engh-sho_M::engh_snowgoggles"
+            },
+            "bodyColors": {
+              "A": {
+                "h": -85,
+                "s": -0.9,
+                "v": 0.35
+              },
+              "B": {
+                "h": -85,
+                "s": -0.9,
+                "v": 0.35
+              },
+              "C": {
+                "h": -85,
+                "s": -0.85,
+                "v": 0.53
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "little_swamp_house",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "pahu",
+      "name": "Pahu",
+      "homeId": "little_swamp_house",
+      "species": "Kenkari",
+      "gender": "male",
+      "ageBand": "old",
+      "role": "festival lover",
+      "tags": [
+        "little_swamp_house",
+        "festival lover",
+        "villager"
+      ],
+      "bio": "Old Kenkari man; silly, friendly, loves festivals and dragging Leaf out of his shell.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "kenkari",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -20,
+            "s": 0.8,
+            "v": 0
+          },
+          "B": {
+            "h": -20,
+            "s": 0.8,
+            "v": 0
+          },
+          "C": {
+            "h": -20,
+            "s": 0.8500000000000001,
+            "v": 0.18
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "kenkari",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -20,
+                "s": 0.8,
+                "v": 0
+              },
+              "B": {
+                "h": -20,
+                "s": 0.8,
+                "v": 0
+              },
+              "C": {
+                "h": -20,
+                "s": 0.8500000000000001,
+                "v": 0.18
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "little_swamp_house",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "furunji_funji",
+      "name": "Furunji Funji",
+      "homeId": "general_store",
+      "species": "<unknown species>",
+      "gender": "male",
+      "ageBand": "middle aged",
+      "role": "shopkeep",
+      "tags": [
+        "general_store",
+        "shopkeep",
+        "villager"
+      ],
+      "bio": "Middle aged shopkeep; friendly but overworked; always looks tired.",
+      "shopHours": "<suggestion: general store hours should be decided here>",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "general_store",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "foroji_funji",
+      "name": "Foroji Funji",
+      "homeId": "general_store",
+      "species": "<unknown species>",
+      "gender": "male",
+      "ageBand": "<unknown age>",
+      "role": "bard",
+      "tags": [
+        "general_store",
+        "bard",
+        "romanceable"
+      ],
+      "bio": "Romanceable son; bard; only living family member of Furunji but does not want to inherit.",
+      "relationship": {
+        "canBefriend": true,
+        "canDate": true,
+        "canMarry": true,
+        "maxHearts": 14,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "general_store",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "kzubug",
+      "name": "Kzubug",
+      "homeId": "smithy",
+      "species": "Mashtzarr",
+      "gender": "male",
+      "ageBand": "late middle aged",
+      "role": "smith",
+      "tags": [
+        "smithy",
+        "smith",
+        "villager"
+      ],
+      "bio": "Late middle aged Mashtzarr smith; very kind, but very protective of Sloomi.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "smithy",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "sloomi",
+      "name": "Sloomi",
+      "homeId": "smithy",
+      "species": "Mashtzarr",
+      "gender": "female",
+      "ageBand": "<unknown age>",
+      "role": "apprentice smith",
+      "tags": [
+        "smithy",
+        "apprentice smith",
+        "romanceable"
+      ],
+      "bio": "Romanceable adopted daughter and apprentice smith; nice but quiet; aggressive when people she cares about are hurt physically or emotionally.",
+      "relationship": {
+        "canBefriend": true,
+        "canDate": true,
+        "canMarry": true,
+        "maxHearts": 14,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "female",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "female",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "smithy",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "hreesh",
+      "name": "Hreesh",
+      "homeId": "inn",
+      "species": "Mashtzarr",
+      "gender": "male",
+      "ageBand": "<unknown age>",
+      "role": "innkeeper",
+      "tags": [
+        "inn",
+        "innkeeper",
+        "villager"
+      ],
+      "bio": "Amicable but blunt Mashtzarr innkeeper.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "inn",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "jubmir",
+      "name": "Jubmir",
+      "homeId": "inn",
+      "species": "<unknown species>",
+      "gender": "<unknown gender>",
+      "ageBand": "<unknown age>",
+      "role": "visitor",
+      "tags": [
+        "inn",
+        "visitor",
+        "romanceable"
+      ],
+      "bio": "Romanceable when in town.",
+      "relationship": {
+        "canBefriend": true,
+        "canDate": true,
+        "canMarry": true,
+        "maxHearts": 14,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "tletingan",
+        "gender": "male",
+        "cosmetics": {
+          "hairFront": "appearance::Tletingan_M::tl_forwardtuft_long",
+          "hairBack": "appearance::Tletingan_M::tl_splayedknot",
+          "hairSide": "appearance::Tletingan_M::tl_braidcluster-R",
+          "hairSideL": null
+        },
+        "bodyColors": {
+          "A": {
+            "h": -7.5,
+            "s": -0.306,
+            "v": 0.036
+          },
+          "B": {
+            "h": -7.5,
+            "s": -0.409,
+            "v": 0.017
+          },
+          "C": {
+            "h": -7.5,
+            "s": -0.509,
+            "v": 0.474
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "appearance::hat::riverlandskasa_low",
+        "bandolier1",
+        "rugged_poncho"
+      ],
+      "appliedDyes": {
+        "CLOTH": "dye:CLOTH:bright_green_blue",
+        "CLOTH_B": "dye:CLOTH:smoky_yellow_orange"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "tletingan",
+            "gender": "male",
+            "cosmetics": {
+              "hairFront": "appearance::Tletingan_M::tl_forwardtuft_long",
+              "hairBack": "appearance::Tletingan_M::tl_splayedknot",
+              "hairSide": "appearance::Tletingan_M::tl_braidcluster-R",
+              "hairSideL": null
+            },
+            "bodyColors": {
+              "A": {
+                "h": -7.5,
+                "s": -0.306,
+                "v": 0.036
+              },
+              "B": {
+                "h": -7.5,
+                "s": -0.409,
+                "v": 0.017
+              },
+              "C": {
+                "h": -7.5,
+                "s": -0.509,
+                "v": 0.474
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "appearance::hat::riverlandskasa_low",
+            "bandolier1",
+            "rugged_poncho"
+          ],
+          "appliedDyes": {
+            "CLOTH": "dye:CLOTH:bright_green_blue",
+            "CLOTH_B": "dye:CLOTH:smoky_yellow_orange"
+          }
+        }
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "inn",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "father_hunundi_hodu",
+      "name": "Father Hunundi Hodu",
+      "homeId": "temple",
+      "species": "Mao-ao",
+      "gender": "male",
+      "ageBand": "late middle aged",
+      "role": "priest",
+      "tags": [
+        "temple",
+        "priest",
+        "villager"
+      ],
+      "bio": "Late middle aged priest; gets player fixed up and suggests settling in abandoned farmstead after player does not remember home.",
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {
+          "hairBack": "appearance::Mao-ao_M::mao-ao_long_ponytail",
+          "hairSide": "appearance::Mao-ao_M::mao-ao_braidcluster-R",
+          "hairSideL": null,
+          "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
+          "eyes": "appearance::Mao-ao_M::mao-ao_circled_eyes",
+          "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short"
+        },
+        "bodyColors": {
+          "A": {
+            "h": 37,
+            "s": -0.6,
+            "v": -0.07
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37
+          }
+        }
+      },
+      "equippedCosmetics": [
+        "tankan_tunic",
+        "rugged_poncho",
+        "appearance::hat::basic_headband"
+      ],
+      "appliedDyes": {
+        "TORSO_B": "dye:CLOTH:dark_muted_orange",
+        "TORSO": "dye:CLOTH:dark_muted_orange",
+        "CLOTH": "dye:CLOTH:smoky_yellow_orange",
+        "CLOTH_B": "dye:CLOTH:muted_green",
+        "HAT": "dye:CLOTH:dark_muted_green",
+        "HOOD_B": "dye:CLOTH:smoky_yellow_green"
+      },
+      "avatarEditor": {
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "name": "Father Hunundi Hodu",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {
+              "hairBack": "appearance::Mao-ao_M::mao-ao_long_ponytail",
+              "hairSide": "appearance::Mao-ao_M::mao-ao_braidcluster-R",
+              "hairSideL": null,
+              "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
+              "eyes": "appearance::Mao-ao_M::mao-ao_circled_eyes",
+              "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short"
+            },
+            "bodyColors": {
+              "A": {
+                "h": 37,
+                "s": -0.6,
+                "v": -0.07
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "tankan_tunic",
+            "rugged_poncho",
+            "appearance::hat::basic_headband"
+          ],
+          "appliedDyes": {
+            "TORSO_B": "dye:CLOTH:dark_muted_orange",
+            "TORSO": "dye:CLOTH:dark_muted_orange",
+            "CLOTH": "dye:CLOTH:smoky_yellow_orange",
+            "CLOTH_B": "dye:CLOTH:muted_green",
+            "HAT": "dye:CLOTH:dark_muted_green",
+            "HOOD_B": "dye:CLOTH:smoky_yellow_green"
+          }
+        }
+      },
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "temple",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "namui_u_hakaru",
+      "name": "Namu’i u Hakaru",
+      "homeId": "temple",
+      "species": "<unknown species>",
+      "gender": "<unknown gender>",
+      "ageBand": "<unknown age>",
+      "role": "<unknown role>",
+      "tags": [
+        "temple",
+        "romanceable"
+      ],
+      "bio": "Romanceable temple resident.",
+      "relationship": {
+        "canBefriend": true,
+        "canDate": true,
+        "canMarry": true,
+        "maxHearts": 14,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "kenkari",
+        "gender": "female",
+        "cosmetics": {
+          "hairBack": "appearance::Kenkari_F::kenk_splayedknot_low_f",
+          "hairSide": "appearance::Kenkari_F::kenk_braid-R_f",
+          "hairSideL": "appearance::Kenkari_F::kenk_braid-L_f"
+        },
+        "bodyColors": {
+          "A": {
+            "h": -28,
+            "s": -0.1,
+            "v": 0.06
+          },
+          "B": {
+            "h": -28,
+            "s": -0.14,
+            "v": -0.147
+          },
+          "C": {
+            "h": -28,
+            "s": -0.085,
+            "v": 0.207
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "fine_poncho"
+      ],
+      "appliedDyes": {
+        "CLOTH": "dye:CLOTH:bright_yellow",
+        "CLOTH_B": "dye:CLOTH:pale_blue"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "kenkari",
+            "gender": "female",
+            "cosmetics": {
+              "hairBack": "appearance::Kenkari_F::kenk_splayedknot_low_f",
+              "hairSide": "appearance::Kenkari_F::kenk_braid-R_f",
+              "hairSideL": "appearance::Kenkari_F::kenk_braid-L_f"
+            },
+            "bodyColors": {
+              "A": {
+                "h": -28,
+                "s": -0.1,
+                "v": 0.06
+              },
+              "B": {
+                "h": -28,
+                "s": -0.14,
+                "v": -0.147
+              },
+              "C": {
+                "h": -28,
+                "s": -0.085,
+                "v": 0.207
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "fine_poncho"
+          ],
+          "appliedDyes": {
+            "CLOTH": "dye:CLOTH:bright_yellow",
+            "CLOTH_B": "dye:CLOTH:pale_blue"
+          }
+        }
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "temple",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "takua_ao_hakaru",
+      "name": "Taku’a ao Hakaru",
+      "homeId": "temple",
+      "species": "<unknown species>",
+      "gender": "<unknown gender>",
+      "ageBand": "<unknown age>",
+      "role": "<unknown role>",
+      "tags": [
+        "temple",
+        "romanceable"
+      ],
+      "bio": "Romanceable temple resident.",
+      "relationship": {
+        "canBefriend": true,
+        "canDate": true,
+        "canMarry": true,
+        "maxHearts": 14,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "kenkari",
+        "gender": "male",
+        "cosmetics": {
+          "hairFront": "appearance::Kenkari_M::kenk_forwardtuft_long",
+          "hairBack": "appearance::Kenkari_M::kenk_splayedknot_low_m",
+          "hairSide": null,
+          "hairSideL": "appearance::Kenkari_M::kenk_braid-L_m",
+          "facialHair": null
+        },
+        "bodyColors": {
+          "A": {
+            "h": -60,
+            "s": 0.925,
+            "v": 0.063
+          },
+          "B": {
+            "h": 60,
+            "s": 0.975,
+            "v": 0.13
+          },
+          "C": {
+            "h": 60,
+            "s": 0.85,
+            "v": 0.33
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "rugged_poncho",
+        "appearance::hat::basic_headband"
+      ],
+      "appliedDyes": {
+        "CLOTH": "dye:CLOTH:smoky_green_blue",
+        "CLOTH_B": "dye:CLOTH:smoky_green",
+        "HAT": "dye:CLOTH:smoky_green_blue"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "kenkari",
+            "gender": "male",
+            "cosmetics": {
+              "hairFront": "appearance::Kenkari_M::kenk_forwardtuft_long",
+              "hairBack": "appearance::Kenkari_M::kenk_splayedknot_low_m",
+              "hairSide": null,
+              "hairSideL": "appearance::Kenkari_M::kenk_braid-L_m",
+              "facialHair": null
+            },
+            "bodyColors": {
+              "A": {
+                "h": -60,
+                "s": 0.925,
+                "v": 0.063
+              },
+              "B": {
+                "h": 60,
+                "s": 0.975,
+                "v": 0.13
+              },
+              "C": {
+                "h": 60,
+                "s": 0.85,
+                "v": 0.33
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "rugged_poncho",
+            "appearance::hat::basic_headband"
+          ],
+          "appliedDyes": {
+            "CLOTH": "dye:CLOTH:smoky_green_blue",
+            "CLOTH_B": "dye:CLOTH:smoky_green",
+            "HAT": "dye:CLOTH:smoky_green_blue"
+          }
+        }
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "temple",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "kaboku_kunji",
+      "name": "Kaboku Kunji",
+      "homeId": "potion_shop",
+      "species": "<unknown species>",
+      "gender": "male",
+      "ageBand": "old",
+      "role": "potion shop resident",
+      "tags": [
+        "potion_shop",
+        "potion shop resident",
+        "villager"
+      ],
+      "bio": "Old man at Potion Shop.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {
+          "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
+          "hairFront": "appearance::Mao-ao_M::mao-ao_tuft",
+          "hairBack": "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
+          "hairSide": null,
+          "hairSideL": null,
+          "eyes": "appearance::Mao-ao_M::mao-ao_circled_eyes"
+        },
+        "bodyColors": {
+          "A": {
+            "h": 3,
+            "s": -0.9,
+            "v": 0.17
+          },
+          "B": {
+            "h": 37,
+            "s": -0.6,
+            "v": -0.07
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "tankan_tunic"
+      ],
+      "appliedDyes": {
+        "TORSO": "dye:CLOTH:smoky_yellow_green"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {
+              "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
+              "hairFront": "appearance::Mao-ao_M::mao-ao_tuft",
+              "hairBack": "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
+              "hairSide": null,
+              "hairSideL": null,
+              "eyes": "appearance::Mao-ao_M::mao-ao_circled_eyes"
+            },
+            "bodyColors": {
+              "A": {
+                "h": 3,
+                "s": -0.9,
+                "v": 0.17
+              },
+              "B": {
+                "h": 37,
+                "s": -0.6,
+                "v": -0.07
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "tankan_tunic"
+          ],
+          "appliedDyes": {
+            "TORSO": "dye:CLOTH:smoky_yellow_green"
+          }
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "potion_shop",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "kinami_kunji",
+      "name": "Kinami Kunji",
+      "homeId": "potion_shop",
+      "species": "<unknown species>",
+      "gender": "<unknown gender>",
+      "ageBand": "<unknown age>",
+      "role": "potion shop resident",
+      "tags": [
+        "potion_shop",
+        "potion shop resident",
+        "villager"
+      ],
+      "bio": "Potion Shop resident. Design doc provides hostile/prejudiced dialogue lines.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "female",
+        "cosmetics": {
+          "hairFront": "appearance::Mao-ao_F::mao-ao_tuft",
+          "hairBack": "appearance::Mao-ao_F::mao-ao_long_ponytail",
+          "hairSide": "appearance::Mao-ao_F::mao-ao_braid-R",
+          "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L",
+          "eyes": "appearance::Mao-ao_F::mao-ao_circled_eye_L"
+        },
+        "bodyColors": {
+          "A": {
+            "h": 17,
+            "s": -0.9,
+            "v": 0.17
+          },
+          "B": {
+            "h": 23,
+            "s": -0.6,
+            "v": -0.07
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "rugged_poncho"
+      ],
+      "appliedDyes": {
+        "CLOTH": "dye:CLOTH:muted_indigo",
+        "CLOTH_B": "dye:CLOTH:dusty_indigo_violet",
+        "HOOD": "dye:CLOTH:dusty_indigo_violet",
+        "HOOD_B": "dye:CLOTH:muted_indigo"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "female",
+            "cosmetics": {
+              "hairFront": "appearance::Mao-ao_F::mao-ao_tuft",
+              "hairBack": "appearance::Mao-ao_F::mao-ao_long_ponytail",
+              "hairSide": "appearance::Mao-ao_F::mao-ao_braid-R",
+              "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L",
+              "eyes": "appearance::Mao-ao_F::mao-ao_circled_eye_L"
+            },
+            "bodyColors": {
+              "A": {
+                "h": 17,
+                "s": -0.9,
+                "v": 0.17
+              },
+              "B": {
+                "h": 23,
+                "s": -0.6,
+                "v": -0.07
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "rugged_poncho"
+          ],
+          "appliedDyes": {
+            "CLOTH": "dye:CLOTH:muted_indigo",
+            "CLOTH_B": "dye:CLOTH:dusty_indigo_violet",
+            "HOOD": "dye:CLOTH:dusty_indigo_violet",
+            "HOOD_B": "dye:CLOTH:muted_indigo"
+          }
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "potion_shop",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "dzibim_khibu",
+      "name": "Dzibim Khibu",
+      "homeId": "carpenters",
+      "species": "<unknown species>",
+      "gender": "male",
+      "ageBand": "<unknown age>",
+      "role": "carpenter",
+      "tags": [
+        "carpenters",
+        "carpenter",
+        "villager"
+      ],
+      "bio": "Carpenter. Design doc gives house-building family history dialogue.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "carpenters",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "dzahiri_khibu",
+      "name": "Dzahiri Khibu",
+      "homeId": "carpenters",
+      "species": "<unknown species>",
+      "gender": "<unknown gender>",
+      "ageBand": "<unknown age>",
+      "role": "carpenter / roofing family connection",
+      "tags": [
+        "carpenters",
+        "carpenter / roofing family connection",
+        "villager"
+      ],
+      "bio": "Carpenter’s household. Connected to Dzibim and the old Manji roofing side by the provided Dzibim line.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "female",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": 7,
+            "s": -0.9,
+            "v": -0.77
+          },
+          "B": {
+            "h": -56,
+            "s": -0.55,
+            "v": -0.3
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "bandolier1",
+        "tankan_bodywrap",
+        "appearance::hat::basic_headband"
+      ],
+      "appliedDyes": {
+        "CLOTH": "dye:CLOTH:muted_blue",
+        "HAT": "dye:CLOTH:bright_yellow"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "female",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": 7,
+                "s": -0.9,
+                "v": -0.77
+              },
+              "B": {
+                "h": -56,
+                "s": -0.55,
+                "v": -0.3
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "bandolier1",
+            "tankan_bodywrap",
+            "appearance::hat::basic_headband"
+          ],
+          "appliedDyes": {
+            "CLOTH": "dye:CLOTH:muted_blue",
+            "HAT": "dye:CLOTH:bright_yellow"
+          }
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "carpenters",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "nashka_khibu",
+      "name": "Nashka Khibu",
+      "homeId": "carpenters",
+      "species": "<unknown species>",
+      "gender": "<unknown gender>",
+      "ageBand": "<unknown age>",
+      "role": "carpenter household member",
+      "tags": [
+        "carpenters",
+        "carpenter household member",
+        "villager"
+      ],
+      "bio": "Named under Carpenter’s; no further details provided.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37000000000000005
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37000000000000005
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "carpenters",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "teacup_unumanuk",
+      "name": "Teacup Unumanuk",
+      "homeId": "engh_sho_clans",
+      "species": "Engh-Sho",
+      "gender": "female",
+      "ageBand": "elder",
+      "role": "eldress",
+      "tags": [
+        "engh_sho_clans",
+        "eldress",
+        "villager"
+      ],
+      "bio": "Unumanuk Clan eldress.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "female",
+        "cosmetics": {
+          "eyes": "appearance::Engh-sho_F::engh_snowgoggles"
+        },
+        "bodyColors": {
+          "A": {
+            "h": -85,
+            "s": -0.9,
+            "v": 0.35
+          },
+          "B": {
+            "h": -85,
+            "s": -0.9,
+            "v": 0.35
+          },
+          "C": {
+            "h": -85,
+            "s": -0.85,
+            "v": 0.53
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "female",
+            "cosmetics": {
+              "eyes": "appearance::Engh-sho_F::engh_snowgoggles"
+            },
+            "bodyColors": {
+              "A": {
+                "h": -85,
+                "s": -0.9,
+                "v": 0.35
+              },
+              "B": {
+                "h": -85,
+                "s": -0.9,
+                "v": 0.35
+              },
+              "C": {
+                "h": -85,
+                "s": -0.85,
+                "v": 0.53
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "engh_sho_clans",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "binding_hatayap",
+      "name": "Binding Hatayap",
+      "homeId": "ginju_farmstead",
+      "species": "Engh-Sho",
+      "gender": "female",
+      "ageBand": "<unknown age>",
+      "role": "farm worker",
+      "tags": [
+        "ginju_farmstead",
+        "farm worker",
+        "villager"
+      ],
+      "bio": "Single mother whose husband died fighting off the wyrm. Works on Ginju farm to support family and establish themselves as welcome residents.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "female",
+        "cosmetics": {
+          "eyes": "appearance::Engh-sho_F::engh_snowgoggles"
+        },
+        "bodyColors": {
+          "A": {
+            "h": -33.3,
+            "s": -0.753,
+            "v": -0.46
+          },
+          "B": {
+            "h": -33.3,
+            "s": -0.697,
+            "v": -0.577
+          },
+          "C": {
+            "h": -33.3,
+            "s": -0.631,
+            "v": 0.191
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "bandolier1",
+        "tankan_bodywrap",
+        "appearance::hat::riverlandskasa_wide"
+      ],
+      "appliedDyes": {
+        "CLOTH": "dye:CLOTH:silver"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "female",
+            "cosmetics": {
+              "eyes": "appearance::Engh-sho_F::engh_snowgoggles"
+            },
+            "bodyColors": {
+              "A": {
+                "h": -33.3,
+                "s": -0.753,
+                "v": -0.46
+              },
+              "B": {
+                "h": -33.3,
+                "s": -0.697,
+                "v": -0.577
+              },
+              "C": {
+                "h": -33.3,
+                "s": -0.631,
+                "v": 0.191
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "bandolier1",
+            "tankan_bodywrap",
+            "appearance::hat::riverlandskasa_wide"
+          ],
+          "appliedDyes": {
+            "CLOTH": "dye:CLOTH:silver"
+          }
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "ginju_farmstead",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "spearhead_unumanuk",
+      "name": "Spearhead Unumanuk",
+      "homeId": "watch",
+      "species": "Engh-Sho",
+      "gender": "male",
+      "ageBand": "<unknown age>",
+      "role": "watch captain",
+      "tags": [
+        "watch",
+        "watch captain",
+        "villager"
+      ],
+      "bio": "Watch Captain. Son of Teacup. Father of Oddclaw.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "male",
+        "cosmetics": {
+          "eyes": "appearance::Engh-sho_M::engh_snowgoggles",
+          "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
+          "hairSideL": "appearance::Mao-ao_M::mao-ao_braid-L",
+          "hairSide": "appearance::Mao-ao_M::mao-ao_braidcluster-R",
+          "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short",
+          "hairBack": "appearance::Mao-ao_M::mao-ao_splayedknot_medium"
+        },
+        "bodyColors": {
+          "A": {
+            "h": 44.2,
+            "s": -0.725,
+            "v": 0.153
+          },
+          "B": {
+            "h": 44.2,
+            "s": -0.725,
+            "v": -0.08
+          },
+          "C": {
+            "h": 44.2,
+            "s": -0.75,
+            "v": 0.513
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "rugged_poncho"
+      ],
+      "appliedDyes": {
+        "CLOTH": "dye:CLOTH:dark_muted_yellow_orange",
+        "CLOTH_B": "dye:CLOTH:smoky_yellow"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "male",
+            "cosmetics": {
+              "eyes": "appearance::Engh-sho_M::engh_snowgoggles",
+              "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
+              "hairSideL": "appearance::Mao-ao_M::mao-ao_braid-L",
+              "hairSide": "appearance::Mao-ao_M::mao-ao_braidcluster-R",
+              "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short",
+              "hairBack": "appearance::Mao-ao_M::mao-ao_splayedknot_medium"
+            },
+            "bodyColors": {
+              "A": {
+                "h": 44.2,
+                "s": -0.725,
+                "v": 0.153
+              },
+              "B": {
+                "h": 44.2,
+                "s": -0.725,
+                "v": -0.08
+              },
+              "C": {
+                "h": 44.2,
+                "s": -0.75,
+                "v": 0.513
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "rugged_poncho"
+          ],
+          "appliedDyes": {
+            "CLOTH": "dye:CLOTH:dark_muted_yellow_orange",
+            "CLOTH_B": "dye:CLOTH:smoky_yellow"
+          }
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "watch",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "oddclaw_unumanuk",
+      "name": "Oddclaw Unumanuk",
+      "homeId": "watch",
+      "species": "Engh-Sho",
+      "gender": "male",
+      "ageBand": "<unknown age>",
+      "role": "single member of the Watch",
+      "tags": [
+        "watch",
+        "single member of the Watch",
+        "villager"
+      ],
+      "bio": "Only Watch member. Thinks his name means more than being a fighter. Loves animals and wants to train them to protect town; father thinks that is stupid and dangerous. Found claw came from invasive Nazgraku, escaped mounts of the thwarted Cleaver’s Edge horde.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "male",
+        "cosmetics": {
+          "eyes": "appearance::Engh-sho_M::engh_snowgoggles",
+          "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_long",
+          "hairBack": "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
+          "hairSide": "appearance::Mao-ao_M::mao-ao_braidcluster-R",
+          "hairSideL": null
+        },
+        "bodyColors": {
+          "A": {
+            "h": 44.2,
+            "s": -0.725,
+            "v": -0.423
+          },
+          "B": {
+            "h": 44.2,
+            "s": -0.725,
+            "v": -0.54
+          },
+          "C": {
+            "h": 44.2,
+            "s": -0.75,
+            "v": 0.247
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "appearance::hat::basic_headband",
+        "bandolier1",
+        "rugged_poncho"
+      ],
+      "appliedDyes": {
+        "CLOTH": "dye:CLOTH:dark_muted_green_blue",
+        "CLOTH_B": "dye:CLOTH:shadow_yellow_green",
+        "HAT": "dye:CLOTH:dark_muted_green_blue"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "male",
+            "cosmetics": {
+              "eyes": "appearance::Engh-sho_M::engh_snowgoggles",
+              "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_long",
+              "hairBack": "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
+              "hairSide": "appearance::Mao-ao_M::mao-ao_braidcluster-R",
+              "hairSideL": null
+            },
+            "bodyColors": {
+              "A": {
+                "h": 44.2,
+                "s": -0.725,
+                "v": -0.423
+              },
+              "B": {
+                "h": 44.2,
+                "s": -0.725,
+                "v": -0.54
+              },
+              "C": {
+                "h": 44.2,
+                "s": -0.75,
+                "v": 0.247
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "appearance::hat::basic_headband",
+            "bandolier1",
+            "rugged_poncho"
+          ],
+          "appliedDyes": {
+            "CLOTH": "dye:CLOTH:dark_muted_green_blue",
+            "CLOTH_B": "dye:CLOTH:shadow_yellow_green",
+            "HAT": "dye:CLOTH:dark_muted_green_blue"
+          }
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "watch",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "tooth_hatayap",
+      "name": "Tooth Hatayap",
+      "homeId": "inn",
+      "species": "Engh-Sho",
+      "gender": "female",
+      "ageBand": "<unknown age>",
+      "role": "waitress",
+      "tags": [
+        "inn",
+        "waitress",
+        "villager"
+      ],
+      "bio": "Waitress. Binding’s husband’s sister’s daughter; Spearhead’s sister’s husband’s sister’s daughter; Oddclaw’s aunt’s husband’s sister’s daughter. Once held Tuhupnuk surname before Hammerhead murdered Sand and was banished.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "female",
+        "cosmetics": {
+          "eyes": "appearance::Engh-sho_F::engh_snowgoggles",
+          "hairFront": "appearance::Mao-ao_F::mao-ao_forwardtuft_long",
+          "hairBack": "appearance::Mao-ao_F::mao-ao_long_ponytail",
+          "hairSide": null,
+          "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L"
+        },
+        "bodyColors": {
+          "A": {
+            "h": -85,
+            "s": -0.775,
+            "v": 0.53
+          },
+          "B": {
+            "h": -85,
+            "s": -0.675,
+            "v": 0.18
+          },
+          "C": {
+            "h": -85,
+            "s": -0.5,
+            "v": 0.63
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [
+        "appearance::hat::basic_headband",
+        "tankan_bodywrap"
+      ],
+      "appliedDyes": {
+        "TORSO": "dye:CLOTH:deep_green_blue",
+        "HAT": "dye:CLOTH:muted_green_blue",
+        "CLOTH": "dye:CLOTH:pure_orange"
+      },
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "female",
+            "cosmetics": {
+              "eyes": "appearance::Engh-sho_F::engh_snowgoggles",
+              "hairFront": "appearance::Mao-ao_F::mao-ao_forwardtuft_long",
+              "hairBack": "appearance::Mao-ao_F::mao-ao_long_ponytail",
+              "hairSide": null,
+              "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L"
+            },
+            "bodyColors": {
+              "A": {
+                "h": -85,
+                "s": -0.775,
+                "v": 0.53
+              },
+              "B": {
+                "h": -85,
+                "s": -0.675,
+                "v": 0.18
+              },
+              "C": {
+                "h": -85,
+                "s": -0.5,
+                "v": 0.63
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [
+            "appearance::hat::basic_headband",
+            "tankan_bodywrap"
+          ],
+          "appliedDyes": {
+            "TORSO": "dye:CLOTH:deep_green_blue",
+            "HAT": "dye:CLOTH:muted_green_blue",
+            "CLOTH": "dye:CLOTH:pure_orange"
+          }
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "inn",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "hammerhead_tuhupnuk",
+      "name": "Hammerhead Tuhupnuk",
+      "homeId": "tuhupnuk_clan",
+      "species": "Engh-Sho",
+      "gender": "male",
+      "ageBand": "<unknown age>",
+      "role": "bonehewer / banished",
+      "tags": [
+        "tuhupnuk_clan",
+        "bonehewer / banished",
+        "villager"
+      ],
+      "bio": "Bonehewer who murdered his brother Sand and was banished.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "male",
+        "cosmetics": {
+          "eyes": "appearance::Engh-sho_M::engh_snowgoggles"
+        },
+        "bodyColors": {
+          "A": {
+            "h": -85,
+            "s": -0.9,
+            "v": 0.35
+          },
+          "B": {
+            "h": -85,
+            "s": -0.9,
+            "v": 0.35
+          },
+          "C": {
+            "h": -85,
+            "s": -0.85,
+            "v": 0.53
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "male",
+            "cosmetics": {
+              "eyes": "appearance::Engh-sho_M::engh_snowgoggles"
+            },
+            "bodyColors": {
+              "A": {
+                "h": -85,
+                "s": -0.9,
+                "v": 0.35
+              },
+              "B": {
+                "h": -85,
+                "s": -0.9,
+                "v": 0.35
+              },
+              "C": {
+                "h": -85,
+                "s": -0.85,
+                "v": 0.53
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "tuhupnuk_clan",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "talisman_hatayap",
+      "name": "Talisman Hatayap",
+      "homeId": "hatayap_clan_deceased",
+      "species": "Engh-Sho",
+      "gender": "male",
+      "ageBand": "<unknown age>",
+      "role": "deceased snow-watcher",
+      "tags": [
+        "hatayap_clan_deceased",
+        "deceased snow-watcher",
+        "villager"
+      ],
+      "bio": "Binding’s husband. Village snow-watcher who sacrificed himself to distract the wyrm.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "male",
+        "cosmetics": {
+          "eyes": "appearance::Engh-sho_M::engh_snowgoggles"
+        },
+        "bodyColors": {
+          "A": {
+            "h": -85,
+            "s": -0.9,
+            "v": 0.35
+          },
+          "B": {
+            "h": -85,
+            "s": -0.9,
+            "v": 0.35
+          },
+          "C": {
+            "h": -85,
+            "s": -0.85,
+            "v": 0.53
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "male",
+            "cosmetics": {
+              "eyes": "appearance::Engh-sho_M::engh_snowgoggles"
+            },
+            "bodyColors": {
+              "A": {
+                "h": -85,
+                "s": -0.9,
+                "v": 0.35
+              },
+              "B": {
+                "h": -85,
+                "s": -0.9,
+                "v": 0.35
+              },
+              "C": {
+                "h": -85,
+                "s": -0.85,
+                "v": 0.53
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "hatayap_clan_deceased",
+        "shopHours": "",
+        "rules": []
+      }
+    },
+    {
+      "id": "bowstring_hatayap",
+      "name": "Bowstring Hatayap",
+      "homeId": "hatayap_clan_deceased",
+      "species": "Engh-Sho",
+      "gender": "female",
+      "ageBand": "<unknown age>",
+      "role": "deceased bowyer",
+      "tags": [
+        "hatayap_clan_deceased",
+        "deceased bowyer",
+        "villager"
+      ],
+      "bio": "A bowyer who helped her brother distract the Wyrm using one of her bows in her last moments.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "female",
+        "cosmetics": {
+          "eyes": "appearance::Engh-sho_F::engh_snowgoggles"
+        },
+        "bodyColors": {
+          "A": {
+            "h": -85,
+            "s": -0.9,
+            "v": 0.35
+          },
+          "B": {
+            "h": -85,
+            "s": -0.9,
+            "v": 0.35
+          },
+          "C": {
+            "h": -85,
+            "s": -0.85,
+            "v": 0.53
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "female",
+            "cosmetics": {
+              "eyes": "appearance::Engh-sho_F::engh_snowgoggles"
+            },
+            "bodyColors": {
+              "A": {
+                "h": -85,
+                "s": -0.9,
+                "v": 0.35
+              },
+              "B": {
+                "h": -85,
+                "s": -0.9,
+                "v": 0.35
+              },
+              "C": {
+                "h": -85,
+                "s": -0.85,
+                "v": 0.53
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "defaultPathId": "",
+        "workBuildingId": "hatayap_clan_deceased",
+        "shopHours": "",
+        "rules": []
+      }
+    }
+  ],
+  "exportedAt": "2026-06-13T22:40:41.515Z",
+  "summary": {
+    "npcCount": 29,
+    "romanceableCount": 6,
+    "placeholderCount": 1
+  },
+  "mapEditorNote": "NPC ids and paths are used by the Map Editor (docs/tools/map-editor). NPC paths reference npc.id."
 }
