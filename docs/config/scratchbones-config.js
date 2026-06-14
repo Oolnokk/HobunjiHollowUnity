@@ -3094,9 +3094,19 @@ window.SCRATCHBONES_CONFIG = {
         "orbitControlsModuleUrl": "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js?deps=three@0.165.0",
         "gltfExporterModuleUrl": "https://esm.sh/three@0.165.0/examples/jsm/exporters/GLTFExporter.js?deps=three@0.165.0",
         "modelWidth": 1,
+        "worldModelWidth": 0.9,
+        "worldAlphaTest": 0.01,
         "anchorZ": 0,
         "alphaTest": 0.001,
         "backPlaneOffsetZ": 0.001,
+        "portraitVerticalPlacement": {
+          "default": 0.5,
+          "kenkari": { "female": 0.35, "male": 0.4 },
+          "tletingan": { "male": 0.45 },
+          "engh-sho": { "female": 0.5, "male": 0.55 },
+          "mao-ao": { "female": 0.65, "male": 0.7 },
+          "mashtzarr": { "male": 0.8 }
+        },
         "behindView": {
           "headUrls": {
             "mao-ao": {

@@ -64,6 +64,49 @@
     };
   }
 
+
+  function normalizeKey(value) {
+    return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  function normalizeGender(value) {
+    const g = String(value || '').trim().toLowerCase();
+    return g === 'female' || g === 'f' ? 'female' : 'male';
+  }
+
+  function configuredParentSpecies(species) {
+    const speciesConfig = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {};
+    return normalizeKey(speciesConfig[species]?.parentSpecies);
+  }
+
+  function placementSpeciesChain(species) {
+    const chain = [];
+    const seen = new Set();
+    let current = normalizeKey(species);
+    while (current && !seen.has(current)) {
+      chain.push(current);
+      seen.add(current);
+      current = configuredParentSpecies(current);
+    }
+    return chain;
+  }
+
+  function avatarPlacementRatioFor(options = {}) {
+    const placement = cfg().portraitVerticalPlacement || {};
+    const defaultRatio = Number.isFinite(Number(placement.default)) ? Number(placement.default) : 0.5;
+    const source = options.appearance || options.profile?.appearance || options.profile?.fighter || {};
+    const species = normalizeKey(options.speciesId || source.speciesId || source.species || options.profile?.fighter?.speciesId);
+    const gender = normalizeGender(options.gender || source.gender || options.profile?.fighter?.gender);
+    for (const speciesKey of placementSpeciesChain(species)) {
+      const speciesPlacement = placement[speciesKey];
+      if (speciesPlacement && Object.prototype.hasOwnProperty.call(speciesPlacement, gender)) {
+        const ratio = Number(speciesPlacement[gender]);
+        if (Number.isFinite(ratio)) return ratio;
+      }
+    }
+    return defaultRatio;
+  }
+
   function createSinglePlaneAssembly(THREE, config) {
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_single_plane_assembly';
@@ -164,13 +207,17 @@
         ? 'disabled for runtime NPC preview; a single front plane plus assembled rear portrait plane are created'
         : 'disabled for runtime NPC preview; only the single front plane plus rear silhouette are created',
     };
-    root.add(createSinglePlaneAssembly(THREE, {
+    const placementRatio = avatarPlacementRatioFor({ ...options, profile: options.profile });
+    const assembly = createSinglePlaneAssembly(THREE, {
       planeWidth: modelWidth,
       planeHeight: modelHeight,
       anchorZ,
       textures,
       name: `${root.name}_single_plane_assembly`,
-    }));
+    });
+    assembly.position.y = (placementRatio - 0.5) * modelHeight;
+    root.userData.portraitVerticalPlacementRatio = placementRatio;
+    root.add(assembly);
     return root;
   }
 
@@ -202,6 +249,7 @@
     makeVariantCanvas,
     buildAnimalPlaneAvatarModel,
     buildSinglePlaneAvatarModel,
+    avatarPlacementRatioFor,
     disposeAvatarModel,
     loadThreeModules,
   };
