@@ -905,7 +905,7 @@ canvas.addEventListener('pointerdown', e => {
         else if (gHit.type === 'W')   selB.gridX--;
         else if (gHit.type === 'E')   selB.gridX++;
         else if (gHit.type === 'rot') selB.rotationDeg = ((selB.rotationDeg || 0) + 90) % 360;
-        saveWs(); renderBuildingPanel(); draw();
+        saveWorkspace(); renderBuildingPanel(); draw();
       }
       return; // consume — no camera pan
     }
@@ -961,7 +961,7 @@ canvas.addEventListener('pointermove', e => {
 });
 function endPtr(e) {
   ptrs.delete(e.pointerId);
-  if (_bldgDrag) { saveWs(); renderBuildingPanel(); _bldgDrag = null; }
+  if (_bldgDrag) { saveWorkspace(); renderBuildingPanel(); _bldgDrag = null; }
   drag = false; painting = false; pinchStart = null;
 }
 canvas.addEventListener('pointerup', endPtr);
