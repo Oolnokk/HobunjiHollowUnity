@@ -859,7 +859,8 @@ canvas.addEventListener('pointerdown', e => {
   const p = canvasPt(e);
   if (mode === 'pan') {
     const w = s2w(p.x, p.y); const wc = Math.floor(w.x), wr = Math.floor(w.y);
-    const hit = _detectedBuildings.find(b => wc >= b.minC && wc <= b.maxC && wr >= b.minR && wr <= b.maxR);
+    const bldgs = activeMap().buildings || [];
+    const hit = bldgs.find(b => wc >= b.gridX && wc < b.gridX + (b.footprintW || 7) && wr >= b.gridZ && wr < b.gridZ + (b.footprintD || 5));
     if (hit) { _selectedBuildingId = hit.id; renderBuildingPanel(); draw(); }
     drag = true; dragStart = { p, cx: cam.x, cy: cam.y }; return;
   }
