@@ -3096,6 +3096,18 @@ window.SCRATCHBONES_CONFIG = {
         "modelWidth": 1,
         "worldModelWidth": 0.9,
         "worldAlphaTest": 0.01,
+        "portraitScaleBySpecies": {
+          "mao-ao": 1,
+          "engh-sho": 1,
+          "kenkari": 0.75,
+          "tletingan": 0.75,
+          "mashtzarr": 1
+        },
+        "childScaleMultiplier": 0.5,
+        "childMarkers": {
+          "roles": ["child"],
+          "tags": ["child"]
+        },
         "groundShadow": {
           "radiusX": 0.34,
           "radiusZ": 0.22,

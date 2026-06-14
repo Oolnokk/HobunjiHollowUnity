@@ -1429,9 +1429,10 @@
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
+          { backCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
         );
-        avatarGroup.position.set(0, MODEL_W / 2, 0);
+        const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
+        avatarGroup.position.set(0, avatarHeight / 2, 0);
         const root = new THREE.Group();
         root.name = 'npc_walker_' + (path.id || path.label || '');
         const groundShadow = makeCharacterGroundShadow('npc_ground_shadow');
@@ -7193,8 +7194,9 @@
             { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_H, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
           );
           avatarGroup.name = 'player_avatar';
+          const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_H;
           // PlaneGeometry is origin-centered; lift by half height so bottom = tile surface
-          avatarGroup.position.set(0, MODEL_H / 2, 0);
+          avatarGroup.position.set(0, avatarHeight / 2, 0);
           playerMesh.add(avatarGroup);
           debugLog('PNG plane avatar attached to player_root');
         } catch (err) {

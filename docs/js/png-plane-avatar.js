@@ -91,12 +91,60 @@
     return chain;
   }
 
+
+  function sourceForAvatarOptions(options = {}) {
+    return options.appearance || options.npcRecord?.appearance || options.profile?.appearance || options.profile?.fighter || {};
+  }
+
+  function avatarSpeciesAndGender(options = {}) {
+    const source = sourceForAvatarOptions(options);
+    return {
+      species: normalizeKey(options.speciesId || source.speciesId || source.species || options.profile?.fighter?.speciesId),
+      gender: normalizeGender(options.gender || source.gender || options.profile?.fighter?.gender),
+    };
+  }
+
+  function configuredChildMarkers() {
+    const markers = cfg().childMarkers || {};
+    return {
+      roles: new Set((markers.roles || []).map(normalizeKey).filter(Boolean)),
+      tags: new Set((markers.tags || []).map(normalizeKey).filter(Boolean)),
+    };
+  }
+
+  function isChildAvatar(options = {}) {
+    const record = options.npcRecord || options.profile?.npcRecord || {};
+    const markers = configuredChildMarkers();
+    const role = normalizeKey(record.role || options.role);
+    if (role && markers.roles.has(role)) return true;
+    const tags = Array.isArray(record.tags) ? record.tags : Array.isArray(options.tags) ? options.tags : [];
+    return tags.some(tag => markers.tags.has(normalizeKey(tag)));
+  }
+
+  function avatarScaleMultiplierFor(options = {}) {
+    const { species } = avatarSpeciesAndGender(options);
+    const scaleBySpecies = cfg().portraitScaleBySpecies || {};
+    let scale = 1;
+    for (const speciesKey of placementSpeciesChain(species)) {
+      if (Object.prototype.hasOwnProperty.call(scaleBySpecies, speciesKey)) {
+        const speciesScale = Number(scaleBySpecies[speciesKey]);
+        if (Number.isFinite(speciesScale) && speciesScale > 0) {
+          scale = speciesScale;
+          break;
+        }
+      }
+    }
+    if (isChildAvatar(options)) {
+      const childScale = Number(cfg().childScaleMultiplier);
+      if (Number.isFinite(childScale) && childScale > 0) scale *= childScale;
+    }
+    return scale;
+  }
+
   function avatarPlacementRatioFor(options = {}) {
     const placement = cfg().portraitVerticalPlacement || {};
     const defaultRatio = Number.isFinite(Number(placement.default)) ? Number(placement.default) : 0.5;
-    const source = options.appearance || options.profile?.appearance || options.profile?.fighter || {};
-    const species = normalizeKey(options.speciesId || source.speciesId || source.species || options.profile?.fighter?.speciesId);
-    const gender = normalizeGender(options.gender || source.gender || options.profile?.fighter?.gender);
+    const { species, gender } = avatarSpeciesAndGender(options);
     for (const speciesKey of placementSpeciesChain(species)) {
       const speciesPlacement = placement[speciesKey];
       if (speciesPlacement && Object.prototype.hasOwnProperty.call(speciesPlacement, gender)) {
@@ -192,8 +240,11 @@
     const pxW = sourceCanvas.naturalWidth || sourceCanvas.width;
     const pxH = sourceCanvas.naturalHeight || sourceCanvas.height;
     const aspectHeight = pxH / Math.max(1, pxW);
-    const modelWidth = options.modelWidth ?? cfg().modelWidth ?? 1;
-    const modelHeight = options.modelHeight ?? modelWidth * aspectHeight;
+    const scaleMultiplier = avatarScaleMultiplierFor(options);
+    const baseModelWidth = options.modelWidth ?? cfg().modelWidth ?? 1;
+    const baseModelHeight = options.modelHeight ?? baseModelWidth * aspectHeight;
+    const modelWidth = baseModelWidth * scaleMultiplier;
+    const modelHeight = baseModelHeight * scaleMultiplier;
     const anchorZ = options.anchorZ ?? cfg().anchorZ ?? 0;
     const textures = buildTextureSet(THREE, sourceCanvas, options.backCanvas || options.backImage || null);
     const root = new THREE.Group();
@@ -217,6 +268,9 @@
     });
     assembly.position.y = (placementRatio - 0.5) * modelHeight;
     root.userData.portraitVerticalPlacementRatio = placementRatio;
+    root.userData.portraitScaleMultiplier = scaleMultiplier;
+    root.userData.portraitModelWidth = modelWidth;
+    root.userData.portraitModelHeight = modelHeight;
     root.add(assembly);
     return root;
   }
@@ -250,6 +304,8 @@
     buildAnimalPlaneAvatarModel,
     buildSinglePlaneAvatarModel,
     avatarPlacementRatioFor,
+    avatarScaleMultiplierFor,
+    isChildAvatar,
     disposeAvatarModel,
     loadThreeModules,
   };
