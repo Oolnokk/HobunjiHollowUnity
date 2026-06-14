@@ -121,6 +121,7 @@
         buildEquipmentSlots();
         if (targetPanel === 'shipping') buildShippingTransferUI();
         if (targetPanel === 'supplies') renderSupplyPage();
+        if (targetPanel === 'generalStore') renderGeneralStorePage();
         auditInventorySizing();
       }
       function closeMenu() {
@@ -145,6 +146,7 @@
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
         if (id === 'shipping') buildShippingTransferUI();
         if (id === 'supplies') renderSupplyPage();
+        if (id === 'generalStore') renderGeneralStorePage();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
       }
 
@@ -307,14 +309,14 @@
       const HOUSE_FOOTPRINT_D = 4;      // footprint depth in tiles (cells y=10..13, 4 deep)
       const DOOR_COL          = 28;     // farm grid col of door zone (mapper cell 11,14 → col 28)
       const DOOR_ROW          = 6;      // farm grid row of door zone (mapper cell 11,14 → row 6)
-      // Interior dimensions from playerhouse_interior.json (house_interior_mapper.v1)
-      // Layout: 6×5 main room (cols 0-5, rows 0-4) + 2-cell south corridor (cols 2-3, row 5)
-      const INTERIOR_COLS        = 6;
-      const INTERIOR_ROWS        = 6;
-      const INTERIOR_ENTRY_COL   = 2;    // player spawns here when entering (left corridor col)
-      const INTERIOR_ENTRY_ROW   = 4;    // just inside the main room, north of the corridor
-      const INTERIOR_EXIT_COL    = 2;    // leftmost col of south exit corridor
-      const INTERIOR_EXIT_ROW    = 5;    // row of south exit corridor
+      // Interior dimensions — 12×12 (doubled from original 6×6).
+      // Layout: 12×10 main room (cols 0-11, rows 0-9) + 4-cell wide south corridor (cols 4-7, rows 10-11)
+      const INTERIOR_COLS        = 12;
+      const INTERIOR_ROWS        = 12;
+      const INTERIOR_ENTRY_COL   = 5;    // player spawns here when entering (center corridor col)
+      const INTERIOR_ENTRY_ROW   = 9;    // just inside the main room, north of the corridor
+      const INTERIOR_EXIT_COL    = 5;    // center col of south exit corridor
+      const INTERIOR_EXIT_ROW    = 11;   // last row of south exit corridor
       const INTERIOR_WALL_HEIGHT = 1.75; // wall height in world units (30% shorter than original 2.5)
 
       // ── Voxel render constants ──
@@ -573,6 +575,7 @@
         tableSmall:    { itemKey: 'tableSmallFurniture',    icon: '🍽️', name: 'Small Table',          modelFile: 'table_small.glb',              price: 18, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A small side table.' },
         wardrobe:      { itemKey: 'wardrobeFurniture',      icon: '🚪', name: 'Tall Wardrobe',        modelFile: 'wardrobe_tall.glb',            price: 48, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A tall wardrobe for clothing storage.' },
         washTub:       { itemKey: 'washTubFurniture',       icon: '🛁', name: 'Copper Wash Tub',      modelFile: 'wash_tub_copper.glb',          price: 25, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A copper tub for bathing or laundry.' },
+        counter:       { itemKey: 'counterFurniture',       icon: '🏪', name: 'Shop Counter',          modelFile: 'counter_shop.glb',             price: 40, fw: 3, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A sturdy shop counter for conducting business.' },
       };
 
       const DECORATIVE_FURNITURE_CATALOG = Object.entries(DECORATIVE_FURNITURE_DEFS).map(([, def]) => ({
@@ -608,13 +611,27 @@
         ...LIVESTOCK_CATALOG
       ];
 
+      // ── General Store catalog (Funji & Son's) ─────────────────────
+      const GENERAL_STORE_CATALOG = [
+        { key: 'mulchBag',      icon: '🍂', name: 'Mulch Bag',      desc: 'Boosts soil recovery and clears weeds.',        price: 3,  gives: { mulch: 5 } },
+        { key: 'bucket',        icon: '🪣', name: 'Tin Bucket',     desc: 'A utilitarian tin bucket for hauling water.',   price: 8,  gives: { bucketFurniture: 1 }, category: 'goods' },
+        { key: 'copperBarrel',  icon: '🛢️', name: 'Copper Barrel',  desc: 'A sturdy copper-hooped storage barrel.',       price: 20, gives: { copperBarrelFurniture: 1 }, category: 'goods' },
+        { key: 'crateStack',    icon: '📦', name: 'Crate Stack',    desc: 'Stacked wooden crates for storing loose goods.',price: 14, gives: { crateStackFurniture: 1 }, category: 'goods' },
+        { key: 'stool',         icon: '🪑', name: 'Round Stool',    desc: 'A simple round stool — good for any space.',    price: 10, gives: { stoolFurniture: 1 }, category: 'goods' },
+        { key: 'candleTable',   icon: '🕯️', name: 'Candle Table',   desc: 'Small table with a candle for warm light.',    price: 15, gives: { candleTableFurniture: 1 }, category: 'goods' },
+        { key: 'washTub',       icon: '🛁', name: 'Copper Wash Tub',desc: 'A copper tub for bathing or laundry.',         price: 25, gives: { washTubFurniture: 1 }, category: 'goods' },
+        { key: 'counter',       icon: '🏪', name: 'Shop Counter',   desc: 'A sturdy counter for conducting business.',    price: 40, gives: { counterFurniture: 1 }, category: 'goods' },
+      ];
+
       // Pending orders: [{catalogKey, qty, arrivalDay, name}]
       let pendingOrders  = [];
       let deliveryLog    = [];
       const SELL_INTERVAL_HOURS = 4;  // sell crate empties every N game-hours
 
-      // worldObjects: Map<"col,row", object>
+      // worldObjects: Map<"col,row", object> (farm scene only)
       const worldObjects = new Map();
+      // interiorWorldObjects: Map<"col,row", object> (interior scene)
+      const interiorWorldObjects = new Map();
       let shippingBoxObject = null; // Used by the Shipping menu pane to read/write the active sell crate contents.
       let supplyBoxObject = null; // Used by the Supplies menu pane to read/write supply order quantities.
       const processingFurnitureObjects = new Set(); // Used by reset and debug to track player-placed processing furniture.
@@ -1652,6 +1669,17 @@
           }
         }
 
+        // Load and render piece extensions (porch/stair/railing) for buildings with pieceFile
+        for (const bldg of _townBuildingDefs) {
+          const _le = bldg.houseId ? _houseLib[bldg.houseId] : null;
+          if (_le?.pieceFile) {
+            fetch(_le.pieceFile)
+              .then(r => r.json())
+              .then(pieceData => buildPieceExtensions(pieceData, bldg.minC, bldg.minR))
+              .catch(e => debugLog('Piece extensions load error: ' + e, 'warn'));
+          }
+        }
+
         // Upgrade to real bricks + GLB shingles once both assets are ready.
         if (!_townBuildingsGlbUpgradePending) {
           _townBuildingsGlbUpgradePending = true;
@@ -1991,6 +2019,7 @@
       }
 
       function getWorldObjectAt(col, row) {
+        if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
         return worldObjects.get(col + ',' + row) || null;
       }
 
@@ -2104,6 +2133,42 @@
 
       // ── Market page render ─────────────────────────────────────────
       function renderMarketPage() { /* market UI removed — sell from Inventory panel */ }
+
+      // ── General Store page render ───────────────────────────────────
+      function renderGeneralStorePage() {
+        const list   = document.getElementById('generalStoreList');
+        const goldEl = document.getElementById('gsGoldDisplay');
+        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
+        if (!list) return;
+        list.innerHTML = '';
+        GENERAL_STORE_CATALOG.forEach(item => {
+          const row = document.createElement('div');
+          row.className = 'shop-row';
+          row.innerHTML = `
+            <div class="sh-icon">${item.icon}</div>
+            <div class="sh-info">
+              <div class="sh-name">${item.name}</div>
+              <div class="sh-desc">${item.desc}</div>
+              <div class="sh-price">${item.price}g</div>
+            </div>
+            <button class="shop-buy-btn" data-key="${item.key}">Buy</button>
+          `;
+          row.querySelector('[data-key]')?.addEventListener('click', () => {
+            const gold = inventory.gold || 0;
+            if (gold < item.price) { showToast('Not enough gold.', false); return; }
+            inventory.gold = gold - item.price;
+            if (item.gives) {
+              Object.entries(item.gives).forEach(([k, v]) => {
+                inventory[k] = Math.min(99, (inventory[k] || 0) + v);
+              });
+            }
+            showToast('Bought ' + item.name + '!', true);
+            renderGeneralStorePage();
+            buildInventoryGrid();
+          });
+          list.appendChild(row);
+        });
+      }
 
             // Item scroll — ordered list of scrollable inventory slots
       const inventoryItems = [
@@ -2631,11 +2696,10 @@
         return row === DOOR_ROW - 1 && col >= DOOR_COL && col <= DOOR_COL + 1;
       }
 
-      // Interior grid from playerhouse_interior.json floorCells:
-      // main room cols 0-5 rows 0-4 + south corridor cols 2-3 row 5
+      // Interior grid: 12×12 — main room cols 0-11 rows 0-9, south corridor cols 4-7 rows 10-11
       const interiorGrid = (() => {
         const floor = (c, r) =>
-          (r <= 4 && c >= 0 && c <= 5) || (r === 5 && c >= 2 && c <= 3);
+          (r <= 9 && c >= 0 && c <= 11) || (r >= 10 && r <= 11 && c >= 4 && c <= 7);
         return Array.from({ length: INTERIOR_ROWS }, (_, r) =>
           Array.from({ length: INTERIOR_COLS }, (_, c) => ({
             type: floor(c, r) ? TileType.GRASS : TileType.ROCK,
@@ -3674,15 +3738,120 @@
       // Coord origin: editor cell (9,9) → interior (0,0).
       // N/S panels face along Z (rotY=0/180); W/E panels face along X (rotY=±90).
       const INTERIOR_WALL_PANELS = [
-        { id: 'n_wall',  width: 6, height: INTERIOR_WALL_HEIGHT, position: [3, 0, 0],   rotationDeg: [0,   0, 0] },
-        { id: 'w_wall',  width: 5, height: INTERIOR_WALL_HEIGHT, position: [0, 0, 2.5], rotationDeg: [0,  90, 0] },
-        { id: 'e_wall',  width: 5, height: INTERIOR_WALL_HEIGHT, position: [6, 0, 2.5], rotationDeg: [0, -90, 0] },
-        { id: 's_left',  width: 2, height: INTERIOR_WALL_HEIGHT, position: [1, 0, 5],   rotationDeg: [0, 180, 0] },
-        { id: 's_right', width: 2, height: INTERIOR_WALL_HEIGHT, position: [5, 0, 5],   rotationDeg: [0, 180, 0] },
+        { id: 'n_wall',  width: 12, height: INTERIOR_WALL_HEIGHT, position: [6,  0, 0],    rotationDeg: [0,   0, 0] },
+        { id: 'w_wall',  width: 10, height: INTERIOR_WALL_HEIGHT, position: [0,  0, 5],    rotationDeg: [0,  90, 0] },
+        { id: 'e_wall',  width: 10, height: INTERIOR_WALL_HEIGHT, position: [12, 0, 5],    rotationDeg: [0, -90, 0] },
+        { id: 's_left',  width: 4,  height: INTERIOR_WALL_HEIGHT, position: [2,  0, 10],   rotationDeg: [0, 180, 0] },
+        { id: 's_right', width: 4,  height: INTERIOR_WALL_HEIGHT, position: [10, 0, 10],   rotationDeg: [0, 180, 0] },
         // Corridor side walls — south end kept open (no exit_s)
-        { id: 'exit_w',  width: 1, height: INTERIOR_WALL_HEIGHT, position: [2, 0, 5.5], rotationDeg: [0,  90, 0] },
-        { id: 'exit_e',  width: 1, height: INTERIOR_WALL_HEIGHT, position: [4, 0, 5.5], rotationDeg: [0, -90, 0] },
+        { id: 'exit_w',  width: 2,  height: INTERIOR_WALL_HEIGHT, position: [4,  0, 11],   rotationDeg: [0,  90, 0] },
+        { id: 'exit_e',  width: 2,  height: INTERIOR_WALL_HEIGHT, position: [8,  0, 11],   rotationDeg: [0, -90, 0] },
       ];
+
+      // ── Shop Bell ─────────────────────────────────────────────────────
+      // Places a small bell mesh at (col, row) in the interior scene.
+      // Interaction: if Foroji or Furunji NPC exists in npcWalkers, opens General Store.
+      function makeShopBell(col, row) {
+        const bellGeo  = new THREE.CylinderGeometry(0.12, 0.18, 0.22, 10);
+        const bellMat  = new THREE.MeshLambertMaterial({ color: 0xd4a800 });
+        const bell     = new THREE.Mesh(bellGeo, bellMat);
+        bell.position.set(col + 0.5, 0.6, row + 0.5);
+        bell.castShadow = true;
+        interiorScene.add(bell);
+
+        // Small post
+        const postGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.55, 6);
+        const postMat = new THREE.MeshLambertMaterial({ color: 0x6b4a28 });
+        const post    = new THREE.Mesh(postGeo, postMat);
+        post.position.set(col + 0.5, 0.28, row + 0.5);
+        interiorScene.add(post);
+
+        const SHOPKEEPER_IDS = new Set(['foroji_funji', 'furunji_funji']);
+        interiorWorldObjects.set(col + ',' + row, {
+          onAction(action) {
+            if (action !== 'obj_interact') return { ok: false, message: 'Ring the shop bell.' };
+            const shopkeeperPresent = npcWalkers.some(w => SHOPKEEPER_IDS.has(w.npcId));
+            if (!shopkeeperPresent) {
+              return { ok: false, message: 'No one is at the counter. Come back later.' };
+            }
+            openMenu('generalStore');
+            return { ok: true, message: 'Funji shuffles over to help.' };
+          }
+        });
+      }
+
+      // ── Piece Extension Renderer ───────────────────────────────────────
+      // Renders porch/porchStair/railing faces from a house piece JSON into townScene.
+      // boards.png material for porch/stair/railing; stone for entryTunnel.
+      function buildPieceExtensions(piece, bldgMinC, bldgMinR) {
+        if (!townScene || !piece?.base?.faces) return;
+        const faces   = piece.base.faces;
+        const offsetX = bldgMinC + 3;
+        const offsetZ = bldgMinR + 2;
+
+        const boardsMat = new THREE.MeshLambertMaterial({ color: 0x8b6914, side: THREE.DoubleSide });
+        new THREE.TextureLoader().load(
+          'assets/textures/boards.png',
+          (tex) => {
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            boardsMat.map = tex;
+            boardsMat.color.set(0xffffff);
+            boardsMat.needsUpdate = true;
+          },
+          undefined, () => {}
+        );
+        const stoneMat = new THREE.MeshLambertMaterial({ color: 0x888888, side: THREE.DoubleSide });
+
+        const BOARD_TAGS   = new Set(['porch', 'porchStair', 'railing']);
+        const SKIP_EXT     = new Set(['floor']); // skip invisible ground-contact underside
+
+        // Separate position/uv/index arrays per material bucket
+        const buckets = {
+          board: { pos: [], uv: [], idx: [] },
+          stone: { pos: [], uv: [], idx: [] },
+        };
+
+        for (const f of faces) {
+          const tag = f.tag;
+          if (!BOARD_TAGS.has(tag) && tag !== 'entryTunnel') continue;
+          if (SKIP_EXT.has(f.extensionFace)) continue;
+          const verts = f.v;
+          if (!verts || verts.length < 4) continue;
+
+          const bk   = BOARD_TAGS.has(tag) ? 'board' : 'stone';
+          const b    = buckets[bk];
+          const base = b.pos.length / 3;
+
+          // UV axis selection by face direction
+          const ef = f.extensionFace || 'top';
+          let ua, ub; // local coord indices used for UV
+          if (ef === 'north' || ef === 'south') { ua = 0; ub = 1; }
+          else if (ef === 'east' || ef === 'west') { ua = 2; ub = 1; }
+          else { ua = 0; ub = 2; } // top / ceiling / railing floor
+
+          for (let i = 0; i < 4; i++) {
+            const v = verts[i];
+            b.pos.push(v[0] + offsetX, v[1], v[2] + offsetZ);
+            b.uv.push(v[ua], v[ub]);
+          }
+          // Quad → two triangles
+          b.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        }
+
+        // Build one merged mesh per material
+        for (const [bk, mat] of [['board', boardsMat], ['stone', stoneMat]]) {
+          const b = buckets[bk];
+          if (!b.pos.length) continue;
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(b.pos), 3));
+          geo.setAttribute('uv',       new THREE.BufferAttribute(new Float32Array(b.uv),  2));
+          geo.setIndex(b.idx);
+          geo.computeVertexNormals();
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.receiveShadow = true;
+          townScene.add(mesh);
+        }
+      }
 
       // Built lazily on first entry to avoid blocking startup; called by enterInterior().
       function buildInteriorScene() {
@@ -3703,10 +3872,10 @@
           () => {}
         );
 
-        // Floor tiles: main room 6×5 + corridor 2×1; exit tiles use same material
+        // Floor tiles: main room 12×10 + corridor 4×2; exit tiles use same material
         const floorCells = [];
-        for (let r = 0; r < 5; r++) for (let c = 0; c < 6; c++) floorCells.push([c, r]);
-        floorCells.push([2, 5], [3, 5]);
+        for (let r = 0; r < 10; r++) for (let c = 0; c < 12; c++) floorCells.push([c, r]);
+        for (let r = 10; r <= 11; r++) for (let c = 4; c <= 7; c++) floorCells.push([c, r]);
         for (const [c, r] of floorCells) {
           const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
           fl.position.set(c + 0.5, -0.05, r + 0.5);
@@ -3739,9 +3908,9 @@
         }
 
         // Outside ambient light seeping in through the corridor exit — cool daylight cone
-        const _exitSpot = new THREE.SpotLight(0xb4d8ff, 2.5, 6, 0.5, 0.7, 1.5);
-        _exitSpot.position.set(3, 3, 8);
-        _exitSpot.target.position.set(3, 0, 5.5);
+        const _exitSpot = new THREE.SpotLight(0xb4d8ff, 2.5, 12, 0.5, 0.7, 1.5);
+        _exitSpot.position.set(6, 3, 14);
+        _exitSpot.target.position.set(6, 0, 11);
         interiorScene.add(_exitSpot);
         interiorScene.add(_exitSpot.target);
 
@@ -3749,6 +3918,9 @@
         interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
         _markOutline(interiorWallGroup);
         interiorScene.add(interiorWallGroup);
+
+        // Shop bell at the counter position (row 3, col 6 — center-north of the room)
+        makeShopBell(6, 3);
 
         debugLog('buildInteriorScene complete');
       }
@@ -6332,13 +6504,15 @@
 
 
       function computeActionButtons() {
-        // Interior: only show exit button near the south door
+        // Interior: exit button near south door + interact button for interior world objects
         if (currentArea === 'interior') {
-          const reticle = getReticleTile();
+          const reticle  = getReticleTile();
           const nearExit = reticle.row >= INTERIOR_EXIT_ROW && reticle.col >= INTERIOR_EXIT_COL && reticle.col < INTERIOR_EXIT_COL + 2;
-          return nearExit
-            ? [{ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true }]
-            : [];
+          const btns     = [];
+          if (nearExit) btns.push({ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true });
+          const iObj = getWorldObjectAt(reticle.col, reticle.row);
+          if (iObj) btns.push({ icon: '🔔', label: 'Interact', action: 'obj_interact', style: 'primary', allowed: true });
+          return btns;
         }
 
         // Town has no tile-based tool actions yet

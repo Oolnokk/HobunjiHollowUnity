@@ -138,6 +138,7 @@
         <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
         <button class="mp-tab"        data-mpanel="shipping"      role="tab">📦 Shipping</button>
         <button class="mp-tab"        data-mpanel="supplies"      role="tab">🧺 Supplies</button>
+        <button class="mp-tab"        data-mpanel="generalStore"  role="tab">🛒 General Store</button>
         <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
         <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
@@ -311,6 +312,17 @@
           <div id="supplyDeliveryList" class="supply-delivery-list"></div>
         </div>
       </div><!-- /mpSupplies -->
+
+      <!-- ── General Store pane ─────────────────────────────── -->
+      <div class="mp-pane" id="mpGeneralStore">
+        <div class="supply-top-row">
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="gsGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title">Funji &amp; Son's General Store</div>
+          <div id="generalStoreList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpGeneralStore -->
 
       <!-- ── Progress pane ──────────────────────────────── -->
       <div class="mp-pane" id="mpProgress">
