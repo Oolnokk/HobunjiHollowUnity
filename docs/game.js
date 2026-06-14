@@ -3785,9 +3785,14 @@
       // boards.png material for porch/stair/railing; stone for entryTunnel.
       function buildPieceExtensions(piece, bldgMinC, bldgMinR) {
         if (!townScene || !piece?.base?.faces) return;
-        const faces   = piece.base.faces;
-        const offsetX = bldgMinC + 3;
-        const offsetZ = bldgMinR + 2;
+        const faces      = piece.base.faces;
+        // Piece local coords: vertex[x] = (mapCell.x - gridCenter); offset back to world = bldgMinC + (gridCenter - footprintMinX)
+        const _pcells    = piece.footprint?.cells || [];
+        const _gc        = Math.floor((piece.gridSize || 18) / 2);
+        const _minCX     = _pcells.length ? Math.min(..._pcells.map(c => c.x)) : 6;
+        const _minCY     = _pcells.length ? Math.min(..._pcells.map(c => c.y)) : 7;
+        const offsetX    = bldgMinC + (_gc - _minCX);
+        const offsetZ    = bldgMinR + (_gc - _minCY);
 
         const boardsMat = new THREE.MeshLambertMaterial({ color: 0x8b6914, side: THREE.DoubleSide });
         new THREE.TextureLoader().load(
