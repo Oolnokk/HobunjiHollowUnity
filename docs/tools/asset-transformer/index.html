@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Asset Transformer — Hobunji Hollow</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#07101a;color:#edf5ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:13px;overflow:hidden}
+:root{
+  --bg:#07101a;--panel:#111b28;--panel2:#0d1620;--border:rgba(255,255,255,.11);
+  --acc:#6aa7ff;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185;--text:#edf5ff;--muted:#9fb4cf
+}
+button{border:1px solid rgba(106,167,255,.3);background:rgba(106,167,255,.12);color:var(--text);border-radius:7px;padding:5px 11px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .1s;white-space:nowrap}
+button:hover{background:rgba(106,167,255,.22)}
+button:disabled{opacity:.4;cursor:default}
+button.danger{border-color:rgba(251,113,133,.3);background:rgba(251,113,133,.12)}
+button.danger:hover{background:rgba(251,113,133,.22)}
+button.ok{border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.14)}
+button.ok:hover{background:rgba(52,211,153,.24)}
+input[type=text],input[type=number]{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);padding:5px 8px;outline:none;width:100%}
+input[type=number]{width:72px}
+input[type=range]{width:100%;accent-color:var(--acc)}
+input[type=checkbox]{accent-color:var(--acc);width:14px;height:14px;cursor:pointer}
+label{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;cursor:pointer}
+select{font:inherit;background:#111b28;border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);padding:5px 8px;outline:none;cursor:pointer}
+
+#shell{display:flex;flex-direction:column;height:100%}
+#titlebar{display:flex;align-items:center;gap:10px;padding:6px 12px;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0}
+#titlebar h1{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.4px}
+#titlebar a{margin-left:auto;font-size:11px;color:var(--acc);text-decoration:none;border:1px solid rgba(106,167,255,.3);border-radius:6px;padding:3px 8px}
+
+#layout{display:flex;flex:1;min-height:0}
+
+/* ── LEFT: queue ── */
+#queue-panel{width:220px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--panel)}
+#queue-header{padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:6px}
+#queue-header h2{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;flex:1}
+#queue-list{flex:1;overflow-y:auto;padding:6px}
+.q-item{display:flex;align-items:center;gap:6px;padding:6px 7px;border:1px solid rgba(255,255,255,.09);border-radius:6px;margin-bottom:4px;cursor:pointer;background:rgba(255,255,255,.03);transition:background .1s}
+.q-item:hover{background:rgba(106,167,255,.08)}
+.q-item.sel{outline:2px solid var(--acc);outline-offset:1px;background:rgba(106,167,255,.1)}
+.q-thumb{width:28px;height:28px;object-fit:contain;border-radius:3px;background:rgba(255,255,255,.06);image-rendering:pixelated;flex-shrink:0}
+.q-name{flex:1;font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.q-del{flex-shrink:0;font-size:10px;border-radius:4px;padding:2px 5px}
+#queue-footer{padding:8px;border-top:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;gap:6px}
+
+/* ── CENTRE: preview ── */
+#preview-panel{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);position:relative;overflow:hidden;min-width:0}
+#drop-zone{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);font-size:13px;pointer-events:none;transition:opacity .2s}
+#drop-zone svg{opacity:.3}
+#drop-zone.hidden{opacity:0}
+#canvas-wrap{position:relative}
+#preview-canvas{display:block;image-rendering:pixelated;cursor:crosshair}
+#checkerboard{position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.12;border-radius:2px;
+  background-image:linear-gradient(45deg,#fff 25%,transparent 25%),linear-gradient(-45deg,#fff 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#fff 75%),linear-gradient(-45deg,transparent 75%,#fff 75%);
+  background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}
+#canvas-wrap canvas{position:relative;z-index:1}
+#size-info{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--muted);background:rgba(7,16,26,.8);padding:2px 8px;border-radius:4px;pointer-events:none}
+#preview-toolbar{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;gap:6px;background:rgba(11,20,32,.85);border:1px solid var(--border);border-radius:8px;padding:5px 8px}
+
+/* ── RIGHT: controls ── */
+#controls-panel{width:260px;flex-shrink:0;display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--panel);overflow-y:auto}
+.ctrl-section{padding:10px;border-bottom:1px solid var(--border)}
+.ctrl-section h3{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:8px}
+.ctrl-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.ctrl-row label{width:80px;flex-shrink:0;font-size:11px;color:var(--muted)}
+.ctrl-row .val{width:48px;flex-shrink:0;font-size:11px;color:var(--acc);text-align:right}
+.ctrl-row input[type=range]{flex:1}
+.ctrl-row input[type=number]{width:72px}
+.ctrl-row input[type=text]{flex:1}
+.flag-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.path-row{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}
+.path-row span{font-size:11px;color:var(--muted)}
+.out-size-row{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.out-size-row span{font-size:11px;color:var(--muted)}
+#add-btn{width:100%;margin-top:4px}
+#export-btn{width:100%}
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="titlebar">
+    <h1>ASSET TRANSFORMER</h1>
+    <a href="../">← Tools</a>
+  </div>
+  <div id="layout">
+
+    <!-- Queue -->
+    <div id="queue-panel">
+      <div id="queue-header">
+        <h2>Export Queue</h2>
+        <span id="q-count" style="font-size:11px;color:var(--muted)">0</span>
+      </div>
+      <div id="queue-list"></div>
+      <div id="queue-footer">
+        <button id="export-btn" class="ok" disabled>Export ZIP</button>
+      </div>
+    </div>
+
+    <!-- Preview -->
+    <div id="preview-panel" id="preview-panel">
+      <div id="drop-zone">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#6aa7ff" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span>Drop image here or use Import button</span>
+        <span style="font-size:11px;color:#6aa7ff">PNG, GIF, WebP — any size</span>
+      </div>
+      <div id="canvas-wrap" style="display:none">
+        <div id="checkerboard"></div>
+        <canvas id="preview-canvas"></canvas>
+      </div>
+      <div id="preview-toolbar" style="display:none">
+        <button onclick="resetTransforms()" style="font-size:11px;padding:3px 8px">Reset</button>
+        <button onclick="zoomFit()" style="font-size:11px;padding:3px 8px">Fit</button>
+        <button onclick="zoom(2)" style="font-size:11px;padding:3px 8px">2×</button>
+        <button onclick="zoom(4)" style="font-size:11px;padding:3px 8px">4×</font></button>
+      </div>
+      <div id="size-info" style="display:none"></div>
+    </div>
+
+    <!-- Controls -->
+    <div id="controls-panel">
+
+      <div class="ctrl-section">
+        <h3>Source</h3>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button onclick="document.getElementById('file-input').click()" style="flex:1">Import File</button>
+          <input type="file" id="file-input" accept="image/*" style="display:none" multiple>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Source: <span id="src-name" style="color:var(--text)">—</span></div>
+        <div style="font-size:11px;color:var(--muted)">Size: <span id="src-size" style="color:var(--text)">—</span></div>
+      </div>
+
+      <div class="ctrl-section">
+        <h3>Output Canvas</h3>
+        <div class="out-size-row">
+          <span>W</span><input type="number" id="out-w" min="1" max="4096" value="200" onchange="scheduleRender()">
+          <span>H</span><input type="number" id="out-h" min="1" max="4096" value="200" onchange="scheduleRender()">
+          <button onclick="sizeFromSource()" style="font-size:11px;padding:3px 7px">From Src</button>
+        </div>
+        <div class="out-size-row">
+          <span style="font-size:11px;color:var(--muted)">Match:</span>
+          <select id="size-preset" onchange="applySizePreset()">
+            <option value="">Custom</option>
+            <option value="200,200">Portrait 200×200</option>
+            <option value="96,96">Head 96×96</option>
+            <option value="128,128">128×128</option>
+            <option value="256,256">256×256</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="ctrl-section">
+        <h3>Transform</h3>
+
+        <div class="ctrl-row">
+          <label>Scale X</label>
+          <input type="range" id="sx" min="0.05" max="4" step="0.01" value="1" oninput="syncNum('sx','sx-n');scheduleRender()">
+          <input type="number" id="sx-n" min="0.05" max="4" step="0.01" value="1" style="width:56px" oninput="syncRange('sx-n','sx');scheduleRender()">
+        </div>
+        <div class="ctrl-row">
+          <label>Scale Y</label>
+          <input type="range" id="sy" min="0.05" max="4" step="0.01" value="1" oninput="syncNum('sy','sy-n');scheduleRender()">
+          <input type="number" id="sy-n" min="0.05" max="4" step="0.01" value="1" style="width:56px" oninput="syncRange('sy-n','sy');scheduleRender()">
+        </div>
+
+        <div class="ctrl-row">
+          <label>Translate X</label>
+          <input type="range" id="tx" min="-512" max="512" step="1" value="0" oninput="syncNum('tx','tx-n');scheduleRender()">
+          <input type="number" id="tx-n" min="-512" max="512" step="1" value="0" style="width:56px" oninput="syncRange('tx-n','tx');scheduleRender()">
+        </div>
+        <div class="ctrl-row">
+          <label>Translate Y</label>
+          <input type="range" id="ty" min="-512" max="512" step="1" value="0" oninput="syncNum('ty','ty-n');scheduleRender()">
+          <input type="number" id="ty-n" min="-512" max="512" step="1" value="0" style="width:56px" oninput="syncRange('ty-n','ty');scheduleRender()">
+        </div>
+
+        <div class="ctrl-row">
+          <label>Rotate °</label>
+          <input type="range" id="rot" min="-180" max="180" step="1" value="0" oninput="syncNum('rot','rot-n');scheduleRender()">
+          <input type="number" id="rot-n" min="-180" max="180" step="1" value="0" style="width:56px" oninput="syncRange('rot-n','rot');scheduleRender()">
+        </div>
+
+        <div class="flag-row">
+          <label><input type="checkbox" id="flip-h" onchange="scheduleRender()"> Flip H</label>
+          <label><input type="checkbox" id="flip-v" onchange="scheduleRender()"> Flip V</label>
+        </div>
+
+        <div style="margin-top:4px;display:flex;gap:6px">
+          <button onclick="resetTransforms()" style="flex:1;font-size:11px">Reset</button>
+          <button onclick="copyTransforms()" style="flex:1;font-size:11px">Copy JSON</button>
+        </div>
+      </div>
+
+      <div class="ctrl-section">
+        <h3>Tint / Adjust</h3>
+        <div class="ctrl-row">
+          <label>Hue °</label>
+          <input type="range" id="hue" min="-180" max="180" step="1" value="0" oninput="syncNum('hue','hue-n');scheduleRender()">
+          <input type="number" id="hue-n" value="0" style="width:56px" oninput="syncRange('hue-n','hue');scheduleRender()">
+        </div>
+        <div class="ctrl-row">
+          <label>Saturate</label>
+          <input type="range" id="sat" min="0" max="300" step="1" value="100" oninput="syncNum('sat','sat-n');scheduleRender()">
+          <input type="number" id="sat-n" value="100" style="width:56px" oninput="syncRange('sat-n','sat');scheduleRender()">
+        </div>
+        <div class="ctrl-row">
+          <label>Brightness</label>
+          <input type="range" id="bri" min="0" max="300" step="1" value="100" oninput="syncNum('bri','bri-n');scheduleRender()">
+          <input type="number" id="bri-n" value="100" style="width:56px" oninput="syncRange('bri-n','bri');scheduleRender()">
+        </div>
+        <div class="ctrl-row">
+          <label>Contrast</label>
+          <input type="range" id="con" min="0" max="300" step="1" value="100" oninput="syncNum('con','con-n');scheduleRender()">
+          <input type="number" id="con-n" value="100" style="width:56px" oninput="syncRange('con-n','con');scheduleRender()">
+        </div>
+        <div class="ctrl-row">
+          <label>Opacity</label>
+          <input type="range" id="opa" min="0" max="100" step="1" value="100" oninput="syncNum('opa','opa-n');scheduleRender()">
+          <input type="number" id="opa-n" value="100" style="width:56px" oninput="syncRange('opa-n','opa');scheduleRender()">
+        </div>
+      </div>
+
+      <div class="ctrl-section">
+        <h3>Output Path</h3>
+        <div class="path-row">
+          <span>Path inside ZIP (mirrors repo asset folder)</span>
+          <input type="text" id="out-path" placeholder="e.g. portraitsprites/head_mashtz_m.png">
+        </div>
+        <button id="add-btn" onclick="addToQueue()">Add to Queue</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let srcImg = null;
+let srcName = '';
+let renderPending = false;
+const queue = [];  // [{name, path, blob, thumbUrl}]
+let selQIdx = -1;
+
+const canvas = document.getElementById('preview-canvas');
+const ctx = canvas.getContext('2d');
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function syncNum(rangeId, numId) {
+  document.getElementById(numId).value = document.getElementById(rangeId).value;
+}
+function syncRange(numId, rangeId) {
+  document.getElementById(rangeId).value = document.getElementById(numId).value;
+}
+function n(id) { return parseFloat(document.getElementById(id).value) || 0; }
+function b(id) { return document.getElementById(id).checked; }
+
+function scheduleRender() {
+  if (renderPending) return;
+  renderPending = true;
+  requestAnimationFrame(() => { renderPending = false; render(); });
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render() {
+  if (!srcImg) return;
+
+  const ow = Math.max(1, Math.round(n('out-w')));
+  const oh = Math.max(1, Math.round(n('out-h')));
+  canvas.width  = ow;
+  canvas.height = oh;
+
+  ctx.clearRect(0, 0, ow, oh);
+
+  const sx  = n('sx');
+  const sy  = n('sy');
+  const tx  = n('tx');
+  const ty  = n('ty');
+  const rot = n('rot') * Math.PI / 180;
+  const fh  = b('flip-h');
+  const fv  = b('flip-v');
+
+  const hue = n('hue');
+  const sat = n('sat');
+  const bri = n('bri');
+  const con = n('con');
+  const opa = n('opa') / 100;
+
+  ctx.save();
+  ctx.globalAlpha = opa;
+
+  const filterParts = [];
+  if (hue !== 0)   filterParts.push(`hue-rotate(${hue}deg)`);
+  if (sat !== 100) filterParts.push(`saturate(${sat}%)`);
+  if (bri !== 100) filterParts.push(`brightness(${bri}%)`);
+  if (con !== 100) filterParts.push(`contrast(${con}%)`);
+  if (filterParts.length) ctx.filter = filterParts.join(' ');
+
+  ctx.translate(ow / 2 + tx, oh / 2 + ty);
+  ctx.rotate(rot);
+  ctx.scale(sx * (fh ? -1 : 1), sy * (fv ? -1 : 1));
+
+  const dw = srcImg.naturalWidth;
+  const dh = srcImg.naturalHeight;
+  ctx.drawImage(srcImg, -dw / 2, -dh / 2, dw, dh);
+  ctx.restore();
+
+  updateSizeInfo(ow, oh);
+  syncCanvasDisplay();
+}
+
+function syncCanvasDisplay() {
+  // Scale the canvas CSS so it fits the preview panel without distortion.
+  const wrap = document.getElementById('canvas-wrap');
+  const panel = document.getElementById('preview-panel');
+  const pw = panel.clientWidth - 32;
+  const ph = panel.clientHeight - 32;
+  const scale = Math.min(1, pw / canvas.width, ph / canvas.height);
+  const dispScale = Math.max(1, Math.floor(scale > 0.5 ? 1 : 1 / scale > 8 ? 8 : Math.round(1 / scale)));
+  // Use integer zoom for pixel art clarity
+  const fitScale = Math.min(pw / canvas.width, ph / canvas.height);
+  const cssScale = Math.min(8, Math.max(0.25, fitScale));
+  canvas.style.width  = (canvas.width  * cssScale) + 'px';
+  canvas.style.height = (canvas.height * cssScale) + 'px';
+}
+
+function updateSizeInfo(w, h) {
+  document.getElementById('size-info').textContent = `${w} × ${h} px`;
+}
+
+// ── Source loading ────────────────────────────────────────────────────────────
+function loadImageFile(file) {
+  srcName = file.name;
+  document.getElementById('src-name').textContent = file.name;
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    srcImg = img;
+    document.getElementById('src-size').textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+    document.getElementById('drop-zone').classList.add('hidden');
+    document.getElementById('canvas-wrap').style.display = '';
+    document.getElementById('preview-toolbar').style.display = '';
+    document.getElementById('size-info').style.display = '';
+
+    // Auto-set output size to source
+    document.getElementById('out-w').value = img.naturalWidth;
+    document.getElementById('out-h').value = img.naturalHeight;
+
+    // Auto-suggest output path based on filename
+    if (!document.getElementById('out-path').value) {
+      document.getElementById('out-path').value = file.name;
+    }
+
+    render();
+  };
+  img.src = url;
+}
+
+document.getElementById('file-input').addEventListener('change', e => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  // Load first file as active source; remaining go straight to queue if they have paths? No — just load first.
+  loadImageFile(files[0]);
+  e.target.value = '';
+});
+
+// Drag-and-drop
+const previewPanel = document.getElementById('preview-panel');
+previewPanel.addEventListener('dragover', e => { e.preventDefault(); });
+previewPanel.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) loadImageFile(file);
+});
+
+// ── Transform controls ────────────────────────────────────────────────────────
+function resetTransforms() {
+  ['sx','sy'].forEach(id => { document.getElementById(id).value = 1; document.getElementById(id+'-n').value = 1; });
+  ['tx','ty','rot','hue'].forEach(id => { document.getElementById(id).value = 0; document.getElementById(id+'-n').value = 0; });
+  document.getElementById('sat').value = document.getElementById('sat-n').value = 100;
+  document.getElementById('bri').value = document.getElementById('bri-n').value = 100;
+  document.getElementById('con').value = document.getElementById('con-n').value = 100;
+  document.getElementById('opa').value = document.getElementById('opa-n').value = 100;
+  document.getElementById('flip-h').checked = false;
+  document.getElementById('flip-v').checked = false;
+  scheduleRender();
+}
+
+function copyTransforms() {
+  const obj = {
+    scaleX: n('sx'), scaleY: n('sy'),
+    translateX: n('tx'), translateY: n('ty'),
+    rotateDeg: n('rot'),
+    flipH: b('flip-h'), flipV: b('flip-v'),
+    hue: n('hue'), saturate: n('sat'), brightness: n('bri'), contrast: n('con'), opacity: n('opa'),
+    outputW: n('out-w'), outputH: n('out-h'),
+  };
+  navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).then(() => {
+    const btn = event.target; btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy JSON', 1200);
+  });
+}
+
+function sizeFromSource() {
+  if (!srcImg) return;
+  document.getElementById('out-w').value = srcImg.naturalWidth;
+  document.getElementById('out-h').value = srcImg.naturalHeight;
+  scheduleRender();
+}
+
+function applySizePreset() {
+  const val = document.getElementById('size-preset').value;
+  if (!val) return;
+  const [w, h] = val.split(',').map(Number);
+  document.getElementById('out-w').value = w;
+  document.getElementById('out-h').value = h;
+  scheduleRender();
+}
+
+function zoomFit() { syncCanvasDisplay(); }
+function zoom(scale) {
+  canvas.style.width  = (canvas.width  * scale) + 'px';
+  canvas.style.height = (canvas.height * scale) + 'px';
+}
+
+// ── Queue ─────────────────────────────────────────────────────────────────────
+function addToQueue() {
+  if (!srcImg) return;
+  const path = document.getElementById('out-path').value.trim();
+  if (!path) { alert('Set an output path first.'); return; }
+
+  canvas.toBlob(blob => {
+    const name = path.split('/').pop();
+    const thumbUrl = URL.createObjectURL(blob);
+    queue.push({ name, path, blob, thumbUrl, srcName });
+    selQIdx = queue.length - 1;
+    renderQueue();
+    document.getElementById('export-btn').disabled = false;
+  }, 'image/png');
+}
+
+function removeFromQueue(idx) {
+  queue.splice(idx, 1);
+  if (selQIdx >= queue.length) selQIdx = queue.length - 1;
+  renderQueue();
+  document.getElementById('export-btn').disabled = queue.length === 0;
+}
+
+function renderQueue() {
+  const list = document.getElementById('queue-list');
+  document.getElementById('q-count').textContent = queue.length;
+  list.innerHTML = '';
+  queue.forEach((item, i) => {
+    const el = document.createElement('div');
+    el.className = 'q-item' + (i === selQIdx ? ' sel' : '');
+    el.innerHTML = `
+      <img class="q-thumb" src="${item.thumbUrl}">
+      <div class="q-name" title="${item.path}">${item.name}</div>
+      <button class="q-del danger" onclick="event.stopPropagation();removeFromQueue(${i})">✕</button>`;
+    el.addEventListener('click', () => { selQIdx = i; renderQueue(); });
+    list.appendChild(el);
+  });
+}
+
+// ── Export ZIP ────────────────────────────────────────────────────────────────
+document.getElementById('export-btn').addEventListener('click', async () => {
+  if (!queue.length) return;
+  const zip = new JSZip();
+  for (const item of queue) {
+    zip.file(item.path, item.blob);
+  }
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'assets-export.zip';
+  a.click();
+});
+</script>
+</body>
+</html>
