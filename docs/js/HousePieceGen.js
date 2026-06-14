@@ -667,8 +667,9 @@
         continue;
       }
 
-      // Skip invisible floor undersides of extension faces
+      // Skip interior-only faces: extension floor undersides, main building floor/ceiling
       if (f.extensionFace === 'floor') continue;
+      if (tag === 'floor' || tag === 'ceiling') continue;
 
       // Collect roof faces for shingle generation
       if (tag === 'roof') roofFaces.push(fOff);
