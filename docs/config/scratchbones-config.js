@@ -3104,8 +3104,8 @@ window.SCRATCHBONES_CONFIG = {
           "kenkari": { "female": 0.35, "male": 0.4 },
           "tletingan": { "male": 0.45 },
           "engh-sho": { "female": 0.5, "male": 0.55 },
-          "mao-ao": { "female": 0.65, "male": 0.7 },
-          "mashtzarr": { "male": 0.8 }
+          "mao-ao": { "female": 0.65, "male": 1.5 },
+          "mashtzarr": { "male": 2.5 }
         },
         "behindView": {
           "headUrls": {
