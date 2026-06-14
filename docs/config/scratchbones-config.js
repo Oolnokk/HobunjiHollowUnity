@@ -3096,6 +3096,13 @@ window.SCRATCHBONES_CONFIG = {
         "modelWidth": 1,
         "worldModelWidth": 0.9,
         "worldAlphaTest": 0.01,
+        "groundShadow": {
+          "radiusX": 0.34,
+          "radiusZ": 0.22,
+          "opacity": 0.28,
+          "color": "#1b1712",
+          "surfaceOffsetY": 0.018
+        },
         "anchorZ": 0,
         "alphaTest": 0.001,
         "backPlaneOffsetZ": 0.001,
