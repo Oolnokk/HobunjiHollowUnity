@@ -733,9 +733,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hoodHideFrontAndSideHair = Boolean(resolveOptionLayers(hood, resolvedFighter).length);
   const hiddenCosmeticGroups = hoodHideFrontAndSideHair ? new Set([hairFront, hairSide, hairSideL]) : null;
 
-  const preBackLayers    = [];  // back hairstyle + hat-back, drawn before arms
-  const sideLeftLayers   = [];  // left side hairstyle, drawn before head
-  const facialHairLayers = [];  // facial hair, drawn after head
+  const preBackLayers          = [];  // back hairstyle + hat-back, drawn before arms
+  const sideLeftLayers         = [];  // left side hairstyle, drawn before head
+  const preHeadFacialHairLayers = [];  // facial hair with pos:'back', drawn before head (e.g. Mashtzarr beards behind trunk)
+  const facialHairLayers       = [];  // facial hair, drawn after head
   const eyesLayers       = [];  // eyes, drawn after facial hair
   const upperFaceLayers  = [];  // upper-face accessories, drawn above expression layers
   const frontHairLayers   = [];  // front fringe hair, drawn after facial hair and ur-head overlays
@@ -773,7 +774,16 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       }
     }
     pushToTarget(hairSideL, sideLeftLayers);
-    pushToTarget(facialHair, facialHairLayers);
+    if (facialHair && !hiddenCosmeticGroups?.has(facialHair)) {
+      const fhLayers = resolveOptionLayers(facialHair, resolvedFighter);
+      for (const layer of fhLayers) {
+        const key = layer.paletteColorKey;
+        const layerTintSlot = (!key || key === 'A') ? facialHair.tintSlot
+          : (facialHair.tintSlot ? `${facialHair.tintSlot}_${key}` : null);
+        const entry = { layer, filter: filterFor(layerTintSlot), group: facialHair };
+        (layer.pos === 'back' ? preHeadFacialHairLayers : facialHairLayers).push(entry);
+      }
+    }
     pushToTarget(eyes, eyesLayerAboveUnderHoodHat ? elevatedEyeAccessoryLayers : eyesLayers);
     pushToTarget(upperFace, upperFaceLayers);
     pushToTarget(hairFront, frontHairLayers);
@@ -825,7 +835,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     };
     [
       preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
-      rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
+      preHeadFacialHairLayers, rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
       elevatedEyeAccessoryLayers, hoodLayers, pauldronLayers, hatUnderLayers,
       hatOverLayers,
     ].forEach(useBehindLayers);
@@ -845,6 +855,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ...torsoClothingLayers.map(({ layer }) => layer.url),
     ...overwearLayers.map(({ layer }) => layer.url),
     ...sideLeftLayers.map(({ layer }) => layer.url),
+    ...preHeadFacialHairLayers.map(({ layer }) => layer.url),
     ...rightSideHairLayers.map(({ layer }) => layer.url),
     ...facialHairLayers.map(({ layer }) => layer.url),
     ...(renderBehindView ? behindSnowgogglesLayers : eyesLayers).map(({ layer }) => layer.url),
@@ -1007,6 +1018,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawBreathingLayers(torsoClothingLayers);
   drawBreathingLayers(overwearLayers);
   drawEmoteLayers(sideLeftLayers);
+  drawEmoteLayers(preHeadFacialHairLayers);
   if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), filterA); }
   const _isMaskSpecies = mouthImg && _isMouthMask(speciesId);
   drawEmoteLayers(rightSideHairLayers);

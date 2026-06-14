@@ -361,6 +361,50 @@
     {
       "id": "appearance::Rakakoan_F::rakakoan_wrapped_eyepatch",
       "path": "./appearance/kenkari/rakakoan_wrapped_eyepatch.json"
+    },
+    {
+      "id": "appearance::Mashtzarr_M::mashtz_wildbeard",
+      "path": "./appearance/mashtzarr/wildbeard.json"
+    },
+    {
+      "id": "appearance::Mashtzarr_M::mashtz_smooth_striped",
+      "path": "./appearance/mashtzarr/smooth_striped.json"
+    },
+    {
+      "id": "appearance::Mashtzarr_M::mashtz_tuft",
+      "path": "./appearance/mashtzarr/tuft.json"
+    },
+    {
+      "id": "appearance::Mashtzarr_M::mashtz_forwardtuft_short",
+      "path": "./appearance/mashtzarr/forwardtuft_short.json"
+    },
+    {
+      "id": "appearance::Mashtzarr_M::mashtz_forwardtuft_long",
+      "path": "./appearance/mashtzarr/forwardtuft_long.json"
+    },
+    {
+      "id": "appearance::Mashtzarr_M::mashtz_splayedknot_medium",
+      "path": "./appearance/mashtzarr/splayedknot_medium.json"
+    },
+    {
+      "id": "appearance::Mashtzarr_M::mashtz_long_ponytail",
+      "path": "./appearance/mashtzarr/long_ponytail.json"
+    },
+    {
+      "id": "appearance::Mashtzarr_M::mashtz_shoulder_length_drape",
+      "path": "./appearance/mashtzarr/shoulder_length_drape.json"
+    },
+    {
+      "id": "appearance::Mashtzarr_M::mashtz_braid-R",
+      "path": "./appearance/mashtzarr/braid-R.json"
+    },
+    {
+      "id": "appearance::Mashtzarr_M::mashtz_braidcluster-R",
+      "path": "./appearance/mashtzarr/braidcluster-R.json"
+    },
+    {
+      "id": "appearance::Mashtzarr_M::mashtz_braid-L",
+      "path": "./appearance/mashtzarr/braid-L.json"
     }
   ]
 }

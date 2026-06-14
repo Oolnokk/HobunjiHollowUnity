@@ -16,6 +16,17 @@
       "sy": 1
     },
     "allowedCosmetics": [
+      "appearance::Mashtzarr_M::mashtz_smooth_striped",
+      "appearance::Mashtzarr_M::mashtz_tuft",
+      "appearance::Mashtzarr_M::mashtz_forwardtuft_short",
+      "appearance::Mashtzarr_M::mashtz_forwardtuft_long",
+      "appearance::Mashtzarr_M::mashtz_splayedknot_medium",
+      "appearance::Mashtzarr_M::mashtz_long_ponytail",
+      "appearance::Mashtzarr_M::mashtz_shoulder_length_drape",
+      "appearance::Mashtzarr_M::mashtz_braid-R",
+      "appearance::Mashtzarr_M::mashtz_braidcluster-R",
+      "appearance::Mashtzarr_M::mashtz_braid-L",
+      "appearance::Mashtzarr_M::mashtz_wildbeard",
       "fine_hood",
       "tankan_tunic",
       "bandolier1",
@@ -24,6 +35,32 @@
       "fine_poncho"
     ],
     "cosmeticWeights": {
+      "hairFront": {
+        "none": 15,
+        "mashtz_smooth_striped": 20,
+        "mashtz_tuft": 25,
+        "mashtz_forwardtuft_short": 20,
+        "mashtz_forwardtuft_long": 20
+      },
+      "hairBack": {
+        "none": 50,
+        "mashtz_splayedknot_medium": 25,
+        "mashtz_long_ponytail": 25
+      },
+      "hairSide": {
+        "none": 55,
+        "mashtz_shoulder_length_drape": 15,
+        "mashtz_braid-R": 15,
+        "mashtz_braidcluster-R": 15
+      },
+      "hairSideL": {
+        "none": 60,
+        "mashtz_braid-L": 40
+      },
+      "facialHair": {
+        "none": 60,
+        "mashtz_wildbeard": 40
+      },
       "hood": {
         "none": 80,
         "fine_hood": 20
