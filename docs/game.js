@@ -2641,6 +2641,10 @@
       }
 
       let activeItemIndex = 0;
+      // Declared before createInitialGrid() because recomputeWater() (called
+      // inside createInitialGrid) sets these — they must not be in TDZ.
+      let _waterSimDirty = true;
+      let _flowingTrenchTiles = [];
       let grid = createInitialGrid();
       // Apply any saved farm layout (tile overrides only; object positions applied after initWorldObjects)
       { const _savedLayout = loadFarmLayout(); if (_savedLayout) applyFarmLayoutToGrid(_savedLayout); }
@@ -4045,12 +4049,6 @@
 
       // Global water time — updated in gameLoop
       let waterTime = 0;
-      // Set true after recomputeWater() so updateWaterMeshes does a full refresh;
-      // cleared after the refresh so subsequent frames only push uTime.
-      let _waterSimDirty = true;
-      // Flowing trench tile positions — rebuilt each sim tick to avoid a full
-      // 936-tile scan every frame in updateWaterParticles().
-      let _flowingTrenchTiles = [];
       const reticleMat = new THREE.MeshBasicMaterial({
         color: 0xf9e28a, wireframe: true, transparent: true, opacity: 0.85,
       });
@@ -6033,7 +6031,7 @@
         }
 
         // Signal updateWaterMeshes to do a full refresh this frame.
-        if (targetGrid === grid) _waterSimDirty = true;
+        _waterSimDirty = true;
       }
 
       function trenchNeighbors(col, row) {
