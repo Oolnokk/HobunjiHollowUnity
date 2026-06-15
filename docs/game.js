@@ -1410,8 +1410,8 @@
 
       function normalizeRoutes(routes, legacyPaths = []) {
         const out = (routes || []).filter(r => r && Array.isArray(r.nodes) && r.nodes.length > 0)
-          .map(r => ({ id: r.id, label: r.label || 'Route', area: r.area || 'farm', nodes: r.nodes.map(n => [n[0], n[1]]) }));
-        if (!out.length) legacyPaths.forEach(p => out.push({ id: 'legacy_' + (p.id || p.label || out.length), label: p.label || 'Legacy route', area: p.area || 'farm', nodes: p.nodes.map(n => [n[0], n[1]]) }));
+          .map(r => ({ id: r.id, label: r.label || 'Route', area: normalizeNpcArea(r.area || 'farm'), nodes: r.nodes.map(n => [n[0], n[1]]) }));
+        if (!out.length) legacyPaths.forEach(p => out.push({ id: 'legacy_' + (p.id || p.label || out.length), label: p.label || 'Legacy route', area: normalizeNpcArea(p.area || 'farm'), nodes: p.nodes.map(n => [n[0], n[1]]) }));
         return out;
       }
 
@@ -1494,8 +1494,15 @@
 
       function parseNpcTimeMinutes(t) { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
       function currentGameMinutes() { return Math.round(getHour() * 60); }
+      function normalizeNpcArea(area) { return area === 'interior' ? 'interior' : area === 'town' || area === 'hobunji_main_town' ? 'town' : 'farm'; }
+      function sceneForNpcArea(area) { return normalizeNpcArea(area) === 'interior' ? interiorScene : normalizeNpcArea(area) === 'town' ? townScene : scene; }
+      function npcGridForArea(area) { return normalizeNpcArea(area) === 'interior' ? interiorGrid : normalizeNpcArea(area) === 'town' ? townGrid : grid; }
+      function npcSurfaceY(area, c, r) {
+        const tile = npcGridForArea(area)[r]?.[c];
+        return tile ? tileSurfaceY(tile.type) : 0;
+      }
       function resolveNpcSpawnPosition(rec, target) {
-        const legacy = worldNpcPaths.find(p => p.npcId === rec?.id);
+        const legacy = target?.legacyPath || null;
         if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[0]; return { area: legacy.area || target?.area || 'farm', c, r }; }
         return target;
       }
@@ -1505,11 +1512,11 @@
         const now = currentGameMinutes();
         for (const rule of hooks.rules || []) {
           const start = parseNpcTimeMinutes(rule.start), end = parseNpcTimeMinutes(rule.end);
-          if (start !== null && end !== null && now >= start && now < end && Number.isFinite(rule.c) && Number.isFinite(rule.r)) return { area: rule.area || hooks.defaultMapId || 'town', c: rule.c, r: rule.r };
+          if (start !== null && end !== null && now >= start && now < end && Number.isFinite(rule.c) && Number.isFinite(rule.r)) return { area: normalizeNpcArea(rule.area || hooks.defaultMapId || 'town'), c: rule.c, r: rule.r };
         }
-        if (hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) return hooks.defaultPosition;
+        if (hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) return { ...hooks.defaultPosition, area: normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town') };
         const legacy = worldNpcPaths.find(p => p.npcId === rec?.id);
-        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; return { area: legacy.area || 'farm', c, r }; }
+        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; return { area: normalizeNpcArea(legacy.area || 'farm'), c, r, legacyPath: legacy }; }
         return null;
       }
 
@@ -1566,23 +1573,40 @@
         root.add(avatarGroup);
 
         const spawnTarget = resolveNpcSpawnPosition(rec, initialTarget);
-        const area = spawnTarget.area === 'interior' ? 'interior' : spawnTarget.area === 'town' || spawnTarget.area === 'hobunji_main_town' ? 'town' : 'farm';
-        const targetSceneForArea = () => area === 'interior' ? interiorScene : area === 'town' ? townScene : scene;
-        const surfY = (c, r) => {
-          const g = area === 'interior' ? interiorGrid : area === 'town' ? townGrid : grid;
-          const tile = g[r]?.[c];
-          return tile ? tileSurfaceY(tile.type) : 0;
-        };
-        root.position.set(spawnTarget.c + 0.5, surfY(spawnTarget.c, spawnTarget.r), spawnTarget.r + 0.5);
-        const sc = targetSceneForArea();
-        if (sc) sc.add(root);
+        const spawnArea = normalizeNpcArea(spawnTarget.area);
+        root.position.set(spawnTarget.c + 0.5, npcSurfaceY(spawnArea, spawnTarget.c, spawnTarget.r), spawnTarget.r + 0.5);
+        const sc = sceneForNpcArea(spawnArea);
+        if (sc) { sc.add(root); root._npcScene = sc; root._pendingTownAdd = false; }
         else root._pendingTownAdd = true;
 
         const walker = {
-          root, rec, profile, area,
+          root, rec, profile, area: spawnArea,
           state: 'idle', routeNode: null, previousRouteNode: null, routeTarget: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {},
+          resetRouteState() {
+            this.state = 'idle';
+            this.routeNode = null;
+            this.previousRouteNode = null;
+            this.routeTarget = null;
+          },
+          transferToArea(nextArea, target) {
+            const area = normalizeNpcArea(nextArea);
+            if (area === this.area) return;
+            if (root._npcScene) root._npcScene.remove(root);
+            else {
+              scene.remove(root);
+              interiorScene.remove(root);
+              townScene?.remove(root);
+            }
+            const nextScene = sceneForNpcArea(area);
+            root._pendingTownAdd = false;
+            if (nextScene) { nextScene.add(root); root._npcScene = nextScene; }
+            else { root._npcScene = null; root._pendingTownAdd = area === 'town'; }
+            this.area = area;
+            this.resetRouteState();
+            root.position.set(target.c + 0.5, npcSurfaceY(area, target.c, target.r), target.r + 0.5);
+          },
           moveToward(tx, tz, dt) {
             const cfg = npcMovementConfig();
             const speed = (cfg.speedTilesPerSecond ?? 1.25) * this.catchup;
@@ -1602,12 +1626,14 @@
             if (this.pause === Infinity) return;
             const target = resolveNpcScheduleTarget(this.rec);
             if (!target) return;
+            const targetArea = normalizeNpcArea(target.area);
+            if (targetArea !== this.area) this.transferToArea(targetArea, target);
             const cfg = npcMovementConfig();
             const tx = target.c + 0.5, tz = target.r + 0.5;
             const arrival = cfg.arrivalRadiusTiles ?? 0.18;
             if (Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) this.state = 'idle';
             if (this.state === 'idle' && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
-              const groundY = surfY(target.c, target.r);
+              const groundY = npcSurfaceY(this.area, target.c, target.r);
               root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
               groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
               return;
@@ -1634,7 +1660,7 @@
               this.routeNode = this.routeTarget; this.routeTarget = null; this.previousRouteNode = null; this.state = 'on-route';
             }
             if (this.state === 'breakoff') this.state = 'idle';
-            const ty = surfY(Math.floor(root.position.x), Math.floor(root.position.z));
+            const ty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
             root.position.y += (ty - root.position.y) * 0.2;
             root.position.y += Math.sin(performance.now() / 140) * 0.012;
             groundShadow.position.y = ty - root.position.y + characterGroundShadowSurfaceOffset();
@@ -1914,6 +1940,7 @@
           if (w.root._pendingTownAdd) {
             w.root._pendingTownAdd = false;
             townScene.add(w.root);
+            w.root._npcScene = townScene;
           }
         }
 
@@ -3921,7 +3948,7 @@
         interiorWorldObjects.set(col + ',' + row, {
           onAction(action) {
             if (action !== 'obj_interact') return { ok: false, message: 'Ring the shop bell.' };
-            const shopkeeperPresent = npcWalkers.some(w => SHOPKEEPER_IDS.has(w.npcId));
+            const shopkeeperPresent = npcWalkers.some(w => SHOPKEEPER_IDS.has(w.rec?.id));
             if (!shopkeeperPresent) {
               return { ok: false, message: 'No one is at the counter. Come back later.' };
             }
