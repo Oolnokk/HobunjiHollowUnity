@@ -1839,6 +1839,60 @@
       }
 
       // ── Building interior scenes ─────────────────────────────────────
+
+      // Derives WallBuilder panels from a tile grid — any solid tile adjacent to a
+      // walkable tile produces a wall face on that edge. Contiguous same-facing
+      // segments on the same row/column are merged into a single panel.
+      function buildWallPanelsFromGrid(bGrid, cols, rows, wallHeight) {
+        const panels = [];
+        const segN = [], segS = [], segW = [], segE = [];
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (!isSolid(bGrid[r]?.[c]?.type)) continue;
+            if (r + 1 < rows && !isSolid(bGrid[r + 1]?.[c]?.type)) segN.push({ z: r + 1, c });
+            if (r - 1 >= 0  && !isSolid(bGrid[r - 1]?.[c]?.type)) segS.push({ z: r,     c });
+            if (c + 1 < cols && !isSolid(bGrid[r]?.[c + 1]?.type)) segW.push({ x: c + 1, r });
+            if (c - 1 >= 0  && !isSolid(bGrid[r]?.[c - 1]?.type)) segE.push({ x: c,     r });
+          }
+        }
+        const mergeH = (segs, rot, prefix) => {
+          const byZ = {};
+          for (const s of segs) { (byZ[s.z] = byZ[s.z] || []).push(s.c); }
+          let i = 0;
+          for (const [z, cs] of Object.entries(byZ)) {
+            const sorted = [...new Set(cs)].sort((a, b) => a - b);
+            let s = sorted[0], p = sorted[0];
+            for (let j = 1; j <= sorted.length; j++) {
+              if (j === sorted.length || sorted[j] !== p + 1) {
+                const w = (p + 1) - s;
+                panels.push({ id: prefix + (i++), width: w, height: wallHeight, position: [s + w / 2, 0, +z], rotationDeg: rot });
+                s = sorted[j]; p = sorted[j];
+              } else { p = sorted[j]; }
+            }
+          }
+        };
+        const mergeV = (segs, rot, prefix) => {
+          const byX = {};
+          for (const s of segs) { (byX[s.x] = byX[s.x] || []).push(s.r); }
+          let i = 0;
+          for (const [x, rs] of Object.entries(byX)) {
+            const sorted = [...new Set(rs)].sort((a, b) => a - b);
+            let s = sorted[0], p = sorted[0];
+            for (let j = 1; j <= sorted.length; j++) {
+              if (j === sorted.length || sorted[j] !== p + 1) {
+                const w = (p + 1) - s;
+                panels.push({ id: prefix + (i++), width: w, height: wallHeight, position: [+x, 0, s + w / 2], rotationDeg: rot });
+                s = sorted[j]; p = sorted[j];
+              } else { p = sorted[j]; }
+            }
+          }
+        };
+        mergeH(segN, [0, 0,   0], 'wn_');
+        mergeH(segS, [0, 180, 0], 'ws_');
+        mergeV(segW, [0, 90,  0], 'ww_');
+        mergeV(segE, [0, -90, 0], 'we_');
+        return panels;
+      }
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
@@ -1893,6 +1947,12 @@
           const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
           fl.position.set(c2 + 0.5, -0.05, r2 + 0.5);
           bScene.add(fl);
+        }
+        // Brick walls derived from solid tiles — same material and params as player house interior
+        const wallPanels = buildWallPanelsFromGrid(bGrid, cols, rows, INTERIOR_WALL_HEIGHT);
+        if (wallPanels.length) {
+          const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+          bScene.add(wallGroup);
         }
         const info = { scene: bScene, grid: bGrid, cols, rows, transitions };
         _buildingScenes.set(mapId, info);
