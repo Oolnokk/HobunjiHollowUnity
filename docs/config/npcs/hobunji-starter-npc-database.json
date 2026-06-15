@@ -2704,7 +2704,7 @@
           {
             "from": "06:00",
             "to": "12:00",
-            "mapId": "map_i_potion_shop",
+            "mapId": "map_i_kunjis_potions_F1",
             "position": {
               "c": 3,
               "r": 3
@@ -2888,7 +2888,7 @@
           {
             "from": "12:00",
             "to": "22:00",
-            "mapId": "map_i_potion_shop",
+            "mapId": "map_i_kunjis_potions_F1",
             "position": {
               "c": 3,
               "r": 4

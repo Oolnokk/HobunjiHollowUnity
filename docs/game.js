@@ -1391,6 +1391,7 @@
         camTargetX = player.x / TILE;
         camTargetZ = player.y / TILE;
         _transitionLatch = travelAreaKey();
+        if (t.target !== 'building' && t.target !== 'exit_building') logMapSwap('travel', currentArea);
       }
 
 
@@ -1952,9 +1953,10 @@
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
         let mapData = null;
+        let loadSource = 'missing';
         try {
           const resp = await fetch('config/maps/' + mapId + '.json');
-          if (resp.ok) mapData = await resp.json();
+          if (resp.ok) { mapData = await resp.json(); loadSource = 'config'; }
         } catch(_) {}
         // Fallback: load map data from cached workspace JSON
         if (!mapData && _workspaceMaps) {
@@ -1966,7 +1968,8 @@
               if (Number.isFinite(c) && Number.isFinite(r)) tileArr.push({ c, r, type: val.type || 'grass' });
             }
             mapData = { cols: wsMap.cols, rows: wsMap.rows, tiles: tileArr, transitions: wsMap.transitions || [] };
-            window.__farmLog?.(`[building] ${mapId}: loaded from workspace (${mapData.cols}x${mapData.rows})`, 'info');
+            loadSource = 'workspace';
+            window.__farmLog?.(`[building] ${mapId}: loaded from workspace fallback (${mapData.cols}x${mapData.rows})`, 'warn');
           }
         }
 
@@ -2066,7 +2069,7 @@
             worldRoutes = worldRoutes.filter(r => (r.area || 'farm') !== mapId).concat(buildingRoutes);
             rebuildRouteGraphs();
           }
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes };
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config' };
           _buildingScenes.set(mapId, info);
           for (const w of npcWalkers) {
             if (w.root._pendingBuildingAdd === mapId) {
@@ -2122,7 +2125,7 @@
           const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
           bScene.add(wallGroup);
         }
-        const info = { scene: bScene, grid: bGrid, cols, rows, transitions };
+        const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config' };
         _buildingScenes.set(mapId, info);
         for (const w of npcWalkers) {
           if (w.root._pendingBuildingAdd === mapId) {
@@ -2136,6 +2139,24 @@
         debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ')');
       }
 
+      function buildingSpawnFromExit(bi, fallbackCols, fallbackRows) {
+        const exitTiles = (bi?.transitions || []).filter(t => t.target === 'exit_building');
+        if (!exitTiles.length) return { col: Math.floor(fallbackCols / 2), row: Math.max(0, fallbackRows - 2) };
+        const avgCol = exitTiles.reduce((sum, t) => sum + t.col, 0) / exitTiles.length;
+        const northRow = Math.min(...exitTiles.map(t => t.row)) - 1;
+        return {
+          col: clamp(Math.round(avgCol), 0, fallbackCols - 1),
+          row: clamp(northRow, 0, fallbackRows - 1)
+        };
+      }
+
+      function logMapSwap(label, area, extra = {}) {
+        const source = extra.source || 'runtime';
+        const fallback = !!extra.fallback;
+        const loading = !!extra.loading;
+        window.__farmLog?.(`[map] ${label}: currentMap=${area} source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}`, fallback ? 'warn' : 'info');
+      }
+
       function enterBuilding(mapId, defaultCol, defaultRow) {
         if (!_buildingScenes.has(mapId)) loadBuildingScene(mapId);
         const fromScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || null)
@@ -2147,10 +2168,11 @@
         currentArea = mapId;
         const bi = _buildingScenes.get(mapId);
         const bCols = bi?.cols || 20, bRows = bi?.rows || 20;
-        // Spawn just inside the exit transition; fall back to centre-bottom
-        const exitT = bi?.transitions?.find(t => t.target === 'exit_building');
-        const col = defaultCol ?? exitT?.col ?? Math.floor(bCols / 2);
-        const row = defaultRow ?? (exitT ? Math.max(0, exitT.row - 1) : bRows - 2);
+        // Default entry is one tile north of the building's exit. Explicit
+        // inter-floor spawn coordinates still win when an exit supplies them.
+        const exitSpawn = buildingSpawnFromExit(bi, bCols, bRows);
+        const col = Number.isFinite(defaultCol) ? defaultCol : exitSpawn.col;
+        const row = Number.isFinite(defaultRow) ? defaultRow : exitSpawn.row;
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         facingAngle = Math.PI / 2; player.angle = facingAngle;
@@ -2163,6 +2185,7 @@
         }
         if (bi?.scene) { bi.scene.add(playerMesh); bi.scene.add(playerGroundShadow); }
         refreshActionBar();
+        logMapSwap('enterBuilding', currentArea, { source: bi?.loadSource || 'loading', fallback: bi?.fallback || !bi, loading: !bi });
       }
 
       function exitBuilding() {
@@ -2187,6 +2210,7 @@
             toScene.add(reticleWavyGroup);
           }
           refreshActionBar();
+          logMapSwap('exitBuilding', currentArea);
         });
       }
 

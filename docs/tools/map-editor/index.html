@@ -339,8 +339,8 @@ function buildBuildingInteriorMapV1(m) {
     const [c, r] = key.split(',').map(Number);
     if (!Number.isFinite(c) || !Number.isFinite(r) || c < 0 || r < 0 || c >= m.cols || r >= m.rows) return;
     const type = m.tiles[key]?.type || 'grass';
+    floor.push([c, r]);
     if (type === 'rock') colliders.push([c, r]);
-    else floor.push([c, r]);
   });
   base.floor = floor;
   base.colliders = colliders;
