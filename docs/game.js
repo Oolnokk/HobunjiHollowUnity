@@ -1763,15 +1763,7 @@
       }
 
       // ── Town zone ──────────────────────────────────────────────────
-      function loadTownLayout() {
-        try {
-          const raw = localStorage.getItem('hobunji_town_v1');
-          if (!raw) return null;
-          return JSON.parse(raw);
-        } catch(_) { return null; }
-      }
-
-      // Fallback: if no localStorage town data, load from the workspace JSON file.
+      // Loads the town layout from the workspace JSON file.
       // Mirrors the map editor's buildTownLayout() conversion.
       async function _loadTownFromWorkspace() {
         try {
@@ -4358,38 +4350,6 @@
         { id: 'exit_e',  width: 2,  height: INTERIOR_WALL_HEIGHT, position: [8,  0, 11],   rotationDeg: [0, -90, 0] },
       ];
 
-      // ── Shop Bell ─────────────────────────────────────────────────────
-      // Places a small bell mesh at (col, row) in the interior scene.
-      // Interaction: if Foroji or Furunji NPC exists in npcWalkers, opens General Store.
-      function makeShopBell(col, row) {
-        const bellGeo  = new THREE.CylinderGeometry(0.12, 0.18, 0.22, 10);
-        const bellMat  = new THREE.MeshLambertMaterial({ color: 0xd4a800 });
-        const bell     = new THREE.Mesh(bellGeo, bellMat);
-        bell.position.set(col + 0.5, 0.6, row + 0.5);
-        bell.castShadow = true;
-        interiorScene.add(bell);
-
-        // Small post
-        const postGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.55, 6);
-        const postMat = new THREE.MeshLambertMaterial({ color: 0x6b4a28 });
-        const post    = new THREE.Mesh(postGeo, postMat);
-        post.position.set(col + 0.5, 0.28, row + 0.5);
-        interiorScene.add(post);
-
-        const SHOPKEEPER_IDS = new Set(['foroji_funji', 'furunji_funji']);
-        interiorWorldObjects.set(col + ',' + row, {
-          onAction(action) {
-            if (action !== 'obj_interact') return { ok: false, message: 'Ring the shop bell.' };
-            const shopkeeperPresent = npcWalkers.some(w => SHOPKEEPER_IDS.has(w.rec?.id));
-            if (!shopkeeperPresent) {
-              return { ok: false, message: 'No one is at the counter. Come back later.' };
-            }
-            openMenu('generalStore');
-            return { ok: true, message: 'Funji shuffles over to help.' };
-          }
-        });
-      }
-
       // Built lazily on first entry to avoid blocking startup; called by enterInterior().
       function buildInteriorScene() {
         if (interiorSceneBuilt) return;
@@ -4455,9 +4415,6 @@
         interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
         _markOutline(interiorWallGroup);
         interiorScene.add(interiorWallGroup);
-
-        // Shop bell at the counter position (row 3, col 6 — center-north of the room)
-        makeShopBell(6, 3);
 
         debugLog('buildInteriorScene complete');
       }
@@ -7885,9 +7842,7 @@
         worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
         buildTransitionMarkers();
       }
-      // Town zone (written by Map Editor "Send to Game" when a town map is linked)
-      try { const _tl = loadTownLayout(); if (_tl) initTownTravel(_tl); } catch(e) { console.error('initTownTravel:', e); }
-      // If no localStorage town data, fall back to loading from the workspace config file
+      // Load town layout from workspace config (authoritative source)
       _loadTownFromWorkspace().catch(() => {});
       debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
 
