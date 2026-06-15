@@ -18015,52 +18015,266 @@
       "id": "route_main_ns",
       "label": "Main north-south road",
       "nodes": [
-        {"c":28,"r":45},{"c":28,"r":38},{"c":28,"r":30},
-        {"c":28,"r":22},{"c":28,"r":15},{"c":30,"r":10},{"c":35,"r":8}
+        {
+          "c": 28,
+          "r": 45,
+          "id": "route_main_ns_n0"
+        },
+        {
+          "c": 28,
+          "r": 38,
+          "id": "route_main_ns_n1"
+        },
+        {
+          "c": 28,
+          "r": 30,
+          "id": "route_main_ns_n2"
+        },
+        {
+          "c": 28,
+          "r": 22,
+          "id": "route_main_ns_n3"
+        },
+        {
+          "c": 28,
+          "r": 15,
+          "id": "route_main_ns_n4"
+        },
+        {
+          "c": 30,
+          "r": 10,
+          "id": "route_main_ns_n5"
+        },
+        {
+          "c": 35,
+          "r": 8,
+          "id": "route_main_ns_n6"
+        }
       ]
     },
     {
       "id": "route_west_road",
       "label": "Western road (smithy to temple)",
       "nodes": [
-        {"c":8,"r":15},{"c":9,"r":20},{"c":10,"r":25},
-        {"c":10,"r":30},{"c":11,"r":36},{"c":9,"r":43}
+        {
+          "c": 8,
+          "r": 15,
+          "id": "route_west_road_n0"
+        },
+        {
+          "c": 9,
+          "r": 20,
+          "id": "route_west_road_n1"
+        },
+        {
+          "c": 10,
+          "r": 25,
+          "id": "route_west_road_n2"
+        },
+        {
+          "c": 10,
+          "r": 30,
+          "id": "route_west_road_n3"
+        },
+        {
+          "c": 11,
+          "r": 36,
+          "id": "route_west_road_n4"
+        },
+        {
+          "c": 9,
+          "r": 43,
+          "id": "route_west_road_n5"
+        }
       ]
     },
     {
       "id": "route_east_market",
       "label": "Eastern market row",
       "nodes": [
-        {"c":33,"r":28},{"c":37,"r":28},{"c":42,"r":28},
-        {"c":45,"r":28},{"c":45,"r":32},{"c":44,"r":35},
-        {"c":40,"r":34},{"c":37,"r":34}
+        {
+          "c": 33,
+          "r": 28,
+          "id": "route_east_market_n0"
+        },
+        {
+          "c": 37,
+          "r": 28,
+          "id": "route_east_market_n1"
+        },
+        {
+          "c": 42,
+          "r": 28,
+          "id": "route_east_market_n2"
+        },
+        {
+          "c": 45,
+          "r": 28,
+          "id": "route_east_market_n3"
+        },
+        {
+          "c": 45,
+          "r": 32,
+          "id": "route_east_market_n4"
+        },
+        {
+          "c": 44,
+          "r": 35,
+          "id": "route_east_market_n5"
+        },
+        {
+          "c": 40,
+          "r": 34,
+          "id": "route_east_market_n6"
+        },
+        {
+          "c": 37,
+          "r": 34,
+          "id": "route_east_market_n7"
+        }
       ]
     },
     {
       "id": "route_patrol_ring",
       "label": "Town perimeter patrol",
       "nodes": [
-        {"c":5,"r":5},{"c":20,"r":3},{"c":35,"r":3},
-        {"c":55,"r":5},{"c":57,"r":20},{"c":57,"r":40},
-        {"c":50,"r":47},{"c":30,"r":48},{"c":5,"r":45},
-        {"c":3,"r":25},{"c":5,"r":5}
+        {
+          "c": 5,
+          "r": 5,
+          "id": "route_patrol_ring_n0"
+        },
+        {
+          "c": 20,
+          "r": 3,
+          "id": "route_patrol_ring_n1"
+        },
+        {
+          "c": 35,
+          "r": 3,
+          "id": "route_patrol_ring_n2"
+        },
+        {
+          "c": 55,
+          "r": 5,
+          "id": "route_patrol_ring_n3"
+        },
+        {
+          "c": 57,
+          "r": 20,
+          "id": "route_patrol_ring_n4"
+        },
+        {
+          "c": 57,
+          "r": 40,
+          "id": "route_patrol_ring_n5"
+        },
+        {
+          "c": 50,
+          "r": 47,
+          "id": "route_patrol_ring_n6"
+        },
+        {
+          "c": 30,
+          "r": 48,
+          "id": "route_patrol_ring_n7"
+        },
+        {
+          "c": 5,
+          "r": 45,
+          "id": "route_patrol_ring_n8"
+        },
+        {
+          "c": 3,
+          "r": 25,
+          "id": "route_patrol_ring_n9"
+        },
+        {
+          "c": 5,
+          "r": 5,
+          "id": "route_patrol_ring_n10"
+        }
       ]
     },
     {
       "id": "route_farmstead_path",
       "label": "Path between farmstead and town center",
       "nodes": [
-        {"c":35,"r":9},{"c":33,"r":13},{"c":30,"r":18},
-        {"c":28,"r":22},{"c":25,"r":28}
+        {
+          "c": 35,
+          "r": 9,
+          "id": "route_farmstead_path_n0"
+        },
+        {
+          "c": 33,
+          "r": 13,
+          "id": "route_farmstead_path_n1"
+        },
+        {
+          "c": 30,
+          "r": 18,
+          "id": "route_farmstead_path_n2"
+        },
+        {
+          "c": 28,
+          "r": 22,
+          "id": "route_farmstead_path_n3"
+        },
+        {
+          "c": 25,
+          "r": 28,
+          "id": "route_farmstead_path_n4"
+        }
       ]
     },
     {
       "id": "route_town_center",
       "label": "Town center loop",
       "nodes": [
-        {"c":22,"r":30},{"c":25,"r":28},{"c":28,"r":28},
-        {"c":30,"r":30},{"c":30,"r":33},{"c":28,"r":35},
-        {"c":25,"r":35},{"c":22,"r":33},{"c":22,"r":30}
+        {
+          "c": 22,
+          "r": 30,
+          "id": "route_town_center_n0"
+        },
+        {
+          "c": 25,
+          "r": 28,
+          "id": "route_town_center_n1"
+        },
+        {
+          "c": 28,
+          "r": 28,
+          "id": "route_town_center_n2"
+        },
+        {
+          "c": 30,
+          "r": 30,
+          "id": "route_town_center_n3"
+        },
+        {
+          "c": 30,
+          "r": 33,
+          "id": "route_town_center_n4"
+        },
+        {
+          "c": 28,
+          "r": 35,
+          "id": "route_town_center_n5"
+        },
+        {
+          "c": 25,
+          "r": 35,
+          "id": "route_town_center_n6"
+        },
+        {
+          "c": 22,
+          "r": 33,
+          "id": "route_town_center_n7"
+        },
+        {
+          "c": 22,
+          "r": 30,
+          "id": "route_town_center_n8"
+        }
       ]
     }
   ],
