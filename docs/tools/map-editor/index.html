@@ -524,14 +524,21 @@ function renderPalette() {
       const target = mapById(t.targetMapId);
       const spotOpts = (target?.transitions || []).map(s =>
         `<option value="${s.id}" ${t.targetSpotId===s.id?'selected':''}>${s.label}</option>`).join('');
+      const isBuildingInterior = t.targetMapId && t.targetMapId.startsWith('map_i_');
+      const targetRow = isBuildingInterior
+        ? `<div class="row" style="margin-top:4px">
+            <span class="pill" style="flex:1;overflow:hidden;text-overflow:ellipsis">🏠 ${t.targetMapId}</span>
+            <button class="sec" style="padding:3px 8px;white-space:nowrap" onclick="window.parent.postMessage({type:'openBuildingInterior',mapId:'${t.targetMapId}'},'*')">Edit Interior ↗</button>
+          </div>`
+        : `<div class="g2" style="margin-top:4px">
+            <select data-spottarget="${t.id}"><option value="">→ target map…</option>${others.map(x =>
+              `<option value="${x.id}" ${t.targetMapId===x.id?'selected':''}>${x.name}</option>`).join('')}</select>
+            <select data-spotspot="${t.id}"><option value="">→ arrive at…</option>${spotOpts}</select>
+          </div>`;
       return `<div class="item ${t.id===activeSpotId?'sel':''}" data-spotsel="${t.id}">
         <div class="row"><input data-spotlabel="${t.id}" value="${t.label.replace(/"/g,'&quot;')}" style="flex:1">
           <button class="bad" data-spotdel="${t.id}" style="padding:3px 8px">✕</button></div>
-        <div class="g2" style="margin-top:4px">
-          <select data-spottarget="${t.id}"><option value="">→ target map…</option>${others.map(x =>
-            `<option value="${x.id}" ${t.targetMapId===x.id?'selected':''}>${x.name}</option>`).join('')}</select>
-          <select data-spotspot="${t.id}"><option value="">→ arrive at…</option>${spotOpts}</select>
-        </div>
+        ${targetRow}
         <div class="item-meta">at (${t.col}, ${t.row})</div>
       </div>`;
     }).join('') || '<p class="muted">No transition spots yet.</p>';

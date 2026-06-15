@@ -1183,6 +1183,18 @@ afterLoad();
 animate();
 preloadAllFurnGLBs();
 log('Building Interior Editor ready.');
+// Hub bridge — lets the parent dev-tools hub load a server map into this editor
+window._biaBridge = {
+  loadFromServer: function(mapId) {
+    fetch('../../config/maps/' + mapId + '.json')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        pushUndo(); state.interior = data; afterLoad();
+        log('Loaded "' + (data.name || mapId) + '" from hub.');
+      })
+      .catch(function(e) { log('Hub load error: ' + e.message, 'error'); });
+  }
+};
 
 })(); // end IIFE
 </script>
