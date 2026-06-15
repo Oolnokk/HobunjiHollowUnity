@@ -4908,23 +4908,8 @@
         }
       }
 
-      function townProceduralTerrainConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.townProceduralTerrain || {};
-      }
-
-      function _terrainHash(ix, iz, seed) {
-        let h = (2166136261 ^ seed ^ Math.imul(ix, 374761393) ^ Math.imul(iz, 668265263)) >>> 0;
-        h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
-        return h / 4294967296;
-      }
-
-      function _terrainValueNoise(x, z, cellSize, seed) {
-        const gx = Math.floor(x / cellSize), gz = Math.floor(z / cellSize);
-        const fx = x / cellSize - gx, fz = z / cellSize - gz;
-        const sx = fx * fx * (3 - 2 * fx), sz = fz * fz * (3 - 2 * fz);
-        const a = _terrainHash(gx, gz, seed), b = _terrainHash(gx + 1, gz, seed);
-        const c = _terrainHash(gx, gz + 1, seed), d = _terrainHash(gx + 1, gz + 1, seed);
-        return ((a + (b - a) * sx) + ((c + (d - c) * sx) - (a + (b - a) * sx)) * sz) * 2 - 1;
+      function landscapeTerrainConfig(section) {
+        return window.SCRATCHBONES_CONFIG?.game?.landscapeTerrain?.[section] || {};
       }
 
       function _townPaintBlendAt(x, z, cfg) {
@@ -4946,46 +4931,190 @@
         return 1 - (t * t * (3 - 2 * t));
       }
 
-      function buildTownProceduralTerrainMesh(cols, rows) {
-        const cfg = townProceduralTerrainConfig();
-        const border = Math.max(0, Math.round(Number(cfg.borderTiles) || 10));
-        const segPerTile = Math.max(1, Math.round(Number(cfg.segmentsPerTile) || 2));
-        const xMin = -border, zMin = -border, width = cols + border * 2, depth = rows + border * 2;
-        const xSegs = width * segPerTile, zSegs = depth * segPerTile;
-        const flattenedY = Number.isFinite(Number(cfg.flattenedY)) ? Number(cfg.flattenedY) : -0.035;
-        const baseAmp = Number.isFinite(Number(cfg.baseAmplitude)) ? Number(cfg.baseAmplitude) : 0.34;
-        const detailAmp = Number.isFinite(Number(cfg.detailAmplitude)) ? Number(cfg.detailAmplitude) : 0.07;
-        const step = Math.max(0.001, Number(cfg.simplifiedStep) || 0.08);
-        const seed = Math.round(Number(cfg.seed) || 1337);
-        const low = new THREE.Color(cfg.lowColor || '#496f39'), mid = new THREE.Color(cfg.midColor || '#638f48'), high = new THREE.Color(cfg.highColor || '#8a8456');
-        const positions = [], colors = [], indices = [];
-        for (let rz = 0; rz <= zSegs; rz++) for (let cx = 0; cx <= xSegs; cx++) {
-          const x = xMin + cx / segPerTile, z = zMin + rz / segPerTile;
-          const broad = _terrainValueNoise(x + cols * 0.5, z + rows * 0.5, 8, seed) * baseAmp;
-          const detail = _terrainValueNoise(x - cols * 0.35, z + rows * 0.25, 2.75, seed + 97) * detailAmp;
-          const proceduralY = broad + detail;
-          const simplifiedY = Math.round(proceduralY / step) * step * 0.35;
-          const blend = _townPaintBlendAt(x, z, cfg);
-          const y = proceduralY * (1 - blend) + (flattenedY + simplifiedY * 0.25) * blend;
-          positions.push(x, y, z);
-          const shade = THREE.MathUtils.clamp((y + baseAmp + detailAmp) / ((baseAmp + detailAmp) * 2), 0, 1);
-          const col = shade < 0.55 ? low.clone().lerp(mid, shade / 0.55) : mid.clone().lerp(high, (shade - 0.55) / 0.45);
-          colors.push(col.r, col.g, col.b);
+      // Shared landscape pipeline used by the farm boundary and the town terrain.
+      // It mirrors HALandscapeGenV3: seam hash initialization, connected-cell
+      // plateau raises, an optional outer cliff rim, then a normal-based stone skin.
+      function buildLandscapeTerrainMesh({ cols, rows, cfg, includeCell, adjustHeight }) {
+        const border = Math.max(0, Math.round(Number(cfg.borderTiles) || 18));
+        const seed = Math.round(Number(cfg.seed) || 2026);
+        const blendSteps = Math.max(1, Math.round(Number(cfg.blendSteps) || 8));
+        const BV = border * 2;
+        const PVW = cols * 2, PVH = rows * 2;
+        const GW = PVW + 2 * BV + 1, GH = PVH + 2 * BV + 1;
+        const CW = GW - 1, CH = GH - 1;
+
+        let _s = seed >>> 0;
+        const rng = () => {
+          _s += 0x6D2B79F5;
+          let t = Math.imul(_s ^ _s >>> 15, _s | 1);
+          t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+
+        const hashDisp = (vi, vj) => {
+          let h = (2166136261 ^ (vi * 374761393) ^ (vj * 668265263)) >>> 0;
+          h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+        const vSteps = (gi, gj) => {
+          const vi = gi - BV, vj = gj - BV;
+          const dx = Math.max(0, -vi, vi - PVW);
+          const dz = Math.max(0, -vj, vj - PVH);
+          return Math.sqrt(dx * dx + dz * dz);
+        };
+        const isPlayable = (ci, cj) => ci >= BV && ci < BV + PVW && cj >= BV && cj < BV + PVH;
+        const cellIncluded = includeCell || ((ci, cj) => !isPlayable(ci, cj));
+
+        const Y = new Float32Array(GW * GH);
+        for (let gj = 0; gj < GH; gj++) for (let gi = 0; gi < GW; gi++) {
+          Y[gj * GW + gi] = NORMAL_TOP + hashDisp(gi - BV, gj - BV);
         }
-        const rowStride = xSegs + 1;
-        for (let rz = 0; rz < zSegs; rz++) for (let cx = 0; cx < xSegs; cx++) {
-          const a = rz * rowStride + cx, b = a + 1, c = a + rowStride, d = c + 1;
-          indices.push(a, c, b, b, c, d);
+
+        const cv4 = (ci, cj) => [cj * GW + ci, cj * GW + ci + 1, (cj + 1) * GW + ci, (cj + 1) * GW + ci + 1];
+        function pickGroup(ci0, cj0, maxSz) {
+          const group = [], seen = new Set([cj0 * CW + ci0]);
+          const front = [[ci0, cj0]];
+          while (front.length && group.length < maxSz) {
+            const fi = Math.floor(rng() * front.length);
+            const [ci, cj] = front.splice(fi, 1)[0];
+            group.push([ci, cj]);
+            for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+              const ni = ci + dc, nj = cj + dr;
+              if (ni < 0 || ni >= CW || nj < 0 || nj >= CH) continue;
+              const nk = nj * CW + ni;
+              if (seen.has(nk) || !cellIncluded(ni, nj)) continue;
+              seen.add(nk); front.push([ni, nj]);
+            }
+          }
+          return group;
+        }
+        function raiseGroup(group, amount) {
+          let maxY = -Infinity;
+          const verts = new Set();
+          for (const [ci, cj] of group) for (const vi of cv4(ci, cj)) { verts.add(vi); if (Y[vi] > maxY) maxY = Y[vi]; }
+          const target = maxY + amount;
+          for (const vi of verts) {
+            const gi = vi % GW, gj = vi / GW | 0;
+            const st = vSteps(gi, gj);
+            const blend = st === 0 ? 0 : Math.min(1, st / blendSteps);
+            const raised = NORMAL_TOP + hashDisp(gi - BV, gj - BV) + blend * (target - NORMAL_TOP);
+            if (raised > Y[vi]) Y[vi] = raised;
+          }
+        }
+        function pickCell(outerBias) {
+          const rim = Math.max(1, BV >> 2);
+          for (let attempt = 0; attempt < 300; attempt++) {
+            let ci, cj;
+            if (rng() < outerBias) {
+              const side = Math.floor(rng() * 4);
+              if (side === 0) { ci = Math.floor(rng() * CW); cj = Math.floor(rng() * rim); }
+              else if (side === 1) { ci = Math.floor(rng() * CW); cj = (CH - 1 - Math.floor(rng() * rim)) | 0; }
+              else if (side === 2) { ci = Math.floor(rng() * rim); cj = Math.floor(rng() * CH); }
+              else { ci = (CW - 1 - Math.floor(rng() * rim)) | 0; cj = Math.floor(rng() * CH); }
+            } else {
+              ci = Math.floor(rng() * CW); cj = Math.floor(rng() * CH);
+            }
+            if (cellIncluded(ci, cj)) return [ci, cj];
+          }
+          return [0, 0];
+        }
+
+        const ruggedPasses = Math.max(0, Math.round(Number(cfg.ruggedPasses) || 55));
+        for (let pass = 0; pass < ruggedPasses; pass++) {
+          const [ci, cj] = pickCell(Number(cfg.ruggedOuterBias) || 0.12);
+          const groupMax = Math.round((Number(cfg.ruggedGroupMin) || 4) + rng() * (Number(cfg.ruggedGroupRange) || 18));
+          raiseGroup(pickGroup(ci, cj, groupMax), (Number(cfg.ruggedRaiseMin) || 0.05) + rng() * (Number(cfg.ruggedRaiseRange) || 0.32));
+        }
+        const cliffPasses = Math.max(0, Math.round(Number(cfg.cliffPasses) || 32));
+        for (let pass = 0; pass < cliffPasses; pass++) {
+          const [ci, cj] = pickCell(Number(cfg.cliffOuterBias) || 0.88);
+          const groupMax = Math.round((Number(cfg.cliffGroupMin) || 10) + rng() * (Number(cfg.cliffGroupRange) || 38));
+          raiseGroup(pickGroup(ci, cj, groupMax), (Number(cfg.cliffRaiseMin) || 0.9) + rng() * (Number(cfg.cliffRaiseRange) || 3.2));
+        }
+
+        const rimSteps = Math.max(0, Math.round(Number(cfg.rimSteps) || 0));
+        const rimMinY = Number(cfg.rimMinY);
+        if (rimSteps > 0 && Number.isFinite(rimMinY)) {
+          for (let gj = 0; gj < GH; gj++) for (let gi = 0; gi < GW; gi++) {
+            if (gj >= rimSteps && gj <= GH - 1 - rimSteps && gi >= rimSteps && gi <= GW - 1 - rimSteps) continue;
+            const k = gj * GW + gi;
+            if (Y[k] < rimMinY) Y[k] = rimMinY;
+          }
+        }
+
+        if (adjustHeight) {
+          for (let gj = 0; gj < GH; gj++) for (let gi = 0; gi < GW; gi++) {
+            const k = gj * GW + gi;
+            Y[k] = adjustHeight((gi - BV) * 0.5, (gj - BV) * 0.5, Y[k], hashDisp(gi - BV, gj - BV));
+          }
+        }
+
+        const pos = new Float32Array(GW * GH * 3);
+        for (let gj = 0; gj < GH; gj++) for (let gi = 0; gi < GW; gi++) {
+          const k = gj * GW + gi;
+          pos[k * 3] = (gi - BV) * 0.5;
+          pos[k * 3 + 1] = Y[k];
+          pos[k * 3 + 2] = (gj - BV) * 0.5;
+        }
+        const indices = [];
+        for (let cj = 0; cj < GH - 1; cj++) for (let ci = 0; ci < GW - 1; ci++) {
+          if (!cellIncluded(ci, cj)) continue;
+          const v00 = cj * GW + ci, v10 = v00 + 1, v01 = (cj + 1) * GW + ci, v11 = v01 + 1;
+          indices.push(v00, v01, v11, v00, v11, v10);
         }
         const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-        geo.setIndex(indices);
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setIndex(new THREE.BufferAttribute(new (indices.length > 65535 ? Uint32Array : Uint16Array)(indices), 1));
         geo.computeVertexNormals();
-        const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-        const mesh = new THREE.Mesh(geo, mat);
+        const mesh = new THREE.Mesh(geo, tileMats.grass);
         mesh.receiveShadow = true;
-        return mesh;
+
+        const stoneThreshold = Number(cfg.stoneSlopeThreshold) || 0.194;
+        const stonePositions = [], stoneIdx = [];
+        let svi = 0;
+        for (let cj = 0; cj < GH - 1; cj++) for (let ci = 0; ci < GW - 1; ci++) {
+          if (!cellIncluded(ci, cj)) continue;
+          const y00 = Y[cj * GW + ci], y10 = Y[cj * GW + ci + 1];
+          const y01 = Y[(cj + 1) * GW + ci], y11 = Y[(cj + 1) * GW + ci + 1];
+          const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+          const cnz = 0.5 * ((y10 - y01) - (y11 - y00));
+          if (cnx * cnx + cnz * cnz <= stoneThreshold) continue;
+          const x0 = (ci - BV) * 0.5, x1 = x0 + 0.5, z0 = (cj - BV) * 0.5, z1 = z0 + 0.5;
+          stonePositions.push(x0, y00, z0, x1, y10, z0, x0, y01, z1, x1, y11, z1);
+          stoneIdx.push(svi, svi + 2, svi + 3, svi, svi + 3, svi + 1); svi += 4;
+        }
+        let stoneMesh = null;
+        if (stonePositions.length) {
+          const stoneGeo = new THREE.BufferGeometry();
+          stoneGeo.setAttribute('position', new THREE.Float32BufferAttribute(stonePositions, 3));
+          stoneGeo.setIndex(new THREE.BufferAttribute(new Uint32Array(stoneIdx), 1));
+          stoneGeo.computeVertexNormals();
+          const cliffMat = new THREE.MeshLambertMaterial({
+            color: 0x6a6460, side: THREE.DoubleSide,
+            polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+          });
+          stoneMesh = new THREE.Mesh(stoneGeo, cliffMat);
+        }
+        return { mesh, stoneMesh };
+      }
+
+      function buildTownProceduralTerrainMesh(cols, rows) {
+        const cfg = landscapeTerrainConfig('town');
+        const flattenedY = Number.isFinite(Number(cfg.flattenedY)) ? Number(cfg.flattenedY) : -0.035;
+        const step = Math.max(0.001, Number(cfg.simplifiedStep) || 0.08);
+        const group = new THREE.Group();
+        const terrain = buildLandscapeTerrainMesh({
+          cols, rows, cfg,
+          includeCell: () => true,
+          adjustHeight: (x, z, proceduralY, seamY) => {
+            const blend = _townPaintBlendAt(x, z, cfg);
+            const simplifiedY = Math.round(seamY / step) * step;
+            return proceduralY * (1 - blend) + (flattenedY + simplifiedY * 0.25) * blend;
+          }
+        });
+        group.add(terrain.mesh);
+        if (terrain.stoneMesh) group.add(terrain.stoneMesh);
+        return group;
       }
 
       // Geometry — full 1.0×1.0 footprint, no gaps
@@ -5293,211 +5422,13 @@
       }
 
 
-      // Mirrors the procedural pipeline from HALandscapeGenV3:
-      //   1) Initialize all verts at seam height (same FNV hash as makeFloorGeo)
-      //   2) Rugged-plain passes: small connected-cell plateaus, low amplitude
-      //   3) Cliff passes: large edge-biased plateaus, tall amplitude
-      // Near-seam vertices are smoothly blended so the inner edge is gap-free.
+      // Farm boundary terrain uses the same shared landscape pipeline as town,
+      // but skips playable farm cells so it only draws the surrounding ring.
       function buildBorderTerrain() {
-        const BORDER_W   = 18;   // border tile width on each side
-        const SEED       = 2026;
-        const BLEND_STEPS = 8;   // seam-blend zone: 4 tiles = 8 vertex steps
-
-        // ── Grid dims (0.5-unit vertex spacing = makeFloorGeo 2×2 subdivision) ──
-        const BV  = BORDER_W * 2;
-        const PVW = COLS * 2, PVH = ROWS * 2;
-        const GW  = PVW + 2*BV + 1;       // 145 vertex columns
-        const GH  = PVH + 2*BV + 1;       // 125 vertex rows
-        const CW  = GW - 1, CH = GH - 1;
-
-        // ── Mulberry32 RNG ─────────────────────────────────────────────────────
-        let _s = SEED >>> 0;
-        const rng = () => {
-          _s += 0x6D2B79F5;
-          let t = Math.imul(_s ^ _s>>>15, _s|1);
-          t ^= t + Math.imul(t ^ t>>>7, t|61);
-          return ((t ^ t>>>14) >>> 0) / 4294967296;
-        };
-
-        // ── Seam hash — exact copy of makeFloorGeo ─────────────────────────────
-        const hashDisp = (vi, vj) => {
-          let h = (2166136261 ^ (vi * 374761393) ^ (vj * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.026;
-        };
-
-        // Distance (in 0.5-unit vertex steps) of grid vertex (gi,gj) from playable boundary
-        const vSteps = (gi, gj) => {
-          const vi = gi - BV, vj = gj - BV;
-          const dx = Math.max(0, -vi, vi - PVW);
-          const dz = Math.max(0, -vj, vj - PVH);
-          return Math.sqrt(dx*dx + dz*dz);
-        };
-
-        const isPlayable = (ci, cj) => ci>=BV && ci<BV+PVW && cj>=BV && cj<BV+PVH;
-
-        // ── Height map initialised to exact seam heights ───────────────────────
-        const Y = new Float32Array(GW * GH);
-        for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++)
-            Y[gj*GW+gi] = NORMAL_TOP + hashDisp(gi-BV, gj-BV);
-
-        // ── Plateau operations ─────────────────────────────────────────────────
-        const cv4 = (ci, cj) => [cj*GW+ci, cj*GW+ci+1, (cj+1)*GW+ci, (cj+1)*GW+ci+1];
-
-        // Random-frontier connected group expansion (border cells only)
-        function pickGroup(ci0, cj0, maxSz) {
-          const group = [], seen = new Set([cj0*CW+ci0]);
-          const front = [[ci0, cj0]];
-          while (front.length && group.length < maxSz) {
-            const fi = Math.floor(rng() * front.length);
-            const [ci, cj] = front.splice(fi, 1)[0];
-            group.push([ci, cj]);
-            for (const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-              const ni=ci+dc, nj=cj+dr;
-              if (ni<0||ni>=CW||nj<0||nj>=CH) continue;
-              const nk = nj*CW+ni;
-              if (seen.has(nk) || isPlayable(ni,nj)) continue;
-              seen.add(nk); front.push([ni,nj]);
-            }
-          }
-          return group;
-        }
-
-        // Raise group verts to (max-in-group + amount).
-        // Verts within BLEND_STEPS of the seam are blended proportionally
-        // so the raised terrain ramps smoothly down to the seam edge.
-        function raiseGroup(group, amount) {
-          let maxY = -Infinity;
-          const verts = new Set();
-          for (const [ci,cj] of group)
-            for (const vi of cv4(ci,cj)) { verts.add(vi); if(Y[vi]>maxY) maxY=Y[vi]; }
-          const target = maxY + amount;
-          for (const vi of verts) {
-            const gi = vi%GW, gj = vi/GW|0;
-            const st = vSteps(gi, gj);
-            if (st === 0) continue;                          // seam — never touch
-            const blend  = Math.min(1, st / BLEND_STEPS);   // 0→1 over 4-tile zone
-            const raised = NORMAL_TOP + hashDisp(gi-BV, gj-BV) + blend*(target - NORMAL_TOP);
-            if (raised > Y[vi]) Y[vi] = raised;             // plateaus only go up
-          }
-        }
-
-        // Edge-biased seed cell picker (avoids playable area)
-        function pickCell(outerBias) {
-          const rim = BV >> 2; // outermost-quarter cells per side
-          for (let attempt = 0; attempt < 300; attempt++) {
-            let ci, cj;
-            if (rng() < outerBias) {
-              const side = Math.floor(rng() * 4);
-              if (side===0) { ci=Math.floor(rng()*CW); cj=Math.floor(rng()*rim); }
-              else if(side===1){ ci=Math.floor(rng()*CW); cj=(CH-1-Math.floor(rng()*rim))|0; }
-              else if(side===2){ ci=Math.floor(rng()*rim); cj=Math.floor(rng()*CH); }
-              else              { ci=(CW-1-Math.floor(rng()*rim))|0; cj=Math.floor(rng()*CH); }
-            } else {
-              ci=Math.floor(rng()*CW); cj=Math.floor(rng()*CH);
-            }
-            if (!isPlayable(ci,cj)) return [ci,cj];
-          }
-          return [0,0];
-        }
-
-        // ── Pass 1: rugged plain — small, low plateaus spread across the border ─
-        for (let p = 0; p < 55; p++) {
-          const [ci,cj] = pickCell(0.12);
-          raiseGroup(pickGroup(ci, cj, 4 + Math.floor(rng()*18)), 0.05 + rng()*0.32);
-        }
-
-        // ── Pass 2: distant cliffs — tall, strongly edge-biased plateaus ────────
-        for (let p = 0; p < 32; p++) {
-          const [ci,cj] = pickCell(0.88);
-          raiseGroup(pickGroup(ci, cj, 10 + Math.floor(rng()*38)), 0.9 + rng()*3.2);
-        }
-
-        // ── Pass 3: guarantee a continuous outer cliff ring ────────────────────
-        // Force-raise every vertex in the outermost RIM_V steps of each side
-        // so there are no skybox gaps regardless of where random groups landed.
-        const RIM_V   = 20;              // ~10 tile-widths from each outer edge
-        const RIM_MIN = NORMAL_TOP + 3.0;
-        for (let gj = 0; gj < GH; gj++) {
-          for (let gi = 0; gi < GW; gi++) {
-            if (gj >= RIM_V && gj <= GH-1-RIM_V &&
-                gi >= RIM_V && gi <= GW-1-RIM_V) continue; // interior — skip
-            const k = gj * GW + gi;
-            if (Y[k] < RIM_MIN) Y[k] = RIM_MIN;
-          }
-        }
-
-        // ── Build geometry (border ring only — playable interior skipped) ───────
-        const pos = new Float32Array(GW * GH * 3);
-        for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++) {
-            const k = gj*GW+gi;
-            pos[k*3]   = (gi-BV)*0.5;
-            pos[k*3+1] = Y[k];
-            pos[k*3+2] = (gj-BV)*0.5;
-          }
-
-        const indices = [];
-        for (let cj = 0; cj < GH-1; cj++)
-          for (let ci = 0; ci < GW-1; ci++) {
-            if (isPlayable(ci,cj)) continue;
-            const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
-            indices.push(v00, v01, v11,  v00, v11, v10);
-          }
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        geo.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
-        geo.computeVertexNormals();
-
-        const mesh = new THREE.Mesh(geo, tileMats.grass);
-        mesh.receiveShadow = true;
-        scene.add(mesh);
-
-        // ── Stone cliff skin: normal-based overlay on border terrain ─────────────
-        // Matches the landscape generator's rule: faces with |normal.y| < 0.75
-        // (steeper than ~41° from horizontal) are stone; shallower faces are grass.
-        // For a 0.5×0.5 cell the diagonal cross product has cny=0.5 always, so the
-        // threshold reduces to cnx²+cnz² > 0.194 — no sqrt required.
-        const cliffMat = new THREE.MeshLambertMaterial({
-          color: 0x6a6460, side: THREE.DoubleSide,
-          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
-        });
-
-        function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
-          const positions = [], idxArr = [];
-          let vi = 0;
-          for (let gj = gjMin; gj < gjMax; gj++) {
-            for (let gi = giMin; gi < giMax; gi++) {
-              const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
-              const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
-              // Cross product of quad diagonals (SE-NW) × (NE-SW); cny = 0.5 always.
-              const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
-              const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
-              if (cnx * cnx + cnz * cnz <= 0.194) continue;  // near-horizontal → grass
-              const x0=(gi-BV)*0.5, x1=x0+0.5;
-              const z0=(gj-BV)*0.5, z1=z0+0.5;
-              positions.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
-              idxArr.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
-            }
-          }
-          if (!positions.length) return;
-          const g = new THREE.BufferGeometry();
-          g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-          g.setIndex(new THREE.BufferAttribute(new Uint32Array(idxArr), 1));
-          g.computeVertexNormals();
-          scene.add(new THREE.Mesh(g, cliffMat));
-        }
-
-        // North border strip (full width)
-        elevStoneSkin(0,           BV,          0,          GW - 1);
-        // South border strip (full width)
-        elevStoneSkin(GH - 1 - BV, GH - 1,      0,          GW - 1);
-        // West border strip (middle rows — corners already covered by N/S)
-        elevStoneSkin(BV,          GH - 1 - BV, 0,          BV);
-        // East border strip (middle rows)
-        elevStoneSkin(BV,          GH - 1 - BV, GW - 1 - BV, GW - 1);
+        const cfg = landscapeTerrainConfig('farmBoundary');
+        const terrain = buildLandscapeTerrainMesh({ cols: COLS, rows: ROWS, cfg });
+        scene.add(terrain.mesh);
+        if (terrain.stoneMesh) scene.add(terrain.stoneMesh);
       }
 
       const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
