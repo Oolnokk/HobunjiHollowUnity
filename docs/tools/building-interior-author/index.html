@@ -264,6 +264,8 @@ var state = {
   selectedId: null,
   library: [],
   dragging: false,
+  dragFurn: null,   // furniture item currently being tile-dragged
+  dragOff: null,    // {dc,dr} click offset within that item's footprint
 };
 
 function syncFloorSet(){
@@ -390,7 +392,15 @@ function gridAction(e){
     drawGrid(); rebuild3D();
   }
   else if(tool==='select'){
-    var f=furnAt(c,r); selectFurn(f?f.id:null);
+    var f=furnAt(c,r);
+    if(f){
+      selectFurn(f.id);
+      state.dragFurn=f;
+      state.dragOff={dc:c-f.col, dr:r-f.row};
+    } else {
+      selectFurn(null);
+      state.dragFurn=null;
+    }
   }
   else if(tool==='erase'){
     var f=furnAt(c,r);
@@ -404,10 +414,31 @@ gc.addEventListener('pointerdown',function(e){
 });
 gc.addEventListener('pointermove',function(e){
   if(!state.dragging) return;
-  if(['paintFloor','eraseFloor','furniture','erase'].indexOf(state.tool)>=0) gridAction(e);
+  if(state.tool==='select' && state.dragFurn){
+    var cr=gridCell(e), nc=cr.c-state.dragOff.dc, nr=cr.r-state.dragOff.dr;
+    var f=state.dragFurn, cat=catOf(f.itemKey), interior=state.interior;
+    if(nc===f.col && nr===f.row) return;
+    // validate all footprint tiles are floor and in bounds
+    var ok=true;
+    for(var dc=0;dc<cat.fw&&ok;dc++) for(var dd=0;dd<cat.fd&&ok;dd++){
+      var tc=nc+dc, tr=nr+dd;
+      if(tc<0||tr<0||tc>=interior.cols||tr>=interior.rows||!isFloor(tc,tr)) ok=false;
+    }
+    if(!ok) return;
+    f.col=nc; f.row=nr;
+    drawGrid();
+  } else if(['paintFloor','eraseFloor','furniture','erase'].indexOf(state.tool)>=0){
+    gridAction(e);
+  }
 });
-gc.addEventListener('pointerup',function(){ state.dragging=false; commitUndo(); });
-gc.addEventListener('pointerleave',function(){ state.dragging=false; commitUndo(); });
+gc.addEventListener('pointerup',function(){
+  if(state.dragFurn){ rebuild3D(); state.dragFurn=null; state.dragOff=null; }
+  state.dragging=false; commitUndo();
+});
+gc.addEventListener('pointerleave',function(){
+  if(state.dragFurn){ rebuild3D(); state.dragFurn=null; state.dragOff=null; }
+  state.dragging=false; commitUndo();
+});
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
 var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',exit:'toolExit',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase'};
