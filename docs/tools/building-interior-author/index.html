@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Building Interior Editor</title>
+<style>
+:root{
+  --bg:#0d121a; --panel:#151d2a; --panel2:#1b2637; --text:#eaf1ff; --muted:#9eacc3;
+  --line:#2b3a51; --accent:#76b8ff; --ok:#85e09b; --warn:#ffd26e; --danger:#ff8383;
+}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;height:100vh;overflow:hidden}
+button,input,select,textarea{font:inherit} button,label.fileButton{border:1px solid #3b4c67;background:#243149;color:var(--text);border-radius:10px;padding:8px 10px;cursor:pointer;user-select:none} button:hover,label.fileButton:hover{background:#2d3d5b} button:disabled{opacity:.45;cursor:not-allowed} button.active{outline:2px solid var(--accent);background:#203c5c} button.danger{background:#43252d;border-color:#874850} button.ok{background:#23442d;border-color:#41724b}
+input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394a63;border-radius:8px;padding:7px 8px;min-width:0} input[type=checkbox]{width:auto} .hidden{display:none!important}
+.app{display:grid;grid-template-columns:minmax(320px,34vw) 1fr minmax(300px,24vw);grid-template-rows:auto 1fr 112px;height:100vh;gap:8px;padding:8px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;min-height:0;overflow:auto}
+.viewer{position:relative;padding:0;overflow:hidden;background:#0b0f16}
+header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.title h1{font-size:16px;margin:0} .status{font-size:12px;color:var(--muted);margin-top:2px}
+.debug{grid-column:1/-1;background:#06090e;border:1px solid #26364d;border-radius:12px;padding:8px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:#c7d8f2;white-space:pre-wrap}
+.section{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px;margin-bottom:10px}
+.section h2{font-size:13px;margin:0 0 8px;color:#c9d8f3}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.field label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
+.field input,.field select,.field textarea{width:100%}
+.hint{color:var(--muted);font-size:12px;line-height:1.35}
+.pill{display:inline-flex;align-items:center;gap:6px;background:rgba(6,10,16,.78);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:6px 10px;color:#cfe0fa;font-size:12px;backdrop-filter:blur(6px)}
+#gridCanvas{width:100%;aspect-ratio:1/1;background:#060a10;border:1px solid #2b3548;border-radius:14px;touch-action:none;image-rendering:pixelated}
+#threeCanvas{display:block;width:100%;height:100%}
+.overlayTop{position:absolute;left:10px;right:10px;top:10px;display:flex;justify-content:space-between;gap:8px;pointer-events:none}
+.modeButtons{position:absolute;right:12px;top:60px;display:flex;flex-direction:column;gap:8px;z-index:5}
+.modeButtons button{width:98px;background:rgba(7,11,18,.82);backdrop-filter:blur(6px)}
+.libraryList{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.listItem{display:flex;justify-content:space-between;gap:8px;align-items:center;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);border-radius:10px;padding:7px 8px;font-size:12px}
+.chip{font-size:11px;color:var(--muted)}
+textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
+.catGrid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px;max-height:260px;overflow-y:auto}
+.catBtn{font-size:11px;padding:5px 7px;border-radius:8px;text-align:left;background:#172034;border-color:#2e4060;white-space:pre-line;line-height:1.25}
+.catBtn:hover{background:#1f2f48} .catBtn.active{outline:2px solid var(--accent);background:#1a3050}
+@media(max-width:1050px){body{overflow:auto}.app{height:auto;min-height:100vh;grid-template-columns:1fr;grid-template-rows:auto auto 58vh auto 130px}.viewer{height:58vh}.debug{height:130px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="panel">
+    <div class="title"><h1>Building Interior Editor</h1><div class="status" id="statusLine">Loading scripts…</div></div>
+    <div class="row">
+      <button id="newBtn">New interior</button>
+      <button id="undoBtn" disabled>Undo</button>
+      <button id="redoBtn" disabled>Redo</button>
+      <button id="copyJsonBtn">Copy JSON</button>
+      <button id="downloadBtn" class="ok">Download JSON</button>
+    </div>
+  </header>
+
+  <aside class="panel">
+    <div class="section">
+      <h2>1. Room identity</h2>
+      <div class="grid2">
+        <div class="field"><label>Map ID</label><input id="mapId" value="map_i_building_01"></div>
+        <div class="field"><label>Display name</label><input id="mapName" value="Building Interior"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>2. Grid canvas size</h2>
+      <div class="grid2">
+        <div class="field"><label>Columns</label><input id="gridCols" type="number" min="3" max="32" value="12"></div>
+        <div class="field"><label>Rows</label><input id="gridRows" type="number" min="3" max="32" value="10"></div>
+      </div>
+      <div class="row">
+        <button id="applyGridBtn">Apply grid</button>
+        <button id="fillRectBtn">Fill rectangle</button>
+        <button id="clearFloorBtn" class="danger">Clear floor</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>3. Floor plan tools</h2>
+      <canvas id="gridCanvas" width="900" height="900"></canvas>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px">
+        <button id="toolPaintFloor" class="active">Paint floor</button>
+        <button id="toolEraseFloor">Erase floor</button>
+        <button id="toolPaintCollider">Collider</button>
+        <button id="toolEraseCollider">Erase collider</button>
+        <button id="toolFurniture">Place furniture</button>
+        <button id="toolSelect">Select</button>
+        <button id="toolErase">Erase furn</button>
+      </div>
+      <p class="hint" style="margin-top:6px">Paint floor footprint. Collider = invisible blocker (red). Exit/vendor zones below. Walls auto-generate with gaps at exit tile edges.</p>
+    </div>
+
+    <div class="section">
+      <h2>3b. Exit zones</h2>
+      <div class="row" style="flex-wrap:wrap;gap:5px">
+        <button id="addExitBtn">+ New exit</button>
+        <button id="toolPaintExit">Paint exit</button>
+        <button id="toolEraseExit">Erase exit</button>
+      </div>
+      <div id="exitZoneList" style="margin-top:6px;display:flex;flex-direction:column;gap:5px"></div>
+      <div id="exitZoneFields" class="hidden" style="margin-top:6px;border-top:1px solid var(--line);padding-top:6px">
+        <div class="grid2">
+          <div class="field"><label>Label</label><input id="exitZoneLabel" placeholder="Front door"></div>
+          <div class="field"><label>Target map</label><input id="exitTargetMap" placeholder="map_town_01"></div>
+        </div>
+        <div class="grid2" style="margin-top:4px">
+          <div class="field"><label>Spawn col</label><input id="exitSpawnCol" type="number" min="0" value="0"></div>
+          <div class="field"><label>Spawn row</label><input id="exitSpawnRow" type="number" min="0" value="0"></div>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <button id="applyExitBtn">Apply</button>
+          <button id="delExitBtn" class="danger">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>3c. Vendor zones</h2>
+      <div class="row" style="flex-wrap:wrap;gap:5px">
+        <button id="addVendorBtn">+ New vendor</button>
+        <button id="toolPaintVendor">Paint vendor</button>
+        <button id="toolEraseVendor">Erase vendor</button>
+      </div>
+      <div id="vendorZoneList" style="margin-top:6px;display:flex;flex-direction:column;gap:5px"></div>
+      <div id="vendorZoneFields" class="hidden" style="margin-top:6px;border-top:1px solid var(--line);padding-top:6px">
+        <div class="field">
+          <label>Vendor key</label><input id="vendorKey" placeholder="merchant_trader">
+        </div>
+        <div class="row" style="margin-top:4px">
+          <button id="applyVendorBtn">Apply</button>
+          <button id="delVendorBtn" class="danger">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>4. Furniture catalog</h2>
+      <div class="field" style="margin-bottom:6px">
+        <label>Active item</label>
+        <select id="catSelect"></select>
+      </div>
+      <div class="catGrid" id="catGrid"></div>
+    </div>
+  </aside>
+
+  <main class="panel viewer">
+    <canvas id="threeCanvas"></canvas>
+    <div class="overlayTop">
+      <div class="pill" id="viewStats">Loading…</div>
+      <div class="pill" id="selStats">Nothing selected</div>
+    </div>
+    <div class="modeButtons">
+      <button id="modeTranslate" class="active">Translate</button>
+      <button id="modeRotate">Rotate</button>
+      <button id="modeScale">Scale</button>
+    </div>
+  </main>
+
+  <aside class="panel">
+    <div class="section">
+      <h2>5. Post-transform (3D visual only)</h2>
+      <div id="noSelMsg" class="hint">Select a furniture tile on the 2D grid or click a piece in 3D.</div>
+      <div id="selFields" class="hidden">
+        <div style="font-size:12px;margin-bottom:6px">
+          <span style="color:var(--accent)" id="selLabel">—</span>
+          <span class="chip" id="selPos"> —</span>
+        </div>
+        <div class="grid3">
+          <div class="field"><label>Rot Y°</label><input id="pRotY" type="number" step="15" value="0"></div>
+          <div class="field"><label>Offset X</label><input id="pX" type="number" step="0.05" value="0"></div>
+          <div class="field"><label>Offset Y</label><input id="pY" type="number" step="0.05" value="0"></div>
+        </div>
+        <div class="grid2" style="margin-top:6px">
+          <div class="field"><label>Offset Z</label><input id="pZ" type="number" step="0.05" value="0"></div>
+          <div class="field"><label>Scale X</label><input id="pSX" type="number" step="0.05" min="0.05" value="1"></div>
+        </div>
+        <div class="grid2" style="margin-top:4px">
+          <div class="field"><label>Scale Y</label><input id="pSY" type="number" step="0.05" min="0.05" value="1"></div>
+          <div class="field"><label>Scale Z</label><input id="pSZ" type="number" step="0.05" min="0.05" value="1"></div>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <button id="applyPTBtn">Apply</button>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <button id="resetPTBtn">Reset</button>
+          <button id="delFurnBtn" class="danger">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>6. Interior library</h2>
+      <div class="row">
+        <button id="saveLibBtn">Save to library</button>
+        <button id="delLibBtn" class="danger">Delete</button>
+      </div>
+      <div class="libraryList" id="libraryList"></div>
+    </div>
+
+    <div class="section">
+      <h2>7. Server maps</h2>
+      <button id="fetchServerBtn">Refresh</button>
+      <div class="libraryList" id="serverMapList"><span style="color:#888;font-size:11px">Loading…</span></div>
+    </div>
+
+    <div class="section">
+      <h2>8. Import / export</h2>
+      <div class="row">
+        <label class="fileButton" for="importInput">Import JSON</label>
+        <input id="importInput" class="hidden" type="file" accept=".json,application/json">
+        <button id="refreshExportBtn">Refresh</button>
+      </div>
+      <textarea id="exportText" style="margin-top:8px;min-height:160px"></textarea>
+    </div>
+  </aside>
+
+  <pre id="debugLog" class="debug">loading…</pre>
+</div>
+
+<!-- Same Three.js approach as the game (r128 global from CloudFlare CDN) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../../js/GLTFLoader.js"></script>
+<!-- OrbitControls and TransformControls for r128 -->
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+<script src="../../js/WallBuilder.js"></script>
+
+<script>
+(function () {
+'use strict';
+
+// ─── Boot check ───────────────────────────────────────────────────────────────
+if (typeof THREE === 'undefined') {
+  document.getElementById('debugLog').textContent = '[boot] THREE.js failed to load from CloudFlare CDN. Check internet connection.';
+  document.getElementById('statusLine').textContent = 'THREE not loaded';
+  return;
+}
+if (typeof THREE.OrbitControls === 'undefined') {
+  document.getElementById('debugLog').textContent = '[boot] OrbitControls failed to load from unpkg. Check internet connection.';
+  return;
+}
+
+// ─── Logging ──────────────────────────────────────────────────────────────────
+var logEl = document.getElementById('debugLog');
+var statusLine = document.getElementById('statusLine');
+function log(msg, lv) {
+  lv = lv || 'info';
+  var line = '[' + new Date().toLocaleTimeString() + '] ' + lv + ': ' + msg;
+  logEl.textContent = (logEl.textContent === 'loading…' ? '' : logEl.textContent + '\n') + line;
+  logEl.scrollTop = logEl.scrollHeight;
+  statusLine.textContent = msg;
+}
+window.addEventListener('error', function(e){ log(e.message + ' @ ' + (e.filename||'?') + ':' + (e.lineno||'?'), 'error'); });
+
+function $(id){ return document.getElementById(id); }
+
+// ─── Furniture catalog — mirrors DECORATIVE_FURNITURE_DEFS + PROCESSING_FURNITURE_DEFS in game.js
+// modelFile paths are relative to docs/assets/models/furniture/
+// fw/fd from game.js definitions; models loaded via THREE.GLTFLoader
+var CATALOG = [
+  // ── Decorative ──────────────────────────────────────────────────────────────
+  { key:'basicBedFurniture',      label:'Single Bed',       modelFile:'basicbed_single_refined.glb',   fw:1, fd:2, col:0x8b6540 },
+  { key:'doubleBedFurniture',     label:'Double Bed',        modelFile:'basicbed_double_refined.glb',   fw:2, fd:2, col:0x8b6540 },
+  { key:'bedrollFurniture',       label:'Bedroll',           modelFile:'bedroll_folded.glb',            fw:1, fd:1, col:0x6b8c5e },
+  { key:'benchFurniture',         label:'Short Bench',       modelFile:'bench_short.glb',               fw:2, fd:1, col:0x7a5c3a },
+  { key:'bookshelfFurniture',     label:'Bookshelf',         modelFile:'bookshelf_low.glb',             fw:2, fd:1, col:0x6b4a28 },
+  { key:'bucketFurniture',        label:'Tin Bucket',        modelFile:'bucket_tin.glb',                fw:1, fd:1, col:0x888888 },
+  { key:'candleTableFurniture',   label:'Candle Table',      modelFile:'candle_table.glb',              fw:1, fd:1, col:0x5a4020 },
+  { key:'chairSimpleFurniture',   label:'Simple Chair',      modelFile:'chair_simple.glb',              fw:1, fd:1, col:0x7a5c3a },
+  { key:'chairCushionFurniture',  label:'Cushioned Chair',   modelFile:'chair_with_blue_cushion.glb',   fw:1, fd:1, col:0x3a5c8a },
+  { key:'chestFurniture',         label:'Storage Chest',     modelFile:'chest_storage.glb',             fw:1, fd:1, col:0x6b4a28 },
+  { key:'crateStackFurniture',    label:'Crate Stack',       modelFile:'crate_stack.glb',               fw:1, fd:1, col:0x8a6a3a },
+  { key:'copperBarrelFurniture',  label:'Copper Barrel',     modelFile:'barrel_copper_hoop.glb',        fw:1, fd:1, col:0xb87333 },
+  { key:'deskFurniture',          label:'Writing Desk',      modelFile:'desk_writing.glb',              fw:2, fd:1, col:0x6b4a28 },
+  { key:'dresserFurniture',       label:'Low Dresser',       modelFile:'dresser_low.glb',               fw:2, fd:1, col:0x6b4a28 },
+  { key:'hearthFurniture',        label:'Hearth Fireplace',  modelFile:'hearth_fireplace.glb',          fw:2, fd:1, col:0x5a4a3a },
+  { key:'loomFurniture',          label:'Small Loom',        modelFile:'loom_small.glb',                fw:1, fd:2, col:0x8a6a3a },
+  { key:'nightstandFurniture',    label:'Nightstand',        modelFile:'nightstand.glb',                fw:1, fd:1, col:0x6b4a28 },
+  { key:'rugFurniture',           label:'Woven Rug',         modelFile:'rug_woven_small.glb',           fw:2, fd:2, col:0x8a5a3a },
+  { key:'standingLampFurniture',  label:'Bronze Lamp',       modelFile:'standing_lamp_bronze.glb',      fw:1, fd:1, col:0xb87333 },
+  { key:'stoolFurniture',         label:'Round Stool',       modelFile:'stool_round.glb',               fw:1, fd:1, col:0x7a5c3a },
+  { key:'tableLongFurniture',     label:'Long Table',        modelFile:'table_long.glb',                fw:4, fd:1, col:0x7a5c3a },
+  { key:'tableRoundFurniture',    label:'Round Table',       modelFile:'table_round.glb',               fw:2, fd:2, col:0x7a5c3a },
+  { key:'tableSmallFurniture',    label:'Small Table',       modelFile:'table_small.glb',               fw:1, fd:1, col:0x7a5c3a },
+  { key:'wardrobeFurniture',      label:'Tall Wardrobe',     modelFile:'wardrobe_tall.glb',             fw:2, fd:1, col:0x6b4a28 },
+  { key:'washTubFurniture',       label:'Copper Wash Tub',   modelFile:'wash_tub_copper.glb',           fw:1, fd:1, col:0xb87333 },
+  // ── Processing stations ──────────────────────────────────────────────────────
+  { key:'pestleFurniture',        label:'Pestle Station',    modelFile:'station_pestle.glb',            fw:1, fd:1, col:0x9a6a3a },
+  { key:'squeezerFurniture',      label:'Hand Squeezer',     modelFile:'station_vat.glb',               fw:2, fd:2, col:0x4f9eb8 },
+  { key:'handMillFurniture',      label:'Hand Mill',         modelFile:'station_hand_mill.glb',         fw:1, fd:1, col:0x8f8a78 },
+  { key:'dryingRackFurniture',    label:'Drying Rack',       modelFile:'station_drying_rack.glb',       fw:2, fd:1, col:0xcaa45e },
+  { key:'smokerFurniture',        label:'Smoking Hut',       modelFile:'station_smoking_hut.glb',       fw:2, fd:2, col:0x5c5147 },
+  { key:'agingBarrelFurniture',   label:'Aging Barrel',      modelFile:'station_aging_barrel.glb',      fw:1, fd:1, col:0x7a4924 },
+  { key:'agingVaseFurniture',     label:'Aging Vase',        modelFile:'station_aging_vase.glb',        fw:1, fd:1, col:0xa76b47 },
+];
+var CMAP = {};
+CATALOG.forEach(function(f){ CMAP[f.key] = f; });
+function catOf(key){ return CMAP[key] || { fw:1, fd:1, col:0x607090, label:key }; }
+function catColHex(key){ return '#' + catOf(key).col.toString(16).padStart(6,'0'); }
+
+// ─── State ────────────────────────────────────────────────────────────────────
+function newId(){ return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+function makeBlank(){
+  var cols=12, rows=10, floor=[];
+  for(var r=0;r<rows;r++) for(var c=0;c<cols;c++) floor.push([c,r]);
+  return { schema:'hobunji_building_interior.v1', id:'map_i_building_01', name:'Building Interior',
+           cols:cols, rows:rows, exits:[], colliders:[], vendorZones:[], floor:floor, furniture:[] };
+}
+
+var state = {
+  interior: makeBlank(),
+  floorSet: new Set(),
+  tool: 'paintFloor',
+  activeKey: 'shop_counter',
+  selectedId: null,
+  activeExitId: null,
+  activeVendorId: null,
+  library: [],
+  dragging: false,
+  dragFurn: null,
+  dragOff: null,
+};
+
+function syncFloorSet(){
+  state.floorSet = new Set();
+  (state.interior.floor||[]).forEach(function(p){ state.floorSet.add(p[0]+','+p[1]); });
+}
+function syncFloorFromSet(){
+  state.interior.floor = [];
+  state.floorSet.forEach(function(k){
+    var p=k.split(','); state.interior.floor.push([+p[0],+p[1]]);
+  });
+}
+function isFloor(c,r){ return state.floorSet.has(c+','+r); }
+
+// ─── Undo/redo ────────────────────────────────────────────────────────────────
+var HLIMIT=60, hist={undo:[],redo:[],pending:null};
+function snap(){ return JSON.stringify(state.interior); }
+function pushUndo(){ var s=snap(); if(hist.undo[hist.undo.length-1]===s) return; hist.undo.push(s); if(hist.undo.length>HLIMIT) hist.undo.shift(); hist.redo=[]; updateUR(); }
+function beginUndo(){ if(!hist.pending) hist.pending=snap(); }
+function commitUndo(){ if(!hist.pending) return; var b=hist.pending; hist.pending=null; var a=snap(); if(b===a) return; hist.undo.push(b); if(hist.undo.length>HLIMIT) hist.undo.shift(); hist.redo=[]; updateUR(); }
+function updateUR(){ $('undoBtn').disabled=!hist.undo.length; $('redoBtn').disabled=!hist.redo.length; }
+function undo(){ if(!hist.undo.length) return; hist.redo.push(snap()); loadSnap(hist.undo.pop()); }
+function redo(){ if(!hist.redo.length) return; hist.undo.push(snap()); loadSnap(hist.redo.pop()); }
+function loadSnap(s){ state.interior=JSON.parse(s); afterLoad(); updateUR(); }
+
+// ─── 2D grid canvas ──────────────────────────────────────────────────────────
+var gc=$('gridCanvas'), gx=gc.getContext('2d');
+
+function drawGrid(){
+  var cols=state.interior.cols, rows=state.interior.rows;
+  var W=gc.width, H=gc.height, cw=W/cols, ch=H/rows;
+  gx.fillStyle='#060a10'; gx.fillRect(0,0,W,H);
+
+  // Floor
+  state.floorSet.forEach(function(key){
+    var p=key.split(','), c=+p[0], r=+p[1];
+    gx.fillStyle='#1a2a3e'; gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
+  });
+
+  // Colliders
+  (state.interior.colliders||[]).forEach(function(p){
+    var c=p[0],r=p[1];
+    gx.fillStyle='rgba(255,50,50,0.28)'; gx.fillRect(c*cw,r*ch,cw,ch);
+    gx.save(); gx.beginPath();
+    for(var s=3;s<cw+ch;s+=6){ gx.moveTo(c*cw+Math.min(s,cw),r*ch+Math.max(0,s-cw)); gx.lineTo(c*cw+Math.max(0,s-ch),r*ch+Math.min(s,ch)); }
+    gx.strokeStyle='rgba(210,40,40,0.55)'; gx.lineWidth=1; gx.stroke(); gx.restore();
+    gx.strokeStyle='#ff3333'; gx.lineWidth=1; gx.strokeRect(c*cw+0.5,r*ch+0.5,cw-1,ch-1);
+  });
+
+  // Exit zones
+  (state.interior.exits||[]).forEach(function(ez,zi){
+    var isActive=ez.id===state.activeExitId;
+    (ez.tiles||[]).forEach(function(p){
+      var c=p[0],r=p[1];
+      gx.fillStyle=isActive?'rgba(255,148,15,0.82)':'rgba(210,125,12,0.52)';
+      gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
+      gx.strokeStyle=isActive?'#ffe055':'#d08010'; gx.lineWidth=isActive?2:1;
+      gx.strokeRect(c*cw+1,r*ch+1,cw-2,ch-2);
+      var fs=Math.max(6,Math.min(10,cw*0.3));
+      gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
+      gx.fillStyle='#fff'; gx.globalAlpha=0.9;
+      gx.fillText('E'+(zi+1),(c+0.5)*cw,(r+0.5)*ch); gx.globalAlpha=1;
+    });
+  });
+
+  // Vendor zones
+  (state.interior.vendorZones||[]).forEach(function(vz,zi){
+    var isActive=vz.id===state.activeVendorId;
+    (vz.tiles||[]).forEach(function(p){
+      var c=p[0],r=p[1];
+      gx.fillStyle=isActive?'rgba(148,55,255,0.82)':'rgba(120,40,215,0.52)';
+      gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
+      gx.strokeStyle=isActive?'#cc88ff':'#8025c0'; gx.lineWidth=isActive?2:1;
+      gx.strokeRect(c*cw+1,r*ch+1,cw-2,ch-2);
+      var fs=Math.max(6,Math.min(10,cw*0.3));
+      gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
+      gx.fillStyle='#fff'; gx.globalAlpha=0.9;
+      gx.fillText('V'+(zi+1),(c+0.5)*cw,(r+0.5)*ch); gx.globalAlpha=1;
+    });
+  });
+
+  // Furniture
+  state.interior.furniture.forEach(function(f){
+    var cat=catOf(f.itemKey), sel=f.id===state.selectedId;
+    gx.fillStyle=sel?'#76b8ff':catColHex(f.itemKey); gx.globalAlpha=sel?0.9:0.7;
+    gx.fillRect(f.col*cw+2,f.row*ch+2,cat.fw*cw-4,cat.fd*ch-4);
+    gx.globalAlpha=1;
+    gx.strokeStyle=sel?'#fff':'rgba(255,255,255,.4)'; gx.lineWidth=sel?2:1;
+    gx.strokeRect(f.col*cw+2,f.row*ch+2,cat.fw*cw-4,cat.fd*ch-4);
+    var fs=Math.max(7,Math.min(11,cw*0.3));
+    gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
+    gx.fillStyle='#fff'; gx.globalAlpha=sel?1:0.8;
+    gx.fillText((cat.label||f.itemKey).slice(0,7),(f.col+cat.fw/2)*cw,(f.row+cat.fd/2)*ch);
+    gx.globalAlpha=1;
+  });
+
+  // Grid lines
+  gx.strokeStyle='#1e2d45'; gx.lineWidth=0.5;
+  for(var c=0;c<=cols;c++){ gx.beginPath(); gx.moveTo(c*cw,0); gx.lineTo(c*cw,H); gx.stroke(); }
+  for(var r=0;r<=rows;r++){ gx.beginPath(); gx.moveTo(0,r*ch); gx.lineTo(W,r*ch); gx.stroke(); }
+
+  var nColl=(state.interior.colliders||[]).length, nEZ=(state.interior.exits||[]).length, nVZ=(state.interior.vendorZones||[]).length;
+  $('viewStats').textContent=state.floorSet.size+' tiles | '+state.interior.furniture.length+' furn | '+cols+'x'+rows+(nColl?' | '+nColl+' coll':'')+(nEZ?' | '+nEZ+' exits':'')+(nVZ?' | '+nVZ+' vendors':'');
+}
+
+function gridCell(e){
+  var rect=gc.getBoundingClientRect();
+  return { c:Math.floor((e.clientX-rect.left)/rect.width*state.interior.cols),
+           r:Math.floor((e.clientY-rect.top)/rect.height*state.interior.rows) };
+}
+function inGrid(c,r){ return c>=0&&r>=0&&c<state.interior.cols&&r<state.interior.rows; }
+function furnAt(c,r){
+  for(var i=0;i<state.interior.furniture.length;i++){
+    var f=state.interior.furniture[i], cat=catOf(f.itemKey);
+    if(c>=f.col&&c<f.col+cat.fw&&r>=f.row&&r<f.row+cat.fd) return f;
+  }
+  return null;
+}
+
+function gridAction(e){
+  var cr=gridCell(e), c=cr.c, r=cr.r;
+  if(!inGrid(c,r)) return;
+  var key=c+','+r, tool=state.tool, interior=state.interior;
+
+  if(tool==='paintFloor'){
+    if(!state.floorSet.has(key)){ state.floorSet.add(key); syncFloorFromSet(); drawGrid(); rebuild3D(); }
+  }
+  else if(tool==='eraseFloor'){
+    if(state.floorSet.has(key)){
+      state.floorSet.delete(key);
+      interior.furniture=interior.furniture.filter(function(f){
+        var cat=catOf(f.itemKey);
+        for(var dc=0;dc<cat.fw;dc++) for(var dd=0;dd<cat.fd;dd++)
+          if(f.col+dc===c&&f.row+dd===r) return false;
+        return true;
+      });
+      (interior.exits||[]).forEach(function(ez){ ez.tiles=(ez.tiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;}); });
+      (interior.vendorZones||[]).forEach(function(vz){ vz.tiles=(vz.tiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;}); });
+      syncFloorFromSet(); drawGrid(); rebuild3D();
+    }
+  }
+  else if(tool==='exit'){
+    if(!isFloor(c,r)){ log('Exit must be on a floor tile.','warn'); return; }
+    interior.exit={col:c,row:r}; drawGrid(); rebuild3D();
+  }
+  else if(tool==='furniture'){
+    if(!isFloor(c,r)){ log('Furniture must be on a floor tile.','warn'); return; }
+    var cat=catOf(state.activeKey);
+    for(var dc=0;dc<cat.fw;dc++) for(var dd=0;dd<cat.fd;dd++)
+      if(!isFloor(c+dc,r+dd)||c+dc>=interior.cols||r+dd>=interior.rows)
+        { log('Not enough floor space here.','warn'); return; }
+    var existing=furnAt(c,r);
+    if(existing){ selectFurn(existing.id); return; }
+    interior.furniture.push({id:newId(),itemKey:state.activeKey,col:c,row:r,rotY:0,postX:0,postY:0,postZ:0});
+    drawGrid(); rebuild3D();
+  }
+  else if(tool==='select'){
+    var f=furnAt(c,r);
+    if(f){
+      selectFurn(f.id);
+      state.dragFurn=f;
+      state.dragOff={dc:c-f.col, dr:r-f.row};
+    } else {
+      selectFurn(null);
+      state.dragFurn=null;
+    }
+  }
+  else if(tool==='erase'){
+    var f=furnAt(c,r);
+    if(f){ interior.furniture=interior.furniture.filter(function(x){return x.id!==f.id;}); if(state.selectedId===f.id) selectFurn(null); drawGrid(); rebuild3D(); }
+  }
+  else if(tool==='paintCollider'){
+    if(!interior.colliders) interior.colliders=[];
+    if(!interior.colliders.some(function(p){return p[0]===c&&p[1]===r;})){
+      interior.colliders.push([c,r]); drawGrid(); rebuild3D();
+    }
+  }
+  else if(tool==='eraseCollider'){
+    interior.colliders=(interior.colliders||[]).filter(function(p){return p[0]!==c||p[1]!==r;});
+    drawGrid(); rebuild3D();
+  }
+  else if(tool==='paintExit'){
+    if(!state.activeExitId){log('Select an exit zone first.','warn');return;}
+    var ez=(interior.exits||[]).filter(function(e){return e.id===state.activeExitId;})[0];
+    if(!ez) return;
+    if(!isFloor(c,r)){log('Exit tiles must be on floor.','warn');return;}
+    if(!ez.tiles.some(function(p){return p[0]===c&&p[1]===r;})){
+      ez.tiles.push([c,r]); drawGrid(); rebuild3D();
+    }
+  }
+  else if(tool==='eraseExit'){
+    if(!state.activeExitId) return;
+    var ez=(interior.exits||[]).filter(function(e){return e.id===state.activeExitId;})[0];
+    if(!ez) return;
+    ez.tiles=ez.tiles.filter(function(p){return p[0]!==c||p[1]!==r;});
+    drawGrid(); rebuild3D();
+  }
+  else if(tool==='paintVendor'){
+    if(!state.activeVendorId){log('Select a vendor zone first.','warn');return;}
+    var vz=(interior.vendorZones||[]).filter(function(v){return v.id===state.activeVendorId;})[0];
+    if(!vz) return;
+    if(!isFloor(c,r)){log('Vendor tiles must be on floor.','warn');return;}
+    if(!vz.tiles.some(function(p){return p[0]===c&&p[1]===r;})){
+      vz.tiles.push([c,r]); drawGrid(); rebuild3D();
+    }
+  }
+  else if(tool==='eraseVendor'){
+    if(!state.activeVendorId) return;
+    var vz=(interior.vendorZones||[]).filter(function(v){return v.id===state.activeVendorId;})[0];
+    if(!vz) return;
+    vz.tiles=vz.tiles.filter(function(p){return p[0]!==c||p[1]!==r;});
+    drawGrid(); rebuild3D();
+  }
+}
+
+gc.addEventListener('pointerdown',function(e){
+  beginUndo(); state.dragging=true;
+  gridAction(e);
+});
+gc.addEventListener('pointermove',function(e){
+  if(!state.dragging) return;
+  if(state.tool==='select' && state.dragFurn){
+    var cr=gridCell(e), nc=cr.c-state.dragOff.dc, nr=cr.r-state.dragOff.dr;
+    var f=state.dragFurn, cat=catOf(f.itemKey), interior=state.interior;
+    if(nc===f.col && nr===f.row) return;
+    // validate all footprint tiles are floor and in bounds
+    var ok=true;
+    for(var dc=0;dc<cat.fw&&ok;dc++) for(var dd=0;dd<cat.fd&&ok;dd++){
+      var tc=nc+dc, tr=nr+dd;
+      if(tc<0||tr<0||tc>=interior.cols||tr>=interior.rows||!isFloor(tc,tr)) ok=false;
+    }
+    if(!ok) return;
+    f.col=nc; f.row=nr;
+    drawGrid();
+  } else if(['paintFloor','eraseFloor','furniture','erase',
+             'paintCollider','eraseCollider','paintExit','eraseExit','paintVendor','eraseVendor'].indexOf(state.tool)>=0){
+    gridAction(e);
+  }
+});
+gc.addEventListener('pointerup',function(){
+  if(state.dragFurn){ rebuild3D(); state.dragFurn=null; state.dragOff=null; }
+  state.dragging=false; commitUndo();
+});
+gc.addEventListener('pointerleave',function(){
+  if(state.dragFurn){ rebuild3D(); state.dragFurn=null; state.dragOff=null; }
+  state.dragging=false; commitUndo();
+});
+
+// ─── Tools ────────────────────────────────────────────────────────────────────
+var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',paintCollider:'toolPaintCollider',eraseCollider:'toolEraseCollider',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase',paintExit:'toolPaintExit',eraseExit:'toolEraseExit',paintVendor:'toolPaintVendor',eraseVendor:'toolEraseVendor'};
+function setTool(t){
+  state.tool=t;
+  Object.keys(TOOL_IDS).forEach(function(k){ $(TOOL_IDS[k]).classList.toggle('active',k===t); });
+  log('Tool: '+t);
+}
+Object.keys(TOOL_IDS).forEach(function(k){ $(TOOL_IDS[k]).addEventListener('click',function(){ setTool(k); }); });
+
+// ─── Catalog UI ───────────────────────────────────────────────────────────────
+function buildCatalogUI(){
+  var sel=$('catSelect');
+  sel.innerHTML=CATALOG.map(function(f){ return '<option value="'+f.key+'">'+f.label+' ('+f.fw+'x'+f.fd+')</option>'; }).join('');
+  sel.value=state.activeKey;
+  sel.addEventListener('change',function(){ state.activeKey=sel.value; setTool('furniture'); updateCatHL(); });
+  var grid=$('catGrid'); grid.innerHTML='';
+  CATALOG.forEach(function(f){
+    var btn=document.createElement('button');
+    btn.className='catBtn'; btn.dataset.key=f.key;
+    btn.textContent=f.label+'\n'+f.fw+'x'+f.fd;
+    btn.addEventListener('click',function(){ state.activeKey=f.key; sel.value=f.key; setTool('furniture'); updateCatHL(); });
+    grid.appendChild(btn);
+  });
+  updateCatHL();
+}
+function updateCatHL(){
+  document.querySelectorAll('.catBtn').forEach(function(b){ b.classList.toggle('active',b.dataset.key===state.activeKey); });
+}
+
+// ─── Selection UI ─────────────────────────────────────────────────────────────
+function selectFurn(id){
+  state.selectedId=id;
+  var f=id?state.interior.furniture.filter(function(x){return x.id===id;})[0]:null;
+  if(f){
+    $('noSelMsg').classList.add('hidden'); $('selFields').classList.remove('hidden');
+    var cat=catOf(f.itemKey);
+    $('selLabel').textContent=(cat.label||f.itemKey)+' ('+f.itemKey+')';
+    $('selPos').textContent=' col '+f.col+', row '+f.row;
+    var defS=f.postScale!=null?f.postScale:1;
+    $('pRotY').value=f.rotY||0; $('pX').value=f.postX||0; $('pY').value=f.postY||0; $('pZ').value=f.postZ||0;
+    $('pSX').value=f.postSX!=null?f.postSX:defS; $('pSY').value=f.postSY!=null?f.postSY:defS; $('pSZ').value=f.postSZ!=null?f.postSZ:defS;
+    $('selStats').textContent='Selected: '+(cat.label||f.itemKey);
+    syncTC();
+  } else {
+    $('noSelMsg').classList.remove('hidden'); $('selFields').classList.add('hidden');
+    $('selStats').textContent='Nothing selected';
+    if(tc) tc.detach();
+  }
+  drawGrid();
+}
+$('applyPTBtn').addEventListener('click',function(){
+  var f=state.interior.furniture.filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
+  pushUndo();
+  f.rotY=+$('pRotY').value||0; f.postX=+$('pX').value||0; f.postY=+$('pY').value||0; f.postZ=+$('pZ').value||0;
+  f.postSX=Math.max(0.05,+$('pSX').value||1); f.postSY=Math.max(0.05,+$('pSY').value||1); f.postSZ=Math.max(0.05,+$('pSZ').value||1);
+  delete f.postScale;
+  rebuild3D();
+});
+$('resetPTBtn').addEventListener('click',function(){
+  var f=state.interior.furniture.filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
+  pushUndo(); f.rotY=0; f.postX=0; f.postY=0; f.postZ=0; f.postSX=1; f.postSY=1; f.postSZ=1; delete f.postScale; rebuild3D(); selectFurn(state.selectedId);
+});
+$('delFurnBtn').addEventListener('click',function(){
+  if(!state.selectedId) return; pushUndo();
+  state.interior.furniture=state.interior.furniture.filter(function(x){return x.id!==state.selectedId;});
+  selectFurn(null); drawGrid(); rebuild3D();
+});
+
+// ─── Grid controls ────────────────────────────────────────────────────────────
+$('applyGridBtn').addEventListener('click',function(){
+  pushUndo();
+  var cols=Math.max(3,Math.min(32,+$('gridCols').value||12));
+  var rows=Math.max(3,Math.min(32,+$('gridRows').value||10));
+  state.interior.cols=cols; state.interior.rows=rows;
+  state.interior.floor=(state.interior.floor||[]).filter(function(p){return p[0]<cols&&p[1]<rows;});
+  syncFloorSet();
+  state.interior.furniture=state.interior.furniture.filter(function(f){
+    var cat=catOf(f.itemKey); return f.col+cat.fw<=cols&&f.row+cat.fd<=rows;
+  });
+  (state.interior.exits||[]).forEach(function(e){ e.tiles=(e.tiles||[]).filter(function(p){return p[0]<cols&&p[1]<rows;}); });
+  (state.interior.vendorZones||[]).forEach(function(v){ v.tiles=(v.tiles||[]).filter(function(p){return p[0]<cols&&p[1]<rows;}); });
+  state.interior.colliders=(state.interior.colliders||[]).filter(function(p){return p[0]<cols&&p[1]<rows;});
+  drawGrid(); rebuild3D(); log('Grid '+cols+'x'+rows);
+});
+$('fillRectBtn').addEventListener('click',function(){
+  pushUndo();
+  var cols=state.interior.cols, rows=state.interior.rows, floor=[];
+  for(var r=0;r<rows;r++) for(var c=0;c<cols;c++) floor.push([c,r]);
+  state.interior.floor=floor; syncFloorSet(); drawGrid(); rebuild3D(); log('Filled rectangle.');
+});
+$('clearFloorBtn').addEventListener('click',function(){
+  pushUndo(); state.interior.floor=[]; syncFloorSet(); state.interior.furniture=[];
+  (state.interior.exits||[]).forEach(function(e){e.tiles=[];});
+  (state.interior.vendorZones||[]).forEach(function(v){v.tiles=[];});
+  selectFurn(null); drawGrid(); rebuild3D(); log('Floor cleared.');
+});
+
+// ─── Exit zone management ─────────────────────────────────────────────────────
+function renderExitList(){
+  var el=$('exitZoneList'); el.innerHTML='';
+  (state.interior.exits||[]).forEach(function(ez){
+    var isActive=ez.id===state.activeExitId;
+    var div=document.createElement('div'); div.className='listItem';
+    div.style.outline=isActive?'2px solid var(--accent)':'';
+    div.innerHTML='<span><b>'+(ez.label||ez.id)+'</b><br><span class="chip">'+
+      (ez.tiles||[]).length+' tiles → '+(ez.targetMap||'(no target)')+'</span></span>'+
+      '<button type="button" onclick="window.__biaSelExit(\''+ez.id+'\')">Edit</button>';
+    el.appendChild(div);
+  });
+}
+window.__biaSelExit=function(id){
+  var ez=(state.interior.exits||[]).filter(function(e){return e.id===id;})[0]; if(!ez) return;
+  state.activeExitId=id;
+  $('exitZoneFields').classList.remove('hidden');
+  $('exitZoneLabel').value=ez.label||'';
+  $('exitTargetMap').value=ez.targetMap||'';
+  $('exitSpawnCol').value=ez.spawnCol||0;
+  $('exitSpawnRow').value=ez.spawnRow||0;
+  setTool('paintExit'); renderExitList(); drawGrid();
+};
+$('addExitBtn').addEventListener('click',function(){
+  if(!state.interior.exits) state.interior.exits=[];
+  var id='exit_'+Date.now().toString(36);
+  state.interior.exits.push({id:id,label:'Exit '+(state.interior.exits.length+1),tiles:[],targetMap:'',spawnCol:0,spawnRow:0});
+  window.__biaSelExit(id);
+});
+$('applyExitBtn').addEventListener('click',function(){
+  if(!state.activeExitId) return;
+  var ez=(state.interior.exits||[]).filter(function(e){return e.id===state.activeExitId;})[0]; if(!ez) return;
+  pushUndo();
+  ez.label=$('exitZoneLabel').value.trim()||ez.label;
+  ez.targetMap=$('exitTargetMap').value.trim();
+  ez.spawnCol=+$('exitSpawnCol').value||0;
+  ez.spawnRow=+$('exitSpawnRow').value||0;
+  renderExitList(); refreshExport(); log('Exit zone updated.');
+});
+$('delExitBtn').addEventListener('click',function(){
+  if(!state.activeExitId) return; pushUndo();
+  state.interior.exits=(state.interior.exits||[]).filter(function(e){return e.id!==state.activeExitId;});
+  state.activeExitId=null; $('exitZoneFields').classList.add('hidden');
+  renderExitList(); drawGrid(); rebuild3D();
+});
+
+// ─── Vendor zone management ────────────────────────────────────────────────────
+function renderVendorList(){
+  var el=$('vendorZoneList'); el.innerHTML='';
+  (state.interior.vendorZones||[]).forEach(function(vz){
+    var isActive=vz.id===state.activeVendorId;
+    var div=document.createElement('div'); div.className='listItem';
+    div.style.outline=isActive?'2px solid #b060ff':'';
+    div.innerHTML='<span><b>'+(vz.vendorKey||'(no key)')+'</b><br><span class="chip">'+
+      (vz.tiles||[]).length+' tiles</span></span>'+
+      '<button type="button" onclick="window.__biaSelVendor(\''+vz.id+'\')">Edit</button>';
+    el.appendChild(div);
+  });
+}
+window.__biaSelVendor=function(id){
+  var vz=(state.interior.vendorZones||[]).filter(function(v){return v.id===id;})[0]; if(!vz) return;
+  state.activeVendorId=id;
+  $('vendorZoneFields').classList.remove('hidden');
+  $('vendorKey').value=vz.vendorKey||'';
+  setTool('paintVendor'); renderVendorList(); drawGrid();
+};
+$('addVendorBtn').addEventListener('click',function(){
+  if(!state.interior.vendorZones) state.interior.vendorZones=[];
+  var id='vendor_'+Date.now().toString(36);
+  state.interior.vendorZones.push({id:id,vendorKey:'',tiles:[]});
+  window.__biaSelVendor(id);
+});
+$('applyVendorBtn').addEventListener('click',function(){
+  if(!state.activeVendorId) return;
+  var vz=(state.interior.vendorZones||[]).filter(function(v){return v.id===state.activeVendorId;})[0]; if(!vz) return;
+  pushUndo();
+  vz.vendorKey=$('vendorKey').value.trim();
+  renderVendorList(); refreshExport(); log('Vendor zone updated.');
+});
+$('delVendorBtn').addEventListener('click',function(){
+  if(!state.activeVendorId) return; pushUndo();
+  state.interior.vendorZones=(state.interior.vendorZones||[]).filter(function(v){return v.id!==state.activeVendorId;});
+  state.activeVendorId=null; $('vendorZoneFields').classList.add('hidden');
+  renderVendorList(); drawGrid(); rebuild3D();
+});
+
+// ─── Three.js setup ───────────────────────────────────────────────────────────
+var canvas3=$('threeCanvas');
+var renderer=new THREE.WebGLRenderer({canvas:canvas3,antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setClearColor(0x0b0f16);
+
+var scene3=new THREE.Scene();
+scene3.background=new THREE.Color(0x0b0f16);
+scene3.fog=new THREE.Fog(0x0b0f16,14,35);
+
+var camera=new THREE.PerspectiveCamera(55,1,0.1,80);
+camera.position.set(6,7,12);
+
+var orbit=new THREE.OrbitControls(camera,canvas3);
+orbit.enableDamping=true; orbit.dampingFactor=0.12; orbit.target.set(6,0.5,5);
+
+var tc=null;
+
+// Lights
+scene3.add(new THREE.AmbientLight(0xb0c8e8,0.65));
+var dirL=new THREE.DirectionalLight(0xfff8e0,0.9); dirL.position.set(5,8,4); scene3.add(dirL);
+var fillL=new THREE.DirectionalLight(0x6080a0,0.3); fillL.position.set(-4,2,-3); scene3.add(fillL);
+
+var floorMat=new THREE.MeshLambertMaterial({color:0x3d2a18});
+var exitMat =new THREE.MeshLambertMaterial({color:0xd08020});
+var wallFbkMat=new THREE.MeshLambertMaterial({color:0x8b7055});
+
+var WALL_H=1.75;
+var furnMeshes={};
+var previewGroup=null;
+
+// ─── WallBuilder setup ────────────────────────────────────────────────────────
+var wb=null, wbReady=false;
+if(typeof WallBuilder !== 'undefined'){
+  wb=new WallBuilder({glbBasePath:'../../assets/models/'});
+  wb.loadDefaultGlb()
+    .then(function(){ wbReady=true; log('Roughbrick1.glb ready — rebuilding.'); rebuild3D(); })
+    .catch(function(e){ log('GLB load failed ('+e.message+') — placeholder bricks.','warn'); });
+  log('WallBuilder ready.');
+} else {
+  log('WallBuilder not found — walls will use flat boxes.','warn');
+}
+
+// ─── Furniture GLB loader ─────────────────────────────────────────────────────
+var glbCache = {};   // modelFile → THREE.Group (cloneable template) once loaded
+var glbPending = {}; // modelFile → true while in-flight
+
+function loadFurnGLB(modelFile){
+  if(glbCache[modelFile] || glbPending[modelFile]) return;
+  glbPending[modelFile] = true;
+  var loader = new THREE.GLTFLoader();
+  loader.load('../../assets/models/furniture/' + modelFile,
+    function(gltf){
+      // Auto-center: translate so model bottom sits at Y=0, centered in X/Z
+      var box = new THREE.Box3().setFromObject(gltf.scene);
+      var cx = (box.min.x + box.max.x) / 2;
+      var cz = (box.min.z + box.max.z) / 2;
+      gltf.scene.position.set(-cx, -box.min.y, -cz);
+      var wrapper = new THREE.Group();
+      wrapper.add(gltf.scene);
+      glbCache[modelFile] = wrapper;
+      delete glbPending[modelFile];
+      log('Loaded ' + modelFile);
+      rebuild3D();
+    },
+    undefined,
+    function(err){ delete glbPending[modelFile]; log('GLB load failed: ' + modelFile, 'warn'); }
+  );
+}
+
+function preloadAllFurnGLBs(){
+  CATALOG.forEach(function(c){ if(c.modelFile) loadFurnGLB(c.modelFile); });
+}
+
+function furnGroupFor(f){
+  var cat = catOf(f.itemKey);
+  var modelFile = cat.modelFile;
+  if(modelFile && glbCache[modelFile]){
+    var grp = glbCache[modelFile].clone();
+    grp.userData = { furnId: f.id };
+    // Ensure all meshes carry the furnId for raycasting
+    grp.traverse(function(o){ if(o.isMesh) o.userData = { furnId: f.id }; });
+    return grp;
+  }
+  // Placeholder box while model loads (or if no modelFile)
+  var mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(cat.fw*0.8, 0.9, cat.fd*0.8),
+    new THREE.MeshLambertMaterial({color: cat.col})
+  );
+  mesh.position.y = 0.45;
+  mesh.userData = { furnId: f.id };
+  var grp = new THREE.Group();
+  grp.userData = { furnId: f.id };
+  grp.add(mesh);
+  return grp;
+}
+
+// ─── Wall panel generation from irregular footprint ──────────────────────────
+function mergeH(segs){
+  if(!segs.length) return [];
+  segs.sort(function(a,b){return a.x0-b.x0;});
+  var out=[{x0:segs[0].x0,x1:segs[0].x1}];
+  for(var i=1;i<segs.length;i++){
+    var L=out[out.length-1];
+    if(segs[i].x0<=L.x1) L.x1=Math.max(L.x1,segs[i].x1); else out.push({x0:segs[i].x0,x1:segs[i].x1});
+  }
+  return out;
+}
+function mergeV(segs){
+  if(!segs.length) return [];
+  segs.sort(function(a,b){return a.z0-b.z0;});
+  var out=[{z0:segs[0].z0,z1:segs[0].z1}];
+  for(var i=1;i<segs.length;i++){
+    var L=out[out.length-1];
+    if(segs[i].z0<=L.z1) L.z1=Math.max(L.z1,segs[i].z1); else out.push({z0:segs[i].z0,z1:segs[i].z1});
+  }
+  return out;
+}
+
+function buildWallPanels(floorSet, exits){
+  var exitTileSet=new Set();
+  (exits||[]).forEach(function(ez){ (ez.tiles||[]).forEach(function(p){ exitTileSet.add(p[0]+','+p[1]); }); });
+
+  var nMap={}, sMap={}, eMap={}, wMap={};
+  function push(map,k,seg){ if(!map[k]) map[k]=[]; map[k].push(seg); }
+
+  floorSet.forEach(function(key){
+    var p=key.split(','), c=+p[0], r=+p[1];
+    var isExit=exitTileSet.has(key);
+    if(!floorSet.has(c+','+(r-1)) && !isExit) push(nMap,r,    {x0:c,x1:c+1});
+    if(!floorSet.has(c+','+(r+1)) && !isExit) push(sMap,r+1,  {x0:c,x1:c+1});
+    if(!floorSet.has((c+1)+','+r) && !isExit) push(eMap,c+1,  {z0:r,z1:r+1});
+    if(!floorSet.has((c-1)+','+r) && !isExit) push(wMap,c,    {z0:r,z1:r+1});
+  });
+
+  var panels=[], H=WALL_H;
+  Object.keys(nMap).forEach(function(z){ mergeH(nMap[z]).forEach(function(m){ var w=m.x1-m.x0,cx=(m.x0+m.x1)/2; panels.push({width:w,height:H,position:[cx,H/2,+z],rotationDeg:[0,0,0]}); }); });
+  Object.keys(sMap).forEach(function(z){ mergeH(sMap[z]).forEach(function(m){ var w=m.x1-m.x0,cx=(m.x0+m.x1)/2; panels.push({width:w,height:H,position:[cx,H/2,+z],rotationDeg:[0,180,0]}); }); });
+  Object.keys(eMap).forEach(function(x){ mergeV(eMap[x]).forEach(function(m){ var d=m.z1-m.z0,cz=(m.z0+m.z1)/2; panels.push({width:d,height:H,position:[+x,H/2,cz],rotationDeg:[0,-90,0]}); }); });
+  Object.keys(wMap).forEach(function(x){ mergeV(wMap[x]).forEach(function(m){ var d=m.z1-m.z0,cz=(m.z0+m.z1)/2; panels.push({width:d,height:H,position:[+x,H/2,cz],rotationDeg:[0,90,0]}); }); });
+  return panels;
+}
+
+function makeFallbackWalls(panels){
+  var g=new THREE.Group();
+  panels.forEach(function(p){
+    var m=new THREE.Mesh(new THREE.BoxGeometry(p.width,p.height,0.18),wallFbkMat);
+    m.position.set(p.position[0],p.position[1],p.position[2]);
+    m.rotation.set(p.rotationDeg[0]*Math.PI/180,p.rotationDeg[1]*Math.PI/180,p.rotationDeg[2]*Math.PI/180);
+    g.add(m);
+  });
+  return g;
+}
+
+// ─── 3D rebuild ───────────────────────────────────────────────────────────────
+function rebuild3D(){
+  if(previewGroup){ scene3.remove(previewGroup); previewGroup.traverse(function(o){if(o.geometry)o.geometry.dispose();}); }
+  furnMeshes={};
+  var floorSet=state.floorSet, interior=state.interior, furniture=interior.furniture;
+  previewGroup=new THREE.Group();
+
+  // Floor tiles
+  floorSet.forEach(function(key){
+    var p=key.split(','), c=+p[0], r=+p[1];
+    var fl=new THREE.Mesh(new THREE.BoxGeometry(1,0.08,1),floorMat);
+    fl.position.set(c+0.5,-0.04,r+0.5); previewGroup.add(fl);
+  });
+
+  // Exit zone overlays
+  var exitZoneMat3=new THREE.MeshLambertMaterial({color:0xd08020,transparent:true,opacity:0.55});
+  (interior.exits||[]).forEach(function(ez){
+    (ez.tiles||[]).forEach(function(p){
+      var m=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.03,0.9),exitZoneMat3);
+      m.position.set(p[0]+0.5,0.02,p[1]+0.5); previewGroup.add(m);
+    });
+  });
+
+  // Vendor zone overlays
+  var vendorZoneMat3=new THREE.MeshLambertMaterial({color:0x9933cc,transparent:true,opacity:0.5});
+  (interior.vendorZones||[]).forEach(function(vz){
+    (vz.tiles||[]).forEach(function(p){
+      var m=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.03,0.9),vendorZoneMat3);
+      m.position.set(p[0]+0.5,0.025,p[1]+0.5); previewGroup.add(m);
+    });
+  });
+
+  // Collider boxes (editor-visible, invisible in game)
+  var colliderMat3=new THREE.MeshLambertMaterial({color:0xcc2222,transparent:true,opacity:0.35});
+  (interior.colliders||[]).forEach(function(p){
+    var m=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.3,0.9),colliderMat3);
+    m.position.set(p[0]+0.5,0.15,p[1]+0.5); previewGroup.add(m);
+  });
+
+  // Walls
+  var panels=buildWallPanels(floorSet,interior.exits);
+  if(wb && panels.length){
+    try{
+      var wbOpts={usePlaceholder:!wbReady,unitMult:0.5,rockScale:1.5,preScale:[1,1,0.6],brickJitter:{rotYDeg:8,shiftU:0.04,shiftV:0.03}};
+      previewGroup.add(wb.build(panels,wbOpts));
+    } catch(e){ log('WallBuilder error: '+e.message,'warn'); previewGroup.add(makeFallbackWalls(panels)); }
+  } else if(panels.length){
+    previewGroup.add(makeFallbackWalls(panels));
+  }
+
+  // Furniture — use real GLBs if cached, placeholder boxes otherwise
+  furniture.forEach(function(f){
+    var cat=catOf(f.itemKey);
+    var grp=furnGroupFor(f);
+    var cx=f.col+cat.fw/2+(f.postX||0), cz=f.row+cat.fd/2+(f.postZ||0);
+    var defS=f.postScale!=null?f.postScale:1;
+    var scX=f.postSX!=null?f.postSX:defS, scY=f.postSY!=null?f.postSY:defS, scZ=f.postSZ!=null?f.postSZ:defS;
+    grp.position.set(cx,(f.postY||0),cz);
+    grp.rotation.y=(f.rotY||0)*Math.PI/180;
+    grp.scale.set(scX,scY,scZ);
+    furnMeshes[f.id]=grp;
+    previewGroup.add(grp);
+  });
+
+  scene3.add(previewGroup);
+  syncTC();
+
+  // Orbit target = centroid
+  if(floorSet.size){
+    var sx=0,sz=0,n=0;
+    floorSet.forEach(function(k){var p=k.split(','); sx+=+p[0]+0.5; sz+=+p[1]+0.5; n++;});
+    orbit.target.set(sx/n,0.5,sz/n);
+  }
+  refreshExport();
+}
+
+// ─── Transform controls ───────────────────────────────────────────────────────
+function initTC(){
+  tc=new THREE.TransformControls(camera,canvas3);
+  tc.addEventListener('change',function(){ renderer.render(scene3,camera); });
+  tc.addEventListener('dragging-changed',function(e){
+    orbit.enabled=!e.value;
+    if(!e.value && state.selectedId){
+      var f=null; for(var i=0;i<state.interior.furniture.length;i++) if(state.interior.furniture[i].id===state.selectedId){f=state.interior.furniture[i];break;}
+      var grp=furnMeshes[state.selectedId];
+      if(!f||!grp) return;
+      var cat=catOf(f.itemKey);
+      f.postX=+( grp.position.x-(f.col+cat.fw/2) ).toFixed(3);
+      f.postY=+( grp.position.y ).toFixed(3);
+      f.postZ=+( grp.position.z-(f.row+cat.fd/2) ).toFixed(3);
+      f.rotY =+( grp.rotation.y*180/Math.PI ).toFixed(1);
+      f.postSX=+( grp.scale.x ).toFixed(3); f.postSY=+( grp.scale.y ).toFixed(3); f.postSZ=+( grp.scale.z ).toFixed(3);
+      delete f.postScale;
+      $('pX').value=f.postX; $('pY').value=f.postY; $('pZ').value=f.postZ; $('pRotY').value=f.rotY;
+      $('pSX').value=f.postSX; $('pSY').value=f.postSY; $('pSZ').value=f.postSZ;
+      commitUndo();
+    }
+  });
+  scene3.add(tc);
+}
+function syncTC(){
+  if(!tc) return;
+  if(!state.selectedId){tc.detach();return;}
+  var mesh=furnMeshes[state.selectedId];
+  if(mesh) tc.attach(mesh); else tc.detach();
+}
+function setMode(m){
+  if(!tc) return; tc.setMode(m);
+  $('modeTranslate').classList.toggle('active',m==='translate');
+  $('modeRotate').classList.toggle('active',m==='rotate');
+  $('modeScale').classList.toggle('active',m==='scale');
+}
+$('modeTranslate').addEventListener('click',function(){setMode('translate');});
+$('modeRotate').addEventListener('click',function(){setMode('rotate');});
+$('modeScale').addEventListener('click',function(){setMode('scale');});
+
+// ─── 3D click → select ────────────────────────────────────────────────────────
+var ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
+canvas3.addEventListener('pointerdown',function(e){
+  var rect=canvas3.getBoundingClientRect();
+  mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+  mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+  ray.setFromCamera(mouse,camera);
+  var meshArr=Object.keys(furnMeshes).map(function(k){return furnMeshes[k];});
+  var hits=ray.intersectObjects(meshArr,true);
+  if(hits.length){
+    var furnId=hits[0].object.userData.furnId;
+    // Walk up to group if needed
+    var obj=hits[0].object;
+    while(obj&&!obj.userData.furnId&&obj.parent) obj=obj.parent;
+    if(obj&&obj.userData.furnId) furnId=obj.userData.furnId;
+    selectFurn(furnId);
+  }
+});
+
+// ─── Render loop ──────────────────────────────────────────────────────────────
+function resizeRenderer(){
+  var w=canvas3.clientWidth, h=canvas3.clientHeight;
+  if(!w||!h) return;
+  renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+function animate(){ requestAnimationFrame(animate); resizeRenderer(); orbit.update(); renderer.render(scene3,camera); }
+
+// ─── Library ──────────────────────────────────────────────────────────────────
+var LS='bia_lib_v1';
+function loadLib(){ try{state.library=JSON.parse(localStorage.getItem(LS)||'[]');}catch(e){state.library=[];} }
+function saveLib(){ try{localStorage.setItem(LS,JSON.stringify(state.library));}catch(e){log('localStorage error','warn');} }
+function renderLib(){
+  var el=$('libraryList'); el.innerHTML='';
+  state.library.forEach(function(it){
+    var div=document.createElement('div'); div.className='listItem';
+    div.innerHTML='<span><b>'+it.name+'</b><br><span class="chip">'+it.id+' | '+it.cols+'x'+it.rows+' | '+(it.furniture?it.furniture.length:0)+' items</span></span><button type="button" onclick="window.__biaLoad(\''+it.id+'\')">Load</button>';
+    el.appendChild(div);
+  });
+}
+window.__biaLoad=function(id){
+  var it=null; for(var i=0;i<state.library.length;i++) if(state.library[i].id===id){it=state.library[i];break;}
+  if(!it) return;
+  pushUndo(); state.interior=JSON.parse(JSON.stringify(it)); afterLoad(); log('Loaded "'+it.name+'".');
+};
+$('saveLibBtn').addEventListener('click',function(){
+  var cp=JSON.parse(JSON.stringify(state.interior)), idx=-1;
+  for(var i=0;i<state.library.length;i++) if(state.library[i].id===cp.id){idx=i;break;}
+  if(idx>=0) state.library[idx]=cp; else state.library.push(cp);
+  saveLib(); renderLib(); log('Saved "'+cp.name+'" to library.');
+});
+$('delLibBtn').addEventListener('click',function(){
+  var id=state.interior.id, before=state.library.length;
+  state.library=state.library.filter(function(l){return l.id!==id;});
+  if(state.library.length<before){saveLib();renderLib();log('Deleted from library.');}
+  else log('Not in library.','warn');
+});
+
+// ─── Export / import ──────────────────────────────────────────────────────────
+function refreshExport(){ $('exportText').value=JSON.stringify(state.interior,null,2); }
+$('refreshExportBtn').addEventListener('click',refreshExport);
+$('copyJsonBtn').addEventListener('click',function(){
+  var txt=JSON.stringify(state.interior,null,2);
+  if(navigator.clipboard) navigator.clipboard.writeText(txt).then(function(){log('Copied to clipboard.');}).catch(function(){log('Clipboard unavailable.','warn');});
+  else { $('exportText').value=txt; $('exportText').select(); try{document.execCommand('copy');log('Copied.');}catch(e){log('Copy failed.','warn');} }
+});
+$('downloadBtn').addEventListener('click',function(){
+  var txt=JSON.stringify(state.interior,null,2);
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([txt],{type:'application/json'}));
+  a.download=(state.interior.id||'building_interior')+'.json';
+  a.click(); URL.revokeObjectURL(a.href); log('Downloaded '+a.download);
+});
+$('importInput').addEventListener('change',function(e){
+  var file=e.target.files&&e.target.files[0]; if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      var data=JSON.parse(ev.target.result);
+      if(!data.cols||!data.rows){log('Invalid JSON: missing cols/rows.','error');return;}
+      if(!data.floor){data.floor=[];for(var r=0;r<data.rows;r++) for(var c=0;c<data.cols;c++) data.floor.push([c,r]);}
+      pushUndo(); state.interior=Object.assign({schema:'hobunji_building_interior.v1',furniture:[]},data);
+      afterLoad(); log('Imported '+file.name+'.');
+    }catch(err){log('Import error: '+err.message,'error');}
+  };
+  reader.readAsText(file);
+  e.target.value='';
+});
+
+// ─── Server maps ──────────────────────────────────────────────────────────────
+var _serverMaps = null;
+function renderServerList(){
+  var el=$('serverMapList');
+  if(!_serverMaps){el.innerHTML='<span style="color:#888;font-size:11px">No building interior maps found on server.</span>';return;}
+  if(!_serverMaps.length){el.innerHTML='<span style="color:#888;font-size:11px">No building interior maps on server.</span>';return;}
+  el.innerHTML='';
+  _serverMaps.forEach(function(m){
+    var div=document.createElement('div'); div.className='listItem';
+    div.innerHTML='<span><b>'+m.name+'</b><br><span class="chip">'+m.id+'</span></span>'
+      +'<button type="button" onclick="window.__biaLoadServer(\''+m.id+'\')">Load</button>';
+    el.appendChild(div);
+  });
+}
+window.__biaLoadServer=function(id){
+  var m=null;
+  for(var i=0;i<(_serverMaps||[]).length;i++) if(_serverMaps[i].id===id){m=_serverMaps[i];break;}
+  if(!m) return;
+  fetch('../../'+m.file).then(function(r){return r.json();}).then(function(data){
+    pushUndo(); state.interior=data; afterLoad(); log('Loaded "'+data.name+'" from server.');
+  }).catch(function(e){log('Fetch error: '+e.message,'error');});
+};
+function fetchServerMaps(){
+  fetch('../../config/maps/index.json').then(function(r){return r.json();}).then(function(idx){
+    _serverMaps=(idx.maps||[]).filter(function(m){return m.category==='building_interior';});
+    renderServerList();
+  }).catch(function(){_serverMaps=[];renderServerList();});
+}
+$('fetchServerBtn').addEventListener('click',fetchServerMaps);
+
+// ─── Header buttons ───────────────────────────────────────────────────────────
+$('newBtn').addEventListener('click',function(){ pushUndo(); state.interior=makeBlank(); afterLoad(); log('New interior.'); });
+$('undoBtn').addEventListener('click',undo);
+$('redoBtn').addEventListener('click',redo);
+$('mapId').addEventListener('change',function(){state.interior.id=$('mapId').value.trim();});
+$('mapName').addEventListener('change',function(){state.interior.name=$('mapName').value.trim();});
+
+// ─── afterLoad ────────────────────────────────────────────────────────────────
+function afterLoad(){
+  var i=state.interior;
+  // Migrate legacy single exit → exits array
+  if(i.exit && (!i.exits||!i.exits.length)){
+    if(!i.exits) i.exits=[];
+    i.exits.push({id:newId(),label:'Exit',tiles:[[i.exit.col,i.exit.row]],targetMap:'',spawnCol:0,spawnRow:0});
+    delete i.exit;
+  }
+  if(!i.exits) i.exits=[];
+  if(!i.colliders) i.colliders=[];
+  if(!i.vendorZones) i.vendorZones=[];
+  // Migrate legacy uniform postScale → per-axis
+  (i.furniture||[]).forEach(function(f){
+    if(f.postScale!=null && f.postSX==null){
+      f.postSX=f.postScale; f.postSY=f.postScale; f.postSZ=f.postScale; delete f.postScale;
+    }
+  });
+  $('mapId').value=i.id||''; $('mapName').value=i.name||'';
+  $('gridCols').value=i.cols||12; $('gridRows').value=i.rows||10;
+  state.activeExitId=null; state.activeVendorId=null;
+  $('exitZoneFields').classList.add('hidden'); $('vendorZoneFields').classList.add('hidden');
+  syncFloorSet(); selectFurn(null); drawGrid(); rebuild3D(); refreshExport(); updateUR(); renderLib();
+  renderExitList(); renderVendorList();
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+loadLib();
+fetchServerMaps();
+buildCatalogUI();
+initTC();
+afterLoad();
+animate();
+preloadAllFurnGLBs();
+log('Building Interior Editor ready.');
+// Hub bridge — lets the parent dev-tools hub load a server map into this editor
+window._biaBridge = {
+  loadFromServer: function(mapId) {
+    fetch('../../config/maps/' + mapId + '.json')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        pushUndo(); state.interior = data; afterLoad();
+        log('Loaded "' + (data.name || mapId) + '" from hub.');
+      })
+      .catch(function(e) { log('Hub load error: ' + e.message, 'error'); });
+  }
+};
+
+})(); // end IIFE
+</script>
+</body>
+</html>

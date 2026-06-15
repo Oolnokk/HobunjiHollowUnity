@@ -97,7 +97,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <div class="sect-head"><b>Map Settings</b><span class="sect-tag" id="catTag">—</span></div>
           <div class="g2">
             <div><label>Name</label><input id="mapName"></div>
-            <div><label>Category</label><select id="mapCategory"><option value="exterior">exterior</option><option value="interior">interior</option></select></div>
+            <div><label>Category</label><select id="mapCategory"><option value="exterior">exterior</option><option value="interior">interior</option><option value="building_interior">building_interior</option></select></div>
           </div>
           <div class="g3" style="margin-top:6px">
             <div><label>Columns</label><input id="mapCols" type="number" min="2" max="400"></div>
@@ -206,7 +206,8 @@ const TILE_INFO = {
 const TILE_SETS = {
   exterior: ['grass','weeds','tilled','trench','raised','paddy','rock','shrub','path'],
   // Interior grid in game.js uses grass = walkable floor, rock = blocked.
-  interior: ['grass','rock']
+  interior: ['grass','rock'],
+  building_interior: ['grass','rock']
 };
 const INTERIOR_TILE_LABELS = { grass: 'Floor (walkable)', rock: 'Blocked' };
 
@@ -477,7 +478,7 @@ function renderPalette() {
     const set = TILE_SETS[m.category] || TILE_SETS.exterior;
     html = set.map(t => {
       const info = TILE_INFO[t];
-      const label = m.category === 'interior' ? (INTERIOR_TILE_LABELS[t] || info.label) : info.label;
+      const label = (m.category === 'interior' || m.category === 'building_interior') ? (INTERIOR_TILE_LABELS[t] || info.label) : info.label;
       return `<button class="sec palBtn ${brush.tile===t?'act':''}" data-pal="tile" data-val="${t}"><span class="palSw" style="background:${info.color}"></span>${label}</button>`;
     }).join('');
     const isFarmLinked2 = m.category === 'exterior' && ws.gameLink.exteriorId === m.id;
@@ -501,7 +502,7 @@ function renderPalette() {
     else html = Object.keys(PROCESSORS).map(k =>
       `<button class="sec palBtn ${brush.furniture===k?'act':''}" data-pal="furniture" data-val="${k}">${PROCESSORS[k].icon} ${PROCESSORS[k].label}</button>`).join('');
   } else if (mode === 'decor') {
-    const want = m.category === 'interior' ? ['interior','any'] : ['farm','any'];
+    const want = (m.category === 'interior' || m.category === 'building_interior') ? ['interior','any'] : ['farm','any'];
     html = Object.keys(DECOR).filter(k => want.includes(DECOR[k].area)).map(k =>
       `<button class="sec palBtn ${brush.decor===k?'act':''}" data-pal="decor" data-val="${k}">${DECOR[k].icon} ${DECOR[k].label} <span class="muted" style="margin-left:auto">${DECOR[k].fw}×${DECOR[k].fd}</span></button>`).join('');
   } else if (mode === 'path') {
@@ -524,14 +525,21 @@ function renderPalette() {
       const target = mapById(t.targetMapId);
       const spotOpts = (target?.transitions || []).map(s =>
         `<option value="${s.id}" ${t.targetSpotId===s.id?'selected':''}>${s.label}</option>`).join('');
+      const isBuildingInterior = t.targetMapId && t.targetMapId.startsWith('map_i_');
+      const targetRow = isBuildingInterior
+        ? `<div class="row" style="margin-top:4px">
+            <span class="pill" style="flex:1;overflow:hidden;text-overflow:ellipsis">🏠 ${t.targetMapId}</span>
+            <button class="sec" style="padding:3px 8px;white-space:nowrap" onclick="window.parent.postMessage({type:'openBuildingInterior',mapId:'${t.targetMapId}'},'*')">Edit Interior ↗</button>
+          </div>`
+        : `<div class="g2" style="margin-top:4px">
+            <select data-spottarget="${t.id}"><option value="">→ target map…</option>${others.map(x =>
+              `<option value="${x.id}" ${t.targetMapId===x.id?'selected':''}>${x.name}</option>`).join('')}</select>
+            <select data-spotspot="${t.id}"><option value="">→ arrive at…</option>${spotOpts}</select>
+          </div>`;
       return `<div class="item ${t.id===activeSpotId?'sel':''}" data-spotsel="${t.id}">
         <div class="row"><input data-spotlabel="${t.id}" value="${t.label.replace(/"/g,'&quot;')}" style="flex:1">
           <button class="bad" data-spotdel="${t.id}" style="padding:3px 8px">✕</button></div>
-        <div class="g2" style="margin-top:4px">
-          <select data-spottarget="${t.id}"><option value="">→ target map…</option>${others.map(x =>
-            `<option value="${x.id}" ${t.targetMapId===x.id?'selected':''}>${x.name}</option>`).join('')}</select>
-          <select data-spotspot="${t.id}"><option value="">→ arrive at…</option>${spotOpts}</select>
-        </div>
+        ${targetRow}
         <div class="item-meta">at (${t.col}, ${t.row})</div>
       </div>`;
     }).join('') || '<p class="muted">No transition spots yet.</p>';
@@ -981,9 +989,10 @@ window.addEventListener('keydown', e => {
 
 // ── Map management UI ────────────────────────────────────────────────────────
 function renderMapList() {
+  const icon = m => m.category==='building_interior'?'🏛':m.category==='interior'?'🏠':'🗺';
   $('mapList').innerHTML = ws.maps.map(m =>
     `<div class="item ${m.id===ws.activeId?'sel':''}" data-id="${m.id}">
-      <div class="item-name">${m.category==='interior'?'🏠':'🗺'} ${m.name}</div>
+      <div class="item-name">${icon(m)} ${m.name}</div>
       <div class="item-meta">${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.transitions||[]).length} spots</div>
     </div>`).join('');
   $('mapList').querySelectorAll('.item').forEach(el => el.addEventListener('click', () => {
@@ -1005,7 +1014,7 @@ function fillSettings() {
   $('mapCols').value = m.cols; $('mapRows').value = m.rows;
   $('catTag').textContent = m.category;
   $('activeMapPill').textContent = `${m.name} (${m.cols}×${m.rows})`;
-  $('floorTemplateBtn').style.display = m.category === 'interior' ? '' : 'none';
+  $('floorTemplateBtn').style.display = (m.category === 'interior' || m.category === 'building_interior') ? '' : 'none';
 }
 
 function refreshPreview() {
@@ -1405,8 +1414,72 @@ window.addEventListener('error', e => setStatus('Error: ' + e.message));
 
 $('farmDimsNote').textContent = `${GAME.farm.cols}×${GAME.farm.rows}`;
 
+// ── Building interior map mirror ──────────────────────────────────────────────
+async function loadBuildingInteriorMaps() {
+  let index;
+  try {
+    const res = await fetch('../../config/maps/index.json');
+    index = await res.json();
+  } catch(e) { setStatus('Could not load map index: ' + e.message); return; }
+
+  const entries = (index.maps || []).filter(e => e.category === 'building_interior');
+  let added = 0;
+
+  for (const entry of entries) {
+    if (ws.maps.find(m => m.id === entry.id)) continue;
+    let mapData;
+    try {
+      const r2 = await fetch('../../' + entry.file);
+      mapData = await r2.json();
+    } catch(e) { continue; }
+
+    // Convert hobunji_building_interior.v1 schema to workspace map format
+    const cols = mapData.cols || 20, rows = mapData.rows || 20;
+    const tiles = {};
+    const floorSet = new Set((mapData.floor || []).map(([c,r]) => `${c},${r}`));
+    const colliderSet = new Set((mapData.colliders || []).map(([c,r]) => `${c},${r}`));
+    for (const key of floorSet) {
+      tiles[key] = { type: colliderSet.has(key) ? 'rock' : 'grass' };
+    }
+    // Also mark colliders that aren't in floor as rock tiles
+    for (const key of colliderSet) {
+      if (!tiles[key]) tiles[key] = { type: 'rock' };
+    }
+
+    // Convert exits to transitions (spots)
+    const transitions = (mapData.exits || []).flatMap(exit =>
+      (exit.tiles || []).map(([c,r]) => ({
+        id: exit.id + '_' + c + '_' + r,
+        col: c, row: r,
+        label: exit.label || exit.id,
+        targetMapId: exit.targetMap || '',
+        spawnCol: exit.spawnCol ?? c,
+        spawnRow: exit.spawnRow ?? r
+      }))
+    );
+
+    ws.maps.push({
+      id: entry.id,
+      name: entry.name || mapData.name || entry.id,
+      category: 'building_interior',
+      cols, rows,
+      tiles,
+      routes: [],
+      npcPaths: [],
+      transitions,
+      objects: {},
+      furniture: [],
+      decor: []
+    });
+    added++;
+  }
+
+  if (added > 0) { saveWorkspace(); renderMapList(); setStatus(`Synced ${added} building interior map${added>1?'s':''}.`); }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 resizeCanvas(); updateAll(); fitView();
+loadBuildingInteriorMaps();
 })();
 </script>
 </body>

@@ -1286,6 +1286,7 @@
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
       let _currentBuildingMapId = null;
+      let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
 
       function initWorldTravel(layout) {
@@ -1335,7 +1336,7 @@
         else pool = area === 'town' ? worldTownTransitions : worldTransitions;
         const t = pool.find(x =>
           (_isBuildingArea(area) || x.area === area) && x.col === pc && x.row === pr &&
-          (x.target === 'building' ? !!x.targetMapId : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
+          (x.target === 'building' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
         if (!t) return;
         startSceneTransition(() => performTravel(t));
       }
@@ -1364,7 +1365,9 @@
       }
 
       function performTravel(t) {
-        if (t.target === 'building') {
+        if (t.target === 'exit_building') {
+          exitBuilding();
+        } else if (t.target === 'building') {
           enterBuilding(t.targetMapId, t.targetCol, t.targetRow);
         } else if (t.target === 'interior') {
           if (currentArea !== 'interior') enterInterior();
@@ -1518,6 +1521,7 @@
         if (area === 'interior') return 'interior';
         if (area === 'town' || area === 'hobunji_main_town' || area === 'map_hobunji_town') return 'town';
         if (_isBuildingArea(area)) return area;
+        window.__farmLog?.(`[schedule] Unknown area "${area}" → fallback to farm`, 'warn');
         return 'farm';
       }
       function sceneForNpcArea(area) {
@@ -1555,9 +1559,13 @@
           if (start !== null && end !== null && now >= start && now < end && Number.isFinite(c) && Number.isFinite(r))
             return { area, c, r, routeId: rule.routeId || null };
         }
-        if (hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) return { ...hooks.defaultPosition, area: normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town') };
+        if (hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) {
+          const defArea = normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town');
+          window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback defaultPosition area=${defArea} c=${hooks.defaultPosition.c} r=${hooks.defaultPosition.r}`, 'warn');
+          return { ...hooks.defaultPosition, area: defArea };
+        }
         const legacy = worldNpcPaths.find(p => p.npcId === rec?.id);
-        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; return { area: normalizeNpcArea(legacy.area || 'farm'), c, r, legacyPath: legacy }; }
+        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; const legArea = normalizeNpcArea(legacy.area || 'farm'); window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback legacy path area=${legArea} c=${c} r=${r}`, 'warn'); return { area: legArea, c, r, legacyPath: legacy }; }
         return null;
       }
 
@@ -1688,6 +1696,7 @@
                 const ex = this._exitSpot.c + 0.5, ez = this._exitSpot.r + 0.5;
                 const arrival = npcMovementConfig().arrivalRadiusTiles ?? 0.18;
                 if (Math.hypot(root.position.x - ex, root.position.z - ez) <= arrival) {
+                  window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: transferring via exit spot "${this.area}"→"${targetArea}" | playerMap="${currentArea}"`, 'info');
                   this._exitSpot = null;
                   this.transferToArea(targetArea, target);
                 } else {
@@ -1695,6 +1704,7 @@
                 }
                 return;
               }
+              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: instant transfer "${this.area}"→"${targetArea}" (no exit spot) | playerMap="${currentArea}"`, 'info');
               this.transferToArea(targetArea, target);
               return;
             }
@@ -1753,23 +1763,14 @@
       }
 
       // ── Town zone ──────────────────────────────────────────────────
-      function loadTownLayout() {
-        try {
-          const raw = localStorage.getItem('hobunji_town_v1');
-          if (!raw) return null;
-          return JSON.parse(raw);
-        } catch(_) { return null; }
-      }
-
-      // Fallback: if no localStorage town data, load from the workspace JSON file.
+      // Loads the town layout from the workspace JSON file.
       // Mirrors the map editor's buildTownLayout() conversion.
       async function _loadTownFromWorkspace() {
-        if (_townZone) return; // already loaded via localStorage
         try {
           const resp = await fetch('config/town-workspace-v1.json');
           if (!resp.ok) return;
           const ws = await resp.json();
-          if (_townZone) return; // race: loaded since fetch started
+          _workspaceMaps = ws.maps;
           const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
           const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], buildings: townM.buildings || [] };
@@ -1828,6 +1829,114 @@
       }
 
       // ── Building interior scenes ─────────────────────────────────────
+
+      // Generates WallBuilder panels for a rectangular room. Walls always sit at
+      // the footprint boundary. A 2-tile door gap is cut in whichever wall the exit
+      // transition sits on; the gap is centred on the transition column/row.
+      function buildWallPanelsForRoom(cols, rows, wallHeight, exitTransition) {
+        const DOOR_W = 2;
+        const panels = [];
+        // Determine which wall the exit is on (S/N/W/E) by proximity to boundary
+        let doorWall = null, doorPos = 0;
+        if (exitTransition) {
+          const { col: ec, row: er } = exitTransition;
+          const dS = rows - 1 - er, dN = er, dE = cols - 1 - ec, dW = ec;
+          const minD = Math.min(dS, dN, dE, dW);
+          if      (minD === dS) { doorWall = 'S'; doorPos = ec; }
+          else if (minD === dN) { doorWall = 'N'; doorPos = ec; }
+          else if (minD === dE) { doorWall = 'E'; doorPos = er; }
+          else                  { doorWall = 'W'; doorPos = er; }
+        }
+        const splitH = (wallId, z, rot, along) => {
+          if (doorWall === along) {
+            const gapStart = Math.max(0, doorPos - Math.floor(DOOR_W / 2));
+            const gapEnd   = Math.min(cols, gapStart + DOOR_W);
+            if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [gapStart / 2,            0, z], rotationDeg: rot });
+            if (gapEnd < cols)   panels.push({ id: wallId + '_r', width: cols - gapEnd,   height: wallHeight, position: [(gapEnd + cols) / 2,     0, z], rotationDeg: rot });
+          } else {
+            panels.push({ id: wallId, width: cols, height: wallHeight, position: [cols / 2, 0, z], rotationDeg: rot });
+          }
+        };
+        const splitV = (wallId, x, rot, along) => {
+          if (doorWall === along) {
+            const gapStart = Math.max(0, doorPos - Math.floor(DOOR_W / 2));
+            const gapEnd   = Math.min(rows, gapStart + DOOR_W);
+            if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [x, 0, gapStart / 2],            rotationDeg: rot });
+            if (gapEnd < rows)   panels.push({ id: wallId + '_r', width: rows - gapEnd,   height: wallHeight, position: [x, 0, (gapEnd + rows) / 2],     rotationDeg: rot });
+          } else {
+            panels.push({ id: wallId, width: rows, height: wallHeight, position: [x, 0, rows / 2], rotationDeg: rot });
+          }
+        };
+        splitH('wn', 0,    [0, 0,    0], 'N');
+        splitH('ws', rows, [0, 180,  0], 'S');
+        splitV('ww', 0,    [0, 90,   0], 'W');
+        splitV('we', cols, [0, -90,  0], 'E');
+        return panels;
+      }
+      function buildWallPanelsFromFloorSet(floorSet, exitTileSet, wallHeight) {
+        const nMap = {}, sMap = {}, eMap = {}, wMap = {};
+        function pushH(map, key, x0, x1) { if (!map[key]) map[key] = []; map[key].push({ x0, x1 }); }
+        function pushV(map, key, z0, z1) { if (!map[key]) map[key] = []; map[key].push({ z0, z1 }); }
+        function mergeH(segs) {
+          segs.sort((a, b) => a.x0 - b.x0);
+          const out = [];
+          for (const s of segs) {
+            if (out.length && out[out.length - 1].x1 >= s.x0) out[out.length - 1].x1 = Math.max(out[out.length - 1].x1, s.x1);
+            else out.push({ x0: s.x0, x1: s.x1 });
+          }
+          return out;
+        }
+        function mergeV(segs) {
+          segs.sort((a, b) => a.z0 - b.z0);
+          const out = [];
+          for (const s of segs) {
+            if (out.length && out[out.length - 1].z1 >= s.z0) out[out.length - 1].z1 = Math.max(out[out.length - 1].z1, s.z1);
+            else out.push({ z0: s.z0, z1: s.z1 });
+          }
+          return out;
+        }
+        for (const key of floorSet) {
+          const parts = key.split(',');
+          const c = Number(parts[0]), r = Number(parts[1]);
+          const isExit = exitTileSet.has(key);
+          if (!floorSet.has(`${c},${r - 1}`) && !isExit) pushH(nMap, r,     c, c + 1);
+          if (!floorSet.has(`${c},${r + 1}`) && !isExit) pushH(sMap, r + 1, c, c + 1);
+          if (!floorSet.has(`${c + 1},${r}`) && !isExit) pushV(eMap, c + 1, r, r + 1);
+          if (!floorSet.has(`${c - 1},${r}`) && !isExit) pushV(wMap, c,     r, r + 1);
+        }
+        const panels = [];
+        let pid = 0;
+        for (const [rStr, segs] of Object.entries(nMap)) {
+          const z = Number(rStr);
+          for (const seg of mergeH(segs)) {
+            const w = seg.x1 - seg.x0, cx = (seg.x0 + seg.x1) / 2;
+            panels.push({ id: `wn_${pid++}`, width: w, height: wallHeight, position: [cx, 0, z], rotationDeg: [0, 0, 0] });
+          }
+        }
+        for (const [rStr, segs] of Object.entries(sMap)) {
+          const z = Number(rStr);
+          for (const seg of mergeH(segs)) {
+            const w = seg.x1 - seg.x0, cx = (seg.x0 + seg.x1) / 2;
+            panels.push({ id: `ws_${pid++}`, width: w, height: wallHeight, position: [cx, 0, z], rotationDeg: [0, 180, 0] });
+          }
+        }
+        for (const [cStr, segs] of Object.entries(eMap)) {
+          const x = Number(cStr);
+          for (const seg of mergeV(segs)) {
+            const d = seg.z1 - seg.z0, cz = (seg.z0 + seg.z1) / 2;
+            panels.push({ id: `we_${pid++}`, width: d, height: wallHeight, position: [x, 0, cz], rotationDeg: [0, -90, 0] });
+          }
+        }
+        for (const [cStr, segs] of Object.entries(wMap)) {
+          const x = Number(cStr);
+          for (const seg of mergeV(segs)) {
+            const d = seg.z1 - seg.z0, cz = (seg.z0 + seg.z1) / 2;
+            panels.push({ id: `ww_${pid++}`, width: d, height: wallHeight, position: [x, 0, cz], rotationDeg: [0, 90, 0] });
+          }
+        }
+        return panels;
+      }
+
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
@@ -1836,6 +1945,123 @@
           const resp = await fetch('config/maps/' + mapId + '.json');
           if (resp.ok) mapData = await resp.json();
         } catch(_) {}
+        // Fallback: load map data from cached workspace JSON
+        if (!mapData && _workspaceMaps) {
+          const wsMap = _workspaceMaps.find(m => m.id === mapId);
+          if (wsMap) {
+            const tileArr = [];
+            for (const [key, val] of Object.entries(wsMap.tiles || {})) {
+              const [c, r] = key.split(',').map(Number);
+              if (Number.isFinite(c) && Number.isFinite(r)) tileArr.push({ c, r, type: val.type || 'grass' });
+            }
+            mapData = { cols: wsMap.cols, rows: wsMap.rows, tiles: tileArr, transitions: wsMap.transitions || [] };
+            window.__farmLog?.(`[building] ${mapId}: loaded from workspace (${mapData.cols}x${mapData.rows})`, 'info');
+          }
+        }
+
+        // ── hobunji_building_interior.v1 schema ──────────────────────────
+        if (mapData?.schema === 'hobunji_building_interior.v1') {
+          const cols = mapData.cols || 20, rows = mapData.rows || 20;
+          const bGrid = Array.from({ length: rows }, () =>
+            Array.from({ length: cols }, () => ({
+              type: TileType.ROCK, water: 0, crop: CropType.NONE,
+              cropAge: 0, cropReady: false, stress: '', variation: 0,
+            }))
+          );
+          // Fill floor tiles as walkable
+          const floorSet = new Set();
+          for (const [c, r] of (mapData.floor || [])) {
+            if (bGrid[r]?.[c]) { bGrid[r][c].type = TileType.GRASS; floorSet.add(`${c},${r}`); }
+          }
+          // Colliders override back to solid
+          for (const [c, r] of (mapData.colliders || [])) {
+            if (bGrid[r]?.[c]) bGrid[r][c].type = TileType.ROCK;
+          }
+          // Build transitions from exits array
+          const transitions = [];
+          const exitTileSet = new Set();
+          for (const exit of (mapData.exits || [])) {
+            const target = exit.targetMap ? 'building' : 'exit_building';
+            for (const [tc, tr] of (exit.tiles || [])) {
+              exitTileSet.add(`${tc},${tr}`);
+              const t = { col: tc, row: tr, area: mapId, target };
+              if (exit.targetMap) { t.targetMapId = exit.targetMap; t.targetCol = exit.spawnCol || 0; t.targetRow = exit.spawnRow || 0; }
+              transitions.push(t);
+            }
+          }
+          const bScene = new THREE.Scene();
+          bScene.background = new THREE.Color(0x2a1a0a);
+          bScene.add(new THREE.AmbientLight(0xfff5e0, 0.7));
+          const dl = new THREE.DirectionalLight(0xffeedd, 0.5);
+          dl.position.set(5, 10, 5);
+          bScene.add(dl);
+          const floorMat = new THREE.MeshLambertMaterial({ color: 0x8b6914 });
+          new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
+          }, undefined, () => {});
+          // Floor tiles only for defined floor set
+          for (const [c, r] of (mapData.floor || [])) {
+            const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+            fl.position.set(c + 0.5, -0.05, r + 0.5);
+            bScene.add(fl);
+          }
+          // Irregular brick walls with gaps at all exit tiles
+          const wallPanels = buildWallPanelsFromFloorSet(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
+          if (wallPanels.length) {
+            const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+            bScene.add(wallGroup);
+          }
+          // Furniture: build combined itemKey -> def lookup
+          const allFurnDefs = {};
+          for (const def of Object.values(DECORATIVE_FURNITURE_DEFS)) allFurnDefs[def.itemKey] = def;
+          for (const def of Object.values(PROCESSING_FURNITURE_DEFS)) allFurnDefs[def.itemKey] = def;
+          for (const f of (mapData.furniture || [])) {
+            const def = allFurnDefs[f.itemKey];
+            const color = def?.color || 0x888888;
+            const scX = f.postSX != null ? f.postSX : (f.postScale != null ? f.postScale : 1);
+            const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
+            const scZ = f.postSZ != null ? f.postSZ : (f.postScale != null ? f.postScale : 1);
+            const bx = (f.col + 0.5) + (f.postX || 0);
+            const by = f.postY || 0;
+            const bz = (f.row + 0.5) + (f.postZ || 0);
+            const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
+            // Coloured box placeholder
+            const ph = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshLambertMaterial({ color }));
+            ph.position.set(bx, by + 0.4, bz);
+            ph.rotation.y = rotRad;
+            ph.scale.set(scX, scY, scZ);
+            bScene.add(ph);
+            if (def?.modelFile) {
+              const loader = new THREE.GLTFLoader();
+              loader.load(`assets/models/furniture/${def.modelFile}`, (gltf) => {
+                const model = gltf.scene;
+                model.position.set(bx, by, bz);
+                model.rotation.y = rotRad;
+                model.scale.set(scX, scY, scZ);
+                model.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+                bScene.remove(ph);
+                ph.geometry.dispose(); ph.material.dispose();
+                bScene.add(model);
+              }, undefined, () => {});
+            }
+          }
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [] };
+          _buildingScenes.set(mapId, info);
+          for (const w of npcWalkers) {
+            if (w.root._pendingBuildingAdd === mapId) {
+              w.root._pendingBuildingAdd = null;
+              bScene.add(w.root); w.root._npcScene = bScene;
+            }
+          }
+          if (_currentBuildingMapId === mapId && _isBuildingArea(currentArea)) {
+            bScene.add(playerMesh); bScene.add(playerGroundShadow);
+          }
+          debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ') [v1]');
+          return;
+        }
+
+        // ── Legacy rectangular-room schema ───────────────────────────────
         const cols = mapData?.cols || 20, rows = mapData?.rows || 20;
         const bGrid = Array.from({ length: rows }, () =>
           Array.from({ length: cols }, () => ({
@@ -1848,9 +2074,10 @@
             if (bGrid[tile.r]?.[tile.c]) bGrid[tile.r][tile.c].type = tile.type || TileType.GRASS;
           }
         }
+        // Convert workspace exit transitions (targetMapId=town) to exit_building so checkTransitionSpots fires
         const transitions = (mapData?.transitions || [])
           .filter(t => Number.isFinite(t.col) && Number.isFinite(t.row))
-          .map(t => ({ ...t, area: mapId }));
+          .map(t => ({ ...t, area: mapId, target: t.target || 'exit_building' }));
         const bScene = new THREE.Scene();
         bScene.background = new THREE.Color(0x2a1a0a);
         bScene.add(new THREE.AmbientLight(0xfff5e0, 0.7));
@@ -1862,12 +2089,18 @@
           tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
           floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
         }, undefined, () => {});
+        // Floor covers the full footprint — walls always sit on the boundary
         for (let r2 = 0; r2 < rows; r2++) for (let c2 = 0; c2 < cols; c2++) {
-          const tile = bGrid[r2][c2];
-          if (isSolid(tile.type)) continue;
           const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
           fl.position.set(c2 + 0.5, -0.05, r2 + 0.5);
           bScene.add(fl);
+        }
+        // Brick walls at footprint boundary with a door gap at the exit transition
+        const exitT = transitions.find(t => t.target === 'exit_building');
+        const wallPanels = buildWallPanelsForRoom(cols, rows, INTERIOR_WALL_HEIGHT, exitT);
+        if (wallPanels.length) {
+          const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+          bScene.add(wallGroup);
         }
         const info = { scene: bScene, grid: bGrid, cols, rows, transitions };
         _buildingScenes.set(mapId, info);
@@ -1887,13 +2120,17 @@
         if (!_buildingScenes.has(mapId)) loadBuildingScene(mapId);
         const fromScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || null)
           : currentArea === 'town' ? townScene : scene;
-        farmPlayerSave = { x: player.x, y: player.y, angle: player.angle, area: currentArea };
+        if (!_isBuildingArea(currentArea)) {
+          farmPlayerSave = { x: player.x, y: player.y, angle: player.angle, area: currentArea };
+        }
         _currentBuildingMapId = mapId;
         currentArea = mapId;
         const bi = _buildingScenes.get(mapId);
         const bCols = bi?.cols || 20, bRows = bi?.rows || 20;
-        const col = defaultCol ?? Math.floor(bCols / 2);
-        const row = defaultRow ?? (bRows - 2);
+        // Spawn just inside the exit transition; fall back to centre-bottom
+        const exitT = bi?.transitions?.find(t => t.target === 'exit_building');
+        const col = defaultCol ?? exitT?.col ?? Math.floor(bCols / 2);
+        const row = defaultRow ?? (exitT ? Math.max(0, exitT.row - 1) : bRows - 2);
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         facingAngle = Math.PI / 2; player.angle = facingAngle;
@@ -2012,7 +2249,13 @@
             const eCol = Math.floor((worldMinC + worldMaxC + 1) / 2);
             const eRow = Math.min(TROWS_ENT - 1, worldMaxR + 1);
             const eid  = 'bldg_entrance_' + bldg.id;
-            if (!worldTownTransitions.find(t => t.id === eid)) {
+            // Skip auto-entrance if workspace already defined a building transition in this footprint
+            const hasWorkspaceEntry = worldTownTransitions.some(t =>
+              t.target === 'building' &&
+              Number.isFinite(t.col) && Number.isFinite(t.row) &&
+              t.col >= (bldg.gridX ?? 0) && t.col < (bldg.gridX ?? 0) + (bldg.footprintW ?? 1) &&
+              t.row >= (bldg.gridZ ?? 0) && t.row < (bldg.gridZ ?? 0) + (bldg.footprintD ?? 1));
+            if (!hasWorkspaceEntry && !worldTownTransitions.find(t => t.id === eid)) {
               worldTownTransitions.push({
                 id: eid, area: 'town', col: eCol, row: eRow,
                 target: 'interior',
@@ -4107,38 +4350,6 @@
         { id: 'exit_e',  width: 2,  height: INTERIOR_WALL_HEIGHT, position: [8,  0, 11],   rotationDeg: [0, -90, 0] },
       ];
 
-      // ── Shop Bell ─────────────────────────────────────────────────────
-      // Places a small bell mesh at (col, row) in the interior scene.
-      // Interaction: if Foroji or Furunji NPC exists in npcWalkers, opens General Store.
-      function makeShopBell(col, row) {
-        const bellGeo  = new THREE.CylinderGeometry(0.12, 0.18, 0.22, 10);
-        const bellMat  = new THREE.MeshLambertMaterial({ color: 0xd4a800 });
-        const bell     = new THREE.Mesh(bellGeo, bellMat);
-        bell.position.set(col + 0.5, 0.6, row + 0.5);
-        bell.castShadow = true;
-        interiorScene.add(bell);
-
-        // Small post
-        const postGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.55, 6);
-        const postMat = new THREE.MeshLambertMaterial({ color: 0x6b4a28 });
-        const post    = new THREE.Mesh(postGeo, postMat);
-        post.position.set(col + 0.5, 0.28, row + 0.5);
-        interiorScene.add(post);
-
-        const SHOPKEEPER_IDS = new Set(['foroji_funji', 'furunji_funji']);
-        interiorWorldObjects.set(col + ',' + row, {
-          onAction(action) {
-            if (action !== 'obj_interact') return { ok: false, message: 'Ring the shop bell.' };
-            const shopkeeperPresent = npcWalkers.some(w => SHOPKEEPER_IDS.has(w.rec?.id));
-            if (!shopkeeperPresent) {
-              return { ok: false, message: 'No one is at the counter. Come back later.' };
-            }
-            openMenu('generalStore');
-            return { ok: true, message: 'Funji shuffles over to help.' };
-          }
-        });
-      }
-
       // Built lazily on first entry to avoid blocking startup; called by enterInterior().
       function buildInteriorScene() {
         if (interiorSceneBuilt) return;
@@ -4204,9 +4415,6 @@
         interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
         _markOutline(interiorWallGroup);
         interiorScene.add(interiorWallGroup);
-
-        // Shop bell at the counter position (row 3, col 6 — center-north of the room)
-        makeShopBell(6, 3);
 
         debugLog('buildInteriorScene complete');
       }
@@ -7634,9 +7842,7 @@
         worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
         buildTransitionMarkers();
       }
-      // Town zone (written by Map Editor "Send to Game" when a town map is linked)
-      try { const _tl = loadTownLayout(); if (_tl) initTownTravel(_tl); } catch(e) { console.error('initTownTravel:', e); }
-      // If no localStorage town data, fall back to loading from the workspace config file
+      // Load town layout from workspace config (authoritative source)
       _loadTownFromWorkspace().catch(() => {});
       debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
 
