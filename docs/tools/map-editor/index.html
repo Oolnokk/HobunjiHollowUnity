@@ -57,6 +57,8 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
     <span class="pill" id="activeMapPill">no map</span>
     <div id="topbar-right">
       <button class="ok" id="playBtn">🎮 Send to Game &amp; Play</button>
+      <button class="sec" id="undoBtn">↶ Undo</button>
+      <button class="sec" id="redoBtn">↷ Redo</button>
       <button class="sec" id="exportMapBtn">⬇ Map JSON</button>
       <button class="sec" id="exportLayoutBtn">⬇ Farm Layout</button>
       <button class="sec" id="loadTownBtn">🏘 Load Town</button>
@@ -427,21 +429,36 @@ function applyFarmhouseFloor(m) {
 
 // ── Undo ──────────────────────────────────────────────────────────────────────
 const undoStack = [];
+const redoStack = [];
+function replaceMapFromSnapshot(raw) {
+  const snap = JSON.parse(raw);
+  const i = ws.maps.findIndex(m => m.id === snap.id);
+  if (i >= 0) { ws.maps[i] = snap; updateAll(); return true; }
+  return false;
+}
 function pushUndo() {
   undoStack.push(JSON.stringify(activeMap()));
+  redoStack.length = 0;
   if (undoStack.length > 40) undoStack.shift();
 }
 function undo() {
   if (!undoStack.length) return;
-  const snap = JSON.parse(undoStack.pop());
-  const i = ws.maps.findIndex(m => m.id === snap.id);
-  if (i >= 0) { ws.maps[i] = snap; updateAll(); setStatus('Undid.'); }
+  redoStack.push(JSON.stringify(activeMap()));
+  if (redoStack.length > 40) redoStack.shift();
+  if (replaceMapFromSnapshot(undoStack.pop())) setStatus('Undid.');
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(JSON.stringify(activeMap()));
+  if (undoStack.length > 40) undoStack.shift();
+  if (replaceMapFromSnapshot(redoStack.pop())) setStatus('Redid.');
 }
 
 // ── Building panel ────────────────────────────────────────────────────────────
 let _selectedBuildingId = null;
 let _gizmos   = [];       // [{type,sx,sy,r}] rebuilt each draw(); used for hit-testing
 let _bldgDrag = null;     // {bid,ox,oz,px0,py0} during drag-move of a building
+let _routeNodeDrag = null; // {routeId,index} during drag-move of a route node
 
 // Canvas-space gizmo button
 function _drawGizmoBtn(type, sx, sy, R) {
@@ -524,6 +541,7 @@ function renderBuildingPanel() {
 let mode = 'pan';
 let brush = { tile: 'grass', crop: 'needlegrain', object: 'sellCrate', furniture: 'pestle', decor: 'basicBed' };
 let activePathId = null;   // route being extended in route mode
+let activeRouteNodeIndex = null; // selected node index in active route
 let activeSpotId = null;   // transition spot selected in spot mode
 let activeStationId = null; // NPC station selected in station mode
 
@@ -541,7 +559,7 @@ function updateBrushPill() {
   if (mode === 'object') t = `object: ${OBJECTS[brush.object]?.label}`;
   if (mode === 'furniture') t = `processor: ${PROCESSORS[brush.furniture]?.label}`;
   if (mode === 'decor') t = `decor: ${DECOR[brush.decor]?.label}`;
-  if (mode === 'path') { const p = (activeMap().routes || activeMap().npcPaths || []).find(x => x.id === activePathId); t = p ? `route: ${p.label}` : 'route: (click to start one)'; }
+  if (mode === 'path') { const p = (activeMap().routes || activeMap().npcPaths || []).find(x => x.id === activePathId); t = p ? `route: ${p.label}${activeRouteNodeIndex!==null?' node '+(activeRouteNodeIndex+1):''}` : 'route: (click to start one)'; }
   if (mode === 'spot') t = 'spot: click map to place';
   if (mode === 'station') { const st = (activeMap().npcStations || []).find(x => x.id === activeStationId); t = st ? `station: ${st.label}` : 'station: click map to place'; }
   $('brushPill').textContent = t;
@@ -596,8 +614,12 @@ function renderPalette() {
       html += `<div class="g2" style="margin-top:6px">
         <div><label>Label</label><input id="pathLabelIn" value="${ap.label.replace(/"/g,'&quot;')}"></div>
               </div>`;
+      html += `<div style="margin-top:6px"><label>Nodes (select one, then click map to branch from it)</label>${ap.nodes.map((n,i) =>
+        `<div class="item ${i===activeRouteNodeIndex?'sel':''}" data-nodesel="${i}" style="padding:4px 7px;margin-bottom:3px">
+          <div class="row"><span style="flex:1">#${i+1} (${n[0]}, ${n[1]})</span><button class="bad" data-nodedel="${i}" style="padding:1px 7px;font-size:10px">✕</button></div>
+        </div>`).join('') || '<p class="muted">No nodes yet.</p>'}</div>`;
     }
-    html += '<p class="muted" style="margin-top:5px">Select a route, then click the map to append nodes. Erase mode removes nodes. In-game, NPC schedules choose target positions; NPCs beeline unless blocked, use shared interconnected routes to get around blockers, and leave routes once they stop improving progress.</p>';
+    html += '<p class="muted" style="margin-top:5px">Select a route and click the map to append nodes. Select a node to branch from it; the next map click inserts after that node. Drag nodes on the map to clean up large route networks. Erase mode removes nodes.</p>';
   } else if (mode === 'spot') {
     html = m.transitions.map(t => {
       const others = ws.maps.filter(x => x.id !== m.id);
@@ -698,6 +720,16 @@ function renderPalette() {
   }));
   const pl = box.querySelector('#pathLabelIn');
   if (pl) pl.addEventListener('change', () => { const p = (m.routes || []).find(x => x.id === activePathId); if (p) { p.label = pl.value.trim() || p.label; renderPalette(); draw(); refreshPreview(); saveWorkspace(); } });
+  box.querySelectorAll('[data-nodesel]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-nodedel]')) return;
+    activeRouteNodeIndex = Number(el.dataset.nodesel); renderPalette(); updateBrushPill(); draw();
+  }));
+  box.querySelectorAll('[data-nodedel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); pushUndo();
+    const p = (m.routes || []).find(x => x.id === activePathId); if (!p) return;
+    p.nodes.splice(Number(el.dataset.nodedel), 1); activeRouteNodeIndex = null;
+    renderPalette(); draw(); refreshPreview(); saveWorkspace(); updateBrushPill();
+  }));
   // Station palette wiring
   box.querySelectorAll('[data-stationsel]').forEach(el => el.addEventListener('click', e => {
     if (e.target.closest('button,input,select')) return;
@@ -912,7 +944,7 @@ function draw() {
     }
     pa.nodes.forEach(([c, rr], i) => {
       const s = w2s(c+.5, rr+.5);
-      ctx.fillStyle = isActive ? '#fff' : '#38bdf8';
+      ctx.fillStyle = isActive && i === activeRouteNodeIndex ? '#fef08a' : (isActive ? '#fff' : '#38bdf8');
       ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(3.5, z*.18), 0, Math.PI*2); ctx.fill();
       ctx.strokeStyle = '#082f49'; ctx.lineWidth = 1.5; ctx.stroke();
       if (z > 13) { ctx.fillStyle = '#e0f2fe'; ctx.font = `${clamp(z*.28,9,12)}px system-ui`; ctx.fillText(String(i+1), s.x + z*.22, s.y - z*.18); }
@@ -982,7 +1014,13 @@ function applyAt(tile) {
     m.routes = m.routes || [];
     let p = m.routes.find(x => x.id === activePathId);
     if (!p) { p = { id: uid('route'), label: `Route ${m.routes.length+1}`, nodes: [] }; m.routes.push(p); activePathId = p.id; }
-    p.nodes.push([c, r]);
+    if (activeRouteNodeIndex !== null && activeRouteNodeIndex >= 0 && activeRouteNodeIndex < p.nodes.length) {
+      p.nodes.splice(activeRouteNodeIndex + 1, 0, [c, r]);
+      activeRouteNodeIndex += 1;
+    } else {
+      p.nodes.push([c, r]);
+      activeRouteNodeIndex = p.nodes.length - 1;
+    }
     renderPalette(); updateBrushPill();
   } else if (mode === 'station') {
     m.npcStations = m.npcStations || [];
@@ -1075,8 +1113,21 @@ canvas.addEventListener('pointerdown', e => {
     else if (_selectedBuildingId) { _selectedBuildingId = null; renderBuildingPanel(); draw(); }
     drag = true; dragStart = { p, cx: cam.x, cy: cam.y }; return;
   }
-  pushUndo();
   const w = s2w(p.x, p.y);
+  if (mode === 'path') {
+    const m = activeMap();
+    const routes = activePathId ? (m.routes || []).filter(r => r.id === activePathId) : (m.routes || []);
+    for (const route of routes) {
+      for (let i = 0; i < (route.nodes || []).length; i++) {
+        const n = route.nodes[i];
+        if (Math.hypot(w.x - (n[0] + 0.5), w.y - (n[1] + 0.5)) <= 0.45) {
+          pushUndo(); activePathId = route.id; activeRouteNodeIndex = i; _routeNodeDrag = { routeId: route.id, index: i };
+          renderPalette(); updateBrushPill(); draw(); return;
+        }
+      }
+    }
+  }
+  pushUndo();
   if (PAINT_MODES.includes(mode)) { painting = true; applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) }); }
   else if (TAP_MODES.includes(mode)) applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) });
 });
@@ -1090,6 +1141,14 @@ canvas.addEventListener('pointermove', e => {
     const wx = (pinchStart.mid.x-pinchStart.x)/pinchStart.zoom, wy = (pinchStart.mid.y-pinchStart.y)/pinchStart.zoom;
     cam.zoom = nz; cam.x = pinchStart.mid.x - wx*nz; cam.y = pinchStart.mid.y - wy*nz;
     draw(); return;
+  }
+  if (_routeNodeDrag) {
+    const m = activeMap(); const route = (m.routes || []).find(r => r.id === _routeNodeDrag.routeId);
+    if (route?.nodes?.[_routeNodeDrag.index]) {
+      route.nodes[_routeNodeDrag.index] = [clamp(Math.floor(w.x), 0, m.cols - 1), clamp(Math.floor(w.y), 0, m.rows - 1)];
+      renderPalette(); draw();
+    }
+    return;
   }
   if (_bldgDrag) {
     const selB = (activeMap().buildings || []).find(b => b.id === _bldgDrag.bid);
@@ -1106,6 +1165,7 @@ canvas.addEventListener('pointermove', e => {
 });
 function endPtr(e) {
   ptrs.delete(e.pointerId);
+  if (_routeNodeDrag) { saveWorkspace(); refreshPreview(); _routeNodeDrag = null; }
   if (_bldgDrag) { saveWorkspace(); renderBuildingPanel(); _bldgDrag = null; }
   drag = false; painting = false; pinchStart = null;
 }
@@ -1119,7 +1179,8 @@ canvas.addEventListener('wheel', e => {
 }, { passive:false });
 
 window.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); }
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); undo(); }
+  if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyY' || (e.shiftKey && e.code === 'KeyZ'))) { e.preventDefault(); redo(); }
 });
 
 // ── Map management UI ────────────────────────────────────────────────────────
@@ -1131,7 +1192,7 @@ function renderMapList() {
       <div class="item-meta">${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.transitions||[]).length} spots · ${(m.npcStations||[]).length} stations</div>
     </div>`).join('');
   $('mapList').querySelectorAll('.item').forEach(el => el.addEventListener('click', () => {
-    ws.activeId = el.dataset.id; undoStack.length = 0; activePathId = null; activeSpotId = null; updateAll(); fitView();
+    ws.activeId = el.dataset.id; undoStack.length = 0; redoStack.length = 0; activePathId = null; activeSpotId = null; updateAll(); fitView();
   }));
   $('mapCountTag').textContent = String(ws.maps.length);
   // Game link dropdowns
@@ -1324,7 +1385,7 @@ function loadFromGame() {
     const arrive = tm?.transitions.find(s => s.col === c && s.row === r);
     if (arrive) spot.targetSpotId = arrive.id;
   });
-  ws.activeId = ext.id; undoStack.length = 0;
+  ws.activeId = ext.id; undoStack.length = 0; redoStack.length = 0;
   updateAll(); fitView(); setStatus('Loaded game farm.');
 }
 
@@ -1397,7 +1458,7 @@ function importAny(obj) {
       ws.gameLink = obj.gameLink || { exteriorId:'', interiorId:'' };
       setStatus(`Loaded workspace: ${incoming.length} maps.`);
     }
-    undoStack.length = 0;
+    undoStack.length = 0; redoStack.length = 0;
     updateAll(); fitView();
     return;
   }
@@ -1407,18 +1468,20 @@ function importAny(obj) {
 // ── Wire up ───────────────────────────────────────────────────────────────────
 document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 $('fitBtn').addEventListener('click', fitView);
+$('undoBtn').addEventListener('click', undo);
+$('redoBtn').addEventListener('click', redo);
 
 $('newMapBtn').addEventListener('click', () => {
   const cat = confirm('OK = exterior map, Cancel = interior map') ? 'exterior' : 'interior';
   const m = cat === 'exterior' ? makeMap('New exterior', 'exterior', GAME.farm.cols, GAME.farm.rows)
                                : makeMap('New interior', 'interior', GAME.interior.cols, GAME.interior.rows);
-  ws.maps.push(m); ws.activeId = m.id; undoStack.length = 0;
+  ws.maps.push(m); ws.activeId = m.id; undoStack.length = 0; redoStack.length = 0;
   updateAll(); fitView(); setStatus('Created ' + m.name);
 });
 $('dupMapBtn').addEventListener('click', () => {
   const src = activeMap(); const copy = JSON.parse(JSON.stringify(src));
   copy.id = uid('map'); copy.name = src.name + ' copy';
-  ws.maps.push(copy); ws.activeId = copy.id; undoStack.length = 0;
+  ws.maps.push(copy); ws.activeId = copy.id; undoStack.length = 0; redoStack.length = 0;
   updateAll(); setStatus('Duplicated.');
 });
 $('delMapBtn').addEventListener('click', () => {
@@ -1429,7 +1492,7 @@ $('delMapBtn').addEventListener('click', () => {
   if (ws.gameLink.exteriorId === m.id) ws.gameLink.exteriorId = '';
   if (ws.gameLink.interiorId === m.id) ws.gameLink.interiorId = '';
   if (ws.gameLink.townId     === m.id) ws.gameLink.townId     = '';
-  ws.activeId = ws.maps[0].id; undoStack.length = 0;
+  ws.activeId = ws.maps[0].id; undoStack.length = 0; redoStack.length = 0;
   updateAll(); fitView(); setStatus('Deleted.');
 });
 
