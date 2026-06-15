@@ -1102,6 +1102,9 @@ function buildTownLayout() {
         if (fspot) { targetCol = fspot.col; targetRow = fspot.row; }
       }
       if (targetCol === null) { targetCol = 17; targetRow = 0; } // default farm spawn
+    } else if (t.targetMapId && t.targetMapId.startsWith('map_i_')) {
+      layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId });
+      return; // handled — skip the generic push below
     } else {
       const target = mapById(t.targetMapId);
       targetArea = t.targetMapId === ws.gameLink.interiorId ? 'interior' : '';

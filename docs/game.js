@@ -1284,6 +1284,9 @@
       let _townSceneBuilt    = false;
       let _townBuildingDefs  = [];     // building entries from _townZone.buildings
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
+      const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
+      let _currentBuildingMapId = null;
+      function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
 
       function initWorldTravel(layout) {
         if (!layout || layout.version !== 3) return;
@@ -1302,7 +1305,7 @@
       }
 
       function travelAreaKey() {
-        const area = currentArea === 'interior' ? 'interior' : currentArea === 'town' ? 'town' : 'farm';
+        const area = _isBuildingArea(currentArea) ? currentArea : currentArea === 'interior' ? 'interior' : currentArea === 'town' ? 'town' : 'farm';
         return area + ':' + Math.floor(player.x / TILE) + ',' + Math.floor(player.y / TILE);
       }
 
@@ -1322,15 +1325,17 @@
       }
 
       function checkTransitionSpots() {
-        const area = currentArea === 'interior' ? 'interior' : currentArea === 'town' ? 'town' : 'farm';
+        const area = _isBuildingArea(currentArea) ? currentArea : currentArea === 'interior' ? 'interior' : currentArea === 'town' ? 'town' : 'farm';
         const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
         const key = area + ':' + pc + ',' + pr;
         if (key === _transitionLatch) return;
         _transitionLatch = null;
-        const pool = area === 'town' ? worldTownTransitions : worldTransitions;
+        let pool;
+        if (_isBuildingArea(area)) pool = _buildingScenes.get(area)?.transitions || [];
+        else pool = area === 'town' ? worldTownTransitions : worldTransitions;
         const t = pool.find(x =>
-          x.area === area && x.col === pc && x.row === pr &&
-          Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow));
+          (_isBuildingArea(area) || x.area === area) && x.col === pc && x.row === pr &&
+          (x.target === 'building' ? !!x.targetMapId : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
         if (!t) return;
         startSceneTransition(() => performTravel(t));
       }
@@ -1342,6 +1347,10 @@
         } else if (currentArea === 'town' && townScene) {
           townScene.remove(playerMesh);
           townScene.remove(playerGroundShadow);
+        } else if (_isBuildingArea(currentArea)) {
+          const bs = _buildingScenes.get(currentArea);
+          if (bs?.scene) { bs.scene.remove(playerMesh); bs.scene.remove(playerGroundShadow); }
+          _currentBuildingMapId = null;
         }
         scene.add(playerMesh);
         scene.add(playerGroundShadow);
@@ -1355,7 +1364,9 @@
       }
 
       function performTravel(t) {
-        if (t.target === 'interior') {
+        if (t.target === 'building') {
+          enterBuilding(t.targetMapId, t.targetCol, t.targetRow);
+        } else if (t.target === 'interior') {
           if (currentArea !== 'interior') enterInterior();
           const c = clamp(t.targetCol, 0, INTERIOR_COLS - 1);
           const r = clamp(t.targetRow, 0, INTERIOR_ROWS - 1);
@@ -1482,6 +1493,7 @@
         if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
         if (area !== 'town' && interiorFurnitureObjects.some(o => o.area === area && o.col === c && o.row === r)) return false;
         if (area === 'town' && _townBuildingDefs.some(b => c >= (b.gridX ?? b.col ?? 0) && r >= (b.gridZ ?? b.row ?? 0) && c < (b.gridX ?? b.col ?? 0) + (b.footprintW ?? b.w ?? 1) && r < (b.gridZ ?? b.row ?? 0) + (b.footprintD ?? b.h ?? 1))) return false;
+        if (_isBuildingArea(area)) { const g = npcGridForArea(area); return !!g?.[r]?.[c] && !isSolid(g[r][c].type); }
         return true;
       }
 
@@ -1501,11 +1513,28 @@
 
       function parseNpcTimeMinutes(t) { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
       function currentGameMinutes() { return Math.round(getHour() * 60); }
-      function normalizeNpcArea(area) { return area === 'interior' ? 'interior' : area === 'town' || area === 'hobunji_main_town' || area === 'map_hobunji_town' ? 'town' : 'farm'; }
-      function sceneForNpcArea(area) { return normalizeNpcArea(area) === 'interior' ? interiorScene : normalizeNpcArea(area) === 'town' ? townScene : scene; }
-      function npcGridForArea(area) { return normalizeNpcArea(area) === 'interior' ? interiorGrid : normalizeNpcArea(area) === 'town' ? townGrid : grid; }
+      function normalizeNpcArea(area) {
+        if (!area) return 'farm';
+        if (area === 'interior') return 'interior';
+        if (area === 'town' || area === 'hobunji_main_town' || area === 'map_hobunji_town') return 'town';
+        if (_isBuildingArea(area)) return area;
+        return 'farm';
+      }
+      function sceneForNpcArea(area) {
+        if (area === 'interior') return interiorScene;
+        if (area === 'town') return townScene;
+        if (_isBuildingArea(area)) return _buildingScenes.get(area)?.scene || null;
+        return scene;
+      }
+      function npcGridForArea(area) {
+        if (area === 'interior') return interiorGrid;
+        if (area === 'town') return townGrid;
+        if (_isBuildingArea(area)) return _buildingScenes.get(area)?.grid || null;
+        return grid;
+      }
       function npcSurfaceY(area, c, r) {
-        const tile = npcGridForArea(area)[r]?.[c];
+        const g = npcGridForArea(area);
+        const tile = g?.[r]?.[c];
         return tile ? tileSurfaceY(tile.type) : 0;
       }
       function resolveNpcSpawnPosition(rec, target) {
@@ -1588,12 +1617,16 @@
         const spawnArea = normalizeNpcArea(spawnTarget.area);
         root.position.set(spawnTarget.c + 0.5, npcSurfaceY(spawnArea, spawnTarget.c, spawnTarget.r), spawnTarget.r + 0.5);
         const sc = sceneForNpcArea(spawnArea);
-        if (sc) { sc.add(root); root._npcScene = sc; root._pendingTownAdd = false; }
-        else root._pendingTownAdd = true;
+        if (sc) { sc.add(root); root._npcScene = sc; root._pendingTownAdd = false; root._pendingBuildingAdd = null; }
+        else if (spawnArea === 'town') { root._npcScene = null; root._pendingTownAdd = true; root._pendingBuildingAdd = null; }
+        else if (_isBuildingArea(spawnArea)) {
+          root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = spawnArea;
+          if (!_buildingScenes.has(spawnArea)) loadBuildingScene(spawnArea);
+        } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; }
 
         const walker = {
           root, rec, profile, area: spawnArea,
-          state: 'idle', routeNode: null, previousRouteNode: null, routeTarget: null,
+          state: 'idle', routeNode: null, previousRouteNode: null, routeTarget: null, _exitSpot: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {},
           resetRouteState() {
@@ -1603,21 +1636,22 @@
             this.routeTarget = null;
           },
           transferToArea(nextArea, target) {
-            const area = normalizeNpcArea(nextArea);
+            const area = nextArea; // caller passes pre-normalized area
             if (area === this.area) return;
             if (root._npcScene) root._npcScene.remove(root);
-            else {
-              scene.remove(root);
-              interiorScene.remove(root);
-              townScene?.remove(root);
-            }
+            else { scene.remove(root); interiorScene?.remove(root); townScene?.remove(root); }
+            _buildingScenes.forEach(bi => bi?.scene?.remove(root));
+            root._pendingTownAdd = false; root._pendingBuildingAdd = null;
             const nextScene = sceneForNpcArea(area);
-            root._pendingTownAdd = false;
             if (nextScene) { nextScene.add(root); root._npcScene = nextScene; }
-            else { root._npcScene = null; root._pendingTownAdd = area === 'town'; }
+            else if (area === 'town') { root._npcScene = null; root._pendingTownAdd = true; }
+            else if (_isBuildingArea(area)) {
+              root._npcScene = null; root._pendingBuildingAdd = area;
+              if (!_buildingScenes.has(area)) loadBuildingScene(area);
+            } else { scene.add(root); root._npcScene = scene; }
             this.area = area;
             this.resetRouteState();
-            root.position.set(target.c + 0.5, npcSurfaceY(area, target.c, target.r), target.r + 0.5);
+            root.position.set(target.c + 0.5, _isBuildingArea(area) ? 0 : npcSurfaceY(area, target.c, target.r), target.r + 0.5);
           },
           moveToward(tx, tz, dt) {
             const cfg = npcMovementConfig();
@@ -1639,7 +1673,32 @@
             const target = resolveNpcScheduleTarget(this.rec);
             if (!target) return;
             const targetArea = normalizeNpcArea(target.area);
-            if (targetArea !== this.area) this.transferToArea(targetArea, target);
+            if (targetArea !== this.area) {
+              if (!this._exitSpot) {
+                if (this.area === 'town' && _isBuildingArea(targetArea)) {
+                  const tr = worldTownTransitions.find(x => x.target === 'building' && x.targetMapId === targetArea);
+                  if (tr) this._exitSpot = { c: tr.col, r: tr.row };
+                } else if (_isBuildingArea(this.area) && targetArea === 'town') {
+                  const bi = _buildingScenes.get(this.area);
+                  const tr = (bi?.transitions || []).find(x => x.target === 'town');
+                  if (tr) this._exitSpot = { c: tr.col, r: tr.row };
+                }
+              }
+              if (this._exitSpot) {
+                const ex = this._exitSpot.c + 0.5, ez = this._exitSpot.r + 0.5;
+                const arrival = npcMovementConfig().arrivalRadiusTiles ?? 0.18;
+                if (Math.hypot(root.position.x - ex, root.position.z - ez) <= arrival) {
+                  this._exitSpot = null;
+                  this.transferToArea(targetArea, target);
+                } else {
+                  this.moveToward(ex, ez, dt);
+                }
+                return;
+              }
+              this.transferToArea(targetArea, target);
+              return;
+            }
+            this._exitSpot = null;
             const cfg = npcMovementConfig();
             const tx = target.c + 0.5, tz = target.r + 0.5;
             const arrival = cfg.arrivalRadiusTiles ?? 0.18;
@@ -1731,6 +1790,8 @@
             // Farm spot (no targetMapId) — returns player to farm exit at col 17, row 0
             if (!t.targetMapId) {
               layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'farm', targetCol: 17, targetRow: 0 });
+            } else if (_isBuildingArea(t.targetMapId)) {
+              layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId });
             }
           });
           initTownTravel(layout);
@@ -1751,8 +1812,10 @@
           if (townGrid[r]?.[c]) townGrid[r][c].type = type || TileType.GRASS;
         }
         worldTownTransitions = (layout.transitions || []).filter(t =>
-          t && Number.isFinite(t.col) && Number.isFinite(t.row) &&
-          Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow));
+          t && Number.isFinite(t.col) && Number.isFinite(t.row) && (
+            (Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)) ||
+            (t.target === 'building' && t.targetMapId)
+          ));
         const townPaths = (layout.npcPaths || []).filter(p =>
           p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
         worldTownRoutes = normalizeRoutes(layout.routes, townPaths).map(r => ({ ...r, area: 'town' }));
@@ -1762,6 +1825,112 @@
           _townBuildingDefs = _detectTownBuildings();
           _spawnTownBuildings();
         }
+      }
+
+      // ── Building interior scenes ─────────────────────────────────────
+      async function loadBuildingScene(mapId) {
+        if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
+        _buildingScenes.set(mapId, null); // sentinel: loading in progress
+        let mapData = null;
+        try {
+          const resp = await fetch('config/maps/' + mapId + '.json');
+          if (resp.ok) mapData = await resp.json();
+        } catch(_) {}
+        const cols = mapData?.cols || 20, rows = mapData?.rows || 20;
+        const bGrid = Array.from({ length: rows }, () =>
+          Array.from({ length: cols }, () => ({
+            type: TileType.GRASS, water: 0, crop: CropType.NONE,
+            cropAge: 0, cropReady: false, stress: '', variation: 0,
+          }))
+        );
+        if (mapData) {
+          for (const tile of (mapData.tiles || [])) {
+            if (bGrid[tile.r]?.[tile.c]) bGrid[tile.r][tile.c].type = tile.type || TileType.GRASS;
+          }
+        }
+        const transitions = (mapData?.transitions || [])
+          .filter(t => Number.isFinite(t.col) && Number.isFinite(t.row))
+          .map(t => ({ ...t, area: mapId }));
+        const bScene = new THREE.Scene();
+        bScene.background = new THREE.Color(0x2a1a0a);
+        bScene.add(new THREE.AmbientLight(0xfff5e0, 0.7));
+        const dl = new THREE.DirectionalLight(0xffeedd, 0.5);
+        dl.position.set(5, 10, 5);
+        bScene.add(dl);
+        const floorMat = new THREE.MeshLambertMaterial({ color: 0x8b6914 });
+        new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
+        }, undefined, () => {});
+        for (let r2 = 0; r2 < rows; r2++) for (let c2 = 0; c2 < cols; c2++) {
+          const tile = bGrid[r2][c2];
+          if (isSolid(tile.type)) continue;
+          const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+          fl.position.set(c2 + 0.5, -0.05, r2 + 0.5);
+          bScene.add(fl);
+        }
+        const info = { scene: bScene, grid: bGrid, cols, rows, transitions };
+        _buildingScenes.set(mapId, info);
+        for (const w of npcWalkers) {
+          if (w.root._pendingBuildingAdd === mapId) {
+            w.root._pendingBuildingAdd = null;
+            bScene.add(w.root); w.root._npcScene = bScene;
+          }
+        }
+        if (_currentBuildingMapId === mapId && _isBuildingArea(currentArea)) {
+          bScene.add(playerMesh); bScene.add(playerGroundShadow);
+        }
+        debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ')');
+      }
+
+      function enterBuilding(mapId, defaultCol, defaultRow) {
+        if (!_buildingScenes.has(mapId)) loadBuildingScene(mapId);
+        const fromScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || null)
+          : currentArea === 'town' ? townScene : scene;
+        farmPlayerSave = { x: player.x, y: player.y, angle: player.angle, area: currentArea };
+        _currentBuildingMapId = mapId;
+        currentArea = mapId;
+        const bi = _buildingScenes.get(mapId);
+        const bCols = bi?.cols || 20, bRows = bi?.rows || 20;
+        const col = defaultCol ?? Math.floor(bCols / 2);
+        const row = defaultRow ?? (bRows - 2);
+        player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
+        player.vx = 0; player.vy = 0;
+        facingAngle = Math.PI / 2; player.angle = facingAngle;
+        camTargetX = player.x / TILE; camTargetZ = player.y / TILE;
+        if (fromScene) {
+          fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow);
+          fromScene.remove(toolHolder); fromScene.remove(reticleMesh);
+          fromScene.remove(reticleCircleMesh); fromScene.remove(reticleRingMesh);
+          fromScene.remove(reticleWavyGroup);
+        }
+        if (bi?.scene) { bi.scene.add(playerMesh); bi.scene.add(playerGroundShadow); }
+        refreshActionBar();
+      }
+
+      function exitBuilding() {
+        if (!_isBuildingArea(currentArea)) return;
+        startSceneTransition(() => {
+          const fromScene = _buildingScenes.get(currentArea)?.scene || null;
+          const returnArea = farmPlayerSave?.area ?? 'town';
+          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+          _currentBuildingMapId = null;
+          currentArea = returnArea;
+          if (farmPlayerSave) {
+            player.x = farmPlayerSave.x; player.y = farmPlayerSave.y;
+            player.angle = farmPlayerSave.angle; facingAngle = farmPlayerSave.angle;
+          }
+          player.vx = 0; player.vy = 0;
+          camTargetX = player.x / TILE; camTargetZ = player.y / TILE;
+          const toScene = returnArea === 'town' ? townScene : scene;
+          if (toScene) {
+            toScene.add(playerMesh); toScene.add(playerGroundShadow);
+            toScene.add(toolHolder); toScene.add(reticleMesh);
+            toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
+            toScene.add(reticleWavyGroup);
+          }
+          refreshActionBar();
+        });
       }
 
       // ── Town building detection ──────────────────────────────────────
@@ -1953,6 +2122,7 @@
             townScene.add(w.root);
             w.root._npcScene = townScene;
           }
+          if (w.root._pendingBuildingAdd === undefined) w.root._pendingBuildingAdd = null;
         }
 
         // Generate 3D buildings from rock-tile clusters
@@ -5938,8 +6108,8 @@
             }
           }
 
-          // Map-editor transition spots (farm ↔ interior warps)
-          if (sceneTransDir === 0 && worldTransitions.length) checkTransitionSpots();
+          // Transition spots (farm ↔ interior ↔ town ↔ building)
+          if (sceneTransDir === 0) checkTransitionSpots();
 
           if (currentArea === 'farm') {
             waterFlowPhase = (waterFlowPhase + dt * 3.2) % 1;
@@ -6016,11 +6186,11 @@
         }
 
         // ── Render active scene ──────────────────────────────────
-        const activeScene = currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene;
+        const activeScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || scene) : currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene;
         renderer.render(activeScene, camera);
         // Selective shell outline pass (layer-1 objects only)
         if (s_outlines && currentArea !== 'town') {
-          const _outlineScene = currentArea === 'interior' ? interiorScene : scene;
+          const _outlineScene = _isBuildingArea(currentArea) ? activeScene : currentArea === 'interior' ? interiorScene : scene;
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
           _outlineScene.overrideMaterial = shellOutlineMat;
