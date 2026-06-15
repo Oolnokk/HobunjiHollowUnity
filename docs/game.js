@@ -1549,6 +1549,15 @@
         return target;
       }
 
+      const _scheduleFallbackLogKeys = new Set();
+      function logScheduleFallbackOnce(rec, kind, area, c, r) {
+        const minuteBucket = Math.floor(currentGameMinutes() / 10);
+        const key = [rec?.id || 'npc', kind, currentArea, area, c, r, minuteBucket].join('|');
+        if (_scheduleFallbackLogKeys.has(key)) return;
+        _scheduleFallbackLogKeys.add(key);
+        window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback ${kind} area=${area} c=${c} r=${r}`, 'warn');
+      }
+
       function resolveNpcScheduleTarget(rec) {
         const hooks = rec?.scheduleHooks || {};
         const now = currentGameMinutes();
@@ -1563,11 +1572,11 @@
         }
         if (hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) {
           const defArea = normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town');
-          window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback defaultPosition area=${defArea} c=${hooks.defaultPosition.c} r=${hooks.defaultPosition.r}`, 'warn');
+          logScheduleFallbackOnce(rec, 'defaultPosition', defArea, hooks.defaultPosition.c, hooks.defaultPosition.r);
           return { ...hooks.defaultPosition, area: defArea };
         }
         const legacy = worldNpcPaths.find(p => p.npcId === rec?.id);
-        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; const legArea = normalizeNpcArea(legacy.area || 'farm'); window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback legacy path area=${legArea} c=${c} r=${r}`, 'warn'); return { area: legArea, c, r, legacyPath: legacy }; }
+        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; const legArea = normalizeNpcArea(legacy.area || 'farm'); logScheduleFallbackOnce(rec, 'legacy path', legArea, c, r); return { area: legArea, c, r, legacyPath: legacy }; }
         return null;
       }
 
