@@ -14,14 +14,14 @@
       "homeId": "researchers_tent",
       "species": "<unknown species>",
       "gender": "<unknown gender>",
-      "ageBand": "<carter\u2019s age>",
+      "ageBand": "<carter’s age>",
       "role": "researcher",
       "tags": [
         "researchers_tent",
         "researcher",
         "villager"
       ],
-      "bio": "Researcher\u2019s Tent resident. Age noted as <carter\u2019s age>.",
+      "bio": "Researcher’s Tent resident. Age noted as <carter’s age>.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -119,28 +119,28 @@
           {
             "from": "08:00",
             "to": "18:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_researchers_tent",
             "position": {
-              "c": 15,
-              "r": 8
+              "c": 2,
+              "r": 2
             },
             "activity": "researching"
           },
           {
             "from": "18:00",
             "to": "08:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_researchers_tent",
             "position": {
-              "c": 14,
-              "r": 9
+              "c": 2,
+              "r": 3
             },
             "activity": "resting"
           }
         ],
         "defaultPosition": {
-          "area": "town",
-          "c": 15,
-          "r": 8
+          "area": "map_i_researchers_tent",
+          "c": 2,
+          "r": 2
         }
       }
     },
@@ -294,10 +294,10 @@
           {
             "from": "12:00",
             "to": "14:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_ginju_farmstead",
             "position": {
-              "c": 35,
-              "r": 9
+              "c": 4,
+              "r": 3
             },
             "activity": "resting"
           },
@@ -314,18 +314,18 @@
           {
             "from": "19:00",
             "to": "06:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_ginju_farmstead",
             "position": {
-              "c": 35,
-              "r": 9
+              "c": 4,
+              "r": 3
             },
             "activity": "home"
           }
         ],
         "defaultPosition": {
-          "area": "town",
-          "c": 35,
-          "r": 9
+          "area": "map_i_ginju_farmstead",
+          "c": 4,
+          "r": 3
         }
       }
     },
@@ -464,10 +464,10 @@
           {
             "from": "07:00",
             "to": "09:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_ginju_farmstead",
             "position": {
-              "c": 35,
-              "r": 9
+              "c": 3,
+              "r": 5
             },
             "activity": "home"
           },
@@ -484,10 +484,10 @@
           {
             "from": "18:00",
             "to": "07:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_ginju_farmstead",
             "position": {
-              "c": 35,
-              "r": 9
+              "c": 3,
+              "r": 5
             },
             "activity": "home"
           }
@@ -652,10 +652,10 @@
           {
             "from": "17:00",
             "to": "07:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_ginju_farmstead",
             "position": {
-              "c": 35,
-              "r": 9
+              "c": 7,
+              "r": 5
             },
             "routeId": "route_farmstead_path",
             "activity": "home"
@@ -806,10 +806,10 @@
           {
             "from": "19:00",
             "to": "08:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_ginju_farmstead",
             "position": {
-              "c": 35,
-              "r": 9
+              "c": 4,
+              "r": 5
             },
             "routeId": "route_farmstead_path",
             "activity": "home"
@@ -947,10 +947,10 @@
           {
             "from": "18:00",
             "to": "10:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_swamp_house",
             "position": {
-              "c": 6,
-              "r": 43
+              "c": 2,
+              "r": 3
             },
             "activity": "home"
           }
@@ -1095,10 +1095,10 @@
           {
             "from": "20:00",
             "to": "08:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_swamp_house",
             "position": {
-              "c": 6,
-              "r": 43
+              "c": 3,
+              "r": 3
             },
             "activity": "home"
           }
@@ -1222,10 +1222,10 @@
           {
             "from": "08:00",
             "to": "18:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_general_store",
             "position": {
-              "c": 37,
-              "r": 33
+              "c": 4,
+              "r": 2
             },
             "routeId": "route_east_market",
             "activity": "shopkeeping"
@@ -1242,9 +1242,9 @@
           }
         ],
         "defaultPosition": {
-          "area": "town",
-          "c": 37,
-          "r": 33
+          "area": "map_i_general_store",
+          "c": 4,
+          "r": 2
         }
       }
     },
@@ -1359,10 +1359,10 @@
           {
             "from": "08:00",
             "to": "14:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_general_store",
             "position": {
-              "c": 37,
-              "r": 34
+              "c": 5,
+              "r": 5
             },
             "routeId": "route_east_market",
             "activity": "helping at store"
@@ -1529,10 +1529,10 @@
           {
             "from": "07:00",
             "to": "12:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_smithy",
             "position": {
-              "c": 10,
-              "r": 21
+              "c": 4,
+              "r": 3
             },
             "routeId": "route_west_road",
             "activity": "smithing"
@@ -1550,10 +1550,10 @@
           {
             "from": "13:00",
             "to": "18:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_smithy",
             "position": {
-              "c": 10,
-              "r": 21
+              "c": 4,
+              "r": 3
             },
             "activity": "smithing"
           },
@@ -1569,9 +1569,9 @@
           }
         ],
         "defaultPosition": {
-          "area": "town",
-          "c": 10,
-          "r": 21
+          "area": "map_i_smithy",
+          "c": 4,
+          "r": 3
         }
       }
     },
@@ -1686,10 +1686,10 @@
           {
             "from": "07:30",
             "to": "12:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_smithy",
             "position": {
-              "c": 11,
-              "r": 21
+              "c": 5,
+              "r": 4
             },
             "activity": "apprentice smithing"
           },
@@ -1706,10 +1706,10 @@
           {
             "from": "13:00",
             "to": "17:30",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_smithy",
             "position": {
-              "c": 11,
-              "r": 21
+              "c": 5,
+              "r": 4
             },
             "activity": "apprentice smithing"
           },
@@ -1862,28 +1862,28 @@
           {
             "from": "06:00",
             "to": "22:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_inn",
             "position": {
-              "c": 28,
-              "r": 27
+              "c": 3,
+              "r": 1
             },
             "activity": "innkeeping"
           },
           {
             "from": "22:00",
             "to": "06:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_inn",
             "position": {
-              "c": 27,
-              "r": 26
+              "c": 1,
+              "r": 1
             },
             "activity": "resting"
           }
         ],
         "defaultPosition": {
-          "area": "town",
-          "c": 28,
-          "r": 27
+          "area": "map_i_inn",
+          "c": 3,
+          "r": 1
         }
       }
     },
@@ -2033,10 +2033,10 @@
           {
             "from": "17:00",
             "to": "09:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_inn",
             "position": {
-              "c": 27,
-              "r": 26
+              "c": 8,
+              "r": 5
             },
             "activity": "at inn"
           }
@@ -2190,10 +2190,10 @@
           {
             "from": "07:00",
             "to": "10:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_temple",
             "position": {
-              "c": 12,
-              "r": 33
+              "c": 7,
+              "r": 4
             },
             "activity": "morning prayers"
           },
@@ -2211,34 +2211,34 @@
           {
             "from": "14:00",
             "to": "19:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_temple",
             "position": {
-              "c": 12,
-              "r": 33
+              "c": 7,
+              "r": 4
             },
             "activity": "temple duties"
           },
           {
             "from": "19:00",
             "to": "07:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_temple",
             "position": {
-              "c": 12,
-              "r": 33
+              "c": 7,
+              "r": 7
             },
             "activity": "evening prayers"
           }
         ],
         "defaultPosition": {
-          "area": "town",
-          "c": 12,
-          "r": 33
+          "area": "map_i_temple",
+          "c": 7,
+          "r": 4
         }
       }
     },
     {
       "id": "namui_u_hakaru",
-      "name": "Namu\u2019i u Hakaru",
+      "name": "Namu’i u Hakaru",
       "homeId": "temple",
       "species": "<unknown species>",
       "gender": "<unknown gender>",
@@ -2364,10 +2364,10 @@
           {
             "from": "08:00",
             "to": "12:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_temple",
             "position": {
-              "c": 12,
-              "r": 33
+              "c": 11,
+              "r": 4
             },
             "activity": "temple"
           },
@@ -2384,24 +2384,24 @@
           {
             "from": "17:00",
             "to": "08:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_temple",
             "position": {
-              "c": 12,
-              "r": 33
+              "c": 11,
+              "r": 4
             },
             "activity": "temple"
           }
         ],
         "defaultPosition": {
-          "area": "town",
-          "c": 12,
-          "r": 33
+          "area": "map_i_temple",
+          "c": 11,
+          "r": 4
         }
       }
     },
     {
       "id": "takua_ao_hakaru",
-      "name": "Taku\u2019a ao Hakaru",
+      "name": "Taku’a ao Hakaru",
       "homeId": "temple",
       "species": "<unknown species>",
       "gender": "<unknown gender>",
@@ -2535,10 +2535,10 @@
           {
             "from": "09:00",
             "to": "13:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_temple",
             "position": {
-              "c": 12,
-              "r": 33
+              "c": 3,
+              "r": 4
             },
             "activity": "temple"
           },
@@ -2556,18 +2556,18 @@
           {
             "from": "18:00",
             "to": "09:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_temple",
             "position": {
-              "c": 12,
-              "r": 33
+              "c": 3,
+              "r": 4
             },
             "activity": "temple"
           }
         ],
         "defaultPosition": {
-          "area": "town",
-          "c": 12,
-          "r": 33
+          "area": "map_i_temple",
+          "c": 3,
+          "r": 4
         }
       }
     },
@@ -2704,10 +2704,10 @@
           {
             "from": "06:00",
             "to": "12:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_potion_shop",
             "position": {
-              "c": 45,
-              "r": 30
+              "c": 3,
+              "r": 3
             },
             "activity": "running potion shop"
           },
@@ -2888,10 +2888,10 @@
           {
             "from": "12:00",
             "to": "22:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_potion_shop",
             "position": {
-              "c": 45,
-              "r": 30
+              "c": 3,
+              "r": 4
             },
             "activity": "running potion shop"
           },
@@ -3046,10 +3046,10 @@
           {
             "from": "07:00",
             "to": "12:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_carpenters",
             "position": {
-              "c": 37,
-              "r": 27
+              "c": 2,
+              "r": 2
             },
             "routeId": "route_east_market",
             "activity": "carpentry"
@@ -3067,10 +3067,10 @@
           {
             "from": "13:00",
             "to": "17:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_carpenters",
             "position": {
-              "c": 37,
-              "r": 27
+              "c": 2,
+              "r": 2
             },
             "activity": "carpentry"
           },
@@ -3105,7 +3105,7 @@
         "carpenter / roofing family connection",
         "villager"
       ],
-      "bio": "Carpenter\u2019s household. Connected to Dzibim and the old Manji roofing side by the provided Dzibim line.",
+      "bio": "Carpenter’s household. Connected to Dzibim and the old Manji roofing side by the provided Dzibim line.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -3217,10 +3217,10 @@
           {
             "from": "08:00",
             "to": "17:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_carpenters",
             "position": {
-              "c": 38,
-              "r": 27
+              "c": 3,
+              "r": 4
             },
             "activity": "carpentry"
           },
@@ -3255,7 +3255,7 @@
         "carpenter household member",
         "villager"
       ],
-      "bio": "Named under Carpenter\u2019s; no further details provided.",
+      "bio": "Named under Carpenter’s; no further details provided.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -3361,10 +3361,10 @@
           {
             "from": "08:00",
             "to": "17:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_carpenters",
             "position": {
-              "c": 36,
-              "r": 27
+              "c": 5,
+              "r": 4
             },
             "activity": "carpentry work"
           },
@@ -3696,10 +3696,10 @@
           {
             "from": "19:00",
             "to": "07:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_inn",
             "position": {
-              "c": 28,
-              "r": 27
+              "c": 8,
+              "r": 5
             },
             "activity": "resting at inn"
           }
@@ -3906,7 +3906,7 @@
         "single member of the Watch",
         "villager"
       ],
-      "bio": "Only Watch member. Thinks his name means more than being a fighter. Loves animals and wants to train them to protect town; father thinks that is stupid and dangerous. Found claw came from invasive Nazgraku, escaped mounts of the thwarted Cleaver\u2019s Edge horde.",
+      "bio": "Only Watch member. Thinks his name means more than being a fighter. Loves animals and wants to train them to protect town; father thinks that is stupid and dangerous. Found claw came from invasive Nazgraku, escaped mounts of the thwarted Cleaver’s Edge horde.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -4093,7 +4093,7 @@
         "waitress",
         "villager"
       ],
-      "bio": "Waitress. Binding\u2019s husband\u2019s sister\u2019s daughter; Spearhead\u2019s sister\u2019s husband\u2019s sister\u2019s daughter; Oddclaw\u2019s aunt\u2019s husband\u2019s sister\u2019s daughter. Once held Tuhupnuk surname before Hammerhead murdered Sand and was banished.",
+      "bio": "Waitress. Binding’s husband’s sister’s daughter; Spearhead’s sister’s husband’s sister’s daughter; Oddclaw’s aunt’s husband’s sister’s daughter. Once held Tuhupnuk surname before Hammerhead murdered Sand and was banished.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -4217,10 +4217,10 @@
           {
             "from": "07:00",
             "to": "15:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_inn",
             "position": {
-              "c": 28,
-              "r": 27
+              "c": 7,
+              "r": 4
             },
             "routeId": "route_main_ns",
             "activity": "morning shift at inn"
@@ -4238,28 +4238,28 @@
           {
             "from": "17:00",
             "to": "22:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_inn",
             "position": {
-              "c": 28,
-              "r": 27
+              "c": 7,
+              "r": 4
             },
             "activity": "evening dinner shift"
           },
           {
             "from": "22:00",
             "to": "07:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_inn",
             "position": {
-              "c": 27,
-              "r": 26
+              "c": 6,
+              "r": 8
             },
             "activity": "resting"
           }
         ],
         "defaultPosition": {
-          "area": "town",
-          "c": 28,
-          "r": 27
+          "area": "map_i_inn",
+          "c": 7,
+          "r": 4
         }
       }
     },
@@ -4395,7 +4395,7 @@
         "deceased snow-watcher",
         "villager"
       ],
-      "bio": "Binding\u2019s husband. Village snow-watcher who sacrificed himself to distract the wyrm.",
+      "bio": "Binding’s husband. Village snow-watcher who sacrificed himself to distract the wyrm.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
