@@ -1,7 +1,7 @@
 {
   "schema": "hobunji_map.v1",
   "id": "map_hobunji_town",
-  "name": "Hobunji Hollow — Town",
+  "name": "Hobunji Hollow \u2014 Town",
   "category": "exterior",
   "cols": 60,
   "rows": 50,
@@ -6003,7 +6003,7 @@
     {
       "c": 46,
       "r": 16,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -18010,66 +18010,230 @@
   "objects": {},
   "furniture": [],
   "decor": [],
-  "npcPaths": [
+  "routes": [
     {
-      "id": "pth_spearhead",
-      "label": "Spearhead patrol",
-      "npcId": "spearhead_unumanuk",
-      "nodes": []
+      "id": "route_wjhen",
+      "label": "Route 1",
+      "nodes": [
+        [
+          30,
+          49
+        ],
+        [
+          30,
+          45
+        ],
+        [
+          27,
+          37
+        ],
+        [
+          26,
+          34
+        ],
+        [
+          25,
+          29
+        ],
+        [
+          24,
+          26
+        ],
+        [
+          24,
+          21
+        ],
+        [
+          27,
+          14
+        ],
+        [
+          29,
+          8
+        ],
+        [
+          30,
+          0
+        ]
+      ]
     },
     {
-      "id": "pth_oddclaw",
-      "label": "Oddclaw patrol",
-      "npcId": "oddclaw_unumanuk",
-      "nodes": []
+      "id": "route_7g7ae",
+      "label": "Route 2",
+      "nodes": [
+        [
+          25,
+          29
+        ],
+        [
+          37,
+          29
+        ],
+        [
+          45,
+          29
+        ],
+        [
+          48,
+          29
+        ],
+        [
+          52,
+          27
+        ],
+        [
+          55,
+          25
+        ],
+        [
+          59,
+          25
+        ]
+      ]
     },
     {
-      "id": "pth_tooth_out",
-      "label": "Tooth daily route",
-      "npcId": "tooth_hatayap",
-      "nodes": []
+      "id": "route_vjlr1",
+      "label": "Route 3",
+      "nodes": [
+        [
+          52,
+          27
+        ],
+        [
+          53,
+          29
+        ],
+        [
+          53,
+          32
+        ],
+        [
+          51,
+          35
+        ],
+        [
+          49,
+          37
+        ],
+        [
+          33,
+          37
+        ],
+        [
+          31,
+          36
+        ],
+        [
+          27,
+          37
+        ]
+      ]
     },
     {
-      "id": "pth_binding",
-      "label": "Binding commute",
-      "npcId": "binding_hatayap",
-      "nodes": []
+      "id": "route_qsqhf",
+      "label": "Route 4",
+      "nodes": [
+        [
+          27,
+          37
+        ],
+        [
+          27,
+          37
+        ],
+        [
+          24,
+          39
+        ],
+        [
+          21,
+          42
+        ],
+        [
+          19,
+          45
+        ],
+        [
+          18,
+          49
+        ]
+      ]
     },
     {
-      "id": "pth_foroji_out",
-      "label": "Foroji shop shift",
-      "npcId": "foroji_funji",
-      "nodes": []
+      "id": "route_lfvot",
+      "label": "Route 5",
+      "nodes": [
+        [
+          26,
+          34
+        ],
+        [
+          23,
+          34
+        ],
+        [
+          21,
+          35
+        ],
+        [
+          19,
+          37
+        ],
+        [
+          17,
+          39
+        ],
+        [
+          15,
+          39
+        ],
+        [
+          13,
+          38
+        ],
+        [
+          11,
+          36
+        ]
+      ]
     },
     {
-      "id": "pth_furunji_shop",
-      "label": "Furunji shop shift",
-      "npcId": "furunji_funji",
-      "nodes": []
-    },
-    {
-      "id": "pth_kinami_shop",
-      "label": "Kinami shop shift",
-      "npcId": "kinami_kunji",
-      "nodes": []
-    },
-    {
-      "id": "pth_kaboku_shop",
-      "label": "Kaboku shop shift",
-      "npcId": "kaboku_kunji",
-      "nodes": []
-    },
-    {
-      "id": "path_75xld",
-      "label": "Path 9",
-      "npcId": "",
-      "nodes": []
-    },
-    {
-      "id": "path_px4ei",
-      "label": "Path 10",
-      "npcId": "",
-      "nodes": []
+      "id": "route_infid",
+      "label": "Route 6",
+      "nodes": [
+        [
+          24,
+          26
+        ],
+        [
+          22,
+          26
+        ],
+        [
+          18,
+          24
+        ],
+        [
+          14,
+          23
+        ],
+        [
+          7,
+          23
+        ],
+        [
+          4,
+          24
+        ],
+        [
+          1,
+          25
+        ],
+        [
+          0,
+          25
+        ]
+      ]
     }
   ],
   "transitions": [
@@ -18189,7 +18353,8 @@
       "footprintD": 4,
       "wbOpts": null,
       "wbGableOpts": null,
-      "rotationDeg": 180
+      "rotationDeg": 180,
+      "rotation": 180
     },
     {
       "id": "bldg_ty9gy",
@@ -18201,7 +18366,8 @@
       "footprintD": 4,
       "wbOpts": null,
       "wbGableOpts": null,
-      "rotationDeg": 90
+      "rotationDeg": 90,
+      "rotation": 180
     },
     {
       "id": "bldg_8r0d6",

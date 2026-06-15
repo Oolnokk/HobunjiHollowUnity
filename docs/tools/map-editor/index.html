@@ -1101,6 +1101,10 @@ function buildTownLayout() {
           || (farmM.transitions || []).find(s => s.targetMapId === townM.id);
         if (fspot) { targetCol = fspot.col; targetRow = fspot.row; }
       }
+      if (targetCol === null) { targetCol = 17; targetRow = 0; } // default farm spawn
+    } else if (t.targetMapId && t.targetMapId.startsWith('map_i_')) {
+      layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId });
+      return; // handled — skip the generic push below
     } else {
       const target = mapById(t.targetMapId);
       targetArea = t.targetMapId === ws.gameLink.interiorId ? 'interior' : '';
@@ -1196,6 +1200,7 @@ function importAny(obj) {
     m.routes = Array.isArray(obj.routes) ? obj.routes : (Array.isArray(obj.npcPaths) ? obj.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(obj.npcPaths) ? obj.npcPaths : [];
     m.transitions = Array.isArray(obj.transitions) ? obj.transitions : [];
+    m.buildings = Array.isArray(obj.buildings) ? obj.buildings : [];
     ws.maps.push(m); ws.activeId = m.id;
     updateAll(); fitView(); setStatus('Imported map: ' + m.name);
     return;
@@ -1217,6 +1222,7 @@ function importAny(obj) {
       m.routes = Array.isArray(src.routes) ? src.routes : (Array.isArray(src.npcPaths) ? src.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(src.npcPaths) ? src.npcPaths : [];
       m.transitions = Array.isArray(src.transitions) ? src.transitions : [];
+      m.buildings = Array.isArray(src.buildings) ? src.buildings : [];
       return m;
     });
     if (doMerge) {
@@ -1344,7 +1350,8 @@ $('loadTownBtn').addEventListener('click', async () => {
       ws.gameLink.townId = townM.id;
       // Wire farm ↔ town transition spots
       const farmM = mapById(ws.gameLink.exteriorId);
-      const townSpot = (townM.transitions || []).find(t => t.id === 'sp_town_farm');
+      const townSpot = (townM.transitions || []).find(t => t.id === 'sp_town_farm')
+        || (townM.transitions || []).find(t => !t.targetMapId);
       if (farmM && townSpot) {
         // Add farm-side spot pointing back to town if not already present
         const existing = (farmM.transitions || []).find(t => t.targetMapId === townM.id);
