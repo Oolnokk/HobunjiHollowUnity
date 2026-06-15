@@ -247,7 +247,6 @@ var state = {
   selectedId: null,
   library: [],
   dragging: false,
-  eraseMode: false,
 };
 
 function syncFloorSet(){
@@ -343,8 +342,7 @@ function gridAction(e){
   var key=c+','+r, tool=state.tool, interior=state.interior;
 
   if(tool==='paintFloor'){
-    if(!state.eraseMode){ if(!state.floorSet.has(key)){ state.floorSet.add(key); syncFloorFromSet(); drawGrid(); } }
-    else                { if( state.floorSet.has(key)){ state.floorSet.delete(key); syncFloorFromSet(); drawGrid(); } }
+    if(!state.floorSet.has(key)){ state.floorSet.add(key); syncFloorFromSet(); drawGrid(); rebuild3D(); }
   }
   else if(tool==='eraseFloor'){
     if(state.floorSet.has(key)){
@@ -385,7 +383,6 @@ function gridAction(e){
 
 gc.addEventListener('pointerdown',function(e){
   beginUndo(); state.dragging=true;
-  if(state.tool==='paintFloor'){ var cr=gridCell(e); state.eraseMode=state.floorSet.has(cr.c+','+cr.r); }
   gridAction(e);
 });
 gc.addEventListener('pointermove',function(e){
