@@ -1281,6 +1281,7 @@
       // ── Town zone ──────────────────────────────────────────────────
       let _townZone          = null;   // parsed hobunji_town_v1 layout
       let townGrid           = [];     // 2-D tile array for the town map
+      let townPaintedCells   = new Set(); // c,r keys from explicit town workspace paint
       let townScene          = null;   // THREE.Scene, built lazily
       let _townSceneBuilt    = false;
       let _townBuildingDefs  = [];     // building entries from _townZone.buildings
@@ -1882,6 +1883,7 @@
       function initTownTravel(layout) {
         if (!layout || layout.version !== 1) return;
         _townZone = layout;
+        townPaintedCells = new Set((layout.tiles || []).map(t => `${t.c},${t.r}`));
         const TCOLS = layout.cols || 60, TROWS = layout.rows || 50;
         townGrid = Array.from({ length: TROWS }, (_, r) =>
           Array.from({ length: TCOLS }, (_, c) => ({
@@ -2436,17 +2438,19 @@
         townScene.add(sun);
 
         const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
+        townScene.add(buildTownProceduralTerrainMesh(TCOLS, TROWS));
 
-        // Count tiles per type to size InstancedMeshes.
+        // Count only explicitly painted town tiles; unpainted cells are the procedural landscape.
         // Rock tiles render as grass — buildings cover those footprints.
         const typeCounts = {};
-        for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
+        for (const key of townPaintedCells) {
+          const [c, r] = key.split(',').map(Number);
           const tp = townGrid[r]?.[c]?.type || TileType.GRASS;
           const rtp = tp === TileType.ROCK ? TileType.GRASS : tp;
           typeCounts[rtp] = (typeCounts[rtp] || 0) + 1;
         }
 
-        // One InstancedMesh per tile type (rock tiles render as ground — walls added separately)
+        // One InstancedMesh per painted tile type (rock tiles render as ground — walls added separately)
         const slabGeo = new THREE.BoxGeometry(1, SLAB_H, 1);
         const dummy = new THREE.Object3D();
         const instances = {};
@@ -2458,7 +2462,8 @@
           townScene.add(im);
         }
 
-        for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
+        for (const key of townPaintedCells) {
+          const [c, r] = key.split(',').map(Number);
           const tile = townGrid[r]?.[c];
           const tp  = tile?.type || TileType.GRASS;
           const rtp = tp === TileType.ROCK ? TileType.GRASS : tp;
@@ -4901,6 +4906,86 @@
           case TileType.ROCK:   return ROCK_TOP;
           default:              return NORMAL_TOP;
         }
+      }
+
+      function townProceduralTerrainConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.townProceduralTerrain || {};
+      }
+
+      function _terrainHash(ix, iz, seed) {
+        let h = (2166136261 ^ seed ^ Math.imul(ix, 374761393) ^ Math.imul(iz, 668265263)) >>> 0;
+        h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+        return h / 4294967296;
+      }
+
+      function _terrainValueNoise(x, z, cellSize, seed) {
+        const gx = Math.floor(x / cellSize), gz = Math.floor(z / cellSize);
+        const fx = x / cellSize - gx, fz = z / cellSize - gz;
+        const sx = fx * fx * (3 - 2 * fx), sz = fz * fz * (3 - 2 * fz);
+        const a = _terrainHash(gx, gz, seed), b = _terrainHash(gx + 1, gz, seed);
+        const c = _terrainHash(gx, gz + 1, seed), d = _terrainHash(gx + 1, gz + 1, seed);
+        return ((a + (b - a) * sx) + ((c + (d - c) * sx) - (a + (b - a) * sx)) * sz) * 2 - 1;
+      }
+
+      function _townPaintBlendAt(x, z, cfg) {
+        if (!townPaintedCells.size) return 0;
+        const blendTiles = Math.max(0.01, Number(cfg.flattenBlendTiles) || 3.5);
+        const inset = Math.max(0, Number(cfg.paintedInsetTiles) || 0.45);
+        const c0 = Math.floor(x - blendTiles - 1), c1 = Math.floor(x + blendTiles + 1);
+        const r0 = Math.floor(z - blendTiles - 1), r1 = Math.floor(z + blendTiles + 1);
+        let nearest = Infinity;
+        for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+          if (!townPaintedCells.has(`${c},${r}`)) continue;
+          const dx = Math.max(c - x, 0, x - (c + 1));
+          const dz = Math.max(r - z, 0, z - (r + 1));
+          nearest = Math.min(nearest, Math.hypot(dx, dz));
+        }
+        if (nearest <= inset) return 1;
+        if (nearest >= blendTiles) return 0;
+        const t = (nearest - inset) / Math.max(0.01, blendTiles - inset);
+        return 1 - (t * t * (3 - 2 * t));
+      }
+
+      function buildTownProceduralTerrainMesh(cols, rows) {
+        const cfg = townProceduralTerrainConfig();
+        const border = Math.max(0, Math.round(Number(cfg.borderTiles) || 10));
+        const segPerTile = Math.max(1, Math.round(Number(cfg.segmentsPerTile) || 2));
+        const xMin = -border, zMin = -border, width = cols + border * 2, depth = rows + border * 2;
+        const xSegs = width * segPerTile, zSegs = depth * segPerTile;
+        const flattenedY = Number.isFinite(Number(cfg.flattenedY)) ? Number(cfg.flattenedY) : -0.035;
+        const baseAmp = Number.isFinite(Number(cfg.baseAmplitude)) ? Number(cfg.baseAmplitude) : 0.34;
+        const detailAmp = Number.isFinite(Number(cfg.detailAmplitude)) ? Number(cfg.detailAmplitude) : 0.07;
+        const step = Math.max(0.001, Number(cfg.simplifiedStep) || 0.08);
+        const seed = Math.round(Number(cfg.seed) || 1337);
+        const low = new THREE.Color(cfg.lowColor || '#496f39'), mid = new THREE.Color(cfg.midColor || '#638f48'), high = new THREE.Color(cfg.highColor || '#8a8456');
+        const positions = [], colors = [], indices = [];
+        for (let rz = 0; rz <= zSegs; rz++) for (let cx = 0; cx <= xSegs; cx++) {
+          const x = xMin + cx / segPerTile, z = zMin + rz / segPerTile;
+          const broad = _terrainValueNoise(x + cols * 0.5, z + rows * 0.5, 8, seed) * baseAmp;
+          const detail = _terrainValueNoise(x - cols * 0.35, z + rows * 0.25, 2.75, seed + 97) * detailAmp;
+          const proceduralY = broad + detail;
+          const simplifiedY = Math.round(proceduralY / step) * step * 0.35;
+          const blend = _townPaintBlendAt(x, z, cfg);
+          const y = proceduralY * (1 - blend) + (flattenedY + simplifiedY * 0.25) * blend;
+          positions.push(x, y, z);
+          const shade = THREE.MathUtils.clamp((y + baseAmp + detailAmp) / ((baseAmp + detailAmp) * 2), 0, 1);
+          const col = shade < 0.55 ? low.clone().lerp(mid, shade / 0.55) : mid.clone().lerp(high, (shade - 0.55) / 0.45);
+          colors.push(col.r, col.g, col.b);
+        }
+        const rowStride = xSegs + 1;
+        for (let rz = 0; rz < zSegs; rz++) for (let cx = 0; cx < xSegs; cx++) {
+          const a = rz * rowStride + cx, b = a + 1, c = a + rowStride, d = c + 1;
+          indices.push(a, c, b, b, c, d);
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+        const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.receiveShadow = true;
+        return mesh;
       }
 
       // Geometry — full 1.0×1.0 footprint, no gaps

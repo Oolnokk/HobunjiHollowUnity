@@ -24,6 +24,20 @@ window.SCRATCHBONES_CONFIG = {
         "actions": true
       }
     },
+    "townProceduralTerrain": {
+      "borderTiles": 10,
+      "segmentsPerTile": 2,
+      "flattenBlendTiles": 3.5,
+      "paintedInsetTiles": 0.45,
+      "flattenedY": -0.035,
+      "baseAmplitude": 0.34,
+      "detailAmplitude": 0.07,
+      "simplifiedStep": 0.08,
+      "seed": 1337,
+      "lowColor": "#496f39",
+      "midColor": "#638f48",
+      "highColor": "#8a8456"
+    },
     "movement": {
       "perpRotDeadzoneDeg": 40,
       "npc": {
