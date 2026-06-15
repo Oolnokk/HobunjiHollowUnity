@@ -290,6 +290,79 @@ function makeMap(name, category, cols, rows) {
   };
 }
 
+
+function buildingInteriorToWorkspaceMap(mapData, entry = {}) {
+  const cols = clamp(Math.round(mapData.cols || 20), 2, 400);
+  const rows = clamp(Math.round(mapData.rows || 20), 2, 400);
+  const tiles = {};
+  const floorSet = new Set((mapData.floor || []).map(([c,r]) => `${c},${r}`));
+  const colliderSet = new Set((mapData.colliders || []).map(([c,r]) => `${c},${r}`));
+  for (const key of floorSet) tiles[key] = { type: colliderSet.has(key) ? 'rock' : 'grass' };
+  for (const key of colliderSet) if (!tiles[key]) tiles[key] = { type: 'rock' };
+  const transitions = (mapData.exits || []).flatMap(exit =>
+    (exit.tiles || []).map(([c,r]) => ({
+      id: `${exit.id}_${c}_${r}`,
+      exitId: exit.id,
+      col: c, row: r,
+      label: exit.label || exit.id,
+      targetMapId: exit.targetMap || '',
+      spawnCol: Number.isFinite(exit.spawnCol) ? exit.spawnCol : 0,
+      spawnRow: Number.isFinite(exit.spawnRow) ? exit.spawnRow : 0
+    }))
+  );
+  return {
+    schema: 'hobunji_map.v1',
+    id: entry.id || mapData.id || uid('map'),
+    name: entry.name || mapData.name || entry.id || 'Building Interior',
+    category: 'building_interior',
+    cols, rows, tiles,
+    routes: Array.isArray(mapData.routes) ? mapData.routes : [],
+    npcPaths: Array.isArray(mapData.npcPaths) ? mapData.npcPaths : [],
+    transitions,
+    objects: {}, furniture: [], decor: [], buildings: [],
+    buildingInteriorBase: JSON.parse(JSON.stringify(mapData))
+  };
+}
+
+function buildBuildingInteriorMapV1(m) {
+  const base = m.buildingInteriorBase && m.buildingInteriorBase.schema === 'hobunji_building_interior.v1'
+    ? JSON.parse(JSON.stringify(m.buildingInteriorBase))
+    : { schema: 'hobunji_building_interior.v1', furniture: [], id: m.id, name: m.name, cols: m.cols, rows: m.rows, exits: [], colliders: [], vendorZones: [], floor: [] };
+  base.schema = 'hobunji_building_interior.v1';
+  base.id = m.id;
+  base.name = m.name || base.name || 'Building Interior';
+  base.cols = m.cols;
+  base.rows = m.rows;
+  const floor = [];
+  const colliders = [];
+  Object.keys(m.tiles || {}).forEach(key => {
+    const [c, r] = key.split(',').map(Number);
+    if (!Number.isFinite(c) || !Number.isFinite(r) || c < 0 || r < 0 || c >= m.cols || r >= m.rows) return;
+    const type = m.tiles[key]?.type || 'grass';
+    if (type === 'rock') colliders.push([c, r]);
+    else floor.push([c, r]);
+  });
+  base.floor = floor;
+  base.colliders = colliders;
+  const baseExitsById = new Map((base.exits || []).map(e => [e.id, { ...e, tiles: [] }]));
+  const generated = new Map();
+  (m.transitions || []).forEach(t => {
+    if (!Number.isFinite(t.col) || !Number.isFinite(t.row)) return;
+    const exitId = t.exitId || (typeof t.id === 'string' && t.id.includes('_') ? t.id.replace(/_\d+_\d+$/, '') : t.id) || uid('exit');
+    const ex = baseExitsById.get(exitId) || generated.get(exitId) || { id: exitId, label: t.label || 'Exit', tiles: [], targetMap: '', spawnCol: 0, spawnRow: 0 };
+    ex.label = t.label || ex.label || exitId;
+    ex.targetMap = t.targetMapId || ex.targetMap || '';
+    ex.spawnCol = Number.isFinite(t.spawnCol) ? t.spawnCol : (Number.isFinite(ex.spawnCol) ? ex.spawnCol : 0);
+    ex.spawnRow = Number.isFinite(t.spawnRow) ? t.spawnRow : (Number.isFinite(ex.spawnRow) ? ex.spawnRow : 0);
+    if (!ex.tiles.some(([c,r]) => c === t.col && r === t.row)) ex.tiles.push([t.col, t.row]);
+    generated.set(exitId, ex);
+  });
+  base.exits = Array.from(generated.values());
+  base.routes = (m.routes || []).map(p => ({ id: p.id, label: p.label, nodes: (p.nodes || []).map(n => [n[0], n[1]]) })).filter(p => p.nodes.length);
+  base.npcPaths = (m.npcPaths || []).map(p => ({ id: p.id, label: p.label, npcId: p.npcId || '', nodes: (p.nodes || []).map(n => [n[0], n[1]]) })).filter(p => p.nodes.length);
+  return base;
+}
+
 let ws = loadWorkspace();
 function loadWorkspace() {
   try {
@@ -1200,6 +1273,12 @@ function importAny(obj) {
     setStatus('Imported farm layout.');
     return;
   }
+  if (obj && obj.schema === 'hobunji_building_interior.v1') {
+    const m = buildingInteriorToWorkspaceMap(obj, { id: obj.id, name: obj.name });
+    ws.maps.push(m); ws.activeId = m.id;
+    updateAll(); fitView(); setStatus('Imported building interior: ' + m.name);
+    return;
+  }
   if (obj && obj.schema === 'hobunji_map.v1') {
     const m = makeMap(obj.name || 'Imported', obj.category === 'interior' ? 'interior' : 'exterior',
       clamp(Math.round(obj.cols||36),2,400), clamp(Math.round(obj.rows||26),2,400));
@@ -1221,7 +1300,7 @@ function importAny(obj) {
       `Merge ${obj.maps.length} maps into your current workspace?\n\nOK = merge (keep your maps)\nCancel = replace workspace`);
     // Sanitise incoming maps
     const incoming = obj.maps.map(src => {
-      const m = makeMap(src.name || 'Imported', src.category === 'interior' ? 'interior' : 'exterior',
+      const m = makeMap(src.name || 'Imported', src.category === 'building_interior' ? 'building_interior' : (src.category === 'interior' ? 'interior' : 'exterior'),
         clamp(Math.round(src.cols||36),2,400), clamp(Math.round(src.rows||26),2,400));
       m.id = src.id || m.id;  // keep authored IDs so transitions link correctly
       if (Array.isArray(src.tiles))
@@ -1232,6 +1311,7 @@ function importAny(obj) {
       m.npcPaths = Array.isArray(src.npcPaths) ? src.npcPaths : [];
       m.transitions = Array.isArray(src.transitions) ? src.transitions : [];
       m.buildings = Array.isArray(src.buildings) ? src.buildings : [];
+      if (src.buildingInteriorBase) m.buildingInteriorBase = src.buildingInteriorBase;
       return m;
     });
     if (doMerge) {
@@ -1289,7 +1369,7 @@ $('applyMapBtn').addEventListener('click', () => {
   if (newCat !== m.category) {
     m.category = newCat;
     // Drop palette items not valid in the new category (routes and spots are valid in both)
-    if (newCat === 'interior') { m.objects = {}; m.furniture = []; Object.keys(m.tiles).forEach(k => { if (m.tiles[k].crop) m.tiles[k].crop = ''; }); }
+    if (newCat === 'interior' || newCat === 'building_interior') { m.objects = {}; m.furniture = []; Object.keys(m.tiles).forEach(k => { if (m.tiles[k].crop) m.tiles[k].crop = ''; }); }
     if (ws.gameLink.exteriorId === m.id && newCat !== 'exterior') ws.gameLink.exteriorId = '';
     if (ws.gameLink.interiorId === m.id && newCat !== 'interior') ws.gameLink.interiorId = '';
     if (ws.gameLink.townId     === m.id && newCat !== 'exterior') ws.gameLink.townId     = '';
@@ -1310,7 +1390,7 @@ $('applyMapBtn').addEventListener('click', () => {
 
 $('floorTemplateBtn').addEventListener('click', () => {
   const m = activeMap();
-  if (m.category !== 'interior') return;
+  if (m.category !== 'interior' && m.category !== 'building_interior') return;
   pushUndo(); applyFarmhouseFloor(m); updateAll(); setStatus('Farmhouse floor template applied.');
 });
 
@@ -1337,9 +1417,12 @@ $('playBtn').addEventListener('click', () => {
 
 $('exportMapBtn').addEventListener('click', () => {
   const m = activeMap();
-  const out = { ...m, tiles: Object.keys(m.tiles).map(k => { const [c,r] = k.split(',').map(Number); return { c, r, ...m.tiles[k] }; }) };
-  download(`${m.name.toLowerCase().replace(/[^a-z0-9]+/g,'_')}.map.json`, out);
-  setStatus('Map JSON downloaded.');
+  const out = m.category === 'building_interior'
+    ? buildBuildingInteriorMapV1(m)
+    : { ...m, tiles: Object.keys(m.tiles).map(k => { const [c,r] = k.split(',').map(Number); return { c, r, ...m.tiles[k] }; }) };
+  const suffix = m.category === 'building_interior' ? '.json' : '.map.json';
+  download(`${m.name.toLowerCase().replace(/[^a-z0-9]+/g,'_')}${suffix}`, out);
+  setStatus(m.category === 'building_interior' ? 'Building interior JSON downloaded.' : 'Map JSON downloaded.');
 });
 $('exportLayoutBtn').addEventListener('click', () => {
   if (!ws.gameLink.exteriorId) { setStatus('Pick a Farm map in Game Link first.'); return; }
@@ -1433,44 +1516,7 @@ async function loadBuildingInteriorMaps() {
       mapData = await r2.json();
     } catch(e) { continue; }
 
-    // Convert hobunji_building_interior.v1 schema to workspace map format
-    const cols = mapData.cols || 20, rows = mapData.rows || 20;
-    const tiles = {};
-    const floorSet = new Set((mapData.floor || []).map(([c,r]) => `${c},${r}`));
-    const colliderSet = new Set((mapData.colliders || []).map(([c,r]) => `${c},${r}`));
-    for (const key of floorSet) {
-      tiles[key] = { type: colliderSet.has(key) ? 'rock' : 'grass' };
-    }
-    // Also mark colliders that aren't in floor as rock tiles
-    for (const key of colliderSet) {
-      if (!tiles[key]) tiles[key] = { type: 'rock' };
-    }
-
-    // Convert exits to transitions (spots)
-    const transitions = (mapData.exits || []).flatMap(exit =>
-      (exit.tiles || []).map(([c,r]) => ({
-        id: exit.id + '_' + c + '_' + r,
-        col: c, row: r,
-        label: exit.label || exit.id,
-        targetMapId: exit.targetMap || '',
-        spawnCol: exit.spawnCol ?? c,
-        spawnRow: exit.spawnRow ?? r
-      }))
-    );
-
-    ws.maps.push({
-      id: entry.id,
-      name: entry.name || mapData.name || entry.id,
-      category: 'building_interior',
-      cols, rows,
-      tiles,
-      routes: [],
-      npcPaths: [],
-      transitions,
-      objects: {},
-      furniture: [],
-      decor: []
-    });
+    ws.maps.push(buildingInteriorToWorkspaceMap(mapData, entry));
     added++;
   }
 

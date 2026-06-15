@@ -1453,7 +1453,9 @@
 
       function rebuildRouteGraphs() {
         routeGraphsByArea.clear();
-        for (const area of ['farm', 'interior', 'town']) {
+        const areas = new Set(['farm', 'interior', 'town']);
+        [...worldRoutes, ...worldTownRoutes].forEach(r => areas.add(r.area || 'farm'));
+        for (const area of areas) {
           const routes = [...worldRoutes, ...worldTownRoutes].filter(r => (r.area || 'farm') === area);
           routeGraphsByArea.set(area, buildRouteGraph(routes));
         }
@@ -2046,7 +2048,16 @@
               }, undefined, () => {});
             }
           }
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [] };
+          const buildingPaths = (mapData.npcPaths || []).filter(p => p && Array.isArray(p.nodes) && p.nodes.length > 0)
+            .map(p => ({ ...p, area: mapId }));
+          const buildingRoutes = normalizeRoutes(
+            (mapData.routes || []).map(r => ({ ...r, area: mapId })),
+            buildingPaths);
+          if (buildingRoutes.length) {
+            worldRoutes = worldRoutes.filter(r => (r.area || 'farm') !== mapId).concat(buildingRoutes);
+            rebuildRouteGraphs();
+          }
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes };
           _buildingScenes.set(mapId, info);
           for (const w of npcWalkers) {
             if (w.root._pendingBuildingAdd === mapId) {
