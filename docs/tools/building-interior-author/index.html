@@ -110,6 +110,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     <div class="modeButtons">
       <button id="modeTranslate" class="active">Translate</button>
       <button id="modeRotate">Rotate</button>
+      <button id="modeScale">Scale</button>
     </div>
   </main>
 
@@ -129,7 +130,10 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
         </div>
         <div class="grid2" style="margin-top:6px">
           <div class="field"><label>Offset Z</label><input id="pZ" type="number" step="0.05" value="0"></div>
-          <div class="field"><label>&nbsp;</label><button id="applyPTBtn">Apply</button></div>
+          <div class="field"><label>Scale</label><input id="pScale" type="number" step="0.05" min="0.05" value="1"></div>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <button id="applyPTBtn">Apply</button>
         </div>
         <div class="row" style="margin-top:4px">
           <button id="resetPTBtn">Reset</button>
@@ -443,7 +447,7 @@ function selectFurn(id){
     var cat=catOf(f.itemKey);
     $('selLabel').textContent=(cat.label||f.itemKey)+' ('+f.itemKey+')';
     $('selPos').textContent=' col '+f.col+', row '+f.row;
-    $('pRotY').value=f.rotY||0; $('pX').value=f.postX||0; $('pY').value=f.postY||0; $('pZ').value=f.postZ||0;
+    $('pRotY').value=f.rotY||0; $('pX').value=f.postX||0; $('pY').value=f.postY||0; $('pZ').value=f.postZ||0; $('pScale').value=f.postScale||1;
     $('selStats').textContent='Selected: '+(cat.label||f.itemKey);
     syncTC();
   } else {
@@ -456,12 +460,12 @@ function selectFurn(id){
 $('applyPTBtn').addEventListener('click',function(){
   var f=state.interior.furniture.filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
   pushUndo();
-  f.rotY=+$('pRotY').value||0; f.postX=+$('pX').value||0; f.postY=+$('pY').value||0; f.postZ=+$('pZ').value||0;
+  f.rotY=+$('pRotY').value||0; f.postX=+$('pX').value||0; f.postY=+$('pY').value||0; f.postZ=+$('pZ').value||0; f.postScale=Math.max(0.05,+$('pScale').value||1);
   rebuild3D();
 });
 $('resetPTBtn').addEventListener('click',function(){
   var f=state.interior.furniture.filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
-  pushUndo(); f.rotY=0; f.postX=0; f.postY=0; f.postZ=0; rebuild3D(); selectFurn(state.selectedId);
+  pushUndo(); f.rotY=0; f.postX=0; f.postY=0; f.postZ=0; f.postScale=1; rebuild3D(); selectFurn(state.selectedId);
 });
 $('delFurnBtn').addEventListener('click',function(){
   if(!state.selectedId) return; pushUndo();
@@ -688,8 +692,10 @@ function rebuild3D(){
     var cat=catOf(f.itemKey);
     var grp=furnGroupFor(f);
     var cx=f.col+cat.fw/2+(f.postX||0), cz=f.row+cat.fd/2+(f.postZ||0);
+    var sc=f.postScale||1;
     grp.position.set(cx,(f.postY||0),cz);
     grp.rotation.y=(f.rotY||0)*Math.PI/180;
+    grp.scale.setScalar(sc);
     furnMeshes[f.id]=grp;
     previewGroup.add(grp);
   });
@@ -721,7 +727,8 @@ function initTC(){
       f.postY=+( grp.position.y ).toFixed(3);
       f.postZ=+( grp.position.z-(f.row+cat.fd/2) ).toFixed(3);
       f.rotY =+( grp.rotation.y*180/Math.PI ).toFixed(1);
-      $('pX').value=f.postX; $('pY').value=f.postY; $('pZ').value=f.postZ; $('pRotY').value=f.rotY;
+      f.postScale=+( grp.scale.x ).toFixed(3);
+      $('pX').value=f.postX; $('pY').value=f.postY; $('pZ').value=f.postZ; $('pRotY').value=f.rotY; $('pScale').value=f.postScale;
       commitUndo();
     }
   });
@@ -737,9 +744,11 @@ function setMode(m){
   if(!tc) return; tc.setMode(m);
   $('modeTranslate').classList.toggle('active',m==='translate');
   $('modeRotate').classList.toggle('active',m==='rotate');
+  $('modeScale').classList.toggle('active',m==='scale');
 }
 $('modeTranslate').addEventListener('click',function(){setMode('translate');});
 $('modeRotate').addEventListener('click',function(){setMode('rotate');});
+$('modeScale').addEventListener('click',function(){setMode('scale');});
 
 // ─── 3D click → select ────────────────────────────────────────────────────────
 var ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
