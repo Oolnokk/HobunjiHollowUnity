@@ -1500,7 +1500,7 @@
         if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH) return false;
         if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
         if (area !== 'town' && interiorFurnitureObjects.some(o => o.area === area && o.col === c && o.row === r)) return false;
-        if (area === 'town' && _townBuildingDefs.some(b => c >= (b.gridX ?? b.col ?? 0) && r >= (b.gridZ ?? b.row ?? 0) && c < (b.gridX ?? b.col ?? 0) + (b.footprintW ?? b.w ?? 1) && r < (b.gridZ ?? b.row ?? 0) + (b.footprintD ?? b.h ?? 1))) return false;
+        if (area === 'town' && isTownBuildingCollisionTile(c, r)) return false;
         if (_isBuildingArea(area)) { const g = npcGridForArea(area); return !!g?.[r]?.[c] && !isSolid(g[r][c].type); }
         return true;
       }
@@ -3417,6 +3417,60 @@
         return col >= HOUSE_COL && col < HOUSE_COL + HOUSE_FOOTPRINT_W
             && row >= HOUSE_ROW && row < HOUSE_ROW + HOUSE_FOOTPRINT_D;
       }
+      function rotateBuildingCollisionCell(localX, localY, width, depth, rotationDeg) {
+        const rot = ((Math.round((rotationDeg || 0) / 90) * 90) % 360 + 360) % 360;
+        if (rot === 90) return { x: depth - 1 - localY, y: localX };
+        if (rot === 180) return { x: width - 1 - localX, y: depth - 1 - localY };
+        if (rot === 270) return { x: localY, y: width - 1 - localX };
+        return { x: localX, y: localY };
+      }
+      function isTownBuildingCollisionTile(col, row) {
+        const loadedBuildingGroups = _townBuildingGroups.filter(entry => entry.piece?.footprint);
+        const buildingSources = loadedBuildingGroups.length
+          ? loadedBuildingGroups
+          : _townBuildingDefs.map(bldg => ({ bldg, piece: null }));
+
+        return buildingSources.some(({ bldg, piece }) => {
+          const originX = bldg.gridX ?? bldg.col ?? 0;
+          const originZ = bldg.gridZ ?? bldg.row ?? 0;
+
+          if (!piece?.footprint) {
+            const width = bldg.footprintW ?? bldg.w ?? 1;
+            const depth = bldg.footprintD ?? bldg.h ?? 1;
+            return col >= originX && row >= originZ && col < originX + width && row < originZ + depth;
+          }
+
+          const structuralCells = piece.footprint.cells || [];
+          const fencePostCells = piece.footprint.extensions?.railings || [];
+          const collisionCells = structuralCells.concat(fencePostCells);
+          if (!collisionCells.length) return false;
+
+          const allBuildingCells = []
+            .concat(piece.footprint.cells || [])
+            .concat(piece.footprint.extensions?.entryTunnels || [])
+            .concat(piece.footprint.extensions?.chimneys || [])
+            .concat(piece.footprint.extensions?.porches || [])
+            .concat(piece.footprint.extensions?.porchStairs || [])
+            .concat(piece.footprint.extensions?.railings || []);
+          const minX = Math.min(...allBuildingCells.map(cell => cell.x));
+          const minY = Math.min(...allBuildingCells.map(cell => cell.y));
+          const maxX = Math.max(...allBuildingCells.map(cell => cell.x));
+          const maxY = Math.max(...allBuildingCells.map(cell => cell.y));
+          const width = maxX - minX + 1;
+          const depth = maxY - minY + 1;
+
+          return collisionCells.some(cell => {
+            const rotated = rotateBuildingCollisionCell(
+              cell.x - minX,
+              cell.y - minY,
+              width,
+              depth,
+              bldg.rotationDeg || bldg.rotation || 0,
+            );
+            return col === originX + rotated.x && row === originZ + rotated.y;
+          });
+        });
+      }
       // The two tiles immediately north of the door act as a second entrance
       function isHouseEntranceTile(col, row) {
         return row === DOOR_ROW - 1 && col >= DOOR_COL && col <= DOOR_COL + 1;
@@ -4392,15 +4446,9 @@
         const row  = Math.floor(wy / TILE);
         const type = getActiveGrid()[row][col].type;
         if (isSolid(type)) return null;
-        // Block building footprints on exterior maps (player must use doors/transitions).
+        // Block structural building tiles on exterior maps (player must use doors/transitions).
         if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
-        if (currentArea === 'town' && _townBuildingDefs.some(b => {
-          const x = b.gridX ?? b.col ?? 0;
-          const z = b.gridZ ?? b.row ?? 0;
-          const w = b.footprintW ?? b.w ?? 1;
-          const d = b.footprintD ?? b.h ?? 1;
-          return col >= x && row >= z && col < x + w && row < z + d;
-        })) return null;
+        if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
         return {
           [TileType.GRASS]:   1.00,
           [TileType.TILLED]:  0.85,
