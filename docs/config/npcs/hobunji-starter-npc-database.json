@@ -2584,7 +2584,7 @@
         "potion shop resident",
         "villager"
       ],
-      "bio": "Old man at Potion Shop.",
+      "bio": "Old man at Potion Shop. He and Kinami had a falling out a few years ago and now avoid sharing a room except during dinner and sleep.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -2715,6 +2715,54 @@
           },
           {
             "from": "09:00",
+            "to": "10:20",
+            "stationId": "station_0qpky",
+            "mapId": "map_i_kunjis_potions_F1",
+            "position": {
+              "c": 5,
+              "r": 6
+            },
+            "routeId": "route_lx49v",
+            "activity": "morning counter shift"
+          },
+          {
+            "from": "10:20",
+            "to": "10:30",
+            "stationId": "station_0v1y7",
+            "mapId": "map_i_kunjis_potions_F1",
+            "position": {
+              "c": 2,
+              "r": 6
+            },
+            "routeId": "route_lx49v",
+            "activity": "checking potion shelves"
+          },
+          {
+            "from": "10:30",
+            "to": "11:20",
+            "stationId": "station_0qpky",
+            "mapId": "map_i_kunjis_potions_F1",
+            "position": {
+              "c": 5,
+              "r": 6
+            },
+            "routeId": "route_lx49v",
+            "activity": "morning counter shift"
+          },
+          {
+            "from": "11:20",
+            "to": "11:30",
+            "stationId": "station_0v1y7",
+            "mapId": "map_i_kunjis_potions_F1",
+            "position": {
+              "c": 2,
+              "r": 6
+            },
+            "routeId": "route_lx49v",
+            "activity": "checking potion shelves"
+          },
+          {
+            "from": "11:30",
             "to": "12:00",
             "stationId": "station_0qpky",
             "mapId": "map_i_kunjis_potions_F1",
@@ -2723,7 +2771,7 @@
               "r": 6
             },
             "routeId": "route_lx49v",
-            "activity": "running potion shop"
+            "activity": "morning counter shift"
           },
           {
             "from": "12:00",
@@ -2734,7 +2782,7 @@
               "r": 29
             },
             "routeId": "route_7g7ae",
-            "activity": "browsing market"
+            "activity": "staying out of Kinami's way"
           },
           {
             "from": "19:00",
@@ -2782,7 +2830,7 @@
         "potion shop resident",
         "villager"
       ],
-      "bio": "Potion Shop resident. Design doc provides hostile/prejudiced dialogue lines.",
+      "bio": "Potion Shop resident. She and Kaboku had a falling out a few years ago and now avoid sharing a room except during dinner and sleep.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -2912,11 +2960,23 @@
               "r": 37
             },
             "routeId": "route_vjlr1",
-            "activity": "morning errands"
+            "activity": "morning errands away from Kaboku"
           },
           {
             "from": "12:00",
-            "to": "19:00",
+            "to": "13:20",
+            "stationId": "station_0qpky",
+            "mapId": "map_i_kunjis_potions_F1",
+            "position": {
+              "c": 5,
+              "r": 6
+            },
+            "routeId": "route_lx49v",
+            "activity": "afternoon counter shift"
+          },
+          {
+            "from": "13:20",
+            "to": "13:30",
             "stationId": "station_0v1y7",
             "mapId": "map_i_kunjis_potions_F1",
             "position": {
@@ -2925,6 +2985,66 @@
             },
             "routeId": "route_lx49v",
             "activity": "checking potion shelves"
+          },
+          {
+            "from": "13:30",
+            "to": "15:20",
+            "stationId": "station_0qpky",
+            "mapId": "map_i_kunjis_potions_F1",
+            "position": {
+              "c": 5,
+              "r": 6
+            },
+            "routeId": "route_lx49v",
+            "activity": "afternoon counter shift"
+          },
+          {
+            "from": "15:20",
+            "to": "15:30",
+            "stationId": "station_0v1y7",
+            "mapId": "map_i_kunjis_potions_F1",
+            "position": {
+              "c": 2,
+              "r": 6
+            },
+            "routeId": "route_lx49v",
+            "activity": "checking potion shelves"
+          },
+          {
+            "from": "15:30",
+            "to": "17:20",
+            "stationId": "station_0qpky",
+            "mapId": "map_i_kunjis_potions_F1",
+            "position": {
+              "c": 5,
+              "r": 6
+            },
+            "routeId": "route_lx49v",
+            "activity": "afternoon counter shift"
+          },
+          {
+            "from": "17:20",
+            "to": "17:30",
+            "stationId": "station_0v1y7",
+            "mapId": "map_i_kunjis_potions_F1",
+            "position": {
+              "c": 2,
+              "r": 6
+            },
+            "routeId": "route_lx49v",
+            "activity": "checking potion shelves"
+          },
+          {
+            "from": "17:30",
+            "to": "19:00",
+            "stationId": "station_0qpky",
+            "mapId": "map_i_kunjis_potions_F1",
+            "position": {
+              "c": 5,
+              "r": 6
+            },
+            "routeId": "route_lx49v",
+            "activity": "afternoon counter shift"
           },
           {
             "from": "19:00",

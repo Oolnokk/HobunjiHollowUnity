@@ -1,0 +1,865 @@
+{
+  "schema": "hobunji_building_interior.v1",
+  "furniture": [
+    {
+      "id": "fmqf7ii03b7yo",
+      "itemKey": "tableLongFurniture",
+      "col": 1,
+      "row": 7,
+      "rotY": 0,
+      "postX": 1.477,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 3.5,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "fmqf949thrwvs",
+      "itemKey": "stoolFurniture",
+      "col": 4,
+      "row": 6,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0
+    },
+    {
+      "id": "fmqflpf2qgfgn",
+      "itemKey": "crateStackFurniture",
+      "col": 13,
+      "row": 2,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0.005,
+      "postZ": 0.014,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "fmqflpgq0r0dn",
+      "itemKey": "crateStackFurniture",
+      "col": 16,
+      "row": 2,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0
+    },
+    {
+      "id": "fmqflphj1epr0",
+      "itemKey": "crateStackFurniture",
+      "col": 14,
+      "row": 2,
+      "rotY": 54,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "fmqflpidew5cu",
+      "itemKey": "crateStackFurniture",
+      "col": 16,
+      "row": 5,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0
+    },
+    {
+      "id": "fmqflpj35c027",
+      "itemKey": "crateStackFurniture",
+      "col": 14,
+      "row": 7,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "fmqflpji9r36k",
+      "itemKey": "crateStackFurniture",
+      "col": 15,
+      "row": 7,
+      "rotY": -80.7,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "fmqflpp4txm3x",
+      "itemKey": "copperBarrelFurniture",
+      "col": 16,
+      "row": 7,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0
+    },
+    {
+      "id": "fmqflppjm8jy8",
+      "itemKey": "copperBarrelFurniture",
+      "col": 16,
+      "row": 6,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0
+    },
+    {
+      "id": "fmqflpq09hz43",
+      "itemKey": "copperBarrelFurniture",
+      "col": 15,
+      "row": 6,
+      "rotY": 53.9,
+      "postX": 0.319,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "fmqflpt36bt24",
+      "itemKey": "copperBarrelFurniture",
+      "col": 13,
+      "row": 7,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0
+    },
+    {
+      "id": "fmqflwr1gmo3q",
+      "itemKey": "hearthFurniture",
+      "col": 8,
+      "row": 1,
+      "rotY": 180,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "fmqflxtmkc8qo",
+      "itemKey": "pestleFurniture",
+      "col": 10,
+      "row": 1,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0
+    },
+    {
+      "id": "fmqflxx5896wc",
+      "itemKey": "handMillFurniture",
+      "col": 11,
+      "row": 1,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0
+    },
+    {
+      "id": "fmqflyhx9gput",
+      "itemKey": "bookshelfFurniture",
+      "col": 1,
+      "row": 5,
+      "rotY": 180,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1.25,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "fmqflyjsxciu5",
+      "itemKey": "bookshelfFurniture",
+      "col": 3,
+      "row": 5,
+      "rotY": 180,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1.25,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "fmqfm0z7jep8i",
+      "itemKey": "dresserFurniture",
+      "col": 5,
+      "row": 5,
+      "rotY": 180,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1.25,
+      "postSY": 0.9,
+      "postSZ": 1
+    }
+  ],
+  "id": "map_i_general_store",
+  "name": "Funji & Sons General Store",
+  "cols": 20,
+  "rows": 20,
+  "floor": [
+    [
+      5,
+      2
+    ],
+    [
+      7,
+      2
+    ],
+    [
+      8,
+      2
+    ],
+    [
+      1,
+      5
+    ],
+    [
+      2,
+      5
+    ],
+    [
+      3,
+      5
+    ],
+    [
+      4,
+      5
+    ],
+    [
+      5,
+      5
+    ],
+    [
+      6,
+      5
+    ],
+    [
+      7,
+      5
+    ],
+    [
+      8,
+      5
+    ],
+    [
+      9,
+      5
+    ],
+    [
+      1,
+      6
+    ],
+    [
+      2,
+      6
+    ],
+    [
+      3,
+      6
+    ],
+    [
+      4,
+      6
+    ],
+    [
+      5,
+      6
+    ],
+    [
+      6,
+      6
+    ],
+    [
+      7,
+      6
+    ],
+    [
+      8,
+      6
+    ],
+    [
+      9,
+      6
+    ],
+    [
+      1,
+      7
+    ],
+    [
+      1,
+      8
+    ],
+    [
+      1,
+      9
+    ],
+    [
+      2,
+      9
+    ],
+    [
+      2,
+      8
+    ],
+    [
+      3,
+      8
+    ],
+    [
+      4,
+      8
+    ],
+    [
+      5,
+      8
+    ],
+    [
+      6,
+      8
+    ],
+    [
+      7,
+      9
+    ],
+    [
+      8,
+      9
+    ],
+    [
+      9,
+      9
+    ],
+    [
+      9,
+      8
+    ],
+    [
+      6,
+      9
+    ],
+    [
+      5,
+      9
+    ],
+    [
+      4,
+      9
+    ],
+    [
+      3,
+      9
+    ],
+    [
+      9,
+      7
+    ],
+    [
+      8,
+      7
+    ],
+    [
+      7,
+      7
+    ],
+    [
+      6,
+      7
+    ],
+    [
+      5,
+      7
+    ],
+    [
+      4,
+      7
+    ],
+    [
+      3,
+      7
+    ],
+    [
+      2,
+      7
+    ],
+    [
+      8,
+      8
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      1,
+      10
+    ],
+    [
+      2,
+      10
+    ],
+    [
+      3,
+      10
+    ],
+    [
+      4,
+      10
+    ],
+    [
+      5,
+      10
+    ],
+    [
+      6,
+      10
+    ],
+    [
+      7,
+      10
+    ],
+    [
+      8,
+      10
+    ],
+    [
+      9,
+      10
+    ],
+    [
+      8,
+      3
+    ],
+    [
+      4,
+      11
+    ],
+    [
+      5,
+      11
+    ],
+    [
+      6,
+      11
+    ],
+    [
+      11,
+      6
+    ],
+    [
+      11,
+      5
+    ],
+    [
+      10,
+      6
+    ],
+    [
+      11,
+      7
+    ],
+    [
+      9,
+      3
+    ],
+    [
+      9,
+      2
+    ],
+    [
+      1,
+      2
+    ],
+    [
+      3,
+      2
+    ],
+    [
+      2,
+      2
+    ],
+    [
+      14,
+      4
+    ],
+    [
+      14,
+      5
+    ],
+    [
+      14,
+      6
+    ],
+    [
+      14,
+      7
+    ],
+    [
+      10,
+      5
+    ],
+    [
+      10,
+      7
+    ],
+    [
+      10,
+      8
+    ],
+    [
+      10,
+      9
+    ],
+    [
+      10,
+      10
+    ],
+    [
+      10,
+      3
+    ],
+    [
+      10,
+      2
+    ],
+    [
+      10,
+      1
+    ],
+    [
+      9,
+      1
+    ],
+    [
+      8,
+      1
+    ],
+    [
+      4,
+      2
+    ],
+    [
+      11,
+      3
+    ],
+    [
+      11,
+      2
+    ],
+    [
+      11,
+      1
+    ],
+    [
+      11,
+      8
+    ],
+    [
+      11,
+      9
+    ],
+    [
+      11,
+      10
+    ],
+    [
+      14,
+      2
+    ],
+    [
+      14,
+      3
+    ],
+    [
+      16,
+      2
+    ],
+    [
+      16,
+      3
+    ],
+    [
+      16,
+      4
+    ],
+    [
+      16,
+      5
+    ],
+    [
+      16,
+      6
+    ],
+    [
+      16,
+      7
+    ],
+    [
+      15,
+      7
+    ],
+    [
+      15,
+      6
+    ],
+    [
+      15,
+      5
+    ],
+    [
+      15,
+      4
+    ],
+    [
+      15,
+      3
+    ],
+    [
+      15,
+      2
+    ],
+    [
+      13,
+      2
+    ],
+    [
+      13,
+      3
+    ],
+    [
+      13,
+      4
+    ],
+    [
+      13,
+      5
+    ],
+    [
+      13,
+      6
+    ],
+    [
+      13,
+      7
+    ],
+    [
+      12,
+      6
+    ],
+    [
+      6,
+      2
+    ],
+    [
+      10,
+      4
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      7,
+      3
+    ],
+    [
+      7,
+      1
+    ],
+    [
+      5,
+      3
+    ]
+  ],
+  "exits": [
+    {
+      "id": "exit_mqf7tpam",
+      "label": "Front Door",
+      "tiles": [
+        [
+          4,
+          11
+        ],
+        [
+          5,
+          11
+        ],
+        [
+          6,
+          11
+        ]
+      ],
+      "targetMap": "",
+      "spawnCol": 0,
+      "spawnRow": 0
+    }
+  ],
+  "colliders": [
+    [
+      5,
+      7
+    ],
+    [
+      6,
+      7
+    ],
+    [
+      7,
+      7
+    ],
+    [
+      4,
+      7
+    ],
+    [
+      3,
+      7
+    ],
+    [
+      2,
+      7
+    ],
+    [
+      1,
+      7
+    ],
+    [
+      6,
+      5
+    ],
+    [
+      5,
+      5
+    ],
+    [
+      4,
+      5
+    ],
+    [
+      3,
+      5
+    ],
+    [
+      2,
+      5
+    ],
+    [
+      1,
+      5
+    ],
+    [
+      8,
+      1
+    ],
+    [
+      9,
+      1
+    ],
+    [
+      10,
+      1
+    ],
+    [
+      11,
+      1
+    ],
+    [
+      14,
+      2
+    ],
+    [
+      13,
+      2
+    ],
+    [
+      16,
+      2
+    ],
+    [
+      16,
+      5
+    ],
+    [
+      16,
+      6
+    ],
+    [
+      16,
+      7
+    ],
+    [
+      15,
+      7
+    ],
+    [
+      14,
+      7
+    ],
+    [
+      13,
+      7
+    ],
+    [
+      15,
+      6
+    ]
+  ],
+  "vendorZones": [
+    {
+      "id": "vendor_mqf7w5zg",
+      "vendorKey": "general_store",
+      "tiles": [
+        [
+          2,
+          8
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          4,
+          8
+        ],
+        [
+          5,
+          8
+        ],
+        [
+          6,
+          8
+        ],
+        [
+          1,
+          8
+        ],
+        [
+          7,
+          8
+        ]
+      ]
+    }
+  ],
+  "routes": [],
+  "npcStations": [],
+  "npcPaths": []
+}
