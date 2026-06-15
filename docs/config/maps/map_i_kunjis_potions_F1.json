@@ -3,14 +3,14 @@
   "furniture": [
     {
       "id": "fmqf7ii03b7yo",
-      "itemKey": "tableLongFurniture",
+      "itemKey": "counterFurniture",
       "col": 1,
       "row": 7,
       "rotY": 0,
-      "postX": 1.477,
+      "postX": 1.0,
       "postY": 0,
       "postZ": 0,
-      "postSX": 3.5,
+      "postSX": 1,
       "postSY": 1,
       "postSZ": 1
     },
@@ -508,11 +508,11 @@
   "npcStations": [
     {
       "id": "station_0qpky",
-      "label": "Sitting at Counter",
+      "label": "Behind the Counter",
       "col": 5,
       "row": 6,
       "rotY": 0,
-      "pose": "sit",
+      "pose": "stand",
       "toolKey": "",
       "toolIntervalSec": 0,
       "toolAnimStyle": ""

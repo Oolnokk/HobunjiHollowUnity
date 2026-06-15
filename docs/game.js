@@ -4392,8 +4392,15 @@
         const row  = Math.floor(wy / TILE);
         const type = getActiveGrid()[row][col].type;
         if (isSolid(type)) return null;
-        // Block the house footprint on the farm (player must use the door)
+        // Block building footprints on exterior maps (player must use doors/transitions).
         if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
+        if (currentArea === 'town' && _townBuildingDefs.some(b => {
+          const x = b.gridX ?? b.col ?? 0;
+          const z = b.gridZ ?? b.row ?? 0;
+          const w = b.footprintW ?? b.w ?? 1;
+          const d = b.footprintD ?? b.h ?? 1;
+          return col >= x && row >= z && col < x + w && row < z + d;
+        })) return null;
         return {
           [TileType.GRASS]:   1.00,
           [TileType.TILLED]:  0.85,
