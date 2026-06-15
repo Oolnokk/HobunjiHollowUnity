@@ -1268,6 +1268,7 @@
       let worldTownTransitions = [];   // town: same shape
       let worldRoutes          = [];   // shared routes: { id, label, area, nodes: [[c,r],...] }
       let worldTownRoutes      = [];   // town shared routes
+      const npcStationsById    = new Map(); // stationId → { id, label, area, c, r, rotY, pose, toolKey, toolIntervalSec }
       let worldNpcPaths        = [];   // legacy only: { id, label, npcId, area, nodes: [[c,r],...] }
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
@@ -1298,6 +1299,7 @@
         worldRoutes = normalizeRoutes(
           (layout.routes || []).filter(r => (r.area || 'farm') !== 'town'),
           worldNpcPaths);
+        registerNpcStations(layout.npcStations, null);
         rebuildRouteGraphs();
         // Don't fire a spot the player happens to spawn on
         _transitionLatch = travelAreaKey();
@@ -1527,6 +1529,34 @@
         window.__farmLog?.(`[schedule] Unknown area "${area}" → fallback to farm`, 'warn');
         return 'farm';
       }
+      function normalizeNpcStation(station, fallbackArea) {
+        if (!station || !station.id) return null;
+        const c = station.c ?? station.col;
+        const r = station.r ?? station.row;
+        if (!Number.isFinite(c) || !Number.isFinite(r)) return null;
+        return {
+          id: station.id,
+          label: station.label || station.id,
+          area: normalizeNpcArea(station.area || station.mapId || fallbackArea || 'farm'),
+          c, r,
+          rotY: Number.isFinite(station.rotY) ? station.rotY : 0,
+          pose: station.pose || 'stand',
+          toolKey: station.toolKey || '',
+          toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
+          toolAnimStyle: station.toolAnimStyle || '',
+        };
+      }
+      function registerNpcStations(stations, fallbackArea) {
+        (stations || []).forEach(st => {
+          const normalized = normalizeNpcStation(st, fallbackArea);
+          if (normalized) npcStationsById.set(normalized.id, normalized);
+        });
+      }
+      function resolveNpcStationTarget(stationId) {
+        const station = npcStationsById.get(stationId);
+        return station ? { ...station, stationId: station.id } : null;
+      }
+
       function sceneForNpcArea(area) {
         if (area === 'interior') return interiorScene;
         if (area === 'town') return townScene;
@@ -1565,11 +1595,21 @@
         for (const rule of hooks.rules || []) {
           const start = parseNpcTimeMinutes(rule.start ?? rule.from);
           const end   = parseNpcTimeMinutes(rule.end   ?? rule.to);
+          if (start !== null && end !== null && now >= start && now < end && rule.stationId) {
+            const stationTarget = resolveNpcStationTarget(rule.stationId);
+            if (stationTarget) return { ...stationTarget, routeId: rule.routeId || null };
+            window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found`, 'warn');
+          }
           const c = rule.c ?? rule.position?.c;
           const r = rule.r ?? rule.position?.r;
           const area = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
           if (start !== null && end !== null && now >= start && now < end && Number.isFinite(c) && Number.isFinite(r))
             return { area, c, r, routeId: rule.routeId || null };
+        }
+        if (hooks.defaultStationId) {
+          const stationTarget = resolveNpcStationTarget(hooks.defaultStationId);
+          if (stationTarget) return stationTarget;
+          window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: defaultStationId "${hooks.defaultStationId}" not found`, 'warn');
         }
         if (hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) {
           const defArea = normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town');
@@ -1648,7 +1688,7 @@
           root, rec, profile, area: spawnArea,
           state: 'idle', routeNode: null, previousRouteNode: null, routeTarget: null, _exitSpot: null,
           pause: 0, catchup: 1, catchupDur: 0,
-          rot: Math.PI / 2, perpState: {},
+          rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
           resetRouteState() {
             this.state = 'idle';
             this.routeNode = null;
@@ -1728,9 +1768,27 @@
             if (this.state === 'idle' && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               const groundY = npcSurfaceY(this.area, target.c, target.r);
               root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
+              if (Number.isFinite(target.rotY)) { this.rot = THREE.MathUtils.degToRad(target.rotY); root.rotation.y = this.rot; }
+              if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
+                if (this.stationToolKey !== target.toolKey) {
+                  if (this.stationToolMesh) root.remove(this.stationToolMesh);
+                  this.stationToolMesh = makeToolPlaneMesh(target.toolKey);
+                  this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
+                  if (this.stationToolMesh) { this.stationToolMesh.position.set(0.25, 0.75, 0.15); root.add(this.stationToolMesh); }
+                }
+                if (this.stationToolMesh) {
+                  const interval = Math.max(0.2, target.toolIntervalSec || 2);
+                  this.stationToolT = (this.stationToolT + dt) % interval;
+                  const swing = Math.sin((this.stationToolT / interval) * Math.PI * 2);
+                  this.stationToolMesh.rotation.z = swing * 0.45;
+                }
+              } else if (this.stationToolMesh) {
+                root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = '';
+              }
               groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
+            if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
             if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r)) {
               this.state = 'beeline'; this.routeNode = this.previousRouteNode = this.routeTarget = null;
@@ -1785,7 +1843,7 @@
           _workspaceMaps = ws.maps;
           const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
-          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], buildings: townM.buildings || [] };
+          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
             if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
@@ -1798,6 +1856,10 @@
           (townM.npcPaths || []).forEach(p => {
             if (!p.nodes?.length || (townM.routes || []).length) return;
             layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
+          });
+          (ws.maps || []).forEach(m => {
+            const area = m.id === townM.id ? 'town' : m.id;
+            (m.npcStations || []).forEach(st => layout.npcStations.push({ ...st, area }));
           });
           (townM.transitions || []).forEach(t => {
             // Farm spot (no targetMapId) — returns player to farm exit at col 17, row 0
@@ -1832,6 +1894,7 @@
         const townPaths = (layout.npcPaths || []).filter(p =>
           p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
         worldTownRoutes = normalizeRoutes(layout.routes, townPaths).map(r => ({ ...r, area: 'town' }));
+        registerNpcStations(layout.npcStations, 'town');
         rebuildRouteGraphs();
         // If town scene was already built before this layout arrived, spawn buildings now
         if (_townSceneBuilt && townScene) {
@@ -1967,7 +2030,7 @@
               const [c, r] = key.split(',').map(Number);
               if (Number.isFinite(c) && Number.isFinite(r)) tileArr.push({ c, r, type: val.type || 'grass' });
             }
-            mapData = { cols: wsMap.cols, rows: wsMap.rows, tiles: tileArr, transitions: wsMap.transitions || [] };
+            mapData = { cols: wsMap.cols, rows: wsMap.rows, tiles: tileArr, transitions: wsMap.transitions || [], npcStations: wsMap.npcStations || [] };
             loadSource = 'workspace';
             window.__farmLog?.(`[building] ${mapId}: loaded from workspace fallback (${mapData.cols}x${mapData.rows})`, 'warn');
           }
@@ -2060,6 +2123,7 @@
               }, undefined, () => {});
             }
           }
+          registerNpcStations((mapData.npcStations || []).map(st => ({ ...st, area: mapId })), mapId);
           const buildingPaths = (mapData.npcPaths || []).filter(p => p && Array.isArray(p.nodes) && p.nodes.length > 0)
             .map(p => ({ ...p, area: mapId }));
           const buildingRoutes = normalizeRoutes(
