@@ -1840,57 +1840,47 @@
 
       // ── Building interior scenes ─────────────────────────────────────
 
-      // Derives WallBuilder panels from a tile grid — any solid tile adjacent to a
-      // walkable tile produces a wall face on that edge. Contiguous same-facing
-      // segments on the same row/column are merged into a single panel.
-      function buildWallPanelsFromGrid(bGrid, cols, rows, wallHeight) {
+      // Generates WallBuilder panels for a rectangular room. Walls always sit at
+      // the footprint boundary. A 2-tile door gap is cut in whichever wall the exit
+      // transition sits on; the gap is centred on the transition column/row.
+      function buildWallPanelsForRoom(cols, rows, wallHeight, exitTransition) {
+        const DOOR_W = 2;
         const panels = [];
-        const segN = [], segS = [], segW = [], segE = [];
-        for (let r = 0; r < rows; r++) {
-          for (let c = 0; c < cols; c++) {
-            if (!isSolid(bGrid[r]?.[c]?.type)) continue;
-            if (r + 1 < rows && !isSolid(bGrid[r + 1]?.[c]?.type)) segN.push({ z: r + 1, c });
-            if (r - 1 >= 0  && !isSolid(bGrid[r - 1]?.[c]?.type)) segS.push({ z: r,     c });
-            if (c + 1 < cols && !isSolid(bGrid[r]?.[c + 1]?.type)) segW.push({ x: c + 1, r });
-            if (c - 1 >= 0  && !isSolid(bGrid[r]?.[c - 1]?.type)) segE.push({ x: c,     r });
-          }
+        // Determine which wall the exit is on (S/N/W/E) by proximity to boundary
+        let doorWall = null, doorPos = 0;
+        if (exitTransition) {
+          const { col: ec, row: er } = exitTransition;
+          const dS = rows - 1 - er, dN = er, dE = cols - 1 - ec, dW = ec;
+          const minD = Math.min(dS, dN, dE, dW);
+          if      (minD === dS) { doorWall = 'S'; doorPos = ec; }
+          else if (minD === dN) { doorWall = 'N'; doorPos = ec; }
+          else if (minD === dE) { doorWall = 'E'; doorPos = er; }
+          else                  { doorWall = 'W'; doorPos = er; }
         }
-        const mergeH = (segs, rot, prefix) => {
-          const byZ = {};
-          for (const s of segs) { (byZ[s.z] = byZ[s.z] || []).push(s.c); }
-          let i = 0;
-          for (const [z, cs] of Object.entries(byZ)) {
-            const sorted = [...new Set(cs)].sort((a, b) => a - b);
-            let s = sorted[0], p = sorted[0];
-            for (let j = 1; j <= sorted.length; j++) {
-              if (j === sorted.length || sorted[j] !== p + 1) {
-                const w = (p + 1) - s;
-                panels.push({ id: prefix + (i++), width: w, height: wallHeight, position: [s + w / 2, 0, +z], rotationDeg: rot });
-                s = sorted[j]; p = sorted[j];
-              } else { p = sorted[j]; }
-            }
+        const splitH = (wallId, z, rot, along) => {
+          if (doorWall === along) {
+            const gapStart = Math.max(0, doorPos - Math.floor(DOOR_W / 2));
+            const gapEnd   = Math.min(cols, gapStart + DOOR_W);
+            if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [gapStart / 2,            0, z], rotationDeg: rot });
+            if (gapEnd < cols)   panels.push({ id: wallId + '_r', width: cols - gapEnd,   height: wallHeight, position: [(gapEnd + cols) / 2,     0, z], rotationDeg: rot });
+          } else {
+            panels.push({ id: wallId, width: cols, height: wallHeight, position: [cols / 2, 0, z], rotationDeg: rot });
           }
         };
-        const mergeV = (segs, rot, prefix) => {
-          const byX = {};
-          for (const s of segs) { (byX[s.x] = byX[s.x] || []).push(s.r); }
-          let i = 0;
-          for (const [x, rs] of Object.entries(byX)) {
-            const sorted = [...new Set(rs)].sort((a, b) => a - b);
-            let s = sorted[0], p = sorted[0];
-            for (let j = 1; j <= sorted.length; j++) {
-              if (j === sorted.length || sorted[j] !== p + 1) {
-                const w = (p + 1) - s;
-                panels.push({ id: prefix + (i++), width: w, height: wallHeight, position: [+x, 0, s + w / 2], rotationDeg: rot });
-                s = sorted[j]; p = sorted[j];
-              } else { p = sorted[j]; }
-            }
+        const splitV = (wallId, x, rot, along) => {
+          if (doorWall === along) {
+            const gapStart = Math.max(0, doorPos - Math.floor(DOOR_W / 2));
+            const gapEnd   = Math.min(rows, gapStart + DOOR_W);
+            if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [x, 0, gapStart / 2],            rotationDeg: rot });
+            if (gapEnd < rows)   panels.push({ id: wallId + '_r', width: rows - gapEnd,   height: wallHeight, position: [x, 0, (gapEnd + rows) / 2],     rotationDeg: rot });
+          } else {
+            panels.push({ id: wallId, width: rows, height: wallHeight, position: [x, 0, rows / 2], rotationDeg: rot });
           }
         };
-        mergeH(segN, [0, 0,   0], 'wn_');
-        mergeH(segS, [0, 180, 0], 'ws_');
-        mergeV(segW, [0, 90,  0], 'ww_');
-        mergeV(segE, [0, -90, 0], 'we_');
+        splitH('wn', 0,    [0, 0,    0], 'N');
+        splitH('ws', rows, [0, 180,  0], 'S');
+        splitV('ww', 0,    [0, 90,   0], 'W');
+        splitV('we', cols, [0, -90,  0], 'E');
         return panels;
       }
       async function loadBuildingScene(mapId) {
@@ -1941,15 +1931,15 @@
           tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
           floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
         }, undefined, () => {});
+        // Floor covers the full footprint — walls always sit on the boundary
         for (let r2 = 0; r2 < rows; r2++) for (let c2 = 0; c2 < cols; c2++) {
-          const tile = bGrid[r2][c2];
-          if (isSolid(tile.type)) continue;
           const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
           fl.position.set(c2 + 0.5, -0.05, r2 + 0.5);
           bScene.add(fl);
         }
-        // Brick walls derived from solid tiles — same material and params as player house interior
-        const wallPanels = buildWallPanelsFromGrid(bGrid, cols, rows, INTERIOR_WALL_HEIGHT);
+        // Brick walls at footprint boundary with a door gap at the exit transition
+        const exitT = transitions.find(t => t.target === 'exit_building');
+        const wallPanels = buildWallPanelsForRoom(cols, rows, INTERIOR_WALL_HEIGHT, exitT);
         if (wallPanels.length) {
           const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
           bScene.add(wallGroup);
@@ -1977,8 +1967,10 @@
         currentArea = mapId;
         const bi = _buildingScenes.get(mapId);
         const bCols = bi?.cols || 20, bRows = bi?.rows || 20;
-        const col = defaultCol ?? Math.floor(bCols / 2);
-        const row = defaultRow ?? (bRows - 2);
+        // Spawn just inside the exit transition; fall back to centre-bottom
+        const exitT = bi?.transitions?.find(t => t.target === 'exit_building');
+        const col = defaultCol ?? exitT?.col ?? Math.floor(bCols / 2);
+        const row = defaultRow ?? (exitT ? Math.max(0, exitT.row - 1) : bRows - 2);
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         facingAngle = Math.PI / 2; player.angle = facingAngle;
