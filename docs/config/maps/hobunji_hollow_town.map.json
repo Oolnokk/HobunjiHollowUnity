@@ -18010,66 +18010,58 @@
   "objects": {},
   "furniture": [],
   "decor": [],
-  "npcPaths": [
+  "routes": [
     {
-      "id": "pth_spearhead",
-      "label": "Spearhead patrol",
-      "npcId": "spearhead_unumanuk",
-      "nodes": []
+      "id": "route_main_ns",
+      "label": "Main north-south road",
+      "nodes": [
+        {"c":28,"r":45},{"c":28,"r":38},{"c":28,"r":30},
+        {"c":28,"r":22},{"c":28,"r":15},{"c":30,"r":10},{"c":35,"r":8}
+      ]
     },
     {
-      "id": "pth_oddclaw",
-      "label": "Oddclaw patrol",
-      "npcId": "oddclaw_unumanuk",
-      "nodes": []
+      "id": "route_west_road",
+      "label": "Western road (smithy to temple)",
+      "nodes": [
+        {"c":8,"r":15},{"c":9,"r":20},{"c":10,"r":25},
+        {"c":10,"r":30},{"c":11,"r":36},{"c":9,"r":43}
+      ]
     },
     {
-      "id": "pth_tooth_out",
-      "label": "Tooth daily route",
-      "npcId": "tooth_hatayap",
-      "nodes": []
+      "id": "route_east_market",
+      "label": "Eastern market row",
+      "nodes": [
+        {"c":33,"r":28},{"c":37,"r":28},{"c":42,"r":28},
+        {"c":45,"r":28},{"c":45,"r":32},{"c":44,"r":35},
+        {"c":40,"r":34},{"c":37,"r":34}
+      ]
     },
     {
-      "id": "pth_binding",
-      "label": "Binding commute",
-      "npcId": "binding_hatayap",
-      "nodes": []
+      "id": "route_patrol_ring",
+      "label": "Town perimeter patrol",
+      "nodes": [
+        {"c":5,"r":5},{"c":20,"r":3},{"c":35,"r":3},
+        {"c":55,"r":5},{"c":57,"r":20},{"c":57,"r":40},
+        {"c":50,"r":47},{"c":30,"r":48},{"c":5,"r":45},
+        {"c":3,"r":25},{"c":5,"r":5}
+      ]
     },
     {
-      "id": "pth_foroji_out",
-      "label": "Foroji shop shift",
-      "npcId": "foroji_funji",
-      "nodes": []
+      "id": "route_farmstead_path",
+      "label": "Path between farmstead and town center",
+      "nodes": [
+        {"c":35,"r":9},{"c":33,"r":13},{"c":30,"r":18},
+        {"c":28,"r":22},{"c":25,"r":28}
+      ]
     },
     {
-      "id": "pth_furunji_shop",
-      "label": "Furunji shop shift",
-      "npcId": "furunji_funji",
-      "nodes": []
-    },
-    {
-      "id": "pth_kinami_shop",
-      "label": "Kinami shop shift",
-      "npcId": "kinami_kunji",
-      "nodes": []
-    },
-    {
-      "id": "pth_kaboku_shop",
-      "label": "Kaboku shop shift",
-      "npcId": "kaboku_kunji",
-      "nodes": []
-    },
-    {
-      "id": "path_75xld",
-      "label": "Path 9",
-      "npcId": "",
-      "nodes": []
-    },
-    {
-      "id": "path_px4ei",
-      "label": "Path 10",
-      "npcId": "",
-      "nodes": []
+      "id": "route_town_center",
+      "label": "Town center loop",
+      "nodes": [
+        {"c":22,"r":30},{"c":25,"r":28},{"c":28,"r":28},
+        {"c":30,"r":30},{"c":30,"r":33},{"c":28,"r":35},
+        {"c":25,"r":35},{"c":22,"r":33},{"c":22,"r":30}
+      ]
     }
   ],
   "transitions": [
