@@ -1711,7 +1711,7 @@
           if (_townZone) return; // race: loaded since fetch started
           const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
-          const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [] };
+          const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], buildings: townM.buildings || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
             if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
