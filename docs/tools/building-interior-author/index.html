@@ -41,12 +41,11 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 .catBtn:hover{background:#1f2f48} .catBtn.active{outline:2px solid var(--accent);background:#1a3050}
 @media(max-width:1050px){body{overflow:auto}.app{height:auto;min-height:100vh;grid-template-columns:1fr;grid-template-rows:auto auto 58vh auto 130px}.viewer{height:58vh}.debug{height:130px}}
 </style>
-<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 </head>
 <body>
 <div class="app">
   <header class="panel">
-    <div class="title"><h1>Building Interior Editor</h1><div class="status" id="statusLine">Booting…</div></div>
+    <div class="title"><h1>Building Interior Editor</h1><div class="status" id="statusLine">Loading scripts…</div></div>
     <div class="row">
       <button id="newBtn">New interior</button>
       <button id="undoBtn" disabled>Undo</button>
@@ -56,7 +55,6 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
   </header>
 
-  <!-- LEFT: 2D editor -->
   <aside class="panel">
     <div class="section">
       <h2>1. Room identity</h2>
@@ -90,7 +88,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
         <button id="toolSelect">Select</button>
         <button id="toolErase">Erase</button>
       </div>
-      <p class="hint" style="margin-top:6px">Paint the room footprint first. Exit (orange) = door back to town. Furniture placed on tiles — collision lives at the tile center. 3D view lets you fine-tune post-transforms.</p>
+      <p class="hint" style="margin-top:6px">Paint the room footprint first. Exit (orange) = door back to town. Walls auto-generate at footprint boundary with a gap at the exit tile.</p>
     </div>
 
     <div class="section">
@@ -103,11 +101,10 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
   </aside>
 
-  <!-- CENTER: 3D preview -->
   <main class="panel viewer">
     <canvas id="threeCanvas"></canvas>
     <div class="overlayTop">
-      <div class="pill" id="viewStats">No interior</div>
+      <div class="pill" id="viewStats">Loading…</div>
       <div class="pill" id="selStats">Nothing selected</div>
     </div>
     <div class="modeButtons">
@@ -116,7 +113,6 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
   </main>
 
-  <!-- RIGHT: props + library + export -->
   <aside class="panel">
     <div class="section">
       <h2>5. Post-transform (3D visual only)</h2>
@@ -162,343 +158,283 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
   </aside>
 
-  <pre id="debugLog" class="debug">booting…</pre>
+  <pre id="debugLog" class="debug">loading…</pre>
 </div>
 
+<!-- Same Three.js approach as the game (r128 global from CloudFlare CDN) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../../js/GLTFLoader.js"></script>
+<!-- OrbitControls and TransformControls for r128 -->
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+<script src="../../js/WallBuilder.js"></script>
+
 <script>
-// Safety boot check
-(function(){
-  setTimeout(function(){
-    if(window.__BIA_READY__) return;
-    var el=document.getElementById('debugLog');
-    if(el && el.textContent.startsWith('booting')) el.textContent='[boot] 3D module did not load — check network access to unpkg CDN.';
-  }, 5000);
-})();
-</script>
+(function () {
+'use strict';
 
-<script type="module">
-import * as THREE from 'three';
-import { GLTFLoader }       from 'three/addons/loaders/GLTFLoader.js';
-import { OrbitControls }    from 'three/addons/controls/OrbitControls.js';
-import { TransformControls } from 'three/addons/controls/TransformControls.js';
+// ─── Boot check ───────────────────────────────────────────────────────────────
+if (typeof THREE === 'undefined') {
+  document.getElementById('debugLog').textContent = '[boot] THREE.js failed to load from CloudFlare CDN. Check internet connection.';
+  document.getElementById('statusLine').textContent = 'THREE not loaded';
+  return;
+}
+if (typeof THREE.OrbitControls === 'undefined') {
+  document.getElementById('debugLog').textContent = '[boot] OrbitControls failed to load from unpkg. Check internet connection.';
+  return;
+}
 
-// Expose THREE globally so WallBuilder.js (legacy global script) can use it
-window.THREE = THREE;
-window.THREE.GLTFLoader = GLTFLoader;
-
-// ─── Logging ─────────────────────────────────────────────────────────────────
-const logEl = document.getElementById('debugLog');
-const statusLine = document.getElementById('statusLine');
-function log(msg, lv='info'){
-  const line = `[${new Date().toLocaleTimeString()}] ${lv}: ${msg}`;
-  logEl.textContent = (logEl.textContent.startsWith('booting') ? '' : logEl.textContent+'\n') + line;
+// ─── Logging ──────────────────────────────────────────────────────────────────
+var logEl = document.getElementById('debugLog');
+var statusLine = document.getElementById('statusLine');
+function log(msg, lv) {
+  lv = lv || 'info';
+  var line = '[' + new Date().toLocaleTimeString() + '] ' + lv + ': ' + msg;
+  logEl.textContent = (logEl.textContent === 'loading…' ? '' : logEl.textContent + '\n') + line;
   logEl.scrollTop = logEl.scrollHeight;
   statusLine.textContent = msg;
 }
-window.addEventListener('error', e => log(`${e.message} @ ${e.filename}:${e.lineno}`, 'error'));
-window.addEventListener('unhandledrejection', e => log(`Unhandled: ${e.reason?.message||e.reason}`, 'error'));
+window.addEventListener('error', function(e){ log(e.message + ' @ ' + (e.filename||'?') + ':' + (e.lineno||'?'), 'error'); });
 
-const $ = id => document.getElementById(id);
-
-// ─── WallBuilder loader ───────────────────────────────────────────────────────
-let wb = null;
-let wbReady = false;
-
-function loadWallBuilderScript(){
-  return new Promise((res, rej) => {
-    const s = document.createElement('script');
-    s.src = '../../js/WallBuilder.js';
-    s.onload  = () => res(window.WallBuilder);
-    s.onerror = rej;
-    document.head.appendChild(s);
-  });
-}
-
-async function initWallBuilder(){
-  try {
-    const WallBuilder = await loadWallBuilderScript();
-    wb = new WallBuilder({ glbBasePath: '../../assets/models/' });
-    log('WallBuilder loaded. Fetching Roughbrick1.glb…');
-    wb.loadDefaultGlb()
-      .then(() => { wbReady = true; log('Roughbrick1.glb ready — rebuilding walls.'); rebuild3D(); })
-      .catch(e => { log(`GLB load failed (${e.message||e}) — using placeholder bricks.`, 'warn'); rebuild3D(); });
-    rebuild3D(); // placeholder pass while GLB loads
-  } catch(e){
-    log(`WallBuilder.js load failed: ${e.message||e} — walls will be flat boxes.`, 'warn');
-  }
-}
+function $(id){ return document.getElementById(id); }
 
 // ─── Furniture catalog ────────────────────────────────────────────────────────
-const CATALOG = [
-  { key:'shop_counter',  label:'Shop Counter',  fw:2, fd:1, col:'#7c5c3a' },
-  { key:'shelf',         label:'Shelf',         fw:1, fd:1, col:'#7c5c3a' },
-  { key:'shelf_tall',    label:'Shelf (tall)',   fw:1, fd:1, col:'#6b4f2e' },
-  { key:'table_small',   label:'Table (sm)',     fw:1, fd:1, col:'#8b6914' },
-  { key:'table_large',   label:'Table (lg)',     fw:2, fd:1, col:'#8b6914' },
-  { key:'chair',         label:'Chair',         fw:1, fd:1, col:'#4a7c59' },
-  { key:'bench',         label:'Bench',         fw:2, fd:1, col:'#5c7040' },
-  { key:'bed_single',    label:'Bed (single)',   fw:1, fd:2, col:'#3a5c8a' },
-  { key:'bed_double',    label:'Bed (double)',   fw:2, fd:2, col:'#2d4a70' },
-  { key:'barrel',        label:'Barrel',        fw:1, fd:1, col:'#6b4020' },
-  { key:'crate',         label:'Crate',         fw:1, fd:1, col:'#7a6030' },
-  { key:'stove',         label:'Stove',         fw:1, fd:1, col:'#3a3a3a' },
-  { key:'fireplace',     label:'Fireplace',     fw:2, fd:1, col:'#5a2a10' },
-  { key:'anvil',         label:'Anvil',         fw:1, fd:1, col:'#404040' },
-  { key:'workbench',     label:'Workbench',     fw:2, fd:1, col:'#8b5e3c' },
-  { key:'pot',           label:'Pot',           fw:1, fd:1, col:'#505050' },
-  { key:'chest',         label:'Chest',         fw:1, fd:1, col:'#7a5020' },
-  { key:'altar',         label:'Altar',         fw:2, fd:1, col:'#6a5080' },
-  { key:'pillar',        label:'Pillar',        fw:1, fd:1, col:'#888888' },
-  { key:'plant',         label:'Plant',         fw:1, fd:1, col:'#2a6030' },
-  { key:'rug',           label:'Rug',           fw:2, fd:2, col:'#7a2040' },
-  { key:'door_internal', label:'Door (int)',     fw:1, fd:1, col:'#7a5030' },
-  { key:'ladder',        label:'Ladder',        fw:1, fd:1, col:'#6a5020' },
-  { key:'counter_curve', label:'Counter (crv)', fw:1, fd:1, col:'#7c5c3a' },
+var CATALOG = [
+  { key:'shop_counter',  label:'Shop Counter',  fw:2, fd:1, col:0x7c5c3a },
+  { key:'shelf',         label:'Shelf',         fw:1, fd:1, col:0x7c5c3a },
+  { key:'shelf_tall',    label:'Shelf (tall)',   fw:1, fd:1, col:0x6b4f2e },
+  { key:'table_small',   label:'Table (sm)',     fw:1, fd:1, col:0x8b6914 },
+  { key:'table_large',   label:'Table (lg)',     fw:2, fd:1, col:0x8b6914 },
+  { key:'chair',         label:'Chair',         fw:1, fd:1, col:0x4a7c59 },
+  { key:'bench',         label:'Bench',         fw:2, fd:1, col:0x5c7040 },
+  { key:'bed_single',    label:'Bed (single)',   fw:1, fd:2, col:0x3a5c8a },
+  { key:'bed_double',    label:'Bed (double)',   fw:2, fd:2, col:0x2d4a70 },
+  { key:'barrel',        label:'Barrel',        fw:1, fd:1, col:0x6b4020 },
+  { key:'crate',         label:'Crate',         fw:1, fd:1, col:0x7a6030 },
+  { key:'stove',         label:'Stove',         fw:1, fd:1, col:0x3a3a3a },
+  { key:'fireplace',     label:'Fireplace',     fw:2, fd:1, col:0x5a2a10 },
+  { key:'anvil',         label:'Anvil',         fw:1, fd:1, col:0x404040 },
+  { key:'workbench',     label:'Workbench',     fw:2, fd:1, col:0x8b5e3c },
+  { key:'pot',           label:'Pot',           fw:1, fd:1, col:0x505050 },
+  { key:'chest',         label:'Chest',         fw:1, fd:1, col:0x7a5020 },
+  { key:'altar',         label:'Altar',         fw:2, fd:1, col:0x6a5080 },
+  { key:'pillar',        label:'Pillar',        fw:1, fd:1, col:0x888888 },
+  { key:'plant',         label:'Plant',         fw:1, fd:1, col:0x2a6030 },
+  { key:'rug',           label:'Rug',           fw:2, fd:2, col:0x7a2040 },
+  { key:'door_internal', label:'Door (int)',     fw:1, fd:1, col:0x7a5030 },
+  { key:'ladder',        label:'Ladder',        fw:1, fd:1, col:0x6a5020 },
 ];
-const CMAP = Object.fromEntries(CATALOG.map(f => [f.key, f]));
+var CMAP = {};
+CATALOG.forEach(function(f){ CMAP[f.key] = f; });
+function catOf(key){ return CMAP[key] || { fw:1, fd:1, col:0x607090, label:key }; }
+function catColHex(key){ return '#' + catOf(key).col.toString(16).padStart(6,'0'); }
 
 // ─── State ────────────────────────────────────────────────────────────────────
-function newId(){ return `f${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`; }
+function newId(){ return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 
 function makeBlank(){
-  const cols = 12, rows = 10;
-  // Default: fill rectangle
-  const floor = [];
-  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) floor.push([c,r]);
-  return {
-    schema:'hobunji_building_interior.v1',
-    id:'map_i_building_01', name:'Building Interior',
-    cols, rows,
-    exit:{ col:6, row:9 },
-    floor,
-    furniture:[]
-  };
+  var cols=12, rows=10, floor=[];
+  for(var r=0;r<rows;r++) for(var c=0;c<cols;c++) floor.push([c,r]);
+  return { schema:'hobunji_building_interior.v1', id:'map_i_building_01', name:'Building Interior',
+           cols:cols, rows:rows, exit:{col:6,row:9}, floor:floor, furniture:[] };
 }
 
-const state = {
+var state = {
   interior: makeBlank(),
-  floorSet: new Set(),     // "c,r" strings for O(1) lookup
-  tool:'paintFloor',
-  activeKey: CATALOG[0].key,
+  floorSet: new Set(),
+  tool: 'paintFloor',
+  activeKey: 'shop_counter',
   selectedId: null,
   library: [],
   dragging: false,
-  eraseMode: false,        // used during drag to lock paint/erase
+  eraseMode: false,
 };
 
 function syncFloorSet(){
-  state.floorSet.clear();
-  for(const [c,r] of (state.interior.floor||[])) state.floorSet.add(`${c},${r}`);
+  state.floorSet = new Set();
+  (state.interior.floor||[]).forEach(function(p){ state.floorSet.add(p[0]+','+p[1]); });
 }
-
 function syncFloorFromSet(){
-  state.interior.floor = [...state.floorSet].map(k => k.split(',').map(Number));
+  state.interior.floor = [];
+  state.floorSet.forEach(function(k){
+    var p=k.split(','); state.interior.floor.push([+p[0],+p[1]]);
+  });
 }
-
-function isFloor(c, r){ return state.floorSet.has(`${c},${r}`); }
+function isFloor(c,r){ return state.floorSet.has(c+','+r); }
 
 // ─── Undo/redo ────────────────────────────────────────────────────────────────
-const HLIMIT = 60;
-const hist = { undo:[], redo:[], pending:null };
-
+var HLIMIT=60, hist={undo:[],redo:[],pending:null};
 function snap(){ return JSON.stringify(state.interior); }
-function pushUndo(){
-  const s = snap(); if(hist.undo[hist.undo.length-1]===s) return;
-  hist.undo.push(s); if(hist.undo.length>HLIMIT) hist.undo.shift(); hist.redo.length=0; updateUR();
-}
+function pushUndo(){ var s=snap(); if(hist.undo[hist.undo.length-1]===s) return; hist.undo.push(s); if(hist.undo.length>HLIMIT) hist.undo.shift(); hist.redo=[]; updateUR(); }
 function beginUndo(){ if(!hist.pending) hist.pending=snap(); }
-function commitUndo(){
-  if(!hist.pending) return;
-  const before=hist.pending; hist.pending=null;
-  const after=snap(); if(before===after) return;
-  hist.undo.push(before); if(hist.undo.length>HLIMIT) hist.undo.shift(); hist.redo.length=0; updateUR();
-}
+function commitUndo(){ if(!hist.pending) return; var b=hist.pending; hist.pending=null; var a=snap(); if(b===a) return; hist.undo.push(b); if(hist.undo.length>HLIMIT) hist.undo.shift(); hist.redo=[]; updateUR(); }
 function updateUR(){ $('undoBtn').disabled=!hist.undo.length; $('redoBtn').disabled=!hist.redo.length; }
 function undo(){ if(!hist.undo.length) return; hist.redo.push(snap()); loadSnap(hist.undo.pop()); }
 function redo(){ if(!hist.redo.length) return; hist.undo.push(snap()); loadSnap(hist.redo.pop()); }
 function loadSnap(s){ state.interior=JSON.parse(s); afterLoad(); updateUR(); }
 
 // ─── 2D grid canvas ──────────────────────────────────────────────────────────
-const gc = $('gridCanvas');
-const gx = gc.getContext('2d');
+var gc=$('gridCanvas'), gx=gc.getContext('2d');
 
 function drawGrid(){
-  const { interior, floorSet, selectedId } = state;
-  const { cols, rows, exit, furniture } = interior;
-  const W = gc.width, H = gc.height;
-  const cw = W/cols, ch = H/rows;
+  var cols=state.interior.cols, rows=state.interior.rows;
+  var W=gc.width, H=gc.height, cw=W/cols, ch=H/rows;
+  gx.fillStyle='#060a10'; gx.fillRect(0,0,W,H);
 
-  // Background
-  gx.fillStyle = '#060a10'; gx.fillRect(0,0,W,H);
-
-  // Floor tiles
-  for(const key of floorSet){
-    const [c,r] = key.split(',').map(Number);
-    gx.fillStyle = '#1a2a3e';
-    gx.fillRect(c*cw+1, r*ch+1, cw-2, ch-2);
-  }
+  // Floor
+  state.floorSet.forEach(function(key){
+    var p=key.split(','), c=+p[0], r=+p[1];
+    gx.fillStyle='#1a2a3e'; gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
+  });
 
   // Exit
-  if(exit && isFloor(exit.col, exit.row)){
-    gx.fillStyle = '#c47a10';
-    gx.globalAlpha = 0.75;
-    gx.fillRect(exit.col*cw+1, exit.row*ch+1, cw-2, ch-2);
-    gx.globalAlpha = 1;
-    gx.strokeStyle = '#ffd26e'; gx.lineWidth = 2;
-    gx.strokeRect(exit.col*cw+1, exit.row*ch+1, cw-2, ch-2);
-    gx.fillStyle = '#fff';
-    const fs = Math.max(7, Math.min(11, cw*0.32));
-    gx.font = `bold ${fs}px system-ui`;
-    gx.textAlign = 'center'; gx.textBaseline = 'middle';
-    gx.fillText('E', (exit.col+0.5)*cw, (exit.row+0.5)*ch);
+  var ex=state.interior.exit;
+  if(ex && isFloor(ex.col,ex.row)){
+    gx.fillStyle='#c47a10'; gx.globalAlpha=0.75;
+    gx.fillRect(ex.col*cw+1,ex.row*ch+1,cw-2,ch-2);
+    gx.globalAlpha=1;
+    gx.strokeStyle='#ffd26e'; gx.lineWidth=2;
+    gx.strokeRect(ex.col*cw+1,ex.row*ch+1,cw-2,ch-2);
+    var fs=Math.max(7,Math.min(11,cw*0.32));
+    gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
+    gx.fillStyle='#fff'; gx.fillText('E',(ex.col+0.5)*cw,(ex.row+0.5)*ch);
   }
 
   // Furniture
-  for(const f of furniture){
-    const cat = CMAP[f.itemKey] ?? { fw:1, fd:1, col:'#607090' };
-    const sel = f.id === selectedId;
-    gx.fillStyle = sel ? '#76b8ff' : cat.col;
-    gx.globalAlpha = sel ? 0.9 : 0.7;
-    gx.fillRect(f.col*cw+2, f.row*ch+2, cat.fw*cw-4, cat.fd*ch-4);
-    gx.globalAlpha = 1;
-    gx.strokeStyle = sel ? '#fff' : 'rgba(255,255,255,.4)'; gx.lineWidth = sel ? 2 : 1;
-    gx.strokeRect(f.col*cw+2, f.row*ch+2, cat.fw*cw-4, cat.fd*ch-4);
-    const fs = Math.max(7, Math.min(11, cw*0.3));
-    gx.font = `bold ${fs}px system-ui`; gx.textAlign='center'; gx.textBaseline='middle';
-    gx.fillStyle = '#fff'; gx.globalAlpha = sel ? 1 : 0.8;
-    gx.fillText((cat.label||f.itemKey).slice(0,7), (f.col+cat.fw/2)*cw, (f.row+cat.fd/2)*ch);
-    gx.globalAlpha = 1;
-  }
+  state.interior.furniture.forEach(function(f){
+    var cat=catOf(f.itemKey), sel=f.id===state.selectedId;
+    gx.fillStyle=sel?'#76b8ff':catColHex(f.itemKey); gx.globalAlpha=sel?0.9:0.7;
+    gx.fillRect(f.col*cw+2,f.row*ch+2,cat.fw*cw-4,cat.fd*ch-4);
+    gx.globalAlpha=1;
+    gx.strokeStyle=sel?'#fff':'rgba(255,255,255,.4)'; gx.lineWidth=sel?2:1;
+    gx.strokeRect(f.col*cw+2,f.row*ch+2,cat.fw*cw-4,cat.fd*ch-4);
+    var fs=Math.max(7,Math.min(11,cw*0.3));
+    gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
+    gx.fillStyle='#fff'; gx.globalAlpha=sel?1:0.8;
+    gx.fillText((cat.label||f.itemKey).slice(0,7),(f.col+cat.fw/2)*cw,(f.row+cat.fd/2)*ch);
+    gx.globalAlpha=1;
+  });
 
   // Grid lines
-  gx.strokeStyle = '#1e2d45'; gx.lineWidth = 0.5;
-  for(let c=0;c<=cols;c++){ gx.beginPath(); gx.moveTo(c*cw,0); gx.lineTo(c*cw,H); gx.stroke(); }
-  for(let r=0;r<=rows;r++){ gx.beginPath(); gx.moveTo(0,r*ch); gx.lineTo(W,r*ch); gx.stroke(); }
+  gx.strokeStyle='#1e2d45'; gx.lineWidth=0.5;
+  for(var c=0;c<=cols;c++){ gx.beginPath(); gx.moveTo(c*cw,0); gx.lineTo(c*cw,H); gx.stroke(); }
+  for(var r=0;r<=rows;r++){ gx.beginPath(); gx.moveTo(0,r*ch); gx.lineTo(W,r*ch); gx.stroke(); }
 
-  $('viewStats').textContent = `${floorSet.size} tiles | ${furniture.length} items | ${cols}×${rows} grid`;
+  $('viewStats').textContent=state.floorSet.size+' tiles | '+state.interior.furniture.length+' items | '+cols+'x'+rows;
 }
 
 function gridCell(e){
-  const rect = gc.getBoundingClientRect();
-  const c = Math.floor((e.clientX-rect.left)/rect.width  * state.interior.cols);
-  const r = Math.floor((e.clientY-rect.top )/rect.height * state.interior.rows);
-  return {c,r};
+  var rect=gc.getBoundingClientRect();
+  return { c:Math.floor((e.clientX-rect.left)/rect.width*state.interior.cols),
+           r:Math.floor((e.clientY-rect.top)/rect.height*state.interior.rows) };
 }
 function inGrid(c,r){ return c>=0&&r>=0&&c<state.interior.cols&&r<state.interior.rows; }
 function furnAt(c,r){
-  for(const f of state.interior.furniture){
-    const cat=CMAP[f.itemKey]??{fw:1,fd:1};
+  for(var i=0;i<state.interior.furniture.length;i++){
+    var f=state.interior.furniture[i], cat=catOf(f.itemKey);
     if(c>=f.col&&c<f.col+cat.fw&&r>=f.row&&r<f.row+cat.fd) return f;
   }
   return null;
 }
 
 function gridAction(e){
-  const {c,r} = gridCell(e);
+  var cr=gridCell(e), c=cr.c, r=cr.r;
   if(!inGrid(c,r)) return;
-  const key = `${c},${r}`;
-  const { tool, interior, floorSet, activeKey } = state;
+  var key=c+','+r, tool=state.tool, interior=state.interior;
 
   if(tool==='paintFloor'){
-    if(!state.eraseMode){ if(!floorSet.has(key)){ floorSet.add(key); syncFloorFromSet(); drawGrid(); } }
-    else                { if( floorSet.has(key)){ floorSet.delete(key); syncFloorFromSet(); drawGrid(); } }
+    if(!state.eraseMode){ if(!state.floorSet.has(key)){ state.floorSet.add(key); syncFloorFromSet(); drawGrid(); } }
+    else                { if( state.floorSet.has(key)){ state.floorSet.delete(key); syncFloorFromSet(); drawGrid(); } }
   }
   else if(tool==='eraseFloor'){
-    if(floorSet.has(key)){
-      floorSet.delete(key);
-      // Remove furniture on this tile
-      interior.furniture = interior.furniture.filter(f=>{
-        const cat=CMAP[f.itemKey]??{fw:1,fd:1};
-        for(let dc=0;dc<cat.fw;dc++) for(let dd=0;dd<cat.fd;dd++)
-          if(f.col+dc===c && f.row+dd===r) return false;
+    if(state.floorSet.has(key)){
+      state.floorSet.delete(key);
+      interior.furniture=interior.furniture.filter(function(f){
+        var cat=catOf(f.itemKey);
+        for(var dc=0;dc<cat.fw;dc++) for(var dd=0;dd<cat.fd;dd++)
+          if(f.col+dc===c&&f.row+dd===r) return false;
         return true;
       });
-      if(interior.exit?.col===c && interior.exit?.row===r) interior.exit=null;
+      if(interior.exit&&interior.exit.col===c&&interior.exit.row===r) interior.exit=null;
       syncFloorFromSet(); drawGrid(); rebuild3D();
     }
   }
   else if(tool==='exit'){
     if(!isFloor(c,r)){ log('Exit must be on a floor tile.','warn'); return; }
-    interior.exit = {col:c, row:r}; drawGrid(); rebuild3D();
+    interior.exit={col:c,row:r}; drawGrid(); rebuild3D();
   }
   else if(tool==='furniture'){
     if(!isFloor(c,r)){ log('Furniture must be on a floor tile.','warn'); return; }
-    const cat = CMAP[activeKey]??{fw:1,fd:1};
-    // Check all footprint tiles are floor
-    for(let dc=0;dc<cat.fw;dc++) for(let dd=0;dd<cat.fd;dd++)
+    var cat=catOf(state.activeKey);
+    for(var dc=0;dc<cat.fw;dc++) for(var dd=0;dd<cat.fd;dd++)
       if(!isFloor(c+dc,r+dd)||c+dc>=interior.cols||r+dd>=interior.rows)
-        { log('Not enough floor space for this item here.','warn'); return; }
-    if(furnAt(c,r)){ selectFurn(furnAt(c,r)?.id??null); return; }
-    interior.furniture.push({ id:newId(), itemKey:activeKey, col:c, row:r, rotY:0, postX:0, postY:0, postZ:0 });
+        { log('Not enough floor space here.','warn'); return; }
+    var existing=furnAt(c,r);
+    if(existing){ selectFurn(existing.id); return; }
+    interior.furniture.push({id:newId(),itemKey:state.activeKey,col:c,row:r,rotY:0,postX:0,postY:0,postZ:0});
     drawGrid(); rebuild3D();
   }
   else if(tool==='select'){
-    selectFurn(furnAt(c,r)?.id??null);
+    var f=furnAt(c,r); selectFurn(f?f.id:null);
   }
   else if(tool==='erase'){
-    const f = furnAt(c,r);
-    if(f){ interior.furniture=interior.furniture.filter(x=>x.id!==f.id); if(state.selectedId===f.id) selectFurn(null); drawGrid(); rebuild3D(); }
+    var f=furnAt(c,r);
+    if(f){ interior.furniture=interior.furniture.filter(function(x){return x.id!==f.id;}); if(state.selectedId===f.id) selectFurn(null); drawGrid(); rebuild3D(); }
   }
 }
 
-gc.addEventListener('pointerdown', e=>{
+gc.addEventListener('pointerdown',function(e){
   beginUndo(); state.dragging=true;
-  // For paintFloor: lock erase mode based on whether cell is already painted
-  if(state.tool==='paintFloor'){
-    const {c,r}=gridCell(e); state.eraseMode=state.floorSet.has(`${c},${r}`);
-  }
+  if(state.tool==='paintFloor'){ var cr=gridCell(e); state.eraseMode=state.floorSet.has(cr.c+','+cr.r); }
   gridAction(e);
 });
-gc.addEventListener('pointermove', e=>{
+gc.addEventListener('pointermove',function(e){
   if(!state.dragging) return;
-  if(['paintFloor','eraseFloor','furniture','erase'].includes(state.tool)) gridAction(e);
+  if(['paintFloor','eraseFloor','furniture','erase'].indexOf(state.tool)>=0) gridAction(e);
 });
-gc.addEventListener('pointerup',    ()=>{ state.dragging=false; commitUndo(); });
-gc.addEventListener('pointerleave', ()=>{ state.dragging=false; commitUndo(); });
+gc.addEventListener('pointerup',function(){ state.dragging=false; commitUndo(); });
+gc.addEventListener('pointerleave',function(){ state.dragging=false; commitUndo(); });
 
-// ─── Tool strip ───────────────────────────────────────────────────────────────
-const TOOLS = ['paintFloor','eraseFloor','exit','furniture','select','erase'];
-const TOOL_IDS = { paintFloor:'toolPaintFloor', eraseFloor:'toolEraseFloor', exit:'toolExit', furniture:'toolFurniture', select:'toolSelect', erase:'toolErase' };
+// ─── Tools ────────────────────────────────────────────────────────────────────
+var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',exit:'toolExit',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase'};
 function setTool(t){
   state.tool=t;
-  TOOLS.forEach(k=>$(TOOL_IDS[k])?.classList.toggle('active',k===t));
-  log(`Tool: ${t}`);
+  Object.keys(TOOL_IDS).forEach(function(k){ $(TOOL_IDS[k]).classList.toggle('active',k===t); });
+  log('Tool: '+t);
 }
-TOOLS.forEach(k=>$(TOOL_IDS[k])?.addEventListener('click',()=>setTool(k)));
+Object.keys(TOOL_IDS).forEach(function(k){ $(TOOL_IDS[k]).addEventListener('click',function(){ setTool(k); }); });
 
 // ─── Catalog UI ───────────────────────────────────────────────────────────────
 function buildCatalogUI(){
-  const sel = $('catSelect');
-  sel.innerHTML = CATALOG.map(f=>`<option value="${f.key}">${f.label} (${f.fw}×${f.fd})</option>`).join('');
-  sel.value = state.activeKey;
-  sel.addEventListener('change',()=>{ state.activeKey=sel.value; setTool('furniture'); updateCatHighlight(); });
-
-  const grid = $('catGrid');
-  grid.innerHTML='';
-  for(const f of CATALOG){
-    const btn=document.createElement('button');
+  var sel=$('catSelect');
+  sel.innerHTML=CATALOG.map(function(f){ return '<option value="'+f.key+'">'+f.label+' ('+f.fw+'x'+f.fd+')</option>'; }).join('');
+  sel.value=state.activeKey;
+  sel.addEventListener('change',function(){ state.activeKey=sel.value; setTool('furniture'); updateCatHL(); });
+  var grid=$('catGrid'); grid.innerHTML='';
+  CATALOG.forEach(function(f){
+    var btn=document.createElement('button');
     btn.className='catBtn'; btn.dataset.key=f.key;
-    btn.textContent=`${f.label}\n${f.fw}×${f.fd}`;
-    btn.addEventListener('click',()=>{ state.activeKey=f.key; sel.value=f.key; setTool('furniture'); updateCatHighlight(); });
+    btn.textContent=f.label+'\n'+f.fw+'x'+f.fd;
+    btn.addEventListener('click',function(){ state.activeKey=f.key; sel.value=f.key; setTool('furniture'); updateCatHL(); });
     grid.appendChild(btn);
-  }
-  updateCatHighlight();
+  });
+  updateCatHL();
 }
-function updateCatHighlight(){
-  document.querySelectorAll('.catBtn').forEach(b=>b.classList.toggle('active',b.dataset.key===state.activeKey));
+function updateCatHL(){
+  document.querySelectorAll('.catBtn').forEach(function(b){ b.classList.toggle('active',b.dataset.key===state.activeKey); });
 }
 
 // ─── Selection UI ─────────────────────────────────────────────────────────────
 function selectFurn(id){
   state.selectedId=id;
-  const f = id ? state.interior.furniture.find(x=>x.id===id) : null;
+  var f=id?state.interior.furniture.filter(function(x){return x.id===id;})[0]:null;
   if(f){
     $('noSelMsg').classList.add('hidden'); $('selFields').classList.remove('hidden');
-    const cat=CMAP[f.itemKey];
-    $('selLabel').textContent=`${cat?.label??f.itemKey} (${f.itemKey})`;
-    $('selPos').textContent=` col ${f.col}, row ${f.row}`;
-    $('pRotY').value=f.rotY??0; $('pX').value=f.postX??0; $('pY').value=f.postY??0; $('pZ').value=f.postZ??0;
-    $('selStats').textContent=`Selected: ${cat?.label??f.itemKey}`;
+    var cat=catOf(f.itemKey);
+    $('selLabel').textContent=(cat.label||f.itemKey)+' ('+f.itemKey+')';
+    $('selPos').textContent=' col '+f.col+', row '+f.row;
+    $('pRotY').value=f.rotY||0; $('pX').value=f.postX||0; $('pY').value=f.postY||0; $('pZ').value=f.postZ||0;
+    $('selStats').textContent='Selected: '+(cat.label||f.itemKey);
     syncTC();
   } else {
     $('noSelMsg').classList.remove('hidden'); $('selFields').classList.add('hidden');
@@ -507,252 +443,224 @@ function selectFurn(id){
   }
   drawGrid();
 }
-$('applyPTBtn').addEventListener('click',()=>{
-  const f=state.interior.furniture.find(x=>x.id===state.selectedId); if(!f) return;
+$('applyPTBtn').addEventListener('click',function(){
+  var f=state.interior.furniture.filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
   pushUndo();
   f.rotY=+$('pRotY').value||0; f.postX=+$('pX').value||0; f.postY=+$('pY').value||0; f.postZ=+$('pZ').value||0;
   rebuild3D();
 });
-$('resetPTBtn').addEventListener('click',()=>{
-  const f=state.interior.furniture.find(x=>x.id===state.selectedId); if(!f) return;
+$('resetPTBtn').addEventListener('click',function(){
+  var f=state.interior.furniture.filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
   pushUndo(); f.rotY=0; f.postX=0; f.postY=0; f.postZ=0; rebuild3D(); selectFurn(state.selectedId);
 });
-$('delFurnBtn').addEventListener('click',()=>{
+$('delFurnBtn').addEventListener('click',function(){
   if(!state.selectedId) return; pushUndo();
-  state.interior.furniture=state.interior.furniture.filter(x=>x.id!==state.selectedId);
+  state.interior.furniture=state.interior.furniture.filter(function(x){return x.id!==state.selectedId;});
   selectFurn(null); drawGrid(); rebuild3D();
 });
 
 // ─── Grid controls ────────────────────────────────────────────────────────────
-$('applyGridBtn').addEventListener('click',()=>{
+$('applyGridBtn').addEventListener('click',function(){
   pushUndo();
-  const cols=Math.max(3,Math.min(32,+$('gridCols').value||12));
-  const rows=Math.max(3,Math.min(32,+$('gridRows').value||10));
+  var cols=Math.max(3,Math.min(32,+$('gridCols').value||12));
+  var rows=Math.max(3,Math.min(32,+$('gridRows').value||10));
   state.interior.cols=cols; state.interior.rows=rows;
-  // Clamp floor & furniture
-  state.interior.floor=(state.interior.floor||[]).filter(([c,r])=>c<cols&&r<rows);
+  state.interior.floor=(state.interior.floor||[]).filter(function(p){return p[0]<cols&&p[1]<rows;});
   syncFloorSet();
-  state.interior.furniture=state.interior.furniture.filter(f=>{
-    const cat=CMAP[f.itemKey]??{fw:1,fd:1}; return f.col+cat.fw<=cols&&f.row+cat.fd<=rows;
+  state.interior.furniture=state.interior.furniture.filter(function(f){
+    var cat=catOf(f.itemKey); return f.col+cat.fw<=cols&&f.row+cat.fd<=rows;
   });
   if(state.interior.exit){ state.interior.exit.col=Math.min(state.interior.exit.col,cols-1); state.interior.exit.row=Math.min(state.interior.exit.row,rows-1); }
-  drawGrid(); rebuild3D(); log(`Grid ${cols}×${rows}`);
+  drawGrid(); rebuild3D(); log('Grid '+cols+'x'+rows);
 });
-$('fillRectBtn').addEventListener('click',()=>{
+$('fillRectBtn').addEventListener('click',function(){
   pushUndo();
-  const {cols,rows}=state.interior;
-  state.interior.floor=[];
-  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) state.interior.floor.push([c,r]);
-  syncFloorSet(); drawGrid(); rebuild3D(); log('Filled rectangle.');
+  var cols=state.interior.cols, rows=state.interior.rows, floor=[];
+  for(var r=0;r<rows;r++) for(var c=0;c<cols;c++) floor.push([c,r]);
+  state.interior.floor=floor; syncFloorSet(); drawGrid(); rebuild3D(); log('Filled rectangle.');
 });
-$('clearFloorBtn').addEventListener('click',()=>{
+$('clearFloorBtn').addEventListener('click',function(){
   pushUndo(); state.interior.floor=[]; syncFloorSet(); state.interior.furniture=[]; selectFurn(null); drawGrid(); rebuild3D(); log('Floor cleared.');
 });
 
-// ─── Three.js ─────────────────────────────────────────────────────────────────
-const canvas3 = $('threeCanvas');
-const renderer = new THREE.WebGLRenderer({ canvas:canvas3, antialias:true });
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+// ─── Three.js setup ───────────────────────────────────────────────────────────
+var canvas3=$('threeCanvas');
+var renderer=new THREE.WebGLRenderer({canvas:canvas3,antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
 renderer.setClearColor(0x0b0f16);
 
-const scene3 = new THREE.Scene();
-scene3.background = new THREE.Color(0x0b0f16);
-scene3.fog = new THREE.Fog(0x0b0f16, 14, 35);
+var scene3=new THREE.Scene();
+scene3.background=new THREE.Color(0x0b0f16);
+scene3.fog=new THREE.Fog(0x0b0f16,14,35);
 
-const camera = new THREE.PerspectiveCamera(55,1,0.1,80);
+var camera=new THREE.PerspectiveCamera(55,1,0.1,80);
 camera.position.set(6,7,12);
 
-const orbit = new OrbitControls(camera, canvas3);
+var orbit=new THREE.OrbitControls(camera,canvas3);
 orbit.enableDamping=true; orbit.dampingFactor=0.12; orbit.target.set(6,0.5,5);
 
-let tc = null;  // TransformControls
+var tc=null;
 
 // Lights
-scene3.add(new THREE.AmbientLight(0xb0c8e8, 0.65));
-const dir = new THREE.DirectionalLight(0xfff8e0, 0.9); dir.position.set(5,8,4); scene3.add(dir);
-scene3.add(Object.assign(new THREE.DirectionalLight(0x6080a0,0.3),{position:new THREE.Vector3(-4,2,-3)}));
+scene3.add(new THREE.AmbientLight(0xb0c8e8,0.65));
+var dirL=new THREE.DirectionalLight(0xfff8e0,0.9); dirL.position.set(5,8,4); scene3.add(dirL);
+var fillL=new THREE.DirectionalLight(0x6080a0,0.3); fillL.position.set(-4,2,-3); scene3.add(fillL);
 
-// Materials
-const floorMat = new THREE.MeshLambertMaterial({color:0x3d2a18});
-const exitMat  = new THREE.MeshLambertMaterial({color:0xd08020});
-const wallFbkMat = new THREE.MeshLambertMaterial({color:0x8b7055}); // fallback brick colour
+var floorMat=new THREE.MeshLambertMaterial({color:0x3d2a18});
+var exitMat =new THREE.MeshLambertMaterial({color:0xd08020});
+var wallFbkMat=new THREE.MeshLambertMaterial({color:0x8b7055});
 
-const WALL_H = 1.75;
-const furnMeshes = new Map(); // furnId → Mesh
-let previewGroup = null;
+var WALL_H=1.75;
+var furnMeshes={};
+var previewGroup=null;
+
+// ─── WallBuilder setup ────────────────────────────────────────────────────────
+var wb=null, wbReady=false;
+if(typeof WallBuilder !== 'undefined'){
+  wb=new WallBuilder({glbBasePath:'../../assets/models/'});
+  wb.loadDefaultGlb()
+    .then(function(){ wbReady=true; log('Roughbrick1.glb ready — rebuilding.'); rebuild3D(); })
+    .catch(function(e){ log('GLB load failed ('+e.message+') — placeholder bricks.','warn'); });
+  log('WallBuilder ready.');
+} else {
+  log('WallBuilder not found — walls will use flat boxes.','warn');
+}
 
 // ─── Wall panel generation from irregular footprint ──────────────────────────
 function mergeH(segs){
   if(!segs.length) return [];
-  segs.sort((a,b)=>a.x0-b.x0);
-  const out=[{...segs[0]}];
-  for(let i=1;i<segs.length;i++){
-    const L=out[out.length-1];
-    if(segs[i].x0<=L.x1) L.x1=Math.max(L.x1,segs[i].x1);
-    else out.push({...segs[i]});
+  segs.sort(function(a,b){return a.x0-b.x0;});
+  var out=[{x0:segs[0].x0,x1:segs[0].x1}];
+  for(var i=1;i<segs.length;i++){
+    var L=out[out.length-1];
+    if(segs[i].x0<=L.x1) L.x1=Math.max(L.x1,segs[i].x1); else out.push({x0:segs[i].x0,x1:segs[i].x1});
   }
   return out;
 }
 function mergeV(segs){
   if(!segs.length) return [];
-  segs.sort((a,b)=>a.z0-b.z0);
-  const out=[{...segs[0]}];
-  for(let i=1;i<segs.length;i++){
-    const L=out[out.length-1];
-    if(segs[i].z0<=L.z1) L.z1=Math.max(L.z1,segs[i].z1);
-    else out.push({...segs[i]});
+  segs.sort(function(a,b){return a.z0-b.z0;});
+  var out=[{z0:segs[0].z0,z1:segs[0].z1}];
+  for(var i=1;i<segs.length;i++){
+    var L=out[out.length-1];
+    if(segs[i].z0<=L.z1) L.z1=Math.max(L.z1,segs[i].z1); else out.push({z0:segs[i].z0,z1:segs[i].z1});
   }
   return out;
 }
 
 function buildWallPanels(floorSet, exit){
-  // Collect per-edge segments, skip exit tile boundary
-  const ec=exit?.col, er=exit?.row;
-  // Determine which side of the exit tile is the exterior
-  let exitSide=null;
-  if(Number.isFinite(ec)&&Number.isFinite(er)){
-    if(!floorSet.has(`${ec},${er-1}`))       exitSide='N';
-    else if(!floorSet.has(`${ec},${er+1}`))  exitSide='S';
-    else if(!floorSet.has(`${ec+1},${er}`))  exitSide='E';
-    else if(!floorSet.has(`${ec-1},${er}`))  exitSide='W';
+  var ec=exit?exit.col:null, er=exit?exit.row:null, exitSide=null;
+  if(ec!==null && er!==null){
+    if(!floorSet.has(ec+','+(er-1)))      exitSide='N';
+    else if(!floorSet.has(ec+','+(er+1))) exitSide='S';
+    else if(!floorSet.has((ec+1)+','+er)) exitSide='E';
+    else if(!floorSet.has((ec-1)+','+er)) exitSide='W';
   }
 
-  const nMap=new Map(), sMap=new Map(), eMap=new Map(), wMap=new Map();
+  var nMap={}, sMap={}, eMap={}, wMap={};
+  function push(map,k,seg){ if(!map[k]) map[k]=[]; map[k].push(seg); }
 
-  for(const key of floorSet){
-    const [c,r]=key.split(',').map(Number);
-    const isExit = c===ec&&r===er;
+  floorSet.forEach(function(key){
+    var p=key.split(','), c=+p[0], r=+p[1];
+    var isExit=(c===ec&&r===er);
+    if(!floorSet.has(c+','+(r-1)) && !(isExit&&exitSide==='N')) push(nMap,r,    {x0:c,x1:c+1});
+    if(!floorSet.has(c+','+(r+1)) && !(isExit&&exitSide==='S')) push(sMap,r+1,  {x0:c,x1:c+1});
+    if(!floorSet.has((c+1)+','+r) && !(isExit&&exitSide==='E')) push(eMap,c+1,  {z0:r,z1:r+1});
+    if(!floorSet.has((c-1)+','+r) && !(isExit&&exitSide==='W')) push(wMap,c,    {z0:r,z1:r+1});
+  });
 
-    if(!floorSet.has(`${c},${r-1}`)){ // North boundary (z=r)
-      if(!(isExit&&exitSide==='N')){ const a=nMap.get(r)??[]; a.push({x0:c,x1:c+1}); nMap.set(r,a); }
-    }
-    if(!floorSet.has(`${c},${r+1}`)){ // South boundary (z=r+1)
-      if(!(isExit&&exitSide==='S')){ const a=sMap.get(r+1)??[]; a.push({x0:c,x1:c+1}); sMap.set(r+1,a); }
-    }
-    if(!floorSet.has(`${c+1},${r}`)){ // East boundary (x=c+1)
-      if(!(isExit&&exitSide==='E')){ const a=eMap.get(c+1)??[]; a.push({z0:r,z1:r+1}); eMap.set(c+1,a); }
-    }
-    if(!floorSet.has(`${c-1},${r}`)){ // West boundary (x=c)
-      if(!(isExit&&exitSide==='W')){ const a=wMap.get(c)??[]; a.push({z0:r,z1:r+1}); wMap.set(c,a); }
-    }
-  }
-
-  const panels=[];
-  const H=WALL_H;
-
-  for(const [z,segs] of nMap) for(const m of mergeH(segs)){
-    const w=m.x1-m.x0, cx=(m.x0+m.x1)/2;
-    panels.push({width:w, height:H, position:[cx,H/2,z], rotationDeg:[0,0,0]});
-  }
-  for(const [z,segs] of sMap) for(const m of mergeH(segs)){
-    const w=m.x1-m.x0, cx=(m.x0+m.x1)/2;
-    panels.push({width:w, height:H, position:[cx,H/2,z], rotationDeg:[0,180,0]});
-  }
-  for(const [x,segs] of eMap) for(const m of mergeV(segs)){
-    const d=m.z1-m.z0, cz=(m.z0+m.z1)/2;
-    panels.push({width:d, height:H, position:[x,H/2,cz], rotationDeg:[0,-90,0]});
-  }
-  for(const [x,segs] of wMap) for(const m of mergeV(segs)){
-    const d=m.z1-m.z0, cz=(m.z0+m.z1)/2;
-    panels.push({width:d, height:H, position:[x,H/2,cz], rotationDeg:[0,90,0]});
-  }
+  var panels=[], H=WALL_H;
+  Object.keys(nMap).forEach(function(z){ mergeH(nMap[z]).forEach(function(m){ var w=m.x1-m.x0,cx=(m.x0+m.x1)/2; panels.push({width:w,height:H,position:[cx,H/2,+z],rotationDeg:[0,0,0]}); }); });
+  Object.keys(sMap).forEach(function(z){ mergeH(sMap[z]).forEach(function(m){ var w=m.x1-m.x0,cx=(m.x0+m.x1)/2; panels.push({width:w,height:H,position:[cx,H/2,+z],rotationDeg:[0,180,0]}); }); });
+  Object.keys(eMap).forEach(function(x){ mergeV(eMap[x]).forEach(function(m){ var d=m.z1-m.z0,cz=(m.z0+m.z1)/2; panels.push({width:d,height:H,position:[+x,H/2,cz],rotationDeg:[0,-90,0]}); }); });
+  Object.keys(wMap).forEach(function(x){ mergeV(wMap[x]).forEach(function(m){ var d=m.z1-m.z0,cz=(m.z0+m.z1)/2; panels.push({width:d,height:H,position:[+x,H/2,cz],rotationDeg:[0,90,0]}); }); });
   return panels;
 }
 
-// ─── Fallback wall mesh (flat box) ───────────────────────────────────────────
 function makeFallbackWalls(panels){
-  const group=new THREE.Group();
-  for(const p of panels){
-    const geo=new THREE.BoxGeometry(p.width, p.height, 0.18);
-    const m=new THREE.Mesh(geo, wallFbkMat);
-    m.position.set(...p.position);
-    m.rotation.set(
-      THREE.MathUtils.degToRad(p.rotationDeg[0]),
-      THREE.MathUtils.degToRad(p.rotationDeg[1]),
-      THREE.MathUtils.degToRad(p.rotationDeg[2])
-    );
-    group.add(m);
-  }
-  return group;
+  var g=new THREE.Group();
+  panels.forEach(function(p){
+    var m=new THREE.Mesh(new THREE.BoxGeometry(p.width,p.height,0.18),wallFbkMat);
+    m.position.set(p.position[0],p.position[1],p.position[2]);
+    m.rotation.set(p.rotationDeg[0]*Math.PI/180,p.rotationDeg[1]*Math.PI/180,p.rotationDeg[2]*Math.PI/180);
+    g.add(m);
+  });
+  return g;
 }
 
 // ─── 3D rebuild ───────────────────────────────────────────────────────────────
 function rebuild3D(){
-  if(previewGroup){ scene3.remove(previewGroup); previewGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); }
-  furnMeshes.clear();
+  if(previewGroup){ scene3.remove(previewGroup); previewGroup.traverse(function(o){if(o.geometry)o.geometry.dispose();}); }
+  furnMeshes={};
+  var floorSet=state.floorSet, exit=state.interior.exit, furniture=state.interior.furniture;
+  previewGroup=new THREE.Group();
 
-  const {floorSet, interior:{exit,furniture}} = state;
-  previewGroup = new THREE.Group();
-
-  // Floor tiles (only painted)
-  for(const key of floorSet){
-    const [c,r]=key.split(',').map(Number);
-    const fl=new THREE.Mesh(new THREE.BoxGeometry(1,0.08,1), floorMat);
-    fl.position.set(c+0.5,-0.04,r+0.5);
-    previewGroup.add(fl);
-  }
+  // Floor tiles
+  floorSet.forEach(function(key){
+    var p=key.split(','), c=+p[0], r=+p[1];
+    var fl=new THREE.Mesh(new THREE.BoxGeometry(1,0.08,1),floorMat);
+    fl.position.set(c+0.5,-0.04,r+0.5); previewGroup.add(fl);
+  });
 
   // Exit marker
-  if(exit&&Number.isFinite(exit.col)&&isFloor(exit.col,exit.row)){
-    const em=new THREE.Mesh(new THREE.BoxGeometry(0.85,0.03,0.85), exitMat);
-    em.position.set(exit.col+0.5,0.015,exit.row+0.5);
-    previewGroup.add(em);
+  if(exit && typeof exit.col==='number' && isFloor(exit.col,exit.row)){
+    var em=new THREE.Mesh(new THREE.BoxGeometry(0.85,0.03,0.85),exitMat);
+    em.position.set(exit.col+0.5,0.015,exit.row+0.5); previewGroup.add(em);
   }
 
-  // Walls — WallBuilder if ready, else fallback
-  const panels = buildWallPanels(floorSet, exit);
+  // Walls
+  var panels=buildWallPanels(floorSet,exit);
   if(wb && panels.length){
-    const wbOpts = { usePlaceholder:!wbReady, unitMult:0.5, rockScale:1.5, preScale:[1,1,0.6], brickJitter:{rotYDeg:8,shiftU:0.04,shiftV:0.03} };
-    try{ previewGroup.add(wb.build(panels, wbOpts)); }
-    catch(e){ log('WallBuilder.build error: '+e.message,'warn'); previewGroup.add(makeFallbackWalls(panels)); }
+    try{
+      var wbOpts={usePlaceholder:!wbReady,unitMult:0.5,rockScale:1.5,preScale:[1,1,0.6],brickJitter:{rotYDeg:8,shiftU:0.04,shiftV:0.03}};
+      previewGroup.add(wb.build(panels,wbOpts));
+    } catch(e){ log('WallBuilder error: '+e.message,'warn'); previewGroup.add(makeFallbackWalls(panels)); }
   } else if(panels.length){
     previewGroup.add(makeFallbackWalls(panels));
   }
 
   // Furniture
-  for(const f of furniture){
-    const cat=CMAP[f.itemKey]??{fw:1,fd:1,col:'#607090'};
-    const color=parseInt(cat.col.slice(1),16);
-    const mesh=new THREE.Mesh(
-      new THREE.BoxGeometry(cat.fw*0.8, 0.9, cat.fd*0.8),
-      new THREE.MeshLambertMaterial({color})
+  furniture.forEach(function(f){
+    var cat=catOf(f.itemKey);
+    var mesh=new THREE.Mesh(
+      new THREE.BoxGeometry(cat.fw*0.8,0.9,cat.fd*0.8),
+      new THREE.MeshLambertMaterial({color:cat.col})
     );
-    const cx=f.col+cat.fw/2+(f.postX??0);
-    const cz=f.row+cat.fd/2+(f.postZ??0);
-    mesh.position.set(cx, 0.45+(f.postY??0), cz);
-    mesh.rotation.y=THREE.MathUtils.degToRad(f.rotY??0);
-    mesh.userData.furnId=f.id;
-    furnMeshes.set(f.id, mesh);
+    var cx=f.col+cat.fw/2+(f.postX||0), cz=f.row+cat.fd/2+(f.postZ||0);
+    mesh.position.set(cx,0.45+(f.postY||0),cz);
+    mesh.rotation.y=(f.rotY||0)*Math.PI/180;
+    mesh.userData={furnId:f.id};
+    furnMeshes[f.id]=mesh;
     previewGroup.add(mesh);
-  }
+  });
 
   scene3.add(previewGroup);
   syncTC();
 
-  // Orbit target = centroid of floor tiles
+  // Orbit target = centroid
   if(floorSet.size){
-    let sx=0,sz=0;
-    for(const key of floorSet){ const[c,r]=key.split(',').map(Number); sx+=c+0.5; sz+=r+0.5; }
-    orbit.target.set(sx/floorSet.size, 0.5, sz/floorSet.size);
+    var sx=0,sz=0,n=0;
+    floorSet.forEach(function(k){var p=k.split(','); sx+=+p[0]+0.5; sz+=+p[1]+0.5; n++;});
+    orbit.target.set(sx/n,0.5,sz/n);
   }
   refreshExport();
 }
 
 // ─── Transform controls ───────────────────────────────────────────────────────
 function initTC(){
-  tc=new TransformControls(camera, canvas3);
-  tc.addEventListener('change', ()=>renderer.render(scene3,camera));
-  tc.addEventListener('dragging-changed', e=>{
+  tc=new THREE.TransformControls(camera,canvas3);
+  tc.addEventListener('change',function(){ renderer.render(scene3,camera); });
+  tc.addEventListener('dragging-changed',function(e){
     orbit.enabled=!e.value;
-    if(!e.value&&state.selectedId){
-      const f=state.interior.furniture.find(x=>x.id===state.selectedId);
-      const mesh=furnMeshes.get(state.selectedId);
+    if(!e.value && state.selectedId){
+      var f=null; for(var i=0;i<state.interior.furniture.length;i++) if(state.interior.furniture[i].id===state.selectedId){f=state.interior.furniture[i];break;}
+      var mesh=furnMeshes[state.selectedId];
       if(!f||!mesh) return;
-      const cat=CMAP[f.itemKey]??{fw:1,fd:1};
+      var cat=catOf(f.itemKey);
       f.postX=+( mesh.position.x-(f.col+cat.fw/2) ).toFixed(3);
       f.postY=+( mesh.position.y-0.45 ).toFixed(3);
       f.postZ=+( mesh.position.z-(f.row+cat.fd/2) ).toFixed(3);
-      f.rotY =+( THREE.MathUtils.radToDeg(mesh.rotation.y) ).toFixed(1);
+      f.rotY =+( mesh.rotation.y*180/Math.PI ).toFixed(1);
       $('pX').value=f.postX; $('pY').value=f.postY; $('pZ').value=f.postZ; $('pRotY').value=f.rotY;
       commitUndo();
     }
@@ -761,106 +669,112 @@ function initTC(){
 }
 function syncTC(){
   if(!tc) return;
-  if(!state.selectedId){ tc.detach(); return; }
-  const mesh=furnMeshes.get(state.selectedId);
+  if(!state.selectedId){tc.detach();return;}
+  var mesh=furnMeshes[state.selectedId];
   if(mesh) tc.attach(mesh); else tc.detach();
 }
-function setMode(m){ if(!tc) return; tc.setMode(m); $('modeTranslate').classList.toggle('active',m==='translate'); $('modeRotate').classList.toggle('active',m==='rotate'); }
-$('modeTranslate').addEventListener('click',()=>setMode('translate'));
-$('modeRotate').addEventListener('click',()=>setMode('rotate'));
+function setMode(m){
+  if(!tc) return; tc.setMode(m);
+  $('modeTranslate').classList.toggle('active',m==='translate');
+  $('modeRotate').classList.toggle('active',m==='rotate');
+}
+$('modeTranslate').addEventListener('click',function(){setMode('translate');});
+$('modeRotate').addEventListener('click',function(){setMode('rotate');});
 
 // ─── 3D click → select ────────────────────────────────────────────────────────
-const ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
-canvas3.addEventListener('pointerdown', e=>{
-  const rect=canvas3.getBoundingClientRect();
+var ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
+canvas3.addEventListener('pointerdown',function(e){
+  var rect=canvas3.getBoundingClientRect();
   mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
   mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
   ray.setFromCamera(mouse,camera);
-  const hits=ray.intersectObjects([...furnMeshes.values()],false);
+  var meshArr=Object.keys(furnMeshes).map(function(k){return furnMeshes[k];});
+  var hits=ray.intersectObjects(meshArr,false);
   if(hits.length) selectFurn(hits[0].object.userData.furnId);
 });
 
 // ─── Render loop ──────────────────────────────────────────────────────────────
-function resize(){
-  const w=canvas3.clientWidth, h=canvas3.clientHeight;
+function resizeRenderer(){
+  var w=canvas3.clientWidth, h=canvas3.clientHeight;
   if(!w||!h) return;
   renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
 }
-function animate(){ requestAnimationFrame(animate); resize(); orbit.update(); renderer.render(scene3,camera); }
+function animate(){ requestAnimationFrame(animate); resizeRenderer(); orbit.update(); renderer.render(scene3,camera); }
 
-// ─── Library ─────────────────────────────────────────────────────────────────
-const LS='bia_lib_v1';
-function loadLib(){ try{ state.library=JSON.parse(localStorage.getItem(LS)||'[]'); }catch{ state.library=[]; } }
-function saveLib(){ try{ localStorage.setItem(LS,JSON.stringify(state.library)); }catch(e){ log('localStorage error: '+e,'warn'); } }
+// ─── Library ──────────────────────────────────────────────────────────────────
+var LS='bia_lib_v1';
+function loadLib(){ try{state.library=JSON.parse(localStorage.getItem(LS)||'[]');}catch(e){state.library=[];} }
+function saveLib(){ try{localStorage.setItem(LS,JSON.stringify(state.library));}catch(e){log('localStorage error','warn');} }
 function renderLib(){
-  const el=$('libraryList'); el.innerHTML='';
-  for(const it of state.library){
-    const div=document.createElement('div'); div.className='listItem';
-    div.innerHTML=`<span><b>${it.name||it.id}</b><br><span class="chip">${it.id} | ${it.cols}×${it.rows} | ${it.furniture?.length??0} items</span></span>
-      <button type="button" onclick="window.__biaLoad('${it.id}')">Load</button>`;
+  var el=$('libraryList'); el.innerHTML='';
+  state.library.forEach(function(it){
+    var div=document.createElement('div'); div.className='listItem';
+    div.innerHTML='<span><b>'+it.name+'</b><br><span class="chip">'+it.id+' | '+it.cols+'x'+it.rows+' | '+(it.furniture?it.furniture.length:0)+' items</span></span><button type="button" onclick="window.__biaLoad(\''+it.id+'\')">Load</button>';
     el.appendChild(div);
-  }
+  });
 }
 window.__biaLoad=function(id){
-  const it=state.library.find(l=>l.id===id); if(!it) return;
-  pushUndo(); state.interior=JSON.parse(JSON.stringify(it)); afterLoad(); log(`Loaded "${it.name||it.id}".`);
+  var it=null; for(var i=0;i<state.library.length;i++) if(state.library[i].id===id){it=state.library[i];break;}
+  if(!it) return;
+  pushUndo(); state.interior=JSON.parse(JSON.stringify(it)); afterLoad(); log('Loaded "'+it.name+'".');
 };
-$('saveLibBtn').addEventListener('click',()=>{
-  const cp=JSON.parse(JSON.stringify(state.interior));
-  const i=state.library.findIndex(l=>l.id===cp.id);
-  if(i>=0) state.library[i]=cp; else state.library.push(cp);
-  saveLib(); renderLib(); log(`Saved "${cp.name||cp.id}" to library.`);
+$('saveLibBtn').addEventListener('click',function(){
+  var cp=JSON.parse(JSON.stringify(state.interior)), idx=-1;
+  for(var i=0;i<state.library.length;i++) if(state.library[i].id===cp.id){idx=i;break;}
+  if(idx>=0) state.library[idx]=cp; else state.library.push(cp);
+  saveLib(); renderLib(); log('Saved "'+cp.name+'" to library.');
 });
-$('delLibBtn').addEventListener('click',()=>{
-  const id=state.interior.id, before=state.library.length;
-  state.library=state.library.filter(l=>l.id!==id);
-  if(state.library.length<before){ saveLib(); renderLib(); log('Deleted from library.'); }
+$('delLibBtn').addEventListener('click',function(){
+  var id=state.interior.id, before=state.library.length;
+  state.library=state.library.filter(function(l){return l.id!==id;});
+  if(state.library.length<before){saveLib();renderLib();log('Deleted from library.');}
   else log('Not in library.','warn');
 });
 
 // ─── Export / import ──────────────────────────────────────────────────────────
 function refreshExport(){ $('exportText').value=JSON.stringify(state.interior,null,2); }
-$('refreshExportBtn').addEventListener('click', refreshExport);
-$('copyJsonBtn').addEventListener('click', async()=>{
-  const txt=JSON.stringify(state.interior,null,2);
-  try{ await navigator.clipboard.writeText(txt); log('Copied to clipboard.'); }
-  catch{ log('Clipboard unavailable — use the text area.','warn'); }
+$('refreshExportBtn').addEventListener('click',refreshExport);
+$('copyJsonBtn').addEventListener('click',function(){
+  var txt=JSON.stringify(state.interior,null,2);
+  if(navigator.clipboard) navigator.clipboard.writeText(txt).then(function(){log('Copied to clipboard.');}).catch(function(){log('Clipboard unavailable.','warn');});
+  else { $('exportText').value=txt; $('exportText').select(); try{document.execCommand('copy');log('Copied.');}catch(e){log('Copy failed.','warn');} }
 });
-$('downloadBtn').addEventListener('click',()=>{
-  const txt=JSON.stringify(state.interior,null,2);
-  const a=document.createElement('a');
+$('downloadBtn').addEventListener('click',function(){
+  var txt=JSON.stringify(state.interior,null,2);
+  var a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([txt],{type:'application/json'}));
-  a.download=`${state.interior.id||'building_interior'}.json`;
-  a.click(); URL.revokeObjectURL(a.href); log(`Downloaded ${a.download}`);
+  a.download=(state.interior.id||'building_interior')+'.json';
+  a.click(); URL.revokeObjectURL(a.href); log('Downloaded '+a.download);
 });
-$('importInput').addEventListener('change', async e=>{
-  const file=e.target.files?.[0]; if(!file) return;
-  try{
-    const data=JSON.parse(await file.text());
-    if(!data.cols||!data.rows){ log('Invalid JSON: missing cols/rows.','error'); return; }
-    // Back-compat: if no floor array, fill rectangle
-    if(!data.floor){ data.floor=[]; for(let r=0;r<data.rows;r++) for(let c=0;c<data.cols;c++) data.floor.push([c,r]); }
-    pushUndo(); state.interior={schema:'hobunji_building_interior.v1',furniture:[],...data};
-    afterLoad(); log(`Imported ${file.name}.`);
-  }catch(err){ log(`Import error: ${err.message}`,'error'); }
+$('importInput').addEventListener('change',function(e){
+  var file=e.target.files&&e.target.files[0]; if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      var data=JSON.parse(ev.target.result);
+      if(!data.cols||!data.rows){log('Invalid JSON: missing cols/rows.','error');return;}
+      if(!data.floor){data.floor=[];for(var r=0;r<data.rows;r++) for(var c=0;c<data.cols;c++) data.floor.push([c,r]);}
+      pushUndo(); state.interior=Object.assign({schema:'hobunji_building_interior.v1',furniture:[]},data);
+      afterLoad(); log('Imported '+file.name+'.');
+    }catch(err){log('Import error: '+err.message,'error');}
+  };
+  reader.readAsText(file);
   e.target.value='';
 });
 
-// ─── New / header ─────────────────────────────────────────────────────────────
-$('newBtn').addEventListener('click',()=>{ pushUndo(); state.interior=makeBlank(); afterLoad(); log('New interior.'); });
-$('undoBtn').addEventListener('click', undo);
-$('redoBtn').addEventListener('click', redo);
-$('mapId').addEventListener('change',  ()=>state.interior.id=$('mapId').value.trim());
-$('mapName').addEventListener('change',()=>state.interior.name=$('mapName').value.trim());
+// ─── Header buttons ───────────────────────────────────────────────────────────
+$('newBtn').addEventListener('click',function(){ pushUndo(); state.interior=makeBlank(); afterLoad(); log('New interior.'); });
+$('undoBtn').addEventListener('click',undo);
+$('redoBtn').addEventListener('click',redo);
+$('mapId').addEventListener('change',function(){state.interior.id=$('mapId').value.trim();});
+$('mapName').addEventListener('change',function(){state.interior.name=$('mapName').value.trim();});
 
 // ─── afterLoad ────────────────────────────────────────────────────────────────
 function afterLoad(){
-  const {id,name,cols,rows}=state.interior;
-  $('mapId').value=id||''; $('mapName').value=name||'';
-  $('gridCols').value=cols||12; $('gridRows').value=rows||10;
-  syncFloorSet();
-  selectFurn(null);
-  drawGrid(); rebuild3D(); refreshExport(); updateUR(); renderLib();
+  var i=state.interior;
+  $('mapId').value=i.id||''; $('mapName').value=i.name||'';
+  $('gridCols').value=i.cols||12; $('gridRows').value=i.rows||10;
+  syncFloorSet(); selectFurn(null); drawGrid(); rebuild3D(); refreshExport(); updateUR(); renderLib();
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
@@ -869,9 +783,9 @@ buildCatalogUI();
 initTC();
 afterLoad();
 animate();
-initWallBuilder();   // async — kicks off WallBuilder.js + GLB load
-window.__BIA_READY__=true;
 log('Building Interior Editor ready.');
+
+})(); // end IIFE
 </script>
 </body>
 </html>
