@@ -12090,7 +12090,7 @@
           "label": "Enter Kunji's Potions",
           "col": 44,
           "row": 35,
-          "targetMapId": "map_i_potion_shop",
+          "targetMapId": "map_i_kunjis_potions_F1",
           "targetSpotId": "sp_pot_entry"
         },
         {

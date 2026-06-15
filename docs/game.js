@@ -1883,6 +1883,70 @@
         splitV('we', cols, [0, -90,  0], 'E');
         return panels;
       }
+      function buildWallPanelsFromFloorSet(floorSet, exitTileSet, wallHeight) {
+        const nMap = {}, sMap = {}, eMap = {}, wMap = {};
+        function pushH(map, key, x0, x1) { if (!map[key]) map[key] = []; map[key].push({ x0, x1 }); }
+        function pushV(map, key, z0, z1) { if (!map[key]) map[key] = []; map[key].push({ z0, z1 }); }
+        function mergeH(segs) {
+          segs.sort((a, b) => a.x0 - b.x0);
+          const out = [];
+          for (const s of segs) {
+            if (out.length && out[out.length - 1].x1 >= s.x0) out[out.length - 1].x1 = Math.max(out[out.length - 1].x1, s.x1);
+            else out.push({ x0: s.x0, x1: s.x1 });
+          }
+          return out;
+        }
+        function mergeV(segs) {
+          segs.sort((a, b) => a.z0 - b.z0);
+          const out = [];
+          for (const s of segs) {
+            if (out.length && out[out.length - 1].z1 >= s.z0) out[out.length - 1].z1 = Math.max(out[out.length - 1].z1, s.z1);
+            else out.push({ z0: s.z0, z1: s.z1 });
+          }
+          return out;
+        }
+        for (const key of floorSet) {
+          const parts = key.split(',');
+          const c = Number(parts[0]), r = Number(parts[1]);
+          const isExit = exitTileSet.has(key);
+          if (!floorSet.has(`${c},${r - 1}`) && !isExit) pushH(nMap, r,     c, c + 1);
+          if (!floorSet.has(`${c},${r + 1}`) && !isExit) pushH(sMap, r + 1, c, c + 1);
+          if (!floorSet.has(`${c + 1},${r}`) && !isExit) pushV(eMap, c + 1, r, r + 1);
+          if (!floorSet.has(`${c - 1},${r}`) && !isExit) pushV(wMap, c,     r, r + 1);
+        }
+        const panels = [];
+        let pid = 0;
+        for (const [rStr, segs] of Object.entries(nMap)) {
+          const z = Number(rStr);
+          for (const seg of mergeH(segs)) {
+            const w = seg.x1 - seg.x0, cx = (seg.x0 + seg.x1) / 2;
+            panels.push({ id: `wn_${pid++}`, width: w, height: wallHeight, position: [cx, 0, z], rotationDeg: [0, 0, 0] });
+          }
+        }
+        for (const [rStr, segs] of Object.entries(sMap)) {
+          const z = Number(rStr);
+          for (const seg of mergeH(segs)) {
+            const w = seg.x1 - seg.x0, cx = (seg.x0 + seg.x1) / 2;
+            panels.push({ id: `ws_${pid++}`, width: w, height: wallHeight, position: [cx, 0, z], rotationDeg: [0, 180, 0] });
+          }
+        }
+        for (const [cStr, segs] of Object.entries(eMap)) {
+          const x = Number(cStr);
+          for (const seg of mergeV(segs)) {
+            const d = seg.z1 - seg.z0, cz = (seg.z0 + seg.z1) / 2;
+            panels.push({ id: `we_${pid++}`, width: d, height: wallHeight, position: [x, 0, cz], rotationDeg: [0, -90, 0] });
+          }
+        }
+        for (const [cStr, segs] of Object.entries(wMap)) {
+          const x = Number(cStr);
+          for (const seg of mergeV(segs)) {
+            const d = seg.z1 - seg.z0, cz = (seg.z0 + seg.z1) / 2;
+            panels.push({ id: `ww_${pid++}`, width: d, height: wallHeight, position: [x, 0, cz], rotationDeg: [0, 90, 0] });
+          }
+        }
+        return panels;
+      }
+
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
@@ -1904,6 +1968,110 @@
             window.__farmLog?.(`[building] ${mapId}: loaded from workspace (${mapData.cols}x${mapData.rows})`, 'info');
           }
         }
+
+        // ── hobunji_building_interior.v1 schema ──────────────────────────
+        if (mapData?.schema === 'hobunji_building_interior.v1') {
+          const cols = mapData.cols || 20, rows = mapData.rows || 20;
+          const bGrid = Array.from({ length: rows }, () =>
+            Array.from({ length: cols }, () => ({
+              type: TileType.ROCK, water: 0, crop: CropType.NONE,
+              cropAge: 0, cropReady: false, stress: '', variation: 0,
+            }))
+          );
+          // Fill floor tiles as walkable
+          const floorSet = new Set();
+          for (const [c, r] of (mapData.floor || [])) {
+            if (bGrid[r]?.[c]) { bGrid[r][c].type = TileType.GRASS; floorSet.add(`${c},${r}`); }
+          }
+          // Colliders override back to solid
+          for (const [c, r] of (mapData.colliders || [])) {
+            if (bGrid[r]?.[c]) bGrid[r][c].type = TileType.ROCK;
+          }
+          // Build transitions from exits array
+          const transitions = [];
+          const exitTileSet = new Set();
+          for (const exit of (mapData.exits || [])) {
+            const target = exit.targetMap ? 'building' : 'exit_building';
+            for (const [tc, tr] of (exit.tiles || [])) {
+              exitTileSet.add(`${tc},${tr}`);
+              const t = { col: tc, row: tr, area: mapId, target };
+              if (exit.targetMap) { t.targetMapId = exit.targetMap; t.targetCol = exit.spawnCol || 0; t.targetRow = exit.spawnRow || 0; }
+              transitions.push(t);
+            }
+          }
+          const bScene = new THREE.Scene();
+          bScene.background = new THREE.Color(0x2a1a0a);
+          bScene.add(new THREE.AmbientLight(0xfff5e0, 0.7));
+          const dl = new THREE.DirectionalLight(0xffeedd, 0.5);
+          dl.position.set(5, 10, 5);
+          bScene.add(dl);
+          const floorMat = new THREE.MeshLambertMaterial({ color: 0x8b6914 });
+          new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
+          }, undefined, () => {});
+          // Floor tiles only for defined floor set
+          for (const [c, r] of (mapData.floor || [])) {
+            const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+            fl.position.set(c + 0.5, -0.05, r + 0.5);
+            bScene.add(fl);
+          }
+          // Irregular brick walls with gaps at all exit tiles
+          const wallPanels = buildWallPanelsFromFloorSet(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
+          if (wallPanels.length) {
+            const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+            bScene.add(wallGroup);
+          }
+          // Furniture: build combined itemKey -> def lookup
+          const allFurnDefs = {};
+          for (const def of Object.values(DECORATIVE_FURNITURE_DEFS)) allFurnDefs[def.itemKey] = def;
+          for (const def of Object.values(PROCESSING_FURNITURE_DEFS)) allFurnDefs[def.itemKey] = def;
+          for (const f of (mapData.furniture || [])) {
+            const def = allFurnDefs[f.itemKey];
+            const color = def?.color || 0x888888;
+            const scX = f.postSX != null ? f.postSX : (f.postScale != null ? f.postScale : 1);
+            const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
+            const scZ = f.postSZ != null ? f.postSZ : (f.postScale != null ? f.postScale : 1);
+            const bx = (f.col + 0.5) + (f.postX || 0);
+            const by = f.postY || 0;
+            const bz = (f.row + 0.5) + (f.postZ || 0);
+            const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
+            // Coloured box placeholder
+            const ph = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshLambertMaterial({ color }));
+            ph.position.set(bx, by + 0.4, bz);
+            ph.rotation.y = rotRad;
+            ph.scale.set(scX, scY, scZ);
+            bScene.add(ph);
+            if (def?.modelFile) {
+              const loader = new THREE.GLTFLoader();
+              loader.load(`assets/models/furniture/${def.modelFile}`, (gltf) => {
+                const model = gltf.scene;
+                model.position.set(bx, by, bz);
+                model.rotation.y = rotRad;
+                model.scale.set(scX, scY, scZ);
+                model.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+                bScene.remove(ph);
+                ph.geometry.dispose(); ph.material.dispose();
+                bScene.add(model);
+              }, undefined, () => {});
+            }
+          }
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [] };
+          _buildingScenes.set(mapId, info);
+          for (const w of npcWalkers) {
+            if (w.root._pendingBuildingAdd === mapId) {
+              w.root._pendingBuildingAdd = null;
+              bScene.add(w.root); w.root._npcScene = bScene;
+            }
+          }
+          if (_currentBuildingMapId === mapId && _isBuildingArea(currentArea)) {
+            bScene.add(playerMesh); bScene.add(playerGroundShadow);
+          }
+          debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ') [v1]');
+          return;
+        }
+
+        // ── Legacy rectangular-room schema ───────────────────────────────
         const cols = mapData?.cols || 20, rows = mapData?.rows || 20;
         const bGrid = Array.from({ length: rows }, () =>
           Array.from({ length: cols }, () => ({
@@ -1962,7 +2130,9 @@
         if (!_buildingScenes.has(mapId)) loadBuildingScene(mapId);
         const fromScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || null)
           : currentArea === 'town' ? townScene : scene;
-        farmPlayerSave = { x: player.x, y: player.y, angle: player.angle, area: currentArea };
+        if (!_isBuildingArea(currentArea)) {
+          farmPlayerSave = { x: player.x, y: player.y, angle: player.angle, area: currentArea };
+        }
         _currentBuildingMapId = mapId;
         currentArea = mapId;
         const bi = _buildingScenes.get(mapId);
