@@ -1286,6 +1286,7 @@
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
       let _currentBuildingMapId = null;
+      let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
 
       function initWorldTravel(layout) {
@@ -1335,7 +1336,7 @@
         else pool = area === 'town' ? worldTownTransitions : worldTransitions;
         const t = pool.find(x =>
           (_isBuildingArea(area) || x.area === area) && x.col === pc && x.row === pr &&
-          (x.target === 'building' ? !!x.targetMapId : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
+          (x.target === 'building' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
         if (!t) return;
         startSceneTransition(() => performTravel(t));
       }
@@ -1364,7 +1365,9 @@
       }
 
       function performTravel(t) {
-        if (t.target === 'building') {
+        if (t.target === 'exit_building') {
+          exitBuilding();
+        } else if (t.target === 'building') {
           enterBuilding(t.targetMapId, t.targetCol, t.targetRow);
         } else if (t.target === 'interior') {
           if (currentArea !== 'interior') enterInterior();
@@ -1777,6 +1780,7 @@
           if (!resp.ok) return;
           const ws = await resp.json();
           if (_townZone) return; // race: loaded since fetch started
+          _workspaceMaps = ws.maps;
           const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
           const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], buildings: townM.buildings || [] };
@@ -1843,6 +1847,19 @@
           const resp = await fetch('config/maps/' + mapId + '.json');
           if (resp.ok) mapData = await resp.json();
         } catch(_) {}
+        // Fallback: load map data from cached workspace JSON
+        if (!mapData && _workspaceMaps) {
+          const wsMap = _workspaceMaps.find(m => m.id === mapId);
+          if (wsMap) {
+            const tileArr = [];
+            for (const [key, val] of Object.entries(wsMap.tiles || {})) {
+              const [c, r] = key.split(',').map(Number);
+              if (Number.isFinite(c) && Number.isFinite(r)) tileArr.push({ c, r, type: val.type || 'grass' });
+            }
+            mapData = { cols: wsMap.cols, rows: wsMap.rows, tiles: tileArr, transitions: wsMap.transitions || [] };
+            window.__farmLog?.(`[building] ${mapId}: loaded from workspace (${mapData.cols}x${mapData.rows})`, 'info');
+          }
+        }
         const cols = mapData?.cols || 20, rows = mapData?.rows || 20;
         const bGrid = Array.from({ length: rows }, () =>
           Array.from({ length: cols }, () => ({
@@ -1855,9 +1872,10 @@
             if (bGrid[tile.r]?.[tile.c]) bGrid[tile.r][tile.c].type = tile.type || TileType.GRASS;
           }
         }
+        // Convert workspace exit transitions (targetMapId=town) to exit_building so checkTransitionSpots fires
         const transitions = (mapData?.transitions || [])
           .filter(t => Number.isFinite(t.col) && Number.isFinite(t.row))
-          .map(t => ({ ...t, area: mapId }));
+          .map(t => ({ ...t, area: mapId, target: t.target || 'exit_building' }));
         const bScene = new THREE.Scene();
         bScene.background = new THREE.Color(0x2a1a0a);
         bScene.add(new THREE.AmbientLight(0xfff5e0, 0.7));
@@ -2019,7 +2037,13 @@
             const eCol = Math.floor((worldMinC + worldMaxC + 1) / 2);
             const eRow = Math.min(TROWS_ENT - 1, worldMaxR + 1);
             const eid  = 'bldg_entrance_' + bldg.id;
-            if (!worldTownTransitions.find(t => t.id === eid)) {
+            // Skip auto-entrance if workspace already defined a building transition in this footprint
+            const hasWorkspaceEntry = worldTownTransitions.some(t =>
+              t.target === 'building' &&
+              Number.isFinite(t.col) && Number.isFinite(t.row) &&
+              t.col >= (bldg.gridX ?? 0) && t.col < (bldg.gridX ?? 0) + (bldg.footprintW ?? 1) &&
+              t.row >= (bldg.gridZ ?? 0) && t.row < (bldg.gridZ ?? 0) + (bldg.footprintD ?? 1));
+            if (!hasWorkspaceEntry && !worldTownTransitions.find(t => t.id === eid)) {
               worldTownTransitions.push({
                 id: eid, area: 'town', col: eCol, row: eRow,
                 target: 'interior',
