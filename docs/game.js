@@ -1288,10 +1288,12 @@
       function initWorldTravel(layout) {
         if (!layout || layout.version !== 3) return;
         worldTransitions = (layout.transitions || []).filter(t =>
-          t && Number.isFinite(t.col) && Number.isFinite(t.row));
+          t && Number.isFinite(t.col) && Number.isFinite(t.row) && (t.area || 'farm') !== 'town');
         worldNpcPaths = (layout.npcPaths || []).filter(p =>
-          p && Array.isArray(p.nodes) && p.nodes.length > 0);
-        worldRoutes = normalizeRoutes(layout.routes, worldNpcPaths);
+          p && Array.isArray(p.nodes) && p.nodes.length > 0 && (p.area || 'farm') !== 'town');
+        worldRoutes = normalizeRoutes(
+          (layout.routes || []).filter(r => (r.area || 'farm') !== 'town'),
+          worldNpcPaths);
         rebuildRouteGraphs();
         // Don't fire a spot the player happens to spawn on
         _transitionLatch = travelAreaKey();
@@ -1649,7 +1651,7 @@
               return;
             }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
-            if (canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r)) {
+            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r)) {
               this.state = 'beeline'; this.routeNode = this.previousRouteNode = this.routeTarget = null;
               this.moveToward(tx, tz, dt);
             } else if (this.state !== 'on-route') {
