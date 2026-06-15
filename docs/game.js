@@ -1481,7 +1481,7 @@
         if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH) return false;
         if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
         if (area !== 'town' && interiorFurnitureObjects.some(o => o.area === area && o.col === c && o.row === r)) return false;
-        if (area === 'town' && _townBuildingDefs.some(b => c >= b.col && r >= b.row && c < b.col + (b.w || 1) && r < b.row + (b.h || 1))) return false;
+        if (area === 'town' && _townBuildingDefs.some(b => c >= (b.gridX ?? b.col ?? 0) && r >= (b.gridZ ?? b.row ?? 0) && c < (b.gridX ?? b.col ?? 0) + (b.footprintW ?? b.w ?? 1) && r < (b.gridZ ?? b.row ?? 0) + (b.footprintD ?? b.h ?? 1))) return false;
         return true;
       }
 

@@ -2707,7 +2707,7 @@
             "mapId": "map_hobunji_town",
             "position": {
               "c": 45,
-              "r": 32
+              "r": 30
             },
             "activity": "running potion shop"
           },
@@ -2727,8 +2727,8 @@
             "to": "06:00",
             "mapId": "map_hobunji_town",
             "position": {
-              "c": 44,
-              "r": 33
+              "c": 45,
+              "r": 32
             },
             "activity": "home"
           }
@@ -2736,7 +2736,7 @@
         "defaultPosition": {
           "area": "town",
           "c": 45,
-          "r": 32
+          "r": 30
         }
       }
     },
@@ -2891,7 +2891,7 @@
             "mapId": "map_hobunji_town",
             "position": {
               "c": 45,
-              "r": 32
+              "r": 30
             },
             "activity": "running potion shop"
           },
@@ -2900,8 +2900,8 @@
             "to": "06:00",
             "mapId": "map_hobunji_town",
             "position": {
-              "c": 44,
-              "r": 33
+              "c": 45,
+              "r": 32
             },
             "activity": "home"
           }
@@ -2909,7 +2909,7 @@
         "defaultPosition": {
           "area": "town",
           "c": 45,
-          "r": 32
+          "r": 30
         }
       }
     },
