@@ -474,22 +474,10 @@
   "colliders": [
     [
       7,
-      8
-    ],
-    [
-      7,
       9
     ],
     [
-      6,
-      8
-    ],
-    [
-      5,
-      8
-    ],
-    [
-      4,
+      7,
       8
     ],
     [
@@ -497,8 +485,16 @@
       8
     ],
     [
-      8,
-      2
+      4,
+      8
+    ],
+    [
+      6,
+      8
+    ],
+    [
+      7,
+      3
     ],
     [
       8,
@@ -509,8 +505,12 @@
       2
     ],
     [
-      7,
-      3
+      8,
+      2
+    ],
+    [
+      5,
+      8
     ]
   ],
   "vendorZones": [
@@ -519,5 +519,120 @@
       "vendorKey": "potion_shop",
       "tiles": []
     }
-  ]
+  ],
+  "routes": [
+    {
+      "id": "route_sww8w",
+      "label": "Route 1",
+      "nodes": [
+        [
+          4,
+          2
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          6
+        ],
+        [
+          2,
+          9
+        ]
+      ]
+    },
+    {
+      "id": "route_pogxw",
+      "label": "Route 2",
+      "nodes": [
+        [
+          2,
+          6
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          9,
+          4
+        ],
+        [
+          9,
+          3
+        ]
+      ]
+    },
+    {
+      "id": "route_og6xq",
+      "label": "Route 3",
+      "nodes": [
+        [
+          8,
+          4
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          6,
+          3
+        ]
+      ]
+    }
+  ],
+  "npcStations": [
+    {
+      "id": "station_jayis",
+      "label": "Kaboku's Dinner Seat",
+      "col": 2,
+      "row": 9,
+      "rotY": 270,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_njyek",
+      "label": "Kinami's Dinner Seat",
+      "col": 8,
+      "row": 9,
+      "rotY": 90,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_di22s",
+      "label": "Kaboku's Bed",
+      "col": 7,
+      "row": 2,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_20tpy",
+      "label": "Kinami's Bed",
+      "col": 8,
+      "row": 2,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
+  ],
+  "npcPaths": []
 }
