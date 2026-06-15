@@ -411,7 +411,7 @@
   ],
   "colliders": [
     [
-      5,
+      7,
       7
     ],
     [
@@ -419,7 +419,7 @@
       7
     ],
     [
-      7,
+      5,
       7
     ]
   ],
@@ -458,5 +458,87 @@
         ]
       ]
     }
-  ]
+  ],
+  "routes": [
+    {
+      "id": "route_oe4sm",
+      "label": "Route 1",
+      "nodes": [
+        [
+          5,
+          10
+        ],
+        [
+          8,
+          10
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          8,
+          2
+        ],
+        [
+          4,
+          2
+        ]
+      ]
+    },
+    {
+      "id": "route_lx49v",
+      "label": "Route 2",
+      "nodes": [
+        [
+          5,
+          6
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          2,
+          6
+        ]
+      ]
+    }
+  ],
+  "npcStations": [
+    {
+      "id": "station_0qpky",
+      "label": "Sitting at Counter",
+      "col": 5,
+      "row": 6,
+      "rotY": 0,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_0v1y7",
+      "label": "Checking Shelves",
+      "col": 2,
+      "row": 6,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_6z6x4",
+      "label": "Cooking",
+      "col": 7,
+      "row": 2,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
+  ],
+  "npcPaths": []
 }

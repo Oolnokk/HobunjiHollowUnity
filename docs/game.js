@@ -1521,6 +1521,11 @@
 
       function parseNpcTimeMinutes(t) { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
       function currentGameMinutes() { return Math.round(getHour() * 60); }
+      function isNowWithinNpcRuleWindow(now, start, end) {
+        if (start === null || end === null) return false;
+        if (start <= end) return now >= start && now < end;
+        return now >= start || now < end;
+      }
       function normalizeNpcArea(area) {
         if (!area) return 'farm';
         if (area === 'interior') return 'interior';
@@ -1595,7 +1600,8 @@
         for (const rule of hooks.rules || []) {
           const start = parseNpcTimeMinutes(rule.start ?? rule.from);
           const end   = parseNpcTimeMinutes(rule.end   ?? rule.to);
-          if (start !== null && end !== null && now >= start && now < end && rule.stationId) {
+          const ruleActive = isNowWithinNpcRuleWindow(now, start, end);
+          if (ruleActive && rule.stationId) {
             const stationTarget = resolveNpcStationTarget(rule.stationId);
             if (stationTarget) return { ...stationTarget, routeId: rule.routeId || null };
             window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found`, 'warn');
@@ -1603,7 +1609,7 @@
           const c = rule.c ?? rule.position?.c;
           const r = rule.r ?? rule.position?.r;
           const area = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
-          if (start !== null && end !== null && now >= start && now < end && Number.isFinite(c) && Number.isFinite(r))
+          if (ruleActive && Number.isFinite(c) && Number.isFinite(r))
             return { area, c, r, routeId: rule.routeId || null };
         }
         if (hooks.defaultStationId) {
