@@ -198,31 +198,44 @@ window.addEventListener('error', function(e){ log(e.message + ' @ ' + (e.filenam
 
 function $(id){ return document.getElementById(id); }
 
-// ─── Furniture catalog ────────────────────────────────────────────────────────
+// ─── Furniture catalog — mirrors DECORATIVE_FURNITURE_DEFS + PROCESSING_FURNITURE_DEFS in game.js
+// modelFile paths are relative to docs/assets/models/furniture/
+// fw/fd from game.js definitions; models loaded via THREE.GLTFLoader
 var CATALOG = [
-  { key:'shop_counter',  label:'Shop Counter',  fw:2, fd:1, col:0x7c5c3a },
-  { key:'shelf',         label:'Shelf',         fw:1, fd:1, col:0x7c5c3a },
-  { key:'shelf_tall',    label:'Shelf (tall)',   fw:1, fd:1, col:0x6b4f2e },
-  { key:'table_small',   label:'Table (sm)',     fw:1, fd:1, col:0x8b6914 },
-  { key:'table_large',   label:'Table (lg)',     fw:2, fd:1, col:0x8b6914 },
-  { key:'chair',         label:'Chair',         fw:1, fd:1, col:0x4a7c59 },
-  { key:'bench',         label:'Bench',         fw:2, fd:1, col:0x5c7040 },
-  { key:'bed_single',    label:'Bed (single)',   fw:1, fd:2, col:0x3a5c8a },
-  { key:'bed_double',    label:'Bed (double)',   fw:2, fd:2, col:0x2d4a70 },
-  { key:'barrel',        label:'Barrel',        fw:1, fd:1, col:0x6b4020 },
-  { key:'crate',         label:'Crate',         fw:1, fd:1, col:0x7a6030 },
-  { key:'stove',         label:'Stove',         fw:1, fd:1, col:0x3a3a3a },
-  { key:'fireplace',     label:'Fireplace',     fw:2, fd:1, col:0x5a2a10 },
-  { key:'anvil',         label:'Anvil',         fw:1, fd:1, col:0x404040 },
-  { key:'workbench',     label:'Workbench',     fw:2, fd:1, col:0x8b5e3c },
-  { key:'pot',           label:'Pot',           fw:1, fd:1, col:0x505050 },
-  { key:'chest',         label:'Chest',         fw:1, fd:1, col:0x7a5020 },
-  { key:'altar',         label:'Altar',         fw:2, fd:1, col:0x6a5080 },
-  { key:'pillar',        label:'Pillar',        fw:1, fd:1, col:0x888888 },
-  { key:'plant',         label:'Plant',         fw:1, fd:1, col:0x2a6030 },
-  { key:'rug',           label:'Rug',           fw:2, fd:2, col:0x7a2040 },
-  { key:'door_internal', label:'Door (int)',     fw:1, fd:1, col:0x7a5030 },
-  { key:'ladder',        label:'Ladder',        fw:1, fd:1, col:0x6a5020 },
+  // ── Decorative ──────────────────────────────────────────────────────────────
+  { key:'basicBedFurniture',      label:'Single Bed',       modelFile:'basicbed_single_refined.glb',   fw:1, fd:2, col:0x8b6540 },
+  { key:'doubleBedFurniture',     label:'Double Bed',        modelFile:'basicbed_double_refined.glb',   fw:2, fd:2, col:0x8b6540 },
+  { key:'bedrollFurniture',       label:'Bedroll',           modelFile:'bedroll_folded.glb',            fw:1, fd:1, col:0x6b8c5e },
+  { key:'benchFurniture',         label:'Short Bench',       modelFile:'bench_short.glb',               fw:2, fd:1, col:0x7a5c3a },
+  { key:'bookshelfFurniture',     label:'Bookshelf',         modelFile:'bookshelf_low.glb',             fw:2, fd:1, col:0x6b4a28 },
+  { key:'bucketFurniture',        label:'Tin Bucket',        modelFile:'bucket_tin.glb',                fw:1, fd:1, col:0x888888 },
+  { key:'candleTableFurniture',   label:'Candle Table',      modelFile:'candle_table.glb',              fw:1, fd:1, col:0x5a4020 },
+  { key:'chairSimpleFurniture',   label:'Simple Chair',      modelFile:'chair_simple.glb',              fw:1, fd:1, col:0x7a5c3a },
+  { key:'chairCushionFurniture',  label:'Cushioned Chair',   modelFile:'chair_with_blue_cushion.glb',   fw:1, fd:1, col:0x3a5c8a },
+  { key:'chestFurniture',         label:'Storage Chest',     modelFile:'chest_storage.glb',             fw:1, fd:1, col:0x6b4a28 },
+  { key:'crateStackFurniture',    label:'Crate Stack',       modelFile:'crate_stack.glb',               fw:1, fd:1, col:0x8a6a3a },
+  { key:'copperBarrelFurniture',  label:'Copper Barrel',     modelFile:'barrel_copper_hoop.glb',        fw:1, fd:1, col:0xb87333 },
+  { key:'deskFurniture',          label:'Writing Desk',      modelFile:'desk_writing.glb',              fw:2, fd:1, col:0x6b4a28 },
+  { key:'dresserFurniture',       label:'Low Dresser',       modelFile:'dresser_low.glb',               fw:2, fd:1, col:0x6b4a28 },
+  { key:'hearthFurniture',        label:'Hearth Fireplace',  modelFile:'hearth_fireplace.glb',          fw:2, fd:1, col:0x5a4a3a },
+  { key:'loomFurniture',          label:'Small Loom',        modelFile:'loom_small.glb',                fw:1, fd:2, col:0x8a6a3a },
+  { key:'nightstandFurniture',    label:'Nightstand',        modelFile:'nightstand.glb',                fw:1, fd:1, col:0x6b4a28 },
+  { key:'rugFurniture',           label:'Woven Rug',         modelFile:'rug_woven_small.glb',           fw:2, fd:2, col:0x8a5a3a },
+  { key:'standingLampFurniture',  label:'Bronze Lamp',       modelFile:'standing_lamp_bronze.glb',      fw:1, fd:1, col:0xb87333 },
+  { key:'stoolFurniture',         label:'Round Stool',       modelFile:'stool_round.glb',               fw:1, fd:1, col:0x7a5c3a },
+  { key:'tableLongFurniture',     label:'Long Table',        modelFile:'table_long.glb',                fw:4, fd:1, col:0x7a5c3a },
+  { key:'tableRoundFurniture',    label:'Round Table',       modelFile:'table_round.glb',               fw:2, fd:2, col:0x7a5c3a },
+  { key:'tableSmallFurniture',    label:'Small Table',       modelFile:'table_small.glb',               fw:1, fd:1, col:0x7a5c3a },
+  { key:'wardrobeFurniture',      label:'Tall Wardrobe',     modelFile:'wardrobe_tall.glb',             fw:2, fd:1, col:0x6b4a28 },
+  { key:'washTubFurniture',       label:'Copper Wash Tub',   modelFile:'wash_tub_copper.glb',           fw:1, fd:1, col:0xb87333 },
+  // ── Processing stations ──────────────────────────────────────────────────────
+  { key:'pestleFurniture',        label:'Pestle Station',    modelFile:'station_pestle.glb',            fw:1, fd:1, col:0x9a6a3a },
+  { key:'squeezerFurniture',      label:'Hand Squeezer',     modelFile:'station_vat.glb',               fw:2, fd:2, col:0x4f9eb8 },
+  { key:'handMillFurniture',      label:'Hand Mill',         modelFile:'station_hand_mill.glb',         fw:1, fd:1, col:0x8f8a78 },
+  { key:'dryingRackFurniture',    label:'Drying Rack',       modelFile:'station_drying_rack.glb',       fw:2, fd:1, col:0xcaa45e },
+  { key:'smokerFurniture',        label:'Smoking Hut',       modelFile:'station_smoking_hut.glb',       fw:2, fd:2, col:0x5c5147 },
+  { key:'agingBarrelFurniture',   label:'Aging Barrel',      modelFile:'station_aging_barrel.glb',      fw:1, fd:1, col:0x7a4924 },
+  { key:'agingVaseFurniture',     label:'Aging Vase',        modelFile:'station_aging_vase.glb',        fw:1, fd:1, col:0xa76b47 },
 ];
 var CMAP = {};
 CATALOG.forEach(function(f){ CMAP[f.key] = f; });
@@ -523,6 +536,60 @@ if(typeof WallBuilder !== 'undefined'){
   log('WallBuilder not found — walls will use flat boxes.','warn');
 }
 
+// ─── Furniture GLB loader ─────────────────────────────────────────────────────
+var glbCache = {};   // modelFile → THREE.Group (cloneable template) once loaded
+var glbPending = {}; // modelFile → true while in-flight
+
+function loadFurnGLB(modelFile){
+  if(glbCache[modelFile] || glbPending[modelFile]) return;
+  glbPending[modelFile] = true;
+  var loader = new THREE.GLTFLoader();
+  loader.load('../../assets/models/furniture/' + modelFile,
+    function(gltf){
+      // Auto-center: translate so model bottom sits at Y=0, centered in X/Z
+      var box = new THREE.Box3().setFromObject(gltf.scene);
+      var cx = (box.min.x + box.max.x) / 2;
+      var cz = (box.min.z + box.max.z) / 2;
+      gltf.scene.position.set(-cx, -box.min.y, -cz);
+      var wrapper = new THREE.Group();
+      wrapper.add(gltf.scene);
+      glbCache[modelFile] = wrapper;
+      delete glbPending[modelFile];
+      log('Loaded ' + modelFile);
+      rebuild3D();
+    },
+    undefined,
+    function(err){ delete glbPending[modelFile]; log('GLB load failed: ' + modelFile, 'warn'); }
+  );
+}
+
+function preloadAllFurnGLBs(){
+  CATALOG.forEach(function(c){ if(c.modelFile) loadFurnGLB(c.modelFile); });
+}
+
+function furnGroupFor(f){
+  var cat = catOf(f.itemKey);
+  var modelFile = cat.modelFile;
+  if(modelFile && glbCache[modelFile]){
+    var grp = glbCache[modelFile].clone();
+    grp.userData = { furnId: f.id };
+    // Ensure all meshes carry the furnId for raycasting
+    grp.traverse(function(o){ if(o.isMesh) o.userData = { furnId: f.id }; });
+    return grp;
+  }
+  // Placeholder box while model loads (or if no modelFile)
+  var mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(cat.fw*0.8, 0.9, cat.fd*0.8),
+    new THREE.MeshLambertMaterial({color: cat.col})
+  );
+  mesh.position.y = 0.45;
+  mesh.userData = { furnId: f.id };
+  var grp = new THREE.Group();
+  grp.userData = { furnId: f.id };
+  grp.add(mesh);
+  return grp;
+}
+
 // ─── Wall panel generation from irregular footprint ──────────────────────────
 function mergeH(segs){
   if(!segs.length) return [];
@@ -616,19 +683,15 @@ function rebuild3D(){
     previewGroup.add(makeFallbackWalls(panels));
   }
 
-  // Furniture
+  // Furniture — use real GLBs if cached, placeholder boxes otherwise
   furniture.forEach(function(f){
     var cat=catOf(f.itemKey);
-    var mesh=new THREE.Mesh(
-      new THREE.BoxGeometry(cat.fw*0.8,0.9,cat.fd*0.8),
-      new THREE.MeshLambertMaterial({color:cat.col})
-    );
+    var grp=furnGroupFor(f);
     var cx=f.col+cat.fw/2+(f.postX||0), cz=f.row+cat.fd/2+(f.postZ||0);
-    mesh.position.set(cx,0.45+(f.postY||0),cz);
-    mesh.rotation.y=(f.rotY||0)*Math.PI/180;
-    mesh.userData={furnId:f.id};
-    furnMeshes[f.id]=mesh;
-    previewGroup.add(mesh);
+    grp.position.set(cx,(f.postY||0),cz);
+    grp.rotation.y=(f.rotY||0)*Math.PI/180;
+    furnMeshes[f.id]=grp;
+    previewGroup.add(grp);
   });
 
   scene3.add(previewGroup);
@@ -651,13 +714,13 @@ function initTC(){
     orbit.enabled=!e.value;
     if(!e.value && state.selectedId){
       var f=null; for(var i=0;i<state.interior.furniture.length;i++) if(state.interior.furniture[i].id===state.selectedId){f=state.interior.furniture[i];break;}
-      var mesh=furnMeshes[state.selectedId];
-      if(!f||!mesh) return;
+      var grp=furnMeshes[state.selectedId];
+      if(!f||!grp) return;
       var cat=catOf(f.itemKey);
-      f.postX=+( mesh.position.x-(f.col+cat.fw/2) ).toFixed(3);
-      f.postY=+( mesh.position.y-0.45 ).toFixed(3);
-      f.postZ=+( mesh.position.z-(f.row+cat.fd/2) ).toFixed(3);
-      f.rotY =+( mesh.rotation.y*180/Math.PI ).toFixed(1);
+      f.postX=+( grp.position.x-(f.col+cat.fw/2) ).toFixed(3);
+      f.postY=+( grp.position.y ).toFixed(3);
+      f.postZ=+( grp.position.z-(f.row+cat.fd/2) ).toFixed(3);
+      f.rotY =+( grp.rotation.y*180/Math.PI ).toFixed(1);
       $('pX').value=f.postX; $('pY').value=f.postY; $('pZ').value=f.postZ; $('pRotY').value=f.rotY;
       commitUndo();
     }
@@ -686,8 +749,15 @@ canvas3.addEventListener('pointerdown',function(e){
   mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
   ray.setFromCamera(mouse,camera);
   var meshArr=Object.keys(furnMeshes).map(function(k){return furnMeshes[k];});
-  var hits=ray.intersectObjects(meshArr,false);
-  if(hits.length) selectFurn(hits[0].object.userData.furnId);
+  var hits=ray.intersectObjects(meshArr,true);
+  if(hits.length){
+    var furnId=hits[0].object.userData.furnId;
+    // Walk up to group if needed
+    var obj=hits[0].object;
+    while(obj&&!obj.userData.furnId&&obj.parent) obj=obj.parent;
+    if(obj&&obj.userData.furnId) furnId=obj.userData.furnId;
+    selectFurn(furnId);
+  }
 });
 
 // ─── Render loop ──────────────────────────────────────────────────────────────
@@ -780,6 +850,7 @@ buildCatalogUI();
 initTC();
 afterLoad();
 animate();
+preloadAllFurnGLBs();
 log('Building Interior Editor ready.');
 
 })(); // end IIFE
