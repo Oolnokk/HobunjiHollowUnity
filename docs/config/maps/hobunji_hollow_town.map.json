@@ -1,7 +1,7 @@
 {
   "schema": "hobunji_map.v1",
   "id": "map_hobunji_town",
-  "name": "Hobunji Hollow \u2014 Town",
+  "name": "Hobunji Hollow — Town",
   "category": "exterior",
   "cols": 60,
   "rows": 50,
@@ -1267,12 +1267,6 @@
       "crop": ""
     },
     {
-      "c": 30,
-      "r": 3,
-      "type": "path",
-      "crop": ""
-    },
-    {
       "c": 31,
       "r": 3,
       "type": "path",
@@ -5197,18 +5191,6 @@
       "crop": ""
     },
     {
-      "c": 25,
-      "r": 14,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 26,
-      "r": 14,
-      "type": "path",
-      "crop": ""
-    },
-    {
       "c": 27,
       "r": 14,
       "type": "path",
@@ -5563,12 +5545,6 @@
       "crop": ""
     },
     {
-      "c": 26,
-      "r": 15,
-      "type": "path",
-      "crop": ""
-    },
-    {
       "c": 27,
       "r": 15,
       "type": "path",
@@ -5582,12 +5558,6 @@
     },
     {
       "c": 29,
-      "r": 15,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 30,
       "r": 15,
       "type": "grass",
       "crop": ""
@@ -5911,12 +5881,6 @@
       "crop": ""
     },
     {
-      "c": 24,
-      "r": 16,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 25,
       "r": 16,
       "type": "path",
@@ -5930,12 +5894,6 @@
     },
     {
       "c": 27,
-      "r": 16,
-      "type": "path",
-      "crop": ""
-    },
-    {
-      "c": 28,
       "r": 16,
       "type": "path",
       "crop": ""
@@ -6062,12 +6020,6 @@
     },
     {
       "c": 49,
-      "r": 16,
-      "type": "tilled",
-      "crop": ""
-    },
-    {
-      "c": 50,
       "r": 16,
       "type": "tilled",
       "crop": ""
@@ -6217,12 +6169,6 @@
       "crop": ""
     },
     {
-      "c": 15,
-      "r": 17,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 16,
       "r": 17,
       "type": "grass",
@@ -6272,18 +6218,6 @@
     },
     {
       "c": 24,
-      "r": 17,
-      "type": "path",
-      "crop": ""
-    },
-    {
-      "c": 25,
-      "r": 17,
-      "type": "path",
-      "crop": ""
-    },
-    {
-      "c": 26,
       "r": 17,
       "type": "path",
       "crop": ""
@@ -6422,12 +6356,6 @@
     },
     {
       "c": 49,
-      "r": 17,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 50,
       "r": 17,
       "type": "grass",
       "crop": ""
@@ -6746,12 +6674,6 @@
     },
     {
       "c": 43,
-      "r": 18,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 44,
       "r": 18,
       "type": "grass",
       "crop": ""
@@ -7105,12 +7027,6 @@
       "crop": ""
     },
     {
-      "c": 43,
-      "r": 19,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 44,
       "r": 19,
       "type": "grass",
@@ -7345,12 +7261,6 @@
       "crop": ""
     },
     {
-      "c": 23,
-      "r": 20,
-      "type": "path",
-      "crop": ""
-    },
-    {
       "c": 24,
       "r": 20,
       "type": "path",
@@ -7370,18 +7280,6 @@
     },
     {
       "c": 27,
-      "r": 20,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 28,
-      "r": 20,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 29,
       "r": 20,
       "type": "grass",
       "crop": ""
@@ -7453,12 +7351,6 @@
       "crop": ""
     },
     {
-      "c": 41,
-      "r": 20,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 42,
       "r": 20,
       "type": "grass",
@@ -7472,12 +7364,6 @@
     },
     {
       "c": 44,
-      "r": 20,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 45,
       "r": 20,
       "type": "grass",
       "crop": ""
@@ -7723,12 +7609,6 @@
       "crop": ""
     },
     {
-      "c": 26,
-      "r": 21,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 27,
       "r": 21,
       "type": "grass",
@@ -7759,12 +7639,6 @@
       "crop": ""
     },
     {
-      "c": 32,
-      "r": 21,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 33,
       "r": 21,
       "type": "grass",
@@ -7784,12 +7658,6 @@
     },
     {
       "c": 36,
-      "r": 21,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 37,
       "r": 21,
       "type": "grass",
       "crop": ""
@@ -7825,12 +7693,6 @@
       "crop": ""
     },
     {
-      "c": 43,
-      "r": 21,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 44,
       "r": 21,
       "type": "grass",
@@ -7850,12 +7712,6 @@
     },
     {
       "c": 47,
-      "r": 21,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 48,
       "r": 21,
       "type": "grass",
       "crop": ""
@@ -8083,12 +7939,6 @@
       "crop": ""
     },
     {
-      "c": 26,
-      "r": 22,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 27,
       "r": 22,
       "type": "grass",
@@ -8162,12 +8012,6 @@
     },
     {
       "c": 39,
-      "r": 22,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 40,
       "r": 22,
       "type": "grass",
       "crop": ""
@@ -8191,19 +8035,7 @@
       "crop": ""
     },
     {
-      "c": 44,
-      "r": 22,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 45,
-      "r": 22,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 46,
       "r": 22,
       "type": "grass",
       "crop": ""
@@ -8437,18 +8269,6 @@
       "crop": ""
     },
     {
-      "c": 25,
-      "r": 23,
-      "type": "path",
-      "crop": ""
-    },
-    {
-      "c": 26,
-      "r": 23,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 27,
       "r": 23,
       "type": "grass",
@@ -8522,12 +8342,6 @@
     },
     {
       "c": 39,
-      "r": 23,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 40,
       "r": 23,
       "type": "grass",
       "crop": ""
@@ -8803,12 +8617,6 @@
       "crop": ""
     },
     {
-      "c": 26,
-      "r": 24,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 27,
       "r": 24,
       "type": "grass",
@@ -8905,12 +8713,6 @@
       "crop": ""
     },
     {
-      "c": 43,
-      "r": 24,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 44,
       "r": 24,
       "type": "grass",
@@ -8973,47 +8775,41 @@
     {
       "c": 54,
       "r": 24,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 55,
       "r": 24,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 56,
       "r": 24,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 57,
       "r": 24,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 58,
       "r": 24,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 59,
       "r": 24,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 0,
-      "r": 25,
       "type": "path",
       "crop": ""
     },
     {
-      "c": 1,
+      "c": 0,
       "r": 25,
       "type": "path",
       "crop": ""
@@ -9187,12 +8983,6 @@
       "crop": ""
     },
     {
-      "c": 30,
-      "r": 25,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 31,
       "r": 25,
       "type": "grass",
@@ -9206,18 +8996,6 @@
     },
     {
       "c": 33,
-      "r": 25,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 34,
-      "r": 25,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 35,
       "r": 25,
       "type": "grass",
       "crop": ""
@@ -9321,49 +9099,43 @@
     {
       "c": 52,
       "r": 25,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 53,
       "r": 25,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 54,
       "r": 25,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 55,
       "r": 25,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 56,
       "r": 25,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 57,
       "r": 25,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 58,
-      "r": 25,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 59,
       "r": 25,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -9649,12 +9421,6 @@
       "crop": ""
     },
     {
-      "c": 47,
-      "r": 26,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 48,
       "r": 26,
       "type": "grass",
@@ -9663,67 +9429,67 @@
     {
       "c": 49,
       "r": 26,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 50,
       "r": 26,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 51,
       "r": 26,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 52,
       "r": 26,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 53,
       "r": 26,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 54,
       "r": 26,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 55,
       "r": 26,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 56,
       "r": 26,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 57,
       "r": 26,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 58,
       "r": 26,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 59,
       "r": 26,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -9909,157 +9675,157 @@
     {
       "c": 30,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 31,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 32,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 33,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 34,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 35,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 36,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 37,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 38,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 39,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 40,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 41,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 42,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 43,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 44,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 45,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 46,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 47,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 48,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 49,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 50,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 51,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 52,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 53,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 54,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 55,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -10070,18 +9836,6 @@
     },
     {
       "c": 57,
-      "r": 27,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 58,
-      "r": 27,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 59,
       "r": 27,
       "type": "grass",
       "crop": ""
@@ -10251,169 +10005,169 @@
     {
       "c": 27,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 28,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 29,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 30,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 31,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 32,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 33,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 34,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 35,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 36,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 37,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 38,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 39,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 40,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 41,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 42,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 43,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 44,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 45,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 46,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 47,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 48,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 49,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 50,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 51,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 52,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 53,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 54,
       "r": 28,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -10611,145 +10365,145 @@
     {
       "c": 27,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 28,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 29,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 30,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 31,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 32,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 33,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 34,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 35,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 36,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 37,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 38,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 39,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 40,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 41,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 42,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 43,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 44,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 45,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 46,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 47,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 48,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 49,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 50,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -10761,19 +10515,19 @@
     {
       "c": 52,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 53,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 54,
       "r": 29,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -10969,33 +10723,21 @@
       "crop": ""
     },
     {
-      "c": 27,
-      "r": 30,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 28,
       "r": 30,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 29,
       "r": 30,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 30,
-      "r": 30,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 31,
       "r": 30,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -11121,19 +10863,19 @@
     {
       "c": 52,
       "r": 30,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 53,
       "r": 30,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 54,
       "r": 30,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -11329,12 +11071,6 @@
       "crop": ""
     },
     {
-      "c": 27,
-      "r": 31,
-      "type": "path",
-      "crop": ""
-    },
-    {
       "c": 28,
       "r": 31,
       "type": "grass",
@@ -11481,13 +11217,13 @@
     {
       "c": 52,
       "r": 31,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 53,
       "r": 31,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -11499,31 +11235,31 @@
     {
       "c": 55,
       "r": 31,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 56,
       "r": 31,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 57,
       "r": 31,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 58,
       "r": 31,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 59,
       "r": 31,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -11582,12 +11318,6 @@
     },
     {
       "c": 9,
-      "r": 32,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 10,
       "r": 32,
       "type": "grass",
       "crop": ""
@@ -11707,12 +11437,6 @@
       "crop": ""
     },
     {
-      "c": 30,
-      "r": 32,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 31,
       "r": 32,
       "type": "grass",
@@ -11841,7 +11565,7 @@
     {
       "c": 52,
       "r": 32,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -11859,47 +11583,35 @@
     {
       "c": 55,
       "r": 32,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 56,
       "r": 32,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 57,
       "r": 32,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 58,
       "r": 32,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 59,
       "r": 32,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 0,
-      "r": 33,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 1,
-      "r": 33,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 2,
       "r": 33,
       "type": "grass",
       "crop": ""
@@ -12057,31 +11769,31 @@
     {
       "c": 28,
       "r": 33,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 29,
       "r": 33,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 30,
       "r": 33,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 31,
       "r": 33,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 32,
       "r": 33,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -12092,12 +11804,6 @@
     },
     {
       "c": 34,
-      "r": 33,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 35,
       "r": 33,
       "type": "grass",
       "crop": ""
@@ -12219,31 +11925,31 @@
     {
       "c": 55,
       "r": 33,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 56,
       "r": 33,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 57,
       "r": 33,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 58,
       "r": 33,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 59,
       "r": 33,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -12417,133 +12123,127 @@
     {
       "c": 28,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 29,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 30,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 31,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 32,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 33,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 34,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 35,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 36,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 37,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 38,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 39,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 40,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 41,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 42,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 43,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 44,
       "r": 34,
-      "type": "path",
-      "crop": ""
-    },
-    {
-      "c": 45,
-      "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 46,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 47,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 48,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 49,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -12573,13 +12273,13 @@
     {
       "c": 54,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 55,
       "r": 34,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -12757,12 +12457,6 @@
       "crop": ""
     },
     {
-      "c": 25,
-      "r": 35,
-      "type": "path",
-      "crop": ""
-    },
-    {
       "c": 26,
       "r": 35,
       "type": "path",
@@ -12813,91 +12507,91 @@
     {
       "c": 34,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 35,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 36,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 37,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 38,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 39,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 40,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 41,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 42,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 43,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 44,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 45,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 46,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 47,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 48,
       "r": 35,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -12932,12 +12626,6 @@
     },
     {
       "c": 54,
-      "r": 35,
-      "type": "path",
-      "crop": ""
-    },
-    {
-      "c": 55,
       "r": 35,
       "type": "grass",
       "crop": ""
@@ -13287,7 +12975,7 @@
     {
       "c": 53,
       "r": 36,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -13717,12 +13405,6 @@
       "crop": ""
     },
     {
-      "c": 5,
-      "r": 38,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 6,
       "r": 38,
       "type": "grass",
@@ -14012,12 +13694,6 @@
     },
     {
       "c": 54,
-      "r": 38,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 55,
       "r": 38,
       "type": "grass",
       "crop": ""
@@ -14611,18 +14287,6 @@
       "crop": ""
     },
     {
-      "c": 34,
-      "r": 40,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 35,
-      "r": 40,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 36,
       "r": 40,
       "type": "grass",
@@ -15151,18 +14815,6 @@
       "crop": ""
     },
     {
-      "c": 4,
-      "r": 42,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 5,
-      "r": 42,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 6,
       "r": 42,
       "type": "grass",
@@ -15272,12 +14924,6 @@
     },
     {
       "c": 24,
-      "r": 42,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 25,
       "r": 42,
       "type": "grass",
       "crop": ""
@@ -16747,12 +16393,6 @@
       "crop": ""
     },
     {
-      "c": 30,
-      "r": 46,
-      "type": "path",
-      "crop": ""
-    },
-    {
       "c": 31,
       "r": 46,
       "type": "path",
@@ -16826,12 +16466,6 @@
     },
     {
       "c": 43,
-      "r": 46,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 44,
       "r": 46,
       "type": "grass",
       "crop": ""
@@ -17143,12 +16777,6 @@
       "crop": ""
     },
     {
-      "c": 36,
-      "r": 47,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 37,
       "r": 47,
       "type": "grass",
@@ -17407,19 +17035,7 @@
       "crop": ""
     },
     {
-      "c": 20,
-      "r": 48,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 21,
-      "r": 48,
-      "type": "grass",
-      "crop": ""
-    },
-    {
-      "c": 22,
       "r": 48,
       "type": "grass",
       "crop": ""
@@ -17455,19 +17071,7 @@
       "crop": ""
     },
     {
-      "c": 28,
-      "r": 48,
-      "type": "grass",
-      "crop": ""
-    },
-    {
       "c": 29,
-      "r": 48,
-      "type": "path",
-      "crop": ""
-    },
-    {
-      "c": 30,
       "r": 48,
       "type": "path",
       "crop": ""
@@ -18003,6 +17607,402 @@
     {
       "c": 59,
       "r": 49,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 27,
+      "r": 31,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 27,
+      "r": 30,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 28,
+      "r": 20,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 29,
+      "r": 20,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 30,
+      "r": 15,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 28,
+      "r": 16,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 26,
+      "r": 15,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 26,
+      "r": 17,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 25,
+      "r": 17,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 24,
+      "r": 16,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 23,
+      "r": 20,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 48,
+      "r": 21,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 50,
+      "r": 17,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 50,
+      "r": 16,
+      "type": "tilled",
+      "crop": ""
+    },
+    {
+      "c": 30,
+      "r": 3,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 25,
+      "r": 14,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 26,
+      "r": 14,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 15,
+      "r": 17,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 44,
+      "r": 18,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 43,
+      "r": 19,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 41,
+      "r": 20,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 45,
+      "r": 20,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 32,
+      "r": 21,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 37,
+      "r": 21,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 43,
+      "r": 21,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 40,
+      "r": 22,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 44,
+      "r": 22,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 46,
+      "r": 22,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 40,
+      "r": 23,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 43,
+      "r": 24,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 30,
+      "r": 25,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 34,
+      "r": 25,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 35,
+      "r": 25,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 30,
+      "r": 30,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 10,
+      "r": 32,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 30,
+      "r": 32,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 35,
+      "r": 33,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 45,
+      "r": 34,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 25,
+      "r": 35,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 55,
+      "r": 35,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 5,
+      "r": 38,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 55,
+      "r": 38,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 34,
+      "r": 40,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 35,
+      "r": 40,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 4,
+      "r": 42,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 5,
+      "r": 42,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 25,
+      "r": 42,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 30,
+      "r": 46,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 44,
+      "r": 46,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 36,
+      "r": 47,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 22,
+      "r": 48,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 28,
+      "r": 48,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 47,
+      "r": 26,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 25,
+      "r": 23,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 26,
+      "r": 22,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 26,
+      "r": 23,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 26,
+      "r": 24,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 26,
+      "r": 21,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 2,
+      "r": 33,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 1,
+      "r": 33,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 59,
+      "r": 27,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 58,
+      "r": 27,
+      "type": "grass",
+      "crop": ""
+    },
+    {
+      "c": 1,
+      "r": 25,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 58,
+      "r": 25,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 30,
+      "r": 48,
+      "type": "path",
+      "crop": ""
+    },
+    {
+      "c": 20,
+      "r": 48,
       "type": "grass",
       "crop": ""
     }
@@ -18056,40 +18056,40 @@
           0
         ]
       ],
-      "pathWidth": 3,
-      "paintTiles": true
+      "paintTiles": true,
+      "pathWidth": 3
     },
     {
       "id": "route_7g7ae",
       "label": "Route 2",
       "nodes": [
         [
-          26,
-          34
+          25,
+          29
         ],
         [
           37,
-          35
+          28
         ],
         [
           45,
-          35
+          28
         ],
         [
-          48,
-          35
+          47,
+          28
         ],
         [
           52,
-          35
+          27
         ],
         [
           55,
-          32
+          25
         ],
         [
           59,
-          32
+          25
         ]
       ],
       "pathWidth": 3,
@@ -18101,7 +18101,15 @@
       "nodes": [
         [
           52,
-          35
+          27
+        ],
+        [
+          53,
+          29
+        ],
+        [
+          53,
+          32
         ],
         [
           51,
@@ -18240,6 +18248,7 @@
       "paintTiles": true
     }
   ],
+  "npcPaths": [],
   "transitions": [
     {
       "id": "sp_town_north",
@@ -18346,6 +18355,7 @@
       "targetSpotId": "sp_smi_entry"
     }
   ],
+  "npcStations": [],
   "buildings": [
     {
       "id": "bldg_3bhxe",
@@ -18440,7 +18450,5 @@
       "wbOpts": null,
       "wbGableOpts": null
     }
-  ],
-  "npcPaths": [],
-  "npcStations": []
+  ]
 }
