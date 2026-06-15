@@ -1420,13 +1420,14 @@
         const key = (area, c, r) => area + ':' + c + ',' + r;
         const ensure = (area, c, r) => {
           const k = key(area, c, r);
-          if (!nodes.has(k)) nodes.set(k, { key: k, area, c, r, edges: new Set() });
+          if (!nodes.has(k)) nodes.set(k, { key: k, area, c, r, edges: new Set(), routeIds: new Set() });
           return nodes.get(k);
         };
         routes.forEach(route => {
           let prev = null;
           (route.nodes || []).forEach(([c, r]) => {
             const node = ensure(route.area || 'farm', c, r);
+            if (route.id) node.routeIds.add(route.id);
             if (prev) { prev.edges.add(node.key); node.edges.add(prev.key); }
             prev = node;
           });
@@ -1446,9 +1447,11 @@
 
       function findNearestRouteNode(area, x, z, target) {
         const graph = routeGraphsByArea.get(area);
+        const routeId = target?.routeId || null;
         const maxDist = npcMovementConfig().routeSnapRadiusTiles ?? 8;
         let best = null, bestD = Infinity;
         graph?.nodes.forEach(node => {
+          if (routeId && !node.routeIds.has(routeId)) return;
           const d = Math.hypot(node.c + 0.5 - x, node.r + 0.5 - z);
           if (d <= maxDist && (!target || distanceToTarget(node, target) < Math.hypot(x - (target.c + 0.5), z - (target.r + 0.5))) && d < bestD) { best = node; bestD = d; }
         });
@@ -1457,11 +1460,13 @@
 
       function chooseNextRouteNodeCloserToTarget(currentNode, previousNode, target) {
         const graph = routeGraphsByArea.get(currentNode.area);
+        const routeId = target?.routeId || null;
         const here = distanceToTarget(currentNode, target);
         let best = null, bestD = here;
         currentNode.edges.forEach(k => {
           if (previousNode && k === previousNode.key) return;
           const n = graph?.nodes.get(k);
+          if (routeId && n && !n.routeIds.has(routeId)) return;
           const d = n ? distanceToTarget(n, target) : Infinity;
           if (d < bestD) { best = n; bestD = d; }
         });
@@ -1511,8 +1516,13 @@
         const hooks = rec?.scheduleHooks || {};
         const now = currentGameMinutes();
         for (const rule of hooks.rules || []) {
-          const start = parseNpcTimeMinutes(rule.start), end = parseNpcTimeMinutes(rule.end);
-          if (start !== null && end !== null && now >= start && now < end && Number.isFinite(rule.c) && Number.isFinite(rule.r)) return { area: normalizeNpcArea(rule.area || hooks.defaultMapId || 'town'), c: rule.c, r: rule.r };
+          const start = parseNpcTimeMinutes(rule.start ?? rule.from);
+          const end   = parseNpcTimeMinutes(rule.end   ?? rule.to);
+          const c = rule.c ?? rule.position?.c;
+          const r = rule.r ?? rule.position?.r;
+          const area = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
+          if (start !== null && end !== null && now >= start && now < end && Number.isFinite(c) && Number.isFinite(r))
+            return { area, c, r, routeId: rule.routeId || null };
         }
         if (hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) return { ...hooks.defaultPosition, area: normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town') };
         const legacy = worldNpcPaths.find(p => p.npcId === rec?.id);
