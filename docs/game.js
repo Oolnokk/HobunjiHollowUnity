@@ -1499,7 +1499,7 @@
 
       function parseNpcTimeMinutes(t) { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
       function currentGameMinutes() { return Math.round(getHour() * 60); }
-      function normalizeNpcArea(area) { return area === 'interior' ? 'interior' : area === 'town' || area === 'hobunji_main_town' ? 'town' : 'farm'; }
+      function normalizeNpcArea(area) { return area === 'interior' ? 'interior' : area === 'town' || area === 'hobunji_main_town' || area === 'map_hobunji_town' ? 'town' : 'farm'; }
       function sceneForNpcArea(area) { return normalizeNpcArea(area) === 'interior' ? interiorScene : normalizeNpcArea(area) === 'town' ? townScene : scene; }
       function npcGridForArea(area) { return normalizeNpcArea(area) === 'interior' ? interiorGrid : normalizeNpcArea(area) === 'town' ? townGrid : grid; }
       function npcSurfaceY(area, c, r) {
