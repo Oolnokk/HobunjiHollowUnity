@@ -9663,7 +9663,7 @@
     {
       "c": 49,
       "r": 26,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -9909,109 +9909,109 @@
     {
       "c": 30,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 31,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 32,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 33,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 34,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 35,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 36,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 37,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 38,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 39,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 40,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 41,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 42,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 43,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 44,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 45,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 46,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
       "c": 47,
       "r": 27,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -10755,7 +10755,7 @@
     {
       "c": 51,
       "r": 29,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -11001,109 +11001,109 @@
     {
       "c": 32,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 33,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 34,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 35,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 36,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 37,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 38,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 39,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 40,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 41,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 42,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 43,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 44,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 45,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 46,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 47,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 48,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 49,
       "r": 30,
-      "type": "path",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -11835,7 +11835,7 @@
     {
       "c": 51,
       "r": 32,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -12549,7 +12549,7 @@
     {
       "c": 50,
       "r": 34,
-      "type": "grass",
+      "type": "path",
       "crop": ""
     },
     {
@@ -18069,15 +18069,15 @@
         ],
         [
           37,
-          29
+          28
         ],
         [
           45,
-          29
+          28
         ],
         [
-          48,
-          29
+          47,
+          28
         ],
         [
           52,
@@ -18364,7 +18364,7 @@
       "label": "Funji & Son's General Store",
       "pieceFile": "config/pieces/general-store.json",
       "gridX": 35,
-      "gridZ": 32,
+      "gridZ": 30,
       "footprintW": 7,
       "footprintD": 4,
       "wbOpts": null,
@@ -18377,7 +18377,7 @@
       "label": "Kunji's Potion Shop",
       "pieceFile": "config/pieces/potion-shop.json",
       "gridX": 43,
-      "gridZ": 32,
+      "gridZ": 30,
       "footprintW": 5,
       "footprintD": 4,
       "wbOpts": null,
