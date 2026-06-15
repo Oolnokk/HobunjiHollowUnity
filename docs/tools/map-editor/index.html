@@ -567,6 +567,34 @@ function updateBrushPill() {
   $('brushPill').textContent = t;
 }
 
+// ── Route tile-painting ───────────────────────────────────────────────────────
+function bresenham(x0, y0, x1, y1) {
+  const pts = [];
+  let dx = Math.abs(x1-x0), sx = x0<x1?1:-1;
+  let dy = -Math.abs(y1-y0), sy = y0<y1?1:-1, err = dx+dy;
+  for (;;) {
+    pts.push([x0, y0]);
+    if (x0===x1 && y0===y1) break;
+    const e2 = 2*err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+  return pts;
+}
+function paintRouteTiles(route, m) {
+  const nodes = route.nodes || [];
+  for (let i = 0; i < nodes.length - 1; i++) {
+    for (const [c, r] of bresenham(nodes[i][0], nodes[i][1], nodes[i+1][0], nodes[i+1][1])) {
+      const k = `${c},${r}`;
+      m.tiles[k] = { type: 'path', crop: m.tiles[k]?.crop || '' };
+    }
+  }
+}
+function maybePaintRoute(m) {
+  const route = (m.routes || []).find(r => r.id === activePathId);
+  if (route?.paintTiles) { paintRouteTiles(route, m); draw(); refreshPreview(); saveWorkspace(); }
+}
+
 // ── Palette UI ────────────────────────────────────────────────────────────────
 function renderPalette() {
   const m = activeMap();
@@ -615,7 +643,11 @@ function renderPalette() {
     if (ap) {
       html += `<div class="g2" style="margin-top:6px">
         <div><label>Label</label><input id="pathLabelIn" value="${ap.label.replace(/"/g,'&quot;')}"></div>
-              </div>`;
+              </div>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;cursor:pointer">
+          <input type="checkbox" id="routePaintTilesChk" ${ap.paintTiles?'checked':''}>
+          Paint path tiles along route
+        </label>`;
       html += `<div style="margin-top:6px"><label>Nodes (select one, then click map to branch from it)</label>${ap.nodes.map((n,i) =>
         `<div class="item ${i===activeRouteNodeIndex?'sel':''}" data-nodesel="${i}" style="padding:4px 7px;margin-bottom:3px">
           <div class="row"><span style="flex:1">#${i+1} (${n[0]}, ${n[1]})</span><button class="bad" data-nodedel="${i}" style="padding:1px 7px;font-size:10px">✕</button></div>
@@ -722,6 +754,13 @@ function renderPalette() {
   }));
   const pl = box.querySelector('#pathLabelIn');
   if (pl) pl.addEventListener('change', () => { const p = (m.routes || []).find(x => x.id === activePathId); if (p) { p.label = pl.value.trim() || p.label; renderPalette(); draw(); refreshPreview(); saveWorkspace(); } });
+  const rptChk = box.querySelector('#routePaintTilesChk');
+  if (rptChk) rptChk.addEventListener('change', () => {
+    const p = (m.routes || []).find(x => x.id === activePathId); if (!p) return;
+    p.paintTiles = rptChk.checked;
+    if (p.paintTiles) { pushUndo(); paintRouteTiles(p, m); draw(); refreshPreview(); }
+    saveWorkspace();
+  });
   box.querySelectorAll('[data-nodesel]').forEach(el => el.addEventListener('click', e => {
     if (e.target.closest('[data-nodedel]')) return;
     activeRouteNodeIndex = Number(el.dataset.nodesel); renderPalette(); updateBrushPill(); draw();
@@ -730,6 +769,7 @@ function renderPalette() {
     e.stopPropagation(); pushUndo();
     const p = (m.routes || []).find(x => x.id === activePathId); if (!p) return;
     p.nodes.splice(Number(el.dataset.nodedel), 1); activeRouteNodeIndex = null;
+    maybePaintRoute(m);
     renderPalette(); draw(); refreshPreview(); saveWorkspace(); updateBrushPill();
   }));
   // Station palette wiring
@@ -1023,6 +1063,7 @@ function applyAt(tile) {
       p.nodes.push([c, r]);
       activeRouteNodeIndex = p.nodes.length - 1;
     }
+    maybePaintRoute(m);
     renderPalette(); updateBrushPill();
   } else if (mode === 'station') {
     m.npcStations = m.npcStations || [];
@@ -1195,7 +1236,7 @@ canvas.addEventListener('pointermove', e => {
 });
 function endPtr(e) {
   ptrs.delete(e.pointerId);
-  if (_routeNodeDrag) { saveWorkspace(); refreshPreview(); _routeNodeDrag = null; }
+  if (_routeNodeDrag) { maybePaintRoute(activeMap()); saveWorkspace(); refreshPreview(); _routeNodeDrag = null; }
   if (_spotDrag)      { saveWorkspace(); refreshPreview(); _spotDrag = null; }
   if (_stationDrag)   { saveWorkspace(); refreshPreview(); _stationDrag = null; }
   if (_bldgDrag) { saveWorkspace(); renderBuildingPanel(); _bldgDrag = null; }
