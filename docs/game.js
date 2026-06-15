@@ -1287,6 +1287,7 @@
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
       let _currentBuildingMapId = null;
+      let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
 
@@ -2175,6 +2176,13 @@
           }
           if (_currentBuildingMapId === mapId && _isBuildingArea(currentArea)) {
             bScene.add(playerMesh); bScene.add(playerGroundShadow);
+            if (_pendingEntrySpawnFromExit) {
+              _pendingEntrySpawnFromExit = false;
+              const sp = buildingSpawnFromExit(info, cols, rows);
+              player.x = (sp.col + 0.5) * TILE;
+              player.y = (sp.row + 0.5) * TILE;
+              camTargetX = player.x / TILE; camTargetZ = player.y / TILE;
+            }
           }
           debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ') [v1]');
           return;
@@ -2278,6 +2286,9 @@
         const exitSpawn = buildingSpawnFromExit(bi, bCols, bRows);
         const col = Number.isFinite(defaultCol) ? defaultCol : exitSpawn.col;
         const row = Number.isFinite(defaultRow) ? defaultRow : exitSpawn.row;
+        // If the scene hasn't loaded yet (bi===null) and no explicit coords, defer
+        // the spawn correction to when loadBuildingScene finishes.
+        _pendingEntrySpawnFromExit = !bi && !Number.isFinite(defaultCol);
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         facingAngle = Math.PI / 2; player.angle = facingAngle;
@@ -3430,9 +3441,9 @@
       let sceneTransDir   = 0;        // 0=idle  1=darkening  -1=brightening
       let sceneTransCb    = null;     // fired once at peak darkness
 
-      function getActiveCols() { return currentArea === 'interior' ? INTERIOR_COLS : currentArea === 'town' ? (_townZone?.cols || 60) : COLS; }
-      function getActiveRows() { return currentArea === 'interior' ? INTERIOR_ROWS : currentArea === 'town' ? (_townZone?.rows || 50) : ROWS; }
-      function getActiveGrid() { return currentArea === 'interior' ? interiorGrid   : currentArea === 'town' ? townGrid : grid; }
+      function getActiveCols() { return currentArea === 'interior' ? INTERIOR_COLS : currentArea === 'town' ? (_townZone?.cols || 60) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.cols || 20) : COLS; }
+      function getActiveRows() { return currentArea === 'interior' ? INTERIOR_ROWS : currentArea === 'town' ? (_townZone?.rows || 50) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.rows || 20) : ROWS; }
+      function getActiveGrid() { return currentArea === 'interior' ? interiorGrid : currentArea === 'town' ? townGrid : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.grid || grid) : grid; }
       function getActiveTileAt(col, row) {
         const g = getActiveGrid();
         return g[row]?.[col] || { type: TileType.ROCK, water: 0, crop: CropType.NONE, cropAge: 0, cropReady: false, stress: '', variation: 0 };
