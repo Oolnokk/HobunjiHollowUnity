@@ -711,6 +711,32 @@
       "targetMap": "",
       "spawnCol": 0,
       "spawnRow": 0
+    },
+    {
+      "id": "exit_n5k8p",
+      "label": "Stairs to Foroji's Room",
+      "tiles": [
+        [
+          11,
+          5
+        ]
+      ],
+      "targetMap": "map_i_general_store_F2_R1",
+      "spawnCol": 11,
+      "spawnRow": 6
+    },
+    {
+      "id": "exit_m3h2q",
+      "label": "Stairs to Furunji's Room",
+      "tiles": [
+        [
+          7,
+          5
+        ]
+      ],
+      "targetMap": "map_i_general_store_F2_R2",
+      "spawnCol": 7,
+      "spawnRow": 6
     }
   ],
   "colliders": [
@@ -860,6 +886,40 @@
     }
   ],
   "routes": [],
-  "npcStations": [],
+  "npcStations": [
+    {
+      "id": "station_p2x4t",
+      "label": "Sitting at Counter",
+      "col": 5,
+      "row": 6,
+      "rotY": 0,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_k7m3q",
+      "label": "Checking Shelves",
+      "col": 2,
+      "row": 6,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_w9r6j",
+      "label": "Cooking",
+      "col": 9,
+      "row": 2,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
+  ],
   "npcPaths": []
 }
