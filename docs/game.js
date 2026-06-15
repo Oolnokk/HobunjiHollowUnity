@@ -1846,8 +1846,34 @@
           const resp = await fetch('config/town-workspace-v1.json');
           if (!resp.ok) return;
           const ws = await resp.json();
-          _workspaceMaps = ws.maps;
-          const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
+          // Load map index so individual map files take priority over workspace inline data
+          let mapFileIndex = {};
+          try {
+            const idxResp = await fetch('config/maps/index.json');
+            if (idxResp.ok) {
+              const idx = await idxResp.json();
+              for (const e of (idx.maps || [])) if (e.id && e.file) mapFileIndex[e.id] = e.file;
+            }
+          } catch(_) {}
+          // Resolve each map: fetch from file if listed in index, fall back to workspace inline data
+          const resolvedMaps = await Promise.all((ws.maps || []).map(async m => {
+            const file = mapFileIndex[m.id];
+            if (!file) return m;
+            try {
+              const r = await fetch(file);
+              if (!r.ok) return m;
+              const data = await r.json();
+              // Normalise tiles: array [{c,r,type,crop}] → dict {"c,r":{type,crop}}
+              if (Array.isArray(data.tiles)) {
+                const d = {};
+                for (const t of data.tiles) d[`${t.c},${t.r}`] = { type: t.type, crop: t.crop || '' };
+                data.tiles = d;
+              }
+              return data;
+            } catch(_) { return m; }
+          }));
+          _workspaceMaps = resolvedMaps;
+          const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
           const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
@@ -1863,7 +1889,7 @@
             if (!p.nodes?.length || (townM.routes || []).length) return;
             layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
           });
-          (ws.maps || []).forEach(m => {
+          resolvedMaps.forEach(m => {
             const area = m.id === townM.id ? 'town' : m.id;
             (m.npcStations || []).forEach(st => layout.npcStations.push({ ...st, area }));
           });
