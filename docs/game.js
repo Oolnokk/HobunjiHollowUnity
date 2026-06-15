@@ -1518,6 +1518,7 @@
         if (area === 'interior') return 'interior';
         if (area === 'town' || area === 'hobunji_main_town' || area === 'map_hobunji_town') return 'town';
         if (_isBuildingArea(area)) return area;
+        window.__farmLog?.(`[schedule] Unknown area "${area}" → fallback to farm`, 'warn');
         return 'farm';
       }
       function sceneForNpcArea(area) {
@@ -1555,9 +1556,13 @@
           if (start !== null && end !== null && now >= start && now < end && Number.isFinite(c) && Number.isFinite(r))
             return { area, c, r, routeId: rule.routeId || null };
         }
-        if (hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) return { ...hooks.defaultPosition, area: normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town') };
+        if (hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) {
+          const defArea = normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town');
+          window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback defaultPosition area=${defArea} c=${hooks.defaultPosition.c} r=${hooks.defaultPosition.r}`, 'warn');
+          return { ...hooks.defaultPosition, area: defArea };
+        }
         const legacy = worldNpcPaths.find(p => p.npcId === rec?.id);
-        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; return { area: normalizeNpcArea(legacy.area || 'farm'), c, r, legacyPath: legacy }; }
+        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; const legArea = normalizeNpcArea(legacy.area || 'farm'); window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback legacy path area=${legArea} c=${c} r=${r}`, 'warn'); return { area: legArea, c, r, legacyPath: legacy }; }
         return null;
       }
 
@@ -1688,6 +1693,7 @@
                 const ex = this._exitSpot.c + 0.5, ez = this._exitSpot.r + 0.5;
                 const arrival = npcMovementConfig().arrivalRadiusTiles ?? 0.18;
                 if (Math.hypot(root.position.x - ex, root.position.z - ez) <= arrival) {
+                  window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: transferring via exit spot "${this.area}"→"${targetArea}" | playerMap="${currentArea}"`, 'info');
                   this._exitSpot = null;
                   this.transferToArea(targetArea, target);
                 } else {
@@ -1695,6 +1701,7 @@
                 }
                 return;
               }
+              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: instant transfer "${this.area}"→"${targetArea}" (no exit spot) | playerMap="${currentArea}"`, 'info');
               this.transferToArea(targetArea, target);
               return;
             }
