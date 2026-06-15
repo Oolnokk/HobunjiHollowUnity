@@ -1268,6 +1268,7 @@
       let worldTownTransitions = [];   // town: same shape
       let worldRoutes          = [];   // shared routes: { id, label, area, nodes: [[c,r],...] }
       let worldTownRoutes      = [];   // town shared routes
+      const npcStationsById    = new Map(); // stationId → { id, label, area, c, r, rotY, pose, toolKey, toolIntervalSec }
       let worldNpcPaths        = [];   // legacy only: { id, label, npcId, area, nodes: [[c,r],...] }
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
@@ -1298,6 +1299,7 @@
         worldRoutes = normalizeRoutes(
           (layout.routes || []).filter(r => (r.area || 'farm') !== 'town'),
           worldNpcPaths);
+        registerNpcStations(layout.npcStations, null);
         rebuildRouteGraphs();
         // Don't fire a spot the player happens to spawn on
         _transitionLatch = travelAreaKey();
@@ -1391,6 +1393,7 @@
         camTargetX = player.x / TILE;
         camTargetZ = player.y / TILE;
         _transitionLatch = travelAreaKey();
+        if (t.target !== 'building' && t.target !== 'exit_building') logMapSwap('travel', currentArea, { target: t.target || 'farm' });
       }
 
 
@@ -1453,7 +1456,9 @@
 
       function rebuildRouteGraphs() {
         routeGraphsByArea.clear();
-        for (const area of ['farm', 'interior', 'town']) {
+        const areas = new Set(['farm', 'interior', 'town']);
+        [...worldRoutes, ...worldTownRoutes].forEach(r => areas.add(r.area || 'farm'));
+        for (const area of areas) {
           const routes = [...worldRoutes, ...worldTownRoutes].filter(r => (r.area || 'farm') === area);
           routeGraphsByArea.set(area, buildRouteGraph(routes));
         }
@@ -1524,6 +1529,34 @@
         window.__farmLog?.(`[schedule] Unknown area "${area}" → fallback to farm`, 'warn');
         return 'farm';
       }
+      function normalizeNpcStation(station, fallbackArea) {
+        if (!station || !station.id) return null;
+        const c = station.c ?? station.col;
+        const r = station.r ?? station.row;
+        if (!Number.isFinite(c) || !Number.isFinite(r)) return null;
+        return {
+          id: station.id,
+          label: station.label || station.id,
+          area: normalizeNpcArea(station.area || station.mapId || fallbackArea || 'farm'),
+          c, r,
+          rotY: Number.isFinite(station.rotY) ? station.rotY : 0,
+          pose: station.pose || 'stand',
+          toolKey: station.toolKey || '',
+          toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
+          toolAnimStyle: station.toolAnimStyle || '',
+        };
+      }
+      function registerNpcStations(stations, fallbackArea) {
+        (stations || []).forEach(st => {
+          const normalized = normalizeNpcStation(st, fallbackArea);
+          if (normalized) npcStationsById.set(normalized.id, normalized);
+        });
+      }
+      function resolveNpcStationTarget(stationId) {
+        const station = npcStationsById.get(stationId);
+        return station ? { ...station, stationId: station.id } : null;
+      }
+
       function sceneForNpcArea(area) {
         if (area === 'interior') return interiorScene;
         if (area === 'town') return townScene;
@@ -1547,25 +1580,44 @@
         return target;
       }
 
+      const _scheduleFallbackLogKeys = new Set();
+      function logScheduleFallbackOnce(rec, kind, area, c, r) {
+        const minuteBucket = Math.floor(currentGameMinutes() / 10);
+        const key = [rec?.id || 'npc', kind, currentArea, area, c, r, minuteBucket].join('|');
+        if (_scheduleFallbackLogKeys.has(key)) return;
+        _scheduleFallbackLogKeys.add(key);
+        window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback ${kind} area=${area} c=${c} r=${r}`, 'warn');
+      }
+
       function resolveNpcScheduleTarget(rec) {
         const hooks = rec?.scheduleHooks || {};
         const now = currentGameMinutes();
         for (const rule of hooks.rules || []) {
           const start = parseNpcTimeMinutes(rule.start ?? rule.from);
           const end   = parseNpcTimeMinutes(rule.end   ?? rule.to);
+          if (start !== null && end !== null && now >= start && now < end && rule.stationId) {
+            const stationTarget = resolveNpcStationTarget(rule.stationId);
+            if (stationTarget) return { ...stationTarget, routeId: rule.routeId || null };
+            window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found`, 'warn');
+          }
           const c = rule.c ?? rule.position?.c;
           const r = rule.r ?? rule.position?.r;
           const area = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
           if (start !== null && end !== null && now >= start && now < end && Number.isFinite(c) && Number.isFinite(r))
             return { area, c, r, routeId: rule.routeId || null };
         }
+        if (hooks.defaultStationId) {
+          const stationTarget = resolveNpcStationTarget(hooks.defaultStationId);
+          if (stationTarget) return stationTarget;
+          window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: defaultStationId "${hooks.defaultStationId}" not found`, 'warn');
+        }
         if (hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) {
           const defArea = normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town');
-          window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback defaultPosition area=${defArea} c=${hooks.defaultPosition.c} r=${hooks.defaultPosition.r}`, 'warn');
+          logScheduleFallbackOnce(rec, 'defaultPosition', defArea, hooks.defaultPosition.c, hooks.defaultPosition.r);
           return { ...hooks.defaultPosition, area: defArea };
         }
         const legacy = worldNpcPaths.find(p => p.npcId === rec?.id);
-        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; const legArea = normalizeNpcArea(legacy.area || 'farm'); window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback legacy path area=${legArea} c=${c} r=${r}`, 'warn'); return { area: legArea, c, r, legacyPath: legacy }; }
+        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; const legArea = normalizeNpcArea(legacy.area || 'farm'); logScheduleFallbackOnce(rec, 'legacy path', legArea, c, r); return { area: legArea, c, r, legacyPath: legacy }; }
         return null;
       }
 
@@ -1636,7 +1688,7 @@
           root, rec, profile, area: spawnArea,
           state: 'idle', routeNode: null, previousRouteNode: null, routeTarget: null, _exitSpot: null,
           pause: 0, catchup: 1, catchupDur: 0,
-          rot: Math.PI / 2, perpState: {},
+          rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
           resetRouteState() {
             this.state = 'idle';
             this.routeNode = null;
@@ -1716,9 +1768,27 @@
             if (this.state === 'idle' && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               const groundY = npcSurfaceY(this.area, target.c, target.r);
               root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
+              if (Number.isFinite(target.rotY)) { this.rot = THREE.MathUtils.degToRad(target.rotY); root.rotation.y = this.rot; }
+              if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
+                if (this.stationToolKey !== target.toolKey) {
+                  if (this.stationToolMesh) root.remove(this.stationToolMesh);
+                  this.stationToolMesh = makeToolPlaneMesh(target.toolKey);
+                  this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
+                  if (this.stationToolMesh) { this.stationToolMesh.position.set(0.25, 0.75, 0.15); root.add(this.stationToolMesh); }
+                }
+                if (this.stationToolMesh) {
+                  const interval = Math.max(0.2, target.toolIntervalSec || 2);
+                  this.stationToolT = (this.stationToolT + dt) % interval;
+                  const swing = Math.sin((this.stationToolT / interval) * Math.PI * 2);
+                  this.stationToolMesh.rotation.z = swing * 0.45;
+                }
+              } else if (this.stationToolMesh) {
+                root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = '';
+              }
               groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
+            if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
             if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r)) {
               this.state = 'beeline'; this.routeNode = this.previousRouteNode = this.routeTarget = null;
@@ -1773,7 +1843,7 @@
           _workspaceMaps = ws.maps;
           const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
-          const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], buildings: townM.buildings || [] };
+          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
             if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
@@ -1786,6 +1856,10 @@
           (townM.npcPaths || []).forEach(p => {
             if (!p.nodes?.length || (townM.routes || []).length) return;
             layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
+          });
+          (ws.maps || []).forEach(m => {
+            const area = m.id === townM.id ? 'town' : m.id;
+            (m.npcStations || []).forEach(st => layout.npcStations.push({ ...st, area }));
           });
           (townM.transitions || []).forEach(t => {
             // Farm spot (no targetMapId) — returns player to farm exit at col 17, row 0
@@ -1820,6 +1894,7 @@
         const townPaths = (layout.npcPaths || []).filter(p =>
           p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
         worldTownRoutes = normalizeRoutes(layout.routes, townPaths).map(r => ({ ...r, area: 'town' }));
+        registerNpcStations(layout.npcStations, 'town');
         rebuildRouteGraphs();
         // If town scene was already built before this layout arrived, spawn buildings now
         if (_townSceneBuilt && townScene) {
@@ -1941,9 +2016,10 @@
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
         let mapData = null;
+        let loadSource = 'missing';
         try {
           const resp = await fetch('config/maps/' + mapId + '.json');
-          if (resp.ok) mapData = await resp.json();
+          if (resp.ok) { mapData = await resp.json(); loadSource = 'config'; }
         } catch(_) {}
         // Fallback: load map data from cached workspace JSON
         if (!mapData && _workspaceMaps) {
@@ -1954,8 +2030,9 @@
               const [c, r] = key.split(',').map(Number);
               if (Number.isFinite(c) && Number.isFinite(r)) tileArr.push({ c, r, type: val.type || 'grass' });
             }
-            mapData = { cols: wsMap.cols, rows: wsMap.rows, tiles: tileArr, transitions: wsMap.transitions || [] };
-            window.__farmLog?.(`[building] ${mapId}: loaded from workspace (${mapData.cols}x${mapData.rows})`, 'info');
+            mapData = { cols: wsMap.cols, rows: wsMap.rows, tiles: tileArr, transitions: wsMap.transitions || [], npcStations: wsMap.npcStations || [] };
+            loadSource = 'workspace';
+            window.__farmLog?.(`[building] ${mapId}: loaded from workspace fallback (${mapData.cols}x${mapData.rows})`, 'warn');
           }
         }
 
@@ -2046,7 +2123,17 @@
               }, undefined, () => {});
             }
           }
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [] };
+          registerNpcStations((mapData.npcStations || []).map(st => ({ ...st, area: mapId })), mapId);
+          const buildingPaths = (mapData.npcPaths || []).filter(p => p && Array.isArray(p.nodes) && p.nodes.length > 0)
+            .map(p => ({ ...p, area: mapId }));
+          const buildingRoutes = normalizeRoutes(
+            (mapData.routes || []).map(r => ({ ...r, area: mapId })),
+            buildingPaths);
+          if (buildingRoutes.length) {
+            worldRoutes = worldRoutes.filter(r => (r.area || 'farm') !== mapId).concat(buildingRoutes);
+            rebuildRouteGraphs();
+          }
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId };
           _buildingScenes.set(mapId, info);
           for (const w of npcWalkers) {
             if (w.root._pendingBuildingAdd === mapId) {
@@ -2102,7 +2189,7 @@
           const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
           bScene.add(wallGroup);
         }
-        const info = { scene: bScene, grid: bGrid, cols, rows, transitions };
+        const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId };
         _buildingScenes.set(mapId, info);
         for (const w of npcWalkers) {
           if (w.root._pendingBuildingAdd === mapId) {
@@ -2116,6 +2203,33 @@
         debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ')');
       }
 
+      function buildingSpawnFromExit(bi, fallbackCols, fallbackRows) {
+        const exitTiles = (bi?.transitions || []).filter(t => t.target === 'exit_building');
+        if (!exitTiles.length) return { col: Math.floor(fallbackCols / 2), row: Math.max(0, fallbackRows - 2) };
+        const avgCol = exitTiles.reduce((sum, t) => sum + t.col, 0) / exitTiles.length;
+        const northRow = Math.min(...exitTiles.map(t => t.row)) - 1;
+        return {
+          col: clamp(Math.round(avgCol), 0, fallbackCols - 1),
+          row: clamp(northRow, 0, fallbackRows - 1)
+        };
+      }
+
+      function mapDebugName(area) {
+        if (area === 'interior') return 'Farmhouse Interior';
+        if (area === 'town') return _townZone?.name || 'Hobunji Hollow — Town';
+        if (area === 'farm') return 'Farm';
+        if (_isBuildingArea(area)) return _buildingScenes.get(area)?.name || area;
+        return area || '(unknown)';
+      }
+
+      function logMapSwap(label, area, extra = {}) {
+        const source = extra.source || 'runtime';
+        const fallback = !!extra.fallback;
+        const loading = !!extra.loading;
+        const target = extra.target ? ` target=${extra.target}` : '';
+        window.__farmLog?.(`[map] ${label}: currentMap=${area} name="${mapDebugName(area)}" source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}${target}`, fallback ? 'warn' : 'info');
+      }
+
       function enterBuilding(mapId, defaultCol, defaultRow) {
         if (!_buildingScenes.has(mapId)) loadBuildingScene(mapId);
         const fromScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || null)
@@ -2127,10 +2241,11 @@
         currentArea = mapId;
         const bi = _buildingScenes.get(mapId);
         const bCols = bi?.cols || 20, bRows = bi?.rows || 20;
-        // Spawn just inside the exit transition; fall back to centre-bottom
-        const exitT = bi?.transitions?.find(t => t.target === 'exit_building');
-        const col = defaultCol ?? exitT?.col ?? Math.floor(bCols / 2);
-        const row = defaultRow ?? (exitT ? Math.max(0, exitT.row - 1) : bRows - 2);
+        // Default entry is one tile north of the building's exit. Explicit
+        // inter-floor spawn coordinates still win when an exit supplies them.
+        const exitSpawn = buildingSpawnFromExit(bi, bCols, bRows);
+        const col = Number.isFinite(defaultCol) ? defaultCol : exitSpawn.col;
+        const row = Number.isFinite(defaultRow) ? defaultRow : exitSpawn.row;
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         facingAngle = Math.PI / 2; player.angle = facingAngle;
@@ -2143,6 +2258,7 @@
         }
         if (bi?.scene) { bi.scene.add(playerMesh); bi.scene.add(playerGroundShadow); }
         refreshActionBar();
+        logMapSwap('enterBuilding', currentArea, { source: bi?.loadSource || 'loading', fallback: bi?.fallback || !bi, loading: !bi });
       }
 
       function exitBuilding() {
@@ -2167,6 +2283,7 @@
             toScene.add(reticleWavyGroup);
           }
           refreshActionBar();
+          logMapSwap('exitBuilding', currentArea);
         });
       }
 
@@ -2254,8 +2371,9 @@
               t.target === 'building' &&
               Number.isFinite(t.col) && Number.isFinite(t.row) &&
               t.col >= (bldg.gridX ?? 0) && t.col < (bldg.gridX ?? 0) + (bldg.footprintW ?? 1) &&
-              t.row >= (bldg.gridZ ?? 0) && t.row < (bldg.gridZ ?? 0) + (bldg.footprintD ?? 1));
-            if (!hasWorkspaceEntry && !worldTownTransitions.find(t => t.id === eid)) {
+              t.row >= (bldg.gridZ ?? 0) && t.row <= (bldg.gridZ ?? 0) + (bldg.footprintD ?? 1));
+            const hasAnyEntryAtDoor = worldTownTransitions.some(t => Number.isFinite(t.col) && Number.isFinite(t.row) && t.col === eCol && t.row === eRow);
+            if (!hasWorkspaceEntry && !hasAnyEntryAtDoor && !worldTownTransitions.find(t => t.id === eid)) {
               worldTownTransitions.push({
                 id: eid, area: 'town', col: eCol, row: eRow,
                 target: 'interior',

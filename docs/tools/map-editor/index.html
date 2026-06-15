@@ -57,6 +57,8 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
     <span class="pill" id="activeMapPill">no map</span>
     <div id="topbar-right">
       <button class="ok" id="playBtn">🎮 Send to Game &amp; Play</button>
+      <button class="sec" id="undoBtn">↶ Undo</button>
+      <button class="sec" id="redoBtn">↷ Redo</button>
       <button class="sec" id="exportMapBtn">⬇ Map JSON</button>
       <button class="sec" id="exportLayoutBtn">⬇ Farm Layout</button>
       <button class="sec" id="loadTownBtn">🏘 Load Town</button>
@@ -76,6 +78,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <button class="sec" data-mode="decor">🪑 Decor</button>
         <button class="sec" data-mode="path">🛤 Route</button>
         <button class="sec" data-mode="spot">🔁 Spot</button>
+        <button class="sec" data-mode="station">🧍 Station</button>
         <button class="sec" data-mode="erase">⌫ Erase</button>
         <button class="sec" id="fitBtn" style="margin-left:auto">Fit</button>
       </div>
@@ -286,8 +289,83 @@ function makeMap(name, category, cols, rows) {
     routes: [],       // { id, label, nodes: [[c,r],...] }
     npcPaths: [],     // legacy compatibility only: { id, label, npcId, nodes: [[c,r],...] }
     transitions: [],  // { id, label, col, row, targetMapId, targetSpotId }
+    npcStations: [], // { id, label, col, row, rotY, pose, toolKey, toolIntervalSec, toolAnimStyle }
     buildings: [],    // { id, label, pieceFile, gridX, gridZ, footprintW, footprintD, wbOpts, wbGableOpts }
   };
+}
+
+
+function buildingInteriorToWorkspaceMap(mapData, entry = {}) {
+  const cols = clamp(Math.round(mapData.cols || 20), 2, 400);
+  const rows = clamp(Math.round(mapData.rows || 20), 2, 400);
+  const tiles = {};
+  const floorSet = new Set((mapData.floor || []).map(([c,r]) => `${c},${r}`));
+  const colliderSet = new Set((mapData.colliders || []).map(([c,r]) => `${c},${r}`));
+  for (const key of floorSet) tiles[key] = { type: colliderSet.has(key) ? 'rock' : 'grass' };
+  for (const key of colliderSet) if (!tiles[key]) tiles[key] = { type: 'rock' };
+  const transitions = (mapData.exits || []).flatMap(exit =>
+    (exit.tiles || []).map(([c,r]) => ({
+      id: `${exit.id}_${c}_${r}`,
+      exitId: exit.id,
+      col: c, row: r,
+      label: exit.label || exit.id,
+      targetMapId: exit.targetMap || '',
+      spawnCol: Number.isFinite(exit.spawnCol) ? exit.spawnCol : 0,
+      spawnRow: Number.isFinite(exit.spawnRow) ? exit.spawnRow : 0
+    }))
+  );
+  return {
+    schema: 'hobunji_map.v1',
+    id: entry.id || mapData.id || uid('map'),
+    name: entry.name || mapData.name || entry.id || 'Building Interior',
+    category: 'building_interior',
+    cols, rows, tiles,
+    routes: Array.isArray(mapData.routes) ? mapData.routes : [],
+    npcPaths: Array.isArray(mapData.npcPaths) ? mapData.npcPaths : [],
+    transitions,
+    objects: {}, furniture: [], decor: [], buildings: [], npcStations: Array.isArray(mapData.npcStations) ? mapData.npcStations : [],
+    buildingInteriorBase: JSON.parse(JSON.stringify(mapData))
+  };
+}
+
+function buildBuildingInteriorMapV1(m) {
+  const base = m.buildingInteriorBase && m.buildingInteriorBase.schema === 'hobunji_building_interior.v1'
+    ? JSON.parse(JSON.stringify(m.buildingInteriorBase))
+    : { schema: 'hobunji_building_interior.v1', furniture: [], id: m.id, name: m.name, cols: m.cols, rows: m.rows, exits: [], colliders: [], vendorZones: [], floor: [] };
+  base.schema = 'hobunji_building_interior.v1';
+  base.id = m.id;
+  base.name = m.name || base.name || 'Building Interior';
+  base.cols = m.cols;
+  base.rows = m.rows;
+  const floor = [];
+  const colliders = [];
+  Object.keys(m.tiles || {}).forEach(key => {
+    const [c, r] = key.split(',').map(Number);
+    if (!Number.isFinite(c) || !Number.isFinite(r) || c < 0 || r < 0 || c >= m.cols || r >= m.rows) return;
+    const type = m.tiles[key]?.type || 'grass';
+    floor.push([c, r]);
+    if (type === 'rock') colliders.push([c, r]);
+  });
+  base.floor = floor;
+  base.colliders = colliders;
+  const baseExitsById = new Map((base.exits || []).map(e => [e.id, { ...e, tiles: [] }]));
+  const generated = new Map();
+  (m.transitions || []).forEach(t => {
+    if (!Number.isFinite(t.col) || !Number.isFinite(t.row)) return;
+    const exitId = t.exitId || (typeof t.id === 'string' && t.id.includes('_') ? t.id.replace(/_\d+_\d+$/, '') : t.id) || uid('exit');
+    const ex = baseExitsById.get(exitId) || generated.get(exitId) || { id: exitId, label: t.label || 'Exit', tiles: [], targetMap: '', spawnCol: 0, spawnRow: 0 };
+    ex.label = t.label || ex.label || exitId;
+    ex.targetMap = t.targetMapId || ex.targetMap || '';
+    ex.spawnCol = Number.isFinite(t.spawnCol) ? t.spawnCol : (Number.isFinite(ex.spawnCol) ? ex.spawnCol : 0);
+    ex.spawnRow = Number.isFinite(t.spawnRow) ? t.spawnRow : (Number.isFinite(ex.spawnRow) ? ex.spawnRow : 0);
+    if (!ex.tiles.some(([c,r]) => c === t.col && r === t.row)) ex.tiles.push([t.col, t.row]);
+    generated.set(exitId, ex);
+  });
+  base.exits = Array.from(generated.values());
+  base.routes = (m.routes || []).map(p => ({ id: p.id, label: p.label, nodes: (p.nodes || []).map(n => [n[0], n[1]]) })).filter(p => p.nodes.length);
+  base.npcStations = (m.npcStations || []).map(st => ({ id: st.id, label: st.label || st.id, col: st.col, row: st.row, rotY: st.rotY || 0, pose: st.pose || 'stand', toolKey: st.toolKey || '', toolIntervalSec: st.toolIntervalSec || 0, toolAnimStyle: st.toolAnimStyle || '' }));
+  base.npcPaths = (m.npcPaths || []).map(p => ({ id: p.id, label: p.label, npcId: p.npcId || '', nodes: (p.nodes || []).map(n => [n[0], n[1]]) })).filter(p => p.nodes.length);
+  return base;
 }
 
 let ws = loadWorkspace();
@@ -301,6 +379,7 @@ function loadWorkspace() {
           m.routes = Array.isArray(m.routes) ? m.routes : (Array.isArray(m.npcPaths) ? m.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
           m.npcPaths = Array.isArray(m.npcPaths) ? m.npcPaths : [];
           m.transitions = Array.isArray(m.transitions) ? m.transitions : [];
+          m.npcStations = Array.isArray(m.npcStations) ? m.npcStations : [];
           // Migrate old houseLibrary/houseAssignments → buildings array
           if (!Array.isArray(m.buildings)) {
             m.buildings = [];
@@ -350,21 +429,36 @@ function applyFarmhouseFloor(m) {
 
 // ── Undo ──────────────────────────────────────────────────────────────────────
 const undoStack = [];
+const redoStack = [];
+function replaceMapFromSnapshot(raw) {
+  const snap = JSON.parse(raw);
+  const i = ws.maps.findIndex(m => m.id === snap.id);
+  if (i >= 0) { ws.maps[i] = snap; updateAll(); return true; }
+  return false;
+}
 function pushUndo() {
   undoStack.push(JSON.stringify(activeMap()));
+  redoStack.length = 0;
   if (undoStack.length > 40) undoStack.shift();
 }
 function undo() {
   if (!undoStack.length) return;
-  const snap = JSON.parse(undoStack.pop());
-  const i = ws.maps.findIndex(m => m.id === snap.id);
-  if (i >= 0) { ws.maps[i] = snap; updateAll(); setStatus('Undid.'); }
+  redoStack.push(JSON.stringify(activeMap()));
+  if (redoStack.length > 40) redoStack.shift();
+  if (replaceMapFromSnapshot(undoStack.pop())) setStatus('Undid.');
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(JSON.stringify(activeMap()));
+  if (undoStack.length > 40) undoStack.shift();
+  if (replaceMapFromSnapshot(redoStack.pop())) setStatus('Redid.');
 }
 
 // ── Building panel ────────────────────────────────────────────────────────────
 let _selectedBuildingId = null;
 let _gizmos   = [];       // [{type,sx,sy,r}] rebuilt each draw(); used for hit-testing
 let _bldgDrag = null;     // {bid,ox,oz,px0,py0} during drag-move of a building
+let _routeNodeDrag = null; // {routeId,index} during drag-move of a route node
 
 // Canvas-space gizmo button
 function _drawGizmoBtn(type, sx, sy, R) {
@@ -447,7 +541,9 @@ function renderBuildingPanel() {
 let mode = 'pan';
 let brush = { tile: 'grass', crop: 'needlegrain', object: 'sellCrate', furniture: 'pestle', decor: 'basicBed' };
 let activePathId = null;   // route being extended in route mode
+let activeRouteNodeIndex = null; // selected node index in active route
 let activeSpotId = null;   // transition spot selected in spot mode
+let activeStationId = null; // NPC station selected in station mode
 
 function setMode(m) {
   mode = m;
@@ -463,8 +559,9 @@ function updateBrushPill() {
   if (mode === 'object') t = `object: ${OBJECTS[brush.object]?.label}`;
   if (mode === 'furniture') t = `processor: ${PROCESSORS[brush.furniture]?.label}`;
   if (mode === 'decor') t = `decor: ${DECOR[brush.decor]?.label}`;
-  if (mode === 'path') { const p = (activeMap().routes || activeMap().npcPaths || []).find(x => x.id === activePathId); t = p ? `route: ${p.label}` : 'route: (click to start one)'; }
+  if (mode === 'path') { const p = (activeMap().routes || activeMap().npcPaths || []).find(x => x.id === activePathId); t = p ? `route: ${p.label}${activeRouteNodeIndex!==null?' node '+(activeRouteNodeIndex+1):''}` : 'route: (click to start one)'; }
   if (mode === 'spot') t = 'spot: click map to place';
+  if (mode === 'station') { const st = (activeMap().npcStations || []).find(x => x.id === activeStationId); t = st ? `station: ${st.label}` : 'station: click map to place'; }
   $('brushPill').textContent = t;
 }
 
@@ -517,8 +614,12 @@ function renderPalette() {
       html += `<div class="g2" style="margin-top:6px">
         <div><label>Label</label><input id="pathLabelIn" value="${ap.label.replace(/"/g,'&quot;')}"></div>
               </div>`;
+      html += `<div style="margin-top:6px"><label>Nodes (select one, then click map to branch from it)</label>${ap.nodes.map((n,i) =>
+        `<div class="item ${i===activeRouteNodeIndex?'sel':''}" data-nodesel="${i}" style="padding:4px 7px;margin-bottom:3px">
+          <div class="row"><span style="flex:1">#${i+1} (${n[0]}, ${n[1]})</span><button class="bad" data-nodedel="${i}" style="padding:1px 7px;font-size:10px">✕</button></div>
+        </div>`).join('') || '<p class="muted">No nodes yet.</p>'}</div>`;
     }
-    html += '<p class="muted" style="margin-top:5px">Select a route, then click the map to append nodes. Erase mode removes nodes. In-game, NPC schedules choose target positions; NPCs beeline unless blocked, use shared interconnected routes to get around blockers, and leave routes once they stop improving progress.</p>';
+    html += '<p class="muted" style="margin-top:5px">Select a route and click the map to append nodes. Select a node to branch from it; the next map click inserts after that node. Drag nodes on the map to clean up large route networks. Erase mode removes nodes.</p>';
   } else if (mode === 'spot') {
     html = m.transitions.map(t => {
       const others = ws.maps.filter(x => x.id !== m.id);
@@ -544,6 +645,21 @@ function renderPalette() {
       </div>`;
     }).join('') || '<p class="muted">No transition spots yet.</p>';
     html += '<p class="muted" style="margin-top:5px">Click the map to place a spot, then pick which map (and which spot on it) it leads to. In-game, spots warp the player when their target is the linked Farm or Farmhouse map; other targets are kept in the map JSON for future zones.</p>';
+  } else if (mode === 'station') {
+    html = (m.npcStations || []).map(st => `<div class="item ${st.id===activeStationId?'sel':''}" data-stationsel="${st.id}">
+      <div class="row"><input data-stationlabel="${st.id}" value="${(st.label||st.id).replace(/"/g,'&quot;')}" style="flex:1"><button class="bad" data-stationdel="${st.id}" style="padding:3px 8px">✕</button></div>
+      <div class="g3" style="margin-top:4px">
+        <div><label>Rot Y°</label><input data-stationrot="${st.id}" type="number" value="${st.rotY||0}"></div>
+        <div><label>Pose</label><select data-stationpose="${st.id}">${['stand','sit','lie','kneel'].map(p => `<option value="${p}" ${st.pose===p?'selected':''}>${p}</option>`).join('')}</select></div>
+        <div><label>Tool</label><input data-stationtool="${st.id}" value="${st.toolKey||''}" placeholder="hatchet"></div>
+      </div>
+      <div class="g2" style="margin-top:4px">
+        <div><label>Tool interval sec</label><input data-stationinterval="${st.id}" type="number" step="0.1" min="0" value="${st.toolIntervalSec||0}"></div>
+        <div><label>Tool anim</label><input data-stationanim="${st.id}" value="${st.toolAnimStyle||''}" placeholder="sweep/chop/thrust"></div>
+      </div>
+      <div class="item-meta">id: ${st.id} · at (${st.col}, ${st.row})</div>
+    </div>`).join('') || '<p class="muted">No NPC stations yet.</p>';
+    html += '<p class="muted" style="margin-top:5px">Click the map to place a reusable NPC Station. Schedules can use <code>stationId</code> instead of x/y positions; rotation, pose, and optional tool loop metadata travel with the station.</p>';
   } else if (mode === 'erase') {
     html = '<p class="muted">Click or drag to remove tiles, crops, objects, furniture, decor, route nodes, and spots under the cursor.</p>';
   } else {
@@ -604,6 +720,34 @@ function renderPalette() {
   }));
   const pl = box.querySelector('#pathLabelIn');
   if (pl) pl.addEventListener('change', () => { const p = (m.routes || []).find(x => x.id === activePathId); if (p) { p.label = pl.value.trim() || p.label; renderPalette(); draw(); refreshPreview(); saveWorkspace(); } });
+  box.querySelectorAll('[data-nodesel]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-nodedel]')) return;
+    activeRouteNodeIndex = Number(el.dataset.nodesel); renderPalette(); updateBrushPill(); draw();
+  }));
+  box.querySelectorAll('[data-nodedel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); pushUndo();
+    const p = (m.routes || []).find(x => x.id === activePathId); if (!p) return;
+    p.nodes.splice(Number(el.dataset.nodedel), 1); activeRouteNodeIndex = null;
+    renderPalette(); draw(); refreshPreview(); saveWorkspace(); updateBrushPill();
+  }));
+  // Station palette wiring
+  box.querySelectorAll('[data-stationsel]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('button,input,select')) return;
+    activeStationId = el.dataset.stationsel; renderPalette(); draw(); updateBrushPill();
+  }));
+  box.querySelectorAll('[data-stationdel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); pushUndo();
+    m.npcStations = (m.npcStations || []).filter(st => st.id !== el.dataset.stationdel);
+    if (activeStationId === el.dataset.stationdel) activeStationId = null;
+    renderPalette(); draw(); refreshPreview(); saveWorkspace(); updateBrushPill();
+  }));
+  const updateStation = (id, patch) => { const st = (m.npcStations || []).find(x => x.id === id); if (!st) return; Object.assign(st, patch); draw(); refreshPreview(); saveWorkspace(); updateBrushPill(); };
+  box.querySelectorAll('[data-stationlabel]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationlabel, { label: el.value.trim() || el.dataset.stationlabel })));
+  box.querySelectorAll('[data-stationrot]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationrot, { rotY: Number(el.value) || 0 })));
+  box.querySelectorAll('[data-stationpose]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationpose, { pose: el.value })));
+  box.querySelectorAll('[data-stationtool]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationtool, { toolKey: el.value.trim() })));
+  box.querySelectorAll('[data-stationinterval]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationinterval, { toolIntervalSec: Math.max(0, Number(el.value) || 0) })));
+  box.querySelectorAll('[data-stationanim]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationanim, { toolAnimStyle: el.value.trim() })));
   // Spot palette wiring
   box.querySelectorAll('[data-spotsel]').forEach(el => el.addEventListener('click', e => {
     if (e.target.closest('button,select,input')) return;
@@ -800,7 +944,7 @@ function draw() {
     }
     pa.nodes.forEach(([c, rr], i) => {
       const s = w2s(c+.5, rr+.5);
-      ctx.fillStyle = isActive ? '#fff' : '#38bdf8';
+      ctx.fillStyle = isActive && i === activeRouteNodeIndex ? '#fef08a' : (isActive ? '#fff' : '#38bdf8');
       ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(3.5, z*.18), 0, Math.PI*2); ctx.fill();
       ctx.strokeStyle = '#082f49'; ctx.lineWidth = 1.5; ctx.stroke();
       if (z > 13) { ctx.fillStyle = '#e0f2fe'; ctx.font = `${clamp(z*.28,9,12)}px system-ui`; ctx.fillText(String(i+1), s.x + z*.22, s.y - z*.18); }
@@ -825,6 +969,18 @@ function draw() {
       ctx.fillText(t.label + (target ? ` → ${target.name}` : ''), p.x, p.y + s + clamp(z*.3,7,10));
       ctx.font = `${Math.floor(z*0.5)}px system-ui`;
     }
+  });
+  // NPC Stations (cyan squares)
+  (m.npcStations || []).forEach(st => {
+    const p = w2s(st.col + .5, st.row + .5);
+    const s = z * .36;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate((st.rotY || 0) * Math.PI / 180);
+    ctx.fillStyle = st.id === activeStationId ? 'rgba(34,211,238,.75)' : 'rgba(34,211,238,.42)';
+    ctx.fillRect(-s, -s, s * 2, s * 2);
+    ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = st.id === activeStationId ? 2.5 : 1.5; ctx.strokeRect(-s, -s, s * 2, s * 2);
+    ctx.fillStyle = '#ecfeff'; ctx.fillText(st.pose === 'sit' ? '🪑' : st.pose === 'lie' ? '🛏️' : '🧍', 0, 0);
+    ctx.restore();
+    if (z > 12) { ctx.fillStyle = '#cffafe'; ctx.font = `${clamp(z*.25,8,11)}px system-ui`; ctx.fillText(st.label || st.id, p.x, p.y + s + clamp(z*.3,7,10)); ctx.font = `${Math.floor(z*0.5)}px system-ui`; }
   });
   ctx.textAlign='left'; ctx.textBaseline='alphabetic';
 }
@@ -858,7 +1014,22 @@ function applyAt(tile) {
     m.routes = m.routes || [];
     let p = m.routes.find(x => x.id === activePathId);
     if (!p) { p = { id: uid('route'), label: `Route ${m.routes.length+1}`, nodes: [] }; m.routes.push(p); activePathId = p.id; }
-    p.nodes.push([c, r]);
+    if (activeRouteNodeIndex !== null && activeRouteNodeIndex >= 0 && activeRouteNodeIndex < p.nodes.length) {
+      p.nodes.splice(activeRouteNodeIndex + 1, 0, [c, r]);
+      activeRouteNodeIndex += 1;
+    } else {
+      p.nodes.push([c, r]);
+      activeRouteNodeIndex = p.nodes.length - 1;
+    }
+    renderPalette(); updateBrushPill();
+  } else if (mode === 'station') {
+    m.npcStations = m.npcStations || [];
+    const existing = m.npcStations.find(st => st.col === c && st.row === r);
+    if (existing) activeStationId = existing.id;
+    else {
+      const st = { id: uid('station'), label: `Station ${m.npcStations.length+1}`, col: c, row: r, rotY: 0, pose: 'stand', toolKey: '', toolIntervalSec: 0, toolAnimStyle: '' };
+      m.npcStations.push(st); activeStationId = st.id;
+    }
     renderPalette(); updateBrushPill();
   } else if (mode === 'spot') {
     const existing = m.transitions.find(t => t.col === c && t.row === r);
@@ -880,6 +1051,8 @@ function applyAt(tile) {
     });
     const ti = (m.transitions || []).findIndex(t => t.col === c && t.row === r);
     if (ti >= 0) { if (m.transitions[ti].id === activeSpotId) activeSpotId = null; m.transitions.splice(ti,1); did = true; }
+    const si = (m.npcStations || []).findIndex(st => st.col === c && st.row === r);
+    if (si >= 0) { if (m.npcStations[si].id === activeStationId) activeStationId = null; m.npcStations.splice(si,1); did = true; }
     if (!did) return;
     if (mode === 'erase') renderPalette();
   } else return;
@@ -892,7 +1065,7 @@ function overlaps(d, c, r, fw, fd) {
 }
 
 const PAINT_MODES = ['tile','crop','erase'];   // drag-paintable
-const TAP_MODES = ['object','furniture','decor','path','spot'];
+const TAP_MODES = ['object','furniture','decor','path','spot','station'];
 
 canvas.addEventListener('pointerdown', e => {
   canvas.setPointerCapture?.(e.pointerId); ptrs.set(e.pointerId, canvasPt(e));
@@ -940,8 +1113,21 @@ canvas.addEventListener('pointerdown', e => {
     else if (_selectedBuildingId) { _selectedBuildingId = null; renderBuildingPanel(); draw(); }
     drag = true; dragStart = { p, cx: cam.x, cy: cam.y }; return;
   }
-  pushUndo();
   const w = s2w(p.x, p.y);
+  if (mode === 'path') {
+    const m = activeMap();
+    const routes = activePathId ? (m.routes || []).filter(r => r.id === activePathId) : (m.routes || []);
+    for (const route of routes) {
+      for (let i = 0; i < (route.nodes || []).length; i++) {
+        const n = route.nodes[i];
+        if (Math.hypot(w.x - (n[0] + 0.5), w.y - (n[1] + 0.5)) <= 0.45) {
+          pushUndo(); activePathId = route.id; activeRouteNodeIndex = i; _routeNodeDrag = { routeId: route.id, index: i };
+          renderPalette(); updateBrushPill(); draw(); return;
+        }
+      }
+    }
+  }
+  pushUndo();
   if (PAINT_MODES.includes(mode)) { painting = true; applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) }); }
   else if (TAP_MODES.includes(mode)) applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) });
 });
@@ -955,6 +1141,14 @@ canvas.addEventListener('pointermove', e => {
     const wx = (pinchStart.mid.x-pinchStart.x)/pinchStart.zoom, wy = (pinchStart.mid.y-pinchStart.y)/pinchStart.zoom;
     cam.zoom = nz; cam.x = pinchStart.mid.x - wx*nz; cam.y = pinchStart.mid.y - wy*nz;
     draw(); return;
+  }
+  if (_routeNodeDrag) {
+    const m = activeMap(); const route = (m.routes || []).find(r => r.id === _routeNodeDrag.routeId);
+    if (route?.nodes?.[_routeNodeDrag.index]) {
+      route.nodes[_routeNodeDrag.index] = [clamp(Math.floor(w.x), 0, m.cols - 1), clamp(Math.floor(w.y), 0, m.rows - 1)];
+      renderPalette(); draw();
+    }
+    return;
   }
   if (_bldgDrag) {
     const selB = (activeMap().buildings || []).find(b => b.id === _bldgDrag.bid);
@@ -971,6 +1165,7 @@ canvas.addEventListener('pointermove', e => {
 });
 function endPtr(e) {
   ptrs.delete(e.pointerId);
+  if (_routeNodeDrag) { saveWorkspace(); refreshPreview(); _routeNodeDrag = null; }
   if (_bldgDrag) { saveWorkspace(); renderBuildingPanel(); _bldgDrag = null; }
   drag = false; painting = false; pinchStart = null;
 }
@@ -984,7 +1179,8 @@ canvas.addEventListener('wheel', e => {
 }, { passive:false });
 
 window.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); }
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); undo(); }
+  if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyY' || (e.shiftKey && e.code === 'KeyZ'))) { e.preventDefault(); redo(); }
 });
 
 // ── Map management UI ────────────────────────────────────────────────────────
@@ -993,10 +1189,10 @@ function renderMapList() {
   $('mapList').innerHTML = ws.maps.map(m =>
     `<div class="item ${m.id===ws.activeId?'sel':''}" data-id="${m.id}">
       <div class="item-name">${icon(m)} ${m.name}</div>
-      <div class="item-meta">${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.transitions||[]).length} spots</div>
+      <div class="item-meta">${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.transitions||[]).length} spots · ${(m.npcStations||[]).length} stations</div>
     </div>`).join('');
   $('mapList').querySelectorAll('.item').forEach(el => el.addEventListener('click', () => {
-    ws.activeId = el.dataset.id; undoStack.length = 0; activePathId = null; activeSpotId = null; updateAll(); fitView();
+    ws.activeId = el.dataset.id; undoStack.length = 0; redoStack.length = 0; activePathId = null; activeSpotId = null; updateAll(); fitView();
   }));
   $('mapCountTag').textContent = String(ws.maps.length);
   // Game link dropdowns
@@ -1029,7 +1225,7 @@ function updateAll() { renderMapList(); fillSettings(); renderPalette(); refresh
 // ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
 function buildFarmLayoutV3() {
   const ext = mapById(ws.gameLink.exteriorId);
-  const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], routes: [], npcPaths: [], transitions: [] };
+  const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], routes: [], npcPaths: [], transitions: [], npcStations: [] };
   const areaOf = id => id === ws.gameLink.interiorId ? 'interior' : id === ws.gameLink.exteriorId ? 'farm' : id === ws.gameLink.townId ? 'town' : '';
   const pushTravel = (m, area) => {
     (m.routes || []).forEach(p => {
@@ -1040,6 +1236,7 @@ function buildFarmLayoutV3() {
       if (!p.nodes.length) return;
       layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area, nodes: p.nodes.map(n => [n[0], n[1]]) });
     });
+    (m.npcStations || []).forEach(st => layout.npcStations.push({ ...st, area }));
     (m.transitions || []).forEach(t => {
       const target = areaOf(t.targetMapId);
       const spot = mapById(t.targetMapId)?.transitions.find(s => s.id === t.targetSpotId) || null;
@@ -1079,7 +1276,7 @@ function buildFarmLayoutV3() {
 function buildTownLayout() {
   const townM = mapById(ws.gameLink.townId);
   if (!townM) return null;
-  const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], routes: [], npcPaths: [], transitions: [],
+  const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], routes: [], npcPaths: [], transitions: [], npcStations: [],
                    buildings: townM.buildings || [] };
   // Tiles
   for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
@@ -1096,6 +1293,7 @@ function buildTownLayout() {
     if (!(townM.routes || []).length) layout.routes.push({ id: p.id, label: p.label, area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
     layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
   });
+  (townM.npcStations || []).forEach(st => layout.npcStations.push({ ...st, area: 'town' }));
   // Transitions — resolve farm side: target 'farm', targetCol/Row from the farm-side spot
   const farmM = mapById(ws.gameLink.exteriorId);
   (townM.transitions || []).forEach(t => {
@@ -1135,7 +1333,7 @@ function loadFromGame() {
   if (!layout || layout.version !== 3) { setStatus('No saved game farm found.'); return; }
   let ext = mapById(ws.gameLink.exteriorId);
   if (!ext) { ext = makeMap('Farm', 'exterior', GAME.farm.cols, GAME.farm.rows); ws.maps.push(ext); ws.gameLink.exteriorId = ext.id; }
-  ext.tiles = {}; ext.objects = {}; ext.furniture = []; ext.decor = [];
+  ext.tiles = {}; ext.objects = {}; ext.furniture = []; ext.decor = []; ext.npcStations = [];
   (layout.tiles || []).forEach(t => { ext.tiles[`${t.c},${t.r}`] = { type: t.type, crop: t.crop || '' }; });
   Object.keys(layout.objects || {}).forEach(k => { ext.objects[k] = [...layout.objects[k]]; });
   (layout.furniture || []).forEach(f => ext.furniture.push({ key: f.key, col: f.col, row: f.row }));
@@ -1143,6 +1341,7 @@ function loadFromGame() {
   const needInterior = (layout.decor || []).some(d => d.area === 'interior')
     || (layout.routes || []).some(p => p.area === 'interior')
     || (layout.npcPaths || []).some(p => p.area === 'interior')
+    || (layout.npcStations || []).some(st => st.area === 'interior')
     || (layout.transitions || []).some(t => t.area === 'interior');
   if (!intM && needInterior) {
     intM = makeMap('Farmhouse', 'interior', GAME.interior.cols, GAME.interior.rows);
@@ -1154,7 +1353,12 @@ function loadFromGame() {
   });
   // Restore shared routes, legacy NPC paths, and transition spots authored for the game
   ext.routes = []; ext.npcPaths = []; ext.transitions = [];
-  if (intM) { intM.routes = []; intM.npcPaths = []; intM.transitions = []; }
+  if (intM) { intM.routes = []; intM.npcPaths = []; intM.transitions = []; intM.npcStations = []; }
+  (layout.npcStations || []).forEach(st => {
+    const m = st.area === 'interior' ? intM : ext;
+    if (!m || !Number.isFinite(st.col) || !Number.isFinite(st.row)) return;
+    m.npcStations.push({ ...st });
+  });
   (layout.routes || []).forEach(p => {
     const m = p.area === 'interior' ? intM : ext;
     if (!m || !Array.isArray(p.nodes) || !p.nodes.length) return;
@@ -1181,7 +1385,7 @@ function loadFromGame() {
     const arrive = tm?.transitions.find(s => s.col === c && s.row === r);
     if (arrive) spot.targetSpotId = arrive.id;
   });
-  ws.activeId = ext.id; undoStack.length = 0;
+  ws.activeId = ext.id; undoStack.length = 0; redoStack.length = 0;
   updateAll(); fitView(); setStatus('Loaded game farm.');
 }
 
@@ -1200,6 +1404,12 @@ function importAny(obj) {
     setStatus('Imported farm layout.');
     return;
   }
+  if (obj && obj.schema === 'hobunji_building_interior.v1') {
+    const m = buildingInteriorToWorkspaceMap(obj, { id: obj.id, name: obj.name });
+    ws.maps.push(m); ws.activeId = m.id;
+    updateAll(); fitView(); setStatus('Imported building interior: ' + m.name);
+    return;
+  }
   if (obj && obj.schema === 'hobunji_map.v1') {
     const m = makeMap(obj.name || 'Imported', obj.category === 'interior' ? 'interior' : 'exterior',
       clamp(Math.round(obj.cols||36),2,400), clamp(Math.round(obj.rows||26),2,400));
@@ -1210,6 +1420,7 @@ function importAny(obj) {
       m.npcPaths = Array.isArray(obj.npcPaths) ? obj.npcPaths : [];
     m.transitions = Array.isArray(obj.transitions) ? obj.transitions : [];
     m.buildings = Array.isArray(obj.buildings) ? obj.buildings : [];
+    m.npcStations = Array.isArray(obj.npcStations) ? obj.npcStations : [];
     ws.maps.push(m); ws.activeId = m.id;
     updateAll(); fitView(); setStatus('Imported map: ' + m.name);
     return;
@@ -1221,7 +1432,7 @@ function importAny(obj) {
       `Merge ${obj.maps.length} maps into your current workspace?\n\nOK = merge (keep your maps)\nCancel = replace workspace`);
     // Sanitise incoming maps
     const incoming = obj.maps.map(src => {
-      const m = makeMap(src.name || 'Imported', src.category === 'interior' ? 'interior' : 'exterior',
+      const m = makeMap(src.name || 'Imported', src.category === 'building_interior' ? 'building_interior' : (src.category === 'interior' ? 'interior' : 'exterior'),
         clamp(Math.round(src.cols||36),2,400), clamp(Math.round(src.rows||26),2,400));
       m.id = src.id || m.id;  // keep authored IDs so transitions link correctly
       if (Array.isArray(src.tiles))
@@ -1232,6 +1443,8 @@ function importAny(obj) {
       m.npcPaths = Array.isArray(src.npcPaths) ? src.npcPaths : [];
       m.transitions = Array.isArray(src.transitions) ? src.transitions : [];
       m.buildings = Array.isArray(src.buildings) ? src.buildings : [];
+      m.npcStations = Array.isArray(src.npcStations) ? src.npcStations : [];
+      if (src.buildingInteriorBase) m.buildingInteriorBase = src.buildingInteriorBase;
       return m;
     });
     if (doMerge) {
@@ -1245,7 +1458,7 @@ function importAny(obj) {
       ws.gameLink = obj.gameLink || { exteriorId:'', interiorId:'' };
       setStatus(`Loaded workspace: ${incoming.length} maps.`);
     }
-    undoStack.length = 0;
+    undoStack.length = 0; redoStack.length = 0;
     updateAll(); fitView();
     return;
   }
@@ -1255,18 +1468,20 @@ function importAny(obj) {
 // ── Wire up ───────────────────────────────────────────────────────────────────
 document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 $('fitBtn').addEventListener('click', fitView);
+$('undoBtn').addEventListener('click', undo);
+$('redoBtn').addEventListener('click', redo);
 
 $('newMapBtn').addEventListener('click', () => {
   const cat = confirm('OK = exterior map, Cancel = interior map') ? 'exterior' : 'interior';
   const m = cat === 'exterior' ? makeMap('New exterior', 'exterior', GAME.farm.cols, GAME.farm.rows)
                                : makeMap('New interior', 'interior', GAME.interior.cols, GAME.interior.rows);
-  ws.maps.push(m); ws.activeId = m.id; undoStack.length = 0;
+  ws.maps.push(m); ws.activeId = m.id; undoStack.length = 0; redoStack.length = 0;
   updateAll(); fitView(); setStatus('Created ' + m.name);
 });
 $('dupMapBtn').addEventListener('click', () => {
   const src = activeMap(); const copy = JSON.parse(JSON.stringify(src));
   copy.id = uid('map'); copy.name = src.name + ' copy';
-  ws.maps.push(copy); ws.activeId = copy.id; undoStack.length = 0;
+  ws.maps.push(copy); ws.activeId = copy.id; undoStack.length = 0; redoStack.length = 0;
   updateAll(); setStatus('Duplicated.');
 });
 $('delMapBtn').addEventListener('click', () => {
@@ -1277,7 +1492,7 @@ $('delMapBtn').addEventListener('click', () => {
   if (ws.gameLink.exteriorId === m.id) ws.gameLink.exteriorId = '';
   if (ws.gameLink.interiorId === m.id) ws.gameLink.interiorId = '';
   if (ws.gameLink.townId     === m.id) ws.gameLink.townId     = '';
-  ws.activeId = ws.maps[0].id; undoStack.length = 0;
+  ws.activeId = ws.maps[0].id; undoStack.length = 0; redoStack.length = 0;
   updateAll(); fitView(); setStatus('Deleted.');
 });
 
@@ -1289,7 +1504,7 @@ $('applyMapBtn').addEventListener('click', () => {
   if (newCat !== m.category) {
     m.category = newCat;
     // Drop palette items not valid in the new category (routes and spots are valid in both)
-    if (newCat === 'interior') { m.objects = {}; m.furniture = []; Object.keys(m.tiles).forEach(k => { if (m.tiles[k].crop) m.tiles[k].crop = ''; }); }
+    if (newCat === 'interior' || newCat === 'building_interior') { m.objects = {}; m.furniture = []; Object.keys(m.tiles).forEach(k => { if (m.tiles[k].crop) m.tiles[k].crop = ''; }); }
     if (ws.gameLink.exteriorId === m.id && newCat !== 'exterior') ws.gameLink.exteriorId = '';
     if (ws.gameLink.interiorId === m.id && newCat !== 'interior') ws.gameLink.interiorId = '';
     if (ws.gameLink.townId     === m.id && newCat !== 'exterior') ws.gameLink.townId     = '';
@@ -1304,13 +1519,14 @@ $('applyMapBtn').addEventListener('click', () => {
     m.decor = m.decor.filter(d => { const inf = DECOR[d.key]; return inf && d.col + inf.fw <= nc && d.row + inf.fd <= nr; });
     ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c < nc && r < nr); });
     m.transitions = (m.transitions || []).filter(t => t.col < nc && t.row < nr);
+    m.npcStations = (m.npcStations || []).filter(st => st.col < nc && st.row < nr);
   }
   updateAll(); fitView(); setStatus('Applied.');
 });
 
 $('floorTemplateBtn').addEventListener('click', () => {
   const m = activeMap();
-  if (m.category !== 'interior') return;
+  if (m.category !== 'interior' && m.category !== 'building_interior') return;
   pushUndo(); applyFarmhouseFloor(m); updateAll(); setStatus('Farmhouse floor template applied.');
 });
 
@@ -1337,9 +1553,12 @@ $('playBtn').addEventListener('click', () => {
 
 $('exportMapBtn').addEventListener('click', () => {
   const m = activeMap();
-  const out = { ...m, tiles: Object.keys(m.tiles).map(k => { const [c,r] = k.split(',').map(Number); return { c, r, ...m.tiles[k] }; }) };
-  download(`${m.name.toLowerCase().replace(/[^a-z0-9]+/g,'_')}.map.json`, out);
-  setStatus('Map JSON downloaded.');
+  const out = m.category === 'building_interior'
+    ? buildBuildingInteriorMapV1(m)
+    : { ...m, tiles: Object.keys(m.tiles).map(k => { const [c,r] = k.split(',').map(Number); return { c, r, ...m.tiles[k] }; }) };
+  const suffix = m.category === 'building_interior' ? '.json' : '.map.json';
+  download(`${m.name.toLowerCase().replace(/[^a-z0-9]+/g,'_')}${suffix}`, out);
+  setStatus(m.category === 'building_interior' ? 'Building interior JSON downloaded.' : 'Map JSON downloaded.');
 });
 $('exportLayoutBtn').addEventListener('click', () => {
   if (!ws.gameLink.exteriorId) { setStatus('Pick a Farm map in Game Link first.'); return; }
@@ -1433,44 +1652,7 @@ async function loadBuildingInteriorMaps() {
       mapData = await r2.json();
     } catch(e) { continue; }
 
-    // Convert hobunji_building_interior.v1 schema to workspace map format
-    const cols = mapData.cols || 20, rows = mapData.rows || 20;
-    const tiles = {};
-    const floorSet = new Set((mapData.floor || []).map(([c,r]) => `${c},${r}`));
-    const colliderSet = new Set((mapData.colliders || []).map(([c,r]) => `${c},${r}`));
-    for (const key of floorSet) {
-      tiles[key] = { type: colliderSet.has(key) ? 'rock' : 'grass' };
-    }
-    // Also mark colliders that aren't in floor as rock tiles
-    for (const key of colliderSet) {
-      if (!tiles[key]) tiles[key] = { type: 'rock' };
-    }
-
-    // Convert exits to transitions (spots)
-    const transitions = (mapData.exits || []).flatMap(exit =>
-      (exit.tiles || []).map(([c,r]) => ({
-        id: exit.id + '_' + c + '_' + r,
-        col: c, row: r,
-        label: exit.label || exit.id,
-        targetMapId: exit.targetMap || '',
-        spawnCol: exit.spawnCol ?? c,
-        spawnRow: exit.spawnRow ?? r
-      }))
-    );
-
-    ws.maps.push({
-      id: entry.id,
-      name: entry.name || mapData.name || entry.id,
-      category: 'building_interior',
-      cols, rows,
-      tiles,
-      routes: [],
-      npcPaths: [],
-      transitions,
-      objects: {},
-      furniture: [],
-      decor: []
-    });
+    ws.maps.push(buildingInteriorToWorkspaceMap(mapData, entry));
     added++;
   }
 
