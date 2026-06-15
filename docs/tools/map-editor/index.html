@@ -459,6 +459,8 @@ let _selectedBuildingId = null;
 let _gizmos   = [];       // [{type,sx,sy,r}] rebuilt each draw(); used for hit-testing
 let _bldgDrag = null;     // {bid,ox,oz,px0,py0} during drag-move of a building
 let _routeNodeDrag = null; // {routeId,index} during drag-move of a route node
+let _spotDrag      = null; // {spotId} during drag-move of a transition spot
+let _stationDrag   = null; // {stationId} during drag-move of an NPC station
 
 // Canvas-space gizmo button
 function _drawGizmoBtn(type, sx, sy, R) {
@@ -1127,6 +1129,24 @@ canvas.addEventListener('pointerdown', e => {
       }
     }
   }
+  if (mode === 'spot') {
+    const m = activeMap();
+    for (const t of (m.transitions || [])) {
+      if (Math.hypot(w.x - (t.col + 0.5), w.y - (t.row + 0.5)) <= 0.45) {
+        pushUndo(); activeSpotId = t.id; _spotDrag = { spotId: t.id };
+        renderPalette(); draw(); return;
+      }
+    }
+  }
+  if (mode === 'station') {
+    const m = activeMap();
+    for (const st of (m.npcStations || [])) {
+      if (Math.hypot(w.x - (st.col + 0.5), w.y - (st.row + 0.5)) <= 0.45) {
+        pushUndo(); activeStationId = st.id; _stationDrag = { stationId: st.id };
+        renderPalette(); updateBrushPill(); draw(); return;
+      }
+    }
+  }
   pushUndo();
   if (PAINT_MODES.includes(mode)) { painting = true; applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) }); }
   else if (TAP_MODES.includes(mode)) applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) });
@@ -1150,6 +1170,16 @@ canvas.addEventListener('pointermove', e => {
     }
     return;
   }
+  if (_spotDrag) {
+    const m = activeMap(); const t = (m.transitions || []).find(t => t.id === _spotDrag.spotId);
+    if (t) { t.col = clamp(Math.floor(w.x), 0, m.cols - 1); t.row = clamp(Math.floor(w.y), 0, m.rows - 1); renderPalette(); draw(); }
+    return;
+  }
+  if (_stationDrag) {
+    const m = activeMap(); const st = (m.npcStations || []).find(st => st.id === _stationDrag.stationId);
+    if (st) { st.col = clamp(Math.floor(w.x), 0, m.cols - 1); st.row = clamp(Math.floor(w.y), 0, m.rows - 1); renderPalette(); draw(); }
+    return;
+  }
   if (_bldgDrag) {
     const selB = (activeMap().buildings || []).find(b => b.id === _bldgDrag.bid);
     if (selB) {
@@ -1166,6 +1196,8 @@ canvas.addEventListener('pointermove', e => {
 function endPtr(e) {
   ptrs.delete(e.pointerId);
   if (_routeNodeDrag) { saveWorkspace(); refreshPreview(); _routeNodeDrag = null; }
+  if (_spotDrag)      { saveWorkspace(); refreshPreview(); _spotDrag = null; }
+  if (_stationDrag)   { saveWorkspace(); refreshPreview(); _stationDrag = null; }
   if (_bldgDrag) { saveWorkspace(); renderBuildingPanel(); _bldgDrag = null; }
   drag = false; painting = false; pinchStart = null;
 }
