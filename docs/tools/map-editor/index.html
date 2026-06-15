@@ -60,6 +60,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
       <button class="sec" id="undoBtn">↶ Undo</button>
       <button class="sec" id="redoBtn">↷ Redo</button>
       <button class="sec" id="exportMapBtn">⬇ Map JSON</button>
+      <button class="sec" id="exportDiffBtn">📋 Export Diff</button>
       <button class="sec" id="exportLayoutBtn">⬇ Farm Layout</button>
       <button class="sec" id="loadTownBtn">🏘 Load Town</button>
       <button class="sec" id="importBtn">Import</button>
@@ -369,7 +370,65 @@ function buildBuildingInteriorMapV1(m) {
   return base;
 }
 
+// ── Diff baseline tracking ────────────────────────────────────────────────────
+const _baselines = new Map();
+function _snapMap(m) {
+  return JSON.parse(JSON.stringify({
+    tiles: m.tiles, routes: m.routes, buildings: m.buildings,
+    transitions: m.transitions, npcStations: m.npcStations,
+    cols: m.cols, rows: m.rows
+  }));
+}
+function captureBaseline(m) { _baselines.set(m.id, _snapMap(m)); }
+
+function computeMapDiff(m) {
+  const base = _baselines.get(m.id);
+  const diff = { mapId: m.id, name: m.name };
+  if (!base) { diff._note = 'No baseline — map was created in this session.'; return diff; }
+
+  // Tiles: group changes by "wasType→nowType"
+  const allKeys = new Set([...Object.keys(m.tiles), ...Object.keys(base.tiles || {})]);
+  const tileGroups = {};
+  for (const k of allKeys) {
+    const ct = m.tiles[k], bt = (base.tiles || {})[k];
+    const cT = ct?.type ?? null, bT = bt?.type ?? null;
+    const cC = ct?.crop || '', bC = bt?.crop || '';
+    if (cT !== bT || cC !== bC) {
+      const [c, r] = k.split(',').map(Number);
+      let label = `${bT ?? 'null'}→${cT ?? 'null'}`;
+      if (cC !== bC) label += ` crop:${bC || 'null'}→${cC || 'null'}`;
+      (tileGroups[label] = tileGroups[label] || []).push([c, r]);
+    }
+  }
+  if (Object.keys(tileGroups).length) diff.tiles = tileGroups;
+
+  // Entity arrays
+  for (const key of ['routes', 'buildings', 'transitions', 'npcStations']) {
+    const curr = m[key] || [], prev = base[key] || [];
+    const prevMap = new Map(prev.map(x => [x.id, x]));
+    const currMap = new Map(curr.map(x => [x.id, x]));
+    const added   = curr.filter(x => !prevMap.has(x.id));
+    const removed = prev.filter(x => !currMap.has(x.id)).map(x => x.id);
+    const modified = curr.filter(x => {
+      const b = prevMap.get(x.id); return b && JSON.stringify(x) !== JSON.stringify(b);
+    }).map(x => {
+      const b = prevMap.get(x.id), delta = { id: x.id };
+      for (const k of new Set([...Object.keys(x), ...Object.keys(b)])) {
+        if (JSON.stringify(x[k]) !== JSON.stringify(b[k])) delta[k] = x[k];
+      }
+      return delta;
+    });
+    const d = {};
+    if (added.length)    d.added    = added;
+    if (removed.length)  d.removed  = removed;
+    if (modified.length) d.modified = modified;
+    if (Object.keys(d).length) diff[key] = d;
+  }
+  return diff;
+}
+
 let ws = loadWorkspace();
+ws.maps.forEach(captureBaseline);
 function loadWorkspace() {
   try {
     const raw = localStorage.getItem(WS_KEY);
@@ -1527,6 +1586,7 @@ function importAny(obj) {
   if (obj && obj.schema === 'hobunji_building_interior.v1') {
     const m = buildingInteriorToWorkspaceMap(obj, { id: obj.id, name: obj.name });
     ws.maps.push(m); ws.activeId = m.id;
+    captureBaseline(m);
     updateAll(); fitView(); setStatus('Imported building interior: ' + m.name);
     return;
   }
@@ -1542,6 +1602,7 @@ function importAny(obj) {
     m.buildings = Array.isArray(obj.buildings) ? obj.buildings : [];
     m.npcStations = Array.isArray(obj.npcStations) ? obj.npcStations : [];
     ws.maps.push(m); ws.activeId = m.id;
+    captureBaseline(m);
     updateAll(); fitView(); setStatus('Imported map: ' + m.name);
     return;
   }
@@ -1579,6 +1640,7 @@ function importAny(obj) {
       setStatus(`Loaded workspace: ${incoming.length} maps.`);
     }
     undoStack.length = 0; redoStack.length = 0;
+    ws.maps.forEach(captureBaseline);
     updateAll(); fitView();
     return;
   }
@@ -1685,6 +1747,31 @@ $('exportLayoutBtn').addEventListener('click', () => {
   download('farm_layout_v3.json', buildFarmLayoutV3());
   setStatus('Farm layout downloaded.');
 });
+$('exportDiffBtn').addEventListener('click', () => {
+  const m = activeMap();
+  const diff = computeMapDiff(m);
+  const json = JSON.stringify(diff, null, 2);
+  $('diffTitle').textContent = m.name;
+  const tileCount = diff.tiles ? Object.values(diff.tiles).reduce((s,a)=>s+a.length,0) : 0;
+  const hasBase = _baselines.has(m.id);
+  $('diffSubtitle').textContent = hasBase
+    ? `${tileCount} tile change${tileCount!==1?'s':''} vs baseline · ${json.length.toLocaleString()} chars (full JSON: ~${Math.round(JSON.stringify(m).length/1024)}KB)`
+    : 'No baseline — import or load a map file to establish one.';
+  $('diffTextarea').value = json;
+  $('diffModal').style.display = 'block';
+});
+$('diffCopyBtn').addEventListener('click', () => {
+  navigator.clipboard?.writeText($('diffTextarea').value)
+    .then(() => setStatus('Diff copied to clipboard.'))
+    .catch(() => { $('diffTextarea').select(); document.execCommand('copy'); setStatus('Diff copied.'); });
+});
+$('diffDownloadBtn').addEventListener('click', () => {
+  const m = activeMap();
+  download(`${m.name.toLowerCase().replace(/[^a-z0-9]+/g,'_')}.diff.json`, JSON.parse($('diffTextarea').value));
+  setStatus('Diff downloaded.');
+});
+$('diffCloseBtn').addEventListener('click', () => { $('diffModal').style.display = 'none'; });
+$('diffModal').addEventListener('click', e => { if (e.target === $('diffModal')) $('diffModal').style.display = 'none'; });
 $('importBtn').addEventListener('click', () => $('importFile').click());
 $('loadTownBtn').addEventListener('click', async () => {
   try {
@@ -1784,5 +1871,17 @@ resizeCanvas(); updateAll(); fitView();
 loadBuildingInteriorMaps();
 })();
 </script>
+<div id="diffModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);overflow:auto;padding:20px">
+  <div style="max-width:760px;margin:0 auto;background:#111b28;border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:20px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <b style="flex:1;font-size:13px">Export Diff — <span id="diffTitle" style="color:#6aa7ff"></span></b>
+      <button id="diffCopyBtn" class="ok" style="padding:5px 12px">📋 Copy</button>
+      <button id="diffDownloadBtn" class="sec" style="padding:5px 12px">⬇ Download</button>
+      <button id="diffCloseBtn" class="bad" style="padding:5px 10px">✕</button>
+    </div>
+    <p id="diffSubtitle" style="font-size:11px;color:#9fb4cf;margin-bottom:8px"></p>
+    <textarea id="diffTextarea" readonly style="width:100%;height:65vh;font:12px/1.5 monospace;background:#07101a;border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#edf5ff;padding:10px;resize:vertical;box-sizing:border-box"></textarea>
+  </div>
+</div>
 </body>
 </html>
