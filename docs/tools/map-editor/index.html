@@ -72,6 +72,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
       <div id="modeBar">
         <button class="sec act" data-mode="pan">✋ Pan</button>
         <button class="sec" data-mode="tile">🖌 Tile</button>
+        <button class="sec" data-mode="fill">🪣 Fill</button>
         <button class="sec" data-mode="crop">🌱 Crop</button>
         <button class="sec" data-mode="object">📦 Object</button>
         <button class="sec" data-mode="furniture">⚙️ Processor</button>
@@ -583,12 +584,39 @@ function bresenham(x0, y0, x1, y1) {
 }
 function paintRouteTiles(route, m) {
   const nodes = route.nodes || [];
+  const rad = Math.floor(((route.pathWidth || 1) - 1) / 2);
   for (let i = 0; i < nodes.length - 1; i++) {
-    for (const [c, r] of bresenham(nodes[i][0], nodes[i][1], nodes[i+1][0], nodes[i+1][1])) {
-      const k = `${c},${r}`;
-      m.tiles[k] = { type: 'path', crop: m.tiles[k]?.crop || '' };
+    for (const [bc, br] of bresenham(nodes[i][0], nodes[i][1], nodes[i+1][0], nodes[i+1][1])) {
+      for (let dc = -rad; dc <= rad; dc++) {
+        for (let dr = -rad; dr <= rad; dr++) {
+          const nc = bc+dc, nr = br+dr;
+          if (nc < 0 || nc >= m.cols || nr < 0 || nr >= m.rows) continue;
+          const k = `${nc},${nr}`;
+          m.tiles[k] = { type: 'path', crop: m.tiles[k]?.crop || '' };
+        }
+      }
     }
   }
+}
+function floodFill(m, startC, startR, newType) {
+  const k0 = `${startC},${startR}`;
+  const oldType = m.tiles[k0]?.type ?? null;
+  if (oldType === newType) return false;
+  const queue = [[startC, startR]];
+  const visited = new Set([k0]);
+  while (queue.length) {
+    const [c, r] = queue.shift();
+    const k = `${c},${r}`;
+    m.tiles[k] = { type: newType, crop: m.tiles[k]?.crop || '' };
+    for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nc = c+dc, nr = r+dr;
+      if (nc < 0 || nc >= m.cols || nr < 0 || nr >= m.rows) continue;
+      const nk = `${nc},${nr}`;
+      if (visited.has(nk)) continue;
+      if ((m.tiles[nk]?.type ?? null) === oldType) { visited.add(nk); queue.push([nc, nr]); }
+    }
+  }
+  return true;
 }
 function maybePaintRoute(m) {
   const route = (m.routes || []).find(r => r.id === activePathId);
@@ -643,6 +671,7 @@ function renderPalette() {
     if (ap) {
       html += `<div class="g2" style="margin-top:6px">
         <div><label>Label</label><input id="pathLabelIn" value="${ap.label.replace(/"/g,'&quot;')}"></div>
+        <div><label>Path width</label><input id="pathWidthIn" type="number" min="1" max="20" value="${ap.pathWidth||1}"></div>
               </div>
         <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;cursor:pointer">
           <input type="checkbox" id="routePaintTilesChk" ${ap.paintTiles?'checked':''}>
@@ -694,6 +723,13 @@ function renderPalette() {
       <div class="item-meta">id: ${st.id} · at (${st.col}, ${st.row})</div>
     </div>`).join('') || '<p class="muted">No NPC stations yet.</p>';
     html += '<p class="muted" style="margin-top:5px">Click the map to place a reusable NPC Station. Schedules can use <code>stationId</code> instead of x/y positions; rotation, pose, and optional tool loop metadata travel with the station.</p>';
+  } else if (mode === 'fill') {
+    const set = TILE_SETS[m.category] || TILE_SETS.exterior;
+    html = set.map(t => {
+      const info = TILE_INFO[t];
+      return `<button class="pal-btn ${brush.tile===t?'act':''}" data-pal="tile" data-val="${t}" style="--pc:${info?.color||'#555'}">${t}</button>`;
+    }).join('');
+    html += '<p class="muted" style="margin-top:6px">Click a tile to flood-fill all connected tiles of the same type with the selected tile.</p>';
   } else if (mode === 'erase') {
     html = '<p class="muted">Click or drag to remove tiles, crops, objects, furniture, decor, route nodes, and spots under the cursor.</p>';
   } else {
@@ -754,6 +790,13 @@ function renderPalette() {
   }));
   const pl = box.querySelector('#pathLabelIn');
   if (pl) pl.addEventListener('change', () => { const p = (m.routes || []).find(x => x.id === activePathId); if (p) { p.label = pl.value.trim() || p.label; renderPalette(); draw(); refreshPreview(); saveWorkspace(); } });
+  const pwIn = box.querySelector('#pathWidthIn');
+  if (pwIn) pwIn.addEventListener('change', () => {
+    const p = (m.routes || []).find(x => x.id === activePathId); if (!p) return;
+    p.pathWidth = Math.max(1, parseInt(pwIn.value) || 1);
+    if (p.paintTiles) { pushUndo(); paintRouteTiles(p, m); draw(); refreshPreview(); }
+    saveWorkspace();
+  });
   const rptChk = box.querySelector('#routePaintTilesChk');
   if (rptChk) rptChk.addEventListener('change', () => {
     const p = (m.routes || []).find(x => x.id === activePathId); if (!p) return;
@@ -1082,6 +1125,10 @@ function applyAt(tile) {
       m.transitions.push(t); activeSpotId = t.id;
     }
     renderPalette();
+  } else if (mode === 'fill') {
+    const set = TILE_SETS[m.category] || TILE_SETS.exterior;
+    const t = set.includes(brush.tile) ? brush.tile : set[0];
+    if (!floodFill(m, c, r, t)) return;
   } else if (mode === 'erase') {
     let did = false;
     if (m.tiles[key]) { delete m.tiles[key]; did = true; }
@@ -1108,7 +1155,7 @@ function overlaps(d, c, r, fw, fd) {
 }
 
 const PAINT_MODES = ['tile','crop','erase'];   // drag-paintable
-const TAP_MODES = ['object','furniture','decor','path','spot','station'];
+const TAP_MODES = ['object','furniture','decor','path','spot','station','fill'];
 
 canvas.addEventListener('pointerdown', e => {
   canvas.setPointerCapture?.(e.pointerId); ptrs.set(e.pointerId, canvasPt(e));
