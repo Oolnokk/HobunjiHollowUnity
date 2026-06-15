@@ -83,12 +83,56 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
       <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px">
         <button id="toolPaintFloor" class="active">Paint floor</button>
         <button id="toolEraseFloor">Erase floor</button>
-        <button id="toolExit">Place exit</button>
+        <button id="toolPaintCollider">Collider</button>
+        <button id="toolEraseCollider">Erase collider</button>
         <button id="toolFurniture">Place furniture</button>
         <button id="toolSelect">Select</button>
-        <button id="toolErase">Erase</button>
+        <button id="toolErase">Erase furn</button>
       </div>
-      <p class="hint" style="margin-top:6px">Paint the room footprint first. Exit (orange) = door back to town. Walls auto-generate at footprint boundary with a gap at the exit tile.</p>
+      <p class="hint" style="margin-top:6px">Paint floor footprint. Collider = invisible blocker (red). Exit/vendor zones below. Walls auto-generate with gaps at exit tile edges.</p>
+    </div>
+
+    <div class="section">
+      <h2>3b. Exit zones</h2>
+      <div class="row" style="flex-wrap:wrap;gap:5px">
+        <button id="addExitBtn">+ New exit</button>
+        <button id="toolPaintExit">Paint exit</button>
+        <button id="toolEraseExit">Erase exit</button>
+      </div>
+      <div id="exitZoneList" style="margin-top:6px;display:flex;flex-direction:column;gap:5px"></div>
+      <div id="exitZoneFields" class="hidden" style="margin-top:6px;border-top:1px solid var(--line);padding-top:6px">
+        <div class="grid2">
+          <div class="field"><label>Label</label><input id="exitZoneLabel" placeholder="Front door"></div>
+          <div class="field"><label>Target map</label><input id="exitTargetMap" placeholder="map_town_01"></div>
+        </div>
+        <div class="grid2" style="margin-top:4px">
+          <div class="field"><label>Spawn col</label><input id="exitSpawnCol" type="number" min="0" value="0"></div>
+          <div class="field"><label>Spawn row</label><input id="exitSpawnRow" type="number" min="0" value="0"></div>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <button id="applyExitBtn">Apply</button>
+          <button id="delExitBtn" class="danger">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>3c. Vendor zones</h2>
+      <div class="row" style="flex-wrap:wrap;gap:5px">
+        <button id="addVendorBtn">+ New vendor</button>
+        <button id="toolPaintVendor">Paint vendor</button>
+        <button id="toolEraseVendor">Erase vendor</button>
+      </div>
+      <div id="vendorZoneList" style="margin-top:6px;display:flex;flex-direction:column;gap:5px"></div>
+      <div id="vendorZoneFields" class="hidden" style="margin-top:6px;border-top:1px solid var(--line);padding-top:6px">
+        <div class="field">
+          <label>Vendor key</label><input id="vendorKey" placeholder="merchant_trader">
+        </div>
+        <div class="row" style="margin-top:4px">
+          <button id="applyVendorBtn">Apply</button>
+          <button id="delVendorBtn" class="danger">Delete</button>
+        </div>
+      </div>
     </div>
 
     <div class="section">
@@ -130,7 +174,11 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
         </div>
         <div class="grid2" style="margin-top:6px">
           <div class="field"><label>Offset Z</label><input id="pZ" type="number" step="0.05" value="0"></div>
-          <div class="field"><label>Scale</label><input id="pScale" type="number" step="0.05" min="0.05" value="1"></div>
+          <div class="field"><label>Scale X</label><input id="pSX" type="number" step="0.05" min="0.05" value="1"></div>
+        </div>
+        <div class="grid2" style="margin-top:4px">
+          <div class="field"><label>Scale Y</label><input id="pSY" type="number" step="0.05" min="0.05" value="1"></div>
+          <div class="field"><label>Scale Z</label><input id="pSZ" type="number" step="0.05" min="0.05" value="1"></div>
         </div>
         <div class="row" style="margin-top:4px">
           <button id="applyPTBtn">Apply</button>
@@ -253,7 +301,7 @@ function makeBlank(){
   var cols=12, rows=10, floor=[];
   for(var r=0;r<rows;r++) for(var c=0;c<cols;c++) floor.push([c,r]);
   return { schema:'hobunji_building_interior.v1', id:'map_i_building_01', name:'Building Interior',
-           cols:cols, rows:rows, exit:{col:6,row:9}, floor:floor, furniture:[] };
+           cols:cols, rows:rows, exits:[], colliders:[], vendorZones:[], floor:floor, furniture:[] };
 }
 
 var state = {
@@ -262,10 +310,12 @@ var state = {
   tool: 'paintFloor',
   activeKey: 'shop_counter',
   selectedId: null,
+  activeExitId: null,
+  activeVendorId: null,
   library: [],
   dragging: false,
-  dragFurn: null,   // furniture item currently being tile-dragged
-  dragOff: null,    // {dc,dr} click offset within that item's footprint
+  dragFurn: null,
+  dragOff: null,
 };
 
 function syncFloorSet(){
@@ -305,18 +355,47 @@ function drawGrid(){
     gx.fillStyle='#1a2a3e'; gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
   });
 
-  // Exit
-  var ex=state.interior.exit;
-  if(ex && isFloor(ex.col,ex.row)){
-    gx.fillStyle='#c47a10'; gx.globalAlpha=0.75;
-    gx.fillRect(ex.col*cw+1,ex.row*ch+1,cw-2,ch-2);
-    gx.globalAlpha=1;
-    gx.strokeStyle='#ffd26e'; gx.lineWidth=2;
-    gx.strokeRect(ex.col*cw+1,ex.row*ch+1,cw-2,ch-2);
-    var fs=Math.max(7,Math.min(11,cw*0.32));
-    gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
-    gx.fillStyle='#fff'; gx.fillText('E',(ex.col+0.5)*cw,(ex.row+0.5)*ch);
-  }
+  // Colliders
+  (state.interior.colliders||[]).forEach(function(p){
+    var c=p[0],r=p[1];
+    gx.fillStyle='rgba(255,50,50,0.28)'; gx.fillRect(c*cw,r*ch,cw,ch);
+    gx.save(); gx.beginPath();
+    for(var s=3;s<cw+ch;s+=6){ gx.moveTo(c*cw+Math.min(s,cw),r*ch+Math.max(0,s-cw)); gx.lineTo(c*cw+Math.max(0,s-ch),r*ch+Math.min(s,ch)); }
+    gx.strokeStyle='rgba(210,40,40,0.55)'; gx.lineWidth=1; gx.stroke(); gx.restore();
+    gx.strokeStyle='#ff3333'; gx.lineWidth=1; gx.strokeRect(c*cw+0.5,r*ch+0.5,cw-1,ch-1);
+  });
+
+  // Exit zones
+  (state.interior.exits||[]).forEach(function(ez,zi){
+    var isActive=ez.id===state.activeExitId;
+    (ez.tiles||[]).forEach(function(p){
+      var c=p[0],r=p[1];
+      gx.fillStyle=isActive?'rgba(255,148,15,0.82)':'rgba(210,125,12,0.52)';
+      gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
+      gx.strokeStyle=isActive?'#ffe055':'#d08010'; gx.lineWidth=isActive?2:1;
+      gx.strokeRect(c*cw+1,r*ch+1,cw-2,ch-2);
+      var fs=Math.max(6,Math.min(10,cw*0.3));
+      gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
+      gx.fillStyle='#fff'; gx.globalAlpha=0.9;
+      gx.fillText('E'+(zi+1),(c+0.5)*cw,(r+0.5)*ch); gx.globalAlpha=1;
+    });
+  });
+
+  // Vendor zones
+  (state.interior.vendorZones||[]).forEach(function(vz,zi){
+    var isActive=vz.id===state.activeVendorId;
+    (vz.tiles||[]).forEach(function(p){
+      var c=p[0],r=p[1];
+      gx.fillStyle=isActive?'rgba(148,55,255,0.82)':'rgba(120,40,215,0.52)';
+      gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
+      gx.strokeStyle=isActive?'#cc88ff':'#8025c0'; gx.lineWidth=isActive?2:1;
+      gx.strokeRect(c*cw+1,r*ch+1,cw-2,ch-2);
+      var fs=Math.max(6,Math.min(10,cw*0.3));
+      gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
+      gx.fillStyle='#fff'; gx.globalAlpha=0.9;
+      gx.fillText('V'+(zi+1),(c+0.5)*cw,(r+0.5)*ch); gx.globalAlpha=1;
+    });
+  });
 
   // Furniture
   state.interior.furniture.forEach(function(f){
@@ -338,7 +417,8 @@ function drawGrid(){
   for(var c=0;c<=cols;c++){ gx.beginPath(); gx.moveTo(c*cw,0); gx.lineTo(c*cw,H); gx.stroke(); }
   for(var r=0;r<=rows;r++){ gx.beginPath(); gx.moveTo(0,r*ch); gx.lineTo(W,r*ch); gx.stroke(); }
 
-  $('viewStats').textContent=state.floorSet.size+' tiles | '+state.interior.furniture.length+' items | '+cols+'x'+rows;
+  var nColl=(state.interior.colliders||[]).length, nEZ=(state.interior.exits||[]).length, nVZ=(state.interior.vendorZones||[]).length;
+  $('viewStats').textContent=state.floorSet.size+' tiles | '+state.interior.furniture.length+' furn | '+cols+'x'+rows+(nColl?' | '+nColl+' coll':'')+(nEZ?' | '+nEZ+' exits':'')+(nVZ?' | '+nVZ+' vendors':'');
 }
 
 function gridCell(e){
@@ -372,7 +452,8 @@ function gridAction(e){
           if(f.col+dc===c&&f.row+dd===r) return false;
         return true;
       });
-      if(interior.exit&&interior.exit.col===c&&interior.exit.row===r) interior.exit=null;
+      (interior.exits||[]).forEach(function(ez){ ez.tiles=(ez.tiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;}); });
+      (interior.vendorZones||[]).forEach(function(vz){ vz.tiles=(vz.tiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;}); });
       syncFloorFromSet(); drawGrid(); rebuild3D();
     }
   }
@@ -406,6 +487,48 @@ function gridAction(e){
     var f=furnAt(c,r);
     if(f){ interior.furniture=interior.furniture.filter(function(x){return x.id!==f.id;}); if(state.selectedId===f.id) selectFurn(null); drawGrid(); rebuild3D(); }
   }
+  else if(tool==='paintCollider'){
+    if(!interior.colliders) interior.colliders=[];
+    if(!interior.colliders.some(function(p){return p[0]===c&&p[1]===r;})){
+      interior.colliders.push([c,r]); drawGrid(); rebuild3D();
+    }
+  }
+  else if(tool==='eraseCollider'){
+    interior.colliders=(interior.colliders||[]).filter(function(p){return p[0]!==c||p[1]!==r;});
+    drawGrid(); rebuild3D();
+  }
+  else if(tool==='paintExit'){
+    if(!state.activeExitId){log('Select an exit zone first.','warn');return;}
+    var ez=(interior.exits||[]).filter(function(e){return e.id===state.activeExitId;})[0];
+    if(!ez) return;
+    if(!isFloor(c,r)){log('Exit tiles must be on floor.','warn');return;}
+    if(!ez.tiles.some(function(p){return p[0]===c&&p[1]===r;})){
+      ez.tiles.push([c,r]); drawGrid(); rebuild3D();
+    }
+  }
+  else if(tool==='eraseExit'){
+    if(!state.activeExitId) return;
+    var ez=(interior.exits||[]).filter(function(e){return e.id===state.activeExitId;})[0];
+    if(!ez) return;
+    ez.tiles=ez.tiles.filter(function(p){return p[0]!==c||p[1]!==r;});
+    drawGrid(); rebuild3D();
+  }
+  else if(tool==='paintVendor'){
+    if(!state.activeVendorId){log('Select a vendor zone first.','warn');return;}
+    var vz=(interior.vendorZones||[]).filter(function(v){return v.id===state.activeVendorId;})[0];
+    if(!vz) return;
+    if(!isFloor(c,r)){log('Vendor tiles must be on floor.','warn');return;}
+    if(!vz.tiles.some(function(p){return p[0]===c&&p[1]===r;})){
+      vz.tiles.push([c,r]); drawGrid(); rebuild3D();
+    }
+  }
+  else if(tool==='eraseVendor'){
+    if(!state.activeVendorId) return;
+    var vz=(interior.vendorZones||[]).filter(function(v){return v.id===state.activeVendorId;})[0];
+    if(!vz) return;
+    vz.tiles=vz.tiles.filter(function(p){return p[0]!==c||p[1]!==r;});
+    drawGrid(); rebuild3D();
+  }
 }
 
 gc.addEventListener('pointerdown',function(e){
@@ -427,7 +550,8 @@ gc.addEventListener('pointermove',function(e){
     if(!ok) return;
     f.col=nc; f.row=nr;
     drawGrid();
-  } else if(['paintFloor','eraseFloor','furniture','erase'].indexOf(state.tool)>=0){
+  } else if(['paintFloor','eraseFloor','furniture','erase',
+             'paintCollider','eraseCollider','paintExit','eraseExit','paintVendor','eraseVendor'].indexOf(state.tool)>=0){
     gridAction(e);
   }
 });
@@ -441,7 +565,7 @@ gc.addEventListener('pointerleave',function(){
 });
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
-var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',exit:'toolExit',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase'};
+var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',paintCollider:'toolPaintCollider',eraseCollider:'toolEraseCollider',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase',paintExit:'toolPaintExit',eraseExit:'toolEraseExit',paintVendor:'toolPaintVendor',eraseVendor:'toolEraseVendor'};
 function setTool(t){
   state.tool=t;
   Object.keys(TOOL_IDS).forEach(function(k){ $(TOOL_IDS[k]).classList.toggle('active',k===t); });
@@ -478,7 +602,9 @@ function selectFurn(id){
     var cat=catOf(f.itemKey);
     $('selLabel').textContent=(cat.label||f.itemKey)+' ('+f.itemKey+')';
     $('selPos').textContent=' col '+f.col+', row '+f.row;
-    $('pRotY').value=f.rotY||0; $('pX').value=f.postX||0; $('pY').value=f.postY||0; $('pZ').value=f.postZ||0; $('pScale').value=f.postScale||1;
+    var defS=f.postScale!=null?f.postScale:1;
+    $('pRotY').value=f.rotY||0; $('pX').value=f.postX||0; $('pY').value=f.postY||0; $('pZ').value=f.postZ||0;
+    $('pSX').value=f.postSX!=null?f.postSX:defS; $('pSY').value=f.postSY!=null?f.postSY:defS; $('pSZ').value=f.postSZ!=null?f.postSZ:defS;
     $('selStats').textContent='Selected: '+(cat.label||f.itemKey);
     syncTC();
   } else {
@@ -491,12 +617,14 @@ function selectFurn(id){
 $('applyPTBtn').addEventListener('click',function(){
   var f=state.interior.furniture.filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
   pushUndo();
-  f.rotY=+$('pRotY').value||0; f.postX=+$('pX').value||0; f.postY=+$('pY').value||0; f.postZ=+$('pZ').value||0; f.postScale=Math.max(0.05,+$('pScale').value||1);
+  f.rotY=+$('pRotY').value||0; f.postX=+$('pX').value||0; f.postY=+$('pY').value||0; f.postZ=+$('pZ').value||0;
+  f.postSX=Math.max(0.05,+$('pSX').value||1); f.postSY=Math.max(0.05,+$('pSY').value||1); f.postSZ=Math.max(0.05,+$('pSZ').value||1);
+  delete f.postScale;
   rebuild3D();
 });
 $('resetPTBtn').addEventListener('click',function(){
   var f=state.interior.furniture.filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
-  pushUndo(); f.rotY=0; f.postX=0; f.postY=0; f.postZ=0; f.postScale=1; rebuild3D(); selectFurn(state.selectedId);
+  pushUndo(); f.rotY=0; f.postX=0; f.postY=0; f.postZ=0; f.postSX=1; f.postSY=1; f.postSZ=1; delete f.postScale; rebuild3D(); selectFurn(state.selectedId);
 });
 $('delFurnBtn').addEventListener('click',function(){
   if(!state.selectedId) return; pushUndo();
@@ -515,7 +643,9 @@ $('applyGridBtn').addEventListener('click',function(){
   state.interior.furniture=state.interior.furniture.filter(function(f){
     var cat=catOf(f.itemKey); return f.col+cat.fw<=cols&&f.row+cat.fd<=rows;
   });
-  if(state.interior.exit){ state.interior.exit.col=Math.min(state.interior.exit.col,cols-1); state.interior.exit.row=Math.min(state.interior.exit.row,rows-1); }
+  (state.interior.exits||[]).forEach(function(e){ e.tiles=(e.tiles||[]).filter(function(p){return p[0]<cols&&p[1]<rows;}); });
+  (state.interior.vendorZones||[]).forEach(function(v){ v.tiles=(v.tiles||[]).filter(function(p){return p[0]<cols&&p[1]<rows;}); });
+  state.interior.colliders=(state.interior.colliders||[]).filter(function(p){return p[0]<cols&&p[1]<rows;});
   drawGrid(); rebuild3D(); log('Grid '+cols+'x'+rows);
 });
 $('fillRectBtn').addEventListener('click',function(){
@@ -525,7 +655,96 @@ $('fillRectBtn').addEventListener('click',function(){
   state.interior.floor=floor; syncFloorSet(); drawGrid(); rebuild3D(); log('Filled rectangle.');
 });
 $('clearFloorBtn').addEventListener('click',function(){
-  pushUndo(); state.interior.floor=[]; syncFloorSet(); state.interior.furniture=[]; selectFurn(null); drawGrid(); rebuild3D(); log('Floor cleared.');
+  pushUndo(); state.interior.floor=[]; syncFloorSet(); state.interior.furniture=[];
+  (state.interior.exits||[]).forEach(function(e){e.tiles=[];});
+  (state.interior.vendorZones||[]).forEach(function(v){v.tiles=[];});
+  selectFurn(null); drawGrid(); rebuild3D(); log('Floor cleared.');
+});
+
+// ─── Exit zone management ─────────────────────────────────────────────────────
+function renderExitList(){
+  var el=$('exitZoneList'); el.innerHTML='';
+  (state.interior.exits||[]).forEach(function(ez){
+    var isActive=ez.id===state.activeExitId;
+    var div=document.createElement('div'); div.className='listItem';
+    div.style.outline=isActive?'2px solid var(--accent)':'';
+    div.innerHTML='<span><b>'+(ez.label||ez.id)+'</b><br><span class="chip">'+
+      (ez.tiles||[]).length+' tiles → '+(ez.targetMap||'(no target)')+'</span></span>'+
+      '<button type="button" onclick="window.__biaSelExit(\''+ez.id+'\')">Edit</button>';
+    el.appendChild(div);
+  });
+}
+window.__biaSelExit=function(id){
+  var ez=(state.interior.exits||[]).filter(function(e){return e.id===id;})[0]; if(!ez) return;
+  state.activeExitId=id;
+  $('exitZoneFields').classList.remove('hidden');
+  $('exitZoneLabel').value=ez.label||'';
+  $('exitTargetMap').value=ez.targetMap||'';
+  $('exitSpawnCol').value=ez.spawnCol||0;
+  $('exitSpawnRow').value=ez.spawnRow||0;
+  setTool('paintExit'); renderExitList(); drawGrid();
+};
+$('addExitBtn').addEventListener('click',function(){
+  if(!state.interior.exits) state.interior.exits=[];
+  var id='exit_'+Date.now().toString(36);
+  state.interior.exits.push({id:id,label:'Exit '+(state.interior.exits.length+1),tiles:[],targetMap:'',spawnCol:0,spawnRow:0});
+  window.__biaSelExit(id);
+});
+$('applyExitBtn').addEventListener('click',function(){
+  if(!state.activeExitId) return;
+  var ez=(state.interior.exits||[]).filter(function(e){return e.id===state.activeExitId;})[0]; if(!ez) return;
+  pushUndo();
+  ez.label=$('exitZoneLabel').value.trim()||ez.label;
+  ez.targetMap=$('exitTargetMap').value.trim();
+  ez.spawnCol=+$('exitSpawnCol').value||0;
+  ez.spawnRow=+$('exitSpawnRow').value||0;
+  renderExitList(); refreshExport(); log('Exit zone updated.');
+});
+$('delExitBtn').addEventListener('click',function(){
+  if(!state.activeExitId) return; pushUndo();
+  state.interior.exits=(state.interior.exits||[]).filter(function(e){return e.id!==state.activeExitId;});
+  state.activeExitId=null; $('exitZoneFields').classList.add('hidden');
+  renderExitList(); drawGrid(); rebuild3D();
+});
+
+// ─── Vendor zone management ────────────────────────────────────────────────────
+function renderVendorList(){
+  var el=$('vendorZoneList'); el.innerHTML='';
+  (state.interior.vendorZones||[]).forEach(function(vz){
+    var isActive=vz.id===state.activeVendorId;
+    var div=document.createElement('div'); div.className='listItem';
+    div.style.outline=isActive?'2px solid #b060ff':'';
+    div.innerHTML='<span><b>'+(vz.vendorKey||'(no key)')+'</b><br><span class="chip">'+
+      (vz.tiles||[]).length+' tiles</span></span>'+
+      '<button type="button" onclick="window.__biaSelVendor(\''+vz.id+'\')">Edit</button>';
+    el.appendChild(div);
+  });
+}
+window.__biaSelVendor=function(id){
+  var vz=(state.interior.vendorZones||[]).filter(function(v){return v.id===id;})[0]; if(!vz) return;
+  state.activeVendorId=id;
+  $('vendorZoneFields').classList.remove('hidden');
+  $('vendorKey').value=vz.vendorKey||'';
+  setTool('paintVendor'); renderVendorList(); drawGrid();
+};
+$('addVendorBtn').addEventListener('click',function(){
+  if(!state.interior.vendorZones) state.interior.vendorZones=[];
+  var id='vendor_'+Date.now().toString(36);
+  state.interior.vendorZones.push({id:id,vendorKey:'',tiles:[]});
+  window.__biaSelVendor(id);
+});
+$('applyVendorBtn').addEventListener('click',function(){
+  if(!state.activeVendorId) return;
+  var vz=(state.interior.vendorZones||[]).filter(function(v){return v.id===state.activeVendorId;})[0]; if(!vz) return;
+  pushUndo();
+  vz.vendorKey=$('vendorKey').value.trim();
+  renderVendorList(); refreshExport(); log('Vendor zone updated.');
+});
+$('delVendorBtn').addEventListener('click',function(){
+  if(!state.activeVendorId) return; pushUndo();
+  state.interior.vendorZones=(state.interior.vendorZones||[]).filter(function(v){return v.id!==state.activeVendorId;});
+  state.activeVendorId=null; $('vendorZoneFields').classList.add('hidden');
+  renderVendorList(); drawGrid(); rebuild3D();
 });
 
 // ─── Three.js setup ───────────────────────────────────────────────────────────
@@ -647,25 +866,20 @@ function mergeV(segs){
   return out;
 }
 
-function buildWallPanels(floorSet, exit){
-  var ec=exit?exit.col:null, er=exit?exit.row:null, exitSide=null;
-  if(ec!==null && er!==null){
-    if(!floorSet.has(ec+','+(er-1)))      exitSide='N';
-    else if(!floorSet.has(ec+','+(er+1))) exitSide='S';
-    else if(!floorSet.has((ec+1)+','+er)) exitSide='E';
-    else if(!floorSet.has((ec-1)+','+er)) exitSide='W';
-  }
+function buildWallPanels(floorSet, exits){
+  var exitTileSet=new Set();
+  (exits||[]).forEach(function(ez){ (ez.tiles||[]).forEach(function(p){ exitTileSet.add(p[0]+','+p[1]); }); });
 
   var nMap={}, sMap={}, eMap={}, wMap={};
   function push(map,k,seg){ if(!map[k]) map[k]=[]; map[k].push(seg); }
 
   floorSet.forEach(function(key){
     var p=key.split(','), c=+p[0], r=+p[1];
-    var isExit=(c===ec&&r===er);
-    if(!floorSet.has(c+','+(r-1)) && !(isExit&&exitSide==='N')) push(nMap,r,    {x0:c,x1:c+1});
-    if(!floorSet.has(c+','+(r+1)) && !(isExit&&exitSide==='S')) push(sMap,r+1,  {x0:c,x1:c+1});
-    if(!floorSet.has((c+1)+','+r) && !(isExit&&exitSide==='E')) push(eMap,c+1,  {z0:r,z1:r+1});
-    if(!floorSet.has((c-1)+','+r) && !(isExit&&exitSide==='W')) push(wMap,c,    {z0:r,z1:r+1});
+    var isExit=exitTileSet.has(key);
+    if(!floorSet.has(c+','+(r-1)) && !isExit) push(nMap,r,    {x0:c,x1:c+1});
+    if(!floorSet.has(c+','+(r+1)) && !isExit) push(sMap,r+1,  {x0:c,x1:c+1});
+    if(!floorSet.has((c+1)+','+r) && !isExit) push(eMap,c+1,  {z0:r,z1:r+1});
+    if(!floorSet.has((c-1)+','+r) && !isExit) push(wMap,c,    {z0:r,z1:r+1});
   });
 
   var panels=[], H=WALL_H;
@@ -691,7 +905,7 @@ function makeFallbackWalls(panels){
 function rebuild3D(){
   if(previewGroup){ scene3.remove(previewGroup); previewGroup.traverse(function(o){if(o.geometry)o.geometry.dispose();}); }
   furnMeshes={};
-  var floorSet=state.floorSet, exit=state.interior.exit, furniture=state.interior.furniture;
+  var floorSet=state.floorSet, interior=state.interior, furniture=interior.furniture;
   previewGroup=new THREE.Group();
 
   // Floor tiles
@@ -701,14 +915,33 @@ function rebuild3D(){
     fl.position.set(c+0.5,-0.04,r+0.5); previewGroup.add(fl);
   });
 
-  // Exit marker
-  if(exit && typeof exit.col==='number' && isFloor(exit.col,exit.row)){
-    var em=new THREE.Mesh(new THREE.BoxGeometry(0.85,0.03,0.85),exitMat);
-    em.position.set(exit.col+0.5,0.015,exit.row+0.5); previewGroup.add(em);
-  }
+  // Exit zone overlays
+  var exitZoneMat3=new THREE.MeshLambertMaterial({color:0xd08020,transparent:true,opacity:0.55});
+  (interior.exits||[]).forEach(function(ez){
+    (ez.tiles||[]).forEach(function(p){
+      var m=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.03,0.9),exitZoneMat3);
+      m.position.set(p[0]+0.5,0.02,p[1]+0.5); previewGroup.add(m);
+    });
+  });
+
+  // Vendor zone overlays
+  var vendorZoneMat3=new THREE.MeshLambertMaterial({color:0x9933cc,transparent:true,opacity:0.5});
+  (interior.vendorZones||[]).forEach(function(vz){
+    (vz.tiles||[]).forEach(function(p){
+      var m=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.03,0.9),vendorZoneMat3);
+      m.position.set(p[0]+0.5,0.025,p[1]+0.5); previewGroup.add(m);
+    });
+  });
+
+  // Collider boxes (editor-visible, invisible in game)
+  var colliderMat3=new THREE.MeshLambertMaterial({color:0xcc2222,transparent:true,opacity:0.35});
+  (interior.colliders||[]).forEach(function(p){
+    var m=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.3,0.9),colliderMat3);
+    m.position.set(p[0]+0.5,0.15,p[1]+0.5); previewGroup.add(m);
+  });
 
   // Walls
-  var panels=buildWallPanels(floorSet,exit);
+  var panels=buildWallPanels(floorSet,interior.exits);
   if(wb && panels.length){
     try{
       var wbOpts={usePlaceholder:!wbReady,unitMult:0.5,rockScale:1.5,preScale:[1,1,0.6],brickJitter:{rotYDeg:8,shiftU:0.04,shiftV:0.03}};
@@ -723,10 +956,11 @@ function rebuild3D(){
     var cat=catOf(f.itemKey);
     var grp=furnGroupFor(f);
     var cx=f.col+cat.fw/2+(f.postX||0), cz=f.row+cat.fd/2+(f.postZ||0);
-    var sc=f.postScale||1;
+    var defS=f.postScale!=null?f.postScale:1;
+    var scX=f.postSX!=null?f.postSX:defS, scY=f.postSY!=null?f.postSY:defS, scZ=f.postSZ!=null?f.postSZ:defS;
     grp.position.set(cx,(f.postY||0),cz);
     grp.rotation.y=(f.rotY||0)*Math.PI/180;
-    grp.scale.setScalar(sc);
+    grp.scale.set(scX,scY,scZ);
     furnMeshes[f.id]=grp;
     previewGroup.add(grp);
   });
@@ -758,8 +992,10 @@ function initTC(){
       f.postY=+( grp.position.y ).toFixed(3);
       f.postZ=+( grp.position.z-(f.row+cat.fd/2) ).toFixed(3);
       f.rotY =+( grp.rotation.y*180/Math.PI ).toFixed(1);
-      f.postScale=+( grp.scale.x ).toFixed(3);
-      $('pX').value=f.postX; $('pY').value=f.postY; $('pZ').value=f.postZ; $('pRotY').value=f.rotY; $('pScale').value=f.postScale;
+      f.postSX=+( grp.scale.x ).toFixed(3); f.postSY=+( grp.scale.y ).toFixed(3); f.postSZ=+( grp.scale.z ).toFixed(3);
+      delete f.postScale;
+      $('pX').value=f.postX; $('pY').value=f.postY; $('pZ').value=f.postZ; $('pRotY').value=f.rotY;
+      $('pSX').value=f.postSX; $('pSY').value=f.postSY; $('pSZ').value=f.postSZ;
       commitUndo();
     }
   });
@@ -879,9 +1115,27 @@ $('mapName').addEventListener('change',function(){state.interior.name=$('mapName
 // ─── afterLoad ────────────────────────────────────────────────────────────────
 function afterLoad(){
   var i=state.interior;
+  // Migrate legacy single exit → exits array
+  if(i.exit && (!i.exits||!i.exits.length)){
+    if(!i.exits) i.exits=[];
+    i.exits.push({id:newId(),label:'Exit',tiles:[[i.exit.col,i.exit.row]],targetMap:'',spawnCol:0,spawnRow:0});
+    delete i.exit;
+  }
+  if(!i.exits) i.exits=[];
+  if(!i.colliders) i.colliders=[];
+  if(!i.vendorZones) i.vendorZones=[];
+  // Migrate legacy uniform postScale → per-axis
+  (i.furniture||[]).forEach(function(f){
+    if(f.postScale!=null && f.postSX==null){
+      f.postSX=f.postScale; f.postSY=f.postScale; f.postSZ=f.postScale; delete f.postScale;
+    }
+  });
   $('mapId').value=i.id||''; $('mapName').value=i.name||'';
   $('gridCols').value=i.cols||12; $('gridRows').value=i.rows||10;
+  state.activeExitId=null; state.activeVendorId=null;
+  $('exitZoneFields').classList.add('hidden'); $('vendorZoneFields').classList.add('hidden');
   syncFloorSet(); selectFurn(null); drawGrid(); rebuild3D(); refreshExport(); updateUR(); renderLib();
+  renderExitList(); renderVendorList();
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
