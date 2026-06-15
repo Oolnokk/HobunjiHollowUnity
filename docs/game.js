@@ -1774,12 +1774,10 @@
       // Fallback: if no localStorage town data, load from the workspace JSON file.
       // Mirrors the map editor's buildTownLayout() conversion.
       async function _loadTownFromWorkspace() {
-        if (_townZone) return; // already loaded via localStorage
         try {
           const resp = await fetch('config/town-workspace-v1.json');
           if (!resp.ok) return;
           const ws = await resp.json();
-          if (_townZone) return; // race: loaded since fetch started
           _workspaceMaps = ws.maps;
           const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
