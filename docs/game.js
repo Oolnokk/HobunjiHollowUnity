@@ -1743,7 +1743,6 @@
           Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow));
         const townPaths = (layout.npcPaths || []).filter(p =>
           p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
-        worldNpcPaths.push(...townPaths);
         worldTownRoutes = normalizeRoutes(layout.routes, townPaths).map(r => ({ ...r, area: 'town' }));
         rebuildRouteGraphs();
         // If town scene was already built before this layout arrived, spawn buildings now

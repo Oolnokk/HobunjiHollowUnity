@@ -1101,6 +1101,7 @@ function buildTownLayout() {
           || (farmM.transitions || []).find(s => s.targetMapId === townM.id);
         if (fspot) { targetCol = fspot.col; targetRow = fspot.row; }
       }
+      if (targetCol === null) { targetCol = 17; targetRow = 0; } // default farm spawn
     } else {
       const target = mapById(t.targetMapId);
       targetArea = t.targetMapId === ws.gameLink.interiorId ? 'interior' : '';
@@ -1346,7 +1347,8 @@ $('loadTownBtn').addEventListener('click', async () => {
       ws.gameLink.townId = townM.id;
       // Wire farm ↔ town transition spots
       const farmM = mapById(ws.gameLink.exteriorId);
-      const townSpot = (townM.transitions || []).find(t => t.id === 'sp_town_farm');
+      const townSpot = (townM.transitions || []).find(t => t.id === 'sp_town_farm')
+        || (townM.transitions || []).find(t => !t.targetMapId);
       if (farmM && townSpot) {
         // Add farm-side spot pointing back to town if not already present
         const existing = (farmM.transitions || []).find(t => t.targetMapId === townM.id);
