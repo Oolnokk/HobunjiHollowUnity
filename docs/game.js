@@ -1391,7 +1391,7 @@
         camTargetX = player.x / TILE;
         camTargetZ = player.y / TILE;
         _transitionLatch = travelAreaKey();
-        if (t.target !== 'building' && t.target !== 'exit_building') logMapSwap('travel', currentArea);
+        if (t.target !== 'building' && t.target !== 'exit_building') logMapSwap('travel', currentArea, { target: t.target || 'farm' });
       }
 
 
@@ -1785,7 +1785,7 @@
           _workspaceMaps = ws.maps;
           const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
-          const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], buildings: townM.buildings || [] };
+          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], buildings: townM.buildings || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
             if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
@@ -2069,7 +2069,7 @@
             worldRoutes = worldRoutes.filter(r => (r.area || 'farm') !== mapId).concat(buildingRoutes);
             rebuildRouteGraphs();
           }
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config' };
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId };
           _buildingScenes.set(mapId, info);
           for (const w of npcWalkers) {
             if (w.root._pendingBuildingAdd === mapId) {
@@ -2125,7 +2125,7 @@
           const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
           bScene.add(wallGroup);
         }
-        const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config' };
+        const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId };
         _buildingScenes.set(mapId, info);
         for (const w of npcWalkers) {
           if (w.root._pendingBuildingAdd === mapId) {
@@ -2150,11 +2150,20 @@
         };
       }
 
+      function mapDebugName(area) {
+        if (area === 'interior') return 'Farmhouse Interior';
+        if (area === 'town') return _townZone?.name || 'Hobunji Hollow — Town';
+        if (area === 'farm') return 'Farm';
+        if (_isBuildingArea(area)) return _buildingScenes.get(area)?.name || area;
+        return area || '(unknown)';
+      }
+
       function logMapSwap(label, area, extra = {}) {
         const source = extra.source || 'runtime';
         const fallback = !!extra.fallback;
         const loading = !!extra.loading;
-        window.__farmLog?.(`[map] ${label}: currentMap=${area} source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}`, fallback ? 'warn' : 'info');
+        const target = extra.target ? ` target=${extra.target}` : '';
+        window.__farmLog?.(`[map] ${label}: currentMap=${area} name="${mapDebugName(area)}" source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}${target}`, fallback ? 'warn' : 'info');
       }
 
       function enterBuilding(mapId, defaultCol, defaultRow) {
@@ -2298,8 +2307,9 @@
               t.target === 'building' &&
               Number.isFinite(t.col) && Number.isFinite(t.row) &&
               t.col >= (bldg.gridX ?? 0) && t.col < (bldg.gridX ?? 0) + (bldg.footprintW ?? 1) &&
-              t.row >= (bldg.gridZ ?? 0) && t.row < (bldg.gridZ ?? 0) + (bldg.footprintD ?? 1));
-            if (!hasWorkspaceEntry && !worldTownTransitions.find(t => t.id === eid)) {
+              t.row >= (bldg.gridZ ?? 0) && t.row <= (bldg.gridZ ?? 0) + (bldg.footprintD ?? 1));
+            const hasAnyEntryAtDoor = worldTownTransitions.some(t => Number.isFinite(t.col) && Number.isFinite(t.row) && t.col === eCol && t.row === eRow);
+            if (!hasWorkspaceEntry && !hasAnyEntryAtDoor && !worldTownTransitions.find(t => t.id === eid)) {
               worldTownTransitions.push({
                 id: eid, area: 'town', col: eCol, row: eRow,
                 target: 'interior',
