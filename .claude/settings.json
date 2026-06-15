@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cmd=$(jq -r '.tool_input.command // \"\"'); echo \"$cmd\" | grep -q 'git commit' && HASH=$(git -C /home/user/HobunjiHollowUnity rev-parse HEAD 2>/dev/null) && printf '{\"systemMessage\":\"Githack: https://rawcdn.githack.com/oolnokk/hobunjihollowunity/%s/docs/index.html\"}' \"$HASH\" || true"
+            "command": "cmd=$(jq -r '.tool_input.command // \"\"'); echo \"$cmd\" | grep -q 'git commit' && HASH=$(git -C /home/user/HobunjiHollowUnity rev-parse HEAD 2>/dev/null) && printf '{\"systemMessage\":\"Githack: https://rawcdn.githack.com/oolnokk/hobunjihollowunity/%s/docs/tools/index.html\"}' \"$HASH\" || true"
           }
         ]
       }
