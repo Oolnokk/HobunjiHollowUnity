@@ -1,7 +1,7 @@
 {
   "schema": "hobunji_map.v1",
   "id": "map_hobunji_town",
-  "name": "Hobunji Hollow \u2014 Town",
+  "name": "Hobunji Hollow — Town",
   "category": "exterior",
   "cols": 60,
   "rows": 50,
@@ -18297,7 +18297,7 @@
       "id": "spot_x3opy",
       "label": "Enter Carpenter's Shop",
       "col": 37,
-      "row": 28,
+      "row": 27,
       "targetMapId": "map_i_carpenters",
       "targetSpotId": "sp_car_entry"
     },
@@ -18353,8 +18353,8 @@
       "footprintD": 4,
       "wbOpts": null,
       "wbGableOpts": null,
-      "rotationDeg": 180,
-      "rotation": 180
+      "rotationDeg": 0,
+      "rotation": 0
     },
     {
       "id": "bldg_ty9gy",
@@ -18366,15 +18366,15 @@
       "footprintD": 4,
       "wbOpts": null,
       "wbGableOpts": null,
-      "rotationDeg": 90,
-      "rotation": 180
+      "rotationDeg": 270,
+      "rotation": 270
     },
     {
       "id": "bldg_8r0d6",
       "label": "Unumanuk Household",
       "pieceFile": "config/pieces/placeholder-medium.json",
       "gridX": 43,
-      "gridZ": 24,
+      "gridZ": 23,
       "footprintW": 5,
       "footprintD": 4,
       "wbOpts": null,
@@ -18430,7 +18430,7 @@
       "label": "Carpenter",
       "pieceFile": "config/pieces/placeholder-medium.json",
       "gridX": 35,
-      "gridZ": 24,
+      "gridZ": 23,
       "footprintW": 5,
       "footprintD": 4,
       "wbOpts": null,
