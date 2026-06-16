@@ -1,7 +1,7 @@
 {
   "schema": "hobunji_map.v1",
   "id": "map_hobunji_town",
-  "name": "Hobunji Hollow — Town",
+  "name": "Hobunji Hollow \u2014 Town",
   "category": "exterior",
   "cols": 60,
   "rows": 50,
@@ -18380,8 +18380,8 @@
       "footprintD": 4,
       "wbOpts": null,
       "wbGableOpts": null,
-      "rotationDeg": 270,
-      "rotation": 270
+      "rotationDeg": 90,
+      "rotation": 90
     },
     {
       "id": "bldg_8r0d6",

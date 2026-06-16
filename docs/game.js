@@ -1278,6 +1278,7 @@
       let _dialogueWalker    = null;
       let nearbyNpcWalker    = null;
       let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
+      let _pendingSpotTransition = null; // spot the player is currently standing on; awaits input to fire
       // ── Town zone ──────────────────────────────────────────────────
       let _townZone          = null;   // parsed hobunji_town_v1 layout
       let townGrid           = [];     // 2-D tile array for the town map
@@ -1332,7 +1333,7 @@
         const area = _isBuildingArea(currentArea) ? currentArea : currentArea === 'interior' ? 'interior' : currentArea === 'town' ? 'town' : 'farm';
         const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
         const key = area + ':' + pc + ',' + pr;
-        if (key === _transitionLatch) return;
+        if (key === _transitionLatch) { _pendingSpotTransition = null; return; }
         _transitionLatch = null;
         let pool;
         if (_isBuildingArea(area)) pool = _buildingScenes.get(area)?.transitions || [];
@@ -1340,8 +1341,9 @@
         const t = pool.find(x =>
           (_isBuildingArea(area) || x.area === area) && x.col === pc && x.row === pr &&
           (x.target === 'building' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
-        if (!t) return;
-        startSceneTransition(() => performTravel(t));
+        if (t !== _pendingSpotTransition) { _pendingSpotTransition = t || null; refreshActionBar(); }
+        // Farm interior exit fires automatically (legacy behaviour)
+        if (t && area === 'interior') startSceneTransition(() => performTravel(t));
       }
 
       function _returnToFarmMeshes() {
@@ -4143,6 +4145,12 @@
         toolSwingT = toolSwingDur;
         strikeFired = false;
         pendingAction = null;
+
+        // Spot transitions require explicit input
+        if (activeAction === 'use_spot' && _pendingSpotTransition) {
+          startSceneTransition(() => performTravel(_pendingSpotTransition));
+          return;
+        }
 
         // Immediate actions (navigation / world-object interactions)
         if (activeAction === 'obj_exit_house') {
@@ -7314,8 +7322,27 @@
           return btns;
         }
 
-        // Town has no tile-based tool actions yet
-        if (currentArea === 'town') return [];
+        // Town: only spot transitions (require explicit input)
+        if (currentArea === 'town') {
+          if (_pendingSpotTransition) {
+            const t = _pendingSpotTransition;
+            const icon = t.target === 'building' ? '🚪' : '🏘';
+            const label = t.label || (t.target === 'building' ? 'Enter' : 'Leave Town');
+            return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
+          }
+          return [];
+        }
+
+        // Building interior: spot transitions require explicit input
+        if (_isBuildingArea(currentArea)) {
+          if (_pendingSpotTransition) {
+            const t = _pendingSpotTransition;
+            const icon = t.target === 'exit_building' ? '🚪' : '🪜';
+            const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
+            return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
+          }
+          return [];
+        }
 
         const reticle = getReticleTile();
         const tile    = grid[reticle.row][reticle.col];
@@ -7416,7 +7443,7 @@
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 
         const obj = currentArea === 'farm' ? getWorldObjectAt(reticle.col, reticle.row) : null;
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}`;
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 

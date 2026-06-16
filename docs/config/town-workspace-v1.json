@@ -12372,8 +12372,8 @@
           "footprintD": 4,
           "wbOpts": null,
           "wbGableOpts": null,
-          "rotationDeg": 270,
-          "rotation": 270
+          "rotationDeg": 90,
+          "rotation": 90
         },
         {
           "id": "bldg_8r0d6",
