@@ -972,7 +972,9 @@
       display: flex;
       flex-direction: column;
       padding: 14px 20px 12px;
-      min-height: calc(4.2 * var(--row));
+      height: calc(4.2 * var(--row));
+      min-height: 0;
+      box-sizing: border-box;
     }
     #npcDialogueName {
       font-size: 12px;
@@ -986,6 +988,8 @@
     }
     #npcDialogueText {
       flex: 1;
+      min-height: 0;
+      overflow: hidden;
       font-size: 13px;
       line-height: 1.7;
       color: var(--text);

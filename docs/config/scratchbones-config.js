@@ -36,6 +36,10 @@ window.SCRATCHBONES_CONFIG = {
       }
     },
     "npcDialogue": {
+      "text": {
+        "maxCharsPerPage": 180,
+        "emptyLine": "..."
+      },
       "staging": {
         "playerDiagonalOffsets": [
           { "x": -0.5, "y": 1 },

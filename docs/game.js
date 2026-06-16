@@ -219,10 +219,38 @@
       const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
       const _npcDialogueTextEl  = document.getElementById('npcDialogueText');
 
+      function npcDialogueTextConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.text || {};
+      }
+
+      function _paginateNpcDialogueText(text) {
+        const cfg = npcDialogueTextConfig();
+        const emptyLine = cfg.emptyLine || '...';
+        const source = String(text || '').trim();
+        if (!source) return [emptyLine];
+        const maxChars = Math.max(1, Number(cfg.maxCharsPerPage) || source.length);
+        const pages = [];
+        let current = '';
+        for (const word of source.split(/\s+/)) {
+          const next = current ? `${current} ${word}` : word;
+          if (next.length > maxChars && current) {
+            pages.push(current);
+            current = word;
+          } else {
+            current = next;
+          }
+        }
+        if (current) pages.push(current);
+        return pages.length ? pages : [emptyLine];
+      }
+
       function _npcDialogueLines(rec) {
-        if (!rec) return ['...'];
-        if (rec.bio) return [rec.bio];
-        return ['...'];
+        if (!rec) return _paginateNpcDialogueText('');
+        if (Array.isArray(rec.dialogueLines) && rec.dialogueLines.length) {
+          return rec.dialogueLines.flatMap(line => _paginateNpcDialogueText(line));
+        }
+        if (rec.bio) return _paginateNpcDialogueText(rec.bio);
+        return _paginateNpcDialogueText('');
       }
 
       async function openNpcDialogue(walker) {
