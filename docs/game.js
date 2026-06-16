@@ -3140,6 +3140,8 @@
       }
 
       let supplyActiveCategory = 'seeds'; // Used by renderSupplyPage() to keep the longer catalog readable on mobile.
+      let generalStoreActiveCategory = 'goods';
+      const generalStorePurchaseQtys = {};
 
       function getSupplyItemCategory(item) {
         // Used by the supply ordering pane; avoids hard-coding future catalog rows into the UI.
@@ -3154,7 +3156,7 @@
       }
 
       function bindSupplyTabs() {
-        document.querySelectorAll('.supply-tab').forEach(btn => {
+        document.querySelectorAll('[data-supply-cat]').forEach(btn => {
           btn.classList.toggle('active', btn.dataset.supplyCat === supplyActiveCategory);
           btn.onclick = () => {
             supplyActiveCategory = btn.dataset.supplyCat || 'seeds';
@@ -3227,69 +3229,125 @@
       function renderMarketPage() { /* market UI removed — sell from Inventory panel */ }
 
       // ── General Store page render ───────────────────────────────────
-      function renderGeneralStorePage() {
-        const list   = document.getElementById('generalStoreList');
-        const goldEl = document.getElementById('gsGoldDisplay');
-        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
-        if (!list) return;
-        list.innerHTML = '';
-        GENERAL_STORE_CATALOG.forEach(item => {
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">${item.icon}</div>
-            <div class="sh-info">
-              <div class="sh-name">${item.name}</div>
-              <div class="sh-desc">${item.desc}</div>
-              <div class="sh-price">${item.price}g</div>
-            </div>
-            <button class="shop-buy-btn" data-key="${item.key}">Buy</button>
-          `;
-          row.querySelector('[data-key]')?.addEventListener('click', () => {
-            const gold = inventory.gold || 0;
-            if (gold < item.price) { showToast('Not enough gold.', false); return; }
-            inventory.gold = gold - item.price;
-            if (item.gives) {
-              Object.entries(item.gives).forEach(([k, v]) => {
-                inventory[k] = Math.min(99, (inventory[k] || 0) + v);
-              });
-            }
-            showToast('Bought ' + item.name + '!', true);
+
+      function getGeneralStoreCategoryLabel(category) {
+        return ({ all: 'All', goods: 'Goods', clothing: 'Clothing' })[category] || 'General Store';
+      }
+
+      function bindGeneralStoreTabs() {
+        document.querySelectorAll('[data-store-cat]').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.storeCat === generalStoreActiveCategory);
+          btn.onclick = () => {
+            generalStoreActiveCategory = btn.dataset.storeCat || 'goods';
             renderGeneralStorePage();
-            buildInventoryGrid();
-          });
-          list.appendChild(row);
-        });
-
-        // ── Daily Clothing ──────────────────────────────────
-        const clothHdrEl = document.createElement('div');
-        clothHdrEl.className = 'shop-section-label';
-        clothHdrEl.textContent = '🧥 Today\'s Clothing  (rerolls each day)';
-        list.appendChild(clothHdrEl);
-
-        generateDailyClothingStock(calendar.day).forEach(item => {
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">👘</div>
-            <div class="sh-info">
-              <div class="sh-name">${esc(item.label)}</div>
-              <div class="sh-desc">${item.slot.charAt(0).toUpperCase() + item.slot.slice(1)} — goes to pack inventory</div>
-              <div class="sh-price">${item.price}g</div>
-            </div>
-            <button class="shop-buy-btn gs-cloth-buy">Buy</button>
-          `;
-          row.querySelector('.gs-cloth-buy')?.addEventListener('click', () => {
-            if ((inventory.gold || 0) < item.price) { showToast('Not enough gold.', false); return; }
-            inventory.gold = (inventory.gold || 0) - item.price;
-            packClothing.push({ ...item });
-            showToast('Bought ' + item.label + '!', true);
-            renderGeneralStorePage(); buildInventoryGrid(); buildPackClothingSection();
-          });
-          list.appendChild(row);
+          };
         });
       }
 
+      function getGeneralStoreQty(itemKey) {
+        return generalStorePurchaseQtys[itemKey] || 0;
+      }
+
+      function adjustGeneralStoreQty(itemKey, delta) {
+        generalStorePurchaseQtys[itemKey] = Math.max(0, Math.min(99, getGeneralStoreQty(itemKey) + delta));
+        renderGeneralStorePage();
+      }
+
+      function buyGeneralStoreItem(item, qty, onBought) {
+        if (qty < 1) { showToast('Select a quantity first.', false); return; }
+        const cost = item.price * qty;
+        const gold = inventory.gold || 0;
+        if (gold < cost) { showToast('Not enough gold. Need ' + cost + 'g.', false); return; }
+        inventory.gold = gold - cost;
+        onBought();
+        generalStorePurchaseQtys[item.key] = 0;
+        showToast('Bought ' + qty + '× ' + item.name + ' for ' + cost + 'g!', true);
+        renderGeneralStorePage();
+        buildInventoryGrid();
+      }
+
+      function renderGeneralStorePage() {
+        bindGeneralStoreTabs();
+        const list = document.getElementById('generalStoreList');
+        const goldEl = document.getElementById('gsGoldDisplay');
+        const sectionTitle = document.getElementById('generalStoreSectionTitle');
+        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
+        if (sectionTitle) sectionTitle.textContent = 'Funji & Son\'s General Store — ' + getGeneralStoreCategoryLabel(generalStoreActiveCategory);
+        if (!list) return;
+        list.innerHTML = '';
+
+        const showGoods = generalStoreActiveCategory === 'all' || generalStoreActiveCategory === 'goods';
+        const showClothing = generalStoreActiveCategory === 'all' || generalStoreActiveCategory === 'clothing';
+
+        if (showGoods) {
+          GENERAL_STORE_CATALOG.forEach(item => {
+            const qty = getGeneralStoreQty(item.key);
+            const row = document.createElement('div');
+            row.className = 'shop-row';
+            row.innerHTML = `
+              <div class="sh-icon">${item.icon}</div>
+              <div class="sh-info">
+                <div class="sh-name">${item.name}</div>
+                <div class="sh-desc">${item.desc}</div>
+                <div class="sh-price">${item.price}g each</div>
+              </div>
+              <div class="shop-qty-ctrl">
+                <button class="shop-qty-btn" data-act="minus">−</button>
+                <span class="shop-qty-val">${qty}</span>
+                <button class="shop-qty-btn" data-act="plus">+</button>
+              </div>
+              <button class="shop-buy-btn" data-act="buy">Buy</button>
+            `;
+            row.querySelector('[data-act="minus"]')?.addEventListener('click', () => adjustGeneralStoreQty(item.key, -1));
+            row.querySelector('[data-act="plus"]')?.addEventListener('click', () => adjustGeneralStoreQty(item.key, 1));
+            row.querySelector('[data-act="buy"]')?.addEventListener('click', () => {
+              buyGeneralStoreItem(item, getGeneralStoreQty(item.key), () => {
+                if (item.gives) {
+                  Object.entries(item.gives).forEach(([k, v]) => {
+                    inventory[k] = Math.min(99, (inventory[k] || 0) + v * getGeneralStoreQty(item.key));
+                  });
+                }
+              });
+            });
+            list.appendChild(row);
+          });
+        }
+
+        if (showClothing) {
+          generateDailyClothingStock(calendar.day).forEach(item => {
+            const qty = getGeneralStoreQty(item.key);
+            const row = document.createElement('div');
+            row.className = 'shop-row';
+            row.innerHTML = `
+              <div class="sh-icon">👘</div>
+              <div class="sh-info">
+                <div class="sh-name">${esc(item.label)}</div>
+                <div class="sh-desc">${item.slot.charAt(0).toUpperCase() + item.slot.slice(1)} — goes to pack inventory</div>
+                <div class="sh-price">${item.price}g each</div>
+              </div>
+              <div class="shop-qty-ctrl">
+                <button class="shop-qty-btn" data-act="minus">−</button>
+                <span class="shop-qty-val">${qty}</span>
+                <button class="shop-qty-btn" data-act="plus">+</button>
+              </div>
+              <button class="shop-buy-btn" data-act="buy">Buy</button>
+            `;
+            row.querySelector('[data-act="minus"]')?.addEventListener('click', () => adjustGeneralStoreQty(item.key, -1));
+            row.querySelector('[data-act="plus"]')?.addEventListener('click', () => adjustGeneralStoreQty(item.key, 1));
+            row.querySelector('[data-act="buy"]')?.addEventListener('click', () => {
+              buyGeneralStoreItem({ ...item, name: item.label }, qty, () => {
+                for (let i = 0; i < qty; i++) packClothing.push({ ...item });
+                buildPackClothingSection();
+              });
+            });
+            list.appendChild(row);
+          });
+        }
+
+        if (!showGoods && !showClothing) {
+          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">📭</span><span class="dr-name">No entries in this store category yet.</span><span class="dr-eta">—</span></div>';
+        }
+      }
             // Item scroll — ordered list of scrollable inventory slots
       const inventoryItems = [
         { key: 'needlegrainSeeds',   icon: '🌾', label: 'NEEDLEGRAIN SEEDS', max: 99, seedFor: 'needlegrain' },

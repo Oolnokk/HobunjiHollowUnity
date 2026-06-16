@@ -322,9 +322,14 @@
       <div class="mp-pane" id="mpGeneralStore">
         <div class="supply-top-row">
           <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="gsGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+          <div class="supply-tabs" role="tablist" aria-label="General store category filters">
+            <button class="supply-tab active" data-store-cat="goods" type="button">Goods</button>
+            <button class="supply-tab" data-store-cat="clothing" type="button">Clothing</button>
+            <button class="supply-tab" data-store-cat="all" type="button">All</button>
+          </div>
         </div>
         <div class="menu-section supply-shop-section">
-          <div class="menu-section-title">Funji &amp; Son's General Store</div>
+          <div class="menu-section-title" id="generalStoreSectionTitle">Funji &amp; Son's General Store — Goods</div>
           <div id="generalStoreList" class="supply-list"></div>
         </div>
       </div><!-- /mpGeneralStore -->
