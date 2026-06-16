@@ -351,10 +351,15 @@
 
       async function _renderNpcDialoguePortrait() {
         if (!dialogueOpen || !_dialogueWalker?.profile || !window.NpcAvatarPreview) return false;
-        await window.NpcAvatarPreview.renderProfileToCanvas(_npcPortraitCanvas, _dialogueWalker.profile, {
+        const renderOptions = {
           breathingComposer: window.portraitBreathingComposer || null,
           seatId: _dialogueSeatId(),
-        });
+        };
+        await window.NpcAvatarPreview.renderProfileToCanvas(_npcPortraitCanvas, _dialogueWalker.profile, renderOptions);
+        if (_dialogueWalker.avatarFrontCanvas && window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel) {
+          await window.NpcAvatarPreview.renderProfileToCanvas(_dialogueWalker.avatarFrontCanvas, _dialogueWalker.profile, renderOptions);
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(_dialogueWalker.avatarGroup, _dialogueWalker.avatarFrontCanvas);
+        }
         return true;
       }
 
@@ -2179,7 +2184,7 @@
         } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; }
 
         const walker = {
-          root, rec, profile, area: spawnArea,
+          root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
           state: 'idle', routeNode: null, previousRouteNode: null, routeTarget: null, _exitSpot: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
