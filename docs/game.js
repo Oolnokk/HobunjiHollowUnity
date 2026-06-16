@@ -3827,7 +3827,19 @@
         set('iiTags',  '<span class="ii-tag">Clothing</span><span class="ii-tag">' + slot.charAt(0).toUpperCase() + slot.slice(1) + '</span>');
         set('iiDesc',  'Currently worn. Buy or find another piece and transfer it to this slot to swap.');
         const actEl = document.getElementById('iiActions');
-        if (actEl) actEl.innerHTML = '';
+        if (actEl) {
+          actEl.innerHTML = '';
+          const btn = document.createElement('button');
+          btn.className = 'ii-btn';
+          btn.textContent = 'De-equip';
+          btn.onclick = () => {
+            gearInventory.clothing[slot] = null;
+            saveGearInventory();
+            buildEquipmentSlots();
+            clearInventoryDetail();
+          };
+          actEl.appendChild(btn);
+        }
       }
 
       function buildPackClothingSection() {
