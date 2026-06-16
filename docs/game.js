@@ -512,12 +512,14 @@
         redberrySeeds: 3, blueberrySeeds: 3, yellowberrySeeds: 3, whiteberrySeeds: 2, blackberrySeeds: 2,
         blackMustardSeed: 3, greenMustardSeed: 3,
         uumkaoiiCrate: 1,
-        bronzehoe: 1, hatchet: 1, fishingmace: 1, fishingspear: 1, pickshovel: 1,
         gold: 40,
       };
 
       // Used by inventoryHud and planting/harvesting actions.
       const inventory = { ...STARTING_INVENTORY };
+
+      let gearInventory = null; // Loaded from player profile — character-scoped
+      let packClothing  = [];   // Clothing items in world/pack inventory
 
       // Tool item definitions: sprite path, compatible slots, animation style
       const TOOL_ITEM_DEFS = {
@@ -545,7 +547,27 @@
         { key: 'legs',  label: 'Legs'  },
         { key: 'feet',  label: 'Feet'  },
       ];
-      const clothingSlots = { head: null, chest: null, legs: null, feet: null };
+
+      function makeDefaultGear() {
+        return {
+          tools:    { bronzehoe: true, hatchet: true, fishingmace: true, fishingspear: true, pickshovel: true },
+          clothing: { hat: null, hood: null, torso: null, overwear: null },
+          charms: [], whistles: [],
+        };
+      }
+
+      function saveGearInventory() {
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
+          const ch = (meta.characters || []).find(c => c.id === window.__hobunjiPlayerProfile.characterId);
+          if (ch) { ch.gearInventory = gearInventory; localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta)); }
+        } catch {}
+      }
+
+      function esc(s) {
+        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
 
       // World object system handles sell+supply (see below)
 
@@ -686,6 +708,53 @@
         { key: 'washTub',       icon: '🛁', name: 'Copper Wash Tub',desc: 'A copper tub for bathing or laundry.',         price: 25, gives: { washTubFurniture: 1 }, category: 'goods' },
         { key: 'counter',       icon: '🏪', name: 'Shop Counter',   desc: 'A sturdy counter for conducting business.',    price: 40, gives: { counterFurniture: 1 }, category: 'goods' },
       ];
+
+      const STORE_CLOTHING_DYES = [
+        { label: 'Earth',   h: -70,  s: -0.80, v: -0.55 },
+        { label: 'Olive',   h: -40,  s: -0.70, v: -0.45 },
+        { label: 'Sage',    h:   0,  s: -0.70, v: -0.30 },
+        { label: 'Seafoam', h:  30,  s: -0.60, v: -0.15 },
+        { label: 'Ash',     h:  10,  s: -0.90, v:  0.25 },
+        { label: 'Onyx',    h:   0,  s: -0.90, v: -0.85 },
+        { label: 'Brown',   h: -113, s: -0.45, v: -0.45 },
+        { label: 'Rust',    h: -143, s: -0.40, v: -0.40 },
+        { label: 'Amber',   h: -113, s: -0.35, v: -0.25 },
+        { label: 'Ochre',   h:  -83, s: -0.45, v: -0.20 },
+        { label: 'Lichen',  h:  -23, s: -0.55, v: -0.25 },
+        { label: 'Slate',   h:   77, s: -0.75, v: -0.20 },
+      ];
+
+      const STORE_CLOTHING_PIECES = [
+        { id: 'rugged_poncho', label: 'Rugged Poncho',        category: 'overwear', usesB: true,  price: 70 },
+        { id: 'fine_poncho',   label: 'Fine Poncho',          category: 'overwear', usesB: true,  price: 80 },
+        { id: 'fine_hood',     label: 'Fine Hood',            category: 'hood',     usesB: true,  price: 60 },
+        { id: 'tankan_tunic',  label: 'Tankan Tunic',         category: 'torso',    usesB: false, price: 50 },
+        { id: 'bandolier1',    label: 'Bandolier',            category: 'torso',    usesB: false, price: 40 },
+        { id: 'appearance::hat::basic_headband',      label: 'Basic Headband',        category: 'hat', usesB: false, price: 35 },
+        { id: 'appearance::hat::leather_headband',    label: 'Leather Headband',      category: 'hat', usesB: false, price: 40 },
+        { id: 'appearance::hat::riverlandskasa_wide', label: 'Riverland Kasa (Wide)', category: 'hat', usesB: false, price: 45 },
+      ];
+
+      function generateDailyClothingStock(day) {
+        const stock = [];
+        for (let i = 0; i < 4; i++) {
+          const piece   = STORE_CLOTHING_PIECES[Math.floor(seededRandom(day * 97 + i * 31) * STORE_CLOTHING_PIECES.length)];
+          const dyeA    = STORE_CLOTHING_DYES[Math.floor(seededRandom(day * 53 + i * 71 + 13) * STORE_CLOTHING_DYES.length)];
+          const dyeB    = piece.usesB ? STORE_CLOTHING_DYES[Math.floor(seededRandom(day * 113 + i * 43 + 7) * STORE_CLOTHING_DYES.length)] : null;
+          const dyeLbl  = piece.usesB && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
+          stock.push({
+            uid:        'citem_gs_' + day + '_' + i,
+            cosmeticId: piece.id,
+            slot:       piece.category,
+            label:      dyeLbl + ' ' + piece.label,
+            colorA:     dyeA,
+            colorB:     dyeB,
+            price:      piece.price,
+            sellPrice:  Math.floor(piece.price * 0.4),
+          });
+        }
+        return stock;
+      }
 
       // Pending orders: [{catalogKey, qty, arrivalDay, name}]
       let pendingOrders  = [];
@@ -3191,6 +3260,34 @@
           });
           list.appendChild(row);
         });
+
+        // ── Daily Clothing ──────────────────────────────────
+        const clothHdrEl = document.createElement('div');
+        clothHdrEl.className = 'shop-section-label';
+        clothHdrEl.textContent = '🧥 Today\'s Clothing  (rerolls each day)';
+        list.appendChild(clothHdrEl);
+
+        generateDailyClothingStock(calendar.day).forEach(item => {
+          const row = document.createElement('div');
+          row.className = 'shop-row';
+          row.innerHTML = `
+            <div class="sh-icon">👘</div>
+            <div class="sh-info">
+              <div class="sh-name">${esc(item.label)}</div>
+              <div class="sh-desc">${item.slot.charAt(0).toUpperCase() + item.slot.slice(1)} — goes to pack inventory</div>
+              <div class="sh-price">${item.price}g</div>
+            </div>
+            <button class="shop-buy-btn gs-cloth-buy">Buy</button>
+          `;
+          row.querySelector('.gs-cloth-buy')?.addEventListener('click', () => {
+            if ((inventory.gold || 0) < item.price) { showToast('Not enough gold.', false); return; }
+            inventory.gold = (inventory.gold || 0) - item.price;
+            packClothing.push({ ...item });
+            showToast('Bought ' + item.label + '!', true);
+            renderGeneralStorePage(); buildInventoryGrid(); buildPackClothingSection();
+          });
+          list.appendChild(row);
+        });
       }
 
             // Item scroll — ordered list of scrollable inventory slots
@@ -3532,6 +3629,7 @@
 
         if (invSelectedKey && keys.includes(invSelectedKey)) selectInventoryItem(invSelectedKey, true);
         else clearInventoryDetail(keys.length ? '← Select an item' : 'Bag is empty');
+        buildPackClothingSection();
       }
 
       function selectInventoryItem(key, skipGridUpdate) {
@@ -3584,18 +3682,13 @@
               buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
             });
           }
-          // Assign/unassign buttons for tool items (item stays in bag either way)
+          // Tool items in pack: offer Transfer to Gear (can't equip directly from pack)
           const toolDef = TOOL_ITEM_DEFS[key];
           if (toolDef && count > 0) {
-            for (const slot of toolDef.slots) {
-              const isAssigned = equipmentSlots[slot] === key;
-              mkBtn(isAssigned ? `Unassign from ${slot}` : `Assign as ${slot}`, 'equip', () => {
-                if (isAssigned) unequipItem(slot);
-                else equipItem(key, slot);
-                buildInventoryGrid();
-                buildEquipmentSlots();
-                selectInventoryItem(key, false);
-              });
+            if (!gearInventory?.tools?.[key]) {
+              mkBtn('Transfer to Gear', 'equip', () => transferToolToGear(key));
+            } else {
+              mkBtn('Already in Gear (extra copy)', '', () => showToast('You already have this tool in your gear.', false));
             }
           }
 
@@ -3603,11 +3696,11 @@
         }
       }
 
-      // Assign a tool item to a slot (item stays in bag; one slot, multiple items can share the item)
+      // Assign a tool item to a slot (tool must be in gear inventory)
       function equipItem(itemKey, slot) {
         const toolDef = TOOL_ITEM_DEFS[itemKey];
         if (!toolDef || !toolDef.slots.includes(slot)) { showToast('Cannot assign that item to that slot.', false); return; }
-        if ((inventory[itemKey] || 0) < 1) { showToast('No ' + (ITEM_DEFS[itemKey]?.label || itemKey) + ' in bag.', false); return; }
+        if (!gearInventory?.tools?.[itemKey]) { showToast((TOOL_ITEM_DEFS[itemKey]?.label || itemKey) + ' is not in your gear. Transfer it first.', false); return; }
         equipmentSlots[slot] = itemKey;
         rebuildToolMeshes();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
@@ -3616,7 +3709,7 @@
         refreshActionBar();
       }
 
-      // Clear a slot assignment (item remains in bag)
+      // Clear a slot assignment (tool remains in gear inventory)
       function unequipItem(slot) {
         const itemKey = equipmentSlots[slot];
         if (!itemKey) return;
@@ -3630,13 +3723,154 @@
         refreshActionBar();
       }
 
+      function transferToolToGear(itemKey) {
+        const toolDef = TOOL_ITEM_DEFS[itemKey];
+        if (!toolDef) return;
+        if (gearInventory.tools[itemKey]) { showToast(toolDef.label + ' is already in your gear.', false); return; }
+        if ((inventory[itemKey] || 0) < 1) { showToast('No ' + toolDef.label + ' in pack.', false); return; }
+        inventory[itemKey]--;
+        clampInventoryStack(itemKey);
+        gearInventory.tools[itemKey] = true;
+        saveGearInventory();
+        showToast(toolDef.label + ' transferred to gear!', true);
+        buildInventoryGrid(); buildEquipmentSlots(); clearInventoryDetail();
+      }
+
+      function transferClothingToGear(uid) {
+        const idx = packClothing.findIndex(c => c.uid === uid);
+        if (idx < 0) return;
+        const item = packClothing[idx];
+        const old  = gearInventory.clothing[item.slot];
+        if (old) packClothing.push({ ...old, uid: 'citem_' + Math.random().toString(36).slice(2, 8) });
+        gearInventory.clothing[item.slot] = { cosmeticId: item.cosmeticId, slot: item.slot, label: item.label, colorA: item.colorA, colorB: item.colorB };
+        packClothing.splice(idx, 1);
+        saveGearInventory();
+        showToast(item.label + ' equipped!', true);
+        buildPackClothingSection(); buildEquipmentSlots(); clearInventoryDetail();
+      }
+
+      function selectGearTool(key) {
+        const def = TOOL_ITEM_DEFS[key];
+        if (!def) return;
+        invSelectedKey = null;
+        document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
+        const emptyEl  = document.getElementById('iiEmpty');
+        const detailEl = document.getElementById('iiDetail');
+        if (emptyEl)  emptyEl.style.display  = 'none';
+        if (detailEl) detailEl.style.display  = '';
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
+        set('iiIcon',  def.icon);
+        set('iiName',  def.label + ' (Gear)');
+        set('iiPrice', 'Permanent — not sellable');
+        set('iiTags',  def.slots.map(t => '<span class="ii-tag">' + t + '</span>').join(''));
+        set('iiDesc',  'This tool is in your gear inventory. Assign it to an equipment slot to use it.');
+        const actEl = document.getElementById('iiActions');
+        if (actEl) {
+          actEl.innerHTML = '';
+          const mkBtn = (label, cls, fn) => {
+            const b = document.createElement('button'); b.className = 'ii-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.onclick = fn; actEl.appendChild(b);
+          };
+          for (const slot of def.slots) {
+            const isAssigned = equipmentSlots[slot] === key;
+            mkBtn(isAssigned ? 'Unassign from ' + slot : 'Assign as ' + slot, 'equip', () => {
+              if (isAssigned) unequipItem(slot); else equipItem(key, slot);
+              buildEquipmentSlots(); selectGearTool(key);
+            });
+          }
+        }
+      }
+
+      function selectPackClothingItem(uid) {
+        const item = packClothing.find(c => c.uid === uid);
+        if (!item) return;
+        invSelectedKey = null;
+        document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
+        const emptyEl  = document.getElementById('iiEmpty');
+        const detailEl = document.getElementById('iiDetail');
+        if (emptyEl)  emptyEl.style.display  = 'none';
+        if (detailEl) detailEl.style.display  = '';
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
+        set('iiIcon',  '👘');
+        set('iiName',  item.label);
+        set('iiPrice', item.sellPrice ? item.sellPrice + 'g' : '');
+        set('iiTags',  '<span class="ii-tag">Clothing</span><span class="ii-tag">' + item.slot.charAt(0).toUpperCase() + item.slot.slice(1) + '</span>');
+        set('iiDesc',  'Transfer to gear to wear it (permanent). Can sell while in pack.');
+        const actEl = document.getElementById('iiActions');
+        if (actEl) {
+          actEl.innerHTML = '';
+          const mkBtn = (label, cls, fn) => {
+            const b = document.createElement('button'); b.className = 'ii-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.onclick = fn; actEl.appendChild(b);
+          };
+          mkBtn('Transfer to Gear (permanent)', 'equip', () => transferClothingToGear(uid));
+          if (item.sellPrice > 0) {
+            mkBtn('Sell (' + item.sellPrice + 'g)', 'sell', () => {
+              packClothing = packClothing.filter(c => c.uid !== uid);
+              inventory.gold = (inventory.gold || 0) + item.sellPrice;
+              showToast('Sold ' + item.label + ' for ' + item.sellPrice + 'g', true);
+              buildPackClothingSection(); buildInventoryGrid(); clearInventoryDetail();
+            });
+          }
+        }
+      }
+
+      function selectGearClothing(slot, item) {
+        invSelectedKey = null;
+        document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
+        const emptyEl  = document.getElementById('iiEmpty');
+        const detailEl = document.getElementById('iiDetail');
+        if (emptyEl)  emptyEl.style.display  = 'none';
+        if (detailEl) detailEl.style.display  = '';
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
+        set('iiIcon',  '👘');
+        set('iiName',  item.label);
+        set('iiPrice', 'Permanent gear — not sellable');
+        set('iiTags',  '<span class="ii-tag">Clothing</span><span class="ii-tag">' + slot.charAt(0).toUpperCase() + slot.slice(1) + '</span>');
+        set('iiDesc',  'Currently worn. Buy or find another piece and transfer it to this slot to swap.');
+        const actEl = document.getElementById('iiActions');
+        if (actEl) {
+          actEl.innerHTML = '';
+          const btn = document.createElement('button');
+          btn.className = 'ii-btn';
+          btn.textContent = 'De-equip';
+          btn.onclick = () => {
+            gearInventory.clothing[slot] = null;
+            saveGearInventory();
+            buildEquipmentSlots();
+            clearInventoryDetail();
+          };
+          actEl.appendChild(btn);
+        }
+      }
+
+      function buildPackClothingSection() {
+        const sec = document.getElementById('invPackClothing');
+        if (!sec) return;
+        if (!packClothing.length) {
+          sec.innerHTML = '<div class="inv-pcloth-empty">No clothing in pack.</div>';
+          return;
+        }
+        sec.innerHTML = '';
+        packClothing.forEach(item => {
+          const btn = document.createElement('button');
+          btn.className = 'inv-pcloth-item';
+          btn.innerHTML = '<span class="ipc-icon">👘</span><span class="ipc-name">' + esc(item.label) + '</span>';
+          btn.addEventListener('click', () => selectPackClothingItem(item.uid));
+          sec.appendChild(btn);
+        });
+      }
+
       // Build the equipment slots panel inside #invEquipSection
       function buildEquipmentSlots() {
         const sec = document.getElementById('invEquipSection');
         if (!sec) return;
         sec.innerHTML = '';
 
-        // Tool slots row
+        // ── Tool Slot Assignments ─────────────────────────────
+        const slotHdr = document.createElement('div');
+        slotHdr.className = 'inv-equip-label';
+        slotHdr.textContent = 'Tool Slots';
+        sec.appendChild(slotHdr);
+
         const toolRow = document.createElement('div');
         toolRow.className = 'inv-equip-row';
         const TOOL_SLOTS = ['hoe', 'shovel', 'axe', 'pick', 'harpoon', 'weapon'];
@@ -3646,44 +3880,80 @@
           const cell = document.createElement('div');
           cell.className = 'inv-equip-slot' + (activeTool === slot ? ' active-slot' : '') + (def ? ' occupied' : '');
           cell.setAttribute('title', slot + (def ? ': ' + def.label : ' (empty)'));
-
-          // Sprite image if equipped
           if (def) {
             const img = document.createElement('img');
-            img.src = def.sprite;
-            img.className = 'ies-sprite';
-            img.alt = def.label;
+            img.src = def.sprite; img.className = 'ies-sprite'; img.alt = def.label;
             cell.appendChild(img);
             const unBtn = document.createElement('button');
-            unBtn.className = 'ies-unequip';
-            unBtn.textContent = '✕';
-            unBtn.title = 'Unassign ' + def.label;
+            unBtn.className = 'ies-unequip'; unBtn.textContent = '✕'; unBtn.title = 'Unassign ' + def.label;
             unBtn.addEventListener('click', (e) => { e.stopPropagation(); unequipItem(slot); });
             cell.appendChild(unBtn);
           }
-
           const lbl = document.createElement('span');
           lbl.className = 'ies-label';
           lbl.textContent = slot.charAt(0).toUpperCase() + slot.slice(1);
           cell.appendChild(lbl);
-
-          // Click slot to switch active tool
           cell.addEventListener('click', () => { setActiveTool(slot); buildEquipmentSlots(); });
           toolRow.appendChild(cell);
         }
         sec.appendChild(toolRow);
 
-        // Clothing slots row (placeholder)
+        // ── Owned Tools (gear inventory) ──────────────────────
+        const ownedHdr = document.createElement('div');
+        ownedHdr.className = 'inv-equip-label';
+        ownedHdr.textContent = 'Owned Tools';
+        sec.appendChild(ownedHdr);
+
+        const gearTools = Object.keys(gearInventory?.tools || {}).filter(k => gearInventory.tools[k] && TOOL_ITEM_DEFS[k]);
+        if (gearTools.length) {
+          const gearRow = document.createElement('div');
+          gearRow.className = 'inv-equip-row';
+          for (const key of gearTools) {
+            const def = TOOL_ITEM_DEFS[key];
+            const cell = document.createElement('div');
+            cell.className = 'inv-equip-slot';
+            cell.setAttribute('title', def.label + ' — click to assign');
+            const img = document.createElement('img');
+            img.src = def.sprite; img.className = 'ies-sprite'; img.alt = def.label;
+            cell.appendChild(img);
+            const lbl = document.createElement('span');
+            lbl.className = 'ies-label';
+            lbl.textContent = def.label.split(' ')[0];
+            cell.appendChild(lbl);
+            cell.addEventListener('click', () => selectGearTool(key));
+            gearRow.appendChild(cell);
+          }
+          sec.appendChild(gearRow);
+        } else {
+          const empty = document.createElement('div');
+          empty.className = 'inv-equip-empty';
+          empty.textContent = 'No tools in gear.';
+          sec.appendChild(empty);
+        }
+
+        // ── Clothing Slots ────────────────────────────────────
+        const clothHdr = document.createElement('div');
+        clothHdr.className = 'inv-equip-label';
+        clothHdr.textContent = 'Clothing';
+        sec.appendChild(clothHdr);
+
         const clothRow = document.createElement('div');
         clothRow.className = 'inv-equip-row';
-        for (const slotDef of CLOTHING_SLOT_DEFS) {
+        for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
+          const item = gearInventory?.clothing?.[slot];
           const cell = document.createElement('div');
-          cell.className = 'inv-equip-slot clothing-slot';
-          cell.setAttribute('title', slotDef.label + ' (coming soon)');
+          cell.className = 'inv-equip-slot clothing-slot' + (item ? ' occupied' : '');
+          cell.setAttribute('title', slot + (item ? ': ' + item.label : ' (empty)'));
+          if (item) {
+            const nameEl = document.createElement('span');
+            nameEl.className = 'ies-cloth-name'; nameEl.textContent = item.label;
+            cell.appendChild(nameEl);
+          }
           const lbl = document.createElement('span');
           lbl.className = 'ies-label';
-          lbl.textContent = slotDef.label;
+          lbl.textContent = slot.charAt(0).toUpperCase() + slot.slice(1);
           cell.appendChild(lbl);
+          if (item) cell.addEventListener('click', () => selectGearClothing(slot, item));
           clothRow.appendChild(cell);
         }
         sec.appendChild(clothRow);
@@ -8231,10 +8501,11 @@
         cardinalHoldTimer = 0;
         activeItemIndex = 0;
         // Reset equipment to defaults
-        equipmentSlots.hoe = 'bronzehoe'; equipmentSlots.shovel = 'pickshovel';
-        equipmentSlots.axe = null; equipmentSlots.pick = null;
-        equipmentSlots.harpoon = null; equipmentSlots.weapon = 'hatchet';
-        Object.keys(clothingSlots).forEach(k => { clothingSlots[k] = null; });
+        packClothing = [];
+        Object.keys(equipmentSlots).forEach(k => { equipmentSlots[k] = null; });
+        if (gearInventory?.tools?.bronzehoe)  equipmentSlots.hoe    = 'bronzehoe';
+        if (gearInventory?.tools?.pickshovel) equipmentSlots.shovel = 'pickshovel';
+        if (gearInventory?.tools?.hatchet)    equipmentSlots.weapon = 'hatchet';
         rebuildToolMeshes();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
@@ -8471,6 +8742,19 @@
       let gameStarted = false;
 
       async function spawnPlayerAvatar(playerData) {
+        gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
+          ? playerData.gearInventory
+          : makeDefaultGear();
+        if (!gearInventory.tools)    gearInventory.tools    = {};
+        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
+        // Set default equipment slot assignments
+        if (gearInventory.tools.bronzehoe)  equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
+        if (gearInventory.tools.pickshovel) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
+        if (gearInventory.tools.hatchet)    equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
+        rebuildToolMeshes();
+        Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+        if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+        buildEquipmentSlots();
         try {
           await window.NpcAvatarPreview.ensurePortraitCosmetics({
             assetBase: './assets/',

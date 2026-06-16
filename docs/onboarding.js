@@ -373,6 +373,7 @@
     { key: 'torso',    label: '👘 Torso',    category: 'torso' },
     { key: 'overwear', label: '🧥 Overwear', category: 'overwear' },
   ];
+  const CLOTHING_USES_B = new Set(['rugged_poncho', 'fine_poncho', 'fine_hood']);
 
   // ── Module state ──────────────────────────────────────────────────────
   let _state       = null;
@@ -462,7 +463,23 @@
   }
 
   function makeDefaultGear() {
-    return { tools: {}, clothing: { head: null, chest: null, legs: null, feet: null }, charms: [], whistles: [] };
+    return {
+      tools:    { bronzehoe: true, hatchet: true, fishingmace: true, fishingspear: true, pickshovel: true },
+      clothing: { hat: null, hood: null, torso: null, overwear: null },
+      charms: [], whistles: [],
+    };
+  }
+
+  function makeClothingItem(catalogItem, colorA, colorB) {
+    const usesB = CLOTHING_USES_B.has(catalogItem.id);
+    const dyeLabel = usesB && colorB ? (colorA.label + ' & ' + colorB.label) : colorA.label;
+    return {
+      cosmeticId: catalogItem.id,
+      slot:       catalogItem.category,
+      label:      dyeLabel + ' ' + catalogItem.label,
+      colorA:     { h: colorA.h, s: colorA.s, v: colorA.v, label: colorA.label },
+      colorB:     usesB && colorB ? { h: colorB.h, s: colorB.s, v: colorB.v, label: colorB.label } : null,
+    };
   }
 
   function makeDefaultSkills() {
@@ -931,6 +948,10 @@
       </div>`;
     }
 
+    const gData2     = SPECIES_DATA[ap.speciesId]?.[ap.gender];
+    const colorOpts2 = gData2?.colorOptions || [];
+    const cA = colorOpts2[_colorAIdx] || { h: 0, s: 0, v: 0, label: 'Default' };
+    const cB = colorOpts2[_colorBIdx] || cA;
     return `
       <div class="ob-col ob-col-left">
         <canvas id="ob-portrait-canvas" class="ob-portrait" width="200" height="200"></canvas>
@@ -941,6 +962,16 @@
         <div class="ob-cosmetics">
           ${slotsHtml || '<div class="ob-muted">No items in shop catalog.</div>'}
         </div>
+        <div class="ob-section-label" style="margin-top:10px;">Dye Colors (from Appearance tab)</div>
+        <div class="ob-swatches">
+          <button class="ob-swatch ob-active" style="${swatchStyle(cA.h, cA.s, cA.v)}" title="${esc(cA.label)}"></button>
+          <span class="ob-muted" style="font-size:11px;line-height:1;align-self:center">Primary: ${esc(cA.label)}</span>
+        </div>
+        <div class="ob-swatches" style="margin-top:4px;">
+          <button class="ob-swatch ob-active" style="${swatchStyle(cB.h, cB.s, cB.v)}" title="${esc(cB.label)}"></button>
+          <span class="ob-muted" style="font-size:11px;line-height:1;align-self:center">Secondary: ${esc(cB.label)}</span>
+        </div>
+        <div class="ob-muted" style="font-size:10px;margin-top:6px;">Rugged Poncho, Fine Poncho &amp; Fine Hood use both colors.</div>
       </div>`;
   }
 
@@ -1091,7 +1122,19 @@
         appearance:       playerData.appearance,
         equippedCosmetics: playerData.equippedCosmetics,
         appliedDyes:      playerData.appliedDyes,
-        gearInventory:    makeDefaultGear(),
+        gearInventory:    (() => {
+          const gear    = makeDefaultGear();
+          const catalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
+          const gData   = SPECIES_DATA[playerData.appearance.speciesId]?.[playerData.appearance.gender];
+          const opts    = gData?.colorOptions || [];
+          const colorA  = opts[_colorAIdx] || { h: 0, s: -0.70, v: -0.30, label: 'Default' };
+          const colorB  = opts[_colorBIdx] || colorA;
+          for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
+            const catItem = catalog.find(i => i.category === slot && playerData.equippedCosmetics.includes(i.id));
+            if (catItem) gear.clothing[slot] = makeClothingItem(catItem, colorA, colorB);
+          }
+          return gear;
+        })(),
         skillLevels:      makeDefaultSkills(),
         npcFavor:         {},
         createdAt:        Date.now(),
