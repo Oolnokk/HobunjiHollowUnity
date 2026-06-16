@@ -1272,6 +1272,7 @@
       let worldNpcPaths        = [];   // legacy only: { id, label, npcId, area, nodes: [[c,r],...] }
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
+      window._npcWalkers = npcWalkers;
       let dialogueOpen       = false;
       let _dialogueLines     = [];
       let _dialogueLineIdx   = 0;
@@ -1639,10 +1640,12 @@
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
         for (const rec of dbNpcs) {
           const target = resolveNpcScheduleTarget(rec);
-          if (!target) continue;
+          if (!target) { console.warn('[NPC] No schedule target for', rec?.id, '— skipped'); continue; }
           try { const w = await makeNpcWalker(rec, target); if (w) npcWalkers.push(w); }
           catch (e) { console.warn('NPC walker failed for schedule', rec?.id, e); }
         }
+        console.log(`[NPC] Spawned ${npcWalkers.length}/${dbNpcs.length} walkers. inspect: window._npcWalkers`);
+        console.log('[NPC] Areas:', npcWalkers.map(w => (w.rec?.id || '?') + '@' + (w.area || w.root?._pendingBuildingAdd || (w.root?._pendingTownAdd ? 'town(pending)' : '?'))));
       }
 
       async function makeNpcWalker(rec, initialTarget) {
