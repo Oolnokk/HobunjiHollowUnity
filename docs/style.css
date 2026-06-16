@@ -1847,3 +1847,26 @@
       border: 1px solid var(--border); border-radius: 4px;
       padding: 1px 5px; letter-spacing: 0.04em; flex-shrink: 0;
     }
+
+    /* ── Mobile scroll fix ───────────────────────────────────
+       body has touch-action:none to prevent browser pan while
+       using the game joystick. Override it on every scrollable
+       UI container so menus/lists work on touch devices.      */
+    .inv-grid-area,
+    .inv-info,
+    .ii-desc,
+    .ii-actions,
+    .inv-pack-clothing,
+    .ship-grid-wrap,
+    .ship-detail-desc,
+    .supply-list,
+    .supply-delivery-list,
+    #mpSettings,
+    #mpProgress,
+    #mpTasks,
+    #mpRelationships,
+    .fed-scroll,
+    .inv-gear-extras {
+      touch-action: pan-y;
+      -webkit-overflow-scrolling: touch;
+    }
