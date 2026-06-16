@@ -1236,13 +1236,18 @@
         "speciesId": "engh-sho",
         "gender": "male",
         "cosmetics": {
-          "eyes": "appearance::Engh-sho_M::engh_snowgoggles"
+          "eyes": "appearance::Engh-sho_M::engh_snowgoggles",
+          "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
+          "hairBack": "appearance::Mao-ao_M::mao-ao_long_ponytail",
+          "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short",
+          "hairSide": "appearance::Mao-ao_M::mao-ao_shoulder_length_drape",
+          "hairSideL": "appearance::Mao-ao_M::mao-ao_braid-L"
         },
         "bodyColors": {
           "A": {
-            "h": -85,
-            "s": -0.9,
-            "v": 0.35
+            "h": -7,
+            "s": -0.7,
+            "v": -0.22
           },
           "B": {
             "h": -85,
@@ -1261,8 +1266,16 @@
           "l": 68
         }
       },
-      "equippedCosmetics": [],
-      "appliedDyes": {},
+      "equippedCosmetics": [
+        "appearance::hat::basic_headband",
+        "bandolier1",
+        "tankan_bodywrap"
+      ],
+      "appliedDyes": {
+        "HAT": "dye:CLOTH:smoky_orange",
+        "CLOTH": "dye:CLOTH:smoky_orange",
+        "CLOTH_B": "dye:CLOTH:smoky_orange"
+      },
       "avatarEditor": {
         "sourceFormat": "npc_avatar_editor_export",
         "rawExport": {
@@ -1272,13 +1285,18 @@
             "speciesId": "engh-sho",
             "gender": "male",
             "cosmetics": {
-              "eyes": "appearance::Engh-sho_M::engh_snowgoggles"
+              "eyes": "appearance::Engh-sho_M::engh_snowgoggles",
+              "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
+              "hairBack": "appearance::Mao-ao_M::mao-ao_long_ponytail",
+              "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short",
+              "hairSide": "appearance::Mao-ao_M::mao-ao_shoulder_length_drape",
+              "hairSideL": "appearance::Mao-ao_M::mao-ao_braid-L"
             },
             "bodyColors": {
               "A": {
-                "h": -85,
-                "s": -0.9,
-                "v": 0.35
+                "h": -7,
+                "s": -0.7,
+                "v": -0.22
               },
               "B": {
                 "h": -85,
@@ -1297,8 +1315,16 @@
               "l": 68
             }
           },
-          "equippedCosmetics": [],
-          "appliedDyes": {}
+          "equippedCosmetics": [
+            "appearance::hat::basic_headband",
+            "bandolier1",
+            "tankan_bodywrap"
+          ],
+          "appliedDyes": {
+            "HAT": "dye:CLOTH:smoky_orange",
+            "CLOTH": "dye:CLOTH:smoky_orange",
+            "CLOTH_B": "dye:CLOTH:smoky_orange"
+          }
         }
       },
       "relationship": {
@@ -1375,22 +1401,25 @@
       "appearance": {
         "speciesId": "kenkari",
         "gender": "male",
-        "cosmetics": {},
+        "cosmetics": {
+          "hairBack": "appearance::Kenkari_M::kenk_splayedknot_high_m",
+          "hairSideL": "appearance::Kenkari_M::kenk_braid-L_m"
+        },
         "bodyColors": {
           "A": {
-            "h": -20,
-            "s": 0.8,
-            "v": 0
+            "h": -180,
+            "s": 0.925,
+            "v": 0.23
           },
           "B": {
-            "h": -20,
-            "s": 0.8,
-            "v": 0
+            "h": 0,
+            "s": 0.975,
+            "v": -0.037
           },
           "C": {
-            "h": -20,
-            "s": 0.8500000000000001,
-            "v": 0.18
+            "h": 0,
+            "s": 0.85,
+            "v": 0.147
           }
         },
         "chatColor": {
@@ -1399,8 +1428,15 @@
           "l": 68
         }
       },
-      "equippedCosmetics": [],
-      "appliedDyes": {},
+      "equippedCosmetics": [
+        "tankan_tunic",
+        "fine_poncho",
+        "appearance::hat::kenk_riverlandskasa_wide"
+      ],
+      "appliedDyes": {
+        "CLOTH": "dye:CLOTH:bright_green_blue",
+        "CLOTH_B": "dye:CLOTH:bright_orange"
+      },
       "avatarEditor": {
         "sourceFormat": "npc_avatar_editor_export",
         "rawExport": {
@@ -1409,22 +1445,25 @@
           "appearance": {
             "speciesId": "kenkari",
             "gender": "male",
-            "cosmetics": {},
+            "cosmetics": {
+              "hairBack": "appearance::Kenkari_M::kenk_splayedknot_high_m",
+              "hairSideL": "appearance::Kenkari_M::kenk_braid-L_m"
+            },
             "bodyColors": {
               "A": {
-                "h": -20,
-                "s": 0.8,
-                "v": 0
+                "h": -180,
+                "s": 0.925,
+                "v": 0.23
               },
               "B": {
-                "h": -20,
-                "s": 0.8,
-                "v": 0
+                "h": 0,
+                "s": 0.975,
+                "v": -0.037
               },
               "C": {
-                "h": -20,
-                "s": 0.8500000000000001,
-                "v": 0.18
+                "h": 0,
+                "s": 0.85,
+                "v": 0.147
               }
             },
             "chatColor": {
@@ -1433,8 +1472,15 @@
               "l": 68
             }
           },
-          "equippedCosmetics": [],
-          "appliedDyes": {}
+          "equippedCosmetics": [
+            "tankan_tunic",
+            "fine_poncho",
+            "appearance::hat::kenk_riverlandskasa_wide"
+          ],
+          "appliedDyes": {
+            "CLOTH": "dye:CLOTH:bright_green_blue",
+            "CLOTH_B": "dye:CLOTH:bright_orange"
+          }
         }
       },
       "relationship": {
@@ -1524,32 +1570,141 @@
       "appearance": {
         "speciesId": "mao-ao",
         "gender": "male",
-        "cosmetics": {},
+        "cosmetics": {
+          "eyes": "appearance::Mao-ao_M::mao-ao_circled_eye_L",
+          "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
+          "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short"
+        },
         "bodyColors": {
           "A": {
-            "h": -70,
-            "s": -0.8,
-            "v": -0.55
+            "h": 0,
+            "s": -0.7,
+            "v": -0.3
           },
           "B": {
-            "h": -70,
-            "s": -0.8,
-            "v": -0.55
+            "h": 0,
+            "s": -0.7,
+            "v": -0.3
           },
           "C": {
-            "h": -70,
-            "s": -0.75,
-            "v": -0.37000000000000005
+            "h": 0,
+            "s": -0.65,
+            "v": -0.12
           }
         },
         "chatColor": {
           "h": 210,
           "s": 75,
           "l": 68
-        }
+        },
+        "bodyDeform": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
       },
-      "equippedCosmetics": [],
-      "appliedDyes": {},
+      "equippedCosmetics": [
+        "tankan_tunic"
+      ],
+      "appliedDyes": {
+        "CLOTH": "dye:CLOTH:smoky_orange",
+        "CLOTH_B": "dye:CLOTH:smoky_orange",
+        "TORSO": "dye:CLOTH:smoky_red_orange",
+        "TORSO_B": "dye:CLOTH:smoky_red_orange"
+      },
       "avatarEditor": {
         "sourceFormat": "npc_avatar_editor_export",
         "rawExport": {
@@ -1558,32 +1713,141 @@
           "appearance": {
             "speciesId": "mao-ao",
             "gender": "male",
-            "cosmetics": {},
+            "cosmetics": {
+              "eyes": "appearance::Mao-ao_M::mao-ao_circled_eye_L",
+              "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
+              "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short"
+            },
             "bodyColors": {
               "A": {
-                "h": -70,
-                "s": -0.8,
-                "v": -0.55
+                "h": 0,
+                "s": -0.7,
+                "v": -0.3
               },
               "B": {
-                "h": -70,
-                "s": -0.8,
-                "v": -0.55
+                "h": 0,
+                "s": -0.7,
+                "v": -0.3
               },
               "C": {
-                "h": -70,
-                "s": -0.75,
-                "v": -0.37000000000000005
+                "h": 0,
+                "s": -0.65,
+                "v": -0.12
               }
             },
             "chatColor": {
               "h": 210,
               "s": 75,
               "l": 68
-            }
+            },
+            "bodyDeform": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ]
+            ]
           },
-          "equippedCosmetics": [],
-          "appliedDyes": {}
+          "equippedCosmetics": [
+            "tankan_tunic"
+          ],
+          "appliedDyes": {
+            "CLOTH": "dye:CLOTH:smoky_orange",
+            "CLOTH_B": "dye:CLOTH:smoky_orange",
+            "TORSO": "dye:CLOTH:smoky_red_orange",
+            "TORSO_B": "dye:CLOTH:smoky_red_orange"
+          }
         }
       },
       "relationship": {
@@ -1679,12 +1943,15 @@
       "appearance": {
         "speciesId": "mao-ao",
         "gender": "male",
-        "cosmetics": {},
+        "cosmetics": {
+          "eyes": "appearance::Mao-ao_M::mao-ao_circled_eye_L",
+          "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short"
+        },
         "bodyColors": {
           "A": {
-            "h": -70,
-            "s": -0.8,
-            "v": -0.55
+            "h": -40,
+            "s": -0.7,
+            "v": -0.45
           },
           "B": {
             "h": -70,
@@ -1692,19 +1959,125 @@
             "v": -0.55
           },
           "C": {
-            "h": -70,
-            "s": -0.75,
-            "v": -0.37000000000000005
+            "h": -40,
+            "s": -0.65,
+            "v": -0.27
           }
         },
         "chatColor": {
           "h": 210,
           "s": 75,
           "l": 68
-        }
+        },
+        "bodyDeform": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
       },
-      "equippedCosmetics": [],
-      "appliedDyes": {},
+      "equippedCosmetics": [
+        "rugged_poncho"
+      ],
+      "appliedDyes": {
+        "CLOTH": "dye:CLOTH:deep_yellow",
+        "CLOTH_B": "dye:CLOTH:dark_muted_green_blue",
+        "CLOTH_C": "dye:CLOTH:dark_muted_green_blue",
+        "TORSO": "dye:CLOTH:smoky_red_orange",
+        "TORSO_B": "dye:CLOTH:smoky_red_orange"
+      },
       "avatarEditor": {
         "sourceFormat": "npc_avatar_editor_export",
         "rawExport": {
@@ -1713,12 +2086,15 @@
           "appearance": {
             "speciesId": "mao-ao",
             "gender": "male",
-            "cosmetics": {},
+            "cosmetics": {
+              "eyes": "appearance::Mao-ao_M::mao-ao_circled_eye_L",
+              "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short"
+            },
             "bodyColors": {
               "A": {
-                "h": -70,
-                "s": -0.8,
-                "v": -0.55
+                "h": -40,
+                "s": -0.7,
+                "v": -0.45
               },
               "B": {
                 "h": -70,
@@ -1726,19 +2102,125 @@
                 "v": -0.55
               },
               "C": {
-                "h": -70,
-                "s": -0.75,
-                "v": -0.37000000000000005
+                "h": -40,
+                "s": -0.65,
+                "v": -0.27
               }
             },
             "chatColor": {
               "h": 210,
               "s": 75,
               "l": 68
-            }
+            },
+            "bodyDeform": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                0
+              ]
+            ]
           },
-          "equippedCosmetics": [],
-          "appliedDyes": {}
+          "equippedCosmetics": [
+            "rugged_poncho"
+          ],
+          "appliedDyes": {
+            "CLOTH": "dye:CLOTH:deep_yellow",
+            "CLOTH_B": "dye:CLOTH:dark_muted_green_blue",
+            "CLOTH_C": "dye:CLOTH:dark_muted_green_blue",
+            "TORSO": "dye:CLOTH:smoky_red_orange",
+            "TORSO_B": "dye:CLOTH:smoky_red_orange"
+          }
         }
       },
       "gifts": {
@@ -2465,27 +2947,32 @@
         "cosmetics": {
           "hairBack": "appearance::Mao-ao_M::mao-ao_long_ponytail",
           "hairSide": "appearance::Mao-ao_M::mao-ao_braidcluster-R",
-          "hairSideL": null,
+          "hairSideL": "appearance::Mao-ao_M::mao-ao_braid-L",
           "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
           "eyes": "appearance::Mao-ao_M::mao-ao_circled_eyes",
           "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short"
         },
         "bodyColors": {
           "A": {
-            "h": 37,
-            "s": -0.6,
-            "v": -0.07
+            "h": -7,
+            "s": -0.7,
+            "v": -0.22
           },
           "B": {
-            "h": -70,
-            "s": -0.8,
-            "v": -0.55
+            "h": -7,
+            "s": -0.4,
+            "v": -0.3
           },
           "C": {
             "h": -70,
             "s": -0.75,
             "v": -0.37
           }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
         }
       },
       "equippedCosmetics": [
@@ -2495,11 +2982,12 @@
       ],
       "appliedDyes": {
         "TORSO_B": "dye:CLOTH:dark_muted_orange",
-        "TORSO": "dye:CLOTH:dark_muted_orange",
+        "TORSO": "dye:CLOTH:muted_yellow_green",
         "CLOTH": "dye:CLOTH:smoky_yellow_orange",
-        "CLOTH_B": "dye:CLOTH:muted_green",
-        "HAT": "dye:CLOTH:dark_muted_green",
-        "HOOD_B": "dye:CLOTH:smoky_yellow_green"
+        "CLOTH_B": "dye:CLOTH:dark_muted_yellow_green",
+        "HAT": "dye:CLOTH:smoky_yellow_orange",
+        "HOOD_B": "dye:CLOTH:smoky_yellow_green",
+        "HAT_B": "dye:CLOTH:dark_muted_yellow_green"
       },
       "avatarEditor": {
         "rawExport": {
@@ -2512,21 +3000,21 @@
             "cosmetics": {
               "hairBack": "appearance::Mao-ao_M::mao-ao_long_ponytail",
               "hairSide": "appearance::Mao-ao_M::mao-ao_braidcluster-R",
-              "hairSideL": null,
+              "hairSideL": "appearance::Mao-ao_M::mao-ao_braid-L",
               "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
               "eyes": "appearance::Mao-ao_M::mao-ao_circled_eyes",
               "hairFront": "appearance::Mao-ao_M::mao-ao_forwardtuft_short"
             },
             "bodyColors": {
               "A": {
-                "h": 37,
-                "s": -0.6,
-                "v": -0.07
+                "h": -7,
+                "s": -0.7,
+                "v": -0.22
               },
               "B": {
-                "h": -70,
-                "s": -0.8,
-                "v": -0.55
+                "h": -7,
+                "s": -0.4,
+                "v": -0.3
               },
               "C": {
                 "h": -70,
@@ -2547,11 +3035,12 @@
           ],
           "appliedDyes": {
             "TORSO_B": "dye:CLOTH:dark_muted_orange",
-            "TORSO": "dye:CLOTH:dark_muted_orange",
+            "TORSO": "dye:CLOTH:muted_yellow_green",
             "CLOTH": "dye:CLOTH:smoky_yellow_orange",
-            "CLOTH_B": "dye:CLOTH:muted_green",
-            "HAT": "dye:CLOTH:dark_muted_green",
-            "HOOD_B": "dye:CLOTH:smoky_yellow_green"
+            "CLOTH_B": "dye:CLOTH:dark_muted_yellow_green",
+            "HAT": "dye:CLOTH:smoky_yellow_orange",
+            "HOOD_B": "dye:CLOTH:smoky_yellow_green",
+            "HAT_B": "dye:CLOTH:dark_muted_yellow_green"
           }
         }
       },
@@ -2670,9 +3159,9 @@
         },
         "bodyColors": {
           "A": {
-            "h": -28,
-            "s": -0.1,
-            "v": 0.06
+            "h": -103,
+            "s": -0.328,
+            "v": -0.055
           },
           "B": {
             "h": -28,
@@ -2713,9 +3202,9 @@
             },
             "bodyColors": {
               "A": {
-                "h": -28,
-                "s": -0.1,
-                "v": 0.06
+                "h": -103,
+                "s": -0.328,
+                "v": -0.055
               },
               "B": {
                 "h": -28,
@@ -2835,14 +3324,14 @@
         },
         "bodyColors": {
           "A": {
-            "h": -60,
+            "h": -120,
             "s": 0.925,
             "v": 0.063
           },
           "B": {
             "h": 60,
             "s": 0.975,
-            "v": 0.13
+            "v": -0.037
           },
           "C": {
             "h": 60,
@@ -2882,14 +3371,14 @@
             },
             "bodyColors": {
               "A": {
-                "h": -60,
+                "h": -120,
                 "s": 0.925,
                 "v": 0.063
               },
               "B": {
                 "h": 60,
                 "s": 0.975,
-                "v": 0.13
+                "v": -0.037
               },
               "C": {
                 "h": 60,
@@ -3971,13 +4460,17 @@
         "speciesId": "engh-sho",
         "gender": "female",
         "cosmetics": {
-          "eyes": "appearance::Engh-sho_F::engh_snowgoggles"
+          "eyes": "appearance::Engh-sho_F::engh_snowgoggles",
+          "hairBack": "appearance::Mao-ao_F::mao-ao_splayedknot_medium",
+          "hairFront": "appearance::Mao-ao_F::mao-ao_tuft",
+          "hairSide": "appearance::Mao-ao_F::mao-ao_braidcluster-R",
+          "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L"
         },
         "bodyColors": {
           "A": {
-            "h": -85,
+            "h": 17,
             "s": -0.9,
-            "v": 0.35
+            "v": 0.223
           },
           "B": {
             "h": -85,
@@ -3996,8 +4489,13 @@
           "l": 68
         }
       },
-      "equippedCosmetics": [],
-      "appliedDyes": {},
+      "equippedCosmetics": [
+        "tankan_bodywrap",
+        "tankan_tunic"
+      ],
+      "appliedDyes": {
+        "TORSO": "dye:CLOTH:dusty_yellow_orange"
+      },
       "avatarEditor": {
         "sourceFormat": "npc_avatar_editor_export",
         "rawExport": {
@@ -4007,13 +4505,17 @@
             "speciesId": "engh-sho",
             "gender": "female",
             "cosmetics": {
-              "eyes": "appearance::Engh-sho_F::engh_snowgoggles"
+              "eyes": "appearance::Engh-sho_F::engh_snowgoggles",
+              "hairBack": "appearance::Mao-ao_F::mao-ao_splayedknot_medium",
+              "hairFront": "appearance::Mao-ao_F::mao-ao_tuft",
+              "hairSide": "appearance::Mao-ao_F::mao-ao_braidcluster-R",
+              "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L"
             },
             "bodyColors": {
               "A": {
-                "h": -85,
+                "h": 17,
                 "s": -0.9,
-                "v": 0.35
+                "v": 0.223
               },
               "B": {
                 "h": -85,
@@ -4032,8 +4534,13 @@
               "l": 68
             }
           },
-          "equippedCosmetics": [],
-          "appliedDyes": {}
+          "equippedCosmetics": [
+            "tankan_bodywrap",
+            "tankan_tunic"
+          ],
+          "appliedDyes": {
+            "TORSO": "dye:CLOTH:dusty_yellow_orange"
+          }
         }
       },
       "relationship": {
@@ -4122,13 +4629,16 @@
         "speciesId": "engh-sho",
         "gender": "female",
         "cosmetics": {
-          "eyes": "appearance::Engh-sho_F::engh_snowgoggles"
+          "eyes": "appearance::Engh-sho_F::engh_snowgoggles",
+          "hairBack": "appearance::Mao-ao_F::mao-ao_long_ponytail",
+          "hairFront": "appearance::Mao-ao_F::mao-ao_forwardtuft_short",
+          "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L"
         },
         "bodyColors": {
           "A": {
-            "h": -33.3,
-            "s": -0.753,
-            "v": -0.46
+            "h": -106,
+            "s": -0.45,
+            "v": -0.37
           },
           "B": {
             "h": -33.3,
@@ -4149,11 +4659,10 @@
       },
       "equippedCosmetics": [
         "bandolier1",
-        "tankan_bodywrap",
-        "appearance::hat::riverlandskasa_wide"
+        "tankan_bodywrap"
       ],
       "appliedDyes": {
-        "CLOTH": "dye:CLOTH:silver"
+        "CLOTH": "dye:CLOTH:bright_blue"
       },
       "avatarEditor": {
         "sourceFormat": "npc_avatar_editor_export",
@@ -4164,13 +4673,16 @@
             "speciesId": "engh-sho",
             "gender": "female",
             "cosmetics": {
-              "eyes": "appearance::Engh-sho_F::engh_snowgoggles"
+              "eyes": "appearance::Engh-sho_F::engh_snowgoggles",
+              "hairBack": "appearance::Mao-ao_F::mao-ao_long_ponytail",
+              "hairFront": "appearance::Mao-ao_F::mao-ao_forwardtuft_short",
+              "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L"
             },
             "bodyColors": {
               "A": {
-                "h": -33.3,
-                "s": -0.753,
-                "v": -0.46
+                "h": -106,
+                "s": -0.45,
+                "v": -0.37
               },
               "B": {
                 "h": -33.3,
@@ -4191,11 +4703,10 @@
           },
           "equippedCosmetics": [
             "bandolier1",
-            "tankan_bodywrap",
-            "appearance::hat::riverlandskasa_wide"
+            "tankan_bodywrap"
           ],
           "appliedDyes": {
-            "CLOTH": "dye:CLOTH:silver"
+            "CLOTH": "dye:CLOTH:bright_blue"
           }
         }
       },
@@ -4305,9 +4816,9 @@
         },
         "bodyColors": {
           "A": {
-            "h": 44.2,
-            "s": -0.725,
-            "v": 0.153
+            "h": -7,
+            "s": -0.7,
+            "v": -0.22
           },
           "B": {
             "h": 44.2,
@@ -4351,9 +4862,9 @@
             },
             "bodyColors": {
               "A": {
-                "h": 44.2,
-                "s": -0.725,
-                "v": 0.153
+                "h": -7,
+                "s": -0.7,
+                "v": -0.22
               },
               "B": {
                 "h": 44.2,
@@ -4486,9 +4997,9 @@
         },
         "bodyColors": {
           "A": {
-            "h": 44.2,
-            "s": -0.725,
-            "v": -0.423
+            "h": -120,
+            "s": -0.45,
+            "v": -0.53
           },
           "B": {
             "h": 44.2,
@@ -4513,9 +5024,9 @@
         "rugged_poncho"
       ],
       "appliedDyes": {
-        "CLOTH": "dye:CLOTH:dark_muted_green_blue",
-        "CLOTH_B": "dye:CLOTH:shadow_yellow_green",
-        "HAT": "dye:CLOTH:dark_muted_green_blue"
+        "CLOTH": "dye:CLOTH:dark_muted_yellow_orange",
+        "CLOTH_B": "dye:CLOTH:smoky_green",
+        "HAT": "dye:CLOTH:smoky_green"
       },
       "avatarEditor": {
         "sourceFormat": "npc_avatar_editor_export",
@@ -4534,9 +5045,9 @@
             },
             "bodyColors": {
               "A": {
-                "h": 44.2,
-                "s": -0.725,
-                "v": -0.423
+                "h": -120,
+                "s": -0.45,
+                "v": -0.53
               },
               "B": {
                 "h": 44.2,
@@ -4561,9 +5072,9 @@
             "rugged_poncho"
           ],
           "appliedDyes": {
-            "CLOTH": "dye:CLOTH:dark_muted_green_blue",
-            "CLOTH_B": "dye:CLOTH:shadow_yellow_green",
-            "HAT": "dye:CLOTH:dark_muted_green_blue"
+            "CLOTH": "dye:CLOTH:dark_muted_yellow_orange",
+            "CLOTH_B": "dye:CLOTH:smoky_green",
+            "HAT": "dye:CLOTH:smoky_green"
           }
         }
       },
@@ -4666,16 +5177,16 @@
         "gender": "female",
         "cosmetics": {
           "eyes": "appearance::Engh-sho_F::engh_snowgoggles",
-          "hairFront": "appearance::Mao-ao_F::mao-ao_forwardtuft_long",
-          "hairBack": "appearance::Mao-ao_F::mao-ao_long_ponytail",
-          "hairSide": null,
+          "hairFront": "appearance::Mao-ao_F::mao-ao_forwardtuft_short",
+          "hairBack": "appearance::Mao-ao_F::mao-ao_splayedknot_medium",
+          "hairSide": "appearance::Mao-ao_F::mao-ao_shoulder_length_drape",
           "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L"
         },
         "bodyColors": {
           "A": {
-            "h": -85,
-            "s": -0.775,
-            "v": 0.53
+            "h": -106,
+            "s": -0.35,
+            "v": -0.277
           },
           "B": {
             "h": -85,
@@ -4701,7 +5212,8 @@
       "appliedDyes": {
         "TORSO": "dye:CLOTH:deep_green_blue",
         "HAT": "dye:CLOTH:muted_green_blue",
-        "CLOTH": "dye:CLOTH:pure_orange"
+        "CLOTH": "dye:CLOTH:pale_violet",
+        "CLOTH_B": "dye:CLOTH:dusty_indigo_violet"
       },
       "avatarEditor": {
         "sourceFormat": "npc_avatar_editor_export",
@@ -4713,16 +5225,16 @@
             "gender": "female",
             "cosmetics": {
               "eyes": "appearance::Engh-sho_F::engh_snowgoggles",
-              "hairFront": "appearance::Mao-ao_F::mao-ao_forwardtuft_long",
-              "hairBack": "appearance::Mao-ao_F::mao-ao_long_ponytail",
-              "hairSide": null,
+              "hairFront": "appearance::Mao-ao_F::mao-ao_forwardtuft_short",
+              "hairBack": "appearance::Mao-ao_F::mao-ao_splayedknot_medium",
+              "hairSide": "appearance::Mao-ao_F::mao-ao_shoulder_length_drape",
               "hairSideL": "appearance::Mao-ao_F::mao-ao_braid-L"
             },
             "bodyColors": {
               "A": {
-                "h": -85,
-                "s": -0.775,
-                "v": 0.53
+                "h": -106,
+                "s": -0.35,
+                "v": -0.277
               },
               "B": {
                 "h": -85,
@@ -4748,7 +5260,8 @@
           "appliedDyes": {
             "TORSO": "dye:CLOTH:deep_green_blue",
             "HAT": "dye:CLOTH:muted_green_blue",
-            "CLOTH": "dye:CLOTH:pure_orange"
+            "CLOTH": "dye:CLOTH:pale_violet",
+            "CLOTH_B": "dye:CLOTH:dusty_indigo_violet"
           }
         }
       },
