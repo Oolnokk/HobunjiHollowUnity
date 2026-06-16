@@ -14,14 +14,14 @@
       "homeId": "researchers_tent",
       "species": "<unknown species>",
       "gender": "<unknown gender>",
-      "ageBand": "<carter\u2019s age>",
+      "ageBand": "<carter’s age>",
       "role": "researcher",
       "tags": [
         "researchers_tent",
         "researcher",
         "villager"
       ],
-      "bio": "Researcher\u2019s Tent resident. Age noted as <carter\u2019s age>.",
+      "bio": "Researcher’s Tent resident. Age noted as <carter’s age>.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -620,7 +620,241 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_mqgppxdb1",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_mqgprd293",
+          "nodes": [
+            {
+              "id": "n_mqgprd293",
+              "type": "text",
+              "pos": {
+                "x": -132,
+                "y": 718
+              },
+              "text": "Hey! You're that new farmer, aren't you? \n...\n{{playerName}}, right?",
+              "next": "n_mqgprjdh4"
+            },
+            {
+              "id": "n_mqgprjdh4",
+              "type": "choice",
+              "pos": {
+                "x": 128,
+                "y": 718
+              },
+              "choices": [
+                {
+                  "label": "Yeah. that's me...->",
+                  "next": "n_mqgq8d106"
+                },
+                {
+                  "label": "{{playerName}}? Never heard of {{playerPronoun1}}... ->",
+                  "next": "n_mqgqlrqv8"
+                },
+                {
+                  "label": "No that's wrong. My name is... ->",
+                  "next": "n_mqgqb51e7"
+                }
+              ]
+            },
+            {
+              "id": "n_mqgps0lh5",
+              "type": "text",
+              "pos": {
+                "x": 388,
+                "y": 718
+              },
+              "text": "",
+              "next": null
+            },
+            {
+              "id": "n_mqgq8d106",
+              "type": "choice",
+              "pos": {
+                "x": -132,
+                "y": 898
+              },
+              "choices": [
+                {
+                  "label": "And yours?",
+                  "next": null
+                },
+                {
+                  "label": ", but you can call me...->",
+                  "next": "n_mqgqb51e7"
+                }
+              ]
+            },
+            {
+              "id": "n_mqgqb51e7",
+              "type": "choice",
+              "pos": {
+                "x": 128,
+                "y": 898
+              },
+              "choices": [
+                {
+                  "label": "{{playerFirstL2V1}}.",
+                  "next": "n_mqgrbcgrd"
+                },
+                {
+                  "label": "{{playerNickname}}.",
+                  "next": "n_mqgrbcgrd"
+                },
+                {
+                  "label": "Handsome",
+                  "next": "n_mqgr22ekc"
+                },
+                {
+                  "label": "Sexy",
+                  "next": "n_mqgrdmfde"
+                },
+                {
+                  "label": "{{playerName}}",
+                  "next": null
+                }
+              ]
+            },
+            {
+              "id": "n_mqgqlrqv8",
+              "type": "choice",
+              "pos": {
+                "x": 388,
+                "y": 898
+              },
+              "choices": [
+                {
+                  "label": "He sounds like he's pretty cool, though.",
+                  "next": "n_mqgqswah9"
+                },
+                {
+                  "label": "He sounds like an Idiot.",
+                  "next": "n_mqgqswah9"
+                }
+              ]
+            },
+            {
+              "id": "n_mqgqswah9",
+              "type": "text",
+              "pos": {
+                "x": -132,
+                "y": 1078
+              },
+              "text": "I have a feeling that you're probably right about that.",
+              "next": "n_mqgqv4zwa"
+            },
+            {
+              "id": "n_mqgqv4zwa",
+              "type": "text",
+              "pos": {
+                "x": 128,
+                "y": 1078
+              },
+              "text": "*giggles*",
+              "next": "n_mqgqvongb"
+            },
+            {
+              "id": "n_mqgqvongb",
+              "type": "text",
+              "pos": {
+                "x": 388,
+                "y": 1078
+              },
+              "text": "Anyway, my name is Aliri. It was nice to meet you.\nI live up on the northeast end of town, on my parents' farm. Feel free to stop by any time you'd like. ",
+              "next": null
+            },
+            {
+              "id": "n_mqgr22ekc",
+              "type": "text",
+              "pos": {
+                "x": -132,
+                "y": 1258
+              },
+              "text": "Don't worry, I'm just teasing.",
+              "next": "n_mqgqvongb"
+            },
+            {
+              "id": "n_mqgrbcgrd",
+              "type": "text",
+              "pos": {
+                "x": 128,
+                "y": 1258
+              },
+              "text": "Cool name. I'll try to remember it.",
+              "next": "n_mqgqvongb"
+            },
+            {
+              "id": "n_mqgrdmfde",
+              "type": "text",
+              "pos": {
+                "x": 388,
+                "y": 1258
+              },
+              "text": "Uh... I think I hear my Dad calling me...\n\nGotta go!",
+              "next": null
+            },
+            {
+              "id": "n_mqgrfxz2f",
+              "type": "text",
+              "pos": {
+                "x": -132,
+                "y": 1438
+              },
+              "text": "Yeah, that's what I said. {{playerName}}!",
+              "next": "n_mqgrgm2mg"
+            },
+            {
+              "id": "n_mqgrgm2mg",
+              "type": "choice",
+              "pos": {
+                "x": 128,
+                "y": 1438
+              },
+              "choices": [
+                {
+                  "label": "Oh, I guess I misheard you the first time.",
+                  "next": "n_mqgriz0ch"
+                },
+                {
+                  "label": "You said it wrong, ->",
+                  "next": "n_mqgrmkqri"
+                }
+              ]
+            },
+            {
+              "id": "n_mqgriz0ch",
+              "type": "text",
+              "pos": {
+                "x": 388,
+                "y": 1438
+              },
+              "text": "Oh, sorry about that. Sometimes I talk too fast and forget to anunciate.",
+              "next": "n_mqgqvongb"
+            },
+            {
+              "id": "n_mqgrmkqri",
+              "type": "choice",
+              "pos": {
+                "x": -132,
+                "y": 1618
+              },
+              "choices": [
+                {
+                  "label": ", but that's alright. I've done the same.",
+                  "next": null
+                },
+                {
+                  "label": "... idiot.",
+                  "next": "n_mqgrdmfde"
+                }
+              ]
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -2243,7 +2477,7 @@
     },
     {
       "id": "namui_u_hakaru",
-      "name": "Namu\u2019i u Hakaru",
+      "name": "Namu’i u Hakaru",
       "homeId": "temple",
       "species": "<unknown species>",
       "gender": "<unknown gender>",
@@ -2406,7 +2640,7 @@
     },
     {
       "id": "takua_ao_hakaru",
-      "name": "Taku\u2019a ao Hakaru",
+      "name": "Taku’a ao Hakaru",
       "homeId": "temple",
       "species": "<unknown species>",
       "gender": "<unknown gender>",
@@ -3276,7 +3510,7 @@
         "carpenter / roofing family connection",
         "villager"
       ],
-      "bio": "Carpenter\u2019s household. Connected to Dzibim and the old Manji roofing side by the provided Dzibim line.",
+      "bio": "Carpenter’s household. Connected to Dzibim and the old Manji roofing side by the provided Dzibim line.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -3426,7 +3660,7 @@
         "carpenter household member",
         "villager"
       ],
-      "bio": "Named under Carpenter\u2019s; no further details provided.",
+      "bio": "Named under Carpenter’s; no further details provided.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -4077,7 +4311,7 @@
         "single member of the Watch",
         "villager"
       ],
-      "bio": "Only Watch member. Thinks his name means more than being a fighter. Loves animals and wants to train them to protect town; father thinks that is stupid and dangerous. Found claw came from invasive Nazgraku, escaped mounts of the thwarted Cleaver\u2019s Edge horde.",
+      "bio": "Only Watch member. Thinks his name means more than being a fighter. Loves animals and wants to train them to protect town; father thinks that is stupid and dangerous. Found claw came from invasive Nazgraku, escaped mounts of the thwarted Cleaver’s Edge horde.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -4264,7 +4498,7 @@
         "waitress",
         "villager"
       ],
-      "bio": "Waitress. Binding\u2019s husband\u2019s sister\u2019s daughter; Spearhead\u2019s sister\u2019s husband\u2019s sister\u2019s daughter; Oddclaw\u2019s aunt\u2019s husband\u2019s sister\u2019s daughter. Once held Tuhupnuk surname before Hammerhead murdered Sand and was banished.",
+      "bio": "Waitress. Binding’s husband’s sister’s daughter; Spearhead’s sister’s husband’s sister’s daughter; Oddclaw’s aunt’s husband’s sister’s daughter. Once held Tuhupnuk surname before Hammerhead murdered Sand and was banished.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -4566,7 +4800,7 @@
         "deceased snow-watcher",
         "villager"
       ],
-      "bio": "Binding\u2019s husband. Village snow-watcher who sacrificed himself to distract the wyrm.",
+      "bio": "Binding’s husband. Village snow-watcher who sacrificed himself to distract the wyrm.",
       "portrait": {
         "asset": "",
         "avatarKey": ""

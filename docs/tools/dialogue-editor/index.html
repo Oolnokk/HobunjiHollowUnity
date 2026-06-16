@@ -5,10 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hobunji Dialogue Editor</title>
 <style>
-/* ── Variables (match Character Studio) ─────────────────── */
 :root{
   --bg:#07101a;--panel:#111b28;--panel2:#0c141e;--text:#edf4ff;--muted:#9fb2cc;
-  --line:#26384f;--acc:#6aa7ff;--good:#34d399;--warn:#fbbf24;--bad:#fb7185;
+  --line:#26384f;--acc:#6aa7ff;--good:#34d399;--warn:#fbbf24;--bad:#fb7185;--seq:#2dd4bf;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
@@ -29,7 +28,6 @@ textarea{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14)
 label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
   text-transform:uppercase;letter-spacing:.3px}
 
-/* ── App frame ───────────────────────────────────────────── */
 #app{height:100%;display:flex;flex-direction:column}
 #topbar{display:flex;align-items:center;gap:8px;padding:8px 12px;flex-shrink:0;
   border-bottom:1px solid var(--line);
@@ -41,7 +39,6 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
   color:var(--muted);font-size:11px}
 #workspace{flex:1;min-height:0;display:flex}
 
-/* ── NPC sidebar ─────────────────────────────────────────── */
 #npcSidebar{width:210px;min-width:170px;display:flex;flex-direction:column;flex-shrink:0;
   border-right:1px solid var(--line);
   background:linear-gradient(180deg,var(--panel),var(--panel2))}
@@ -60,7 +57,6 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
   border:1px solid rgba(106,167,255,.3);border-radius:999px;padding:1px 5px;
   color:var(--acc);margin-top:1px}
 
-/* ── Center panel ────────────────────────────────────────── */
 #centerPanel{flex:1;min-width:0;display:flex;flex-direction:column}
 #treeBar{display:flex;align-items:center;gap:6px;padding:5px 8px;flex-shrink:0;
   border-bottom:1px solid var(--line);background:rgba(255,255,255,.015);min-height:44px}
@@ -71,9 +67,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
 .treeTab.sel{border-color:var(--warn);background:rgba(251,191,36,.12);color:var(--warn)}
 .treeTab:hover:not(.sel){background:rgba(255,255,255,.08)}
 
-/* ── Canvas ──────────────────────────────────────────────── */
-#canvasOuter{flex:1;min-height:0;position:relative;overflow:hidden;
-  background-color:#07101a}
+#canvasOuter{flex:1;min-height:0;position:relative;overflow:hidden;background-color:#07101a}
 #canvas{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
 #svgLayer{position:absolute;top:0;left:0;width:9000px;height:9000px;
   pointer-events:none;overflow:visible}
@@ -88,7 +82,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
 #zoomLabel{font-size:10px;color:var(--muted);min-width:34px;text-align:right}
 .barSep{width:1px;height:16px;background:var(--line);margin:0 2px;flex-shrink:0}
 
-/* ── Nodes ───────────────────────────────────────────────── */
+/* Nodes */
 .node{position:absolute;min-width:220px;max-width:300px;border-radius:11px;
   border:1px solid rgba(255,255,255,.15);background:var(--panel);
   box-shadow:0 4px 16px rgba(0,0,0,.5);user-select:none;cursor:grab;overflow:visible}
@@ -99,13 +93,13 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
   border-bottom:1px solid rgba(255,255,255,.07);border-radius:10px 10px 0 0}
 .nodeBadge{font-size:9px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
   padding:2px 6px;border-radius:4px;flex-shrink:0}
-.node-text .nodeBadge{background:rgba(106,167,255,.2);color:var(--acc)}
-.node-choice .nodeBadge{background:rgba(251,191,36,.2);color:var(--warn)}
-.node-end .nodeBadge{background:rgba(251,113,133,.18);color:var(--bad)}
+.node-text     .nodeBadge{background:rgba(106,167,255,.2);color:var(--acc)}
+.node-choice   .nodeBadge{background:rgba(251,191,36,.2);color:var(--warn)}
+.node-end      .nodeBadge{background:rgba(251,113,133,.18);color:var(--bad)}
+.node-sequence .nodeBadge{background:rgba(45,212,191,.2);color:var(--seq)}
 .nodeEntryTag{font-size:9px;padding:2px 5px;border-radius:4px;
   background:rgba(52,211,153,.15);border:1px solid rgba(52,211,153,.35);color:var(--good)}
-.nodeId{font-size:9px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap}
+.nodeId{font-size:9px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .nodeX{width:18px;height:18px;padding:0;border-radius:5px;font-size:11px;
   border:1px solid rgba(251,113,133,.3);background:rgba(251,113,133,.1);color:var(--bad);
   flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
@@ -114,20 +108,30 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
   display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
 .nodeText.empty{color:var(--muted);font-style:italic}
 .nodeEndLine{font-size:11px;color:var(--bad);font-style:italic}
+.nodeMeta{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.nodeMetaTag{font-size:9px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+  border-radius:3px;padding:1px 5px;color:var(--muted)}
 .choiceRows{list-style:none;margin:0;padding:0}
 .choiceRow{display:flex;align-items:center;gap:6px;padding:3px 0;
   border-bottom:1px solid rgba(255,255,255,.055);min-height:24px}
 .choiceRow:last-child{border-bottom:none}
-.choiceLabel{flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;color:var(--text)}
+.choiceLabel{flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
 .choiceLabel.empty{color:var(--muted);font-style:italic}
 .choiceTarget{font-size:9px;color:var(--muted);background:rgba(255,255,255,.05);
   border-radius:3px;padding:1px 5px;white-space:nowrap;flex-shrink:0}
+.seqTierBadge{font-size:10px;color:var(--muted);margin-bottom:3px}
+.seqTierList{list-style:none;margin:0;padding:0}
+.seqTierItem{display:flex;align-items:baseline;gap:4px;padding:2px 0;
+  border-bottom:1px solid rgba(255,255,255,.05)}
+.seqTierItem:last-child{border-bottom:none}
+.seqTierNum{font-size:9px;color:var(--muted);min-width:14px;flex-shrink:0}
+.seqTierText{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.seqTierText.empty{color:var(--muted);font-style:italic}
+.seqPortHint{font-size:9px;color:var(--muted);margin-top:5px;display:flex;gap:8px}
 
-/* ── Ports ───────────────────────────────────────────────── */
+/* Ports */
 .port{width:11px;height:11px;border-radius:50%;border:2px solid;
-  position:absolute;cursor:crosshair;z-index:10;
-  transition:transform .12s,background .12s}
+  position:absolute;cursor:crosshair;z-index:10;transition:transform .12s,background .12s}
 .port:hover{transform:scale(1.55)!important}
 .port-in{left:-6px;border-color:rgba(159,178,204,.5);background:var(--panel2)}
 .port-in:hover{background:var(--muted)}
@@ -135,16 +139,25 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
 .port-out:hover{background:var(--acc)}
 .port-out.choice-port{border-color:rgba(251,191,36,.65)}
 .port-out.choice-port:hover{background:var(--warn)}
-/* text node: port vertically centered in full node height */
+.port-out.exhaust-port{border-color:rgba(52,211,153,.65)}
+.port-out.exhaust-port:hover{background:var(--good)}
+/* text node ports: vertically centered */
 .node-text .port-in{top:50%;transform:translateY(-50%)}
 .node-text .port-in:hover{transform:translateY(-50%) scale(1.55)}
 .node-text .port-out{top:50%;transform:translateY(-50%)}
 .node-text .port-out:hover{transform:translateY(-50%) scale(1.55)}
-/* choice / end node: port near top (header midpoint) */
+/* choice/end input near header */
 .node-choice .port-in,.node-end .port-in{top:16px;transform:none}
+/* sequence: input centered, next at top-right, exhaust at bottom-right */
+.node-sequence .port-in{top:50%;transform:translateY(-50%)}
+.node-sequence .port-in:hover{transform:translateY(-50%) scale(1.55)}
+.node-sequence .port-out[data-ci=""]{top:18px;transform:none}
+.node-sequence .port-out[data-ci=""]:hover{transform:scale(1.55)}
+.node-sequence .port-out[data-ci="exhaust"]{bottom:14px;top:auto;transform:none}
+.node-sequence .port-out[data-ci="exhaust"]:hover{transform:scale(1.55)}
 
-/* ── Inspector ───────────────────────────────────────────── */
-#inspector{width:254px;min-width:210px;flex-shrink:0;display:flex;flex-direction:column;
+/* Inspector */
+#inspector{width:260px;min-width:210px;flex-shrink:0;display:flex;flex-direction:column;
   border-left:1px solid var(--line);
   background:linear-gradient(180deg,var(--panel),var(--panel2))}
 #inspBody{flex:1;overflow-y:auto;padding:8px}
@@ -160,9 +173,20 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
 .ceX{width:20px;height:20px;padding:0;border-radius:5px;font-size:12px;
   border:1px solid rgba(251,113,133,.3);background:rgba(251,113,133,.1);color:var(--bad);
   flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
+.tierDel{width:20px;height:20px;padding:0;border-radius:5px;font-size:12px;
+  border:1px solid rgba(251,113,133,.3);background:rgba(251,113,133,.1);color:var(--bad);
+  flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
 hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
+.tagRow{display:flex;align-items:center;gap:5px;padding:5px 8px;
+  border-bottom:1px solid rgba(255,255,255,.07)}
+.tagRow:last-child{border-bottom:none}
+.tagBadge{font-size:9px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;
+  padding:2px 6px;border-radius:4px;background:rgba(159,178,204,.12);color:var(--muted);flex-shrink:0}
+.tagX{width:18px;height:18px;padding:0;border-radius:4px;font-size:11px;
+  border:1px solid rgba(251,113,133,.3);background:rgba(251,113,133,.1);color:var(--bad);
+  flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
 
-/* ── Import modal ────────────────────────────────────────── */
+/* Import modal */
 #importModal{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;
   display:flex;align-items:center;justify-content:center}
 #importModal.hidden{display:none}
@@ -176,8 +200,6 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
 </head>
 <body>
 <div id="app">
-
-  <!-- Top bar -->
   <div id="topbar">
     <h1>Hobunji Dialogue Editor</h1>
     <button class="secondary" id="loadBtn">Load DB</button>
@@ -185,17 +207,12 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
     <div class="spacer"></div>
     <span class="pill" id="statusPill">No database loaded</span>
   </div>
-
   <div id="workspace">
-
-    <!-- NPC sidebar -->
     <div id="npcSidebar">
       <div class="paneHead">NPCs</div>
       <div id="npcSearch"><input id="npcQ" type="search" placeholder="Search…"></div>
       <div id="npcListEl"></div>
     </div>
-
-    <!-- Center: tree tabs + canvas + toolbar -->
     <div id="centerPanel">
       <div id="treeBar">
         <div class="treeTabs" id="treeTabs"></div>
@@ -215,6 +232,7 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
         <button id="btnText"   disabled style="font-size:11px">+ Text</button>
         <button id="btnChoice" disabled style="font-size:11px">+ Choice</button>
         <button id="btnEnd"    disabled style="font-size:11px">+ End</button>
+        <button id="btnSeq"    disabled style="font-size:11px;border-color:rgba(45,212,191,.4);background:rgba(45,212,191,.1);color:var(--seq)">+ Sequence</button>
         <div class="barSep"></div>
         <button class="danger" id="btnDel"   disabled style="font-size:11px">Delete Node</button>
         <button class="warn"   id="btnEntry" disabled style="font-size:11px">Set Entry</button>
@@ -223,27 +241,19 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
         <span id="zoomLabel">100%</span>
       </div>
     </div>
-
-    <!-- Inspector -->
     <div id="inspector">
       <div class="paneHead">Inspector</div>
       <div id="inspBody">
-        <p style="color:var(--muted);font-size:12px;margin:0;padding:4px 0">
-          Select a node to inspect it.
-        </p>
+        <p style="color:var(--muted);font-size:12px;margin:0;padding:4px 0">Select a node to inspect it.</p>
       </div>
     </div>
+  </div>
+</div>
 
-  </div><!-- /workspace -->
-</div><!-- /app -->
-
-<!-- Import modal -->
 <div id="importModal" class="hidden">
   <div id="importBox">
     <h2>Load NPC Database</h2>
-    <p style="margin:0;font-size:12px;color:var(--muted)">
-      Open a <code>.json</code> database file, or paste JSON below.
-    </p>
+    <p style="margin:0;font-size:12px;color:var(--muted)">Open a <code>.json</code> database file, or paste JSON below.</p>
     <div class="mrow">
       <button class="good" id="fileBtn">Open file…</button>
       <input type="file" id="fileInput" accept=".json" style="display:none">
@@ -259,33 +269,28 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
 
 <script>
 'use strict';
-/* ================================================================
-   STATE
-================================================================ */
-let db         = null;
-let sel        = { npcId: null, treeId: null, nodeId: null };
-let cam        = { panX: 60, panY: 60, zoom: 1 };
-let dragState  = null;   // { nid, sx, sy, nx, ny }
-let connState  = null;   // { fromId, ci, sx, sy, curX, curY, preview }
-let panState   = null;   // { sx, sy, px, py }
-let _seq       = 1;
+let db        = null;
+let sel       = { npcId: null, treeId: null, nodeId: null };
+let cam       = { panX: 60, panY: 60, zoom: 1 };
+let dragState = null;
+let connState = null;
+let panState  = null;
+let _seq      = 1;
 
-/* ================================================================
-   HELPERS
-================================================================ */
-const $       = id => document.getElementById(id);
-const getNpc  = ()       => db?.npcs?.find(n => n.id === sel.npcId)             ?? null;
-const getTree = ()       => getNpc()?.dialogueTrees?.find(t => t.id === sel.treeId) ?? null;
-const getNode = (id = sel.nodeId) => getTree()?.nodes?.find(n => n.id === id)   ?? null;
-const genId   = p  => `${p}${Date.now().toString(36)}${(_seq++).toString(36)}`;
-const esc     = s  => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-const trunc   = (s, n) => s.length > n ? s.slice(0, n) + '…' : s;
-const deepCopy = v => JSON.parse(JSON.stringify(v));
-const setDirty = () => { $('exportBtn').disabled = false; };
+const $        = id => document.getElementById(id);
+const getNpc   = ()  => db?.npcs?.find(n => n.id === sel.npcId) ?? null;
+const getTree  = ()  => getNpc()?.dialogueTrees?.find(t => t.id === sel.treeId) ?? null;
+const getNode  = (id = sel.nodeId) => getTree()?.nodes?.find(n => n.id === id) ?? null;
+const genId    = p   => `${p}${Date.now().toString(36)}${(_seq++).toString(36)}`;
+const esc      = s   => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const trunc    = (s,n) => s.length > n ? s.slice(0,n) + '…' : s;
+const deepCopy = v   => JSON.parse(JSON.stringify(v));
+const setDirty = ()  => { $('exportBtn').disabled = false; };
 
-/* ================================================================
-   DATABASE I/O
-================================================================ */
+const EXPRESSIONS   = ['neutral','happy','sad','angry','surprised','flustered','concerned','excited','thoughtful'];
+const REVEAL_SPEEDS = ['normal','slow','fast','instant'];
+
+/* ── Database I/O ─────────────────────────────────────────── */
 function loadDatabase(json) {
   try {
     const parsed = typeof json === 'string' ? JSON.parse(json) : json;
@@ -294,13 +299,12 @@ function loadDatabase(json) {
       if (!Array.isArray(npc.dialogueTrees)) npc.dialogueTrees = [];
       for (const tree of npc.dialogueTrees) {
         if (!Array.isArray(tree.nodes)) tree.nodes = [];
-        // Assign editor positions if missing
         tree.nodes.forEach((nd, i) => { nd.pos ??= { x: 60 + i * 260, y: 80 }; });
       }
     }
     db  = parsed;
     sel = { npcId: null, treeId: null, nodeId: null };
-    $('exportBtn').disabled  = false;
+    $('exportBtn').disabled = false;
     $('statusPill').textContent = `${db.npcs.length} NPC${db.npcs.length !== 1 ? 's' : ''} loaded`;
     renderAll();
     if (db.npcs.length) selectNpc(db.npcs[0].id);
@@ -312,18 +316,13 @@ function loadDatabase(json) {
 }
 
 function exportDatabase() {
-  const data = deepCopy(db);
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(deepCopy(db), null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
-  Object.assign(document.createElement('a'), {
-    href: url, download: 'hobunji-starter-npc-database.json'
-  }).click();
+  Object.assign(document.createElement('a'), { href: url, download: 'hobunji-starter-npc-database.json' }).click();
   URL.revokeObjectURL(url);
 }
 
-/* ================================================================
-   SELECTION
-================================================================ */
+/* ── Selection ───────────────────────────────────────────── */
 function selectNpc(id) {
   sel.npcId = id; sel.treeId = null; sel.nodeId = null;
   const npc = getNpc();
@@ -341,23 +340,18 @@ function selectTree(id) {
 
 function selectNode(id) {
   sel.nodeId = id;
-  document.querySelectorAll('.node').forEach(el =>
-    el.classList.toggle('sel', el.dataset.nid === id));
+  document.querySelectorAll('.node').forEach(el => el.classList.toggle('sel', el.dataset.nid === id));
   renderInspector();
   $('btnDel').disabled   = !id;
   $('btnEntry').disabled = !id;
 }
 
-/* ================================================================
-   TREE ACTIONS
-================================================================ */
+/* ── Tree actions ────────────────────────────────────────── */
 function addTree() {
-  const npc = getNpc();
-  if (!npc) return;
-  const id   = genId('tree_');
-  const tree = { id, label: `Tree ${npc.dialogueTrees.length + 1}`,
-                 trigger: 'interact', priority: 0, entryNode: null, nodes: [] };
-  npc.dialogueTrees.push(tree);
+  const npc = getNpc(); if (!npc) return;
+  const id  = genId('tree_');
+  npc.dialogueTrees.push({ id, label: `Tree ${npc.dialogueTrees.length + 1}`,
+    trigger: 'interact', priority: 0, entryNode: null, nodes: [] });
   sel.treeId = id; sel.nodeId = null;
   cam = { panX: 60, panY: 60, zoom: 1 };
   setDirty(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar();
@@ -371,26 +365,19 @@ function deleteTree(id) {
   setDirty(); renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector();
 }
 
-/* ================================================================
-   NODE ACTIONS
-================================================================ */
+/* ── Node actions ────────────────────────────────────────── */
 function addNode(type) {
   const tree = getTree(); if (!tree) return;
   const id   = genId('n_');
-  const outer = $('canvasOuter');
-  const w = outer.clientWidth  || 800;
-  const h = outer.clientHeight || 600;
-  // Base at viewport center; stagger each new node 260px right then wrap into rows
+  const w = $('canvasOuter').clientWidth  || 800;
+  const h = $('canvasOuter').clientHeight || 600;
   const idx = tree.nodes.length;
-  const col = idx % 3;
-  const row = Math.floor(idx / 3);
-  const vcx = Math.round((w / 2 - cam.panX) / cam.zoom);
-  const vcy = Math.round((h / 2 - cam.panY) / cam.zoom);
-  const cx  = vcx - 330 + col * 260;   // 3 columns, centered in view
-  const cy  = vcy - 40  + row * 180;
-  const nd = { id, type, pos: { x: cx, y: cy } };
-  if (type === 'text')   { nd.text = ''; nd.next = null; }
-  if (type === 'choice') { nd.choices = [{ label: '', next: null }]; }
+  const cx  = Math.round((w/2 - cam.panX) / cam.zoom) - 330 + (idx % 3) * 260;
+  const cy  = Math.round((h/2 - cam.panY) / cam.zoom) - 40  + Math.floor(idx/3) * 180;
+  const nd  = { id, type, pos: { x: cx, y: cy } };
+  if (type === 'text')     { nd.text = ''; nd.next = null; nd.expression = 'neutral'; nd.expressionHold = 2; nd.revealSpeed = 'normal'; }
+  if (type === 'choice')   { nd.choices = [{ label: '', next: null }]; }
+  if (type === 'sequence') { nd.tiers = ['']; nd.next = null; nd.exhaustedNext = null; }
   tree.nodes.push(nd);
   if (!tree.entryNode) tree.entryNode = id;
   setDirty(); renderCanvas(); selectNode(id);
@@ -400,8 +387,10 @@ function deleteNode(id) {
   const tree = getTree(); if (!tree) return;
   tree.nodes = tree.nodes.filter(n => n.id !== id);
   for (const n of tree.nodes) {
-    if (n.next === id) n.next = null;
+    if (n.next === id)          n.next = null;
+    if (n.exhaustedNext === id) n.exhaustedNext = null;
     n.choices?.forEach(c => { if (c.next === id) c.next = null; });
+    if (n.tags) n.tags = n.tags.filter(t => !(t.type === 'break_sequence' && t.sequenceNodeId === id));
   }
   if (tree.entryNode === id) tree.entryNode = tree.nodes[0]?.id ?? null;
   if (sel.nodeId === id) sel.nodeId = null;
@@ -417,82 +406,62 @@ function setEntryNode(id) {
 function connectNodes(fromId, ci, toId) {
   const tree = getTree(); if (!tree) return;
   const nd   = tree.nodes.find(n => n.id === fromId); if (!nd) return;
-  if (ci != null) { if (nd.choices?.[ci]) nd.choices[ci].next = toId; }
-  else nd.next = toId;
+  if      (ci === 'exhaust') { nd.exhaustedNext = toId; }
+  else if (ci != null)       { if (nd.choices?.[ci]) nd.choices[ci].next = toId; }
+  else                       { nd.next = toId; }
   setDirty(); renderSvg();
   if (sel.nodeId === fromId) renderInspector();
 }
 
-/* ================================================================
-   RENDER: NPC LIST
-================================================================ */
+/* ── NPC list ────────────────────────────────────────────── */
 function renderNpcList() {
   const el = $('npcListEl');
-  if (!db) {
-    el.innerHTML = '<p style="padding:12px;color:var(--muted);font-size:12px">Load a database to begin.</p>';
-    return;
-  }
+  if (!db) { el.innerHTML = '<p style="padding:12px;color:var(--muted);font-size:12px">Load a database to begin.</p>'; return; }
   const q = ($('npcQ').value || '').toLowerCase();
   const list = db.npcs.filter(n => !q ||
-    (n.name  || '').toLowerCase().includes(q) ||
-    (n.role  || '').toLowerCase().includes(q) ||
-    (n.species || '').toLowerCase().includes(q));
+    (n.name||'').toLowerCase().includes(q) ||
+    (n.role||'').toLowerCase().includes(q) ||
+    (n.species||'').toLowerCase().includes(q));
   el.innerHTML = list.map(n => `
     <div class="npcItem${n.id === sel.npcId ? ' sel' : ''}" data-id="${esc(n.id)}">
-      <div class="npcName">
-        <span class="npcBadge">${n.dialogueTrees?.length || 0}</span>
-        ${esc(n.name || n.id)}
-      </div>
+      <div class="npcName"><span class="npcBadge">${n.dialogueTrees?.length || 0}</span>${esc(n.name || n.id)}</div>
       <div class="npcMeta">${esc(n.role || '—')} · ${esc(n.species || '—')}</div>
     </div>`).join('');
-  el.querySelectorAll('.npcItem').forEach(el =>
-    el.addEventListener('click', () => selectNpc(el.dataset.id)));
+  el.querySelectorAll('.npcItem').forEach(el => el.addEventListener('click', () => selectNpc(el.dataset.id)));
 }
 
-/* ================================================================
-   RENDER: TREE BAR
-================================================================ */
+/* ── Tree bar ────────────────────────────────────────────── */
 function renderTreeBar() {
   const npc = getNpc();
   $('treeTabs').innerHTML = !npc ? '' : npc.dialogueTrees.map(t => `
-    <div class="treeTab${t.id === sel.treeId ? ' sel' : ''}" data-id="${esc(t.id)}">
-      ${esc(t.label || t.id)}
-    </div>`).join('');
-  $('treeTabs').querySelectorAll('.treeTab').forEach(el =>
-    el.addEventListener('click', () => selectTree(el.dataset.id)));
+    <div class="treeTab${t.id === sel.treeId ? ' sel' : ''}" data-id="${esc(t.id)}">${esc(t.label || t.id)}</div>`).join('');
+  $('treeTabs').querySelectorAll('.treeTab').forEach(el => el.addEventListener('click', () => selectTree(el.dataset.id)));
 }
 
 function updateBar() {
   const ok = !!getTree();
-  $('btnText').disabled   = !ok;
-  $('btnChoice').disabled = !ok;
-  $('btnEnd').disabled    = !ok;
-  $('btnDel').disabled    = !sel.nodeId;
-  $('btnEntry').disabled  = !sel.nodeId;
+  ['btnText','btnChoice','btnEnd','btnSeq'].forEach(id => $(id).disabled = !ok);
+  $('btnDel').disabled   = !sel.nodeId;
+  $('btnEntry').disabled = !sel.nodeId;
 }
 
-/* ================================================================
-   RENDER: CANVAS
-================================================================ */
+/* ── Canvas ──────────────────────────────────────────────── */
 function applyTransform() {
-  $('canvas').style.transform =
-    `matrix(${cam.zoom},0,0,${cam.zoom},${cam.panX},${cam.panY})`;
-  $('zoomLabel').textContent = Math.round(cam.zoom * 100) + '%';
-  // Dot grid moves with pan/zoom
+  $('canvas').style.transform = `matrix(${cam.zoom},0,0,${cam.zoom},${cam.panX},${cam.panY})`;
+  $('zoomLabel').textContent  = Math.round(cam.zoom * 100) + '%';
   const gs = 24 * cam.zoom;
   const outer = $('canvasOuter');
-  outer.style.backgroundSize  = `${gs}px ${gs}px`;
-  outer.style.backgroundImage =
-    `radial-gradient(circle,rgba(38,56,79,.55) 1px,transparent 1px)`;
+  outer.style.backgroundSize     = `${gs}px ${gs}px`;
+  outer.style.backgroundImage    = `radial-gradient(circle,rgba(38,56,79,.55) 1px,transparent 1px)`;
   outer.style.backgroundPosition = `${cam.panX % gs}px ${cam.panY % gs}px`;
 }
 
 function renderCanvas() {
   applyTransform();
-  const tree    = getTree();
-  const nlayer  = $('nodesLayer');
-  const empty   = $('emptyState');
-  const emsg    = $('emptyMsg');
+  const tree   = getTree();
+  const nlayer = $('nodesLayer');
+  const empty  = $('emptyState');
+  const emsg   = $('emptyMsg');
 
   if (!getNpc()) {
     nlayer.innerHTML = ''; $('svgLayer').innerHTML = '';
@@ -502,76 +471,72 @@ function renderCanvas() {
     nlayer.innerHTML = ''; $('svgLayer').innerHTML = '';
     empty.classList.remove('hidden');
     emsg.textContent = !getNpc()?.dialogueTrees?.length
-      ? 'Click "+ Tree" to create a dialogue tree'
-      : 'Select a tree above to edit it';
+      ? 'Click "+ Tree" to create a dialogue tree' : 'Select a tree above to edit it';
     return;
   }
   empty.classList.add('hidden');
   nlayer.innerHTML = (tree.nodes || []).map(n => buildNodeHtml(n, tree)).join('');
 
-  // Wire node events
   nlayer.querySelectorAll('.node').forEach(el => {
     el.addEventListener('mousedown', e => onNodeDown(e, el.dataset.nid));
-    el.querySelector('.nodeX')?.addEventListener('click', e => {
-      e.stopPropagation(); deleteNode(el.dataset.nid);
-    });
+    el.querySelector('.nodeX')?.addEventListener('click', e => { e.stopPropagation(); deleteNode(el.dataset.nid); });
   });
-  // Wire text/end output ports
   nlayer.querySelectorAll('.port-out[data-nid]').forEach(p =>
     p.addEventListener('mousedown', e => { e.stopPropagation(); onPortDown(e, p); }));
 
-  // Position choice ports using live DOM measurements then render SVG
-  requestAnimationFrame(() => {
-    placeChoicePorts();
-    renderSvg();
-  });
+  requestAnimationFrame(() => { placeChoicePorts(); renderSvg(); });
 }
 
 function buildNodeHtml(nd, tree) {
   const isSel   = nd.id === sel.nodeId;
   const isEntry = tree.entryNode === nd.id;
-  let body = '';
+  let body = '', outPort = '';
 
   if (nd.type === 'text') {
-    body = `<div class="nodeText${!nd.text ? ' empty' : ''}">${
-      nd.text ? esc(trunc(nd.text, 140)) : 'No text — click to edit'
-    }</div>`;
+    const meta = [];
+    if (nd.expression && nd.expression !== 'neutral') meta.push(`<span class="nodeMetaTag">${esc(nd.expression)}</span>`);
+    if (nd.revealSpeed && nd.revealSpeed !== 'normal') meta.push(`<span class="nodeMetaTag">${esc(nd.revealSpeed)}</span>`);
+    if ((nd.tags||[]).length) meta.push(`<span class="nodeMetaTag">${nd.tags.length} tag${nd.tags.length!==1?'s':''}</span>`);
+    body = `<div class="nodeText${!nd.text?' empty':''}">${nd.text?esc(trunc(nd.text,140)):'No text — click to edit'}</div>
+      ${meta.length?`<div class="nodeMeta">${meta.join('')}</div>`:''}`;
+    outPort = `<div class="port port-out" data-nid="${nd.id}" data-ci="" title="Connect to next node"></div>`;
   } else if (nd.type === 'choice') {
-    const rows = (nd.choices || []).map((c, i) => `
+    const rows = (nd.choices||[]).map((c,i) => `
       <li class="choiceRow">
-        <span class="choiceLabel${!c.label ? ' empty' : ''}">${
-          c.label ? esc(trunc(c.label, 48)) : 'Empty choice'
-        }</span>
-        <span class="choiceTarget">${c.next ? '→ ' + esc(c.next) : '→ END'}</span>
+        <span class="choiceLabel${!c.label?' empty':''}">${c.label?esc(trunc(c.label,48)):'Empty choice'}</span>
+        <span class="choiceTarget">${c.next?'→ '+esc(c.next):'→ END'}</span>
       </li>`).join('');
-    body = `<ul class="choiceRows">${
-      rows || '<li class="choiceRow" style="color:var(--muted);font-size:11px">No choices</li>'
-    }</ul>`;
+    body = `<ul class="choiceRows">${rows||'<li class="choiceRow" style="color:var(--muted);font-size:11px">No choices</li>'}</ul>`;
   } else if (nd.type === 'end') {
     body = `<div class="nodeEndLine">— end of conversation —</div>`;
+  } else if (nd.type === 'sequence') {
+    const tiers = nd.tiers || [];
+    const rows = tiers.slice(0,3).map((t,i) => `
+      <li class="seqTierItem">
+        <span class="seqTierNum">${i+1}.</span>
+        <span class="seqTierText${!t?' empty':''}">${t?esc(trunc(t,52)):'Empty tier'}</span>
+      </li>`).join('');
+    body = `<div class="seqTierBadge">${tiers.length} tier${tiers.length!==1?'s':''}${tiers.length>3?' (showing 3)':''}</div>
+      <ul class="seqTierList">${rows||'<li class="seqTierItem"><span style="color:var(--muted);font-size:11px">No tiers</span></li>'}</ul>
+      <div class="seqPortHint"><span style="color:var(--acc)">● next</span><span style="color:var(--good)">● exhausted</span></div>`;
+    outPort = `<div class="port port-out" data-nid="${nd.id}" data-ci="" title="Next (tiers remain)"></div>
+               <div class="port port-out exhaust-port" data-nid="${nd.id}" data-ci="exhaust" title="Exhausted (all tiers shown)"></div>`;
   }
 
-  // Text / end nodes get a static output port; choice ports are added by placeChoicePorts()
-  const outPort = (nd.type === 'text')
-    ? `<div class="port port-out" data-nid="${nd.id}" data-ci="" title="Connect to next node"></div>`
-    : '';
-
-  return `
-    <div class="node node-${nd.type}${isSel ? ' sel' : ''}" data-nid="${nd.id}"
-         style="left:${nd.pos.x}px;top:${nd.pos.y}px">
-      <div class="port port-in" data-nid="${nd.id}" title="Input"></div>
-      <div class="nodeHead">
-        <span class="nodeBadge">${nd.type}</span>
-        ${isEntry ? '<span class="nodeEntryTag">entry</span>' : ''}
-        <span class="nodeId">${esc(nd.id)}</span>
-        <button class="nodeX" title="Delete node">×</button>
-      </div>
-      <div class="nodeBody">${body}</div>
-      ${outPort}
-    </div>`;
+  return `<div class="node node-${nd.type}${isSel?' sel':''}" data-nid="${nd.id}"
+       style="left:${nd.pos.x}px;top:${nd.pos.y}px">
+    <div class="port port-in" data-nid="${nd.id}" title="Input"></div>
+    <div class="nodeHead">
+      <span class="nodeBadge">${nd.type}</span>
+      ${isEntry?'<span class="nodeEntryTag">entry</span>':''}
+      <span class="nodeId">${esc(nd.id)}</span>
+      <button class="nodeX" title="Delete node">×</button>
+    </div>
+    <div class="nodeBody">${body}</div>
+    ${outPort}
+  </div>`;
 }
 
-/* Position choice output ports using measured DOM layout */
 function placeChoicePorts() {
   const tree = getTree(); if (!tree) return;
   document.querySelectorAll('.node-choice').forEach(nodeEl => {
@@ -581,26 +546,22 @@ function placeChoicePorts() {
     nodeEl.querySelectorAll('.choiceRow').forEach((row, ci) => {
       const rr  = row.getBoundingClientRect();
       const top = (rr.top + rr.height / 2) - nr.top;
-      // Reuse existing port if already placed, else create
-      let port = nodeEl.querySelector(`.port-out[data-ci="${ci}"]`);
+      let port  = nodeEl.querySelector(`.port-out[data-ci="${ci}"]`);
       if (!port) {
         port = document.createElement('div');
-        port.className = 'port port-out choice-port';
+        port.className   = 'port port-out choice-port';
         port.dataset.nid = nid;
         port.dataset.ci  = String(ci);
         port.title       = `Connect choice ${ci + 1}`;
         port.addEventListener('mousedown', e => { e.stopPropagation(); onPortDown(e, port); });
         nodeEl.appendChild(port);
       }
-      port.style.cssText =
-        `top:${top}px;right:-6px;position:absolute;transform:translateY(-50%)`;
+      port.style.cssText = `top:${top}px;right:-6px;position:absolute;transform:translateY(-50%)`;
     });
   });
 }
 
-/* ================================================================
-   RENDER: SVG CONNECTIONS
-================================================================ */
+/* ── SVG connections ─────────────────────────────────────── */
 function portCanvasPos(portEl) {
   const or = $('canvasOuter').getBoundingClientRect();
   const pr = portEl.getBoundingClientRect();
@@ -619,30 +580,40 @@ function renderSvg() {
   const tree = getTree();
   const svg  = $('svgLayer');
   if (!tree) { svg.innerHTML = ''; return; }
-
   requestAnimationFrame(() => {
     const paths = [];
+    const curve = (op, ip, color) => {
+      if (!op || !ip) return;
+      const p1 = portCanvasPos(op), p2 = portCanvasPos(ip);
+      paths.push(`<path d="${bezierPath(p1.x,p1.y,p2.x,p2.y)}"
+        stroke="${color}" stroke-width="2" fill="none" stroke-linecap="round"/>`);
+    };
     for (const nd of (tree.nodes || [])) {
       if (nd.type === 'text' && nd.next) {
-        const op = document.querySelector(`.port-out[data-nid="${nd.id}"][data-ci=""]`);
-        const ip = document.querySelector(`.port-in[data-nid="${nd.next}"]`);
-        if (op && ip) {
-          const p1 = portCanvasPos(op), p2 = portCanvasPos(ip);
-          paths.push(`<path d="${bezierPath(p1.x,p1.y,p2.x,p2.y)}"
-            stroke="rgba(106,167,255,.75)" stroke-width="2" fill="none" stroke-linecap="round"/>`);
-        }
+        curve(
+          document.querySelector(`.port-out[data-nid="${nd.id}"][data-ci=""]`),
+          document.querySelector(`.port-in[data-nid="${nd.next}"]`),
+          'rgba(106,167,255,.75)');
       }
       if (nd.type === 'choice') {
-        (nd.choices || []).forEach((c, ci) => {
-          if (!c.next) return;
-          const op = document.querySelector(`.port-out[data-nid="${nd.id}"][data-ci="${ci}"]`);
-          const ip = document.querySelector(`.port-in[data-nid="${c.next}"]`);
-          if (op && ip) {
-            const p1 = portCanvasPos(op), p2 = portCanvasPos(ip);
-            paths.push(`<path d="${bezierPath(p1.x,p1.y,p2.x,p2.y)}"
-              stroke="rgba(251,191,36,.75)" stroke-width="2" fill="none" stroke-linecap="round"/>`);
-          }
+        (nd.choices||[]).forEach((c,ci) => { if (!c.next) return;
+          curve(
+            document.querySelector(`.port-out[data-nid="${nd.id}"][data-ci="${ci}"]`),
+            document.querySelector(`.port-in[data-nid="${c.next}"]`),
+            'rgba(251,191,36,.75)');
         });
+      }
+      if (nd.type === 'sequence') {
+        if (nd.next)
+          curve(
+            document.querySelector(`.port-out[data-nid="${nd.id}"][data-ci=""]`),
+            document.querySelector(`.port-in[data-nid="${nd.next}"]`),
+            'rgba(106,167,255,.75)');
+        if (nd.exhaustedNext)
+          curve(
+            document.querySelector(`.port-out[data-nid="${nd.id}"][data-ci="exhaust"]`),
+            document.querySelector(`.port-in[data-nid="${nd.exhaustedNext}"]`),
+            'rgba(52,211,153,.75)');
       }
     }
     if (connState?.preview) paths.push(connState.preview);
@@ -650,9 +621,53 @@ function renderSvg() {
   });
 }
 
-/* ================================================================
-   RENDER: INSPECTOR
-================================================================ */
+/* ── Inspector helpers ───────────────────────────────────── */
+function buildTagsHtml(nd, tree) {
+  const tags     = nd.tags || [];
+  const seqNodes = (tree.nodes||[]).filter(n => n.type === 'sequence' && n.id !== nd.id);
+  const rows = tags.map((tag, ti) => {
+    let detail = '';
+    if (tag.type === 'break_sequence') {
+      detail = `<select class="tagSeqSel" data-ti="${ti}" style="font-size:11px;flex:1">
+        <option value="">— none —</option>
+        ${seqNodes.map(sn => `<option value="${esc(sn.id)}"${sn.id===tag.sequenceNodeId?' selected':''}>${esc(sn.id)}</option>`).join('')}
+      </select>`;
+    }
+    return `<div class="tagRow">
+      <span class="tagBadge">${esc(tag.type)}</span>
+      ${detail}
+      <button class="tagX" data-ti="${ti}" style="margin-left:auto">×</button>
+    </div>`;
+  }).join('');
+  return `<hr class="idiv">
+    <div class="iGroup">
+      <label>Tags</label>
+      ${tags.length ? `<div class="ceWrap">${rows}</div>` : '<div class="iMuted" style="margin-bottom:5px">No tags on this node.</div>'}
+      <div style="display:flex;gap:5px;margin-top:5px">
+        <select id="iTagType" style="flex:1;font-size:11px">
+          <option value="break_sequence">break_sequence</option>
+        </select>
+        <button id="iAddTag" style="font-size:11px;flex-shrink:0">+ Add</button>
+      </div>
+    </div>`;
+}
+
+function wireTagEvents(nd) {
+  if (!nd.tags) nd.tags = [];
+  $('iAddTag')?.addEventListener('click', () => {
+    const type = $('iTagType').value;
+    if (type === 'break_sequence') nd.tags.push({ type: 'break_sequence', sequenceNodeId: '' });
+    setDirty(); renderInspector();
+  });
+  document.querySelectorAll('.tagX').forEach(el => el.addEventListener('click', () => {
+    nd.tags.splice(+el.dataset.ti, 1); setDirty(); renderInspector();
+  }));
+  document.querySelectorAll('.tagSeqSel').forEach(el => el.addEventListener('change', () => {
+    nd.tags[+el.dataset.ti].sequenceNodeId = el.value; setDirty();
+  }));
+}
+
+/* ── Inspector ───────────────────────────────────────────── */
 function renderInspector() {
   const body = $('inspBody');
   const tree = getTree();
@@ -663,72 +678,75 @@ function renderInspector() {
     return;
   }
 
-  /* ── Tree metadata (no node selected) ── */
   if (!nd) {
-    const otherNodes = tree.nodes || [];
+    const nodes = tree.nodes || [];
     body.innerHTML = `
-      <div class="iGroup">
-        <label>Label</label>
-        <input id="iLabel" value="${esc(tree.label || '')}" placeholder="Tree name">
-      </div>
-      <div class="iGroup">
-        <label>Trigger</label>
+      <div class="iGroup"><label>Label</label>
+        <input id="iLabel" value="${esc(tree.label||'')}" placeholder="Tree name"></div>
+      <div class="iGroup"><label>Trigger</label>
         <select id="iTrigger">
           ${['interact','gift','quest','relationship','date','custom'].map(v =>
-            `<option${tree.trigger === v ? ' selected' : ''}>${esc(v)}</option>`).join('')}
+            `<option${tree.trigger===v?' selected':''}>${esc(v)}</option>`).join('')}
         </select>
-        <div class="iMuted">When this tree activates.</div>
-      </div>
-      <div class="iGroup">
-        <label>Priority</label>
-        <input id="iPrio" type="number" value="${tree.priority ?? 0}" min="0" max="99">
-        <div class="iMuted">Higher number = checked first.</div>
-      </div>
-      <div class="iGroup">
-        <label>Entry node</label>
+        <div class="iMuted">When this tree activates.</div></div>
+      <div class="iGroup"><label>Priority</label>
+        <input id="iPrio" type="number" value="${tree.priority??0}" min="0" max="99">
+        <div class="iMuted">Higher = checked first.</div></div>
+      <div class="iGroup"><label>Entry node</label>
         <select id="iEntry">
           <option value="">— none —</option>
-          ${otherNodes.map(n => `<option value="${esc(n.id)}"${tree.entryNode===n.id?' selected':''}>${esc(n.id)} (${n.type})</option>`).join('')}
-        </select>
-      </div>
+          ${nodes.map(n => `<option value="${esc(n.id)}"${tree.entryNode===n.id?' selected':''}>${esc(n.id)} (${n.type})</option>`).join('')}
+        </select></div>
       <hr class="idiv">
       <div class="iGroup">
-        <button class="danger" id="iDelTree" style="width:100%;font-size:12px">Delete Tree</button>
-      </div>`;
+        <button class="danger" id="iDelTree" style="width:100%;font-size:12px">Delete Tree</button></div>`;
     $('iLabel').oninput    = e => { tree.label    = e.target.value; setDirty(); renderTreeBar(); };
     $('iTrigger').onchange = e => { tree.trigger  = e.target.value; setDirty(); };
-    $('iPrio').oninput     = e => { tree.priority = parseInt(e.target.value) || 0; setDirty(); };
-    $('iEntry').onchange   = e => { tree.entryNode = e.target.value || null; setDirty(); renderCanvas(); };
+    $('iPrio').oninput     = e => { tree.priority = parseInt(e.target.value)||0; setDirty(); };
+    $('iEntry').onchange   = e => { tree.entryNode = e.target.value||null; setDirty(); renderCanvas(); };
     $('iDelTree').onclick  = () => deleteTree(sel.treeId);
     return;
   }
 
-  /* ── Node inspector ── */
-  const others = (tree.nodes || []).filter(n => n.id !== nd.id);
+  const others   = (tree.nodes||[]).filter(n => n.id !== nd.id);
   const nextOpts = id => `<option value="">— END —</option>` +
     others.map(n => `<option value="${esc(n.id)}"${n.id===id?' selected':''}>${esc(n.id)} (${n.type})</option>`).join('');
 
   let specific = '';
+
   if (nd.type === 'text') {
     specific = `
-      <div class="iGroup">
-        <label>Dialogue text</label>
-        <textarea id="iText" rows="5" style="font:12px/1.5 system-ui,sans-serif;resize:vertical">${esc(nd.text || '')}</textarea>
+      <div class="iGroup"><label>Dialogue text</label>
+        <textarea id="iText" rows="5">${esc(nd.text||'')}</textarea>
         <div class="iMuted">
           Tokens: <code>{{npcName}}</code> <code>{{playerName}}</code>
+          <code>{{playerPronoun1}}</code> <code>{{playerPronoun2}}</code>
+          <code>{{playerPronoun3}}</code> <code>{{playerPronounSelf}}</code>
+          <code>{{playerLocalNickname}}</code> <code>{{playerNickname}}</code>
+          <code>{{playerFirstL2V1}}</code>
           <code>{{npcSpecies}}</code> <code>{{playerSpecies}}</code> <code>{{role}}</code>
-        </div>
-      </div>
-      <div class="iGroup">
-        <label>Next node</label>
-        <select id="iNext">${nextOpts(nd.next)}</select>
-      </div>`;
+        </div></div>
+      <div class="iGroup"><label>Next node</label>
+        <select id="iNext">${nextOpts(nd.next)}</select></div>
+      <div class="iGroup"><label>Expression</label>
+        <select id="iExpr">
+          ${EXPRESSIONS.map(v=>`<option${(nd.expression||'neutral')===v?' selected':''}>${v}</option>`).join('')}
+        </select></div>
+      <div class="iGroup"><label>Expression hold after END (sec)</label>
+        <input id="iExprHold" type="number" value="${nd.expressionHold??2}" min="0" max="30" step="0.5">
+        <div class="iMuted">In-game seconds before fading to neutral after conversation ends.</div></div>
+      <div class="iGroup"><label>Reveal speed</label>
+        <select id="iReveal">
+          ${REVEAL_SPEEDS.map(v=>`<option${(nd.revealSpeed||'normal')===v?' selected':''}>${v}</option>`).join('')}
+        </select>
+        <div class="iMuted">Punctuation (. … !) always pauses at non-instant speeds.</div></div>
+      ${buildTagsHtml(nd, tree)}`;
   } else if (nd.type === 'choice') {
-    const ceRows = (nd.choices || []).map((c, i) => `
+    const ceRows = (nd.choices||[]).map((c,i) => `
       <div class="ceItem" data-ci="${i}">
         <div style="display:flex;align-items:center;gap:5px">
-          <span style="font-size:10px;color:var(--muted);min-width:18px">${i + 1}.</span>
-          <input class="ceLabel" data-ci="${i}" value="${esc(c.label || '')}" placeholder="Choice text…" style="font-size:12px;flex:1">
+          <span style="font-size:10px;color:var(--muted);min-width:18px">${i+1}.</span>
+          <input class="ceLabel" data-ci="${i}" value="${esc(c.label||'')}" placeholder="Choice text…" style="font-size:12px;flex:1">
           <button class="ceX" data-ci="${i}">×</button>
         </div>
         <div class="ceRow">
@@ -737,88 +755,110 @@ function renderInspector() {
         </div>
       </div>`).join('');
     specific = `
-      <div class="iGroup">
-        <label>Choices</label>
-        <div class="ceWrap">${ceRows || '<div style="padding:8px;color:var(--muted);font-size:11px">No choices yet</div>'}</div>
-        <button id="iAddChoice" style="width:100%;margin-top:6px;font-size:11px">+ Add choice</button>
-      </div>`;
+      <div class="iGroup"><label>Choices</label>
+        <div class="ceWrap">${ceRows||'<div style="padding:8px;color:var(--muted);font-size:11px">No choices yet</div>'}</div>
+        <button id="iAddChoice" style="width:100%;margin-top:6px;font-size:11px">+ Add choice</button></div>
+      ${buildTagsHtml(nd, tree)}`;
   } else if (nd.type === 'end') {
     specific = `<div class="iGroup">
-      <div class="iMuted">This node ends the conversation. No outputs.</div>
-    </div>`;
+      <div class="iMuted">This node ends the conversation. No outputs.</div></div>
+      ${buildTagsHtml(nd, tree)}`;
+  } else if (nd.type === 'sequence') {
+    const tiers = nd.tiers || [];
+    const tierItems = tiers.map((t,i) => `
+      <div class="ceItem">
+        <div style="display:flex;align-items:flex-start;gap:5px">
+          <span style="font-size:10px;color:var(--muted);min-width:18px;margin-top:8px">${i+1}.</span>
+          <textarea class="tierTA" data-ti="${i}" rows="2" style="flex:1;font-size:12px">${esc(t)}</textarea>
+          <button class="tierDel" data-ti="${i}" style="margin-top:4px">×</button>
+        </div>
+      </div>`).join('');
+    specific = `
+      <div class="iGroup"><label>Tiers</label>
+        <div class="iMuted" style="margin-bottom:5px">Cycles through tiers on each visit. Takes exhausted path when all shown.</div>
+        <div class="ceWrap">${tierItems||'<div style="padding:8px;color:var(--muted);font-size:11px">No tiers yet</div>'}</div>
+        <button id="iAddTier" style="width:100%;margin-top:6px;font-size:11px">+ Add tier</button></div>
+      <div class="iGroup"><label style="color:var(--acc)">● Next node (tiers remain)</label>
+        <select id="iSeqNext">${nextOpts(nd.next)}</select></div>
+      <div class="iGroup"><label style="color:var(--good)">● Exhausted next (all tiers shown)</label>
+        <select id="iSeqExhaust">
+          <option value="">— END —</option>
+          ${others.map(n=>`<option value="${esc(n.id)}"${n.id===nd.exhaustedNext?' selected':''}>${esc(n.id)} (${n.type})</option>`).join('')}
+        </select></div>
+      ${buildTagsHtml(nd, tree)}`;
   }
 
   const isEntry = tree.entryNode === nd.id;
   body.innerHTML = `
-    <div class="iGroup">
-      <label>Type · <code style="font-size:10px;color:var(--muted)">${esc(nd.id)}</code></label>
+    <div class="iGroup"><label>Type · <code style="font-size:10px;color:var(--muted)">${esc(nd.id)}</code></label>
       <select id="iType" style="font-size:12px">
-        <option${nd.type==='text'  ?' selected':''}>text</option>
-        <option${nd.type==='choice'?' selected':''}>choice</option>
-        <option${nd.type==='end'  ?' selected':''}>end</option>
-      </select>
-    </div>
+        <option${nd.type==='text'    ?' selected':''}>text</option>
+        <option${nd.type==='choice'  ?' selected':''}>choice</option>
+        <option${nd.type==='end'    ?' selected':''}>end</option>
+        <option${nd.type==='sequence'?' selected':''}>sequence</option>
+      </select></div>
     ${specific}
     <div class="iGroup">
-      <button id="iEntryBtn" class="${isEntry?'warn':'secondary'}"
-              style="width:100%;font-size:11px">
-        ${isEntry ? '★ Entry node (this tree starts here)' : 'Set as entry node'}
-      </button>
-    </div>`;
+      <button id="iEntryBtn" class="${isEntry?'warn':'secondary'}" style="width:100%;font-size:11px">
+        ${isEntry?'★ Entry node (this tree starts here)':'Set as entry node'}
+      </button></div>`;
 
-  /* Wire inspector events */
   $('iType')?.addEventListener('change', e => {
-    const t = e.target.value;
+    const t = e.target.value, prevTags = nd.tags;
     nd.type = t;
-    delete nd.text; delete nd.next; delete nd.choices;
-    if (t === 'text')   { nd.text = ''; nd.next = null; }
-    if (t === 'choice') { nd.choices = [{ label: '', next: null }]; }
+    ['text','next','choices','exhaustedNext','tiers','expression','expressionHold','revealSpeed']
+      .forEach(k => delete nd[k]);
+    if (t === 'text')     { nd.text = ''; nd.next = null; nd.expression = 'neutral'; nd.expressionHold = 2; nd.revealSpeed = 'normal'; }
+    if (t === 'choice')   { nd.choices = [{ label: '', next: null }]; }
+    if (t === 'sequence') { nd.tiers = ['']; nd.next = null; nd.exhaustedNext = null; }
+    nd.tags = prevTags || [];
     setDirty(); renderCanvas(); renderInspector();
   });
+
   $('iText')?.addEventListener('input', e => {
     nd.text = e.target.value; setDirty();
-    // Update node preview live
-    const nodeEl = document.querySelector(`.node[data-nid="${nd.id}"]`);
-    if (nodeEl) {
-      const el = nodeEl.querySelector('.nodeText');
-      if (el) { el.classList.toggle('empty', !nd.text); el.textContent = nd.text ? trunc(nd.text, 140) : 'No text — click to edit'; }
-    }
+    const el = document.querySelector(`.node[data-nid="${nd.id}"] .nodeText`);
+    if (el) { el.classList.toggle('empty', !nd.text); el.textContent = nd.text ? trunc(nd.text,140) : 'No text — click to edit'; }
   });
-  $('iNext')?.addEventListener('change', e => {
-    nd.next = e.target.value || null; setDirty(); renderSvg();
-    // Update target label in node
-    const nodeEl = document.querySelector(`.node[data-nid="${nd.id}"]`);
-    // Full canvas re-render needed to update connection label
-    renderCanvas();
-  });
-  $('iEntryBtn')?.addEventListener('click', () => setEntryNode(nd.id));
+  $('iNext')?.addEventListener('change', e => { nd.next = e.target.value||null; setDirty(); renderCanvas(); });
+  $('iExpr')?.addEventListener('change', e => { nd.expression = e.target.value; setDirty(); renderCanvas(); });
+  $('iExprHold')?.addEventListener('input', e => { nd.expressionHold = parseFloat(e.target.value)||0; setDirty(); });
+  $('iReveal')?.addEventListener('change', e => { nd.revealSpeed = e.target.value; setDirty(); renderCanvas(); });
+
   $('iAddChoice')?.addEventListener('click', () => {
-    nd.choices.push({ label: '', next: null });
-    setDirty(); renderCanvas(); renderInspector();
+    nd.choices.push({ label: '', next: null }); setDirty(); renderCanvas(); renderInspector();
   });
   document.querySelectorAll('.ceLabel').forEach(el => el.addEventListener('input', e => {
-    const ci = +e.target.dataset.ci;
-    nd.choices[ci].label = e.target.value; setDirty();
-    renderCanvas(); // update choice label in node preview
+    nd.choices[+e.target.dataset.ci].label = e.target.value; setDirty(); renderCanvas();
   }));
   document.querySelectorAll('.ceNext').forEach(el => el.addEventListener('change', e => {
-    const ci = +e.target.dataset.ci;
-    nd.choices[ci].next = e.target.value || null; setDirty(); renderSvg();
-    renderCanvas();
+    nd.choices[+e.target.dataset.ci].next = e.target.value||null; setDirty(); renderCanvas();
   }));
   document.querySelectorAll('.ceX').forEach(el => el.addEventListener('click', e => {
-    nd.choices.splice(+e.target.dataset.ci, 1);
-    setDirty(); renderCanvas(); renderInspector();
+    nd.choices.splice(+e.target.dataset.ci, 1); setDirty(); renderCanvas(); renderInspector();
   }));
+
+  $('iSeqNext')?.addEventListener('change', e => { nd.next = e.target.value||null; setDirty(); renderCanvas(); });
+  $('iSeqExhaust')?.addEventListener('change', e => { nd.exhaustedNext = e.target.value||null; setDirty(); renderCanvas(); });
+  $('iAddTier')?.addEventListener('click', () => {
+    if (!nd.tiers) nd.tiers = [];
+    nd.tiers.push(''); setDirty(); renderCanvas(); renderInspector();
+  });
+  document.querySelectorAll('.tierTA').forEach(el => el.addEventListener('input', e => {
+    nd.tiers[+e.target.dataset.ti] = e.target.value; setDirty(); renderCanvas();
+  }));
+  document.querySelectorAll('.tierDel').forEach(el => el.addEventListener('click', e => {
+    nd.tiers.splice(+e.target.dataset.ti, 1); setDirty(); renderCanvas(); renderInspector();
+  }));
+
+  $('iEntryBtn')?.addEventListener('click', () => setEntryNode(nd.id));
+  wireTagEvents(nd);
 }
 
-/* ================================================================
-   CANVAS INTERACTION
-================================================================ */
+/* ── Canvas interaction ──────────────────────────────────── */
 function onNodeDown(e, nid) {
   if (e.button !== 0 || connState) return;
-  e.stopPropagation();
-  e.preventDefault();   // prevent text selection on drag
+  e.stopPropagation(); e.preventDefault();
   selectNode(nid);
   const nd = getNode(nid); if (!nd) return;
   dragState = { nid, sx: e.clientX, sy: e.clientY, nx: nd.pos.x, ny: nd.pos.y };
@@ -832,31 +872,29 @@ function onPortDown(e, portEl) {
   const pr  = portEl.getBoundingClientRect();
   const sx  = (pr.left + pr.width  / 2 - or.left - cam.panX) / cam.zoom;
   const sy  = (pr.top  + pr.height / 2 - or.top  - cam.panY) / cam.zoom;
+  const ciStr = portEl.dataset.ci;
   connState = {
     fromId: portEl.dataset.nid,
-    ci:     portEl.dataset.ci !== '' ? +portEl.dataset.ci : null,
+    ci: ciStr === '' ? null : (isNaN(+ciStr) ? ciStr : +ciStr),
     sx, sy, curX: sx, curY: sy, preview: ''
   };
 }
 
 function onCanvasDown(e) {
-  // Pan: middle-mouse or Alt+left
   if (e.button === 1 || (e.button === 0 && e.altKey)) {
     panState = { sx: e.clientX, sy: e.clientY, px: cam.panX, py: cam.panY };
     e.preventDefault(); return;
   }
-  if (connState)     { connState = null; renderSvg(); return; }
-  if (e.button === 0){ selectNode(null); renderInspector(); }
+  if (connState)      { connState = null; renderSvg(); return; }
+  if (e.button === 0) { selectNode(null); renderInspector(); }
 }
 
 function onMouseMove(e) {
   if (dragState) {
-    const dx = (e.clientX - dragState.sx) / cam.zoom;
-    const dy = (e.clientY - dragState.sy) / cam.zoom;
     const nd = getNode(dragState.nid);
     if (nd) {
-      nd.pos.x = Math.round(dragState.nx + dx);
-      nd.pos.y = Math.round(dragState.ny + dy);
+      nd.pos.x = Math.round(dragState.nx + (e.clientX - dragState.sx) / cam.zoom);
+      nd.pos.y = Math.round(dragState.ny + (e.clientY - dragState.sy) / cam.zoom);
       const el = document.querySelector(`.node[data-nid="${dragState.nid}"]`);
       if (el) { el.style.left = nd.pos.x + 'px'; el.style.top = nd.pos.y + 'px'; }
       renderSvg();
@@ -869,12 +907,11 @@ function onMouseMove(e) {
     applyTransform(); renderSvg(); return;
   }
   if (connState) {
-    const or  = $('canvasOuter').getBoundingClientRect();
+    const or = $('canvasOuter').getBoundingClientRect();
     connState.curX = (e.clientX - or.left - cam.panX) / cam.zoom;
     connState.curY = (e.clientY - or.top  - cam.panY) / cam.zoom;
-    connState.preview =
-      `<path d="${bezierPath(connState.sx,connState.sy,connState.curX,connState.curY)}"
-       stroke="rgba(255,255,255,.3)" stroke-width="1.5" fill="none" stroke-dasharray="6 4"/>`;
+    connState.preview = `<path d="${bezierPath(connState.sx,connState.sy,connState.curX,connState.curY)}"
+      stroke="rgba(255,255,255,.3)" stroke-width="1.5" fill="none" stroke-dasharray="6 4"/>`;
     renderSvg();
   }
 }
@@ -887,8 +924,7 @@ function onMouseUp(e) {
     const portIn = hit?.closest('.port-in');
     if (portIn) {
       const toId = portIn.dataset.nid;
-      if (toId && toId !== connState.fromId)
-        connectNodes(connState.fromId, connState.ci, toId);
+      if (toId && toId !== connState.fromId) connectNodes(connState.fromId, connState.ci, toId);
     }
     connState = null; renderSvg();
   }
@@ -898,44 +934,27 @@ function onWheel(e) {
   e.preventDefault();
   const or = $('canvasOuter').getBoundingClientRect();
   const mx = e.clientX - or.left, my = e.clientY - or.top;
-  const nz = Math.max(0.15, Math.min(3, cam.zoom * (e.deltaY > 0 ? 0.9 : 1 / 0.9)));
+  const nz = Math.max(0.15, Math.min(3, cam.zoom * (e.deltaY > 0 ? 0.9 : 1/0.9)));
   cam.panX = mx - (mx - cam.panX) * nz / cam.zoom;
   cam.panY = my - (my - cam.panY) * nz / cam.zoom;
   cam.zoom = nz;
   applyTransform(); renderSvg();
 }
 
-/* ================================================================
-   KEYBOARD
-================================================================ */
 document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' ||
-      e.target.tagName === 'SELECT') return;
-  if ((e.key === 'Delete' || e.key === 'Backspace') && sel.nodeId) {
-    e.preventDefault(); deleteNode(sel.nodeId);
-  }
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && sel.nodeId) { e.preventDefault(); deleteNode(sel.nodeId); }
   if (e.key === 'Escape') {
     if (connState) { connState = null; renderSvg(); }
-    else { selectNode(null); renderInspector(); }
+    else           { selectNode(null); renderInspector(); }
   }
 });
 
-/* ================================================================
-   RENDER ALL
-================================================================ */
-function renderAll() {
-  renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar();
-}
+function renderAll() { renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar(); }
 
-/* ================================================================
-   INIT
-================================================================ */
 document.addEventListener('DOMContentLoaded', () => {
-  // Topbar
   $('loadBtn').onclick   = () => $('importModal').classList.remove('hidden');
   $('exportBtn').onclick = exportDatabase;
-
-  // Import modal
   $('importCancel').onclick = () => $('importModal').classList.add('hidden');
   $('fileBtn').onclick      = () => $('fileInput').click();
   $('fileInput').addEventListener('change', e => {
@@ -948,38 +967,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const j = $('importPaste').value.trim();
     if (j && loadDatabase(j)) { $('importModal').classList.add('hidden'); $('importPaste').value = ''; }
   };
-
-  // NPC search
-  $('npcQ').oninput = renderNpcList;
-
-  // Tree bar
+  $('npcQ').oninput      = renderNpcList;
   $('addTreeBtn').onclick = addTree;
-
-  // Canvas toolbar
   $('btnText').onclick   = () => addNode('text');
   $('btnChoice').onclick = () => addNode('choice');
   $('btnEnd').onclick    = () => addNode('end');
+  $('btnSeq').onclick    = () => addNode('sequence');
   $('btnDel').onclick    = () => sel.nodeId && deleteNode(sel.nodeId);
   $('btnEntry').onclick  = () => sel.nodeId && setEntryNode(sel.nodeId);
-  $('btnReset').onclick  = () => {
-    cam = { panX: 60, panY: 60, zoom: 1 }; applyTransform(); renderSvg();
-  };
-
-  // Canvas events
+  $('btnReset').onclick  = () => { cam = { panX:60, panY:60, zoom:1 }; applyTransform(); renderSvg(); };
   const outer = $('canvasOuter');
   outer.addEventListener('mousedown', onCanvasDown);
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mouseup',   onMouseUp);
   outer.addEventListener('wheel', onWheel, { passive: false });
-  // Suppress context menu on canvas so right-click can be used later
   outer.addEventListener('contextmenu', e => e.preventDefault());
-
-  // Auto-load from relative path (works when served over HTTP)
   fetch('../../config/npcs/hobunji-starter-npc-database.json')
     .then(r => r.ok ? r.json() : Promise.reject())
     .then(data => loadDatabase(data))
-    .catch(() => { /* User loads manually via Load DB button */ });
-
+    .catch(() => {});
   renderAll();
 });
 </script>
