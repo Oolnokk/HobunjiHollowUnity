@@ -14,14 +14,14 @@
       "homeId": "researchers_tent",
       "species": "<unknown species>",
       "gender": "<unknown gender>",
-      "ageBand": "<carter’s age>",
+      "ageBand": "<carter\u2019s age>",
       "role": "researcher",
       "tags": [
         "researchers_tent",
         "researcher",
         "villager"
       ],
-      "bio": "Researcher’s Tent resident. Age noted as <carter’s age>.",
+      "bio": "Researcher\u2019s Tent resident. Age noted as <carter\u2019s age>.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -1215,37 +1215,45 @@
       "dialogueTrees": [],
       "events": [],
       "scheduleHooks": {
-        "defaultMapId": "hobunji_main_town",
+        "defaultMapId": "map_i_general_store",
         "workBuildingId": "general_store",
         "shopHours": "",
         "rules": [
           {
+            "from": "06:00",
+            "to": "08:00",
+            "mapId": "map_i_general_store",
+            "stationId": "station_w9r6j",
+            "position": {
+              "c": 9,
+              "r": 2
+            },
+            "activity": "cooking"
+          },
+          {
             "from": "08:00",
             "to": "18:00",
             "mapId": "map_i_general_store",
+            "stationId": "station_p2x4t",
             "position": {
-              "c": 4,
-              "r": 2
+              "c": 5,
+              "r": 6
             },
-            "routeId": "route_east_market",
             "activity": "shopkeeping"
           },
           {
             "from": "18:00",
-            "to": "08:00",
-            "mapId": "map_hobunji_town",
+            "to": "06:00",
+            "mapId": "map_i_general_store_F2_R2",
+            "stationId": "station_r3p5w",
             "position": {
-              "c": 38,
-              "r": 33
+              "c": 10,
+              "r": 6
             },
-            "activity": "home"
+            "activity": "sleeping"
           }
         ],
-        "defaultPosition": {
-          "area": "map_i_general_store",
-          "c": 4,
-          "r": 2
-        }
+        "defaultStationId": "station_p2x4t"
       }
     },
     {
@@ -1352,7 +1360,7 @@
       "dialogueTrees": [],
       "events": [],
       "scheduleHooks": {
-        "defaultMapId": "hobunji_main_town",
+        "defaultMapId": "map_hobunji_town",
         "workBuildingId": "general_store",
         "shopHours": "",
         "rules": [
@@ -1360,11 +1368,11 @@
             "from": "08:00",
             "to": "14:00",
             "mapId": "map_i_general_store",
+            "stationId": "station_k7m3q",
             "position": {
-              "c": 5,
-              "r": 5
+              "c": 2,
+              "r": 6
             },
-            "routeId": "route_east_market",
             "activity": "helping at store"
           },
           {
@@ -1381,19 +1389,16 @@
           {
             "from": "19:00",
             "to": "08:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_general_store_F2_R1",
+            "stationId": "station_v4n8x",
             "position": {
-              "c": 38,
-              "r": 33
+              "c": 7,
+              "r": 6
             },
-            "activity": "home"
+            "activity": "sleeping"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 38,
-          "r": 33
-        }
+        "defaultStationId": "station_k7m3q"
       }
     },
     {
@@ -2238,7 +2243,7 @@
     },
     {
       "id": "namui_u_hakaru",
-      "name": "Namu’i u Hakaru",
+      "name": "Namu\u2019i u Hakaru",
       "homeId": "temple",
       "species": "<unknown species>",
       "gender": "<unknown gender>",
@@ -2401,7 +2406,7 @@
     },
     {
       "id": "takua_ao_hakaru",
-      "name": "Taku’a ao Hakaru",
+      "name": "Taku\u2019a ao Hakaru",
       "homeId": "temple",
       "species": "<unknown species>",
       "gender": "<unknown gender>",
@@ -3271,7 +3276,7 @@
         "carpenter / roofing family connection",
         "villager"
       ],
-      "bio": "Carpenter’s household. Connected to Dzibim and the old Manji roofing side by the provided Dzibim line.",
+      "bio": "Carpenter\u2019s household. Connected to Dzibim and the old Manji roofing side by the provided Dzibim line.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -3421,7 +3426,7 @@
         "carpenter household member",
         "villager"
       ],
-      "bio": "Named under Carpenter’s; no further details provided.",
+      "bio": "Named under Carpenter\u2019s; no further details provided.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -4072,7 +4077,7 @@
         "single member of the Watch",
         "villager"
       ],
-      "bio": "Only Watch member. Thinks his name means more than being a fighter. Loves animals and wants to train them to protect town; father thinks that is stupid and dangerous. Found claw came from invasive Nazgraku, escaped mounts of the thwarted Cleaver’s Edge horde.",
+      "bio": "Only Watch member. Thinks his name means more than being a fighter. Loves animals and wants to train them to protect town; father thinks that is stupid and dangerous. Found claw came from invasive Nazgraku, escaped mounts of the thwarted Cleaver\u2019s Edge horde.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -4259,7 +4264,7 @@
         "waitress",
         "villager"
       ],
-      "bio": "Waitress. Binding’s husband’s sister’s daughter; Spearhead’s sister’s husband’s sister’s daughter; Oddclaw’s aunt’s husband’s sister’s daughter. Once held Tuhupnuk surname before Hammerhead murdered Sand and was banished.",
+      "bio": "Waitress. Binding\u2019s husband\u2019s sister\u2019s daughter; Spearhead\u2019s sister\u2019s husband\u2019s sister\u2019s daughter; Oddclaw\u2019s aunt\u2019s husband\u2019s sister\u2019s daughter. Once held Tuhupnuk surname before Hammerhead murdered Sand and was banished.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -4561,7 +4566,7 @@
         "deceased snow-watcher",
         "villager"
       ],
-      "bio": "Binding’s husband. Village snow-watcher who sacrificed himself to distract the wyrm.",
+      "bio": "Binding\u2019s husband. Village snow-watcher who sacrificed himself to distract the wyrm.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
