@@ -4961,11 +4961,16 @@
           minDistance,
           Math.hypot(npcCenter.x - playerCenter.x, npcCenter.z - playerCenter.z),
         );
-        const portraitPitch = Math.atan2(npcCenter.y - playerCenter.y, portraitDistance);
+        const rawPortraitPitch = Math.atan2(npcCenter.y - playerCenter.y, portraitDistance);
+        const maxUpwardPitch = THREE.MathUtils.degToRad(modeCfg.maxUpwardPortraitPitchDeg ?? 0);
+        const portraitPitch = Math.min(rawPortraitPitch, maxUpwardPitch);
+        const cameraY = rawPortraitPitch > maxUpwardPitch
+          ? (playerCenter.y + npcCenter.y) / 2
+          : playerCenter.y;
         const cameraHorizontalDistance = Math.cos(baseAngle) * distance;
         return {
-          cameraY: playerCenter.y,
-          lookY: playerCenter.y + Math.tan(portraitPitch) * cameraHorizontalDistance,
+          cameraY,
+          lookY: cameraY + Math.tan(portraitPitch) * cameraHorizontalDistance,
           targetX: tx,
           targetZ: tz,
         };

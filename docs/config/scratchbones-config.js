@@ -65,7 +65,8 @@ window.SCRATCHBONES_CONFIG = {
           "followLerp": 0.18,
           "targetYOffsetTiles": 0.9,
           "alignToDialoguePortraitCenters": true,
-          "portraitCenterMinDistanceTiles": 0.001
+          "portraitCenterMinDistanceTiles": 0.001,
+          "maxUpwardPortraitPitchDeg": 0
         }
       }
     },
