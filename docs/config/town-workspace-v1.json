@@ -47235,12 +47235,218 @@
             ]
           }
         ],
-        "routes": [],
+        "routes": [
+          {
+            "id": "route_9ae7a",
+            "label": "Route 1",
+            "nodes": [
+              [
+                5,
+                11
+              ],
+              [
+                5,
+                10
+              ],
+              [
+                10,
+                10
+              ],
+              [
+                10,
+                6
+              ],
+              [
+                10,
+                5
+              ],
+              [
+                1,
+                5
+              ]
+            ]
+          },
+          {
+            "id": "route_dplpr",
+            "label": "Route 2",
+            "nodes": [
+              [
+                10,
+                5
+              ],
+              [
+                10,
+                3
+              ],
+              [
+                7,
+                3
+              ],
+              [
+                7,
+                2
+              ],
+              [
+                5,
+                2
+              ],
+              [
+                5,
+                3
+              ]
+            ]
+          },
+          {
+            "id": "route_csqlv",
+            "label": "Route 3",
+            "nodes": [
+              [
+                5,
+                2
+              ],
+              [
+                2,
+                2
+              ]
+            ]
+          },
+          {
+            "id": "route_jv84f",
+            "label": "Route 4",
+            "nodes": [
+              [
+                2,
+                2
+              ],
+              [
+                2,
+                3
+              ]
+            ]
+          },
+          {
+            "id": "route_t10d3",
+            "label": "Route 5",
+            "nodes": [
+              [
+                10,
+                6
+              ],
+              [
+                13,
+                6
+              ]
+            ]
+          }
+        ],
         "npcStations": [],
         "npcPaths": []
       },
       "schema": "hobunji_map.v1",
-      "routes": []
+      "routes": [
+        {
+          "id": "route_9ae7a",
+          "label": "Route 1",
+          "nodes": [
+            [
+              5,
+              11
+            ],
+            [
+              5,
+              10
+            ],
+            [
+              10,
+              10
+            ],
+            [
+              10,
+              6
+            ],
+            [
+              10,
+              5
+            ],
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "id": "route_dplpr",
+          "label": "Route 2",
+          "nodes": [
+            [
+              10,
+              5
+            ],
+            [
+              10,
+              3
+            ],
+            [
+              7,
+              3
+            ],
+            [
+              7,
+              2
+            ],
+            [
+              5,
+              2
+            ],
+            [
+              5,
+              3
+            ]
+          ]
+        },
+        {
+          "id": "route_csqlv",
+          "label": "Route 3",
+          "nodes": [
+            [
+              5,
+              2
+            ],
+            [
+              2,
+              2
+            ]
+          ]
+        },
+        {
+          "id": "route_jv84f",
+          "label": "Route 4",
+          "nodes": [
+            [
+              2,
+              2
+            ],
+            [
+              2,
+              3
+            ]
+          ]
+        },
+        {
+          "id": "route_t10d3",
+          "label": "Route 5",
+          "nodes": [
+            [
+              10,
+              6
+            ],
+            [
+              13,
+              6
+            ]
+          ]
+        }
+      ]
     },
     {
       "schema": "hobunji_map.v1",
@@ -49431,7 +49637,30 @@
           "type": "grass"
         }
       },
-      "routes": [],
+      "routes": [
+        {
+          "id": "route_bc6yt",
+          "label": "Route 1",
+          "nodes": [
+            [
+              8,
+              6
+            ],
+            [
+              8,
+              7
+            ],
+            [
+              11,
+              7
+            ],
+            [
+              11,
+              5
+            ]
+          ]
+        }
+      ],
       "npcPaths": [],
       "transitions": [
         {
@@ -49559,7 +49788,30 @@
           "type": "grass"
         }
       },
-      "routes": [],
+      "routes": [
+        {
+          "id": "route_2yu1a",
+          "label": "Route 1",
+          "nodes": [
+            [
+              7,
+              5
+            ],
+            [
+              7,
+              7
+            ],
+            [
+              9,
+              7
+            ],
+            [
+              9,
+              6
+            ]
+          ]
+        }
+      ],
       "npcPaths": [],
       "transitions": [
         {

@@ -522,7 +522,7 @@
   ],
   "routes": [
     {
-      "id": "route_sww8w",
+      "id": "route_xid1h",
       "label": "Route 1",
       "nodes": [
         [
@@ -538,52 +538,66 @@
           6
         ],
         [
-          2,
+          8,
+          6
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          6,
+          2
+        ]
+      ]
+    },
+    {
+      "id": "route_c35ds",
+      "label": "Route 2",
+      "nodes": [
+        [
+          8,
+          4
+        ],
+        [
+          9,
+          4
+        ],
+        [
+          9,
+          2
+        ]
+      ]
+    },
+    {
+      "id": "route_71n7b",
+      "label": "Route 3",
+      "nodes": [
+        [
+          8,
+          6
+        ],
+        [
+          8,
           9
         ]
       ]
     },
     {
-      "id": "route_pogxw",
-      "label": "Route 2",
+      "id": "route_724vf",
+      "label": "Route 4",
       "nodes": [
         [
           2,
           6
         ],
         [
-          8,
-          6
-        ],
-        [
-          8,
-          4
-        ],
-        [
-          9,
-          4
-        ],
-        [
-          9,
-          3
-        ]
-      ]
-    },
-    {
-      "id": "route_og6xq",
-      "label": "Route 3",
-      "nodes": [
-        [
-          8,
-          4
-        ],
-        [
-          6,
-          4
-        ],
-        [
-          6,
-          3
+          2,
+          9
         ]
       ]
     }

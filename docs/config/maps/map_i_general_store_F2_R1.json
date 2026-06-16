@@ -239,7 +239,30 @@
       "tiles": []
     }
   ],
-  "routes": [],
+  "routes": [
+    {
+      "id": "route_bc6yt",
+      "label": "Route 1",
+      "nodes": [
+        [
+          8,
+          6
+        ],
+        [
+          8,
+          7
+        ],
+        [
+          11,
+          7
+        ],
+        [
+          11,
+          5
+        ]
+      ]
+    }
+  ],
   "npcStations": [
     {
       "id": "station_v4n8x",
