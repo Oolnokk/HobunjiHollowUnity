@@ -31,6 +31,10 @@
       const toastEl   = document.getElementById('toast');
       const keyHudEl  = document.getElementById('keyHud');
       const isDesktop = window.matchMedia('(pointer: fine)').matches;
+      const dialogueZoomIndicator = document.createElement('div');
+      dialogueZoomIndicator.className = 'dialogue-zoom-indicator';
+      dialogueZoomIndicator.setAttribute('aria-hidden', 'true');
+      threeContainer.appendChild(dialogueZoomIndicator);
 
       // Tool select (replaces rightCluster)
       const toolSelect      = document.getElementById('toolSelect');
@@ -228,6 +232,7 @@
         activeCameraMode = npcDialogueCameraMode();
         activeCameraTarget = walker.root;
         beginNpcDialogueStaging(walker);
+        updateDialogueZoomIndicator();
         walker.pause = Infinity; // freeze in place while the player stages the conversation
         _dialogueLines = _npcDialogueLines(rec);
         _dialogueLineIdx = 0;
@@ -263,6 +268,10 @@
         }
         activeCameraMode = cameraConfig().defaultMode || 'default';
         activeCameraTarget = null;
+        dialogueZoomPointers.clear();
+        dialoguePinchDistance = null;
+        if (dialogueZoomConfig().resetOnDialogueClose) resetDialogueCameraZoom();
+        else updateDialogueZoomIndicator();
         _npcDialogueEl.classList.remove('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'true');
       }
@@ -1286,6 +1295,9 @@
       let npcDialogueStaging = null;
       let activeCameraMode   = cameraConfig().defaultMode || 'default';
       let activeCameraTarget = null;
+      let dialogueCameraZoom = (cameraModeConfig(npcDialogueCameraMode()).runtimeZoom?.initialPercent ?? 100) / 100;
+      const dialogueZoomPointers = new Map();
+      let dialoguePinchDistance = null;
       let nearbyNpcWalker    = null;
       let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
       let _pendingSpotTransition = null; // spot the player is currently standing on; awaits input to fire
@@ -1447,6 +1459,26 @@
         return modes[mode] || modes[cameraConfig().defaultMode] || modes.default || {};
       }
       function npcDialogueCameraMode() { return cameraConfig().dialogueMode || 'npcDialogue'; }
+      function dialogueZoomConfig() { return cameraModeConfig(npcDialogueCameraMode()).runtimeZoom || {}; }
+      function dialogueZoomEnabled() { return dialogueZoomConfig().enabled !== false; }
+      function dialogueZoomActive() { return dialogueOpen && activeCameraMode === npcDialogueCameraMode() && dialogueZoomEnabled(); }
+      function clampDialogueZoom(value) {
+        const cfg = dialogueZoomConfig();
+        return clamp(value, (cfg.minPercent ?? 50) / 100, (cfg.maxPercent ?? 250) / 100);
+      }
+      function setDialogueCameraZoom(value) {
+        dialogueCameraZoom = clampDialogueZoom(value);
+        updateDialogueZoomIndicator();
+      }
+      function updateDialogueZoomIndicator() {
+        if (!dialogueZoomIndicator) return;
+        dialogueZoomIndicator.textContent = `${Math.round(dialogueCameraZoom * 100)}%`;
+        dialogueZoomIndicator.classList.toggle('open', dialogueZoomActive());
+      }
+      function resetDialogueCameraZoom() {
+        dialogueCameraZoom = clampDialogueZoom((dialogueZoomConfig().initialPercent ?? 100) / 100);
+        updateDialogueZoomIndicator();
+      }
       function npcDialogueButtonConfig() {
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.npcDialogueButton || {};
       }
@@ -4978,7 +5010,8 @@
 
       function updateCameraPosition() {
         const modeCfg = cameraModeConfig(activeCameraMode);
-        const distance = modeCfg.distanceTiles ?? 14;
+        const baseDistance = modeCfg.distanceTiles ?? 14;
+        const distance = dialogueZoomActive() ? baseDistance / dialogueCameraZoom : baseDistance;
         const angle = THREE.MathUtils.degToRad(modeCfg.angleFromGroundDeg ?? 32.73);
         const tx = camTargetX, tz = camTargetZ;
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
@@ -8243,15 +8276,51 @@
 
       window.addEventListener('keyup', (event) => input.keys.delete(event.key.toLowerCase()));
 
-      // Scroll wheel: cycle tools forward/backward
+      // Scroll wheel: zooms the active conversation camera; otherwise cycles tools forward/backward.
       threeContainer.addEventListener('wheel', (e) => {
         if (menuOpen || farmEditMode) return;
         e.preventDefault();
+        if (dialogueZoomActive()) {
+          const sensitivity = dialogueZoomConfig().wheelSensitivity ?? 0.0015;
+          setDialogueCameraZoom(dialogueCameraZoom * Math.exp(-e.deltaY * sensitivity));
+          return;
+        }
         const tools = ['shovel', 'hoe', 'weapon', 'axe', 'pick', 'harpoon'];
         const idx = tools.indexOf(activeTool);
         const next = (idx + (e.deltaY > 0 ? 1 : -1) + tools.length) % tools.length;
         setActiveTool(tools[next]);
       }, { passive: false });
+
+      function updateDialoguePinchDistance() {
+        const points = [...dialogueZoomPointers.values()];
+        if (points.length < 2) { dialoguePinchDistance = null; return; }
+        dialoguePinchDistance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      }
+
+      threeContainer.addEventListener('pointerdown', (e) => {
+        if (!dialogueZoomActive() || e.pointerType !== 'touch') return;
+        dialogueZoomPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        updateDialoguePinchDistance();
+      });
+      threeContainer.addEventListener('pointermove', (e) => {
+        if (!dialogueZoomActive() || e.pointerType !== 'touch' || !dialogueZoomPointers.has(e.pointerId)) return;
+        dialogueZoomPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const points = [...dialogueZoomPointers.values()];
+        if (points.length < 2) return;
+        const nextDistance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+        if (dialoguePinchDistance && nextDistance > 0) {
+          const sensitivity = dialogueZoomConfig().pinchSensitivity ?? 1;
+          setDialogueCameraZoom(dialogueCameraZoom * Math.pow(nextDistance / dialoguePinchDistance, sensitivity));
+        }
+        dialoguePinchDistance = nextDistance;
+        e.preventDefault();
+      }, { passive: false });
+      function clearDialogueZoomPointer(e) {
+        dialogueZoomPointers.delete(e.pointerId);
+        updateDialoguePinchDistance();
+      }
+      window.addEventListener('pointerup', clearDialogueZoomPointer);
+      window.addEventListener('pointercancel', clearDialogueZoomPointer);
 
       // Left click = primary action, right click = secondary action (desktop play)
       if (isDesktop) {

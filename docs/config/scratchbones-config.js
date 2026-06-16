@@ -66,7 +66,16 @@ window.SCRATCHBONES_CONFIG = {
           "targetYOffsetTiles": 0.9,
           "alignToDialoguePortraitCenters": true,
           "portraitCenterMinDistanceTiles": 0.001,
-          "maxUpwardPortraitPitchDeg": 0
+          "maxUpwardPortraitPitchDeg": 0,
+          "runtimeZoom": {
+            "enabled": true,
+            "initialPercent": 100,
+            "minPercent": 50,
+            "maxPercent": 250,
+            "wheelSensitivity": 0.0015,
+            "pinchSensitivity": 1,
+            "resetOnDialogueClose": false
+          }
         }
       }
     },
