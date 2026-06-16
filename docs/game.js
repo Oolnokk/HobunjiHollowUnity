@@ -2132,9 +2132,9 @@
             const scX = f.postSX != null ? f.postSX : (f.postScale != null ? f.postScale : 1);
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
             const scZ = f.postSZ != null ? f.postSZ : (f.postScale != null ? f.postScale : 1);
-            const bx = (f.col + 0.5) + (f.postX || 0);
+            const bx = (f.col + (def?.fw || 1) * 0.5) + (f.postX || 0);
             const by = f.postY || 0;
-            const bz = (f.row + 0.5) + (f.postZ || 0);
+            const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
             const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
             // Coloured box placeholder
             const ph = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshLambertMaterial({ color }));
