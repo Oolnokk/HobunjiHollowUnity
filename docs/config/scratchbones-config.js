@@ -63,7 +63,9 @@ window.SCRATCHBONES_CONFIG = {
           "angleFromGroundDeg": 10.64,
           "fovDeg": 42,
           "followLerp": 0.18,
-          "targetYOffsetTiles": 0.9
+          "targetYOffsetTiles": 0.9,
+          "alignToDialoguePortraitCenters": true,
+          "portraitCenterMinDistanceTiles": 0.001
         }
       }
     },

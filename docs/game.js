@@ -1474,7 +1474,7 @@
         player.vy = 0;
       }
 
-      function faceNpcDialogueParticipants(dt) {
+      function faceNpcDialogueParticipants() {
         const walker = npcDialogueStaging?.walker || _dialogueWalker;
         if (!walker?.root) return;
         const cfg = npcDialogueStagingConfig();
@@ -1506,7 +1506,7 @@
           player.y = targetY;
           player.vx = 0;
           player.vy = 0;
-          faceNpcDialogueParticipants(dt);
+          faceNpcDialogueParticipants();
           return;
         }
         const step = Math.min(dist, speed * dt);
@@ -1517,7 +1517,7 @@
         if (canPlayerOccupy(player.x, desiredY)) { player.y = desiredY; moved = true; }
         player.vx = moved ? dx / dist * speed : 0;
         player.vy = moved ? dy / dist * speed : 0;
-        faceNpcDialogueParticipants(dt);
+        faceNpcDialogueParticipants();
       }
 
       function npcDialogueButton() {
@@ -4936,19 +4936,56 @@
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
       let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72;
 
+      function portraitAvatarCenterWorldPosition(root) {
+        let avatarRoot = null;
+        root?.traverse?.(child => {
+          if (!avatarRoot && Number.isFinite(child.userData?.portraitModelHeight)) avatarRoot = child;
+        });
+        if (!avatarRoot) return null;
+        const center = new THREE.Vector3();
+        avatarRoot.updateWorldMatrix?.(true, false);
+        avatarRoot.getWorldPosition(center);
+        const height = avatarRoot.userData.portraitModelHeight;
+        const placementRatio = avatarRoot.userData.portraitVerticalPlacementRatio ?? 0.5;
+        center.y += (placementRatio - 0.5) * height;
+        return center;
+      }
+
+      function dialoguePortraitCameraAim(modeCfg, tx, tz, distance, baseAngle) {
+        if (!modeCfg.alignToDialoguePortraitCenters || !_dialogueWalker?.root) return null;
+        const playerCenter = portraitAvatarCenterWorldPosition(playerMesh);
+        const npcCenter = portraitAvatarCenterWorldPosition(_dialogueWalker.root);
+        if (!playerCenter || !npcCenter) return null;
+        const minDistance = modeCfg.portraitCenterMinDistanceTiles ?? 0.001;
+        const portraitDistance = Math.max(
+          minDistance,
+          Math.hypot(npcCenter.x - playerCenter.x, npcCenter.z - playerCenter.z),
+        );
+        const portraitPitch = Math.atan2(npcCenter.y - playerCenter.y, portraitDistance);
+        const cameraHorizontalDistance = Math.cos(baseAngle) * distance;
+        return {
+          cameraY: playerCenter.y,
+          lookY: playerCenter.y + Math.tan(portraitPitch) * cameraHorizontalDistance,
+          targetX: tx,
+          targetZ: tz,
+        };
+      }
+
       function updateCameraPosition() {
         const modeCfg = cameraModeConfig(activeCameraMode);
         const distance = modeCfg.distanceTiles ?? 14;
         const angle = THREE.MathUtils.degToRad(modeCfg.angleFromGroundDeg ?? 32.73);
         const tx = camTargetX, tz = camTargetZ;
-        const lookY = modeCfg.targetYOffsetTiles ?? 0;
+        const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
+        const lookY = portraitAim?.lookY ?? (modeCfg.targetYOffsetTiles ?? 0);
+        const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
         // Camera sits due south of target, elevated, looking straight north.
         camera.position.set(
-          tx,
-          lookY + Math.sin(angle) * distance,
-          tz + Math.cos(angle) * distance  // +Z = south
+          portraitAim?.targetX ?? tx,
+          cameraY,
+          (portraitAim?.targetZ ?? tz) + Math.cos(angle) * distance  // +Z = south
         );
-        camera.lookAt(tx, lookY, tz);
+        camera.lookAt(portraitAim?.targetX ?? tx, lookY, portraitAim?.targetZ ?? tz);
         camera.fov = modeCfg.fovDeg ?? 42;
         camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
         camera.updateProjectionMatrix();
