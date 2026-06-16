@@ -1923,6 +1923,29 @@
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.npcDialogueButton || {};
       }
       function npcDialogueAction() { return npcDialogueButtonConfig().action || 'npc_dialogue'; }
+      function generalStoreButtonConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.generalStoreButton || {};
+      }
+      function generalStoreAction() { return generalStoreButtonConfig().action || 'open_general_store'; }
+      function isGeneralStoreNpcOnDuty(walker) {
+        const cfg = generalStoreButtonConfig();
+        const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['furunji_funji', 'foroji_funji'];
+        const activities = Array.isArray(cfg.activities) ? cfg.activities : ['sitting at counter', 'checking shelves'];
+        const npcId = walker?.rec?.id || '';
+        const activity = (walker?.currentScheduleTarget?.activity || resolveNpcScheduleTarget(walker?.rec)?.activity || '').toLowerCase();
+        return ids.includes(npcId) && activities.some(label => activity === String(label).toLowerCase());
+      }
+      function generalStoreButton() {
+        const cfg = generalStoreButtonConfig();
+        const name = nearbyNpcWalker?.rec?.name;
+        return {
+          icon: cfg.icon || '🛒',
+          label: name ? `${cfg.label || 'Shop'}: ${name}` : (cfg.label || 'Shop'),
+          action: generalStoreAction(),
+          style: cfg.style || 'primary',
+          allowed: true,
+        };
+      }
 
       function npcDialogueStagingOffsets() {
         const offsets = npcDialogueStagingConfig().playerDiagonalOffsets;
@@ -2180,14 +2203,14 @@
           const ruleActive = isNowWithinNpcRuleWindow(now, start, end);
           if (ruleActive && rule.stationId) {
             const stationTarget = resolveNpcStationTarget(rule.stationId);
-            if (stationTarget) return { ...stationTarget, routeId: rule.routeId || null };
+            if (stationTarget) return { ...stationTarget, routeId: rule.routeId || null, activity: rule.activity || '' };
             window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found`, 'warn');
           }
           const c = rule.c ?? rule.position?.c;
           const r = rule.r ?? rule.position?.r;
           const area = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
           if (ruleActive && Number.isFinite(c) && Number.isFinite(r))
-            return { area, c, r, routeId: rule.routeId || null };
+            return { area, c, r, routeId: rule.routeId || null, activity: rule.activity || '' };
         }
         if (hooks.defaultStationId) {
           const stationTarget = resolveNpcStationTarget(hooks.defaultStationId);
@@ -2316,6 +2339,7 @@
           update(dt) {
             if (this.pause === Infinity) return;
             const target = resolveNpcScheduleTarget(this.rec);
+            this.currentScheduleTarget = target || null;
             if (!target) return;
             const targetArea = normalizeNpcArea(target.area);
             if (targetArea !== this.area) {
@@ -3453,6 +3477,7 @@
       }
 
       let supplyActiveCategory = 'seeds'; // Used by renderSupplyPage() to keep the longer catalog readable on mobile.
+      let generalStoreActiveCategory = 'goods'; // Mirrors supply-shop tabs for the General Store's goods/clothing split.
 
       function getSupplyItemCategory(item) {
         // Used by the supply ordering pane; avoids hard-coding future catalog rows into the UI.
@@ -3540,12 +3565,35 @@
       function renderMarketPage() { /* market UI removed — sell from Inventory panel */ }
 
       // ── General Store page render ───────────────────────────────────
-      function renderGeneralStorePage() {
-        const list   = document.getElementById('generalStoreList');
-        const goldEl = document.getElementById('gsGoldDisplay');
-        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
-        if (!list) return;
-        list.innerHTML = '';
+      function getGeneralStoreCategoryLabel(category) {
+        return ({ all: 'All', goods: 'Goods', clothing: 'Clothing' })[category] || 'General Store';
+      }
+
+      function bindGeneralStoreTabs() {
+        document.querySelectorAll('.general-store-tab').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.generalStoreCat === generalStoreActiveCategory);
+          btn.onclick = () => {
+            generalStoreActiveCategory = btn.dataset.generalStoreCat || 'goods';
+            renderGeneralStorePage();
+          };
+        });
+      }
+
+      function buyGeneralStoreItem(item) {
+        const gold = inventory.gold || 0;
+        if (gold < item.price) { showToast('Not enough gold.', false); return; }
+        inventory.gold = gold - item.price;
+        if (item.gives) {
+          Object.entries(item.gives).forEach(([k, v]) => {
+            inventory[k] = Math.min(99, (inventory[k] || 0) + v);
+          });
+        }
+        showToast('Bought ' + item.name + '!', true);
+        renderGeneralStorePage();
+        buildInventoryGrid();
+      }
+
+      function renderGeneralStoreGoods(list) {
         GENERAL_STORE_CATALOG.forEach(item => {
           const row = document.createElement('div');
           row.className = 'shop-row';
@@ -3554,27 +3602,16 @@
             <div class="sh-info">
               <div class="sh-name">${item.name}</div>
               <div class="sh-desc">${item.desc}</div>
-              <div class="sh-price">${item.price}g</div>
+              <div class="sh-price">${item.price}g each</div>
             </div>
             <button class="shop-buy-btn" data-key="${item.key}">Buy</button>
           `;
-          row.querySelector('[data-key]')?.addEventListener('click', () => {
-            const gold = inventory.gold || 0;
-            if (gold < item.price) { showToast('Not enough gold.', false); return; }
-            inventory.gold = gold - item.price;
-            if (item.gives) {
-              Object.entries(item.gives).forEach(([k, v]) => {
-                inventory[k] = Math.min(99, (inventory[k] || 0) + v);
-              });
-            }
-            showToast('Bought ' + item.name + '!', true);
-            renderGeneralStorePage();
-            buildInventoryGrid();
-          });
+          row.querySelector('[data-key]')?.addEventListener('click', () => buyGeneralStoreItem(item));
           list.appendChild(row);
         });
+      }
 
-        // ── Daily Clothing ──────────────────────────────────
+      function renderGeneralStoreClothing(list) {
         const clothHdrEl = document.createElement('div');
         clothHdrEl.className = 'shop-section-label';
         clothHdrEl.textContent = '🧥 Today\'s Clothing  (rerolls each day)';
@@ -3588,7 +3625,7 @@
             <div class="sh-info">
               <div class="sh-name">${esc(item.label)}</div>
               <div class="sh-desc">${item.slot.charAt(0).toUpperCase() + item.slot.slice(1)} — goes to pack inventory</div>
-              <div class="sh-price">${item.price}g</div>
+              <div class="sh-price">${item.price}g each</div>
             </div>
             <button class="shop-buy-btn gs-cloth-buy">Buy</button>
           `;
@@ -3601,6 +3638,19 @@
           });
           list.appendChild(row);
         });
+      }
+
+      function renderGeneralStorePage() {
+        bindGeneralStoreTabs();
+        const sectionTitle = document.getElementById('generalStoreSectionTitle');
+        if (sectionTitle) sectionTitle.textContent = 'Funji & Son\'s General Store — ' + getGeneralStoreCategoryLabel(generalStoreActiveCategory);
+        const list   = document.getElementById('generalStoreList');
+        const goldEl = document.getElementById('gsGoldDisplay');
+        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
+        if (!list) return;
+        list.innerHTML = '';
+        if (generalStoreActiveCategory === 'goods' || generalStoreActiveCategory === 'all') renderGeneralStoreGoods(list);
+        if (generalStoreActiveCategory === 'clothing' || generalStoreActiveCategory === 'all') renderGeneralStoreClothing(list);
       }
 
             // Item scroll — ordered list of scrollable inventory slots
@@ -4961,8 +5011,16 @@
 
       function useActiveAction() {
         if (dialogueOpen) { advanceNpcDialogue(); return; }
-        if (nearbyNpcWalker && !farmEditMode) { openNpcDialogue(nearbyNpcWalker); return; }
-        if (activeAction === npcDialogueAction()) { showToast(npcDialogueButtonConfig().noTargetMessage || 'No one nearby to talk to.', false); return; }
+        if (activeAction === generalStoreAction()) {
+          if (nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) && !farmEditMode) { openMenu('generalStore'); return; }
+          showToast(generalStoreButtonConfig().noTargetMessage || 'The general store is not available right now.', false);
+          return;
+        }
+        if (activeAction === npcDialogueAction()) {
+          if (nearbyNpcWalker && !farmEditMode) { openNpcDialogue(nearbyNpcWalker); return; }
+          showToast(npcDialogueButtonConfig().noTargetMessage || 'No one nearby to talk to.', false);
+          return;
+        }
         const _anim = activeAnimStyle();
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
         toolSwingT = toolSwingDur;
@@ -8189,7 +8247,11 @@
 
       function computeActionButtons() {
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
-        if (nearbyNpcWalker && !farmEditMode) return [npcDialogueButton()];
+        if (nearbyNpcWalker && !farmEditMode) {
+          const btns = [npcDialogueButton()];
+          if (isGeneralStoreNpcOnDuty(nearbyNpcWalker)) btns.push(generalStoreButton());
+          return btns;
+        }
 
         // Interior: exit button near south door + interact button for interior world objects
         if (currentArea === 'interior') {
@@ -8336,7 +8398,9 @@
 
         const obj = currentArea === 'farm' ? getWorldObjectAt(reticle.col, reticle.row) : null;
         const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}`;
+        const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
+        const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction() : 'none';
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -8378,7 +8442,7 @@
               if (!act || el.classList.contains('abt-hidden')) return;
               activeAction = act;
               // Navigation/interaction actions always fire; tool actions respect swing cooldown
-              const isNavAction = act === npcDialogueAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_');
+              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_');
               if (isNavAction || toolSwingT <= 0) useActiveAction();
             }
 

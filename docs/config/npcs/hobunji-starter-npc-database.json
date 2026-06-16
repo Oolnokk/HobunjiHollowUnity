@@ -1895,7 +1895,7 @@
               "c": 5,
               "r": 6
             },
-            "activity": "shopkeeping"
+            "activity": "sitting at counter"
           },
           {
             "from": "18:00",
@@ -2247,7 +2247,7 @@
               "c": 2,
               "r": 6
             },
-            "activity": "helping at store"
+            "activity": "checking shelves"
           },
           {
             "from": "14:00",
