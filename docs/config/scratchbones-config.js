@@ -35,6 +35,26 @@ window.SCRATCHBONES_CONFIG = {
         "beelineSampleStepTiles": 0.25
       }
     },
+    "camera": {
+      "defaultMode": "default",
+      "dialogueMode": "npcDialogue",
+      "modes": {
+        "default": {
+          "distanceTiles": 14,
+          "angleFromGroundDeg": 32.73,
+          "fovDeg": 42,
+          "followLerp": 0.08,
+          "targetYOffsetTiles": 0
+        },
+        "npcDialogue": {
+          "distanceTiles": 7,
+          "angleFromGroundDeg": 18,
+          "fovDeg": 42,
+          "followLerp": 0.18,
+          "targetYOffsetTiles": 0.9
+        }
+      }
+    },
     "gameplayShortcuts": {
       "focusChat": {
         "enabled": true,

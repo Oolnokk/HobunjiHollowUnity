@@ -225,6 +225,8 @@
         const rec = walker.rec;
         dialogueOpen = true;
         _dialogueWalker = walker;
+        activeCameraMode = npcDialogueCameraMode();
+        activeCameraTarget = walker.root;
         walker.pause = Infinity; // freeze in place
         _dialogueLines = _npcDialogueLines(rec);
         _dialogueLineIdx = 0;
@@ -257,6 +259,8 @@
           _dialogueWalker.catchupDur = 8;
           _dialogueWalker = null;
         }
+        activeCameraMode = cameraConfig().defaultMode || 'default';
+        activeCameraTarget = null;
         _npcDialogueEl.classList.remove('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'true');
       }
@@ -1277,6 +1281,8 @@
       let _dialogueLines     = [];
       let _dialogueLineIdx   = 0;
       let _dialogueWalker    = null;
+      let activeCameraMode   = cameraConfig().defaultMode || 'default';
+      let activeCameraTarget = null;
       let nearbyNpcWalker    = null;
       let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
       let _pendingSpotTransition = null; // spot the player is currently standing on; awaits input to fire
@@ -1430,6 +1436,13 @@
       const NPC_SPECIES_IDS = ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'];
 
       function npcMovementConfig() { return window.SCRATCHBONES_CONFIG?.game?.movement?.npc || {}; }
+      function cameraConfig() { return window.SCRATCHBONES_CONFIG?.game?.camera || {}; }
+      function cameraModesConfig() { return cameraConfig().modes || {}; }
+      function cameraModeConfig(mode) {
+        const modes = cameraModesConfig();
+        return modes[mode] || modes[cameraConfig().defaultMode] || modes.default || {};
+      }
+      function npcDialogueCameraMode() { return cameraConfig().dialogueMode || 'npcDialogue'; }
 
       function normalizeRoutes(routes, legacyPaths = []) {
         const out = (routes || []).filter(r => r && Array.isArray(r.nodes) && r.nodes.length > 0)
@@ -4828,21 +4841,24 @@
         return out;
       }
 
-      // Camera — isometric-style: high angle, offset NW, looking SE toward map center
-      const CAM_DIST   = 14;
-      const CAM_ANGLE  = Math.PI / 5.5;  // ~33° from horizontal — classic 3/4 RPG tilt
-      const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+      // Camera — mode-driven, with the default preserving the original isometric follow.
+      const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
       let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72;
 
       function updateCameraPosition() {
+        const modeCfg = cameraModeConfig(activeCameraMode);
+        const distance = modeCfg.distanceTiles ?? 14;
+        const angle = THREE.MathUtils.degToRad(modeCfg.angleFromGroundDeg ?? 32.73);
         const tx = camTargetX, tz = camTargetZ;
-        // Camera sits due south of target, elevated, looking straight north
+        const lookY = modeCfg.targetYOffsetTiles ?? 0;
+        // Camera sits due south of target, elevated, looking straight north.
         camera.position.set(
           tx,
-          Math.sin(CAM_ANGLE) * CAM_DIST,
-          tz + Math.cos(CAM_ANGLE) * CAM_DIST  // +Z = south
+          lookY + Math.sin(angle) * distance,
+          tz + Math.cos(angle) * distance  // +Z = south
         );
-        camera.lookAt(tx, 0, tz);
+        camera.lookAt(tx, lookY, tz);
+        camera.fov = modeCfg.fovDeg ?? 42;
         camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
         camera.updateProjectionMatrix();
       }
@@ -6636,9 +6652,12 @@
         }
 
         // ── Camera smooth follow ─────────────────────────────────
-        const wx = player.x / TILE, wz = player.y / TILE;
-        camTargetX += (wx - camTargetX) * 0.08;
-        camTargetZ += (wz - camTargetZ) * 0.08;
+        const targetPosition = activeCameraTarget?.position;
+        const wx = targetPosition ? targetPosition.x : player.x / TILE;
+        const wz = targetPosition ? targetPosition.z : player.y / TILE;
+        const camLerp = cameraModeConfig(activeCameraMode).followLerp ?? 0.08;
+        camTargetX += (wx - camTargetX) * camLerp;
+        camTargetZ += (wz - camTargetZ) * camLerp;
         updateCameraPosition();
 
         // ── Three.js updates ─────────────────────────────────────
