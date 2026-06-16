@@ -119,14 +119,16 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
 .choiceLabel.empty{color:var(--muted);font-style:italic}
 .choiceTarget{font-size:9px;color:var(--muted);background:rgba(255,255,255,.05);
   border-radius:3px;padding:1px 5px;white-space:nowrap;flex-shrink:0}
-.seqTierBadge{font-size:10px;color:var(--muted);margin-bottom:3px}
-.seqTierList{list-style:none;margin:0;padding:0}
-.seqTierItem{display:flex;align-items:baseline;gap:4px;padding:2px 0;
+.seqSlotBadge{font-size:10px;color:var(--muted);margin-bottom:3px}
+.seqSlotList{list-style:none;margin:0;padding:0}
+.seqSlotItem{display:flex;align-items:center;gap:4px;padding:2px 0;
   border-bottom:1px solid rgba(255,255,255,.05)}
-.seqTierItem:last-child{border-bottom:none}
-.seqTierNum{font-size:9px;color:var(--muted);min-width:14px;flex-shrink:0}
-.seqTierText{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
-.seqTierText.empty{color:var(--muted);font-style:italic}
+.seqSlotItem:last-child{border-bottom:none}
+.seqSlotNum{font-size:9px;color:var(--muted);min-width:14px;flex-shrink:0}
+.seqSlotRef{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);flex:1}
+.seqSlotRef.empty{color:var(--muted);font-style:italic}
+.seqSlotDepth{font-size:9px;color:var(--seq);background:rgba(45,212,191,.1);
+  border:1px solid rgba(45,212,191,.2);border-radius:3px;padding:1px 4px;flex-shrink:0}
 .seqPortHint{font-size:9px;color:var(--muted);margin-top:5px;display:flex;gap:8px}
 
 /* Ports */
@@ -386,7 +388,7 @@ function addNode(type) {
   const nd  = { id, type, pos: { x: cx, y: cy } };
   if (type === 'text')     { nd.text = ''; nd.next = null; nd.expression = 'neutral'; nd.expressionHold = 2; nd.revealSpeed = 'normal'; }
   if (type === 'choice')   { nd.choices = [{ label: '', next: null }]; }
-  if (type === 'sequence') { nd.tiers = ['']; nd.next = null; nd.exhaustedNext = null; }
+  if (type === 'sequence') { nd.slots = []; nd.next = null; nd.exhaustedNext = null; }
   tree.nodes.push(nd);
   if (!tree.entryNode) tree.entryNode = id;
   setDirty(); renderCanvas(); selectNode(id);
@@ -399,6 +401,7 @@ function deleteNode(id) {
     if (n.next === id)          n.next = null;
     if (n.exhaustedNext === id) n.exhaustedNext = null;
     n.choices?.forEach(c => { if (c.next === id) c.next = null; });
+    if (n.slots) n.slots = n.slots.filter(s => s.nodeId !== id);
     if (n.tags) n.tags = n.tags.filter(t => !(t.type === 'break_sequence' && t.sequenceNodeId === id));
   }
   if (tree.entryNode === id) tree.entryNode = tree.nodes[0]?.id ?? null;
@@ -519,17 +522,18 @@ function buildNodeHtml(nd, tree) {
   } else if (nd.type === 'end') {
     body = `<div class="nodeEndLine">— end of conversation —</div>`;
   } else if (nd.type === 'sequence') {
-    const tiers = nd.tiers || [];
-    const rows = tiers.slice(0,3).map((t,i) => `
-      <li class="seqTierItem">
-        <span class="seqTierNum">${i+1}.</span>
-        <span class="seqTierText${!t?' empty':''}">${t?esc(trunc(t,52)):'Empty tier'}</span>
+    const slots = nd.slots || [];
+    const rows = slots.slice(0,4).map((s,i) => `
+      <li class="seqSlotItem">
+        <span class="seqSlotNum">${i+1}.</span>
+        <span class="seqSlotRef${!s.nodeId?' empty':''}">${s.nodeId?esc(s.nodeId):'— unset —'}</span>
+        <span class="seqSlotDepth">d:${s.depth??0}</span>
       </li>`).join('');
-    body = `<div class="seqTierBadge">${tiers.length} tier${tiers.length!==1?'s':''}${tiers.length>3?' (showing 3)':''}</div>
-      <ul class="seqTierList">${rows||'<li class="seqTierItem"><span style="color:var(--muted);font-size:11px">No tiers</span></li>'}</ul>
+    body = `<div class="seqSlotBadge">${slots.length} slot${slots.length!==1?'s':''}${slots.length>4?' (showing 4)':''}</div>
+      <ul class="seqSlotList">${rows||'<li class="seqSlotItem"><span style="color:var(--muted);font-size:11px">No slots — add in inspector</span></li>'}</ul>
       <div class="seqPortHint"><span style="color:var(--acc)">● next</span><span style="color:var(--good)">● exhausted</span></div>`;
-    outPort = `<div class="port port-out" data-nid="${nd.id}" data-ci="" title="Next (tiers remain)"></div>
-               <div class="port port-out exhaust-port" data-nid="${nd.id}" data-ci="exhaust" title="Exhausted (all tiers shown)"></div>`;
+    outPort = `<div class="port port-out" data-nid="${nd.id}" data-ci="" title="Next (slots remain)"></div>
+               <div class="port port-out exhaust-port" data-nid="${nd.id}" data-ci="exhaust" title="Exhausted (all slots visited)"></div>`;
   }
 
   return `<div class="node node-${nd.type}${isSel?' sel':''}" data-nid="${nd.id}"
@@ -613,6 +617,25 @@ function renderSvg() {
         });
       }
       if (nd.type === 'sequence') {
+        // Slot dispatch lines (dotted teal, from sequence body center)
+        const seqEl = document.querySelector(`.node[data-nid="${nd.id}"]`);
+        if (seqEl) {
+          const sr = seqEl.getBoundingClientRect();
+          const or = $('canvasOuter').getBoundingClientRect();
+          const sx = (sr.right - or.left - cam.panX) / cam.zoom;
+          const sy = (sr.top + sr.height/2 - or.top - cam.panY) / cam.zoom;
+          (nd.slots||[]).forEach((s,si) => {
+            if (!s.nodeId) return;
+            const ip = document.querySelector(`.port-in[data-nid="${s.nodeId}"]`);
+            if (!ip) return;
+            const p2 = portCanvasPos(ip);
+            const dx = Math.max(Math.abs(p2.x - sx)*0.45, 40);
+            paths.push(`<path d="M${sx},${sy} C${sx+dx},${sy} ${p2.x-dx},${p2.y} ${p2.x},${p2.y}"
+              stroke="rgba(45,212,191,.4)" stroke-width="1.5" fill="none"
+              stroke-dasharray="5 4" stroke-linecap="round"/>`);
+          });
+        }
+        // Flow ports
         if (nd.next)
           curve(
             document.querySelector(`.port-out[data-nid="${nd.id}"][data-ci=""]`),
@@ -793,23 +816,33 @@ function renderInspector() {
       <div class="iMuted">This node ends the conversation. No outputs.</div></div>
       ${buildTagsHtml(nd, tree)}`;
   } else if (nd.type === 'sequence') {
-    const tiers = nd.tiers || [];
-    const tierItems = tiers.map((t,i) => `
+    const slots = nd.slots || [];
+    const depthHint = d => d === 0 ? 'trigger only' : `${d} node${d!==1?'s':''} (trigger + ${d-1} hop${d>2?'s':''})`;
+    const slotItems = slots.map((s,si) => `
       <div class="ceItem">
-        <div style="display:flex;align-items:flex-start;gap:5px">
-          <span style="font-size:10px;color:var(--muted);min-width:18px;margin-top:8px">${i+1}.</span>
-          <textarea class="tierTA" data-ti="${i}" rows="2" style="flex:1;font-size:12px">${esc(t)}</textarea>
-          <button class="tierDel" data-ti="${i}" style="margin-top:4px">×</button>
+        <div style="display:flex;align-items:center;gap:5px">
+          <span style="font-size:10px;color:var(--muted);min-width:18px">${si+1}.</span>
+          <select class="slotNode" data-si="${si}" style="font-size:11px;flex:1">
+            <option value="">— unset —</option>
+            ${others.map(n=>`<option value="${esc(n.id)}"${n.id===s.nodeId?' selected':''}>${esc(n.id)} (${n.type})</option>`).join('')}
+          </select>
+          <button class="slotDel" data-si="${si}" style="width:20px;height:20px;padding:0;border-radius:5px;font-size:12px;border:1px solid rgba(251,113,133,.3);background:rgba(251,113,133,.1);color:var(--bad);flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1">×</button>
+        </div>
+        <div class="ceRow" style="margin-top:4px">
+          <span class="ceRowLabel" style="min-width:46px">depth</span>
+          <input class="slotDepth" data-si="${si}" type="number" value="${s.depth??0}" min="0" max="99"
+            style="width:58px;flex-shrink:0;font-size:11px">
+          <span style="font-size:10px;color:var(--muted);margin-left:6px">${depthHint(s.depth??0)}</span>
         </div>
       </div>`).join('');
     specific = `
-      <div class="iGroup"><label>Tiers</label>
-        <div class="iMuted" style="margin-bottom:5px">Cycles through tiers on each visit. Takes exhausted path when all shown.</div>
-        <div class="ceWrap">${tierItems||'<div style="padding:8px;color:var(--muted);font-size:11px">No tiers yet</div>'}</div>
-        <button id="iAddTier" style="width:100%;margin-top:6px;font-size:11px">+ Add tier</button></div>
-      <div class="iGroup"><label style="color:var(--acc)">● Next node (tiers remain)</label>
+      <div class="iGroup"><label>Slots</label>
+        <div class="iMuted" style="margin-bottom:5px">Each slot dispatches to a node. Depth 0 = trigger only; depth N = follow N nodes total including trigger. Cycles through all slots before taking exhausted path.</div>
+        <div class="ceWrap">${slotItems||'<div style="padding:8px;color:var(--muted);font-size:11px">No slots yet</div>'}</div>
+        <button id="iAddSlot" style="width:100%;margin-top:6px;font-size:11px">+ Add slot</button></div>
+      <div class="iGroup"><label style="color:var(--acc)">● Next node (slots remain)</label>
         <select id="iSeqNext">${nextOpts(nd.next)}</select></div>
-      <div class="iGroup"><label style="color:var(--good)">● Exhausted next (all tiers shown)</label>
+      <div class="iGroup"><label style="color:var(--good)">● Exhausted next (all slots visited)</label>
         <select id="iSeqExhaust">
           <option value="">— END —</option>
           ${others.map(n=>`<option value="${esc(n.id)}"${n.id===nd.exhaustedNext?' selected':''}>${esc(n.id)} (${n.type})</option>`).join('')}
@@ -835,11 +868,11 @@ function renderInspector() {
   $('iType')?.addEventListener('change', e => {
     const t = e.target.value, prevTags = nd.tags;
     nd.type = t;
-    ['text','next','choices','exhaustedNext','tiers','expression','expressionHold','revealSpeed']
+    ['text','next','choices','exhaustedNext','slots','expression','expressionHold','revealSpeed']
       .forEach(k => delete nd[k]);
     if (t === 'text')     { nd.text = ''; nd.next = null; nd.expression = 'neutral'; nd.expressionHold = 2; nd.revealSpeed = 'normal'; }
     if (t === 'choice')   { nd.choices = [{ label: '', next: null }]; }
-    if (t === 'sequence') { nd.tiers = ['']; nd.next = null; nd.exhaustedNext = null; }
+    if (t === 'sequence') { nd.slots = []; nd.next = null; nd.exhaustedNext = null; }
     nd.tags = prevTags || [];
     setDirty(); renderCanvas(); renderInspector();
   });
@@ -885,15 +918,19 @@ function renderInspector() {
 
   $('iSeqNext')?.addEventListener('change', e => { nd.next = e.target.value||null; setDirty(); renderCanvas(); });
   $('iSeqExhaust')?.addEventListener('change', e => { nd.exhaustedNext = e.target.value||null; setDirty(); renderCanvas(); });
-  $('iAddTier')?.addEventListener('click', () => {
-    if (!nd.tiers) nd.tiers = [];
-    nd.tiers.push(''); setDirty(); renderCanvas(); renderInspector();
+  $('iAddSlot')?.addEventListener('click', () => {
+    if (!nd.slots) nd.slots = [];
+    nd.slots.push({ nodeId: '', depth: 0 }); setDirty(); renderCanvas(); renderInspector();
   });
-  document.querySelectorAll('.tierTA').forEach(el => el.addEventListener('input', e => {
-    nd.tiers[+e.target.dataset.ti] = e.target.value; setDirty(); renderCanvas();
+  document.querySelectorAll('.slotNode').forEach(el => el.addEventListener('change', e => {
+    nd.slots[+e.target.dataset.si].nodeId = e.target.value; setDirty(); renderCanvas();
   }));
-  document.querySelectorAll('.tierDel').forEach(el => el.addEventListener('click', e => {
-    nd.tiers.splice(+e.target.dataset.ti, 1); setDirty(); renderCanvas(); renderInspector();
+  document.querySelectorAll('.slotDepth').forEach(el => el.addEventListener('input', e => {
+    nd.slots[+e.target.dataset.si].depth = Math.max(0, parseInt(e.target.value)||0);
+    setDirty(); renderInspector();
+  }));
+  document.querySelectorAll('.slotDel').forEach(el => el.addEventListener('click', e => {
+    nd.slots.splice(+e.target.dataset.si, 1); setDirty(); renderCanvas(); renderInspector();
   }));
 
   $('iEntryBtn')?.addEventListener('click', () => setEntryNode(nd.id));
@@ -1010,6 +1047,7 @@ function autoOrganize() {
     add(n.next);
     add(n.exhaustedNext);
     (n.choices || []).forEach(c => add(c.next));
+    (n.slots   || []).forEach(s => add(s.nodeId));
   }
 
   // BFS from entry to assign column depths
