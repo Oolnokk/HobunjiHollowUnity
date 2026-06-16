@@ -30,14 +30,14 @@
       background: var(--bg);
       color: var(--text);
       font-family: 'DM Mono', ui-monospace, monospace;
-      touch-action: none;
       -webkit-font-smoothing: antialiased;
     }
     button { font: inherit; cursor: pointer; border: none; background: none; }
 
     /* ── Full-bleed game shell ───────────────────────────── */
     #gameShell {
-      position: fixed; /* full-screen on wide displays; 16:9 letterboxed on tall displays, set by fitToAspect() */
+      position: fixed;
+      touch-action: none; /* prevent browser pan/zoom on the game canvas area */
       background:
         radial-gradient(circle at 30% 2%, rgba(230,219,137,0.14) 0%, transparent 28%),
         radial-gradient(circle at 72% 0%,  rgba(80,163,223,0.13) 0%, transparent 24%),
@@ -1309,11 +1309,12 @@
     .inv-equip-section {
       position: absolute;
       left: calc(1 * var(--inv-col));   top:    calc(6 * var(--inv-row));
-      width: calc(35 * var(--inv-col)); height: calc(7 * var(--inv-row));
+      width: calc(35 * var(--inv-col)); height: calc(21 * var(--inv-row));
       display: flex; flex-direction: column; gap: var(--inv-gap);
       padding: calc(0.3 * var(--inv-gap)) var(--inv-pad);
-      border-bottom: 1px solid var(--border);
       box-sizing: border-box;
+      overflow-y: auto; scrollbar-width: thin;
+      touch-action: pan-y; -webkit-overflow-scrolling: touch;
     }
     .inv-equip-row {
       display: flex; flex-direction: row; gap: var(--inv-gap);
@@ -1774,7 +1775,7 @@
     #mpInventory.inv-mode-gear .inv-grid-area     { display: none; }
     #mpInventory.inv-mode-gear .inv-pgscroll      { display: none; }
     #mpInventory.inv-mode-gear .inv-key-section   { display: none; }
-    #mpInventory.inv-mode-gear .inv-gear-extras   { display: flex; }
+    #mpInventory.inv-mode-gear .inv-gear-extras   { display: none; }
 
     .inv-pack-clothing {
       position: absolute;
@@ -1848,15 +1849,16 @@
       padding: 1px 5px; letter-spacing: 0.04em; flex-shrink: 0;
     }
 
-    /* ── Mobile scroll fix ───────────────────────────────────
-       body has touch-action:none to prevent browser pan while
-       using the game joystick. Override it on every scrollable
-       UI container so menus/lists work on touch devices.      */
+    /* ── Mobile scroll: touch-action:none lives on #gameShell now,
+       not body — so menu panel children scroll freely on touch.
+       Only containers that are themselves independently scrollable
+       need the explicit pan-y + webkit hint.                   */
     .inv-grid-area,
     .inv-info,
     .ii-desc,
     .ii-actions,
     .inv-pack-clothing,
+    .inv-equip-section,
     .ship-grid-wrap,
     .ship-detail-desc,
     .supply-list,
@@ -1865,8 +1867,7 @@
     #mpProgress,
     #mpTasks,
     #mpRelationships,
-    .fed-scroll,
-    .inv-gear-extras {
+    .fed-scroll {
       touch-action: pan-y;
       -webkit-overflow-scrolling: touch;
     }

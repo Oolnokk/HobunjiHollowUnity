@@ -3813,6 +3813,23 @@
         }
       }
 
+      function selectGearClothing(slot, item) {
+        invSelectedKey = null;
+        document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
+        const emptyEl  = document.getElementById('iiEmpty');
+        const detailEl = document.getElementById('iiDetail');
+        if (emptyEl)  emptyEl.style.display  = 'none';
+        if (detailEl) detailEl.style.display  = '';
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
+        set('iiIcon',  '👘');
+        set('iiName',  item.label);
+        set('iiPrice', 'Permanent gear — not sellable');
+        set('iiTags',  '<span class="ii-tag">Clothing</span><span class="ii-tag">' + slot.charAt(0).toUpperCase() + slot.slice(1) + '</span>');
+        set('iiDesc',  'Currently worn. Buy or find another piece and transfer it to this slot to swap.');
+        const actEl = document.getElementById('iiActions');
+        if (actEl) actEl.innerHTML = '';
+      }
+
       function buildPackClothingSection() {
         const sec = document.getElementById('invPackClothing');
         if (!sec) return;
@@ -3924,6 +3941,7 @@
           lbl.className = 'ies-label';
           lbl.textContent = slot.charAt(0).toUpperCase() + slot.slice(1);
           cell.appendChild(lbl);
+          if (item) cell.addEventListener('click', () => selectGearClothing(slot, item));
           clothRow.appendChild(cell);
         }
         sec.appendChild(clothRow);
