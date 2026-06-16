@@ -2,19 +2,6 @@
   "schema": "hobunji_building_interior.v1",
   "furniture": [
     {
-      "id": "fmqf7ii03b7yo",
-      "itemKey": "counterFurniture",
-      "col": 1,
-      "row": 7,
-      "rotY": 0,
-      "postX": 1.0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
       "id": "fmqf7ykh8e2ve",
       "itemKey": "hearthFurniture",
       "col": 6,
@@ -67,6 +54,19 @@
       "postY": 0,
       "postZ": 0,
       "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "fmqg911qpldqz",
+      "itemKey": "benchFurniture",
+      "col": 1,
+      "row": 7,
+      "rotY": 0,
+      "postX": 2.337,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 3.9,
       "postSY": 1,
       "postSZ": 1
     }
@@ -421,6 +421,46 @@
     [
       5,
       7
+    ],
+    [
+      4,
+      7
+    ],
+    [
+      3,
+      7
+    ],
+    [
+      2,
+      7
+    ],
+    [
+      1,
+      7
+    ],
+    [
+      3,
+      5
+    ],
+    [
+      2,
+      5
+    ],
+    [
+      6,
+      1
+    ],
+    [
+      7,
+      1
+    ],
+    [
+      8,
+      1
+    ],
+    [
+      9,
+      1
     ]
   ],
   "vendorZones": [
