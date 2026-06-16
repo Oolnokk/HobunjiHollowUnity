@@ -31,6 +31,10 @@
       const toastEl   = document.getElementById('toast');
       const keyHudEl  = document.getElementById('keyHud');
       const isDesktop = window.matchMedia('(pointer: fine)').matches;
+      const dialogueZoomIndicator = document.createElement('div');
+      dialogueZoomIndicator.className = 'dialogue-zoom-indicator';
+      dialogueZoomIndicator.setAttribute('aria-hidden', 'true');
+      (document.getElementById('canvasWrap') || threeContainer).appendChild(dialogueZoomIndicator);
 
       // Tool select (replaces rightCluster)
       const toolSelect      = document.getElementById('toolSelect');
@@ -215,17 +219,49 @@
       const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
       const _npcDialogueTextEl  = document.getElementById('npcDialogueText');
 
+      function npcDialogueTextConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.text || {};
+      }
+
+      function _paginateNpcDialogueText(text) {
+        const cfg = npcDialogueTextConfig();
+        const emptyLine = cfg.emptyLine || '...';
+        const source = String(text || '').trim();
+        if (!source) return [emptyLine];
+        const maxChars = Math.max(1, Number(cfg.maxCharsPerPage) || source.length);
+        const pages = [];
+        let current = '';
+        for (const word of source.split(/\s+/)) {
+          const next = current ? `${current} ${word}` : word;
+          if (next.length > maxChars && current) {
+            pages.push(current);
+            current = word;
+          } else {
+            current = next;
+          }
+        }
+        if (current) pages.push(current);
+        return pages.length ? pages : [emptyLine];
+      }
+
       function _npcDialogueLines(rec) {
-        if (!rec) return ['...'];
-        if (rec.bio) return [rec.bio];
-        return ['...'];
+        if (!rec) return _paginateNpcDialogueText('');
+        if (Array.isArray(rec.dialogueLines) && rec.dialogueLines.length) {
+          return rec.dialogueLines.flatMap(line => _paginateNpcDialogueText(line));
+        }
+        if (rec.bio) return _paginateNpcDialogueText(rec.bio);
+        return _paginateNpcDialogueText('');
       }
 
       async function openNpcDialogue(walker) {
         const rec = walker.rec;
         dialogueOpen = true;
         _dialogueWalker = walker;
-        walker.pause = Infinity; // freeze in place
+        activeCameraMode = npcDialogueCameraMode();
+        activeCameraTarget = walker.root;
+        beginNpcDialogueStaging(walker);
+        updateDialogueZoomIndicator();
+        walker.pause = Infinity; // freeze in place while the player stages the conversation
         _dialogueLines = _npcDialogueLines(rec);
         _dialogueLineIdx = 0;
         _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
@@ -251,12 +287,19 @@
         dialogueOpen = false;
         _dialogueLines = [];
         _dialogueLineIdx = 0;
+        npcDialogueStaging = null;
         if (_dialogueWalker) {
           _dialogueWalker.pause = 0;
           _dialogueWalker.catchup = 3.5;
           _dialogueWalker.catchupDur = 8;
           _dialogueWalker = null;
         }
+        activeCameraMode = cameraConfig().defaultMode || 'default';
+        activeCameraTarget = null;
+        dialogueZoomPointers.clear();
+        dialoguePinchDistance = null;
+        if (dialogueZoomConfig().resetOnDialogueClose) resetDialogueCameraZoom();
+        else updateDialogueZoomIndicator();
         _npcDialogueEl.classList.remove('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'true');
       }
@@ -1277,6 +1320,12 @@
       let _dialogueLines     = [];
       let _dialogueLineIdx   = 0;
       let _dialogueWalker    = null;
+      let npcDialogueStaging = null;
+      let activeCameraMode   = cameraConfig().defaultMode || 'default';
+      let activeCameraTarget = null;
+      let dialogueCameraZoomPercent = cameraModeConfig(npcDialogueCameraMode()).runtimeZoom?.initialPercent ?? 0;
+      const dialogueZoomPointers = new Map();
+      let dialoguePinchDistance = null;
       let nearbyNpcWalker    = null;
       let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
       let _pendingSpotTransition = null; // spot the player is currently standing on; awaits input to fire
@@ -1430,6 +1479,126 @@
       const NPC_SPECIES_IDS = ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'];
 
       function npcMovementConfig() { return window.SCRATCHBONES_CONFIG?.game?.movement?.npc || {}; }
+      function npcDialogueStagingConfig() { return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.staging || {}; }
+      function cameraConfig() { return window.SCRATCHBONES_CONFIG?.game?.camera || {}; }
+      function cameraModesConfig() { return cameraConfig().modes || {}; }
+      function cameraModeConfig(mode) {
+        const modes = cameraModesConfig();
+        return modes[mode] || modes[cameraConfig().defaultMode] || modes.default || {};
+      }
+      function npcDialogueCameraMode() { return cameraConfig().dialogueMode || 'npcDialogue'; }
+      function dialogueZoomConfig() { return cameraModeConfig(npcDialogueCameraMode()).runtimeZoom || {}; }
+      function dialogueZoomEnabled() { return dialogueZoomConfig().enabled !== false; }
+      function dialogueZoomActive() { return dialogueOpen && activeCameraMode === npcDialogueCameraMode() && dialogueZoomEnabled(); }
+      function clampDialogueZoomPercent(value) {
+        const cfg = dialogueZoomConfig();
+        return clamp(value, cfg.minPercent ?? 0, cfg.maxPercent ?? 100);
+      }
+      function dialogueZoomFactor() {
+        const cfg = dialogueZoomConfig();
+        const minPercent = cfg.minPercent ?? 0;
+        const maxPercent = cfg.maxPercent ?? 100;
+        const range = Math.max(0.001, maxPercent - minPercent);
+        const normalized = clamp((dialogueCameraZoomPercent - minPercent) / range, 0, 1);
+        return 1 + normalized * ((cfg.maxZoomFactor ?? 2.5) - 1);
+      }
+      function setDialogueCameraZoomPercent(value) {
+        dialogueCameraZoomPercent = clampDialogueZoomPercent(value);
+        updateDialogueZoomIndicator();
+      }
+      function updateDialogueZoomIndicator() {
+        if (!dialogueZoomIndicator) return;
+        dialogueZoomIndicator.textContent = `${Math.round(dialogueCameraZoomPercent)}%`;
+        dialogueZoomIndicator.setAttribute('aria-hidden', dialogueZoomActive() ? 'false' : 'true');
+        dialogueZoomIndicator.classList.toggle('open', dialogueZoomActive());
+      }
+      function resetDialogueCameraZoom() {
+        setDialogueCameraZoomPercent(dialogueZoomConfig().initialPercent ?? 0);
+      }
+      function npcDialogueButtonConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.npcDialogueButton || {};
+      }
+      function npcDialogueAction() { return npcDialogueButtonConfig().action || 'npc_dialogue'; }
+
+      function npcDialogueStagingOffsets() {
+        const offsets = npcDialogueStagingConfig().playerDiagonalOffsets;
+        return Array.isArray(offsets) && offsets.length ? offsets : [{ x: -0.5, y: 1 }, { x: 0.5, y: 1 }];
+      }
+
+      function beginNpcDialogueStaging(walker) {
+        const npcX = walker?.root?.position?.x;
+        const npcZ = walker?.root?.position?.z;
+        if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
+        const playerWorldX = player.x / TILE;
+        const playerWorldZ = player.y / TILE;
+        const candidates = npcDialogueStagingOffsets().map(offset => ({
+          x: npcX + (Number(offset.x) || 0),
+          z: npcZ + (Number(offset.y) || 0),
+        }));
+        candidates.sort((a, b) => Math.hypot(playerWorldX - a.x, playerWorldZ - a.z) - Math.hypot(playerWorldX - b.x, playerWorldZ - b.z));
+        const target = candidates.find(pos => canPlayerOccupy(pos.x * TILE, pos.z * TILE)) || candidates[0];
+        npcDialogueStaging = { walker, targetX: target.x, targetZ: target.z };
+        player.vx = 0;
+        player.vy = 0;
+      }
+
+      function faceNpcDialogueParticipants() {
+        const walker = npcDialogueStaging?.walker || _dialogueWalker;
+        if (!walker?.root) return;
+        const cfg = npcDialogueStagingConfig();
+        const playerWorldX = player.x / TILE;
+        const playerWorldZ = player.y / TILE;
+        const npcX = walker.root.position.x;
+        const npcZ = walker.root.position.z;
+        const playerTargetAngle = Math.atan2(npcZ - playerWorldZ, npcX - playerWorldX);
+        facingAngle += angleDiff(playerTargetAngle, facingAngle) * (cfg.faceLerp ?? 0.28);
+        player.angle = facingAngle;
+        const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
+        const npcTargetRot = -npcTargetAngle + Math.PI / 2;
+        walker.rot += angleDiff(npcTargetRot, walker.rot) * (cfg.npcFacePlayerLerp ?? 0.28);
+        walker.root.rotation.y = walker.rot;
+      }
+
+      function updateNpcDialogueStaging(dt) {
+        if (!npcDialogueStaging?.walker?.root) return;
+        const cfg = npcDialogueStagingConfig();
+        const speed = (cfg.moveSpeedTilesPerSecond ?? 4.25) * TILE;
+        const arrival = (cfg.arrivalRadiusTiles ?? 0.08) * TILE;
+        const targetX = npcDialogueStaging.targetX * TILE;
+        const targetY = npcDialogueStaging.targetZ * TILE;
+        const dx = targetX - player.x;
+        const dy = targetY - player.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= arrival) {
+          player.x = targetX;
+          player.y = targetY;
+          player.vx = 0;
+          player.vy = 0;
+          faceNpcDialogueParticipants();
+          return;
+        }
+        const step = Math.min(dist, speed * dt);
+        const desiredX = player.x + dx / dist * step;
+        const desiredY = player.y + dy / dist * step;
+        let moved = false;
+        if (canPlayerOccupy(desiredX, player.y)) { player.x = desiredX; moved = true; }
+        if (canPlayerOccupy(player.x, desiredY)) { player.y = desiredY; moved = true; }
+        player.vx = moved ? dx / dist * speed : 0;
+        player.vy = moved ? dy / dist * speed : 0;
+        faceNpcDialogueParticipants();
+      }
+
+      function npcDialogueButton() {
+        const cfg = npcDialogueButtonConfig();
+        const name = nearbyNpcWalker?.rec?.name;
+        return {
+          icon: cfg.icon || '💬',
+          label: name ? `${cfg.label || 'Talk'}: ${name}` : (cfg.label || 'Talk'),
+          action: npcDialogueAction(),
+          style: cfg.style || 'primary',
+          allowed: true,
+        };
+      }
 
       function normalizeRoutes(routes, legacyPaths = []) {
         const out = (routes || []).filter(r => r && Array.isArray(r.nodes) && r.nodes.length > 0)
@@ -1833,6 +2002,7 @@
       }
 
       function updateNpcWalkers(dt) {
+        const previousNearbyNpcWalker = nearbyNpcWalker;
         for (const w of npcWalkers) w.update(dt);
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
@@ -1842,6 +2012,7 @@
           if (d < closestDist) { closestDist = d; closest = w; }
         }
         nearbyNpcWalker = closest;
+        if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
       }
 
       // ── Town zone ──────────────────────────────────────────────────
@@ -3708,7 +3879,7 @@
       }
 
       function updateMovement(dt) {
-        if (dialogueOpen) { player.vx *= 0.75; player.vy *= 0.75; return; }
+        if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         const keyboardVector = getKeyboardVector();
         const usingKeyboard = keyboardVector.active;
         let ix = usingKeyboard ? keyboardVector.x : input.x;
@@ -4186,6 +4357,7 @@
       function useActiveAction() {
         if (dialogueOpen) { advanceNpcDialogue(); return; }
         if (nearbyNpcWalker && !farmEditMode) { openNpcDialogue(nearbyNpcWalker); return; }
+        if (activeAction === npcDialogueAction()) { showToast(npcDialogueButtonConfig().noTargetMessage || 'No one nearby to talk to.', false); return; }
         const _anim = activeAnimStyle();
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
         toolSwingT = toolSwingDur;
@@ -4828,21 +5000,67 @@
         return out;
       }
 
-      // Camera — isometric-style: high angle, offset NW, looking SE toward map center
-      const CAM_DIST   = 14;
-      const CAM_ANGLE  = Math.PI / 5.5;  // ~33° from horizontal — classic 3/4 RPG tilt
-      const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+      // Camera — mode-driven, with the default preserving the original isometric follow.
+      const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
       let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72;
 
-      function updateCameraPosition() {
-        const tx = camTargetX, tz = camTargetZ;
-        // Camera sits due south of target, elevated, looking straight north
-        camera.position.set(
-          tx,
-          Math.sin(CAM_ANGLE) * CAM_DIST,
-          tz + Math.cos(CAM_ANGLE) * CAM_DIST  // +Z = south
+      function portraitAvatarCenterWorldPosition(root) {
+        let avatarRoot = null;
+        root?.traverse?.(child => {
+          if (!avatarRoot && Number.isFinite(child.userData?.portraitModelHeight)) avatarRoot = child;
+        });
+        if (!avatarRoot) return null;
+        const center = new THREE.Vector3();
+        avatarRoot.updateWorldMatrix?.(true, false);
+        avatarRoot.getWorldPosition(center);
+        const height = avatarRoot.userData.portraitModelHeight;
+        const placementRatio = avatarRoot.userData.portraitVerticalPlacementRatio ?? 0.5;
+        center.y += (placementRatio - 0.5) * height;
+        return center;
+      }
+
+      function dialoguePortraitCameraAim(modeCfg, tx, tz, distance, baseAngle) {
+        if (!modeCfg.alignToDialoguePortraitCenters || !_dialogueWalker?.root) return null;
+        const playerCenter = portraitAvatarCenterWorldPosition(playerMesh);
+        const npcCenter = portraitAvatarCenterWorldPosition(_dialogueWalker.root);
+        if (!playerCenter || !npcCenter) return null;
+        const minDistance = modeCfg.portraitCenterMinDistanceTiles ?? 0.001;
+        const portraitDistance = Math.max(
+          minDistance,
+          Math.hypot(npcCenter.x - playerCenter.x, npcCenter.z - playerCenter.z),
         );
-        camera.lookAt(tx, 0, tz);
+        const rawPortraitPitch = Math.atan2(npcCenter.y - playerCenter.y, portraitDistance);
+        const maxUpwardPitch = THREE.MathUtils.degToRad(modeCfg.maxUpwardPortraitPitchDeg ?? 0);
+        const portraitPitch = Math.min(rawPortraitPitch, maxUpwardPitch);
+        const cameraY = rawPortraitPitch > maxUpwardPitch
+          ? (playerCenter.y + npcCenter.y) / 2
+          : playerCenter.y;
+        const cameraHorizontalDistance = Math.cos(baseAngle) * distance;
+        return {
+          cameraY,
+          lookY: cameraY + Math.tan(portraitPitch) * cameraHorizontalDistance,
+          targetX: tx,
+          targetZ: tz,
+        };
+      }
+
+      function updateCameraPosition() {
+        const modeCfg = cameraModeConfig(activeCameraMode);
+        const baseDistance = modeCfg.distanceTiles ?? 14;
+        const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
+        const angle = THREE.MathUtils.degToRad(modeCfg.angleFromGroundDeg ?? 32.73);
+        const tx = camTargetX, tz = camTargetZ;
+        const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
+        const lookY = portraitAim?.lookY ?? (modeCfg.targetYOffsetTiles ?? 0);
+        const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
+        // Camera sits due south of target, elevated, looking straight north.
+        camera.position.set(
+          portraitAim?.targetX ?? tx,
+          cameraY,
+          (portraitAim?.targetZ ?? tz) + Math.cos(angle) * distance  // +Z = south
+        );
+        camera.lookAt(portraitAim?.targetX ?? tx, lookY, portraitAim?.targetZ ?? tz);
+        camera.fov = modeCfg.fovDeg ?? 42;
         camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
         camera.updateProjectionMatrix();
       }
@@ -6636,14 +6854,20 @@
         }
 
         // ── Camera smooth follow ─────────────────────────────────
-        const wx = player.x / TILE, wz = player.y / TILE;
-        camTargetX += (wx - camTargetX) * 0.08;
-        camTargetZ += (wz - camTargetZ) * 0.08;
+        const targetPosition = activeCameraTarget?.position;
+        const wx = targetPosition ? targetPosition.x : player.x / TILE;
+        const wz = targetPosition ? targetPosition.z : player.y / TILE;
+        const camLerp = cameraModeConfig(activeCameraMode).followLerp ?? 0.08;
+        camTargetX += (wx - camTargetX) * camLerp;
+        camTargetZ += (wz - camTargetZ) * camLerp;
         updateCameraPosition();
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
-        if (!paused) updateNpcWalkers(dt);
+        if (!paused) {
+          updateNpcWalkers(dt);
+          if (dialogueOpen) faceNpcDialogueParticipants();
+        }
         if (currentArea === 'farm') {
           updateWaterMeshes();
           updateCropMeshes();
@@ -7357,6 +7581,9 @@
 
 
       function computeActionButtons() {
+        // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
+        if (nearbyNpcWalker && !farmEditMode) return [npcDialogueButton()];
+
         // Interior: exit button near south door + interact button for interior world objects
         if (currentArea === 'interior') {
           const reticle  = getReticleTile();
@@ -7501,7 +7728,8 @@
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 
         const obj = currentArea === 'farm' ? getWorldObjectAt(reticle.col, reticle.row) : null;
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}`;
+        const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -7543,7 +7771,7 @@
               if (!act || el.classList.contains('abt-hidden')) return;
               activeAction = act;
               // Navigation/interaction actions always fire; tool actions respect swing cooldown
-              const isNavAction = act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_');
+              const isNavAction = act === npcDialogueAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_');
               if (isNavAction || toolSwingT <= 0) useActiveAction();
             }
 
@@ -8087,15 +8315,51 @@
 
       window.addEventListener('keyup', (event) => input.keys.delete(event.key.toLowerCase()));
 
-      // Scroll wheel: cycle tools forward/backward
+      // Scroll wheel: zooms the active conversation camera; otherwise cycles tools forward/backward.
       threeContainer.addEventListener('wheel', (e) => {
         if (menuOpen || farmEditMode) return;
         e.preventDefault();
+        if (dialogueZoomActive()) {
+          const sensitivity = dialogueZoomConfig().wheelSensitivity ?? 0.0015;
+          setDialogueCameraZoomPercent(dialogueCameraZoomPercent + (-e.deltaY * sensitivity * 100));
+          return;
+        }
         const tools = ['shovel', 'hoe', 'weapon', 'axe', 'pick', 'harpoon'];
         const idx = tools.indexOf(activeTool);
         const next = (idx + (e.deltaY > 0 ? 1 : -1) + tools.length) % tools.length;
         setActiveTool(tools[next]);
       }, { passive: false });
+
+      function updateDialoguePinchDistance() {
+        const points = [...dialogueZoomPointers.values()];
+        if (points.length < 2) { dialoguePinchDistance = null; return; }
+        dialoguePinchDistance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      }
+
+      threeContainer.addEventListener('pointerdown', (e) => {
+        if (!dialogueZoomActive() || e.pointerType !== 'touch') return;
+        dialogueZoomPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        updateDialoguePinchDistance();
+      });
+      threeContainer.addEventListener('pointermove', (e) => {
+        if (!dialogueZoomActive() || e.pointerType !== 'touch' || !dialogueZoomPointers.has(e.pointerId)) return;
+        dialogueZoomPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const points = [...dialogueZoomPointers.values()];
+        if (points.length < 2) return;
+        const nextDistance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+        if (dialoguePinchDistance && nextDistance > 0) {
+          const sensitivity = dialogueZoomConfig().pinchSensitivity ?? 1;
+          setDialogueCameraZoomPercent(dialogueCameraZoomPercent + ((nextDistance / dialoguePinchDistance) - 1) * sensitivity * 100);
+        }
+        dialoguePinchDistance = nextDistance;
+        e.preventDefault();
+      }, { passive: false });
+      function clearDialogueZoomPointer(e) {
+        dialogueZoomPointers.delete(e.pointerId);
+        updateDialoguePinchDistance();
+      }
+      window.addEventListener('pointerup', clearDialogueZoomPointer);
+      window.addEventListener('pointercancel', clearDialogueZoomPointer);
 
       // Left click = primary action, right click = secondary action (desktop play)
       if (isDesktop) {

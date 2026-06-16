@@ -35,6 +35,55 @@ window.SCRATCHBONES_CONFIG = {
         "beelineSampleStepTiles": 0.25
       }
     },
+    "npcDialogue": {
+      "text": {
+        "maxCharsPerPage": 180,
+        "emptyLine": "..."
+      },
+      "staging": {
+        "playerDiagonalOffsets": [
+          { "x": -0.5, "y": 1 },
+          { "x": 0.5, "y": 1 }
+        ],
+        "moveSpeedTilesPerSecond": 4.25,
+        "arrivalRadiusTiles": 0.08,
+        "faceLerp": 0.28,
+        "npcFacePlayerLerp": 0.28
+      }
+    },
+    "camera": {
+      "defaultMode": "default",
+      "dialogueMode": "npcDialogue",
+      "modes": {
+        "default": {
+          "distanceTiles": 14,
+          "angleFromGroundDeg": 32.73,
+          "fovDeg": 42,
+          "followLerp": 0.08,
+          "targetYOffsetTiles": 0
+        },
+        "npcDialogue": {
+          "distanceTiles": 4.67,
+          "angleFromGroundDeg": 10.64,
+          "fovDeg": 42,
+          "followLerp": 0.18,
+          "targetYOffsetTiles": 0.9,
+          "alignToDialoguePortraitCenters": true,
+          "portraitCenterMinDistanceTiles": 0.001,
+          "maxUpwardPortraitPitchDeg": 0,
+          "runtimeZoom": {
+            "enabled": true,
+            "initialPercent": 75,
+            "minPercent": 0,
+            "maxPercent": 100,
+            "maxZoomFactor": 2.5,
+            "wheelSensitivity": 0.0015,
+            "pinchSensitivity": 1,
+            "resetOnDialogueClose": false
+          }
+        }
+      }
+    },
     "gameplayShortcuts": {
       "focusChat": {
         "enabled": true,
@@ -43,6 +92,13 @@ window.SCRATCHBONES_CONFIG = {
       }
     },
     "mobileControls": {
+      "npcDialogueButton": {
+        "icon": "💬",
+        "label": "Talk",
+        "action": "npc_dialogue",
+        "style": "primary",
+        "noTargetMessage": "No one nearby to talk to."
+      },
       "actionArch": {
         "radiusClamp": { "minPx": 200, "vmin": 36, "maxPx": 260 },
         "cssVar": "--scratchbones-action-arch-radius"

@@ -52,6 +52,28 @@
       display: block;
     }
 
+    .dialogue-zoom-indicator {
+      position: absolute;
+      top: max(12px, env(safe-area-inset-top));
+      right: max(12px, env(safe-area-inset-right));
+      z-index: 8;
+      padding: 6px 10px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 999px;
+      background: rgba(8, 18, 13, 0.72);
+      color: var(--accent);
+      font-size: 13px;
+      line-height: 1;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(-4px);
+      transition: opacity 140ms ease, transform 140ms ease;
+    }
+    .dialogue-zoom-indicator.open {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
     /* ── Status bar: grid x:15 y:0 w:17 h:2 (32×18) ─────── */
     #statusBar {
       position: fixed;
@@ -950,7 +972,9 @@
       display: flex;
       flex-direction: column;
       padding: 14px 20px 12px;
-      min-height: calc(4.2 * var(--row));
+      height: calc(4.2 * var(--row));
+      min-height: 0;
+      box-sizing: border-box;
     }
     #npcDialogueName {
       font-size: 12px;
@@ -964,6 +988,8 @@
     }
     #npcDialogueText {
       flex: 1;
+      min-height: 0;
+      overflow: hidden;
       font-size: 13px;
       line-height: 1.7;
       color: var(--text);
