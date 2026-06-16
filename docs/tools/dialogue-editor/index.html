@@ -93,7 +93,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
   border:1px solid rgba(255,255,255,.15);background:var(--panel);
   box-shadow:0 4px 16px rgba(0,0,0,.5);user-select:none;cursor:grab;overflow:visible}
 .node:active{cursor:grabbing}
-.node.sel{border-color:var(--acc);
+.node.sel{border-color:var(--acc);z-index:10;
   box-shadow:0 0 0 2px rgba(106,167,255,.22),0 4px 16px rgba(0,0,0,.5)}
 .nodeHead{display:flex;align-items:center;gap:5px;padding:6px 8px;
   border-bottom:1px solid rgba(255,255,255,.07);border-radius:10px 10px 0 0}
@@ -378,8 +378,16 @@ function addNode(type) {
   const tree = getTree(); if (!tree) return;
   const id   = genId('n_');
   const outer = $('canvasOuter');
-  const cx = Math.round((outer.clientWidth  / 2 - cam.panX) / cam.zoom - 110);
-  const cy = Math.round((outer.clientHeight / 2 - cam.panY) / cam.zoom - 40);
+  const w = outer.clientWidth  || 800;
+  const h = outer.clientHeight || 600;
+  // Base at viewport center; stagger each new node 260px right then wrap into rows
+  const idx = tree.nodes.length;
+  const col = idx % 3;
+  const row = Math.floor(idx / 3);
+  const vcx = Math.round((w / 2 - cam.panX) / cam.zoom);
+  const vcy = Math.round((h / 2 - cam.panY) / cam.zoom);
+  const cx  = vcx - 330 + col * 260;   // 3 columns, centered in view
+  const cy  = vcy - 40  + row * 180;
   const nd = { id, type, pos: { x: cx, y: cy } };
   if (type === 'text')   { nd.text = ''; nd.next = null; }
   if (type === 'choice') { nd.choices = [{ label: '', next: null }]; }
@@ -810,9 +818,11 @@ function renderInspector() {
 function onNodeDown(e, nid) {
   if (e.button !== 0 || connState) return;
   e.stopPropagation();
+  e.preventDefault();   // prevent text selection on drag
   selectNode(nid);
   const nd = getNode(nid); if (!nd) return;
   dragState = { nid, sx: e.clientX, sy: e.clientY, nx: nd.pos.x, ny: nd.pos.y };
+  document.body.style.cursor = 'grabbing';
 }
 
 function onPortDown(e, portEl) {
@@ -870,7 +880,7 @@ function onMouseMove(e) {
 }
 
 function onMouseUp(e) {
-  if (dragState) { setDirty(); dragState = null; return; }
+  if (dragState) { setDirty(); dragState = null; document.body.style.cursor = ''; return; }
   if (panState)  { panState = null; return; }
   if (connState) {
     const hit    = document.elementFromPoint(e.clientX, e.clientY);
