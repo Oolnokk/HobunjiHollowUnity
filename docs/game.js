@@ -1454,7 +1454,7 @@
 
       function npcDialogueStagingOffsets() {
         const offsets = npcDialogueStagingConfig().playerDiagonalOffsets;
-        return Array.isArray(offsets) && offsets.length ? offsets : [{ x: -1, y: 1 }, { x: 1, y: 1 }];
+        return Array.isArray(offsets) && offsets.length ? offsets : [{ x: -0.5, y: 1 }, { x: 0.5, y: 1 }];
       }
 
       function beginNpcDialogueStaging(walker) {
@@ -1485,9 +1485,9 @@
         const playerTargetAngle = Math.atan2(npcZ - playerWorldZ, npcX - playerWorldX);
         facingAngle += angleDiff(playerTargetAngle, facingAngle) * (cfg.faceLerp ?? 0.28);
         player.angle = facingAngle;
-        const npcTargetAngle = Math.atan2(camera.position.z - npcZ, camera.position.x - npcX);
+        const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
-        walker.rot += angleDiff(npcTargetRot, walker.rot) * (cfg.npcFaceCameraLerp ?? 0.28);
+        walker.rot += angleDiff(npcTargetRot, walker.rot) * (cfg.npcFacePlayerLerp ?? 0.28);
         walker.root.rotation.y = walker.rot;
       }
 
