@@ -3492,6 +3492,9 @@
         return { x: localX, y: localY };
       }
       function isTownBuildingCollisionTile(col, row) {
+        // Building-entrance transition tiles are always walkable (they ARE the door approach)
+        if (worldTownTransitions.some(t => t.target === 'building' && t.col === col && t.row === row)) return false;
+
         const loadedBuildingGroups = _townBuildingGroups.filter(entry => entry.piece?.footprint);
         const buildingSources = loadedBuildingGroups.length
           ? loadedBuildingGroups
@@ -7496,7 +7499,9 @@
               const act = el.dataset.action;
               if (!act || el.classList.contains('abt-hidden')) return;
               activeAction = act;
-              if (toolSwingT <= 0) useActiveAction();
+              // Navigation/interaction actions always fire; tool actions respect swing cooldown
+              const isNavAction = act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_');
+              if (isNavAction || toolSwingT <= 0) useActiveAction();
             }
 
             el.addEventListener('pointerdown', ev => {
