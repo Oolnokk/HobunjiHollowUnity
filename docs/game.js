@@ -2425,24 +2425,59 @@
             townScene.add(g);
             _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
 
-            // Entrance ring at south edge of piece footprint
-            const pcells = piece?.footprint?.cells || [];
+            // Entrance ring: compute position using rotation-aware porch/stair cells.
+            // rotateBuildingCollisionCell is hoisted (function declaration at line ~3490).
+            const rotDeg = bldg.rotationDeg || bldg.rotation || 0;
+            const allBldgCells = []
+              .concat(piece?.footprint?.cells || [])
+              .concat(piece?.footprint?.extensions?.entryTunnels || [])
+              .concat(piece?.footprint?.extensions?.chimneys || [])
+              .concat(piece?.footprint?.extensions?.porches || [])
+              .concat(piece?.footprint?.extensions?.porchStairs || [])
+              .concat(piece?.footprint?.extensions?.railings || []);
             const gc = Math.floor((piece?.gridSize || 18) / 2);
-            const maxCX = pcells.length ? Math.max.apply(null, pcells.map(c => c.x)) : gc + 3;
-            const minCX = pcells.length ? Math.min.apply(null, pcells.map(c => c.x)) : gc - 3;
-            const maxCZ = pcells.length ? Math.max.apply(null, pcells.map(c => c.y)) : gc + 3;
-            const minCZ = pcells.length ? Math.min.apply(null, pcells.map(c => c.y)) : gc - 3;
-            const worldMinC = bldg.gridX, worldMaxC = bldg.gridX + (maxCX - minCX);
-            const worldMaxR = bldg.gridZ + (maxCZ - minCZ);
-            const eCol = Math.floor((worldMinC + worldMaxC + 1) / 2);
-            const eRow = Math.min(TROWS_ENT - 1, worldMaxR + 1);
-            const eid  = 'bldg_entrance_' + bldg.id;
-            // Skip auto-entrance if workspace already defined a building transition in this footprint
+            const bldgMinX = allBldgCells.length ? Math.min.apply(null, allBldgCells.map(c => c.x)) : gc - 3;
+            const bldgMinY = allBldgCells.length ? Math.min.apply(null, allBldgCells.map(c => c.y)) : gc - 3;
+            const bldgMaxX = allBldgCells.length ? Math.max.apply(null, allBldgCells.map(c => c.x)) : gc + 3;
+            const bldgMaxY = allBldgCells.length ? Math.max.apply(null, allBldgCells.map(c => c.y)) : gc + 3;
+            const bboxW = bldgMaxX - bldgMinX + 1;
+            const bboxD = bldgMaxY - bldgMinY + 1;
+            // Rotate all cells to get the world-space bounding box (for hasWorkspaceEntry)
+            let wBMinC = Infinity, wBMaxC = -Infinity, wBMinR = Infinity, wBMaxR = -Infinity;
+            for (const cell of allBldgCells) {
+              const r = rotateBuildingCollisionCell(cell.x - bldgMinX, cell.y - bldgMinY, bboxW, bboxD, rotDeg);
+              const wc = bldg.gridX + r.x, wr = bldg.gridZ + r.y;
+              if (wc < wBMinC) wBMinC = wc; if (wc > wBMaxC) wBMaxC = wc;
+              if (wr < wBMinR) wBMinR = wr; if (wr > wBMaxR) wBMaxR = wr;
+            }
+            const hasBldgCells = allBldgCells.length > 0;
+            // Porch + stair cells (non-colliding) determine where the entrance ring sits
+            const psCells = []
+              .concat(piece?.footprint?.extensions?.porches || [])
+              .concat(piece?.footprint?.extensions?.porchStairs || []);
+            let eCol, eRow;
+            if (psCells.length && hasBldgCells) {
+              let wPMinC = Infinity, wPMaxC = -Infinity, wPMinR = Infinity, wPMaxR = -Infinity;
+              for (const cell of psCells) {
+                const r = rotateBuildingCollisionCell(cell.x - bldgMinX, cell.y - bldgMinY, bboxW, bboxD, rotDeg);
+                const wc = bldg.gridX + r.x, wr = bldg.gridZ + r.y;
+                if (wc < wPMinC) wPMinC = wc; if (wc > wPMaxC) wPMaxC = wc;
+                if (wr < wPMinR) wPMinR = wr; if (wr > wPMaxR) wPMaxR = wr;
+              }
+              eCol = Math.floor((wPMinC + wPMaxC + 1) / 2);
+              eRow = Math.min(TROWS_ENT - 1, Math.floor((wPMinR + wPMaxR + 1) / 2));
+            } else {
+              // No porch data: south edge of rotated bounding box
+              eCol = hasBldgCells ? Math.floor((wBMinC + wBMaxC + 1) / 2) : Math.floor((bldg.gridX * 2 + (bldg.footprintW ?? 1) + 1) / 2);
+              eRow = hasBldgCells ? Math.min(TROWS_ENT - 1, wBMaxR + 1) : Math.min(TROWS_ENT - 1, bldg.gridZ + (bldg.footprintD ?? 1));
+            }
+            const eid = 'bldg_entrance_' + bldg.id;
+            // Skip auto-entrance if workspace already defined a building transition within the rotated footprint
             const hasWorkspaceEntry = worldTownTransitions.some(t =>
               t.target === 'building' &&
               Number.isFinite(t.col) && Number.isFinite(t.row) &&
-              t.col >= (bldg.gridX ?? 0) && t.col < (bldg.gridX ?? 0) + (bldg.footprintW ?? 1) &&
-              t.row >= (bldg.gridZ ?? 0) && t.row <= (bldg.gridZ ?? 0) + (bldg.footprintD ?? 1));
+              t.col >= wBMinC && t.col <= wBMaxC &&
+              t.row >= wBMinR && t.row <= wBMaxR);
             const hasAnyEntryAtDoor = worldTownTransitions.some(t => Number.isFinite(t.col) && Number.isFinite(t.row) && t.col === eCol && t.row === eRow);
             if (!hasWorkspaceEntry && !hasAnyEntryAtDoor && !worldTownTransitions.find(t => t.id === eid)) {
               worldTownTransitions.push({
@@ -3508,8 +3543,10 @@
           const originZ = bldg.gridZ ?? bldg.row ?? 0;
 
           if (!piece?.footprint) {
-            const width = bldg.footprintW ?? bldg.w ?? 1;
-            const depth = bldg.footprintD ?? bldg.h ?? 1;
+            const fbRot = ((Math.round((bldg.rotationDeg || bldg.rotation || 0) / 90) * 90) % 360 + 360) % 360;
+            const fbSwap = fbRot === 90 || fbRot === 270;
+            const width = fbSwap ? (bldg.footprintD ?? bldg.h ?? 1) : (bldg.footprintW ?? bldg.w ?? 1);
+            const depth = fbSwap ? (bldg.footprintW ?? bldg.w ?? 1) : (bldg.footprintD ?? bldg.h ?? 1);
             return col >= originX && row >= originZ && col < originX + width && row < originZ + depth;
           }
 
