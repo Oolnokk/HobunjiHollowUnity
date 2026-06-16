@@ -84,6 +84,19 @@ window.SCRATCHBONES_CONFIG = {
         }
       }
     },
+    "generalStore": {
+      "vendorAccess": {
+        "vendorKey": "general_store",
+        "action": "open_general_store",
+        "icon": "🛒",
+        "label": "Shop",
+        "closedLabel": "No Clerk",
+        "noStaffMessage": "No one is minding the General Store right now.",
+        "wrongTileMessage": "Stand in front of the General Store counter to shop.",
+        "staffStationLabels": ["Checking Shelves", "Sitting at Counter"],
+        "staffRadiusTiles": 0.45
+      }
+    },
     "gameplayShortcuts": {
       "focusChat": {
         "enabled": true,
