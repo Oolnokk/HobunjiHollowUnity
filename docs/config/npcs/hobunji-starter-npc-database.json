@@ -698,11 +698,13 @@
               "choices": [
                 {
                   "label": "{{playerFirstL2V1}}.",
-                  "next": "n_mqgrbcgrd"
+                  "next": "n_mqgrbcgrd",
+                  "actions": [{ "type": "setLocalNickname", "value": "{{playerFirstL2V1}}" }]
                 },
                 {
                   "label": "{{playerNickname}}.",
-                  "next": "n_mqgrbcgrd"
+                  "next": "n_mqgrbcgrd",
+                  "actions": [{ "type": "setLocalNickname", "value": "{{playerNickname}}" }]
                 },
                 {
                   "label": "Handsome",
@@ -714,7 +716,8 @@
                 },
                 {
                   "label": "{{playerName}}",
-                  "next": null
+                  "next": null,
+                  "actions": [{ "type": "setLocalNickname", "value": "{{playerName}}" }]
                 }
               ]
             },

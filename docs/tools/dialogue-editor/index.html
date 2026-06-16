@@ -186,6 +186,14 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
   border:1px solid rgba(251,113,133,.3);background:rgba(251,113,133,.1);color:var(--bad);
   flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
 
+/* Action chips in choice inspector */
+.actChip{display:flex;align-items:center;gap:3px;margin-bottom:3px}
+.actLabel{font-size:9px;color:var(--seq);background:rgba(45,212,191,.1);border:1px solid rgba(45,212,191,.25);
+  border-radius:3px;padding:1px 5px;flex-shrink:0;white-space:nowrap}
+.actDelBtn{width:14px;height:14px;padding:0;border-radius:3px;font-size:9px;line-height:1;
+  border:1px solid rgba(251,113,133,.3);background:rgba(251,113,133,.1);color:var(--bad);
+  flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center}
+
 /* Import modal */
 #importModal{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;
   display:flex;align-items:center;justify-content:center}
@@ -237,6 +245,7 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
         <button class="danger" id="btnDel"   disabled style="font-size:11px">Delete Node</button>
         <button class="warn"   id="btnEntry" disabled style="font-size:11px">Set Entry</button>
         <div class="spacer"></div>
+        <button class="secondary" id="btnOrg"   disabled style="font-size:11px">↻ Organize</button>
         <button class="secondary" id="btnReset" style="font-size:11px">↺ View</button>
         <span id="zoomLabel">100%</span>
       </div>
@@ -440,7 +449,7 @@ function renderTreeBar() {
 
 function updateBar() {
   const ok = !!getTree();
-  ['btnText','btnChoice','btnEnd','btnSeq'].forEach(id => $(id).disabled = !ok);
+  ['btnText','btnChoice','btnEnd','btnSeq','btnOrg'].forEach(id => $(id).disabled = !ok);
   $('btnDel').disabled   = !sel.nodeId;
   $('btnEntry').disabled = !sel.nodeId;
 }
@@ -719,12 +728,15 @@ function renderInspector() {
       <div class="iGroup"><label>Dialogue text</label>
         <textarea id="iText" rows="5">${esc(nd.text||'')}</textarea>
         <div class="iMuted">
-          Tokens: <code>{{npcName}}</code> <code>{{playerName}}</code>
-          <code>{{playerPronoun1}}</code> <code>{{playerPronoun2}}</code>
-          <code>{{playerPronoun3}}</code> <code>{{playerPronounSelf}}</code>
-          <code>{{playerLocalNickname}}</code> <code>{{playerNickname}}</code>
-          <code>{{playerFirstL2V1}}</code>
-          <code>{{npcSpecies}}</code> <code>{{playerSpecies}}</code> <code>{{role}}</code>
+          <code>{{npcName}}</code> <code>{{playerName}}</code>
+          <code>{{npcSpecies}}</code> <code>{{playerSpecies}}</code> <code>{{role}}</code><br>
+          <code>{{playerPronoun1}}</code> he/she/they &nbsp;
+          <code>{{playerPronoun2}}</code> him/her/them &nbsp;
+          <code>{{playerPronoun3}}</code> his/her/their &nbsp;
+          <code>{{playerPronounSelf}}</code> himself/…<br>
+          <code>{{playerNickname}}</code> player-set nickname &nbsp;
+          <code>{{playerLocalNickname}}</code> NPC-specific nickname (set via choice action)<br>
+          <code>{{playerFirstL2V1}}</code> leading consonants + first vowel of player name (e.g. "Bra" from "Brandon")
         </div></div>
       <div class="iGroup"><label>Next node</label>
         <select id="iNext">${nextOpts(nd.next)}</select></div>
@@ -742,7 +754,15 @@ function renderInspector() {
         <div class="iMuted">Punctuation (. … !) always pauses at non-instant speeds.</div></div>
       ${buildTagsHtml(nd, tree)}`;
   } else if (nd.type === 'choice') {
-    const ceRows = (nd.choices||[]).map((c,i) => `
+    const ceRows = (nd.choices||[]).map((c,i) => {
+      const acts = (c.actions||[]).map((a,ai) => `
+        <div class="actChip">
+          <span class="actLabel">${esc(a.type)}</span>
+          <input class="actVal" data-ci="${i}" data-ai="${ai}" value="${esc(a.value||'')}"
+            placeholder="{{playerName}}" style="font-size:11px;flex:1;min-width:0">
+          <button class="actDelBtn" data-ci="${i}" data-ai="${ai}">×</button>
+        </div>`).join('');
+      return `
       <div class="ceItem" data-ci="${i}">
         <div style="display:flex;align-items:center;gap:5px">
           <span style="font-size:10px;color:var(--muted);min-width:18px">${i+1}.</span>
@@ -753,7 +773,16 @@ function renderInspector() {
           <span class="ceRowLabel">→ next</span>
           <select class="ceNext" data-ci="${i}" style="font-size:11px">${nextOpts(c.next)}</select>
         </div>
-      </div>`).join('');
+        <div class="ceRow" style="align-items:flex-start;margin-top:3px">
+          <span class="ceRowLabel" style="padding-top:2px">acts</span>
+          <div style="flex:1">${acts}
+            <button class="addAct" data-ci="${i}" style="font-size:10px;padding:2px 6px;
+              border-radius:5px;border:1px solid rgba(45,212,191,.3);background:rgba(45,212,191,.08);
+              color:var(--seq);margin-top:${acts?'3':'0'}px">+ setNickname</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
     specific = `
       <div class="iGroup"><label>Choices</label>
         <div class="ceWrap">${ceRows||'<div style="padding:8px;color:var(--muted);font-size:11px">No choices yet</div>'}</div>
@@ -836,6 +865,22 @@ function renderInspector() {
   }));
   document.querySelectorAll('.ceX').forEach(el => el.addEventListener('click', e => {
     nd.choices.splice(+e.target.dataset.ci, 1); setDirty(); renderCanvas(); renderInspector();
+  }));
+  document.querySelectorAll('.addAct').forEach(el => el.addEventListener('click', e => {
+    const ci = +e.target.dataset.ci;
+    if (!nd.choices[ci].actions) nd.choices[ci].actions = [];
+    nd.choices[ci].actions.push({ type: 'setLocalNickname', value: '' });
+    setDirty(); renderInspector();
+  }));
+  document.querySelectorAll('.actVal').forEach(el => el.addEventListener('input', e => {
+    const ci = +e.target.dataset.ci, ai = +e.target.dataset.ai;
+    nd.choices[ci].actions[ai].value = e.target.value; setDirty();
+  }));
+  document.querySelectorAll('.actDelBtn').forEach(el => el.addEventListener('click', e => {
+    const ci = +e.target.dataset.ci, ai = +e.target.dataset.ai;
+    nd.choices[ci].actions.splice(ai, 1);
+    if (!nd.choices[ci].actions.length) delete nd.choices[ci].actions;
+    setDirty(); renderInspector();
   }));
 
   $('iSeqNext')?.addEventListener('change', e => { nd.next = e.target.value||null; setDirty(); renderCanvas(); });
@@ -950,6 +995,66 @@ document.addEventListener('keydown', e => {
   }
 });
 
+function autoOrganize() {
+  const tree = getTree();
+  if (!tree || !tree.nodes.length) return;
+  const nodes = tree.nodes;
+
+  // Build outgoing edge lists (dedup)
+  const childrenOf = new Map(nodes.map(n => [n.id, []]));
+  for (const n of nodes) {
+    const add = id => {
+      if (id && childrenOf.has(id) && !childrenOf.get(n.id).includes(id))
+        childrenOf.get(n.id).push(id);
+    };
+    add(n.next);
+    add(n.exhaustedNext);
+    (n.choices || []).forEach(c => add(c.next));
+  }
+
+  // BFS from entry to assign column depths
+  const depths = new Map();
+  const bfsQ   = [];
+  const entryId = tree.entryNode || nodes[0]?.id;
+  if (entryId) { depths.set(entryId, 0); bfsQ.push(entryId); }
+  for (let i = 0; i < bfsQ.length; i++) {
+    const d = depths.get(bfsQ[i]);
+    for (const child of childrenOf.get(bfsQ[i]) || []) {
+      if (!depths.has(child)) { depths.set(child, d + 1); bfsQ.push(child); }
+    }
+  }
+  // Unreachable nodes go in a column after the deepest
+  const maxDepth = depths.size ? Math.max(...depths.values()) : 0;
+  nodes.forEach(n => { if (!depths.has(n.id)) depths.set(n.id, maxDepth + 1); });
+
+  // Group IDs by depth (preserve BFS order within each column)
+  const byDepth = new Map();
+  bfsQ.forEach(id => {
+    const d = depths.get(id);
+    if (!byDepth.has(d)) byDepth.set(d, []);
+    byDepth.get(d).push(id);
+  });
+  nodes.forEach(n => {
+    if (!bfsQ.includes(n.id)) {
+      const d = depths.get(n.id);
+      if (!byDepth.has(d)) byDepth.set(d, []);
+      byDepth.get(d).push(n.id);
+    }
+  });
+
+  // Assign positions
+  const COL_W = 340, ROW_H = 200;
+  for (const [depth, ids] of byDepth) {
+    ids.forEach((id, row) => {
+      const nd = nodes.find(n => n.id === id);
+      if (nd) { nd.pos.x = depth * COL_W; nd.pos.y = row * ROW_H; }
+    });
+  }
+
+  cam = { panX: 60, panY: 60, zoom: 1 };
+  setDirty(); renderCanvas();
+}
+
 function renderAll() { renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar(); }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -975,6 +1080,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btnSeq').onclick    = () => addNode('sequence');
   $('btnDel').onclick    = () => sel.nodeId && deleteNode(sel.nodeId);
   $('btnEntry').onclick  = () => sel.nodeId && setEntryNode(sel.nodeId);
+  $('btnOrg').onclick    = autoOrganize;
   $('btnReset').onclick  = () => { cam = { panX:60, panY:60, zoom:1 }; applyTransform(); renderSvg(); };
   const outer = $('canvasOuter');
   outer.addEventListener('mousedown', onCanvasDown);
