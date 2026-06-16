@@ -294,12 +294,12 @@
       function _showDlgChoices(node) {
         const choices = node.choices || [];
         const optEls  = [1,2,3,4,5,6].map(i => document.getElementById(`dlgOpt${i}`));
-        optEls.forEach(el => { if (el) { el.textContent = ''; el.style.display = 'none'; el.onclick = null; } });
+        optEls.forEach(el => { if (el) { el.textContent = ''; el.classList.remove('dlg-opt-visible'); el.onclick = null; } });
         choices.slice(0, 6).forEach((c, i) => {
           const el = optEls[i];
           if (!el) return;
-          el.textContent  = _resolveTokens(c.label || '', _dlgNpcRec);
-          el.style.display = '';
+          el.textContent = _resolveTokens(c.label || '', _dlgNpcRec);
+          el.classList.add('dlg-opt-visible');
           el.onclick = () => {
             if (!dialogueOpen) return;
             (c.actions || []).forEach(act => {
@@ -318,7 +318,7 @@
       function _hideChoiceButtons() {
         [1,2,3,4,5,6].forEach(i => {
           const el = document.getElementById(`dlgOpt${i}`);
-          if (el) { el.textContent = ''; el.style.display = 'none'; el.onclick = null; }
+          if (el) { el.textContent = ''; el.classList.remove('dlg-opt-visible'); el.onclick = null; }
         });
         const continueBtn = document.getElementById('npcDialogueContinue');
         if (continueBtn) continueBtn.style.display = '';
@@ -377,6 +377,7 @@
 
       function _advanceDlgNode() {
         if (!_dlgNode) return;
+        if (_dlgNode.type === 'choice') return; // choices require clicking an option button
         const next = _dlgNode.next;
         if (_dlgSeqStack.length > 0) {
           const frame = _dlgSeqStack[_dlgSeqStack.length - 1];
