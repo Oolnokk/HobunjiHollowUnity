@@ -63,6 +63,13 @@ window.SCRATCHBONES_CONFIG = {
       }
     },
     "mobileControls": {
+      "npcDialogueButton": {
+        "icon": "💬",
+        "label": "Talk",
+        "action": "npc_dialogue",
+        "style": "primary",
+        "noTargetMessage": "No one nearby to talk to."
+      },
       "actionArch": {
         "radiusClamp": { "minPx": 200, "vmin": 36, "maxPx": 260 },
         "cssVar": "--scratchbones-action-arch-radius"

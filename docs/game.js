@@ -1443,6 +1443,21 @@
         return modes[mode] || modes[cameraConfig().defaultMode] || modes.default || {};
       }
       function npcDialogueCameraMode() { return cameraConfig().dialogueMode || 'npcDialogue'; }
+      function npcDialogueButtonConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.npcDialogueButton || {};
+      }
+      function npcDialogueAction() { return npcDialogueButtonConfig().action || 'npc_dialogue'; }
+      function npcDialogueButton() {
+        const cfg = npcDialogueButtonConfig();
+        const name = nearbyNpcWalker?.rec?.name;
+        return {
+          icon: cfg.icon || '💬',
+          label: name ? `${cfg.label || 'Talk'}: ${name}` : (cfg.label || 'Talk'),
+          action: npcDialogueAction(),
+          style: cfg.style || 'primary',
+          allowed: true,
+        };
+      }
 
       function normalizeRoutes(routes, legacyPaths = []) {
         const out = (routes || []).filter(r => r && Array.isArray(r.nodes) && r.nodes.length > 0)
@@ -1846,6 +1861,7 @@
       }
 
       function updateNpcWalkers(dt) {
+        const previousNearbyNpcWalker = nearbyNpcWalker;
         for (const w of npcWalkers) w.update(dt);
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
@@ -1855,6 +1871,7 @@
           if (d < closestDist) { closestDist = d; closest = w; }
         }
         nearbyNpcWalker = closest;
+        if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
       }
 
       // ── Town zone ──────────────────────────────────────────────────
@@ -4199,6 +4216,7 @@
       function useActiveAction() {
         if (dialogueOpen) { advanceNpcDialogue(); return; }
         if (nearbyNpcWalker && !farmEditMode) { openNpcDialogue(nearbyNpcWalker); return; }
+        if (activeAction === npcDialogueAction()) { showToast(npcDialogueButtonConfig().noTargetMessage || 'No one nearby to talk to.', false); return; }
         const _anim = activeAnimStyle();
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
         toolSwingT = toolSwingDur;
@@ -7376,6 +7394,9 @@
 
 
       function computeActionButtons() {
+        // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
+        if (nearbyNpcWalker && !farmEditMode) return [npcDialogueButton()];
+
         // Interior: exit button near south door + interact button for interior world objects
         if (currentArea === 'interior') {
           const reticle  = getReticleTile();
@@ -7520,7 +7541,8 @@
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 
         const obj = currentArea === 'farm' ? getWorldObjectAt(reticle.col, reticle.row) : null;
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}`;
+        const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -7562,7 +7584,7 @@
               if (!act || el.classList.contains('abt-hidden')) return;
               activeAction = act;
               // Navigation/interaction actions always fire; tool actions respect swing cooldown
-              const isNavAction = act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_');
+              const isNavAction = act === npcDialogueAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_');
               if (isNavAction || toolSwingT <= 0) useActiveAction();
             }
 
