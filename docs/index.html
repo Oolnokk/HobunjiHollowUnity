@@ -449,15 +449,39 @@
   <!-- Gameplay Text Box: grid x:5 y:14 w:15 h:3 -->
   <div id="gameTextBox" role="status" aria-live="polite"></div>
 
-  <!-- NPC Dialogue Window -->
+  <!-- NPC Dialogue Window: grid x:0 y:10 w:32 h:8 (32×18) -->
   <div id="npcDialogue" role="dialog" aria-modal="true" aria-label="NPC Dialogue" aria-hidden="true">
+    <!-- Portrait: peeks above dialogue panel from bottom-left -->
     <div id="npcPortraitWrap">
       <canvas id="npcPortraitCanvas" width="256" height="256"></canvas>
     </div>
-    <div id="npcDialoguePanel">
-      <div id="npcDialogueName"></div>
-      <div id="npcDialogueText"></div>
-      <div id="npcDialogueContinue">&#x25BC; <kbd>E</kbd></div>
+    <!-- Inner panel: left content (name+text) | right response panel -->
+    <div id="npcDialogueInner">
+      <!-- Left: header row (name + hearts) + dialogue text -->
+      <div id="npcDialogueLeft">
+        <div id="npcDialogueHeader">
+          <div id="npcDialogueName"></div>
+          <div id="npcDialogueHearts" aria-label="Relationship"></div>
+        </div>
+        <div id="npcDialogueText"></div>
+      </div>
+      <!-- Response panel: inner-grid x:25 y:0 w:7 h:6; sub-grid 8×16 -->
+      <div id="npcResponsePanel">
+        <!-- Options 6–1 stacked; each collapses when unused -->
+        <div id="npcDialogueOptions">
+          <button class="dlg-opt" id="dlgOpt6" data-opt="6"></button>
+          <button class="dlg-opt" id="dlgOpt5" data-opt="5"></button>
+          <button class="dlg-opt" id="dlgOpt4" data-opt="4"></button>
+          <button class="dlg-opt" id="dlgOpt3" data-opt="3"></button>
+          <button class="dlg-opt" id="dlgOpt2" data-opt="2"></button>
+          <button class="dlg-opt" id="dlgOpt1" data-opt="1"></button>
+        </div>
+        <!-- Action row: Leave (x:0 w:3) | Continue (x:3 w:5) -->
+        <div id="npcDialogueActions">
+          <button id="npcDialogueLeave">Leave</button>
+          <button id="npcDialogueContinue">&#x25BC; <kbd>E</kbd></button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -467,48 +491,51 @@
     <div id="joystickKnob">🕹️</div>
   </div>
 
-  <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
-  <div id="toolSelect">
-    <div id="toolPicker" role="menu" aria-label="Select tool">
-      <div class="tool-pick-row">
-        <span class="tool-pick-chip">Shovel</span>
-        <button class="tool-pick-btn active" data-tool="shovel" role="menuitem"><b>⛏️</b></button>
+  <!-- Button/Prompt Arc Container: grid x:24 y:10 w:8 h:8 (32×18).
+       Zero-size fixed anchor at bottom-right; hidden during dialogue. -->
+  <div id="arcContainer">
+    <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
+    <div id="toolSelect">
+      <div id="toolPicker" role="menu" aria-label="Select tool">
+        <div class="tool-pick-row">
+          <span class="tool-pick-chip">Shovel</span>
+          <button class="tool-pick-btn active" data-tool="shovel" role="menuitem"><b>⛏️</b></button>
+        </div>
+        <div class="tool-pick-row">
+          <span class="tool-pick-chip">Hoe</span>
+          <button class="tool-pick-btn" data-tool="hoe" role="menuitem"><b>🪓</b></button>
+        </div>
+        <div class="tool-pick-row">
+          <span class="tool-pick-chip">Weapon</span>
+          <button class="tool-pick-btn" data-tool="weapon" role="menuitem"><b>🗡️</b></button>
+        </div>
+        <div class="tool-pick-row">
+          <span class="tool-pick-chip">Axe</span>
+          <button class="tool-pick-btn" data-tool="axe" role="menuitem"><b>🪓</b></button>
+        </div>
+        <div class="tool-pick-row">
+          <span class="tool-pick-chip">Pick</span>
+          <button class="tool-pick-btn" data-tool="pick" role="menuitem"><b>⛏️</b></button>
+        </div>
+        <div class="tool-pick-row">
+          <span class="tool-pick-chip">Harpoon</span>
+          <button class="tool-pick-btn" data-tool="harpoon" role="menuitem"><b>🎣</b></button>
+        </div>
       </div>
-      <div class="tool-pick-row">
-        <span class="tool-pick-chip">Hoe</span>
-        <button class="tool-pick-btn" data-tool="hoe" role="menuitem"><b>🪓</b></button>
-      </div>
-      <div class="tool-pick-row">
-        <span class="tool-pick-chip">Weapon</span>
-        <button class="tool-pick-btn" data-tool="weapon" role="menuitem"><b>🗡️</b></button>
-      </div>
-      <div class="tool-pick-row">
-        <span class="tool-pick-chip">Axe</span>
-        <button class="tool-pick-btn" data-tool="axe" role="menuitem"><b>🪓</b></button>
-      </div>
-      <div class="tool-pick-row">
-        <span class="tool-pick-chip">Pick</span>
-        <button class="tool-pick-btn" data-tool="pick" role="menuitem"><b>⛏️</b></button>
-      </div>
-      <div class="tool-pick-row">
-        <span class="tool-pick-chip">Harpoon</span>
-        <button class="tool-pick-btn" data-tool="harpoon" role="menuitem"><b>🎣</b></button>
-      </div>
+      <button class="ts-btn" id="toolBtn" aria-label="Select tool" aria-expanded="false">
+        <span class="ts-icon" id="toolBtnIcon">⛏️</span>
+        <span class="ts-lbl" id="toolBtnLabel">Shovel</span>
+      </button>
+      <button id="itemBtn" aria-label="Select item">🌾</button>
     </div>
-    <button class="ts-btn" id="toolBtn" aria-label="Select tool" aria-expanded="false">
-      <span class="ts-icon" id="toolBtnIcon">⛏️</span>
-      <span class="ts-lbl" id="toolBtnLabel">Shovel</span>
-    </button>
-    <button id="itemBtn" aria-label="Select item">🌾</button>
-  </div>
-
-  <!-- Action Arch: 0-size anchor at bottom-right corner, buttons extend along clock 9:10–11:50 -->
-  <div id="actionStack">
-    <button class="abt" id="btnAction1" aria-label="Primary action"></button>
-    <button class="abt" id="btnAction2" aria-label="Action 2"></button>
-    <button class="abt" id="btnAction3" aria-label="Action 3"></button>
-    <button class="abt abt-item" id="btnItemAction1" aria-label="Use item"></button>
-    <button class="abt abt-item" id="btnItemAction2" aria-label="Use item 2"></button>
+    <!-- Action Arch: 0-size anchor at bottom-right corner, buttons extend along clock 9:10–11:50 -->
+    <div id="actionStack">
+      <button class="abt" id="btnAction1" aria-label="Primary action"></button>
+      <button class="abt" id="btnAction2" aria-label="Action 2"></button>
+      <button class="abt" id="btnAction3" aria-label="Action 3"></button>
+      <button class="abt abt-item" id="btnItemAction1" aria-label="Use item"></button>
+      <button class="abt abt-item" id="btnItemAction2" aria-label="Use item 2"></button>
+    </div>
   </div>
 
   <!-- Item Select: grid x:20 y:14 w:5 h:3 · sub-grid 14×6 -->
