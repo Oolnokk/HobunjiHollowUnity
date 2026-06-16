@@ -219,6 +219,7 @@
       const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
       const _npcDialogueTextEl  = document.getElementById('npcDialogueText');
       const _npcDialogueHeartsEl = document.getElementById('npcDialogueHearts');
+      const _npcDialogueOptionEls = Array.from(document.querySelectorAll('#npcDialogueOptions .dlg-opt'));
       const _arcContainerEl     = document.getElementById('arcContainer');
 
       function npcDialogueTextConfig() {
@@ -255,13 +256,50 @@
         return _paginateNpcDialogueText('');
       }
 
+      function setNpcDialogueOptions(options = []) {
+        _npcDialogueOptionEls.forEach(btn => {
+          btn.replaceWith(btn.cloneNode(true));
+        });
+        const freshButtons = Array.from(document.querySelectorAll('#npcDialogueOptions .dlg-opt'));
+        freshButtons.forEach((btn, idx) => {
+          const option = options[idx];
+          btn.classList.toggle('dlg-opt-visible', Boolean(option));
+          btn.textContent = option?.label || '';
+          btn.disabled = !option;
+          if (option) btn.addEventListener('click', option.onSelect);
+        });
+        _npcDialogueOptionEls.splice(0, _npcDialogueOptionEls.length, ...freshButtons);
+      }
+
+      function generalStoreDialogueOptions(walker) {
+        if (!canOpenGeneralStoreFromDialogue(walker)) return [];
+        const cfg = generalStoreDialogueShopConfig();
+        return [{
+          label: cfg.optionLabel || 'Shop',
+          onSelect: () => {
+            const message = cfg.openedMessage || 'Opened General Store.';
+            closeNpcDialogue();
+            openMenu('generalStore');
+            showToast(message, true);
+          },
+        }];
+      }
+
       async function openNpcDialogue(walker) {
         const rec = walker.rec;
         dialogueOpen = true;
         _dialogueWalker = walker;
         activeCameraMode = npcDialogueCameraMode();
         activeCameraTarget = walker.root;
-        beginNpcDialogueStaging(walker);
+        const shopStation = getWalkerGeneralStoreShopStation(walker);
+        const skipShopStaging = shopStation && generalStoreDialogueShopConfig().skipPlayerRepositionAtStaffStations !== false;
+        if (skipShopStaging) {
+          npcDialogueStaging = null;
+          player.vx = 0;
+          player.vy = 0;
+        } else {
+          beginNpcDialogueStaging(walker);
+        }
         updateDialogueZoomIndicator();
         walker.pause = Infinity; // freeze in place while the player stages the conversation
         _dialogueLines = _npcDialogueLines(rec);
@@ -269,6 +307,7 @@
         _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
         _npcDialogueTextEl.textContent = _dialogueLines[0];
         if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = renderRelationshipHearts(rec);
+        setNpcDialogueOptions(generalStoreDialogueOptions(walker));
         _arcContainerEl?.classList.add('arc-hidden');
         // Paint portrait before showing panel so it doesn't pop in after fade-in
         if (walker.profile && window.NpcAvatarPreview) {
@@ -291,6 +330,7 @@
         dialogueOpen = false;
         _dialogueLines = [];
         _dialogueLineIdx = 0;
+        setNpcDialogueOptions([]);
         npcDialogueStaging = null;
         if (_dialogueWalker) {
           _dialogueWalker.pause = 0;
@@ -2103,10 +2143,7 @@
           if (d < closestDist) { closestDist = d; closest = w; }
         }
         nearbyNpcWalker = closest;
-        const previousGeneralStoreStaffPresenceKey = generalStoreStaffPresenceKey;
-        const staffed = getGeneralStoreStaffAtCounter();
-        generalStoreStaffPresenceKey = staffed ? ((staffed.walker.rec?.id || staffed.walker.root.uuid) + '@' + staffed.station.id) : 'none';
-        if (previousNearbyNpcWalker !== nearbyNpcWalker || previousGeneralStoreStaffPresenceKey !== generalStoreStaffPresenceKey) refreshActionBar();
+        if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
       }
 
       // ── Town zone ──────────────────────────────────────────────────
@@ -3119,66 +3156,34 @@
       }
 
 
-      function generalStoreVendorAccessConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.generalStore?.vendorAccess || {};
+      function generalStoreDialogueShopConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.generalStore?.dialogueShop || {};
       }
 
-      function getBuildingVendorZoneAt(area, col, row, vendorKey) {
-        const zones = _buildingScenes.get(area)?.vendorZones || [];
-        return zones.find(zone => zone?.vendorKey === vendorKey && (zone.tiles || []).some(([c, r]) => c === col && r === row)) || null;
-      }
-
-      function isGeneralStoreVendorTile(col, row) {
-        const cfg = generalStoreVendorAccessConfig();
-        if (!_isBuildingArea(currentArea) || !cfg.vendorKey) return false;
-        return Boolean(getBuildingVendorZoneAt(currentArea, col, row, cfg.vendorKey));
+      function isGeneralStoreShopNpc(walker) {
+        const ids = generalStoreDialogueShopConfig().npcIds || [];
+        return ids.includes(walker?.rec?.id);
       }
 
       function isGeneralStoreStaffStation(station) {
-        const labels = generalStoreVendorAccessConfig().staffStationLabels || [];
+        const labels = generalStoreDialogueShopConfig().staffStationLabels || [];
         const stationLabel = String(station?.label || '').toLowerCase();
         return labels.some(label => stationLabel === String(label).toLowerCase());
       }
 
-      function getGeneralStoreStaffAtCounter() {
-        if (!_isBuildingArea(currentArea)) return null;
-        const radius = generalStoreVendorAccessConfig().staffRadiusTiles ?? 0.45;
+      function getWalkerGeneralStoreShopStation(walker) {
+        if (!walker || !isGeneralStoreShopNpc(walker) || !_isBuildingArea(walker.area)) return null;
+        const radius = generalStoreDialogueShopConfig().staffRadiusTiles ?? 0.45;
         for (const station of npcStationsById.values()) {
-          if (station.area !== currentArea || !isGeneralStoreStaffStation(station)) continue;
-          for (const walker of npcWalkers) {
-            if (walker.area !== currentArea) continue;
-            const dist = Math.hypot(walker.root.position.x - (station.c + 0.5), walker.root.position.z - (station.r + 0.5));
-            if (dist <= radius) return { walker, station };
-          }
+          if (station.area !== walker.area || !isGeneralStoreStaffStation(station)) continue;
+          const dist = Math.hypot(walker.root.position.x - (station.c + 0.5), walker.root.position.z - (station.r + 0.5));
+          if (dist <= radius) return station;
         }
         return null;
       }
 
-      function generalStoreVendorActionButton() {
-        const reticle = getReticleTile();
-        const cfg = generalStoreVendorAccessConfig();
-        if (!isGeneralStoreVendorTile(reticle.col, reticle.row)) return null;
-        const staffed = getGeneralStoreStaffAtCounter();
-        return {
-          icon: cfg.icon || '🛒',
-          label: staffed ? (cfg.label || 'Shop') : (cfg.closedLabel || 'No Clerk'),
-          action: cfg.action || 'open_general_store',
-          style: 'primary',
-          allowed: Boolean(staffed),
-        };
-      }
-
-      function openGeneralStoreFromVendor() {
-        const reticle = getReticleTile();
-        const cfg = generalStoreVendorAccessConfig();
-        if (!isGeneralStoreVendorTile(reticle.col, reticle.row)) {
-          return { ok: false, message: cfg.wrongTileMessage || 'Stand in the General Store vendor tiles to shop.' };
-        }
-        if (!getGeneralStoreStaffAtCounter()) {
-          return { ok: false, message: cfg.noStaffMessage || 'No one is minding the General Store right now.' };
-        }
-        openMenu('generalStore');
-        return { ok: true, message: 'Opened General Store.' };
+      function canOpenGeneralStoreFromDialogue(walker) {
+        return Boolean(getWalkerGeneralStoreShopStation(walker));
       }
 
       function worldObjectMorningTick() {
@@ -3208,7 +3213,6 @@
       let supplyActiveCategory = 'seeds'; // Used by renderSupplyPage() to keep the longer catalog readable on mobile.
       let generalStoreActiveCategory = 'goods';
       const generalStorePurchaseQtys = {};
-      let generalStoreStaffPresenceKey = 'none';
 
       function getSupplyItemCategory(item) {
         // Used by the supply ordering pane; avoids hard-coding future catalog rows into the UI.
@@ -4784,12 +4788,6 @@
         // Spot transitions require explicit input
         if (activeAction === 'use_spot' && _pendingSpotTransition) {
           startSceneTransition(() => performTravel(_pendingSpotTransition));
-          return;
-        }
-        if (activeAction === (generalStoreVendorAccessConfig().action || 'open_general_store')) {
-          const result = openGeneralStoreFromVendor();
-          lastActionMessage = result.message;
-          showToast(result.message, result.ok !== false);
           return;
         }
 
@@ -8030,7 +8028,7 @@
           return [];
         }
 
-        // Building interior: spot transitions and vendor zones require explicit input.
+        // Building interior: spot transitions require explicit input; shops are offered through staffed NPC dialogue.
         if (_isBuildingArea(currentArea)) {
           if (_pendingSpotTransition) {
             const t = _pendingSpotTransition;
@@ -8038,8 +8036,7 @@
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
           }
-          const vendorButton = generalStoreVendorActionButton();
-          return vendorButton ? [vendorButton] : [];
+          return [];
         }
 
         const reticle = getReticleTile();
@@ -8154,9 +8151,7 @@
 
         const obj = currentArea === 'farm' ? getWorldObjectAt(reticle.col, reticle.row) : null;
         const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
-        const vendorButton = _isBuildingArea(currentArea) ? generalStoreVendorActionButton() : null;
-        const vendorKey = vendorButton ? `${vendorButton.action}:${vendorButton.allowed ? 'open' : 'closed'}` : 'none';
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${vendorKey}`;
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
