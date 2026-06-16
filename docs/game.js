@@ -1364,16 +1364,17 @@
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
 
       function initWorldTravel(layout) {
-        if (!layout || layout.version !== 3) return;
-        worldTransitions = (layout.transitions || []).filter(t =>
-          t && Number.isFinite(t.col) && Number.isFinite(t.row) && (t.area || 'farm') !== 'town');
-        worldNpcPaths = (layout.npcPaths || []).filter(p =>
-          p && Array.isArray(p.nodes) && p.nodes.length > 0 && (p.area || 'farm') !== 'town');
-        worldRoutes = normalizeRoutes(
-          (layout.routes || []).filter(r => (r.area || 'farm') !== 'town'),
-          worldNpcPaths);
-        registerNpcStations(layout.npcStations, null);
-        rebuildRouteGraphs();
+        if (layout?.version === 3) {
+          worldTransitions = (layout.transitions || []).filter(t =>
+            t && Number.isFinite(t.col) && Number.isFinite(t.row) && (t.area || 'farm') !== 'town');
+          worldNpcPaths = (layout.npcPaths || []).filter(p =>
+            p && Array.isArray(p.nodes) && p.nodes.length > 0 && (p.area || 'farm') !== 'town');
+          worldRoutes = normalizeRoutes(
+            (layout.routes || []).filter(r => (r.area || 'farm') !== 'town'),
+            worldNpcPaths);
+          registerNpcStations(layout.npcStations, null);
+          rebuildRouteGraphs();
+        }
         // Don't fire a spot the player happens to spawn on
         _transitionLatch = travelAreaKey();
         buildTransitionMarkers();
@@ -7361,7 +7362,8 @@
         }
 
         function _outerR() {
-          return _clampedVmin(outerArchRadiusClamp);
+          const colPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--col'));
+          return Number.isFinite(colPx) && colPx > 0 ? colPx * 7.8 : _clampedVmin(outerArchRadiusClamp);
         }
         function _arcPt(deg) {
           const r = _outerR(), a = deg * Math.PI / 180;
