@@ -119,7 +119,7 @@ window.SCRATCHBONES_CONFIG = {
         "action": "open_general_store",
         "style": "primary",
         "npcIds": ["furunji_funji", "foroji_funji"],
-        "activities": ["sitting at counter", "checking shelves"],
+        "stationLabels": ["Sitting at Counter", "Checking Shelves"],
         "noTargetMessage": "Find Foroji or Furunji at the general store counter or shelves to shop."
       },
       "actionArch": {

@@ -1927,13 +1927,19 @@
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.generalStoreButton || {};
       }
       function generalStoreAction() { return generalStoreButtonConfig().action || 'open_general_store'; }
+      function normalizeStationLabel(label) {
+        return String(label || '').trim().toLowerCase();
+      }
       function isGeneralStoreNpcOnDuty(walker) {
         const cfg = generalStoreButtonConfig();
         const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['furunji_funji', 'foroji_funji'];
-        const activities = Array.isArray(cfg.activities) ? cfg.activities : ['sitting at counter', 'checking shelves'];
+        const stationLabels = Array.isArray(cfg.stationLabels) ? cfg.stationLabels : [];
         const npcId = walker?.rec?.id || '';
-        const activity = (walker?.currentScheduleTarget?.activity || resolveNpcScheduleTarget(walker?.rec)?.activity || '').toLowerCase();
-        return ids.includes(npcId) && activities.some(label => activity === String(label).toLowerCase());
+        const target = walker?.currentScheduleTarget || null;
+        const stationLabel = normalizeStationLabel(target?.label);
+        const isAtStation = walker?.state === 'idle' && target && Number.isFinite(target.c) && Number.isFinite(target.r)
+          && Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5)) <= (npcMovementConfig().arrivalRadiusTiles ?? 0.18);
+        return ids.includes(npcId) && isAtStation && stationLabels.some(label => stationLabel === normalizeStationLabel(label));
       }
       function generalStoreButton() {
         const cfg = generalStoreButtonConfig();
@@ -3492,7 +3498,7 @@
       }
 
       function bindSupplyTabs() {
-        document.querySelectorAll('.supply-tab').forEach(btn => {
+        document.querySelectorAll('[data-supply-cat]').forEach(btn => {
           btn.classList.toggle('active', btn.dataset.supplyCat === supplyActiveCategory);
           btn.onclick = () => {
             supplyActiveCategory = btn.dataset.supplyCat || 'seeds';
