@@ -46354,20 +46354,20 @@
           "spawnRow": 0
         },
         {
-          "id": "exit_n5k8p_11_5",
+          "id": "exit_n5k8p_5_3",
           "exitId": "exit_n5k8p",
-          "col": 11,
-          "row": 5,
+          "col": 5,
+          "row": 3,
           "label": "Stairs to Foroji's Room",
           "targetMapId": "map_i_general_store_F2_R1",
           "spawnCol": 11,
           "spawnRow": 6
         },
         {
-          "id": "exit_m3h2q_7_5",
+          "id": "exit_m3h2q_2_3",
           "exitId": "exit_m3h2q",
-          "col": 7,
-          "row": 5,
+          "col": 2,
+          "row": 3,
           "label": "Stairs to Furunji's Room",
           "targetMapId": "map_i_general_store_F2_R2",
           "spawnCol": 7,
