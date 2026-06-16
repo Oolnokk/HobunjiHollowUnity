@@ -7345,6 +7345,18 @@
         }
 
         const reticle = getReticleTile();
+
+        // Farm: show spot transition button (house entrance, town exit, etc.)
+        if (currentArea === 'farm' && _pendingSpotTransition) {
+          const t = _pendingSpotTransition;
+          const icon = t.target === 'interior' ? '🏠' : t.target === 'town' ? '🏘' : '🚪';
+          const label = t.label || (t.target === 'interior' ? 'Enter House' : t.target === 'town' ? 'Leave Farm' : 'Travel');
+          const btnsSpot = [];
+          btnsSpot.push({ icon, label, action: 'use_spot', style: 'primary', allowed: true });
+          const obj2 = getWorldObjectAt(reticle.col, reticle.row);
+          if (obj2) obj2.getButtons(reticle).forEach(b => btnsSpot.push(b));
+          return btnsSpot;
+        }
         const tile    = grid[reticle.row][reticle.col];
         const btns    = [];
 
