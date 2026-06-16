@@ -14,14 +14,14 @@
       "homeId": "researchers_tent",
       "species": "<unknown species>",
       "gender": "<unknown gender>",
-      "ageBand": "<carter\u2019s age>",
+      "ageBand": "<carter’s age>",
       "role": "researcher",
       "tags": [
         "researchers_tent",
         "researcher",
         "villager"
       ],
-      "bio": "Researcher\u2019s Tent resident. Age noted as <carter\u2019s age>.",
+      "bio": "Researcher’s Tent resident. Age noted as <carter’s age>.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -620,7 +620,399 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_mqgppxdb1",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_mqgprd293",
+          "nodes": [
+            {
+              "id": "n_mqgprd293",
+              "type": "text",
+              "pos": {
+                "x": 0,
+                "y": 0
+              },
+              "text": "Hey! You're that new farmer, aren't you? \n...\n{{playerName}}, right?",
+              "next": "n_mqgprjdh4"
+            },
+            {
+              "id": "n_mqgprjdh4",
+              "type": "choice",
+              "pos": {
+                "x": 340,
+                "y": 0
+              },
+              "choices": [
+                {
+                  "label": "Yeah. that's me...->",
+                  "next": "n_mqgq8d106"
+                },
+                {
+                  "label": "{{playerName}}? Never heard of {{playerPronoun1}}... ->",
+                  "next": "n_mqgqlrqv8"
+                },
+                {
+                  "label": "No that's wrong. My name is... ->",
+                  "next": "n_mqgqb51e7"
+                }
+              ]
+            },
+            {
+              "id": "n_mqgq8d106",
+              "type": "choice",
+              "pos": {
+                "x": 717,
+                "y": 12
+              },
+              "choices": [
+                {
+                  "label": "And yours?",
+                  "next": "n_mqh2hv8q2"
+                },
+                {
+                  "label": ", but you can call me...->",
+                  "next": "n_mqgqb51e7"
+                }
+              ],
+              "tags": []
+            },
+            {
+              "id": "n_mqgqb51e7",
+              "type": "choice",
+              "pos": {
+                "x": 672,
+                "y": 214
+              },
+              "choices": [
+                {
+                  "label": "{{playerFirstL2V1}}.",
+                  "next": "n_mqgrbcgrd",
+                  "actions": [
+                    {
+                      "type": "setLocalNickname",
+                      "value": "{{playerFirstL2V1}}"
+                    }
+                  ]
+                },
+                {
+                  "label": "{{playerNickname}}.",
+                  "next": "n_mqgrbcgrd",
+                  "actions": [
+                    {
+                      "type": "setLocalNickname",
+                      "value": "{{playerNickname}}"
+                    }
+                  ]
+                },
+                {
+                  "label": "Handsome",
+                  "next": "n_mqh1zfww1"
+                },
+                {
+                  "label": "Sexy",
+                  "next": "n_mqgrdmfde"
+                },
+                {
+                  "label": "{{playerName}}",
+                  "next": "n_mqgrfxz2f",
+                  "actions": [
+                    {
+                      "type": "setLocalNickname",
+                      "value": "{{playerName}}"
+                    }
+                  ]
+                }
+              ],
+              "tags": []
+            },
+            {
+              "id": "n_mqgqlrqv8",
+              "type": "choice",
+              "pos": {
+                "x": 733,
+                "y": -119
+              },
+              "choices": [
+                {
+                  "label": "He sounds like he's pretty cool, though.",
+                  "next": "n_mqh1zfww1"
+                },
+                {
+                  "label": "He sounds like an Idiot.",
+                  "next": "n_mqgqv4zwa"
+                }
+              ],
+              "tags": []
+            },
+            {
+              "id": "n_mqgqswah9",
+              "type": "text",
+              "pos": {
+                "x": 1339,
+                "y": -98
+              },
+              "text": "I have a feeling that you're probably right about that.",
+              "next": "n_mqgr22ekc",
+              "tags": [],
+              "expression": "smile"
+            },
+            {
+              "id": "n_mqgqv4zwa",
+              "type": "text",
+              "pos": {
+                "x": 1088,
+                "y": -84
+              },
+              "text": "*giggles*",
+              "next": "n_mqgqswah9",
+              "tags": [],
+              "expression": "laugh"
+            },
+            {
+              "id": "n_mqgqvongb",
+              "type": "text",
+              "pos": {
+                "x": 1995,
+                "y": -75
+              },
+              "text": "Anyway, my name is Aliri. It was nice to meet you.\nI live up on the northeast end of town, on my parents' farm. Feel free to stop by any time you'd like. ",
+              "next": null,
+              "tags": [],
+              "expression": "smile"
+            },
+            {
+              "id": "n_mqgr22ekc",
+              "type": "text",
+              "pos": {
+                "x": 1585,
+                "y": -91
+              },
+              "text": "Don't worry, I'm just teasing.",
+              "next": "n_mqgqvongb",
+              "tags": [],
+              "expression": "smile"
+            },
+            {
+              "id": "n_mqgrbcgrd",
+              "type": "text",
+              "pos": {
+                "x": 1071,
+                "y": 198
+              },
+              "text": "Cool name. I'll try to remember it.",
+              "next": "n_mqgqvongb",
+              "tags": [],
+              "expression": "smile"
+            },
+            {
+              "id": "n_mqgrdmfde",
+              "type": "text",
+              "pos": {
+                "x": 2031,
+                "y": 260
+              },
+              "text": "Uh... I think I hear my Dad calling me...\n\nGotta go!",
+              "next": null,
+              "tags": [],
+              "expression": "frown"
+            },
+            {
+              "id": "n_mqgrfxz2f",
+              "type": "text",
+              "pos": {
+                "x": 951,
+                "y": 449
+              },
+              "text": "Yeah, that's what I said. {{playerName}}!",
+              "next": "n_mqgrgm2mg",
+              "tags": []
+            },
+            {
+              "id": "n_mqgrgm2mg",
+              "type": "choice",
+              "pos": {
+                "x": 1285,
+                "y": 458
+              },
+              "choices": [
+                {
+                  "label": "Oh, I guess I misheard you the first time.",
+                  "next": "n_mqgriz0ch"
+                },
+                {
+                  "label": "You said it wrong, ->",
+                  "next": "n_mqgrmkqri"
+                }
+              ],
+              "tags": []
+            },
+            {
+              "id": "n_mqgriz0ch",
+              "type": "text",
+              "pos": {
+                "x": 1675,
+                "y": 497
+              },
+              "text": "Oh, sorry about that. Sometimes I talk too fast and forget to anunciate.",
+              "next": "n_mqgqvongb",
+              "tags": [],
+              "expression": "frown"
+            },
+            {
+              "id": "n_mqgrmkqri",
+              "type": "choice",
+              "pos": {
+                "x": 1710,
+                "y": 683
+              },
+              "choices": [
+                {
+                  "label": ", but that's alright. I've done the same.",
+                  "next": "n_mqgqvongb"
+                },
+                {
+                  "label": "... idiot.",
+                  "next": "n_mqgrdmfde"
+                }
+              ],
+              "tags": []
+            },
+            {
+              "id": "n_mqh1zfww1",
+              "type": "sequence",
+              "pos": {
+                "x": 1159,
+                "y": 58
+              },
+              "slots": [
+                {
+                  "nodeId": "n_mqgqv4zwa",
+                  "depth": 1
+                },
+                {
+                  "nodeId": "n_mqgqvongb",
+                  "depth": 0
+                }
+              ],
+              "next": null,
+              "exhaustedNext": null,
+              "tags": []
+            },
+            {
+              "id": "n_mqh2hv8q2",
+              "type": "text",
+              "pos": {
+                "x": 1081,
+                "y": -220
+              },
+              "text": "My name's Aliri! I live up at the northeast part of town. My family owns a farm there.... Technically we're rivals, I guess...",
+              "next": "n_mqh2kuci3",
+              "expression": "smile",
+              "expressionHold": 2,
+              "revealSpeed": "normal",
+              "tags": []
+            },
+            {
+              "id": "n_mqh2kuci3",
+              "type": "text",
+              "pos": {
+                "x": 1325,
+                "y": -210
+              },
+              "text": "But that doesn't mean I won't be able to give you some tips!!!",
+              "next": "n_mqh2n1424",
+              "expression": "laugh",
+              "expressionHold": 2,
+              "revealSpeed": "normal",
+              "tags": []
+            },
+            {
+              "id": "n_mqh2n1424",
+              "type": "choice",
+              "pos": {
+                "x": 1594,
+                "y": -195
+              },
+              "choices": [
+                {
+                  "label": "Great, thanks!",
+                  "next": "n_mqh2pvx05",
+                  "actions": [
+                    {
+                      "type": "setLocalNickname",
+                      "value": ""
+                    }
+                  ]
+                },
+                {
+                  "label": "I don't know... It sounds like a perfect opportunity for sabotage.",
+                  "next": "n_mqh2tcma7"
+                }
+              ],
+              "tags": []
+            },
+            {
+              "id": "n_mqh2pvx05",
+              "type": "text",
+              "pos": {
+                "x": 2002,
+                "y": -320
+              },
+              "text": "Don't mention it! You're new here. Sure we've got a new competitor, but we've also got a new neighbor, and that...\n",
+              "next": "n_mqh2t6mg6",
+              "expression": "neutral",
+              "expressionHold": 2,
+              "revealSpeed": "normal",
+              "tags": []
+            },
+            {
+              "id": "n_mqh2t6mg6",
+              "type": "text",
+              "pos": {
+                "x": 2268,
+                "y": -322
+              },
+              "text": "That's invaluable... If you stick around awhile, you'll come to know what I mean by that.",
+              "next": null,
+              "expression": "smile",
+              "expressionHold": 60,
+              "revealSpeed": "normal",
+              "tags": []
+            },
+            {
+              "id": "n_mqh2tcma7",
+              "type": "text",
+              "pos": {
+                "x": 1993,
+                "y": -174
+              },
+              "text": "*Ahiri bursts out laughing*...\n\nI guess you caught me!",
+              "next": "n_mqh2xrjc8",
+              "expression": "laugh",
+              "expressionHold": 2,
+              "revealSpeed": "normal",
+              "tags": []
+            },
+            {
+              "id": "n_mqh2xrjc8",
+              "type": "text",
+              "pos": {
+                "x": 2261,
+                "y": -157
+              },
+              "text": "But no... seriously. You're welcome here. We're all happy to have you. Come down to the farm if you ever need anything. We're neighbors now.",
+              "next": null,
+              "expression": "smile",
+              "expressionHold": 90,
+              "revealSpeed": "normal",
+              "tags": []
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -2243,7 +2635,7 @@
     },
     {
       "id": "namui_u_hakaru",
-      "name": "Namu\u2019i u Hakaru",
+      "name": "Namu’i u Hakaru",
       "homeId": "temple",
       "species": "<unknown species>",
       "gender": "<unknown gender>",
@@ -2406,7 +2798,7 @@
     },
     {
       "id": "takua_ao_hakaru",
-      "name": "Taku\u2019a ao Hakaru",
+      "name": "Taku’a ao Hakaru",
       "homeId": "temple",
       "species": "<unknown species>",
       "gender": "<unknown gender>",
@@ -3276,7 +3668,7 @@
         "carpenter / roofing family connection",
         "villager"
       ],
-      "bio": "Carpenter\u2019s household. Connected to Dzibim and the old Manji roofing side by the provided Dzibim line.",
+      "bio": "Carpenter’s household. Connected to Dzibim and the old Manji roofing side by the provided Dzibim line.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -3426,7 +3818,7 @@
         "carpenter household member",
         "villager"
       ],
-      "bio": "Named under Carpenter\u2019s; no further details provided.",
+      "bio": "Named under Carpenter’s; no further details provided.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -4077,7 +4469,7 @@
         "single member of the Watch",
         "villager"
       ],
-      "bio": "Only Watch member. Thinks his name means more than being a fighter. Loves animals and wants to train them to protect town; father thinks that is stupid and dangerous. Found claw came from invasive Nazgraku, escaped mounts of the thwarted Cleaver\u2019s Edge horde.",
+      "bio": "Only Watch member. Thinks his name means more than being a fighter. Loves animals and wants to train them to protect town; father thinks that is stupid and dangerous. Found claw came from invasive Nazgraku, escaped mounts of the thwarted Cleaver’s Edge horde.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -4264,7 +4656,7 @@
         "waitress",
         "villager"
       ],
-      "bio": "Waitress. Binding\u2019s husband\u2019s sister\u2019s daughter; Spearhead\u2019s sister\u2019s husband\u2019s sister\u2019s daughter; Oddclaw\u2019s aunt\u2019s husband\u2019s sister\u2019s daughter. Once held Tuhupnuk surname before Hammerhead murdered Sand and was banished.",
+      "bio": "Waitress. Binding’s husband’s sister’s daughter; Spearhead’s sister’s husband’s sister’s daughter; Oddclaw’s aunt’s husband’s sister’s daughter. Once held Tuhupnuk surname before Hammerhead murdered Sand and was banished.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -4566,7 +4958,7 @@
         "deceased snow-watcher",
         "villager"
       ],
-      "bio": "Binding\u2019s husband. Village snow-watcher who sacrificed himself to distract the wyrm.",
+      "bio": "Binding’s husband. Village snow-watcher who sacrificed himself to distract the wyrm.",
       "portrait": {
         "asset": "",
         "avatarKey": ""

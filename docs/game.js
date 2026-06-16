@@ -255,33 +255,186 @@
         return _paginateNpcDialogueText('');
       }
 
+      function _getNpcDlgState(npcId) {
+        if (!_npcDlgState.has(npcId)) _npcDlgState.set(npcId, { visitedSeqSlots: {}, localNickname: null });
+        return _npcDlgState.get(npcId);
+      }
+
+      function _resolveTokens(text, npcRec) {
+        if (!text) return '';
+        const p     = _playerData;
+        const name  = p?.nickname || 'Farmer';
+        const gen   = p?.appearance?.gender || 'male';
+        const pr1   = gen === 'female' ? 'she'     : gen === 'neutral' ? 'they'    : 'he';
+        const pr2   = gen === 'female' ? 'her'     : gen === 'neutral' ? 'them'    : 'him';
+        const pr3   = gen === 'female' ? 'her'     : gen === 'neutral' ? 'their'   : 'his';
+        const prS   = gen === 'female' ? 'herself' : gen === 'neutral' ? 'themself': 'himself';
+        const VOWELS = new Set('aeiouAEIOU');
+        let fl2v1 = '';
+        for (const ch of name) { fl2v1 += ch; if (VOWELS.has(ch)) break; }
+        const st    = _getNpcDlgState(npcRec?.id);
+        const local = st.localNickname || name;
+        return text
+          .replace(/\{\{npcName\}\}/g,            npcRec?.name || '')
+          .replace(/\{\{playerName\}\}/g,          name)
+          .replace(/\{\{playerNickname\}\}/g,      name)
+          .replace(/\{\{playerLocalNickname\}\}/g, local)
+          .replace(/\{\{playerPronoun1\}\}/g,      pr1)
+          .replace(/\{\{playerPronoun2\}\}/g,      pr2)
+          .replace(/\{\{playerPronoun3\}\}/g,      pr3)
+          .replace(/\{\{playerPronounSelf\}\}/g,   prS)
+          .replace(/\{\{playerFirstL2V1\}\}/g,     fl2v1);
+      }
+
+      function _pickDialogueTree(rec) {
+        const trees = (rec?.dialogueTrees || []).filter(t => (t.trigger || 'interact') === 'interact');
+        return trees.sort((a, b) => (b.priority || 0) - (a.priority || 0))[0] || null;
+      }
+
+      function _showDlgChoices(node) {
+        const choices = node.choices || [];
+        const optEls  = [1,2,3,4,5,6].map(i => document.getElementById(`dlgOpt${i}`));
+        optEls.forEach(el => { if (el) { el.textContent = ''; el.classList.remove('dlg-opt-visible'); el.onclick = null; } });
+        choices.slice(0, 6).forEach((c, i) => {
+          const el = optEls[i];
+          if (!el) return;
+          el.textContent = _resolveTokens(c.label || '', _dlgNpcRec);
+          el.classList.add('dlg-opt-visible');
+          el.onclick = () => {
+            if (!dialogueOpen) return;
+            (c.actions || []).forEach(act => {
+              if (act.type === 'setLocalNickname') {
+                const st = _getNpcDlgState(_dlgNpcRec?.id);
+                st.localNickname = _resolveTokens(act.value || '', _dlgNpcRec) || null;
+              }
+            });
+            _navigateDlgTo(c.next);
+          };
+        });
+        const continueBtn = document.getElementById('npcDialogueContinue');
+        if (continueBtn) continueBtn.style.display = choices.length ? 'none' : '';
+      }
+
+      function _hideChoiceButtons() {
+        [1,2,3,4,5,6].forEach(i => {
+          const el = document.getElementById(`dlgOpt${i}`);
+          if (el) { el.textContent = ''; el.classList.remove('dlg-opt-visible'); el.onclick = null; }
+        });
+        const continueBtn = document.getElementById('npcDialogueContinue');
+        if (continueBtn) continueBtn.style.display = '';
+      }
+
+      function _renderDlgNode(node) {
+        if (!node) { closeNpcDialogue(); return; }
+        _dlgNode = node;
+
+        if (node.type === 'end') { closeNpcDialogue(); return; }
+
+        if (node.type === 'sequence') { _handleSequenceNode(node); return; }
+
+        _npcDialogueTextEl.textContent = _resolveTokens(node.text || '', _dlgNpcRec);
+
+        if (node.type === 'choice') {
+          _showDlgChoices(node);
+        } else {
+          _hideChoiceButtons();
+        }
+      }
+
+      function _handleSequenceNode(seqNode) {
+        const st       = _getNpcDlgState(_dlgNpcRec?.id);
+        const visited  = st.visitedSeqSlots[seqNode.id] || [];
+        const slots    = seqNode.slots || [];
+        const nextIdx  = slots.findIndex((_, i) => !visited.includes(i));
+
+        if (nextIdx === -1) {
+          // All slots exhausted
+          _navigateDlgTo(seqNode.exhaustedNext);
+          return;
+        }
+
+        const slot = slots[nextIdx];
+        st.visitedSeqSlots[seqNode.id] = [...visited, nextIdx];
+        _dlgSeqStack.push({ seqNodeId: seqNode.id, seqNode, depthRemaining: slot.depth });
+        _navigateDlgTo(slot.nodeId);
+      }
+
+      function _navigateDlgTo(nodeId) {
+        if (!nodeId) {
+          // End of chain — pop sequence stack if any, otherwise end dialogue
+          if (_dlgSeqStack.length > 0) {
+            const frame = _dlgSeqStack.pop();
+            _navigateDlgTo(frame.seqNode.next || null);
+          } else {
+            closeNpcDialogue();
+          }
+          return;
+        }
+        const node = _dlgNodeMap?.[nodeId];
+        if (!node) { closeNpcDialogue(); return; }
+        _renderDlgNode(node);
+      }
+
+      function _advanceDlgNode() {
+        if (!_dlgNode) return;
+        if (_dlgNode.type === 'choice') return; // choices require clicking an option button
+        const next = _dlgNode.next;
+        if (_dlgSeqStack.length > 0) {
+          const frame = _dlgSeqStack[_dlgSeqStack.length - 1];
+          if (frame.depthRemaining <= 0) {
+            _dlgSeqStack.pop();
+            _navigateDlgTo(frame.seqNode.next || null);
+            return;
+          }
+          frame.depthRemaining--;
+        }
+        _navigateDlgTo(next || null);
+      }
+
       async function openNpcDialogue(walker) {
-        const rec = walker.rec;
-        dialogueOpen = true;
+        const rec  = walker.rec;
+        const tree = _pickDialogueTree(rec);
+
+        dialogueOpen    = true;
         _dialogueWalker = walker;
-        activeCameraMode = npcDialogueCameraMode();
+        activeCameraMode   = npcDialogueCameraMode();
         activeCameraTarget = walker.root;
         beginNpcDialogueStaging(walker);
         updateDialogueZoomIndicator();
-        walker.pause = Infinity; // freeze in place while the player stages the conversation
-        _dialogueLines = _npcDialogueLines(rec);
-        _dialogueLineIdx = 0;
+        walker.pause = Infinity;
         _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
-        _npcDialogueTextEl.textContent = _dialogueLines[0];
         if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = renderRelationshipHearts(rec);
         _arcContainerEl?.classList.add('arc-hidden');
-        // Paint portrait before showing panel so it doesn't pop in after fade-in
+
         if (walker.profile && window.NpcAvatarPreview) {
           const ctx = _npcPortraitCanvas.getContext('2d');
           ctx.fillStyle = '#1b3529';
           ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
           await window.NpcAvatarPreview.renderProfileToCanvas(_npcPortraitCanvas, walker.profile);
         }
+
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
+
+        if (tree) {
+          _dlgTree    = tree;
+          _dlgNodeMap = Object.fromEntries((tree.nodes || []).map(n => [n.id, n]));
+          _dlgNpcRec  = rec;
+          _dlgSeqStack = [];
+          _dialogueLines   = [];
+          _dialogueLineIdx = 0;
+          _navigateDlgTo(tree.entryNode);
+        } else {
+          _dlgTree = null; _dlgNodeMap = null; _dlgNode = null; _dlgNpcRec = null;
+          _hideChoiceButtons();
+          _dialogueLines   = _npcDialogueLines(rec);
+          _dialogueLineIdx = 0;
+          _npcDialogueTextEl.textContent = _dialogueLines[0];
+        }
       }
 
       function advanceNpcDialogue() {
+        if (_dlgTree) { _advanceDlgNode(); return; }
         _dialogueLineIdx++;
         if (_dialogueLineIdx >= _dialogueLines.length) { closeNpcDialogue(); return; }
         _npcDialogueTextEl.textContent = _dialogueLines[_dialogueLineIdx];
@@ -291,6 +444,8 @@
         dialogueOpen = false;
         _dialogueLines = [];
         _dialogueLineIdx = 0;
+        _dlgTree = null; _dlgNodeMap = null; _dlgNode = null; _dlgNpcRec = null; _dlgSeqStack = [];
+        _hideChoiceButtons();
         npcDialogueStaging = null;
         if (_dialogueWalker) {
           _dialogueWalker.pause = 0;
@@ -1410,6 +1565,15 @@
       let _dialogueLines     = [];
       let _dialogueLineIdx   = 0;
       let _dialogueWalker    = null;
+      let _playerData        = null;  // set from hobunjiPlayerReady event
+
+      // ── Dialogue tree runtime state ──────────────────────────────────
+      let _dlgTree      = null;  // active tree object
+      let _dlgNodeMap   = null;  // {id → node}
+      let _dlgNode      = null;  // current node
+      let _dlgNpcRec    = null;  // current NPC record
+      let _dlgSeqStack  = [];    // [{seqNodeId, depthRemaining}]
+      const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
       let npcDialogueStaging = null;
       let activeCameraMode   = cameraConfig().defaultMode || 'default';
       let activeCameraTarget = null;
@@ -8796,12 +8960,14 @@
       }
 
       document.addEventListener('hobunjiPlayerReady', (e) => {
+        _playerData = e.detail;
         spawnPlayerAvatar(e.detail);
       }, { once: true });
 
       // If init() already fired synchronously (returning player with localStorage profile),
       // __hobunjiPlayerProfile is set before this listener registered — catch that case.
       if (window.__hobunjiPlayerProfile) {
+        _playerData = window.__hobunjiPlayerProfile;
         spawnPlayerAvatar(window.__hobunjiPlayerProfile);
       }
 
