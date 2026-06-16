@@ -47,8 +47,8 @@ window.SCRATCHBONES_CONFIG = {
           "targetYOffsetTiles": 0
         },
         "npcDialogue": {
-          "distanceTiles": 7,
-          "angleFromGroundDeg": 18,
+          "distanceTiles": 4.67,
+          "angleFromGroundDeg": 10.64,
           "fovDeg": 42,
           "followLerp": 0.18,
           "targetYOffsetTiles": 0.9
