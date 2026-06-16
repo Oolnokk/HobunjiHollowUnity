@@ -45726,25 +45726,22 @@
           "type": "grass"
         },
         "1,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "2,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "3,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "4,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "5,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "6,5": {
-          "type": "grass"
-        },
-        "7,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "8,5": {
           "type": "grass"
@@ -45780,7 +45777,7 @@
           "type": "grass"
         },
         "1,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "1,8": {
           "type": "grass"
@@ -45837,22 +45834,22 @@
           "type": "grass"
         },
         "7,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "6,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "5,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "4,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "3,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "2,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "8,8": {
           "type": "grass"
@@ -45902,9 +45899,6 @@
         "11,6": {
           "type": "grass"
         },
-        "11,5": {
-          "type": "grass"
-        },
         "10,6": {
           "type": "grass"
         },
@@ -45936,7 +45930,7 @@
           "type": "grass"
         },
         "14,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "10,5": {
           "type": "grass"
@@ -45960,13 +45954,13 @@
           "type": "grass"
         },
         "10,1": {
-          "type": "grass"
+          "type": "rock"
         },
         "9,1": {
-          "type": "grass"
+          "type": "rock"
         },
         "8,1": {
-          "type": "grass"
+          "type": "rock"
         },
         "4,2": {
           "type": "grass"
@@ -45978,7 +45972,7 @@
           "type": "grass"
         },
         "11,1": {
-          "type": "grass"
+          "type": "rock"
         },
         "11,8": {
           "type": "grass"
@@ -45990,13 +45984,13 @@
           "type": "grass"
         },
         "14,2": {
-          "type": "grass"
+          "type": "rock"
         },
         "14,3": {
           "type": "grass"
         },
         "16,2": {
-          "type": "grass"
+          "type": "rock"
         },
         "16,3": {
           "type": "grass"
@@ -46005,19 +45999,19 @@
           "type": "grass"
         },
         "16,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "16,6": {
-          "type": "grass"
+          "type": "rock"
         },
         "16,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "15,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "15,6": {
-          "type": "grass"
+          "type": "rock"
         },
         "15,5": {
           "type": "grass"
@@ -46032,7 +46026,7 @@
           "type": "grass"
         },
         "13,2": {
-          "type": "grass"
+          "type": "rock"
         },
         "13,3": {
           "type": "grass"
@@ -46047,7 +46041,7 @@
           "type": "grass"
         },
         "13,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "12,6": {
           "type": "grass"
@@ -46068,6 +46062,12 @@
           "type": "grass"
         },
         "5,3": {
+          "type": "grass"
+        },
+        "7,5": {
+          "type": "grass"
+        },
+        "11,5": {
           "type": "grass"
         }
       },
@@ -46286,9 +46286,94 @@
       ],
       "decor": [],
       "buildings": [],
-      "npcStations": [],
+      "npcStations": [
+        {
+          "id": "station_p2x4t",
+          "label": "Sitting at Counter",
+          "col": 5,
+          "row": 6,
+          "rotY": 0,
+          "pose": "sit",
+          "toolKey": "",
+          "toolIntervalSec": 0,
+          "toolAnimStyle": ""
+        },
+        {
+          "id": "station_k7m3q",
+          "label": "Checking Shelves",
+          "col": 2,
+          "row": 6,
+          "rotY": 180,
+          "pose": "stand",
+          "toolKey": "",
+          "toolIntervalSec": 0,
+          "toolAnimStyle": ""
+        },
+        {
+          "id": "station_w9r6j",
+          "label": "Cooking",
+          "col": 9,
+          "row": 2,
+          "rotY": 180,
+          "pose": "stand",
+          "toolKey": "",
+          "toolIntervalSec": 0,
+          "toolAnimStyle": ""
+        }
+      ],
       "npcPaths": [],
-      "transitions": [],
+      "transitions": [
+        {
+          "id": "exit_mqf7tpam_4_11",
+          "exitId": "exit_mqf7tpam",
+          "col": 4,
+          "row": 11,
+          "label": "Front Door",
+          "targetMapId": "",
+          "spawnCol": 0,
+          "spawnRow": 0
+        },
+        {
+          "id": "exit_mqf7tpam_5_11",
+          "exitId": "exit_mqf7tpam",
+          "col": 5,
+          "row": 11,
+          "label": "Front Door",
+          "targetMapId": "",
+          "spawnCol": 0,
+          "spawnRow": 0
+        },
+        {
+          "id": "exit_mqf7tpam_6_11",
+          "exitId": "exit_mqf7tpam",
+          "col": 6,
+          "row": 11,
+          "label": "Front Door",
+          "targetMapId": "",
+          "spawnCol": 0,
+          "spawnRow": 0
+        },
+        {
+          "id": "exit_n5k8p_11_5",
+          "exitId": "exit_n5k8p",
+          "col": 11,
+          "row": 5,
+          "label": "Stairs to Foroji's Room",
+          "targetMapId": "map_i_general_store_F2_R1",
+          "spawnCol": 11,
+          "spawnRow": 6
+        },
+        {
+          "id": "exit_m3h2q_7_5",
+          "exitId": "exit_m3h2q",
+          "col": 7,
+          "row": 5,
+          "label": "Stairs to Furunji's Room",
+          "targetMapId": "map_i_general_store_F2_R2",
+          "spawnCol": 7,
+          "spawnRow": 6
+        }
+      ],
       "buildingInteriorBase": {
         "schema": "hobunji_building_interior.v1",
         "furniture": [
@@ -47153,7 +47238,9 @@
         "routes": [],
         "npcStations": [],
         "npcPaths": []
-      }
+      },
+      "schema": "hobunji_map.v1",
+      "routes": []
     },
     {
       "schema": "hobunji_map.v1",
@@ -49247,6 +49334,262 @@
           "targetSpotId": "sp_town_car"
         }
       ]
+    },
+    {
+      "schema": "hobunji_map.v1",
+      "id": "map_i_general_store_F2_R1",
+      "name": "Foroji's Room",
+      "category": "building_interior",
+      "cols": 20,
+      "rows": 20,
+      "tiles": {
+        "10,6": {
+          "type": "grass"
+        },
+        "9,6": {
+          "type": "rock"
+        },
+        "8,6": {
+          "type": "rock"
+        },
+        "7,6": {
+          "type": "rock"
+        },
+        "6,6": {
+          "type": "rock"
+        },
+        "11,6": {
+          "type": "grass"
+        },
+        "12,6": {
+          "type": "grass"
+        },
+        "12,7": {
+          "type": "grass"
+        },
+        "12,8": {
+          "type": "grass"
+        },
+        "12,9": {
+          "type": "rock"
+        },
+        "11,9": {
+          "type": "rock"
+        },
+        "10,9": {
+          "type": "rock"
+        },
+        "9,9": {
+          "type": "grass"
+        },
+        "8,9": {
+          "type": "grass"
+        },
+        "7,9": {
+          "type": "grass"
+        },
+        "6,9": {
+          "type": "grass"
+        },
+        "6,8": {
+          "type": "grass"
+        },
+        "6,7": {
+          "type": "grass"
+        },
+        "7,8": {
+          "type": "grass"
+        },
+        "8,8": {
+          "type": "grass"
+        },
+        "9,8": {
+          "type": "grass"
+        },
+        "10,8": {
+          "type": "grass"
+        },
+        "11,8": {
+          "type": "grass"
+        },
+        "11,7": {
+          "type": "grass"
+        },
+        "10,7": {
+          "type": "grass"
+        },
+        "9,7": {
+          "type": "grass"
+        },
+        "8,7": {
+          "type": "grass"
+        },
+        "7,7": {
+          "type": "rock"
+        },
+        "11,5": {
+          "type": "grass"
+        }
+      },
+      "routes": [],
+      "npcPaths": [],
+      "transitions": [
+        {
+          "id": "exit_b6t9s_11_5",
+          "exitId": "exit_b6t9s",
+          "col": 11,
+          "row": 5,
+          "label": "Stairs Down",
+          "targetMapId": "map_i_general_store",
+          "spawnCol": 11,
+          "spawnRow": 6
+        }
+      ],
+      "npcStations": [
+        {
+          "id": "station_v4n8x",
+          "label": "Foroji's Bed",
+          "col": 7,
+          "row": 6,
+          "rotY": 0,
+          "pose": "lie",
+          "toolKey": "",
+          "toolIntervalSec": 0,
+          "toolAnimStyle": ""
+        }
+      ],
+      "buildings": [],
+      "objects": {},
+      "furniture": [],
+      "decor": []
+    },
+    {
+      "schema": "hobunji_map.v1",
+      "id": "map_i_general_store_F2_R2",
+      "name": "Furunji's Room",
+      "category": "building_interior",
+      "cols": 20,
+      "rows": 20,
+      "tiles": {
+        "10,6": {
+          "type": "grass"
+        },
+        "9,6": {
+          "type": "grass"
+        },
+        "8,6": {
+          "type": "grass"
+        },
+        "7,6": {
+          "type": "grass"
+        },
+        "6,6": {
+          "type": "grass"
+        },
+        "11,6": {
+          "type": "grass"
+        },
+        "12,6": {
+          "type": "grass"
+        },
+        "12,7": {
+          "type": "grass"
+        },
+        "12,8": {
+          "type": "grass"
+        },
+        "12,9": {
+          "type": "grass"
+        },
+        "11,9": {
+          "type": "grass"
+        },
+        "10,9": {
+          "type": "grass"
+        },
+        "9,9": {
+          "type": "grass"
+        },
+        "8,9": {
+          "type": "grass"
+        },
+        "7,9": {
+          "type": "grass"
+        },
+        "6,9": {
+          "type": "grass"
+        },
+        "6,8": {
+          "type": "grass"
+        },
+        "6,7": {
+          "type": "grass"
+        },
+        "7,8": {
+          "type": "grass"
+        },
+        "8,8": {
+          "type": "grass"
+        },
+        "9,8": {
+          "type": "grass"
+        },
+        "10,8": {
+          "type": "grass"
+        },
+        "11,8": {
+          "type": "grass"
+        },
+        "11,7": {
+          "type": "grass"
+        },
+        "10,7": {
+          "type": "grass"
+        },
+        "9,7": {
+          "type": "grass"
+        },
+        "8,7": {
+          "type": "grass"
+        },
+        "7,7": {
+          "type": "grass"
+        },
+        "7,5": {
+          "type": "grass"
+        }
+      },
+      "routes": [],
+      "npcPaths": [],
+      "transitions": [
+        {
+          "id": "exit_c7m2k_7_5",
+          "exitId": "exit_c7m2k",
+          "col": 7,
+          "row": 5,
+          "label": "Stairs Down",
+          "targetMapId": "map_i_general_store",
+          "spawnCol": 7,
+          "spawnRow": 6
+        }
+      ],
+      "npcStations": [
+        {
+          "id": "station_r3p5w",
+          "label": "Furunji's Bed",
+          "col": 10,
+          "row": 6,
+          "rotY": 0,
+          "pose": "lie",
+          "toolKey": "",
+          "toolIntervalSec": 0,
+          "toolAnimStyle": ""
+        }
+      ],
+      "buildings": [],
+      "objects": {},
+      "furniture": [],
+      "decor": []
     }
   ],
   "activeId": "map_hobunji_town",

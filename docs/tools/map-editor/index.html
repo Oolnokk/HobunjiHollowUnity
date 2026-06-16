@@ -92,6 +92,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <div class="itemlist" id="mapList"></div>
           <div class="row" style="margin-top:6px">
             <button class="ok" id="newMapBtn">+ New</button>
+            <button class="sec" id="fromLayoutBtn">From Layout…</button>
             <button class="sec" id="dupMapBtn">Duplicate</button>
             <button class="bad" id="delMapBtn">Delete</button>
           </div>
@@ -1672,6 +1673,33 @@ $('newMapBtn').addEventListener('click', () => {
                                : makeMap('New interior', 'interior', GAME.interior.cols, GAME.interior.rows);
   ws.maps.push(m); ws.activeId = m.id; undoStack.length = 0; redoStack.length = 0;
   updateAll(); fitView(); setStatus('Created ' + m.name);
+});
+$('fromLayoutBtn').addEventListener('click', async () => {
+  let index;
+  try {
+    const res = await fetch('../../config/maps/index.json');
+    index = await res.json();
+  } catch(e) { setStatus('Could not fetch layout index: ' + e.message); return; }
+  const layouts = (index.maps || []).filter(e => e.category === 'building_interior');
+  if (!layouts.length) { setStatus('No server layouts found.'); return; }
+  const list = layouts.map((e, i) => `${i + 1}. ${e.name}  [${e.id}]`).join('\n');
+  const input = prompt(`Inherit a Server Layout as a new building interior map.\n\n${list}\n\nEnter number (or Cancel):`);
+  if (!input) return;
+  const idx = parseInt(input, 10) - 1;
+  if (!Number.isFinite(idx) || idx < 0 || idx >= layouts.length) { setStatus('Invalid selection.'); return; }
+  const entry = layouts[idx];
+  let mapData;
+  try {
+    const r = await fetch('../../' + entry.file);
+    mapData = await r.json();
+  } catch(e) { setStatus('Could not load layout: ' + e.message); return; }
+  const m = buildingInteriorToWorkspaceMap(mapData, entry);
+  m.id = uid('map'); // new unique ID so it doesn't shadow the layout source
+  m.name = entry.name + ' (copy)';
+  ws.maps.push(m); ws.activeId = m.id;
+  captureBaseline(m);
+  undoStack.length = 0; redoStack.length = 0;
+  updateAll(); fitView(); setStatus('Created building interior from layout: ' + entry.name);
 });
 $('dupMapBtn').addEventListener('click', () => {
   const src = activeMap(); const copy = JSON.parse(JSON.stringify(src));

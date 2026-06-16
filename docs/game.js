@@ -1864,6 +1864,12 @@
               const r = await fetch(file);
               if (!r.ok) return m;
               const data = await r.json();
+              // If the file is an Interior Editor layout and the workspace entry is Map Editor
+              // format, keep the workspace version (source of truth for game logic) and attach
+              // the file as visual base so loadBuildingScene can still render the room.
+              if (data?.schema === 'hobunji_building_interior.v1' && m?.schema !== 'hobunji_building_interior.v1') {
+                return { ...m, buildingInteriorBase: data };
+              }
               // Normalise tiles: array [{c,r,type,crop}] → dict {"c,r":{type,crop}}
               if (Array.isArray(data.tiles)) {
                 const d = {};
@@ -2099,6 +2105,22 @@
               transitions.push(t);
             }
           }
+          // If workspace has a Map Editor version of this map, it is the source of truth
+          // for game logic (spots/transitions, stations). The Interior Editor file above
+          // only provided the visual layout (floor, furniture). Override now.
+          const _wsOverride = _workspaceMaps?.find(m => m.id === mapId && m.schema !== 'hobunji_building_interior.v1');
+          if (_wsOverride) {
+            transitions.length = 0;
+            exitTileSet.clear();
+            for (const t of (_wsOverride.transitions || [])) {
+              if (!Number.isFinite(t.col) || !Number.isFinite(t.row)) continue;
+              const target = !t.targetMapId ? 'exit_building' : 'building';
+              const tr = { col: t.col, row: t.row, area: mapId, target };
+              if (t.targetMapId) { tr.targetMapId = t.targetMapId; tr.targetCol = t.spawnCol ?? 0; tr.targetRow = t.spawnRow ?? 0; }
+              transitions.push(tr);
+              if (!t.targetMapId) exitTileSet.add(`${t.col},${t.row}`);
+            }
+          }
           const bScene = new THREE.Scene();
           bScene.background = new THREE.Color(0x2a1a0a);
           bScene.add(new THREE.AmbientLight(0xfff5e0, 0.7));
@@ -2156,7 +2178,8 @@
               }, undefined, () => {});
             }
           }
-          registerNpcStations((mapData.npcStations || []).map(st => ({ ...st, area: mapId })), mapId);
+          const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
+          registerNpcStations(_stationSrc.map(st => ({ ...st, area: mapId })), mapId);
           const buildingPaths = (mapData.npcPaths || []).filter(p => p && Array.isArray(p.nodes) && p.nodes.length > 0)
             .map(p => ({ ...p, area: mapId }));
           const buildingRoutes = normalizeRoutes(
