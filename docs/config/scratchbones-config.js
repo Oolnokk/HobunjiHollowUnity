@@ -113,6 +113,15 @@ window.SCRATCHBONES_CONFIG = {
         "style": "primary",
         "noTargetMessage": "No one nearby to talk to."
       },
+      "generalStoreButton": {
+        "icon": "🛒",
+        "label": "Shop",
+        "action": "open_general_store",
+        "style": "primary",
+        "npcIds": ["furunji_funji", "foroji_funji"],
+        "activities": ["sitting at counter", "checking shelves"],
+        "noTargetMessage": "Find Foroji or Furunji at the general store counter or shelves to shop."
+      },
       "actionArch": {
         "radiusClamp": { "minPx": 200, "vmin": 36, "maxPx": 260 },
         "cssVar": "--scratchbones-action-arch-radius"
