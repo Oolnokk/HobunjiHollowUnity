@@ -2716,6 +2716,11 @@
             try { _cb(); } catch(e) { debugLog('scene transition error: ' + (e?.stack || e), 'error'); }
           }
         } else {
+          // Hold the black overlay until the building scene has finished loading
+          // so the player never briefly sees the farm scene on entry.
+          if (_isBuildingArea(currentArea) && _buildingScenes.has(currentArea) && !_buildingScenes.get(currentArea)) {
+            return;
+          }
           sceneTransAlpha = Math.max(0, sceneTransAlpha - dt * 2.5);
           if (sceneTransAlpha <= 0) sceneTransDir = 0;
         }
