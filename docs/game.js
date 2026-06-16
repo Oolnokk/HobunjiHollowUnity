@@ -218,6 +218,8 @@
       const _npcPortraitCanvas  = document.getElementById('npcPortraitCanvas');
       const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
       const _npcDialogueTextEl  = document.getElementById('npcDialogueText');
+      const _npcDialogueHeartsEl = document.getElementById('npcDialogueHearts');
+      const _arcContainerEl     = document.getElementById('arcContainer');
 
       function npcDialogueTextConfig() {
         return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.text || {};
@@ -266,6 +268,8 @@
         _dialogueLineIdx = 0;
         _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
         _npcDialogueTextEl.textContent = _dialogueLines[0];
+        if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = renderRelationshipHearts(rec);
+        _arcContainerEl?.classList.add('arc-hidden');
         // Paint portrait before showing panel so it doesn't pop in after fade-in
         if (walker.profile && window.NpcAvatarPreview) {
           const ctx = _npcPortraitCanvas.getContext('2d');
@@ -300,8 +304,25 @@
         dialoguePinchDistance = null;
         if (dialogueZoomConfig().resetOnDialogueClose) resetDialogueCameraZoom();
         else updateDialogueZoomIndicator();
+        _arcContainerEl?.classList.remove('arc-hidden');
         _npcDialogueEl.classList.remove('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'true');
+      }
+
+      function renderRelationshipHearts(rec) {
+        const score = rec?.relationship ?? null;
+        if (score === null) return '';
+        const clamped = Math.max(-5, Math.min(10, score));
+        const hearts = [];
+        for (let i = -5; i <= 10; i++) {
+          if (i === 0) continue;
+          if (clamped < 0) {
+            hearts.push(i < 0 && i >= clamped ? '💜' : i < 0 ? '🖤' : '🤍');
+          } else {
+            hearts.push(i <= clamped ? '❤️' : i > 0 ? '🤍' : '');
+          }
+        }
+        return hearts.filter(Boolean).join('');
       }
 
       // ── Tile / crop enums (must come first — referenced by everything below) ──
@@ -1343,16 +1364,17 @@
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
 
       function initWorldTravel(layout) {
-        if (!layout || layout.version !== 3) return;
-        worldTransitions = (layout.transitions || []).filter(t =>
-          t && Number.isFinite(t.col) && Number.isFinite(t.row) && (t.area || 'farm') !== 'town');
-        worldNpcPaths = (layout.npcPaths || []).filter(p =>
-          p && Array.isArray(p.nodes) && p.nodes.length > 0 && (p.area || 'farm') !== 'town');
-        worldRoutes = normalizeRoutes(
-          (layout.routes || []).filter(r => (r.area || 'farm') !== 'town'),
-          worldNpcPaths);
-        registerNpcStations(layout.npcStations, null);
-        rebuildRouteGraphs();
+        if (layout?.version === 3) {
+          worldTransitions = (layout.transitions || []).filter(t =>
+            t && Number.isFinite(t.col) && Number.isFinite(t.row) && (t.area || 'farm') !== 'town');
+          worldNpcPaths = (layout.npcPaths || []).filter(p =>
+            p && Array.isArray(p.nodes) && p.nodes.length > 0 && (p.area || 'farm') !== 'town');
+          worldRoutes = normalizeRoutes(
+            (layout.routes || []).filter(r => (r.area || 'farm') !== 'town'),
+            worldNpcPaths);
+          registerNpcStations(layout.npcStations, null);
+          rebuildRouteGraphs();
+        }
         // Don't fire a spot the player happens to spawn on
         _transitionLatch = travelAreaKey();
         buildTransitionMarkers();
@@ -7340,7 +7362,8 @@
         }
 
         function _outerR() {
-          return _clampedVmin(outerArchRadiusClamp);
+          const colPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--col'));
+          return Number.isFinite(colPx) && colPx > 0 ? colPx * 7.8 : _clampedVmin(outerArchRadiusClamp);
         }
         function _arcPt(deg) {
           const r = _outerR(), a = deg * Math.PI / 180;
@@ -8249,6 +8272,9 @@
         menuPauseBtn.textContent = paused ? '▶' : '⏸';
         debugLog(paused ? 'paused' : 'resumed');
       });
+
+      document.getElementById('npcDialogueContinue')?.addEventListener('click', () => { if (dialogueOpen) advanceNpcDialogue(); });
+      document.getElementById('npcDialogueLeave')?.addEventListener('click', () => { if (dialogueOpen) closeNpcDialogue(); });
 
       joystickZone.addEventListener('pointerdown', handleJoystickPointerDown);
       joystickZone.addEventListener('pointermove', handleJoystickPointerMove);
