@@ -12318,8 +12318,8 @@
         {
           "id": "spot_1mkut",
           "label": "Enter Kunji's Potions",
-          "col": 45,
-          "row": 31,
+          "col": 44,
+          "row": 35,
           "targetMapId": "map_i_kunjis_potions_F1",
           "targetSpotId": "sp_pot_entry"
         },

@@ -2465,7 +2465,10 @@
                 if (wr < wPMinR) wPMinR = wr; if (wr > wPMaxR) wPMaxR = wr;
               }
               eCol = Math.floor((wPMinC + wPMaxC + 1) / 2);
-              eRow = Math.min(TROWS_ENT - 1, Math.floor((wPMinR + wPMaxR + 1) / 2));
+              // Use the porch row closest to the structural body (not outer stairs)
+              const bldgCentroidR = (wBMinR + wBMaxR) / 2;
+              const innerPorchR = Math.abs(wPMinR - bldgCentroidR) <= Math.abs(wPMaxR - bldgCentroidR) ? wPMinR : wPMaxR;
+              eRow = Math.min(TROWS_ENT - 1, innerPorchR);
             } else {
               // No porch data: south edge of rotated bounding box
               eCol = hasBldgCells ? Math.floor((wBMinC + wBMaxC + 1) / 2) : Math.floor((bldg.gridX * 2 + (bldg.footprintW ?? 1) + 1) / 2);
@@ -3524,9 +3527,9 @@
       }
       function rotateBuildingCollisionCell(localX, localY, width, depth, rotationDeg) {
         const rot = ((Math.round((rotationDeg || 0) / 90) * 90) % 360 + 360) % 360;
-        if (rot === 90) return { x: depth - 1 - localY, y: localX };
+        if (rot === 90)  return { x: localY, y: width - 1 - localX };
         if (rot === 180) return { x: width - 1 - localX, y: depth - 1 - localY };
-        if (rot === 270) return { x: localY, y: width - 1 - localX };
+        if (rot === 270) return { x: depth - 1 - localY, y: localX };
         return { x: localX, y: localY };
       }
       function isTownBuildingCollisionTile(col, row) {
