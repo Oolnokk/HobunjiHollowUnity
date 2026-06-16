@@ -69,9 +69,10 @@ window.SCRATCHBONES_CONFIG = {
           "maxUpwardPortraitPitchDeg": 0,
           "runtimeZoom": {
             "enabled": true,
-            "initialPercent": 100,
-            "minPercent": 50,
-            "maxPercent": 250,
+            "initialPercent": 75,
+            "minPercent": 0,
+            "maxPercent": 100,
+            "maxZoomFactor": 2.5,
             "wheelSensitivity": 0.0015,
             "pinchSensitivity": 1,
             "resetOnDialogueClose": false

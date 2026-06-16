@@ -34,7 +34,7 @@
       const dialogueZoomIndicator = document.createElement('div');
       dialogueZoomIndicator.className = 'dialogue-zoom-indicator';
       dialogueZoomIndicator.setAttribute('aria-hidden', 'true');
-      threeContainer.appendChild(dialogueZoomIndicator);
+      (document.getElementById('canvasWrap') || threeContainer).appendChild(dialogueZoomIndicator);
 
       // Tool select (replaces rightCluster)
       const toolSelect      = document.getElementById('toolSelect');
@@ -1295,7 +1295,7 @@
       let npcDialogueStaging = null;
       let activeCameraMode   = cameraConfig().defaultMode || 'default';
       let activeCameraTarget = null;
-      let dialogueCameraZoom = (cameraModeConfig(npcDialogueCameraMode()).runtimeZoom?.initialPercent ?? 100) / 100;
+      let dialogueCameraZoomPercent = cameraModeConfig(npcDialogueCameraMode()).runtimeZoom?.initialPercent ?? 0;
       const dialogueZoomPointers = new Map();
       let dialoguePinchDistance = null;
       let nearbyNpcWalker    = null;
@@ -1462,22 +1462,30 @@
       function dialogueZoomConfig() { return cameraModeConfig(npcDialogueCameraMode()).runtimeZoom || {}; }
       function dialogueZoomEnabled() { return dialogueZoomConfig().enabled !== false; }
       function dialogueZoomActive() { return dialogueOpen && activeCameraMode === npcDialogueCameraMode() && dialogueZoomEnabled(); }
-      function clampDialogueZoom(value) {
+      function clampDialogueZoomPercent(value) {
         const cfg = dialogueZoomConfig();
-        return clamp(value, (cfg.minPercent ?? 50) / 100, (cfg.maxPercent ?? 250) / 100);
+        return clamp(value, cfg.minPercent ?? 0, cfg.maxPercent ?? 100);
       }
-      function setDialogueCameraZoom(value) {
-        dialogueCameraZoom = clampDialogueZoom(value);
+      function dialogueZoomFactor() {
+        const cfg = dialogueZoomConfig();
+        const minPercent = cfg.minPercent ?? 0;
+        const maxPercent = cfg.maxPercent ?? 100;
+        const range = Math.max(0.001, maxPercent - minPercent);
+        const normalized = clamp((dialogueCameraZoomPercent - minPercent) / range, 0, 1);
+        return 1 + normalized * ((cfg.maxZoomFactor ?? 2.5) - 1);
+      }
+      function setDialogueCameraZoomPercent(value) {
+        dialogueCameraZoomPercent = clampDialogueZoomPercent(value);
         updateDialogueZoomIndicator();
       }
       function updateDialogueZoomIndicator() {
         if (!dialogueZoomIndicator) return;
-        dialogueZoomIndicator.textContent = `${Math.round(dialogueCameraZoom * 100)}%`;
+        dialogueZoomIndicator.textContent = `${Math.round(dialogueCameraZoomPercent)}%`;
+        dialogueZoomIndicator.setAttribute('aria-hidden', dialogueZoomActive() ? 'false' : 'true');
         dialogueZoomIndicator.classList.toggle('open', dialogueZoomActive());
       }
       function resetDialogueCameraZoom() {
-        dialogueCameraZoom = clampDialogueZoom((dialogueZoomConfig().initialPercent ?? 100) / 100);
-        updateDialogueZoomIndicator();
+        setDialogueCameraZoomPercent(dialogueZoomConfig().initialPercent ?? 0);
       }
       function npcDialogueButtonConfig() {
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.npcDialogueButton || {};
@@ -5011,7 +5019,7 @@
       function updateCameraPosition() {
         const modeCfg = cameraModeConfig(activeCameraMode);
         const baseDistance = modeCfg.distanceTiles ?? 14;
-        const distance = dialogueZoomActive() ? baseDistance / dialogueCameraZoom : baseDistance;
+        const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
         const angle = THREE.MathUtils.degToRad(modeCfg.angleFromGroundDeg ?? 32.73);
         const tx = camTargetX, tz = camTargetZ;
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
@@ -6828,7 +6836,10 @@
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
-        if (!paused) updateNpcWalkers(dt);
+        if (!paused) {
+          updateNpcWalkers(dt);
+          if (dialogueOpen) faceNpcDialogueParticipants();
+        }
         if (currentArea === 'farm') {
           updateWaterMeshes();
           updateCropMeshes();
@@ -8282,7 +8293,7 @@
         e.preventDefault();
         if (dialogueZoomActive()) {
           const sensitivity = dialogueZoomConfig().wheelSensitivity ?? 0.0015;
-          setDialogueCameraZoom(dialogueCameraZoom * Math.exp(-e.deltaY * sensitivity));
+          setDialogueCameraZoomPercent(dialogueCameraZoomPercent + (-e.deltaY * sensitivity * 100));
           return;
         }
         const tools = ['shovel', 'hoe', 'weapon', 'axe', 'pick', 'harpoon'];
@@ -8310,7 +8321,7 @@
         const nextDistance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
         if (dialoguePinchDistance && nextDistance > 0) {
           const sensitivity = dialogueZoomConfig().pinchSensitivity ?? 1;
-          setDialogueCameraZoom(dialogueCameraZoom * Math.pow(nextDistance / dialoguePinchDistance, sensitivity));
+          setDialogueCameraZoomPercent(dialogueCameraZoomPercent + ((nextDistance / dialoguePinchDistance) - 1) * sensitivity * 100);
         }
         dialoguePinchDistance = nextDistance;
         e.preventDefault();
