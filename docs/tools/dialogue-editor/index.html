@@ -288,6 +288,9 @@ let connState = null;
 let panState  = null;
 let _seq      = 1;
 
+const GRID = 20;
+const snap = v => Math.round(v / GRID) * GRID;
+
 const $        = id => document.getElementById(id);
 const getNpc   = ()  => db?.npcs?.find(n => n.id === sel.npcId) ?? null;
 const getTree  = ()  => getNpc()?.dialogueTrees?.find(t => t.id === sel.treeId) ?? null;
@@ -310,7 +313,10 @@ function loadDatabase(json) {
       if (!Array.isArray(npc.dialogueTrees)) npc.dialogueTrees = [];
       for (const tree of npc.dialogueTrees) {
         if (!Array.isArray(tree.nodes)) tree.nodes = [];
-        tree.nodes.forEach((nd, i) => { nd.pos ??= { x: 60 + i * 260, y: 80 }; });
+        tree.nodes.forEach((nd, i) => {
+          nd.pos ??= { x: 60 + i * 260, y: 80 };
+          nd.pos.x = snap(nd.pos.x); nd.pos.y = snap(nd.pos.y);
+        });
       }
     }
     db  = parsed;
@@ -383,8 +389,8 @@ function addNode(type) {
   const w = $('canvasOuter').clientWidth  || 800;
   const h = $('canvasOuter').clientHeight || 600;
   const idx = tree.nodes.length;
-  const cx  = Math.round((w/2 - cam.panX) / cam.zoom) - 330 + (idx % 3) * 260;
-  const cy  = Math.round((h/2 - cam.panY) / cam.zoom) - 40  + Math.floor(idx/3) * 180;
+  const cx  = snap(Math.round((w/2 - cam.panX) / cam.zoom) - 320 + (idx % 3) * 260);
+  const cy  = snap(Math.round((h/2 - cam.panY) / cam.zoom) - 40  + Math.floor(idx/3) * 200);
   const nd  = { id, type, pos: { x: cx, y: cy } };
   if (type === 'text')     { nd.text = ''; nd.next = null; nd.expression = 'neutral'; nd.expressionHold = 2; nd.revealSpeed = 'normal'; }
   if (type === 'choice')   { nd.choices = [{ label: '', next: null }]; }
@@ -461,11 +467,16 @@ function updateBar() {
 function applyTransform() {
   $('canvas').style.transform = `matrix(${cam.zoom},0,0,${cam.zoom},${cam.panX},${cam.panY})`;
   $('zoomLabel').textContent  = Math.round(cam.zoom * 100) + '%';
-  const gs = 24 * cam.zoom;
+  const gs  = GRID * cam.zoom;       // minor grid (20px canvas units)
+  const gsl = GRID * 5 * cam.zoom;   // major grid (100px canvas units)
   const outer = $('canvasOuter');
-  outer.style.backgroundSize     = `${gs}px ${gs}px`;
-  outer.style.backgroundImage    = `radial-gradient(circle,rgba(38,56,79,.55) 1px,transparent 1px)`;
-  outer.style.backgroundPosition = `${cam.panX % gs}px ${cam.panY % gs}px`;
+  const px = cam.panX, py = cam.panY;
+  outer.style.backgroundSize  = `${gsl}px ${gsl}px, ${gs}px ${gs}px`;
+  outer.style.backgroundImage =
+    `radial-gradient(circle,rgba(106,167,255,.45) 1.5px,transparent 1.5px),` +
+    `radial-gradient(circle,rgba(38,56,79,.65) 1px,transparent 1px)`;
+  outer.style.backgroundPosition =
+    `${px % gsl}px ${py % gsl}px, ${px % gs}px ${py % gs}px`;
 }
 
 function renderCanvas() {
@@ -584,9 +595,19 @@ function portCanvasPos(portEl) {
   };
 }
 
-function bezierPath(x1, y1, x2, y2) {
-  const dx = Math.max(Math.abs(x2 - x1) * 0.5, 50);
-  return `M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}`;
+function orthoPath(x1, y1, x2, y2) {
+  x1 = Math.round(x1); y1 = Math.round(y1);
+  x2 = Math.round(x2); y2 = Math.round(y2);
+  const STUB = 28;
+  if (x2 >= x1 + STUB * 2) {
+    if (y1 === y2) return `M${x1},${y1} H${x2}`;
+    const mx = Math.round((x1 + x2) / 2);
+    return `M${x1},${y1} H${mx} V${y2} H${x2}`;
+  }
+  // Backward / tight — step out from both ports, meet at mid-Y
+  const ex = x1 + STUB, nx = x2 - STUB;
+  const my = y1 === y2 ? y1 + 52 : Math.round((y1 + y2) / 2);
+  return `M${x1},${y1} H${ex} V${my} H${nx} V${y2} H${x2}`;
 }
 
 function renderSvg() {
@@ -595,11 +616,12 @@ function renderSvg() {
   if (!tree) { svg.innerHTML = ''; return; }
   requestAnimationFrame(() => {
     const paths = [];
-    const curve = (op, ip, color) => {
+    const curve = (op, ip, color, dash='') => {
       if (!op || !ip) return;
       const p1 = portCanvasPos(op), p2 = portCanvasPos(ip);
-      paths.push(`<path d="${bezierPath(p1.x,p1.y,p2.x,p2.y)}"
-        stroke="${color}" stroke-width="2" fill="none" stroke-linecap="round"/>`);
+      paths.push(`<path d="${orthoPath(p1.x,p1.y,p2.x,p2.y)}"
+        stroke="${color}" stroke-width="2" fill="none" stroke-linejoin="miter"
+        stroke-linecap="square"${dash?` stroke-dasharray="${dash}"`:''}/>`);
     };
     for (const nd of (tree.nodes || [])) {
       if (nd.type === 'text' && nd.next) {
@@ -629,10 +651,9 @@ function renderSvg() {
             const ip = document.querySelector(`.port-in[data-nid="${s.nodeId}"]`);
             if (!ip) return;
             const p2 = portCanvasPos(ip);
-            const dx = Math.max(Math.abs(p2.x - sx)*0.45, 40);
-            paths.push(`<path d="M${sx},${sy} C${sx+dx},${sy} ${p2.x-dx},${p2.y} ${p2.x},${p2.y}"
-              stroke="rgba(45,212,191,.4)" stroke-width="1.5" fill="none"
-              stroke-dasharray="5 4" stroke-linecap="round"/>`);
+            paths.push(`<path d="${orthoPath(sx, sy, p2.x, p2.y)}"
+              stroke="rgba(45,212,191,.38)" stroke-width="1.5" fill="none"
+              stroke-dasharray="5 4" stroke-linejoin="miter" stroke-linecap="square"/>`);
           });
         }
         // Flow ports
@@ -975,8 +996,8 @@ function onMouseMove(e) {
   if (dragState) {
     const nd = getNode(dragState.nid);
     if (nd) {
-      nd.pos.x = Math.round(dragState.nx + (e.clientX - dragState.sx) / cam.zoom);
-      nd.pos.y = Math.round(dragState.ny + (e.clientY - dragState.sy) / cam.zoom);
+      nd.pos.x = snap(dragState.nx + (e.clientX - dragState.sx) / cam.zoom);
+      nd.pos.y = snap(dragState.ny + (e.clientY - dragState.sy) / cam.zoom);
       const el = document.querySelector(`.node[data-nid="${dragState.nid}"]`);
       if (el) { el.style.left = nd.pos.x + 'px'; el.style.top = nd.pos.y + 'px'; }
       renderSvg();
@@ -992,8 +1013,9 @@ function onMouseMove(e) {
     const or = $('canvasOuter').getBoundingClientRect();
     connState.curX = (e.clientX - or.left - cam.panX) / cam.zoom;
     connState.curY = (e.clientY - or.top  - cam.panY) / cam.zoom;
-    connState.preview = `<path d="${bezierPath(connState.sx,connState.sy,connState.curX,connState.curY)}"
-      stroke="rgba(255,255,255,.3)" stroke-width="1.5" fill="none" stroke-dasharray="6 4"/>`;
+    connState.preview = `<path d="${orthoPath(connState.sx,connState.sy,connState.curX,connState.curY)}"
+      stroke="rgba(255,255,255,.35)" stroke-width="1.5" fill="none"
+      stroke-dasharray="6 4" stroke-linejoin="miter" stroke-linecap="square"/>`;
     renderSvg();
   }
 }
@@ -1080,8 +1102,8 @@ function autoOrganize() {
     }
   });
 
-  // Assign positions
-  const COL_W = 340, ROW_H = 200;
+  // Assign positions (snapped to GRID)
+  const COL_W = snap(340), ROW_H = snap(200);
   for (const [depth, ids] of byDepth) {
     ids.forEach((id, row) => {
       const nd = nodes.find(n => n.id === id);
