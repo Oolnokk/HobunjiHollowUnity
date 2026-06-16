@@ -35,6 +35,18 @@ window.SCRATCHBONES_CONFIG = {
         "beelineSampleStepTiles": 0.25
       }
     },
+    "npcDialogue": {
+      "staging": {
+        "playerDiagonalOffsets": [
+          { "x": -1, "y": 1 },
+          { "x": 1, "y": 1 }
+        ],
+        "moveSpeedTilesPerSecond": 4.25,
+        "arrivalRadiusTiles": 0.08,
+        "faceLerp": 0.28,
+        "npcFaceCameraLerp": 0.28
+      }
+    },
     "camera": {
       "defaultMode": "default",
       "dialogueMode": "npcDialogue",

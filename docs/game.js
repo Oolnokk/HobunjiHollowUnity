@@ -227,7 +227,8 @@
         _dialogueWalker = walker;
         activeCameraMode = npcDialogueCameraMode();
         activeCameraTarget = walker.root;
-        walker.pause = Infinity; // freeze in place
+        beginNpcDialogueStaging(walker);
+        walker.pause = Infinity; // freeze in place while the player stages the conversation
         _dialogueLines = _npcDialogueLines(rec);
         _dialogueLineIdx = 0;
         _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
@@ -253,6 +254,7 @@
         dialogueOpen = false;
         _dialogueLines = [];
         _dialogueLineIdx = 0;
+        npcDialogueStaging = null;
         if (_dialogueWalker) {
           _dialogueWalker.pause = 0;
           _dialogueWalker.catchup = 3.5;
@@ -1281,6 +1283,7 @@
       let _dialogueLines     = [];
       let _dialogueLineIdx   = 0;
       let _dialogueWalker    = null;
+      let npcDialogueStaging = null;
       let activeCameraMode   = cameraConfig().defaultMode || 'default';
       let activeCameraTarget = null;
       let nearbyNpcWalker    = null;
@@ -1436,6 +1439,7 @@
       const NPC_SPECIES_IDS = ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'];
 
       function npcMovementConfig() { return window.SCRATCHBONES_CONFIG?.game?.movement?.npc || {}; }
+      function npcDialogueStagingConfig() { return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.staging || {}; }
       function cameraConfig() { return window.SCRATCHBONES_CONFIG?.game?.camera || {}; }
       function cameraModesConfig() { return cameraConfig().modes || {}; }
       function cameraModeConfig(mode) {
@@ -1447,6 +1451,75 @@
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.npcDialogueButton || {};
       }
       function npcDialogueAction() { return npcDialogueButtonConfig().action || 'npc_dialogue'; }
+
+      function npcDialogueStagingOffsets() {
+        const offsets = npcDialogueStagingConfig().playerDiagonalOffsets;
+        return Array.isArray(offsets) && offsets.length ? offsets : [{ x: -1, y: 1 }, { x: 1, y: 1 }];
+      }
+
+      function beginNpcDialogueStaging(walker) {
+        const npcX = walker?.root?.position?.x;
+        const npcZ = walker?.root?.position?.z;
+        if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
+        const playerWorldX = player.x / TILE;
+        const playerWorldZ = player.y / TILE;
+        const candidates = npcDialogueStagingOffsets().map(offset => ({
+          x: npcX + (Number(offset.x) || 0),
+          z: npcZ + (Number(offset.y) || 0),
+        }));
+        candidates.sort((a, b) => Math.hypot(playerWorldX - a.x, playerWorldZ - a.z) - Math.hypot(playerWorldX - b.x, playerWorldZ - b.z));
+        const target = candidates.find(pos => canPlayerOccupy(pos.x * TILE, pos.z * TILE)) || candidates[0];
+        npcDialogueStaging = { walker, targetX: target.x, targetZ: target.z };
+        player.vx = 0;
+        player.vy = 0;
+      }
+
+      function faceNpcDialogueParticipants(dt) {
+        const walker = npcDialogueStaging?.walker || _dialogueWalker;
+        if (!walker?.root) return;
+        const cfg = npcDialogueStagingConfig();
+        const playerWorldX = player.x / TILE;
+        const playerWorldZ = player.y / TILE;
+        const npcX = walker.root.position.x;
+        const npcZ = walker.root.position.z;
+        const playerTargetAngle = Math.atan2(npcZ - playerWorldZ, npcX - playerWorldX);
+        facingAngle += angleDiff(playerTargetAngle, facingAngle) * (cfg.faceLerp ?? 0.28);
+        player.angle = facingAngle;
+        const npcTargetAngle = Math.atan2(camera.position.z - npcZ, camera.position.x - npcX);
+        const npcTargetRot = -npcTargetAngle + Math.PI / 2;
+        walker.rot += angleDiff(npcTargetRot, walker.rot) * (cfg.npcFaceCameraLerp ?? 0.28);
+        walker.root.rotation.y = walker.rot;
+      }
+
+      function updateNpcDialogueStaging(dt) {
+        if (!npcDialogueStaging?.walker?.root) return;
+        const cfg = npcDialogueStagingConfig();
+        const speed = (cfg.moveSpeedTilesPerSecond ?? 4.25) * TILE;
+        const arrival = (cfg.arrivalRadiusTiles ?? 0.08) * TILE;
+        const targetX = npcDialogueStaging.targetX * TILE;
+        const targetY = npcDialogueStaging.targetZ * TILE;
+        const dx = targetX - player.x;
+        const dy = targetY - player.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= arrival) {
+          player.x = targetX;
+          player.y = targetY;
+          player.vx = 0;
+          player.vy = 0;
+          faceNpcDialogueParticipants(dt);
+          return;
+        }
+        const step = Math.min(dist, speed * dt);
+        const desiredX = player.x + dx / dist * step;
+        const desiredY = player.y + dy / dist * step;
+        let moved = false;
+        if (canPlayerOccupy(desiredX, player.y)) { player.x = desiredX; moved = true; }
+        if (canPlayerOccupy(player.x, desiredY)) { player.y = desiredY; moved = true; }
+        player.vx = moved ? dx / dist * speed : 0;
+        player.vy = moved ? dy / dist * speed : 0;
+        faceNpcDialogueParticipants(dt);
+      }
+
       function npcDialogueButton() {
         const cfg = npcDialogueButtonConfig();
         const name = nearbyNpcWalker?.rec?.name;
@@ -3738,7 +3811,7 @@
       }
 
       function updateMovement(dt) {
-        if (dialogueOpen) { player.vx *= 0.75; player.vy *= 0.75; return; }
+        if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         const keyboardVector = getKeyboardVector();
         const usingKeyboard = keyboardVector.active;
         let ix = usingKeyboard ? keyboardVector.x : input.x;
