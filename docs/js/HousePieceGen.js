@@ -651,8 +651,8 @@
     var matStone  = opts.matStone  || new THREE.MeshLambertMaterial({ color: 0x888888, side: THREE.DoubleSide });
     var matTube   = opts.matTube   || new THREE.MeshLambertMaterial({ color: 0x9c6240, side: THREE.FrontSide });
 
-    var BOARD_TAGS = { porch: 1, porchStair: 1, railing: 1 };
-    var STONE_TAGS = { entryTunnel: 1, chimney: 1 };
+    var BOARD_TAGS = { porch: 1, porchStair: 1, railing: 1, floor: 1 };
+    var STONE_TAGS = { chimney: 1 };
 
     var group       = new THREE.Group();
     var bodyPanels  = [];
@@ -682,17 +682,17 @@
                    extensionFace: f.extensionFace };
       allOff.push(fOff);
 
-      // Wall faces → WallBuilder panels
-      if (hideWalls && tag === 'wall') {
+      // Wall and entry-tunnel faces → WallBuilder panels (hidden from base mesh)
+      if (hideWalls && (tag === 'wall' || tag === 'entryTunnel')) {
         var panel = _faceToPanel(fOff);
         if (f.gableEnd) gablePanels.push(panel);
         else bodyPanels.push(panel);
         continue;
       }
 
-      // Skip interior-only faces: extension floor undersides, main building floor/ceiling
+      // Skip interior-only faces: extension floor undersides, main building ceiling
       if (f.extensionFace === 'floor') continue;
-      if (tag === 'floor' || tag === 'ceiling') continue;
+      if (tag === 'ceiling') continue;
 
       // Collect roof faces for shingle generation
       if (tag === 'roof') roofFaces.push(fOff);

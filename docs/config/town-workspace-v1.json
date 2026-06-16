@@ -841,15 +841,19 @@
           "crop": ""
         },
         "28,3": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "29,3": {
           "type": "path",
           "crop": ""
         },
+        "30,3": {
+          "type": "path",
+          "crop": ""
+        },
         "31,3": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "32,3": {
@@ -1089,7 +1093,7 @@
           "crop": ""
         },
         "31,4": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "32,4": {
@@ -1329,7 +1333,7 @@
           "crop": ""
         },
         "31,5": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "32,5": {
@@ -2285,7 +2289,7 @@
           "crop": ""
         },
         "30,9": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "31,9": {
@@ -2525,7 +2529,7 @@
           "crop": ""
         },
         "30,10": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "31,10": {
@@ -2989,7 +2993,7 @@
           "crop": ""
         },
         "26,12": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "27,12": {
@@ -3001,7 +3005,7 @@
           "crop": ""
         },
         "29,12": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "30,12": {
@@ -3241,7 +3245,7 @@
           "crop": ""
         },
         "29,13": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "30,13": {
@@ -3462,6 +3466,14 @@
         },
         "24,14": {
           "type": "grass",
+          "crop": ""
+        },
+        "25,14": {
+          "type": "grass",
+          "crop": ""
+        },
+        "26,14": {
+          "type": "path",
           "crop": ""
         },
         "27,14": {
@@ -3697,7 +3709,11 @@
           "crop": ""
         },
         "25,15": {
-          "type": "grass",
+          "type": "path",
+          "crop": ""
+        },
+        "26,15": {
+          "type": "path",
           "crop": ""
         },
         "27,15": {
@@ -3709,6 +3725,10 @@
           "crop": ""
         },
         "29,15": {
+          "type": "grass",
+          "crop": ""
+        },
+        "30,15": {
           "type": "grass",
           "crop": ""
         },
@@ -3924,6 +3944,10 @@
           "type": "grass",
           "crop": ""
         },
+        "24,16": {
+          "type": "grass",
+          "crop": ""
+        },
         "25,16": {
           "type": "path",
           "crop": ""
@@ -3933,6 +3957,10 @@
           "crop": ""
         },
         "27,16": {
+          "type": "path",
+          "crop": ""
+        },
+        "28,16": {
           "type": "path",
           "crop": ""
         },
@@ -4017,6 +4045,10 @@
           "crop": ""
         },
         "49,16": {
+          "type": "tilled",
+          "crop": ""
+        },
+        "50,16": {
           "type": "tilled",
           "crop": ""
         },
@@ -4116,6 +4148,10 @@
           "type": "grass",
           "crop": ""
         },
+        "15,17": {
+          "type": "grass",
+          "crop": ""
+        },
         "16,17": {
           "type": "grass",
           "crop": ""
@@ -4149,7 +4185,15 @@
           "crop": ""
         },
         "24,17": {
-          "type": "grass",
+          "type": "path",
+          "crop": ""
+        },
+        "25,17": {
+          "type": "path",
+          "crop": ""
+        },
+        "26,17": {
+          "type": "path",
           "crop": ""
         },
         "27,17": {
@@ -4241,6 +4285,10 @@
           "crop": ""
         },
         "49,17": {
+          "type": "grass",
+          "crop": ""
+        },
+        "50,17": {
           "type": "grass",
           "crop": ""
         },
@@ -4456,6 +4504,10 @@
           "type": "grass",
           "crop": ""
         },
+        "44,18": {
+          "type": "grass",
+          "crop": ""
+        },
         "45,18": {
           "type": "grass",
           "crop": ""
@@ -4609,7 +4661,7 @@
           "crop": ""
         },
         "23,19": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "24,19": {
@@ -4685,6 +4737,10 @@
           "crop": ""
         },
         "42,19": {
+          "type": "grass",
+          "crop": ""
+        },
+        "43,19": {
           "type": "grass",
           "crop": ""
         },
@@ -4844,6 +4900,10 @@
           "type": "grass",
           "crop": ""
         },
+        "23,20": {
+          "type": "path",
+          "crop": ""
+        },
         "24,20": {
           "type": "path",
           "crop": ""
@@ -4857,6 +4917,14 @@
           "crop": ""
         },
         "27,20": {
+          "type": "grass",
+          "crop": ""
+        },
+        "28,20": {
+          "type": "grass",
+          "crop": ""
+        },
+        "29,20": {
           "type": "grass",
           "crop": ""
         },
@@ -4904,6 +4972,10 @@
           "type": "grass",
           "crop": ""
         },
+        "41,20": {
+          "type": "grass",
+          "crop": ""
+        },
         "42,20": {
           "type": "grass",
           "crop": ""
@@ -4913,6 +4985,10 @@
           "crop": ""
         },
         "44,20": {
+          "type": "grass",
+          "crop": ""
+        },
+        "45,20": {
           "type": "grass",
           "crop": ""
         },
@@ -5076,6 +5152,10 @@
           "type": "path",
           "crop": ""
         },
+        "26,21": {
+          "type": "grass",
+          "crop": ""
+        },
         "27,21": {
           "type": "grass",
           "crop": ""
@@ -5096,6 +5176,10 @@
           "type": "grass",
           "crop": ""
         },
+        "32,21": {
+          "type": "grass",
+          "crop": ""
+        },
         "33,21": {
           "type": "grass",
           "crop": ""
@@ -5109,6 +5193,10 @@
           "crop": ""
         },
         "36,21": {
+          "type": "grass",
+          "crop": ""
+        },
+        "37,21": {
           "type": "grass",
           "crop": ""
         },
@@ -5132,6 +5220,10 @@
           "type": "grass",
           "crop": ""
         },
+        "43,21": {
+          "type": "grass",
+          "crop": ""
+        },
         "44,21": {
           "type": "grass",
           "crop": ""
@@ -5145,6 +5237,10 @@
           "crop": ""
         },
         "47,21": {
+          "type": "grass",
+          "crop": ""
+        },
+        "48,21": {
           "type": "grass",
           "crop": ""
         },
@@ -5213,7 +5309,7 @@
           "crop": ""
         },
         "5,22": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "6,22": {
@@ -5257,11 +5353,11 @@
           "crop": ""
         },
         "16,22": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "17,22": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "18,22": {
@@ -5294,6 +5390,10 @@
         },
         "25,22": {
           "type": "path",
+          "crop": ""
+        },
+        "26,22": {
+          "type": "grass",
           "crop": ""
         },
         "27,22": {
@@ -5348,6 +5448,10 @@
           "type": "grass",
           "crop": ""
         },
+        "40,22": {
+          "type": "grass",
+          "crop": ""
+        },
         "41,22": {
           "type": "grass",
           "crop": ""
@@ -5360,7 +5464,15 @@
           "type": "grass",
           "crop": ""
         },
+        "44,22": {
+          "type": "grass",
+          "crop": ""
+        },
         "45,22": {
+          "type": "grass",
+          "crop": ""
+        },
+        "46,22": {
           "type": "grass",
           "crop": ""
         },
@@ -5425,7 +5537,7 @@
           "crop": ""
         },
         "2,23": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "3,23": {
@@ -5497,7 +5609,7 @@
           "crop": ""
         },
         "20,23": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "21,23": {
@@ -5514,6 +5626,14 @@
         },
         "24,23": {
           "type": "path",
+          "crop": ""
+        },
+        "25,23": {
+          "type": "path",
+          "crop": ""
+        },
+        "26,23": {
+          "type": "grass",
           "crop": ""
         },
         "27,23": {
@@ -5565,6 +5685,10 @@
           "crop": ""
         },
         "39,23": {
+          "type": "grass",
+          "crop": ""
+        },
+        "40,23": {
           "type": "grass",
           "crop": ""
         },
@@ -5733,7 +5857,7 @@
           "crop": ""
         },
         "22,24": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "23,24": {
@@ -5746,6 +5870,10 @@
         },
         "25,24": {
           "type": "path",
+          "crop": ""
+        },
+        "26,24": {
+          "type": "grass",
           "crop": ""
         },
         "27,24": {
@@ -5812,6 +5940,10 @@
           "type": "grass",
           "crop": ""
         },
+        "43,24": {
+          "type": "grass",
+          "crop": ""
+        },
         "44,24": {
           "type": "grass",
           "crop": ""
@@ -5857,26 +5989,30 @@
           "crop": ""
         },
         "55,24": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "56,24": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "57,24": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "58,24": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "59,24": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "0,25": {
+          "type": "path",
+          "crop": ""
+        },
+        "1,25": {
           "type": "path",
           "crop": ""
         },
@@ -5933,7 +6069,7 @@
           "crop": ""
         },
         "15,25": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "16,25": {
@@ -5992,6 +6128,10 @@
           "type": "grass",
           "crop": ""
         },
+        "30,25": {
+          "type": "grass",
+          "crop": ""
+        },
         "31,25": {
           "type": "grass",
           "crop": ""
@@ -6001,6 +6141,14 @@
           "crop": ""
         },
         "33,25": {
+          "type": "grass",
+          "crop": ""
+        },
+        "34,25": {
+          "type": "grass",
+          "crop": ""
+        },
+        "35,25": {
           "type": "grass",
           "crop": ""
         },
@@ -6073,27 +6221,31 @@
           "crop": ""
         },
         "53,25": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "54,25": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "55,25": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "56,25": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "57,25": {
-          "type": "path",
+          "type": "grass",
+          "crop": ""
+        },
+        "58,25": {
+          "type": "grass",
           "crop": ""
         },
         "59,25": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "0,26": {
@@ -6284,6 +6436,10 @@
           "type": "grass",
           "crop": ""
         },
+        "47,26": {
+          "type": "grass",
+          "crop": ""
+        },
         "48,26": {
           "type": "grass",
           "crop": ""
@@ -6297,39 +6453,39 @@
           "crop": ""
         },
         "51,26": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "52,26": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "53,26": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "54,26": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "55,26": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "56,26": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "57,26": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "58,26": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "59,26": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "0,27": {
@@ -6437,7 +6593,7 @@
           "crop": ""
         },
         "26,27": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "27,27": {
@@ -6529,31 +6685,31 @@
           "crop": ""
         },
         "49,27": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "50,27": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "51,27": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "52,27": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "53,27": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "54,27": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "55,27": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "56,27": {
@@ -6561,6 +6717,14 @@
           "crop": ""
         },
         "57,27": {
+          "type": "grass",
+          "crop": ""
+        },
+        "58,27": {
+          "type": "grass",
+          "crop": ""
+        },
+        "59,27": {
           "type": "grass",
           "crop": ""
         },
@@ -6673,115 +6837,115 @@
           "crop": ""
         },
         "27,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "28,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "29,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "30,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "31,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "32,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "33,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "34,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "35,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "36,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "37,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "38,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "39,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "40,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "41,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "42,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "43,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "44,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "45,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "46,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "47,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "48,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "49,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "50,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "51,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "52,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "53,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "54,28": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "55,28": {
@@ -6913,115 +7077,115 @@
           "crop": ""
         },
         "27,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "28,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "29,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "30,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "31,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "32,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "33,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "34,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "35,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "36,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "37,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "38,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "39,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "40,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "41,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "42,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "43,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "44,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "45,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "46,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "47,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "48,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "49,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "50,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "51,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "52,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "53,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "54,29": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "55,29": {
@@ -7152,92 +7316,100 @@
           "type": "path",
           "crop": ""
         },
+        "27,30": {
+          "type": "grass",
+          "crop": ""
+        },
         "28,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "29,30": {
-          "type": "path",
+          "type": "grass",
+          "crop": ""
+        },
+        "30,30": {
+          "type": "grass",
           "crop": ""
         },
         "31,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "32,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "33,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "34,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "35,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "36,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "37,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "38,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "39,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "40,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "41,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "42,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "43,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "44,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "45,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "46,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "47,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "48,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "49,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "50,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "51,30": {
@@ -7245,15 +7417,15 @@
           "crop": ""
         },
         "52,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "53,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "54,30": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "55,30": {
@@ -7384,6 +7556,10 @@
           "type": "path",
           "crop": ""
         },
+        "27,31": {
+          "type": "path",
+          "crop": ""
+        },
         "28,31": {
           "type": "grass",
           "crop": ""
@@ -7481,11 +7657,11 @@
           "crop": ""
         },
         "52,31": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "53,31": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "54,31": {
@@ -7493,23 +7669,23 @@
           "crop": ""
         },
         "55,31": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "56,31": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "57,31": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "58,31": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "59,31": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "0,32": {
@@ -7549,6 +7725,10 @@
           "crop": ""
         },
         "9,32": {
+          "type": "grass",
+          "crop": ""
+        },
+        "10,32": {
           "type": "grass",
           "crop": ""
         },
@@ -7625,6 +7805,10 @@
           "crop": ""
         },
         "29,32": {
+          "type": "grass",
+          "crop": ""
+        },
+        "30,32": {
           "type": "grass",
           "crop": ""
         },
@@ -7709,11 +7893,11 @@
           "crop": ""
         },
         "51,32": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "52,32": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "53,32": {
@@ -7725,26 +7909,34 @@
           "crop": ""
         },
         "55,32": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "56,32": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "57,32": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "58,32": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "59,32": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "0,33": {
+          "type": "grass",
+          "crop": ""
+        },
+        "1,33": {
+          "type": "grass",
+          "crop": ""
+        },
+        "2,33": {
           "type": "grass",
           "crop": ""
         },
@@ -7849,23 +8041,23 @@
           "crop": ""
         },
         "28,33": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "29,33": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "30,33": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "31,33": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "32,33": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "33,33": {
@@ -7873,6 +8065,10 @@
           "crop": ""
         },
         "34,33": {
+          "type": "grass",
+          "crop": ""
+        },
+        "35,33": {
           "type": "grass",
           "crop": ""
         },
@@ -7953,23 +8149,23 @@
           "crop": ""
         },
         "55,33": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "56,33": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "57,33": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "58,33": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "59,33": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "0,34": {
@@ -8053,7 +8249,7 @@
           "crop": ""
         },
         "20,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "21,34": {
@@ -8089,87 +8285,91 @@
           "crop": ""
         },
         "29,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "30,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "31,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "32,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "33,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "34,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "35,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "36,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "37,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "38,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "39,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "40,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "41,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "42,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "43,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "44,34": {
-          "type": "grass",
+          "type": "path",
+          "crop": ""
+        },
+        "45,34": {
+          "type": "path",
           "crop": ""
         },
         "46,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "47,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "48,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "49,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "50,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "51,34": {
@@ -8185,11 +8385,11 @@
           "crop": ""
         },
         "54,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "55,34": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "56,34": {
@@ -8249,15 +8449,15 @@
           "crop": ""
         },
         "10,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "11,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "12,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "13,35": {
@@ -8285,7 +8485,7 @@
           "crop": ""
         },
         "19,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "20,35": {
@@ -8305,6 +8505,10 @@
           "crop": ""
         },
         "24,35": {
+          "type": "path",
+          "crop": ""
+        },
+        "25,35": {
           "type": "path",
           "crop": ""
         },
@@ -8341,63 +8545,63 @@
           "crop": ""
         },
         "34,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "35,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "36,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "37,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "38,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "39,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "40,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "41,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "42,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "43,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "44,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "45,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "46,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "47,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "48,35": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "49,35": {
@@ -8421,6 +8625,10 @@
           "crop": ""
         },
         "54,35": {
+          "type": "path",
+          "crop": ""
+        },
+        "55,35": {
           "type": "grass",
           "crop": ""
         },
@@ -8513,7 +8721,7 @@
           "crop": ""
         },
         "18,36": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "19,36": {
@@ -8533,7 +8741,7 @@
           "crop": ""
         },
         "23,36": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "24,36": {
@@ -8653,7 +8861,7 @@
           "crop": ""
         },
         "53,36": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "54,36": {
@@ -8741,7 +8949,7 @@
           "crop": ""
         },
         "15,37": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "16,37": {
@@ -8749,7 +8957,7 @@
           "crop": ""
         },
         "17,37": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "18,37": {
@@ -8777,7 +8985,7 @@
           "crop": ""
         },
         "24,37": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "25,37": {
@@ -8940,6 +9148,10 @@
           "type": "grass",
           "crop": ""
         },
+        "5,38": {
+          "type": "grass",
+          "crop": ""
+        },
         "6,38": {
           "type": "grass",
           "crop": ""
@@ -9009,7 +9221,7 @@
           "crop": ""
         },
         "23,38": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "24,38": {
@@ -9037,7 +9249,7 @@
           "crop": ""
         },
         "30,38": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "31,38": {
@@ -9133,6 +9345,10 @@
           "crop": ""
         },
         "54,38": {
+          "type": "grass",
+          "crop": ""
+        },
+        "55,38": {
           "type": "grass",
           "crop": ""
         },
@@ -9241,7 +9457,7 @@
           "crop": ""
         },
         "22,39": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "23,39": {
@@ -9477,7 +9693,7 @@
           "crop": ""
         },
         "21,40": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "22,40": {
@@ -9525,6 +9741,14 @@
           "crop": ""
         },
         "33,40": {
+          "type": "grass",
+          "crop": ""
+        },
+        "34,40": {
+          "type": "grass",
+          "crop": ""
+        },
+        "35,40": {
           "type": "grass",
           "crop": ""
         },
@@ -9705,7 +9929,7 @@
           "crop": ""
         },
         "20,41": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "21,41": {
@@ -9745,7 +9969,7 @@
           "crop": ""
         },
         "30,41": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "31,41": {
@@ -9880,6 +10104,14 @@
           "type": "grass",
           "crop": ""
         },
+        "4,42": {
+          "type": "grass",
+          "crop": ""
+        },
+        "5,42": {
+          "type": "grass",
+          "crop": ""
+        },
         "6,42": {
           "type": "grass",
           "crop": ""
@@ -9933,7 +10165,7 @@
           "crop": ""
         },
         "19,42": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "20,42": {
@@ -9956,12 +10188,16 @@
           "type": "grass",
           "crop": ""
         },
+        "25,42": {
+          "type": "grass",
+          "crop": ""
+        },
         "26,42": {
           "type": "grass",
           "crop": ""
         },
         "27,42": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "28,42": {
@@ -10217,7 +10453,7 @@
           "crop": ""
         },
         "31,43": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "32,43": {
@@ -10405,7 +10641,7 @@
           "crop": ""
         },
         "18,44": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "19,44": {
@@ -10657,7 +10893,7 @@
           "crop": ""
         },
         "21,45": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "22,45": {
@@ -10685,7 +10921,7 @@
           "crop": ""
         },
         "28,45": {
-          "type": "path",
+          "type": "grass",
           "crop": ""
         },
         "29,45": {
@@ -10881,7 +11117,7 @@
           "crop": ""
         },
         "17,46": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "18,46": {
@@ -10929,6 +11165,10 @@
           "crop": ""
         },
         "29,46": {
+          "type": "path",
+          "crop": ""
+        },
+        "30,46": {
           "type": "path",
           "crop": ""
         },
@@ -10981,6 +11221,10 @@
           "crop": ""
         },
         "43,46": {
+          "type": "grass",
+          "crop": ""
+        },
+        "44,46": {
           "type": "grass",
           "crop": ""
         },
@@ -11125,7 +11369,7 @@
           "crop": ""
         },
         "20,47": {
-          "type": "grass",
+          "type": "path",
           "crop": ""
         },
         "21,47": {
@@ -11185,6 +11429,10 @@
           "crop": ""
         },
         "35,47": {
+          "type": "grass",
+          "crop": ""
+        },
+        "36,47": {
           "type": "grass",
           "crop": ""
         },
@@ -11360,7 +11608,15 @@
           "type": "path",
           "crop": ""
         },
+        "20,48": {
+          "type": "grass",
+          "crop": ""
+        },
         "21,48": {
+          "type": "grass",
+          "crop": ""
+        },
+        "22,48": {
           "type": "grass",
           "crop": ""
         },
@@ -11384,7 +11640,15 @@
           "type": "shrub",
           "crop": ""
         },
+        "28,48": {
+          "type": "grass",
+          "crop": ""
+        },
         "29,48": {
+          "type": "path",
+          "crop": ""
+        },
+        "30,48": {
           "type": "path",
           "crop": ""
         },
@@ -11743,275 +12007,241 @@
         "59,49": {
           "type": "grass",
           "crop": ""
-        },
-        "27,31": {
-          "type": "path",
-          "crop": ""
-        },
-        "27,30": {
-          "type": "path",
-          "crop": ""
-        },
-        "28,20": {
-          "type": "grass",
-          "crop": ""
-        },
-        "29,20": {
-          "type": "grass",
-          "crop": ""
-        },
-        "30,15": {
-          "type": "grass",
-          "crop": ""
-        },
-        "28,16": {
-          "type": "grass",
-          "crop": ""
-        },
-        "26,15": {
-          "type": "path",
-          "crop": ""
-        },
-        "26,17": {
-          "type": "path",
-          "crop": ""
-        },
-        "25,17": {
-          "type": "path",
-          "crop": ""
-        },
-        "24,16": {
-          "type": "grass",
-          "crop": ""
-        },
-        "23,20": {
-          "type": "path",
-          "crop": ""
-        },
-        "48,21": {
-          "type": "grass",
-          "crop": ""
-        },
-        "50,17": {
-          "type": "grass",
-          "crop": ""
-        },
-        "50,16": {
-          "type": "tilled",
-          "crop": ""
-        },
-        "30,3": {
-          "type": "path",
-          "crop": ""
-        },
-        "25,14": {
-          "type": "grass",
-          "crop": ""
-        },
-        "26,14": {
-          "type": "path",
-          "crop": ""
-        },
-        "15,17": {
-          "type": "grass",
-          "crop": ""
-        },
-        "44,18": {
-          "type": "grass",
-          "crop": ""
-        },
-        "43,19": {
-          "type": "grass",
-          "crop": ""
-        },
-        "41,20": {
-          "type": "grass",
-          "crop": ""
-        },
-        "45,20": {
-          "type": "grass",
-          "crop": ""
-        },
-        "32,21": {
-          "type": "grass",
-          "crop": ""
-        },
-        "37,21": {
-          "type": "grass",
-          "crop": ""
-        },
-        "43,21": {
-          "type": "grass",
-          "crop": ""
-        },
-        "40,22": {
-          "type": "grass",
-          "crop": ""
-        },
-        "44,22": {
-          "type": "grass",
-          "crop": ""
-        },
-        "46,22": {
-          "type": "grass",
-          "crop": ""
-        },
-        "40,23": {
-          "type": "grass",
-          "crop": ""
-        },
-        "43,24": {
-          "type": "grass",
-          "crop": ""
-        },
-        "30,25": {
-          "type": "grass",
-          "crop": ""
-        },
-        "34,25": {
-          "type": "grass",
-          "crop": ""
-        },
-        "35,25": {
-          "type": "grass",
-          "crop": ""
-        },
-        "30,30": {
-          "type": "path",
-          "crop": ""
-        },
-        "10,32": {
-          "type": "grass",
-          "crop": ""
-        },
-        "30,32": {
-          "type": "grass",
-          "crop": ""
-        },
-        "35,33": {
-          "type": "grass",
-          "crop": ""
-        },
-        "45,34": {
-          "type": "grass",
-          "crop": ""
-        },
-        "25,35": {
-          "type": "path",
-          "crop": ""
-        },
-        "55,35": {
-          "type": "grass",
-          "crop": ""
-        },
-        "5,38": {
-          "type": "grass",
-          "crop": ""
-        },
-        "55,38": {
-          "type": "grass",
-          "crop": ""
-        },
-        "34,40": {
-          "type": "grass",
-          "crop": ""
-        },
-        "35,40": {
-          "type": "grass",
-          "crop": ""
-        },
-        "4,42": {
-          "type": "grass",
-          "crop": ""
-        },
-        "5,42": {
-          "type": "grass",
-          "crop": ""
-        },
-        "25,42": {
-          "type": "grass",
-          "crop": ""
-        },
-        "30,46": {
-          "type": "path",
-          "crop": ""
-        },
-        "44,46": {
-          "type": "grass",
-          "crop": ""
-        },
-        "36,47": {
-          "type": "grass",
-          "crop": ""
-        },
-        "22,48": {
-          "type": "grass",
-          "crop": ""
-        },
-        "28,48": {
-          "type": "grass",
-          "crop": ""
-        },
-        "47,26": {
-          "type": "grass",
-          "crop": ""
-        },
-        "25,23": {
-          "type": "path",
-          "crop": ""
-        },
-        "26,22": {
-          "type": "grass",
-          "crop": ""
-        },
-        "26,23": {
-          "type": "grass",
-          "crop": ""
-        },
-        "26,24": {
-          "type": "grass",
-          "crop": ""
-        },
-        "26,21": {
-          "type": "grass",
-          "crop": ""
-        },
-        "2,33": {
-          "type": "grass",
-          "crop": ""
-        },
-        "1,33": {
-          "type": "grass",
-          "crop": ""
-        },
-        "59,27": {
-          "type": "grass",
-          "crop": ""
-        },
-        "58,27": {
-          "type": "grass",
-          "crop": ""
-        },
-        "1,25": {
-          "type": "path",
-          "crop": ""
-        },
-        "58,25": {
-          "type": "path",
-          "crop": ""
-        },
-        "30,48": {
-          "type": "path",
-          "crop": ""
-        },
-        "20,48": {
-          "type": "grass",
-          "crop": ""
         }
       },
       "objects": {},
       "furniture": [],
       "decor": [],
+      "routes": [
+        {
+          "id": "route_wjhen",
+          "label": "Route 1",
+          "nodes": [
+            [
+              30,
+              49
+            ],
+            [
+              30,
+              45
+            ],
+            [
+              27,
+              37
+            ],
+            [
+              26,
+              34
+            ],
+            [
+              25,
+              29
+            ],
+            [
+              24,
+              26
+            ],
+            [
+              24,
+              21
+            ],
+            [
+              27,
+              14
+            ],
+            [
+              29,
+              8
+            ],
+            [
+              30,
+              0
+            ]
+          ],
+          "pathWidth": 3,
+          "paintTiles": true
+        },
+        {
+          "id": "route_7g7ae",
+          "label": "Route 2",
+          "nodes": [
+            [
+              26,
+              34
+            ],
+            [
+              37,
+              35
+            ],
+            [
+              45,
+              35
+            ],
+            [
+              48,
+              35
+            ],
+            [
+              52,
+              35
+            ],
+            [
+              55,
+              32
+            ],
+            [
+              59,
+              32
+            ]
+          ],
+          "pathWidth": 3,
+          "paintTiles": true
+        },
+        {
+          "id": "route_vjlr1",
+          "label": "Route 3",
+          "nodes": [
+            [
+              52,
+              35
+            ],
+            [
+              51,
+              35
+            ],
+            [
+              49,
+              37
+            ],
+            [
+              33,
+              37
+            ],
+            [
+              31,
+              36
+            ],
+            [
+              27,
+              37
+            ]
+          ],
+          "pathWidth": 3,
+          "paintTiles": true
+        },
+        {
+          "id": "route_qsqhf",
+          "label": "Route 4",
+          "nodes": [
+            [
+              27,
+              37
+            ],
+            [
+              27,
+              37
+            ],
+            [
+              24,
+              39
+            ],
+            [
+              21,
+              42
+            ],
+            [
+              19,
+              45
+            ],
+            [
+              18,
+              49
+            ]
+          ],
+          "pathWidth": 3,
+          "paintTiles": true
+        },
+        {
+          "id": "route_lfvot",
+          "label": "Route 5",
+          "nodes": [
+            [
+              26,
+              34
+            ],
+            [
+              23,
+              34
+            ],
+            [
+              21,
+              35
+            ],
+            [
+              19,
+              37
+            ],
+            [
+              17,
+              39
+            ],
+            [
+              15,
+              39
+            ],
+            [
+              13,
+              38
+            ],
+            [
+              11,
+              36
+            ]
+          ],
+          "pathWidth": 3,
+          "paintTiles": true
+        },
+        {
+          "id": "route_infid",
+          "label": "Route 6",
+          "nodes": [
+            [
+              24,
+              26
+            ],
+            [
+              22,
+              26
+            ],
+            [
+              18,
+              24
+            ],
+            [
+              14,
+              23
+            ],
+            [
+              7,
+              23
+            ],
+            [
+              4,
+              24
+            ],
+            [
+              1,
+              25
+            ],
+            [
+              0,
+              25
+            ]
+          ],
+          "pathWidth": 3,
+          "paintTiles": true
+        }
+      ],
       "transitions": [
         {
           "id": "sp_town_north",
@@ -12124,7 +12354,7 @@
           "label": "Funji & Son's General Store",
           "pieceFile": "config/pieces/general-store.json",
           "gridX": 35,
-          "gridZ": 32,
+          "gridZ": 30,
           "footprintW": 7,
           "footprintD": 4,
           "wbOpts": null,
@@ -12137,7 +12367,7 @@
           "label": "Kunji's Potion Shop",
           "pieceFile": "config/pieces/potion-shop.json",
           "gridX": 43,
-          "gridZ": 31,
+          "gridZ": 30,
           "footprintW": 5,
           "footprintD": 4,
           "wbOpts": null,
@@ -12150,7 +12380,7 @@
           "label": "Unumanuk Household",
           "pieceFile": "config/pieces/placeholder-medium.json",
           "gridX": 43,
-          "gridZ": 24,
+          "gridZ": 23,
           "footprintW": 5,
           "footprintD": 4,
           "wbOpts": null,
@@ -12206,239 +12436,15 @@
           "label": "Carpenter",
           "pieceFile": "config/pieces/placeholder-medium.json",
           "gridX": 35,
-          "gridZ": 24,
+          "gridZ": 23,
           "footprintW": 5,
           "footprintD": 4,
           "wbOpts": null,
           "wbGableOpts": null
         }
       ],
-      "routes": [
-        {
-          "id": "route_wjhen",
-          "label": "Route 1",
-          "nodes": [
-            [
-              30,
-              49
-            ],
-            [
-              30,
-              45
-            ],
-            [
-              27,
-              37
-            ],
-            [
-              26,
-              34
-            ],
-            [
-              25,
-              29
-            ],
-            [
-              24,
-              26
-            ],
-            [
-              24,
-              21
-            ],
-            [
-              27,
-              14
-            ],
-            [
-              29,
-              8
-            ],
-            [
-              30,
-              0
-            ]
-          ]
-        },
-        {
-          "id": "route_7g7ae",
-          "label": "Route 2",
-          "nodes": [
-            [
-              25,
-              29
-            ],
-            [
-              37,
-              29
-            ],
-            [
-              45,
-              29
-            ],
-            [
-              48,
-              29
-            ],
-            [
-              52,
-              27
-            ],
-            [
-              55,
-              25
-            ],
-            [
-              59,
-              25
-            ]
-          ]
-        },
-        {
-          "id": "route_vjlr1",
-          "label": "Route 3",
-          "nodes": [
-            [
-              52,
-              27
-            ],
-            [
-              53,
-              29
-            ],
-            [
-              53,
-              32
-            ],
-            [
-              51,
-              35
-            ],
-            [
-              49,
-              37
-            ],
-            [
-              33,
-              37
-            ],
-            [
-              31,
-              36
-            ],
-            [
-              27,
-              37
-            ]
-          ]
-        },
-        {
-          "id": "route_qsqhf",
-          "label": "Route 4",
-          "nodes": [
-            [
-              27,
-              37
-            ],
-            [
-              27,
-              37
-            ],
-            [
-              24,
-              39
-            ],
-            [
-              21,
-              42
-            ],
-            [
-              19,
-              45
-            ],
-            [
-              18,
-              49
-            ]
-          ]
-        },
-        {
-          "id": "route_lfvot",
-          "label": "Route 5",
-          "nodes": [
-            [
-              26,
-              34
-            ],
-            [
-              23,
-              34
-            ],
-            [
-              21,
-              35
-            ],
-            [
-              19,
-              37
-            ],
-            [
-              17,
-              39
-            ],
-            [
-              15,
-              39
-            ],
-            [
-              13,
-              38
-            ],
-            [
-              11,
-              36
-            ]
-          ]
-        },
-        {
-          "id": "route_infid",
-          "label": "Route 6",
-          "nodes": [
-            [
-              24,
-              26
-            ],
-            [
-              22,
-              26
-            ],
-            [
-              18,
-              24
-            ],
-            [
-              14,
-              23
-            ],
-            [
-              7,
-              23
-            ],
-            [
-              4,
-              24
-            ],
-            [
-              1,
-              25
-            ],
-            [
-              0,
-              25
-            ]
-          ]
-        }
-      ]
+      "npcPaths": [],
+      "npcStations": []
     },
     {
       "schema": "hobunji_map.v1",
@@ -45720,25 +45726,22 @@
           "type": "grass"
         },
         "1,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "2,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "3,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "4,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "5,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "6,5": {
-          "type": "grass"
-        },
-        "7,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "8,5": {
           "type": "grass"
@@ -45774,7 +45777,7 @@
           "type": "grass"
         },
         "1,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "1,8": {
           "type": "grass"
@@ -45831,22 +45834,22 @@
           "type": "grass"
         },
         "7,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "6,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "5,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "4,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "3,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "2,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "8,8": {
           "type": "grass"
@@ -45896,9 +45899,6 @@
         "11,6": {
           "type": "grass"
         },
-        "11,5": {
-          "type": "grass"
-        },
         "10,6": {
           "type": "grass"
         },
@@ -45930,7 +45930,7 @@
           "type": "grass"
         },
         "14,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "10,5": {
           "type": "grass"
@@ -45954,13 +45954,13 @@
           "type": "grass"
         },
         "10,1": {
-          "type": "grass"
+          "type": "rock"
         },
         "9,1": {
-          "type": "grass"
+          "type": "rock"
         },
         "8,1": {
-          "type": "grass"
+          "type": "rock"
         },
         "4,2": {
           "type": "grass"
@@ -45972,7 +45972,7 @@
           "type": "grass"
         },
         "11,1": {
-          "type": "grass"
+          "type": "rock"
         },
         "11,8": {
           "type": "grass"
@@ -45984,13 +45984,13 @@
           "type": "grass"
         },
         "14,2": {
-          "type": "grass"
+          "type": "rock"
         },
         "14,3": {
           "type": "grass"
         },
         "16,2": {
-          "type": "grass"
+          "type": "rock"
         },
         "16,3": {
           "type": "grass"
@@ -45999,19 +45999,19 @@
           "type": "grass"
         },
         "16,5": {
-          "type": "grass"
+          "type": "rock"
         },
         "16,6": {
-          "type": "grass"
+          "type": "rock"
         },
         "16,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "15,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "15,6": {
-          "type": "grass"
+          "type": "rock"
         },
         "15,5": {
           "type": "grass"
@@ -46026,7 +46026,7 @@
           "type": "grass"
         },
         "13,2": {
-          "type": "grass"
+          "type": "rock"
         },
         "13,3": {
           "type": "grass"
@@ -46041,7 +46041,7 @@
           "type": "grass"
         },
         "13,7": {
-          "type": "grass"
+          "type": "rock"
         },
         "12,6": {
           "type": "grass"
@@ -46062,6 +46062,12 @@
           "type": "grass"
         },
         "5,3": {
+          "type": "grass"
+        },
+        "7,5": {
+          "type": "grass"
+        },
+        "11,5": {
           "type": "grass"
         }
       },
@@ -46280,9 +46286,94 @@
       ],
       "decor": [],
       "buildings": [],
-      "npcStations": [],
+      "npcStations": [
+        {
+          "id": "station_p2x4t",
+          "label": "Sitting at Counter",
+          "col": 5,
+          "row": 6,
+          "rotY": 0,
+          "pose": "sit",
+          "toolKey": "",
+          "toolIntervalSec": 0,
+          "toolAnimStyle": ""
+        },
+        {
+          "id": "station_k7m3q",
+          "label": "Checking Shelves",
+          "col": 2,
+          "row": 6,
+          "rotY": 180,
+          "pose": "stand",
+          "toolKey": "",
+          "toolIntervalSec": 0,
+          "toolAnimStyle": ""
+        },
+        {
+          "id": "station_w9r6j",
+          "label": "Cooking",
+          "col": 9,
+          "row": 2,
+          "rotY": 180,
+          "pose": "stand",
+          "toolKey": "",
+          "toolIntervalSec": 0,
+          "toolAnimStyle": ""
+        }
+      ],
       "npcPaths": [],
-      "transitions": [],
+      "transitions": [
+        {
+          "id": "exit_mqf7tpam_4_11",
+          "exitId": "exit_mqf7tpam",
+          "col": 4,
+          "row": 11,
+          "label": "Front Door",
+          "targetMapId": "",
+          "spawnCol": 0,
+          "spawnRow": 0
+        },
+        {
+          "id": "exit_mqf7tpam_5_11",
+          "exitId": "exit_mqf7tpam",
+          "col": 5,
+          "row": 11,
+          "label": "Front Door",
+          "targetMapId": "",
+          "spawnCol": 0,
+          "spawnRow": 0
+        },
+        {
+          "id": "exit_mqf7tpam_6_11",
+          "exitId": "exit_mqf7tpam",
+          "col": 6,
+          "row": 11,
+          "label": "Front Door",
+          "targetMapId": "",
+          "spawnCol": 0,
+          "spawnRow": 0
+        },
+        {
+          "id": "exit_n5k8p_5_3",
+          "exitId": "exit_n5k8p",
+          "col": 5,
+          "row": 3,
+          "label": "Stairs to Foroji's Room",
+          "targetMapId": "map_i_general_store_F2_R1",
+          "spawnCol": 11,
+          "spawnRow": 6
+        },
+        {
+          "id": "exit_m3h2q_2_3",
+          "exitId": "exit_m3h2q",
+          "col": 2,
+          "row": 3,
+          "label": "Stairs to Furunji's Room",
+          "targetMapId": "map_i_general_store_F2_R2",
+          "spawnCol": 7,
+          "spawnRow": 6
+        }
+      ],
       "buildingInteriorBase": {
         "schema": "hobunji_building_interior.v1",
         "furniture": [
@@ -47147,7 +47238,9 @@
         "routes": [],
         "npcStations": [],
         "npcPaths": []
-      }
+      },
+      "schema": "hobunji_map.v1",
+      "routes": []
     },
     {
       "schema": "hobunji_map.v1",
@@ -49241,6 +49334,262 @@
           "targetSpotId": "sp_town_car"
         }
       ]
+    },
+    {
+      "schema": "hobunji_map.v1",
+      "id": "map_i_general_store_F2_R1",
+      "name": "Foroji's Room",
+      "category": "building_interior",
+      "cols": 20,
+      "rows": 20,
+      "tiles": {
+        "10,6": {
+          "type": "grass"
+        },
+        "9,6": {
+          "type": "rock"
+        },
+        "8,6": {
+          "type": "rock"
+        },
+        "7,6": {
+          "type": "rock"
+        },
+        "6,6": {
+          "type": "rock"
+        },
+        "11,6": {
+          "type": "grass"
+        },
+        "12,6": {
+          "type": "grass"
+        },
+        "12,7": {
+          "type": "grass"
+        },
+        "12,8": {
+          "type": "grass"
+        },
+        "12,9": {
+          "type": "rock"
+        },
+        "11,9": {
+          "type": "rock"
+        },
+        "10,9": {
+          "type": "rock"
+        },
+        "9,9": {
+          "type": "grass"
+        },
+        "8,9": {
+          "type": "grass"
+        },
+        "7,9": {
+          "type": "grass"
+        },
+        "6,9": {
+          "type": "grass"
+        },
+        "6,8": {
+          "type": "grass"
+        },
+        "6,7": {
+          "type": "grass"
+        },
+        "7,8": {
+          "type": "grass"
+        },
+        "8,8": {
+          "type": "grass"
+        },
+        "9,8": {
+          "type": "grass"
+        },
+        "10,8": {
+          "type": "grass"
+        },
+        "11,8": {
+          "type": "grass"
+        },
+        "11,7": {
+          "type": "grass"
+        },
+        "10,7": {
+          "type": "grass"
+        },
+        "9,7": {
+          "type": "grass"
+        },
+        "8,7": {
+          "type": "grass"
+        },
+        "7,7": {
+          "type": "rock"
+        },
+        "11,5": {
+          "type": "grass"
+        }
+      },
+      "routes": [],
+      "npcPaths": [],
+      "transitions": [
+        {
+          "id": "exit_b6t9s_11_5",
+          "exitId": "exit_b6t9s",
+          "col": 11,
+          "row": 5,
+          "label": "Stairs Down",
+          "targetMapId": "map_i_general_store",
+          "spawnCol": 11,
+          "spawnRow": 6
+        }
+      ],
+      "npcStations": [
+        {
+          "id": "station_v4n8x",
+          "label": "Foroji's Bed",
+          "col": 7,
+          "row": 6,
+          "rotY": 0,
+          "pose": "lie",
+          "toolKey": "",
+          "toolIntervalSec": 0,
+          "toolAnimStyle": ""
+        }
+      ],
+      "buildings": [],
+      "objects": {},
+      "furniture": [],
+      "decor": []
+    },
+    {
+      "schema": "hobunji_map.v1",
+      "id": "map_i_general_store_F2_R2",
+      "name": "Furunji's Room",
+      "category": "building_interior",
+      "cols": 20,
+      "rows": 20,
+      "tiles": {
+        "10,6": {
+          "type": "grass"
+        },
+        "9,6": {
+          "type": "grass"
+        },
+        "8,6": {
+          "type": "grass"
+        },
+        "7,6": {
+          "type": "grass"
+        },
+        "6,6": {
+          "type": "grass"
+        },
+        "11,6": {
+          "type": "grass"
+        },
+        "12,6": {
+          "type": "grass"
+        },
+        "12,7": {
+          "type": "grass"
+        },
+        "12,8": {
+          "type": "grass"
+        },
+        "12,9": {
+          "type": "grass"
+        },
+        "11,9": {
+          "type": "grass"
+        },
+        "10,9": {
+          "type": "grass"
+        },
+        "9,9": {
+          "type": "grass"
+        },
+        "8,9": {
+          "type": "grass"
+        },
+        "7,9": {
+          "type": "grass"
+        },
+        "6,9": {
+          "type": "grass"
+        },
+        "6,8": {
+          "type": "grass"
+        },
+        "6,7": {
+          "type": "grass"
+        },
+        "7,8": {
+          "type": "grass"
+        },
+        "8,8": {
+          "type": "grass"
+        },
+        "9,8": {
+          "type": "grass"
+        },
+        "10,8": {
+          "type": "grass"
+        },
+        "11,8": {
+          "type": "grass"
+        },
+        "11,7": {
+          "type": "grass"
+        },
+        "10,7": {
+          "type": "grass"
+        },
+        "9,7": {
+          "type": "grass"
+        },
+        "8,7": {
+          "type": "grass"
+        },
+        "7,7": {
+          "type": "grass"
+        },
+        "7,5": {
+          "type": "grass"
+        }
+      },
+      "routes": [],
+      "npcPaths": [],
+      "transitions": [
+        {
+          "id": "exit_c7m2k_7_5",
+          "exitId": "exit_c7m2k",
+          "col": 7,
+          "row": 5,
+          "label": "Stairs Down",
+          "targetMapId": "map_i_general_store",
+          "spawnCol": 7,
+          "spawnRow": 6
+        }
+      ],
+      "npcStations": [
+        {
+          "id": "station_r3p5w",
+          "label": "Furunji's Bed",
+          "col": 10,
+          "row": 6,
+          "rotY": 0,
+          "pose": "lie",
+          "toolKey": "",
+          "toolIntervalSec": 0,
+          "toolAnimStyle": ""
+        }
+      ],
+      "buildings": [],
+      "objects": {},
+      "furniture": [],
+      "decor": []
     }
   ],
   "activeId": "map_hobunji_town",

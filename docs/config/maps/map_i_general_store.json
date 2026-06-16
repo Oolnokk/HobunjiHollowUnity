@@ -254,10 +254,6 @@
       5
     ],
     [
-      7,
-      5
-    ],
-    [
       8,
       5
     ],
@@ -464,10 +460,6 @@
     [
       11,
       6
-    ],
-    [
-      11,
-      5
     ],
     [
       10,
@@ -688,6 +680,14 @@
     [
       5,
       3
+    ],
+    [
+      7,
+      5
+    ],
+    [
+      11,
+      5
     ]
   ],
   "exits": [
@@ -711,15 +711,61 @@
       "targetMap": "",
       "spawnCol": 0,
       "spawnRow": 0
+    },
+    {
+      "id": "exit_n5k8p",
+      "label": "Stairs to Foroji's Room",
+      "tiles": [
+        [
+          5,
+          3
+        ]
+      ],
+      "targetMap": "map_i_general_store_F2_R1",
+      "spawnCol": 11,
+      "spawnRow": 6
+    },
+    {
+      "id": "exit_m3h2q",
+      "label": "Stairs to Furunji's Room",
+      "tiles": [
+        [
+          2,
+          3
+        ]
+      ],
+      "targetMap": "map_i_general_store_F2_R2",
+      "spawnCol": 7,
+      "spawnRow": 6
     }
   ],
   "colliders": [
     [
+      1,
+      5
+    ],
+    [
+      2,
+      5
+    ],
+    [
+      3,
+      5
+    ],
+    [
+      4,
+      5
+    ],
+    [
       5,
-      7
+      5
     ],
     [
       6,
+      5
+    ],
+    [
+      1,
       7
     ],
     [
@@ -727,47 +773,31 @@
       7
     ],
     [
-      4,
-      7
-    ],
-    [
-      3,
-      7
-    ],
-    [
-      2,
-      7
-    ],
-    [
-      1,
-      7
-    ],
-    [
       6,
-      5
+      7
     ],
     [
       5,
-      5
+      7
     ],
     [
       4,
-      5
+      7
     ],
     [
       3,
-      5
+      7
     ],
     [
       2,
-      5
+      7
     ],
     [
-      1,
-      5
+      14,
+      7
     ],
     [
-      8,
+      10,
       1
     ],
     [
@@ -775,7 +805,7 @@
       1
     ],
     [
-      10,
+      8,
       1
     ],
     [
@@ -787,10 +817,6 @@
       2
     ],
     [
-      13,
-      2
-    ],
-    [
       16,
       2
     ],
@@ -811,16 +837,16 @@
       7
     ],
     [
-      14,
-      7
+      15,
+      6
+    ],
+    [
+      13,
+      2
     ],
     [
       13,
       7
-    ],
-    [
-      15,
-      6
     ]
   ],
   "vendorZones": [
@@ -860,6 +886,40 @@
     }
   ],
   "routes": [],
-  "npcStations": [],
+  "npcStations": [
+    {
+      "id": "station_p2x4t",
+      "label": "Sitting at Counter",
+      "col": 5,
+      "row": 6,
+      "rotY": 0,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_k7m3q",
+      "label": "Checking Shelves",
+      "col": 2,
+      "row": 6,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_w9r6j",
+      "label": "Cooking",
+      "col": 9,
+      "row": 2,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
+  ],
   "npcPaths": []
 }
