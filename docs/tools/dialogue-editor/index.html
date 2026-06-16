@@ -287,7 +287,7 @@ const trunc    = (s,n) => s.length > n ? s.slice(0,n) + '…' : s;
 const deepCopy = v   => JSON.parse(JSON.stringify(v));
 const setDirty = ()  => { $('exportBtn').disabled = false; };
 
-const EXPRESSIONS   = ['neutral','happy','sad','angry','surprised','flustered','concerned','excited','thoughtful'];
+const EXPRESSIONS   = ['neutral','smile','frown','laugh','yap'];
 const REVEAL_SPEEDS = ['normal','slow','fast','instant'];
 
 /* ── Database I/O ─────────────────────────────────────────── */
@@ -881,7 +881,7 @@ function onPortDown(e, portEl) {
 }
 
 function onCanvasDown(e) {
-  if (e.button === 1 || (e.button === 0 && e.altKey)) {
+  if (e.button === 2 || (e.button === 0 && e.altKey)) {
     panState = { sx: e.clientX, sy: e.clientY, px: cam.panX, py: cam.panY };
     e.preventDefault(); return;
   }
