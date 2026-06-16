@@ -225,6 +225,30 @@
         return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.text || {};
       }
 
+      function npcDialogueLetterSfxConfig(rec = _dlgNpcRec || _dialogueWalker?.rec) {
+        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const dialogueCfg = audioCfg.dialogueLetter || {};
+        const npcOverrides = dialogueCfg.npcs || {};
+        const speciesOverrides = dialogueCfg.species || {};
+        const speciesId = rec?.appearance?.speciesId || rec?.speciesId || rec?.species || _dialogueWalker?.speciesId;
+        return {
+          ...dialogueCfg,
+          ...(speciesId && speciesOverrides[speciesId] ? speciesOverrides[speciesId] : {}),
+          ...(rec?.id && npcOverrides[rec.id] ? npcOverrides[rec.id] : {}),
+          ...(rec?.dialogueLetterSfx || {})
+        };
+      }
+
+      function npcDialogueTypewriterConfig() {
+        const cfg = npcDialogueTextConfig().typewriter || {};
+        return {
+          enabled: cfg.enabled !== false,
+          msPerChar: Math.max(1, Number(cfg.msPerChar) || 22),
+          punctuationPauseMs: Math.max(0, Number(cfg.punctuationPauseMs) || 120),
+          whitespacePauseMs: Math.max(0, Number(cfg.whitespacePauseMs) || 0)
+        };
+      }
+
       function _paginateNpcDialogueText(text) {
         const cfg = npcDialogueTextConfig();
         const emptyLine = cfg.emptyLine || '...';
@@ -338,6 +362,66 @@
         return walker?.rec?.id || walker?.rec?.name || 'npcDialogue';
       }
 
+      function _playNpcDialogueLetterSfx(char, rec = _dlgNpcRec || _dialogueWalker?.rec) {
+        const cfg = npcDialogueLetterSfxConfig(rec);
+        if (cfg.enabled === false || !char || /\s/.test(char)) return;
+        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        if (audioCfg.enabled === false) return;
+        const volume = Math.max(0, Math.min(1, Number(cfg.volume) || 0.18)) * Math.max(0, Number(audioCfg.sfxVolume) || 1);
+        if (volume <= 0) return;
+        if (cfg.url) {
+          const snd = new Audio(cfg.url);
+          snd.volume = volume;
+          snd.playbackRate = Math.max(0.25, Number(cfg.playbackRate) || 1);
+          snd.play().catch(() => {});
+          return;
+        }
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = window._npcDialogueAudioCtx || (window._npcDialogueAudioCtx = new AudioCtx());
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const variance = Math.max(0, Number(cfg.frequencyVarianceHz) || 35);
+        const base = Math.max(20, Number(cfg.frequencyHz) || 520);
+        osc.type = cfg.waveform || 'square';
+        osc.frequency.value = base + (Math.random() * 2 - 1) * variance;
+        gain.gain.setValueAtTime(volume, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (Math.max(5, Number(cfg.durationMs) || 24) / 1000));
+        osc.connect(gain).connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + (Math.max(5, Number(cfg.durationMs) || 24) / 1000));
+      }
+
+      function _stopNpcDialogueTypewriter(showFullText = false) {
+        if (_npcDialogueTypeTimer) clearTimeout(_npcDialogueTypeTimer);
+        _npcDialogueTypeTimer = null;
+        if (showFullText && _npcDialogueTypeText) _npcDialogueTextEl.textContent = _npcDialogueTypeText;
+        _npcDialogueTypeText = '';
+        _npcDialogueTypeIndex = 0;
+      }
+
+      function _setNpcDialogueText(text, node = null) {
+        const resolvedText = String(text || '');
+        _stopNpcDialogueTypewriter(false);
+        _applyNpcDialogueLinePresentation(resolvedText, node);
+        const cfg = npcDialogueTypewriterConfig();
+        if (!cfg.enabled) { _npcDialogueTextEl.textContent = resolvedText; return; }
+        _npcDialogueTypeText = resolvedText;
+        _npcDialogueTypeIndex = 0;
+        _npcDialogueTextEl.textContent = '';
+        const tick = () => {
+          if (!dialogueOpen || !_npcDialogueTypeText) return;
+          const char = _npcDialogueTypeText[_npcDialogueTypeIndex++];
+          _npcDialogueTextEl.textContent += char;
+          _playNpcDialogueLetterSfx(char);
+          if (_npcDialogueTypeIndex >= _npcDialogueTypeText.length) { _stopNpcDialogueTypewriter(false); return; }
+          const delay = /[.!?,;:]/.test(char) ? cfg.punctuationPauseMs : /\s/.test(char) ? cfg.whitespacePauseMs : cfg.msPerChar;
+          _npcDialogueTypeTimer = setTimeout(tick, delay);
+        };
+        _npcDialogueTypeTimer = setTimeout(tick, cfg.msPerChar);
+      }
+
       function _applyNpcDialogueLinePresentation(text, node = null) {
         if (!window.portraitBreathingComposer) return;
         const seatId = _dialogueSeatId();
@@ -387,8 +471,7 @@
         if (node.type === 'sequence') { _handleSequenceNode(node); return; }
 
         const text = _resolveTokens(node.text || '', _dlgNpcRec);
-        _npcDialogueTextEl.textContent = text;
-        _applyNpcDialogueLinePresentation(text, node);
+        _setNpcDialogueText(text, node);
         updateNpcDialoguePortrait(0);
 
         if (node.type === 'choice') {
@@ -486,18 +569,17 @@
           _hideChoiceButtons();
           _dialogueLines   = _npcDialogueLines(rec);
           _dialogueLineIdx = 0;
-          _npcDialogueTextEl.textContent = _dialogueLines[0];
-          _applyNpcDialogueLinePresentation(_dialogueLines[0]);
+          _setNpcDialogueText(_dialogueLines[0]);
           updateNpcDialoguePortrait(0);
         }
       }
 
       function advanceNpcDialogue() {
+        if (_npcDialogueTypeText) { _stopNpcDialogueTypewriter(true); return; }
         if (_dlgTree) { _advanceDlgNode(); return; }
         _dialogueLineIdx++;
         if (_dialogueLineIdx >= _dialogueLines.length) { closeNpcDialogue(); return; }
-        _npcDialogueTextEl.textContent = _dialogueLines[_dialogueLineIdx];
-        _applyNpcDialogueLinePresentation(_dialogueLines[_dialogueLineIdx]);
+        _setNpcDialogueText(_dialogueLines[_dialogueLineIdx]);
         updateNpcDialoguePortrait(0);
       }
 
@@ -506,6 +588,7 @@
         _dialogueLines = [];
         _dialogueLineIdx = 0;
         _dlgTree = null; _dlgNodeMap = null; _dlgNode = null; _dlgNpcRec = null; _dlgSeqStack = [];
+        _stopNpcDialogueTypewriter(false);
         _hideChoiceButtons();
         npcDialogueStaging = null;
         window.portraitBreathingComposer?.setExpression(_dialogueSeatId(), 'neutral');
@@ -1628,6 +1711,9 @@
       let _dialogueLines     = [];
       let _dialogueLineIdx   = 0;
       let _dialogueWalker    = null;
+      let _npcDialogueTypeTimer = null;
+      let _npcDialogueTypeText  = '';
+      let _npcDialogueTypeIndex = 0;
       let _playerData        = null;  // set from hobunjiPlayerReady event
 
       // ── Dialogue tree runtime state ──────────────────────────────────

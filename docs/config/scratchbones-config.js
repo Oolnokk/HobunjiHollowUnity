@@ -38,7 +38,13 @@ window.SCRATCHBONES_CONFIG = {
     "npcDialogue": {
       "text": {
         "maxCharsPerPage": 180,
-        "emptyLine": "..."
+        "emptyLine": "...",
+        "typewriter": {
+          "enabled": true,
+          "msPerChar": 22,
+          "punctuationPauseMs": 120,
+          "whitespacePauseMs": 0
+        }
       },
       "portrait": {
         "maxFps": 12,
@@ -3094,6 +3100,23 @@ window.SCRATCHBONES_CONFIG = {
           "spacingMinMs": 30,
           "spacingMaxMs": 70,
           "pitchCountMode": "preIncrement"
+        },
+        "dialogueLetter": {
+          "enabled": true,
+          "volume": 0.18,
+          "durationMs": 24,
+          "frequencyHz": 520,
+          "frequencyVarianceHz": 35,
+          "waveform": "square",
+          "species": {
+            "mao-ao": { "frequencyHz": 500 },
+            "kenkari": { "frequencyHz": 430 },
+            "rakakoan": { "frequencyHz": 610 },
+            "tletingan": { "frequencyHz": 700 },
+            "engh-sho": { "frequencyHz": 560 },
+            "mashtzarr": { "frequencyHz": 360 }
+          },
+          "npcs": {}
         },
         "bgm": {
           "playlist": [
