@@ -40,6 +40,14 @@ window.SCRATCHBONES_CONFIG = {
         "maxCharsPerPage": 180,
         "emptyLine": "..."
       },
+      "portrait": {
+        "maxFps": 12,
+        "yap": {
+          "flashMs": 120,
+          "spaceDelayMs": 60,
+          "pauseDelayMs": 250
+        }
+      },
       "staging": {
         "playerDiagonalOffsets": [
           { "x": -0.5, "y": 1 },

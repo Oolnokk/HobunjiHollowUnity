@@ -8,23 +8,25 @@
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
   }
 
-  function makeVariantCanvas(image, options = {}) {
+  function drawVariantCanvas(targetCanvas, image, options = {}) {
+    if (!targetCanvas || !image) return null;
     const flipX = !!options.flipX;
     const blackSilhouette = !!options.blackSilhouette;
-    const c = document.createElement('canvas');
-    c.width = image.naturalWidth || image.videoWidth || image.width;
-    c.height = image.naturalHeight || image.videoHeight || image.height;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
-    ctx.clearRect(0, 0, c.width, c.height);
+    const width = image.naturalWidth || image.videoWidth || image.width;
+    const height = image.naturalHeight || image.videoHeight || image.height;
+    targetCanvas.width = width;
+    targetCanvas.height = height;
+    const ctx = targetCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
     ctx.save();
     if (flipX) {
-      ctx.translate(c.width, 0);
+      ctx.translate(targetCanvas.width, 0);
       ctx.scale(-1, 1);
     }
-    ctx.drawImage(image, 0, 0, c.width, c.height);
+    ctx.drawImage(image, 0, 0, targetCanvas.width, targetCanvas.height);
     ctx.restore();
     if (blackSilhouette) {
-      const imgData = ctx.getImageData(0, 0, c.width, c.height);
+      const imgData = ctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height);
       const data = imgData.data;
       for (let i = 0; i < data.length; i += 4) {
         data[i] = 0;
@@ -33,7 +35,11 @@
       }
       ctx.putImageData(imgData, 0, 0);
     }
-    return c;
+    return targetCanvas;
+  }
+
+  function makeVariantCanvas(image, options = {}) {
+    return drawVariantCanvas(document.createElement('canvas'), image, options);
   }
 
   function makeTextureFromCanvas(THREE, canvasEl, debugName) {
@@ -272,7 +278,33 @@
     root.userData.portraitModelWidth = modelWidth;
     root.userData.portraitModelHeight = modelHeight;
     root.add(assembly);
+    root.userData.sourceCanvas = sourceCanvas;
+    root.userData.backCanvas = options.backCanvas || options.backImage || null;
+    root.userData.frontTexture = textures.frontOriginal;
+    root.userData.backTexture = textures.backForOriginal;
+    root.userData.backTextureUsesSilhouette = !(options.backCanvas || options.backImage);
     return root;
+  }
+
+  function refreshSinglePlaneAvatarModel(root, sourceCanvas, options = {}) {
+    if (!root?.userData?.frontTexture) return false;
+    const nextSource = sourceCanvas || root.userData.sourceCanvas;
+    if (!nextSource) return false;
+    root.userData.sourceCanvas = nextSource;
+    drawVariantCanvas(root.userData.frontTexture.image, nextSource);
+    root.userData.frontTexture.needsUpdate = true;
+
+    const nextBack = options.backCanvas || options.backImage || root.userData.backCanvas;
+    if (nextBack && root.userData.backTexture) {
+      root.userData.backCanvas = nextBack;
+      drawVariantCanvas(root.userData.backTexture.image, nextBack, { flipX: true });
+      root.userData.backTexture.needsUpdate = true;
+      root.userData.backTextureUsesSilhouette = false;
+    } else if (options.refreshSilhouette && root.userData.backTexture && root.userData.backTextureUsesSilhouette) {
+      drawVariantCanvas(root.userData.backTexture.image, nextSource, { flipX: true, blackSilhouette: true });
+      root.userData.backTexture.needsUpdate = true;
+    }
+    return true;
   }
 
   function disposeAvatarModel(root) {
@@ -301,6 +333,7 @@
 
   window.PNGPlaneAvatar = {
     makeVariantCanvas,
+    refreshSinglePlaneAvatarModel,
     buildAnimalPlaneAvatarModel,
     buildSinglePlaneAvatarModel,
     avatarPlacementRatioFor,

@@ -324,6 +324,60 @@
         if (continueBtn) continueBtn.style.display = '';
       }
 
+      function npcDialoguePortraitConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.portrait || {};
+      }
+
+      function _dialogueExpressionDurationMs(node) {
+        const holdSeconds = Number(node?.expressionHold);
+        if (Number.isFinite(holdSeconds) && holdSeconds > 0) return holdSeconds * 1000;
+        return Number(window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions?.durationMs) || 10000;
+      }
+
+      function _dialogueSeatId(walker = _dialogueWalker) {
+        return walker?.rec?.id || walker?.rec?.name || 'npcDialogue';
+      }
+
+      function _applyNpcDialogueLinePresentation(text, node = null) {
+        if (!window.portraitBreathingComposer) return;
+        const seatId = _dialogueSeatId();
+        const expression = String(node?.expression || 'neutral').toLowerCase();
+        window.portraitBreathingComposer.setDefaultExpression(seatId, expression);
+        if (expression && expression !== 'neutral') {
+          window.portraitBreathingComposer.setExpression(seatId, expression, _dialogueExpressionDurationMs(node));
+        }
+        window.portraitBreathingComposer.scheduleYapSequence(seatId, text || '', npcDialoguePortraitConfig().yap || {});
+      }
+
+      async function _renderNpcDialoguePortrait() {
+        if (!dialogueOpen || !_dialogueWalker?.profile || !window.NpcAvatarPreview) return false;
+        const renderOptions = {
+          breathingComposer: window.portraitBreathingComposer || null,
+          seatId: _dialogueSeatId(),
+        };
+        await window.NpcAvatarPreview.renderProfileToCanvas(_npcPortraitCanvas, _dialogueWalker.profile, renderOptions);
+        if (_dialogueWalker.avatarFrontCanvas && window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel) {
+          await window.NpcAvatarPreview.renderProfileToCanvas(_dialogueWalker.avatarFrontCanvas, _dialogueWalker.profile, renderOptions);
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(_dialogueWalker.avatarGroup, _dialogueWalker.avatarFrontCanvas);
+        }
+        return true;
+      }
+
+      let _npcDialoguePortraitRenderPending = false;
+      let _npcDialoguePortraitLastRenderMs = 0;
+      function updateNpcDialoguePortrait(nowMs = performance.now()) {
+        if (!dialogueOpen || !_dialogueWalker?.profile || _npcDialoguePortraitRenderPending) return;
+        const fps = Math.max(1, Number(npcDialoguePortraitConfig().maxFps) || 12);
+        if (nowMs !== 0 && nowMs - _npcDialoguePortraitLastRenderMs < 1000 / fps) return;
+        _npcDialoguePortraitRenderPending = true;
+        _renderNpcDialoguePortrait()
+          .catch(err => console.warn('[npc-dialogue] portrait render failed', err))
+          .finally(() => {
+            _npcDialoguePortraitLastRenderMs = performance.now();
+            _npcDialoguePortraitRenderPending = false;
+          });
+      }
+
       function _renderDlgNode(node) {
         if (!node) { closeNpcDialogue(); return; }
         _dlgNode = node;
@@ -332,7 +386,10 @@
 
         if (node.type === 'sequence') { _handleSequenceNode(node); return; }
 
-        _npcDialogueTextEl.textContent = _resolveTokens(node.text || '', _dlgNpcRec);
+        const text = _resolveTokens(node.text || '', _dlgNpcRec);
+        _npcDialogueTextEl.textContent = text;
+        _applyNpcDialogueLinePresentation(text, node);
+        updateNpcDialoguePortrait(0);
 
         if (node.type === 'choice') {
           _showDlgChoices(node);
@@ -410,7 +467,7 @@
           const ctx = _npcPortraitCanvas.getContext('2d');
           ctx.fillStyle = '#1b3529';
           ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
-          await window.NpcAvatarPreview.renderProfileToCanvas(_npcPortraitCanvas, walker.profile);
+          await _renderNpcDialoguePortrait();
         }
 
         _npcDialogueEl.classList.add('open');
@@ -430,6 +487,8 @@
           _dialogueLines   = _npcDialogueLines(rec);
           _dialogueLineIdx = 0;
           _npcDialogueTextEl.textContent = _dialogueLines[0];
+          _applyNpcDialogueLinePresentation(_dialogueLines[0]);
+          updateNpcDialoguePortrait(0);
         }
       }
 
@@ -438,6 +497,8 @@
         _dialogueLineIdx++;
         if (_dialogueLineIdx >= _dialogueLines.length) { closeNpcDialogue(); return; }
         _npcDialogueTextEl.textContent = _dialogueLines[_dialogueLineIdx];
+        _applyNpcDialogueLinePresentation(_dialogueLines[_dialogueLineIdx]);
+        updateNpcDialoguePortrait(0);
       }
 
       function closeNpcDialogue() {
@@ -447,6 +508,8 @@
         _dlgTree = null; _dlgNodeMap = null; _dlgNode = null; _dlgNpcRec = null; _dlgSeqStack = [];
         _hideChoiceButtons();
         npcDialogueStaging = null;
+        window.portraitBreathingComposer?.setExpression(_dialogueSeatId(), 'neutral');
+        window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), 'neutral');
         if (_dialogueWalker) {
           _dialogueWalker.pause = 0;
           _dialogueWalker.catchup = 3.5;
@@ -2121,7 +2184,7 @@
         } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; }
 
         const walker = {
-          root, rec, profile, area: spawnArea,
+          root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
           state: 'idle', routeNode: null, previousRouteNode: null, routeTarget: null, _exitSpot: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
@@ -7404,6 +7467,7 @@
         drawOverlays();
         drawLightingOverlay();
 
+        updateNpcDialoguePortrait(now);
         updateHud();
         requestAnimationFrame(gameLoop);
       }
