@@ -1332,7 +1332,7 @@
     .inv-equip-slot.active-slot { border-color: rgba(249,226,138,0.55); background: rgba(249,226,138,0.08); }
     .inv-equip-slot.occupied { border-color: rgba(255,255,255,0.22); }
     .inv-equip-slot.clothing-slot { cursor: default; }
-    .inv-equip-slot.clothing-slot.occupied { opacity: 1; }
+    .inv-equip-slot.clothing-slot.occupied { cursor: pointer; opacity: 1; }
     .inv-equip-slot.clothing-slot:not(.occupied) { opacity: 0.4; }
     .ies-sprite {
       width: calc(2.0 * var(--inv-row)); height: calc(2.0 * var(--inv-row));
@@ -1352,6 +1352,23 @@
       opacity: 0.55;
     }
     .ies-unequip:hover { color: var(--text); opacity: 1; }
+    .ies-cloth-sprite,
+    .ipc-sprite,
+    .ii-cloth-sprite {
+      object-fit: contain; image-rendering: pixelated; pointer-events: none;
+    }
+    .ies-cloth-sprite {
+      width: calc(2.0 * var(--inv-row)); height: calc(2.0 * var(--inv-row));
+    }
+    .ipc-sprite {
+      width: calc(1.7 * var(--inv-row)); height: calc(1.7 * var(--inv-row));
+    }
+    .ii-cloth-sprite {
+      width: 2.4em; height: 2.4em; vertical-align: middle;
+    }
+    .ies-cloth-fallback {
+      display: flex; align-items: center; justify-content: center; font-size: 16px;
+    }
     .ies-cloth-name {
       font-size: calc(0.7 * var(--inv-font-xs)); color: var(--text);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
@@ -1811,6 +1828,8 @@
       min-height: calc(3 * var(--inv-row)); box-sizing: border-box;
     }
     .inv-pcloth-item:hover { background: rgba(255,255,255,0.09); }
+    .inv-owned-clothing-row { flex-wrap: wrap; flex: 1.4; overflow-y: auto; }
+    .inv-owned-clothing-row .inv-equip-slot { flex: 0 0 calc((100% - (3 * var(--inv-gap))) / 4); min-height: calc(3.2 * var(--inv-row)); }
     .ipc-icon { font-size: 16px; }
     .ipc-name {
       font-size: calc(0.75 * var(--inv-font-xs)); color: var(--muted);
