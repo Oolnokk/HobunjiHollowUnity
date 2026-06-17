@@ -309,17 +309,113 @@ function makeCSSFilter(color) {
   return buildCSSFilter(color.h, color.s, color.v ?? color.l);
 }
 
+
+// ── Tint descriptor / shade-fill helpers ─────────────────────────────────
+
+const _SHADE_FILL_CACHE = new Map();
+
+function parseHexColor(hex) {
+  if (typeof hex !== 'string') return null;
+  const raw = hex.trim().replace(/^#/, '');
+  const expanded = raw.length === 3 ? raw.split('').map(ch => ch + ch).join('') : raw;
+  if (!/^[0-9a-fA-F]{6}$/.test(expanded)) return null;
+  return {
+    r: parseInt(expanded.slice(0, 2), 16),
+    g: parseInt(expanded.slice(2, 4), 16),
+    b: parseInt(expanded.slice(4, 6), 16),
+    hex: '#' + expanded.toUpperCase(),
+  };
+}
+
+function clampByte(value) {
+  return Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
+}
+
+function relativeLuminance(r, g, b) {
+  return (0.2126 * (Number(r) || 0) + 0.7152 * (Number(g) || 0) + 0.0722 * (Number(b) || 0)) / 255;
+}
+
+function getPortraitTintingConfig() {
+  const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
+  return {
+    mode: cfg.mode || 'hexShadeFill',
+    shadowFloor: Number.isFinite(Number(cfg.shadowFloor)) ? Number(cfg.shadowFloor) : 0.18,
+    highlightBoost: Number.isFinite(Number(cfg.highlightBoost)) ? Number(cfg.highlightBoost) : 1.18,
+    neutralLuminance: Number.isFinite(Number(cfg.neutralLuminance)) ? Number(cfg.neutralLuminance) : 0.55,
+    gamma: Number.isFinite(Number(cfg.gamma)) && Number(cfg.gamma) > 0 ? Number(cfg.gamma) : 1,
+    preserveNearBlackOutlines: cfg.preserveNearBlackOutlines !== false,
+    outlineThreshold: Number.isFinite(Number(cfg.outlineThreshold)) ? Number(cfg.outlineThreshold) : 0.08,
+    cacheEnabled: cfg.cacheEnabled !== false,
+  };
+}
+
+function tintForBodyColor(color) {
+  if (!color) return { mode: 'none' };
+  const parsed = color.tintMode === 'hexShadeFill' || color.hex ? parseHexColor(color.hex) : null;
+  if (parsed && getPortraitTintingConfig().mode === 'hexShadeFill') {
+    return { mode: 'hexShadeFill', hex: parsed.hex, options: getPortraitTintingConfig() };
+  }
+  return { mode: 'cssFilter', filter: makeCSSFilter(color) };
+}
+
+function getTintedShadeFillCanvas(img, sourceKey, tintDescriptor) {
+  const parsed = parseHexColor(tintDescriptor?.hex);
+  if (!img || !parsed) return img;
+  const options = { ...getPortraitTintingConfig(), ...(tintDescriptor.options || {}) };
+  const cacheKey = [
+    sourceKey || img.currentSrc || img.src || 'inline', parsed.hex, options.shadowFloor,
+    options.highlightBoost, options.neutralLuminance, options.gamma,
+    options.preserveNearBlackOutlines, options.outlineThreshold
+  ].join('|');
+  if (options.cacheEnabled && _SHADE_FILL_CACHE.has(cacheKey)) return _SHADE_FILL_CACHE.get(cacheKey);
+
+  const canvas = Object.assign(document.createElement('canvas'), {
+    width: img.naturalWidth || img.width,
+    height: img.naturalHeight || img.height,
+  });
+  const offCtx = canvas.getContext('2d');
+  offCtx.drawImage(img, 0, 0);
+  const imageData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const neutral = Math.max(0.0001, options.neutralLuminance);
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3];
+    if (a === 0) continue;
+    const lum = relativeLuminance(data[i], data[i + 1], data[i + 2]);
+    if (options.preserveNearBlackOutlines && lum <= options.outlineThreshold) continue;
+    const normalized = Math.pow(Math.max(0, lum) / neutral, options.gamma);
+    const shade = Math.max(options.shadowFloor, Math.min(options.highlightBoost, normalized));
+    data[i] = clampByte(parsed.r * shade);
+    data[i + 1] = clampByte(parsed.g * shade);
+    data[i + 2] = clampByte(parsed.b * shade);
+    data[i + 3] = a;
+  }
+  offCtx.putImageData(imageData, 0, 0);
+  if (options.cacheEnabled) _SHADE_FILL_CACHE.set(cacheKey, canvas);
+  return canvas;
+}
+
+function _imageForTint(img, sourceKey, tint) {
+  return tint?.mode === 'hexShadeFill' ? getTintedShadeFillCanvas(img, sourceKey, tint) : img;
+}
+
+function _filterForTint(tint) {
+  if (typeof tint === 'string') return tint;
+  return tint?.mode === 'cssFilter' ? (tint.filter || 'none') : 'none';
+}
+
 // ── Canvas helpers ─────────────────────────────────────────
 
-function drawPortraitLayer(ctx, img, xform, cssFilter) {
+function drawPortraitLayer(ctx, img, xform, tint, sourceKey) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
   const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   ctx.save();
-  ctx.filter = cssFilter || 'none';
-  ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+  const drawImg = _imageForTint(img, sourceKey, tint);
+  ctx.filter = _filterForTint(tint);
+  ctx.drawImage(drawImg, cx - w / 2, cy - h / 2, w, h);
   ctx.restore();
 }
 
@@ -398,7 +494,7 @@ function _buildNeutralGrid(cols, rows) {
  * in normalised body-layer space). Applied additively on top of the breathing animation
  * (or on top of the neutral grid when no breathing composer is present).
  */
-function drawPortraitLayerWarped(ctx, img, xform, cssFilter, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform) {
+function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
   const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
@@ -406,12 +502,13 @@ function drawPortraitLayerWarped(ctx, img, xform, cssFilter, breathingComposer, 
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   const layerX = cx - w / 2;
   const layerY = cy - h / 2;
+  const drawImg = _imageForTint(img, sourceKey, tint);
 
   const breathingPts = breathingComposer?.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId);
   if (!breathingPts && !staticDeform) {
     ctx.save();
-    ctx.filter = cssFilter || 'none';
-    ctx.drawImage(img, layerX, layerY, w, h);
+    ctx.filter = _filterForTint(tint);
+    ctx.drawImage(drawImg, layerX, layerY, w, h);
     ctx.restore();
     return;
   }
@@ -433,8 +530,8 @@ function drawPortraitLayerWarped(ctx, img, xform, cssFilter, breathingComposer, 
   }
 
   ctx.save();
-  ctx.filter = cssFilter || 'none';
-  _drawPortraitLayerWarped(ctx, img, layerX, layerY, w, h, neutralPts, finalPts, gridCols, gridRows);
+  ctx.filter = _filterForTint(tint);
+  _drawPortraitLayerWarped(ctx, drawImg, layerX, layerY, w, h, neutralPts, finalPts, gridCols, gridRows);
   ctx.restore();
 }
 
@@ -667,7 +764,8 @@ function _cloneBehindLayer(layer, group, gender) {
 // ── Rendering ──────────────────────────────────────────────
 
 async function renderProfile(canvas, profile, renderOptions = {}) {
-  const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, eyes, upperFace, facialHair, pauldron, hat, torsoCosmetic, armCosmetic, bodyColors } = profile;
+  const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, eyes, upperFace, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
+  const bodyColors = profile.bodyColors || {};
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
   const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
   const breathingComposer   = renderOptions?.breathingComposer ?? window.portraitBreathingComposer ?? null;
@@ -700,8 +798,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   if (_needsScale) { ctx.save(); ctx.scale(_scaleX, _scaleY); }
   ctx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
 
-  const filterFor = (slot) => slot ? makeCSSFilter(bodyColors[slot]) : 'none';
-  const filterA   = makeCSSFilter(bodyColors.A);
+  const tintFor = (slot) => slot ? tintForBodyColor(bodyColors[slot]) : { mode: 'none' };
+  const tintA = tintForBodyColor(bodyColors.A);
 
   const baseLeftArmLayers = [];
   const baseTorsoLayers = [];
@@ -714,7 +812,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       : normalizedId.includes('armr') ? baseRightArmLayers
       : normalizedId.includes('torso') ? baseTorsoLayers
       : baseTorsoLayers;
-    target.push({ layer, filter: filterFor(layer.tintSlot || 'A') });
+    target.push({ layer, tint: tintFor(layer.tintSlot || 'A') });
   }
   for (const group of [torsoCosmetic, armCosmetic]) {
     if (!group) continue;
@@ -725,7 +823,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       const key = layer.paletteColorKey;
       const layerTintSlot = (!key || key === 'A') ? group.tintSlot
         : (group.tintSlot ? `${group.tintSlot}_${key}` : null);
-      target.push({ layer, filter: filterFor(layerTintSlot || 'A') });
+      target.push({ layer, tint: tintFor(layerTintSlot || 'A') });
     }
   }
 
@@ -756,7 +854,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       const key = layer.paletteColorKey;
       const layerTintSlot = (!key || key === 'A') ? group.tintSlot
         : (group.tintSlot ? `${group.tintSlot}_${key}` : null);
-      target.push({ layer, filter: filterFor(layerTintSlot), group });
+      target.push({ layer, tint: tintFor(layerTintSlot), group });
     }
   };
 
@@ -770,7 +868,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
           const key = layer.paletteColorKey;
           const layerTintSlot = (!key || key === 'A') ? group.tintSlot
             : (group.tintSlot ? `${group.tintSlot}_${key}` : null);
-          preBackLayers.push({ layer, filter: filterFor(layerTintSlot), group });
+          preBackLayers.push({ layer, tint: tintFor(layerTintSlot), group });
         }
       }
     }
@@ -787,7 +885,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
           const key = layer.paletteColorKey;
           const layerTintSlot = (!key || key === 'A') ? hat.tintSlot
             : (hat.tintSlot ? `${hat.tintSlot}_${key}` : null);
-          (hatIsUnderHood ? hatUnderLayers : hatOverLayers).push({ layer, filter: filterFor(layerTintSlot), group: hat });
+          (hatIsUnderHood ? hatUnderLayers : hatOverLayers).push({ layer, tint: tintFor(layerTintSlot), group: hat });
         }
       }
     }
@@ -804,7 +902,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         const key = layer.paletteColorKey;
         const layerTintSlot = (!key || key === 'A') ? group.tintSlot
           : (group.tintSlot ? `${group.tintSlot}_${key}` : null);
-        (layer.pos === 'back' ? preBackLayers : frontHairLayers).push({ layer, filter: filterFor(layerTintSlot), group });
+        (layer.pos === 'back' ? preBackLayers : frontHairLayers).push({ layer, tint: tintFor(layerTintSlot), group });
       }
     }
   }
@@ -928,7 +1026,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const emoteNeutralPts  = emoteDeformedPts ? _buildNeutralGrid(4, 6) : null;
 
   // Draws a single image with emote deformation if active, else plain.
-  const drawLayerWithEmote = (img, xform, filter, alpha = 1) => {
+  const drawLayerWithEmote = (img, xform, tint, alpha = 1, sourceKey) => {
     const numericAlpha = Number(alpha);
     const opacity = Number.isFinite(numericAlpha) ? Math.max(0, Math.min(1, numericAlpha)) : 1;
     if (opacity <= 0) return;
@@ -940,36 +1038,37 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
       ctx.save();
       ctx.globalAlpha = opacity;
-      ctx.filter = filter || 'none';
-      _drawPortraitLayerWarped(ctx, img, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
+      const drawImg = _imageForTint(img, sourceKey, tint);
+      ctx.filter = _filterForTint(tint);
+      _drawPortraitLayerWarped(ctx, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
       ctx.restore();
     } else if (opacity < 1) {
       ctx.save();
       ctx.globalAlpha = opacity;
-      drawPortraitLayer(ctx, img, xform, filter);
+      drawPortraitLayer(ctx, img, xform, tint, sourceKey);
       ctx.restore();
     } else {
-      drawPortraitLayer(ctx, img, xform, filter);
+      drawPortraitLayer(ctx, img, xform, tint, sourceKey);
     }
   };
 
   // Draws a list of layers with emote deformation applied to each (head, hair, eyes, hat, etc.).
   const drawEmoteLayers = (layerList) => {
-    for (const { layer, filter } of layerList) {
+    for (const { layer, tint, filter } of layerList) {
       const img = imgMap.get(layer.url);
-      if (img) drawLayerWithEmote(img, resolveXform(layer), filter);
+      if (img) drawLayerWithEmote(img, resolveXform(layer), tint || filter, 1, layer.url);
     }
   };
 
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
   const drawBreathingLayers = (layerList) => {
-    for (const { layer, filter } of layerList) {
+    for (const { layer, tint, filter } of layerList) {
       const img = imgMap.get(layer.url);
       if (!img) continue;
       if (breathingComposer || staticDeform) {
-        drawPortraitLayerWarped(ctx, img, resolveXform(layer), filter, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform);
+        drawPortraitLayerWarped(ctx, img, resolveXform(layer), tint || filter, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, layer.url);
       } else {
-        drawPortraitLayer(ctx, img, resolveXform(layer), filter);
+        drawPortraitLayer(ctx, img, resolveXform(layer), tint || filter, layer.url);
       }
     }
   };
@@ -981,7 +1080,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       baseLeftArm:   () => drawBreathingLayers(baseLeftArmLayers),
       baseTorso:     () => drawBreathingLayers(baseTorsoLayers),
       baseRightArm:  () => drawBreathingLayers(baseRightArmLayers),
-      head:          () => { if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), filterA); } },
+      head:          () => { if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), tintA, 1, headUrl); } },
       torsoClothing: () => drawBreathingLayers(torsoClothingLayers),
       overwear:      () => drawBreathingLayers(overwearLayers),
       hatUnder:      () => drawEmoteLayers(hatUnderLayers),
@@ -1011,7 +1110,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const _beardBelowHead = _BEARD_BELOW_HEAD_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-'));
   drawEmoteLayers(sideLeftLayers);
   if (_beardBelowHead) drawEmoteLayers(facialHairLayers);
-  if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), filterA); }
+  if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), tintA, 1, headUrl); }
   const _isMaskSpecies = mouthImg && _isMouthMask(speciesId);
   drawEmoteLayers(rightSideHairLayers);
   if (!_beardBelowHead) drawEmoteLayers(facialHairLayers);
@@ -1060,11 +1159,11 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     for (const mid of urLayerSource) {
       const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
       const img = imgMap.get(activeUrl) || imgMap.get(mid.url);
-      if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), 'none');
+      if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), 'none', 1, activeUrl);
     }
   }
   // Non-mask species: mouth sprite overlays ur-head (drawn here so it sits above ur-head).
-  if (mouthImg && !_isMaskSpecies) drawLayerWithEmote(mouthImg, getPortraitXformPreset('B'), 'none', mouthOpacity);
+  if (mouthImg && !_isMaskSpecies) drawLayerWithEmote(mouthImg, getPortraitXformPreset('B'), 'none', mouthOpacity, mouthSpriteUrl);
   drawEmoteLayers(upperFaceLayers);
   drawEmoteLayers(hatUnderLayers);
   drawEmoteLayers(elevatedEyeAccessoryLayers);

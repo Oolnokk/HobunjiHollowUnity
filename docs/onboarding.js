@@ -634,6 +634,18 @@
       profile.facialHair = optionCache?.get('none') || none;
     }
 
+    const dyeCatalog = window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
+    for (const [tintKey, dyeId] of Object.entries(_state.appliedDyes || {})) {
+      if (!dyeId) continue;
+      const dye = dyeCatalog.find(d => d.id === dyeId);
+      if (dye) {
+        profile.bodyColors = {
+          ...(profile.bodyColors || {}),
+          [tintKey]: { ...(dye.color || {}), ...(dye.hex ? { hex: dye.hex, tintMode: 'hexShadeFill' } : {}) }
+        };
+      }
+    }
+
     return profile;
   }
 

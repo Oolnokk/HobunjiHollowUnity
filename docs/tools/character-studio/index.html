@@ -900,7 +900,7 @@ function buildPreviewProfile(appearance) {
   for (const [tintKey, dyeId] of Object.entries(dyeIds)) {
     if (dyeId) {
       const dye = catalog.find(d => d.id === dyeId);
-      if (dye) profile.bodyColors = { ...(profile.bodyColors || {}), [tintKey]: { ...dye.color } };
+      if (dye) profile.bodyColors = { ...(profile.bodyColors || {}), [tintKey]: { ...(dye.color || {}), ...(dye.hex ? { hex: dye.hex, tintMode: 'hexShadeFill' } : {}) } };
     }
   }
   return profile;
@@ -1331,7 +1331,6 @@ function renderCollections() {
     { key: 'torso',    label: 'Torso',    category: 'torso',    tintKeys: ['TORSO', 'TORSO_B', 'TORSO_C'] },
     { key: 'overwear', label: 'Overwear', category: 'overwear', tintKeys: ['CLOTH', 'CLOTH_B', 'CLOTH_C'] },
   ];
-  const DYE_SWATCH_BASE = window.SCRATCHBONES_CONFIG?.game?.dyes?.swatchBase;
   const ownedDyes = dyes; // dev tool: all dyes available
   const appearance = acc.getAppearance();
   const appearanceSlotDefs = window.SCRATCHBONES_CONFIG?.game?.collections?.appearanceSlots || [];
@@ -1363,7 +1362,7 @@ function renderCollections() {
       const dyesForSlot = ownedDyes.filter(d => (d.group || 'cloth') === (slot.dyeGroup || 'cloth'));
       const dyeRowHtml = (d) => {
         const color = d.color || { h: 0, s: 0, v: 0 };
-        const style = swatchStyle(DYE_SWATCH_BASE, color.h, color.s, color.v);
+        const style = d.hex ? `background:${d.hex}` : swatchStyle(window.SCRATCHBONES_CONFIG?.game?.dyes?.swatchBase, color.h, color.s, color.v);
         return `
           <div class="dyeRow">
             <span class="dyeDot" style="${style}"></span>
@@ -1422,7 +1421,7 @@ function renderCollections() {
       const dyesForSlot = ownedDyes.filter(d => (d.group || 'cloth') === equippedMaterial);
       const dyeRowHtml = (d) => {
         const color = d.color || { h: 0, s: 0, v: 0 };
-        const style = swatchStyle(DYE_SWATCH_BASE, color.h, color.s, color.v);
+        const style = d.hex ? `background:${d.hex}` : swatchStyle(window.SCRATCHBONES_CONFIG?.game?.dyes?.swatchBase, color.h, color.s, color.v);
         return `
           <div class="dyeRow">
             <span class="dyeDot" style="${style}"></span>
