@@ -841,18 +841,11 @@
         weapon:  null,
       };
 
-      // Clothing slots (visual only for now — no items yet)
-      const CLOTHING_SLOT_DEFS = [
-        { key: 'head',  label: 'Head'  },
-        { key: 'chest', label: 'Chest' },
-        { key: 'legs',  label: 'Legs'  },
-        { key: 'feet',  label: 'Feet'  },
-      ];
-
       function makeDefaultGear() {
         return {
           tools:    { bronzehoe: true, hatchet: true, fishingmace: true, fishingspear: true, pickshovel: true },
           clothing: { hat: null, hood: null, torso: null, overwear: null },
+          clothingItems: [],
           charms: [], whistles: [],
         };
       }
@@ -1052,6 +1045,7 @@
             colorB:     dyeB,
             price:      piece.price,
             sellPrice:  Math.floor(piece.price * 0.4),
+            sprite:     clothingSpriteForCosmetic(piece.id),
           });
         }
         return stock;
@@ -4105,16 +4099,77 @@
         buildInventoryGrid(); buildEquipmentSlots(); clearInventoryDetail();
       }
 
+
+      function makeClothingGearEntry(item) {
+        if (!item) return null;
+        return {
+          uid: item.uid || 'gcloth_' + Math.random().toString(36).slice(2, 10),
+          cosmeticId: item.cosmeticId,
+          slot: item.slot,
+          label: item.label,
+          colorA: item.colorA,
+          colorB: item.colorB,
+          sprite: item.sprite || clothingSpriteForCosmetic(item.cosmeticId),
+          sellPrice: item.sellPrice || 0,
+        };
+      }
+
+      function clothingSpriteForCosmetic(cosmeticId) {
+        return window.SCRATCHBONES_CONFIG?.game?.inventory?.clothingSprites?.[cosmeticId] || null;
+      }
+
+      function renderClothingIcon(parent, item, className = 'ies-cloth-sprite') {
+        const sprite = item?.sprite || clothingSpriteForCosmetic(item?.cosmeticId);
+        if (sprite) {
+          const img = document.createElement('img');
+          img.src = sprite;
+          img.className = className;
+          img.alt = item?.label || 'Clothing';
+          parent.appendChild(img);
+          return img;
+        }
+        const icon = document.createElement('span');
+        icon.className = className + ' ies-cloth-fallback';
+        icon.textContent = '👘';
+        parent.appendChild(icon);
+        return icon;
+      }
+
+      function setInventoryDetailClothingIcon(item) {
+        const iconEl = document.getElementById('iiIcon');
+        if (!iconEl) return;
+        const sprite = item?.sprite || clothingSpriteForCosmetic(item?.cosmeticId);
+        if (sprite) {
+          iconEl.innerHTML = '<img class="ii-cloth-sprite" src="' + esc(sprite) + '" alt="' + esc(item?.label || 'Clothing') + '">';
+        } else {
+          iconEl.textContent = '👘';
+        }
+      }
+
+      function ensureGearClothingCollection() {
+        if (!gearInventory) return;
+        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
+        if (!Array.isArray(gearInventory.clothingItems)) gearInventory.clothingItems = [];
+        for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
+          const worn = gearInventory.clothing[slot];
+          if (!worn) continue;
+          const wornEntry = makeClothingGearEntry({ ...worn, slot });
+          if (!worn.uid) gearInventory.clothing[slot] = wornEntry;
+          const hasItem = gearInventory.clothingItems.some(item => item.uid === wornEntry.uid);
+          if (!hasItem) gearInventory.clothingItems.push(wornEntry);
+        }
+      }
+
       function transferClothingToGear(uid) {
         const idx = packClothing.findIndex(c => c.uid === uid);
         if (idx < 0) return;
-        const item = packClothing[idx];
-        const old  = gearInventory.clothing[item.slot];
-        if (old) packClothing.push({ ...old, uid: 'citem_' + Math.random().toString(36).slice(2, 8) });
-        gearInventory.clothing[item.slot] = { cosmeticId: item.cosmeticId, slot: item.slot, label: item.label, colorA: item.colorA, colorB: item.colorB };
+        const item = makeClothingGearEntry(packClothing[idx]);
+        ensureGearClothingCollection();
+        gearInventory.clothingItems.push(item);
+        gearInventory.clothing[item.slot] = item;
         packClothing.splice(idx, 1);
         saveGearInventory();
-        showToast(item.label + ' equipped!', true);
+        showToast(item.label + ' moved to gear and equipped!', true);
         buildPackClothingSection(); buildEquipmentSlots(); clearInventoryDetail();
       }
 
@@ -4159,7 +4214,7 @@
         if (emptyEl)  emptyEl.style.display  = 'none';
         if (detailEl) detailEl.style.display  = '';
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
-        set('iiIcon',  '👘');
+        setInventoryDetailClothingIcon(item);
         set('iiName',  item.label);
         set('iiPrice', item.sellPrice ? item.sellPrice + 'g' : '');
         set('iiTags',  '<span class="ii-tag">Clothing</span><span class="ii-tag">' + item.slot.charAt(0).toUpperCase() + item.slot.slice(1) + '</span>');
@@ -4182,6 +4237,17 @@
         }
       }
 
+      function equipGearClothing(uid) {
+        ensureGearClothingCollection();
+        const item = gearInventory.clothingItems.find(c => c.uid === uid);
+        if (!item) return;
+        gearInventory.clothing[item.slot] = item;
+        saveGearInventory();
+        showToast(item.label + ' equipped!', true);
+        buildEquipmentSlots();
+        selectGearClothing(item.slot, item);
+      }
+
       function selectGearClothing(slot, item) {
         invSelectedKey = null;
         document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
@@ -4190,24 +4256,33 @@
         if (emptyEl)  emptyEl.style.display  = 'none';
         if (detailEl) detailEl.style.display  = '';
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
-        set('iiIcon',  '👘');
+        setInventoryDetailClothingIcon(item);
         set('iiName',  item.label);
         set('iiPrice', 'Permanent gear — not sellable');
         set('iiTags',  '<span class="ii-tag">Clothing</span><span class="ii-tag">' + slot.charAt(0).toUpperCase() + slot.slice(1) + '</span>');
-        set('iiDesc',  'Currently worn. Buy or find another piece and transfer it to this slot to swap.');
+        const isWorn = gearInventory?.clothing?.[slot]?.uid === item.uid;
+        set('iiDesc',  isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.');
         const actEl = document.getElementById('iiActions');
         if (actEl) {
           actEl.innerHTML = '';
-          const btn = document.createElement('button');
-          btn.className = 'ii-btn';
-          btn.textContent = 'De-equip';
-          btn.onclick = () => {
-            gearInventory.clothing[slot] = null;
-            saveGearInventory();
-            buildEquipmentSlots();
-            clearInventoryDetail();
-          };
-          actEl.appendChild(btn);
+          if (!isWorn) {
+            const equipBtn = document.createElement('button');
+            equipBtn.className = 'ii-btn equip';
+            equipBtn.textContent = 'Equip';
+            equipBtn.onclick = () => equipGearClothing(item.uid);
+            actEl.appendChild(equipBtn);
+          } else {
+            const btn = document.createElement('button');
+            btn.className = 'ii-btn';
+            btn.textContent = 'De-equip';
+            btn.onclick = () => {
+              gearInventory.clothing[slot] = null;
+              saveGearInventory();
+              buildEquipmentSlots();
+              clearInventoryDetail();
+            };
+            actEl.appendChild(btn);
+          }
         }
       }
 
@@ -4222,7 +4297,11 @@
         packClothing.forEach(item => {
           const btn = document.createElement('button');
           btn.className = 'inv-pcloth-item';
-          btn.innerHTML = '<span class="ipc-icon">👘</span><span class="ipc-name">' + esc(item.label) + '</span>';
+          renderClothingIcon(btn, item, 'ipc-sprite');
+          const name = document.createElement('span');
+          name.className = 'ipc-name';
+          name.textContent = item.label;
+          btn.appendChild(name);
           btn.addEventListener('click', () => selectPackClothingItem(item.uid));
           sec.appendChild(btn);
         });
@@ -4300,6 +4379,8 @@
           sec.appendChild(empty);
         }
 
+        ensureGearClothingCollection();
+
         // ── Clothing Slots ────────────────────────────────────
         const clothHdr = document.createElement('div');
         clothHdr.className = 'inv-equip-label';
@@ -4314,6 +4395,7 @@
           cell.className = 'inv-equip-slot clothing-slot' + (item ? ' occupied' : '');
           cell.setAttribute('title', slot + (item ? ': ' + item.label : ' (empty)'));
           if (item) {
+            renderClothingIcon(cell, item);
             const nameEl = document.createElement('span');
             nameEl.className = 'ies-cloth-name'; nameEl.textContent = item.label;
             cell.appendChild(nameEl);
@@ -4326,6 +4408,35 @@
           clothRow.appendChild(cell);
         }
         sec.appendChild(clothRow);
+
+        const ownedClothing = (gearInventory?.clothingItems || []).filter(Boolean);
+        const ownedClothHdr = document.createElement('div');
+        ownedClothHdr.className = 'inv-equip-label';
+        ownedClothHdr.textContent = 'Owned Clothing';
+        sec.appendChild(ownedClothHdr);
+        if (ownedClothing.length) {
+          const ownedClothRow = document.createElement('div');
+          ownedClothRow.className = 'inv-equip-row inv-owned-clothing-row';
+          for (const item of ownedClothing) {
+            const worn = gearInventory?.clothing?.[item.slot]?.uid === item.uid;
+            const cell = document.createElement('div');
+            cell.className = 'inv-equip-slot clothing-owned-slot occupied' + (worn ? ' active-slot' : '');
+            cell.setAttribute('title', item.label + (worn ? ' — currently worn' : ' — click to equip'));
+            renderClothingIcon(cell, item);
+            const lbl = document.createElement('span');
+            lbl.className = 'ies-label';
+            lbl.textContent = item.slot.charAt(0).toUpperCase() + item.slot.slice(1);
+            cell.appendChild(lbl);
+            cell.addEventListener('click', () => selectGearClothing(item.slot, item));
+            ownedClothRow.appendChild(cell);
+          }
+          sec.appendChild(ownedClothRow);
+        } else {
+          const empty = document.createElement('div');
+          empty.className = 'inv-equip-empty';
+          empty.textContent = 'No collected clothing in gear.';
+          sec.appendChild(empty);
+        }
       }
 
       let activeItemIndex = 0;
@@ -9131,6 +9242,7 @@
           : makeDefaultGear();
         if (!gearInventory.tools)    gearInventory.tools    = {};
         if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
+        ensureGearClothingCollection();
         // Set default equipment slot assignments
         if (gearInventory.tools.bronzehoe)  equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
         if (gearInventory.tools.pickshovel) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';

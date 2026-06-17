@@ -24,6 +24,18 @@ window.SCRATCHBONES_CONFIG = {
         "actions": true
       }
     },
+    "inventory": {
+      "clothingSprites": {
+        "rugged_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
+        "fine_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
+        "fine_hood": "assets/cosmetics/clothes/hood/finehood-base_m.png",
+        "tankan_tunic": "assets/cosmetics/clothes/torso/portrait/tankantunic_mao-ao_m.png",
+        "bandolier1": "assets/cosmetics/clothes/torso/portrait/bandolier1_mao-ao_m.png",
+        "appearance::hat::basic_headband": "assets/cosmetics/clothes/hat/headband.png",
+        "appearance::hat::leather_headband": "assets/cosmetics/clothes/hat/headband.png",
+        "appearance::hat::riverlandskasa_wide": "assets/cosmetics/clothes/hat/riverlandskasa_wide-front.png"
+      }
+    },
     "movement": {
       "perpRotDeadzoneDeg": 40,
       "npc": {
