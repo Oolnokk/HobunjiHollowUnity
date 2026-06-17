@@ -1709,6 +1709,7 @@
       let _npcDialogueTypeText  = '';
       let _npcDialogueTypeIndex = 0;
       let _playerData        = null;  // set from hobunjiPlayerReady event
+      let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
 
       // ── Dialogue tree runtime state ──────────────────────────────────
       let _dlgTree      = null;  // active tree object
@@ -4142,34 +4143,45 @@
         };
       }
 
-      async function refreshPlayerAvatar() {
-        if (!_playerData || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+      function disposeAvatarGroup(group) {
+        group?.traverse?.(node => {
+          node.geometry?.dispose?.();
+          if (node.material) {
+            const materials = Array.isArray(node.material) ? node.material : [node.material];
+            materials.forEach(mat => {
+              mat.map?.dispose?.();
+              mat.dispose?.();
+            });
+          }
+        });
+      }
+
+      function removePlayerAvatarChildren() {
         playerMesh.children
           .filter(child => child?.name === 'player_avatar')
           .forEach(child => {
             playerMesh.remove(child);
-            child.traverse?.(node => {
-              node.geometry?.dispose?.();
-              if (node.material) {
-                const materials = Array.isArray(node.material) ? node.material : [node.material];
-                materials.forEach(mat => {
-                  mat.map?.dispose?.();
-                  mat.dispose?.();
-                });
-              }
-            });
+            disposeAvatarGroup(child);
           });
+      }
+
+      async function refreshPlayerAvatar() {
+        if (!_playerData || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const refreshGeneration = ++playerAvatarRefreshGeneration;
+        removePlayerAvatarChildren();
         const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(applyGearClothingToPlayerData(_playerData));
-        if (!profile) return;
+        if (!profile || refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
         const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
         const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
         const frontCanvas = document.createElement('canvas');
         frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
           { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
@@ -4177,6 +4189,11 @@
         avatarGroup.name = 'player_avatar';
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
+        if (refreshGeneration !== playerAvatarRefreshGeneration) {
+          disposeAvatarGroup(avatarGroup);
+          return;
+        }
+        removePlayerAvatarChildren();
         playerMesh.add(avatarGroup);
       }
 
