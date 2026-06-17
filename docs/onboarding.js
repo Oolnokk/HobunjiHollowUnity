@@ -414,10 +414,26 @@
     return best;
   }
 
-  function swatchStyle(h, s, v) {
-    const sat = Math.max(0, 1 + (Number(s) || 0));
-    const bri = Math.max(0, 1 + (Number(v) || 0));
-    return `background:#7dc89a;filter:hue-rotate(${h}deg) saturate(${sat}) brightness(${bri})`;
+  function bodyColorSwatchBase(speciesId) {
+    const key = speciesId || _state?.appearance?.speciesId;
+    const normalizedKey = String(key || '').replace(/_/g, '-');
+    const cfgSpecies = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {};
+    return SPECIES_DATA[key]?.swatchBase
+      || SPECIES_DATA[normalizedKey]?.swatchBase
+      || cfgSpecies[key]?.swatchBase
+      || cfgSpecies[normalizedKey]?.swatchBase
+      || window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting?.legacyBodySwatchFallbackBase
+      || window.SCRATCHBONES_CONFIG?.game?.dyes?.swatchBase;
+  }
+
+  function swatchStyle(h, s, v, speciesId) {
+    const hueOffset   = (window.SCRATCHBONES_CONFIG?.clothingHueOffset)   ?? 0;
+    const satOffset   = (window.SCRATCHBONES_CONFIG?.clothingSatOffset)   ?? 0;
+    const lightOffset = (window.SCRATCHBONES_CONFIG?.clothingLightOffset) ?? 0;
+    const sat = Math.max(0, 1 + (Number(s) || 0) + satOffset);
+    const bri = Math.max(0, 1 + (Number(v) || 0) + lightOffset);
+    const finalH = (Number(h) || 0) + hueOffset;
+    return `background:${bodyColorSwatchBase(speciesId)};filter:hue-rotate(${finalH}deg) saturate(${sat}) brightness(${bri})`;
   }
 
   // ── Persistence ───────────────────────────────────────────────────────
@@ -632,6 +648,18 @@
       : false;
     if (!hasCollared && collarLockedIds.includes(profile.facialHair?.id)) {
       profile.facialHair = optionCache?.get('none') || none;
+    }
+
+    const dyeCatalog = window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
+    for (const [tintKey, dyeId] of Object.entries(_state.appliedDyes || {})) {
+      if (!dyeId) continue;
+      const dye = dyeCatalog.find(d => d.id === dyeId);
+      if (dye) {
+        profile.bodyColors = {
+          ...(profile.bodyColors || {}),
+          [tintKey]: { ...(dye.color || {}), ...(dye.hex ? { hex: dye.hex, tintMode: 'hexShadeFill' } : {}) }
+        };
+      }
     }
 
     return profile;
@@ -889,7 +917,7 @@
 
     const swatchRow = (opts, selIdx, attr) => opts.map((o, i) =>
       `<button class="ob-swatch${i === selIdx ? ' ob-active' : ''}" ${attr}="${i}"
-               style="${swatchStyle(o.h, o.s, o.v)}" title="${esc(o.label)}"></button>`
+               style="${swatchStyle(o.h, o.s, o.v, ap.speciesId)}" title="${esc(o.label)}"></button>`
     ).join('');
 
     return `
@@ -964,11 +992,11 @@
         </div>
         <div class="ob-section-label" style="margin-top:10px;">Dye Colors (from Appearance tab)</div>
         <div class="ob-swatches">
-          <button class="ob-swatch ob-active" style="${swatchStyle(cA.h, cA.s, cA.v)}" title="${esc(cA.label)}"></button>
+          <button class="ob-swatch ob-active" style="${swatchStyle(cA.h, cA.s, cA.v, ap.speciesId)}" title="${esc(cA.label)}"></button>
           <span class="ob-muted" style="font-size:11px;line-height:1;align-self:center">Primary: ${esc(cA.label)}</span>
         </div>
         <div class="ob-swatches" style="margin-top:4px;">
-          <button class="ob-swatch ob-active" style="${swatchStyle(cB.h, cB.s, cB.v)}" title="${esc(cB.label)}"></button>
+          <button class="ob-swatch ob-active" style="${swatchStyle(cB.h, cB.s, cB.v, ap.speciesId)}" title="${esc(cB.label)}"></button>
           <span class="ob-muted" style="font-size:11px;line-height:1;align-self:center">Secondary: ${esc(cB.label)}</span>
         </div>
         <div class="ob-muted" style="font-size:10px;margin-top:6px;">Rugged Poncho, Fine Poncho &amp; Fine Hood use both colors.</div>
