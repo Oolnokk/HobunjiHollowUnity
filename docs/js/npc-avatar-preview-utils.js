@@ -164,7 +164,7 @@
     const dyeCatalog = window.ScratchbonesAccount.getDyeCatalog();
     for (const [tintKey, dyeId] of Object.entries(dyes)) {
       const dye = dyeCatalog.find(d => d.id === dyeId);
-      if (dye) profile.bodyColors = { ...(profile.bodyColors || {}), [tintKey]: { ...dye.color } };
+      if (dye) profile.bodyColors = { ...(profile.bodyColors || {}), [tintKey]: { ...(dye.color || {}), ...(dye.hex ? { hex: dye.hex, tintMode: 'hexShadeFill' } : {}) } };
     }
     return profile;
   }
