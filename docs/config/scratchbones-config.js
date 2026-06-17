@@ -1074,7 +1074,8 @@ window.SCRATCHBONES_CONFIG = {
         "gamma": 1.0,
         "preserveNearBlackOutlines": true,
         "outlineThreshold": 0.08,
-        "cacheEnabled": true
+        "cacheEnabled": true,
+        "legacyBodySwatchFallbackBase": "#7dc89a"
       },
       "xformPresets": {
         "A": { "ax": -0.2, "ay": 0, "scaleX": 2.55, "scaleY": 2.55, "rotDeg": 0 },

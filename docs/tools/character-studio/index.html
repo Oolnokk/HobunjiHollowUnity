@@ -680,6 +680,17 @@ function defaultCosmeticsFor(speciesId, gender) {
   }
   return cosmetics;
 }
+function bodyColorSwatchBase(speciesId) {
+  const speciesKey = speciesId || work?.appearance?.speciesId;
+  const cfgSpecies = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {};
+  const normalizedKey = String(speciesKey || '').replace(/_/g, '-');
+  return SPECIES_DATA[speciesKey]?.swatchBase
+    || SPECIES_DATA[normalizedKey]?.swatchBase
+    || cfgSpecies[speciesKey]?.swatchBase
+    || cfgSpecies[normalizedKey]?.swatchBase
+    || window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting?.legacyBodySwatchFallbackBase
+    || window.SCRATCHBONES_CONFIG?.game?.dyes?.swatchBase;
+}
 function swatchStyle(base, h, s, v) {
   const hueOffset   = (window.SCRATCHBONES_CONFIG?.clothingHueOffset)   ?? 0;
   const satOffset   = (window.SCRATCHBONES_CONFIG?.clothingSatOffset)   ?? 0;
@@ -687,7 +698,10 @@ function swatchStyle(base, h, s, v) {
   const sat = Math.max(0, 1 + (Number(s) || 0) + satOffset).toFixed(3);
   const bri = Math.max(0, 1 + (Number(v) || 0) + lightOffset).toFixed(3);
   const finalH = (Number(h) || 0) + hueOffset;
-  return `background:${base || '#c8c8c8'};filter:hue-rotate(${finalH}deg) saturate(${sat}) brightness(${bri})`;
+  return `background:${base};filter:hue-rotate(${finalH}deg) saturate(${sat}) brightness(${bri})`;
+}
+function bodySwatchStyle(h, s, v, speciesId) {
+  return swatchStyle(bodyColorSwatchBase(speciesId), h, s, v);
 }
 
 // Species/gender mapping helpers (from npc-authoring-editor)
@@ -1228,19 +1242,6 @@ function _swatchesForRange(spec, cols, rows) {
   }
   return out;
 }
-function _swatchFilter(h, s, v) {
-  const hueOffset   = (window.SCRATCHBONES_CONFIG?.clothingHueOffset)   ?? 0;
-  const satOffset   = (window.SCRATCHBONES_CONFIG?.clothingSatOffset)   ?? 0;
-  const lightOffset = (window.SCRATCHBONES_CONFIG?.clothingLightOffset) ?? 0;
-  const sat = Math.max(0, 1 + (Number(s) || 0) + satOffset);
-  const bri = Math.max(0, 1 + (Number(v) || 0) + lightOffset);
-  const finalH = (Number(h) || 0) + hueOffset;
-  const parts = [];
-  if (Math.abs(finalH) > 0.05) parts.push(`hue-rotate(${finalH}deg)`);
-  if (Math.abs(sat - 1) > 0.005) parts.push(`saturate(${sat.toFixed(3)})`);
-  if (Math.abs(bri - 1) > 0.005) parts.push(`brightness(${bri.toFixed(3)})`);
-  return parts.length ? parts.join(' ') : 'none';
-}
 function _colorMatch(a, b) {
   if (!a || !b) return false;
   return Math.abs((a.h || 0) - (b.h || 0)) <= 2 && Math.abs((a.s || 0) - (b.s || 0)) <= 0.04 && Math.abs((a.v || 0) - (b.v || 0)) <= 0.04;
@@ -1264,7 +1265,7 @@ function _renderPicker(ranges) {
           <label style="font-size:10px;color:var(--muted)">H&nbsp;<input type="number" step="1" min="-180" max="180" value="${curH}" data-bc-slot="${slot}" data-bc-field="h" style="${inStyle}"></label>
           <label style="font-size:10px;color:var(--muted)">S&nbsp;<input type="number" step="0.01" min="-1" max="1" value="${curS}" data-bc-slot="${slot}" data-bc-field="s" style="${inStyle}"></label>
           <label style="font-size:10px;color:var(--muted)">V&nbsp;<input type="number" step="0.01" min="-1" max="1" value="${curV}" data-bc-slot="${slot}" data-bc-field="v" style="${inStyle}"></label>
-          <div data-bc-preview="${slot}" style="width:22px;height:22px;border-radius:7px;border:2px solid rgba(255,255,255,.5);background:#c87847;filter:${_swatchFilter(curH, curS, curV)}"></div>
+          <div data-bc-preview="${slot}" style="width:22px;height:22px;border-radius:7px;border:2px solid rgba(255,255,255,.5);${bodySwatchStyle(curH, curS, curV)}"></div>
         </div>`);
       row.querySelectorAll('[data-bc-field]').forEach(inp => {
         inp.addEventListener('input', () => {
@@ -1273,7 +1274,7 @@ function _renderPicker(ranges) {
           work.appearance.bodyColors[sl][fi] = Number(inp.value);
           const cur = work.appearance.bodyColors[sl];
           const preview = row.querySelector(`[data-bc-preview="${sl}"]`);
-          if (preview) preview.style.filter = _swatchFilter(cur.h || 0, cur.s || 0, cur.v || 0);
+          if (preview) preview.style.cssText = `width:22px;height:22px;border-radius:7px;border:2px solid rgba(255,255,255,.5);${bodySwatchStyle(cur.h || 0, cur.s || 0, cur.v || 0)}`;
           invalidatePreview();
         });
       });
@@ -1285,7 +1286,7 @@ function _renderPicker(ranges) {
     for (const sw of swatches) {
       const el = document.createElement('div');
       el.className = 'colorSwatch' + (_colorMatch(current, sw) ? ' swatchActive' : '');
-      el.style.cssText = `background:#c87847;filter:${_swatchFilter(sw.h, sw.s, sw.v)}`;
+      el.style.cssText = bodySwatchStyle(sw.h, sw.s, sw.v);
       el.title = `h:${sw.h} s:${sw.s} v:${sw.v}`;
       el.addEventListener('click', () => {
         if (!work.appearance.bodyColors) work.appearance.bodyColors = clone(DEFAULT_BODY_COLORS);
@@ -1297,8 +1298,8 @@ function _renderPicker(ranges) {
     }
     row.appendChild(grid);
     if (current) {
-      const cf = _swatchFilter(current.h || 0, current.s || 0, current.v || 0);
-      row.insertAdjacentHTML('beforeend', `<div style="display:flex;align-items:center;gap:6px;margin-top:5px"><span style="font-size:11px;color:var(--muted)">Current:</span><div style="width:22px;height:22px;border-radius:7px;border:2px solid rgba(255,255,255,.5);background:#c87847;filter:${cf}"></div><span style="font-size:11px;color:var(--muted)">h:${current.h || 0} s:${current.s || 0} v:${current.v || 0}</span></div>`);
+      const currentStyle = bodySwatchStyle(current.h || 0, current.s || 0, current.v || 0);
+      row.insertAdjacentHTML('beforeend', `<div style="display:flex;align-items:center;gap:6px;margin-top:5px"><span style="font-size:11px;color:var(--muted)">Current:</span><div style="width:22px;height:22px;border-radius:7px;border:2px solid rgba(255,255,255,.5);${currentStyle}"></div><span style="font-size:11px;color:var(--muted)">h:${current.h || 0} s:${current.s || 0} v:${current.v || 0}</span></div>`);
     }
     sec.appendChild(row);
   }
