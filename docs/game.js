@@ -3230,18 +3230,30 @@
           townScene.add(im);
         }
 
+        // Cheap per-tile irregularity (height jitter + tiny tilt) so the town
+        // ground reads less perfectly flat, echoing the farm's heightfield look,
+        // without the per-vertex cost of a unique geometry per tile.
+        const _townHash = (c, r) => {
+          let h = (2166136261 ^ (c * 374761393) ^ (r * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return h / 4294967296;
+        };
         for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
           const tile = townGrid[r]?.[c];
           const tp  = tile?.type || TileType.GRASS;
           const rtp = tp === TileType.ROCK ? TileType.GRASS : tp;
           const inst = instances[rtp];
           if (inst) {
-            dummy.position.set(c + 0.5, tileYCenter(rtp), r + 0.5);
+            const jitter = (_townHash(c, r) - 0.5) * 0.05;
+            dummy.position.set(c + 0.5, tileYCenter(rtp) + jitter, r + 0.5);
+            dummy.rotation.set((_townHash(c + 91, r) - 0.5) * 0.05, 0, (_townHash(c, r + 91) - 0.5) * 0.05);
             dummy.updateMatrix();
             inst.mesh.setMatrixAt(inst.idx++, dummy.matrix);
           }
         }
         for (const { mesh } of Object.values(instances)) mesh.instanceMatrix.needsUpdate = true;
+
+        _buildTownGrassBillboards(TCOLS, TROWS);
 
         // Gold ring markers for town transitions
         const ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
@@ -5681,6 +5693,9 @@
         // Block structural building tiles on exterior maps (player must use doors/transitions).
         if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
         if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
+        // Farm terrain no longer slows movement — keeps farm traversal feeling
+        // as snappy as town, matching the player's uniform GRASS speed there.
+        if (currentArea === 'farm') return 1.00;
         return {
           [TileType.GRASS]:   1.00,
           [TileType.TILLED]:  0.85,
@@ -7125,6 +7140,48 @@
         grassBillboardGroups[i] = group;
       }
 
+      // Town's grass billboards — built once when entering town (town tiles
+      // don't get tilled/cleared at runtime, so no per-tile rebuild needed).
+      const townGrassBillboardGroups = [];
+      function _buildTownGrassBillboards(tcols, trows) {
+        if (!grassBillboardMat) return;
+        for (const g of townGrassBillboardGroups) townScene.remove(g);
+        townGrassBillboardGroups.length = 0;
+        const baseY = tileSurfaceY(TileType.GRASS);
+        for (let row = 0; row < trows; row++) {
+          for (let col = 0; col < tcols; col++) {
+            if (townGrid[row]?.[col]?.type !== TileType.GRASS) continue;
+            const group = new THREE.Group();
+            const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
+            for (let b = 0; b < 14; b++) {
+              const ox  = (rand() - 0.5) * 0.9;
+              const oz  = (rand() - 0.5) * 0.9;
+              const w   = 0.16 + rand() * 0.10;
+              const h   = 0.22 + rand() * 0.14;
+              const rot = rand() * Math.PI;
+
+              const cross = new THREE.Group();
+              cross.position.set(col + 0.5 + ox, baseY, row + 0.5 + oz);
+
+              const m1 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
+              m1.scale.set(w, h, 1);
+              m1.rotation.y = rot;
+              cross.add(m1);
+
+              const m2 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
+              m2.scale.set(w, h, 1);
+              m2.rotation.y = rot + Math.PI * 0.5;
+              cross.add(m2);
+
+              group.add(cross);
+            }
+            group.visible = s_grass;
+            townScene.add(group);
+            townGrassBillboardGroups.push(group);
+          }
+        }
+      }
+
       function _clearGrassBillboards(col, row) {
         const i = row * COLS + col;
         if (grassBillboardGroups[i]) {
@@ -7759,6 +7816,7 @@
       document.getElementById('settingGrass').addEventListener('change', e => {
         s_grass = e.target.checked;
         for (const g of grassBillboardGroups) if (g) g.visible = s_grass;
+        for (const g of townGrassBillboardGroups) g.visible = s_grass;
       });
       document.getElementById('settingBillWind').addEventListener('change', e => {
         s_billWind = e.target.checked;
@@ -7894,6 +7952,13 @@
             grassBillboardMat.uniforms.uTime.value     = windTime;
             grassBillboardMat.uniforms.uStrength.value = s_billWind ? windStrBase : 0;
           }
+        }
+        if (currentArea === 'town' && grassBillboardMat) {
+          // Town grass billboards share the farm's wind shader/material, so keep
+          // them swaying too — farm's block above only runs while on the farm.
+          const windTime = performance.now() / 1000;
+          grassBillboardMat.uniforms.uTime.value     = windTime;
+          grassBillboardMat.uniforms.uStrength.value = s_billWind ? (calendar.isRaining ? (calendar.rainStrength >= 3 ? 0.10 : 0.06) : 0.03) : 0;
         }
 
         // ── Render active scene ──────────────────────────────────
