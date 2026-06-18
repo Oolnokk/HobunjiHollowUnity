@@ -1380,111 +1380,9 @@ function onTransformObjectChange(){
 }
 
 
-function sortedDimsForPart(t){
-  return [
-    { axis:'x', value:Math.max(0.001, Math.abs(Number(t.sx)||0.001)) },
-    { axis:'y', value:Math.max(0.001, Math.abs(Number(t.sy)||0.001)) },
-    { axis:'z', value:Math.max(0.001, Math.abs(Number(t.sz)||0.001)) },
-  ].sort((a,b)=>a.value-b.value);
-}
-
-function resetPartRotationForYUp(part){
-  // These procedural pieces should encode orientation in their dimensions/taper axis.
-  // Rotation is still available after normalization, but the normalized baseline is
-  // "height/up = Y" rather than a 90-degree-turned primitive.
-  part.transform.rx = 0;
-  part.transform.ry = 0;
-  part.transform.rz = 0;
-}
-
-function normalizeLegOrPostYUp(part){
-  const dims = sortedDimsForPart(part.transform);
-  const small = dims[0].value;
-  const mid = dims[1].value;
-  const long = dims[2].value;
-  part.transform.sx = small;
-  part.transform.sy = long;
-  part.transform.sz = mid;
-  part.transform.y = Math.max(Number(part.transform.y)||0, long/2);
-  part.taperAxis = 'y';
-  resetPartRotationForYUp(part);
-}
-
-function normalizeFlatYUp(part){
-  const dims = sortedDimsForPart(part.transform);
-  const thin = dims[0].value;
-  const wideA = dims[1].value;
-  const wideB = dims[2].value;
-  part.transform.sx = wideB;
-  part.transform.sy = thin;
-  part.transform.sz = wideA;
-  part.taperAxis = 'y';
-  resetPartRotationForYUp(part);
-}
-
-function normalizeBeamYUp(part){
-  const dims = sortedDimsForPart(part.transform);
-  const thin = dims[0].value;
-  const mid = dims[1].value;
-  const long = dims[2].value;
-  part.transform.sx = long;
-  part.transform.sy = thin;
-  part.transform.sz = mid;
-  part.taperAxis = 'y';
-  resetPartRotationForYUp(part);
-}
-
-function partLooksLikeUpright(part){
-  const n = String(part.name || '').toLowerCase();
-  return part.kind === 'legSquare' ||
-    part.kind === 'legRound' ||
-    /\b(leg|foot|post|upright|pillar|support|stand|lamp|barrel body|body)\b/.test(n);
-}
-
-function partLooksFlat(part){
-  const n = String(part.name || '').toLowerCase();
-  return part.kind === 'disc' ||
-    part.kind === 'cushion' ||
-    /\b(top|seat|tabletop|table top|mattress|pillow|hoop|plate|shelf|surface|counter)\b/.test(n);
-}
-
-function normalizePartYUp(part){
-  if(!part?.transform) return false;
-  const before = JSON.stringify({t:part.transform, taperAxis:part.taperAxis});
-  if(partLooksLikeUpright(part)){
-    normalizeLegOrPostYUp(part);
-  } else if(partLooksFlat(part)){
-    normalizeFlatYUp(part);
-  } else if(part.kind === 'beam'){
-    normalizeBeamYUp(part);
-  } else if(part.kind === 'cylinder'){
-    // Cylinders are ambiguous: barrel/post = upright, hoop/disc/top = flat.
-    if(partLooksFlat(part)) normalizeFlatYUp(part);
-    else normalizeLegOrPostYUp(part);
-  } else {
-    part.taperAxis = part.taperAxis || 'y';
-  }
-  return JSON.stringify({t:part.transform, taperAxis:part.taperAxis}) !== before;
-}
-
-function normalizeAllPartsYUp(){
-  let changed = 0;
-  for(const part of state.parts){
-    if(normalizePartYUp(part)) changed++;
-  }
-  if(changed){
-    rebuildAll();
-    if(state.selectedType && state.selectedId) selectObject(state.selectedType, state.selectedId);
-    log(`Normalized ${changed} part(s): legs/posts/uprights now use Y as up/height; flat parts use Y as thickness.`);
-  } else {
-    log('Normalize Y-up parts: no changes needed.');
-  }
-}
-
 function addPart(kind, overrides={}){
   const p = Object.assign(defaultPart(kind), overrides);
   if(overrides.transform) p.transform = {...defaultPart(kind).transform, ...overrides.transform};
-  normalizePartYUp(p);
   state.parts.push(p);
   buildPartMesh(p);
   selectObject('part', p.id);
@@ -1566,11 +1464,11 @@ function presetBed(){
   clearParts();
   addPart('box',{name:'Bed Frame', transform:{x:0,y:.14,z:0,rx:0,ry:0,rz:0,sx:2.2,sy:.22,sz:1.15}, color:'#6b4a28'});
   addPart('cushion',{name:'Mattress Cushion', transform:{x:0,y:.33,z:0,rx:0,ry:0,rz:0,sx:2.05,sy:.22,sz:1.02}, color:'#506d8d', topScaleX:.96, topScaleZ:.96, bottomScaleX:1.02, bottomScaleZ:1.02});
-  addPart('cushion',{name:'Pillow', transform:{x:0,y:.50,z:-.38,rx:0,ry:0,rz:0,sx:.9,sy:.16,sz:.28}, color:'#d8d1b8', topScaleX:.94, topScaleZ:.9});
+  addPart('cushion',{name:'Pillow', transform:{x:-.78,y:.50,z:0,rx:0,ry:0,rz:0,sx:.28,sy:.16,sz:.9}, color:'#d8d1b8', topScaleX:.94, topScaleZ:.9});
   for(const x of [-.95,.95]) for(const z of [-.48,.48]) addPart('legSquare',{name:'Stub Bed Foot', transform:{x,y:.07,z,rx:0,ry:0,rz:0,sx:.14,sy:.14,sz:.14}});
   state.placementPlanes=[];
-  addPlane('sleep',{transform:{x:0,y:.48,z:.06,rx:-90,ry:0,rz:0,sx:1.85,sy:1,sz:.82}});
-  addPlane('pillow',{transform:{x:0,y:.59,z:-.38,rx:-90,ry:0,rz:0,sx:.8,sy:1,sz:.24}});
+  addPlane('sleep',{transform:{x:.15,y:.48,z:0,rx:-90,ry:0,rz:0,sx:1.5,sy:1,sz:.82}});
+  addPlane('pillow',{transform:{x:-.78,y:.59,z:0,rx:-90,ry:0,rz:0,sx:.24,sy:1,sz:.8}});
   syncControlsFromState();
 }
 function presetBarrel(){
