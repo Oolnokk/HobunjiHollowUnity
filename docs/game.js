@@ -6986,6 +6986,13 @@
       const vegMeshes = [];
       // Track foliage-generator groups by tile index for rotation-based sway
       const vegFoliageMeshes = new Array(ROWS * COLS).fill(null);
+      // Sparse index of occupied vegFoliageMeshes slots, kept in sync by setVegFoliageMesh(),
+      // so the per-frame wind-sway loop only visits live entries instead of all 936 slots.
+      const _vegFoliageActive = new Set();
+      function setVegFoliageMesh(i, val) {
+        vegFoliageMeshes[i] = val;
+        if (val) _vegFoliageActive.add(i); else _vegFoliageActive.delete(i);
+      }
 
       // ── Grass billboard system (grass_1.png sprites on GRASS tiles) ─────────
       const grassBillboardGroups = new Array(ROWS * COLS).fill(null);
@@ -7065,9 +7072,9 @@
               _buildGrassBillboardsForTile(c, r);
             } else if (grid[r][c].type === TileType.WEEDS && !s_weed3D) {
               const i = r * COLS + c;
-              if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); vegFoliageMeshes[i] = null; }
+              if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); setVegFoliageMesh(i, null); }
               const grp = _buildWeedBillboardGroup(c, r);
-              if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; }
+              if (grp) { scene.add(grp); setVegFoliageMesh(i, grp); }
             }
           }
         }
@@ -7228,6 +7235,7 @@
 
       function updateCropMeshes() {
         _ensureCropList();
+        const _now = performance.now();
         for (const i of _cropTileIndices) {
           const col  = i % COLS;
           const row  = (i / COLS) | 0;
@@ -7270,9 +7278,9 @@
               const scale = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
               mesh.scale.setScalar(scale);
 
-              const bobY = tile.cropReady ? Math.sin(performance.now() / 500 + col + row) * 0.025 : 0;
+              const bobY = tile.cropReady ? Math.sin(_now / 500 + col + row) * 0.025 : 0;
               mesh.position.set(col + 0.5, surfY + 0.01 + bobY, row + 0.5);
-              if (tile.cropReady) mesh.rotation.y = performance.now() / 2200 + col;
+              if (tile.cropReady) mesh.rotation.y = _now / 2200 + col;
 
             } else {
               // ── Simple colored cube (all other crops) ────────────────
@@ -7295,9 +7303,9 @@
               const mesh = cropMeshes[i];
               mesh.material.color.setHex(color);
               mesh.scale.setScalar(size);
-              const bobY = tile.cropReady ? Math.sin(performance.now() / 500 + col + row) * 0.03 : 0;
+              const bobY = tile.cropReady ? Math.sin(_now / 500 + col + row) * 0.03 : 0;
               mesh.position.set(col + 0.5, surfY + size / 2 + 0.02 + bobY, row + 0.5);
-              if (tile.cropReady) mesh.rotation.y = performance.now() / 1200 + col;
+              if (tile.cropReady) mesh.rotation.y = _now / 1200 + col;
             }
         }
       }
@@ -7333,7 +7341,7 @@
             if (!moundRoot) moundRoot = m;
           }
           if (moundRoot) moundRoot._windAmp = 0;  // wind loop skips _windAmp=0
-          vegFoliageMeshes[i] = moundRoot || { _windAmp: 0 };
+          setVegFoliageMesh(i, moundRoot || { _windAmp: 0 });
           _markOutline(moundRoot);
           return;
         }
@@ -7352,7 +7360,7 @@
           vegGroup.scale.set(2, 2, 2);
           vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
           scene.add(vegGroup);
-          vegFoliageMeshes[i] = vegGroup;
+          setVegFoliageMesh(i, vegGroup);
           _markOutline(vegGroup);
           return;
         }
@@ -7368,7 +7376,7 @@
           if (!s_weed3D) {
             // Mode A: oversized grass billboards (deferred if texture not yet loaded)
             const grp = _buildWeedBillboardGroup(col, row);
-            if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; }
+            if (grp) { scene.add(grp); setVegFoliageMesh(i, grp); }
           } else if (window.FoliageGenerator) {
             // Mode B: procedural 3D weeds, subject to shell outline
             const vegGroup = new THREE.Group();
@@ -7385,7 +7393,7 @@
             vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
             vegGroup._windAmp   = 0.10;
             scene.add(vegGroup);
-            vegFoliageMeshes[i] = vegGroup;
+            setVegFoliageMesh(i, vegGroup);
             _markOutline(vegGroup);
           }
           return;
@@ -7410,7 +7418,7 @@
             m._windAmp = 0;
             scene.add(m);
             m.layers.enable(1);  // material transition outline
-            vegFoliageMeshes[i] = m;
+            setVegFoliageMesh(i, m);
             if (!primary) primary = m;
           }
           tileMeshes[i] = primary;
@@ -7466,7 +7474,7 @@
             if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
             if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         waterMeshes[i]         = null; }
             if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
-            if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    vegFoliageMeshes[i]    = null; }
+            if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
             if (grassBillboardGroups[i]){ scene.remove(grassBillboardGroups[i]); grassBillboardGroups[i] = null; }
             cropGrowthBucket[i] = -1;
             _buildOneTileMesh(col, row);
@@ -7480,7 +7488,7 @@
         if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
         if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         waterMeshes[i]         = null; }
         if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
-        if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    vegFoliageMeshes[i]    = null; }
+        if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
         _clearGrassBillboards(col, row);
         cropGrowthBucket[i] = -1;
         _buildOneTileMesh(col, row);
@@ -7842,7 +7850,8 @@
             }
           }
           const windScale = windStrBase / 0.03;
-          for (const fg of vegFoliageMeshes) {
+          for (const _vfi of _vegFoliageActive) {
+            const fg = vegFoliageMeshes[_vfi];
             if (!fg || !fg._windAmp) continue;
             // Skip foliage well outside the camera view — it won't be visible.
             if (Math.abs(fg.position.x - _playerTX) > 14 || Math.abs(fg.position.z - _playerTZ) > 11) continue;
