@@ -166,16 +166,12 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
           <div><label>Placement ratio</label><input id="avatarPlacementRatio" type="number" step="0.01" value="0.5"></div>
         </div>
         <div class="g2">
-          <div><label>Anchor mode</label><select id="avatarAnchorMode"><option value="groundContact">GitHub ground-contact point on anchor Y</option><option value="bottomGround">Visible plane bottom on anchor Y</option><option value="center">Plane center on anchor Y</option></select></div>
-          <div><label>Anchor meaning</label><input value="Avatar Y is the floor/seat/sleep plane; GitHub placement ratio puts the contact point there" disabled></div>
-        </div>
-        <div class="g2">
+          <div><label>Anchor meaning</label><input value="Avatar Y is the floor; matches game.js exactly, including its avatarHeight/2 lift above the floor" disabled></div>
           <div><label>Width source</label><select id="avatarWidthMode"><option value="world">World width (0.9) for furniture scale</option><option value="portrait">Portrait builder width (1.0)</option></select></div>
-          <div><label>Meaning</label><input value="Use world width by default so furniture scale matches in-world avatars" disabled></div>
         </div>
         <div class="g2">
-          <div><label>Visual lift above anchor</label><input id="avatarVisualLift" type="number" step="0.005" value="0.12"></div>
-          <div><label>Why</label><input value="Raises the preview after GitHub placement so visual feet can match the tile base" disabled></div>
+          <div><label>Manual nudge above game.js Y</label><input id="avatarVisualLift" type="number" step="0.005" value="0"></div>
+          <div><label>Why</label><input value="Optional fine-tune only; 0 reproduces the exact in-game position" disabled></div>
         </div>
         <div class="g2">
           <div><label>Source px W</label><input id="avatarPxW" type="number" value="200"></div>
@@ -474,9 +470,8 @@ const state = {
     scaleMultiplier:1,
     placementRatio:0.5,
     transform:{ x:0, y:0, z:0, rx:0, ry:0, rz:0 },
-    anchorMode:'groundContact',
     widthMode:'world',
-    visualLift:0.12,
+    visualLift:0,
     textureDataUrl:null,
     textureName:'runtime 200x200 placeholder',
   },
@@ -764,30 +759,23 @@ function avatarDims(){
   const height = width * aspect;
   const placementRatio = state.avatar.placementRatio ?? 0.5;
 
-  // GitHub PNGPlaneAvatar semantics:
-  // - A centered plane would map image top to +height/2 and bottom to -height/2.
-  // - The pixel row at portraitVerticalPlacement is the intended ground/contact row.
-  // - assemblyOffsetY = (ratio - 0.5) * height moves that contact row to local Y=0.
-  //
-  // Example Mao'ao male, width/height .9, ratio .865:
-  // assemblyOffsetY = .3285
-  // plane bottom = -.1215
-  // ground-contact row = 0
-  //
-  // So if tile/base Y is ground, the avatar root should be placed at that Y,
-  // NOT lifted so the full transparent plane bottom touches ground.
+  // Replicate makeNpcWalker / refreshPlayerAvatar in game.js exactly:
+  // - root sits at the real floor Y (authoredAnchorY here).
+  // - avatarGroup.position.set(0, avatarHeight / 2, 0) lifts the whole avatar
+  //   so its plane is centered half its own height above that floor.
+  // - assemblyOffsetY = (ratio - 0.5) * height shifts the portraitVerticalPlacement
+  //   pixel row to avatarGroup's local Y=0, which self-cancels regardless of ratio,
+  //   so the contact row ends up at world Y = authoredAnchorY + avatarHeight/2 — NOT
+  //   at the floor itself. That's the actual in-game appearance, so this preview
+  //   must match it rather than anchoring the contact row to the floor.
   const assemblyOffsetY = (placementRatio - 0.5) * height;
-  const bottomLocalY = assemblyOffsetY - height / 2;
-  const topLocalY = assemblyOffsetY + height / 2;
+  const bottomLocalY = -height / 2;
+  const topLocalY = height / 2;
   const groundContactLocalY = 0;
 
-  const anchorMode = state.avatar.anchorMode || 'groundContact';
   const authoredAnchorY = state.avatar.transform?.y ?? 0;
   const visualLift = Number(state.avatar.visualLift) || 0;
-  const visualRootY =
-    anchorMode === 'groundContact' ? authoredAnchorY + visualLift :
-    anchorMode === 'bottomGround' ? authoredAnchorY - bottomLocalY + visualLift :
-    authoredAnchorY + visualLift;
+  const visualRootY = authoredAnchorY + height / 2 + visualLift;
 
   const visibleBottomY = visualRootY + bottomLocalY;
   const visibleTopY = visualRootY + topLocalY;
@@ -798,8 +786,8 @@ function avatarDims(){
     pxW, pxH, aspect, width, height, placementRatio,
     assemblyOffsetY, bottomLocalY, topLocalY, groundContactLocalY,
     bottomBelowGround,
-    groundLiftY: -bottomLocalY,
-    anchorMode, authoredAnchorY, visualLift, visualRootY, visibleBottomY, visibleTopY, groundContactY
+    groundLiftY: height / 2,
+    authoredAnchorY, visualLift, visualRootY, visibleBottomY, visibleTopY, groundContactY
   };
 }
 
@@ -1242,7 +1230,7 @@ function updateAvatarReadout(){
   const d = avatarDims();
   $('avatarDims').textContent = `plane ${d.width.toFixed(4)} × ${d.height.toFixed(4)} · placement ${state.avatar.placementRatio} · lift ${d.visualLift.toFixed(4)} · contactY ${d.groundContactY.toFixed(4)} · planeBottomY ${d.visibleBottomY.toFixed(4)}`;
   $('calcText').value = JSON.stringify({
-    formula:'GitHub path: PNGPlaneAvatar.buildSinglePlaneAvatarModel sets portraitModelWidth/Height, portraitScaleMultiplier, and portraitVerticalPlacementRatio; GitHub anchoring uses the placement-ratio pixel row as ground/contact Y=0; furniture-author then adds an editable visual lift so the visible foot contact can be matched against the tile base.',
+    formula:'Matches game.js exactly: PNGPlaneAvatar.buildSinglePlaneAvatarModel sets portraitModelWidth/Height, portraitScaleMultiplier, and portraitVerticalPlacementRatio; makeNpcWalker/refreshPlayerAvatar then place the model root at the real floor Y and lift the avatar group by avatarHeight/2 above it. The placement-ratio pixel row self-cancels to the avatar group origin, so the contact row ends up at floor + avatarHeight/2 in-game, and this preview reproduces that exact offset instead of anchoring contact to the floor.',
     sourceMode: state.avatar.sourceMode,
     sourcePixels: state.avatar.sourcePixels,
     modelWidth: d.width,
@@ -1612,9 +1600,8 @@ function syncControlsFromState(){
   $('avatarBaseW').value = state.avatar.baseModelWidth;
   $('avatarScale').value = state.avatar.scaleMultiplier;
   $('avatarPlacementRatio').value = state.avatar.placementRatio;
-  if ($('avatarAnchorMode')) $('avatarAnchorMode').value = state.avatar.anchorMode || 'groundContact';
   if ($('avatarWidthMode')) $('avatarWidthMode').value = state.avatar.widthMode || 'world';
-  if ($('avatarVisualLift')) $('avatarVisualLift').value = state.avatar.visualLift ?? 0.12;
+  if ($('avatarVisualLift')) $('avatarVisualLift').value = state.avatar.visualLift ?? 0;
   $('avatarPxW').value = state.avatar.sourcePixels[0];
   $('avatarPxH').value = state.avatar.sourcePixels[1];
   $('avatarX').value = state.avatar.transform.x;
@@ -1630,9 +1617,8 @@ function syncAvatarFromControls(){
   state.avatar.baseModelWidth = Math.max(0.01, num('avatarBaseW',1));
   state.avatar.scaleMultiplier = Math.max(0.01, num('avatarScale',1));
   state.avatar.placementRatio = num('avatarPlacementRatio',.5);
-  state.avatar.anchorMode = $('avatarAnchorMode') ? $('avatarAnchorMode').value : (state.avatar.anchorMode || 'groundContact');
   state.avatar.widthMode = $('avatarWidthMode') ? $('avatarWidthMode').value : (state.avatar.widthMode || 'world');
-  state.avatar.visualLift = $('avatarVisualLift') ? num('avatarVisualLift',0.12) : (state.avatar.visualLift ?? 0.12);
+  state.avatar.visualLift = $('avatarVisualLift') ? num('avatarVisualLift',0) : (state.avatar.visualLift ?? 0);
   state.avatar.sourcePixels = [Math.max(1,num('avatarPxW',200)), Math.max(1,num('avatarPxH',200))];
   state.avatar.transform = { x:num('avatarX',0), y:num('avatarY',0), z:num('avatarZ',0), rx:num('avatarRX',0), ry:num('avatarRY',0), rz:num('avatarRZ',0) };
   rebuildAvatar(); updateStats();
@@ -1766,7 +1752,7 @@ function setupEvents(){
     state.avatar.transform = {...poses[b.dataset.pose]};
     syncControlsFromState(); rebuildAvatar(); log('Applied avatar pose '+b.dataset.pose);
   });
-  ['avatarVisible','avatarBaseW','avatarScale','avatarPlacementRatio','avatarAnchorMode','avatarWidthMode','avatarVisualLift','avatarPxW','avatarPxH','avatarX','avatarY','avatarZ','avatarRX','avatarRY','avatarRZ'].forEach(id=>{
+  ['avatarVisible','avatarBaseW','avatarScale','avatarPlacementRatio','avatarWidthMode','avatarVisualLift','avatarPxW','avatarPxH','avatarX','avatarY','avatarZ','avatarRX','avatarRY','avatarRZ'].forEach(id=>{
     $(id).addEventListener('change', syncAvatarFromControls);
   });
   ['showTileBase','tileSize','footprintW','footprintD','tileBaseY','tileGridOpacity'].forEach(id=>{
@@ -1786,7 +1772,7 @@ function setupEvents(){
     reader.readAsText(file); e.target.value='';
   };
   $('exportGlbBtn').onclick=exportGLB;
-  $('resetBtn').onclick=()=>{ if(confirm('Clear everything and reset?')){ state.parts=[]; state.placementPlanes=[]; state.selectedType=null; state.selectedId=null; state.tileBase={visible:true,tileSize:1,footprintW:2,footprintD:2,y:0,gridOpacity:.55}; state.avatar={visible:true,sourceMode:'runtimePortrait',sourcePixels:[200,200],baseModelWidth:0.9,scaleMultiplier:1,placementRatio:0.865,anchorMode:'groundContact',widthMode:'world',visualLift:0.12,transform:{x:0,y:0,z:0,rx:0,ry:0,rz:0},textureDataUrl:null,textureName:'actual GitHub renderPortraitProfile Mao’ao 200×200'}; syncControlsFromState(); rebuildAll(); } };
+  $('resetBtn').onclick=()=>{ if(confirm('Clear everything and reset?')){ state.parts=[]; state.placementPlanes=[]; state.selectedType=null; state.selectedId=null; state.tileBase={visible:true,tileSize:1,footprintW:2,footprintD:2,y:0,gridOpacity:.55}; state.avatar={visible:true,sourceMode:'runtimePortrait',sourcePixels:[200,200],baseModelWidth:0.9,scaleMultiplier:1,placementRatio:0.865,widthMode:'world',visualLift:0,transform:{x:0,y:0,z:0,rx:0,ry:0,rz:0},textureDataUrl:null,textureName:'actual GitHub renderPortraitProfile Mao’ao 200×200'}; syncControlsFromState(); rebuildAll(); } };
   canvas.addEventListener('pointerdown', e=>{
     const rect = canvas.getBoundingClientRect();
     pointer.x = ((e.clientX-rect.left)/rect.width)*2-1;
