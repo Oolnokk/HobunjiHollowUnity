@@ -3224,6 +3224,18 @@
           arr.push({ geo, x, y, z });
         };
 
+        // Paths are no longer flat per-tile slabs stitched at the edges — the
+        // whole road network builds as one continuous heightfield (see
+        // buildPathNetworkGeo) so the dirt/grass boundary reads as an organic
+        // line independent of the tile grid. Tiles inside its bounding box
+        // are skipped below (pathNet.inBounds) except for TRENCH/RAISED/
+        // SHRUB/ROCK, which keep their own geometry.
+        const pathNet = buildPathNetworkGeo(townGrid, TCOLS, TROWS);
+        if (pathNet) {
+          _addToBucket(TileType.PATH,  pathNet.pathGeo,  0, NORMAL_TOP, 0);
+          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
+        }
+
         for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
           const tile = townGrid[r]?.[c];
           const tp = (tile?.type === TileType.ROCK) ? TileType.GRASS : (tile?.type || TileType.GRASS);
@@ -3235,11 +3247,9 @@
             _addToBucket(TileType.GRASS,  grassGeo, cx, NORMAL_TOP, cz);
             continue;
           }
-          if (tp === TileType.PATH) {
-            const { pathGeo, grassGeo } = buildPathTileGeo(c, r, townGrid);
-            _addToBucket(TileType.PATH,  pathGeo, cx, NORMAL_TOP, cz);
-            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP, cz);
-            continue;
+          if (tile?.type !== TileType.ROCK && (tp === TileType.PATH ||
+              (pathNet && pathNet.inBounds(c, r) && (tp === TileType.GRASS || tp === TileType.TILLED)))) {
+            continue; // covered by the path network mesh above
           }
           if (tp === TileType.SHRUB) {
             _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS), cz);
@@ -6234,20 +6244,37 @@
       // entry. Lets hundreds/thousands of seam-safe per-tile heightfield tiles
       // collapse into one draw call per material instead of one mesh per tile.
       function _mergeTileGeos(entries) {
+        // Recomputing normals on the merged buffer is mathematically the same
+        // as computing them per-entry (entries never share vertex indices, so
+        // there's no cross-entry averaging either way) — EXCEPT it silently
+        // discards any normal attribute an entry already carries. Some entries
+        // (e.g. the path network's pathGeo/grassGeo split) deliberately set a
+        // normal computed jointly across a sibling geometry that lives in a
+        // *different* bucket/material, to avoid a lighting seam where they
+        // meet. Preserve those instead of overwriting them.
+        for (const e of entries) {
+          if (!e.geo.attributes.normal) e.geo.computeVertexNormals();
+        }
         let vertCount = 0, idxCount = 0;
         for (const e of entries) {
           vertCount += e.geo.attributes.position.count;
           idxCount  += e.geo.index ? e.geo.index.count : e.geo.attributes.position.count;
         }
         const positions = new Float32Array(vertCount * 3);
+        const normals = new Float32Array(vertCount * 3);
         const indices = vertCount > 65535 ? new Uint32Array(idxCount) : new Uint16Array(idxCount);
         let vOff = 0, iOff = 0, vBase = 0;
         for (const e of entries) {
           const pa = e.geo.attributes.position;
+          const na = e.geo.attributes.normal;
           for (let i = 0; i < pa.count; i++) {
-            positions[vOff++] = pa.getX(i) + e.x;
-            positions[vOff++] = pa.getY(i) + e.y;
-            positions[vOff++] = pa.getZ(i) + e.z;
+            positions[vOff]   = pa.getX(i) + e.x;
+            positions[vOff+1] = pa.getY(i) + e.y;
+            positions[vOff+2] = pa.getZ(i) + e.z;
+            normals[vOff]   = na.getX(i);
+            normals[vOff+1] = na.getY(i);
+            normals[vOff+2] = na.getZ(i);
+            vOff += 3;
           }
           const idx = e.geo.index;
           if (idx) {
@@ -6259,8 +6286,8 @@
         }
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
         g.setIndex(new THREE.BufferAttribute(indices, 1));
-        g.computeVertexNormals();
         return g;
       }
 
@@ -6389,16 +6416,31 @@
 
         const posAttr = new THREE.Float32BufferAttribute(positions, 3);
 
-        // pathGeo and grassGeo are split into separate BufferGeometries, but
-        // they share the position buffer along the wobbling path/grass
-        // boundary. Calling computeVertexNormals() separately on each (as
-        // before) only accounts for that geometry's own faces, so a shared
-        // boundary vertex gets two different normals — a visible lighting
-        // seam exactly where the two materials meet. Compute one normal set
-        // over BOTH index lists combined and reuse it for both geometries so
-        // the boundary is shaded continuously.
-        const allIdx = pathIdx.concat(grassIdx);
-        const normals = new Float32Array(VERTS * VERTS * 3);
+        // pathGeo and grassGeo share the position buffer along the wobbling
+        // path/grass boundary — compute one normal set over both face lists
+        // so the boundary shades continuously instead of each geometry only
+        // seeing its own half of the faces.
+        const normAttr = new THREE.Float32BufferAttribute(
+          _sharedSplitNormals(positions, VERTS * VERTS, pathIdx, grassIdx), 3);
+
+        const makeGeo = idx => {
+          if (!idx.length) return null;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', posAttr);
+          g.setAttribute('normal', normAttr);
+          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          return g;
+        };
+        return { pathGeo: makeGeo(pathIdx), grassGeo: makeGeo(grassIdx) };
+      }
+
+      // Shared helper: compute one normal per vertex from a combined face list
+      // (used so two split geometries that share a position buffer along a
+      // boundary — e.g. path/grass — shade continuously instead of each
+      // computing normals only from its own half of the faces).
+      function _sharedSplitNormals(positions, vertCount, idxA, idxB) {
+        const allIdx = idxA.concat(idxB);
+        const normals = new Float32Array(vertCount * 3);
         for (let f = 0; f < allIdx.length; f += 3) {
           const ia = allIdx[f], ib = allIdx[f+1], ic = allIdx[f+2];
           const ax=positions[ia*3],ay=positions[ia*3+1],az=positions[ia*3+2];
@@ -6410,22 +6452,151 @@
             normals[vi3*3] += nx; normals[vi3*3+1] += ny; normals[vi3*3+2] += nz;
           }
         }
-        for (let v = 0; v < VERTS*VERTS; v++) {
+        for (let v = 0; v < vertCount; v++) {
           const nx=normals[v*3], ny=normals[v*3+1], nz=normals[v*3+2];
           const len = Math.hypot(nx,ny,nz) || 1;
           normals[v*3]=nx/len; normals[v*3+1]=ny/len; normals[v*3+2]=nz/len;
         }
-        const normAttr = new THREE.Float32BufferAttribute(normals, 3);
+        return normals;
+      }
+
+      // ── Path network: one continuous heightfield for the whole road system ───
+      // Instead of treating each PATH tile as its own flat, regular slab and
+      // patching the seams between them, the entire path network (bounding box
+      // of all PATH tiles + a margin) is built as ONE shared vertex grid — the
+      // same "no per-tile independence" approach the border terrain uses beyond
+      // the map's edge. A blurred per-tile mask defines where the ground dips
+      // into the path, so the path/grass boundary settles into an organic,
+      // irregular line that ignores the tile grid, and the dip itself reads as
+      // a very shallow inverted cliff rather than a Minecraft-style flat block.
+      // TRENCH/RAISED/SHRUB/ROCK tiles inside the bbox are left to their own
+      // per-tile geometry (skipped here) so they aren't double-covered.
+      function buildPathNetworkGeo(srcGrid, gcols, grows) {
+        let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+        for (let r = 0; r < grows; r++)
+          for (let c = 0; c < gcols; c++)
+            if (srcGrid[r]?.[c]?.type === TileType.PATH) {
+              if (c < minC) minC = c; if (c > maxC) maxC = c;
+              if (r < minR) minR = r; if (r > maxR) maxR = r;
+            }
+        if (minC === Infinity) return null; // no path tiles at all
+
+        const MARGIN = 2; // tiles of grass apron around the network for the dip to settle into
+        minC = Math.max(0, minC - MARGIN); maxC = Math.min(gcols - 1, maxC + MARGIN);
+        minR = Math.max(0, minR - MARGIN); maxR = Math.min(grows - 1, maxR + MARGIN);
+        const bw = maxC - minC + 1, bh = maxR - minR + 1;
+
+        const CELLS = 6, STEP = 1 / CELLS;
+        const GW = bw * CELLS + 1, GH = bh * CELLS + 1;
+
+        const EXCLUDED = new Set([TileType.TRENCH, TileType.RAISED, TileType.SHRUB, TileType.ROCK]);
+        const cellType    = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]?.type;
+        const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
+        const isExcluded  = (ci, cj) => EXCLUDED.has(cellType(ci, cj));
+
+        // Vertices on a tile boundary touch 2 (edge) or 4 (corner) cells —
+        // average their path-membership so the mask starts as a clean 0 /
+        // 0.25 / 0.5 / 0.75 / 1 step instead of guessing a single owner cell.
+        const touching = (g, n) => {
+          if (g % CELLS === 0) {
+            const a = g / CELLS - 1, b = g / CELLS, arr = [];
+            if (a >= 0 && a < n) arr.push(a);
+            if (b >= 0 && b < n) arr.push(b);
+            return arr;
+          }
+          return [Math.floor(g / CELLS)];
+        };
+
+        let mask = new Float32Array(GW * GH);
+        for (let gj = 0; gj < GH; gj++) {
+          const rows = touching(gj, bh);
+          for (let gi = 0; gi < GW; gi++) {
+            const cols = touching(gi, bw);
+            let sum = 0, n = 0;
+            for (const cj of rows) for (const ci of cols) { n++; if (isPathCell(ci, cj)) sum++; }
+            mask[gj * GW + gi] = n ? sum / n : 0;
+          }
+        }
+
+        // Box-blur the mask a few times to round it into an organic, non-grid
+        // boundary — this is what gives the rim its "more complex/defineable"
+        // character instead of a tile-square hole.
+        for (let pass = 0; pass < 3; pass++) {
+          const next = new Float32Array(GW * GH);
+          for (let gj = 0; gj < GH; gj++)
+            for (let gi = 0; gi < GW; gi++) {
+              let sum = 0, n = 0;
+              for (let dj = -1; dj <= 1; dj++)
+                for (let di = -1; di <= 1; di++) {
+                  const ni = gi+di, nj = gj+dj;
+                  if (ni<0||ni>=GW||nj<0||nj>=GH) continue;
+                  sum += mask[nj*GW+ni]; n++;
+                }
+              next[gj*GW+gi] = sum / n;
+            }
+          mask = next;
+        }
+
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 7) | 0, kz = Math.round(vz * 7) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.045;
+        };
+        const smooth = t => t * t * (3 - 2 * t);
+        const PATH_DY = -0.05; // shallow — a worn groove, not a trench
+
+        const Y = new Float32Array(GW * GH);
+        const positions = new Float32Array(GW * GH * 3);
+        for (let gj = 0; gj < GH; gj++)
+          for (let gi = 0; gi < GW; gi++) {
+            const vx = minC + gi * STEP, vz = minR + gj * STEP;
+            const blend = smooth(Math.min(1, Math.max(0, mask[gj*GW+gi])));
+            const y = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
+            const k = gj*GW+gi;
+            Y[k] = y;
+            positions[k*3] = vx; positions[k*3+1] = y; positions[k*3+2] = vz;
+          }
+
+        const PATH_THRESH = -0.013; // tuned for PATH_DY=-0.05 after the blur softens the mask
+        const pathIdx = [], grassIdx = [];
+        for (let cj = 0; cj < GH-1; cj++)
+          for (let ci = 0; ci < GW-1; ci++) {
+            const tci = Math.min(bw-1, Math.floor(ci / CELLS));
+            const tcj = Math.min(bh-1, Math.floor(cj / CELLS));
+            if (isExcluded(tci, tcj)) continue; // left for that tile's own geometry
+            const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
+            const isPath = Math.min(Y[v00],Y[v10],Y[v01],Y[v11]) < PATH_THRESH;
+            (isPath ? pathIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+          }
+
+        const vertCount = GW * GH;
+        const posAttr  = new THREE.Float32BufferAttribute(positions, 3);
+        const normAttr = new THREE.Float32BufferAttribute(
+          _sharedSplitNormals(positions, vertCount, pathIdx, grassIdx), 3);
 
         const makeGeo = idx => {
           if (!idx.length) return null;
           const g = new THREE.BufferGeometry();
           g.setAttribute('position', posAttr);
           g.setAttribute('normal', normAttr);
-          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          g.setIndex(new THREE.BufferAttribute(
+            vertCount > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
           return g;
         };
-        return { pathGeo: makeGeo(pathIdx), grassGeo: makeGeo(grassIdx) };
+
+        return {
+          pathGeo: makeGeo(pathIdx),
+          grassGeo: makeGeo(grassIdx),
+          inBounds: (c, r) => c >= minC && c <= maxC && r >= minR && r <= maxR,
+          isExcludedTile: (c, r) => EXCLUDED.has(srcGrid[r]?.[c]?.type),
+        };
       }
 
       // ── Rock tile: mini plateau heightfield (same pipeline as border terrain) ───
