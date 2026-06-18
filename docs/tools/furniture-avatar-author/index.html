@@ -1511,7 +1511,21 @@ function clearParts(){
   rebuildAll();
 }
 
+// In-game, a furniture model's local origin (0,0,0) lands at the center of its own
+// footprint, placed at world (col + fw/2, row + fd/2) — see building-interior-author's
+// furniture placement. That's a tile CENTER when the footprint dimension is odd (one tile),
+// but a tile BOUNDARY when it's even (the model straddles two tiles symmetrically) — both
+// are correct, but each preset needs the tile-base grid set to its own real footprint so
+// small single-tile pieces (stool, barrel) sit centered on one tile face instead of
+// straddling whatever footprint a previously-loaded preset left behind.
+function setPresetFootprint(footprintW, footprintD){
+  state.tileBase.footprintW = footprintW;
+  state.tileBase.footprintD = footprintD;
+  rebuildTileBase();
+}
+
 function presetTable(){
+  setPresetFootprint(2, 1);
   clearParts();
   // Width defaults to the full tile-base footprint width so the top spans whole tiles, not a fraction of one.
   const topWidth = Math.max(0.01, state.tileBase.tileSize) * Math.max(1, state.tileBase.footprintW);
@@ -1522,8 +1536,10 @@ function presetTable(){
   state.placementPlanes = [];
   addPlane('decorTop',{transform:{x:0,y:0.535,z:0,rx:-90,ry:0,rz:0,sx:decorWidth,sy:1,sz:.9}});
   selectObject('part', state.parts[0].id);
+  syncControlsFromState();
 }
 function presetBench(){
+  setPresetFootprint(2, 1);
   clearParts();
   addPart('box',{name:'Bench Seat', transform:{x:0,y:.31,z:0,rx:0,ry:0,rz:0,sx:1.9,sy:.18,sz:.55}, color:'#7a5c3a'});
   addPart('beam',{name:'Front Beam', transform:{x:0,y:.11,z:.25,rx:0,ry:0,rz:0,sx:1.7,sy:.12,sz:.12}, color:'#6b4a28'});
@@ -1531,8 +1547,10 @@ function presetBench(){
   for(const x of [-.75,.75]) for(const z of [-.20,.20]) addPart('legSquare',{name:'Bench Leg', transform:{x,y:.135,z,rx:0,ry:0,rz:0,sx:.14,sy:.27,sz:.14}});
   state.placementPlanes = [];
   addPlane('seat',{transform:{x:0,y:.42,z:0,rx:-90,ry:0,rz:0,sx:1.7,sy:1,sz:.45}});
+  syncControlsFromState();
 }
 function presetStool(){
+  setPresetFootprint(1, 1);
   clearParts();
   addPart('disc',{name:'Round Stool Seat', transform:{x:0,y:.31,z:0,rx:0,ry:0,rz:0,sx:.9,sy:.16,sz:.9}, segments:24, color:'#7a5c3a'});
   for(let i=0;i<3;i++){
@@ -1541,8 +1559,10 @@ function presetStool(){
   }
   state.placementPlanes=[];
   addPlane('seat',{transform:{x:0,y:.41,z:0,rx:-90,ry:0,rz:0,sx:.75,sy:1,sz:.75}});
+  syncControlsFromState();
 }
 function presetBed(){
+  setPresetFootprint(2, 1);
   clearParts();
   addPart('box',{name:'Bed Frame', transform:{x:0,y:.14,z:0,rx:0,ry:0,rz:0,sx:2.2,sy:.22,sz:1.15}, color:'#6b4a28'});
   addPart('cushion',{name:'Mattress Cushion', transform:{x:0,y:.33,z:0,rx:0,ry:0,rz:0,sx:2.05,sy:.22,sz:1.02}, color:'#506d8d', topScaleX:.96, topScaleZ:.96, bottomScaleX:1.02, bottomScaleZ:1.02});
@@ -1551,14 +1571,17 @@ function presetBed(){
   state.placementPlanes=[];
   addPlane('sleep',{transform:{x:0,y:.48,z:.06,rx:-90,ry:0,rz:0,sx:1.85,sy:1,sz:.82}});
   addPlane('pillow',{transform:{x:0,y:.59,z:-.38,rx:-90,ry:0,rz:0,sx:.8,sy:1,sz:.24}});
+  syncControlsFromState();
 }
 function presetBarrel(){
+  setPresetFootprint(1, 1);
   clearParts();
   addPart('cylinder',{name:'Tapered Barrel Body', transform:{x:0,y:.225,z:0,rx:0,ry:0,rz:0,sx:.72,sy:.45,sz:.72}, color:'#7a4924', segments:20, topScaleX:.82, topScaleZ:.82, bottomScaleX:.95, bottomScaleZ:.95});
   addPart('disc',{name:'Top Hoop', transform:{x:0,y:.43,z:0,rx:0,ry:0,rz:0,sx:.76,sy:.06,sz:.76}, color:'#b87333', segments:20, topScaleX:.94, topScaleZ:.94});
   addPart('disc',{name:'Bottom Hoop', transform:{x:0,y:.08,z:0,rx:0,ry:0,rz:0,sx:.82,sy:.06,sz:.82}, color:'#b87333', segments:20, topScaleX:.94, topScaleZ:.94});
   state.placementPlanes=[];
   addPlane('decorTop',{transform:{x:0,y:.49,z:0,rx:-90,ry:0,rz:0,sx:.55,sy:1,sz:.55}});
+  syncControlsFromState();
 }
 
 function exportData(){
