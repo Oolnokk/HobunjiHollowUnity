@@ -7728,6 +7728,7 @@
         _threeRect = rect;
         const w = rect.width  || window.innerWidth;
         const h = rect.height || window.innerHeight;
+        renderer.setPixelRatio(dpr * s_resScale);
         renderer.setSize(w, h);
         overlayCanvas.width  = Math.round(w * dpr);
         overlayCanvas.height = Math.round(h * dpr);
@@ -7742,6 +7743,11 @@
       let s_grass     = false;
       let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
       let s_billWind  = true;
+      let s_fpsCounter = false;
+      let s_resScale   = 1;  // render-resolution scale applied to the 3D renderer's pixel ratio
+
+      const fpsCounterEl = document.getElementById('fpsCounter');
+      let _fpsFrames = 0, _fpsAccum = 0;
 
       buildTileMeshes();
       buildBorderTerrain();
@@ -7761,10 +7767,29 @@
         s_weed3D = e.target.checked;
         _rebuildWeedTiles();
       });
+      document.getElementById('settingFpsCounter').addEventListener('change', e => {
+        s_fpsCounter = e.target.checked;
+        fpsCounterEl.style.display = s_fpsCounter ? '' : 'none';
+        _fpsFrames = 0; _fpsAccum = 0;
+      });
+      document.getElementById('settingResolution').addEventListener('change', e => {
+        s_resScale = parseFloat(e.target.value) || 1;
+        resizeCanvas();
+      });
 
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
+
+        if (s_fpsCounter) {
+          _fpsFrames++;
+          _fpsAccum += dt;
+          if (_fpsAccum >= 0.5) {
+            fpsCounterEl.textContent = Math.round(_fpsFrames / _fpsAccum) + ' FPS';
+            _fpsFrames = 0;
+            _fpsAccum  = 0;
+          }
+        }
 
         if (!gameStarted) {
           renderer.render(scene, camera);
