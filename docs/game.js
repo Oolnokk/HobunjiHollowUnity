@@ -6388,12 +6388,41 @@
             positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
 
         const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+
+        // pathGeo and grassGeo are split into separate BufferGeometries, but
+        // they share the position buffer along the wobbling path/grass
+        // boundary. Calling computeVertexNormals() separately on each (as
+        // before) only accounts for that geometry's own faces, so a shared
+        // boundary vertex gets two different normals — a visible lighting
+        // seam exactly where the two materials meet. Compute one normal set
+        // over BOTH index lists combined and reuse it for both geometries so
+        // the boundary is shaded continuously.
+        const allIdx = pathIdx.concat(grassIdx);
+        const normals = new Float32Array(VERTS * VERTS * 3);
+        for (let f = 0; f < allIdx.length; f += 3) {
+          const ia = allIdx[f], ib = allIdx[f+1], ic = allIdx[f+2];
+          const ax=positions[ia*3],ay=positions[ia*3+1],az=positions[ia*3+2];
+          const bx=positions[ib*3],by=positions[ib*3+1],bz=positions[ib*3+2];
+          const cx=positions[ic*3],cy=positions[ic*3+1],cz=positions[ic*3+2];
+          const e1x=bx-ax,e1y=by-ay,e1z=bz-az, e2x=cx-ax,e2y=cy-ay,e2z=cz-az;
+          const nx=e1y*e2z-e1z*e2y, ny=e1z*e2x-e1x*e2z, nz=e1x*e2y-e1y*e2x;
+          for (const vi3 of [ia,ib,ic]) {
+            normals[vi3*3] += nx; normals[vi3*3+1] += ny; normals[vi3*3+2] += nz;
+          }
+        }
+        for (let v = 0; v < VERTS*VERTS; v++) {
+          const nx=normals[v*3], ny=normals[v*3+1], nz=normals[v*3+2];
+          const len = Math.hypot(nx,ny,nz) || 1;
+          normals[v*3]=nx/len; normals[v*3+1]=ny/len; normals[v*3+2]=nz/len;
+        }
+        const normAttr = new THREE.Float32BufferAttribute(normals, 3);
+
         const makeGeo = idx => {
           if (!idx.length) return null;
           const g = new THREE.BufferGeometry();
           g.setAttribute('position', posAttr);
+          g.setAttribute('normal', normAttr);
           g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
-          g.computeVertexNormals();
           return g;
         };
         return { pathGeo: makeGeo(pathIdx), grassGeo: makeGeo(grassIdx) };
