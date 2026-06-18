@@ -936,7 +936,7 @@
         bench:         { itemKey: 'benchFurniture',         icon: '🪑', name: 'Short Bench',          modelFile: 'bench_short.glb',              price: 18, fw: 2, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A short wooden bench.' },
         bookshelf:     { itemKey: 'bookshelfFurniture',     icon: '📚', name: 'Bookshelf',            modelFile: 'bookshelf_low.glb',            price: 28, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low bookshelf.' },
         bucket:        { itemKey: 'bucketFurniture',        icon: '🪣', name: 'Tin Bucket',           modelFile: 'bucket_tin.glb',               price: 8,  fw: 1, fd: 1, color: 0x888888, area: 'any',      desc: 'A utilitarian tin bucket.' },
-        candleTable:   { itemKey: 'candleTableFurniture',   icon: '🕯️', name: 'Candle Table',         modelFile: 'candle_table.glb',             price: 15, fw: 1, fd: 1, color: 0x5a4020, area: 'interior', desc: 'Small table with a candle for warm light.' },
+        candleTable:   { itemKey: 'candleTableFurniture',   icon: '🕯️', name: 'Candle Table',         modelFile: 'candle_table.glb',             price: 15, fw: 1, fd: 1, color: 0x5a4020, area: 'interior', desc: 'Small table with a candle for warm light.', light: { color: 0xffaa44, intensity: 0.7, distance: 5, height: 0.55 } },
         chairSimple:   { itemKey: 'chairSimpleFurniture',   icon: '🪑', name: 'Simple Chair',         modelFile: 'chair_simple.glb',             price: 12, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A plain wooden chair.' },
         chairCushion:  { itemKey: 'chairCushionFurniture',  icon: '🪑', name: 'Cushioned Chair',      modelFile: 'chair_with_blue_cushion.glb',  price: 22, fw: 1, fd: 1, color: 0x3a5c8a, area: 'interior', desc: 'A chair with a soft blue cushion.' },
         chest:         { itemKey: 'chestFurniture',         icon: '📦', name: 'Storage Chest',        modelFile: 'chest_storage.glb',            price: 32, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'Sturdy wooden chest for storage.' },
@@ -944,11 +944,11 @@
         copperBarrel:  { itemKey: 'copperBarrelFurniture',  icon: '🛢️', name: 'Copper Barrel',        modelFile: 'barrel_copper_hoop.glb',       price: 20, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A sturdy copper-hooped barrel.' },
         desk:          { itemKey: 'deskFurniture',          icon: '✍️', name: 'Writing Desk',         modelFile: 'desk_writing.glb',             price: 38, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A fine writing desk with drawers.' },
         dresser:       { itemKey: 'dresserFurniture',       icon: '🗄️', name: 'Low Dresser',          modelFile: 'dresser_low.glb',              price: 30, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low dresser with drawers.' },
-        hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.' },
+        hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.', light: { color: 0xff7722, intensity: 1.4, distance: 7, height: 0.4 } },
         loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
-        nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.' },
+        nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', desc: 'A small decorative woven rug.' },
-        standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.' },
+        standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
         stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.' },
         tableLong:     { itemKey: 'tableLongFurniture',     icon: '🍽️', name: 'Long Table',           modelFile: 'table_long.glb',               price: 42, fw: 4, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A long communal dining table.' },
         tableRound:    { itemKey: 'tableRoundFurniture',    icon: '🍽️', name: 'Round Table',          modelFile: 'table_round.glb',              price: 28, fw: 2, fd: 2, color: 0x7a5c3a, area: 'interior', desc: 'A round wooden dining table.' },
@@ -1346,7 +1346,15 @@
         const group = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color || 0x8b6540);
         group.position.set(col + (def.fw || 1) * 0.5, 0, row + (def.fd || 1) * 0.5);
         targetScene.add(group);
-        return group;
+
+        let light = null;
+        if (def.light) {
+          light = new THREE.PointLight(def.light.color, def.light.intensity, def.light.distance);
+          light.position.set(col + 0.5, def.light.height || 0.6, row + 0.5);
+          targetScene.add(light);
+        }
+
+        return { mesh: group, light };
       }
 
       function placeDecorativeFurniture(col, row, furnitureKey) {
@@ -1360,11 +1368,11 @@
         const itemKey = def.itemKey;
         if ((inventory[itemKey] || 0) < 1) return { ok: false, message: `No ${def.name} in inventory.` };
         const targetScene = isInInterior ? interiorScene : scene;
-        const mesh = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene);
-        if (!mesh) return { ok: false, message: 'Could not create furniture mesh.' };
+        const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene);
+        if (!result) return { ok: false, message: 'Could not create furniture mesh.' };
         inventory[itemKey]--;
         clampInventoryStack(itemKey);
-        interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh, area: currentArea });
+        interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh: result.mesh, light: result.light, area: currentArea });
         refreshItemScroll();
         saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
@@ -1378,6 +1386,7 @@
             if (child.geometry) child.geometry.dispose();
             if (child.material) child.material.dispose();
           });
+          if (obj.light) s.remove(obj.light);
         });
         interiorFurnitureObjects.length = 0;
       }
@@ -1448,6 +1457,7 @@
               if (child.geometry) child.geometry.dispose();
               if (child.material) child.material.dispose();
             });
+            if (d.light) scene.remove(d.light);
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
@@ -1553,8 +1563,8 @@
           const def = DECORATIVE_FURNITURE_DEFS[key];
           if (!def) return;
           const targetScene = area === 'interior' ? interiorScene : scene;
-          const mesh = makeDecorativeFurnitureMesh(col, row, key, targetScene);
-          if (mesh) interiorFurnitureObjects.push({ key, col, row, mesh, area });
+          const result = makeDecorativeFurnitureMesh(col, row, key, targetScene);
+          if (result) interiorFurnitureObjects.push({ key, col, row, mesh: result.mesh, light: result.light, area });
         });
       }
 
@@ -1710,6 +1720,8 @@
       let _townZone          = null;   // parsed hobunji_town_v1 layout
       let townGrid           = [];     // 2-D tile array for the town map
       let townScene          = null;   // THREE.Scene, built lazily
+      let townAmbientLight   = null;
+      let townSunLight       = null;
       let _townSceneBuilt    = false;
       let _townBuildingDefs  = [];     // building entries from _townZone.buildings
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
@@ -3178,46 +3190,80 @@
         townScene = new THREE.Scene();
         townScene.background = new THREE.Color(0x7da87b);
         townScene.fog = new THREE.FogExp2(0x7da87b, 0.018); // match farm fog density
-        townScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
-        const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
-        sun.position.set(4, 8, 2);
-        townScene.add(sun);
+        townAmbientLight = new THREE.AmbientLight(0xfff0e0, 0.7);
+        townScene.add(townAmbientLight);
+        townSunLight = new THREE.DirectionalLight(0xffeedd, 1.1);
+        townSunLight.position.set(4, 8, 2);
+        townScene.add(townSunLight);
 
         const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
 
-        // Count tiles per type to size InstancedMeshes.
-        // Rock tiles render as grass — buildings cover those footprints.
-        const typeCounts = {};
-        for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
-          const tp = townGrid[r]?.[c]?.type || TileType.GRASS;
-          const rtp = tp === TileType.ROCK ? TileType.GRASS : tp;
-          typeCounts[rtp] = (typeCounts[rtp] || 0) + 1;
-        }
+        // Ground: real per-vertex seam-safe heightfield geometry, same pipeline
+        // as the farm (makeFloorGeo / buildPathTileGeo / buildTerrainTileGeo —
+        // all keyed on a hash of absolute world coords so adjacent tiles' shared
+        // edge vertices match exactly, with no gaps or independently-tilted
+        // facets). Per-tile geometries are merged into one BufferGeometry per
+        // material so the whole town ground still costs only a handful of draw
+        // calls despite TCOLS*TROWS individual tiles.
+        const _floorBuckets = new Map();
+        const _addToBucket = (matKey, geo, x, y, z) => {
+          if (!geo) return;
+          let arr = _floorBuckets.get(matKey);
+          if (!arr) { arr = []; _floorBuckets.set(matKey, arr); }
+          arr.push({ geo, x, y, z });
+        };
 
-        // One InstancedMesh per tile type (rock tiles render as ground — walls added separately)
-        const slabGeo = new THREE.BoxGeometry(1, SLAB_H, 1);
-        const dummy = new THREE.Object3D();
-        const instances = {};
-        for (const [tp, count] of Object.entries(typeCounts)) {
-          const mat = tileMats[tp] || tileMats.grass;
-          const im = new THREE.InstancedMesh(slabGeo, mat, count);
-          im.receiveShadow = true;
-          instances[tp] = { mesh: im, idx: 0 };
-          townScene.add(im);
+        // Paths are no longer flat per-tile slabs stitched at the edges — the
+        // whole road network builds as one continuous heightfield (see
+        // buildPathNetworkGeo) so the dirt/grass boundary reads as an organic
+        // line independent of the tile grid. Tiles inside its bounding box
+        // are skipped below (pathNet.inBounds) except for TRENCH/RAISED/
+        // SHRUB/ROCK, which keep their own geometry.
+        const pathNet = buildPathNetworkGeo(townGrid, TCOLS, TROWS);
+        if (pathNet) {
+          _addToBucket(TileType.PATH,  pathNet.pathGeo,  0, NORMAL_TOP, 0);
+          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
         }
 
         for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
           const tile = townGrid[r]?.[c];
-          const tp  = tile?.type || TileType.GRASS;
-          const rtp = tp === TileType.ROCK ? TileType.GRASS : tp;
-          const inst = instances[rtp];
-          if (inst) {
-            dummy.position.set(c + 0.5, tileYCenter(rtp), r + 0.5);
-            dummy.updateMatrix();
-            inst.mesh.setMatrixAt(inst.idx++, dummy.matrix);
+          const tp = (tile?.type === TileType.ROCK) ? TileType.GRASS : (tile?.type || TileType.GRASS);
+          const cx = c + 0.5, cz = r + 0.5;
+
+          if (tp === TileType.TRENCH || tp === TileType.RAISED) {
+            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tp, townGrid);
+            _addToBucket(TileType.TRENCH, dirtGeo, cx, NORMAL_TOP, cz);
+            _addToBucket(TileType.GRASS,  grassGeo, cx, NORMAL_TOP, cz);
+            continue;
           }
+          if (tile?.type !== TileType.ROCK && (tp === TileType.PATH ||
+              (pathNet && pathNet.inBounds(c, r) && (tp === TileType.GRASS || tp === TileType.TILLED)))) {
+            continue; // covered by the path network mesh above
+          }
+          if (tp === TileType.SHRUB) {
+            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS), cz);
+            if (window.FoliageGenerator) {
+              const vegGroup = window.FoliageGenerator.buildShrubMesh(c, r);
+              vegGroup.scale.set(2, 2, 2);
+              vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS), cz);
+              townScene.add(vegGroup);
+            }
+            continue;
+          }
+          // GRASS / TILLED / any other flat type — subdivided slab
+          const matKey = tp === TileType.TILLED ? TileType.TILLED : TileType.GRASS;
+          _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tp), cz);
         }
-        for (const { mesh } of Object.values(instances)) mesh.instanceMatrix.needsUpdate = true;
+
+        for (const [matKey, entries] of _floorBuckets) {
+          const merged = _mergeTileGeos(entries);
+          const mesh = new THREE.Mesh(merged, tileMats[matKey] || tileMats.grass);
+          mesh.receiveShadow = true;
+          townScene.add(mesh);
+        }
+
+        _buildTownGrassBillboards(TCOLS, TROWS);
+        buildTownBorderTerrain();
 
         // Gold ring markers for town transitions
         const ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
@@ -5442,8 +5488,8 @@
         const rect = _threeRect;
         lctx.clearRect(0, 0, rect.width, rect.height);
 
-        if (currentArea === 'interior') {
-          // Interior: no outdoor day/night overlay — just warm interior ambience
+        if (currentArea === 'interior' || _isBuildingArea(currentArea)) {
+          // Interior/building: no outdoor day/night overlay — just warm interior ambience
           lctx.fillStyle = 'rgba(80,40,10,0.08)';
           lctx.fillRect(0, 0, rect.width, rect.height);
           if (sceneTransAlpha > 0) {
@@ -5571,7 +5617,8 @@
       function updateWaterParticles(dt) {
         // Spawn particles on flowing trench tiles.
         // _flowingTrenchTiles is rebuilt each sim tick so no full grid scan is needed.
-        for (const { col, row } of _flowingTrenchTiles) {
+        const flowingTiles = currentArea === 'town' ? _townFlowingTrenchTiles : _flowingTrenchTiles;
+        for (const { col, row } of flowingTiles) {
           if (waterParticles.length < MAX_PARTICLES && Math.random() < 0.12) {
             const tx = col * TILE + 10 + Math.random() * (TILE - 20);
             const ty = row * TILE + 8 + Math.random() * (TILE - 16);
@@ -5597,8 +5644,9 @@
           // Kill if out of life or off a flowing trench
           const pc = Math.floor(p.wx / TILE);
           const pr = Math.floor(p.wy / TILE);
-          const onFlow = pc >= 0 && pc < COLS && pr >= 0 && pr < ROWS
-            && grid[pr][pc].type === TileType.TRENCH && grid[pr][pc].flow;
+          const aGrid = getActiveGrid(), aC = getActiveCols(), aR = getActiveRows();
+          const onFlow = pc >= 0 && pc < aC && pr >= 0 && pr < aR
+            && aGrid[pr][pc].type === TileType.TRENCH && aGrid[pr][pc].flow;
           if (p.life >= p.maxLife || !onFlow) waterParticles.splice(i, 1);
         }
       }
@@ -5611,9 +5659,10 @@
       }
 
       function spawnRipples() {
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const tile = grid[row][col];
+        const aGrid = getActiveGrid(), aC = getActiveCols(), aR = getActiveRows();
+        for (let row = 0; row < aR; row++) {
+          for (let col = 0; col < aC; col++) {
+            const tile = aGrid[row][col];
             const isWet = (tile.type === TileType.PADDY && tile.water >= 0.5)
               || (tile.type !== TileType.TRENCH && tile.water >= 0.7);
             if (!isWet) continue;
@@ -5657,6 +5706,9 @@
         // Block structural building tiles on exterior maps (player must use doors/transitions).
         if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
         if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
+        // Farm terrain no longer slows movement — keeps farm traversal feeling
+        // as snappy as town, matching the player's uniform GRASS speed there.
+        if (currentArea === 'farm') return 1.00;
         return {
           [TileType.GRASS]:   1.00,
           [TileType.TILLED]:  0.85,
@@ -5700,8 +5752,8 @@
       const _intKey = new THREE.DirectionalLight(0xfff0cc, 0.08);
       _intKey.position.set(2, 6, 3);
       interiorScene.add(_intKey);
-      const _intFill = new THREE.PointLight(0xff8833, 0.8, 10);
-      _intFill.position.set(3, 1.8, 2.5);  // centre of 6×5 main room
+      const _intFill = new THREE.PointLight(0xff8833, 0.35, 6);
+      _intFill.position.set(3, 1.8, 2.5);  // centre of 6×5 main room, dim fallback so placed lamps/candles/hearths stand out
       interiorScene.add(_intFill);
 
       // WallBuilder instance — loads Roughbrick1.glb eagerly in background
@@ -6179,6 +6231,58 @@
         return geo;
       }
 
+      // Merge many small per-tile geometries (each in local -0.5..0.5 tile space)
+      // into a single BufferGeometry, baking in world-space (x,y,z) offsets per
+      // entry. Lets hundreds/thousands of seam-safe per-tile heightfield tiles
+      // collapse into one draw call per material instead of one mesh per tile.
+      function _mergeTileGeos(entries) {
+        // Recomputing normals on the merged buffer is mathematically the same
+        // as computing them per-entry (entries never share vertex indices, so
+        // there's no cross-entry averaging either way) — EXCEPT it silently
+        // discards any normal attribute an entry already carries. Some entries
+        // (e.g. the path network's pathGeo/grassGeo split) deliberately set a
+        // normal computed jointly across a sibling geometry that lives in a
+        // *different* bucket/material, to avoid a lighting seam where they
+        // meet. Preserve those instead of overwriting them.
+        for (const e of entries) {
+          if (!e.geo.attributes.normal) e.geo.computeVertexNormals();
+        }
+        let vertCount = 0, idxCount = 0;
+        for (const e of entries) {
+          vertCount += e.geo.attributes.position.count;
+          idxCount  += e.geo.index ? e.geo.index.count : e.geo.attributes.position.count;
+        }
+        const positions = new Float32Array(vertCount * 3);
+        const normals = new Float32Array(vertCount * 3);
+        const indices = vertCount > 65535 ? new Uint32Array(idxCount) : new Uint16Array(idxCount);
+        let vOff = 0, iOff = 0, vBase = 0;
+        for (const e of entries) {
+          const pa = e.geo.attributes.position;
+          const na = e.geo.attributes.normal;
+          for (let i = 0; i < pa.count; i++) {
+            positions[vOff]   = pa.getX(i) + e.x;
+            positions[vOff+1] = pa.getY(i) + e.y;
+            positions[vOff+2] = pa.getZ(i) + e.z;
+            normals[vOff]   = na.getX(i);
+            normals[vOff+1] = na.getY(i);
+            normals[vOff+2] = na.getZ(i);
+            vOff += 3;
+          }
+          const idx = e.geo.index;
+          if (idx) {
+            for (let i = 0; i < idx.count; i++) indices[iOff++] = idx.getX(i) + vBase;
+          } else {
+            for (let i = 0; i < pa.count; i++) indices[iOff++] = i + vBase;
+          }
+          vBase += pa.count;
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+        g.setIndex(new THREE.BufferAttribute(indices, 1));
+        return g;
+      }
+
       // ── Path tile: worn depression with adjacency-aware torn edges ───────────
       // Same heightfield pipeline as buildTerrainTileGeo (TRENCH/RAISED) but with
       // a shallow depth (-0.09) so it reads as a foot-worn groove in the earth.
@@ -6186,15 +6290,46 @@
       // Geometry is split into pathGeo (depressed cells, path material) and
       // grassGeo (edge cells blending back to NORMAL_TOP, grass material) — the
       // same dual-mesh pattern used by rock and trench tiles.
-      function buildPathTileGeo(col, row) {
-        const VERTS = 9, CELLS = 8, STEP = 1.0 / CELLS;
-        const BLEND_V  = 3;
-        const PATH_DY  = -0.09;  // depression depth (shallower than trench's -0.5)
+      function buildPathTileGeo(col, row, srcGrid = grid) {
+        const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
+        const BLEND_V  = 2;
+        const PATH_DY  = -0.045;  // depression depth — shallow, rock-tile-style dip
 
-        const openN = grid[row - 1]?.[col]?.type === TileType.PATH;
-        const openS = grid[row + 1]?.[col]?.type === TileType.PATH;
-        const openW = grid[row]?.[col - 1]?.type === TileType.PATH;
-        const openE = grid[row]?.[col + 1]?.type === TileType.PATH;
+        // World-space smooth value noise — used to wobble the closed-edge
+        // margin width *continuously along the edge's world coordinate*, so
+        // the dirt/grass line meanders in long, smooth curves (serpentine,
+        // like a worn footpath) instead of either a dead-straight band or
+        // independent per-tile random teeth (which would just look like
+        // sawtooth noise, not a winding path). Because it's keyed off world
+        // position rather than per-tile randomness, the wave lines up
+        // seamlessly across adjacent path tiles.
+        const hash1 = n => {
+          let h = (Math.imul(n | 0, 2654435761) ^ ((n | 0) << 13)) >>> 0;
+          h = Math.imul(h ^ h>>>15, 1274126177) >>> 0;
+          return (h >>> 0) / 4294967296;
+        };
+        const smooth = t => t * t * (3 - 2 * t);
+        const wobble = (coord, seedOff) => {
+          const WAVELEN = 3.4;  // ~3-4 tiles per S-curve — reads as serpentine, not jittery
+          const xs = coord / WAVELEN + seedOff;
+          const xi = Math.floor(xs), t = xs - xi;
+          const a = hash1(xi), b = hash1(xi + 1);
+          const v = a + (b - a) * smooth(t);       // 0..1 smooth value noise
+          return 0.35 + v * 1.3;                    // multiplier range ~0.35..1.65
+        };
+
+        const openN = srcGrid[row - 1]?.[col]?.type === TileType.PATH;
+        const openS = srcGrid[row + 1]?.[col]?.type === TileType.PATH;
+        const openW = srcGrid[row]?.[col - 1]?.type === TileType.PATH;
+        const openE = srcGrid[row]?.[col + 1]?.type === TileType.PATH;
+
+        // Diagonal tiles — used to bevel the inner corner of L-shaped turns
+        // instead of leaving a blocky right-angle notch (same technique as
+        // buildTerrainTileGeo's TRENCH/RAISED corners).
+        const diagNW = srcGrid[row-1]?.[col-1]?.type === TileType.PATH;
+        const diagNE = srcGrid[row-1]?.[col+1]?.type === TileType.PATH;
+        const diagSW = srcGrid[row+1]?.[col-1]?.type === TileType.PATH;
+        const diagSE = srcGrid[row+1]?.[col+1]?.type === TileType.PATH;
 
         const seamDisp = (vx, vz) => {
           const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
@@ -6211,23 +6346,52 @@
           return (h / 4294967296 - 0.5) * 0.045;
         };
 
-        const smooth = t => t * t * (3 - 2 * t);
+        // Isolated 1-tile corner "nubs" — both perpendicular neighbors are
+        // path, the far diagonal isn't, AND the other two sides are closed —
+        // are almost always a one-tile width-step along a wider road's edge,
+        // not an intentional junction. Those get a true 45° diagonal cut
+        // across the whole tile (literally half path / half grass) instead
+        // of just a small rounded nub, so a multi-tile-wide road's outer
+        // edge reads as a chamfered line rather than a sawtooth staircase.
+        // Real junctions (where another side is also open) keep the subtle
+        // small-radius diagonal trim so they don't get chopped in half.
+        const isCornerNW = openW && openN && !diagNW && !openS && !openE;
+        const isCornerNE = openE && openN && !diagNE && !openS && !openW;
+        const isCornerSW = openW && openS && !diagSW && !openN && !openE;
+        const isCornerSE = openE && openS && !diagSE && !openN && !openW;
+        const spanNW = isCornerNW ? CELLS : BLEND_V;
+        const spanNE = isCornerNE ? CELLS : BLEND_V;
+        const spanSW = isCornerSW ? CELLS : BLEND_V;
+        const spanSE = isCornerSE ? CELLS : BLEND_V;
 
         const Y = new Float32Array(VERTS * VERTS);
         for (let vj = 0; vj < VERTS; vj++) {
           for (let vi = 0; vi < VERTS; vi++) {
-            const bW = openW ? 1 : smooth(Math.min(1, vi / BLEND_V));
-            const bE = openE ? 1 : smooth(Math.min(1, (CELLS - vi) / BLEND_V));
-            const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
-            const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
-            const blend = Math.min(1, bW * bE * bN * bS);
             const vx = col + vi * STEP, vz = row + vj * STEP;
+
+            // Closed-edge margin wobbles smoothly along the edge's world
+            // coordinate (vz for W/E, vx for N/S) — a long serpentine curve
+            // rather than a per-tile-random tooth.
+            const bW = openW ? 1 : smooth(Math.min(1, (vi / BLEND_V) * wobble(vz, 0.0)));
+            const bE = openE ? 1 : smooth(Math.min(1, ((CELLS - vi) / BLEND_V) * wobble(vz, 17.3)));
+            const bN = openN ? 1 : smooth(Math.min(1, (vj / BLEND_V) * wobble(vx, 41.7)));
+            const bS = openS ? 1 : smooth(Math.min(1, ((CELLS - vj) / BLEND_V) * wobble(vx, 89.1)));
+
+            // Diagonal bevel — Manhattan (vi+vj) distance from the corner,
+            // whose iso-lines are true 45° diagonals (unlike max(vi,vj),
+            // whose iso-lines are right-angle brackets).
+            const bDiagNW = (openW && openN && !diagNW) ? smooth(Math.min(1, (vi + vj)                 / spanNW)) : 1;
+            const bDiagNE = (openE && openN && !diagNE) ? smooth(Math.min(1, ((CELLS-vi) + vj)         / spanNE)) : 1;
+            const bDiagSW = (openW && openS && !diagSW) ? smooth(Math.min(1, (vi + (CELLS-vj))         / spanSW)) : 1;
+            const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, ((CELLS-vi) + (CELLS-vj)) / spanSE)) : 1;
+
+            const blend = Math.min(1, bW * bE * bN * bS * bDiagNW * bDiagNE * bDiagSW * bDiagSE);
             Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
           }
         }
 
         // Split: path material where the depression is visible, grass at shallow edges
-        const PATH_THRESH = -0.018;
+        const PATH_THRESH = -0.009;  // scaled with the shallower PATH_DY
         const pathIdx = [], grassIdx = [];
         for (let cj = 0; cj < CELLS; cj++)
           for (let ci = 0; ci < CELLS; ci++) {
@@ -6243,22 +6407,195 @@
             positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
 
         const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+
+        // pathGeo and grassGeo share the position buffer along the wobbling
+        // path/grass boundary — compute one normal set over both face lists
+        // so the boundary shades continuously instead of each geometry only
+        // seeing its own half of the faces.
+        const normAttr = new THREE.Float32BufferAttribute(
+          _sharedSplitNormals(positions, VERTS * VERTS, pathIdx, grassIdx), 3);
+
         const makeGeo = idx => {
           if (!idx.length) return null;
           const g = new THREE.BufferGeometry();
           g.setAttribute('position', posAttr);
+          g.setAttribute('normal', normAttr);
           g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
-          g.computeVertexNormals();
           return g;
         };
         return { pathGeo: makeGeo(pathIdx), grassGeo: makeGeo(grassIdx) };
+      }
+
+      // Shared helper: compute one normal per vertex from a combined face list
+      // (used so two split geometries that share a position buffer along a
+      // boundary — e.g. path/grass — shade continuously instead of each
+      // computing normals only from its own half of the faces).
+      function _sharedSplitNormals(positions, vertCount, idxA, idxB) {
+        const allIdx = idxA.concat(idxB);
+        const normals = new Float32Array(vertCount * 3);
+        for (let f = 0; f < allIdx.length; f += 3) {
+          const ia = allIdx[f], ib = allIdx[f+1], ic = allIdx[f+2];
+          const ax=positions[ia*3],ay=positions[ia*3+1],az=positions[ia*3+2];
+          const bx=positions[ib*3],by=positions[ib*3+1],bz=positions[ib*3+2];
+          const cx=positions[ic*3],cy=positions[ic*3+1],cz=positions[ic*3+2];
+          const e1x=bx-ax,e1y=by-ay,e1z=bz-az, e2x=cx-ax,e2y=cy-ay,e2z=cz-az;
+          const nx=e1y*e2z-e1z*e2y, ny=e1z*e2x-e1x*e2z, nz=e1x*e2y-e1y*e2x;
+          for (const vi3 of [ia,ib,ic]) {
+            normals[vi3*3] += nx; normals[vi3*3+1] += ny; normals[vi3*3+2] += nz;
+          }
+        }
+        for (let v = 0; v < vertCount; v++) {
+          const nx=normals[v*3], ny=normals[v*3+1], nz=normals[v*3+2];
+          const len = Math.hypot(nx,ny,nz) || 1;
+          normals[v*3]=nx/len; normals[v*3+1]=ny/len; normals[v*3+2]=nz/len;
+        }
+        return normals;
+      }
+
+      // ── Path network: one continuous heightfield for the whole road system ───
+      // Instead of treating each PATH tile as its own flat, regular slab and
+      // patching the seams between them, the entire path network (bounding box
+      // of all PATH tiles + a margin) is built as ONE shared vertex grid — the
+      // same "no per-tile independence" approach the border terrain uses beyond
+      // the map's edge. A blurred per-tile mask defines where the ground dips
+      // into the path, so the path/grass boundary settles into an organic,
+      // irregular line that ignores the tile grid, and the dip itself reads as
+      // a very shallow inverted cliff rather than a Minecraft-style flat block.
+      // TRENCH/RAISED/SHRUB/ROCK tiles inside the bbox are left to their own
+      // per-tile geometry (skipped here) so they aren't double-covered.
+      function buildPathNetworkGeo(srcGrid, gcols, grows) {
+        let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+        for (let r = 0; r < grows; r++)
+          for (let c = 0; c < gcols; c++)
+            if (srcGrid[r]?.[c]?.type === TileType.PATH) {
+              if (c < minC) minC = c; if (c > maxC) maxC = c;
+              if (r < minR) minR = r; if (r > maxR) maxR = r;
+            }
+        if (minC === Infinity) return null; // no path tiles at all
+
+        const MARGIN = 2; // tiles of grass apron around the network for the dip to settle into
+        minC = Math.max(0, minC - MARGIN); maxC = Math.min(gcols - 1, maxC + MARGIN);
+        minR = Math.max(0, minR - MARGIN); maxR = Math.min(grows - 1, maxR + MARGIN);
+        const bw = maxC - minC + 1, bh = maxR - minR + 1;
+
+        const CELLS = 6, STEP = 1 / CELLS;
+        const GW = bw * CELLS + 1, GH = bh * CELLS + 1;
+
+        const EXCLUDED = new Set([TileType.TRENCH, TileType.RAISED, TileType.SHRUB, TileType.ROCK]);
+        const cellType    = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]?.type;
+        const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
+        const isExcluded  = (ci, cj) => EXCLUDED.has(cellType(ci, cj));
+
+        // Vertices on a tile boundary touch 2 (edge) or 4 (corner) cells —
+        // average their path-membership so the mask starts as a clean 0 /
+        // 0.25 / 0.5 / 0.75 / 1 step instead of guessing a single owner cell.
+        const touching = (g, n) => {
+          if (g % CELLS === 0) {
+            const a = g / CELLS - 1, b = g / CELLS, arr = [];
+            if (a >= 0 && a < n) arr.push(a);
+            if (b >= 0 && b < n) arr.push(b);
+            return arr;
+          }
+          return [Math.floor(g / CELLS)];
+        };
+
+        let mask = new Float32Array(GW * GH);
+        for (let gj = 0; gj < GH; gj++) {
+          const rows = touching(gj, bh);
+          for (let gi = 0; gi < GW; gi++) {
+            const cols = touching(gi, bw);
+            let sum = 0, n = 0;
+            for (const cj of rows) for (const ci of cols) { n++; if (isPathCell(ci, cj)) sum++; }
+            mask[gj * GW + gi] = n ? sum / n : 0;
+          }
+        }
+
+        // Box-blur the mask a few times to round it into an organic, non-grid
+        // boundary — this is what gives the rim its "more complex/defineable"
+        // character instead of a tile-square hole.
+        for (let pass = 0; pass < 3; pass++) {
+          const next = new Float32Array(GW * GH);
+          for (let gj = 0; gj < GH; gj++)
+            for (let gi = 0; gi < GW; gi++) {
+              let sum = 0, n = 0;
+              for (let dj = -1; dj <= 1; dj++)
+                for (let di = -1; di <= 1; di++) {
+                  const ni = gi+di, nj = gj+dj;
+                  if (ni<0||ni>=GW||nj<0||nj>=GH) continue;
+                  sum += mask[nj*GW+ni]; n++;
+                }
+              next[gj*GW+gi] = sum / n;
+            }
+          mask = next;
+        }
+
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 7) | 0, kz = Math.round(vz * 7) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.045;
+        };
+        const smooth = t => t * t * (3 - 2 * t);
+        const PATH_DY = -0.05; // shallow — a worn groove, not a trench
+
+        const Y = new Float32Array(GW * GH);
+        const positions = new Float32Array(GW * GH * 3);
+        for (let gj = 0; gj < GH; gj++)
+          for (let gi = 0; gi < GW; gi++) {
+            const vx = minC + gi * STEP, vz = minR + gj * STEP;
+            const blend = smooth(Math.min(1, Math.max(0, mask[gj*GW+gi])));
+            const y = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
+            const k = gj*GW+gi;
+            Y[k] = y;
+            positions[k*3] = vx; positions[k*3+1] = y; positions[k*3+2] = vz;
+          }
+
+        const PATH_THRESH = -0.013; // tuned for PATH_DY=-0.05 after the blur softens the mask
+        const pathIdx = [], grassIdx = [];
+        for (let cj = 0; cj < GH-1; cj++)
+          for (let ci = 0; ci < GW-1; ci++) {
+            const tci = Math.min(bw-1, Math.floor(ci / CELLS));
+            const tcj = Math.min(bh-1, Math.floor(cj / CELLS));
+            if (isExcluded(tci, tcj)) continue; // left for that tile's own geometry
+            const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
+            const isPath = Math.min(Y[v00],Y[v10],Y[v01],Y[v11]) < PATH_THRESH;
+            (isPath ? pathIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+          }
+
+        const vertCount = GW * GH;
+        const posAttr  = new THREE.Float32BufferAttribute(positions, 3);
+        const normAttr = new THREE.Float32BufferAttribute(
+          _sharedSplitNormals(positions, vertCount, pathIdx, grassIdx), 3);
+
+        const makeGeo = idx => {
+          if (!idx.length) return null;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', posAttr);
+          g.setAttribute('normal', normAttr);
+          g.setIndex(new THREE.BufferAttribute(
+            vertCount > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+          return g;
+        };
+
+        return {
+          pathGeo: makeGeo(pathIdx),
+          grassGeo: makeGeo(grassIdx),
+          inBounds: (c, r) => c >= minC && c <= maxC && r >= minR && r <= maxR,
+          isExcludedTile: (c, r) => EXCLUDED.has(srcGrid[r]?.[c]?.type),
+        };
       }
 
       // ── Rock tile: mini plateau heightfield (same pipeline as border terrain) ───
       // 9×9 vertex grid (0.125u steps) over a 1×1 tile. Uses seam-safe FNV hash
       // at tile edges so vertices match adjacent makeFloorGeo tiles exactly.
       function buildRockTileGeo(col, row) {
-        const VERTS = 9, CELLS = 8;
+        const VERTS = 7, CELLS = 6;
         const STEP = 1.0 / CELLS;
 
         let _s = ((col * 374761393) ^ (row * 668265263)) >>> 0;
@@ -6295,7 +6632,7 @@
         // BFS plateau from a random interior starting cell (never touches edge cells)
         const startCi = 1 + Math.floor(rng() * (CELLS - 2));
         const startCj = 1 + Math.floor(rng() * (CELLS - 2));
-        const maxSize = 6 + Math.floor(rng() * 20);
+        const maxSize = 2 + Math.floor(rng() * 12);  // scaled for the smaller CELLS=6 interior
         const group = new Set([startCj * CELLS + startCi]);
         const front = [[startCi, startCj]];
 
@@ -6372,24 +6709,24 @@
       //   2. Diagonal-corner correction fades the inner vertex of L-turns to NORMAL_TOP
       //   3. Geometry is split into dirtGeo (depressed/raised cells) and grassGeo (flat
       //      edge cells near NORMAL_TOP), mirroring the rock tile's stone/grass split.
-      function buildTerrainTileGeo(col, row, type) {
-        const VERTS = 9, CELLS = 8, STEP = 1.0 / CELLS;
-        const BLEND_V  = 3;
+      function buildTerrainTileGeo(col, row, type, srcGrid = grid) {
+        const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
+        const BLEND_V  = 2;
         const PLATEAU  = type === TileType.RAISED ? 3.0 : 1.5;  // raised = wide flat top
         const targetDY = type === TileType.TRENCH
           ? TRENCH_TOP - NORMAL_TOP   // −0.5
           : RAISED_TOP - NORMAL_TOP;  // +0.5
 
-        const openN = grid[row - 1]?.[col]?.type === type;
-        const openS = grid[row + 1]?.[col]?.type === type;
-        const openW = grid[row]?.[col - 1]?.type === type;
-        const openE = grid[row]?.[col + 1]?.type === type;
+        const openN = srcGrid[row - 1]?.[col]?.type === type;
+        const openS = srcGrid[row + 1]?.[col]?.type === type;
+        const openW = srcGrid[row]?.[col - 1]?.type === type;
+        const openE = srcGrid[row]?.[col + 1]?.type === type;
 
         // Diagonal tiles — used to seal the inner corner of L-shaped turns
-        const diagNW = grid[row-1]?.[col-1]?.type === type;
-        const diagNE = grid[row-1]?.[col+1]?.type === type;
-        const diagSW = grid[row+1]?.[col-1]?.type === type;
-        const diagSE = grid[row+1]?.[col+1]?.type === type;
+        const diagNW = srcGrid[row-1]?.[col-1]?.type === type;
+        const diagNE = srcGrid[row-1]?.[col+1]?.type === type;
+        const diagSW = srcGrid[row+1]?.[col-1]?.type === type;
+        const diagSE = srcGrid[row+1]?.[col+1]?.type === type;
 
         const seamDisp = (vx, vz) => {
           const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
@@ -6669,6 +7006,350 @@
         elevStoneSkin(BV,          GH - 1 - BV, GW - 1 - BV, GW - 1);
       }
 
+      // Town border terrain: same plateau-growth pipeline as the farm's
+      // buildBorderTerrain(), but dramatic cliffs (passes 2+3) are restricted
+      // to north/west/east — the south already reads as forest and is left
+      // low/rolling — and the north/west/east walls are notched with flat
+      // "canyon" gaps wherever a road crosses that edge, so paths continue
+      // unobstructed off the map instead of dead-ending into rock.
+      let _townBorderGrassPoints = [];
+      let townBorderGrassBillMesh = null;
+      function _buildTownBorderGrassBillboards() {
+        if (!grassBillboardMat) return;
+        if (townBorderGrassBillMesh) { townScene.remove(townBorderGrassBillMesh); townBorderGrassBillMesh = null; }
+        const pts = _townBorderGrassPoints;
+        if (!pts.length) return;
+        const BLADES = 6;
+        townBorderGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, pts.length * BLADES * 2);
+        townBorderGrassBillMesh.frustumCulled = false;
+        townBorderGrassBillMesh.visible = s_grass;
+        const dummy = new THREE.Object3D();
+        let idx = 0;
+        for (const { px, pz, py, seed } of pts) {
+          const rand = _mbRng(seed);
+          for (let b = 0; b < BLADES; b++) {
+            const ox = (rand() - 0.5) * 0.7, oz = (rand() - 0.5) * 0.7;
+            const w  = 0.16 + rand() * 0.10, h = 0.22 + rand() * 0.14;
+            const rot = rand() * Math.PI;
+            dummy.position.set(px + ox, py, pz + oz);
+            dummy.rotation.set(0, rot, 0);
+            dummy.scale.set(w, h, 1);
+            dummy.updateMatrix();
+            townBorderGrassBillMesh.setMatrixAt(idx++, dummy.matrix);
+            dummy.rotation.set(0, rot + Math.PI * 0.5, 0);
+            dummy.updateMatrix();
+            townBorderGrassBillMesh.setMatrixAt(idx++, dummy.matrix);
+          }
+        }
+        townBorderGrassBillMesh.count = idx;
+        townBorderGrassBillMesh.instanceMatrix.needsUpdate = true;
+        townScene.add(townBorderGrassBillMesh);
+      }
+
+      function buildTownBorderTerrain() {
+        const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
+        const BORDER_W    = 18;
+        const SEED        = 4077;
+        const BLEND_STEPS = 8;
+
+        const BV  = BORDER_W * 2;
+        const PVW = TCOLS * 2, PVH = TROWS * 2;
+        const GW  = PVW + 2*BV + 1;
+        const GH  = PVH + 2*BV + 1;
+        const CW  = GW - 1, CH = GH - 1;
+
+        let _s = SEED >>> 0;
+        const rng = () => {
+          _s += 0x6D2B79F5;
+          let t = Math.imul(_s ^ _s>>>15, _s|1);
+          t ^= t + Math.imul(t ^ t>>>7, t|61);
+          return ((t ^ t>>>14) >>> 0) / 4294967296;
+        };
+
+        const hashDisp = (vi, vj) => {
+          let h = (2166136261 ^ (vi * 374761393) ^ (vj * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+
+        const vSteps = (gi, gj) => {
+          const vi = gi - BV, vj = gj - BV;
+          const dx = Math.max(0, -vi, vi - PVW);
+          const dz = Math.max(0, -vj, vj - PVH);
+          return Math.sqrt(dx*dx + dz*dz);
+        };
+
+        const isPlayable = (ci, cj) => ci>=BV && ci<BV+PVW && cj>=BV && cj<BV+PVH;
+
+        const Y = new Float32Array(GW * GH);
+        for (let gj = 0; gj < GH; gj++)
+          for (let gi = 0; gi < GW; gi++)
+            Y[gj*GW+gi] = NORMAL_TOP + hashDisp(gi-BV, gj-BV);
+
+        const cv4 = (ci, cj) => [cj*GW+ci, cj*GW+ci+1, (cj+1)*GW+ci, (cj+1)*GW+ci+1];
+
+        function pickGroup(ci0, cj0, maxSz) {
+          const group = [], seen = new Set([cj0*CW+ci0]);
+          const front = [[ci0, cj0]];
+          while (front.length && group.length < maxSz) {
+            const fi = Math.floor(rng() * front.length);
+            const [ci, cj] = front.splice(fi, 1)[0];
+            group.push([ci, cj]);
+            for (const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+              const ni=ci+dc, nj=cj+dr;
+              if (ni<0||ni>=CW||nj<0||nj>=CH) continue;
+              const nk = nj*CW+ni;
+              if (seen.has(nk) || isPlayable(ni,nj)) continue;
+              seen.add(nk); front.push([ni,nj]);
+            }
+          }
+          return group;
+        }
+
+        function raiseGroup(group, amount) {
+          let maxY = -Infinity;
+          const verts = new Set();
+          for (const [ci,cj] of group)
+            for (const vi of cv4(ci,cj)) { verts.add(vi); if(Y[vi]>maxY) maxY=Y[vi]; }
+          const target = maxY + amount;
+          for (const vi of verts) {
+            const gi = vi%GW, gj = vi/GW|0;
+            const st = vSteps(gi, gj);
+            if (st === 0) continue;
+            const blend  = Math.min(1, st / BLEND_STEPS);
+            const raised = NORMAL_TOP + hashDisp(gi-BV, gj-BV) + blend*(target - NORMAL_TOP);
+            if (raised > Y[vi]) Y[vi] = raised;
+          }
+        }
+
+        // Edge-biased seed cell picker restricted to a set of sides
+        // (0=north,1=south,2=west,3=east).
+        function pickCell(outerBias, sides) {
+          const rim = BV >> 2;
+          for (let attempt = 0; attempt < 300; attempt++) {
+            let ci, cj;
+            if (rng() < outerBias) {
+              const side = sides[Math.floor(rng() * sides.length)];
+              if (side===0) { ci=Math.floor(rng()*CW); cj=Math.floor(rng()*rim); }
+              else if(side===1){ ci=Math.floor(rng()*CW); cj=(CH-1-Math.floor(rng()*rim))|0; }
+              else if(side===2){ ci=Math.floor(rng()*rim); cj=Math.floor(rng()*CH); }
+              else              { ci=(CW-1-Math.floor(rng()*rim))|0; cj=Math.floor(rng()*CH); }
+            } else {
+              ci=Math.floor(rng()*CW); cj=Math.floor(rng()*CH);
+            }
+            if (!isPlayable(ci,cj)) return [ci,cj];
+          }
+          return [0,0];
+        }
+
+        // Pass 1: rugged plain on all four sides — keeps the south's forest
+        // floor gently uneven too, with no dramatic height.
+        for (let p = 0; p < 55; p++) {
+          const [ci,cj] = pickCell(0.12, [0,1,2,3]);
+          raiseGroup(pickGroup(ci, cj, 4 + Math.floor(rng()*18)), 0.05 + rng()*0.32);
+        }
+
+        // Pass 2: distant cliffs — tall, edge-biased plateaus, north/west/east
+        // only (side 1 = south is excluded so it stays low).
+        const cliffGroups = [];
+        for (let p = 0; p < 32; p++) {
+          const [ci,cj] = pickCell(0.88, [0,2,3]);
+          const group = pickGroup(ci, cj, 10 + Math.floor(rng()*38));
+          raiseGroup(group, 0.9 + rng()*3.2);
+          cliffGroups.push(group);
+        }
+
+        // Pass 2b: sub-plateauing — stack smaller, taller shelves onto the
+        // cliffs just raised (seeded from a random cell of the parent group,
+        // free to spill past its footprint) so tops break up into irregular,
+        // stepped terraces instead of flat single-height mesas. Two rounds
+        // of decreasing scale add coarse-then-fine jaggedness.
+        let subGroups = cliffGroups;
+        for (const [count, sizeRange, amtRange] of [[3, [3, 17], [0.4, 2.2]], [2, [2, 8], [0.2, 1.0]]]) {
+          const next = [];
+          for (const group of subGroups) {
+            const n = 1 + Math.floor(rng() * count);
+            for (let s = 0; s < n; s++) {
+              const [sci, scj] = group[Math.floor(rng() * group.length)];
+              const sub = pickGroup(sci, scj, sizeRange[0] + Math.floor(rng() * (sizeRange[1] - sizeRange[0])));
+              raiseGroup(sub, amtRange[0] + rng() * (amtRange[1] - amtRange[0]));
+              next.push(sub);
+            }
+          }
+          subGroups = next;
+        }
+
+        // Pass 3: guarantee a continuous cliff wall on north/west/east, with
+        // canyon gaps cut through wherever a road crosses that edge. The
+        // minimum ridge height itself is noisy (chunky, block-quantized) so
+        // the skyline isn't a dead-flat shelf.
+        const RIM_V   = 20;
+        const ridgeNoise = (gi, gj) => {
+          const qi = Math.round(gi / 5), qj = Math.round(gj / 5);
+          let h = (2166136261 ^ (qi * 374761393) ^ (qj * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h >>> 0) / 4294967296;
+        };
+        const rimMinAt = (gi, gj) => NORMAL_TOP + 2.2 + ridgeNoise(gi, gj) * 3.2;
+
+        // Tile col/row range -> vertex-index range (half-open), matching the
+        // 0.5-unit vertex spacing used throughout this generator.
+        const toViRange = (a, b) => [BV + a*2, BV + (b+1)*2];
+        const NORTH_GAP = toViRange(25, 35);   // sp_town_north  (col 30, row 1)
+        const WEST_GAP  = toViRange(20, 30);   // spot_2vsub     (col 0,  row 25)
+        const EAST_GAP  = toViRange(20, 30);   // spot_d33e9     (col 59, row 25)
+
+        for (let gj = 0; gj < GH; gj++) {
+          for (let gi = 0; gi < GW; gi++) {
+            const nearN = gj < RIM_V;
+            const nearS = gj > GH-1-RIM_V;
+            const nearW = gi < RIM_V;
+            const nearE = gi > GW-1-RIM_V;
+            if (!nearN && !nearW && !nearE) continue;  // south-only or interior — stays low
+            if (nearN && !nearW && !nearE && gi >= NORTH_GAP[0] && gi < NORTH_GAP[1]) continue;
+            if (nearW && !nearN && !nearS && gj >= WEST_GAP[0]  && gj < WEST_GAP[1])  continue;
+            if (nearE && !nearN && !nearS && gj >= EAST_GAP[0]  && gj < EAST_GAP[1])  continue;
+            const k = gj * GW + gi;
+            const rimMin = rimMinAt(gi, gj);
+            if (Y[k] < rimMin) Y[k] = rimMin;
+          }
+        }
+
+        // Carve the canyons clean through — full border depth on that side,
+        // regardless of anything passes 1/2 piled up in the corridor — so
+        // each road always has an open, flat path off the map edge.
+        const carve = (giMin, giMax, gjMin, gjMax) => {
+          for (let gj = gjMin; gj < gjMax; gj++)
+            for (let gi = giMin; gi < giMax; gi++)
+              Y[gj*GW+gi] = NORMAL_TOP + hashDisp(gi-BV, gj-BV);
+        };
+        carve(NORTH_GAP[0], NORTH_GAP[1], 0,           BV);
+        carve(0,             BV,         WEST_GAP[0],  WEST_GAP[1]);
+        carve(BV + PVW,      GW - 1,     EAST_GAP[0],  EAST_GAP[1]);
+
+        // ── Build geometry (border ring only — playable interior skipped) ──
+        const pos = new Float32Array(GW * GH * 3);
+        for (let gj = 0; gj < GH; gj++)
+          for (let gi = 0; gi < GW; gi++) {
+            const k = gj*GW+gi;
+            pos[k*3]   = (gi-BV)*0.5;
+            pos[k*3+1] = Y[k];
+            pos[k*3+2] = (gj-BV)*0.5;
+          }
+
+        const indices = [];
+        for (let cj = 0; cj < GH-1; cj++)
+          for (let ci = 0; ci < GW-1; ci++) {
+            if (isPlayable(ci,cj)) continue;
+            const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
+            indices.push(v00, v01, v11,  v00, v11, v10);
+          }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setIndex(new THREE.BufferAttribute(
+          (pos.length/3 > 65535) ? new Uint32Array(indices) : new Uint16Array(indices), 1));
+        geo.computeVertexNormals();
+
+        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        mesh.receiveShadow = true;
+        townScene.add(mesh);
+
+        // ── Stone cliff skin — north/west/east strips, plus the SW/SE corner
+        // blocks where the west/east walls continue down to the south edge.
+        const cliffMat = new THREE.MeshLambertMaterial({
+          color: 0x6a6460, side: THREE.DoubleSide,
+          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+        });
+
+        function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
+          const positions = [], idxArr = [];
+          let vi = 0;
+          for (let gj = gjMin; gj < gjMax; gj++) {
+            for (let gi = giMin; gi < giMax; gi++) {
+              const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
+              const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
+              const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+              const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
+              if (cnx * cnx + cnz * cnz <= 0.194) continue;
+              const x0=(gi-BV)*0.5, x1=x0+0.5;
+              const z0=(gj-BV)*0.5, z1=z0+0.5;
+              positions.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
+              idxArr.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
+            }
+          }
+          if (!positions.length) return;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+          g.setIndex(new THREE.BufferAttribute(new Uint32Array(idxArr), 1));
+          g.computeVertexNormals();
+          townScene.add(new THREE.Mesh(g, cliffMat));
+        }
+
+        elevStoneSkin(0,           BV,          0,           GW - 1);  // north strip (incl. NW/NE corners)
+        elevStoneSkin(BV,          GH - 1 - BV, 0,           BV);       // west strip (middle)
+        elevStoneSkin(BV,          GH - 1 - BV, GW - 1 - BV, GW - 1);   // east strip (middle)
+        elevStoneSkin(GH - 1 - BV, GH - 1,      0,           BV);       // SW corner
+        elevStoneSkin(GH - 1 - BV, GH - 1,      GW - 1 - BV, GW - 1);   // SE corner
+
+        // ── Sparse billboard grass on the flatter cells of the new terrain
+        // (skips steep cliff faces; denser on the gentle south/Pass-1 hills)
+        _townBorderGrassPoints = [];
+        for (let cj = 0; cj < CH; cj++) {
+          for (let ci = 0; ci < CW; ci++) {
+            if (isPlayable(ci, cj)) continue;
+            if (vSteps(ci, cj) > 16) continue;   // only near the playable edge
+            const y00=Y[cj*GW+ci],     y10=Y[cj*GW+ci+1];
+            const y01=Y[(cj+1)*GW+ci], y11=Y[(cj+1)*GW+ci+1];
+            const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+            const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
+            if (cnx*cnx + cnz*cnz > 0.194) continue;   // cliff face — no grass
+            const seed = (ci * 7919 + cj * 104173) >>> 0;
+            // Halfway between the old (0.3, too sparse) and the first fix
+            // (0.58, too dense) — sits between the inside and outside look.
+            if (_mbRng(seed)() > 0.44) continue;
+            const px = (ci-BV)*0.5 + 0.25, pz = (cj-BV)*0.5 + 0.25;
+            const py = (y00+y10+y01+y11) / 4;
+            _townBorderGrassPoints.push({ px, pz, py, seed });
+          }
+        }
+        _buildTownBorderGrassBillboards();
+
+        // ── Inaccessible shrubs continuing the forest belt south of the map
+        // edge — purely decorative (no tile data out there), skipped over
+        // the two road corridors so both south exits stay visually clear,
+        // and skipped on the steep SW/SE corner cliff faces.
+        if (window.FoliageGenerator) {
+          const SOUTH_GAP_A = toViRange(15, 21);   // To Farm (col 18, row 49)
+          const SOUTH_GAP_B = toViRange(27, 33);   // To Cloud Forest (col 30, row 49)
+          const STEP = 4;   // 2-tile spacing — shrubs are heavy procedural meshes
+          for (let cj = BV + PVH; cj < CH; cj += STEP) {
+            const depth = cj - (BV + PVH);
+            if (depth > 22) continue;   // ~11 tiles south of the map edge
+            for (let ci = 0; ci < CW; ci += STEP) {
+              if (ci >= SOUTH_GAP_A[0] && ci < SOUTH_GAP_A[1]) continue;
+              if (ci >= SOUTH_GAP_B[0] && ci < SOUTH_GAP_B[1]) continue;
+              const seed = (777 + ci * 7919 + cj * 104173) >>> 0;
+              const r = _mbRng(seed);
+              if (r() > 0.22) continue;   // sparse clusters
+              const y00=Y[cj*GW+ci],     y10=Y[cj*GW+ci+1];
+              const y01=Y[(cj+1)*GW+ci], y11=Y[(cj+1)*GW+ci+1];
+              const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+              const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
+              if (cnx*cnx + cnz*cnz > 0.194) continue;   // steep corner cliff — no shrub
+              const px = (ci-BV)*0.5 + 0.25, pz = (cj-BV)*0.5 + 0.25;
+              const py = (y00+y10+y01+y11) / 4;
+              const vegGroup = window.FoliageGenerator.buildShrubMesh(1000 + ci, 1000 + cj);
+              const sc = 1.6 + r() * 1.2;
+              vegGroup.scale.set(sc, sc, sc);
+              vegGroup.rotation.y = r() * Math.PI * 2;
+              vegGroup.position.set(px, py, pz);
+              townScene.add(vegGroup);
+            }
+          }
+        }
+      }
+
       const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
       const waterGeo  = new THREE.PlaneGeometry(1.0, 1.0);
       waterGeo.rotateX(-Math.PI / 2);
@@ -6705,6 +7386,20 @@
       // Tile meshes: indexed by row*COLS+col
       const tileMeshes  = new Array(ROWS * COLS).fill(null);
       const waterMeshes = new Array(ROWS * COLS).fill(null);
+      // Sparse index of occupied waterMeshes slots, kept in sync by setWaterMesh(),
+      // so the per-frame fast-path time-uniform update only visits live entries.
+      const _waterActive = new Set();
+      function setWaterMesh(i, val) {
+        waterMeshes[i] = val;
+        if (val) _waterActive.add(i); else _waterActive.delete(i);
+      }
+
+      // ── Town water (ditches fill with rain just like farm trenches) ────
+      // Town tiles are keyed "col,row" (the town grid is independently sized
+      // and isn't laid out in the farm's flat row*COLS+col mesh arrays).
+      const townWaterMeshes = new Map();
+      let _townWaterSimDirty = true;
+      let _townFlowingTrenchTiles = [];
 
       // ── Player root (Group — avatar plane attached after onboarding) ─
       const playerMesh = new THREE.Group();
@@ -6962,9 +7657,20 @@
       const vegMeshes = [];
       // Track foliage-generator groups by tile index for rotation-based sway
       const vegFoliageMeshes = new Array(ROWS * COLS).fill(null);
+      // Sparse index of occupied vegFoliageMeshes slots, kept in sync by setVegFoliageMesh(),
+      // so the per-frame wind-sway loop only visits live entries instead of all 936 slots.
+      const _vegFoliageActive = new Set();
+      function setVegFoliageMesh(i, val) {
+        vegFoliageMeshes[i] = val;
+        if (val) _vegFoliageActive.add(i); else _vegFoliageActive.delete(i);
+      }
 
       // ── Grass billboard system (grass_1.png sprites on GRASS tiles) ─────────
-      const grassBillboardGroups = new Array(ROWS * COLS).fill(null);
+      // Rendered via InstancedMesh (one draw call per category) instead of one
+      // Mesh pair per blade — at 14 crosses × 2 blades per tile, a per-Mesh
+      // approach would cost tens of thousands of draw calls across the farm's
+      // WEEDS-majority default tile pattern, which is the real cause of janky
+      // frame pacing during movement (not the per-tile speed multiplier).
 
       function _mbRng(seed) {
         let s = seed >>> 0;
@@ -6989,7 +7695,11 @@
         varying vec2 vUv;
         void main() {
           vUv = uv;
-          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          #ifdef USE_INSTANCING
+            vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+          #else
+            vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          #endif
           float topFactor = uv.y;
           float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
           float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
@@ -7034,106 +7744,119 @@
           fragmentShader: _grassBillFrag,
           alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
         });
-        // Spawn billboards on GRASS tiles; for WEEDS tiles in Mode A, build now
-        for (let r = 0; r < ROWS; r++) {
-          for (let c = 0; c < COLS; c++) {
-            if (grid[r][c].type === TileType.GRASS) {
-              _buildGrassBillboardsForTile(c, r);
-            } else if (grid[r][c].type === TileType.WEEDS && !s_weed3D) {
-              const i = r * COLS + c;
-              if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); vegFoliageMeshes[i] = null; }
-              const grp = _buildWeedBillboardGroup(c, r);
-              if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; }
-            }
-          }
+        _rebuildFarmBillboards();
+        if (_townSceneBuilt) {
+          _buildTownGrassBillboards(_townZone?.cols || 60, _townZone?.rows || 50);
+          _buildTownBorderGrassBillboards();
         }
       });
 
-      function _buildGrassBillboardsForTile(col, row) {
+      // Fills 14 crosses (28 blades) worth of instance matrices for one tile
+      // into `mesh` starting at `startIdx`; returns the next free index.
+      function _fillBillboardInstances(mesh, dummy, startIdx, col, row, sizeMul) {
+        const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
+        const baseY = tileSurfaceY(TileType.GRASS);
+        let idx = startIdx;
+        for (let b = 0; b < 14; b++) {
+          const ox  = (rand() - 0.5) * 0.9;
+          const oz  = (rand() - 0.5) * 0.9;
+          const w   = (0.16 + rand() * 0.10) * sizeMul;
+          const h   = (0.22 + rand() * 0.14) * sizeMul;
+          const rot = rand() * Math.PI;
+          const px  = col + 0.5 + ox, pz = row + 0.5 + oz;
+
+          dummy.position.set(px, baseY, pz);
+          dummy.rotation.set(0, rot, 0);
+          dummy.scale.set(w, h, 1);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(idx++, dummy.matrix);
+
+          dummy.rotation.set(0, rot + Math.PI * 0.5, 0);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(idx++, dummy.matrix);
+        }
+        return idx;
+      }
+
+      // Farm grass (GRASS tiles, gated by s_grass) and weeds (WEEDS tiles in
+      // Mode A, always on) each get one InstancedMesh sized for the worst case
+      // (every farm tile being that type), so edits just refill the buffer and
+      // adjust .count rather than recreating the mesh.
+      let farmGrassBillMesh = null, farmWeedBillMesh = null;
+      function _ensureFarmBillboardMeshes() {
+        if (farmGrassBillMesh) return;
+        const cap = ROWS * COLS * 28;
+        farmGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, cap);
+        farmGrassBillMesh.frustumCulled = false;
+        farmGrassBillMesh.count = 0;
+        farmGrassBillMesh.visible = s_grass;
+        scene.add(farmGrassBillMesh);
+
+        farmWeedBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, cap);
+        farmWeedBillMesh.frustumCulled = false;
+        farmWeedBillMesh.count = 0;
+        scene.add(farmWeedBillMesh);
+      }
+
+      function _rebuildFarmBillboards() {
         if (!grassBillboardMat) return;
-        const i = row * COLS + col;
-        if (grassBillboardGroups[i]) return;
-        if (grid[row][col].type !== TileType.GRASS) return;
-
-        const group = new THREE.Group();
-        const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
-        const baseY = tileSurfaceY(TileType.GRASS);
-
-        for (let b = 0; b < 14; b++) {
-          const ox  = (rand() - 0.5) * 0.9;
-          const oz  = (rand() - 0.5) * 0.9;
-          const w   = 0.16 + rand() * 0.10;
-          const h   = 0.22 + rand() * 0.14;
-          const rot = rand() * Math.PI;
-
-          const cross = new THREE.Group();
-          cross.position.set(col + 0.5 + ox, baseY, row + 0.5 + oz);
-
-          const m1 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
-          m1.scale.set(w, h, 1);
-          m1.rotation.y = rot;
-          cross.add(m1);
-
-          const m2 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
-          m2.scale.set(w, h, 1);
-          m2.rotation.y = rot + Math.PI * 0.5;
-          cross.add(m2);
-
-          group.add(cross);
+        _ensureFarmBillboardMeshes();
+        const dummy = new THREE.Object3D();
+        let gi = 0, wi = 0;
+        for (let row = 0; row < ROWS; row++) {
+          for (let col = 0; col < COLS; col++) {
+            const tp = grid[row][col].type;
+            if (tp === TileType.GRASS) {
+              gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0);
+            } else if (tp === TileType.WEEDS && !s_weed3D) {
+              wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0);
+            }
+          }
         }
-
-        group.visible = s_grass;
-        scene.add(group);
-        grassBillboardGroups[i] = group;
+        farmGrassBillMesh.count = gi;
+        farmWeedBillMesh.count  = wi;
+        farmGrassBillMesh.instanceMatrix.needsUpdate = true;
+        farmWeedBillMesh.instanceMatrix.needsUpdate  = true;
       }
 
-      function _clearGrassBillboards(col, row) {
-        const i = row * COLS + col;
-        if (grassBillboardGroups[i]) {
-          scene.remove(grassBillboardGroups[i]);
-          grassBillboardGroups[i] = null;
+      // Town's grass billboards — built once when entering town (town tiles
+      // don't get tilled/cleared at runtime, so no per-tile rebuild needed).
+      let townGrassBillMesh = null;
+      function _buildTownGrassBillboards(tcols, trows) {
+        if (!grassBillboardMat) return;
+        if (townGrassBillMesh) { townScene.remove(townGrassBillMesh); townGrassBillMesh = null; }
+        let count = 0;
+        for (let row = 0; row < trows; row++)
+          for (let col = 0; col < tcols; col++)
+            if (townGrid[row]?.[col]?.type === TileType.GRASS) count++;
+        if (count === 0) return;
+
+        townGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
+        townGrassBillMesh.frustumCulled = false;
+        townGrassBillMesh.visible = s_grass;
+        const dummy = new THREE.Object3D();
+        let idx = 0;
+        for (let row = 0; row < trows; row++) {
+          for (let col = 0; col < tcols; col++) {
+            if (townGrid[row]?.[col]?.type !== TileType.GRASS) continue;
+            idx = _fillBillboardInstances(townGrassBillMesh, dummy, idx, col, row, 1.0);
+          }
         }
-      }
-
-      // Mode A weeds: oversized grass billboards (2× blade size), same cross
-      // layout as GRASS tiles but larger — no outline, no 3D foliage.
-      function _buildWeedBillboardGroup(col, row) {
-        if (!grassBillboardMat) return null;
-        const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
-        const baseY = tileSurfaceY(TileType.GRASS);
-
-        const group = new THREE.Group();
-        for (let b = 0; b < 14; b++) {
-          const ox  = (rand() - 0.5) * 0.9;
-          const oz  = (rand() - 0.5) * 0.9;
-          const w   = 0.32 + rand() * 0.20;  // 2× grass width
-          const h   = 0.44 + rand() * 0.28;  // 2× grass height
-          const rot = rand() * Math.PI;
-
-          const cross = new THREE.Group();
-          cross.position.set(col + 0.5 + ox, baseY, row + 0.5 + oz);
-
-          const m1 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
-          m1.scale.set(w, h, 1);
-          m1.rotation.y = rot;
-          cross.add(m1);
-
-          const m2 = new THREE.Mesh(_grassBladeGeo, grassBillboardMat);
-          m2.scale.set(w, h, 1);
-          m2.rotation.y = rot + Math.PI * 0.5;
-          cross.add(m2);
-
-          group.add(cross);
-        }
-        group._windAmp = 0;
-        return group;
+        townGrassBillMesh.count = idx;
+        townGrassBillMesh.instanceMatrix.needsUpdate = true;
+        townScene.add(townGrassBillMesh);
       }
 
       function _rebuildWeedTiles() {
         for (let r = 0; r < ROWS; r++)
-          for (let c = 0; c < COLS; c++)
-            if (grid[r][c].type === TileType.WEEDS)
-              refreshTileMesh(c, r);
+          for (let c = 0; c < COLS; c++) {
+            if (grid[r][c].type !== TileType.WEEDS) continue;
+            const i = r * COLS + c;
+            if (tileMeshes[i])       { scene.remove(tileMeshes[i]);       tileMeshes[i]       = null; }
+            if (vegFoliageMeshes[i]) { scene.remove(vegFoliageMeshes[i]); setVegFoliageMesh(i, null); }
+            _buildOneTileMesh(c, r);
+          }
+        _rebuildFarmBillboards();
       }
 
       // ── Crop mesh system ──────────────────────────────────────────
@@ -7204,6 +7927,7 @@
 
       function updateCropMeshes() {
         _ensureCropList();
+        const _now = performance.now();
         for (const i of _cropTileIndices) {
           const col  = i % COLS;
           const row  = (i / COLS) | 0;
@@ -7246,9 +7970,9 @@
               const scale = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
               mesh.scale.setScalar(scale);
 
-              const bobY = tile.cropReady ? Math.sin(performance.now() / 500 + col + row) * 0.025 : 0;
+              const bobY = tile.cropReady ? Math.sin(_now / 500 + col + row) * 0.025 : 0;
               mesh.position.set(col + 0.5, surfY + 0.01 + bobY, row + 0.5);
-              if (tile.cropReady) mesh.rotation.y = performance.now() / 2200 + col;
+              if (tile.cropReady) mesh.rotation.y = _now / 2200 + col;
 
             } else {
               // ── Simple colored cube (all other crops) ────────────────
@@ -7271,9 +7995,9 @@
               const mesh = cropMeshes[i];
               mesh.material.color.setHex(color);
               mesh.scale.setScalar(size);
-              const bobY = tile.cropReady ? Math.sin(performance.now() / 500 + col + row) * 0.03 : 0;
+              const bobY = tile.cropReady ? Math.sin(_now / 500 + col + row) * 0.03 : 0;
               mesh.position.set(col + 0.5, surfY + size / 2 + 0.02 + bobY, row + 0.5);
-              if (tile.cropReady) mesh.rotation.y = performance.now() / 1200 + col;
+              if (tile.cropReady) mesh.rotation.y = _now / 1200 + col;
             }
         }
       }
@@ -7309,7 +8033,7 @@
             if (!moundRoot) moundRoot = m;
           }
           if (moundRoot) moundRoot._windAmp = 0;  // wind loop skips _windAmp=0
-          vegFoliageMeshes[i] = moundRoot || { _windAmp: 0 };
+          setVegFoliageMesh(i, moundRoot || { _windAmp: 0 });
           _markOutline(moundRoot);
           return;
         }
@@ -7328,7 +8052,7 @@
           vegGroup.scale.set(2, 2, 2);
           vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
           scene.add(vegGroup);
-          vegFoliageMeshes[i] = vegGroup;
+          setVegFoliageMesh(i, vegGroup);
           _markOutline(vegGroup);
           return;
         }
@@ -7341,11 +8065,7 @@
           scene.add(floorMesh);
           tileMeshes[i] = floorMesh;
 
-          if (!s_weed3D) {
-            // Mode A: oversized grass billboards (deferred if texture not yet loaded)
-            const grp = _buildWeedBillboardGroup(col, row);
-            if (grp) { scene.add(grp); vegFoliageMeshes[i] = grp; }
-          } else if (window.FoliageGenerator) {
+          if (s_weed3D && window.FoliageGenerator) {
             // Mode B: procedural 3D weeds, subject to shell outline
             const vegGroup = new THREE.Group();
             vegGroup.position.set(col + 0.5, tileSurfaceY(tile.type), row + 0.5);
@@ -7361,7 +8081,7 @@
             vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
             vegGroup._windAmp   = 0.10;
             scene.add(vegGroup);
-            vegFoliageMeshes[i] = vegGroup;
+            setVegFoliageMesh(i, vegGroup);
             _markOutline(vegGroup);
           }
           return;
@@ -7386,7 +8106,7 @@
             m._windAmp = 0;
             scene.add(m);
             m.layers.enable(1);  // material transition outline
-            vegFoliageMeshes[i] = m;
+            setVegFoliageMesh(i, m);
             if (!primary) primary = m;
           }
           tileMeshes[i] = primary;
@@ -7432,7 +8152,6 @@
         if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
           mesh.layers.enable(1);
         }
-        if (tile.type === TileType.GRASS) _buildGrassBillboardsForTile(col, row);
       }
 
       function buildTileMeshes() {
@@ -7440,26 +8159,26 @@
           for (let col = 0; col < COLS; col++) {
             const i = row * COLS + col;
             if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
-            if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         waterMeshes[i]         = null; }
+            if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         setWaterMesh(i, null); }
             if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
-            if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    vegFoliageMeshes[i]    = null; }
-            if (grassBillboardGroups[i]){ scene.remove(grassBillboardGroups[i]); grassBillboardGroups[i] = null; }
+            if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
             cropGrowthBucket[i] = -1;
             _buildOneTileMesh(col, row);
           }
         }
+        _rebuildFarmBillboards();
       }
 
       // Update a single tile mesh (called after shovel actions)
       function refreshTileMesh(col, row) {
         const i = row * COLS + col;
         if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
-        if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         waterMeshes[i]         = null; }
+        if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         setWaterMesh(i, null); }
         if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
-        if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    vegFoliageMeshes[i]    = null; }
-        _clearGrassBillboards(col, row);
+        if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
         cropGrowthBucket[i] = -1;
         _buildOneTileMesh(col, row);
+        _rebuildFarmBillboards();
       }
 
       // ── Update water meshes each frame ─────────────────────────────
@@ -7477,7 +8196,7 @@
               const tile = grid[row][col];
 
               if (isSolid(tile.type) || tile.water < 0.003) {
-                if (waterMeshes[i]) { scene.remove(waterMeshes[i]); waterMeshes[i] = null; }
+                if (waterMeshes[i]) { scene.remove(waterMeshes[i]); setWaterMesh(i, null); }
                 tile._wCached = false;
                 continue;
               }
@@ -7521,7 +8240,7 @@
                 const wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
                 wm.receiveShadow = false;
                 scene.add(wm);
-                waterMeshes[i] = wm;
+                setWaterMesh(i, wm);
               }
               const wm = waterMeshes[i];
               wm.position.set(col + 0.5, surfaceA + 0.015, row + 0.5);
@@ -7535,9 +8254,77 @@
         } else {
           // Fast path: only push updated time uniform — all other values are stable
           // between sim ticks so no recomputation is needed.
-          for (let i = 0; i < waterMeshes.length; i++) {
-            const wm = waterMeshes[i];
-            if (wm) wm.material.uniforms.uTime.value = waterTime;
+          for (const i of _waterActive) {
+            waterMeshes[i].material.uniforms.uTime.value = waterTime;
+          }
+        }
+      }
+
+      // Same as updateWaterMeshes() but for the town's ditch (TRENCH) tiles,
+      // so town weather can fill them with water exactly like farm trenches.
+      function updateTownWaterMeshes() {
+        waterTime += 0.016;
+        const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
+
+        if (_townWaterSimDirty) {
+          _townWaterSimDirty = false;
+          _townFlowingTrenchTiles = [];
+          for (let row = 0; row < TROWS; row++) {
+            for (let col = 0; col < TCOLS; col++) {
+              const key  = col + ',' + row;
+              const tile = townGrid[row][col];
+
+              if (isSolid(tile.type) || tile.water < 0.003) {
+                const old = townWaterMeshes.get(key);
+                if (old) { townScene.remove(old); townWaterMeshes.delete(key); }
+                continue;
+              }
+
+              if (tile.type === TileType.TRENCH && tile.flow) _townFlowingTrenchTiles.push({ col, row });
+
+              const depthFrac = tile.water / MAX_WATER;
+              const surfaceA  = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
+
+              let fx = 0, fz = 0;
+              const nbrs = [
+                { dc:  0, dr:  1, ax: 0, az:  1 },
+                { dc:  0, dr: -1, ax: 0, az: -1 },
+                { dc:  1, dr:  0, ax: 1, az:  0 },
+                { dc: -1, dr:  0, ax: -1,az:  0 },
+              ];
+              for (const { dc, dr, ax, az } of nbrs) {
+                const nc = col + dc, nr = row + dr;
+                if (nc < 0 || nc >= TCOLS || nr < 0 || nr >= TROWS) continue;
+                const nt = townGrid[nr][nc];
+                if (isSolid(nt.type)) continue;
+                const surfB = tileSurfaceY(nt.type) + nt.water * WATER_UNIT;
+                const head  = surfaceA - surfB;
+                if (head > 0.01) { fx += ax * head; fz += az * head; }
+              }
+              const flowLen = Math.hypot(fx, fz);
+              const flowNX  = flowLen > 0.001 ? fx / flowLen : 0;
+              const flowNZ  = flowLen > 0.001 ? fz / flowLen : 0;
+              const r = clamp(180 - depthFrac * 160, 20, 180) / 255;
+              const g = clamp(220 - depthFrac * 100, 100, 220) / 255;
+
+              let wm = townWaterMeshes.get(key);
+              if (!wm) {
+                wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
+                wm.receiveShadow = false;
+                townScene.add(wm);
+                townWaterMeshes.set(key, wm);
+              }
+              wm.position.set(col + 0.5, surfaceA + 0.015, row + 0.5);
+              const u = wm.material.uniforms;
+              u.uTime.value  = waterTime;
+              u.uDepth.value = depthFrac;
+              u.uFlow.value.set(flowNX, flowNZ);
+              u.uColor.value.setRGB(r, g, 1.0);
+            }
+          }
+        } else {
+          for (const wm of townWaterMeshes.values()) {
+            wm.material.uniforms.uTime.value = waterTime;
           }
         }
       }
@@ -7679,6 +8466,29 @@
         scene.fog.color.copy(scene.background);
       }
 
+      let _lastTownLightUpdateTime = 0;
+      function updateTownThreeLighting() {
+        const now = performance.now();
+        if (now - _lastTownLightUpdateTime < 500) return;
+        _lastTownLightUpdateTime = now;
+        const { r, g, b, a } = getLightingState();
+        const brightnessMul = 1 - a * 0.7;
+        townAmbientLight.intensity = 0.3 + brightnessMul * 0.7;
+        townAmbientLight.color.setRGB(
+          (r/255) * 0.6 + 0.4,
+          (g/255) * 0.6 + 0.4,
+          (b/255) * 0.6 + 0.4
+        );
+        townSunLight.intensity = brightnessMul * 1.2;
+        townSunLight.color.setRGB(r/255 * 0.5 + 0.5, g/255 * 0.5 + 0.5, b/255 * 0.4 + 0.6);
+        townScene.background.setRGB(
+          Math.max(0, r/255 * 0.15 + 0.04),
+          Math.max(0, g/255 * 0.15 + 0.08),
+          Math.max(0, b/255 * 0.15 + 0.06)
+        );
+        townScene.fog.color.copy(townScene.background);
+      }
+
       // ── Cached container rect — avoids repeated layout reflows per frame ─
       // Updated in resizeCanvas(); used by drawing functions and worldToOverlay.
       let _threeRect = { width: window.innerWidth, height: window.innerHeight };
@@ -7690,6 +8500,7 @@
         _threeRect = rect;
         const w = rect.width  || window.innerWidth;
         const h = rect.height || window.innerHeight;
+        renderer.setPixelRatio(dpr * s_resScale);
         renderer.setSize(w, h);
         overlayCanvas.width  = Math.round(w * dpr);
         overlayCanvas.height = Math.round(h * dpr);
@@ -7701,9 +8512,14 @@
 
       // ── Visual feature toggles (Settings tab) ────────────────────
       let s_outlines  = true;
-      let s_grass     = false;
+      let s_grass     = true;
       let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
       let s_billWind  = true;
+      let s_fpsCounter = false;
+      let s_resScale   = 1;  // render-resolution scale applied to the 3D renderer's pixel ratio
+
+      const fpsCounterEl = document.getElementById('fpsCounter');
+      let _fpsFrames = 0, _fpsAccum = 0;
 
       buildTileMeshes();
       buildBorderTerrain();
@@ -7714,7 +8530,9 @@
       });
       document.getElementById('settingGrass').addEventListener('change', e => {
         s_grass = e.target.checked;
-        for (const g of grassBillboardGroups) if (g) g.visible = s_grass;
+        if (farmGrassBillMesh) farmGrassBillMesh.visible = s_grass;
+        if (townGrassBillMesh) townGrassBillMesh.visible = s_grass;
+        if (townBorderGrassBillMesh) townBorderGrassBillMesh.visible = s_grass;
       });
       document.getElementById('settingBillWind').addEventListener('change', e => {
         s_billWind = e.target.checked;
@@ -7723,10 +8541,29 @@
         s_weed3D = e.target.checked;
         _rebuildWeedTiles();
       });
+      document.getElementById('settingFpsCounter').addEventListener('change', e => {
+        s_fpsCounter = e.target.checked;
+        fpsCounterEl.style.display = s_fpsCounter ? '' : 'none';
+        _fpsFrames = 0; _fpsAccum = 0;
+      });
+      document.getElementById('settingResolution').addEventListener('change', e => {
+        s_resScale = parseFloat(e.target.value) || 1;
+        resizeCanvas();
+      });
 
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
+
+        if (s_fpsCounter) {
+          _fpsFrames++;
+          _fpsAccum += dt;
+          if (_fpsAccum >= 0.5) {
+            fpsCounterEl.textContent = Math.round(_fpsFrames / _fpsAccum) + ' FPS';
+            _fpsFrames = 0;
+            _fpsAccum  = 0;
+          }
+        }
 
         if (!gameStarted) {
           renderer.render(scene, camera);
@@ -7752,7 +8589,7 @@
           // Transition spots (farm ↔ interior ↔ town ↔ building)
           if (sceneTransDir === 0) checkTransitionSpots();
 
-          if (currentArea === 'farm') {
+          if (currentArea === 'farm' || currentArea === 'town') {
             waterFlowPhase = (waterFlowPhase + dt * 3.2) % 1;
             updateWaterParticles(dt);
             updateRipples(dt);
@@ -7762,11 +8599,16 @@
           // Water sim ticks every 1/8 game-hour (~9s real-time)
           // Uses game time so rain and drainage are clock-consistent
           simAccumulator += dt / DAY_LENGTH_SECONDS * (NIGHT_HOUR - MORNING_HOUR); // game-hours per sec
-          if (simAccumulator >= 0.125 && currentArea === 'farm') {
+          if (simAccumulator >= 0.125 && (currentArea === 'farm' || currentArea === 'town')) {
             simAccumulator -= 0.125;
-            recomputeWater(false);
+            if (currentArea === 'farm') {
+              recomputeWater(false);
+              tickWorldObjects();
+            } else {
+              const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
+              recomputeWater(false, townGrid, TROWS, TCOLS);
+            }
             spawnRipples();
-            tickWorldObjects();
           }
         }
 
@@ -7784,6 +8626,10 @@
         if (!paused) {
           updateNpcWalkers(dt);
           if (dialogueOpen) faceNpcDialogueParticipants();
+        }
+        if (currentArea === 'town') {
+          updateTownWaterMeshes();
+          updateTownThreeLighting();
         }
         if (currentArea === 'farm') {
           updateWaterMeshes();
@@ -7818,7 +8664,8 @@
             }
           }
           const windScale = windStrBase / 0.03;
-          for (const fg of vegFoliageMeshes) {
+          for (const _vfi of _vegFoliageActive) {
+            const fg = vegFoliageMeshes[_vfi];
             if (!fg || !fg._windAmp) continue;
             // Skip foliage well outside the camera view — it won't be visible.
             if (Math.abs(fg.position.x - _playerTX) > 14 || Math.abs(fg.position.z - _playerTZ) > 11) continue;
@@ -7830,6 +8677,13 @@
             grassBillboardMat.uniforms.uTime.value     = windTime;
             grassBillboardMat.uniforms.uStrength.value = s_billWind ? windStrBase : 0;
           }
+        }
+        if (currentArea === 'town' && grassBillboardMat) {
+          // Town grass billboards share the farm's wind shader/material, so keep
+          // them swaying too — farm's block above only runs while on the farm.
+          const windTime = performance.now() / 1000;
+          grassBillboardMat.uniforms.uTime.value     = windTime;
+          grassBillboardMat.uniforms.uStrength.value = s_billWind ? (calendar.isRaining ? (calendar.rainStrength >= 3 ? 0.10 : 0.06) : 0.03) : 0;
         }
 
         // ── Render active scene ──────────────────────────────────
@@ -8034,13 +8888,13 @@
       //    4. Overflow: any water above MAX_WATER is shed to neighbours.
       // ═══════════════════════════════════════════════════════════════
 
-      function recomputeWater(decayOnly, targetGrid = grid) {
+      function recomputeWater(decayOnly, targetGrid = grid, rows = ROWS, cols = COLS) {
         const str = calendar.rainStrength || 1;
         const isRaining = calendar.isRaining && !decayOnly;
 
         // Pass 1: rain + absorption + evaporation + south-edge runoff
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
             const t = targetGrid[row][col];
             if (isSolid(t.type)) continue;
             t.flow = false;
@@ -8059,8 +8913,8 @@
             t.water = Math.max(0, t.water - EVAP_RATE);
 
             // South-edge runoff — bottom 2 rows drain aggressively (gravity outlet)
-            if (row >= ROWS - 2) {
-              const runoffRate = row === ROWS - 1 ? 0.08 : 0.03;
+            if (row >= rows - 2) {
+              const runoffRate = row === rows - 1 ? 0.08 : 0.03;
               t.water = Math.max(0, t.water - runoffRate);
             }
 
@@ -8076,8 +8930,8 @@
           { dc:  0, dr: -1 },  // north
         ];
 
-        for (let row = ROWS - 1; row >= 0; row--) {
-          for (let col = 0; col < COLS; col++) {
+        for (let row = rows - 1; row >= 0; row--) {
+          for (let col = 0; col < cols; col++) {
             const t = targetGrid[row][col];
             if (isSolid(t.type) || t.water <= 0) continue;
 
@@ -8085,7 +8939,7 @@
 
             for (const { dc, dr } of dirs) {
               const nc = col + dc, nr = row + dr;
-              if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+              if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
               const n = targetGrid[nr][nc];
               if (isSolid(n.type)) continue;
 
@@ -8109,15 +8963,16 @@
         }
 
         // Pass 3: clamp
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
             const t = targetGrid[row][col];
             t.water = clamp(t.water, 0, MAX_WATER);
           }
         }
 
-        // Signal updateWaterMeshes to do a full refresh this frame.
-        _waterSimDirty = true;
+        // Signal the matching mesh updater to do a full refresh this frame.
+        if (targetGrid === townGrid) _townWaterSimDirty = true;
+        else _waterSimDirty = true;
       }
 
       function trenchNeighbors(col, row) {
@@ -9155,8 +10010,8 @@
               const def = DECORATIVE_FURNITURE_DEFS[key];
               if (!def) return;
               const tgt = area === 'interior' ? interiorScene : scene;
-              const m = makeDecorativeFurnitureMesh(col, row, key, tgt);
-              if (m) interiorFurnitureObjects.push({ key, col, row, mesh: m, area });
+              const r = makeDecorativeFurnitureMesh(col, row, key, tgt);
+              if (r) interiorFurnitureObjects.push({ key, col, row, mesh: r.mesh, light: r.light, area });
             });
           }
         } catch {}
