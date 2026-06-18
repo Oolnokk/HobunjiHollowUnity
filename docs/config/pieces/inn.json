@@ -1,0 +1,934 @@
+{
+  "id": "d5c0f6cb-2992-4fdc-acba-90de9eab6159",
+  "name": "Inn",
+  "type": "room",
+  "preset": "highland",
+  "gridSize": 18,
+  "tileSize": 1,
+  "footprint": {
+    "cells": [
+      {
+        "x": 6,
+        "y": 7
+      },
+      {
+        "x": 7,
+        "y": 7
+      },
+      {
+        "x": 8,
+        "y": 7
+      },
+      {
+        "x": 9,
+        "y": 7
+      },
+      {
+        "x": 10,
+        "y": 7
+      },
+      {
+        "x": 11,
+        "y": 7
+      },
+      {
+        "x": 12,
+        "y": 7
+      },
+      {
+        "x": 6,
+        "y": 8
+      },
+      {
+        "x": 7,
+        "y": 8
+      },
+      {
+        "x": 8,
+        "y": 8
+      },
+      {
+        "x": 9,
+        "y": 8
+      },
+      {
+        "x": 10,
+        "y": 8
+      },
+      {
+        "x": 11,
+        "y": 8
+      },
+      {
+        "x": 12,
+        "y": 8
+      },
+      {
+        "x": 6,
+        "y": 9
+      },
+      {
+        "x": 7,
+        "y": 9
+      },
+      {
+        "x": 8,
+        "y": 9
+      },
+      {
+        "x": 9,
+        "y": 9
+      },
+      {
+        "x": 10,
+        "y": 9
+      },
+      {
+        "x": 11,
+        "y": 9
+      },
+      {
+        "x": 12,
+        "y": 9
+      },
+      {
+        "x": 6,
+        "y": 10
+      },
+      {
+        "x": 7,
+        "y": 10
+      },
+      {
+        "x": 8,
+        "y": 10
+      },
+      {
+        "x": 9,
+        "y": 10
+      },
+      {
+        "x": 10,
+        "y": 10
+      },
+      {
+        "x": 11,
+        "y": 10
+      },
+      {
+        "x": 12,
+        "y": 10
+      },
+      {
+        "x": 9,
+        "y": 11
+      },
+      {
+        "x": 10,
+        "y": 11
+      },
+      {
+        "x": 11,
+        "y": 11
+      }
+    ],
+    "entrances": [],
+    "connectors": [],
+    "extensions": {
+      "entryTunnels": [],
+      "chimneys": [],
+      "porches": [],
+      "porchStairs": [],
+      "railings": []
+    }
+  },
+  "base": {
+    "height": 1.4,
+    "wallThickness": 0.15,
+    "groundY": 0,
+    "faces": [
+      {
+        "id": 218,
+        "v": [
+          [
+            -3,
+            0,
+            -2
+          ],
+          [
+            4,
+            0,
+            -2
+          ],
+          [
+            4,
+            0,
+            2
+          ],
+          [
+            -3,
+            0,
+            2
+          ]
+        ],
+        "tag": "floor",
+        "color": null,
+        "highlandSectionRole": "primary",
+        "highlandFrustumBottom": true
+      },
+      {
+        "id": 219,
+        "v": [
+          [
+            -2.475,
+            1.4,
+            1.7
+          ],
+          [
+            3.475,
+            1.4,
+            1.7
+          ],
+          [
+            3.475,
+            1.4,
+            -1.7
+          ],
+          [
+            -2.475,
+            1.4,
+            -1.7
+          ]
+        ],
+        "tag": "ceiling",
+        "color": null,
+        "highlandSectionRole": "primary",
+        "highlandFrustumTop": true,
+        "highlandTopScale": 0.85
+      },
+      {
+        "id": 220,
+        "v": [
+          [
+            -3,
+            0,
+            -2
+          ],
+          [
+            -2.475,
+            1.4,
+            -1.7
+          ],
+          [
+            3.475,
+            1.4,
+            -1.7
+          ],
+          [
+            4,
+            0,
+            -2
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "highlandSectionRole": "primary",
+        "highlandFrustumWall": true,
+        "highlandTopScale": 0.85,
+        "entryPortalCut": false,
+        "entryPortalPart": ""
+      },
+      {
+        "id": 221,
+        "v": [
+          [
+            4,
+            0,
+            -2
+          ],
+          [
+            3.475,
+            1.4,
+            -1.7
+          ],
+          [
+            3.475,
+            1.4,
+            1.7
+          ],
+          [
+            4,
+            0,
+            2
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "highlandSectionRole": "primary",
+        "highlandFrustumWall": true,
+        "highlandTopScale": 0.85,
+        "entryPortalCut": false,
+        "entryPortalPart": ""
+      },
+      {
+        "id": 222,
+        "v": [
+          [
+            4,
+            0,
+            2
+          ],
+          [
+            3.475,
+            1.4,
+            1.7
+          ],
+          [
+            -2.475,
+            1.4,
+            1.7
+          ],
+          [
+            -3,
+            0,
+            2
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "highlandSectionRole": "primary",
+        "highlandFrustumWall": true,
+        "highlandTopScale": 0.85,
+        "entryPortalCut": false,
+        "entryPortalPart": ""
+      },
+      {
+        "id": 223,
+        "v": [
+          [
+            -3,
+            0,
+            2
+          ],
+          [
+            -2.475,
+            1.4,
+            1.7
+          ],
+          [
+            -2.475,
+            1.4,
+            -1.7
+          ],
+          [
+            -3,
+            0,
+            -2
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "highlandSectionRole": "primary",
+        "highlandFrustumWall": true,
+        "highlandTopScale": 0.85,
+        "entryPortalCut": false,
+        "entryPortalPart": ""
+      },
+      {
+        "id": 224,
+        "v": [
+          [
+            -2.02875,
+            2.59,
+            0.04
+          ],
+          [
+            3.02875,
+            2.59,
+            0.04
+          ],
+          [
+            3.02875,
+            2.59,
+            -0.04
+          ],
+          [
+            -2.02875,
+            2.59,
+            -0.04
+          ]
+        ],
+        "tag": "ceiling",
+        "color": null,
+        "roofSectionRole": "primary",
+        "roofRidgeCap": true,
+        "resolvedRoofHeight": 1.19,
+        "continuousFrustumSlope": true,
+        "triangularPrismRidge": true,
+        "highlandRidgeLongScale": 0.85
+      },
+      {
+        "id": 225,
+        "v": [
+          [
+            -2.475,
+            1.4,
+            -1.7
+          ],
+          [
+            -2.02875,
+            2.59,
+            -0.04
+          ],
+          [
+            3.02875,
+            2.59,
+            -0.04
+          ],
+          [
+            3.475,
+            1.4,
+            -1.7
+          ]
+        ],
+        "tag": "roof",
+        "color": null,
+        "roofAcrossOffset": -0.25,
+        "roofOffsetRole": "cross_gable_edgeward",
+        "roofSectionRole": "primary",
+        "continuousFrustumSlope": true,
+        "triangularPrismRidge": true,
+        "highlandRidgeLongScale": 0.85
+      },
+      {
+        "id": 226,
+        "v": [
+          [
+            3.475,
+            1.4,
+            -1.7
+          ],
+          [
+            3.02875,
+            2.59,
+            -0.04
+          ],
+          [
+            3.02875,
+            2.59,
+            0.04
+          ],
+          [
+            3.475,
+            1.4,
+            1.7
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "roofSectionRole": "primary",
+        "gableEnd": true,
+        "continuousFrustumSlope": true,
+        "triangularPrismRidge": true,
+        "highlandRidgeLongScale": 0.85
+      },
+      {
+        "id": 227,
+        "v": [
+          [
+            3.475,
+            1.4,
+            1.7
+          ],
+          [
+            3.02875,
+            2.59,
+            0.04
+          ],
+          [
+            -2.02875,
+            2.59,
+            0.04
+          ],
+          [
+            -2.475,
+            1.4,
+            1.7
+          ]
+        ],
+        "tag": "roof",
+        "color": null,
+        "roofAcrossOffset": 0,
+        "roofOffsetRole": "cross_gable_reference",
+        "roofSectionRole": "primary",
+        "continuousFrustumSlope": true,
+        "triangularPrismRidge": true,
+        "highlandRidgeLongScale": 0.85
+      },
+      {
+        "id": 228,
+        "v": [
+          [
+            -2.475,
+            1.4,
+            1.7
+          ],
+          [
+            -2.02875,
+            2.59,
+            0.04
+          ],
+          [
+            -2.02875,
+            2.59,
+            -0.04
+          ],
+          [
+            -2.475,
+            1.4,
+            -1.7
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "roofSectionRole": "primary",
+        "gableEnd": true,
+        "continuousFrustumSlope": true,
+        "triangularPrismRidge": true,
+        "highlandRidgeLongScale": 0.85
+      },
+      {
+        "id": 229,
+        "v": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            3,
+            0,
+            0
+          ],
+          [
+            3,
+            0,
+            3
+          ],
+          [
+            0,
+            0,
+            3
+          ]
+        ],
+        "tag": "floor",
+        "color": null,
+        "highlandSectionRole": "thin_cross_gable_clipped_to_main_ridge",
+        "highlandFrustumBottom": true
+      },
+      {
+        "id": 230,
+        "v": [
+          [
+            0.2250000000000001,
+            1.4,
+            2.775
+          ],
+          [
+            2.775,
+            1.4,
+            2.775
+          ],
+          [
+            2.775,
+            1.4,
+            0.2250000000000001
+          ],
+          [
+            0.2250000000000001,
+            1.4,
+            0.2250000000000001
+          ]
+        ],
+        "tag": "ceiling",
+        "color": null,
+        "highlandSectionRole": "thin_cross_gable_clipped_to_main_ridge",
+        "highlandFrustumTop": true,
+        "highlandTopScale": 0.85
+      },
+      {
+        "id": 231,
+        "v": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            0.2250000000000001,
+            1.4,
+            0.2250000000000001
+          ],
+          [
+            2.775,
+            1.4,
+            0.2250000000000001
+          ],
+          [
+            3,
+            0,
+            0
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "highlandSectionRole": "thin_cross_gable_clipped_to_main_ridge",
+        "highlandFrustumWall": true,
+        "highlandTopScale": 0.85,
+        "entryPortalCut": false,
+        "entryPortalPart": ""
+      },
+      {
+        "id": 232,
+        "v": [
+          [
+            3,
+            0,
+            0
+          ],
+          [
+            2.775,
+            1.4,
+            0.2250000000000001
+          ],
+          [
+            2.775,
+            1.4,
+            2.775
+          ],
+          [
+            3,
+            0,
+            3
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "highlandSectionRole": "thin_cross_gable_clipped_to_main_ridge",
+        "highlandFrustumWall": true,
+        "highlandTopScale": 0.85,
+        "entryPortalCut": false,
+        "entryPortalPart": ""
+      },
+      {
+        "id": 233,
+        "v": [
+          [
+            3,
+            0,
+            3
+          ],
+          [
+            2.775,
+            1.4,
+            2.775
+          ],
+          [
+            0.2250000000000001,
+            1.4,
+            2.775
+          ],
+          [
+            0,
+            0,
+            3
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "highlandSectionRole": "thin_cross_gable_clipped_to_main_ridge",
+        "highlandFrustumWall": true,
+        "highlandTopScale": 0.85,
+        "entryPortalCut": false,
+        "entryPortalPart": ""
+      },
+      {
+        "id": 234,
+        "v": [
+          [
+            0,
+            0,
+            3
+          ],
+          [
+            0.2250000000000001,
+            1.4,
+            2.775
+          ],
+          [
+            0.2250000000000001,
+            1.4,
+            0.2250000000000001
+          ],
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "highlandSectionRole": "thin_cross_gable_clipped_to_main_ridge",
+        "highlandFrustumWall": true,
+        "highlandTopScale": 0.85,
+        "entryPortalCut": false,
+        "entryPortalPart": ""
+      },
+      {
+        "id": 235,
+        "v": [
+          [
+            1.46,
+            2.589999999999999,
+            2.58375
+          ],
+          [
+            1.54,
+            2.589999999999999,
+            2.58375
+          ],
+          [
+            1.54,
+            2.589999999999999,
+            0.41625
+          ],
+          [
+            1.46,
+            2.589999999999999,
+            0.41625
+          ]
+        ],
+        "tag": "ceiling",
+        "color": null,
+        "roofSectionRole": "thin_cross_gable_clipped_to_main_ridge",
+        "roofRidgeCap": true,
+        "resolvedRoofHeight": 1.19,
+        "continuousFrustumSlope": true,
+        "triangularPrismRidge": true,
+        "highlandRidgeLongScale": 0.85
+      },
+      {
+        "id": 236,
+        "v": [
+          [
+            0.2250000000000001,
+            1.4,
+            0.2250000000000001
+          ],
+          [
+            1.46,
+            2.589999999999999,
+            0.41625
+          ],
+          [
+            1.54,
+            2.589999999999999,
+            0.41625
+          ],
+          [
+            2.775,
+            1.4,
+            0.2250000000000001
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "roofSectionRole": "thin_cross_gable_clipped_to_main_ridge",
+        "gableEnd": true,
+        "continuousFrustumSlope": true,
+        "triangularPrismRidge": true,
+        "highlandRidgeLongScale": 0.85
+      },
+      {
+        "id": 237,
+        "v": [
+          [
+            2.775,
+            1.4,
+            0.2250000000000001
+          ],
+          [
+            1.54,
+            2.589999999999999,
+            0.41625
+          ],
+          [
+            1.54,
+            2.589999999999999,
+            2.58375
+          ],
+          [
+            2.775,
+            1.4,
+            2.775
+          ]
+        ],
+        "tag": "roof",
+        "color": null,
+        "roofAcrossOffset": -0.25,
+        "roofOffsetRole": "cross_gable_edgeward",
+        "roofSectionRole": "thin_cross_gable_clipped_to_main_ridge",
+        "continuousFrustumSlope": true,
+        "triangularPrismRidge": true,
+        "highlandRidgeLongScale": 0.85
+      },
+      {
+        "id": 238,
+        "v": [
+          [
+            2.775,
+            1.4,
+            2.775
+          ],
+          [
+            1.54,
+            2.589999999999999,
+            2.58375
+          ],
+          [
+            1.46,
+            2.589999999999999,
+            2.58375
+          ],
+          [
+            0.2250000000000001,
+            1.4,
+            2.775
+          ]
+        ],
+        "tag": "wall",
+        "color": null,
+        "roofSectionRole": "thin_cross_gable_clipped_to_main_ridge",
+        "gableEnd": true,
+        "continuousFrustumSlope": true,
+        "triangularPrismRidge": true,
+        "highlandRidgeLongScale": 0.85
+      },
+      {
+        "id": 239,
+        "v": [
+          [
+            0.2250000000000001,
+            1.4,
+            2.775
+          ],
+          [
+            1.46,
+            2.589999999999999,
+            2.58375
+          ],
+          [
+            1.46,
+            2.589999999999999,
+            0.41625
+          ],
+          [
+            0.2250000000000001,
+            1.4,
+            0.2250000000000001
+          ]
+        ],
+        "tag": "roof",
+        "color": null,
+        "roofAcrossOffset": 0,
+        "roofOffsetRole": "cross_gable_reference",
+        "roofSectionRole": "thin_cross_gable_clipped_to_main_ridge",
+        "continuousFrustumSlope": true,
+        "triangularPrismRidge": true,
+        "highlandRidgeLongScale": 0.85
+      }
+    ]
+  },
+  "roof": {
+    "tubeRadius": 0.08,
+    "tubeSpacing": 0.5,
+    "overhang": 1.25,
+    "wallOriginReach": true,
+    "direction": "u",
+    "lift": 0.04,
+    "flipX": true,
+    "flipY": false,
+    "flipZ": false,
+    "shingleScaleX": 1.2,
+    "shingleScaleY": 1.2,
+    "shingleScaleZ": 2,
+    "shingleRotX": -10,
+    "shingleRotZ": 0,
+    "peakRotateAway": true,
+    "secondLayer": true,
+    "secondLayerAcross": 0.25,
+    "secondLayerLift": 0,
+    "secondLayerOverhang": 1,
+    "secondLayerWallOriginReach": false,
+    "secondLayerShingleScaleX": 1.5,
+    "secondLayerShingleScaleY": 1.2,
+    "secondLayerShingleScaleZ": 2,
+    "secondLayerShingleRotX": 0,
+    "secondLayerPeakRotateAway": false,
+    "secondLayerFlipX": true,
+    "secondLayerFlipY": false,
+    "secondLayerFlipZ": false,
+    "peakRotate": true,
+    "peakRotateStrength": 0.05,
+    "peakRotateFalloff": 0,
+    "highlandInterlockOffset": 0.25,
+    "shingleSource": "",
+    "crossGableSections": [
+      {
+        "axis": "x",
+        "x0": 6,
+        "x1": 13,
+        "y0": 7,
+        "y1": 11,
+        "role": "primary",
+        "roofSpan": 4,
+        "roofHeight": 1.19,
+        "highlandBodyTopScale": 0.85,
+        "roofBaseAlignedToCeiling": true,
+        "continuousFrustumSlope": true,
+        "triangularPrismRidge": true,
+        "clipToPrimaryRidge": false,
+        "clipSide": ""
+      },
+      {
+        "axis": "z",
+        "x0": 9,
+        "x1": 12,
+        "y0": 9,
+        "y1": 12,
+        "role": "thin_cross_gable_clipped_to_main_ridge",
+        "roofSpan": 3,
+        "roofHeight": 1.19,
+        "highlandBodyTopScale": 0.85,
+        "roofBaseAlignedToCeiling": true,
+        "continuousFrustumSlope": true,
+        "triangularPrismRidge": true,
+        "clipToPrimaryRidge": true,
+        "clipSide": "south_to_main_ridge",
+        "originalX0": 9,
+        "originalX1": 12,
+        "originalY0": 7,
+        "originalY1": 12
+      }
+    ]
+  },
+  "assets": [],
+  "extensionGeneration": {
+    "entryTunnelGroups": 0,
+    "chimneyGroups": 0,
+    "porches": 0,
+    "porchStairs": 0,
+    "railings": 0,
+    "generatedAt": "2026-06-17T23:25:36.778Z"
+  }
+}
