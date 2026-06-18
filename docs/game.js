@@ -6276,26 +6276,28 @@
         const BLEND_V  = 2;
         const PATH_DY  = -0.045;  // depression depth — shallow, rock-tile-style dip
 
-        // Per-tile seeded RNG (same Mulberry32 scheme as buildRockTileGeo) so the
-        // path/grass margin reads as an organic, irregular line like the rock
-        // tile's BFS plateau silhouette, instead of a dead-straight blend band.
-        let _s = ((col * 374761393) ^ (row * 668265263)) >>> 0;
-        const rng = () => {
-          _s += 0x6D2B79F5;
-          let t = Math.imul(_s ^ _s>>>15, _s|1);
-          t ^= t + Math.imul(t ^ t>>>7, t|61);
-          return ((t ^ t>>>14) >>> 0) / 4294967296;
+        // World-space smooth value noise — used to wobble the closed-edge
+        // margin width *continuously along the edge's world coordinate*, so
+        // the dirt/grass line meanders in long, smooth curves (serpentine,
+        // like a worn footpath) instead of either a dead-straight band or
+        // independent per-tile random teeth (which would just look like
+        // sawtooth noise, not a winding path). Because it's keyed off world
+        // position rather than per-tile randomness, the wave lines up
+        // seamlessly across adjacent path tiles.
+        const hash1 = n => {
+          let h = (Math.imul(n | 0, 2654435761) ^ ((n | 0) << 13)) >>> 0;
+          h = Math.imul(h ^ h>>>15, 1274126177) >>> 0;
+          return (h >>> 0) / 4294967296;
         };
-        // Multiplicative jitter on the closed-edge blend distance, varied along
-        // each edge. Multiplicative (not additive) keeps the true tile-edge
-        // vertex (vi/vj === 0) pinned at blend 0 regardless of jitter, so the
-        // seam against the neighboring flat ground tile never cracks open —
-        // only the interior margin width wobbles, exactly like the rock tile's
-        // randomly-grown footprint.
-        const jW = []; for (let v=0; v<VERTS; v++) jW.push(0.55 + rng()*0.9);
-        const jE = []; for (let v=0; v<VERTS; v++) jE.push(0.55 + rng()*0.9);
-        const jN = []; for (let v=0; v<VERTS; v++) jN.push(0.55 + rng()*0.9);
-        const jS = []; for (let v=0; v<VERTS; v++) jS.push(0.55 + rng()*0.9);
+        const smooth = t => t * t * (3 - 2 * t);
+        const wobble = (coord, seedOff) => {
+          const WAVELEN = 3.4;  // ~3-4 tiles per S-curve — reads as serpentine, not jittery
+          const xs = coord / WAVELEN + seedOff;
+          const xi = Math.floor(xs), t = xs - xi;
+          const a = hash1(xi), b = hash1(xi + 1);
+          const v = a + (b - a) * smooth(t);       // 0..1 smooth value noise
+          return 0.35 + v * 1.3;                    // multiplier range ~0.35..1.65
+        };
 
         const openN = srcGrid[row - 1]?.[col]?.type === TileType.PATH;
         const openS = srcGrid[row + 1]?.[col]?.type === TileType.PATH;
@@ -6325,8 +6327,6 @@
           return (h / 4294967296 - 0.5) * 0.045;
         };
 
-        const smooth = t => t * t * (3 - 2 * t);
-
         // Isolated 1-tile corner "nubs" — both perpendicular neighbors are
         // path, the far diagonal isn't, AND the other two sides are closed —
         // are almost always a one-tile width-step along a wider road's edge,
@@ -6348,10 +6348,15 @@
         const Y = new Float32Array(VERTS * VERTS);
         for (let vj = 0; vj < VERTS; vj++) {
           for (let vi = 0; vi < VERTS; vi++) {
-            const bW = openW ? 1 : smooth(Math.min(1, (vi / BLEND_V) * jW[vj]));
-            const bE = openE ? 1 : smooth(Math.min(1, ((CELLS - vi) / BLEND_V) * jE[vj]));
-            const bN = openN ? 1 : smooth(Math.min(1, (vj / BLEND_V) * jN[vi]));
-            const bS = openS ? 1 : smooth(Math.min(1, ((CELLS - vj) / BLEND_V) * jS[vi]));
+            const vx = col + vi * STEP, vz = row + vj * STEP;
+
+            // Closed-edge margin wobbles smoothly along the edge's world
+            // coordinate (vz for W/E, vx for N/S) — a long serpentine curve
+            // rather than a per-tile-random tooth.
+            const bW = openW ? 1 : smooth(Math.min(1, (vi / BLEND_V) * wobble(vz, 0.0)));
+            const bE = openE ? 1 : smooth(Math.min(1, ((CELLS - vi) / BLEND_V) * wobble(vz, 17.3)));
+            const bN = openN ? 1 : smooth(Math.min(1, (vj / BLEND_V) * wobble(vx, 41.7)));
+            const bS = openS ? 1 : smooth(Math.min(1, ((CELLS - vj) / BLEND_V) * wobble(vx, 89.1)));
 
             // Diagonal bevel — Manhattan (vi+vj) distance from the corner,
             // whose iso-lines are true 45° diagonals (unlike max(vi,vj),
@@ -6362,7 +6367,6 @@
             const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, ((CELLS-vi) + (CELLS-vj)) / spanSE)) : 1;
 
             const blend = Math.min(1, bW * bE * bN * bS * bDiagNW * bDiagNE * bDiagSW * bDiagSE);
-            const vx = col + vi * STEP, vz = row + vj * STEP;
             Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
           }
         }
