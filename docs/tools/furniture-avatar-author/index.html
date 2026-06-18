@@ -1513,10 +1513,14 @@ function clearParts(){
 
 function presetTable(){
   clearParts();
-  addPart('box',{name:'Table Top', transform:{x:0,y:0.44,z:0,rx:0,ry:0,rz:0,sx:1.8,sy:0.16,sz:1.05}, topScaleX:.94, topScaleZ:.94, bottomScaleX:1, bottomScaleZ:1});
-  for(const x of [-0.75,0.75]) for(const z of [-0.38,0.38]) addPart('legSquare',{name:'Tapered Table Leg', transform:{x,y:0.19,z,rx:0,ry:0,rz:0,sx:.16,sy:.38,sz:.16}, topScaleX:.82, topScaleZ:.82, bottomScaleX:1.08, bottomScaleZ:1.08});
+  // Width defaults to the full tile-base footprint width so the top spans whole tiles, not a fraction of one.
+  const topWidth = Math.max(0.01, state.tileBase.tileSize) * Math.max(1, state.tileBase.footprintW);
+  const legX = topWidth * (0.75 / 1.8);
+  const decorWidth = topWidth * (1.65 / 1.8);
+  addPart('box',{name:'Table Top', transform:{x:0,y:0.44,z:0,rx:0,ry:0,rz:0,sx:topWidth,sy:0.16,sz:1.05}, topScaleX:.94, topScaleZ:.94, bottomScaleX:1, bottomScaleZ:1});
+  for(const x of [-legX,legX]) for(const z of [-0.38,0.38]) addPart('legSquare',{name:'Tapered Table Leg', transform:{x,y:0.19,z,rx:0,ry:0,rz:0,sx:.16,sy:.38,sz:.16}, topScaleX:.82, topScaleZ:.82, bottomScaleX:1.08, bottomScaleZ:1.08});
   state.placementPlanes = [];
-  addPlane('decorTop',{transform:{x:0,y:0.535,z:0,rx:-90,ry:0,rz:0,sx:1.65,sy:1,sz:.9}});
+  addPlane('decorTop',{transform:{x:0,y:0.535,z:0,rx:-90,ry:0,rz:0,sx:decorWidth,sy:1,sz:.9}});
   selectObject('part', state.parts[0].id);
 }
 function presetBench(){
