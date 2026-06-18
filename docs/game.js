@@ -936,7 +936,7 @@
         bench:         { itemKey: 'benchFurniture',         icon: '🪑', name: 'Short Bench',          modelFile: 'bench_short.glb',              price: 18, fw: 2, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A short wooden bench.' },
         bookshelf:     { itemKey: 'bookshelfFurniture',     icon: '📚', name: 'Bookshelf',            modelFile: 'bookshelf_low.glb',            price: 28, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low bookshelf.' },
         bucket:        { itemKey: 'bucketFurniture',        icon: '🪣', name: 'Tin Bucket',           modelFile: 'bucket_tin.glb',               price: 8,  fw: 1, fd: 1, color: 0x888888, area: 'any',      desc: 'A utilitarian tin bucket.' },
-        candleTable:   { itemKey: 'candleTableFurniture',   icon: '🕯️', name: 'Candle Table',         modelFile: 'candle_table.glb',             price: 15, fw: 1, fd: 1, color: 0x5a4020, area: 'interior', desc: 'Small table with a candle for warm light.' },
+        candleTable:   { itemKey: 'candleTableFurniture',   icon: '🕯️', name: 'Candle Table',         modelFile: 'candle_table.glb',             price: 15, fw: 1, fd: 1, color: 0x5a4020, area: 'interior', desc: 'Small table with a candle for warm light.', light: { color: 0xffaa44, intensity: 0.7, distance: 5, height: 0.55 } },
         chairSimple:   { itemKey: 'chairSimpleFurniture',   icon: '🪑', name: 'Simple Chair',         modelFile: 'chair_simple.glb',             price: 12, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A plain wooden chair.' },
         chairCushion:  { itemKey: 'chairCushionFurniture',  icon: '🪑', name: 'Cushioned Chair',      modelFile: 'chair_with_blue_cushion.glb',  price: 22, fw: 1, fd: 1, color: 0x3a5c8a, area: 'interior', desc: 'A chair with a soft blue cushion.' },
         chest:         { itemKey: 'chestFurniture',         icon: '📦', name: 'Storage Chest',        modelFile: 'chest_storage.glb',            price: 32, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'Sturdy wooden chest for storage.' },
@@ -944,11 +944,11 @@
         copperBarrel:  { itemKey: 'copperBarrelFurniture',  icon: '🛢️', name: 'Copper Barrel',        modelFile: 'barrel_copper_hoop.glb',       price: 20, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A sturdy copper-hooped barrel.' },
         desk:          { itemKey: 'deskFurniture',          icon: '✍️', name: 'Writing Desk',         modelFile: 'desk_writing.glb',             price: 38, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A fine writing desk with drawers.' },
         dresser:       { itemKey: 'dresserFurniture',       icon: '🗄️', name: 'Low Dresser',          modelFile: 'dresser_low.glb',              price: 30, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low dresser with drawers.' },
-        hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.' },
+        hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.', light: { color: 0xff7722, intensity: 1.4, distance: 7, height: 0.4 } },
         loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
-        nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.' },
+        nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', desc: 'A small decorative woven rug.' },
-        standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.' },
+        standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
         stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.' },
         tableLong:     { itemKey: 'tableLongFurniture',     icon: '🍽️', name: 'Long Table',           modelFile: 'table_long.glb',               price: 42, fw: 4, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A long communal dining table.' },
         tableRound:    { itemKey: 'tableRoundFurniture',    icon: '🍽️', name: 'Round Table',          modelFile: 'table_round.glb',              price: 28, fw: 2, fd: 2, color: 0x7a5c3a, area: 'interior', desc: 'A round wooden dining table.' },
@@ -1360,6 +1360,13 @@
         mesh.position.set(col + 0.5, 0.2, row + 0.5);
         targetScene.add(mesh);
 
+        let light = null;
+        if (def.light) {
+          light = new THREE.PointLight(def.light.color, def.light.intensity, def.light.distance);
+          light.position.set(col + 0.5, def.light.height || 0.6, row + 0.5);
+          targetScene.add(light);
+        }
+
         // Load GLB async and swap placeholder
         const loader = new THREE.GLTFLoader();
         loader.load(`assets/models/furniture/${def.modelFile}`, (gltf) => {
@@ -1372,7 +1379,7 @@
           const entry = interiorFurnitureObjects.find(o => o.mesh === mesh);
           if (entry) entry.mesh = model;
         }, undefined, () => {});
-        return mesh;
+        return { mesh, light };
       }
 
       function placeDecorativeFurniture(col, row, furnitureKey) {
@@ -1386,11 +1393,11 @@
         const itemKey = def.itemKey;
         if ((inventory[itemKey] || 0) < 1) return { ok: false, message: `No ${def.name} in inventory.` };
         const targetScene = isInInterior ? interiorScene : scene;
-        const mesh = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene);
-        if (!mesh) return { ok: false, message: 'Could not create furniture mesh.' };
+        const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene);
+        if (!result) return { ok: false, message: 'Could not create furniture mesh.' };
         inventory[itemKey]--;
         clampInventoryStack(itemKey);
-        interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh, area: currentArea });
+        interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh: result.mesh, light: result.light, area: currentArea });
         refreshItemScroll();
         saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
@@ -1402,6 +1409,7 @@
           s.remove(obj.mesh);
           if (obj.mesh.geometry) obj.mesh.geometry.dispose();
           if (obj.mesh.material) obj.mesh.material.dispose();
+          if (obj.light) s.remove(obj.light);
         });
         interiorFurnitureObjects.length = 0;
       }
@@ -1469,6 +1477,7 @@
             const d = interiorFurnitureObjects.splice(decIdx, 1)[0];
             scene.remove(d.mesh);
             if (d.mesh.geometry) d.mesh.geometry.dispose();
+            if (d.light) scene.remove(d.light);
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
@@ -1574,8 +1583,8 @@
           const def = DECORATIVE_FURNITURE_DEFS[key];
           if (!def) return;
           const targetScene = area === 'interior' ? interiorScene : scene;
-          const mesh = makeDecorativeFurnitureMesh(col, row, key, targetScene);
-          if (mesh) interiorFurnitureObjects.push({ key, col, row, mesh, area });
+          const result = makeDecorativeFurnitureMesh(col, row, key, targetScene);
+          if (result) interiorFurnitureObjects.push({ key, col, row, mesh: result.mesh, light: result.light, area });
         });
       }
 
@@ -1731,6 +1740,8 @@
       let _townZone          = null;   // parsed hobunji_town_v1 layout
       let townGrid           = [];     // 2-D tile array for the town map
       let townScene          = null;   // THREE.Scene, built lazily
+      let townAmbientLight   = null;
+      let townSunLight       = null;
       let _townSceneBuilt    = false;
       let _townBuildingDefs  = [];     // building entries from _townZone.buildings
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
@@ -3202,10 +3213,11 @@
         townScene = new THREE.Scene();
         townScene.background = new THREE.Color(0x7da87b);
         townScene.fog = new THREE.FogExp2(0x7da87b, 0.018); // match farm fog density
-        townScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
-        const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
-        sun.position.set(4, 8, 2);
-        townScene.add(sun);
+        townAmbientLight = new THREE.AmbientLight(0xfff0e0, 0.7);
+        townScene.add(townAmbientLight);
+        townSunLight = new THREE.DirectionalLight(0xffeedd, 1.1);
+        townSunLight.position.set(4, 8, 2);
+        townScene.add(townSunLight);
 
         const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
 
@@ -5628,7 +5640,8 @@
       function updateWaterParticles(dt) {
         // Spawn particles on flowing trench tiles.
         // _flowingTrenchTiles is rebuilt each sim tick so no full grid scan is needed.
-        for (const { col, row } of _flowingTrenchTiles) {
+        const flowingTiles = currentArea === 'town' ? _townFlowingTrenchTiles : _flowingTrenchTiles;
+        for (const { col, row } of flowingTiles) {
           if (waterParticles.length < MAX_PARTICLES && Math.random() < 0.12) {
             const tx = col * TILE + 10 + Math.random() * (TILE - 20);
             const ty = row * TILE + 8 + Math.random() * (TILE - 16);
@@ -5654,8 +5667,9 @@
           // Kill if out of life or off a flowing trench
           const pc = Math.floor(p.wx / TILE);
           const pr = Math.floor(p.wy / TILE);
-          const onFlow = pc >= 0 && pc < COLS && pr >= 0 && pr < ROWS
-            && grid[pr][pc].type === TileType.TRENCH && grid[pr][pc].flow;
+          const aGrid = getActiveGrid(), aC = getActiveCols(), aR = getActiveRows();
+          const onFlow = pc >= 0 && pc < aC && pr >= 0 && pr < aR
+            && aGrid[pr][pc].type === TileType.TRENCH && aGrid[pr][pc].flow;
           if (p.life >= p.maxLife || !onFlow) waterParticles.splice(i, 1);
         }
       }
@@ -5668,9 +5682,10 @@
       }
 
       function spawnRipples() {
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const tile = grid[row][col];
+        const aGrid = getActiveGrid(), aC = getActiveCols(), aR = getActiveRows();
+        for (let row = 0; row < aR; row++) {
+          for (let col = 0; col < aC; col++) {
+            const tile = aGrid[row][col];
             const isWet = (tile.type === TileType.PADDY && tile.water >= 0.5)
               || (tile.type !== TileType.TRENCH && tile.water >= 0.7);
             if (!isWet) continue;
@@ -5760,8 +5775,8 @@
       const _intKey = new THREE.DirectionalLight(0xfff0cc, 0.08);
       _intKey.position.set(2, 6, 3);
       interiorScene.add(_intKey);
-      const _intFill = new THREE.PointLight(0xff8833, 0.8, 10);
-      _intFill.position.set(3, 1.8, 2.5);  // centre of 6×5 main room
+      const _intFill = new THREE.PointLight(0xff8833, 0.35, 6);
+      _intFill.position.set(3, 1.8, 2.5);  // centre of 6×5 main room, dim fallback so placed lamps/candles/hearths stand out
       interiorScene.add(_intFill);
 
       // WallBuilder instance — loads Roughbrick1.glb eagerly in background
@@ -7402,6 +7417,13 @@
         if (val) _waterActive.add(i); else _waterActive.delete(i);
       }
 
+      // ── Town water (ditches fill with rain just like farm trenches) ────
+      // Town tiles are keyed "col,row" (the town grid is independently sized
+      // and isn't laid out in the farm's flat row*COLS+col mesh arrays).
+      const townWaterMeshes = new Map();
+      let _townWaterSimDirty = true;
+      let _townFlowingTrenchTiles = [];
+
       // ── Player root (Group — avatar plane attached after onboarding) ─
       const playerMesh = new THREE.Group();
       playerMesh.name = 'player_root';
@@ -8261,6 +8283,75 @@
         }
       }
 
+      // Same as updateWaterMeshes() but for the town's ditch (TRENCH) tiles,
+      // so town weather can fill them with water exactly like farm trenches.
+      function updateTownWaterMeshes() {
+        waterTime += 0.016;
+        const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
+
+        if (_townWaterSimDirty) {
+          _townWaterSimDirty = false;
+          _townFlowingTrenchTiles = [];
+          for (let row = 0; row < TROWS; row++) {
+            for (let col = 0; col < TCOLS; col++) {
+              const key  = col + ',' + row;
+              const tile = townGrid[row][col];
+
+              if (isSolid(tile.type) || tile.water < 0.003) {
+                const old = townWaterMeshes.get(key);
+                if (old) { townScene.remove(old); townWaterMeshes.delete(key); }
+                continue;
+              }
+
+              if (tile.type === TileType.TRENCH && tile.flow) _townFlowingTrenchTiles.push({ col, row });
+
+              const depthFrac = tile.water / MAX_WATER;
+              const surfaceA  = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
+
+              let fx = 0, fz = 0;
+              const nbrs = [
+                { dc:  0, dr:  1, ax: 0, az:  1 },
+                { dc:  0, dr: -1, ax: 0, az: -1 },
+                { dc:  1, dr:  0, ax: 1, az:  0 },
+                { dc: -1, dr:  0, ax: -1,az:  0 },
+              ];
+              for (const { dc, dr, ax, az } of nbrs) {
+                const nc = col + dc, nr = row + dr;
+                if (nc < 0 || nc >= TCOLS || nr < 0 || nr >= TROWS) continue;
+                const nt = townGrid[nr][nc];
+                if (isSolid(nt.type)) continue;
+                const surfB = tileSurfaceY(nt.type) + nt.water * WATER_UNIT;
+                const head  = surfaceA - surfB;
+                if (head > 0.01) { fx += ax * head; fz += az * head; }
+              }
+              const flowLen = Math.hypot(fx, fz);
+              const flowNX  = flowLen > 0.001 ? fx / flowLen : 0;
+              const flowNZ  = flowLen > 0.001 ? fz / flowLen : 0;
+              const r = clamp(180 - depthFrac * 160, 20, 180) / 255;
+              const g = clamp(220 - depthFrac * 100, 100, 220) / 255;
+
+              let wm = townWaterMeshes.get(key);
+              if (!wm) {
+                wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
+                wm.receiveShadow = false;
+                townScene.add(wm);
+                townWaterMeshes.set(key, wm);
+              }
+              wm.position.set(col + 0.5, surfaceA + 0.015, row + 0.5);
+              const u = wm.material.uniforms;
+              u.uTime.value  = waterTime;
+              u.uDepth.value = depthFrac;
+              u.uFlow.value.set(flowNX, flowNZ);
+              u.uColor.value.setRGB(r, g, 1.0);
+            }
+          }
+        } else {
+          for (const wm of townWaterMeshes.values()) {
+            wm.material.uniforms.uTime.value = waterTime;
+          }
+        }
+      }
+
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
         // Convert 2D grid coords to 3D world coords
@@ -8398,6 +8489,29 @@
         scene.fog.color.copy(scene.background);
       }
 
+      let _lastTownLightUpdateTime = 0;
+      function updateTownThreeLighting() {
+        const now = performance.now();
+        if (now - _lastTownLightUpdateTime < 500) return;
+        _lastTownLightUpdateTime = now;
+        const { r, g, b, a } = getLightingState();
+        const brightnessMul = 1 - a * 0.7;
+        townAmbientLight.intensity = 0.3 + brightnessMul * 0.7;
+        townAmbientLight.color.setRGB(
+          (r/255) * 0.6 + 0.4,
+          (g/255) * 0.6 + 0.4,
+          (b/255) * 0.6 + 0.4
+        );
+        townSunLight.intensity = brightnessMul * 1.2;
+        townSunLight.color.setRGB(r/255 * 0.5 + 0.5, g/255 * 0.5 + 0.5, b/255 * 0.4 + 0.6);
+        townScene.background.setRGB(
+          Math.max(0, r/255 * 0.15 + 0.04),
+          Math.max(0, g/255 * 0.15 + 0.08),
+          Math.max(0, b/255 * 0.15 + 0.06)
+        );
+        townScene.fog.color.copy(townScene.background);
+      }
+
       // ── Cached container rect — avoids repeated layout reflows per frame ─
       // Updated in resizeCanvas(); used by drawing functions and worldToOverlay.
       let _threeRect = { width: window.innerWidth, height: window.innerHeight };
@@ -8498,7 +8612,7 @@
           // Transition spots (farm ↔ interior ↔ town ↔ building)
           if (sceneTransDir === 0) checkTransitionSpots();
 
-          if (currentArea === 'farm') {
+          if (currentArea === 'farm' || currentArea === 'town') {
             waterFlowPhase = (waterFlowPhase + dt * 3.2) % 1;
             updateWaterParticles(dt);
             updateRipples(dt);
@@ -8508,11 +8622,16 @@
           // Water sim ticks every 1/8 game-hour (~9s real-time)
           // Uses game time so rain and drainage are clock-consistent
           simAccumulator += dt / DAY_LENGTH_SECONDS * (NIGHT_HOUR - MORNING_HOUR); // game-hours per sec
-          if (simAccumulator >= 0.125 && currentArea === 'farm') {
+          if (simAccumulator >= 0.125 && (currentArea === 'farm' || currentArea === 'town')) {
             simAccumulator -= 0.125;
-            recomputeWater(false);
+            if (currentArea === 'farm') {
+              recomputeWater(false);
+              tickWorldObjects();
+            } else {
+              const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
+              recomputeWater(false, townGrid, TROWS, TCOLS);
+            }
             spawnRipples();
-            tickWorldObjects();
           }
         }
 
@@ -8530,6 +8649,10 @@
         if (!paused) {
           updateNpcWalkers(dt);
           if (dialogueOpen) faceNpcDialogueParticipants();
+        }
+        if (currentArea === 'town') {
+          updateTownWaterMeshes();
+          updateTownThreeLighting();
         }
         if (currentArea === 'farm') {
           updateWaterMeshes();
@@ -8788,13 +8911,13 @@
       //    4. Overflow: any water above MAX_WATER is shed to neighbours.
       // ═══════════════════════════════════════════════════════════════
 
-      function recomputeWater(decayOnly, targetGrid = grid) {
+      function recomputeWater(decayOnly, targetGrid = grid, rows = ROWS, cols = COLS) {
         const str = calendar.rainStrength || 1;
         const isRaining = calendar.isRaining && !decayOnly;
 
         // Pass 1: rain + absorption + evaporation + south-edge runoff
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
             const t = targetGrid[row][col];
             if (isSolid(t.type)) continue;
             t.flow = false;
@@ -8813,8 +8936,8 @@
             t.water = Math.max(0, t.water - EVAP_RATE);
 
             // South-edge runoff — bottom 2 rows drain aggressively (gravity outlet)
-            if (row >= ROWS - 2) {
-              const runoffRate = row === ROWS - 1 ? 0.08 : 0.03;
+            if (row >= rows - 2) {
+              const runoffRate = row === rows - 1 ? 0.08 : 0.03;
               t.water = Math.max(0, t.water - runoffRate);
             }
 
@@ -8830,8 +8953,8 @@
           { dc:  0, dr: -1 },  // north
         ];
 
-        for (let row = ROWS - 1; row >= 0; row--) {
-          for (let col = 0; col < COLS; col++) {
+        for (let row = rows - 1; row >= 0; row--) {
+          for (let col = 0; col < cols; col++) {
             const t = targetGrid[row][col];
             if (isSolid(t.type) || t.water <= 0) continue;
 
@@ -8839,7 +8962,7 @@
 
             for (const { dc, dr } of dirs) {
               const nc = col + dc, nr = row + dr;
-              if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+              if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
               const n = targetGrid[nr][nc];
               if (isSolid(n.type)) continue;
 
@@ -8863,15 +8986,16 @@
         }
 
         // Pass 3: clamp
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
             const t = targetGrid[row][col];
             t.water = clamp(t.water, 0, MAX_WATER);
           }
         }
 
-        // Signal updateWaterMeshes to do a full refresh this frame.
-        _waterSimDirty = true;
+        // Signal the matching mesh updater to do a full refresh this frame.
+        if (targetGrid === townGrid) _townWaterSimDirty = true;
+        else _waterSimDirty = true;
       }
 
       function trenchNeighbors(col, row) {
@@ -9909,8 +10033,8 @@
               const def = DECORATIVE_FURNITURE_DEFS[key];
               if (!def) return;
               const tgt = area === 'interior' ? interiorScene : scene;
-              const m = makeDecorativeFurnitureMesh(col, row, key, tgt);
-              if (m) interiorFurnitureObjects.push({ key, col, row, mesh: m, area });
+              const r = makeDecorativeFurnitureMesh(col, row, key, tgt);
+              if (r) interiorFurnitureObjects.push({ key, col, row, mesh: r.mesh, light: r.light, area });
             });
           }
         } catch {}
