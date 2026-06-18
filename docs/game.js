@@ -6306,6 +6306,24 @@
 
         const smooth = t => t * t * (3 - 2 * t);
 
+        // Isolated 1-tile corner "nubs" — both perpendicular neighbors are
+        // path, the far diagonal isn't, AND the other two sides are closed —
+        // are almost always a one-tile width-step along a wider road's edge,
+        // not an intentional junction. Those get a true 45° diagonal cut
+        // across the whole tile (literally half path / half grass) instead
+        // of just a small rounded nub, so a multi-tile-wide road's outer
+        // edge reads as a chamfered line rather than a sawtooth staircase.
+        // Real junctions (where another side is also open) keep the subtle
+        // small-radius diagonal trim so they don't get chopped in half.
+        const isCornerNW = openW && openN && !diagNW && !openS && !openE;
+        const isCornerNE = openE && openN && !diagNE && !openS && !openW;
+        const isCornerSW = openW && openS && !diagSW && !openN && !openE;
+        const isCornerSE = openE && openS && !diagSE && !openN && !openW;
+        const spanNW = isCornerNW ? CELLS : BLEND_V;
+        const spanNE = isCornerNE ? CELLS : BLEND_V;
+        const spanSW = isCornerSW ? CELLS : BLEND_V;
+        const spanSE = isCornerSE ? CELLS : BLEND_V;
+
         const Y = new Float32Array(VERTS * VERTS);
         for (let vj = 0; vj < VERTS; vj++) {
           for (let vi = 0; vi < VERTS; vi++) {
@@ -6314,14 +6332,13 @@
             const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
             const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
 
-            // Diagonal bevel: where two open sides meet at a turn but the
-            // outer diagonal tile isn't path, fade the inner corner back to
-            // ground level over the same BLEND_V zone — a 45°-ish chamfer
-            // instead of a hard rectangular notch.
-            const bDiagNW = (openW && openN && !diagNW) ? smooth(Math.min(1, Math.max(vi, vj)             / BLEND_V)) : 1;
-            const bDiagNE = (openE && openN && !diagNE) ? smooth(Math.min(1, Math.max(CELLS-vi, vj)       / BLEND_V)) : 1;
-            const bDiagSW = (openW && openS && !diagSW) ? smooth(Math.min(1, Math.max(vi, CELLS-vj)       / BLEND_V)) : 1;
-            const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, Math.max(CELLS-vi, CELLS-vj) / BLEND_V)) : 1;
+            // Diagonal bevel — Manhattan (vi+vj) distance from the corner,
+            // whose iso-lines are true 45° diagonals (unlike max(vi,vj),
+            // whose iso-lines are right-angle brackets).
+            const bDiagNW = (openW && openN && !diagNW) ? smooth(Math.min(1, (vi + vj)                 / spanNW)) : 1;
+            const bDiagNE = (openE && openN && !diagNE) ? smooth(Math.min(1, ((CELLS-vi) + vj)         / spanNE)) : 1;
+            const bDiagSW = (openW && openS && !diagSW) ? smooth(Math.min(1, (vi + (CELLS-vj))         / spanSW)) : 1;
+            const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, ((CELLS-vi) + (CELLS-vj)) / spanSE)) : 1;
 
             const blend = Math.min(1, bW * bE * bN * bS * bDiagNW * bDiagNE * bDiagSW * bDiagSE);
             const vx = col + vi * STEP, vz = row + vj * STEP;
@@ -7071,10 +7088,9 @@
             const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
             if (cnx*cnx + cnz*cnz > 0.194) continue;   // cliff face — no grass
             const seed = (ci * 7919 + cj * 104173) >>> 0;
-            // 0.58 here (vs. the always-on accessible tiles) yields roughly
-            // the same instances-per-unit-area as a regular grass tile —
-            // border grass was visibly sparser than the playable area's.
-            if (_mbRng(seed)() > 0.58) continue;
+            // Halfway between the old (0.3, too sparse) and the first fix
+            // (0.58, too dense) — sits between the inside and outside look.
+            if (_mbRng(seed)() > 0.44) continue;
             const px = (ci-BV)*0.5 + 0.25, pz = (cj-BV)*0.5 + 0.25;
             const py = (y00+y10+y01+y11) / 4;
             _townBorderGrassPoints.push({ px, pz, py, seed });
