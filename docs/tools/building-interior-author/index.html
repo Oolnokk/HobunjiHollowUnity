@@ -226,6 +226,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <script src="../../js/WallBuilder.js"></script>
+<script src="../../js/procedural-furniture.js"></script>
 
 <script>
 (function () {
@@ -257,8 +258,7 @@ window.addEventListener('error', function(e){ log(e.message + ' @ ' + (e.filenam
 function $(id){ return document.getElementById(id); }
 
 // ─── Furniture catalog — mirrors DECORATIVE_FURNITURE_DEFS + PROCESSING_FURNITURE_DEFS in game.js
-// modelFile paths are relative to docs/assets/models/furniture/
-// fw/fd from game.js definitions; models loaded via THREE.GLTFLoader
+// fw/fd from game.js definitions; rendered procedurally via ProceduralFurniture (see furnKeyOf)
 var CATALOG = [
   // ── Decorative ──────────────────────────────────────────────────────────────
   { key:'basicBedFurniture',      label:'Single Bed',       modelFile:'basicbed_single_refined.glb',   fw:1, fd:2, col:0x8b6540 },
@@ -796,57 +796,29 @@ if(typeof WallBuilder !== 'undefined'){
   log('WallBuilder not found — walls will use flat boxes.','warn');
 }
 
-// ─── Furniture GLB loader ─────────────────────────────────────────────────────
-var glbCache = {};   // modelFile → THREE.Group (cloneable template) once loaded
-var glbPending = {}; // modelFile → true while in-flight
-
-function loadFurnGLB(modelFile){
-  if(glbCache[modelFile] || glbPending[modelFile]) return;
-  glbPending[modelFile] = true;
-  var loader = new THREE.GLTFLoader();
-  loader.load('../../assets/models/furniture/' + modelFile,
-    function(gltf){
-      // Auto-center: translate so model bottom sits at Y=0, centered in X/Z
-      var box = new THREE.Box3().setFromObject(gltf.scene);
-      var cx = (box.min.x + box.max.x) / 2;
-      var cz = (box.min.z + box.max.z) / 2;
-      gltf.scene.position.set(-cx, -box.min.y, -cz);
-      var wrapper = new THREE.Group();
-      wrapper.add(gltf.scene);
-      glbCache[modelFile] = wrapper;
-      delete glbPending[modelFile];
-      log('Loaded ' + modelFile);
-      rebuild3D();
-    },
-    undefined,
-    function(err){ delete glbPending[modelFile]; log('GLB load failed: ' + modelFile, 'warn'); }
-  );
-}
-
-function preloadAllFurnGLBs(){
-  CATALOG.forEach(function(c){ if(c.modelFile) loadFurnGLB(c.modelFile); });
+// ─── Furniture mesh builder (procedural, no GLB) ──────────────────────────────
+function furnKeyOf(itemKey){
+  return itemKey.endsWith('Furniture') ? itemKey.slice(0, -'Furniture'.length) : itemKey;
 }
 
 function furnGroupFor(f){
   var cat = catOf(f.itemKey);
-  var modelFile = cat.modelFile;
-  if(modelFile && glbCache[modelFile]){
-    var grp = glbCache[modelFile].clone();
-    grp.userData = { furnId: f.id };
-    // Ensure all meshes carry the furnId for raycasting
-    grp.traverse(function(o){ if(o.isMesh) o.userData = { furnId: f.id }; });
-    return grp;
+  var furnKey = furnKeyOf(f.itemKey);
+  var grp;
+  if(window.ProceduralFurniture && window.ProceduralFurniture.CATALOG[furnKey]){
+    grp = window.ProceduralFurniture.buildFurnitureGroup(furnKey, cat.col);
+  } else {
+    // Placeholder box if no procedural recipe is defined for this key
+    var mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(cat.fw*0.8, 0.9, cat.fd*0.8),
+      new THREE.MeshLambertMaterial({color: cat.col})
+    );
+    mesh.position.y = 0.45;
+    grp = new THREE.Group();
+    grp.add(mesh);
   }
-  // Placeholder box while model loads (or if no modelFile)
-  var mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(cat.fw*0.8, 0.9, cat.fd*0.8),
-    new THREE.MeshLambertMaterial({color: cat.col})
-  );
-  mesh.position.y = 0.45;
-  mesh.userData = { furnId: f.id };
-  var grp = new THREE.Group();
   grp.userData = { furnId: f.id };
-  grp.add(mesh);
+  grp.traverse(function(o){ if(o.isMesh) o.userData = { furnId: f.id }; });
   return grp;
 }
 
@@ -1181,7 +1153,6 @@ buildCatalogUI();
 initTC();
 afterLoad();
 animate();
-preloadAllFurnGLBs();
 log('Building Interior Editor ready.');
 // Hub bridge — lets the parent dev-tools hub load a server map into this editor
 window._biaBridge = {
