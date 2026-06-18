@@ -1,0 +1,1829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Hobunji Furniture + Avatar Placement Author</title>
+<style>
+:root{
+  --bg:#071019;--panel:#101b2a;--panel2:#0b1421;--line:rgba(255,255,255,.13);
+  --text:#edf6ff;--muted:#9fb4cc;--accent:#78b8ff;--ok:#6ee7a8;--warn:#ffd166;--bad:#ff7b91;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:13px;overflow:hidden}
+button,input,select,textarea{font:inherit}
+button{border:1px solid rgba(120,184,255,.38);background:rgba(120,184,255,.14);color:var(--text);border-radius:9px;padding:7px 9px;font-weight:700;cursor:pointer}
+button:hover{background:rgba(120,184,255,.24)}
+button.active{outline:2px solid var(--accent);outline-offset:1px}
+button.ok{border-color:rgba(110,231,168,.45);background:rgba(110,231,168,.15)}
+button.warn{border-color:rgba(255,209,102,.45);background:rgba(255,209,102,.12)}
+button.bad{border-color:rgba(255,123,145,.45);background:rgba(255,123,145,.12)}
+input,select,textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:var(--text);padding:6px 8px;min-width:0}
+input[type="checkbox"],input[type="color"]{width:auto}
+textarea{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.35;resize:vertical;min-height:90px}
+label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
+small,.muted{color:var(--muted)}
+#app{height:100%;display:grid;grid-template-columns:minmax(315px,26vw) 1fr minmax(320px,28vw);grid-template-rows:auto 1fr 136px;gap:8px;padding:8px}
+header{grid-column:1/-1;display:flex;gap:8px;align-items:center;justify-content:space-between;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px 10px}
+header h1{font-size:14px;margin:0}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.045);border-radius:999px;padding:4px 8px;color:var(--muted);font-size:11px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;min-height:0;overflow:auto;padding:9px}
+.viewer{position:relative;padding:0;overflow:hidden;background:#050912}
+#threeCanvas{display:block;width:100%;height:100%;touch-action:none}
+.section{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:9px;margin-bottom:9px}
+.section h2{font-size:12px;margin:0 0 7px;text-transform:uppercase;letter-spacing:.04em;color:#cfe3ff}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+.tabs button{font-size:11px;padding:6px 8px}
+.list{display:flex;flex-direction:column;gap:5px}
+.item{border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.035);border-radius:10px;padding:7px 8px;cursor:pointer}
+.item.sel{outline:2px solid var(--accent);background:rgba(120,184,255,.09)}
+.item-title{font-weight:800;font-size:12px}
+.item-meta{color:var(--muted);font-size:11px;margin-top:2px}
+.debug{grid-column:1/-1;background:#050911;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;white-space:pre-wrap;color:#dbeafe}
+.overlayTop{position:absolute;left:10px;right:10px;top:10px;display:flex;gap:6px;justify-content:space-between;pointer-events:none}
+.overlayTop .pill{background:rgba(5,9,18,.75);backdrop-filter:blur(6px)}
+.hidden{display:none!important}
+.colorCell{display:flex;gap:6px;align-items:center}
+.colorCell input[type=color]{height:32px;padding:1px;flex:0 0 42px}
+input[type=range]{padding:0}
+hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
+@media(max-width:1050px){
+  html,body{overflow:auto}
+  #app{height:auto;min-height:100vh;grid-template-columns:1fr;grid-template-rows:auto auto 65vh auto 160px}
+  .viewer{height:65vh}
+  header{align-items:flex-start;flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div>
+      <h1>Hobunji Furniture + Avatar Placement Author</h1>
+      <div class="muted">Standalone local tool. Build furniture from tapered primitives, import PNG textures, preview Mao’ao/avatar sit/lie transforms, author placement planes, and judge against a visible tile base.</div>
+    </div>
+    <div class="row" style="margin:0">
+      <span class="pill" id="statsPill">0 parts · 0 planes</span>
+      <button id="downloadJsonBtn" class="ok">Download JSON</button>
+      <button id="exportGlbBtn" class="ok">Export GLB</button>
+      <button id="resetBtn" class="bad">Reset</button>
+    </div>
+  </header>
+
+  <aside class="panel">
+    <div class="tabs">
+      <button class="active" data-left-tab="parts">Pieces</button>
+      <button data-left-tab="presets">Presets</button>
+      <button data-left-tab="planes">Planes</button>
+      <button data-left-tab="avatar">Avatar</button>
+      <button data-left-tab="base">Tile Base</button>
+      <button data-left-tab="io">I/O</button>
+    </div>
+
+    <div id="tab-parts">
+      <div class="section">
+        <h2>Add pre-made piece</h2>
+        <div class="g2">
+          <button data-add="box">▭ Rect Prism</button>
+          <button data-add="beam">▬ Beam</button>
+          <button data-add="legSquare">▯ Square Leg</button>
+          <button data-add="legRound">◯ Round Leg</button>
+          <button data-add="cylinder">◎ Circular Prism</button>
+          <button data-add="disc">● Disk</button>
+          <button data-add="cushion">▱ Cushion</button>
+          <button data-add="sphere">● Round Knob</button>
+        </div>
+        <p class="muted">Every piece has a recognized top and bottom surface. Use Top Scale / Bottom Scale / Taper Direction in the right panel.</p>
+      </div>
+      <div class="section">
+        <h2>Pieces</h2>
+        <div id="partList" class="list"></div>
+      </div>
+    </div>
+
+    <div id="tab-presets" class="hidden">
+      <div class="section">
+        <h2>Quick structures</h2>
+        <div class="g2">
+          <button data-preset="table">Simple Table</button>
+          <button data-preset="bench">Bench</button>
+          <button data-preset="stool">Round Stool</button>
+          <button data-preset="bed">Bed Frame</button>
+          <button data-preset="barrel">Barrel-ish</button>
+          <button data-preset="clear" class="bad">Clear Parts</button>
+        </div>
+      </div>
+      <div class="section">
+        <h2>Batch style</h2>
+        <div class="g2">
+          <button id="applySubtleTaper">Apply Subtle Taper</button>
+          <button id="applyHeavyTaper">Apply Heavy Taper</button>
+          <button id="randomWonk">Random Wonk</button>
+          <button id="zeroWonk">Zero Wonk</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-planes" class="hidden">
+      <div class="section">
+        <h2>Add placement plane</h2>
+        <div class="g2">
+          <button data-plane="decorTop">Decor Top</button>
+          <button data-plane="seat">Seat</button>
+          <button data-plane="sleep">Sleep</button>
+          <button data-plane="pillow">Pillow</button>
+          <button data-plane="workSurface">Work Surface</button>
+          <button data-plane="custom">Custom</button>
+        </div>
+        <p class="muted">Placement planes are visible helper surfaces for later runtime snap points: table tops, bed sleep surface, seat surface, pillow area, etc.</p>
+      </div>
+      <div class="section">
+        <h2>Placement planes</h2>
+        <div id="planeList" class="list"></div>
+      </div>
+    </div>
+
+    <div id="tab-avatar" class="hidden">
+      <div class="section">
+        <h2>Mao’ao / PNG-plane avatar</h2>
+        <div class="g2">
+          <button id="useRuntimePortrait">Actual GitHub Render</button>
+          <button id="useRawHead">Raw Mao’ao Head</button>
+        </div>
+        <div class="row">
+          <button id="syncAvatarConfigBtn" class="ok">Sync Mao’ao Scale + Vertical Offsets From GitHub Config</button>
+        </div>
+        <div class="row">
+          <label style="flex:1">Import avatar PNG texture<input id="avatarPngInput" type="file" accept="image/png,image/*"></label>
+        </div>
+        <div class="g3">
+          <div><label>Base width</label><input id="avatarBaseW" type="number" step="0.01" value="1"></div>
+          <div><label>Scale mult.</label><input id="avatarScale" type="number" step="0.01" value="1"></div>
+          <div><label>Placement ratio</label><input id="avatarPlacementRatio" type="number" step="0.01" value="0.5"></div>
+        </div>
+        <div class="g2">
+          <div><label>Anchor mode</label><select id="avatarAnchorMode"><option value="groundContact">GitHub ground-contact point on anchor Y</option><option value="bottomGround">Visible plane bottom on anchor Y</option><option value="center">Plane center on anchor Y</option></select></div>
+          <div><label>Anchor meaning</label><input value="Avatar Y is the floor/seat/sleep plane; GitHub placement ratio puts the contact point there" disabled></div>
+        </div>
+        <div class="g2">
+          <div><label>Width source</label><select id="avatarWidthMode"><option value="world">World width (0.9) for furniture scale</option><option value="portrait">Portrait builder width (1.0)</option></select></div>
+          <div><label>Meaning</label><input value="Use world width by default so furniture scale matches in-world avatars" disabled></div>
+        </div>
+        <div class="g2">
+          <div><label>Visual lift above anchor</label><input id="avatarVisualLift" type="number" step="0.005" value="0.12"></div>
+          <div><label>Why</label><input value="Raises the preview after GitHub placement so visual feet can match the tile base" disabled></div>
+        </div>
+        <div class="g2">
+          <div><label>Source px W</label><input id="avatarPxW" type="number" value="200"></div>
+          <div><label>Source px H</label><input id="avatarPxH" type="number" value="200"></div>
+        </div>
+        <div id="avatarDims" class="pill">plane 1 × 1</div>
+      </div>
+      <div class="section">
+        <h2>Pose presets</h2>
+        <div class="g2">
+          <button data-pose="stand">Stand</button>
+          <button data-pose="sit">Sit</button>
+          <button data-pose="lieBack">Lie Back</button>
+          <button data-pose="lieSide">Side Lie</button>
+        </div>
+        <div class="g3">
+          <div><label>Avatar X</label><input id="avatarX" type="number" step="0.01" value="0"></div>
+          <div><label>Avatar anchor Y</label><input id="avatarY" type="number" step="0.01" value="0"></div>
+          <div><label>Avatar Z</label><input id="avatarZ" type="number" step="0.01" value="0"></div>
+        </div>
+        <div class="g3">
+          <div><label>Rot X°</label><input id="avatarRX" type="number" step="1" value="0"></div>
+          <div><label>Rot Y°</label><input id="avatarRY" type="number" step="1" value="0"></div>
+          <div><label>Rot Z°</label><input id="avatarRZ" type="number" step="1" value="0"></div>
+        </div>
+        <label class="row"><input id="avatarVisible" type="checkbox" checked> Show avatar reference</label>
+      </div>
+    </div>
+
+    <div id="tab-base" class="hidden">
+      <div class="section">
+        <h2>Tile base visual</h2>
+        <label class="row"><input id="showTileBase" type="checkbox" checked> Show tile base / footprint grid</label>
+        <div class="g3">
+          <div><label>Tile size</label><input id="tileSize" type="number" min="0.1" step="0.05" value="1"></div>
+          <div><label>Footprint W</label><input id="footprintW" type="number" min="1" step="1" value="2"></div>
+          <div><label>Footprint D</label><input id="footprintD" type="number" min="1" step="1" value="2"></div>
+        </div>
+        <div class="g2">
+          <div><label>Base Y</label><input id="tileBaseY" type="number" step="0.01" value="0"></div>
+          <div><label>Grid opacity</label><input id="tileGridOpacity" type="number" min="0" max="1" step="0.05" value="0.55"></div>
+        </div>
+        <p class="muted">This is only a visual scale/orientation guide. It exports with the JSON reference but not as real furniture unless you choose to convert it later.</p>
+      </div>
+    </div>
+
+    <div id="tab-io" class="hidden">
+      <div class="section">
+        <h2>Import JSON</h2>
+        <input id="jsonFileInput" type="file" accept="application/json,.json">
+        <textarea id="jsonText" placeholder="Paste exported JSON here"></textarea>
+        <div class="g2">
+          <button id="importJsonTextBtn">Import Pasted JSON</button>
+          <button id="copyJsonBtn">Copy Current JSON</button>
+        </div>
+      </div>
+      <div class="section">
+        <h2>Notes</h2>
+        <textarea id="notesText">Standalone draft. Designed for Hobunji-style primitive furniture and avatar placement reference.</textarea>
+      </div>
+    </div>
+  </aside>
+
+  <main class="panel viewer">
+    <canvas id="threeCanvas"></canvas>
+    <div class="overlayTop">
+      <span class="pill" id="viewPill">Loading Three.js…</span>
+      <span class="pill" id="selPill">Nothing selected</span>
+    </div>
+  </main>
+
+  <aside class="panel">
+    <div class="section">
+      <h2>Selected object</h2>
+      <div id="noSelection" class="muted">Select a piece or placement plane.</div>
+      <div id="selectionFields" class="hidden">
+        <div class="g2">
+          <div><label>Name</label><input id="selName"></div>
+          <div><label>Kind</label><input id="selKind" disabled></div>
+        </div>
+        <div class="g3">
+          <div><label>X</label><input id="selX" type="number" step="0.01"></div>
+          <div><label>Y</label><input id="selY" type="number" step="0.01"></div>
+          <div><label>Z</label><input id="selZ" type="number" step="0.01"></div>
+        </div>
+        <div class="g3">
+          <div><label>Rot X°</label><input id="selRX" type="number" step="1"></div>
+          <div><label>Rot Y°</label><input id="selRY" type="number" step="1"></div>
+          <div><label>Rot Z°</label><input id="selRZ" type="number" step="1"></div>
+        </div>
+        <div class="g3">
+          <div><label>Scale X</label><input id="selSX" type="number" step="0.01"></div>
+          <div><label>Scale Y</label><input id="selSY" type="number" step="0.01"></div>
+          <div><label>Scale Z</label><input id="selSZ" type="number" step="0.01"></div>
+        </div>
+        <hr>
+        <div id="pieceOnlyFields">
+          <h2>Hobunji top/bottom surface</h2>
+          <div class="g3">
+            <div><label>Top scale X</label><input id="topScaleX" type="number" step="0.01"></div>
+            <div><label>Top scale Z</label><input id="topScaleZ" type="number" step="0.01"></div>
+            <div><label>Top skew X</label><input id="topSkewX" type="number" step="0.01"></div>
+          </div>
+          <div class="g3">
+            <div><label>Bottom scale X</label><input id="bottomScaleX" type="number" step="0.01"></div>
+            <div><label>Bottom scale Z</label><input id="bottomScaleZ" type="number" step="0.01"></div>
+            <div><label>Top skew Z</label><input id="topSkewZ" type="number" step="0.01"></div>
+          </div>
+          <div class="g2">
+            <div><label>Taper axis</label><select id="taperAxis"><option value="y">Y: vertical</option><option value="z">Z: depth</option><option value="x">X: width</option></select></div>
+            <div><label>Segments</label><input id="segments" type="number" min="3" max="64" step="1"></div>
+          </div>
+          <div class="g2">
+            <div class="colorCell"><input id="selColor" type="color"><span class="muted">Color</span></div>
+            <div><label>Wonkiness</label><input id="wonk" type="number" min="0" step="0.005"></div>
+          </div>
+          <div class="row">
+            <label style="flex:1">Import piece PNG texture<input id="pieceTextureInput" type="file" accept="image/png,image/*"></label>
+          </div>
+          <label class="row"><input id="textureTransparent" type="checkbox" checked> Texture uses transparency</label>
+        </div>
+        <div id="planeOnlyFields" class="hidden">
+          <h2>Placement plane</h2>
+          <div class="g2">
+            <div><label>Role</label><input id="planeRole"></div>
+            <div class="colorCell"><input id="planeColor" type="color"><span class="muted">Color</span></div>
+          </div>
+        </div>
+        <div class="g2">
+          <button id="duplicateBtn">Duplicate</button>
+          <button id="deleteSelectedBtn" class="bad">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Transform tool</h2>
+      <div class="g3">
+        <button data-transform-mode="translate" class="active">Move</button>
+        <button data-transform-mode="rotate">Rotate</button>
+        <button data-transform-mode="scale">Scale</button>
+      </div>
+      <p class="muted">Drag in 3D if TransformControls loads. Otherwise use numeric fields.</p>
+    </div>
+
+    <div class="section">
+      <h2>Calculated avatar dimensions</h2>
+      <textarea id="calcText" readonly></textarea>
+    </div>
+  </aside>
+
+  <pre id="debugLog" class="debug">Booting…</pre>
+</div>
+
+<script>
+window.__hobunjiThreeLoadError = [];
+</script>
+<script>
+window.HOBUNJI_REPO_DOCS_RAW = '../../';
+window.HOBUNJI_ASSET_BASE = window.HOBUNJI_REPO_DOCS_RAW + 'assets/';
+window.HOBUNJI_CONFIG_BASE = window.HOBUNJI_REPO_DOCS_RAW + 'config/';
+window.HOBUNJI_MAOAO_HEAD_URL = window.HOBUNJI_ASSET_BASE + 'fightersprites/mao-ao-m/head_mint.png';
+window.HOBUNJI_MAOAO_UR_HEAD_URL = window.HOBUNJI_ASSET_BASE + 'fightersprites/mao-ao-m/untinted_regions/ur-head.png';
+window.HOBUNJI_PNG_PLANE_AVATAR_FALLBACK = {
+  threeModuleUrl: "https://esm.sh/three@0.165.0",
+  orbitControlsModuleUrl: "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js?deps=three@0.165.0",
+  gltfExporterModuleUrl: "https://esm.sh/three@0.165.0/examples/jsm/exporters/GLTFExporter.js?deps=three@0.165.0",
+  modelWidth: 1,
+  worldModelWidth: 0.9,
+  worldAlphaTest: 0.01,
+  portraitScaleBySpecies: {
+    "mao-ao": 1,
+    "engh-sho": 0.95,
+    "kenkari": 0.75,
+    "tletingan": 0.85,
+    "mashtzarr": 1
+  },
+  childScaleMultiplier: 0.5,
+  childMarkers: {
+    roles: ["child"],
+    tags: ["child"]
+  },
+  groundShadow: {
+    radiusX: 0.34,
+    radiusZ: 0.22,
+    opacity: 0.28,
+    color: "#1b1712",
+    surfaceOffsetY: 0.018
+  },
+  anchorZ: 0,
+  alphaTest: 0.001,
+  backPlaneOffsetZ: 0.001,
+  portraitVerticalPlacement: {
+    default: 0.5,
+    "kenkari": { "female": 0.562, "male": 0.618 },
+    "tletingan": { "male": 0.629 },
+    "engh-sho": { "female": 0.674, "male": 0.719 },
+    "mao-ao": { "female": 0.831, "male": 0.865 },
+    "mashtzarr": { "male": 1.079 }
+  }
+};
+</script>
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js" onerror="window.__hobunjiThreeLoadError.push('three.min.js failed to load')"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js" onerror="window.__hobunjiThreeLoadError.push('OrbitControls failed to load')"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js" onerror="window.__hobunjiThreeLoadError.push('TransformControls failed to load')"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js" onerror="window.__hobunjiThreeLoadError.push('GLTFExporter failed to load')"></script>
+<script src="../../config/scratchbones-config.js" onerror="window.__hobunjiThreeLoadError.push('scratchbones-config failed to load')"></script>
+<script src="../../js/portrait-utils.js" onerror="window.__hobunjiThreeLoadError.push('portrait-utils failed to load')"></script>
+<script src="../../js/portrait-breathing.js" onerror="window.__hobunjiThreeLoadError.push('portrait-breathing failed to load')"></script>
+<script src="../../js/npc-avatar-preview-utils.js" onerror="window.__hobunjiThreeLoadError.push('npc-avatar-preview-utils failed to load')"></script>
+<script src="../../js/png-plane-avatar.js" onerror="window.__hobunjiThreeLoadError.push('png-plane-avatar failed to load')"></script>
+<script>
+
+const $ = id => document.getElementById(id);
+const DEG = Math.PI/180;
+const RAD = 180/Math.PI;
+const logEl = $('debugLog');
+function log(msg, level='info'){
+  const t = new Date().toLocaleTimeString();
+  logEl.textContent += `\n[${t}] ${level.toUpperCase()}: ${msg}`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+logEl.textContent = '[boot] Tool script loaded.';
+
+if (window.__hobunjiThreeLoadError?.length) {
+  log('Library load warnings: ' + window.__hobunjiThreeLoadError.join('; '), 'warn');
+}
+if (!window.THREE) {
+  log('THREE did not load. This usually means the device/browser blocked CDN scripts. Try opening while online, or I can make a bundled/offline version.', 'error');
+  throw new Error('THREE failed to load');
+}
+const OrbitControls = THREE.OrbitControls;
+const TransformControls = THREE.TransformControls;
+const GLTFExporter = THREE.GLTFExporter;
+const canvas = $('threeCanvas');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x050912);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050912);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 100);
+camera.position.set(3.8, 3.2, 5.0);
+let orbit = null;
+if (OrbitControls) {
+  orbit = new OrbitControls(camera, canvas);
+  orbit.enableDamping = true;
+  orbit.target.set(0, 0.55, 0);
+} else {
+  log('OrbitControls unavailable; numeric editing still works but camera orbit is disabled.', 'warn');
+}
+scene.add(new THREE.HemisphereLight(0xddeeff, 0x1d2430, 1.1));
+const sun = new THREE.DirectionalLight(0xfff3dd, 1.0);
+sun.position.set(3, 7, 4);
+scene.add(sun);
+
+const root = new THREE.Group();
+root.name = 'FurnitureAuthorRoot';
+scene.add(root);
+const helperRoot = new THREE.Group();
+helperRoot.name = 'ReferenceHelpers';
+scene.add(helperRoot);
+
+const grid = new THREE.GridHelper(10, 10, 0x41617d, 0x203142);
+grid.position.y = -0.002;
+helperRoot.add(grid);
+const axes = new THREE.AxesHelper(1.2);
+helperRoot.add(axes);
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let transform = null;
+if (TransformControls) {
+  transform = new TransformControls(camera, renderer.domElement);
+  transform.addEventListener('dragging-changed', e => { if (orbit) orbit.enabled = !e.value; });
+  transform.addEventListener('objectChange', onTransformObjectChange);
+  scene.add(transform);
+} else {
+  transform = { attach(){}, detach(){}, setMode(){} };
+  log('TransformControls unavailable; use numeric fields for transforms.', 'warn');
+}
+
+const state = {
+  version: 2,
+  id: 'furniture_piece_author_combined_v2',
+  notes: 'Standalone Hobunji furniture + avatar placement author.',
+  parts: [],
+  placementPlanes: [],
+  selectedType: null,
+  selectedId: null,
+  tileBase: { visible:true, tileSize:1, footprintW:2, footprintD:2, y:0, gridOpacity:0.55 },
+  avatar: {
+    visible:true,
+    sourceMode:'runtimePortrait',
+    sourcePixels:[200,200],
+    baseModelWidth:1,
+    scaleMultiplier:1,
+    placementRatio:0.5,
+    transform:{ x:0, y:0, z:0, rx:0, ry:0, rz:0 },
+    anchorMode:'groundContact',
+    widthMode:'world',
+    visualLift:0.12,
+    textureDataUrl:null,
+    textureName:'runtime 200x200 placeholder',
+  },
+};
+
+const meshes = new Map();
+const planeMeshes = new Map();
+let tileBaseGroup = null;
+let avatarGroup = null;
+let avatarTexture = null;
+
+function uid(prefix){ return prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,6); }
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function num(id, fallback=0){ const v = Number($(id).value); return Number.isFinite(v) ? v : fallback; }
+function colorToHex(v){ return typeof v === 'string' ? v : '#' + (v ?? 0xffffff).toString(16).padStart(6,'0'); }
+function hexToNum(h){ return parseInt(String(h||'#ffffff').replace('#',''),16) || 0xffffff; }
+
+function defaultPart(kind){
+  const defs = {
+    box:{ name:'Rect Prism', sx:1, sy:0.45, sz:1, y:0.225, color:'#8b6540', seg:4 },
+    beam:{ name:'Beam', sx:2.0, sy:0.18, sz:0.22, y:0.75, color:'#7a5c3a', seg:4 },
+    legSquare:{ name:'Square Leg', sx:0.18, sy:0.85, sz:0.18, y:0.425, color:'#6b4a28', seg:4 },
+    legRound:{ name:'Round Leg', sx:0.18, sy:0.85, sz:0.18, y:0.425, color:'#6b4a28', seg:12 },
+    cylinder:{ name:'Circular Prism', sx:0.8, sy:0.7, sz:0.8, y:0.35, color:'#8a6a3a', seg:18 },
+    disc:{ name:'Disk', sx:1.3, sy:0.16, sz:1.3, y:0.8, color:'#7a5c3a', seg:24 },
+    cushion:{ name:'Cushion', sx:1.2, sy:0.20, sz:0.9, y:0.55, color:'#3a5c8a', seg:8 },
+    sphere:{ name:'Round Knob', sx:0.25, sy:0.25, sz:0.25, y:0.6, color:'#b87333', seg:16 },
+  };
+  const d = defs[kind] || defs.box;
+  return {
+    id: uid('part'),
+    kind,
+    name: d.name,
+    transform: { x:0, y:d.y, z:0, rx:0, ry:0, rz:0, sx:d.sx, sy:d.sy, sz:d.sz },
+    color: d.color,
+    segments: d.seg,
+    taperAxis:'y',
+    topScaleX: 0.92,
+    topScaleZ: 0.92,
+    bottomScaleX: 1.00,
+    bottomScaleZ: 1.00,
+    topSkewX: 0,
+    topSkewZ: 0,
+    wonkiness: 0.015,
+    textureDataUrl: null,
+    textureName: '',
+    textureTransparent: true,
+  };
+}
+
+function placementPlane(role){
+  const presets = {
+    decorTop:{ name:'Decor top plane', role:'decorTop', x:0, y:0.93, z:0, sx:1.5, sz:1.0, color:'#7dd3fc' },
+    seat:{ name:'Seat plane', role:'seat', x:0, y:0.55, z:0, sx:1.0, sz:0.8, color:'#facc15' },
+    sleep:{ name:'Sleep plane', role:'sleep', x:0, y:0.52, z:0, sx:2.0, sz:1.0, color:'#c084fc' },
+    pillow:{ name:'Pillow plane', role:'pillow', x:0, y:0.68, z:-0.38, sx:0.8, sz:0.32, color:'#f9a8d4' },
+    workSurface:{ name:'Work surface plane', role:'workSurface', x:0, y:0.93, z:0, sx:1.6, sz:0.8, color:'#86efac' },
+    custom:{ name:'Custom plane', role:'custom', x:0, y:0.5, z:0, sx:1.0, sz:1.0, color:'#ffffff' },
+  };
+  const p = presets[role] || presets.custom;
+  return {
+    id: uid('plane'),
+    name:p.name,
+    role:p.role,
+    transform:{ x:p.x, y:p.y, z:p.z, rx:-90, ry:0, rz:0, sx:p.sx, sy:1, sz:p.sz },
+    color:p.color,
+  };
+}
+
+function createTaperedBoxGeometry(part){
+  const sx = Math.max(0.001, part.transform.sx);
+  const sy = Math.max(0.001, part.transform.sy);
+  const sz = Math.max(0.001, part.transform.sz);
+  const topX = part.topScaleX ?? 1, topZ = part.topScaleZ ?? 1;
+  const botX = part.bottomScaleX ?? 1, botZ = part.bottomScaleZ ?? 1;
+  const skewX = part.topSkewX ?? 0, skewZ = part.topSkewZ ?? 0;
+  const verts = [
+    [-0.5*botX, -0.5, -0.5*botZ], [ 0.5*botX, -0.5, -0.5*botZ], [ 0.5*botX, -0.5,  0.5*botZ], [-0.5*botX, -0.5,  0.5*botZ],
+    [-0.5*topX+skewX, 0.5, -0.5*topZ+skewZ], [ 0.5*topX+skewX, 0.5, -0.5*topZ+skewZ], [ 0.5*topX+skewX, 0.5,  0.5*topZ+skewZ], [-0.5*topX+skewX, 0.5,  0.5*topZ+skewZ],
+  ];
+  const w = part.wonkiness || 0;
+  const seed = [...part.id].reduce((a,c)=>a+c.charCodeAt(0),0);
+  const rand = i => {
+    const x = Math.sin(seed*12.9898 + i*78.233) * 43758.5453;
+    return (x - Math.floor(x)) * 2 - 1;
+  };
+  const axis = part.taperAxis || 'y';
+  const pos = [];
+  verts.forEach((v,i)=>{
+    let p = [v[0]*sx, v[1]*sy, v[2]*sz];
+    if(w){
+      p[0] += rand(i*3) * w;
+      p[1] += rand(i*3+1) * w;
+      p[2] += rand(i*3+2) * w;
+    }
+    if(axis === 'x') p = [v[1]*sx, v[0]*sy, v[2]*sz];
+    if(axis === 'z') p = [v[0]*sx, v[2]*sy, v[1]*sz];
+    pos.push(...p);
+  });
+  const idx = [
+    0,2,1, 0,3,2, // bottom
+    4,5,6, 4,6,7, // top
+    0,1,5, 0,5,4,
+    1,2,6, 1,6,5,
+    2,3,7, 2,7,6,
+    3,0,4, 3,4,7
+  ];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  // Custom tapered primitive faces need outward winding. Earlier builds used the opposite winding,
+  // which made front-side materials vanish / shade inside-out.
+  for (let i = 0; i < idx.length; i += 3) {
+    const tmp = idx[i + 1];
+    idx[i + 1] = idx[i + 2];
+    idx[i + 2] = tmp;
+  }
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function createTaperedCylinderGeometry(part){
+  const seg = clamp(Math.round(part.segments || 16), 3, 64);
+  const sx = Math.max(0.001, part.transform.sx);
+  const sy = Math.max(0.001, part.transform.sy);
+  const sz = Math.max(0.001, part.transform.sz);
+  const topX = part.topScaleX ?? 1, topZ = part.topScaleZ ?? 1;
+  const botX = part.bottomScaleX ?? 1, botZ = part.bottomScaleZ ?? 1;
+  const skewX = part.topSkewX ?? 0, skewZ = part.topSkewZ ?? 0;
+  const axis = part.taperAxis || 'y';
+  const pos = [];
+  const idx = [];
+  const add = (x,y,z) => {
+    let p = [x*sx, y*sy, z*sz];
+    if(axis === 'x') p = [y*sx, x*sy, z*sz];
+    if(axis === 'z') p = [x*sx, z*sy, y*sz];
+    pos.push(...p);
+    return pos.length/3 - 1;
+  };
+  const bot = [], top = [];
+  for(let i=0;i<seg;i++){
+    const a = i/seg * Math.PI*2;
+    bot.push(add(Math.cos(a)*0.5*botX, -0.5, Math.sin(a)*0.5*botZ));
+    top.push(add(Math.cos(a)*0.5*topX+skewX, 0.5, Math.sin(a)*0.5*topZ+skewZ));
+  }
+  const cb = add(0,-0.5,0);
+  const ct = add(skewX,0.5,skewZ);
+  for(let i=0;i<seg;i++){
+    const n=(i+1)%seg;
+    idx.push(bot[i], bot[n], top[n], bot[i], top[n], top[i]);
+    idx.push(cb, bot[i], bot[n]);
+    idx.push(ct, top[n], top[i]);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  // Same outward-winding correction for circular prisms / tapered legs / discs.
+  for (let i = 0; i < idx.length; i += 3) {
+    const tmp = idx[i + 1];
+    idx[i + 1] = idx[i + 2];
+    idx[i + 2] = tmp;
+  }
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function makeCanvasTexture(dataUrl, name){
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.onload = () => {
+      const tex = new THREE.Texture(img);
+      if ('colorSpace' in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace; else tex.encoding = THREE.sRGBEncoding;
+      tex.needsUpdate = true;
+      tex.name = name || 'imported_texture';
+      resolve(tex);
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
+function buildPartMesh(part){
+  const old = meshes.get(part.id);
+  if(old){ root.remove(old); disposeObject(old); meshes.delete(part.id); }
+  let geo;
+  if(['legRound','cylinder','disc'].includes(part.kind)) geo = createTaperedCylinderGeometry(part);
+  else if(part.kind === 'sphere') {
+    geo = new THREE.SphereGeometry(0.5*Math.max(part.transform.sx, part.transform.sy, part.transform.sz), clamp(part.segments||16,8,32), clamp(Math.round((part.segments||16)/2),6,16));
+  } else geo = createTaperedBoxGeometry(part);
+
+  const matOpts = { color: hexToNum(part.color), roughness:0.82, metalness:0.02 };
+  let mat = new THREE.MeshStandardMaterial(matOpts);
+  if(part.textureDataUrl){
+    mat.transparent = !!part.textureTransparent;
+    makeCanvasTexture(part.textureDataUrl, part.textureName).then(tex=>{
+      const mesh = meshes.get(part.id);
+      if(mesh && tex){ mesh.material.map = tex; mesh.material.needsUpdate = true; }
+    });
+  }
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.name = part.name;
+  mesh.userData = { type:'part', id:part.id };
+  mesh.position.set(part.transform.x, part.transform.y, part.transform.z);
+  mesh.rotation.set(part.transform.rx*DEG, part.transform.ry*DEG, part.transform.rz*DEG);
+  // geometry already includes dimensions, so mesh scale remains 1 to avoid double-applying dimensions.
+  root.add(mesh);
+  meshes.set(part.id, mesh);
+  return mesh;
+}
+
+function buildPlaneMesh(p){
+  const old = planeMeshes.get(p.id);
+  if(old){ helperRoot.remove(old); disposeObject(old); planeMeshes.delete(p.id); }
+  const geo = new THREE.PlaneGeometry(1,1);
+  const mat = new THREE.MeshBasicMaterial({ color:hexToNum(p.color), transparent:true, opacity:0.34, side:THREE.DoubleSide, depthWrite:false });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.name = p.name;
+  mesh.userData = { type:'plane', id:p.id };
+  mesh.position.set(p.transform.x, p.transform.y, p.transform.z);
+  mesh.rotation.set(p.transform.rx*DEG, p.transform.ry*DEG, p.transform.rz*DEG);
+  mesh.scale.set(p.transform.sx, p.transform.sy, p.transform.sz);
+  helperRoot.add(mesh);
+  planeMeshes.set(p.id, mesh);
+  return mesh;
+}
+
+function disposeObject(obj){
+  obj.traverse?.(o=>{
+    o.geometry?.dispose?.();
+    const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    mats.forEach(m=>{ m.map?.dispose?.(); m.dispose?.(); });
+  });
+}
+
+function rebuildAll(){
+  for(const obj of meshes.values()) { root.remove(obj); disposeObject(obj); }
+  for(const obj of planeMeshes.values()) { helperRoot.remove(obj); disposeObject(obj); }
+  meshes.clear(); planeMeshes.clear();
+  state.parts.forEach(buildPartMesh);
+  state.placementPlanes.forEach(buildPlaneMesh);
+  rebuildTileBase();
+  rebuildAvatar();
+  updateLists();
+  updateStats();
+  refreshSelectionUI();
+}
+
+function rebuildTileBase(){
+  if(tileBaseGroup){ helperRoot.remove(tileBaseGroup); disposeObject(tileBaseGroup); tileBaseGroup = null; }
+  const b = state.tileBase;
+  if(!b.visible) return;
+  tileBaseGroup = new THREE.Group();
+  tileBaseGroup.name = 'tile_base_visual';
+  const w = Math.max(1,b.footprintW) * Math.max(0.01,b.tileSize);
+  const d = Math.max(1,b.footprintD) * Math.max(0.01,b.tileSize);
+  const baseGeo = new THREE.PlaneGeometry(w,d);
+  const baseMat = new THREE.MeshBasicMaterial({ color:0x2c6f55, transparent:true, opacity:0.14, side:THREE.DoubleSide, depthWrite:false });
+  const base = new THREE.Mesh(baseGeo, baseMat);
+  base.rotation.x = -Math.PI/2;
+  base.position.y = b.y - 0.003;
+  tileBaseGroup.add(base);
+
+  const lineMat = new THREE.LineBasicMaterial({ color:0xa7f3d0, transparent:true, opacity:clamp(b.gridOpacity,0,1) });
+  const pts = [];
+  const left = -w/2, right = w/2, top = -d/2, bottom = d/2;
+  for(let c=0;c<=b.footprintW;c++){
+    const x = left + c*b.tileSize;
+    pts.push(new THREE.Vector3(x,b.y,top), new THREE.Vector3(x,b.y,bottom));
+  }
+  for(let r=0;r<=b.footprintD;r++){
+    const z = top + r*b.tileSize;
+    pts.push(new THREE.Vector3(left,b.y,z), new THREE.Vector3(right,b.y,z));
+  }
+  const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+  const lines = new THREE.LineSegments(lineGeo, lineMat);
+  tileBaseGroup.add(lines);
+  helperRoot.add(tileBaseGroup);
+}
+
+function avatarDims(){
+  const pxW = Math.max(1, state.avatar.sourcePixels[0] || 200);
+  const pxH = Math.max(1, state.avatar.sourcePixels[1] || 200);
+  const aspect = pxH / pxW;
+  const width = (state.avatar.baseModelWidth || 1) * (state.avatar.scaleMultiplier || 1);
+  const height = width * aspect;
+  const placementRatio = state.avatar.placementRatio ?? 0.5;
+
+  // GitHub PNGPlaneAvatar semantics:
+  // - A centered plane would map image top to +height/2 and bottom to -height/2.
+  // - The pixel row at portraitVerticalPlacement is the intended ground/contact row.
+  // - assemblyOffsetY = (ratio - 0.5) * height moves that contact row to local Y=0.
+  //
+  // Example Mao'ao male, width/height .9, ratio .865:
+  // assemblyOffsetY = .3285
+  // plane bottom = -.1215
+  // ground-contact row = 0
+  //
+  // So if tile/base Y is ground, the avatar root should be placed at that Y,
+  // NOT lifted so the full transparent plane bottom touches ground.
+  const assemblyOffsetY = (placementRatio - 0.5) * height;
+  const bottomLocalY = assemblyOffsetY - height / 2;
+  const topLocalY = assemblyOffsetY + height / 2;
+  const groundContactLocalY = 0;
+
+  const anchorMode = state.avatar.anchorMode || 'groundContact';
+  const authoredAnchorY = state.avatar.transform?.y ?? 0;
+  const visualLift = Number(state.avatar.visualLift) || 0;
+  const visualRootY =
+    anchorMode === 'groundContact' ? authoredAnchorY + visualLift :
+    anchorMode === 'bottomGround' ? authoredAnchorY - bottomLocalY + visualLift :
+    authoredAnchorY + visualLift;
+
+  const visibleBottomY = visualRootY + bottomLocalY;
+  const visibleTopY = visualRootY + topLocalY;
+  const groundContactY = visualRootY + groundContactLocalY;
+  const bottomBelowGround = groundContactY - visibleBottomY;
+
+  return {
+    pxW, pxH, aspect, width, height, placementRatio,
+    assemblyOffsetY, bottomLocalY, topLocalY, groundContactLocalY,
+    bottomBelowGround,
+    groundLiftY: -bottomLocalY,
+    anchorMode, authoredAnchorY, visualLift, visualRootY, visibleBottomY, visibleTopY, groundContactY
+  };
+}
+
+function runtimeAvatarOptions(profile=null){
+  // Match the in-game world avatar exactly (see makeNpcWalker / refreshPlayerAvatar in game.js):
+  // the world model is built at worldModelWidth (~0.9), not the portrait-builder width (1.0).
+  // Passing modelWidth/modelHeight through here is what keeps this tool's preview the same
+  // physical size as an NPC/player actually standing on a tile in-game.
+  const avatarCfg = getEffectivePngPlaneAvatarConfig();
+  const widthMode = state.avatar.widthMode || 'world';
+  const modelW = widthMode === 'world'
+    ? (Number(avatarCfg?.worldModelWidth) || 0.9)
+    : (Number(avatarCfg?.modelWidth) || 1);
+  return {
+    backCanvas:null,
+    profile,
+    speciesId:'mao-ao',
+    gender:'male',
+    appearance:{ speciesId:'mao-ao', species:'mao-ao', gender:'male' },
+    npcRecord:{ appearance:{ speciesId:'mao-ao', species:'mao-ao', gender:'male' }, species:'mao-ao', gender:'male' },
+    name:'Furniture_Author_Maoao_Runtime_Model',
+    modelWidth: modelW,
+    modelHeight: modelW,
+    userData:{ source:'furniture-avatar-author-v9' }
+  };
+}
+
+function getEffectivePngPlaneAvatarConfig(){
+  const live = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || null;
+  const fallback = window.HOBUNJI_PNG_PLANE_AVATAR_FALLBACK || null;
+  if (live && typeof live === 'object') {
+    return { ...fallback, ...live };
+  }
+  return fallback;
+}
+
+function readRepoAvatarConfigDiagnostics(){
+  const cfg = getEffectivePngPlaneAvatarConfig();
+  const opts = runtimeAvatarOptions(null);
+  let scale = null, placement = null;
+  try { scale = window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.(opts); } catch(e) { scale = 'ERROR: ' + e.message; }
+  try { placement = window.PNGPlaneAvatar?.avatarPlacementRatioFor?.(opts); } catch(e) { placement = 'ERROR: ' + e.message; }
+
+  // If the repo helper returns defaults because standalone loading is incomplete,
+  // fall back to the supplied config directly.
+  const speciesScale = cfg?.portraitScaleBySpecies?.['mao-ao'];
+  const speciesPlacement = cfg?.portraitVerticalPlacement?.['mao-ao']?.['male'];
+  const fallbackScale = Number.isFinite(Number(speciesScale)) ? Number(speciesScale) : 1;
+  const fallbackPlacement = Number.isFinite(Number(speciesPlacement)) ? Number(speciesPlacement) : 0.865;
+
+  return {
+    hasScratchbonesConfig: !!window.SCRATCHBONES_CONFIG,
+    hasPngPlaneAvatarConfig: !!cfg,
+    usingFallbackConfig: !(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar),
+    pngPlaneAvatarConfigKeys: cfg ? Object.keys(cfg) : [],
+    configModelWidth: cfg?.modelWidth ?? null,
+    configWorldModelWidth: cfg?.worldModelWidth ?? null,
+    configPortraitScaleBySpecies: cfg?.portraitScaleBySpecies ?? null,
+    configPortraitVerticalPlacement: cfg?.portraitVerticalPlacement ?? null,
+    computedMaoaoScale: (Number.isFinite(Number(scale)) && Number(scale) != 1) ? Number(scale) : fallbackScale,
+    computedMaoaoPlacement: (Number.isFinite(Number(placement)) && Number(placement) != 0.5) ? Number(placement) : fallbackPlacement
+  };
+}
+
+function measureBuiltAvatarModel(root){
+  const box = new THREE.Box3().setFromObject(root);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  let planeWidth = null, planeHeight = null, assemblyOffsetY = null;
+  root.traverse(o=>{
+    if(planeWidth != null) return;
+    if(o.isMesh && o.geometry?.parameters?.width && o.geometry?.parameters?.height){
+      planeWidth = Number(o.geometry.parameters.width);
+      planeHeight = Number(o.geometry.parameters.height);
+      const wp = new THREE.Vector3();
+      o.getWorldPosition(wp);
+      const rp = new THREE.Vector3();
+      root.getWorldPosition(rp);
+      assemblyOffsetY = wp.y - rp.y;
+    }
+  });
+  return {
+    boxWidth:size.x,
+    boxHeight:size.y,
+    boxDepth:size.z,
+    planeWidth,
+    planeHeight,
+    assemblyOffsetY,
+    placementFromMeasuredAssembly:(planeHeight ? (assemblyOffsetY / planeHeight + 0.5) : null)
+  };
+}
+
+function syncAvatarStateFromBuiltModel(root, sourceCanvas, profile=null){
+  const ud = root.userData || {};
+  const diagnostics = readRepoAvatarConfigDiagnostics();
+  const measured = measureBuiltAvatarModel(root);
+  const aspect = sourceCanvas.height / Math.max(1, sourceCanvas.width);
+
+  const scale =
+    Number(ud.portraitScaleMultiplier) ||
+    Number(diagnostics.computedMaoaoScale) ||
+    1;
+
+  const widthMode = state.avatar.widthMode || 'world';
+  const configuredBaseWidth = widthMode === 'world'
+    ? (Number(diagnostics.configWorldModelWidth) || Number(diagnostics.configModelWidth) || 0.9)
+    : (Number(diagnostics.configModelWidth) || 1);
+
+  const configuredTargetWidth = configuredBaseWidth * scale;
+
+  const modelWidth =
+    (widthMode === 'world' ? configuredTargetWidth : null) ||
+    Number(ud.portraitModelWidth) ||
+    Number(measured.planeWidth) ||
+    configuredTargetWidth;
+
+  const modelHeight =
+    (modelWidth * aspect);
+
+  const placement =
+    Number.isFinite(Number(ud.portraitVerticalPlacementRatio))
+      ? Number(ud.portraitVerticalPlacementRatio)
+      : Number.isFinite(Number(measured.placementFromMeasuredAssembly))
+        ? Number(measured.placementFromMeasuredAssembly)
+        : Number.isFinite(Number(diagnostics.computedMaoaoPlacement))
+          ? Number(diagnostics.computedMaoaoPlacement)
+          : 0.5;
+
+  state.avatar.sourcePixels = [sourceCanvas.width, sourceCanvas.height];
+  state.avatar.scaleMultiplier = scale;
+  state.avatar.placementRatio = placement;
+
+  // Keep baseModelWidth compatible with the state formula:
+  // modelWidth = baseModelWidth * scaleMultiplier
+  state.avatar.baseModelWidth = scale ? (modelWidth / scale) : modelWidth;
+
+  root.userData = {
+    ...ud,
+    recoveredPortraitModelWidth: modelWidth,
+    recoveredPortraitModelHeight: modelHeight,
+    recoveredPortraitScaleMultiplier: scale,
+    recoveredPortraitVerticalPlacementRatio: placement,
+    recoveredFrom: {
+      userDataHadExpectedFields: !!(ud.portraitModelWidth && ud.portraitModelHeight),
+      measured,
+      diagnostics
+    }
+  };
+
+  log('Avatar GitHub diagnostics: ' + JSON.stringify(diagnostics));
+  log(`Recovered/built avatar dimensions: width ${modelWidth}, height ${modelHeight}, scale ${scale}, placement ${placement}, measuredPlane ${measured.planeWidth}×${measured.planeHeight}`);
+}
+
+
+const MAOAO_HEAD_URL = '../../assets/fightersprites/mao-ao-m/head_mint.png';
+const MAOAO_UR_HEAD_URL = '../../assets/fightersprites/mao-ao-m/untinted_regions/ur-head.png';
+
+function loadImageUrl(url){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to load image: '+url));
+    img.src = url;
+  });
+}
+
+function placeholderAvatarCanvas(mode='runtimePortrait'){
+  const d = mode === 'rawHead' ? {w:234,h:173} : {w:200,h:200};
+  const c = document.createElement('canvas');
+  c.width = d.w; c.height = d.h;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,d.w,d.h);
+  ctx.save();
+  ctx.translate(d.w/2,d.h/2);
+  const s = Math.min(d.w,d.h);
+  ctx.fillStyle = '#6b8f66';
+  ctx.strokeStyle = '#050505';
+  ctx.lineWidth = Math.max(5, s*0.04);
+  ctx.beginPath();
+  ctx.ellipse(0,0,s*0.34,s*0.43,0,0,Math.PI*2);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#0a0a0a';
+  ctx.beginPath(); ctx.arc(-s*.13,-s*.04,s*.045,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(s*.13,-s*.04,s*.045,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(-s*.145,-s*.055,s*.012,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(s*.115,-s*.055,s*.012,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+  return c;
+}
+
+async function makeRawMaoaoHeadCanvas(){
+  const [head, ur] = await Promise.all([
+    loadImageUrl(window.HOBUNJI_MAOAO_HEAD_URL || MAOAO_HEAD_URL),
+    loadImageUrl(window.HOBUNJI_MAOAO_UR_HEAD_URL || MAOAO_UR_HEAD_URL).catch(()=>null)
+  ]);
+  const w = head.naturalWidth || head.width || 234;
+  const h = head.naturalHeight || head.height || 173;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,w,h);
+  ctx.drawImage(head,0,0,w,h);
+  if(ur) ctx.drawImage(ur,0,0,w,h);
+  return c;
+}
+
+async function syncMaoaoAvatarConfigFromRuntime(){
+  const diagnostics = readRepoAvatarConfigDiagnostics();
+  let scale = Number(diagnostics.computedMaoaoScale);
+  let placement = Number(diagnostics.computedMaoaoPlacement);
+
+  if (!Number.isFinite(scale) || scale <= 0) scale = 1;
+  if (!Number.isFinite(placement)) placement = 0.865;
+
+  const widthMode = state.avatar.widthMode || 'world';
+  const portraitWidth = Number(diagnostics.configModelWidth);
+  const worldWidth = Number(diagnostics.configWorldModelWidth);
+
+  const chosenWidth = widthMode === 'world'
+    ? (Number.isFinite(worldWidth) && worldWidth > 0 ? worldWidth : (Number.isFinite(portraitWidth) && portraitWidth > 0 ? portraitWidth : 0.9))
+    : (Number.isFinite(portraitWidth) && portraitWidth > 0 ? portraitWidth : 1);
+
+  state.avatar.scaleMultiplier = scale;
+  state.avatar.placementRatio = placement;
+  state.avatar.baseModelWidth = chosenWidth;
+
+  syncControlsFromState();
+  updateAvatarReadout();
+
+  if (!diagnostics.hasPngPlaneAvatarConfig || !diagnostics.pngPlaneAvatarConfigKeys.length) {
+    log('No live SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar config was found at runtime. Using the supplied fallback pngPlaneAvatar config instead.', 'warn');
+  }
+  log('Synced Mao’ao PNG-plane config diagnostics: ' + JSON.stringify(diagnostics));
+  log(`Applied Mao’ao male runtime values: widthMode=${widthMode}, baseWidth=${chosenWidth}, scale=${scale}, placementRatio=${placement}`);
+  return true;
+}
+
+async function makeRuntimePortraitCanvas(){
+  // Use the actual Hobunji portrait stack, not the local simplified approximation.
+  // This calls NpcAvatarPreview -> portrait-utils renderPortraitProfile using the repo config/species/cosmetics data.
+  const c = document.createElement('canvas');
+  c.width = 200; c.height = 200;
+
+  if (!window.NpcAvatarPreview || !window.renderPortraitProfile || !window.PNGPlaneAvatar) {
+    log('Actual portrait scripts are not loaded yet/available; using fallback. Check library warnings above.', 'warn');
+    return { front:placeholderAvatarCanvas('runtimePortrait'), back:null, profile:null };
+  }
+
+  try {
+    if (window.setPortraitAssetBase) window.setPortraitAssetBase(window.HOBUNJI_ASSET_BASE || ASSET_BASE);
+    await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: window.HOBUNJI_ASSET_BASE || ASSET_BASE, configBase: window.HOBUNJI_CONFIG_BASE || CONFIG_BASE });
+
+    let profile = window.NpcAvatarPreview.randomProfile('furniture-author-maoao-reference', {
+      speciesId:'mao-ao',
+      gender:'male'
+    });
+
+    // Force a plain Mao'ao male if randomization failed or returned another fallback.
+    if (!profile) {
+      const fighter = (window.getPortraitFighters?.() || []).find(f =>
+        String(f.speciesId || '').replace(/_/g,'-') === 'mao-ao' &&
+        String(f.gender || '').toLowerCase() === 'male'
+      );
+      profile = {
+        fighter,
+        bodyColors: {
+          A: { h: -70, s: -0.80, v: -0.55 },
+          B: { h: -70, s: -0.80, v: -0.55 },
+          C: { h: 30, s: -0.60, v: -0.15 }
+        },
+        hairFront: { id:'none', layers:[] },
+        hairBack: { id:'none', layers:[] },
+        hairSide: { id:'none', layers:[] },
+        hairSideL: { id:'none', layers:[] },
+        eyes: { id:'none', layers:[] },
+        upperFace: { id:'none', layers:[] },
+        facialHair: { id:'none', layers:[] },
+        hat: { id:'none', layers:[] },
+        hood: { id:'none', layers:[] },
+        torsoCosmetic: { id:'none', layers:[] },
+        armCosmetic: { id:'none', layers:[] },
+      };
+    }
+
+    await window.NpcAvatarPreview.renderProfileToCanvas(c, profile, {
+      seatId:'furniture-author-maoao-reference',
+      breathingComposer:null
+    });
+    const backCanvas = document.createElement('canvas');
+    backCanvas.width = 200; backCanvas.height = 200;
+    await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView:'behind' });
+
+    state.avatar.sourcePixels = [c.width, c.height];
+    state.avatar.textureName = 'actual GitHub renderProfileToCanvas Mao’ao 200×200 + behind';
+    await syncMaoaoAvatarConfigFromRuntime();
+    return { front:c, back:backCanvas, profile };
+  } catch (err) {
+    log('Actual GitHub portrait render failed; using fallback. ' + (err?.message || err), 'error');
+    return { front:placeholderAvatarCanvas('runtimePortrait'), back:null, profile:null };
+  }
+}
+
+function canvasFromDataUrl(dataUrl){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth || img.width;
+      c.height = img.naturalHeight || img.height;
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      resolve(c);
+    };
+    img.onerror = () => reject(new Error('Failed to load imported avatar data URL'));
+    img.src = dataUrl;
+  });
+}
+
+function makeTextureFromCanvas(canvas){
+  const tex = new THREE.CanvasTexture(canvas);
+  if ('colorSpace' in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+  else tex.encoding = THREE.sRGBEncoding;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+async function resolveAvatarCanvas(){
+  if(state.avatar.textureDataUrl) return { front: await canvasFromDataUrl(state.avatar.textureDataUrl), back:null, profile:null };
+  if(state.avatar.sourceMode === 'rawHead') return { front: await makeRawMaoaoHeadCanvas(), back:null, profile:null };
+  if(state.avatar.sourceMode === 'runtimePortrait') return await makeRuntimePortraitCanvas();
+  return { front: placeholderAvatarCanvas(state.avatar.sourceMode), back:null, profile:null };
+}
+
+let avatarBuildTicket = 0;
+function rebuildAvatar(){
+  const ticket = ++avatarBuildTicket;
+  if(avatarGroup){ helperRoot.remove(avatarGroup); disposeObject(avatarGroup); avatarGroup = null; }
+  if(!state.avatar.visible) { updateAvatarReadout(); return; }
+
+  // Build immediately with a placeholder so the scene never looks empty,
+  // then replace the material texture once the actual PNG is loaded.
+  const immediateCanvas = placeholderAvatarCanvas(state.avatar.sourceMode);
+  buildAvatarFromCanvas(immediateCanvas, ticket, true);
+
+  resolveAvatarCanvas().then(result=>{
+    if(ticket !== avatarBuildTicket) return;
+    const canvas = result.front || result;
+    state.avatar.sourcePixels = [canvas.width, canvas.height];
+    syncControlsFromState();
+    buildAvatarFromCanvas(canvas, ticket, false, result.back || null, result.profile || null);
+    log(`Avatar texture loaded: ${state.avatar.textureName || state.avatar.sourceMode} (${canvas.width}×${canvas.height})`);
+  }).catch(err=>{
+    log('Avatar image load failed; keeping placeholder. '+err.message, 'error');
+    updateAvatarReadout();
+  });
+}
+
+function buildAvatarFromCanvas(sourceCanvas, ticket, isTemporary, backCanvas=null, profile=null){
+  if(ticket !== avatarBuildTicket) return;
+  if(avatarGroup){ helperRoot.remove(avatarGroup); disposeObject(avatarGroup); avatarGroup = null; }
+
+  // For the GitHub runtime avatar path, do not reimplement the scale/vertical math.
+  // Character Studio does: renderProfileToCanvas(front/back) -> PNGPlaneAvatar.buildSinglePlaneAvatarModel(...)
+  // and then trusts model.userData.portraitModelWidth/Height/Scale/VerticalPlacementRatio.
+  if (!isTemporary && state.avatar.sourceMode === 'runtimePortrait' && window.PNGPlaneAvatar?.buildSinglePlaneAvatarModel) {
+    try {
+      const options = { ...runtimeAvatarOptions(profile), backCanvas, profile };
+      const built = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, sourceCanvas, options);
+      syncAvatarStateFromBuiltModel(built, sourceCanvas, profile);
+
+      // Ground/surface anchor is still our furniture-author concern. The repo preview leaves the model root at scene origin;
+      // this tool places that already-correct model so its visible bottom rests on the chosen surface.
+      const d = avatarDims();
+      const tr = state.avatar.transform;
+      built.position.set(tr.x, d.visualRootY, tr.z);
+      built.rotation.set(tr.rx*DEG,tr.ry*DEG,tr.rz*DEG);
+      avatarGroup = built;
+      avatarGroup.name = 'avatar_reference_actual_png_plane_model';
+      helperRoot.add(avatarGroup);
+      syncControlsFromState();
+      updateAvatarReadout();
+      return;
+    } catch (err) {
+      log('PNGPlaneAvatar.buildSinglePlaneAvatarModel failed; falling back to local display. ' + err.message, 'error');
+    }
+  }
+
+  const dims = avatarDims();
+  avatarGroup = new THREE.Group();
+  avatarGroup.name = isTemporary ? 'avatar_reference_loading_placeholder' : 'avatar_reference';
+
+  const frontTex = makeTextureFromCanvas(sourceCanvas);
+  const geo = new THREE.PlaneGeometry(dims.width, dims.height);
+  const mat = new THREE.MeshBasicMaterial({ map:frontTex, transparent:true, alphaTest:0.001, side:THREE.FrontSide, depthWrite:false });
+  const front = new THREE.Mesh(geo, mat);
+  front.name = 'avatar_front_plane';
+  front.renderOrder = 10;
+
+  const backSourceCanvas = backCanvas || sourceCanvas;
+  const backCanvasLocal = document.createElement('canvas');
+  backCanvasLocal.width = backSourceCanvas.width;
+  backCanvasLocal.height = backSourceCanvas.height;
+  const bctx = backCanvasLocal.getContext('2d');
+  bctx.save();
+  bctx.translate(backCanvasLocal.width, 0);
+  bctx.scale(-1, 1);
+  bctx.drawImage(backSourceCanvas,0,0);
+  bctx.restore();
+  if(!backCanvas){
+    const data = bctx.getImageData(0,0,backCanvasLocal.width,backCanvasLocal.height);
+    for(let i=0;i<data.data.length;i+=4){
+      if(data.data[i+3] === 0) continue;
+      data.data[i]=0; data.data[i+1]=0; data.data[i+2]=0;
+    }
+    bctx.putImageData(data,0,0);
+  }
+
+  const backMat = new THREE.MeshBasicMaterial({ map:makeTextureFromCanvas(backCanvasLocal), transparent:true, alphaTest:0.001, side:THREE.FrontSide, depthWrite:false });
+  const back = new THREE.Mesh(geo.clone(), backMat);
+  back.name = backCanvas ? 'avatar_back_assembled_plane' : 'avatar_back_silhouette_plane';
+  back.rotation.y = Math.PI;
+  back.position.z = -0.002;
+  back.renderOrder = 9;
+
+  const assembly = new THREE.Group();
+  assembly.name = 'avatar_single_plane_assembly';
+  assembly.position.y = dims.assemblyOffsetY;
+  assembly.add(front, back);
+  avatarGroup.add(assembly);
+
+  const tr = state.avatar.transform;
+  avatarGroup.position.set(tr.x,dims.visualRootY,tr.z);
+  avatarGroup.rotation.set(tr.rx*DEG,tr.ry*DEG,tr.rz*DEG);
+  helperRoot.add(avatarGroup);
+  updateAvatarReadout();
+}
+
+function updateAvatarReadout(){
+  const d = avatarDims();
+  $('avatarDims').textContent = `plane ${d.width.toFixed(4)} × ${d.height.toFixed(4)} · placement ${state.avatar.placementRatio} · lift ${d.visualLift.toFixed(4)} · contactY ${d.groundContactY.toFixed(4)} · planeBottomY ${d.visibleBottomY.toFixed(4)}`;
+  $('calcText').value = JSON.stringify({
+    formula:'GitHub path: PNGPlaneAvatar.buildSinglePlaneAvatarModel sets portraitModelWidth/Height, portraitScaleMultiplier, and portraitVerticalPlacementRatio; GitHub anchoring uses the placement-ratio pixel row as ground/contact Y=0; furniture-author then adds an editable visual lift so the visible foot contact can be matched against the tile base.',
+    sourceMode: state.avatar.sourceMode,
+    sourcePixels: state.avatar.sourcePixels,
+    modelWidth: d.width,
+    modelHeight: d.height,
+    aspect: d.aspect,
+    assemblyOffsetY: d.assemblyOffsetY,
+    transform: state.avatar.transform,
+    suggestedNotes: {
+      stand:'upright plane: rot 0,0,0',
+      sit:'usually rotate X about -8 to -15 degrees, lower/shift onto seat plane',
+      lieBack:'rotate X -90 degrees, align to sleep plane',
+      lieSide:'rotate X -90 and Z 90 degrees, align to sleep plane'
+    }
+  }, null, 2);
+}
+
+function updateStats(){
+  $('statsPill').textContent = `${state.parts.length} parts · ${state.placementPlanes.length} planes · ${state.tileBase.footprintW}×${state.tileBase.footprintD} tiles`;
+  $('viewPill').textContent = `Tile base ${state.tileBase.footprintW}×${state.tileBase.footprintD} · avatar ${state.avatar.visible?'on':'off'}`;
+}
+
+function updateLists(){
+  $('partList').innerHTML = state.parts.map(p => `<div class="item ${state.selectedType==='part'&&state.selectedId===p.id?'sel':''}" data-select-part="${p.id}">
+    <div class="item-title">${p.name}</div>
+    <div class="item-meta">${p.kind} · top ${p.topScaleX.toFixed(2)}×${p.topScaleZ.toFixed(2)} · bottom ${p.bottomScaleX.toFixed(2)}×${p.bottomScaleZ.toFixed(2)}</div>
+  </div>`).join('') || '<div class="muted">No pieces yet.</div>';
+  $('planeList').innerHTML = state.placementPlanes.map(p => `<div class="item ${state.selectedType==='plane'&&state.selectedId===p.id?'sel':''}" data-select-plane="${p.id}">
+    <div class="item-title">${p.name}</div>
+    <div class="item-meta">${p.role} · ${p.transform.sx.toFixed(2)}×${p.transform.sz.toFixed(2)}</div>
+  </div>`).join('') || '<div class="muted">No placement planes yet.</div>';
+  document.querySelectorAll('[data-select-part]').forEach(el => el.onclick = () => selectObject('part', el.dataset.selectPart));
+  document.querySelectorAll('[data-select-plane]').forEach(el => el.onclick = () => selectObject('plane', el.dataset.selectPlane));
+}
+
+function selectedRecord(){
+  if(state.selectedType==='part') return state.parts.find(p=>p.id===state.selectedId);
+  if(state.selectedType==='plane') return state.placementPlanes.find(p=>p.id===state.selectedId);
+  return null;
+}
+
+function objectForSelection(){
+  if(state.selectedType==='part') return meshes.get(state.selectedId);
+  if(state.selectedType==='plane') return planeMeshes.get(state.selectedId);
+  return null;
+}
+
+function selectObject(type,id){
+  state.selectedType = type;
+  state.selectedId = id;
+  const obj = objectForSelection();
+  if(obj) transform.attach(obj); else transform.detach();
+  updateLists();
+  refreshSelectionUI();
+}
+
+function refreshSelectionUI(){
+  const rec = selectedRecord();
+  const obj = objectForSelection();
+  if(!rec || !obj){
+    $('noSelection').classList.remove('hidden');
+    $('selectionFields').classList.add('hidden');
+    $('selPill').textContent = 'Nothing selected';
+    transform.detach();
+    return;
+  }
+  $('noSelection').classList.add('hidden');
+  $('selectionFields').classList.remove('hidden');
+  $('selPill').textContent = `${rec.name} (${state.selectedType})`;
+  $('selName').value = rec.name;
+  $('selKind').value = state.selectedType === 'part' ? rec.kind : 'placement plane';
+  const tr = rec.transform;
+  $('selX').value = tr.x; $('selY').value = tr.y; $('selZ').value = tr.z;
+  $('selRX').value = tr.rx; $('selRY').value = tr.ry; $('selRZ').value = tr.rz;
+  $('selSX').value = tr.sx; $('selSY').value = tr.sy; $('selSZ').value = tr.sz;
+  const isPart = state.selectedType === 'part';
+  $('pieceOnlyFields').classList.toggle('hidden', !isPart);
+  $('planeOnlyFields').classList.toggle('hidden', isPart);
+  if(isPart){
+    $('topScaleX').value = rec.topScaleX; $('topScaleZ').value = rec.topScaleZ;
+    $('bottomScaleX').value = rec.bottomScaleX; $('bottomScaleZ').value = rec.bottomScaleZ;
+    $('topSkewX').value = rec.topSkewX; $('topSkewZ').value = rec.topSkewZ;
+    $('taperAxis').value = rec.taperAxis || 'y';
+    $('segments').value = rec.segments || 8;
+    $('selColor').value = colorToHex(rec.color);
+    $('wonk').value = rec.wonkiness || 0;
+    $('textureTransparent').checked = rec.textureTransparent !== false;
+  } else {
+    $('planeRole').value = rec.role;
+    $('planeColor').value = colorToHex(rec.color);
+  }
+}
+
+function applySelectionFields(){
+  const rec = selectedRecord();
+  if(!rec) return;
+  rec.name = $('selName').value || rec.name;
+  rec.transform.x = num('selX', rec.transform.x);
+  rec.transform.y = num('selY', rec.transform.y);
+  rec.transform.z = num('selZ', rec.transform.z);
+  rec.transform.rx = num('selRX', rec.transform.rx);
+  rec.transform.ry = num('selRY', rec.transform.ry);
+  rec.transform.rz = num('selRZ', rec.transform.rz);
+  rec.transform.sx = Math.max(0.001, num('selSX', rec.transform.sx));
+  rec.transform.sy = Math.max(0.001, num('selSY', rec.transform.sy));
+  rec.transform.sz = Math.max(0.001, num('selSZ', rec.transform.sz));
+  if(state.selectedType==='part'){
+    rec.topScaleX = Math.max(0.01, num('topScaleX', rec.topScaleX));
+    rec.topScaleZ = Math.max(0.01, num('topScaleZ', rec.topScaleZ));
+    rec.bottomScaleX = Math.max(0.01, num('bottomScaleX', rec.bottomScaleX));
+    rec.bottomScaleZ = Math.max(0.01, num('bottomScaleZ', rec.bottomScaleZ));
+    rec.topSkewX = num('topSkewX', rec.topSkewX);
+    rec.topSkewZ = num('topSkewZ', rec.topSkewZ);
+    rec.taperAxis = $('taperAxis').value;
+    rec.segments = clamp(Math.round(num('segments', rec.segments)),3,64);
+    rec.color = $('selColor').value;
+    rec.wonkiness = Math.max(0, num('wonk', rec.wonkiness));
+    rec.textureTransparent = $('textureTransparent').checked;
+    buildPartMesh(rec);
+  } else {
+    rec.role = $('planeRole').value || rec.role;
+    rec.color = $('planeColor').value;
+    buildPlaneMesh(rec);
+  }
+  selectObject(state.selectedType, rec.id);
+  updateLists();
+  updateStats();
+}
+
+function onTransformObjectChange(){
+  const rec = selectedRecord();
+  const obj = objectForSelection();
+  if(!rec || !obj) return;
+  rec.transform.x = +obj.position.x.toFixed(4);
+  rec.transform.y = +obj.position.y.toFixed(4);
+  rec.transform.z = +obj.position.z.toFixed(4);
+  rec.transform.rx = +(obj.rotation.x*RAD).toFixed(3);
+  rec.transform.ry = +(obj.rotation.y*RAD).toFixed(3);
+  rec.transform.rz = +(obj.rotation.z*RAD).toFixed(3);
+  // For planes, TransformControls scale is meaningful. For parts, dimensions are rec.transform scale baked into geometry,
+  // so transform scale is not used to avoid double-scale confusion.
+  if(state.selectedType==='plane'){
+    rec.transform.sx = +obj.scale.x.toFixed(4);
+    rec.transform.sy = +obj.scale.y.toFixed(4);
+    rec.transform.sz = +obj.scale.z.toFixed(4);
+  }
+  refreshSelectionUI();
+}
+
+
+function sortedDimsForPart(t){
+  return [
+    { axis:'x', value:Math.max(0.001, Math.abs(Number(t.sx)||0.001)) },
+    { axis:'y', value:Math.max(0.001, Math.abs(Number(t.sy)||0.001)) },
+    { axis:'z', value:Math.max(0.001, Math.abs(Number(t.sz)||0.001)) },
+  ].sort((a,b)=>a.value-b.value);
+}
+
+function resetPartRotationForYUp(part){
+  // These procedural pieces should encode orientation in their dimensions/taper axis.
+  // Rotation is still available after normalization, but the normalized baseline is
+  // "height/up = Y" rather than a 90-degree-turned primitive.
+  part.transform.rx = 0;
+  part.transform.ry = 0;
+  part.transform.rz = 0;
+}
+
+function normalizeLegOrPostYUp(part){
+  const dims = sortedDimsForPart(part.transform);
+  const small = dims[0].value;
+  const mid = dims[1].value;
+  const long = dims[2].value;
+  part.transform.sx = small;
+  part.transform.sy = long;
+  part.transform.sz = mid;
+  part.transform.y = Math.max(Number(part.transform.y)||0, long/2);
+  part.taperAxis = 'y';
+  resetPartRotationForYUp(part);
+}
+
+function normalizeFlatYUp(part){
+  const dims = sortedDimsForPart(part.transform);
+  const thin = dims[0].value;
+  const wideA = dims[1].value;
+  const wideB = dims[2].value;
+  part.transform.sx = wideB;
+  part.transform.sy = thin;
+  part.transform.sz = wideA;
+  part.taperAxis = 'y';
+  resetPartRotationForYUp(part);
+}
+
+function normalizeBeamYUp(part){
+  const dims = sortedDimsForPart(part.transform);
+  const thin = dims[0].value;
+  const mid = dims[1].value;
+  const long = dims[2].value;
+  part.transform.sx = long;
+  part.transform.sy = thin;
+  part.transform.sz = mid;
+  part.taperAxis = 'y';
+  resetPartRotationForYUp(part);
+}
+
+function partLooksLikeUpright(part){
+  const n = String(part.name || '').toLowerCase();
+  return part.kind === 'legSquare' ||
+    part.kind === 'legRound' ||
+    /\b(leg|foot|post|upright|pillar|support|stand|lamp|barrel body|body)\b/.test(n);
+}
+
+function partLooksFlat(part){
+  const n = String(part.name || '').toLowerCase();
+  return part.kind === 'disc' ||
+    part.kind === 'cushion' ||
+    /\b(top|seat|tabletop|table top|mattress|pillow|hoop|plate|shelf|surface|counter)\b/.test(n);
+}
+
+function normalizePartYUp(part){
+  if(!part?.transform) return false;
+  const before = JSON.stringify({t:part.transform, taperAxis:part.taperAxis});
+  if(partLooksLikeUpright(part)){
+    normalizeLegOrPostYUp(part);
+  } else if(partLooksFlat(part)){
+    normalizeFlatYUp(part);
+  } else if(part.kind === 'beam'){
+    normalizeBeamYUp(part);
+  } else if(part.kind === 'cylinder'){
+    // Cylinders are ambiguous: barrel/post = upright, hoop/disc/top = flat.
+    if(partLooksFlat(part)) normalizeFlatYUp(part);
+    else normalizeLegOrPostYUp(part);
+  } else {
+    part.taperAxis = part.taperAxis || 'y';
+  }
+  return JSON.stringify({t:part.transform, taperAxis:part.taperAxis}) !== before;
+}
+
+function normalizeAllPartsYUp(){
+  let changed = 0;
+  for(const part of state.parts){
+    if(normalizePartYUp(part)) changed++;
+  }
+  if(changed){
+    rebuildAll();
+    if(state.selectedType && state.selectedId) selectObject(state.selectedType, state.selectedId);
+    log(`Normalized ${changed} part(s): legs/posts/uprights now use Y as up/height; flat parts use Y as thickness.`);
+  } else {
+    log('Normalize Y-up parts: no changes needed.');
+  }
+}
+
+function addPart(kind, overrides={}){
+  const p = Object.assign(defaultPart(kind), overrides);
+  if(overrides.transform) p.transform = {...defaultPart(kind).transform, ...overrides.transform};
+  normalizePartYUp(p);
+  state.parts.push(p);
+  buildPartMesh(p);
+  selectObject('part', p.id);
+  updateStats();
+  updateLists();
+  log(`Added ${p.name}`);
+}
+
+function addPlane(role, overrides={}){
+  const p = Object.assign(placementPlane(role), overrides);
+  if(overrides.transform) p.transform = {...placementPlane(role).transform, ...overrides.transform};
+  state.placementPlanes.push(p);
+  buildPlaneMesh(p);
+  selectObject('plane', p.id);
+  updateStats();
+  updateLists();
+  log(`Added placement plane ${p.name}`);
+}
+
+function clearParts(){
+  state.parts = [];
+  transform.detach();
+  state.selectedType = null; state.selectedId = null;
+  rebuildAll();
+}
+
+function presetTable(){
+  clearParts();
+  addPart('box',{name:'Table Top', transform:{x:0,y:0.82,z:0,rx:0,ry:0,rz:0,sx:1.8,sy:0.16,sz:1.05}, topScaleX:.94, topScaleZ:.94, bottomScaleX:1, bottomScaleZ:1});
+  for(const x of [-0.75,0.75]) for(const z of [-0.38,0.38]) addPart('legSquare',{name:'Tapered Table Leg', transform:{x,y:0.38,z,rx:0,ry:0,rz:0,sx:.16,sy:.76,sz:.16}, topScaleX:.82, topScaleZ:.82, bottomScaleX:1.08, bottomScaleZ:1.08});
+  state.placementPlanes = [];
+  addPlane('decorTop',{transform:{x:0,y:0.915,z:0,rx:-90,ry:0,rz:0,sx:1.65,sy:1,sz:.9}});
+  selectObject('part', state.parts[0].id);
+}
+function presetBench(){
+  clearParts();
+  addPart('box',{name:'Bench Seat', transform:{x:0,y:.58,z:0,rx:0,ry:0,rz:0,sx:1.9,sy:.18,sz:.55}, color:'#7a5c3a'});
+  addPart('beam',{name:'Front Beam', transform:{x:0,y:.38,z:.25,rx:0,ry:0,rz:0,sx:1.7,sy:.12,sz:.12}, color:'#6b4a28'});
+  addPart('beam',{name:'Back Beam', transform:{x:0,y:.38,z:-.25,rx:0,ry:0,rz:0,sx:1.7,sy:.12,sz:.12}, color:'#6b4a28'});
+  for(const x of [-.75,.75]) for(const z of [-.20,.20]) addPart('legSquare',{name:'Bench Leg', transform:{x,y:.27,z,rx:0,ry:0,rz:0,sx:.14,sy:.54,sz:.14}});
+  state.placementPlanes = [];
+  addPlane('seat',{transform:{x:0,y:.69,z:0,rx:-90,ry:0,rz:0,sx:1.7,sy:1,sz:.45}});
+}
+function presetStool(){
+  clearParts();
+  addPart('disc',{name:'Round Stool Seat', transform:{x:0,y:.62,z:0,rx:0,ry:0,rz:0,sx:.9,sy:.16,sz:.9}, segments:24, color:'#7a5c3a'});
+  for(let i=0;i<3;i++){
+    const a=i/3*Math.PI*2+Math.PI/6;
+    addPart('legRound',{name:'Splayed Round Leg', transform:{x:Math.cos(a)*.28,y:.31,z:Math.sin(a)*.28,rx:Math.sin(a)*8,ry:0,rz:-Math.cos(a)*8,sx:.13,sy:.62,sz:.13}, segments:12});
+  }
+  state.placementPlanes=[];
+  addPlane('seat',{transform:{x:0,y:.72,z:0,rx:-90,ry:0,rz:0,sx:.75,sy:1,sz:.75}});
+}
+function presetBed(){
+  clearParts();
+  addPart('box',{name:'Bed Frame', transform:{x:0,y:.28,z:0,rx:0,ry:0,rz:0,sx:2.2,sy:.22,sz:1.15}, color:'#6b4a28'});
+  addPart('cushion',{name:'Mattress Cushion', transform:{x:0,y:.47,z:0,rx:0,ry:0,rz:0,sx:2.05,sy:.22,sz:1.02}, color:'#506d8d', topScaleX:.96, topScaleZ:.96, bottomScaleX:1.02, bottomScaleZ:1.02});
+  addPart('cushion',{name:'Pillow', transform:{x:0,y:.64,z:-.38,rx:0,ry:0,rz:0,sx:.9,sy:.16,sz:.28}, color:'#d8d1b8', topScaleX:.94, topScaleZ:.9});
+  for(const x of [-.95,.95]) for(const z of [-.48,.48]) addPart('legSquare',{name:'Stub Bed Foot', transform:{x,y:.14,z,rx:0,ry:0,rz:0,sx:.14,sy:.28,sz:.14}});
+  state.placementPlanes=[];
+  addPlane('sleep',{transform:{x:0,y:.62,z:.06,rx:-90,ry:0,rz:0,sx:1.85,sy:1,sz:.82}});
+  addPlane('pillow',{transform:{x:0,y:.73,z:-.38,rx:-90,ry:0,rz:0,sx:.8,sy:1,sz:.24}});
+}
+function presetBarrel(){
+  clearParts();
+  addPart('cylinder',{name:'Tapered Barrel Body', transform:{x:0,y:.45,z:0,rx:0,ry:0,rz:0,sx:.72,sy:.9,sz:.72}, color:'#7a4924', segments:20, topScaleX:.82, topScaleZ:.82, bottomScaleX:.95, bottomScaleZ:.95});
+  addPart('disc',{name:'Top Hoop', transform:{x:0,y:.88,z:0,rx:0,ry:0,rz:0,sx:.76,sy:.06,sz:.76}, color:'#b87333', segments:20, topScaleX:.94, topScaleZ:.94});
+  addPart('disc',{name:'Bottom Hoop', transform:{x:0,y:.08,z:0,rx:0,ry:0,rz:0,sx:.82,sy:.06,sz:.82}, color:'#b87333', segments:20, topScaleX:.94, topScaleZ:.94});
+  state.placementPlanes=[];
+  addPlane('decorTop',{transform:{x:0,y:.94,z:0,rx:-90,ry:0,rz:0,sx:.55,sy:1,sz:.55}});
+}
+
+function exportData(){
+  return {
+    schema:'hobunji_furniture_avatar_author.v1',
+    id:state.id,
+    notes:$('notesText').value,
+    createdAt:new Date().toISOString(),
+    tileBase:state.tileBase,
+    avatar:{
+      ...state.avatar,
+      calculated:avatarDims()
+    },
+    parts:state.parts,
+    placementPlanes:state.placementPlanes
+  };
+}
+
+function loadData(data){
+  if(!data || typeof data !== 'object') throw new Error('Invalid JSON');
+  state.id = data.id || state.id;
+  state.notes = data.notes || '';
+  state.parts = Array.isArray(data.parts) ? data.parts : [];
+  state.placementPlanes = Array.isArray(data.placementPlanes) ? data.placementPlanes : [];
+  state.tileBase = {...state.tileBase, ...(data.tileBase||{})};
+  state.avatar = {...state.avatar, ...(data.avatar||{})};
+  if(data.avatar?.calculated) delete state.avatar.calculated;
+  $('notesText').value = state.notes;
+  syncControlsFromState();
+  state.selectedType=null; state.selectedId=null;
+  rebuildAll();
+  log('Imported JSON.');
+}
+
+function syncControlsFromState(){
+  $('showTileBase').checked = !!state.tileBase.visible;
+  $('tileSize').value = state.tileBase.tileSize;
+  $('footprintW').value = state.tileBase.footprintW;
+  $('footprintD').value = state.tileBase.footprintD;
+  $('tileBaseY').value = state.tileBase.y;
+  $('tileGridOpacity').value = state.tileBase.gridOpacity;
+  $('avatarVisible').checked = !!state.avatar.visible;
+  $('avatarBaseW').value = state.avatar.baseModelWidth;
+  $('avatarScale').value = state.avatar.scaleMultiplier;
+  $('avatarPlacementRatio').value = state.avatar.placementRatio;
+  if ($('avatarAnchorMode')) $('avatarAnchorMode').value = state.avatar.anchorMode || 'groundContact';
+  if ($('avatarWidthMode')) $('avatarWidthMode').value = state.avatar.widthMode || 'world';
+  if ($('avatarVisualLift')) $('avatarVisualLift').value = state.avatar.visualLift ?? 0.12;
+  $('avatarPxW').value = state.avatar.sourcePixels[0];
+  $('avatarPxH').value = state.avatar.sourcePixels[1];
+  $('avatarX').value = state.avatar.transform.x;
+  $('avatarY').value = state.avatar.transform.y;
+  $('avatarZ').value = state.avatar.transform.z;
+  $('avatarRX').value = state.avatar.transform.rx;
+  $('avatarRY').value = state.avatar.transform.ry;
+  $('avatarRZ').value = state.avatar.transform.rz;
+}
+
+function syncAvatarFromControls(){
+  state.avatar.visible = $('avatarVisible').checked;
+  state.avatar.baseModelWidth = Math.max(0.01, num('avatarBaseW',1));
+  state.avatar.scaleMultiplier = Math.max(0.01, num('avatarScale',1));
+  state.avatar.placementRatio = num('avatarPlacementRatio',.5);
+  state.avatar.anchorMode = $('avatarAnchorMode') ? $('avatarAnchorMode').value : (state.avatar.anchorMode || 'groundContact');
+  state.avatar.widthMode = $('avatarWidthMode') ? $('avatarWidthMode').value : (state.avatar.widthMode || 'world');
+  state.avatar.visualLift = $('avatarVisualLift') ? num('avatarVisualLift',0.12) : (state.avatar.visualLift ?? 0.12);
+  state.avatar.sourcePixels = [Math.max(1,num('avatarPxW',200)), Math.max(1,num('avatarPxH',200))];
+  state.avatar.transform = { x:num('avatarX',0), y:num('avatarY',0), z:num('avatarZ',0), rx:num('avatarRX',0), ry:num('avatarRY',0), rz:num('avatarRZ',0) };
+  rebuildAvatar(); updateStats();
+}
+
+function syncTileBaseFromControls(){
+  state.tileBase.visible = $('showTileBase').checked;
+  state.tileBase.tileSize = Math.max(0.01, num('tileSize',1));
+  state.tileBase.footprintW = Math.max(1, Math.round(num('footprintW',2)));
+  state.tileBase.footprintD = Math.max(1, Math.round(num('footprintD',2)));
+  state.tileBase.y = num('tileBaseY',0);
+  state.tileBase.gridOpacity = clamp(num('tileGridOpacity',.55),0,1);
+  rebuildTileBase(); updateStats();
+}
+
+function download(name, blob){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+
+function exportGLB(){
+  const exportRoot = new THREE.Group();
+  exportRoot.name = 'hobunji_furniture_export';
+  for(const mesh of meshes.values()) exportRoot.add(mesh.clone(true));
+  for(const mesh of planeMeshes.values()) {
+    const c = mesh.clone(true);
+    c.name = 'PLACEMENT_' + mesh.name;
+    c.userData = { ...mesh.userData, helperPlane:true };
+    exportRoot.add(c);
+  }
+  if (!GLTFExporter) {
+    log('GLB export unavailable because GLTFExporter did not load. JSON export still works.', 'error');
+    return;
+  }
+  const exporter = new GLTFExporter();
+  exporter.parse(exportRoot, result => {
+    if(result instanceof ArrayBuffer) download('hobunji_furniture_author_export.glb', new Blob([result], {type:'model/gltf-binary'}));
+    else download('hobunji_furniture_author_export.gltf', new Blob([JSON.stringify(result,null,2)], {type:'model/gltf+json'}));
+    log('Exported GLB/GLTF. Note: helper placement planes are included and named PLACEMENT_*.');
+  }, err => log('GLB export failed: '+err.message, 'error'), {binary:true});
+}
+
+function setupEvents(){
+  document.querySelectorAll('[data-left-tab]').forEach(btn=>{
+    btn.onclick=()=>{
+      document.querySelectorAll('[data-left-tab]').forEach(b=>b.classList.toggle('active', b===btn));
+      const key = btn.dataset.leftTab;
+      ['parts','presets','planes','avatar','base','io'].forEach(t=>$('tab-'+t).classList.toggle('hidden', t!==key));
+    };
+  });
+  document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>addPart(b.dataset.add));
+  document.querySelectorAll('[data-plane]').forEach(b=>b.onclick=()=>addPlane(b.dataset.plane));
+  document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{
+    const p=b.dataset.preset;
+    if(p==='table') presetTable();
+    if(p==='bench') presetBench();
+    if(p==='stool') presetStool();
+    if(p==='bed') presetBed();
+    if(p==='barrel') presetBarrel();
+    if(p==='clear') clearParts();
+  });
+  document.querySelectorAll('[data-transform-mode]').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('[data-transform-mode]').forEach(x=>x.classList.toggle('active', x===b));
+    transform.setMode(b.dataset.transformMode);
+  });
+  ['selName','selX','selY','selZ','selRX','selRY','selRZ','selSX','selSY','selSZ','topScaleX','topScaleZ','bottomScaleX','bottomScaleZ','topSkewX','topSkewZ','taperAxis','segments','selColor','wonk','textureTransparent','planeRole','planeColor'].forEach(id=>{
+    $(id).addEventListener('change', applySelectionFields);
+    $(id).addEventListener('input', e => {
+      if(['selColor','planeColor'].includes(id)) applySelectionFields();
+    });
+  });
+  $('deleteSelectedBtn').onclick=()=>{
+    if(state.selectedType==='part') state.parts = state.parts.filter(p=>p.id!==state.selectedId);
+    if(state.selectedType==='plane') state.placementPlanes = state.placementPlanes.filter(p=>p.id!==state.selectedId);
+    state.selectedType=null; state.selectedId=null; transform.detach(); rebuildAll();
+  };
+  $('duplicateBtn').onclick=()=>{
+    const rec = selectedRecord();
+    if(!rec) return;
+    const cp = JSON.parse(JSON.stringify(rec));
+    cp.id = uid(state.selectedType || 'obj');
+    cp.name += ' Copy';
+    cp.transform.x += .12; cp.transform.z += .12;
+    if(state.selectedType==='part'){ state.parts.push(cp); buildPartMesh(cp); selectObject('part',cp.id); }
+    if(state.selectedType==='plane'){ state.placementPlanes.push(cp); buildPlaneMesh(cp); selectObject('plane',cp.id); }
+    updateStats(); updateLists();
+  };
+  $('pieceTextureInput').onchange=e=>{
+    const file=e.target.files?.[0]; const rec=selectedRecord();
+    if(!file || !rec || state.selectedType!=='part') return;
+    const reader=new FileReader();
+    reader.onload=ev=>{ rec.textureDataUrl=ev.target.result; rec.textureName=file.name; buildPartMesh(rec); selectObject('part',rec.id); log('Imported piece texture '+file.name); };
+    reader.readAsDataURL(file); e.target.value='';
+  };
+  $('avatarPngInput').onchange=e=>{
+    const file=e.target.files?.[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const img=new Image();
+      img.onload=()=>{
+        state.avatar.textureDataUrl=ev.target.result;
+        state.avatar.textureName=file.name;
+        state.avatar.sourceMode='importedPng';
+        state.avatar.sourcePixels=[img.naturalWidth||img.width, img.naturalHeight||img.height];
+        syncControlsFromState(); rebuildAvatar(); log(`Imported avatar texture ${file.name} (${state.avatar.sourcePixels.join('×')})`);
+      };
+      img.src=ev.target.result;
+    };
+    reader.readAsDataURL(file); e.target.value='';
+  };
+  $('useRuntimePortrait').onclick=()=>{
+    state.avatar.sourceMode='runtimePortrait'; state.avatar.textureDataUrl=null; state.avatar.textureName='actual GitHub renderPortraitProfile Mao’ao 200×200'; state.avatar.sourcePixels=[200,200]; syncControlsFromState(); rebuildAvatar();
+  };
+  $('useRawHead').onclick=()=>{
+    state.avatar.sourceMode='rawHead'; state.avatar.textureDataUrl=null; state.avatar.textureName='real Mao’ao head + ur-head'; state.avatar.sourcePixels=[234,173]; syncControlsFromState(); rebuildAvatar();
+  };
+  $('syncAvatarConfigBtn').onclick=async()=>{
+    await syncMaoaoAvatarConfigFromRuntime();
+    rebuildAvatar();
+  };
+  document.querySelectorAll('[data-pose]').forEach(b=>b.onclick=()=>{
+    const poses = {
+      stand:{x:0,y:0,z:0,rx:0,ry:0,rz:0},
+      sit:{x:0,y:0.69,z:0.02,rx:-10,ry:0,rz:0},
+      lieBack:{x:0,y:0.62,z:0.03,rx:-90,ry:0,rz:0},
+      lieSide:{x:0,y:0.62,z:0.03,rx:-90,ry:0,rz:90},
+    };
+    state.avatar.transform = {...poses[b.dataset.pose]};
+    syncControlsFromState(); rebuildAvatar(); log('Applied avatar pose '+b.dataset.pose);
+  });
+  ['avatarVisible','avatarBaseW','avatarScale','avatarPlacementRatio','avatarAnchorMode','avatarWidthMode','avatarVisualLift','avatarPxW','avatarPxH','avatarX','avatarY','avatarZ','avatarRX','avatarRY','avatarRZ'].forEach(id=>{
+    $(id).addEventListener('change', syncAvatarFromControls);
+  });
+  ['showTileBase','tileSize','footprintW','footprintD','tileBaseY','tileGridOpacity'].forEach(id=>{
+    $(id).addEventListener('change', syncTileBaseFromControls);
+  });
+  $('applySubtleTaper').onclick=()=>{ state.parts.forEach(p=>{p.topScaleX=.94;p.topScaleZ=.94;p.bottomScaleX=1;p.bottomScaleZ=1;p.wonkiness=.012; buildPartMesh(p);}); updateLists(); };
+  $('applyHeavyTaper').onclick=()=>{ state.parts.forEach(p=>{p.topScaleX=.82;p.topScaleZ=.82;p.bottomScaleX=1.06;p.bottomScaleZ=1.06;p.wonkiness=.025; buildPartMesh(p);}); updateLists(); };
+  $('randomWonk').onclick=()=>{ state.parts.forEach(p=>{p.wonkiness=.008+Math.random()*.035;p.topSkewX=(Math.random()-.5)*.08;p.topSkewZ=(Math.random()-.5)*.08; buildPartMesh(p);}); updateLists(); };
+  $('zeroWonk').onclick=()=>{ state.parts.forEach(p=>{p.wonkiness=0;p.topSkewX=0;p.topSkewZ=0; buildPartMesh(p);}); updateLists(); };
+  $('downloadJsonBtn').onclick=()=>download('hobunji_furniture_avatar_author_v2.json', new Blob([JSON.stringify(exportData(),null,2)],{type:'application/json'}));
+  $('copyJsonBtn').onclick=()=>navigator.clipboard?.writeText(JSON.stringify(exportData(),null,2)).then(()=>log('Copied JSON to clipboard.')).catch(()=>{ $('jsonText').value=JSON.stringify(exportData(),null,2); log('Clipboard unavailable; wrote JSON into textarea.','warn');});
+  $('importJsonTextBtn').onclick=()=>{ try{ loadData(JSON.parse($('jsonText').value)); } catch(e){ log('Import failed: '+e.message,'error'); } };
+  $('jsonFileInput').onchange=e=>{
+    const file=e.target.files?.[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{ try{ loadData(JSON.parse(ev.target.result)); } catch(err){ log('JSON file import failed: '+err.message,'error'); } };
+    reader.readAsText(file); e.target.value='';
+  };
+  $('exportGlbBtn').onclick=exportGLB;
+  $('resetBtn').onclick=()=>{ if(confirm('Clear everything and reset?')){ state.parts=[]; state.placementPlanes=[]; state.selectedType=null; state.selectedId=null; state.tileBase={visible:true,tileSize:1,footprintW:2,footprintD:2,y:0,gridOpacity:.55}; state.avatar={visible:true,sourceMode:'runtimePortrait',sourcePixels:[200,200],baseModelWidth:0.9,scaleMultiplier:1,placementRatio:0.865,anchorMode:'groundContact',widthMode:'world',visualLift:0.12,transform:{x:0,y:0,z:0,rx:0,ry:0,rz:0},textureDataUrl:null,textureName:'actual GitHub renderPortraitProfile Mao’ao 200×200'}; syncControlsFromState(); rebuildAll(); } };
+  canvas.addEventListener('pointerdown', e=>{
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = ((e.clientX-rect.left)/rect.width)*2-1;
+    pointer.y = -((e.clientY-rect.top)/rect.height)*2+1;
+    raycaster.setFromCamera(pointer,camera);
+    const objs = [...meshes.values(), ...planeMeshes.values()];
+    const hits = raycaster.intersectObjects(objs, true);
+    if(hits.length){
+      let o = hits[0].object;
+      while(o && !o.userData?.id) o=o.parent;
+      if(o?.userData?.type) selectObject(o.userData.type, o.userData.id);
+    }
+  });
+  window.addEventListener('resize', resize);
+}
+
+function resize(){
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(1, rect.width), h = Math.max(1, rect.height);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w,h,false);
+}
+function animate(){
+  requestAnimationFrame(animate);
+  if (orbit) orbit.update();
+  renderer.render(scene,camera);
+}
+
+setupEvents();
+syncControlsFromState();
+rebuildAll();
+presetTable();
+syncMaoaoAvatarConfigFromRuntime();
+resize();
+animate();
+log('Ready. Includes tapered top/bottom surfaces, PNG texture import, actual GitHub Mao’ao portrait rendering/config sync, adjustable avatar visual lift, Y-up part normalization, placement planes, and tile base visual.');
+</script>
+</body>
+</html>
