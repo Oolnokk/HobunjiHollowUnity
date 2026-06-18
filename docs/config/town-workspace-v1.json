@@ -12286,8 +12286,8 @@
         {
           "id": "spot_85srj",
           "label": "Enter Temple",
-          "col": 11,
-          "row": 36,
+          "col": 12,
+          "row": 40,
           "targetMapId": "map_i_temple",
           "targetSpotId": "sp_tmp_entry"
         },
@@ -12400,11 +12400,11 @@
         {
           "id": "bldg_52zui",
           "label": "Inn",
-          "pieceFile": "config/pieces/placeholder-medium.json",
+          "pieceFile": "config/pieces/inn.json",
           "gridX": 26,
           "gridZ": 24,
-          "footprintW": 5,
-          "footprintD": 4,
+          "footprintW": 7,
+          "footprintD": 5,
           "wbOpts": null,
           "wbGableOpts": null
         },
@@ -12422,14 +12422,14 @@
         {
           "id": "bldg_6feel",
           "label": "Temple",
-          "pieceFile": "config/pieces/placeholder-medium.json",
+          "pieceFile": "config/pieces/temple.json",
           "gridX": 10,
           "gridZ": 31,
-          "footprintW": 5,
-          "footprintD": 4,
+          "footprintW": 9,
+          "footprintD": 5,
           "wbOpts": null,
           "wbGableOpts": null,
-          "rotationDeg": 90
+          "rotationDeg": 270
         },
         {
           "id": "bldg_7kl2f",
@@ -12441,6 +12441,18 @@
           "footprintD": 4,
           "wbOpts": null,
           "wbGableOpts": null
+        },
+        {
+          "id": "bldg_stbl1",
+          "label": "Stable",
+          "pieceFile": "config/pieces/stable.json",
+          "gridX": 33,
+          "gridZ": 13,
+          "footprintW": 7,
+          "footprintD": 3,
+          "wbOpts": null,
+          "wbGableOpts": null,
+          "rotationDeg": 0
         }
       ],
       "npcPaths": [],
@@ -49102,12 +49114,54 @@
       ],
       "transitions": [
         {
-          "id": "sp_tmp_entry",
-          "label": "exit",
-          "col": 6,
-          "row": 9,
-          "targetMapId": "map_hobunji_town",
-          "targetSpotId": "sp_town_tmp"
+          "id": "exit_mqfk0622_10_15",
+          "exitId": "exit_mqfk0622",
+          "col": 10,
+          "row": 15,
+          "label": "Exit",
+          "targetMapId": "",
+          "spawnCol": 0,
+          "spawnRow": 0
+        },
+        {
+          "id": "exit_mqfk0622_9_15",
+          "exitId": "exit_mqfk0622",
+          "col": 9,
+          "row": 15,
+          "label": "Exit",
+          "targetMapId": "",
+          "spawnCol": 0,
+          "spawnRow": 0
+        },
+        {
+          "id": "exit_mqfk0622_8_15",
+          "exitId": "exit_mqfk0622",
+          "col": 8,
+          "row": 15,
+          "label": "Exit",
+          "targetMapId": "",
+          "spawnCol": 0,
+          "spawnRow": 0
+        },
+        {
+          "id": "exit_mqfk0622_11_15",
+          "exitId": "exit_mqfk0622",
+          "col": 11,
+          "row": 15,
+          "label": "Exit",
+          "targetMapId": "",
+          "spawnCol": 0,
+          "spawnRow": 0
+        },
+        {
+          "id": "exit_mqfk2hox_15_4",
+          "exitId": "exit_mqfk2hox",
+          "col": 15,
+          "row": 4,
+          "label": "To Temple Basement",
+          "targetMapId": "",
+          "spawnCol": 0,
+          "spawnRow": 0
         }
       ]
     },

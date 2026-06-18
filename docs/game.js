@@ -2228,6 +2228,42 @@
         return null;
       }
 
+      // Pool of transition spots that live "in" the given area, in the same
+      // shape checkTransitionSpots() uses for the player.
+      function npcTransitionPool(area) {
+        if (_isBuildingArea(area)) return _buildingScenes.get(area)?.transitions || [];
+        if (area === 'town') return worldTownTransitions;
+        return worldTransitions.filter(t => (t.area || 'farm') === area);
+      }
+
+      // Resolves the door an NPC should walk to in order to leave `fromArea`
+      // for `toArea`, plus the spot they should appear at once they arrive —
+      // i.e. the Spot doubles as both the movement target on the way out and
+      // the spawn point on the way in, so NPCs are never warped straight to
+      // their final schedule target through a wall.
+      function findNpcAreaLink(fromArea, toArea) {
+        const pool = npcTransitionPool(fromArea);
+        if (_isBuildingArea(toArea)) {
+          const t = pool.find(x => x.target === 'building' && x.targetMapId === toArea);
+          if (!t) return null;
+          const bi = _buildingScenes.get(toArea);
+          if (!_buildingScenes.has(toArea)) loadBuildingScene(toArea); // warm it up before the NPC reaches the door
+          const spawn = bi ? buildingSpawnFromExit(bi, bi.cols, bi.rows)
+            : { col: t.targetCol ?? 0, row: t.targetRow ?? 0 };
+          return { exit: { c: t.col, r: t.row }, spawn: { c: spawn.col, r: spawn.row } };
+        }
+        if (_isBuildingArea(fromArea)) {
+          const t = pool.find(x => x.target === 'exit_building');
+          if (!t) return null;
+          const townSpot = worldTownTransitions.find(x => x.target === 'building' && x.targetMapId === fromArea);
+          const spawn = townSpot ? { c: townSpot.col, r: townSpot.row } : { c: t.targetCol ?? 0, r: t.targetRow ?? 0 };
+          return { exit: { c: t.col, r: t.row }, spawn };
+        }
+        const t = pool.find(x => x.target === toArea);
+        if (!t || !Number.isFinite(t.targetCol) || !Number.isFinite(t.targetRow)) return null;
+        return { exit: { c: t.col, r: t.row }, spawn: { c: t.targetCol, r: t.targetRow } };
+      }
+
       async function spawnScheduledNpcs(extraRecords) {
         if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         let dbNpcs = extraRecords || [];
@@ -2295,7 +2331,7 @@
 
         const walker = {
           root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
-          state: 'idle', routeNode: null, previousRouteNode: null, routeTarget: null, _exitSpot: null,
+          state: 'idle', routeNode: null, previousRouteNode: null, routeTarget: null, _exitSpot: null, _entrySpot: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
           resetRouteState() {
@@ -2304,7 +2340,10 @@
             this.previousRouteNode = null;
             this.routeTarget = null;
           },
-          transferToArea(nextArea, target) {
+          // `spawnPos` is where the NPC reappears in `nextArea` — normally the
+          // Spot they're entering through, never the final schedule target,
+          // so they always walk the last leg into view instead of popping in.
+          transferToArea(nextArea, spawnPos) {
             const area = nextArea; // caller passes pre-normalized area
             if (area === this.area) return;
             if (root._npcScene) root._npcScene.remove(root);
@@ -2320,7 +2359,7 @@
             } else { scene.add(root); root._npcScene = scene; }
             this.area = area;
             this.resetRouteState();
-            root.position.set(target.c + 0.5, _isBuildingArea(area) ? 0 : npcSurfaceY(area, target.c, target.r), target.r + 0.5);
+            root.position.set(spawnPos.c + 0.5, _isBuildingArea(area) ? 0 : npcSurfaceY(area, spawnPos.c, spawnPos.r), spawnPos.r + 0.5);
           },
           moveToward(tx, tz, dt) {
             const cfg = npcMovementConfig();
@@ -2345,28 +2384,23 @@
             const targetArea = normalizeNpcArea(target.area);
             if (targetArea !== this.area) {
               if (!this._exitSpot) {
-                if (this.area === 'town' && _isBuildingArea(targetArea)) {
-                  const tr = worldTownTransitions.find(x => x.target === 'building' && x.targetMapId === targetArea);
-                  if (tr) this._exitSpot = { c: tr.col, r: tr.row };
-                } else if (_isBuildingArea(this.area) && targetArea === 'town') {
-                  const bi = _buildingScenes.get(this.area);
-                  const tr = (bi?.transitions || []).find(x => x.target === 'town');
-                  if (tr) this._exitSpot = { c: tr.col, r: tr.row };
-                }
+                const link = findNpcAreaLink(this.area, targetArea);
+                if (link) { this._exitSpot = link.exit; this._entrySpot = link.spawn; }
               }
               if (this._exitSpot) {
                 const ex = this._exitSpot.c + 0.5, ez = this._exitSpot.r + 0.5;
                 const arrival = npcMovementConfig().arrivalRadiusTiles ?? 0.18;
                 if (Math.hypot(root.position.x - ex, root.position.z - ez) <= arrival) {
                   window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: transferring via exit spot "${this.area}"→"${targetArea}" | playerMap="${currentArea}"`, 'info');
-                  this._exitSpot = null;
-                  this.transferToArea(targetArea, target);
+                  const spawn = this._entrySpot || this._exitSpot;
+                  this._exitSpot = null; this._entrySpot = null;
+                  this.transferToArea(targetArea, spawn);
                 } else {
                   this.moveToward(ex, ez, dt);
                 }
                 return;
               }
-              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: instant transfer "${this.area}"→"${targetArea}" (no exit spot) | playerMap="${currentArea}"`, 'info');
+              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: instant transfer "${this.area}"→"${targetArea}" (no exit spot — area link missing in map data)`, 'info');
               this.transferToArea(targetArea, target);
               return;
             }
@@ -2428,6 +2462,41 @@
           },
         };
         return walker;
+      }
+
+      // Fires once the screen is fully black on a player area transition.
+      // Any NPC who was already mid-transit between the same two areas (i.e.
+      // their goal-based schedule has them leaving exactly where the player
+      // is leaving, headed exactly where the player is headed) finishes its
+      // walk through the door right now instead of over the next several
+      // seconds, and is nudged a tile past the spawn point in the direction
+      // of travel. The black screen hides the pop-in, so when it clears the
+      // NPC simply looks like it left a step ahead of the player — "caught"
+      // leaving instead of teleporting in front of them.
+      function catchNpcsOnPlayerAreaTransition(fromArea, toArea) {
+        for (const w of npcWalkers) {
+          if (w.area !== fromArea) continue;
+          const target = resolveNpcScheduleTarget(w.rec);
+          if (!target) continue;
+          if (normalizeNpcArea(target.area) !== toArea) continue;
+          const link = (w._exitSpot && w._entrySpot) ? { exit: w._exitSpot, spawn: w._entrySpot } : findNpcAreaLink(fromArea, toArea);
+          if (!link) continue;
+          w._exitSpot = null; w._entrySpot = null;
+          w.transferToArea(toArea, link.spawn);
+          const dx = link.spawn.c - link.exit.c, dz = link.spawn.r - link.exit.r;
+          const dist = Math.hypot(dx, dz);
+          if (dist > 0) {
+            const nc = Math.floor(link.spawn.c + dx / dist);
+            const nr = Math.floor(link.spawn.r + dz / dist);
+            if (isNpcTileWalkable(toArea, nc, nr)) {
+              w.root.position.x = nc + 0.5;
+              w.root.position.z = nr + 0.5;
+              w.root.position.y = npcSurfaceY(toArea, nc, nr);
+              w.rot = -Math.atan2(dz, dx) + Math.PI / 2;
+              w.root.rotation.y = w.rot;
+            }
+          }
+        }
       }
 
       function updateNpcWalkers(dt) {
@@ -3369,6 +3438,7 @@
         sceneTransAlpha = 0;
         sceneTransDir   = 1;
         sceneTransCb    = callback;
+        sceneTransFromArea = currentArea;
       }
 
       function updateSceneTransition(dt) {
@@ -3379,7 +3449,11 @@
             const _cb = sceneTransCb;
             sceneTransCb  = null;
             sceneTransDir = -1;
-            try { _cb(); } catch(e) { debugLog('scene transition error: ' + (e?.stack || e), 'error'); }
+            const fromArea = sceneTransFromArea;
+            try {
+              _cb();
+              if (fromArea && fromArea !== currentArea) catchNpcsOnPlayerAreaTransition(fromArea, currentArea);
+            } catch(e) { debugLog('scene transition error: ' + (e?.stack || e), 'error'); }
           }
         } else {
           // Hold the black overlay until the building scene has finished loading
@@ -4540,6 +4614,7 @@
       let sceneTransAlpha = 0;        // 0 = fully clear, 1 = fully black
       let sceneTransDir   = 0;        // 0=idle  1=darkening  -1=brightening
       let sceneTransCb    = null;     // fired once at peak darkness
+      let sceneTransFromArea = null;  // area the player was in when the fade started
 
       function getActiveCols() { return currentArea === 'interior' ? INTERIOR_COLS : currentArea === 'town' ? (_townZone?.cols || 60) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.cols || 20) : COLS; }
       function getActiveRows() { return currentArea === 'interior' ? INTERIOR_ROWS : currentArea === 'town' ? (_townZone?.rows || 50) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.rows || 20) : ROWS; }
