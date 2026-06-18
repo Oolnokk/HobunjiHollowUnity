@@ -2274,8 +2274,7 @@
           THREE, frontCanvas,
           { backCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
         );
-        const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
-        avatarGroup.position.set(0, avatarHeight / 2, 0);
+        avatarGroup.position.set(0, 0, 0);
         const root = new THREE.Group();
         root.name = 'npc_walker_' + (rec?.id || rec?.name || '');
         const groundShadow = makeCharacterGroundShadow('npc_ground_shadow');
@@ -4187,8 +4186,7 @@
           { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
         );
         avatarGroup.name = 'player_avatar';
-        const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
-        avatarGroup.position.set(0, avatarHeight / 2, 0);
+        avatarGroup.position.set(0, 0, 0);
         if (refreshGeneration !== playerAvatarRefreshGeneration) {
           disposeAvatarGroup(avatarGroup);
           return;
@@ -5881,7 +5879,7 @@
         avatarRoot.getWorldPosition(center);
         const height = avatarRoot.userData.portraitModelHeight;
         const placementRatio = avatarRoot.userData.portraitVerticalPlacementRatio ?? 0.5;
-        center.y += (placementRatio - 0.5) * height;
+        center.y += placementRatio * height;
         return center;
       }
 
