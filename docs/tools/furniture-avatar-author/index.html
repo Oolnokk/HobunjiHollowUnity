@@ -208,7 +208,7 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
         <div class="g3">
           <div><label>Tile size</label><input id="tileSize" type="number" min="0.1" step="0.05" value="1"></div>
           <div><label>Footprint W</label><input id="footprintW" type="number" min="1" step="1" value="2"></div>
-          <div><label>Footprint D</label><input id="footprintD" type="number" min="1" step="1" value="2"></div>
+          <div><label>Footprint D</label><input id="footprintD" type="number" min="1" step="1" value="1"></div>
         </div>
         <div class="g2">
           <div><label>Base Y</label><input id="tileBaseY" type="number" step="0.01" value="0"></div>
@@ -461,7 +461,7 @@ const state = {
   placementPlanes: [],
   selectedType: null,
   selectedId: null,
-  tileBase: { visible:true, tileSize:1, footprintW:2, footprintD:2, y:0, gridOpacity:0.55 },
+  tileBase: { visible:true, tileSize:1, footprintW:2, footprintD:1, y:0, gridOpacity:0.55 },
   avatar: {
     visible:true,
     sourceMode:'runtimePortrait',
@@ -1776,7 +1776,7 @@ function setupEvents(){
     reader.readAsText(file); e.target.value='';
   };
   $('exportGlbBtn').onclick=exportGLB;
-  $('resetBtn').onclick=()=>{ if(confirm('Clear everything and reset?')){ state.parts=[]; state.placementPlanes=[]; state.selectedType=null; state.selectedId=null; state.tileBase={visible:true,tileSize:1,footprintW:2,footprintD:2,y:0,gridOpacity:.55}; state.avatar={visible:true,sourceMode:'runtimePortrait',sourcePixels:[200,200],baseModelWidth:0.9,scaleMultiplier:1,placementRatio:0.865,widthMode:'world',visualLift:0,transform:{x:0,y:0,z:0,rx:0,ry:0,rz:0},textureDataUrl:null,textureName:'actual GitHub renderPortraitProfile Mao’ao 200×200'}; syncControlsFromState(); rebuildAll(); } };
+  $('resetBtn').onclick=()=>{ if(confirm('Clear everything and reset?')){ state.parts=[]; state.placementPlanes=[]; state.selectedType=null; state.selectedId=null; state.tileBase={visible:true,tileSize:1,footprintW:2,footprintD:1,y:0,gridOpacity:.55}; state.avatar={visible:true,sourceMode:'runtimePortrait',sourcePixels:[200,200],baseModelWidth:0.9,scaleMultiplier:1,placementRatio:0.865,widthMode:'world',visualLift:0,transform:{x:0,y:0,z:0,rx:0,ry:0,rz:0},textureDataUrl:null,textureName:'actual GitHub renderPortraitProfile Mao’ao 200×200'}; syncControlsFromState(); rebuildAll(); } };
   canvas.addEventListener('pointerdown', e=>{
     const rect = canvas.getBoundingClientRect();
     pointer.x = ((e.clientX-rect.left)/rect.width)*2-1;
