@@ -6274,7 +6274,28 @@
       function buildPathTileGeo(col, row, srcGrid = grid) {
         const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
         const BLEND_V  = 2;
-        const PATH_DY  = -0.09;  // depression depth (shallower than trench's -0.5)
+        const PATH_DY  = -0.045;  // depression depth — shallow, rock-tile-style dip
+
+        // Per-tile seeded RNG (same Mulberry32 scheme as buildRockTileGeo) so the
+        // path/grass margin reads as an organic, irregular line like the rock
+        // tile's BFS plateau silhouette, instead of a dead-straight blend band.
+        let _s = ((col * 374761393) ^ (row * 668265263)) >>> 0;
+        const rng = () => {
+          _s += 0x6D2B79F5;
+          let t = Math.imul(_s ^ _s>>>15, _s|1);
+          t ^= t + Math.imul(t ^ t>>>7, t|61);
+          return ((t ^ t>>>14) >>> 0) / 4294967296;
+        };
+        // Multiplicative jitter on the closed-edge blend distance, varied along
+        // each edge. Multiplicative (not additive) keeps the true tile-edge
+        // vertex (vi/vj === 0) pinned at blend 0 regardless of jitter, so the
+        // seam against the neighboring flat ground tile never cracks open —
+        // only the interior margin width wobbles, exactly like the rock tile's
+        // randomly-grown footprint.
+        const jW = []; for (let v=0; v<VERTS; v++) jW.push(0.55 + rng()*0.9);
+        const jE = []; for (let v=0; v<VERTS; v++) jE.push(0.55 + rng()*0.9);
+        const jN = []; for (let v=0; v<VERTS; v++) jN.push(0.55 + rng()*0.9);
+        const jS = []; for (let v=0; v<VERTS; v++) jS.push(0.55 + rng()*0.9);
 
         const openN = srcGrid[row - 1]?.[col]?.type === TileType.PATH;
         const openS = srcGrid[row + 1]?.[col]?.type === TileType.PATH;
@@ -6327,10 +6348,10 @@
         const Y = new Float32Array(VERTS * VERTS);
         for (let vj = 0; vj < VERTS; vj++) {
           for (let vi = 0; vi < VERTS; vi++) {
-            const bW = openW ? 1 : smooth(Math.min(1, vi / BLEND_V));
-            const bE = openE ? 1 : smooth(Math.min(1, (CELLS - vi) / BLEND_V));
-            const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
-            const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
+            const bW = openW ? 1 : smooth(Math.min(1, (vi / BLEND_V) * jW[vj]));
+            const bE = openE ? 1 : smooth(Math.min(1, ((CELLS - vi) / BLEND_V) * jE[vj]));
+            const bN = openN ? 1 : smooth(Math.min(1, (vj / BLEND_V) * jN[vi]));
+            const bS = openS ? 1 : smooth(Math.min(1, ((CELLS - vj) / BLEND_V) * jS[vi]));
 
             // Diagonal bevel — Manhattan (vi+vj) distance from the corner,
             // whose iso-lines are true 45° diagonals (unlike max(vi,vj),
@@ -6347,7 +6368,7 @@
         }
 
         // Split: path material where the depression is visible, grass at shallow edges
-        const PATH_THRESH = -0.018;
+        const PATH_THRESH = -0.009;  // scaled with the shallower PATH_DY
         const pathIdx = [], grassIdx = [];
         for (let cj = 0; cj < CELLS; cj++)
           for (let ci = 0; ci < CELLS; ci++) {
@@ -8196,7 +8217,7 @@
 
       // ── Visual feature toggles (Settings tab) ────────────────────
       let s_outlines  = true;
-      let s_grass     = false;
+      let s_grass     = true;
       let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
       let s_billWind  = true;
       let s_fpsCounter = false;
