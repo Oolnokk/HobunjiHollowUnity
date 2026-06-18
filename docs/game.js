@@ -5511,8 +5511,8 @@
         const rect = _threeRect;
         lctx.clearRect(0, 0, rect.width, rect.height);
 
-        if (currentArea === 'interior') {
-          // Interior: no outdoor day/night overlay — just warm interior ambience
+        if (currentArea === 'interior' || _isBuildingArea(currentArea)) {
+          // Interior/building: no outdoor day/night overlay — just warm interior ambience
           lctx.fillStyle = 'rgba(80,40,10,0.08)';
           lctx.fillRect(0, 0, rect.width, rect.height);
           if (sceneTransAlpha > 0) {
