@@ -6281,6 +6281,14 @@
         const openW = srcGrid[row]?.[col - 1]?.type === TileType.PATH;
         const openE = srcGrid[row]?.[col + 1]?.type === TileType.PATH;
 
+        // Diagonal tiles — used to bevel the inner corner of L-shaped turns
+        // instead of leaving a blocky right-angle notch (same technique as
+        // buildTerrainTileGeo's TRENCH/RAISED corners).
+        const diagNW = srcGrid[row-1]?.[col-1]?.type === TileType.PATH;
+        const diagNE = srcGrid[row-1]?.[col+1]?.type === TileType.PATH;
+        const diagSW = srcGrid[row+1]?.[col-1]?.type === TileType.PATH;
+        const diagSE = srcGrid[row+1]?.[col+1]?.type === TileType.PATH;
+
         const seamDisp = (vx, vz) => {
           const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
           let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
@@ -6305,7 +6313,17 @@
             const bE = openE ? 1 : smooth(Math.min(1, (CELLS - vi) / BLEND_V));
             const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
             const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
-            const blend = Math.min(1, bW * bE * bN * bS);
+
+            // Diagonal bevel: where two open sides meet at a turn but the
+            // outer diagonal tile isn't path, fade the inner corner back to
+            // ground level over the same BLEND_V zone — a 45°-ish chamfer
+            // instead of a hard rectangular notch.
+            const bDiagNW = (openW && openN && !diagNW) ? smooth(Math.min(1, Math.max(vi, vj)             / BLEND_V)) : 1;
+            const bDiagNE = (openE && openN && !diagNE) ? smooth(Math.min(1, Math.max(CELLS-vi, vj)       / BLEND_V)) : 1;
+            const bDiagSW = (openW && openS && !diagSW) ? smooth(Math.min(1, Math.max(vi, CELLS-vj)       / BLEND_V)) : 1;
+            const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, Math.max(CELLS-vi, CELLS-vj) / BLEND_V)) : 1;
+
+            const blend = Math.min(1, bW * bE * bN * bS * bDiagNW * bDiagNE * bDiagSW * bDiagSE);
             const vx = col + vi * STEP, vz = row + vj * STEP;
             Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
           }
@@ -6899,15 +6917,46 @@
 
         // Pass 2: distant cliffs — tall, edge-biased plateaus, north/west/east
         // only (side 1 = south is excluded so it stays low).
+        const cliffGroups = [];
         for (let p = 0; p < 32; p++) {
           const [ci,cj] = pickCell(0.88, [0,2,3]);
-          raiseGroup(pickGroup(ci, cj, 10 + Math.floor(rng()*38)), 0.9 + rng()*3.2);
+          const group = pickGroup(ci, cj, 10 + Math.floor(rng()*38));
+          raiseGroup(group, 0.9 + rng()*3.2);
+          cliffGroups.push(group);
+        }
+
+        // Pass 2b: sub-plateauing — stack smaller, taller shelves onto the
+        // cliffs just raised (seeded from a random cell of the parent group,
+        // free to spill past its footprint) so tops break up into irregular,
+        // stepped terraces instead of flat single-height mesas. Two rounds
+        // of decreasing scale add coarse-then-fine jaggedness.
+        let subGroups = cliffGroups;
+        for (const [count, sizeRange, amtRange] of [[3, [3, 17], [0.4, 2.2]], [2, [2, 8], [0.2, 1.0]]]) {
+          const next = [];
+          for (const group of subGroups) {
+            const n = 1 + Math.floor(rng() * count);
+            for (let s = 0; s < n; s++) {
+              const [sci, scj] = group[Math.floor(rng() * group.length)];
+              const sub = pickGroup(sci, scj, sizeRange[0] + Math.floor(rng() * (sizeRange[1] - sizeRange[0])));
+              raiseGroup(sub, amtRange[0] + rng() * (amtRange[1] - amtRange[0]));
+              next.push(sub);
+            }
+          }
+          subGroups = next;
         }
 
         // Pass 3: guarantee a continuous cliff wall on north/west/east, with
-        // canyon gaps cut through wherever a road crosses that edge.
+        // canyon gaps cut through wherever a road crosses that edge. The
+        // minimum ridge height itself is noisy (chunky, block-quantized) so
+        // the skyline isn't a dead-flat shelf.
         const RIM_V   = 20;
-        const RIM_MIN = NORMAL_TOP + 3.0;
+        const ridgeNoise = (gi, gj) => {
+          const qi = Math.round(gi / 5), qj = Math.round(gj / 5);
+          let h = (2166136261 ^ (qi * 374761393) ^ (qj * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h >>> 0) / 4294967296;
+        };
+        const rimMinAt = (gi, gj) => NORMAL_TOP + 2.2 + ridgeNoise(gi, gj) * 3.2;
 
         // Tile col/row range -> vertex-index range (half-open), matching the
         // 0.5-unit vertex spacing used throughout this generator.
@@ -6927,7 +6976,8 @@
             if (nearW && !nearN && !nearS && gj >= WEST_GAP[0]  && gj < WEST_GAP[1])  continue;
             if (nearE && !nearN && !nearS && gj >= EAST_GAP[0]  && gj < EAST_GAP[1])  continue;
             const k = gj * GW + gi;
-            if (Y[k] < RIM_MIN) Y[k] = RIM_MIN;
+            const rimMin = rimMinAt(gi, gj);
+            if (Y[k] < rimMin) Y[k] = rimMin;
           }
         }
 
@@ -7021,13 +7071,50 @@
             const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
             if (cnx*cnx + cnz*cnz > 0.194) continue;   // cliff face — no grass
             const seed = (ci * 7919 + cj * 104173) >>> 0;
-            if (_mbRng(seed)() > 0.3) continue;        // sparse coverage
+            // 0.58 here (vs. the always-on accessible tiles) yields roughly
+            // the same instances-per-unit-area as a regular grass tile —
+            // border grass was visibly sparser than the playable area's.
+            if (_mbRng(seed)() > 0.58) continue;
             const px = (ci-BV)*0.5 + 0.25, pz = (cj-BV)*0.5 + 0.25;
             const py = (y00+y10+y01+y11) / 4;
             _townBorderGrassPoints.push({ px, pz, py, seed });
           }
         }
         _buildTownBorderGrassBillboards();
+
+        // ── Inaccessible shrubs continuing the forest belt south of the map
+        // edge — purely decorative (no tile data out there), skipped over
+        // the two road corridors so both south exits stay visually clear,
+        // and skipped on the steep SW/SE corner cliff faces.
+        if (window.FoliageGenerator) {
+          const SOUTH_GAP_A = toViRange(15, 21);   // To Farm (col 18, row 49)
+          const SOUTH_GAP_B = toViRange(27, 33);   // To Cloud Forest (col 30, row 49)
+          const STEP = 4;   // 2-tile spacing — shrubs are heavy procedural meshes
+          for (let cj = BV + PVH; cj < CH; cj += STEP) {
+            const depth = cj - (BV + PVH);
+            if (depth > 22) continue;   // ~11 tiles south of the map edge
+            for (let ci = 0; ci < CW; ci += STEP) {
+              if (ci >= SOUTH_GAP_A[0] && ci < SOUTH_GAP_A[1]) continue;
+              if (ci >= SOUTH_GAP_B[0] && ci < SOUTH_GAP_B[1]) continue;
+              const seed = (777 + ci * 7919 + cj * 104173) >>> 0;
+              const r = _mbRng(seed);
+              if (r() > 0.22) continue;   // sparse clusters
+              const y00=Y[cj*GW+ci],     y10=Y[cj*GW+ci+1];
+              const y01=Y[(cj+1)*GW+ci], y11=Y[(cj+1)*GW+ci+1];
+              const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+              const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
+              if (cnx*cnx + cnz*cnz > 0.194) continue;   // steep corner cliff — no shrub
+              const px = (ci-BV)*0.5 + 0.25, pz = (cj-BV)*0.5 + 0.25;
+              const py = (y00+y10+y01+y11) / 4;
+              const vegGroup = window.FoliageGenerator.buildShrubMesh(1000 + ci, 1000 + cj);
+              const sc = 1.6 + r() * 1.2;
+              vegGroup.scale.set(sc, sc, sc);
+              vegGroup.rotation.y = r() * Math.PI * 2;
+              vegGroup.position.set(px, py, pz);
+              townScene.add(vegGroup);
+            }
+          }
+        }
       }
 
       const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
