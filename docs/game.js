@@ -1262,22 +1262,13 @@
       function makeProcessingFurniture(col, row, furnitureKey) {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
-        const mat = new THREE.MeshLambertMaterial({ color: def.color });
-        const geo = new THREE.BoxGeometry(0.68, 0.46, 0.68);
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.castShadow = true;
-        mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type) + 0.23, row + 0.5);
+        const mesh = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color);
+        mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
         scene.add(mesh);
-
-        const topMat = new THREE.MeshLambertMaterial({ color: 0xf0d8a0 });
-        const top = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.08, 0.44), topMat);
-        top.castShadow = true;
-        top.position.set(col + 0.5, tileSurfaceY(grid[row][col].type) + 0.50, row + 0.5);
-        scene.add(top);
 
         return {
           id: 'processor_' + furnitureKey + '_' + col + '_' + row,
-          type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh, top,
+          type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh,
           label: def.icon + ' ' + def.name,
           getButtons() {
             const active = getActiveInventoryItem();
@@ -1305,9 +1296,10 @@
           },
           reset() {
             scene.remove(mesh);
-            scene.remove(top);
-            mesh.geometry.dispose(); mesh.material.dispose();
-            top.geometry.dispose(); top.material.dispose();
+            mesh.traverse(child => {
+              if (child.geometry) child.geometry.dispose();
+              if (child.material) child.material.dispose();
+            });
           },
         };
       }
@@ -1351,28 +1343,10 @@
       function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
-        const w = Math.min(def.fw || 1, 1.0) * 0.85;
-        const d = Math.min(def.fd || 1, 1.0) * 0.85;
-        const geo = new THREE.BoxGeometry(w, 0.4, d);
-        const mat = new THREE.MeshLambertMaterial({ color: def.color || 0x8b6540 });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.castShadow = true;
-        mesh.position.set(col + 0.5, 0.2, row + 0.5);
-        targetScene.add(mesh);
-
-        // Load GLB async and swap placeholder
-        const loader = new THREE.GLTFLoader();
-        loader.load(`assets/models/furniture/${def.modelFile}`, (gltf) => {
-          const model = gltf.scene;
-          model.position.set(col + 0.5, 0, row + 0.5);
-          model.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
-          targetScene.remove(mesh);
-          mesh.geometry.dispose(); mesh.material.dispose();
-          targetScene.add(model);
-          const entry = interiorFurnitureObjects.find(o => o.mesh === mesh);
-          if (entry) entry.mesh = model;
-        }, undefined, () => {});
-        return mesh;
+        const group = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color || 0x8b6540);
+        group.position.set(col + (def.fw || 1) * 0.5, 0, row + (def.fd || 1) * 0.5);
+        targetScene.add(group);
+        return group;
       }
 
       function placeDecorativeFurniture(col, row, furnitureKey) {
@@ -1400,8 +1374,10 @@
         interiorFurnitureObjects.forEach(obj => {
           const s = obj.area === 'interior' ? interiorScene : scene;
           s.remove(obj.mesh);
-          if (obj.mesh.geometry) obj.mesh.geometry.dispose();
-          if (obj.mesh.material) obj.mesh.material.dispose();
+          obj.mesh.traverse && obj.mesh.traverse(child => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+          });
         });
         interiorFurnitureObjects.length = 0;
       }
@@ -1468,7 +1444,10 @@
           if (decIdx >= 0) {
             const d = interiorFurnitureObjects.splice(decIdx, 1)[0];
             scene.remove(d.mesh);
-            if (d.mesh.geometry) d.mesh.geometry.dispose();
+            d.mesh.traverse && d.mesh.traverse(child => {
+              if (child.geometry) child.geometry.dispose();
+              if (child.material) child.material.dispose();
+            });
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
@@ -2818,12 +2797,14 @@
             const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
             bScene.add(wallGroup);
           }
-          // Furniture: build combined itemKey -> def lookup
+          // Furniture: build combined itemKey -> def/furnitureKey lookup
           const allFurnDefs = {};
-          for (const def of Object.values(DECORATIVE_FURNITURE_DEFS)) allFurnDefs[def.itemKey] = def;
-          for (const def of Object.values(PROCESSING_FURNITURE_DEFS)) allFurnDefs[def.itemKey] = def;
+          const furnKeyByItemKey = {};
+          for (const [key, def] of Object.entries(DECORATIVE_FURNITURE_DEFS)) { allFurnDefs[def.itemKey] = def; furnKeyByItemKey[def.itemKey] = key; }
+          for (const [key, def] of Object.entries(PROCESSING_FURNITURE_DEFS)) { allFurnDefs[def.itemKey] = def; furnKeyByItemKey[def.itemKey] = key; }
           for (const f of (mapData.furniture || [])) {
             const def = allFurnDefs[f.itemKey];
+            const furnitureKey = furnKeyByItemKey[f.itemKey];
             const color = def?.color || 0x888888;
             const scX = f.postSX != null ? f.postSX : (f.postScale != null ? f.postScale : 1);
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
@@ -2832,24 +2813,19 @@
             const by = f.postY || 0;
             const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
             const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
-            // Coloured box placeholder
-            const ph = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshLambertMaterial({ color }));
-            ph.position.set(bx, by + 0.4, bz);
-            ph.rotation.y = rotRad;
-            ph.scale.set(scX, scY, scZ);
-            bScene.add(ph);
-            if (def?.modelFile) {
-              const loader = new THREE.GLTFLoader();
-              loader.load(`assets/models/furniture/${def.modelFile}`, (gltf) => {
-                const model = gltf.scene;
-                model.position.set(bx, by, bz);
-                model.rotation.y = rotRad;
-                model.scale.set(scX, scY, scZ);
-                model.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
-                bScene.remove(ph);
-                ph.geometry.dispose(); ph.material.dispose();
-                bScene.add(model);
-              }, undefined, () => {});
+            if (furnitureKey && window.ProceduralFurniture.CATALOG[furnitureKey]) {
+              const model = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, color);
+              model.position.set(bx, by, bz);
+              model.rotation.y = rotRad;
+              model.scale.set(scX, scY, scZ);
+              bScene.add(model);
+            } else {
+              // Fallback: no procedural recipe found for this furniture key
+              const ph = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshLambertMaterial({ color }));
+              ph.position.set(bx, by + 0.4, bz);
+              ph.rotation.y = rotRad;
+              ph.scale.set(scX, scY, scZ);
+              bScene.add(ph);
             }
           }
           const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];

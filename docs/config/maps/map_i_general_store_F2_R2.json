@@ -9,14 +9,17 @@
       "rotY": 0,
       "postX": 0,
       "postY": 0,
-      "postZ": 0
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
     },
     {
       "id": "fmqfml4xd0owf",
       "itemKey": "nightstandFurniture",
       "col": 9,
       "row": 6,
-      "rotY": 180,
+      "rotY": 0,
       "postX": 0,
       "postY": 0,
       "postZ": 0,
@@ -29,20 +32,26 @@
       "itemKey": "wardrobeFurniture",
       "col": 10,
       "row": 9,
-      "rotY": 0,
+      "rotY": 180,
       "postX": 0,
       "postY": 0,
-      "postZ": 0
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
     },
     {
       "id": "fmqfmlt6e68kh",
       "itemKey": "bookshelfFurniture",
       "col": 7,
       "row": 9,
-      "rotY": 0,
+      "rotY": 180,
       "postX": 0,
       "postY": 0,
-      "postZ": 0
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
     },
     {
       "id": "fmqfmmnlz454c",
@@ -50,19 +59,19 @@
       "col": 9,
       "row": 7,
       "rotY": 0,
-      "postX": -0.493,
+      "postX": -0.432,
       "postY": 0,
-      "postZ": -0.078,
-      "postSX": 3.25,
+      "postZ": -0.008,
+      "postSX": 3.269,
       "postSY": 1,
-      "postSZ": 3.25
+      "postSZ": 1.61
     },
     {
       "id": "fmqfmpsum15de",
       "itemKey": "chairCushionFurniture",
       "col": 6,
       "row": 8,
-      "rotY": 270,
+      "rotY": 90,
       "postX": 0,
       "postY": 0,
       "postZ": 0,
@@ -76,133 +85,19 @@
   "cols": 20,
   "rows": 20,
   "floor": [
-    [
-      10,
-      6
-    ],
-    [
-      9,
-      6
-    ],
-    [
-      8,
-      6
-    ],
-    [
-      7,
-      6
-    ],
-    [
-      6,
-      6
-    ],
-    [
-      11,
-      6
-    ],
-    [
-      12,
-      6
-    ],
-    [
-      12,
-      7
-    ],
-    [
-      12,
-      8
-    ],
-    [
-      12,
-      9
-    ],
-    [
-      11,
-      9
-    ],
-    [
-      10,
-      9
-    ],
-    [
-      9,
-      9
-    ],
-    [
-      8,
-      9
-    ],
-    [
-      7,
-      9
-    ],
-    [
-      6,
-      9
-    ],
-    [
-      6,
-      8
-    ],
-    [
-      6,
-      7
-    ],
-    [
-      7,
-      8
-    ],
-    [
-      8,
-      8
-    ],
-    [
-      9,
-      8
-    ],
-    [
-      10,
-      8
-    ],
-    [
-      11,
-      8
-    ],
-    [
-      11,
-      7
-    ],
-    [
-      10,
-      7
-    ],
-    [
-      9,
-      7
-    ],
-    [
-      8,
-      7
-    ],
-    [
-      7,
-      7
-    ],
-    [
-      7,
-      5
-    ]
+    [10, 6], [9, 6], [8, 6], [7, 6], [6, 6],
+    [11, 6], [12, 6], [12, 7], [12, 8], [12, 9],
+    [11, 9], [10, 9], [9, 9], [8, 9], [7, 9], [6, 9],
+    [6, 8], [6, 7],
+    [7, 8], [8, 8], [9, 8], [10, 8], [11, 8],
+    [11, 7], [10, 7], [9, 7], [8, 7], [7, 7],
+    [7, 5]
   ],
   "exits": [
     {
       "id": "exit_c7m2k",
       "label": "Stairs Down",
-      "tiles": [
-        [
-          7,
-          5
-        ]
-      ],
+      "tiles": [[7, 5]],
       "targetMap": "map_i_general_store",
       "spawnCol": 7,
       "spawnRow": 6
@@ -220,24 +115,7 @@
     {
       "id": "route_2yu1a",
       "label": "Route 1",
-      "nodes": [
-        [
-          7,
-          5
-        ],
-        [
-          7,
-          7
-        ],
-        [
-          9,
-          7
-        ],
-        [
-          9,
-          6
-        ]
-      ]
+      "nodes": [[7, 5], [7, 7], [9, 7], [9, 6]]
     }
   ],
   "npcStations": [
