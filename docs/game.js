@@ -6729,6 +6729,13 @@
       // Tile meshes: indexed by row*COLS+col
       const tileMeshes  = new Array(ROWS * COLS).fill(null);
       const waterMeshes = new Array(ROWS * COLS).fill(null);
+      // Sparse index of occupied waterMeshes slots, kept in sync by setWaterMesh(),
+      // so the per-frame fast-path time-uniform update only visits live entries.
+      const _waterActive = new Set();
+      function setWaterMesh(i, val) {
+        waterMeshes[i] = val;
+        if (val) _waterActive.add(i); else _waterActive.delete(i);
+      }
 
       // ── Player root (Group — avatar plane attached after onboarding) ─
       const playerMesh = new THREE.Group();
@@ -7472,7 +7479,7 @@
           for (let col = 0; col < COLS; col++) {
             const i = row * COLS + col;
             if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
-            if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         waterMeshes[i]         = null; }
+            if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         setWaterMesh(i, null); }
             if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
             if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
             if (grassBillboardGroups[i]){ scene.remove(grassBillboardGroups[i]); grassBillboardGroups[i] = null; }
@@ -7486,7 +7493,7 @@
       function refreshTileMesh(col, row) {
         const i = row * COLS + col;
         if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
-        if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         waterMeshes[i]         = null; }
+        if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         setWaterMesh(i, null); }
         if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
         if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
         _clearGrassBillboards(col, row);
@@ -7509,7 +7516,7 @@
               const tile = grid[row][col];
 
               if (isSolid(tile.type) || tile.water < 0.003) {
-                if (waterMeshes[i]) { scene.remove(waterMeshes[i]); waterMeshes[i] = null; }
+                if (waterMeshes[i]) { scene.remove(waterMeshes[i]); setWaterMesh(i, null); }
                 tile._wCached = false;
                 continue;
               }
@@ -7553,7 +7560,7 @@
                 const wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
                 wm.receiveShadow = false;
                 scene.add(wm);
-                waterMeshes[i] = wm;
+                setWaterMesh(i, wm);
               }
               const wm = waterMeshes[i];
               wm.position.set(col + 0.5, surfaceA + 0.015, row + 0.5);
@@ -7567,9 +7574,8 @@
         } else {
           // Fast path: only push updated time uniform — all other values are stable
           // between sim ticks so no recomputation is needed.
-          for (let i = 0; i < waterMeshes.length; i++) {
-            const wm = waterMeshes[i];
-            if (wm) wm.material.uniforms.uTime.value = waterTime;
+          for (const i of _waterActive) {
+            waterMeshes[i].material.uniforms.uTime.value = waterTime;
           }
         }
       }
