@@ -6211,8 +6211,8 @@
       // grassGeo (edge cells blending back to NORMAL_TOP, grass material) — the
       // same dual-mesh pattern used by rock and trench tiles.
       function buildPathTileGeo(col, row) {
-        const VERTS = 9, CELLS = 8, STEP = 1.0 / CELLS;
-        const BLEND_V  = 3;
+        const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
+        const BLEND_V  = 2;
         const PATH_DY  = -0.09;  // depression depth (shallower than trench's -0.5)
 
         const openN = grid[row - 1]?.[col]?.type === TileType.PATH;
@@ -6282,7 +6282,7 @@
       // 9×9 vertex grid (0.125u steps) over a 1×1 tile. Uses seam-safe FNV hash
       // at tile edges so vertices match adjacent makeFloorGeo tiles exactly.
       function buildRockTileGeo(col, row) {
-        const VERTS = 9, CELLS = 8;
+        const VERTS = 7, CELLS = 6;
         const STEP = 1.0 / CELLS;
 
         let _s = ((col * 374761393) ^ (row * 668265263)) >>> 0;
@@ -6319,7 +6319,7 @@
         // BFS plateau from a random interior starting cell (never touches edge cells)
         const startCi = 1 + Math.floor(rng() * (CELLS - 2));
         const startCj = 1 + Math.floor(rng() * (CELLS - 2));
-        const maxSize = 6 + Math.floor(rng() * 20);
+        const maxSize = 2 + Math.floor(rng() * 12);  // scaled for the smaller CELLS=6 interior
         const group = new Set([startCj * CELLS + startCi]);
         const front = [[startCi, startCj]];
 
@@ -6397,8 +6397,8 @@
       //   3. Geometry is split into dirtGeo (depressed/raised cells) and grassGeo (flat
       //      edge cells near NORMAL_TOP), mirroring the rock tile's stone/grass split.
       function buildTerrainTileGeo(col, row, type) {
-        const VERTS = 9, CELLS = 8, STEP = 1.0 / CELLS;
-        const BLEND_V  = 3;
+        const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
+        const BLEND_V  = 2;
         const PLATEAU  = type === TileType.RAISED ? 3.0 : 1.5;  // raised = wide flat top
         const targetDY = type === TileType.TRENCH
           ? TRENCH_TOP - NORMAL_TOP   // −0.5
