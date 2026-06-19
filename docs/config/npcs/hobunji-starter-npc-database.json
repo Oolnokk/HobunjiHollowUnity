@@ -5392,8 +5392,8 @@
     },
     {
       "id": "teacup_unumanuk",
-      "name": "Eldress Teacup",
-      "homeId": "engh_sho_clans",
+      "name": "Eldress Teacup Unumanuk",
+      "homeId": "unumanuk_household",
       "species": "Engh-Sho",
       "gender": "female",
       "ageBand": "elder",
@@ -5403,7 +5403,7 @@
         "eldress",
         "villager"
       ],
-      "bio": "Unumanuk Clan eldress who runs the nightly spirit communion service for the Engh-sho villagers, who attend both the morning temple service and her communion. Holds it in the temple building at night, since it tends to unsettle the other races.",
+      "bio": "Unumanuk Clan eldress who runs the nightly spirit communion service for the Engh-sho villagers, who attend both the morning temple service and her communion. Holds it in the temple building at night, since it tends to unsettle the other races. Lives with her son Spearhead and grandson Oddclaw in the overcrowded Unumanuk household.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -5569,44 +5569,34 @@
         "shopHours": "",
         "rules": [
           {
+            "activity": "elder duties",
             "from": "09:00",
-            "to": "14:00",
-            "mapId": "map_hobunji_town",
-            "position": {
-              "c": 50,
-              "r": 38
-            },
-            "activity": "clan home"
-          },
-          {
-            "from": "14:00",
-            "to": "18:00",
             "mapId": "map_hobunji_town",
             "position": {
               "c": 30,
               "r": 31
             },
             "routeId": "route_main_ns",
-            "activity": "elder duties"
+            "to": "18:00"
           },
           {
+            "activity": "home",
             "from": "18:00",
-            "to": "09:00",
             "mapId": "map_hobunji_town",
             "position": {
-              "c": 50,
-              "r": 38
+              "c": 45,
+              "r": 28
             },
-            "activity": "home"
+            "to": "09:00"
           }
         ],
         "defaultPosition": {
           "area": "town",
-          "c": 50,
-          "r": 38
+          "c": 45,
+          "r": 28
         }
       },
-      "loreBackground": "Father Hunundi attends her nightly services without leading them, mostly to keep the other villagers at ease and to be present in case 'something goes awry.' <suggestion: backstory — what spirit communion actually involves mechanically, and what 'going awry' has historically meant>"
+      "loreBackground": "Father Hunundi attends her nightly services without leading them, mostly to keep the other villagers at ease and to be present in case 'something goes awry.' <suggestion: backstory — what spirit communion actually involves mechanically, and what 'going awry' has historically meant> The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds."
     },
     {
       "id": "binding_hatayap",
@@ -5789,7 +5779,7 @@
     {
       "id": "spearhead_unumanuk",
       "name": "Spearhead Unumanuk",
-      "homeId": "watch",
+      "homeId": "unumanuk_household",
       "species": "Engh-Sho",
       "gender": "male",
       "ageBand": "<unknown age>",
@@ -5955,23 +5945,24 @@
             "to": "07:00",
             "mapId": "map_hobunji_town",
             "position": {
-              "c": 23,
-              "r": 22
+              "c": 45,
+              "r": 28
             },
             "activity": "home"
           }
         ],
         "defaultPosition": {
           "area": "town",
-          "c": 23,
-          "r": 22
+          "c": 45,
+          "r": 28
         }
-      }
+      },
+      "loreBackground": "The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds."
     },
     {
       "id": "oddclaw_unumanuk",
       "name": "Oddclaw Unumanuk",
-      "homeId": "watch",
+      "homeId": "unumanuk_household",
       "species": "Engh-Sho",
       "gender": "male",
       "ageBand": "<unknown age>",
@@ -6142,18 +6133,19 @@
             "to": "08:00",
             "mapId": "map_hobunji_town",
             "position": {
-              "c": 23,
-              "r": 22
+              "c": 45,
+              "r": 28
             },
             "activity": "home"
           }
         ],
         "defaultPosition": {
           "area": "town",
-          "c": 23,
-          "r": 22
+          "c": 45,
+          "r": 28
         }
-      }
+      },
+      "loreBackground": "The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds."
     },
     {
       "id": "tooth_hatayap",

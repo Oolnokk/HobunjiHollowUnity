@@ -18355,8 +18355,8 @@
       "label": "Enter Unumanuk Household",
       "col": 45,
       "row": 28,
-      "targetMapId": "",
-      "targetSpotId": ""
+      "targetMapId": "map_i_unumanuk_household",
+      "targetSpotId": "sp_unmh_entry"
     },
     {
       "id": "spot_1mkut",
