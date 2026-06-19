@@ -3143,7 +3143,7 @@
         }
         _townBuildingGroups = [];
 
-        const _wbDefaults = { unitMult: 0.35, rockScale: 1.5,
+        const _wbDefaults = { unitMult: 0.4375, rockScale: 1.5,
                               preScale: [1, 1, 0.6],
                               brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
@@ -6011,9 +6011,12 @@
           uThickness: { value: 0.006 },  // NDC units → constant screen-pixel width
         },
         vertexShader: `
-          #ifdef USE_INSTANCING
-            attribute mat4 instanceMatrix;
-          #endif
+          // NOTE: do not redeclare "attribute mat4 instanceMatrix" here — for a
+          // regular (non-Raw) ShaderMaterial, three.js's WebGLProgram already
+          // injects that exact declaration into the vertex shader prefix
+          // whenever USE_INSTANCING is defined. Redeclaring it is a duplicate
+          // attribute and fails to compile/link, which silently dropped the
+          // outline for every InstancedMesh (wall bricks) using this material.
           uniform float uThickness;
           void main() {
             #ifdef USE_INSTANCING
@@ -6054,9 +6057,9 @@
 
       // Shared vertex shader used for coloured target outlines (supports instancing)
       const _targetOutlineVert = `
-        #ifdef USE_INSTANCING
-          attribute mat4 instanceMatrix;
-        #endif
+        // See shellOutlineMat above — three.js's own vertex-shader prefix
+        // already declares "attribute mat4 instanceMatrix" under
+        // USE_INSTANCING for ShaderMaterial, so it must not be redeclared here.
         uniform float uThickness;
         void main() {
           #ifdef USE_INSTANCING

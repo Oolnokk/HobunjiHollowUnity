@@ -126,8 +126,13 @@
     const gap = computeEffectiveGap(recipe), unit = s.unitSize ?? { x: 1, y: 1, z: 1 };
     const stepX = Math.max(1e-6, Number(unit.x ?? 1) + Number(gap.x ?? 0));
     const stepY = Math.max(1e-6, Number(unit.y ?? 1) + Number(gap.y ?? 0));
-    const cols = Math.max(1, Math.floor((s.length ?? 1) / stepX));
-    const rows = Math.max(1, Math.floor((s.height ?? 1) / stepY));
+    // Math.round (not floor) — floor truncates a whole partial column/row off
+    // every wall, which is a much bigger relative loss on small walls than big
+    // ones (e.g. a 1.3-unit-long wall at stepX=0.5 floors to 2 cols, leaving
+    // 23% of its length bare). Any column that ends up slightly past the
+    // panel's actual bounds is dropped later by the s/t clip in build().
+    const cols = Math.max(1, Math.round((s.length ?? 1) / stepX));
+    const rows = Math.max(1, Math.round((s.height ?? 1) / stepY));
     const perUnit = meshPerUnitScale ?? new THREE.Vector3(1, 1, 1);
     const unitScale = new THREE.Vector3(perUnit.x * Number(unit.x ?? 1), perUnit.y * Number(unit.y ?? 1), perUnit.z * Number(unit.z ?? 1));
     const mats = [];
@@ -205,7 +210,7 @@
       const stepMult = Number(r.settings.stepMultiplier ?? 1);
       const step = (axis === 'Y' ? (Number(unit.y ?? 1) + Number(gap.y ?? 0)) : (axis === 'Z' ? (Number(unit.z ?? 1) + Number(gap.z ?? 0)) : (Number(unit.x ?? 1) + Number(gap.x ?? 0)))) * stepMult;
       const target = axis === 'Y' ? faceHeight : faceWidth;
-      r.settings.count = Math.max(1, Math.floor(target / Math.max(1e-6, step)));
+      r.settings.count = Math.max(1, Math.round(target / Math.max(1e-6, step)));
     } else {
       r.settings.kind = 'wall';
       r.settings.length = faceWidth;
