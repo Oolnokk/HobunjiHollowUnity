@@ -430,73 +430,18 @@
       }
     }
 
-    const shellAnim = opts.shellAnim;
-
     for (const [name, { model, wms }] of perGlb) {
       const inst = new THREE.InstancedMesh(model.mesh.geometry, model.mesh.material, wms.length);
       inst.name = 'Wall:' + name;
       inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      if (shellAnim) {
-        _initShellAnimInstanced(inst, wms, shellAnim, name);
-      } else {
-        wms.forEach((m, i) => inst.setMatrixAt(i, m));
-        inst.instanceMatrix.needsUpdate = true;
-      }
+      wms.forEach((m, i) => inst.setMatrixAt(i, m));
+      inst.instanceMatrix.needsUpdate = true;
       inst.castShadow = true;
       inst.receiveShadow = true;
       group.add(inst);
     }
 
     return group;
-  };
-
-  // Sets up an InstancedMesh to "grow" each brick in from zero scale, staggered
-  // bottom-to-top, instead of popping in fully built. Bricks start at their
-  // final position/rotation with a near-zero scale; advanceShellAnim() tweens
-  // each instance's scale up to its target over userData.buildAnim.duration,
-  // offset by a per-instance delay so the wall fills in like rising bricks.
-  function _initShellAnimInstanced(inst, wms, shellAnim, seedName) {
-    const duration = Math.max(0.01, Number(shellAnim.duration) || 0.6);
-    const stagger  = Math.max(0, Number(shellAnim.stagger) || 0.8);
-    const pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scl = new THREE.Vector3();
-    const delays = new Float32Array(wms.length);
-    let minY = Infinity, maxY = -Infinity;
-    for (const m of wms) { m.decompose(pos, quat, scl); if (pos.y < minY) minY = pos.y; if (pos.y > maxY) maxY = pos.y; }
-    const ySpan = Math.max(1e-6, maxY - minY);
-    const rng = makeRng('shellAnim:' + seedName + ':' + wms.length);
-    for (let i = 0; i < wms.length; i++) {
-      wms[i].decompose(pos, quat, scl);
-      const heightT = (pos.y - minY) / ySpan;
-      delays[i] = heightT * stagger + rng.range(0, stagger * 0.15);
-      inst.setMatrixAt(i, new THREE.Matrix4().compose(pos, quat, new THREE.Vector3(1e-4, 1e-4, 1e-4)));
-    }
-    inst.instanceMatrix.needsUpdate = true;
-    inst.userData.buildAnim = { baseMatrices: wms, delays, duration, elapsed: 0, done: false };
-  }
-
-  // Advances all shell build-up animations found under `root` by `dt` seconds.
-  // Call this once per frame (e.g. from the main render loop) on whatever
-  // group(s) WallBuilder.build() output was added to. Safe to call on groups
-  // with no active animations — it's then a cheap no-op traversal.
-  WallBuilder.advanceShellAnim = function (root, dt) {
-    if (!root || !dt) return;
-    const pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scl = new THREE.Vector3();
-    root.traverse(function (o) {
-      const anim = o.isInstancedMesh && o.userData.buildAnim;
-      if (!anim || anim.done) return;
-      anim.elapsed += dt;
-      let allDone = true;
-      for (let i = 0; i < anim.baseMatrices.length; i++) {
-        const t = (anim.elapsed - anim.delays[i]) / anim.duration;
-        if (t < 1) allDone = false;
-        const f = t <= 0 ? 0 : (t >= 1 ? 1 : t * t * (3 - 2 * t)); // smoothstep
-        anim.baseMatrices[i].decompose(pos, quat, scl);
-        if (f < 1) scl.multiplyScalar(Math.max(1e-4, f));
-        o.setMatrixAt(i, new THREE.Matrix4().compose(pos, quat, scl));
-      }
-      o.instanceMatrix.needsUpdate = true;
-      if (allDone) anim.done = true;
-    });
   };
 
   /** Dispose geometry/material owned by the group (does NOT dispose GLB library entries). */

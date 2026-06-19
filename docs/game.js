@@ -3177,7 +3177,6 @@
                 wallBuilder: houseWallBuilder, wbUsePlaceholder: true,
                 wbOpts, wbGableOpts, matBoards: _boardsMat,
                 rotationDeg: bldg.rotationDeg || 0,
-                shellAnim: { duration: 0.5, stagger: 0.9 },
               });
             }
             townScene.add(g);
@@ -3275,7 +3274,6 @@
                   wallBuilder: houseWallBuilder, wbUsePlaceholder: false,
                   wbOpts, wbGableOpts, matBoards: _boardsMat,
                   rotationDeg: bldg.rotationDeg || 0,
-                  shellAnim: { duration: 0.5, stagger: 0.9 },
                 });
                 townScene.add(g);
                 _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
@@ -8794,12 +8792,6 @@
         if (currentArea === 'town') {
           updateTownWaterMeshes();
           updateTownThreeLighting();
-          for (const { group } of _townBuildingGroups) {
-            if (group.userData.shellAnimDone) continue;
-            HousePieceGen.advanceShellAnim(group, dt);
-            group.userData.shellAnimT = (group.userData.shellAnimT || 0) + dt;
-            if (group.userData.shellAnimT > 3) group.userData.shellAnimDone = true;
-          }
         }
         if (currentArea === 'farm') {
           updateWaterMeshes();
@@ -8860,8 +8852,8 @@
         const activeScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || scene) : currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene;
         renderer.render(activeScene, camera);
         // Selective shell outline pass (layer-1 objects only)
-        if (s_outlines && currentArea !== 'town') {
-          const _outlineScene = _isBuildingArea(currentArea) ? activeScene : currentArea === 'interior' ? interiorScene : scene;
+        if (s_outlines) {
+          const _outlineScene = _isBuildingArea(currentArea) ? activeScene : currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene;
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
           _outlineScene.overrideMaterial = shellOutlineMat;
