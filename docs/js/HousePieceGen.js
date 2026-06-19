@@ -147,7 +147,7 @@
       group.add(wbGroup);
 
       // Gable triangles are smaller — use denser, smaller bricks so they fill properly.
-      var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.495, rockScale: 1.1 });
+      var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.495, densityMult: 1.5, rockScale: 1.1 });
       var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gableExtra));
       gableGroup.userData.isWallBricks = true;
       _markOutlineLayer(gableGroup);
@@ -694,10 +694,12 @@
                    extensionFace: f.extensionFace };
       allOff.push(fOff);
 
-      // Wall and entry-tunnel faces → WallBuilder panels (hidden from base mesh)
+      // Wall and entry-tunnel faces → WallBuilder panels (hidden from base mesh).
+      // Entryway walls use the gable brick recipe (smaller/denser) regardless of
+      // gableEnd, since they're framing a doorway rather than a full wall face.
       if (hideWalls && (tag === 'wall' || tag === 'entryTunnel')) {
         var panel = _faceToPanel(fOff);
-        if (f.gableEnd) gablePanels.push(panel);
+        if (f.gableEnd || tag === 'entryTunnel') gablePanels.push(panel);
         else bodyPanels.push(panel);
         continue;
       }
@@ -749,7 +751,7 @@
         group.add(wbGrp);
       }
       if (gablePanels.length) {
-        var gblExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.495, rockScale: 1.1 });
+        var gblExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.495, densityMult: 1.5, rockScale: 1.1 });
         var gblGrp   = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gblExtra));
         gblGrp.userData.isWallBricks = true;
         _markOutlineLayer(gblGrp);
