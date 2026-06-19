@@ -1707,7 +1707,7 @@
         const ANIMAL_W = 1.275;
         const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
         const halfH = ANIMAL_H / 2;
-        const CREATURE_PERPS = [0, Math.PI];
+        const CREATURE_PERPS = [Math.PI / 2, -Math.PI / 2];
 
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, "assets/creaturesprites/uumkao'ii.png", {
           modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
@@ -1839,7 +1839,7 @@
         }
       }
 
-      const CREATURE_PERPS = [0, Math.PI];
+      const CREATURE_PERPS = [Math.PI / 2, -Math.PI / 2];
 
       function makeCreatureEntity(creatureKey, x, y, opts = {}) {
         const def = CREATURE_DB[creatureKey];
@@ -3227,7 +3227,8 @@
         worldTownTransitions = (layout.transitions || []).filter(t =>
           t && Number.isFinite(t.col) && Number.isFinite(t.row) && (
             (Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)) ||
-            (t.target === 'building' && t.targetMapId)
+            (t.target === 'building' && t.targetMapId) ||
+            (t.target === 'zone' && t.targetMapId)
           ));
         const townPaths = (layout.npcPaths || []).filter(p =>
           p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
@@ -9420,7 +9421,7 @@
           updateMovement(dt);
           updatePlayerVitals(dt);
 
-          if (currentArea === 'farm') {
+          if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
             syncCompanionFromWhistle();
             updateCompanions(dt);
             updateHostileSpawning(dt);
