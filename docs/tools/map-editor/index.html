@@ -556,6 +556,84 @@ function _drawGizmoBtn(type, sx, sy, R) {
   ctx.restore();
 }
 
+// ── Building door auto-derivation ───────────────────────────────────────────
+// A house piece can mark its own door tile (footprint.entrances[0]). We cache
+// that as building-local geometry (doorEntrance) at placement time so the
+// door's world position can be recomputed from gridX/gridZ/rotationDeg alone,
+// without re-fetching the piece file on every move/rotate.
+function deriveDoorLocal(pieceData) {
+  const cells = pieceData?.footprint?.cells || [];
+  if (!cells.length) return null;
+  const xs = cells.map(c => c.x), ys = cells.map(c => c.y);
+  const minx = Math.min(...xs), maxx = Math.max(...xs);
+  const miny = Math.min(...ys), maxy = Math.max(...ys);
+  const rawW = maxx - minx + 1, rawD = maxy - miny + 1;
+  const ents = pieceData?.footprint?.entrances || [];
+  let ex, ey;
+  if (ents.length) { ex = ents[0].x; ey = ents[0].y; }
+  else { ex = minx + Math.floor((rawW - 1) / 2); ey = maxy; } // fallback: south-center
+  const lx = ex - minx, ly = ey - miny;
+  let odx = 0, ody = 1; // default: south-facing
+  if (lx === 0) { odx = -1; ody = 0; }
+  else if (lx === rawW - 1) { odx = 1; ody = 0; }
+  else if (ly === 0) { odx = 0; ody = -1; }
+  else if (ly === rawD - 1) { odx = 0; ody = 1; }
+  return { lx, ly, rawW, rawD, odx, ody };
+}
+
+// Resolve the cached local door geometry through the building's placement
+// (gridX/gridZ/rotationDeg) into a town-map world tile. rotationDeg winds
+// opposite to the elementary clockwise step applied here, hence (4 - n).
+function doorWorldFromBuilding(b) {
+  const ent = b.doorEntrance;
+  if (!ent) return null;
+  let x = ent.lx, y = ent.ly, w = ent.rawW, d = ent.rawD, dx = ent.odx, dy = ent.ody;
+  const steps = (4 - (Math.round((b.rotationDeg || 0) / 90) % 4)) % 4;
+  for (let i = 0; i < steps; i++) {
+    const nx = d - 1 - y, ny = x;
+    x = nx; y = ny;
+    const ndx = -dy, ndy = dx;
+    dx = ndx; dy = ndy;
+    [w, d] = [d, w];
+  }
+  return { col: (b.gridX || 0) + x + dx, row: (b.gridZ || 0) + y + dy };
+}
+
+// Create (or update, if already linked) the transition spot that represents
+// a building's door, tagged with buildingId so it tracks the building when
+// it's moved or rotated. Preserves an existing spot's label/targetMapId.
+function syncBuildingSpot(b, m) {
+  const door = doorWorldFromBuilding(b);
+  if (!door) return;
+  if (!Array.isArray(m.transitions)) m.transitions = [];
+  let t = m.transitions.find(t => t.buildingId === b.id);
+  if (!t) {
+    t = { id: uid('spot'), label: 'Enter ' + (b.label || 'Building'), col: door.col, row: door.row, targetMapId: '', targetSpotId: '', buildingId: b.id };
+    m.transitions.push(t);
+  } else {
+    t.col = door.col; t.row = door.row;
+  }
+}
+
+// One-time migration for buildings loaded from a file saved before this
+// feature existed: fetch their piece to derive doorEntrance, then link/move
+// their spot. Buildings that already have doorEntrance cached are skipped.
+async function ensureBuildingDoors(m) {
+  if (!Array.isArray(m.buildings)) return;
+  let changed = false;
+  for (const b of m.buildings) {
+    if (b.doorEntrance || !b.pieceFile) continue;
+    try {
+      const resp = await fetch('../../' + b.pieceFile);
+      if (!resp.ok) continue;
+      const pieceData = await resp.json();
+      const ent = deriveDoorLocal(pieceData);
+      if (ent) { b.doorEntrance = ent; syncBuildingSpot(b, m); changed = true; }
+    } catch (_) {}
+  }
+  if (changed) { renderBuildingPanel(); draw(); saveWorkspace(); }
+}
+
 let _addBuildingPickerMounted = false;
 function refreshBuildingDetection() {
   const m = activeMap();
@@ -564,6 +642,7 @@ function refreshBuildingDetection() {
   if (!isTown) return;
   if (!Array.isArray(m.buildings)) m.buildings = [];
   $('buildingCountTag').textContent = m.buildings.length;
+  ensureBuildingDoors(m);
   if (!_addBuildingPickerMounted && typeof RepoPicker !== 'undefined') {
     _addBuildingPickerMounted = true;
     const rp = new RepoPicker({ docsBase: '../../' });
@@ -583,8 +662,10 @@ function refreshBuildingDetection() {
           gridX: 0, gridZ: 0,
           footprintW: fw, footprintD: fd,
           wbOpts: null, wbGableOpts: null,
+          doorEntrance: deriveDoorLocal(pieceData),
         };
         am.buildings.push(newB);
+        syncBuildingSpot(newB, am);
         _selectedBuildingId = newB.id;
         $('buildingCountTag').textContent = am.buildings.length;
         renderBuildingPanel(); draw(); saveWorkspace();
@@ -1491,6 +1572,7 @@ canvas.addEventListener('pointerdown', e => {
         else if (gHit.type === 'W')   selB.gridX--;
         else if (gHit.type === 'E')   selB.gridX++;
         else if (gHit.type === 'rot') selB.rotationDeg = ((selB.rotationDeg || 0) + 90) % 360;
+        syncBuildingSpot(selB, activeMap());
         saveWorkspace(); renderBuildingPanel(); draw();
       }
       return; // consume — no camera pan
@@ -1608,6 +1690,7 @@ canvas.addEventListener('pointermove', e => {
       selB.gridX = _bldgDrag.ox + Math.round((p.x - _bldgDrag.px0) / cam.zoom);
       selB.gridZ = _bldgDrag.oz + Math.round((p.y - _bldgDrag.py0) / cam.zoom);
       $('bldgGridX').value = selB.gridX; $('bldgGridZ').value = selB.gridZ;
+      syncBuildingSpot(selB, activeMap());
       draw();
     }
     return;
@@ -2126,6 +2209,7 @@ $('saveBldgBtn').addEventListener('click', () => {
   b.label  = $('bldgLabel').value.trim() || b.label;
   b.gridX  = parseInt($('bldgGridX').value) || 0;
   b.gridZ  = parseInt($('bldgGridZ').value) || 0;
+  syncBuildingSpot(b, m);
   renderBuildingPanel(); draw(); saveWorkspace(); setStatus('Building saved.');
 });
 
@@ -2133,6 +2217,7 @@ $('delBldgBtn').addEventListener('click', () => {
   const m = activeMap();
   if (!_selectedBuildingId) return;
   m.buildings = (m.buildings || []).filter(b => b.id !== _selectedBuildingId);
+  m.transitions = (m.transitions || []).filter(t => t.buildingId !== _selectedBuildingId);
   _selectedBuildingId = null;
   $('buildingCountTag').textContent = m.buildings.length;
   renderBuildingPanel(); draw(); saveWorkspace(); setStatus('Building removed.');

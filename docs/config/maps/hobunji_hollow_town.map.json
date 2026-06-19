@@ -1,7 +1,7 @@
 {
   "schema": "hobunji_map.v1",
   "id": "map_hobunji_town",
-  "name": "Hobunji Hollow — Town",
+  "name": "Hobunji Hollow \u2014 Town",
   "category": "exterior",
   "cols": 60,
   "rows": 50,
@@ -18329,34 +18329,38 @@
     {
       "id": "spot_85srj",
       "label": "Enter Temple",
-      "col": 12,
-      "row": 40,
+      "col": 8,
+      "row": 30,
       "targetMapId": "map_i_temple",
-      "targetSpotId": "sp_tmp_entry"
+      "targetSpotId": "sp_tmp_entry",
+      "buildingId": "bldg_6feel"
     },
     {
       "id": "spot_bggvy",
       "label": "Enter Inn",
-      "col": 30,
+      "col": 29,
       "row": 27,
       "targetMapId": "map_i_inn",
-      "targetSpotId": "sp_inn_entry"
+      "targetSpotId": "sp_inn_entry",
+      "buildingId": "bldg_52zui"
     },
     {
       "id": "spot_x3opy",
       "label": "Enter Carpenter's Shop",
-      "col": 37,
-      "row": 28,
+      "col": 22,
+      "row": 10,
       "targetMapId": "map_i_carpenters",
-      "targetSpotId": "sp_car_entry"
+      "targetSpotId": "sp_car_entry",
+      "buildingId": "bldg_7kl2f"
     },
     {
       "id": "spot_0b01r",
       "label": "Enter Unumanuk Household",
       "col": 45,
-      "row": 28,
+      "row": 27,
       "targetMapId": "map_i_unumanuk_household",
-      "targetSpotId": "sp_unmh_entry"
+      "targetSpotId": "sp_unmh_entry",
+      "buildingId": "bldg_8r0d6"
     },
     {
       "id": "spot_1mkut",
@@ -18364,7 +18368,8 @@
       "col": 44,
       "row": 35,
       "targetMapId": "map_i_kunjis_potions_F1",
-      "targetSpotId": "sp_pot_entry"
+      "targetSpotId": "sp_pot_entry",
+      "buildingId": "bldg_ty9gy"
     },
     {
       "id": "spot_bu2c3",
@@ -18372,7 +18377,8 @@
       "col": 37,
       "row": 34,
       "targetMapId": "map_i_general_store",
-      "targetSpotId": ""
+      "targetSpotId": "",
+      "buildingId": "bldg_3bhxe"
     },
     {
       "id": "spot_x988u",
@@ -18380,7 +18386,8 @@
       "col": 35,
       "row": 9,
       "targetMapId": "map_i_ginju_farmstead",
-      "targetSpotId": ""
+      "targetSpotId": "",
+      "buildingId": "bldg_3ws71"
     },
     {
       "id": "spot_pyc2r",
@@ -18388,7 +18395,17 @@
       "col": 10,
       "row": 22,
       "targetMapId": "map_i_smithy",
-      "targetSpotId": "sp_smi_entry"
+      "targetSpotId": "sp_smi_entry",
+      "buildingId": "bldg_2ntww"
+    },
+    {
+      "id": "spot_qstbl1",
+      "label": "Enter Stable",
+      "col": 35,
+      "row": 27,
+      "targetMapId": "map_i_stable",
+      "targetSpotId": "sp_stb_entry",
+      "buildingId": "bldg_stbl1"
     }
   ],
   "npcStations": [],
@@ -18404,7 +18421,15 @@
       "wbOpts": null,
       "wbGableOpts": null,
       "rotationDeg": 0,
-      "rotation": 0
+      "rotation": 0,
+      "doorEntrance": {
+        "lx": 2,
+        "ly": 3,
+        "rawW": 7,
+        "rawD": 4,
+        "odx": 0,
+        "ody": 1
+      }
     },
     {
       "id": "bldg_ty9gy",
@@ -18417,7 +18442,15 @@
       "wbOpts": null,
       "wbGableOpts": null,
       "rotationDeg": 270,
-      "rotation": 270
+      "rotation": 270,
+      "doorEntrance": {
+        "lx": 4,
+        "ly": 2,
+        "rawW": 5,
+        "rawD": 4,
+        "odx": 1,
+        "ody": 0
+      }
     },
     {
       "id": "bldg_8r0d6",
@@ -18428,7 +18461,15 @@
       "footprintW": 5,
       "footprintD": 4,
       "wbOpts": null,
-      "wbGableOpts": null
+      "wbGableOpts": null,
+      "doorEntrance": {
+        "lx": 2,
+        "ly": 3,
+        "rawW": 5,
+        "rawD": 4,
+        "odx": 0,
+        "ody": 1
+      }
     },
     {
       "id": "bldg_3ws71",
@@ -18439,7 +18480,15 @@
       "footprintW": 5,
       "footprintD": 4,
       "wbOpts": null,
-      "wbGableOpts": null
+      "wbGableOpts": null,
+      "doorEntrance": {
+        "lx": 2,
+        "ly": 3,
+        "rawW": 5,
+        "rawD": 4,
+        "odx": 0,
+        "ody": 1
+      }
     },
     {
       "id": "bldg_52zui",
@@ -18450,7 +18499,15 @@
       "footprintW": 7,
       "footprintD": 5,
       "wbOpts": null,
-      "wbGableOpts": null
+      "wbGableOpts": null,
+      "doorEntrance": {
+        "lx": 3,
+        "ly": 4,
+        "rawW": 7,
+        "rawD": 5,
+        "odx": 0,
+        "ody": 1
+      }
     },
     {
       "id": "bldg_2ntww",
@@ -18461,7 +18518,15 @@
       "footprintW": 4,
       "footprintD": 4,
       "wbOpts": null,
-      "wbGableOpts": null
+      "wbGableOpts": null,
+      "doorEntrance": {
+        "lx": 1,
+        "ly": 3,
+        "rawW": 4,
+        "rawD": 4,
+        "odx": 0,
+        "ody": 1
+      }
     },
     {
       "id": "bldg_6feel",
@@ -18473,7 +18538,15 @@
       "footprintD": 5,
       "wbOpts": null,
       "wbGableOpts": null,
-      "rotationDeg": 270
+      "rotationDeg": 270,
+      "doorEntrance": {
+        "lx": 4,
+        "ly": 4,
+        "rawW": 9,
+        "rawD": 5,
+        "odx": 0,
+        "ody": 1
+      }
     },
     {
       "id": "bldg_7kl2f",
@@ -18484,7 +18557,15 @@
       "footprintW": 5,
       "footprintD": 4,
       "wbOpts": null,
-      "wbGableOpts": null
+      "wbGableOpts": null,
+      "doorEntrance": {
+        "lx": 2,
+        "ly": 3,
+        "rawW": 5,
+        "rawD": 4,
+        "odx": 0,
+        "ody": 1
+      }
     },
     {
       "id": "bldg_stbl1",
@@ -18496,7 +18577,15 @@
       "footprintD": 3,
       "wbOpts": null,
       "wbGableOpts": null,
-      "rotationDeg": 0
+      "rotationDeg": 0,
+      "doorEntrance": {
+        "lx": 3,
+        "ly": 2,
+        "rawW": 7,
+        "rawD": 3,
+        "odx": 0,
+        "ody": 1
+      }
     }
   ]
 }
