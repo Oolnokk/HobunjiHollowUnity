@@ -29,6 +29,10 @@
   ],
   "colliders": [],
   "vendorZones": [],
+  "npcPaths": [
+    { "id": "pth_kzubug", "label": "Kzubug works forge", "npcId": "kzubug", "nodes": [[2, 2], [5, 2], [7, 2], [7, 4], [5, 4], [2, 4]] },
+    { "id": "pth_sloomi", "label": "Sloomi apprentice", "npcId": "sloomi", "nodes": [[5, 3], [8, 3], [8, 6], [5, 6], [2, 6], [2, 3]] }
+  ],
   "floor": [
     [
       0,

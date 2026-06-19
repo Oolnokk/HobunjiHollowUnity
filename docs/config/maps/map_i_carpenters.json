@@ -29,6 +29,11 @@
   ],
   "colliders": [],
   "vendorZones": [],
+  "npcPaths": [
+    { "id": "pth_dzibim", "label": "Dzibim works", "npcId": "dzibim_khibu", "nodes": [[1, 2], [4, 2], [4, 3], [1, 3]] },
+    { "id": "pth_dzahiri", "label": "Dzahiri works", "npcId": "dzahiri_khibu", "nodes": [[2, 5], [4, 5], [4, 3], [2, 3]] },
+    { "id": "pth_nashka", "label": "Nashka fetches", "npcId": "nashka_khibu", "nodes": [[7, 2], [8, 2], [8, 6], [5, 6], [2, 6], [2, 5], [7, 5], [7, 2]] }
+  ],
   "floor": [
     [
       0,

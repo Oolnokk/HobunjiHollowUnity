@@ -18329,8 +18329,8 @@
     {
       "id": "spot_85srj",
       "label": "Enter Temple",
-      "col": 8,
-      "row": 30,
+      "col": 11,
+      "row": 35,
       "targetMapId": "map_i_temple",
       "targetSpotId": "sp_tmp_entry",
       "buildingId": "bldg_6feel"
@@ -18392,7 +18392,7 @@
     {
       "id": "spot_pyc2r",
       "label": "To Kzubug's Bronzeworks",
-      "col": 10,
+      "col": 11,
       "row": 22,
       "targetMapId": "map_i_smithy",
       "targetSpotId": "sp_smi_entry",

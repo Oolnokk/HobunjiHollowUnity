@@ -29,6 +29,11 @@
   ],
   "colliders": [],
   "vendorZones": [],
+  "npcPaths": [
+    { "id": "pth_hreesh", "label": "Hreesh tends bar", "npcId": "hreesh", "nodes": [[1, 2], [5, 2], [5, 1], [1, 1]] },
+    { "id": "pth_jubmir", "label": "Jubmir (in town)", "npcId": "jubmir", "nodes": [[7, 3], [10, 3], [10, 7], [7, 7]] },
+    { "id": "pth_tooth_inn", "label": "Tooth serves tables", "npcId": "tooth_hatayap", "nodes": [[6, 2], [10, 2], [10, 6], [8, 6], [3, 8], [5, 8], [6, 8], [6, 4], [6, 2]] }
+  ],
   "floor": [
     [
       0,
