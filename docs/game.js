@@ -1604,7 +1604,7 @@
       function canSpawnAnimalAt(col, row) {
         const tile = grid[row]?.[col];
         if (!tile || getWorldObjectAt(col, row)) return false;
-        if (tile.crop || isSolid(tile.type) || tile.type === TileType.TRENCH || tile.type === TileType.RIVER) return false;
+        if (tile.crop || isSolid(tile.type) || tile.type === TileType.TRENCH || tile.type === TileType.RIVER || tile.type === TileType.STREAM) return false;
         return true;
       }
 
@@ -2176,7 +2176,7 @@
       function isNpcTileWalkable(area, c, r) {
         const g = area === 'interior' ? interiorGrid : area === 'town' ? townGrid : grid;
         const tile = g[r]?.[c];
-        if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH || tile.type === TileType.RIVER) return false;
+        if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH || tile.type === TileType.RIVER || tile.type === TileType.STREAM) return false;
         if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
         if (area !== 'town' && interiorFurnitureObjects.some(o => o.area === area && o.col === c && o.row === r)) return false;
         if (area === 'town' && isTownBuildingCollisionTile(c, r)) return false;
@@ -2518,6 +2518,11 @@
               this.moveToward(tx, tz, dt);
             } else if (this.state !== 'on-route') {
               this.routeTarget = findNearestRouteNode(this.area, root.position.x, root.position.z, target);
+              // Don't wade to the route node — if the direct line there crosses
+              // water, wait instead (no off-route dry path is computed here).
+              if (this.routeTarget && !canNpcBeeline(this.area, root.position.x, root.position.z, this.routeTarget.c, this.routeTarget.r)) {
+                this.routeTarget = null;
+              }
               this.state = this.routeTarget ? 'to-route' : 'idle';
               if (this.routeTarget) this.moveToward(this.routeTarget.c + 0.5, this.routeTarget.r + 0.5, dt);
             } else {
@@ -5838,9 +5843,8 @@
         const row  = Math.floor(wy / TILE);
         const type = getActiveGrid()[row][col].type;
         if (isSolid(type)) return null;
-        // Rivers are a real crossing obstacle — block like a solid tile.
-        // Streams stay crossable (shallow rivulet) but wade slowly.
-        if (type === TileType.RIVER) return null;
+        // Rivers/streams are a real crossing obstacle — block like a solid tile.
+        if (type === TileType.RIVER || type === TileType.STREAM) return null;
         // Block structural building tiles on exterior maps (player must use doors/transitions).
         if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
         if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
@@ -5854,7 +5858,6 @@
           [TileType.RAISED]:  0.90,
           [TileType.PADDY]:   0.70,
           [TileType.TRENCH]:  0.30,
-          [TileType.STREAM]:  0.40,
         }[type] ?? 1.00;
       }
 
@@ -6324,7 +6327,7 @@
       const NORMAL_TOP =  0.0;  // top surface of grass/tilled/etc
       const RAISED_TOP = +0.5;  // top surface of raised bed
       const RIVER_TOP  = -0.55; // river bed — a wide channel, at least trench-deep
-      const STREAM_TOP = -0.16; // stream bed — a shallow rivulet
+      const STREAM_TOP = -0.55; // stream bed — the actual painted waterway in current maps; same depth as the river
       const ROCK_H     =  0.75; // rock block height
       const ROCK_TOP   = NORMAL_TOP + ROCK_H;
       // Tile types whose ground geometry sinks below NORMAL_TOP (vs. RAISED, which rises).
