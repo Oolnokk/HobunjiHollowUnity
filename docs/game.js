@@ -3301,15 +3301,19 @@
           _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
         }
 
+        const riverTiles = [];
+
         for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
           const tile = townGrid[r]?.[c];
           const tp = (tile?.type === TileType.ROCK) ? TileType.GRASS : (tile?.type || TileType.GRASS);
           const cx = c + 0.5, cz = r + 0.5;
 
-          if (tp === TileType.TRENCH || tp === TileType.RAISED) {
+          if (tp === TileType.TRENCH || tp === TileType.RAISED || tp === TileType.RIVER || tp === TileType.STREAM) {
             const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tp, townGrid);
-            _addToBucket(TileType.TRENCH, dirtGeo, cx, NORMAL_TOP, cz);
-            _addToBucket(TileType.GRASS,  grassGeo, cx, NORMAL_TOP, cz);
+            const bedMatKey = (tp === TileType.RIVER || tp === TileType.STREAM) ? tp : TileType.TRENCH;
+            _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP, cz);
+            if (tp === TileType.RIVER || tp === TileType.STREAM) riverTiles.push({ c, r, tp });
             continue;
           }
           if (tile?.type !== TileType.ROCK && (tp === TileType.PATH ||
@@ -3326,7 +3330,7 @@
             }
             continue;
           }
-          // GRASS / TILLED / RIVER / STREAM / any other flat type — subdivided slab
+          // GRASS / TILLED / any other flat type — subdivided slab
           const matKey = tileMats[tp] ? tp : TileType.GRASS;
           _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tp), cz);
         }
@@ -3337,6 +3341,42 @@
           mesh.receiveShadow = true;
           townScene.add(mesh);
         }
+
+        // River/stream water surface — an animated translucent plane sitting
+        // above the sunken bed built above, so the banks read as real depth
+        // instead of a flat colored tile. Flow direction comes from which
+        // neighbouring tiles are also water, so the shader's flow-stripe mode
+        // animates along the channel rather than rippling in place.
+        const isWaterTile = (cc, rr) => {
+          const t = townGrid[rr]?.[cc]?.type;
+          return t === TileType.RIVER || t === TileType.STREAM;
+        };
+        _townRiverWaterMeshes = riverTiles.map(({ c, r, tp }) => {
+          let fx = (isWaterTile(c + 1, r) ? 1 : 0) - (isWaterTile(c - 1, r) ? 1 : 0);
+          let fz = (isWaterTile(c, r + 1) ? 1 : 0) - (isWaterTile(c, r - 1) ? 1 : 0);
+          const flen = Math.hypot(fx, fz);
+          if (flen > 0.001) { fx /= flen; fz /= flen; } else { fx = 0; fz = 0; }
+          const deep = tp === TileType.RIVER;
+          const mat = new THREE.ShaderMaterial({
+            uniforms: {
+              uTime:  { value: 0 },
+              uPhase: { value: (c * 2.7 + r * 4.1) % 6.28 },
+              uDepth: { value: deep ? 0.8 : 0.45 },
+              uFlow:  { value: new THREE.Vector2(fx, fz) },
+              uColor: { value: new THREE.Color(deep ? 0x1f6f9c : 0x4fb8d9) },
+            },
+            vertexShader:   waterVertShader,
+            fragmentShader: waterFragShader,
+            transparent:    true,
+            depthWrite:     false,
+            side:           THREE.FrontSide,
+          });
+          const wm = new THREE.Mesh(waterGeo, mat);
+          wm.receiveShadow = false;
+          wm.position.set(c + 0.5, NORMAL_TOP - (deep ? 0.10 : 0.05), r + 0.5);
+          townScene.add(wm);
+          return wm;
+        });
 
         _buildTownGrassBillboards(TCOLS, TROWS);
         buildTownBorderTerrain();
@@ -6139,8 +6179,8 @@
         rock:   new THREE.MeshLambertMaterial({ color: 0x79807c }),
         shrub:  new THREE.MeshLambertMaterial({ color: 0x356e36 }),
         path:   new THREE.MeshLambertMaterial({ color: 0xb8956a }),
-        river:  new THREE.MeshLambertMaterial({ color: 0x2f6fb8 }),
-        stream: new THREE.MeshLambertMaterial({ color: 0x4f9bd9 }),
+        river:  new THREE.MeshLambertMaterial({ color: 0x3a4a3f }), // silty bed, seen through the water surface
+        stream: new THREE.MeshLambertMaterial({ color: 0x6b5a3a }), // sandy streambed
       };
       // Floor material for vegetation tiles — matches weed foliage HSL color
       const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
@@ -6260,8 +6300,16 @@
       const TRENCH_TOP = -0.5;  // top surface of trench
       const NORMAL_TOP =  0.0;  // top surface of grass/tilled/etc
       const RAISED_TOP = +0.5;  // top surface of raised bed
+      const RIVER_TOP  = -0.34; // river bed — a wide, fairly deep channel
+      const STREAM_TOP = -0.16; // stream bed — a shallow rivulet
       const ROCK_H     =  0.75; // rock block height
       const ROCK_TOP   = NORMAL_TOP + ROCK_H;
+      // Tile types whose ground geometry sinks below NORMAL_TOP (vs. RAISED, which rises).
+      const DEPRESSION_TOP = {
+        [TileType.TRENCH]: TRENCH_TOP,
+        [TileType.RIVER]:  RIVER_TOP,
+        [TileType.STREAM]: STREAM_TOP,
+      };
 
       const WATER_UNIT = SLAB_H / MAX_WATER; // world-Y per water depth unit
 
@@ -6269,6 +6317,8 @@
       function tileYCenter(type) {
         switch (type) {
           case TileType.TRENCH: return TRENCH_TOP - SLAB_H / 2;   // -0.75
+          case TileType.RIVER:  return RIVER_TOP  - SLAB_H / 2;
+          case TileType.STREAM: return STREAM_TOP - SLAB_H / 2;
           case TileType.RAISED: return RAISED_TOP - SLAB_H / 2;   // +0.25
           case TileType.ROCK:   return NORMAL_TOP + ROCK_H / 2;   // +0.375
           case TileType.SHRUB:  return NORMAL_TOP + VEG_H / 2;    // slab on surface
@@ -6281,6 +6331,8 @@
       function tileSurfaceY(type) {
         switch (type) {
           case TileType.TRENCH: return TRENCH_TOP;
+          case TileType.RIVER:  return RIVER_TOP;
+          case TileType.STREAM: return STREAM_TOP;
           case TileType.RAISED: return RAISED_TOP;
           case TileType.ROCK:   return ROCK_TOP;
           default:              return NORMAL_TOP;
@@ -6791,8 +6843,10 @@
         const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
         const BLEND_V  = 2;
         const PLATEAU  = type === TileType.RAISED ? 3.0 : 1.5;  // raised = wide flat top
-        const targetDY = type === TileType.TRENCH
-          ? TRENCH_TOP - NORMAL_TOP   // −0.5
+        const depressionTop = DEPRESSION_TOP[type];
+        const isDepression = depressionTop !== undefined;
+        const targetDY = isDepression
+          ? depressionTop - NORMAL_TOP
           : RAISED_TOP - NORMAL_TOP;  // +0.5
 
         const openN = srcGrid[row - 1]?.[col]?.type === type;
@@ -6858,7 +6912,7 @@
             const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
             const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
             const y00=Y[v00], y10=Y[v10], y01=Y[v01], y11=Y[v11];
-            const isDirt = type === TileType.TRENCH
+            const isDirt = isDepression
               ? Math.min(y00, y10, y01, y11) < -DIRT_THRESH
               : Math.max(y00, y10, y01, y11) >  DIRT_THRESH;
             (isDirt ? dirtIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
@@ -7478,6 +7532,9 @@
       const townWaterMeshes = new Map();
       let _townWaterSimDirty = true;
       let _townFlowingTrenchTiles = [];
+      // Static river/stream water-surface meshes built once in buildTownScene
+      // (not part of the rain-fed water sim — rivers always flow).
+      let _townRiverWaterMeshes = [];
 
       // ── Player root (Group — avatar plane attached after onboarding) ─
       const playerMesh = new THREE.Group();
@@ -8342,6 +8399,7 @@
       // so town weather can fill them with water exactly like farm trenches.
       function updateTownWaterMeshes() {
         waterTime += 0.016;
+        for (const wm of _townRiverWaterMeshes) wm.material.uniforms.uTime.value = waterTime;
         const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
 
         if (_townWaterSimDirty) {
