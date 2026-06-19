@@ -90,7 +90,7 @@
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
-  global.HousePieceGen = { buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece, loadShingleGlb: loadShingleGlb, shingleReady: shingleReady };
+  global.HousePieceGen = { buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece, loadShingleGlb: loadShingleGlb, shingleReady: shingleReady, advanceShellAnim: advanceShellAnim };
 
   /**
    * Build a Highland house group for one rectangular building footprint.
@@ -137,17 +137,17 @@
       var bodyPanels  = _wallPanels(minC, maxC, minR, maxR, y0, baseH, tile);
       var gablePanels = _gablePanels(faces);
       var wbUse   = opts.wbUsePlaceholder !== false;
-      var wbExtra = opts.wbOpts || { unitMult: 0.35, rockScale: 1.5,
+      var wbExtra = opts.wbOpts || { unitMult: 0.4375, rockScale: 1.5,
                                      preScale: [1, 1, 0.6],
                                      brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
-      var wbGroup = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse }, wbExtra));
+      var wbGroup = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse, shellAnim: opts.shellAnim }, wbExtra));
       wbGroup.userData.isWallBricks = true;
       group.add(wbGroup);
 
       // Gable triangles are smaller — use denser, smaller bricks so they fill properly.
-      var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.22, rockScale: 1.1 });
-      var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gableExtra));
+      var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.33, rockScale: 1.1 });
+      var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse, shellAnim: opts.shellAnim }, gableExtra));
       gableGroup.userData.isWallBricks = true;
       group.add(gableGroup);
     }
@@ -587,6 +587,7 @@
     var cfg        = HIGHLAND_ROOF_CFG;
     var peakCenter = _highestCeilingCenter(allFaces);
     var matTube    = opts.matTube || new THREE.MeshLambertMaterial({ color: 0x9c6240, side: THREE.FrontSide });
+    var shellAnim  = opts.shellAnim;
 
     for (var fi = 0; fi < roofFaces.length; fi++) {
       var face          = roofFaces[fi];
@@ -607,7 +608,56 @@
 
       _alignGroup(face, faceGroup, cfg);
       group.add(faceGroup);
+
+      if (shellAnim) _initShellAnimShingles(faceGroup, shellAnim);
     }
+  }
+
+  // Mirrors WallBuilder's brick shell-animation: each shingle/tube object
+  // starts at zero scale and grows in, staggered from eave to ridge (i.e.
+  // bottom of the roof face to its top edge) so the roof appears to tile
+  // itself into place rather than popping in fully built.
+  function _initShellAnimShingles(faceGroup, shellAnim) {
+    var duration = Math.max(0.01, Number(shellAnim.duration) || 0.6);
+    var stagger  = Math.max(0, Number(shellAnim.stagger) || 0.8);
+    var kids     = faceGroup.children;
+    if (!kids.length) return;
+    var minY = Infinity, maxY = -Infinity;
+    for (var i = 0; i < kids.length; i++) {
+      var y = kids[i].position.y;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    var ySpan = Math.max(1e-6, maxY - minY);
+    for (var j = 0; j < kids.length; j++) {
+      var kid = kids[j];
+      var heightT = (kid.position.y - minY) / ySpan;
+      var delay = heightT * stagger + Math.random() * stagger * 0.15;
+      kid.userData.buildAnim = { baseScale: kid.scale.clone(), delay: delay, duration: duration, elapsed: 0, done: false };
+      kid.scale.set(1e-4, 1e-4, 1e-4);
+    }
+  }
+
+  // Advances both brick (InstancedMesh, via WallBuilder) and shingle (Group/Mesh)
+  // shell build-up animations found anywhere under `root`. Call once per frame.
+  function advanceShellAnim(root, dt) {
+    if (!root || !dt) return;
+    if (global.WallBuilder && typeof global.WallBuilder.advanceShellAnim === 'function') {
+      global.WallBuilder.advanceShellAnim(root, dt);
+    }
+    root.traverse(function (o) {
+      var anim = o.userData && o.userData.buildAnim;
+      if (!anim || anim.done || o.isInstancedMesh) return;
+      anim.elapsed += dt;
+      var t = (anim.elapsed - anim.delay) / anim.duration;
+      var f = t <= 0 ? 0 : (t >= 1 ? 1 : t * t * (3 - 2 * t));
+      o.scale.set(
+        Math.max(1e-4, anim.baseScale.x * f),
+        Math.max(1e-4, anim.baseScale.y * f),
+        Math.max(1e-4, anim.baseScale.z * f)
+      );
+      if (t >= 1) anim.done = true;
+    });
   }
 
   // ── buildGroupFromPiece ─────────────────────────────────────────────────────
@@ -727,17 +777,17 @@
     // WallBuilder bricks on body walls and gable triangles
     if (opts.wallBuilder) {
       var wbUse   = opts.wbUsePlaceholder !== false;
-      var wbExtra = opts.wbOpts || { unitMult: 0.35, rockScale: 1.5,
+      var wbExtra = opts.wbOpts || { unitMult: 0.4375, rockScale: 1.5,
                                      preScale: [1, 1, 0.6],
                                      brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
       if (bodyPanels.length) {
-        var wbGrp = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse }, wbExtra));
+        var wbGrp = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse, shellAnim: opts.shellAnim }, wbExtra));
         wbGrp.userData.isWallBricks = true;
         group.add(wbGrp);
       }
       if (gablePanels.length) {
-        var gblExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.22, rockScale: 1.1 });
-        var gblGrp   = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gblExtra));
+        var gblExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.33, rockScale: 1.1 });
+        var gblGrp   = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse, shellAnim: opts.shellAnim }, gblExtra));
         gblGrp.userData.isWallBricks = true;
         group.add(gblGrp);
       }
