@@ -326,13 +326,21 @@
           el.classList.add('dlg-opt-visible');
           el.onclick = () => {
             if (!dialogueOpen) return;
+            let skipNav = false;
             (c.actions || []).forEach(act => {
               if (act.type === 'setLocalNickname') {
                 const st = _getNpcDlgState(_dlgNpcRec?.id);
                 st.localNickname = _resolveTokens(act.value || '', _dlgNpcRec) || null;
+              } else if (act.type === 'openShop') {
+                closeNpcDialogue();
+                openMenu('generalStore');
+                skipNav = true;
+              } else if (act.type === 'startChat') {
+                _beginNpcConversation(_dlgNpcRec);
+                skipNav = true;
               }
             });
-            _navigateDlgTo(c.next);
+            if (!skipNav) _navigateDlgTo(c.next);
           };
         });
         const continueBtn = document.getElementById('npcDialogueContinue');
@@ -531,9 +539,31 @@
         _navigateDlgTo(next || null);
       }
 
+      // Starts the actual conversation content (dialogue tree, or the plain
+      // bio/line fallback) — shared by plain NPCs and by the "Chat" branch
+      // of the merchant shop/chat choice below.
+      function _beginNpcConversation(rec) {
+        const tree = _pickDialogueTree(rec);
+        if (tree) {
+          _dlgTree    = tree;
+          _dlgNodeMap = Object.fromEntries((tree.nodes || []).map(n => [n.id, n]));
+          _dlgNpcRec  = rec;
+          _dlgSeqStack = [];
+          _dialogueLines   = [];
+          _dialogueLineIdx = 0;
+          _navigateDlgTo(tree.entryNode);
+        } else {
+          _dlgTree = null; _dlgNodeMap = null; _dlgNode = null; _dlgNpcRec = rec;
+          _hideChoiceButtons();
+          _dialogueLines   = _npcDialogueLines(rec);
+          _dialogueLineIdx = 0;
+          _setNpcDialogueText(_dialogueLines[0]);
+          updateNpcDialoguePortrait(0);
+        }
+      }
+
       async function openNpcDialogue(walker) {
         const rec  = walker.rec;
-        const tree = _pickDialogueTree(rec);
 
         dialogueOpen    = true;
         _dialogueWalker = walker;
@@ -556,22 +586,21 @@
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
 
-        if (tree) {
-          _dlgTree    = tree;
-          _dlgNodeMap = Object.fromEntries((tree.nodes || []).map(n => [n.id, n]));
-          _dlgNpcRec  = rec;
-          _dlgSeqStack = [];
-          _dialogueLines   = [];
-          _dialogueLineIdx = 0;
-          _navigateDlgTo(tree.entryNode);
-        } else {
-          _dlgTree = null; _dlgNodeMap = null; _dlgNode = null; _dlgNpcRec = null;
-          _hideChoiceButtons();
-          _dialogueLines   = _npcDialogueLines(rec);
-          _dialogueLineIdx = 0;
-          _setNpcDialogueText(_dialogueLines[0]);
-          updateNpcDialoguePortrait(0);
+        if (isGeneralStoreNpcOnDuty(walker)) {
+          const cfg = generalStoreButtonConfig();
+          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
+          _renderDlgNode({
+            type: 'choice',
+            text: cfg.shopGreeting || 'What can I do for you?',
+            choices: [
+              { label: cfg.buyChoiceLabel || 'Buy', actions: [{ type: 'openShop' }] },
+              { label: cfg.chatChoiceLabel || 'Chat', actions: [{ type: 'startChat' }] },
+            ],
+          });
+          return;
         }
+
+        _beginNpcConversation(rec);
       }
 
       function advanceNpcDialogue() {
@@ -2071,19 +2100,55 @@
         return best;
       }
 
-      function chooseNextRouteNodeCloserToTarget(currentNode, previousNode, target) {
-        const graph = routeGraphsByArea.get(currentNode.area);
+      function findBestRouteDestinationNode(graph, target) {
         const routeId = target?.routeId || null;
-        const here = distanceToTarget(currentNode, target);
-        let best = null, bestD = here;
-        currentNode.edges.forEach(k => {
-          if (previousNode && k === previousNode.key) return;
-          const n = graph?.nodes.get(k);
-          if (routeId && n && !n.routeIds.has(routeId)) return;
-          const d = n ? distanceToTarget(n, target) : Infinity;
-          if (d < bestD) { best = n; bestD = d; }
+        let best = null, bestD = Infinity;
+        graph?.nodes.forEach(node => {
+          if (routeId && !node.routeIds.has(routeId)) return;
+          const d = distanceToTarget(node, target);
+          if (d < bestD) { best = node; bestD = d; }
         });
         return best;
+      }
+
+      // Full shortest-path walk (via BFS) from `startNode` to whichever route
+      // node sits nearest the target, instead of a greedy "pick whichever
+      // neighbor is closer than here" step. The greedy version refuses any
+      // edge that doesn't immediately shrink the distance to target, so at
+      // junction nodes with no immediately-closer neighbor — door tiles are
+      // exactly this, since routes typically bend right where they cross a
+      // threshold — it gives up and the NPC freezes there indefinitely.
+      function computeRoutePathToTarget(startNode, target) {
+        const graph = routeGraphsByArea.get(startNode.area);
+        if (!graph) return null;
+        const dest = findBestRouteDestinationNode(graph, target);
+        if (!dest || dest.key === startNode.key) return [];
+        const routeId = target?.routeId || null;
+        const prevByKey = new Map();
+        const visited = new Set([startNode.key]);
+        const queue = [startNode.key];
+        for (let i = 0; i < queue.length; i++) {
+          const curKey = queue[i];
+          if (curKey === dest.key) break;
+          const cur = graph.nodes.get(curKey);
+          cur.edges.forEach(k => {
+            if (visited.has(k)) return;
+            const n = graph.nodes.get(k);
+            if (routeId && n && !n.routeIds.has(routeId)) return;
+            visited.add(k);
+            prevByKey.set(k, curKey);
+            queue.push(k);
+          });
+        }
+        if (!visited.has(dest.key)) return null;
+        const path = [];
+        let curKey = dest.key;
+        while (curKey !== startNode.key) {
+          path.unshift(graph.nodes.get(curKey));
+          curKey = prevByKey.get(curKey);
+          if (curKey === undefined) return null;
+        }
+        return path;
       }
 
       function isNpcTileWalkable(area, c, r) {
@@ -2322,14 +2387,15 @@
 
         const walker = {
           root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
-          state: 'idle', routeNode: null, previousRouteNode: null, routeTarget: null, _exitSpot: null, _entrySpot: null,
+          state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
           resetRouteState() {
             this.state = 'idle';
             this.routeNode = null;
-            this.previousRouteNode = null;
             this.routeTarget = null;
+            this.routePath = null;
+            this._routePathTargetKey = null;
           },
           // `spawnPos` is where the NPC reappears in `nextArea` — normally the
           // Spot they're entering through, never the final schedule target,
@@ -2426,24 +2492,31 @@
             if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
             if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r)) {
-              this.state = 'beeline'; this.routeNode = this.previousRouteNode = this.routeTarget = null;
+              this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = null; this._routePathTargetKey = null;
               this.moveToward(tx, tz, dt);
             } else if (this.state !== 'on-route') {
               this.routeTarget = findNearestRouteNode(this.area, root.position.x, root.position.z, target);
               this.state = this.routeTarget ? 'to-route' : 'idle';
               if (this.routeTarget) this.moveToward(this.routeTarget.c + 0.5, this.routeTarget.r + 0.5, dt);
             } else {
-              if (!this.routeTarget) this.routeTarget = chooseNextRouteNodeCloserToTarget(this.routeNode, this.previousRouteNode, target);
-              if (!this.routeTarget) { this.state = 'breakoff'; return; }
-              if (this.moveToward(this.routeTarget.c + 0.5, this.routeTarget.r + 0.5, dt)) {
-                this.previousRouteNode = this.routeNode;
-                this.routeNode = this.routeTarget;
-                this.routeTarget = chooseNextRouteNodeCloserToTarget(this.routeNode, this.previousRouteNode, target);
-                if (!this.routeTarget) this.state = 'breakoff';
+              // Walk a precomputed shortest path hop-by-hop instead of greedily
+              // picking whichever neighbor looks closer right now — the greedy
+              // version stalls forever at junction nodes (often doorways) where
+              // every immediate neighbor is briefly no closer than "here".
+              const targetKey = target.routeId + '|' + target.c + ',' + target.r;
+              if (!this.routePath || this._routePathTargetKey !== targetKey) {
+                this.routePath = computeRoutePathToTarget(this.routeNode, target);
+                this._routePathTargetKey = targetKey;
+              }
+              if (!this.routePath || !this.routePath.length) { this.state = 'breakoff'; return; }
+              const nextHop = this.routePath[0];
+              if (this.moveToward(nextHop.c + 0.5, nextHop.r + 0.5, dt)) {
+                this.routeNode = nextHop;
+                this.routePath.shift();
               }
             }
             if (this.state === 'to-route' && this.routeTarget && Math.hypot(root.position.x - (this.routeTarget.c + 0.5), root.position.z - (this.routeTarget.r + 0.5)) <= arrival) {
-              this.routeNode = this.routeTarget; this.routeTarget = null; this.previousRouteNode = null; this.state = 'on-route';
+              this.routeNode = this.routeTarget; this.routeTarget = null; this.routePath = null; this.state = 'on-route';
             }
             if (this.state === 'breakoff') this.state = 'idle';
             const ty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));

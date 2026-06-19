@@ -132,7 +132,10 @@ window.SCRATCHBONES_CONFIG = {
         "style": "primary",
         "npcIds": ["furunji_funji", "foroji_funji"],
         "stationLabels": ["Sitting at Counter", "Checking Shelves"],
-        "noTargetMessage": "Find Foroji or Furunji at the general store counter or shelves to shop."
+        "noTargetMessage": "Find Foroji or Furunji at the general store counter or shelves to shop.",
+        "shopGreeting": "What can I do for you?",
+        "buyChoiceLabel": "Buy",
+        "chatChoiceLabel": "Chat"
       },
       "actionArch": {
         "radiusClamp": { "minPx": 200, "vmin": 36, "maxPx": 260 },
