@@ -254,7 +254,7 @@
             1
           ]
         ],
-        "tag": "",
+        "tag": "wall",
         "color": null,
         "highlandSectionRole": "single_rectangle",
         "highlandFrustumWall": true,
@@ -416,7 +416,7 @@
             0.8887604911664708
           ]
         ],
-        "tag": "",
+        "tag": "roof",
         "color": null,
         "roofAcrossOffset": 0,
         "roofOffsetRole": "cross_gable_reference",

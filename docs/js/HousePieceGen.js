@@ -325,9 +325,6 @@
       var f   = faces[i];
       // Wall faces are covered by WallBuilder bricks — skip the base mesh planes.
       if (hideWalls && f.tag === 'wall') continue;
-      // An untagged face marks an intentionally open gap (e.g. the stable's
-      // open stall front) — leave it unrendered so the interior reads hollow.
-      if (f.tag === '') continue;
       var mat = f.tag === 'roof' ? matRoof : matFloor;
       var geom = new THREE.BufferGeometry();
       var pts  = [f.v[0], f.v[1], f.v[2], f.v[0], f.v[2], f.v[3]].flat();
@@ -696,10 +693,6 @@
       // Skip interior-only faces: extension floor undersides, main building ceiling
       if (f.extensionFace === 'floor') continue;
       if (tag === 'ceiling') continue;
-      // An untagged face (neither wall, roof, nor any known role) marks an
-      // intentionally open gap — e.g. the stable's open stall front — so the
-      // interior reads as hollow instead of being capped by a floor-colored plane.
-      if (tag === '') continue;
 
       // Collect roof faces for shingle generation
       if (tag === 'roof') roofFaces.push(fOff);
