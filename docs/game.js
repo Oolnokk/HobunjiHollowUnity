@@ -3351,6 +3351,7 @@
               vegGroup.scale.set(2, 2, 2);
               vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS), cz);
               townScene.add(vegGroup);
+              _markOutline(vegGroup);
             }
             continue;
           }
@@ -7503,6 +7504,7 @@
               vegGroup.rotation.y = r() * Math.PI * 2;
               vegGroup.position.set(px, py, pz);
               townScene.add(vegGroup);
+              _markOutline(vegGroup);
             }
           }
         }
