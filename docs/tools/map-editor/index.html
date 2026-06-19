@@ -665,21 +665,45 @@ function bresenham(x0, y0, x1, y1) {
   }
   return pts;
 }
+// Tracks which "c,r" tile keys (and tile type) each route/river last painted,
+// so reshaping or moving a node can revert tiles that fall out of the new
+// path instead of only ever adding new ones. Keyed by entity id; not
+// persisted with the map.
+const _paintedKeysByEntity = new Map();
+function applyPaintDiff(entityId, newKeys, tileType, m, { preserveCrop = true } = {}) {
+  const next = new Set(newKeys);
+  const prevEntry = _paintedKeysByEntity.get(entityId);
+  if (prevEntry) {
+    const sameType = prevEntry.type === tileType;
+    for (const k of prevEntry.keys) {
+      if ((!sameType || !next.has(k)) && m.tiles[k]?.type === prevEntry.type) delete m.tiles[k];
+    }
+  }
+  for (const k of next) m.tiles[k] = { type: tileType, crop: preserveCrop ? (m.tiles[k]?.crop || '') : '' };
+  _paintedKeysByEntity.set(entityId, { type: tileType, keys: next });
+}
+function clearPaintedTiles(entityId, m) {
+  const prevEntry = _paintedKeysByEntity.get(entityId);
+  if (!prevEntry) return;
+  for (const k of prevEntry.keys) if (m.tiles[k]?.type === prevEntry.type) delete m.tiles[k];
+  _paintedKeysByEntity.delete(entityId);
+}
 function paintRouteTiles(route, m) {
   const nodes = route.nodes || [];
   const rad = Math.floor(((route.pathWidth || 1) - 1) / 2);
+  const keys = [];
   for (let i = 0; i < nodes.length - 1; i++) {
     for (const [bc, br] of bresenham(nodes[i][0], nodes[i][1], nodes[i+1][0], nodes[i+1][1])) {
       for (let dc = -rad; dc <= rad; dc++) {
         for (let dr = -rad; dr <= rad; dr++) {
           const nc = bc+dc, nr = br+dr;
           if (nc < 0 || nc >= m.cols || nr < 0 || nr >= m.rows) continue;
-          const k = `${nc},${nr}`;
-          m.tiles[k] = { type: 'path', crop: m.tiles[k]?.crop || '' };
+          keys.push(`${nc},${nr}`);
         }
       }
     }
   }
+  applyPaintDiff(route.id, keys, 'path', m);
 }
 function floodFill(m, startC, startR, newType) {
   const k0 = `${startC},${startR}`;
@@ -749,17 +773,19 @@ function paintRiverTiles(river, m) {
   const path = buildRiverPath(river).map(([x, y]) => [Math.round(x), Math.round(y)]);
   const rad = Math.floor(((river.width || (river.kind === 'stream' ? 1 : 3)) - 1) / 2);
   const tileType = river.kind === 'stream' ? 'stream' : 'river';
+  const keys = [];
   for (let i = 0; i < path.length - 1; i++) {
     for (const [bc, br] of bresenham(path[i][0], path[i][1], path[i+1][0], path[i+1][1])) {
       for (let dc = -rad; dc <= rad; dc++) {
         for (let dr = -rad; dr <= rad; dr++) {
           const nc = bc+dc, nr = br+dr;
           if (nc < 0 || nc >= m.cols || nr < 0 || nr >= m.rows) continue;
-          m.tiles[`${nc},${nr}`] = { type: tileType, crop: '' };
+          keys.push(`${nc},${nr}`);
         }
       }
     }
   }
+  applyPaintDiff(river.id, keys, tileType, m, { preserveCrop: false });
 }
 function maybePaintRiver(m) {
   const river = (m.rivers || []).find(r => r.id === activeRiverId);
@@ -960,6 +986,7 @@ function renderPalette() {
   }));
   box.querySelectorAll('[data-pathdel]').forEach(el => el.addEventListener('click', e => {
     e.stopPropagation(); pushUndo();
+    clearPaintedTiles(el.dataset.pathdel, m);
     m.routes = (m.routes || []).filter(p => p.id !== el.dataset.pathdel);
     if (activePathId === el.dataset.pathdel) activePathId = null;
     renderPalette(); draw(); refreshPreview(); saveWorkspace();
@@ -977,7 +1004,9 @@ function renderPalette() {
   if (rptChk) rptChk.addEventListener('change', () => {
     const p = (m.routes || []).find(x => x.id === activePathId); if (!p) return;
     p.paintTiles = rptChk.checked;
-    if (p.paintTiles) { pushUndo(); paintRouteTiles(p, m); draw(); refreshPreview(); }
+    pushUndo();
+    if (p.paintTiles) { paintRouteTiles(p, m); } else { clearPaintedTiles(p.id, m); }
+    draw(); refreshPreview();
     saveWorkspace();
   });
   box.querySelectorAll('[data-nodesel]').forEach(el => el.addEventListener('click', e => {
@@ -1006,6 +1035,7 @@ function renderPalette() {
   }));
   box.querySelectorAll('[data-riverdel]').forEach(el => el.addEventListener('click', e => {
     e.stopPropagation(); pushUndo();
+    clearPaintedTiles(el.dataset.riverdel, m);
     m.rivers = (m.rivers || []).filter(p => p.id !== el.dataset.riverdel);
     if (activeRiverId === el.dataset.riverdel) activeRiverId = null;
     renderPalette(); draw(); refreshPreview(); saveWorkspace();
@@ -1045,7 +1075,9 @@ function renderPalette() {
   if (riverPaintChk) riverPaintChk.addEventListener('change', () => {
     const p = (m.rivers || []).find(x => x.id === activeRiverId); if (!p) return;
     p.paintTiles = riverPaintChk.checked;
-    if (p.paintTiles) { pushUndo(); paintRiverTiles(p, m); draw(); refreshPreview(); }
+    pushUndo();
+    if (p.paintTiles) { paintRiverTiles(p, m); } else { clearPaintedTiles(p.id, m); }
+    draw(); refreshPreview();
     saveWorkspace();
   });
   box.querySelectorAll('[data-rivernodesel]').forEach(el => el.addEventListener('click', e => {
