@@ -137,18 +137,20 @@
       var bodyPanels  = _wallPanels(minC, maxC, minR, maxR, y0, baseH, tile);
       var gablePanels = _gablePanels(faces);
       var wbUse   = opts.wbUsePlaceholder !== false;
-      var wbExtra = opts.wbOpts || { unitMult: 0.35, rockScale: 1.5,
+      var wbExtra = opts.wbOpts || { unitMult: 0.4375, rockScale: 1.5,
                                      preScale: [1, 1, 0.6],
                                      brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
       var wbGroup = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse }, wbExtra));
       wbGroup.userData.isWallBricks = true;
+      _markOutlineLayer(wbGroup);
       group.add(wbGroup);
 
       // Gable triangles are smaller — use denser, smaller bricks so they fill properly.
-      var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.22, rockScale: 1.1 });
+      var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.396, densityMult: 1.5, rockScale: 1.1 });
       var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gableExtra));
       gableGroup.userData.isWallBricks = true;
+      _markOutlineLayer(gableGroup);
       group.add(gableGroup);
     }
 
@@ -583,6 +585,14 @@
   }
 
   // Exact port of rebuildRoofPreview() — adds shingle groups to `group`
+  // Enables render layer 1 (the selective black "shell" outline pass used for
+  // shrubs/rocks elsewhere in the game) on a mesh or every mesh inside a Group.
+  function _markOutlineLayer(obj) {
+    if (!obj) return;
+    if (obj.isMesh) { obj.layers.enable(1); return; }
+    obj.traverse(function (child) { if (child.isMesh) child.layers.enable(1); });
+  }
+
   function _addShingles(group, roofFaces, allFaces, opts) {
     var cfg        = HIGHLAND_ROOF_CFG;
     var peakCenter = _highestCeilingCenter(allFaces);
@@ -597,11 +607,13 @@
         var t  = targets[ti];
         var s1 = _makeShingle(t, cfg, peakCenter) || _makeTube(t, cfg, matTube);
         faceGroup.add(s1);
+        _markOutlineLayer(s1);
 
         if (cfg.secondLayer) {
           var t2 = _layer2Target(t, cfg);
           var s2 = _makeShingle(t2, cfg, peakCenter) || _makeTube(t2, cfg, matTube);
           faceGroup.add(s2);
+          _markOutlineLayer(s2);
         }
       }
 
@@ -682,10 +694,12 @@
                    extensionFace: f.extensionFace };
       allOff.push(fOff);
 
-      // Wall and entry-tunnel faces → WallBuilder panels (hidden from base mesh)
+      // Wall and entry-tunnel faces → WallBuilder panels (hidden from base mesh).
+      // Entryway walls use the gable brick recipe (smaller/denser) regardless of
+      // gableEnd, since they're framing a doorway rather than a full wall face.
       if (hideWalls && (tag === 'wall' || tag === 'entryTunnel')) {
         var panel = _faceToPanel(fOff);
-        if (f.gableEnd) gablePanels.push(panel);
+        if (f.gableEnd || tag === 'entryTunnel') gablePanels.push(panel);
         else bodyPanels.push(panel);
         continue;
       }
@@ -727,18 +741,20 @@
     // WallBuilder bricks on body walls and gable triangles
     if (opts.wallBuilder) {
       var wbUse   = opts.wbUsePlaceholder !== false;
-      var wbExtra = opts.wbOpts || { unitMult: 0.35, rockScale: 1.5,
+      var wbExtra = opts.wbOpts || { unitMult: 0.4375, rockScale: 1.5,
                                      preScale: [1, 1, 0.6],
                                      brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
       if (bodyPanels.length) {
         var wbGrp = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse }, wbExtra));
         wbGrp.userData.isWallBricks = true;
+        _markOutlineLayer(wbGrp);
         group.add(wbGrp);
       }
       if (gablePanels.length) {
-        var gblExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.22, rockScale: 1.1 });
+        var gblExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.396, densityMult: 1.5, rockScale: 1.1 });
         var gblGrp   = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gblExtra));
         gblGrp.userData.isWallBricks = true;
+        _markOutlineLayer(gblGrp);
         group.add(gblGrp);
       }
     }

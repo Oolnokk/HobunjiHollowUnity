@@ -659,7 +659,8 @@
       const TileType = Object.freeze({
         GRASS: 'grass', WEEDS: 'weeds', TILLED: 'tilled',
         TRENCH: 'trench', RAISED: 'raised', PADDY: 'paddy',
-        ROCK: 'rock', SHRUB: 'shrub', PATH: 'path'
+        ROCK: 'rock', SHRUB: 'shrub', PATH: 'path',
+        RIVER: 'river', STREAM: 'stream'
       });
 
       const CropType = Object.freeze({
@@ -795,6 +796,8 @@
         rock:   { topColor: '#79807c', sideColor: '#50554f', label: 'rock'     },
         shrub:  { topColor: '#356e36', sideColor: '#204d20', label: 'shrub'    },
         path:   { topColor: '#b8956a', sideColor: '#8a6a3a', label: 'path'     },
+        river:  { topColor: '#2f6fb8', sideColor: '#1f4d80', label: 'river'    },
+        stream: { topColor: '#4f9bd9', sideColor: '#356f99', label: 'stream'   },
       };
 
       // Helper: floor Z for a tile type
@@ -1601,7 +1604,7 @@
       function canSpawnAnimalAt(col, row) {
         const tile = grid[row]?.[col];
         if (!tile || getWorldObjectAt(col, row)) return false;
-        if (tile.crop || isSolid(tile.type) || tile.type === TileType.TRENCH) return false;
+        if (tile.crop || isSolid(tile.type) || tile.type === TileType.TRENCH || tile.type === TileType.RIVER || tile.type === TileType.STREAM) return false;
         return true;
       }
 
@@ -2055,6 +2058,22 @@
         return out;
       }
 
+      // Whether the straight segment between two route nodes stays on dry,
+      // walkable ground (no river crossing) — sampled the same way as
+      // canNpcBeeline so authored route edges respect the same rules.
+      function isRouteSegmentDry(area, c1, r1, c2, r2) {
+        const x1 = c1 + 0.5, z1 = r1 + 0.5, x2 = c2 + 0.5, z2 = r2 + 0.5;
+        const dist = Math.hypot(x2 - x1, z2 - z1);
+        const samples = Math.max(1, Math.ceil(dist / 0.5));
+        for (let i = 0; i <= samples; i++) {
+          const t = i / samples;
+          const c = Math.floor(x1 + (x2 - x1) * t);
+          const r = Math.floor(z1 + (z2 - z1) * t);
+          if (!isNpcTileWalkable(area, c, r)) return false;
+        }
+        return true;
+      }
+
       function buildRouteGraph(routes) {
         const nodes = new Map();
         const key = (area, c, r) => area + ':' + c + ',' + r;
@@ -2064,11 +2083,14 @@
           return nodes.get(k);
         };
         routes.forEach(route => {
+          const area = route.area || 'farm';
           let prev = null;
           (route.nodes || []).forEach(([c, r]) => {
-            const node = ensure(route.area || 'farm', c, r);
+            const node = ensure(area, c, r);
             if (route.id) node.routeIds.add(route.id);
-            if (prev) { prev.edges.add(node.key); node.edges.add(prev.key); }
+            // Skip edges that wade through a river — NPCs following this route
+            // will detour via any other dry edge instead of crossing the water.
+            if (prev && isRouteSegmentDry(area, prev.c, prev.r, c, r)) { prev.edges.add(node.key); node.edges.add(prev.key); }
             prev = node;
           });
         });
@@ -2154,7 +2176,7 @@
       function isNpcTileWalkable(area, c, r) {
         const g = area === 'interior' ? interiorGrid : area === 'town' ? townGrid : grid;
         const tile = g[r]?.[c];
-        if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH) return false;
+        if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH || tile.type === TileType.RIVER || tile.type === TileType.STREAM) return false;
         if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
         if (area !== 'town' && interiorFurnitureObjects.some(o => o.area === area && o.col === c && o.row === r)) return false;
         if (area === 'town' && isTownBuildingCollisionTile(c, r)) return false;
@@ -2496,6 +2518,11 @@
               this.moveToward(tx, tz, dt);
             } else if (this.state !== 'on-route') {
               this.routeTarget = findNearestRouteNode(this.area, root.position.x, root.position.z, target);
+              // Don't wade to the route node — if the direct line there crosses
+              // water, wait instead (no off-route dry path is computed here).
+              if (this.routeTarget && !canNpcBeeline(this.area, root.position.x, root.position.z, this.routeTarget.c, this.routeTarget.r)) {
+                this.routeTarget = null;
+              }
               this.state = this.routeTarget ? 'to-route' : 'idle';
               if (this.routeTarget) this.moveToward(this.routeTarget.c + 0.5, this.routeTarget.r + 0.5, dt);
             } else {
@@ -3116,7 +3143,7 @@
         }
         _townBuildingGroups = [];
 
-        const _wbDefaults = { unitMult: 0.35, rockScale: 1.5,
+        const _wbDefaults = { unitMult: 0.4375, rockScale: 1.5,
                               preScale: [1, 1, 0.6],
                               brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
@@ -3298,19 +3325,23 @@
           _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
         }
 
+        const riverTiles = [];
+
         for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
           const tile = townGrid[r]?.[c];
           const tp = (tile?.type === TileType.ROCK) ? TileType.GRASS : (tile?.type || TileType.GRASS);
           const cx = c + 0.5, cz = r + 0.5;
 
-          if (tp === TileType.TRENCH || tp === TileType.RAISED) {
+          if (tp === TileType.TRENCH || tp === TileType.RAISED || tp === TileType.RIVER || tp === TileType.STREAM) {
             const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tp, townGrid);
-            _addToBucket(TileType.TRENCH, dirtGeo, cx, NORMAL_TOP, cz);
-            _addToBucket(TileType.GRASS,  grassGeo, cx, NORMAL_TOP, cz);
+            const bedMatKey = (tp === TileType.RIVER || tp === TileType.STREAM) ? tp : TileType.TRENCH;
+            _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP, cz);
+            if (tp === TileType.RIVER || tp === TileType.STREAM) riverTiles.push({ c, r, tp });
             continue;
           }
           if (tile?.type !== TileType.ROCK && (tp === TileType.PATH ||
-              (pathNet && pathNet.inBounds(c, r) && (tp === TileType.GRASS || tp === TileType.TILLED)))) {
+              (pathNet && pathNet.inBounds(c, r) && !pathNet.isExcludedTile(c, r) && tp === TileType.GRASS))) {
             continue; // covered by the path network mesh above
           }
           if (tp === TileType.SHRUB) {
@@ -3320,11 +3351,12 @@
               vegGroup.scale.set(2, 2, 2);
               vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS), cz);
               townScene.add(vegGroup);
+              _markOutline(vegGroup);
             }
             continue;
           }
           // GRASS / TILLED / any other flat type — subdivided slab
-          const matKey = tp === TileType.TILLED ? TileType.TILLED : TileType.GRASS;
+          const matKey = tileMats[tp] ? tp : TileType.GRASS;
           _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tp), cz);
         }
 
@@ -3334,6 +3366,42 @@
           mesh.receiveShadow = true;
           townScene.add(mesh);
         }
+
+        // River/stream water surface — an animated translucent plane sitting
+        // above the sunken bed built above, so the banks read as real depth
+        // instead of a flat colored tile. Flow direction comes from which
+        // neighbouring tiles are also water, so the shader's flow-stripe mode
+        // animates along the channel rather than rippling in place.
+        const isWaterTile = (cc, rr) => {
+          const t = townGrid[rr]?.[cc]?.type;
+          return t === TileType.RIVER || t === TileType.STREAM;
+        };
+        _townRiverWaterMeshes = riverTiles.map(({ c, r, tp }) => {
+          let fx = (isWaterTile(c + 1, r) ? 1 : 0) - (isWaterTile(c - 1, r) ? 1 : 0);
+          let fz = (isWaterTile(c, r + 1) ? 1 : 0) - (isWaterTile(c, r - 1) ? 1 : 0);
+          const flen = Math.hypot(fx, fz);
+          if (flen > 0.001) { fx /= flen; fz /= flen; } else { fx = 0; fz = 0; }
+          const deep = tp === TileType.RIVER;
+          const mat = new THREE.ShaderMaterial({
+            uniforms: {
+              uTime:  { value: 0 },
+              uPhase: { value: (c * 2.7 + r * 4.1) % 6.28 },
+              uDepth: { value: deep ? 0.8 : 0.45 },
+              uFlow:  { value: new THREE.Vector2(fx, fz) },
+              uColor: { value: new THREE.Color(deep ? 0x1f6f9c : 0x4fb8d9) },
+            },
+            vertexShader:   waterVertShader,
+            fragmentShader: waterFragShader,
+            transparent:    true,
+            depthWrite:     false,
+            side:           THREE.FrontSide,
+          });
+          const wm = new THREE.Mesh(waterGeo, mat);
+          wm.receiveShadow = false;
+          wm.position.set(c + 0.5, NORMAL_TOP - (deep ? 0.10 : 0.05), r + 0.5);
+          townScene.add(wm);
+          return wm;
+        });
 
         _buildTownGrassBillboards(TCOLS, TROWS);
         buildTownBorderTerrain();
@@ -5776,6 +5844,8 @@
         const row  = Math.floor(wy / TILE);
         const type = getActiveGrid()[row][col].type;
         if (isSolid(type)) return null;
+        // Rivers/streams are a real crossing obstacle — block like a solid tile.
+        if (type === TileType.RIVER || type === TileType.STREAM) return null;
         // Block structural building tiles on exterior maps (player must use doors/transitions).
         if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
         if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
@@ -5941,9 +6011,12 @@
           uThickness: { value: 0.006 },  // NDC units → constant screen-pixel width
         },
         vertexShader: `
-          #ifdef USE_INSTANCING
-            attribute mat4 instanceMatrix;
-          #endif
+          // NOTE: do not redeclare "attribute mat4 instanceMatrix" here — for a
+          // regular (non-Raw) ShaderMaterial, three.js's WebGLProgram already
+          // injects that exact declaration into the vertex shader prefix
+          // whenever USE_INSTANCING is defined. Redeclaring it is a duplicate
+          // attribute and fails to compile/link, which silently dropped the
+          // outline for every InstancedMesh (wall bricks) using this material.
           uniform float uThickness;
           void main() {
             #ifdef USE_INSTANCING
@@ -5984,9 +6057,9 @@
 
       // Shared vertex shader used for coloured target outlines (supports instancing)
       const _targetOutlineVert = `
-        #ifdef USE_INSTANCING
-          attribute mat4 instanceMatrix;
-        #endif
+        // See shellOutlineMat above — three.js's own vertex-shader prefix
+        // already declares "attribute mat4 instanceMatrix" under
+        // USE_INSTANCING for ShaderMaterial, so it must not be redeclared here.
         uniform float uThickness;
         void main() {
           #ifdef USE_INSTANCING
@@ -6136,6 +6209,8 @@
         rock:   new THREE.MeshLambertMaterial({ color: 0x79807c }),
         shrub:  new THREE.MeshLambertMaterial({ color: 0x356e36 }),
         path:   new THREE.MeshLambertMaterial({ color: 0xb8956a }),
+        river:  new THREE.MeshLambertMaterial({ color: 0x3a4a3f }), // silty bed, seen through the water surface
+        stream: new THREE.MeshLambertMaterial({ color: 0x6b5a3a }), // sandy streambed
       };
       // Floor material for vegetation tiles — matches weed foliage HSL color
       const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
@@ -6255,8 +6330,16 @@
       const TRENCH_TOP = -0.5;  // top surface of trench
       const NORMAL_TOP =  0.0;  // top surface of grass/tilled/etc
       const RAISED_TOP = +0.5;  // top surface of raised bed
+      const RIVER_TOP  = -0.55; // river bed — a wide channel, at least trench-deep
+      const STREAM_TOP = -0.55; // stream bed — the actual painted waterway in current maps; same depth as the river
       const ROCK_H     =  0.75; // rock block height
       const ROCK_TOP   = NORMAL_TOP + ROCK_H;
+      // Tile types whose ground geometry sinks below NORMAL_TOP (vs. RAISED, which rises).
+      const DEPRESSION_TOP = {
+        [TileType.TRENCH]: TRENCH_TOP,
+        [TileType.RIVER]:  RIVER_TOP,
+        [TileType.STREAM]: STREAM_TOP,
+      };
 
       const WATER_UNIT = SLAB_H / MAX_WATER; // world-Y per water depth unit
 
@@ -6264,6 +6347,8 @@
       function tileYCenter(type) {
         switch (type) {
           case TileType.TRENCH: return TRENCH_TOP - SLAB_H / 2;   // -0.75
+          case TileType.RIVER:  return RIVER_TOP  - SLAB_H / 2;
+          case TileType.STREAM: return STREAM_TOP - SLAB_H / 2;
           case TileType.RAISED: return RAISED_TOP - SLAB_H / 2;   // +0.25
           case TileType.ROCK:   return NORMAL_TOP + ROCK_H / 2;   // +0.375
           case TileType.SHRUB:  return NORMAL_TOP + VEG_H / 2;    // slab on surface
@@ -6276,6 +6361,8 @@
       function tileSurfaceY(type) {
         switch (type) {
           case TileType.TRENCH: return TRENCH_TOP;
+          case TileType.RIVER:  return RIVER_TOP;
+          case TileType.STREAM: return STREAM_TOP;
           case TileType.RAISED: return RAISED_TOP;
           case TileType.ROCK:   return ROCK_TOP;
           default:              return NORMAL_TOP;
@@ -6554,7 +6641,7 @@
         const CELLS = 6, STEP = 1 / CELLS;
         const GW = bw * CELLS + 1, GH = bh * CELLS + 1;
 
-        const EXCLUDED = new Set([TileType.TRENCH, TileType.RAISED, TileType.SHRUB, TileType.ROCK]);
+        const EXCLUDED = new Set([TileType.TRENCH, TileType.RAISED, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RIVER, TileType.STREAM]);
         const cellType    = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]?.type;
         const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
         const isExcluded  = (ci, cj) => EXCLUDED.has(cellType(ci, cj));
@@ -6786,8 +6873,10 @@
         const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
         const BLEND_V  = 2;
         const PLATEAU  = type === TileType.RAISED ? 3.0 : 1.5;  // raised = wide flat top
-        const targetDY = type === TileType.TRENCH
-          ? TRENCH_TOP - NORMAL_TOP   // −0.5
+        const depressionTop = DEPRESSION_TOP[type];
+        const isDepression = depressionTop !== undefined;
+        const targetDY = isDepression
+          ? depressionTop - NORMAL_TOP
           : RAISED_TOP - NORMAL_TOP;  // +0.5
 
         const openN = srcGrid[row - 1]?.[col]?.type === type;
@@ -6853,7 +6942,7 @@
             const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
             const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
             const y00=Y[v00], y10=Y[v10], y01=Y[v01], y11=Y[v11];
-            const isDirt = type === TileType.TRENCH
+            const isDirt = isDepression
               ? Math.min(y00, y10, y01, y11) < -DIRT_THRESH
               : Math.max(y00, y10, y01, y11) >  DIRT_THRESH;
             (isDirt ? dirtIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
@@ -7418,6 +7507,7 @@
               vegGroup.rotation.y = r() * Math.PI * 2;
               vegGroup.position.set(px, py, pz);
               townScene.add(vegGroup);
+              _markOutline(vegGroup);
             }
           }
         }
@@ -7473,6 +7563,9 @@
       const townWaterMeshes = new Map();
       let _townWaterSimDirty = true;
       let _townFlowingTrenchTiles = [];
+      // Static river/stream water-surface meshes built once in buildTownScene
+      // (not part of the rain-fed water sim — rivers always flow).
+      let _townRiverWaterMeshes = [];
 
       // ── Player root (Group — avatar plane attached after onboarding) ─
       const playerMesh = new THREE.Group();
@@ -8337,6 +8430,7 @@
       // so town weather can fill them with water exactly like farm trenches.
       function updateTownWaterMeshes() {
         waterTime += 0.016;
+        for (const wm of _townRiverWaterMeshes) wm.material.uniforms.uTime.value = waterTime;
         const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
 
         if (_townWaterSimDirty) {
@@ -8763,8 +8857,8 @@
         const activeScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || scene) : currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene;
         renderer.render(activeScene, camera);
         // Selective shell outline pass (layer-1 objects only)
-        if (s_outlines && currentArea !== 'town') {
-          const _outlineScene = _isBuildingArea(currentArea) ? activeScene : currentArea === 'interior' ? interiorScene : scene;
+        if (s_outlines) {
+          const _outlineScene = _isBuildingArea(currentArea) ? activeScene : currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene;
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
           _outlineScene.overrideMaterial = shellOutlineMat;

@@ -117,17 +117,29 @@
 
   // ── Recipe-to-matrix generators ───────────────────────────────────────────
 
-  function generateWallMatricesFromRecipe(recipe, meshPerUnitScale, rockScaleMult) {
+  function generateWallMatricesFromRecipe(recipe, meshPerUnitScale, rockScaleMult, densityMult) {
     rockScaleMult = rockScaleMult || 1;
+    densityMult = Math.max(1e-6, Number(densityMult) || 1);
     if (recipe?.version !== 1 || recipe?.settings?.kind !== 'wall')
       throw new Error("Recipe.settings.kind must be 'wall'.");
     const s = recipe.settings, rng = makeRng(recipe.seed);
     const preM = preTRSToMatrix(recipe.preTransform?.translate, recipe.preTransform?.rotateDegXYZ, recipe.preTransform?.scale);
     const gap = computeEffectiveGap(recipe), unit = s.unitSize ?? { x: 1, y: 1, z: 1 };
-    const stepX = Math.max(1e-6, Number(unit.x ?? 1) + Number(gap.x ?? 0));
-    const stepY = Math.max(1e-6, Number(unit.y ?? 1) + Number(gap.y ?? 0));
-    const cols = Math.max(1, Math.floor((s.length ?? 1) / stepX));
-    const rows = Math.max(1, Math.floor((s.height ?? 1) / stepY));
+    const baseStepX = Math.max(1e-6, Number(unit.x ?? 1) + Number(gap.x ?? 0));
+    const baseStepY = Math.max(1e-6, Number(unit.y ?? 1) + Number(gap.y ?? 0));
+    // Math.round (not floor) — floor truncates a whole partial column/row off
+    // every wall, which is a much bigger relative loss on small walls than big
+    // ones (e.g. a 1.3-unit-long wall at stepX=0.5 floors to 2 cols, leaving
+    // 23% of its length bare). Any column that ends up slightly past the
+    // panel's actual bounds is dropped later by the s/t clip in build().
+    const cols = Math.max(1, Math.round((s.length ?? 1) / baseStepX * densityMult));
+    const rows = Math.max(1, Math.round((s.height ?? 1) / baseStepY * densityMult));
+    // Re-derive the actual placement spacing from cols/rows so the bricks still
+    // exactly span the wall — densityMult packs more bricks into the same span
+    // (overlapping if >1) rather than changing brick visual size, which stays
+    // tied to unit/unitMult below.
+    const stepX = (s.length ?? 1) / cols;
+    const stepY = (s.height ?? 1) / rows;
     const perUnit = meshPerUnitScale ?? new THREE.Vector3(1, 1, 1);
     const unitScale = new THREE.Vector3(perUnit.x * Number(unit.x ?? 1), perUnit.y * Number(unit.y ?? 1), perUnit.z * Number(unit.z ?? 1));
     const mats = [];
@@ -189,7 +201,7 @@
     return mats;
   }
 
-  function cloneRecipeWithFaceDims(recipe, faceWidth, faceHeight, unitMult) {
+  function cloneRecipeWithFaceDims(recipe, faceWidth, faceHeight, unitMult, densityMult) {
     const r = JSON.parse(JSON.stringify(recipe));
     r.settings = r.settings || {};
     r.settings.unitSize = r.settings.unitSize ?? { x: 1, y: 1, z: 1 };
@@ -199,17 +211,23 @@
       r.settings.unitSize.y = Number(r.settings.unitSize.y ?? 1) * m;
       r.settings.unitSize.z = Number(r.settings.unitSize.z ?? 1) * m;
     }
+    const dm = Math.max(1e-6, Number(densityMult) || 1);
     if (r.settings.kind === 'stacks') {
       const axis = String(r.settings.axis ?? 'X').toUpperCase();
       const gap = computeEffectiveGap(r), unit = r.settings.unitSize;
       const stepMult = Number(r.settings.stepMultiplier ?? 1);
       const step = (axis === 'Y' ? (Number(unit.y ?? 1) + Number(gap.y ?? 0)) : (axis === 'Z' ? (Number(unit.z ?? 1) + Number(gap.z ?? 0)) : (Number(unit.x ?? 1) + Number(gap.x ?? 0)))) * stepMult;
       const target = axis === 'Y' ? faceHeight : faceWidth;
-      r.settings.count = Math.max(1, Math.floor(target / Math.max(1e-6, step)));
+      r.settings.count = Math.max(1, Math.round(target / Math.max(1e-6, step) * dm));
+      // Shrink stepMultiplier to match the boosted count so stacks still span
+      // the same target length/height (count grew but the per-piece spacing
+      // must shrink proportionally, same idea as the 'wall' density rederivation).
+      r.settings.stepMultiplier = stepMult / dm;
     } else {
       r.settings.kind = 'wall';
       r.settings.length = faceWidth;
       r.settings.height = faceHeight;
+      r.settings.densityMult = dm;
     }
     return r;
   }
@@ -341,6 +359,9 @@
    * @param {Array}  panels  Each: { id, width, height, position:[x,y,z], rotationDeg:[rx,ry,rz], wallRecipeId? }
    * @param {Object} opts
    *   unitMult       {number}   Brick unit size multiplier (default 1)
+   *   densityMult    {number}   Packs more (possibly overlapping) bricks of the
+   *                              same size into the same wall span, independent
+   *                              of unitMult (default 1)
    *   rockScale      {number}   Uniform scale applied after count (default 1)
    *   preScale       {number[]} [sx,sy,sz] applied to each instance before face projection (default [1,1,1])
    *   preRot         {number[]} [rx°,ry°,rz°] applied before face projection (default [0,0,0])
@@ -353,6 +374,7 @@
   WallBuilder.prototype.build = function (panels, opts) {
     opts = opts || {};
     const unitMult       = Math.max(0.0001, Number(opts.unitMult) || 1);
+    const densityMult    = Math.max(0.0001, Number(opts.densityMult) || 1);
     const rockScale      = Math.max(0.0001, Number(opts.rockScale) || 1);
     const preScale       = opts.preScale       || [1, 1, 1];
     const preRot         = opts.preRot         || [0, 0, 0];
@@ -393,10 +415,10 @@
       if (!model) continue;
 
       const kind = String(recipe.settings?.kind || 'wall');
-      const recipeFit = cloneRecipeWithFaceDims(recipe, p.width, p.height, unitMult);
+      const recipeFit = cloneRecipeWithFaceDims(recipe, p.width, p.height, unitMult, densityMult);
       let mats = kind === 'stacks'
         ? generateStacksMatricesFromRecipe(recipeFit, model.perUnitScale, rockScale)
-        : generateWallMatricesFromRecipe(recipeFit, model.perUnitScale, rockScale);
+        : generateWallMatricesFromRecipe(recipeFit, model.perUnitScale, rockScale, recipeFit.settings.densityMult);
 
       applyWallPreScaleToMatrices(mats, preScale[0], preScale[1], preScale[2]);
       applyWallPreRotationToMatrices(mats, preRot[0], preRot[1], preRot[2]);
