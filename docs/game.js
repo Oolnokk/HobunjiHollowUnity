@@ -1604,7 +1604,7 @@
       function canSpawnAnimalAt(col, row) {
         const tile = grid[row]?.[col];
         if (!tile || getWorldObjectAt(col, row)) return false;
-        if (tile.crop || isSolid(tile.type) || tile.type === TileType.TRENCH) return false;
+        if (tile.crop || isSolid(tile.type) || tile.type === TileType.TRENCH || tile.type === TileType.RIVER) return false;
         return true;
       }
 
@@ -2058,6 +2058,22 @@
         return out;
       }
 
+      // Whether the straight segment between two route nodes stays on dry,
+      // walkable ground (no river crossing) — sampled the same way as
+      // canNpcBeeline so authored route edges respect the same rules.
+      function isRouteSegmentDry(area, c1, r1, c2, r2) {
+        const x1 = c1 + 0.5, z1 = r1 + 0.5, x2 = c2 + 0.5, z2 = r2 + 0.5;
+        const dist = Math.hypot(x2 - x1, z2 - z1);
+        const samples = Math.max(1, Math.ceil(dist / 0.5));
+        for (let i = 0; i <= samples; i++) {
+          const t = i / samples;
+          const c = Math.floor(x1 + (x2 - x1) * t);
+          const r = Math.floor(z1 + (z2 - z1) * t);
+          if (!isNpcTileWalkable(area, c, r)) return false;
+        }
+        return true;
+      }
+
       function buildRouteGraph(routes) {
         const nodes = new Map();
         const key = (area, c, r) => area + ':' + c + ',' + r;
@@ -2067,11 +2083,14 @@
           return nodes.get(k);
         };
         routes.forEach(route => {
+          const area = route.area || 'farm';
           let prev = null;
           (route.nodes || []).forEach(([c, r]) => {
-            const node = ensure(route.area || 'farm', c, r);
+            const node = ensure(area, c, r);
             if (route.id) node.routeIds.add(route.id);
-            if (prev) { prev.edges.add(node.key); node.edges.add(prev.key); }
+            // Skip edges that wade through a river — NPCs following this route
+            // will detour via any other dry edge instead of crossing the water.
+            if (prev && isRouteSegmentDry(area, prev.c, prev.r, c, r)) { prev.edges.add(node.key); node.edges.add(prev.key); }
             prev = node;
           });
         });
@@ -2157,7 +2176,7 @@
       function isNpcTileWalkable(area, c, r) {
         const g = area === 'interior' ? interiorGrid : area === 'town' ? townGrid : grid;
         const tile = g[r]?.[c];
-        if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH) return false;
+        if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH || tile.type === TileType.RIVER) return false;
         if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
         if (area !== 'town' && interiorFurnitureObjects.some(o => o.area === area && o.col === c && o.row === r)) return false;
         if (area === 'town' && isTownBuildingCollisionTile(c, r)) return false;
@@ -5819,6 +5838,9 @@
         const row  = Math.floor(wy / TILE);
         const type = getActiveGrid()[row][col].type;
         if (isSolid(type)) return null;
+        // Rivers are a real crossing obstacle — block like a solid tile.
+        // Streams stay crossable (shallow rivulet) but wade slowly.
+        if (type === TileType.RIVER) return null;
         // Block structural building tiles on exterior maps (player must use doors/transitions).
         if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
         if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
@@ -5832,6 +5854,7 @@
           [TileType.RAISED]:  0.90,
           [TileType.PADDY]:   0.70,
           [TileType.TRENCH]:  0.30,
+          [TileType.STREAM]:  0.40,
         }[type] ?? 1.00;
       }
 
@@ -6300,7 +6323,7 @@
       const TRENCH_TOP = -0.5;  // top surface of trench
       const NORMAL_TOP =  0.0;  // top surface of grass/tilled/etc
       const RAISED_TOP = +0.5;  // top surface of raised bed
-      const RIVER_TOP  = -0.34; // river bed — a wide, fairly deep channel
+      const RIVER_TOP  = -0.55; // river bed — a wide channel, at least trench-deep
       const STREAM_TOP = -0.16; // stream bed — a shallow rivulet
       const ROCK_H     =  0.75; // rock block height
       const ROCK_TOP   = NORMAL_TOP + ROCK_H;
