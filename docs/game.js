@@ -3313,7 +3313,7 @@
             continue;
           }
           if (tile?.type !== TileType.ROCK && (tp === TileType.PATH ||
-              (pathNet && pathNet.inBounds(c, r) && (tp === TileType.GRASS || tp === TileType.TILLED)))) {
+              (pathNet && pathNet.inBounds(c, r) && !pathNet.isExcludedTile(c, r) && tp === TileType.GRASS))) {
             continue; // covered by the path network mesh above
           }
           if (tp === TileType.SHRUB) {
@@ -3326,8 +3326,8 @@
             }
             continue;
           }
-          // GRASS / TILLED / any other flat type — subdivided slab
-          const matKey = tp === TileType.TILLED ? TileType.TILLED : TileType.GRASS;
+          // GRASS / TILLED / RIVER / STREAM / any other flat type — subdivided slab
+          const matKey = tileMats[tp] ? tp : TileType.GRASS;
           _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tp), cz);
         }
 
@@ -6139,6 +6139,8 @@
         rock:   new THREE.MeshLambertMaterial({ color: 0x79807c }),
         shrub:  new THREE.MeshLambertMaterial({ color: 0x356e36 }),
         path:   new THREE.MeshLambertMaterial({ color: 0xb8956a }),
+        river:  new THREE.MeshLambertMaterial({ color: 0x2f6fb8 }),
+        stream: new THREE.MeshLambertMaterial({ color: 0x4f9bd9 }),
       };
       // Floor material for vegetation tiles — matches weed foliage HSL color
       const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
@@ -6557,7 +6559,7 @@
         const CELLS = 6, STEP = 1 / CELLS;
         const GW = bw * CELLS + 1, GH = bh * CELLS + 1;
 
-        const EXCLUDED = new Set([TileType.TRENCH, TileType.RAISED, TileType.SHRUB, TileType.ROCK]);
+        const EXCLUDED = new Set([TileType.TRENCH, TileType.RAISED, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RIVER, TileType.STREAM]);
         const cellType    = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]?.type;
         const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
         const isExcluded  = (ci, cj) => EXCLUDED.has(cellType(ci, cj));
