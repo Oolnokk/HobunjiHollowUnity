@@ -883,6 +883,32 @@
         },
       };
 
+      // Minimal standalone exterior zones reachable from the town's pre-authored
+      // "To Northern Cliffs" / "To Southern Cloud Forest" transition spots. Each
+      // is a small flat all-grass map built lazily the first time it's entered;
+      // this is where the ambient hostile spawns actually live now.
+      const EXTERIOR_ZONES = {
+        map_northern_cliffs: {
+          label: 'Northern Cliffs',
+          cols: 22, rows: 16,
+          groundColor: 0x6b7280, fogColor: 0x3a4148,
+          hostileKey: 'gar-wolf-alpha',
+          entryCol: 11, entryRow: 14,
+          exitCol: 11, exitRow: 15,
+          townReturnCol: 30, townReturnRow: 2,
+        },
+        map_southern_cloud_forest: {
+          label: 'Southern Cloud Forest',
+          cols: 22, rows: 16,
+          groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
+          hostileKey: 'gar-wolf',
+          entryCol: 11, entryRow: 1,
+          exitCol: 11, exitRow: 0,
+          townReturnCol: 30, townReturnRow: 48,
+        },
+      };
+      function _isZoneArea(area) { return typeof area === 'string' && !!EXTERIOR_ZONES[area]; }
+
       // Used by input polling; supports both keyboard and touch joystick.
       const input = {
         x: 0,
@@ -1818,6 +1844,11 @@
       function makeCreatureEntity(creatureKey, x, y, opts = {}) {
         const def = CREATURE_DB[creatureKey];
         if (!def) return null;
+        const { scene: optScene, grid: optGrid, cols: optCols, rows: optRows, ...restOpts } = opts;
+        const targetScene = optScene || getActiveScene();
+        const targetGrid  = optGrid  || getActiveGrid();
+        const gridCols = optCols || getActiveCols();
+        const gridRows = optRows || getActiveRows();
         const modelWidth = def.modelWidth;
         const modelHeight = modelWidth * (600 / 1375); // all creature sprites are 1375×600px
         const halfH = modelHeight / 2;
@@ -1831,11 +1862,11 @@
             if (child.material) child.material.color.setHex(def.tint);
           }
         }
-        const col = clamp(Math.floor(x / TILE), 0, COLS - 1);
-        const row = clamp(Math.floor(y / TILE), 0, ROWS - 1);
-        const surfY = grid[row]?.[col] ? tileSurfaceY(grid[row][col].type) : 0;
+        const col = clamp(Math.floor(x / TILE), 0, gridCols - 1);
+        const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
+        const surfY = targetGrid[row]?.[col] ? tileSurfaceY(targetGrid[row][col].type) : 0;
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
-        scene.add(avatarRef.group);
+        targetScene.add(avatarRef.group);
 
         const creature = {
           id: creatureKey + '_' + idUniq,
@@ -1852,13 +1883,14 @@
           state: 'idle',
           wanderTarget: null, wanderT: 0,
           homeX: x, homeY: y,
-          ...opts,
+          scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
+          ...restOpts,
         };
         return creature;
       }
 
       function despawnCreature(c) {
-        scene.remove(c.avatarRef.group);
+        (c.scene || scene).remove(c.avatarRef.group);
         c.avatarRef.dispose();
       }
 
@@ -1904,6 +1936,7 @@
         let lastName = '';
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
+          if (c.areaId !== currentArea) continue;
           if (!inCone(player.x, player.y, player.angle, c.x, c.y, abil.rangePx, abil.halfConeRad)) continue;
           damageCreature(c, abil.damage);
           hits++;
@@ -1943,25 +1976,26 @@
       }
 
       function updateCreatureMesh(c, dt, aimAngle) {
-        const col = clamp(Math.floor(c.x / TILE), 0, COLS - 1);
-        const row = clamp(Math.floor(c.y / TILE), 0, ROWS - 1);
-        const surfY = grid[row]?.[col] ? tileSurfaceY(grid[row][col].type) : 0;
-        const g = c.avatarRef.group;
+        const g = c.areaGrid || grid;
+        const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
+        const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
+        const surfY = g[row]?.[col] ? tileSurfaceY(g[row][col].type) : 0;
+        const grp = c.avatarRef.group;
         const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight;
-        g.position.x += (tx - g.position.x) * Math.min(1, dt * 10);
-        g.position.z += (tz - g.position.z) * Math.min(1, dt * 10);
-        g.position.y += (ty - g.position.y) * Math.min(1, dt * 7);
+        grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
+        grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
+        grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
         const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, CREATURE_PERPS);
         if (snapTo !== null) c.groupRot = effectiveTarget;
         else c.groupRot += angleDiff(effectiveTarget, c.groupRot) * Math.min(1, dt * 10);
-        g.rotation.y = c.groupRot;
+        grp.rotation.y = c.groupRot;
 
         if (c.hitFlashT > 0) {
           c.hitFlashT = Math.max(0, c.hitFlashT - dt);
           const flashColor = c.hitFlashT > 0 ? 0xff5050 : (c.def.tint || 0xffffff);
-          for (const child of g.children) {
+          for (const child of grp.children) {
             if (child.material) child.material.color.setHex(flashColor);
           }
         }
@@ -1990,6 +2024,7 @@
       function updateHostiles(dt) {
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
+          if (c.areaId !== currentArea) continue;
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
           c.stamina = Math.min(c.maxStamina, c.stamina + c.maxStamina * 0.25 * dt);
@@ -2019,8 +2054,8 @@
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
           c.facing = aimAngle;
-          c.x = clamp(c.x, 0, COLS * TILE);
-          c.y = clamp(c.y, 0, ROWS * TILE);
+          c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
+          c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
           updateCreatureMesh(c, dt, aimAngle);
           updateCreatureAnimFrame(c, dt, moving);
@@ -2034,6 +2069,7 @@
       function updateCompanions(dt) {
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
+          if (c.areaId !== currentArea) continue;
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
           c.stamina = Math.min(c.maxStamina, c.stamina + c.maxStamina * 0.25 * dt);
@@ -2043,6 +2079,7 @@
           let target = null;
           for (const h of hostileObjects) {
             if (h.health <= 0) continue;
+            if (h.areaId !== currentArea) continue;
             if (Math.hypot(h.x - player.x, h.y - player.y) <= ALERT_RANGE_PX) { target = h; break; }
           }
 
@@ -2064,8 +2101,8 @@
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
           c.facing = aimAngle;
-          c.x = clamp(c.x, 0, COLS * TILE);
-          c.y = clamp(c.y, 0, ROWS * TILE);
+          c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
+          c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
           updateCreatureMesh(c, dt, aimAngle);
           updateCreatureAnimFrame(c, dt, moving);
@@ -2078,7 +2115,8 @@
       }
 
       // Spawns/despawns the active companion to match the equipped whistle.
-      // Called every farm-area frame; cheap no-op once in sync.
+      // Called every farm/zone-area frame; cheap no-op once in sync. Also
+      // re-spawns into the new area's scene whenever the player travels.
       function syncCompanionFromWhistle() {
         const whistle = equipmentSlots.whistle
           ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
@@ -2088,7 +2126,7 @@
           if (existing) despawnCompanions();
           return;
         }
-        if (existing && existing.creatureKey === whistle.creatureKey) return;
+        if (existing && existing.creatureKey === whistle.creatureKey && existing.areaId === currentArea) return;
         despawnCompanions();
         const spawnX = player.x + Math.cos(player.angle + Math.PI) * TILE * 1.4;
         const spawnY = player.y + Math.sin(player.angle + Math.PI) * TILE * 1.4;
@@ -2103,30 +2141,28 @@
         hostileObjects.clear();
       }
 
-      // Ambient hostile spawning, biased to the southern cloud forest (rows
-      // near the bottom edge → regular Gar-wolf) and northern cliffs (rows
-      // near the top edge → tougher Gar-wolf Alpha) of the farm map.
-      const HOSTILE_CAP = 5;
+      // Ambient hostile spawning — lives entirely inside the exterior zones now
+      // (southern cloud forest → Gar-wolf, northern cliffs → Gar-wolf Alpha).
+      const HOSTILE_CAP_PER_ZONE = 4;
       const HOSTILE_SPAWN_INTERVAL_S = 14;
-      const HOSTILE_SPAWN_ZONES = [
-        { creatureKey: 'gar-wolf',       rowMin: ROWS - 6, rowMax: ROWS - 1 }, // southern cloud forest
-        { creatureKey: 'gar-wolf-alpha', rowMin: 0,        rowMax: 5        }, // northern cliffs
-      ];
       let hostileSpawnTimer = HOSTILE_SPAWN_INTERVAL_S;
 
       function updateHostileSpawning(dt) {
+        if (!_isZoneArea(currentArea)) return;
         hostileSpawnTimer -= dt;
         if (hostileSpawnTimer > 0) return;
         hostileSpawnTimer = HOSTILE_SPAWN_INTERVAL_S;
-        if (hostileObjects.size >= HOSTILE_CAP) return;
-        const zone = HOSTILE_SPAWN_ZONES[Math.floor(Math.random() * HOSTILE_SPAWN_ZONES.length)];
+        const inZone = [...hostileObjects].filter(c => c.areaId === currentArea).length;
+        if (inZone >= HOSTILE_CAP_PER_ZONE) return;
+        const zdef = EXTERIOR_ZONES[currentArea];
+        const zi = buildZoneScene(currentArea);
+        if (!zdef || !zi) return;
         for (let attempt = 0; attempt < 8; attempt++) {
-          const col = Math.floor(Math.random() * COLS);
-          const row = zone.rowMin + Math.floor(Math.random() * (zone.rowMax - zone.rowMin + 1));
-          if (!canSpawnAnimalAt(col, row)) continue;
+          const col = Math.floor(Math.random() * zdef.cols);
+          const row = Math.floor(Math.random() * zdef.rows);
           const x = col * TILE + TILE * 0.5, y = row * TILE + TILE * 0.5;
           if (Math.hypot(x - player.x, y - player.y) < TILE * 5) continue;
-          const creature = makeCreatureEntity(zone.creatureKey, x, y, { homeX: x, homeY: y, state: 'idle' });
+          const creature = makeCreatureEntity(zdef.hostileKey, x, y, { homeX: x, homeY: y, state: 'idle' });
           if (creature) hostileObjects.add(creature);
           return;
         }
@@ -2214,6 +2250,43 @@
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
+      // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
+      const _zoneScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions }
+
+      function buildZoneScene(mapId) {
+        if (_zoneScenes.has(mapId)) return _zoneScenes.get(mapId);
+        const zdef = EXTERIOR_ZONES[mapId];
+        if (!zdef) return null;
+        const zScene = new THREE.Scene();
+        zScene.background = new THREE.Color(zdef.fogColor);
+        zScene.fog = new THREE.FogExp2(zdef.fogColor, 0.022);
+        zScene.add(new THREE.AmbientLight(0xffffff, 0.65));
+        const sun = new THREE.DirectionalLight(0xffffff, 0.85);
+        sun.position.set(zdef.cols * 0.3, 18, zdef.rows * 0.2);
+        zScene.add(sun);
+
+        const zGrid = Array.from({ length: zdef.rows }, () =>
+          Array.from({ length: zdef.cols }, () => ({
+            type: TileType.GRASS, water: 0, crop: CropType.NONE,
+            cropAge: 0, cropReady: false, stress: '', variation: 0,
+          }))
+        );
+
+        const groundGeo = new THREE.PlaneGeometry(zdef.cols, zdef.rows);
+        groundGeo.rotateX(-Math.PI / 2);
+        const ground = new THREE.Mesh(groundGeo, new THREE.MeshLambertMaterial({ color: zdef.groundColor }));
+        ground.position.set(zdef.cols / 2, 0, zdef.rows / 2);
+        zScene.add(ground);
+
+        const transitions = [{
+          id: mapId + '_exit', label: 'Back to Town', col: zdef.exitCol, row: zdef.exitRow,
+          target: 'town', targetCol: zdef.townReturnCol, targetRow: zdef.townReturnRow,
+        }];
+
+        const info = { scene: zScene, grid: zGrid, cols: zdef.cols, rows: zdef.rows, transitions };
+        _zoneScenes.set(mapId, info);
+        return info;
+      }
 
       function initWorldTravel(layout) {
         if (layout?.version === 3) {
@@ -2233,8 +2306,12 @@
         spawnScheduledNpcs().catch(e => console.warn('spawnScheduledNpcs failed:', e));
       }
 
+      function _travelAreaOf(area) {
+        return _isBuildingArea(area) ? area : _isZoneArea(area) ? area : area === 'interior' ? 'interior' : area === 'town' ? 'town' : 'farm';
+      }
+
       function travelAreaKey() {
-        const area = _isBuildingArea(currentArea) ? currentArea : currentArea === 'interior' ? 'interior' : currentArea === 'town' ? 'town' : 'farm';
+        const area = _travelAreaOf(currentArea);
         return area + ':' + Math.floor(player.x / TILE) + ',' + Math.floor(player.y / TILE);
       }
 
@@ -2254,17 +2331,18 @@
       }
 
       function checkTransitionSpots() {
-        const area = _isBuildingArea(currentArea) ? currentArea : currentArea === 'interior' ? 'interior' : currentArea === 'town' ? 'town' : 'farm';
+        const area = _travelAreaOf(currentArea);
         const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
         const key = area + ':' + pc + ',' + pr;
         if (key === _transitionLatch) { _pendingSpotTransition = null; return; }
         _transitionLatch = null;
         let pool;
         if (_isBuildingArea(area)) pool = _buildingScenes.get(area)?.transitions || [];
+        else if (_isZoneArea(area)) pool = _zoneScenes.get(area)?.transitions || [];
         else pool = area === 'town' ? worldTownTransitions : worldTransitions;
         const t = pool.find(x =>
-          (_isBuildingArea(area) || x.area === area) && x.col === pc && x.row === pr &&
-          (x.target === 'building' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
+          (_isBuildingArea(area) || _isZoneArea(area) || x.area === area) && x.col === pc && x.row === pr &&
+          (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
         if (t !== _pendingSpotTransition) { _pendingSpotTransition = t || null; refreshActionBar(); }
         // Farm interior exit fires automatically (legacy behaviour)
         if (t && area === 'interior') startSceneTransition(() => performTravel(t));
@@ -2309,6 +2387,8 @@
           const c = clamp(t.targetCol, 0, tcols - 1);
           const r = clamp(t.targetRow, 0, trows - 1);
           enterTown(c, r);
+        } else if (t.target === 'zone') {
+          enterZone(t.targetMapId, t.targetCol, t.targetRow);
         } else { // 'farm'
           _returnToFarmMeshes();
           const c = clamp(t.targetCol, 0, COLS - 1);
@@ -3123,6 +3203,8 @@
               layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'farm', targetCol: 17, targetRow: 0 });
             } else if (_isBuildingArea(t.targetMapId)) {
               layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId });
+            } else if (EXTERIOR_ZONES[t.targetMapId]) {
+              layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
             }
           });
           initTownTravel(layout);
@@ -3567,6 +3649,34 @@
         });
       }
 
+      // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
+      function enterZone(mapId, defaultCol, defaultRow) {
+        const zdef = EXTERIOR_ZONES[mapId];
+        if (!zdef) return;
+        const zi = buildZoneScene(mapId);
+        const fromScene = getActiveScene();
+        _currentBuildingMapId = null;
+        currentArea = mapId;
+        const col = Number.isFinite(defaultCol) ? defaultCol : zdef.entryCol;
+        const row = Number.isFinite(defaultRow) ? defaultRow : zdef.entryRow;
+        player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
+        player.vx = 0; player.vy = 0;
+        facingAngle = -Math.PI / 2; player.angle = facingAngle;
+        camTargetX = player.x / TILE; camTargetZ = player.y / TILE;
+        if (fromScene) {
+          fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow);
+          fromScene.remove(toolHolder); fromScene.remove(reticleMesh);
+          fromScene.remove(reticleCircleMesh); fromScene.remove(reticleRingMesh);
+          fromScene.remove(reticleWavyGroup);
+        }
+        zi.scene.add(playerMesh); zi.scene.add(playerGroundShadow);
+        zi.scene.add(toolHolder); zi.scene.add(reticleMesh);
+        zi.scene.add(reticleCircleMesh); zi.scene.add(reticleRingMesh);
+        zi.scene.add(reticleWavyGroup);
+        refreshActionBar();
+        logMapSwap('enterZone', currentArea);
+      }
+
       // ── Town building detection ──────────────────────────────────────
       // Reads explicit building entries from the town layout (placed by map editor).
       function _detectTownBuildings() {
@@ -3887,8 +3997,10 @@
       }
 
       function enterTown(col, row) {
+        const fromScene = getActiveScene();
         buildTownScene();
         farmPlayerSave = { x: player.x, y: player.y, angle: player.angle };
+        _currentBuildingMapId = null;
         currentArea = 'town';
         player.x = (col + 0.5) * TILE;
         player.y = (row + 0.5) * TILE;
@@ -3897,16 +4009,23 @@
         player.angle = facingAngle;
         camTargetX = player.x / TILE;
         camTargetZ = player.y / TILE;
-        scene.remove(playerMesh);
-        scene.remove(playerGroundShadow);
-        scene.remove(toolHolder);
-        scene.remove(reticleMesh);
-        scene.remove(reticleCircleMesh);
-        scene.remove(reticleRingMesh);
-        scene.remove(reticleWavyGroup);
+        if (fromScene) {
+          fromScene.remove(playerMesh);
+          fromScene.remove(playerGroundShadow);
+          fromScene.remove(toolHolder);
+          fromScene.remove(reticleMesh);
+          fromScene.remove(reticleCircleMesh);
+          fromScene.remove(reticleRingMesh);
+          fromScene.remove(reticleWavyGroup);
+        }
         if (townScene) {
           townScene.add(playerMesh);
           townScene.add(playerGroundShadow);
+          townScene.add(toolHolder);
+          townScene.add(reticleMesh);
+          townScene.add(reticleCircleMesh);
+          townScene.add(reticleRingMesh);
+          townScene.add(reticleWavyGroup);
         }
         refreshActionBar();
       }
@@ -4139,6 +4258,7 @@
 
       function getWorldObjectAt(col, row) {
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
+        if (currentArea !== 'farm') return null;
         return worldObjects.get(col + ',' + row) || null;
       }
 
@@ -5285,9 +5405,10 @@
       let sceneTransCb    = null;     // fired once at peak darkness
       let sceneTransFromArea = null;  // area the player was in when the fade started
 
-      function getActiveCols() { return currentArea === 'interior' ? INTERIOR_COLS : currentArea === 'town' ? (_townZone?.cols || 60) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.cols || 20) : COLS; }
-      function getActiveRows() { return currentArea === 'interior' ? INTERIOR_ROWS : currentArea === 'town' ? (_townZone?.rows || 50) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.rows || 20) : ROWS; }
-      function getActiveGrid() { return currentArea === 'interior' ? interiorGrid : currentArea === 'town' ? townGrid : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.grid || grid) : grid; }
+      function getActiveCols() { return currentArea === 'interior' ? INTERIOR_COLS : currentArea === 'town' ? (_townZone?.cols || 60) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.cols || 20) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.cols || EXTERIOR_ZONES[currentArea].cols) : COLS; }
+      function getActiveRows() { return currentArea === 'interior' ? INTERIOR_ROWS : currentArea === 'town' ? (_townZone?.rows || 50) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.rows || 20) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.rows || EXTERIOR_ZONES[currentArea].rows) : ROWS; }
+      function getActiveGrid() { return currentArea === 'interior' ? interiorGrid : currentArea === 'town' ? townGrid : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.grid || grid) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.grid || buildZoneScene(currentArea).grid) : grid; }
+      function getActiveScene() { return _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || scene) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.scene || buildZoneScene(currentArea).scene) : currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene; }
       function getActiveTileAt(col, row) {
         const g = getActiveGrid();
         return g[row]?.[col] || { type: TileType.ROCK, water: 0, crop: CropType.NONE, cropAge: 0, cropReady: false, stress: '', variation: 0 };
@@ -5648,7 +5769,7 @@
       }
 
       function canUseAction(tool, action, col, row) {
-        const tile = grid[row][col];
+        const tile = getActiveGrid()[row][col];
         if (tile.type === TileType.ROCK) return false;
         if (currentArea === 'farm' && isHouseFootprint(col, row) && !isHouseEntranceTile(col, row)) return false;
         if (tool === 'shovel') {
@@ -5666,8 +5787,9 @@
         if (tool === 'weapon') return true; // combat hits are cone-based, not tile-gated
         if (tool === 'machete' || tool === 'axe' || tool === 'harpoon') {
           const targets = getMacheteTargets(col, row, action);
+          const tgrid = getActiveGrid();
           return targets.some(t => {
-            const targetTile = grid[t.row]?.[t.col];
+            const targetTile = tgrid[t.row]?.[t.col];
             return targetTile && !targetTile.crop && (targetTile.type === TileType.WEEDS || targetTile.type === TileType.SHRUB);
           });
         }
@@ -5721,7 +5843,8 @@
       }
 
       function getMacheteTargets(col, row, action) {
-        const clampedCenter = { col: clamp(col, 0, COLS - 1), row: clamp(row, 0, ROWS - 1) };
+        const acols = getActiveCols(), arows = getActiveRows();
+        const clampedCenter = { col: clamp(col, 0, acols - 1), row: clamp(row, 0, arows - 1) };
         if (action !== 'slash') return [clampedCenter];
 
         // Slash uses a simple three-tile cone: the aimed tile plus its two side tiles relative to facing.
@@ -5733,7 +5856,7 @@
           { col: clampedCenter.col + side.x, row: clampedCenter.row + side.y },
           { col: clampedCenter.col - side.x, row: clampedCenter.row - side.y },
         ].filter(t => {
-          if (t.col < 0 || t.col >= COLS || t.row < 0 || t.row >= ROWS) return false;
+          if (t.col < 0 || t.col >= acols || t.row < 0 || t.row >= arows) return false;
           const key = `${t.col},${t.row}`;
           if (seen.has(key)) return false;
           seen.add(key);
@@ -5743,9 +5866,10 @@
 
       function clearVegetationAt(col, row, action) {
         const targets = getMacheteTargets(col, row, action);
+        const tgrid = getActiveGrid();
         let cleared = 0;
         for (const t of targets) {
-          const tile = grid[t.row][t.col];
+          const tile = tgrid[t.row][t.col];
           if (!tile.crop && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB)) {
             tile.type = TileType.GRASS;
             inventory.mulch = Math.min(99, inventory.mulch + 1);
@@ -5772,7 +5896,8 @@
 
       function spawnActionParticles(col, row, action, ok) {
         const profile = actionFxProfile(action, ok);
-        const baseY = tileSurfaceY(grid[row][col].type) + 0.16 + Math.max(0, grid[row][col].water * WATER_UNIT);
+        const agrid = getActiveGrid();
+        const baseY = tileSurfaceY(agrid[row][col].type) + 0.16 + Math.max(0, agrid[row][col].water * WATER_UNIT);
         actionTileEffects.push({ col, row, action, ok, age: 0, maxAge: ok ? 0.58 : 0.44, color: profile.ring });
         while (actionTileEffects.length > 8) actionTileEffects.shift();
         if (action === 'slash') spawnWeaponTrailEffect(col, row, ok);
@@ -5804,7 +5929,8 @@
         const dir = facingCardinal(player.angle);
         const side = dir.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 };
         const targets = getMacheteTargets(col, row, 'slash');
-        const surfaceY = targets.reduce((sum, t) => sum + tileSurfaceY(grid[t.row][t.col].type), 0) / Math.max(1, targets.length);
+        const tgrid = getActiveGrid();
+        const surfaceY = targets.reduce((sum, t) => sum + tileSurfaceY(tgrid[t.row][t.col].type), 0) / Math.max(1, targets.length);
         weaponTrailEffects.push({
           col, row, dir, side,
           age: 0,
@@ -5889,7 +6015,7 @@
       function drawActionTileEffects() {
         for (const fx of actionTileEffects) {
           const t = fx.age / fx.maxAge;
-          const tile = grid[fx.row][fx.col];
+          const tile = getActiveGrid()[fx.row][fx.col];
           const y = tileSurfaceY(tile.type) + 0.06 + Math.max(0, tile.water * WATER_UNIT);
           const center = worldToOverlay(fx.col + 0.5, y + 0.02, fx.row + 0.5);
           if (!center.visible) continue;
@@ -5927,7 +6053,7 @@
 
       function applyAction(tool, action, col, row) {
         if (!canUseAction(tool, action, col, row)) return { ok: false, message: `${actionName(action)} cannot be used on that tile.` };
-        const tile = grid[row][col];
+        const tile = getActiveGrid()[row][col];
 
         if (tool === 'shovel') {
           const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile);
@@ -9411,11 +9537,11 @@
         }
 
         // ── Render active scene ──────────────────────────────────
-        const activeScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || scene) : currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene;
+        const activeScene = getActiveScene();
         renderer.render(activeScene, camera);
         // Selective shell outline pass (layer-1 objects only)
         if (s_outlines) {
-          const _outlineScene = _isBuildingArea(currentArea) ? activeScene : currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene;
+          const _outlineScene = activeScene;
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
           _outlineScene.overrideMaterial = shellOutlineMat;
@@ -10121,8 +10247,8 @@
 
         const reticle = getReticleTile();
 
-        // Farm: show spot transition button (house entrance, town exit, etc.)
-        if (currentArea === 'farm' && _pendingSpotTransition) {
+        // Farm/zone: show spot transition button (house entrance, town exit, etc.)
+        if ((currentArea === 'farm' || _isZoneArea(currentArea)) && _pendingSpotTransition) {
           const t = _pendingSpotTransition;
           const icon = t.target === 'interior' ? '🏠' : t.target === 'town' ? '🏘' : '🚪';
           const label = t.label || (t.target === 'interior' ? 'Enter House' : t.target === 'town' ? 'Leave Farm' : 'Travel');
@@ -10132,7 +10258,7 @@
           if (obj2) obj2.getButtons(reticle).forEach(b => btnsSpot.push(b));
           return btnsSpot;
         }
-        const tile    = grid[reticle.row][reticle.col];
+        const tile    = getActiveGrid()[reticle.row][reticle.col];
         const btns    = [];
 
         // 0. World object at reticle — its buttons take priority
