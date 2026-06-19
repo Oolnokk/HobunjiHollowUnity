@@ -57,7 +57,13 @@
       transparent: true,
       alphaTest: cfg().alphaTest ?? 0.001,
       side: THREE.FrontSide,
-      depthWrite: false,
+      // alphaTest already discards fully-transparent texels, so the opaque
+      // sprite silhouette can safely write depth — without this, the depth
+      // buffer behind the sprite still holds whatever was rendered before it
+      // (e.g. a building wall), so later passes that re-test depth (like the
+      // shell outline pass) draw straight through the sprite as if it weren't
+      // there.
+      depthWrite: true,
     });
   }
 
@@ -205,7 +211,8 @@
     backTex.repeat.set(-1, 1);
     backTex.offset.set(1, 0);
 
-    const matOpts = { transparent: true, alphaTest: cfg().alphaTest ?? 0.001, side: THREE.FrontSide, depthWrite: false };
+    // See makeSpriteMaterial above for why depthWrite is true here.
+    const matOpts = { transparent: true, alphaTest: cfg().alphaTest ?? 0.001, side: THREE.FrontSide, depthWrite: true };
     const frontMat = new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_front_mat', map: frontTex });
     const backMat  = new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_back_mat',  map: backTex  });
 

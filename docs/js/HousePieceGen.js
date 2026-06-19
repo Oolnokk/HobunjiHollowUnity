@@ -147,7 +147,7 @@
       group.add(wbGroup);
 
       // Gable triangles are smaller — use denser, smaller bricks so they fill properly.
-      var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.495, densityMult: 1.5, rockScale: 1.1 });
+      var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.396, densityMult: 1.5, rockScale: 1.1 });
       var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gableExtra));
       gableGroup.userData.isWallBricks = true;
       _markOutlineLayer(gableGroup);
@@ -751,7 +751,7 @@
         group.add(wbGrp);
       }
       if (gablePanels.length) {
-        var gblExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.495, densityMult: 1.5, rockScale: 1.1 });
+        var gblExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.396, densityMult: 1.5, rockScale: 1.1 });
         var gblGrp   = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gblExtra));
         gblGrp.userData.isWallBricks = true;
         _markOutlineLayer(gblGrp);
