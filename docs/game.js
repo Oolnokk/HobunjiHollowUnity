@@ -817,7 +817,70 @@
         y: ROWS * TILE * 0.72,
         angle: -Math.PI / 2,
         vx: 0, vy: 0,
-        emoji: '🧑‍🌾'
+        emoji: '🧑‍🌾',
+        health: 100, maxHealth: 100,
+        stamina: 100, maxStamina: 100,
+        invulnUntil: 0,
+        dodging: false, dodgeT: 0, dodgeDirX: 0, dodgeDirY: 0, dodgeCooldownT: 0,
+      };
+
+      // Combat tuning for the weapon tool's two abilities. Cone hit-tests use
+      // continuous angle+range against creatures (not tile snapped). 'slash'
+      // is the big sweep: bigger cone, more damage, costs more stamina.
+      const WEAPON_ABILITY = {
+        cut:   { damage: 14, halfConeRad: 32 * Math.PI / 180, rangePx: TILE * 1.05, staminaCost: 12 },
+        slash: { damage: 24, halfConeRad: 62 * Math.PI / 180, rangePx: TILE * 1.35, staminaCost: 20 },
+      };
+
+      const PLAYER_STAMINA_REGEN = 14;   // per second
+      const PLAYER_HEALTH_REGEN  = 1.2;  // per second, passive
+      const DODGE_DUR_S = 0.22;
+      const DODGE_SPEED_PX = 640;
+      const DODGE_IFRAME_MS = 380;
+      const DODGE_COOLDOWN_S = 0.6;
+      const DODGE_STAMINA_COST = 18;
+
+      // Global creature database — companions (whistle-bound) and hostiles
+      // (ambient-spawned) are both built from this table.
+      const CREATURE_DB = {
+        'dabinggi-hound': {
+          label: 'Dabinggi-hound', hostile: false,
+          maxHealth: 50, maxStamina: 40,
+          moveSpeed: 165, chaseSpeed: 220,
+          attackDamage: 10, attackRangePx: TILE * 0.9, attackHalfConeRad: 45 * Math.PI / 180,
+          attackStaminaCost: 14, attackCooldownS: 1.1,
+          modelWidth: 0.95, tint: 0xffffff,
+          sprites: {
+            idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
+            run: ['assets/creaturesprites/dabinggi-hound_run1.png', 'assets/creaturesprites/dabinggi-hound_run2.png'],
+          },
+        },
+        'gar-wolf': {
+          label: 'Gar-wolf', hostile: true,
+          maxHealth: 38, maxStamina: 30,
+          moveSpeed: 130, chaseSpeed: 195,
+          attackDamage: 12, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
+          attackStaminaCost: 12, attackCooldownS: 1.0,
+          aggroRangePx: TILE * 6.2, leashRangePx: TILE * 9,
+          modelWidth: 1.05, tint: 0xffffff,
+          sprites: {
+            idle: 'assets/creaturesprites/gar-wolf_idle.png',
+            run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
+          },
+        },
+        'gar-wolf-alpha': {
+          label: 'Gar-wolf Alpha', hostile: true,
+          maxHealth: 78, maxStamina: 46,
+          moveSpeed: 140, chaseSpeed: 205,
+          attackDamage: 18, attackRangePx: TILE * 0.95, attackHalfConeRad: 46 * Math.PI / 180,
+          attackStaminaCost: 16, attackCooldownS: 1.0,
+          aggroRangePx: TILE * 7, leashRangePx: TILE * 10,
+          modelWidth: 1.55, tint: 0xffb0a0,
+          sprites: {
+            idle: 'assets/creaturesprites/gar-wolf_idle.png',
+            run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
+          },
+        },
       };
 
       // Used by input polling; supports both keyboard and touch joystick.
@@ -871,6 +934,7 @@
         pick:    null,
         harpoon: null,
         weapon:  null,
+        whistle: null,
       };
 
       function makeDefaultGear() {
@@ -878,7 +942,10 @@
           tools:    { bronzehoe: true, hatchet: true, fishingmace: true, fishingspear: true, pickshovel: true },
           clothing: { hat: null, hood: null, torso: null, overwear: null },
           clothingItems: [],
-          charms: [], whistles: [],
+          charms: [],
+          whistles: [
+            { id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' },
+          ],
         };
       }
 
@@ -1097,6 +1164,8 @@
       const processingFurnitureObjects = new Set(); // Used by reset and debug to track player-placed processing furniture.
       const interiorFurnitureObjects = []; // Tracks decorative furniture placed inside the house.
       const animalObjects = new Set(); // Tracks all live animal world objects for update loop and reset.
+      const companionObjects = new Set(); // Whistle-summoned companion creatures (0 or 1 active at a time).
+      const hostileObjects = new Set();   // Ambient-spawned hostile creatures (Gar-wolf / Gar-wolf Alpha).
 
       // Preload uumkao'ii sprite; animals check this before spawning.
       let uumkaoiiSpriteImage = null;
@@ -1708,6 +1777,389 @@
 
       function updateAnimalMeshes(dt) {
         for (const animal of animalObjects) animal.update(dt);
+      }
+
+      // ── Companion & hostile creatures (Whistle system + Combat system) ───────
+      // Continuous pixel-space movement (unlike the tile-hopping uumkao'ii
+      // above), built on the same two-plane side-view sprite avatars.
+
+      const _creatureTexCache = { front: new Map(), back: new Map() };
+      function _getCreatureFrontTexture(url) {
+        if (!_creatureTexCache.front.has(url)) {
+          const tex = new THREE.TextureLoader().load(url);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          _creatureTexCache.front.set(url, tex);
+        }
+        return _creatureTexCache.front.get(url);
+      }
+      function _getCreatureBackTexture(url) {
+        if (!_creatureTexCache.back.has(url)) {
+          const tex = new THREE.TextureLoader().load(url);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.repeat.set(-1, 1);
+          tex.offset.set(1, 0);
+          _creatureTexCache.back.set(url, tex);
+        }
+        return _creatureTexCache.back.get(url);
+      }
+      function setCreatureFrame(avatarRef, url) {
+        for (const child of avatarRef.group.children) {
+          if (!child.material) continue;
+          if (child.name.endsWith('_front_plane')) child.material.map = _getCreatureFrontTexture(url);
+          else if (child.name.endsWith('_back_plane')) child.material.map = _getCreatureBackTexture(url);
+          else continue;
+          child.material.needsUpdate = true;
+        }
+      }
+
+      const CREATURE_PERPS = [0, Math.PI];
+
+      function makeCreatureEntity(creatureKey, x, y, opts = {}) {
+        const def = CREATURE_DB[creatureKey];
+        if (!def) return null;
+        const modelWidth = def.modelWidth;
+        const modelHeight = modelWidth * (600 / 1375); // all creature sprites are 1375×600px
+        const halfH = modelHeight / 2;
+        const idUniq = (performance.now() | 0) + '_' + Math.floor(Math.random() * 100000);
+        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
+          modelWidth, modelHeight,
+          name: creatureKey + '_' + idUniq,
+        });
+        if (def.tint && def.tint !== 0xffffff) {
+          for (const child of avatarRef.group.children) {
+            if (child.material) child.material.color.setHex(def.tint);
+          }
+        }
+        const col = clamp(Math.floor(x / TILE), 0, COLS - 1);
+        const row = clamp(Math.floor(y / TILE), 0, ROWS - 1);
+        const surfY = grid[row]?.[col] ? tileSurfaceY(grid[row][col].type) : 0;
+        avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
+        scene.add(avatarRef.group);
+
+        const creature = {
+          id: creatureKey + '_' + idUniq,
+          creatureKey, def, avatarRef,
+          x, y, vx: 0, vy: 0,
+          halfHeight: halfH,
+          health: def.maxHealth, maxHealth: def.maxHealth,
+          stamina: def.maxStamina, maxStamina: def.maxStamina,
+          facing: 0, groupRot: 0, perpState: {},
+          attackCooldownT: 0, hitFlashT: 0,
+          runFrame: 0, runFrameT: 0, currentFrameUrl: def.sprites.idle,
+          isCompanion: false,
+          name: def.label,
+          state: 'idle',
+          wanderTarget: null, wanderT: 0,
+          homeX: x, homeY: y,
+          ...opts,
+        };
+        return creature;
+      }
+
+      function despawnCreature(c) {
+        scene.remove(c.avatarRef.group);
+        c.avatarRef.dispose();
+      }
+
+      function damageCreature(c, amount) {
+        c.health = Math.max(0, c.health - amount);
+        c.hitFlashT = 0.25;
+        if (c.health <= 0) {
+          despawnCreature(c);
+          hostileObjects.delete(c);
+          companionObjects.delete(c);
+        }
+      }
+
+      function damagePlayer(amount) {
+        if (performance.now() < player.invulnUntil) return;
+        player.health = Math.max(0, player.health - amount);
+        if (player.health <= 0) respawnPlayer();
+      }
+
+      function respawnPlayer() {
+        player.x = COLS * TILE * 0.5;
+        player.y = ROWS * TILE * 0.72;
+        player.health = Math.round(player.maxHealth * 0.5);
+        player.invulnUntil = performance.now() + 1000;
+        showToast('You black out and stumble back to the farmhouse...', false);
+      }
+
+      // Continuous angle+range cone test (not tile based) shared by player
+      // weapon swings, companion bites, and hostile bites.
+      function inCone(fromX, fromY, facingAngle, toX, toY, rangePx, halfConeRad) {
+        const dx = toX - fromX, dy = toY - fromY;
+        const dist = Math.hypot(dx, dy);
+        if (dist > rangePx) return false;
+        if (dist < 1) return true;
+        const angTo = Math.atan2(dy, dx);
+        return Math.abs(angleDiff(angTo, facingAngle)) <= halfConeRad;
+      }
+
+      function resolveWeaponHit(action) {
+        const abil = WEAPON_ABILITY[action];
+        if (!abil) return { hits: 0, message: '' };
+        let hits = 0;
+        let lastName = '';
+        for (const c of hostileObjects) {
+          if (c.health <= 0) continue;
+          if (!inCone(player.x, player.y, player.angle, c.x, c.y, abil.rangePx, abil.halfConeRad)) continue;
+          damageCreature(c, abil.damage);
+          hits++;
+          lastName = c.def.label;
+          if (c.health > 0) {
+            const ang = Math.atan2(c.y - player.y, c.x - player.x);
+            c.x += Math.cos(ang) * 10;
+            c.y += Math.sin(ang) * 10;
+          }
+        }
+        if (hits <= 0) return { hits: 0, message: '' };
+        const verb = action === 'slash' ? 'Slashed' : 'Cut';
+        return { hits, message: hits > 1 ? `${verb} ${hits} creatures!` : `${verb} the ${lastName}!` };
+      }
+
+      function moveCreatureToward(c, tx, ty, speed, dt) {
+        const dx = tx - c.x, dy = ty - c.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
+        const nx = dx / dist, ny = dy / dist;
+        const step = Math.min(dist, speed * dt);
+        c.x += nx * step;
+        c.y += ny * step;
+        c.vx = nx * speed; c.vy = ny * speed;
+        return true;
+      }
+
+      function wanderTick(c, dt, anchorX, anchorY, radiusPx) {
+        c.wanderT -= dt;
+        if (!c.wanderTarget || c.wanderT <= 0) {
+          const ang = Math.random() * Math.PI * 2;
+          const r = Math.random() * radiusPx;
+          c.wanderTarget = { x: anchorX + Math.cos(ang) * r, y: anchorY + Math.sin(ang) * r };
+          c.wanderT = 1.5 + Math.random() * 2;
+        }
+        return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
+      }
+
+      function updateCreatureMesh(c, dt, aimAngle) {
+        const col = clamp(Math.floor(c.x / TILE), 0, COLS - 1);
+        const row = clamp(Math.floor(c.y / TILE), 0, ROWS - 1);
+        const surfY = grid[row]?.[col] ? tileSurfaceY(grid[row][col].type) : 0;
+        const g = c.avatarRef.group;
+        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight;
+        g.position.x += (tx - g.position.x) * Math.min(1, dt * 10);
+        g.position.z += (tz - g.position.z) * Math.min(1, dt * 10);
+        g.position.y += (ty - g.position.y) * Math.min(1, dt * 7);
+
+        const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
+        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, CREATURE_PERPS);
+        if (snapTo !== null) c.groupRot = effectiveTarget;
+        else c.groupRot += angleDiff(effectiveTarget, c.groupRot) * Math.min(1, dt * 10);
+        g.rotation.y = c.groupRot;
+
+        if (c.hitFlashT > 0) {
+          c.hitFlashT = Math.max(0, c.hitFlashT - dt);
+          const flashColor = c.hitFlashT > 0 ? 0xff5050 : (c.def.tint || 0xffffff);
+          for (const child of g.children) {
+            if (child.material) child.material.color.setHex(flashColor);
+          }
+        }
+      }
+
+      function updateCreatureAnimFrame(c, dt, moving) {
+        if (!moving) {
+          if (c.currentFrameUrl !== c.def.sprites.idle) {
+            setCreatureFrame(c.avatarRef, c.def.sprites.idle);
+            c.currentFrameUrl = c.def.sprites.idle;
+          }
+          return;
+        }
+        c.runFrameT += dt;
+        if (c.runFrameT >= 0.18) {
+          c.runFrameT = 0;
+          c.runFrame = (c.runFrame + 1) % c.def.sprites.run.length;
+        }
+        const url = c.def.sprites.run[c.runFrame];
+        if (c.currentFrameUrl !== url) {
+          setCreatureFrame(c.avatarRef, url);
+          c.currentFrameUrl = url;
+        }
+      }
+
+      function updateHostiles(dt) {
+        for (const c of hostileObjects) {
+          if (c.health <= 0) continue;
+          const def = c.def;
+          c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
+          c.stamina = Math.min(c.maxStamina, c.stamina + c.maxStamina * 0.25 * dt);
+
+          const dxp = player.x - c.x, dyp = player.y - c.y;
+          const distToPlayer = Math.hypot(dxp, dyp);
+          const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
+
+          if (c.state !== 'chase' && distToPlayer <= def.aggroRangePx) c.state = 'chase';
+          if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
+          if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
+
+          let moving = false, aimAngle = c.facing || 0;
+          if (c.state === 'chase') {
+            moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
+            aimAngle = Math.atan2(dyp, dxp);
+            if (distToPlayer <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+              c.stamina -= def.attackStaminaCost;
+              c.attackCooldownT = def.attackCooldownS;
+              damagePlayer(def.attackDamage);
+            }
+          } else if (c.state === 'return') {
+            moving = moveCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
+            if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
+          } else {
+            moving = wanderTick(c, dt, c.homeX, c.homeY, TILE * 2.2);
+            if (moving) aimAngle = Math.atan2(c.vy, c.vx);
+          }
+          c.facing = aimAngle;
+          c.x = clamp(c.x, 0, COLS * TILE);
+          c.y = clamp(c.y, 0, ROWS * TILE);
+
+          updateCreatureMesh(c, dt, aimAngle);
+          updateCreatureAnimFrame(c, dt, moving);
+        }
+      }
+
+      const FOLLOW_FAR_PX  = TILE * 2.2;
+      const FOLLOW_NEAR_PX = TILE * 1.1;
+      const ALERT_RANGE_PX = TILE * 4.5;
+
+      function updateCompanions(dt) {
+        for (const c of companionObjects) {
+          if (c.health <= 0) continue;
+          const def = c.def;
+          c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
+          c.stamina = Math.min(c.maxStamina, c.stamina + c.maxStamina * 0.25 * dt);
+
+          const dxp = player.x - c.x, dyp = player.y - c.y;
+          const distToPlayer = Math.hypot(dxp, dyp);
+          let target = null;
+          for (const h of hostileObjects) {
+            if (h.health <= 0) continue;
+            if (Math.hypot(h.x - player.x, h.y - player.y) <= ALERT_RANGE_PX) { target = h; break; }
+          }
+
+          let moving = false, aimAngle = c.facing || 0;
+          if (target) {
+            const dist = Math.hypot(target.x - c.x, target.y - c.y);
+            if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
+            aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
+            if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+              c.stamina -= def.attackStaminaCost;
+              c.attackCooldownT = def.attackCooldownS;
+              damageCreature(target, def.attackDamage);
+            }
+          } else if (distToPlayer > FOLLOW_FAR_PX) {
+            moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
+            aimAngle = Math.atan2(dyp, dxp);
+          } else {
+            moving = wanderTick(c, dt, player.x, player.y, FOLLOW_NEAR_PX);
+            if (moving) aimAngle = Math.atan2(c.vy, c.vx);
+          }
+          c.facing = aimAngle;
+          c.x = clamp(c.x, 0, COLS * TILE);
+          c.y = clamp(c.y, 0, ROWS * TILE);
+
+          updateCreatureMesh(c, dt, aimAngle);
+          updateCreatureAnimFrame(c, dt, moving);
+        }
+      }
+
+      function despawnCompanions() {
+        companionObjects.forEach(c => despawnCreature(c));
+        companionObjects.clear();
+      }
+
+      // Spawns/despawns the active companion to match the equipped whistle.
+      // Called every farm-area frame; cheap no-op once in sync.
+      function syncCompanionFromWhistle() {
+        const whistle = equipmentSlots.whistle
+          ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
+          : null;
+        const existing = [...companionObjects][0];
+        if (!whistle) {
+          if (existing) despawnCompanions();
+          return;
+        }
+        if (existing && existing.creatureKey === whistle.creatureKey) return;
+        despawnCompanions();
+        const spawnX = player.x + Math.cos(player.angle + Math.PI) * TILE * 1.4;
+        const spawnY = player.y + Math.sin(player.angle + Math.PI) * TILE * 1.4;
+        const companion = makeCreatureEntity(whistle.creatureKey, spawnX, spawnY, {
+          isCompanion: true, name: whistle.name, homeX: spawnX, homeY: spawnY, state: 'idle',
+        });
+        if (companion) companionObjects.add(companion);
+      }
+
+      function clearHostileObjects() {
+        hostileObjects.forEach(c => despawnCreature(c));
+        hostileObjects.clear();
+      }
+
+      // Ambient hostile spawning, biased to the southern cloud forest (rows
+      // near the bottom edge → regular Gar-wolf) and northern cliffs (rows
+      // near the top edge → tougher Gar-wolf Alpha) of the farm map.
+      const HOSTILE_CAP = 5;
+      const HOSTILE_SPAWN_INTERVAL_S = 14;
+      const HOSTILE_SPAWN_ZONES = [
+        { creatureKey: 'gar-wolf',       rowMin: ROWS - 6, rowMax: ROWS - 1 }, // southern cloud forest
+        { creatureKey: 'gar-wolf-alpha', rowMin: 0,        rowMax: 5        }, // northern cliffs
+      ];
+      let hostileSpawnTimer = HOSTILE_SPAWN_INTERVAL_S;
+
+      function updateHostileSpawning(dt) {
+        hostileSpawnTimer -= dt;
+        if (hostileSpawnTimer > 0) return;
+        hostileSpawnTimer = HOSTILE_SPAWN_INTERVAL_S;
+        if (hostileObjects.size >= HOSTILE_CAP) return;
+        const zone = HOSTILE_SPAWN_ZONES[Math.floor(Math.random() * HOSTILE_SPAWN_ZONES.length)];
+        for (let attempt = 0; attempt < 8; attempt++) {
+          const col = Math.floor(Math.random() * COLS);
+          const row = zone.rowMin + Math.floor(Math.random() * (zone.rowMax - zone.rowMin + 1));
+          if (!canSpawnAnimalAt(col, row)) continue;
+          const x = col * TILE + TILE * 0.5, y = row * TILE + TILE * 0.5;
+          if (Math.hypot(x - player.x, y - player.y) < TILE * 5) continue;
+          const creature = makeCreatureEntity(zone.creatureKey, x, y, { homeX: x, homeY: y, state: 'idle' });
+          if (creature) hostileObjects.add(creature);
+          return;
+        }
+      }
+
+      function updatePlayerVitals(dt) {
+        player.stamina = Math.min(player.maxStamina, player.stamina + PLAYER_STAMINA_REGEN * dt);
+        if (player.health > 0) player.health = Math.min(player.maxHealth, player.health + PLAYER_HEALTH_REGEN * dt);
+        if (player.dodgeCooldownT > 0) player.dodgeCooldownT = Math.max(0, player.dodgeCooldownT - dt);
+        refreshVitalsHud();
+      }
+
+      function performDodge(angle) {
+        if (player.dodging || player.dodgeCooldownT > 0) return false;
+        if (player.stamina < DODGE_STAMINA_COST) {
+          showToast('Too winded to dodge!', false);
+          return false;
+        }
+        player.stamina -= DODGE_STAMINA_COST;
+        player.dodging = true;
+        player.dodgeT = DODGE_DUR_S;
+        player.dodgeDirX = Math.cos(angle);
+        player.dodgeDirY = Math.sin(angle);
+        player.dodgeCooldownT = DODGE_COOLDOWN_S;
+        player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
+        return true;
+      }
+
+      const _vbHealthFill  = document.getElementById('vbHealthFill');
+      const _vbStaminaFill = document.getElementById('vbStaminaFill');
+      function refreshVitalsHud() {
+        if (_vbHealthFill)  _vbHealthFill.style.width  = `${Math.max(0, Math.min(100, player.health  / player.maxHealth  * 100))}%`;
+        if (_vbStaminaFill) _vbStaminaFill.style.width = `${Math.max(0, Math.min(100, player.stamina / player.maxStamina * 100))}%`;
       }
 
       // ── World travel: transition spots + shared NPC routes (map editor data) ─
@@ -4760,6 +5212,60 @@
           empty.textContent = 'No collected clothing in gear.';
           sec.appendChild(empty);
         }
+        buildWhistleEquipUI();
+      }
+
+      function equipWhistle(whistleId) {
+        equipmentSlots.whistle = whistleId;
+        saveGearInventory();
+        buildWhistleEquipUI();
+      }
+
+      function unequipWhistle() {
+        equipmentSlots.whistle = null;
+        saveGearInventory();
+        buildWhistleEquipUI();
+      }
+
+      function buildWhistleEquipUI() {
+        const sec = document.getElementById('invWhistleSection');
+        if (!sec) return;
+        sec.innerHTML = '';
+        const whistles = gearInventory?.whistles || [];
+        if (!whistles.length) {
+          const empty = document.createElement('div');
+          empty.className = 'inv-gear-extra-empty';
+          empty.textContent = 'No whistles in gear.';
+          sec.appendChild(empty);
+          return;
+        }
+        const row = document.createElement('div');
+        row.className = 'inv-equip-row';
+        for (const whistle of whistles) {
+          const def = CREATURE_DB[whistle.creatureKey];
+          const equipped = equipmentSlots.whistle === whistle.id;
+          const cell = document.createElement('div');
+          cell.className = 'inv-equip-slot occupied' + (equipped ? ' active-slot' : '');
+          cell.setAttribute('title', `${whistle.name} (${def?.label || whistle.creatureKey})` + (equipped ? ' — equipped' : ' — click to equip'));
+          if (def?.sprites?.idle) {
+            const img = document.createElement('img');
+            img.src = def.sprites.idle; img.className = 'ies-sprite'; img.alt = whistle.name;
+            cell.appendChild(img);
+          }
+          if (equipped) {
+            const unBtn = document.createElement('button');
+            unBtn.className = 'ies-unequip'; unBtn.textContent = '✕'; unBtn.title = 'Unequip ' + whistle.name;
+            unBtn.addEventListener('click', (e) => { e.stopPropagation(); unequipWhistle(); });
+            cell.appendChild(unBtn);
+          }
+          const lbl = document.createElement('span');
+          lbl.className = 'ies-label';
+          lbl.textContent = whistle.name;
+          cell.appendChild(lbl);
+          cell.addEventListener('click', () => equipWhistle(whistle.id));
+          row.appendChild(cell);
+        }
+        sec.appendChild(row);
       }
 
       let activeItemIndex = 0;
@@ -4976,6 +5482,24 @@
 
       function updateMovement(dt) {
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
+
+        if (player.dodging) {
+          player.dodgeT -= dt;
+          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+          const desiredX = clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
+          const desiredY = clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
+          if (canPlayerOccupy(desiredX, player.y)) player.x = desiredX;
+          if (canPlayerOccupy(player.x, desiredY)) player.y = desiredY;
+          player.vx = player.dodgeDirX * DODGE_SPEED_PX;
+          player.vy = player.dodgeDirY * DODGE_SPEED_PX;
+          if (player.dodgeT <= 0) {
+            player.dodging = false;
+            player.vx = 0; player.vy = 0;
+          }
+          return;
+        }
+
         const keyboardVector = getKeyboardVector();
         const usingKeyboard = keyboardVector.active;
         let ix = usingKeyboard ? keyboardVector.x : input.x;
@@ -5139,7 +5663,8 @@
           if (action === 'till') return tile.type === TileType.GRASS && !tile.crop;
           if (action === 'smooth') return [TileType.TILLED, TileType.RAISED, TileType.PADDY].includes(tile.type) && !tile.crop;
         }
-        if (tool === 'machete' || tool === 'axe' || tool === 'harpoon' || tool === 'weapon') {
+        if (tool === 'weapon') return true; // combat hits are cone-based, not tile-gated
+        if (tool === 'machete' || tool === 'axe' || tool === 'harpoon') {
           const targets = getMacheteTargets(col, row, action);
           return targets.some(t => {
             const targetTile = grid[t.row]?.[t.col];
@@ -5420,7 +5945,7 @@
           return { ok: true, message: action === 'till' ? 'Tilled a plantable bed.' : 'Smoothed the tile back into grass.' };
         }
 
-        if (tool === 'machete' || tool === 'axe' || tool === 'harpoon' || tool === 'weapon') {
+        if (tool === 'machete' || tool === 'axe' || tool === 'harpoon') {
           const result = clearVegetationAt(col, row, action);
           if (result.cleared <= 0) return { ok: false, message: action === 'slash' ? 'Slash cone found no overgrowth.' : 'No overgrowth to cut here.' };
           return {
@@ -5429,6 +5954,21 @@
               ? `Slashed ${result.cleared} tile${result.cleared === 1 ? '' : 's'} in the cone into mulch.`
               : 'Cut one tile of day-one overgrowth into mulch.'
           };
+        }
+
+        if (tool === 'weapon') {
+          const hitResult = resolveWeaponHit(action);
+          if (hitResult.hits > 0) return { ok: true, message: hitResult.message };
+          const vegResult = clearVegetationAt(col, row, action);
+          if (vegResult.cleared > 0) {
+            return {
+              ok: true,
+              message: action === 'slash'
+                ? `Slashed ${vegResult.cleared} tile${vegResult.cleared === 1 ? '' : 's'} in the cone into mulch.`
+                : 'Cut one tile of day-one overgrowth into mulch.'
+            };
+          }
+          return { ok: false, message: action === 'slash' ? 'The big sweep connects with nothing.' : 'The strike connects with nothing.' };
         }
 
         if (tool === 'pick') {
@@ -5462,6 +6002,15 @@
           showToast(npcDialogueButtonConfig().noTargetMessage || 'No one nearby to talk to.', false);
           return;
         }
+        if (activeTool === 'weapon') {
+          const abil = WEAPON_ABILITY[activeAction];
+          if (abil && player.stamina < abil.staminaCost) {
+            showToast('Too winded to swing!', false);
+            return;
+          }
+          if (abil) player.stamina = Math.max(0, player.stamina - abil.staminaCost);
+        }
+
         const _anim = activeAnimStyle();
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
         toolSwingT = toolSwingDur;
@@ -8743,6 +9292,14 @@
         if (!paused) {
           updateCalendar(dt);
           updateMovement(dt);
+          updatePlayerVitals(dt);
+
+          if (currentArea === 'farm') {
+            syncCompanionFromWhistle();
+            updateCompanions(dt);
+            updateHostileSpawning(dt);
+            updateHostiles(dt);
+          }
 
           // Interior exit detection: player walks south through exit door
           if (currentArea === 'interior' && sceneTransDir === 0) {
@@ -10143,6 +10700,8 @@
         clearPlacedProcessingFurniture();
         clearInteriorFurniture();
         clearAnimalObjects();
+        clearHostileObjects();
+        despawnCompanions();
         worldObjects.forEach(o => o.reset && o.reset());
         grid = createInitialGrid();
         { const _sl = loadFarmLayout(); if (_sl) applyFarmLayoutToGrid(_sl); }
@@ -10150,6 +10709,9 @@
         player.y = ROWS * TILE * 0.72;
         player.angle = -Math.PI / 2;
         player.vx = 0; player.vy = 0;
+        player.health = player.maxHealth;
+        player.stamina = player.maxStamina;
+        player.dodging = false; player.dodgeT = 0; player.dodgeCooldownT = 0; player.invulnUntil = 0;
         facingAngle = -Math.PI / 2;
         lastMoveAngle = -Math.PI / 2;
         cardinalHoldTimer = 0;
@@ -10160,6 +10722,7 @@
         if (gearInventory?.tools?.bronzehoe)  equipmentSlots.hoe    = 'bronzehoe';
         if (gearInventory?.tools?.pickshovel) equipmentSlots.shovel = 'pickshovel';
         if (gearInventory?.tools?.hatchet)    equipmentSlots.weapon = 'hatchet';
+        if (gearInventory?.whistles?.length)  equipmentSlots.whistle = gearInventory.whistles[0].id;
         rebuildToolMeshes();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
@@ -10205,6 +10768,64 @@
       joystickZone.addEventListener('pointermove', handleJoystickPointerMove);
       joystickZone.addEventListener('pointerup', handleJoystickPointerUp);
       joystickZone.addEventListener('pointercancel', handleJoystickPointerUp);
+
+      // Dodge button: drag like a stick to aim the dodge (mobile), or tap to
+      // dodge in the current facing direction. Mirrors applyAbt()'s drag-stick
+      // pattern, but fires performDodge() once per gesture instead of repeating.
+      function initDodgeButton() {
+        const el = document.getElementById('dodgeBtn');
+        if (!el) return;
+        let _ptId = null, _cx = 0, _cy = 0, _sockR = 0, _drag = false, _socket = null;
+        const DRAG_THRESH = 10;
+
+        el.addEventListener('pointerdown', ev => {
+          if (_ptId !== null) return;
+          _ptId = ev.pointerId;
+          el.setPointerCapture(ev.pointerId);
+          const rect = el.getBoundingClientRect();
+          _cx = rect.left + rect.width / 2;
+          _cy = rect.top + rect.height / 2;
+          _sockR = rect.width * 0.70;
+          _drag = false;
+          _socket = document.createElement('div');
+          _socket.className = 'abt-socket';
+          _socket.style.left   = _cx + 'px';
+          _socket.style.top    = _cy + 'px';
+          _socket.style.width  = (rect.width * 2.2) + 'px';
+          _socket.style.height = (rect.width * 2.2) + 'px';
+          document.body.appendChild(_socket);
+          el.style.transition = 'none';
+          ev.preventDefault();
+        });
+
+        el.addEventListener('pointermove', ev => {
+          if (ev.pointerId !== _ptId) return;
+          const dx = ev.clientX - _cx, dy = ev.clientY - _cy;
+          const dist = Math.hypot(dx, dy);
+          const r = Math.min(dist, _sockR);
+          const nx = dist > 0.5 ? dx / dist * r : 0;
+          const ny = dist > 0.5 ? dy / dist * r : 0;
+          el.style.transform = `translate(calc(-50% + ${nx}px), calc(50% + ${ny}px))`;
+          if (dist > DRAG_THRESH) _drag = true;
+        });
+
+        function _dodgeUp(ev) {
+          if (ev.pointerId !== _ptId) return;
+          _ptId = null;
+          if (_socket) { _socket.remove(); _socket = null; }
+          el.style.transition = 'transform 0.14s ease-out';
+          el.style.transform  = 'translate(-50%, 50%)';
+          setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
+          const dx = ev.clientX - _cx, dy = ev.clientY - _cy;
+          const dist = Math.hypot(dx, dy);
+          performDodge(_drag && dist > DRAG_THRESH ? Math.atan2(dy, dx) : player.angle);
+          _drag = false;
+        }
+
+        el.addEventListener('pointerup', _dodgeUp);
+        el.addEventListener('pointercancel', _dodgeUp);
+      }
+      initDodgeButton();
 
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
@@ -10252,6 +10873,13 @@
           event.preventDefault();
           cycleActiveInventoryItem(1);
           refreshItemScroll(); refreshActionBar();
+        }
+
+        // X: dodge in the current facing direction, with i-frames
+        if (key === 'x') {
+          event.preventDefault();
+          performDodge(player.angle);
+          return;
         }
 
         // R: cycle active tool's action mode (equivalent to Q on mobile)
@@ -10401,11 +11029,16 @@
           : makeDefaultGear();
         if (!gearInventory.tools)    gearInventory.tools    = {};
         if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
+        if (!gearInventory.charms)   gearInventory.charms   = [];
+        if (!gearInventory.whistles || !gearInventory.whistles.length) {
+          gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];
+        }
         ensureGearClothingCollection();
         // Set default equipment slot assignments
         if (gearInventory.tools.bronzehoe)  equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
         if (gearInventory.tools.pickshovel) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
         if (gearInventory.tools.hatchet)    equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
+        if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
         rebuildToolMeshes();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);

@@ -62,6 +62,18 @@
     <span class="sb-gold" id="spGold">💰 0g</span>
   </div>
 
+  <!-- Player vitals: health + stamina bars (top-left) -->
+  <div id="vitalsBar">
+    <div class="vb-row">
+      <span class="vb-icon">❤️</span>
+      <div class="vb-track"><div class="vb-fill vb-health" id="vbHealthFill"></div></div>
+    </div>
+    <div class="vb-row">
+      <span class="vb-icon">⚡</span>
+      <div class="vb-track"><div class="vb-fill vb-stamina" id="vbStaminaFill"></div></div>
+    </div>
+  </div>
+
   <!-- Farm editor toggle button (top-right, beside menu) -->
   <button id="farmEditBtn" aria-label="Toggle farm editor" title="Farm Editor" onclick="window._farmEditor?.toggle()">✏️</button>
 
@@ -219,7 +231,7 @@
           </div>
           <div class="inv-gear-extra-section">
             <div class="inv-gear-extra-label">🎵 Whistles</div>
-            <div class="inv-gear-extra-empty">No whistles equipped. <span class="inv-gear-coming">Not yet implemented.</span></div>
+            <div id="invWhistleSection"></div>
           </div>
           <div class="inv-gear-carry-note">Gear Inventory saves with your character and carries between worlds.</div>
         </div>
@@ -520,6 +532,14 @@
   <div id="joystickZone" class="control-zone" aria-label="Movement joystick">
     <div id="joystickBase"></div>
     <div id="joystickKnob">🕹️</div>
+  </div>
+
+  <!-- Dodge button: drag like a stick to choose dodge direction (mobile); tap dodges in current facing direction. Desktop: X key. -->
+  <div id="dodgeAnchor">
+    <button id="dodgeBtn" class="abt" aria-label="Dodge">
+      <span class="abt-icon">💨</span>
+      <span class="abt-label">Dodge</span>
+    </button>
   </div>
 
   <!-- Button/Prompt Arc Container: grid x:24 y:10 w:8 h:8 (32×18).
