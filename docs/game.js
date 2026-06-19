@@ -659,7 +659,8 @@
       const TileType = Object.freeze({
         GRASS: 'grass', WEEDS: 'weeds', TILLED: 'tilled',
         TRENCH: 'trench', RAISED: 'raised', PADDY: 'paddy',
-        ROCK: 'rock', SHRUB: 'shrub', PATH: 'path'
+        ROCK: 'rock', SHRUB: 'shrub', PATH: 'path',
+        RIVER: 'river', STREAM: 'stream'
       });
 
       const CropType = Object.freeze({
@@ -795,6 +796,8 @@
         rock:   { topColor: '#79807c', sideColor: '#50554f', label: 'rock'     },
         shrub:  { topColor: '#356e36', sideColor: '#204d20', label: 'shrub'    },
         path:   { topColor: '#b8956a', sideColor: '#8a6a3a', label: 'path'     },
+        river:  { topColor: '#2f6fb8', sideColor: '#1f4d80', label: 'river'    },
+        stream: { topColor: '#4f9bd9', sideColor: '#356f99', label: 'stream'   },
       };
 
       // Helper: floor Z for a tile type
