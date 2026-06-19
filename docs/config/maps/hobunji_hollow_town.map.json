@@ -18337,8 +18337,8 @@
     {
       "id": "spot_bggvy",
       "label": "Enter Inn",
-      "col": 28,
-      "row": 28,
+      "col": 30,
+      "row": 27,
       "targetMapId": "map_i_inn",
       "targetSpotId": "sp_inn_entry"
     },
@@ -18446,7 +18446,7 @@
       "label": "Inn",
       "pieceFile": "config/pieces/inn.json",
       "gridX": 26,
-      "gridZ": 24,
+      "gridZ": 22,
       "footprintW": 7,
       "footprintD": 5,
       "wbOpts": null,
@@ -18479,8 +18479,8 @@
       "id": "bldg_7kl2f",
       "label": "Carpenter",
       "pieceFile": "config/pieces/placeholder-medium.json",
-      "gridX": 35,
-      "gridZ": 23,
+      "gridX": 20,
+      "gridZ": 6,
       "footprintW": 5,
       "footprintD": 4,
       "wbOpts": null,
@@ -18490,13 +18490,13 @@
       "id": "bldg_stbl1",
       "label": "Stable",
       "pieceFile": "config/pieces/stable.json",
-      "gridX": 33,
-      "gridZ": 13,
+      "gridX": 32,
+      "gridZ": 24,
       "footprintW": 7,
       "footprintD": 3,
       "wbOpts": null,
       "wbGableOpts": null,
-      "rotationDeg": 0
+      "rotationDeg": 180
     }
   ]
 }
