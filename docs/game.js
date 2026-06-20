@@ -1658,6 +1658,7 @@
         if (!def) return null;
         const group = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color || 0x8b6540);
         group.position.set(col + (def.fw || 1) * 0.5, 0, row + (def.fd || 1) * 0.5);
+        _markOutline(group);
         targetScene.add(group);
 
         let light = null;
