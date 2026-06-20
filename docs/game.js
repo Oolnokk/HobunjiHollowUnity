@@ -769,9 +769,9 @@
         shovel:  ['dig', 'raise', 'fill'],
         hoe:     ['till', 'smooth'],
         machete: ['cut', 'slash'],
-        axe:     ['cut', 'slash'],
+        axe:     ['chop', 'hack'],
         pick:    ['dig', 'raise', 'fill'],
-        harpoon: ['cut', 'slash', 'fish'],
+        harpoon: ['fish'],
         weapon:  ['cut', 'slash'],
       };
 
@@ -784,6 +784,8 @@
         smooth:     ['🍃', 'Smooth'],
         cut:        ['🗡️', 'Cut'],
         slash:      ['💥', 'Slash'],
+        chop:       ['🪓', 'Chop'],
+        hack:       ['💢', 'Hack'],
         harvest:    ['🧺', 'Harvest'],
         fish:       ['🎣', 'Fish'],
       };
@@ -5971,7 +5973,7 @@
         if (tool === 'harpoon' && action === 'fish') {
           return tile.type === TileType.RIVER || tile.type === TileType.STREAM;
         }
-        if (tool === 'machete' || tool === 'axe' || tool === 'harpoon') {
+        if (tool === 'machete' || tool === 'axe') {
           const targets = getMacheteTargets(col, row, action);
           const tgrid = getActiveGrid();
           return targets.some(t => {
@@ -6031,7 +6033,7 @@
       function getMacheteTargets(col, row, action) {
         const acols = getActiveCols(), arows = getActiveRows();
         const clampedCenter = { col: clamp(col, 0, acols - 1), row: clamp(row, 0, arows - 1) };
-        if (action !== 'slash') return [clampedCenter];
+        if (action !== 'slash' && action !== 'hack') return [clampedCenter];
 
         // Slash uses a simple three-tile cone: the aimed tile plus its two side tiles relative to facing.
         const dir = facingCardinal(player.angle);
@@ -6072,7 +6074,10 @@
         if (action === 'raise') return { emoji: '▲', color: '#f0d040', count: 12, spread: 0.45, lift: -0.75, ring: '#f0d040' };
         if (action === 'paddy') return { emoji: '〜', color: '#6ec6f0', count: 14, spread: 0.50, lift: -0.65, ring: '#6ec6f0' };
         if (action === 'till' || action === 'smooth') return { emoji: '·', color: '#d2a66a', count: 12, spread: 0.42, lift: -0.65, ring: '#d2a66a' };
-        if (action === 'cut' || action === 'slash') return { emoji: '✦', color: '#7fe89a', count: action === 'slash' ? 20 : 12, spread: action === 'slash' ? 0.78 : 0.48, lift: -0.8, ring: '#7fe89a' };
+        if (action === 'cut' || action === 'slash' || action === 'chop' || action === 'hack') {
+          const isWide = action === 'slash' || action === 'hack';
+          return { emoji: '✦', color: '#7fe89a', count: isWide ? 20 : 12, spread: isWide ? 0.78 : 0.48, lift: -0.8, ring: '#7fe89a' };
+        }
         if (action === 'harvest') return { emoji: '✧', color: '#f9e28a', count: 16, spread: 0.50, lift: -0.9, ring: '#f9e28a' };
         if (action.startsWith('plant')) return { emoji: '•', color: '#9ff08a', count: 11, spread: 0.36, lift: -0.55, ring: '#9ff08a' };
         if (action.startsWith('place_')) return { emoji: '◆', color: '#f9e28a', count: 12, spread: 0.42, lift: -0.65, ring: '#f9e28a' };
@@ -6257,14 +6262,15 @@
           return { ok: true, message: action === 'till' ? 'Tilled a plantable bed.' : 'Smoothed the tile back into grass.' };
         }
 
-        if (tool === 'machete' || tool === 'axe' || tool === 'harpoon') {
+        if (tool === 'machete' || tool === 'axe') {
           const result = clearVegetationAt(col, row, action);
-          if (result.cleared <= 0) return { ok: false, message: action === 'slash' ? 'Slash cone found no overgrowth.' : 'No overgrowth to cut here.' };
+          const isWide = action === 'slash' || action === 'hack';
+          if (result.cleared <= 0) return { ok: false, message: isWide ? 'Found no overgrowth in the swing.' : 'No overgrowth to clear here.' };
           return {
             ok: true,
-            message: action === 'slash'
-              ? `Slashed ${result.cleared} tile${result.cleared === 1 ? '' : 's'} in the cone into mulch.`
-              : 'Cut one tile of day-one overgrowth into mulch.'
+            message: isWide
+              ? `Cleared ${result.cleared} tile${result.cleared === 1 ? '' : 's'} in the swing into mulch.`
+              : 'Cleared one tile of day-one overgrowth into mulch.'
           };
         }
 
@@ -6448,6 +6454,23 @@
         panicStep: 34,
         panicMax: 100,
       };
+      // Escape/respawn sequence timings, ported from the prototype's fishRespawn
+      // state: when panic maxes out the fish doesn't just end the round, it visibly
+      // slides into the central pool, shrinks away, waits, then a freshly rolled
+      // fish grows in the pool and swims back out onto the ring.
+      const FISH_RESPAWN_TIMING = {
+        retreatDuration: 0.72,
+        shrinkDuration: 0.42,
+        waitDuration: 2.15,
+        growDuration: 0.68,
+        enterDuration: 0.88,
+      };
+      function angleDiffDeg(from, to) {
+        let d = (to - from) % 360;
+        if (d > 180) d -= 360;
+        if (d < -180) d += 360;
+        return d;
+      }
       const FISH_CLASS_VEL_RANGE = {
         smooth:  [-0.15, 0.15],
         sinker:  [0.05, 0.55],
@@ -6468,7 +6491,7 @@
         boneAmpScale: 0.82, whiskerBoneAmpScale: 0.3, whiskerRate: 0.38,
         flipX: -1,                          // source silhouettes face left; mirror so facing=1 points right
         spriteWidth: 46, spriteHeight: 122,  // harpoon/mace sprite box (preserveAspectRatio keeps the real PNG shape)
-        spriteRotationOffset: -90,          // the PNG's business end is at the bottom, not the top
+        spriteRotationOffset: 90,           // the PNG's business end is at the bottom, not the top
         ropeAttachBack: 23, spearAttachFront: 10,
         ropeSag: 0.1,
         maceSpinRateDeg: 9720,              // ~27 spins/sec while the mace is outbound
@@ -6476,10 +6499,23 @@
 
       let fishBodySpriteImage = null, fishWhiskersSpriteImage = null;
       let harpoonSpearSpriteImage = null, harpoonMaceSpriteImage = null;
-      { const _img = new Image(); _img.onload = () => { fishBodySpriteImage = _img; }; _img.src = 'assets/hud/fish_silhouette-body.png'; }
-      { const _img = new Image(); _img.onload = () => { fishWhiskersSpriteImage = _img; }; _img.src = 'assets/hud/fish_silhouette-whiskers.png'; }
-      { const _img = new Image(); _img.onload = () => { harpoonSpearSpriteImage = _img; }; _img.src = 'assets/toolsprites/harpoon_fishingspear.png'; }
-      { const _img = new Image(); _img.onload = () => { harpoonMaceSpriteImage = _img; }; _img.src = 'assets/toolsprites/harpoon_fishingmace.png'; }
+      function loadFishSprite(src, onOk) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          onOk(img);
+          window.__farmLog?.(`sprite loaded OK: ${src} (${img.naturalWidth}x${img.naturalHeight})`, 'fish');
+        };
+        img.onerror = (ev) => {
+          window.__farmLog?.(`sprite FAILED to load: ${src}`, 'fish');
+        };
+        img.src = src;
+        return img;
+      }
+      loadFishSprite('assets/hud/fish_silhouette-body.png', (img) => { fishBodySpriteImage = img; });
+      loadFishSprite('assets/hud/fish_silhouette-whiskers.png', (img) => { fishWhiskersSpriteImage = img; });
+      loadFishSprite('assets/toolsprites/harpoon_fishingspear.png', (img) => { harpoonSpearSpriteImage = img; });
+      loadFishSprite('assets/toolsprites/harpoon_fishingmace.png', (img) => { harpoonMaceSpriteImage = img; });
 
       let fishDeformCanvas = null, fishDeformCtx = null;
       function ensureFishDeformCanvas(width, height) {
@@ -6540,8 +6576,24 @@
         ctx.restore();
       }
 
+      // toDataURL() is a synchronous PNG encode — doing it every animation frame
+      // (60/sec) is what was tripping the browser's "requestAnimationFrame handler
+      // took Nms" violation while fishing. The deform itself still redraws every
+      // frame (cheap drawImage calls), but the expensive re-encode to a data URL
+      // only happens a few times a second; the SVG <image> keeps showing the last
+      // encoded frame in between, which reads as smooth at this swim speed.
+      let _fishDeformUrlCache = null;
+      let _fishDeformUrlCacheAt = -Infinity;
+      const FISH_DEFORM_REENCODE_INTERVAL = 1 / 12; // seconds
+      let _fishDeformLastFailReason = null;
       function renderFishDeformedTexture(fm) {
-        if (!fishBodySpriteImage || !fishBodySpriteImage.naturalWidth) return null;
+        if (!fishBodySpriteImage || !fishBodySpriteImage.naturalWidth) {
+          if (_fishDeformLastFailReason !== 'noimg') {
+            _fishDeformLastFailReason = 'noimg';
+            window.__farmLog?.('fish render: body sprite not loaded yet, skipping draw', 'fish');
+          }
+          return null;
+        }
         const art = FISHING_BRIDGE_ART;
         const pad = Math.ceil(art.imgH * 0.45);
         const targetW = Math.ceil(art.imgW + pad * 2);
@@ -6558,7 +6610,21 @@
         if (fishWhiskersSpriteImage && fishWhiskersSpriteImage.naturalWidth) {
           drawFishImageAlongBones(ctx, fishWhiskersSpriteImage, w, h, art.imgW, art.imgH, whiskerOffsets, 0.95);
         }
-        try { return { url: canvas.toDataURL('image/png'), w, h }; } catch (err) { return null; }
+        if (_fishDeformUrlCache && fm.fishAnimT - _fishDeformUrlCacheAt < FISH_DEFORM_REENCODE_INTERVAL) {
+          return { url: _fishDeformUrlCache, w, h };
+        }
+        try {
+          _fishDeformUrlCache = canvas.toDataURL('image/png');
+          _fishDeformUrlCacheAt = fm.fishAnimT;
+          _fishDeformLastFailReason = null;
+          return { url: _fishDeformUrlCache, w, h };
+        } catch (err) {
+          if (_fishDeformLastFailReason !== 'tainted') {
+            _fishDeformLastFailReason = 'tainted';
+            window.__farmLog?.(`fish render: canvas.toDataURL() threw (${err.name}: ${err.message}) — canvas likely tainted by a cross-origin sprite load`, 'fish');
+          }
+          return null;
+        }
       }
 
       let fishingMinigame = null; // non-null while the spear-bridge overlay is open
@@ -6720,8 +6786,16 @@
           resultTimer: 0,
           message: 'Tap Fire to drop the first marker.',
           messageType: '',
+          respawn: {
+            active: false, phase: 'idle', timer: 0, scale: 1,
+            startAngle: 0, startRadius: FISHING_RING.fishRadius,
+            centerAngle: 0, centerRadius: 0,
+            enterStartAngle: 0, enterStartRadius: 0, enterTargetAngle: 0,
+          },
         };
         fishPickTargetVel(fishingMinigame);
+        _fishDeformUrlCache = null;
+        _fishDeformUrlCacheAt = -Infinity;
         window.__farmLog?.(`fishing started: zone=${zoneKey} fish=${fish.key} anchor=(${anchorWorld.x.toFixed(2)},${anchorWorld.y.toFixed(2)},${anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`);
         // World time/NPCs/weather keep running during the minigame — only
         // player movement is suspended (see the guard in updateMovement).
@@ -6750,7 +6824,7 @@
 
       function fireFishingBridge() {
         const fm = fishingMinigame;
-        if (!fm || fm.resolved || fm.bridge.spearActive) return;
+        if (!fm || fm.resolved || fm.respawn.active || fm.bridge.spearActive) return;
         const b = fm.bridge;
         const currentAngle = b.angle;
         if (b.markerA == null) {
@@ -6776,6 +6850,16 @@
         b.markerB = null;
         fm.message = 'Spear thrown!';
         fm.messageType = '';
+
+        // Cosmetic 3D-world throw: reuse the hoe/chop swing arc (raise → slam) but
+        // fly the held harpoon mesh out to the fishing anchor mid-slam instead of
+        // slamming it down at the player's feet, then ease it back to the hand.
+        // Duration must stay under the 2D ring's shot+retract window (~0.44s) so a
+        // repeat cast can't restart the swing while the mesh is still mid-flight.
+        toolSwingDur = 0.42;
+        toolSwingT = toolSwingDur;
+        strikeFired = true; // fishing has no pendingAction to fire on strike
+        fishThrowActive = true;
       }
 
       function fishingTryTipCatch(fm) {
@@ -6789,18 +6873,130 @@
       }
 
       function resolveFishingRound(fm, caught) {
-        fm.resolved = true;
-        fm.resultTimer = 1.1;
         if (caught) {
+          fm.resolved = true;
+          fm.resultTimer = 1.1;
           inventory[fm.fishDef.key] = Math.min(99, (inventory[fm.fishDef.key] || 0) + 1);
           fm.message = `Caught a ${fm.fishDef.label}! ${fm.fishDef.icon}`;
           fm.messageType = 'good';
           lastActionMessage = fm.message;
-        } else {
-          fm.message = 'The fish fled into the pool.';
-          fm.messageType = 'bad';
-          lastActionMessage = fm.message;
+          return;
         }
+        beginFishEscapeRespawn(fm);
+      }
+
+      // Panic maxed out without a catch: the current fish escapes into the
+      // central pool instead of ending the round outright. A new fish is
+      // rolled mid-animation and swims back out so the player keeps fishing.
+      function beginFishEscapeRespawn(fm) {
+        const r = fm.respawn;
+        r.active = true;
+        r.phase = 'retreat';
+        r.timer = 0;
+        r.startAngle = fm.fish.angle;
+        r.startRadius = FISHING_RING.fishRadius;
+        r.centerAngle = r.startAngle;
+        r.centerRadius = 72 + Math.random() * 26;
+        r.scale = 1;
+        fm.message = 'Fish fled into the pool.';
+        fm.messageType = 'bad';
+      }
+
+      function respawnNextFish(fm) {
+        const picked = pickFishForCurrentZone();
+        const fish = picked ? picked.fish : fm.fishDef;
+        fm.fishDef = fish;
+        fm.difficulty = fish.difficulty;
+        fm.fishClass = fish.fishClass;
+        fm.fish.pos = Math.random();
+        fm.fish.vel = 0;
+        fm.fish.targetVel = 0;
+        fm.fish.moveDir = 1;
+        fm.fish.pendingMoveDir = 1;
+        fm.fish.turning = false;
+        fm.fish.turnProgress = 0;
+        fm.fish.localFacingScale = 1;
+        fishPickTargetVel(fm);
+        fm.panic = 0;
+        const r = fm.respawn;
+        r.enterStartAngle = r.centerAngle;
+        r.enterStartRadius = r.centerRadius;
+        r.enterTargetAngle = fm.fish.angle;
+      }
+
+      function beginFishPoolEnter(fm) {
+        const r = fm.respawn;
+        r.phase = 'enter';
+        r.timer = 0;
+        r.scale = 1;
+        r.enterStartAngle = r.centerAngle;
+        r.enterStartRadius = r.centerRadius;
+        r.enterTargetAngle = fm.fish.angle;
+        fm.message = 'New fish is swimming back to the ring.';
+        fm.messageType = '';
+      }
+
+      function finishFishPoolEnter(fm) {
+        const r = fm.respawn;
+        r.active = false;
+        r.phase = 'idle';
+        r.timer = 0;
+        r.scale = 1;
+        fm.message = 'New fish entered. Tap Fire to drop the first marker.';
+        fm.messageType = '';
+      }
+
+      function updateFishRespawnAnimation(fm, dt) {
+        const r = fm.respawn;
+        const T = FISH_RESPAWN_TIMING;
+        r.timer += dt;
+        if (r.phase === 'retreat' && r.timer >= T.retreatDuration) {
+          r.phase = 'shrink'; r.timer = 0; r.scale = 1;
+        } else if (r.phase === 'shrink' && r.timer >= T.shrinkDuration) {
+          r.phase = 'wait'; r.timer = 0; r.scale = 0;
+        } else if (r.phase === 'wait' && r.timer >= T.waitDuration) {
+          r.phase = 'grow'; r.timer = 0; r.scale = 0;
+          respawnNextFish(fm);
+        } else if (r.phase === 'grow' && r.timer >= T.growDuration) {
+          beginFishPoolEnter(fm);
+        } else if (r.phase === 'enter') {
+          fishStepMotion(fm, dt);
+          r.enterTargetAngle = fm.fish.angle;
+          if (r.timer >= T.enterDuration) finishFishPoolEnter(fm);
+        }
+      }
+
+      // Visual-only pose during the escape/respawn sequence: where to draw the
+      // fish (pool center vs sliding/growing) and at what scale. Returns null
+      // once the sequence is over so normal ring rendering takes over again.
+      function getRespawnFishPose(fm) {
+        const r = fm.respawn;
+        if (!r.active) return null;
+        const T = FISH_RESPAWN_TIMING;
+        if (r.phase === 'retreat') {
+          const t = clamp(r.timer / T.retreatDuration, 0, 1);
+          const angle = r.startAngle + angleDiffDeg(r.startAngle, r.centerAngle) * t;
+          const radius = r.startRadius + (r.centerRadius - r.startRadius) * t;
+          return { angle, radius, scale: 1 };
+        }
+        if (r.phase === 'shrink') {
+          const t = clamp(r.timer / T.shrinkDuration, 0, 1);
+          return { angle: r.centerAngle, radius: r.centerRadius, scale: Math.max(0, 1 - t) };
+        }
+        if (r.phase === 'wait') {
+          return { angle: r.centerAngle, radius: r.centerRadius, scale: 0 };
+        }
+        if (r.phase === 'grow') {
+          const t = clamp(r.timer / T.growDuration, 0, 1);
+          return { angle: r.centerAngle, radius: r.centerRadius, scale: t };
+        }
+        if (r.phase === 'enter') {
+          const t = clamp(r.timer / T.enterDuration, 0, 1);
+          const angle = r.enterStartAngle + angleDiffDeg(r.enterStartAngle, r.enterTargetAngle) * t;
+          const radius = r.enterStartRadius + (FISHING_RING.fishRadius - r.enterStartRadius) * t;
+          return { angle, radius, scale: 1 };
+        }
+        return null;
       }
 
       function updateFishingMinigame(dt) {
@@ -6809,6 +7005,13 @@
         if (fm.resolved) {
           fm.resultTimer -= dt;
           if (fm.resultTimer <= 0) { closeFishingMinigame(); return; }
+          renderFishingOverlay();
+          return;
+        }
+
+        if (fm.respawn.active) {
+          fm.fishAnimT += dt;
+          updateFishRespawnAnimation(fm, dt);
           renderFishingOverlay();
           return;
         }
@@ -6882,7 +7085,6 @@
               <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
               <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
               <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
-              <ellipse id="fishContrastHalo" fill="rgba(3,8,12,0.82)" stroke="rgba(255,255,255,0.3)" stroke-width="2" opacity="0" style="filter:blur(3px)"/>
               <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
             </svg>
           </div>
@@ -6903,7 +7105,6 @@
           spearRope: document.getElementById('fishSpearRope'),
           spearSpriteWrap: document.getElementById('fishSpearSpriteWrap'),
           spearImage: document.getElementById('fishSpearImage'),
-          fishContrastHalo: document.getElementById('fishContrastHalo'),
           fishImageRig: document.getElementById('fishImageRig'),
           fishImageTransform: document.getElementById('fishImageTransform'),
           fishDeformedImage: document.getElementById('fishDeformedImage'),
@@ -6964,7 +7165,15 @@
       // fish silhouette (see renderFishDeformedTexture) at its ring point, rotated to
       // the ring angle and mirrored by localFacingScale for left/right turnarounds.
       function renderFishingImageFish(fm) {
-        const fishPt = fishingPolarToXY(fm.fish.angle, FISHING_RING.fishRadius);
+        const pose = getRespawnFishPose(fm);
+        if (pose && pose.scale <= 0.01) {
+          fishingEls.fishImageRig.setAttribute('opacity', '0');
+          return;
+        }
+        const renderAngle = pose ? pose.angle : fm.fish.angle;
+        const renderRadius = pose ? pose.radius : FISHING_RING.fishRadius;
+        const renderScale = pose ? pose.scale : 1;
+        const fishPt = fishingPolarToXY(renderAngle, renderRadius);
         const deform = renderFishDeformedTexture(fm);
         // Only log on a state change (loaded vs. not), so the debug panel gets one
         // entry per session instead of one per frame at 60fps.
@@ -6978,7 +7187,6 @@
         }
         if (!deform) {
           fishingEls.fishImageRig.setAttribute('opacity', '0');
-          fishingEls.fishContrastHalo.setAttribute('opacity', '0');
           return;
         }
 
@@ -6987,25 +7195,15 @@
         const localFacingScale = Math.abs(requested) < 0.035 ? 0.035 * Math.sign(requested || 1) : requested;
         const scaleX = art.flipX * localFacingScale;
 
-        // A soft dark disc directly behind the fish so the silhouette keeps
-        // contrast against whatever live 3D scene happens to be behind the
-        // floating ring (bright town grass/water reads very differently than
-        // the dark farm backdrop the glow-only look was originally tuned for).
-        const haloR = Math.hypot(art.imgW, art.imgH) * 0.62;
-        fishingEls.fishContrastHalo.setAttribute('cx', fishPt.x.toFixed(2));
-        fishingEls.fishContrastHalo.setAttribute('cy', fishPt.y.toFixed(2));
-        fishingEls.fishContrastHalo.setAttribute('rx', haloR.toFixed(2));
-        fishingEls.fishContrastHalo.setAttribute('ry', haloR.toFixed(2));
-        fishingEls.fishContrastHalo.setAttribute('opacity', '1');
-
+        const w = deform.w * renderScale, h = deform.h * renderScale;
         fishingEls.fishImageRig.setAttribute('opacity', '1');
         fishingEls.fishImageRig.setAttribute('transform', `translate(${fishPt.x.toFixed(2)} ${fishPt.y.toFixed(2)})`);
-        fishingEls.fishImageTransform.setAttribute('transform', `rotate(${fm.fish.angle.toFixed(2)}) scale(${scaleX.toFixed(4)} 1)`);
+        fishingEls.fishImageTransform.setAttribute('transform', `rotate(${renderAngle.toFixed(2)}) scale(${scaleX.toFixed(4)} 1)`);
         fishingEls.fishDeformedImage.setAttribute('href', deform.url);
-        fishingEls.fishDeformedImage.setAttribute('x', (-deform.w / 2).toFixed(2));
-        fishingEls.fishDeformedImage.setAttribute('y', (-deform.h / 2).toFixed(2));
-        fishingEls.fishDeformedImage.setAttribute('width', deform.w.toFixed(2));
-        fishingEls.fishDeformedImage.setAttribute('height', deform.h.toFixed(2));
+        fishingEls.fishDeformedImage.setAttribute('x', (-w / 2).toFixed(2));
+        fishingEls.fishDeformedImage.setAttribute('y', (-h / 2).toFixed(2));
+        fishingEls.fishDeformedImage.setAttribute('width', w.toFixed(2));
+        fishingEls.fishDeformedImage.setAttribute('height', h.toFixed(2));
       }
 
       // Floats the ring over the live 3D scene at the river tile's projected screen
@@ -9146,6 +9344,9 @@
       // Per-tool swing durations: thrust fast, chop medium, sweep slow.
       let toolSwingT   = 0;
       let toolSwingDur = 0.22;
+      // Set true for the duration of a fishing-spear throw swing so updateToolMesh
+      // flies the harpoon mesh out to the water anchor instead of slamming in place.
+      let fishThrowActive = false;
       // Full rotations a "spinning" harpoon sprite (e.g. the fishing mace) twirls through over
       // one complete swing; spear-mode harpoon items leave their `spinning` flag false/unset.
       const TOOL_SPIN_REVOLUTIONS = 2.5;
@@ -9251,7 +9452,7 @@
         _qFac.setFromAxisAngle(_tUp, θ);
         _swAxis.set(rightX, 0, rightZ);
 
-        const anim = activeAnimStyle();
+        const anim = fishThrowActive ? 'chop' : activeAnimStyle();
         const WF = 0.16, SF = 0.28;  // windup 16%, strike 12%, return 72% — strike faster than windup
 
         if (anim === 'thrust') {
@@ -9284,11 +9485,24 @@
           }
           _qAnim.setFromAxisAngle(_swAxis, chopAngle);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
-          toolHolder.position.set(
-            playerMesh.position.x + rightX * 0.28,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + rightZ * 0.28
-          );
+          const handX = playerMesh.position.x + rightX * 0.28;
+          const handY = playerMesh.position.y + 0.18;
+          const handZ = playerMesh.position.z + rightZ * 0.28;
+          if (fishThrowActive && fishingMinigame?.anchorWorld) {
+            // Out during the slam (WF→SF), back during the return (SF→1).
+            let travel;
+            if (progress <= WF) travel = 0;
+            else if (progress <= SF) travel = (progress - WF) / (SF - WF);
+            else travel = 1 - (progress - SF) / (1.0 - SF);
+            const aw = fishingMinigame.anchorWorld;
+            toolHolder.position.set(
+              handX + (aw.x - handX) * travel,
+              handY + (aw.y - handY) * travel,
+              handZ + (aw.z - handZ) * travel
+            );
+          } else {
+            toolHolder.position.set(handX, handY, handZ);
+          }
 
         } else {
           // SWEEP — body rotates through windup-strike-return arc; axe locked in hand.
@@ -9319,7 +9533,12 @@
         const spinItemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
         const spinPlane    = toolMeshMap[activeTool]?.userData?.toolPlane;
         if (spinPlane) {
-          const baseRotZ = toolMeshMap[activeTool].userData.basePlaneRotZ || 0;
+          // The harpoon's plane bakes in a -90° z-twist for its normal "sweep" hold pose,
+          // which the bronzehoe never has. Our throw forces the chop arc (hoe math assumes
+          // a neutral, untwisted plane), so drop that baked offset while throwing — otherwise
+          // the static twist reads as a facing-independent "global" rotation on top of the
+          // facing-relative chop tilt, only happening to cancel out at one specific facing.
+          const baseRotZ = fishThrowActive ? 0 : (toolMeshMap[activeTool].userData.basePlaneRotZ || 0);
           spinPlane.rotation.z = TOOL_ITEM_DEFS[spinItemKey]?.spinning
             ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
             : baseRotZ;
@@ -9329,6 +9548,7 @@
           strikeFired = true;
           firePendingAction();
         }
+        if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
       }
 
       // Initialize mesh map after toolHolder exists
@@ -11467,6 +11687,8 @@
         if (action === 'smooth') return 'Smooth';
         if (action === 'cut')   return 'Cut';
         if (action === 'slash') return 'Slash 3×';
+        if (action === 'chop')  return 'Chop';
+        if (action === 'hack')  return 'Hack 3×';
         if (action === 'harvest') return tile.cropReady ? '✓ Harvest' : 'Growing';
         if (action === 'fish') return 'Fish';
         if (action.startsWith('place_')) return 'Place';
