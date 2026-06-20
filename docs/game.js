@@ -687,7 +687,7 @@
       const JOYSTICK_RESPONSE = 0.82; // used by updateJoystick() to make small thumb motion feel responsive.
       const ACTION_FX_LIMIT = 90; // used by spawnActionParticles()/updateActionParticles() to cap mobile effects.
       const FLOW_SOURCE_ROW = 0;
-      const DAY_LENGTH_SECONDS = 72;
+      const DAY_LENGTH_SECONDS = 288; // 4x the original 72s — time now runs at 25% speed
       const MORNING_HOUR = 6;
       const NIGHT_HOUR   = 22;
       const SEASON_LENGTH_DAYS = 8;
@@ -803,6 +803,163 @@
         river:  { topColor: '#2f6fb8', sideColor: '#1f4d80', label: 'river'    },
         stream: { topColor: '#4f9bd9', sideColor: '#356f99', label: 'stream'   },
       };
+
+      // ── Footstep SFX ──────────────────────────────────────────────────
+      // Placeholder footfalls, keyed by a coarse "surface" rather than raw
+      // TileType — several tile types share a footstep (e.g. grass and weeds
+      // both sound like grass underfoot). Interior floors always map to
+      // 'wood' regardless of the (irrelevant) tile type beneath them.
+      //
+      // Every surface reuses the exact same oscillator+noise voice (the only
+      // one of our synth attempts that reads as a footstep rather than a
+      // sound effect) — they're differentiated purely by post effects
+      // (filter shape/cutoff/Q, pitch, decay length), not a different recipe.
+      const FOOTSTEP_BASE = Object.freeze({
+        waveform: 'triangle', freq: 55, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.26,
+      });
+
+      // Swap in real recordings later by setting `url` on a surface's post-fx
+      // entry, same convention as _playNpcDialogueLetterSfx's cfg.url.
+      const FOOTSTEP_POST_FX = Object.freeze({
+        grass: {},
+        dirt:  { filterFreqMul: 2.4, filterQ: 1.2, durationMul: 1.15 },
+        path:  { filterFreqMul: 4.6, filterQ: 2.4, durationMul: 0.6,  pitchMul: 1.2,  volumeMul: 0.9 },
+        mud:   { filterFreqMul: 1.5, filterQ: 0.9, durationMul: 1.8,  pitchMul: 0.7,  volumeMul: 1.1 },
+        water: { filterFreqMul: 5.5, filterQ: 1.0, durationMul: 1.3,  pitchMul: 1.7,  volumeMul: 1.0, filterType: 'highpass' },
+        rock:  { filterFreqMul: 5.2, filterQ: 2.8, durationMul: 0.5,  pitchMul: 1.35, volumeMul: 0.95 },
+        wood:  { filterFreqMul: 3.6, filterQ: 1.8, durationMul: 0.75, pitchMul: 1.1,  volumeMul: 0.9 },
+      });
+
+      // Distance an entity must travel between alternating footfalls, in world px
+      // (TILE-scaled so the same constant works for player/creature px coords
+      // and NPC tile-unit coords once converted to px).
+      const FOOTSTEP_STRIDE_PX = TILE * 0.45;
+      // The player moves much faster (px/s) than NPCs/creatures, so the same
+      // per-distance stride would trigger footsteps far more often in real
+      // time than it does for them — use a longer player-only stride so the
+      // cadence (not the tone) matches how often NPC footsteps land.
+      const FOOTSTEP_PLAYER_STRIDE_PX = TILE * 1.35;
+      // Beyond this distance from the player, NPC/creature footsteps are inaudible.
+      const FOOTSTEP_EARSHOT_PX = TILE * 9;
+      // NPC/enemy footsteps pan hard left/right within this distance — keeps
+      // them clearly directional without needing real spatial audio.
+      const FOOTSTEP_PAN_RANGE_PX = TILE * 5;
+      // The player and whistled companion animals tread much more quietly
+      // than NPCs/hostiles, and aren't panned (the player is the listener;
+      // a companion is always close at hand).
+      const FOOTSTEP_QUIET_SCALE = 0.35;
+
+      function footstepSurfaceKey(area, type) {
+        if (area === 'interior' || _isBuildingArea(area)) return 'wood';
+        switch (type) {
+          case TileType.PADDY:
+          case TileType.RIVER:
+          case TileType.STREAM:  return 'water';
+          case TileType.TILLED:
+          case TileType.RAISED:  return 'dirt';
+          case TileType.PATH:    return 'path';
+          case TileType.TRENCH:  return 'mud';
+          case TileType.ROCK:
+          case TileType.SHRUB:   return 'rock';
+          default:               return 'grass'; // GRASS, WEEDS
+        }
+      }
+
+      // Returns the TileType at a world-px coordinate within `area`'s own grid
+      // (not necessarily the player's currentArea — used for NPCs/creatures
+      // walking around in areas the player isn't currently viewing).
+      function footstepTileTypeAt(area, wx, wy, grid) {
+        const g = grid || npcGridForArea(area);
+        if (!g) return null;
+        const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
+        return g[row]?.[col]?.type ?? null;
+      }
+
+      // Advances a per-entity footstep stride accumulator; returns true (and
+      // resets the remainder) exactly when a footfall should sound, so cadence
+      // naturally scales with how fast the entity is actually moving.
+      function _footstepAdvance(state, distPx, stridePx = FOOTSTEP_STRIDE_PX) {
+        if (!(distPx > 0)) return false;
+        state.footstepAccum = (state.footstepAccum || 0) + distPx;
+        if (state.footstepAccum < stridePx) return false;
+        state.footstepAccum -= stridePx;
+        state.footstepFoot = !state.footstepFoot;
+        return true;
+      }
+
+      // `pan` is -1 (full left) .. 1 (full right); leave at 0 for the player
+      // (the listener) and companions (always close, not worth panning).
+      function playFootstepSfx(area, type, volumeScale = 1, pan = 0) {
+        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        if (audioCfg.enabled === false) return;
+        const footstepCfg = audioCfg.footsteps || {};
+        if (footstepCfg.enabled === false) return;
+        const surfaceKey = footstepSurfaceKey(area, type);
+        const postFx = { ...FOOTSTEP_POST_FX[surfaceKey], ...(footstepCfg.surfaces?.[surfaceKey] || {}) };
+        const base = FOOTSTEP_BASE;
+        const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
+        const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1)
+          * Math.max(0, volumeScale) * Math.max(0, Number(base.volume) || 0.26)
+          * Math.max(0, Number(postFx.volumeMul) || 1);
+        if (volume <= 0.002) return;
+
+        if (postFx.url) {
+          const snd = new Audio(postFx.url);
+          snd.volume = Math.min(1, volume);
+          snd.playbackRate = 0.92 + Math.random() * 0.16;
+          snd.play().catch(() => {});
+          return;
+        }
+
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+        const now = ctx.currentTime;
+        const pitchMul = Number(postFx.pitchMul) || 1;
+        const durationS = Math.max(0.02, (Number(base.durationMs) || 55) / 1000 * (Number(postFx.durationMul) || 1));
+        const noiseMix = Math.max(0, Math.min(1, Number(base.noiseMix) ?? 0.82));
+        const baseFreq = Math.max(20, Number(base.freq) * pitchMul);
+        const variance = Math.max(0, Number(base.freqVarianceHz) || 15);
+
+        const panNode = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+        if (panNode) {
+          panNode.pan.value = Math.max(-1, Math.min(1, pan));
+          panNode.connect(ctx.destination);
+        }
+        const outNode = panNode || ctx.destination;
+
+        if (noiseMix < 1) {
+          const osc = ctx.createOscillator();
+          const oscGain = ctx.createGain();
+          osc.type = base.waveform || 'triangle';
+          osc.frequency.value = baseFreq + (Math.random() * 2 - 1) * variance;
+          oscGain.gain.setValueAtTime(volume * (1 - noiseMix), now);
+          oscGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
+          osc.connect(oscGain).connect(outNode);
+          osc.start(now);
+          osc.stop(now + durationS);
+        }
+
+        if (noiseMix > 0) {
+          const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * durationS));
+          const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+          const noise = ctx.createBufferSource();
+          noise.buffer = buffer;
+          const filter = ctx.createBiquadFilter();
+          filter.type = postFx.filterType || 'bandpass';
+          filter.frequency.value = baseFreq * (Number(postFx.filterFreqMul) || 3.2);
+          filter.Q.value = Number(postFx.filterQ) || 1.6;
+          const noiseGain = ctx.createGain();
+          noiseGain.gain.setValueAtTime(volume * noiseMix, now);
+          noiseGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
+          noise.connect(filter).connect(noiseGain).connect(outNode);
+          noise.start(now);
+          noise.stop(now + durationS);
+        }
+      }
 
       // Helper: floor Z for a tile type
       function floorZ(type) {
@@ -1988,6 +2145,22 @@
         return best;
       }
 
+      // Shared by hostiles, companions, and wandering creatures — covers every
+      // creature movement path with a single footstep hook.
+      function tickCreatureFootsteps(c, distPx) {
+        if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
+        if (!_footstepAdvance(c, distPx)) return;
+        const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
+        if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
+        const falloff = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+        const type = footstepTileTypeAt(c.areaId, c.x, c.y, c.areaGrid);
+        // Whistled companions stay quiet (like the player) and unpanned —
+        // hostiles/wild creatures get the full directional treatment.
+        if (c.isCompanion) { playFootstepSfx(c.areaId, type, falloff * FOOTSTEP_QUIET_SCALE); return; }
+        const pan = Math.max(-1, Math.min(1, (c.x - player.x) / FOOTSTEP_PAN_RANGE_PX));
+        playFootstepSfx(c.areaId, type, falloff, pan);
+      }
+
       function moveCreatureToward(c, tx, ty, speed, dt) {
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
@@ -1997,6 +2170,7 @@
         c.x += nx * step;
         c.y += ny * step;
         c.vx = nx * speed; c.vy = ny * speed;
+        tickCreatureFootsteps(c, step);
         return true;
       }
 
@@ -3039,14 +3213,32 @@
             this.resetRouteState();
             root.position.set(spawnPos.c + 0.5, _isBuildingArea(area) ? 0 : npcSurfaceY(area, spawnPos.c, spawnPos.r), spawnPos.r + 0.5);
           },
+          // Surface/interior-aware placeholder footstep hook — shared by every
+          // NPC movement path since they all funnel through moveToward().
+          _tickFootsteps(distTiles) {
+            if (this.area !== currentArea) return; // not in the player's current area; inaudible
+            if (!_footstepAdvance(this, distTiles * TILE)) return;
+            const wx = root.position.x * TILE, wy = root.position.z * TILE;
+            const distToPlayer = Math.hypot(wx - player.x, wy - player.y);
+            if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
+            const falloff = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+            const pan = Math.max(-1, Math.min(1, (wx - player.x) / FOOTSTEP_PAN_RANGE_PX));
+            const type = footstepTileTypeAt(this.area, wx, wy, npcGridForArea(this.area));
+            playFootstepSfx(this.area, type, falloff, pan);
+          },
           moveToward(tx, tz, dt) {
             const cfg = npcMovementConfig();
             const speed = (cfg.speedTilesPerSecond ?? 1.25) * this.catchup;
             const dx = tx - root.position.x, dz = tz - root.position.z;
             const d = Math.hypot(dx, dz);
-            if (d <= Math.max(0.001, speed * dt)) { root.position.x = tx; root.position.z = tz; return true; }
-            root.position.x += dx / d * speed * dt;
-            root.position.z += dz / d * speed * dt;
+            if (d <= Math.max(0.001, speed * dt)) {
+              this._tickFootsteps(d);
+              root.position.x = tx; root.position.z = tz; return true;
+            }
+            const movedTiles = speed * dt;
+            root.position.x += dx / d * movedTiles;
+            root.position.z += dz / d * movedTiles;
+            this._tickFootsteps(movedTiles);
             const rawRot = -Math.atan2(dz, dx) + Math.PI / 2;
             const { effectiveTarget, snapTo } = perpClamp(this.perpState, rawRot, cameraRelativePerps());
             if (snapTo !== null) this.rot = effectiveTarget;
@@ -5706,6 +5898,10 @@
       const weaponTrailEffects = [];
       // Lightning flash state for storms
       let lightningAlpha = 0;
+      let lightningTimer = 6 + Math.random() * 8;
+      let lightningStrikesRemaining = 0;
+      let lightningGapTimer = 0;
+      let lightningDecayRate = 0;
 
       function createInitialGrid() {
         const nextGrid = Array.from({ length: ROWS }, (_, row) => (
@@ -5758,9 +5954,18 @@
         };
       }
 
+      function tickPlayerFootsteps(prevX, prevY) {
+        const dist = Math.hypot(player.x - prevX, player.y - prevY);
+        if (!_footstepAdvance(player, dist, FOOTSTEP_PLAYER_STRIDE_PX)) return;
+        const type = footstepTileTypeAt(currentArea, player.x, player.y, getActiveGrid());
+        playFootstepSfx(currentArea, type, 1);
+      }
+
       function updateMovement(dt) {
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (fishingMinigame?.active) return;
+
+        const _fsPrevX = player.x, _fsPrevY = player.y;
 
         if (player.dodging) {
           player.dodgeT -= dt;
@@ -5776,6 +5981,7 @@
             player.dodging = false;
             player.vx = 0; player.vy = 0;
           }
+          tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           return;
         }
 
@@ -5790,6 +5996,7 @@
           player.vx = player.knockbackVX;
           player.vy = player.knockbackVY;
           if (player.knockbackT <= 0) { player.vx = 0; player.vy = 0; }
+          tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           return;
         }
 
@@ -5912,6 +6119,8 @@
         // ── Boundary clamp ────────────────────────────────────
         player.x = clamp(player.x, PLAYER_RADIUS, getActiveCols() * TILE - PLAYER_RADIUS);
         player.y = clamp(player.y, PLAYER_RADIUS, getActiveRows() * TILE - PLAYER_RADIUS);
+
+        tickPlayerFootsteps(_fsPrevX, _fsPrevY);
       }
 
       function canPlayerOccupy(wx, wy) {
@@ -7369,6 +7578,48 @@
         debugLog(`major storm: ${name} — ${dmgText || 'no damage'}`);
       }
 
+      // ── Lantern light masks ────────────────────────────────────────────
+      // Carried by the player and any NPC tagged "watch" (the Watch). Punches
+      // a soft hole through the day/night darkness tint: a short inner ring
+      // where the tint is almost fully cleared (actual clarity), surrounded
+      // by a much larger, dim halo (the lantern "shines" further than it
+      // actually reveals detail).
+      const LANTERN_CLARITY_TILES = 1.3; // fully-cleared radius, in tiles
+      const LANTERN_SHINE_TILES   = 5.0; // total falloff radius, in tiles
+
+      function _lanternScreenRadius(tx, tz, tiles) {
+        const c = worldToOverlay(tx, 0.5, tz);
+        const e = worldToOverlay(tx + tiles, 0.5, tz);
+        return Math.hypot(e.x - c.x, e.y - c.y);
+      }
+
+      function drawLanternMasks() {
+        const carriers = [{ x: player.x / TILE, z: player.y / TILE }];
+        for (const w of npcWalkers) {
+          if (w.area === currentArea && w.rec?.tags?.includes('watch')) {
+            carriers.push({ x: w.root.position.x, z: w.root.position.z });
+          }
+        }
+        lctx.globalCompositeOperation = 'destination-out';
+        for (const c of carriers) {
+          const center = worldToOverlay(c.x, 0.5, c.z);
+          if (!center.visible) continue;
+          const shineR = _lanternScreenRadius(c.x, c.z, LANTERN_SHINE_TILES);
+          if (!(shineR > 0)) continue;
+          const clarityFrac = Math.min(0.9, LANTERN_CLARITY_TILES / LANTERN_SHINE_TILES);
+          const grad = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
+          grad.addColorStop(0,                              'rgba(0,0,0,0.92)');
+          grad.addColorStop(clarityFrac,                     'rgba(0,0,0,0.80)');
+          grad.addColorStop(Math.min(1, clarityFrac + 0.18), 'rgba(0,0,0,0.28)');
+          grad.addColorStop(1,                               'rgba(0,0,0,0)');
+          lctx.fillStyle = grad;
+          lctx.beginPath();
+          lctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
+          lctx.fill();
+        }
+        lctx.globalCompositeOperation = 'source-over';
+      }
+
       let _lastLightingOverlayTime = 0;
       function drawLightingOverlay() {
         const now = performance.now();
@@ -7389,63 +7640,20 @@
         }
 
         const { r, g, b, a } = getLightingState();
-        const hour = getHour();
         const W = rect.width;
         const H = rect.height;
 
-        // Radial gradient: slightly lighter at top (sky source), darker at edges
-        const grad = lctx.createRadialGradient(W * 0.5, H * 0.1, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.7);
-        grad.addColorStop(0,   `rgba(${r}, ${g}, ${b}, ${Math.max(0, a - 0.15)})`);
-        grad.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, ${a})`);
-        grad.addColorStop(1,   `rgba(${Math.round(r*0.6)}, ${Math.round(g*0.6)}, ${Math.round(b*0.7)}, ${Math.min(0.92, a + 0.15)})`);
-
-        lctx.fillStyle = grad;
+        // Flat sky tint (ported from ScratchbonesGame's outdoor lighting):
+        // screen-blend at low opacity adds warmth/brightness on clear days,
+        // multiply-blend once opacity climbs darkens normally toward dusk/night.
+        // The opacity transitions through near-zero at phase boundaries,
+        // hiding the blend-mode switch.
+        lctx.globalCompositeOperation = a < 0.09 ? 'screen' : 'multiply';
+        lctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
         lctx.fillRect(0, 0, W, H);
+        lctx.globalCompositeOperation = 'source-over';
 
-        // Sunrise/sunset warm glow on the horizon edge
-        if (hour >= 6 && hour <= 8) {
-          const sunProgress = (hour - 6) / 2;
-          const sunAlpha = (1 - Math.abs(sunProgress - 0.4) * 2.5) * 0.22;
-          if (sunAlpha > 0) {
-            const sunGrad = lctx.createRadialGradient(W * 0.5, H * 0.05, 0, W * 0.5, H * 0.05, W * 0.55);
-            sunGrad.addColorStop(0,   `rgba(255, 190, 80, ${sunAlpha})`);
-            sunGrad.addColorStop(0.4, `rgba(255, 120, 40, ${sunAlpha * 0.5})`);
-            sunGrad.addColorStop(1,   'rgba(255, 80, 20, 0)');
-            lctx.fillStyle = sunGrad;
-            lctx.fillRect(0, 0, W, H);
-          }
-        }
-        if (hour >= 17.5 && hour <= 20) {
-          const sunProgress = (hour - 17.5) / 2.5;
-          const sunAlpha = Math.sin(sunProgress * Math.PI) * 0.28;
-          if (sunAlpha > 0) {
-            const sunGrad = lctx.createRadialGradient(W * 0.5, H * 0.08, 0, W * 0.5, H * 0.1, W * 0.6);
-            sunGrad.addColorStop(0,   `rgba(255, 140, 40, ${sunAlpha})`);
-            sunGrad.addColorStop(0.5, `rgba(200, 60, 20, ${sunAlpha * 0.5})`);
-            sunGrad.addColorStop(1,   'rgba(120, 20, 40, 0)');
-            lctx.fillStyle = sunGrad;
-            lctx.fillRect(0, 0, W, H);
-          }
-        }
-
-        // Night: add some subtle stars as white specks on very dark frames
-        if (a > 0.55 && !calendar.isRaining) {
-          const starAlpha = (a - 0.55) / 0.17;
-          lctx.save();
-          lctx.globalAlpha = starAlpha * 0.6;
-          for (let s = 0; s < 38; s++) {
-            const sx = seededRandom(s * 137) * W;
-            const sy = seededRandom(s * 271) * H * 0.5;
-            const sr = 0.8 + seededRandom(s * 53) * 1.2;
-            const twinkle = 0.5 + 0.5 * Math.sin(performance.now() / 1000 * (0.5 + seededRandom(s * 11)) + s);
-            lctx.globalAlpha = starAlpha * 0.5 * twinkle;
-            lctx.fillStyle = '#ffffff';
-            lctx.beginPath();
-            lctx.arc(sx, sy, sr, 0, Math.PI * 2);
-            lctx.fill();
-          }
-          lctx.restore();
-        }
+        drawLanternMasks();
 
         // Lightning flash on lighting canvas too
         if (lightningAlpha > 0) {
@@ -7460,7 +7668,7 @@
         }
       }
 
-      function getLightingState() {
+      function _computeRawLightingState() {
         const hour = getHour(); // 6..22
         const season = currentSeason();
         const isRaining = calendar.isRaining;
@@ -7500,7 +7708,32 @@
         if (isStorm) { r = r * 0.5 + 30 * 0.5; g = g * 0.5 + 45 * 0.5; b = b * 0.5 + 70 * 0.5; a = Math.min(0.85, a + 0.25); }
         else if (isRaining) { r = r * 0.7 + 50 * 0.3; g = g * 0.7 + 65 * 0.3; b = b * 0.7 + 90 * 0.3; a = Math.min(0.78, a + 0.12); }
 
-        return { r: Math.round(r), g: Math.round(g), b: Math.round(b), a };
+        return { r, g, b, a };
+      }
+
+      // Smoothed lighting state — eases toward the raw target each frame so
+      // the lantern's punched-through clarity (and the sky/ambient tint) fade
+      // gradually instead of snapping, most noticeably at the day-rollover
+      // instant when getHour() jumps straight from ~22 back to 6.
+      let _lightR = 10, _lightG = 10, _lightB = 40, _lightA = 0.72;
+      let _lightingInitialized = false;
+      function _advanceSmoothedLighting(dt) {
+        const raw = _computeRawLightingState();
+        if (!_lightingInitialized) {
+          _lightR = raw.r; _lightG = raw.g; _lightB = raw.b; _lightA = raw.a;
+          _lightingInitialized = true;
+          return;
+        }
+        const tc = 1.5; // seconds — gentle fade, imperceptible as a "step"
+        const k = 1 - Math.exp(-dt / tc);
+        _lightR += (raw.r - _lightR) * k;
+        _lightG += (raw.g - _lightG) * k;
+        _lightB += (raw.b - _lightB) * k;
+        _lightA += (raw.a - _lightA) * k;
+      }
+
+      function getLightingState() {
+        return { r: Math.round(_lightR), g: Math.round(_lightG), b: Math.round(_lightB), a: _lightA };
       }
 
       function updateWaterParticles(dt) {
@@ -7574,15 +7807,134 @@
         }
       }
 
+      // Ported from ScratchbonesGame's outdoor lightning: a strike sequence is
+      // 1 flash (520ms fade) or, 30% of the time, 2 flashes — a bright lead
+      // strike that cuts to a brief dark gap, then a dimmer second flash.
+      const LIGHTNING_AVG_INTERVAL_S = 28; // average seconds between strike sequences during a storm
       function updateLightningFlash(dt) {
-        if (calendar.isRaining && calendar.rainStrength >= 3) {
+        const stormActive = calendar.isRaining && calendar.rainStrength >= 3;
+        if (stormActive && lightningStrikesRemaining <= 0) {
           lightningTimer -= dt;
           if (lightningTimer <= 0) {
-            lightningAlpha = 1.0;
-            lightningTimer = 4 + Math.random() * 8;
+            lightningStrikesRemaining = Math.random() < 0.30 ? 2 : 1;
+            lightningAlpha = 0.72;
+            lightningDecayRate = 0.72 / (lightningStrikesRemaining > 1 ? 0.09 : 0.52);
+            lightningTimer = LIGHTNING_AVG_INTERVAL_S * (0.4 + Math.random() * 1.2);
           }
         }
-        if (lightningAlpha > 0) lightningAlpha = Math.max(0, lightningAlpha - dt * 5);
+        if (lightningStrikesRemaining > 0) {
+          if (lightningAlpha > 0) {
+            lightningAlpha = Math.max(0, lightningAlpha - lightningDecayRate * dt);
+            if (lightningAlpha <= 0 && lightningStrikesRemaining > 1) lightningGapTimer = 0.055;
+          } else if (lightningGapTimer > 0) {
+            lightningGapTimer -= dt;
+            if (lightningGapTimer <= 0) {
+              lightningStrikesRemaining -= 1;
+              if (lightningStrikesRemaining > 0) {
+                lightningAlpha = 0.52;
+                lightningDecayRate = 0.52 / (lightningStrikesRemaining > 1 ? 0.09 : 0.52);
+              }
+            }
+          } else {
+            lightningStrikesRemaining = 0;
+          }
+        }
+      }
+
+      // ── Layered rain audio (ported from ScratchbonesGame's outdoor weather) ──
+      // Three pink-noise sources at different playback rates, each narrowed by
+      // its own filter band (bright/mid/rumble), cross-faded by rain intensity.
+      function _buildRainPinkNoise(audioCtx) {
+        const len = audioCtx.sampleRate * 2;
+        const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+        const d = buf.getChannelData(0);
+        let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0;
+        for (let i = 0; i < len; i++) {
+          const w = Math.random() * 2 - 1;
+          b0 = 0.99886 * b0 + w * 0.0555179;
+          b1 = 0.99332 * b1 + w * 0.0750759;
+          b2 = 0.96900 * b2 + w * 0.1538520;
+          b3 = 0.86650 * b3 + w * 0.3104856;
+          b4 = 0.55000 * b4 + w * 0.5329522;
+          b5 = -0.7616 * b5 - w * 0.0168980;
+          d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + w * 0.5362) * 0.10;
+        }
+        return buf;
+      }
+
+      function _createRainAudio() {
+        let ctx = null, gainH = null, gainM = null, gainL = null, lpf = null, started = false;
+
+        function start() {
+          if (started) return;
+          started = true;
+          try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            ctx = window._rainAudioCtx || (window._rainAudioCtx = new AudioCtx());
+            const buf = _buildRainPinkNoise(ctx);
+
+            function makeSource(rate) {
+              const s = ctx.createBufferSource();
+              s.buffer = buf; s.loop = true; s.playbackRate.value = rate; s.start();
+              return s;
+            }
+            const srcH = makeSource(1.00);
+            const srcM = makeSource(0.95);
+            const srcL = makeSource(0.81);
+
+            // Tighter Q than the original port (and quieter master gain below) —
+            // same scuffy/noise-heavy, narrow-band treatment given to footsteps
+            // (FOOTSTEP_POST_FX bandpass Q ~0.9-2.8) instead of smooth broadband hiss.
+            const hpf = ctx.createBiquadFilter();
+            hpf.type = 'highpass'; hpf.frequency.value = 950; hpf.Q.value = 1.6;
+            const bpf = ctx.createBiquadFilter();
+            bpf.type = 'bandpass'; bpf.frequency.value = 330; bpf.Q.value = 1.8;
+            lpf = ctx.createBiquadFilter();
+            lpf.type = 'lowpass'; lpf.frequency.value = 115; lpf.Q.value = 1.4;
+
+            gainH = ctx.createGain(); gainH.gain.value = 0;
+            gainM = ctx.createGain(); gainM.gain.value = 0;
+            gainL = ctx.createGain(); gainL.gain.value = 0;
+
+            const master = ctx.createGain();
+            master.gain.value = Math.max(0, Number(window.SCRATCHBONES_CONFIG?.game?.audio?.rainVolume) || 0.20);
+
+            srcH.connect(hpf); hpf.connect(gainH); gainH.connect(master);
+            srcM.connect(bpf); bpf.connect(gainM); gainM.connect(master);
+            srcL.connect(lpf); lpf.connect(gainL); gainL.connect(master);
+            master.connect(ctx.destination);
+          } catch (e) {
+            console.warn('[rainAudio] Web Audio unavailable:', e);
+          }
+        }
+
+        function setIntensity(v) {
+          if (!ctx || !gainH) return;
+          if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+          const now = ctx.currentTime, tc = 1.2;
+          gainH.gain.setTargetAtTime(v * 1.0, now, tc);
+          gainM.gain.setTargetAtTime(v * 0.72, now, tc);
+          const lv = v > 0.5 ? Math.pow((v - 0.5) * 2, 1.6) : 0;
+          gainL.gain.setTargetAtTime(lv * 0.68, now, tc);
+          if (lpf) lpf.frequency.setTargetAtTime(145 - v * 73, now, tc);
+        }
+
+        return { start, setIntensity };
+      }
+
+      let _rainAudio = null;
+      function updateRainAudio() {
+        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        if (audioCfg.enabled === false) return;
+        const outdoors = currentArea === 'farm' || currentArea === 'town';
+        const indoors = currentArea === 'interior' || _isBuildingArea(currentArea);
+        const intensity = (outdoors && !indoors && calendar.isRaining)
+          ? Math.min(1, (calendar.rainStrength || 0) / 3)
+          : 0;
+        if (!_rainAudio) _rainAudio = _createRainAudio();
+        if (intensity > 0) _rainAudio.start();
+        _rainAudio.setIntensity(intensity);
       }
 
       function tileSpeedAt(wx, wy) {
@@ -10540,6 +10892,8 @@
 
         if (!paused) {
           updateCalendar(dt);
+          _advanceSmoothedLighting(dt);
+          updateRainAudio();
           updateMovement(dt);
           updatePlayerVitals(dt);
 
