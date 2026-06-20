@@ -18287,38 +18287,6 @@
   "npcPaths": [],
   "transitions": [
     {
-      "id": "sp_town_north",
-      "label": "To Northern Cliffs",
-      "col": 30,
-      "row": 1,
-      "targetMapId": "map_northern_cliffs",
-      "targetSpotId": "sp_ncl_south"
-    },
-    {
-      "id": "spot_2vsub",
-      "label": "To Western Slope",
-      "col": 0,
-      "row": 25,
-      "targetMapId": "map_western_slope",
-      "targetSpotId": "sp_wslope_e"
-    },
-    {
-      "id": "spot_d33e9",
-      "label": "To Eastern Mire",
-      "col": 59,
-      "row": 25,
-      "targetMapId": "map_eastern_mire",
-      "targetSpotId": "sp_emi_west"
-    },
-    {
-      "id": "spot_lkjns",
-      "label": "To Southern Cloud Forest",
-      "col": 30,
-      "row": 49,
-      "targetMapId": "map_southern_cloud_forest",
-      "targetSpotId": "sp_scloud_n"
-    },
-    {
       "id": "spot_aklcp",
       "label": "To Farm",
       "col": 18,
@@ -18406,6 +18374,38 @@
       "targetMapId": "map_i_stable",
       "targetSpotId": "sp_stb_entry",
       "buildingId": "bldg_stbl1"
+    },
+    {
+      "id": "sp_town_north",
+      "label": "To Northern Cliffs",
+      "col": 30,
+      "row": 1,
+      "targetMapId": "map_northern_cliffs",
+      "targetSpotId": "sp_ncl_south"
+    },
+    {
+      "id": "spot_2vsub",
+      "label": "To Western Slope",
+      "col": 0,
+      "row": 25,
+      "targetMapId": "map_western_slope",
+      "targetSpotId": "sp_wslope_e"
+    },
+    {
+      "id": "spot_d33e9",
+      "label": "To Eastern Mire",
+      "col": 59,
+      "row": 25,
+      "targetMapId": "map_eastern_mire",
+      "targetSpotId": "sp_emi_west"
+    },
+    {
+      "id": "spot_lkjns",
+      "label": "To Southern Cloud Forest",
+      "col": 30,
+      "row": 49,
+      "targetMapId": "map_southern_cloud_forest",
+      "targetSpotId": "sp_scloud_n"
     }
   ],
   "npcStations": [],
