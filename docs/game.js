@@ -969,8 +969,12 @@
       const TOOL_ITEM_DEFS = {
         bronzehoe:    { label: 'Bronze Hoe',    icon: '🪓', sprite: 'assets/toolsprites/hoe_bronzehoe.png',        slots: ['hoe'],                    animStyle: 'chop'   },
         hatchet:      { label: 'Hatchet',       icon: '🪓', sprite: 'assets/toolsprites/axe_hatchet.png',          slots: ['axe', 'weapon'],           animStyle: 'sweep'  },
-        fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep'  },
-        fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'sweep'  },
+        // `spinning` distinguishes the harpoon-slot sprite's in-hand behavior: mace-mode items
+        // twirl around their own axis through the swing (call it "spinning" rather than
+        // "mace mode" since fishing hatchets or other harpoon variants may reuse the same flag),
+        // while spear-mode items stay rigidly oriented like the hatchet sweep.
+        fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true  },
+        fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: false },
         pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust' },
       };
 
@@ -8357,6 +8361,9 @@
       // Per-tool swing durations: thrust fast, chop medium, sweep slow.
       let toolSwingT   = 0;
       let toolSwingDur = 0.22;
+      // Full rotations a "spinning" harpoon sprite (e.g. the fishing mace) twirls through over
+      // one complete swing; spear-mode harpoon items leave their `spinning` flag false/unset.
+      const TOOL_SPIN_REVOLUTIONS = 2.5;
 
       // Reference width in world units; height is derived from the image's aspect ratio,
       // matching the pattern used by buildAnimalPlaneAvatarModel (modelWidth × h/w).
@@ -8402,6 +8409,10 @@
         // Sweep tools: rotate image 90° in the flat plane so blade aligns parallel to player body
         if (TOOL_ITEM_DEFS[itemKey]?.animStyle === 'sweep') plane.rotation.z = -Math.PI / 2;
         g.add(plane);
+        // Keep a handle on the sprite plane and its rest rotation so updateToolMesh can layer a
+        // continuous "spinning" twirl on top for mace-mode harpoon items without disturbing chop/thrust tools.
+        g.userData.toolPlane    = plane;
+        g.userData.basePlaneRotZ = plane.rotation.z;
         return g;
       }
 
@@ -8516,6 +8527,17 @@
             playerMesh.position.y + 0.18,
             playerMesh.position.z + vRZ * 0.20 + vFZ * 0.16
           );
+        }
+
+        // Layer the sprite's own "spinning" twirl on top of whichever swing style is active —
+        // mace-mode harpoon items spin through the swing, spear-mode ones hold their rest pose.
+        const spinItemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
+        const spinPlane    = toolMeshMap[activeTool]?.userData?.toolPlane;
+        if (spinPlane) {
+          const baseRotZ = toolMeshMap[activeTool].userData.basePlaneRotZ || 0;
+          spinPlane.rotation.z = TOOL_ITEM_DEFS[spinItemKey]?.spinning
+            ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
+            : baseRotZ;
         }
 
         if (pendingAction && !strikeFired && progress >= SF) {
