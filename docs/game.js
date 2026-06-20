@@ -5795,6 +5795,10 @@
       const weaponTrailEffects = [];
       // Lightning flash state for storms
       let lightningAlpha = 0;
+      let lightningTimer = 6 + Math.random() * 8;
+      let lightningStrikesRemaining = 0;
+      let lightningGapTimer = 0;
+      let lightningDecayRate = 0;
 
       function createInitialGrid() {
         const nextGrid = Array.from({ length: ROWS }, (_, row) => (
@@ -5846,7 +5850,7 @@
         const dist = Math.hypot(player.x - prevX, player.y - prevY);
         if (!_footstepAdvance(player, dist, FOOTSTEP_PLAYER_STRIDE_PX)) return;
         const type = footstepTileTypeAt(currentArea, player.x, player.y, getActiveGrid());
-        playFootstepSfx(currentArea, type, FOOTSTEP_QUIET_SCALE);
+        playFootstepSfx(currentArea, type, 1);
       }
 
       function updateMovement(dt) {
@@ -6611,63 +6615,18 @@
         }
 
         const { r, g, b, a } = getLightingState();
-        const hour = getHour();
         const W = rect.width;
         const H = rect.height;
 
-        // Radial gradient: slightly lighter at top (sky source), darker at edges
-        const grad = lctx.createRadialGradient(W * 0.5, H * 0.1, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.7);
-        grad.addColorStop(0,   `rgba(${r}, ${g}, ${b}, ${Math.max(0, a - 0.15)})`);
-        grad.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, ${a})`);
-        grad.addColorStop(1,   `rgba(${Math.round(r*0.6)}, ${Math.round(g*0.6)}, ${Math.round(b*0.7)}, ${Math.min(0.92, a + 0.15)})`);
-
-        lctx.fillStyle = grad;
+        // Flat sky tint (ported from ScratchbonesGame's outdoor lighting):
+        // screen-blend at low opacity adds warmth/brightness on clear days,
+        // multiply-blend once opacity climbs darkens normally toward dusk/night.
+        // The opacity transitions through near-zero at phase boundaries,
+        // hiding the blend-mode switch.
+        lctx.globalCompositeOperation = a < 0.09 ? 'screen' : 'multiply';
+        lctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
         lctx.fillRect(0, 0, W, H);
-
-        // Sunrise/sunset warm glow on the horizon edge
-        if (hour >= 6 && hour <= 8) {
-          const sunProgress = (hour - 6) / 2;
-          const sunAlpha = (1 - Math.abs(sunProgress - 0.4) * 2.5) * 0.22;
-          if (sunAlpha > 0) {
-            const sunGrad = lctx.createRadialGradient(W * 0.5, H * 0.05, 0, W * 0.5, H * 0.05, W * 0.55);
-            sunGrad.addColorStop(0,   `rgba(255, 190, 80, ${sunAlpha})`);
-            sunGrad.addColorStop(0.4, `rgba(255, 120, 40, ${sunAlpha * 0.5})`);
-            sunGrad.addColorStop(1,   'rgba(255, 80, 20, 0)');
-            lctx.fillStyle = sunGrad;
-            lctx.fillRect(0, 0, W, H);
-          }
-        }
-        if (hour >= 17.5 && hour <= 20) {
-          const sunProgress = (hour - 17.5) / 2.5;
-          const sunAlpha = Math.sin(sunProgress * Math.PI) * 0.28;
-          if (sunAlpha > 0) {
-            const sunGrad = lctx.createRadialGradient(W * 0.5, H * 0.08, 0, W * 0.5, H * 0.1, W * 0.6);
-            sunGrad.addColorStop(0,   `rgba(255, 140, 40, ${sunAlpha})`);
-            sunGrad.addColorStop(0.5, `rgba(200, 60, 20, ${sunAlpha * 0.5})`);
-            sunGrad.addColorStop(1,   'rgba(120, 20, 40, 0)');
-            lctx.fillStyle = sunGrad;
-            lctx.fillRect(0, 0, W, H);
-          }
-        }
-
-        // Night: add some subtle stars as white specks on very dark frames
-        if (a > 0.55 && !calendar.isRaining) {
-          const starAlpha = (a - 0.55) / 0.17;
-          lctx.save();
-          lctx.globalAlpha = starAlpha * 0.6;
-          for (let s = 0; s < 38; s++) {
-            const sx = seededRandom(s * 137) * W;
-            const sy = seededRandom(s * 271) * H * 0.5;
-            const sr = 0.8 + seededRandom(s * 53) * 1.2;
-            const twinkle = 0.5 + 0.5 * Math.sin(performance.now() / 1000 * (0.5 + seededRandom(s * 11)) + s);
-            lctx.globalAlpha = starAlpha * 0.5 * twinkle;
-            lctx.fillStyle = '#ffffff';
-            lctx.beginPath();
-            lctx.arc(sx, sy, sr, 0, Math.PI * 2);
-            lctx.fill();
-          }
-          lctx.restore();
-        }
+        lctx.globalCompositeOperation = 'source-over';
 
         // Lightning flash on lighting canvas too
         if (lightningAlpha > 0) {
@@ -6796,15 +6755,131 @@
         }
       }
 
+      // Ported from ScratchbonesGame's outdoor lightning: a strike sequence is
+      // 1 flash (520ms fade) or, 30% of the time, 2 flashes — a bright lead
+      // strike that cuts to a brief dark gap, then a dimmer second flash.
+      const LIGHTNING_AVG_INTERVAL_S = 28; // average seconds between strike sequences during a storm
       function updateLightningFlash(dt) {
-        if (calendar.isRaining && calendar.rainStrength >= 3) {
+        const stormActive = calendar.isRaining && calendar.rainStrength >= 3;
+        if (stormActive && lightningStrikesRemaining <= 0) {
           lightningTimer -= dt;
           if (lightningTimer <= 0) {
-            lightningAlpha = 1.0;
-            lightningTimer = 4 + Math.random() * 8;
+            lightningStrikesRemaining = Math.random() < 0.30 ? 2 : 1;
+            lightningAlpha = 0.72;
+            lightningDecayRate = 0.72 / (lightningStrikesRemaining > 1 ? 0.09 : 0.52);
+            lightningTimer = LIGHTNING_AVG_INTERVAL_S * (0.4 + Math.random() * 1.2);
           }
         }
-        if (lightningAlpha > 0) lightningAlpha = Math.max(0, lightningAlpha - dt * 5);
+        if (lightningStrikesRemaining > 0) {
+          if (lightningAlpha > 0) {
+            lightningAlpha = Math.max(0, lightningAlpha - lightningDecayRate * dt);
+            if (lightningAlpha <= 0 && lightningStrikesRemaining > 1) lightningGapTimer = 0.055;
+          } else if (lightningGapTimer > 0) {
+            lightningGapTimer -= dt;
+            if (lightningGapTimer <= 0) {
+              lightningStrikesRemaining -= 1;
+              if (lightningStrikesRemaining > 0) {
+                lightningAlpha = 0.52;
+                lightningDecayRate = 0.52 / (lightningStrikesRemaining > 1 ? 0.09 : 0.52);
+              }
+            }
+          } else {
+            lightningStrikesRemaining = 0;
+          }
+        }
+      }
+
+      // ── Layered rain audio (ported from ScratchbonesGame's outdoor weather) ──
+      // Three pink-noise sources at different playback rates, each narrowed by
+      // its own filter band (bright/mid/rumble), cross-faded by rain intensity.
+      function _buildRainPinkNoise(audioCtx) {
+        const len = audioCtx.sampleRate * 2;
+        const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+        const d = buf.getChannelData(0);
+        let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0;
+        for (let i = 0; i < len; i++) {
+          const w = Math.random() * 2 - 1;
+          b0 = 0.99886 * b0 + w * 0.0555179;
+          b1 = 0.99332 * b1 + w * 0.0750759;
+          b2 = 0.96900 * b2 + w * 0.1538520;
+          b3 = 0.86650 * b3 + w * 0.3104856;
+          b4 = 0.55000 * b4 + w * 0.5329522;
+          b5 = -0.7616 * b5 - w * 0.0168980;
+          d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + w * 0.5362) * 0.10;
+        }
+        return buf;
+      }
+
+      function _createRainAudio() {
+        let ctx = null, gainH = null, gainM = null, gainL = null, lpf = null, started = false;
+
+        function start() {
+          if (started) return;
+          started = true;
+          try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            ctx = window._rainAudioCtx || (window._rainAudioCtx = new AudioCtx());
+            const buf = _buildRainPinkNoise(ctx);
+
+            function makeSource(rate) {
+              const s = ctx.createBufferSource();
+              s.buffer = buf; s.loop = true; s.playbackRate.value = rate; s.start();
+              return s;
+            }
+            const srcH = makeSource(1.00);
+            const srcM = makeSource(0.95);
+            const srcL = makeSource(0.81);
+
+            const hpf = ctx.createBiquadFilter();
+            hpf.type = 'highpass'; hpf.frequency.value = 950; hpf.Q.value = 0.5;
+            const bpf = ctx.createBiquadFilter();
+            bpf.type = 'bandpass'; bpf.frequency.value = 330; bpf.Q.value = 1.1;
+            lpf = ctx.createBiquadFilter();
+            lpf.type = 'lowpass'; lpf.frequency.value = 115; lpf.Q.value = 0.7;
+
+            gainH = ctx.createGain(); gainH.gain.value = 0;
+            gainM = ctx.createGain(); gainM.gain.value = 0;
+            gainL = ctx.createGain(); gainL.gain.value = 0;
+
+            const master = ctx.createGain();
+            master.gain.value = Math.max(0, Number(window.SCRATCHBONES_CONFIG?.game?.audio?.rainVolume) || 0.58);
+
+            srcH.connect(hpf); hpf.connect(gainH); gainH.connect(master);
+            srcM.connect(bpf); bpf.connect(gainM); gainM.connect(master);
+            srcL.connect(lpf); lpf.connect(gainL); gainL.connect(master);
+            master.connect(ctx.destination);
+          } catch (e) {
+            console.warn('[rainAudio] Web Audio unavailable:', e);
+          }
+        }
+
+        function setIntensity(v) {
+          if (!ctx || !gainH) return;
+          if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+          const now = ctx.currentTime, tc = 1.2;
+          gainH.gain.setTargetAtTime(v * 1.0, now, tc);
+          gainM.gain.setTargetAtTime(v * 0.72, now, tc);
+          const lv = v > 0.5 ? Math.pow((v - 0.5) * 2, 1.6) : 0;
+          gainL.gain.setTargetAtTime(lv * 0.68, now, tc);
+          if (lpf) lpf.frequency.setTargetAtTime(145 - v * 73, now, tc);
+        }
+
+        return { start, setIntensity };
+      }
+
+      let _rainAudio = null;
+      function updateRainAudio() {
+        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        if (audioCfg.enabled === false) return;
+        const outdoors = currentArea === 'farm' || currentArea === 'town';
+        const indoors = currentArea === 'interior' || _isBuildingArea(currentArea);
+        const intensity = (outdoors && !indoors && calendar.isRaining)
+          ? Math.min(1, (calendar.rainStrength || 0) / 3)
+          : 0;
+        if (!_rainAudio) _rainAudio = _createRainAudio();
+        if (intensity > 0) _rainAudio.start();
+        _rainAudio.setIntensity(intensity);
       }
 
       function tileSpeedAt(wx, wy) {
@@ -9712,6 +9787,7 @@
 
         if (!paused) {
           updateCalendar(dt);
+          updateRainAudio();
           updateMovement(dt);
           updatePlayerVitals(dt);
 
