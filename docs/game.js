@@ -3465,7 +3465,7 @@
             const target = exit.targetMap ? 'building' : 'exit_building';
             for (const [tc, tr] of (exit.tiles || [])) {
               exitTileSet.add(`${tc},${tr}`);
-              const t = { col: tc, row: tr, area: mapId, target };
+              const t = { col: tc, row: tr, area: mapId, target, exitId: exit.id };
               if (exit.targetMap) { t.targetMapId = exit.targetMap; t.targetCol = exit.spawnCol || 0; t.targetRow = exit.spawnRow || 0; }
               transitions.push(t);
             }
@@ -3480,7 +3480,7 @@
             for (const t of (_wsOverride.transitions || [])) {
               if (!Number.isFinite(t.col) || !Number.isFinite(t.row)) continue;
               const target = !t.targetMapId ? 'exit_building' : 'building';
-              const tr = { col: t.col, row: t.row, area: mapId, target };
+              const tr = { col: t.col, row: t.row, area: mapId, target, exitId: t.exitId };
               if (t.targetMapId) { tr.targetMapId = t.targetMapId; tr.targetCol = t.spawnCol ?? 0; tr.targetRow = t.spawnRow ?? 0; }
               transitions.push(tr);
               if (!t.targetMapId) exitTileSet.add(`${t.col},${t.row}`);
@@ -3631,8 +3631,22 @@
       function buildingSpawnFromExit(bi, fallbackCols, fallbackRows) {
         const exitTiles = (bi?.transitions || []).filter(t => t.target === 'exit_building');
         if (!exitTiles.length) return { col: Math.floor(fallbackCols / 2), row: Math.max(0, fallbackRows - 2) };
-        const avgCol = exitTiles.reduce((sum, t) => sum + t.col, 0) / exitTiles.length;
-        const northRow = Math.min(...exitTiles.map(t => t.row)) - 1;
+        // Multiple unrelated exit_building tiles can exist on one map (e.g. a real
+        // exterior door plus an unwired stairwell stub). Cluster tiles that share the
+        // same exitId/door, then use the largest cluster so a stray single-tile stub
+        // can't drag the computed spawn point away from the actual entrance.
+        const clusters = new Map();
+        for (const t of exitTiles) {
+          const key = t.exitId != null ? t.exitId : `${t.col},${t.row}`;
+          if (!clusters.has(key)) clusters.set(key, []);
+          clusters.get(key).push(t);
+        }
+        let mainCluster = exitTiles;
+        if (clusters.size > 1) {
+          mainCluster = [...clusters.values()].reduce((a, b) => (b.length > a.length ? b : a));
+        }
+        const avgCol = mainCluster.reduce((sum, t) => sum + t.col, 0) / mainCluster.length;
+        const northRow = Math.min(...mainCluster.map(t => t.row)) - 1;
         return {
           col: clamp(Math.round(avgCol), 0, fallbackCols - 1),
           row: clamp(northRow, 0, fallbackRows - 1)
