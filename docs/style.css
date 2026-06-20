@@ -525,25 +525,25 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 22px; pointer-events: none;
     }
-    /* ── Dodge button: 0-size fixed anchor above-right of the joystick,
-       same right/bottom-corner + translate(50%,50%) re-centering trick as
-       #toolSelect/#actionStack, so it can reuse the .abt drag-stick code. ── */
-    #dodgeAnchor {
-      position: fixed;
-      left: max(12px, calc(env(safe-area-inset-left) + 12px));
-      bottom: max(150px, calc(env(safe-area-inset-bottom) + 150px));
-      width: 0; height: 0; overflow: visible; z-index: 30; touch-action: none;
-    }
+    /* ── Dodge button: lives on the same outer ring as the tool/item dials
+       (#toolSelect, radius --ar2), directly above the corner (90°). Hidden
+       outside combat; shown only while .combat-active is toggled on by
+       updateMovement() (same condition that drives the auto-target lock),
+       and never on desktop (X key covers it there instead). ── */
     #dodgeBtn {
-      position: absolute; left: calc(18vmin + 18px); bottom: 0;
-      transform: translate(-50%, 50%); /* left+bottom corner-pin → recenter (mirror image of .abt's right/bottom translate(50%,50%)) */
-      width: clamp(50px, 9vmin, 68px); height: clamp(50px, 9vmin, 68px);
+      position: absolute;
+      right:  calc(-1*cos(90deg)*var(--ar2));
+      bottom: calc(   sin(90deg)*var(--ar2));
+      transform: translate(50%, 50%);
+      width: clamp(46px, calc(1.05 * var(--col)), 62px); height: clamp(46px, calc(1.05 * var(--col)), 62px);
       border-color: rgba(120,200,255,0.46); background: rgba(120,200,255,0.09);
+      display: none;
     }
-    button.abt#dodgeBtn:active { transform: translate(-50%, 50%) scale(0.92); }
+    #dodgeBtn.combat-active { display: flex; }
+    button.abt#dodgeBtn:active { transform: translate(50%, 50%) scale(0.92); }
     #dodgeBtn .abt-icon { font-size: 1.3em; }
     @media (pointer: fine) {
-      #dodgeAnchor { display: none; }
+      #dodgeBtn { display: none !important; }
     }
     /* ── Arc Container: grid x:24 y:10 w:8 h:8 (32×18).
        Sized to exactly match the layout-spec bounding box.

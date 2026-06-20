@@ -534,19 +534,18 @@
     <div id="joystickKnob">🕹️</div>
   </div>
 
-  <!-- Dodge button: drag like a stick to choose dodge direction (mobile); tap dodges in current facing direction. Desktop: X key. -->
-  <div id="dodgeAnchor">
-    <button id="dodgeBtn" class="abt" aria-label="Dodge">
-      <span class="abt-icon">💨</span>
-      <span class="abt-label">Dodge</span>
-    </button>
-  </div>
-
   <!-- Button/Prompt Arc Container: grid x:24 y:10 w:8 h:8 (32×18).
        Zero-size fixed anchor at bottom-right; hidden during dialogue. -->
   <div id="arcContainer">
     <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
     <div id="toolSelect">
+      <!-- Dodge: tap dodges in current facing direction. Only shown (via
+           .combat-active) while a hostile is within auto-target range —
+           dodging doesn't matter outside combat. Desktop: X key, no button. -->
+      <button id="dodgeBtn" class="abt" aria-label="Dodge">
+        <span class="abt-icon">💨</span>
+        <span class="abt-label">Dodge</span>
+      </button>
       <div id="toolPicker" role="menu" aria-label="Select tool">
         <div class="tool-pick-row">
           <span class="tool-pick-chip">Shovel</span>

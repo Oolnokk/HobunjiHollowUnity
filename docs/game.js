@@ -9,6 +9,7 @@
       const debugLog = window.__farmLog || ((m) => console.log(m));
       const joystickZone = document.getElementById('joystickZone');
       const joystickKnob = document.getElementById('joystickKnob');
+      const dodgeBtn = document.getElementById('dodgeBtn');
 
       // Status pill
       const spTime    = document.getElementById('spTime');
@@ -5760,6 +5761,11 @@
         if (desiredY !== nextY) player.vy = 0;
 
         // ── Facing ────────────────────────────────────────────
+        // Computed once per frame: also drives the touch dodge button, which
+        // only matters in combat (same condition as the facing lock below).
+        const autoTarget = findAutoTarget();
+        dodgeBtn?.classList.toggle('combat-active', !!autoTarget);
+
         if (isDesktop && mouseLookActive) {
           if (performance.now() - lastMouseMoveTime > MOUSE_IDLE_MS) {
             mouseLookActive = false;
@@ -5772,7 +5778,6 @@
         }
 
         if (!mouseLookActive || !isDesktop) {
-          const autoTarget = findAutoTarget();
           if (autoTarget) {
             // Combat: lock facing onto the nearest nearby hostile instead of
             // movement direction, akin to Z-targeting.
@@ -10983,63 +10988,13 @@
       joystickZone.addEventListener('pointerup', handleJoystickPointerUp);
       joystickZone.addEventListener('pointercancel', handleJoystickPointerUp);
 
-      // Dodge button: drag like a stick to aim the dodge (mobile), or tap to
-      // dodge in the current facing direction. Mirrors applyAbt()'s drag-stick
-      // pattern, but fires performDodge() once per gesture instead of repeating.
-      function initDodgeButton() {
-        const el = document.getElementById('dodgeBtn');
-        if (!el) return;
-        let _ptId = null, _cx = 0, _cy = 0, _sockR = 0, _drag = false, _socket = null;
-        const DRAG_THRESH = 10;
-
-        el.addEventListener('pointerdown', ev => {
-          if (_ptId !== null) return;
-          _ptId = ev.pointerId;
-          el.setPointerCapture(ev.pointerId);
-          const rect = el.getBoundingClientRect();
-          _cx = rect.left + rect.width / 2;
-          _cy = rect.top + rect.height / 2;
-          _sockR = rect.width * 0.70;
-          _drag = false;
-          _socket = document.createElement('div');
-          _socket.className = 'abt-socket';
-          _socket.style.left   = _cx + 'px';
-          _socket.style.top    = _cy + 'px';
-          _socket.style.width  = (rect.width * 2.2) + 'px';
-          _socket.style.height = (rect.width * 2.2) + 'px';
-          document.body.appendChild(_socket);
-          el.style.transition = 'none';
-          ev.preventDefault();
-        });
-
-        el.addEventListener('pointermove', ev => {
-          if (ev.pointerId !== _ptId) return;
-          const dx = ev.clientX - _cx, dy = ev.clientY - _cy;
-          const dist = Math.hypot(dx, dy);
-          const r = Math.min(dist, _sockR);
-          const nx = dist > 0.5 ? dx / dist * r : 0;
-          const ny = dist > 0.5 ? dy / dist * r : 0;
-          el.style.transform = `translate(calc(-50% + ${nx}px), calc(50% + ${ny}px))`;
-          if (dist > DRAG_THRESH) _drag = true;
-        });
-
-        function _dodgeUp(ev) {
-          if (ev.pointerId !== _ptId) return;
-          _ptId = null;
-          if (_socket) { _socket.remove(); _socket = null; }
-          el.style.transition = 'transform 0.14s ease-out';
-          el.style.transform  = 'translate(-50%, 50%)';
-          setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
-          const dx = ev.clientX - _cx, dy = ev.clientY - _cy;
-          const dist = Math.hypot(dx, dy);
-          performDodge(_drag && dist > DRAG_THRESH ? Math.atan2(dy, dx) : player.angle);
-          _drag = false;
-        }
-
-        el.addEventListener('pointerup', _dodgeUp);
-        el.addEventListener('pointercancel', _dodgeUp);
-      }
-      initDodgeButton();
+      // Dodge button: a plain tap, dodging in the current facing direction.
+      // Only shown (via .combat-active, toggled in updateMovement) while a
+      // hostile is within auto-target range, since dodging is moot outside combat.
+      dodgeBtn?.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        performDodge(player.angle);
+      });
 
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
