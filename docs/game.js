@@ -9519,7 +9519,12 @@
         const spinItemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
         const spinPlane    = toolMeshMap[activeTool]?.userData?.toolPlane;
         if (spinPlane) {
-          const baseRotZ = toolMeshMap[activeTool].userData.basePlaneRotZ || 0;
+          // The harpoon's plane bakes in a -90° z-twist for its normal "sweep" hold pose,
+          // which the bronzehoe never has. Our throw forces the chop arc (hoe math assumes
+          // a neutral, untwisted plane), so drop that baked offset while throwing — otherwise
+          // the static twist reads as a facing-independent "global" rotation on top of the
+          // facing-relative chop tilt, only happening to cancel out at one specific facing.
+          const baseRotZ = fishThrowActive ? 0 : (toolMeshMap[activeTool].userData.basePlaneRotZ || 0);
           spinPlane.rotation.z = TOOL_ITEM_DEFS[spinItemKey]?.spinning
             ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
             : baseRotZ;
