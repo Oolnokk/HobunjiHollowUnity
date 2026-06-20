@@ -107,6 +107,14 @@ window.SCRATCHBONES_CONFIG = {
             "pinchSensitivity": 1,
             "resetOnDialogueClose": false
           }
+        },
+        "fishing": {
+          "distanceTiles": 15.3,
+          "angleFromGroundDeg": 25.5,
+          "azimuthDeg": 34,
+          "fovDeg": 42,
+          "followLerp": 0.15,
+          "targetYOffsetTiles": 0.35
         }
       }
     },

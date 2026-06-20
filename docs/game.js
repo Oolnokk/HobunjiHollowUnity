@@ -1734,7 +1734,6 @@
         const ANIMAL_W = 1.275;
         const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
         const halfH = ANIMAL_H / 2;
-        const CREATURE_PERPS = [Math.PI / 2, -Math.PI / 2];
 
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, "assets/creaturesprites/uumkao'ii.png", {
           modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
@@ -1795,7 +1794,7 @@
             this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
             this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
 
-            const { effectiveTarget, snapTo } = perpClamp(this.perpState, this.targetRot, CREATURE_PERPS);
+            const { effectiveTarget, snapTo } = perpClamp(this.perpState, this.targetRot, cameraRelativePerps());
             if (snapTo !== null) this.groupRot = effectiveTarget;
             else this.groupRot += angleDiff(effectiveTarget, this.groupRot) * 0.18;
             this.avatarRef.group.rotation.y = this.groupRot;
@@ -1865,8 +1864,6 @@
           child.material.needsUpdate = true;
         }
       }
-
-      const CREATURE_PERPS = [Math.PI / 2, -Math.PI / 2];
 
       function makeCreatureEntity(creatureKey, x, y, opts = {}) {
         const def = CREATURE_DB[creatureKey];
@@ -2024,7 +2021,7 @@
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
-        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, CREATURE_PERPS);
+        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativePerps());
         if (snapTo !== null) c.groupRot = effectiveTarget;
         else c.groupRot += angleDiff(effectiveTarget, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
@@ -2283,6 +2280,21 @@
       let npcDialogueStaging = null;
       let activeCameraMode   = cameraConfig().defaultMode || 'default';
       let activeCameraTarget = null;
+      let _prevCameraMode    = null; // saved mode to restore when the fishing minigame closes
+      let _prevCameraTarget  = null; // saved target to restore when the fishing minigame closes
+      // Camera azimuth (radians, rotated from due-south toward east) for the active
+      // mode. Everything except "fishing" stays at 0 (camera due south, as before).
+      function activeCameraAzimuthRad() {
+        return THREE.MathUtils.degToRad(cameraModeConfig(activeCameraMode).azimuthDeg ?? 0);
+      }
+      // Billboard sprites go edge-on (and effectively disappear) when rotated
+      // perpendicular to the camera's current viewing axis. perpClamp's dead zones
+      // need to rotate along with the camera's azimuth so this still works once the
+      // camera isn't pointed due north (e.g. the "fishing" mode's diagonal framing).
+      function cameraRelativePerps() {
+        const az = activeCameraAzimuthRad();
+        return [Math.PI / 2 + az, -Math.PI / 2 + az];
+      }
       let dialogueCameraZoomPercent = cameraModeConfig(npcDialogueCameraMode()).runtimeZoom?.initialPercent ?? 0;
       const dialogueZoomPointers = new Map();
       let dialoguePinchDistance = null;
@@ -3034,7 +3046,7 @@
             root.position.x += dx / d * speed * dt;
             root.position.z += dz / d * speed * dt;
             const rawRot = -Math.atan2(dz, dx) + Math.PI / 2;
-            const { effectiveTarget, snapTo } = perpClamp(this.perpState, rawRot, [Math.PI / 2, -Math.PI / 2]);
+            const { effectiveTarget, snapTo } = perpClamp(this.perpState, rawRot, cameraRelativePerps());
             if (snapTo !== null) this.rot = effectiveTarget;
             else this.rot += angleDiff(effectiveTarget, this.rot) * 0.15;
             root.rotation.y = this.rot;
@@ -6686,10 +6698,19 @@
           messageType: '',
         };
         fishPickTargetVel(fishingMinigame);
+        window.__farmLog?.(`fishing started: zone=${zoneKey} fish=${fish.key} anchor=(${anchorWorld.x.toFixed(2)},${anchorWorld.y.toFixed(2)},${anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`);
         // World time/NPCs/weather keep running during the minigame — only
         // player movement is suspended (see the guard in updateMovement).
         renderFishingOverlay();
         fishingOverlayEl.classList.add('open');
+
+        // Swap to the "fishing" camera mode (fixed diagonal offset, matching the
+        // (HA)SpearFishingMinigameV2 prototype's cube/river framing) and track the
+        // fished water tile instead of the player while the minigame is open.
+        _prevCameraMode = activeCameraMode;
+        _prevCameraTarget = activeCameraTarget;
+        activeCameraMode = 'fishing';
+        activeCameraTarget = { position: new THREE.Vector3(anchorWorld.x, anchorWorld.y, anchorWorld.z) };
       }
 
       function closeFishingMinigame() {
@@ -6698,6 +6719,9 @@
         fishingOverlayEl.classList.remove('open');
         fishingOverlayEl.innerHTML = '';
         fishingEls = null;
+        if (_prevCameraMode !== null) { activeCameraMode = _prevCameraMode; _prevCameraMode = null; }
+        activeCameraTarget = _prevCameraTarget;
+        _prevCameraTarget = null;
       }
 
       function fireFishingBridge() {
@@ -6918,6 +6942,16 @@
       function renderFishingImageFish(fm) {
         const fishPt = fishingPolarToXY(fm.fish.angle, FISHING_RING.fishRadius);
         const deform = renderFishDeformedTexture(fm);
+        // Only log on a state change (loaded vs. not), so the debug panel gets one
+        // entry per session instead of one per frame at 60fps.
+        if (fm._pngLogState !== !!deform) {
+          fm._pngLogState = !!deform;
+          window.__farmLog?.(
+            `fish png render: ${deform ? 'OK (' + deform.w.toFixed(0) + 'x' + deform.h.toFixed(0) + ')' : 'FAILED'} ` +
+            `bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`,
+            deform ? 'info' : 'warn'
+          );
+        }
         if (!deform) {
           fishingEls.fishImageRig.setAttribute('opacity', '0');
           fishingEls.fishContrastHalo.setAttribute('opacity', '0');
@@ -6972,8 +7006,8 @@
         if (!fishingEls?.dock || !playerMesh) return;
         const proj = worldToOverlay(playerMesh.position.x, playerMesh.position.y + 0.6, playerMesh.position.z);
         if (!proj.visible) return;
-        const dockGap = 36;
-        const dockWidth = 280; // keeps the dock's left edge from running off-screen
+        const dockGap = 70;
+        const dockWidth = 210; // keeps the dock's left edge from running off-screen
         const rect = _threeRect;
         const left = clamp(proj.x - dockGap, dockWidth, rect.width);
         const top = clamp(proj.y, 0, rect.height);
@@ -7656,15 +7690,19 @@
         const baseDistance = modeCfg.distanceTiles ?? 14;
         const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
         const angle = THREE.MathUtils.degToRad(modeCfg.angleFromGroundDeg ?? 32.73);
+        const azimuth = THREE.MathUtils.degToRad(modeCfg.azimuthDeg ?? 0);
         const tx = camTargetX, tz = camTargetZ;
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
         const lookY = portraitAim?.lookY ?? (modeCfg.targetYOffsetTiles ?? 0);
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
-        // Camera sits due south of target, elevated, looking straight north.
+        const groundDistance = Math.cos(angle) * distance;
+        // Camera sits at `azimuth` east of due-south from the target, elevated,
+        // looking back at it. azimuth=0 (every mode but "fishing") reduces to the
+        // original due-south-looking-north framing.
         camera.position.set(
-          portraitAim?.targetX ?? tx,
+          (portraitAim?.targetX ?? tx) + Math.sin(azimuth) * groundDistance,
           cameraY,
-          (portraitAim?.targetZ ?? tz) + Math.cos(angle) * distance  // +Z = south
+          (portraitAim?.targetZ ?? tz) + Math.cos(azimuth) * groundDistance  // +Z = south
         );
         camera.lookAt(portraitAim?.targetX ?? tx, lookY, portraitAim?.targetZ ?? tz);
         camera.fov = modeCfg.fovDeg ?? 42;
@@ -10026,7 +10064,7 @@
         // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
         if (!player.perpState) player.perpState = {};
         const rawTargetRotY = -facingAngle + Math.PI / 2;
-        const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, [Math.PI / 2, -Math.PI / 2]);
+        const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, cameraRelativePerps());
         if (pSnapTo !== null) playerFacing = pEffTarget;
         else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
         playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
