@@ -801,6 +801,130 @@
         stream: { topColor: '#4f9bd9', sideColor: '#356f99', label: 'stream'   },
       };
 
+      // ── Footstep SFX ──────────────────────────────────────────────────
+      // Placeholder synthesized footfalls, keyed by a coarse "surface" rather
+      // than raw TileType — several tile types share a footstep (e.g. grass
+      // and weeds both sound like grass underfoot). Interior floors always
+      // map to 'wood' regardless of the (irrelevant) tile type beneath them.
+      // Swap in real recordings later by setting `url` on a surface entry,
+      // same convention as _playNpcDialogueLetterSfx's cfg.url.
+      const FOOTSTEP_SOUNDS = Object.freeze({
+        grass: { waveform: 'triangle', freq: 130, freqVarianceHz: 18, durationMs: 70, noiseMix: 0.6,  volume: 0.5  },
+        dirt:  { waveform: 'triangle', freq: 100, freqVarianceHz: 14, durationMs: 85, noiseMix: 0.75, volume: 0.55 },
+        path:  { waveform: 'square',   freq: 230, freqVarianceHz: 25, durationMs: 45, noiseMix: 0.3,  volume: 0.45 },
+        mud:   { waveform: 'sine',     freq: 75,  freqVarianceHz: 10, durationMs: 130, noiseMix: 0.85, volume: 0.6  },
+        water: { waveform: 'sine',     freq: 320, freqVarianceHz: 60, durationMs: 95,  noiseMix: 0.9,  volume: 0.55 },
+        rock:  { waveform: 'square',   freq: 260, freqVarianceHz: 20, durationMs: 40,  noiseMix: 0.2,  volume: 0.5  },
+        wood:  { waveform: 'triangle', freq: 190, freqVarianceHz: 15, durationMs: 55,  noiseMix: 0.35, volume: 0.45 },
+      });
+
+      // Distance an entity must travel between alternating footfalls, in world px
+      // (TILE-scaled so the same constant works for player/creature px coords
+      // and NPC tile-unit coords once converted to px).
+      const FOOTSTEP_STRIDE_PX = TILE * 0.45;
+      // Beyond this distance from the player, NPC/creature footsteps are inaudible.
+      const FOOTSTEP_EARSHOT_PX = TILE * 9;
+
+      function footstepSurfaceKey(area, type) {
+        if (area === 'interior' || _isBuildingArea(area)) return 'wood';
+        switch (type) {
+          case TileType.PADDY:
+          case TileType.RIVER:
+          case TileType.STREAM:  return 'water';
+          case TileType.TILLED:
+          case TileType.RAISED:  return 'dirt';
+          case TileType.PATH:    return 'path';
+          case TileType.TRENCH:  return 'mud';
+          case TileType.ROCK:
+          case TileType.SHRUB:   return 'rock';
+          default:               return 'grass'; // GRASS, WEEDS
+        }
+      }
+
+      // Returns the TileType at a world-px coordinate within `area`'s own grid
+      // (not necessarily the player's currentArea — used for NPCs/creatures
+      // walking around in areas the player isn't currently viewing).
+      function footstepTileTypeAt(area, wx, wy, grid) {
+        const g = grid || npcGridForArea(area);
+        if (!g) return null;
+        const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
+        return g[row]?.[col]?.type ?? null;
+      }
+
+      // Advances a per-entity footstep stride accumulator; returns true (and
+      // resets the remainder) exactly when a footfall should sound, so cadence
+      // naturally scales with how fast the entity is actually moving.
+      function _footstepAdvance(state, distPx) {
+        if (!(distPx > 0)) return false;
+        state.footstepAccum = (state.footstepAccum || 0) + distPx;
+        if (state.footstepAccum < FOOTSTEP_STRIDE_PX) return false;
+        state.footstepAccum -= FOOTSTEP_STRIDE_PX;
+        state.footstepFoot = !state.footstepFoot;
+        return true;
+      }
+
+      function playFootstepSfx(area, type, volumeScale = 1) {
+        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        if (audioCfg.enabled === false) return;
+        const footstepCfg = audioCfg.footsteps || {};
+        if (footstepCfg.enabled === false) return;
+        const surfaceKey = footstepSurfaceKey(area, type);
+        const surface = { ...FOOTSTEP_SOUNDS[surfaceKey], ...(footstepCfg.surfaces?.[surfaceKey] || {}) };
+        const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 1));
+        const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1)
+          * Math.max(0, volumeScale) * Math.max(0, Number(surface.volume) || 0.5);
+        if (volume <= 0.002) return;
+
+        if (surface.url) {
+          const snd = new Audio(surface.url);
+          snd.volume = Math.min(1, volume);
+          snd.playbackRate = 0.92 + Math.random() * 0.16;
+          snd.play().catch(() => {});
+          return;
+        }
+
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+        const now = ctx.currentTime;
+        const durationS = Math.max(0.02, (Number(surface.durationMs) || 60) / 1000);
+        const noiseMix = Math.max(0, Math.min(1, Number(surface.noiseMix) ?? 0.5));
+        const baseFreq = Math.max(20, Number(surface.freq) || 140);
+        const variance = Math.max(0, Number(surface.freqVarianceHz) || 15);
+
+        if (noiseMix < 1) {
+          const osc = ctx.createOscillator();
+          const oscGain = ctx.createGain();
+          osc.type = surface.waveform || 'triangle';
+          osc.frequency.value = baseFreq + (Math.random() * 2 - 1) * variance;
+          oscGain.gain.setValueAtTime(volume * (1 - noiseMix), now);
+          oscGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
+          osc.connect(oscGain).connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + durationS);
+        }
+
+        if (noiseMix > 0) {
+          const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * durationS));
+          const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+          const noise = ctx.createBufferSource();
+          noise.buffer = buffer;
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'bandpass';
+          filter.frequency.value = baseFreq * 2.2;
+          filter.Q.value = 0.7;
+          const noiseGain = ctx.createGain();
+          noiseGain.gain.setValueAtTime(volume * noiseMix, now);
+          noiseGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
+          noise.connect(filter).connect(noiseGain).connect(ctx.destination);
+          noise.start(now);
+          noise.stop(now + durationS);
+        }
+      }
+
       // Helper: floor Z for a tile type
       function floorZ(type) {
         if (type === TileType.RAISED) return  1;
@@ -1984,6 +2108,18 @@
         return best;
       }
 
+      // Shared by hostiles, companions, and wandering creatures — covers every
+      // creature movement path with a single footstep hook.
+      function tickCreatureFootsteps(c, distPx) {
+        if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
+        if (!_footstepAdvance(c, distPx)) return;
+        const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
+        if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
+        const volumeScale = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+        const type = footstepTileTypeAt(c.areaId, c.x, c.y, c.areaGrid);
+        playFootstepSfx(c.areaId, type, volumeScale);
+      }
+
       function moveCreatureToward(c, tx, ty, speed, dt) {
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
@@ -1993,6 +2129,7 @@
         c.x += nx * step;
         c.y += ny * step;
         c.vx = nx * speed; c.vy = ny * speed;
+        tickCreatureFootsteps(c, step);
         return true;
       }
 
@@ -3020,14 +3157,31 @@
             this.resetRouteState();
             root.position.set(spawnPos.c + 0.5, _isBuildingArea(area) ? 0 : npcSurfaceY(area, spawnPos.c, spawnPos.r), spawnPos.r + 0.5);
           },
+          // Surface/interior-aware placeholder footstep hook — shared by every
+          // NPC movement path since they all funnel through moveToward().
+          _tickFootsteps(distTiles) {
+            if (this.area !== currentArea) return; // not in the player's current area; inaudible
+            if (!_footstepAdvance(this, distTiles * TILE)) return;
+            const wx = root.position.x * TILE, wy = root.position.z * TILE;
+            const distToPlayer = Math.hypot(wx - player.x, wy - player.y);
+            if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
+            const volumeScale = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+            const type = footstepTileTypeAt(this.area, wx, wy, npcGridForArea(this.area));
+            playFootstepSfx(this.area, type, volumeScale);
+          },
           moveToward(tx, tz, dt) {
             const cfg = npcMovementConfig();
             const speed = (cfg.speedTilesPerSecond ?? 1.25) * this.catchup;
             const dx = tx - root.position.x, dz = tz - root.position.z;
             const d = Math.hypot(dx, dz);
-            if (d <= Math.max(0.001, speed * dt)) { root.position.x = tx; root.position.z = tz; return true; }
-            root.position.x += dx / d * speed * dt;
-            root.position.z += dz / d * speed * dt;
+            if (d <= Math.max(0.001, speed * dt)) {
+              this._tickFootsteps(d);
+              root.position.x = tx; root.position.z = tz; return true;
+            }
+            const movedTiles = speed * dt;
+            root.position.x += dx / d * movedTiles;
+            root.position.z += dz / d * movedTiles;
+            this._tickFootsteps(movedTiles);
             const rawRot = -Math.atan2(dz, dx) + Math.PI / 2;
             const { effectiveTarget, snapTo } = perpClamp(this.perpState, rawRot, [Math.PI / 2, -Math.PI / 2]);
             if (snapTo !== null) this.rot = effectiveTarget;
@@ -5650,8 +5804,17 @@
         };
       }
 
+      function tickPlayerFootsteps(prevX, prevY) {
+        const dist = Math.hypot(player.x - prevX, player.y - prevY);
+        if (!_footstepAdvance(player, dist)) return;
+        const type = footstepTileTypeAt(currentArea, player.x, player.y, getActiveGrid());
+        playFootstepSfx(currentArea, type, 1);
+      }
+
       function updateMovement(dt) {
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
+
+        const _fsPrevX = player.x, _fsPrevY = player.y;
 
         if (player.dodging) {
           player.dodgeT -= dt;
@@ -5667,6 +5830,7 @@
             player.dodging = false;
             player.vx = 0; player.vy = 0;
           }
+          tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           return;
         }
 
@@ -5681,6 +5845,7 @@
           player.vx = player.knockbackVX;
           player.vy = player.knockbackVY;
           if (player.knockbackT <= 0) { player.vx = 0; player.vy = 0; }
+          tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           return;
         }
 
@@ -5803,6 +5968,8 @@
         // ── Boundary clamp ────────────────────────────────────
         player.x = clamp(player.x, PLAYER_RADIUS, getActiveCols() * TILE - PLAYER_RADIUS);
         player.y = clamp(player.y, PLAYER_RADIUS, getActiveRows() * TILE - PLAYER_RADIUS);
+
+        tickPlayerFootsteps(_fsPrevX, _fsPrevY);
       }
 
       function canPlayerOccupy(wx, wy) {
