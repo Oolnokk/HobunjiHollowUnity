@@ -6651,6 +6651,16 @@
         const picked = pickFishForCurrentZone();
         if (!picked) { showToast('No fish here.', false); return; }
         const { fish, zoneKey } = picked;
+        // Anchor the floating ring over the actual river tile being fished, so it
+        // tracks the live 3D scene's camera angle instead of sitting in a fixed
+        // modal position (see updateFishingRingScreenPosition/worldToOverlay).
+        const reticle = getReticleTile();
+        const reticleTile = getActiveTileAt(reticle.col, reticle.row);
+        const anchorWorld = {
+          x: reticle.col + 0.5,
+          z: reticle.row + 0.5,
+          y: tileSurfaceY(reticleTile.type) + 0.35,
+        };
         fishingMinigame = {
           active: true,
           fishDef: fish,
@@ -6658,6 +6668,7 @@
           difficulty: fish.difficulty,
           fishClass: fish.fishClass,
           fishAnimT: 0,
+          anchorWorld,
           fish: {
             pos: Math.random(), vel: 0, targetVel: 0, angle: 0,
             moveDir: 1, pendingMoveDir: 1, turning: false, turnProgress: 0, localFacingScale: 1,
@@ -6814,21 +6825,21 @@
         const R = FISHING_RING;
         const outerRadius = R.fishRadius + R.outerOffset;
         fishingOverlayEl.innerHTML = `
-          <div class="fish-card">
+          <div class="fish-ring-wrap" id="fishRingWrap">
+            <svg viewBox="0 0 ${R.cx * 2} ${R.cy * 2}">
+              <circle cx="${R.cx}" cy="${R.cy}" r="${R.fishRadius}" fill="none" stroke="rgba(127,232,154,0.4)" stroke-width="2"/>
+              <circle cx="${R.cx}" cy="${R.cy}" r="${outerRadius}" fill="none" stroke="rgba(255,255,255,0.32)" stroke-width="2"/>
+              <path id="fishSegArc" fill="none" stroke="#f9e28a" stroke-width="6" stroke-linecap="round"/>
+              <circle id="fishMarkerA" r="5" fill="#ff8060" opacity="0"/>
+              <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
+              <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
+              <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
+              <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
+            </svg>
+          </div>
+          <div class="fish-dock">
             <div class="fish-title">${FISH_ZONE_LABELS[fm.zoneKey]} — Spearfishing</div>
             <div class="fish-hint">Tap Fire once to drop marker 1, again for marker 2. The spear flies the chord between them — line it up with the fish.</div>
-            <div class="fish-ring-wrap">
-              <svg viewBox="0 0 ${R.cx * 2} ${R.cy * 2}">
-                <circle cx="${R.cx}" cy="${R.cy}" r="${R.fishRadius}" fill="none" stroke="rgba(127,232,154,0.25)" stroke-width="2"/>
-                <circle cx="${R.cx}" cy="${R.cy}" r="${outerRadius}" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="2"/>
-                <path id="fishSegArc" fill="none" stroke="#f9e28a" stroke-width="6" stroke-linecap="round"/>
-                <circle id="fishMarkerA" r="5" fill="#ff8060" opacity="0"/>
-                <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
-                <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
-                <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
-                <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
-              </svg>
-            </div>
             <div class="fish-status" id="fishStatus"></div>
             <div class="fish-panic-wrap"><div class="fish-panic-fill" id="fishPanicFill"></div></div>
             <button class="fish-fire-btn" id="fishFireBtn">Fire (Space)</button>
@@ -6836,6 +6847,7 @@
           </div>`;
 
         fishingEls = {
+          ringWrap: document.getElementById('fishRingWrap'),
           segArc: document.getElementById('fishSegArc'),
           markerA: document.getElementById('fishMarkerA'),
           markerB: document.getElementById('fishMarkerB'),
@@ -6920,10 +6932,26 @@
         fishingEls.fishDeformedImage.setAttribute('height', deform.h.toFixed(2));
       }
 
+      // Floats the ring over the live 3D scene at the river tile's projected screen
+      // position instead of centering it in a modal — same camera-angle-tracking
+      // intent as the prototype's backdrop demo (cube player + river prism).
+      function updateFishingRingScreenPosition(fm) {
+        if (!fishingEls || !fm.anchorWorld) return;
+        const proj = worldToOverlay(fm.anchorWorld.x, fm.anchorWorld.y, fm.anchorWorld.z);
+        if (!proj.visible) return;
+        const halfRing = 160; // matches the ring-wrap's max 320px size
+        const rect = _threeRect;
+        const left = clamp(proj.x, halfRing, Math.max(halfRing, rect.width - halfRing));
+        const top = clamp(proj.y, halfRing, Math.max(halfRing, rect.height - halfRing));
+        fishingEls.ringWrap.style.left = (rect.left + left) + 'px';
+        fishingEls.ringWrap.style.top = (rect.top + top) + 'px';
+      }
+
       function renderFishingOverlay() {
         const fm = fishingMinigame;
         if (!fm) return;
         if (!fishingEls) buildFishingOverlayDom(fm);
+        updateFishingRingScreenPosition(fm);
 
         const R = FISHING_RING;
         const outerRadius = R.fishRadius + R.outerOffset;

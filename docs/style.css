@@ -1958,24 +1958,32 @@
     }
 
     /* ── Spearfishing minigame (Spear Bridge) ────────────────── */
+    /* No opaque backdrop: the ring floats free over the live 3D scene, tracking
+       the river tile's projected screen position (see updateFishingRingScreenPosition
+       in game.js) the same way the prototype's cube-player/river-prism demo showed. */
     #fishingOverlay {
       display: none; position: fixed; inset: 0;
-      background: rgba(4,12,9,0.72);
-      z-index: 240; touch-action: none;
-      align-items: center; justify-content: center;
+      z-index: 240; touch-action: none; pointer-events: none;
     }
-    #fishingOverlay.open { display: flex; }
-    .fish-card {
+    #fishingOverlay.open { display: block; }
+    .fish-ring-wrap {
+      position: absolute; width: min(72vw, 320px); height: min(72vw, 320px);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    .fish-ring-wrap svg { width: 100%; height: 100%; display: block; }
+    .fish-dock {
+      position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
       display: flex; flex-direction: column; align-items: center; gap: 10px;
+      max-width: min(86vw, 320px);
       background: var(--glass-2); border: 1px solid var(--border-bright);
-      border-radius: var(--r); padding: 16px 20px 18px;
+      border-radius: var(--r); padding: 12px 20px 14px;
       box-shadow: 0 12px 40px rgba(0,0,0,0.5);
       backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      pointer-events: auto;
     }
     .fish-title { font-family: 'Pixelify Sans', monospace; font-size: 15px; color: var(--accent); letter-spacing: 0.04em; }
     .fish-hint { font-size: 11px; color: var(--muted); text-align: center; max-width: 260px; }
-    .fish-ring-wrap { position: relative; width: min(72vw, 320px); }
-    .fish-ring-wrap svg { width: 100%; height: 100%; display: block; }
     /* Fish render is a pure-black silhouette PNG (see fish_silhouette-body.png); without a
        light halo it nearly disappears against the dark backdrop, so give it the same white
        glow trick the prototype used on .fish-image-rig, just stronger for our darker scene. */
