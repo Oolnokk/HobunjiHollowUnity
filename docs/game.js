@@ -687,7 +687,7 @@
       const JOYSTICK_RESPONSE = 0.82; // used by updateJoystick() to make small thumb motion feel responsive.
       const ACTION_FX_LIMIT = 90; // used by spawnActionParticles()/updateActionParticles() to cap mobile effects.
       const FLOW_SOURCE_ROW = 0;
-      const DAY_LENGTH_SECONDS = 72;
+      const DAY_LENGTH_SECONDS = 288; // 4x the original 72s — time now runs at 25% speed
       const MORNING_HOUR = 6;
       const NIGHT_HOUR   = 22;
       const SEASON_LENGTH_DAYS = 8;
@@ -6595,6 +6595,48 @@
         debugLog(`major storm: ${name} — ${dmgText || 'no damage'}`);
       }
 
+      // ── Lantern light masks ────────────────────────────────────────────
+      // Carried by the player and any NPC tagged "watch" (the Watch). Punches
+      // a soft hole through the day/night darkness tint: a short inner ring
+      // where the tint is almost fully cleared (actual clarity), surrounded
+      // by a much larger, dim halo (the lantern "shines" further than it
+      // actually reveals detail).
+      const LANTERN_CLARITY_TILES = 1.3; // fully-cleared radius, in tiles
+      const LANTERN_SHINE_TILES   = 5.0; // total falloff radius, in tiles
+
+      function _lanternScreenRadius(tx, tz, tiles) {
+        const c = worldToOverlay(tx, 0.5, tz);
+        const e = worldToOverlay(tx + tiles, 0.5, tz);
+        return Math.hypot(e.x - c.x, e.y - c.y);
+      }
+
+      function drawLanternMasks() {
+        const carriers = [{ x: player.x / TILE, z: player.y / TILE }];
+        for (const w of npcWalkers) {
+          if (w.area === currentArea && w.rec?.tags?.includes('watch')) {
+            carriers.push({ x: w.root.position.x, z: w.root.position.z });
+          }
+        }
+        lctx.globalCompositeOperation = 'destination-out';
+        for (const c of carriers) {
+          const center = worldToOverlay(c.x, 0.5, c.z);
+          if (!center.visible) continue;
+          const shineR = _lanternScreenRadius(c.x, c.z, LANTERN_SHINE_TILES);
+          if (!(shineR > 0)) continue;
+          const clarityFrac = Math.min(0.9, LANTERN_CLARITY_TILES / LANTERN_SHINE_TILES);
+          const grad = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
+          grad.addColorStop(0,                              'rgba(0,0,0,0.92)');
+          grad.addColorStop(clarityFrac,                     'rgba(0,0,0,0.80)');
+          grad.addColorStop(Math.min(1, clarityFrac + 0.18), 'rgba(0,0,0,0.28)');
+          grad.addColorStop(1,                               'rgba(0,0,0,0)');
+          lctx.fillStyle = grad;
+          lctx.beginPath();
+          lctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
+          lctx.fill();
+        }
+        lctx.globalCompositeOperation = 'source-over';
+      }
+
       let _lastLightingOverlayTime = 0;
       function drawLightingOverlay() {
         const now = performance.now();
@@ -6627,6 +6669,8 @@
         lctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
         lctx.fillRect(0, 0, W, H);
         lctx.globalCompositeOperation = 'source-over';
+
+        drawLanternMasks();
 
         // Lightning flash on lighting canvas too
         if (lightningAlpha > 0) {
