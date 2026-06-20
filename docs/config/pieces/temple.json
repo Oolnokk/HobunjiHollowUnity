@@ -946,7 +946,7 @@
             -0.7749999999999999
           ]
         ],
-        "tag": "roof",
+        "tag": "wall",
         "color": null,
         "highlandSectionRole": "thin_cross_gable_clipped_to_main_ridge",
         "watertightSeam": true,
@@ -976,7 +976,7 @@
             1.775
           ]
         ],
-        "tag": "roof",
+        "tag": "wall",
         "color": null,
         "highlandSectionRole": "thin_cross_gable_clipped_to_main_ridge",
         "watertightSeam": true,
@@ -1006,7 +1006,7 @@
             -0.7749999999999999
           ]
         ],
-        "tag": "roof",
+        "tag": "wall",
         "color": null,
         "highlandSectionRole": "thin_cross_gable_clipped_to_main_ridge",
         "watertightSeam": true,
