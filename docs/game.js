@@ -822,20 +822,36 @@
         stamina: 100, maxStamina: 100,
         invulnUntil: 0,
         dodging: false, dodgeT: 0, dodgeDirX: 0, dodgeDirY: 0, dodgeCooldownT: 0,
+        knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
       };
 
       // Combat tuning for the weapon tool's two abilities. Cone hit-tests use
       // continuous angle+range against creatures (not tile snapped). 'slash'
-      // is the big sweep: bigger cone, more damage, costs more stamina.
+      // is the big sweep: bigger cone, more damage, costs more stamina, and
+      // knocks targets back further.
       const WEAPON_ABILITY = {
-        cut:   { damage: 14, halfConeRad: 32 * Math.PI / 180, rangePx: TILE * 1.05, staminaCost: 12 },
-        slash: { damage: 24, halfConeRad: 62 * Math.PI / 180, rangePx: TILE * 1.35, staminaCost: 20 },
+        cut:   { damage: 14, halfConeRad: 32 * Math.PI / 180, rangePx: TILE * 1.05, staminaCost: 12, knockbackPxS: 360 },
+        slash: { damage: 24, halfConeRad: 62 * Math.PI / 180, rangePx: TILE * 1.35, staminaCost: 20, knockbackPxS: 520 },
       };
 
       // Z-target-style auto lock: while a hostile is this close, facing tracks
       // it instead of movement direction, so strafing/repositioning in combat
       // doesn't spin the character away from the thing it's fighting.
       const AUTO_TARGET_RANGE_PX = TILE * 5.5;
+
+      // Knockback shared by all combat attacks: a short impulse that overrides
+      // normal movement/AI while it decays, applied away from the attacker.
+      const KNOCKBACK_DUR_S = 0.18;
+      const PLAYER_KNOCKBACK_PX_S = 300;
+      const COMPANION_BITE_KNOCKBACK_PX_S = 280;
+      const HOSTILE_BITE_KNOCKBACK_PX_S = 240;
+
+      function applyKnockback(target, fromX, fromY, speedPxS) {
+        const ang = Math.atan2(target.y - fromY, target.x - fromX);
+        target.knockbackT = KNOCKBACK_DUR_S;
+        target.knockbackVX = Math.cos(ang) * speedPxS;
+        target.knockbackVY = Math.sin(ang) * speedPxS;
+      }
 
       const PLAYER_STAMINA_REGEN = 14;   // per second
       const PLAYER_HEALTH_REGEN  = 1.2;  // per second, passive
@@ -1882,6 +1898,7 @@
           stamina: def.maxStamina, maxStamina: def.maxStamina,
           facing: 0, groupRot: 0, perpState: {},
           attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
+          knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
           runFrame: 0, runFrameT: 0, currentFrameUrl: def.sprites.idle,
           isCompanion: false,
           name: def.label,
@@ -1899,19 +1916,22 @@
         c.avatarRef.dispose();
       }
 
-      function damageCreature(c, amount) {
+      function damageCreature(c, amount, fromX, fromY, knockbackPxS) {
         c.health = Math.max(0, c.health - amount);
         c.hitFlashT = 0.25;
         if (c.health <= 0) {
           despawnCreature(c);
           hostileObjects.delete(c);
           companionObjects.delete(c);
+          return;
         }
+        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
       }
 
-      function damagePlayer(amount) {
+      function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S) {
         if (performance.now() < player.invulnUntil) return;
         player.health = Math.max(0, player.health - amount);
+        if (fromX !== undefined && player.health > 0) applyKnockback(player, fromX, fromY, knockbackPxS);
         if (player.health <= 0) respawnPlayer();
       }
 
@@ -1943,14 +1963,9 @@
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
           if (!inCone(player.x, player.y, player.angle, c.x, c.y, abil.rangePx, abil.halfConeRad)) continue;
-          damageCreature(c, abil.damage);
+          damageCreature(c, abil.damage, player.x, player.y, abil.knockbackPxS);
           hits++;
           lastName = c.def.label;
-          if (c.health > 0) {
-            const ang = Math.atan2(c.y - player.y, c.x - player.x);
-            c.x += Math.cos(ang) * 10;
-            c.y += Math.sin(ang) * 10;
-          }
         }
         if (hits <= 0) return { hits: 0, message: '' };
         const verb = action === 'slash' ? 'Slashed' : 'Cut';
@@ -2057,7 +2072,12 @@
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
 
           let moving = false, aimAngle = c.facing || 0;
-          if (c.state === 'chase') {
+          if (c.knockbackT > 0) {
+            // Reeling from a hit; let the impulse play out before resuming AI.
+            c.knockbackT = Math.max(0, c.knockbackT - dt);
+            c.x += c.knockbackVX * dt;
+            c.y += c.knockbackVY * dt;
+          } else if (c.state === 'chase') {
             aimAngle = Math.atan2(dyp, dxp);
             if (c.retreatT > 0) {
               // Jump back after landing a bite, keeping eyes on the player.
@@ -2069,7 +2089,7 @@
               if (distToPlayer <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
                 c.stamina -= def.attackStaminaCost;
                 c.attackCooldownT = def.attackCooldownS;
-                damagePlayer(def.attackDamage);
+                damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
                 c.retreatT = JUMP_BACK_DUR_S;
               }
             }
@@ -2118,7 +2138,7 @@
             if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
               c.stamina -= def.attackStaminaCost;
               c.attackCooldownT = def.attackCooldownS;
-              damageCreature(target, def.attackDamage);
+              damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
             }
           } else if (distToPlayer > FOLLOW_FAR_PX) {
             moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
@@ -5646,6 +5666,20 @@
             player.dodging = false;
             player.vx = 0; player.vy = 0;
           }
+          return;
+        }
+
+        if (player.knockbackT > 0) {
+          player.knockbackT = Math.max(0, player.knockbackT - dt);
+          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+          const desiredX = clamp(player.x + player.knockbackVX * dt, minX, maxX);
+          const desiredY = clamp(player.y + player.knockbackVY * dt, minY, maxY);
+          if (canPlayerOccupy(desiredX, player.y)) player.x = desiredX; else player.knockbackVX = 0;
+          if (canPlayerOccupy(player.x, desiredY)) player.y = desiredY; else player.knockbackVY = 0;
+          player.vx = player.knockbackVX;
+          player.vy = player.knockbackVY;
+          if (player.knockbackT <= 0) { player.vx = 0; player.vy = 0; }
           return;
         }
 
