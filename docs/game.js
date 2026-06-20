@@ -1031,7 +1031,7 @@
           moveSpeed: 165, chaseSpeed: 220,
           attackDamage: 10, attackRangePx: TILE * 0.9, attackHalfConeRad: 45 * Math.PI / 180,
           attackStaminaCost: 14, attackCooldownS: 1.1,
-          modelWidth: 0.95, tint: 0xffffff,
+          modelWidth: 1.9, tint: 0xffffff,
           sprites: {
             idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
             run: ['assets/creaturesprites/dabinggi-hound_run1.png', 'assets/creaturesprites/dabinggi-hound_run2.png'],
@@ -1044,7 +1044,7 @@
           attackDamage: 12, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
           attackStaminaCost: 12, attackCooldownS: 1.0,
           aggroRangePx: TILE * 6.2, leashRangePx: TILE * 9,
-          modelWidth: 1.05, tint: 0xffffff,
+          modelWidth: 2.1, tint: 0xffffff,
           sprites: {
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
@@ -1057,7 +1057,7 @@
           attackDamage: 18, attackRangePx: TILE * 0.95, attackHalfConeRad: 46 * Math.PI / 180,
           attackStaminaCost: 16, attackCooldownS: 1.0,
           aggroRangePx: TILE * 7, leashRangePx: TILE * 10,
-          modelWidth: 1.55, tint: 0xffb0a0,
+          modelWidth: 3.1, tint: 0xffb0a0,
           sprites: {
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
@@ -1577,6 +1577,8 @@
         if (!def) return null;
         const mesh = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color);
         mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
+        _markOutline(mesh);
+        _markFurnitureEdgeId(mesh);
         scene.add(mesh);
 
         return {
@@ -1658,6 +1660,8 @@
         if (!def) return null;
         const group = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color || 0x8b6540);
         group.position.set(col + (def.fw || 1) * 0.5, 0, row + (def.fd || 1) * 0.5);
+        _markOutline(group);
+        _markFurnitureEdgeId(group);
         targetScene.add(group);
 
         let light = null;
@@ -1902,6 +1906,7 @@
         const initSurfY = tileSurfaceY(grid[row][col].type);
         avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
         avatarRef.group.rotation.y = Math.PI / 2; // start facing east
+        _markPngPlane(avatarRef.group);
         scene.add(avatarRef.group);
 
         let tickCounter = 0;
@@ -2049,6 +2054,7 @@
         const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
         const surfY = targetGrid[row]?.[col] ? tileSurfaceY(targetGrid[row][col].type) : 0;
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
+        _markPngPlane(avatarRef.group);
         targetScene.add(avatarRef.group);
 
         const creature = {
@@ -3163,6 +3169,7 @@
         );
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
+        _markPngPlane(avatarGroup);
         const root = new THREE.Group();
         root.name = 'npc_walker_' + (rec?.id || rec?.name || '');
         const groundShadow = makeCharacterGroundShadow('npc_ground_shadow');
@@ -3701,6 +3708,7 @@
           const wallPanels = buildWallPanelsFromFloorSet(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
           if (wallPanels.length) {
             const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+            _markOutline(wallGroup);
             bScene.add(wallGroup);
           }
           // Furniture: build combined itemKey -> def/furnitureKey lookup
@@ -3724,6 +3732,8 @@
               model.position.set(bx, by, bz);
               model.rotation.y = rotRad;
               model.scale.set(scX, scY, scZ);
+              _markOutline(model);
+              _markFurnitureEdgeId(model);
               bScene.add(model);
             } else {
               // Fallback: no procedural recipe found for this furniture key
@@ -3731,6 +3741,8 @@
               ph.position.set(bx, by + 0.4, bz);
               ph.rotation.y = rotRad;
               ph.scale.set(scX, scY, scZ);
+              _markOutline(ph);
+              _markFurnitureEdgeId(ph);
               bScene.add(ph);
             }
           }
@@ -3806,6 +3818,7 @@
         const wallPanels = buildWallPanelsForRoom(cols, rows, INTERIOR_WALL_HEIGHT, exitT);
         if (wallPanels.length) {
           const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+          _markOutline(wallGroup);
           bScene.add(wallGroup);
         }
         const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId };
@@ -4201,6 +4214,7 @@
           const mesh = new THREE.Mesh(merged, tileMats[matKey] || tileMats.grass);
           mesh.receiveShadow = true;
           townScene.add(mesh);
+          _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
         }
 
         // River/stream water surface — an animated translucent plane sitting
@@ -4236,6 +4250,7 @@
           wm.receiveShadow = false;
           wm.position.set(c + 0.5, NORMAL_TOP - (deep ? 0.10 : 0.05), r + 0.5);
           townScene.add(wm);
+          _markTerrainEdgeId(wm, 'water');
           return wm;
         });
 
@@ -5342,6 +5357,7 @@
         avatarGroup.name = 'player_avatar';
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
+        _markPngPlane(avatarGroup);
         if (refreshGeneration !== playerAvatarRefreshGeneration) {
           disposeAvatarGroup(avatarGroup);
           return;
@@ -8215,6 +8231,166 @@
         return out;
       }
 
+      // ── Screen-space outline pass (depth edges + furniture material seams) ──
+      // Two extra outline sources layered on top of the per-mesh shell outline
+      // above, both detected as a post-process over the rendered frame:
+      //   1. Depth discontinuities — catches silhouettes the shell pass misses,
+      //      e.g. one object's edge against another object/the floor behind it.
+      //   2. Furniture "material ID" seams — catches boundaries between two
+      //      touching parts of the same furniture group (e.g. a chair leg
+      //      against the seat) where depth is continuous but the part changes,
+      //      so neither the shell pass nor depth edges would draw a line.
+      // Layer 3 is reserved for furniture parts feeding the material-ID buffer.
+
+      // PNG-plane avatars (player/NPCs/animals/creatures) are flat cutout
+      // sprites — running depth-edge detection against them would outline
+      // every alpha-cutout silhouette edge of the sprite art itself, which
+      // reads as noise rather than a deliberate outline. Tagging their root
+      // group lets the depth-only source pass below hide them temporarily
+      // without touching the main colour pass that actually shows them.
+      function _markPngPlane(obj) {
+        if (obj) obj.userData.isPngPlane = true;
+      }
+
+      let _furnitureEdgeIdSeq = 0;
+      function _markFurnitureEdgeId(obj) {
+        if (!obj) return;
+        const apply = (m) => {
+          m.layers.enable(3);
+          const hue = (_furnitureEdgeIdSeq++ * 0.6180339887) % 1;
+          const idColor = new THREE.Color().setHSL(hue, 0.85, 0.55);
+          m.onBeforeRender = function (renderer, scene, camera, geometry, material) {
+            if (material !== _furnitureIdMat) return;
+            _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
+            // Every tagged part shares this one material instance, so the
+            // renderer's "material/program unchanged since last draw" cache
+            // would otherwise skip re-uploading the uniform we just mutated —
+            // only the first part drawn each frame would ever reach the GPU.
+            _furnitureIdMat.uniformsNeedUpdate = true;
+          };
+        };
+        if (obj.isMesh) { apply(obj); return; }
+        obj.traverse(child => { if (child.isMesh) apply(child); });
+      }
+
+      // Flat-unlit material shared by every furniture part during the ID-buffer
+      // pass; each part's onBeforeRender (above) stamps its own colour into the
+      // shared uniform right before its draw call.
+      const _furnitureIdMat = new THREE.ShaderMaterial({
+        uniforms: { uIdColor: { value: new THREE.Color(0, 0, 0) } },
+        vertexShader: `
+          void main() {
+            #ifdef USE_INSTANCING
+              gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+            #else
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            #endif
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 uIdColor;
+          void main() { gl_FragColor = vec4(uIdColor, 1.0); }
+        `,
+      });
+
+      // Main colour pass render target — keeps a depth texture around so the
+      // composite shader below can read real per-pixel scene depth.
+      function _makeSceneRT(w, h) {
+        const rt = new THREE.WebGLRenderTarget(w, h, {
+          minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat,
+        });
+        rt.depthTexture = new THREE.DepthTexture(w, h);
+        return rt;
+      }
+      const _mainRT   = _makeSceneRT(1, 1);
+      // Furniture/terrain material-ID buffer — alpha 0 means "nothing tagged
+      // here". Carries its own depth texture (depth of the tagged objects
+      // only, since the pass that fills this target restricts the camera to
+      // layer 3) so the composite shader can tell whether a tagged surface is
+      // actually the frontmost thing at that pixel before drawing its seam —
+      // without that check, a tagged object hidden behind a wall would still
+      // contribute an edge, since nothing else was rendered into this target
+      // to occlude it.
+      const _edgeIdRT = _makeSceneRT(1, 1);
+      // Depth-only source for depth-edge detection — rendered with PNG-plane
+      // avatars hidden (see _markPngPlane above) so the detector only sees
+      // solid-geometry depth, never sprite-cutout silhouettes. colorWrite is
+      // off since only the attached depth texture is read back.
+      const _depthOnlyRT = _makeSceneRT(1, 1);
+      const _depthOnlyMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+      function _resizeOutlineTargets(pixelW, pixelH) {
+        _mainRT.setSize(pixelW, pixelH);
+        _edgeIdRT.setSize(pixelW, pixelH);
+        _depthOnlyRT.setSize(pixelW, pixelH);
+        _postMat.uniforms.uTexel.value.set(1 / pixelW, 1 / pixelH);
+      }
+
+      // Fullscreen composite — blends depth-edge and furniture-seam outlines
+      // over the rendered colour buffer.
+      const _postScene  = new THREE.Scene();
+      const _postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      const _postMat = new THREE.ShaderMaterial({
+        uniforms: {
+          tColor: { value: null }, tDepth: { value: null }, tEdgeId: { value: null },
+          tEdgeIdDepth: { value: null }, tSceneDepth: { value: null },
+          uTexel: { value: new THREE.Vector2(1, 1) },
+          uCameraNear: { value: 0.1 }, uCameraFar: { value: 200 },
+          uDepthOutlinesOn: { value: 0 }, uDepthThreshScale: { value: 1 },
+        },
+        depthTest: false, depthWrite: false,
+        vertexShader: `
+          varying vec2 vUv;
+          void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+        `,
+        fragmentShader: `
+          uniform sampler2D tColor, tDepth, tEdgeId, tEdgeIdDepth, tSceneDepth;
+          uniform vec2 uTexel;
+          uniform float uCameraNear, uCameraFar;
+          uniform float uDepthOutlinesOn, uDepthThreshScale;
+          varying vec2 vUv;
+          float linearDepth(float z) {
+            float zNdc = z * 2.0 - 1.0;
+            return (2.0 * uCameraNear * uCameraFar) / (uCameraFar + uCameraNear - zNdc * (uCameraFar - uCameraNear));
+          }
+          void main() {
+            vec3 color = texture2D(tColor, vUv).rgb;
+
+            float d0 = linearDepth(texture2D(tDepth, vUv).r);
+            float dL = linearDepth(texture2D(tDepth, vUv - vec2(uTexel.x, 0.0)).r);
+            float dR = linearDepth(texture2D(tDepth, vUv + vec2(uTexel.x, 0.0)).r);
+            float dU = linearDepth(texture2D(tDepth, vUv + vec2(0.0, uTexel.y)).r);
+            float dD = linearDepth(texture2D(tDepth, vUv - vec2(0.0, uTexel.y)).r);
+            float depthDelta  = max(max(abs(d0 - dL), abs(d0 - dR)), max(abs(d0 - dU), abs(d0 - dD)));
+            float depthThresh = mix(0.015, 0.6, clamp(d0 / uCameraFar, 0.0, 1.0)) * uDepthThreshScale;
+            float depthEdge   = step(depthThresh, depthDelta) * uDepthOutlinesOn;
+
+            vec4 id0 = texture2D(tEdgeId, vUv);
+            vec4 idL = texture2D(tEdgeId, vUv - vec2(uTexel.x, 0.0));
+            vec4 idR = texture2D(tEdgeId, vUv + vec2(uTexel.x, 0.0));
+            vec4 idU = texture2D(tEdgeId, vUv + vec2(0.0, uTexel.y));
+            vec4 idD = texture2D(tEdgeId, vUv - vec2(0.0, uTexel.y));
+            float idEdge = 0.0;
+            idEdge = max(idEdge, (id0.a > 0.5 && idL.a > 0.5 && distance(id0.rgb, idL.rgb) > 0.1) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idR.a > 0.5 && distance(id0.rgb, idR.rgb) > 0.1) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idU.a > 0.5 && distance(id0.rgb, idU.rgb) > 0.1) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idD.a > 0.5 && distance(id0.rgb, idD.rgb) > 0.1) ? 1.0 : 0.0);
+
+            // Occlusion test — the ID buffer was rendered with only the
+            // tagged objects in view, so it has no idea a wall or other
+            // untagged object sits in front of them. Compare its own depth
+            // against the real scene depth at this pixel and drop the seam
+            // if something closer to the camera is actually there.
+            float idDepth    = linearDepth(texture2D(tEdgeIdDepth, vUv).r);
+            float sceneDepth = linearDepth(texture2D(tSceneDepth, vUv).r);
+            idEdge *= step(idDepth, sceneDepth + 0.05);
+
+            float edge = max(depthEdge, idEdge);
+            gl_FragColor = vec4(mix(color, vec3(0.0), edge), 1.0);
+          }
+        `,
+      });
+      _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
+
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
       let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72;
@@ -8318,6 +8494,37 @@
       };
       // Floor material for vegetation tiles — matches weed foliage HSL color
       const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
+
+      // Fixed per-terrain-type ID colours feeding the same material-ID-seam
+      // outline used for furniture (see _markFurnitureEdgeId), generalized to
+      // ground tiles: unlike furniture (every part gets its own unique
+      // colour, since any two touching parts should show a seam), terrain
+      // tiles of the same type must share one colour so the seam only shows
+      // up at real material boundaries — path/grass, stone/grass, water's
+      // edge, etc. — not at every tile-to-tile grid line.
+      const _terrainIdColors = (() => {
+        const colors = {};
+        let i = 0;
+        for (const key of Object.keys(tileMats)) colors[key] = new THREE.Color().setHSL((i++ * 0.6180339887) % 1, 0.85, 0.55);
+        colors.water = new THREE.Color().setHSL((i++ * 0.6180339887) % 1, 0.85, 0.55);
+        return colors;
+      })();
+      function _terrainCategoryFor(type) {
+        return tileMats[type] ? type : TileType.GRASS;
+      }
+      function _markTerrainEdgeId(mesh, category) {
+        if (!mesh) return;
+        const idColor = _terrainIdColors[category] || _terrainIdColors[TileType.GRASS];
+        mesh.layers.enable(3);
+        mesh.onBeforeRender = function (renderer, scene, camera, geometry, material) {
+          if (material !== _furnitureIdMat) return;
+          _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
+          // See _markFurnitureEdgeId above — required so each tile's colour
+          // actually reaches the GPU instead of reusing whatever the
+          // previous tile sharing this material last uploaded.
+          _furnitureIdMat.uniformsNeedUpdate = true;
+        };
+      }
       // ── Water shader — flow lines + ripple rings ───────────────────
       // Each water plane gets its own ShaderMaterial instance with per-tile uniforms.
       // uFlow: vec2 flow direction (normalised), zero = still water → ripple mode
@@ -10325,6 +10532,7 @@
           floorMesh.position.set(col + 0.5, NORMAL_TOP - SLAB_H / 2, row + 0.5);
           scene.add(floorMesh);
           tileMeshes[i] = floorMesh;
+          _markTerrainEdgeId(floorMesh, TileType.GRASS);
           // Plateau mound: stone for elevated/cliff cells, grass for ground-level base
           const { stoneGeo, grassGeo } = buildRockTileGeo(col, row);
           let moundRoot = null;
@@ -10333,6 +10541,7 @@
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
+            _markTerrainEdgeId(m, TileType.ROCK);
             moundRoot = m;
           }
           if (grassGeo) {
@@ -10340,6 +10549,7 @@
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
+            _markTerrainEdgeId(m, TileType.GRASS);
             if (!moundRoot) moundRoot = m;
           }
           if (moundRoot) moundRoot._windAmp = 0;  // wind loop skips _windAmp=0
@@ -10355,6 +10565,7 @@
           floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
           scene.add(floorMesh);
           tileMeshes[i] = floorMesh;
+          _markTerrainEdgeId(floorMesh, TileType.GRASS);
 
           const vegGroup = window.FoliageGenerator.buildShrubMesh(col, row);
           vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
@@ -10374,6 +10585,7 @@
           floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
           scene.add(floorMesh);
           tileMeshes[i] = floorMesh;
+          _markTerrainEdgeId(floorMesh, TileType.GRASS);
 
           if (s_weed3D && window.FoliageGenerator) {
             // Mode B: procedural 3D weeds, subject to shell outline
@@ -10407,6 +10619,7 @@
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
             m.layers.enable(1);  // material transition outline
+            _markTerrainEdgeId(m, TileType.TRENCH);
             primary = m;
           }
           if (grassGeo) {
@@ -10416,6 +10629,7 @@
             m._windAmp = 0;
             scene.add(m);
             m.layers.enable(1);  // material transition outline
+            _markTerrainEdgeId(m, TileType.GRASS);
             setVegFoliageMesh(i, m);
             if (!primary) primary = m;
           }
@@ -10430,6 +10644,7 @@
             const m = new THREE.Mesh(pathGeo, tileMats.path);
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            _markTerrainEdgeId(m, TileType.PATH);
             scene.add(m);
             primary = m;
           }
@@ -10438,6 +10653,7 @@
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
+            _markTerrainEdgeId(m, TileType.GRASS);
             if (!primary) primary = m;
           }
           tileMeshes[i] = primary;
@@ -10461,6 +10677,10 @@
         // Rock and fallback vegetation get outlines; flat floor tiles do not.
         if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
           mesh.layers.enable(1);
+        } else {
+          // Flat ground tiles (grass/tilled/paddy/river/stream bed) — fallback
+          // foliage billboards above are skipped since they aren't flat ground.
+          _markTerrainEdgeId(mesh, _terrainCategoryFor(tile.type));
         }
       }
 
@@ -10550,6 +10770,7 @@
                 const wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
                 wm.receiveShadow = false;
                 scene.add(wm);
+                _markTerrainEdgeId(wm, 'water');
                 setWaterMesh(i, wm);
               }
               const wm = waterMeshes[i];
@@ -10627,6 +10848,7 @@
                 wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
                 wm.receiveShadow = false;
                 townScene.add(wm);
+                _markTerrainEdgeId(wm, 'water');
                 townWaterMeshes.set(key, wm);
               }
               wm.position.set(col + 0.5, surfaceA + 0.015, row + 0.5);
@@ -10817,6 +11039,8 @@
         const h = rect.height || window.innerHeight;
         renderer.setPixelRatio(dpr * s_resScale);
         renderer.setSize(w, h);
+        const bufSize = renderer.getDrawingBufferSize(new THREE.Vector2());
+        _resizeOutlineTargets(bufSize.x, bufSize.y);
         overlayCanvas.width  = Math.round(w * dpr);
         overlayCanvas.height = Math.round(h * dpr);
         octx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -10827,6 +11051,8 @@
 
       // ── Visual feature toggles (Settings tab) ────────────────────
       let s_outlines  = true;
+      let s_depthOutlines = false;       // extra depth-seam outline pass — off by default (heavier)
+      let s_depthOutlineThreshScale = 1; // sensitivity: lower = catches smaller depth gaps
       let s_grass     = true;
       let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
       let s_billWind  = true;
@@ -10842,6 +11068,15 @@
       // ── Settings tab checkbox wiring ──────────────────────────────
       document.getElementById('settingOutlines').addEventListener('change', e => {
         s_outlines = e.target.checked;
+      });
+      document.getElementById('settingDepthOutlines').addEventListener('change', e => {
+        s_depthOutlines = e.target.checked;
+      });
+      document.getElementById('settingDepthOutlineSensitivity').addEventListener('input', e => {
+        // Slider is "sensitivity" (higher = catches smaller depth gaps), so
+        // invert it into the threshold-scale multiplier used by the shader.
+        const sensitivity = Number(e.target.value);
+        s_depthOutlineThreshScale = 2.0 + (0.25 - 2.0) * sensitivity;
       });
       document.getElementById('settingGrass').addEventListener('change', e => {
         s_grass = e.target.checked;
@@ -11020,31 +11255,89 @@
 
         // ── Render active scene ──────────────────────────────────
         const activeScene = getActiveScene();
-        renderer.render(activeScene, camera);
-        // Selective shell outline pass (layer-1 objects only)
         if (s_outlines) {
-          const _outlineScene = activeScene;
+          // Colour + depth into an offscreen target so the post-process
+          // composite below can read real per-pixel depth afterwards —
+          // rendering straight to the canvas would lose that depth buffer
+          // the moment the fullscreen composite quad overwrites it.
+          renderer.setRenderTarget(_mainRT);
+          renderer.render(activeScene, camera);
+
+          // Selective shell outline pass (layer-1 objects only)
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
-          _outlineScene.overrideMaterial = shellOutlineMat;
+          activeScene.overrideMaterial = shellOutlineMat;
           camera.layers.set(1);
-          renderer.render(_outlineScene, camera);
+          renderer.render(activeScene, camera);
           camera.layers.enableAll();
-          _outlineScene.overrideMaterial = null;
+          activeScene.overrideMaterial = null;
+
+          // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
+          if (_targetOutlineMeshes.length > 0) {
+            scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
+            camera.layers.set(2);
+            renderer.render(scene, camera);
+            camera.layers.enableAll();
+            scene.overrideMaterial = null;
+          }
           renderer.autoClearColor = true;
           renderer.autoClearDepth = true;
-        }
-        // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
-        if (_targetOutlineMeshes.length > 0) {
-          renderer.autoClearColor = false;
-          renderer.autoClearDepth = false;
-          scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
-          camera.layers.set(2);
-          renderer.render(scene, camera);
+
+          // Furniture material-ID buffer (layer-3 objects only) — feeds the
+          // material-seam edge detection in the composite shader below.
+          renderer.setRenderTarget(_edgeIdRT);
+          renderer.setClearColor(0x000000, 0);
+          renderer.clear(true, true, false);
+          camera.layers.set(3);
+          activeScene.overrideMaterial = _furnitureIdMat;
+          renderer.render(activeScene, camera);
+          activeScene.overrideMaterial = null;
           camera.layers.enableAll();
-          scene.overrideMaterial = null;
-          renderer.autoClearColor = true;
-          renderer.autoClearDepth = true;
+
+          // Depth-only source for the depth-edge detector, PNG-plane avatars
+          // hidden for this pass only (see _markPngPlane) so sprite cutout
+          // silhouettes never feed the detector. Opt-in/off by default since
+          // it's an extra full scene pass on top of everything above.
+          if (s_depthOutlines) {
+            const _hiddenPngPlanes = [];
+            activeScene.traverse(o => {
+              if (o.userData.isPngPlane && o.visible) { o.visible = false; _hiddenPngPlanes.push(o); }
+            });
+            renderer.setRenderTarget(_depthOnlyRT);
+            activeScene.overrideMaterial = _depthOnlyMat;
+            renderer.render(activeScene, camera);
+            activeScene.overrideMaterial = null;
+            _hiddenPngPlanes.forEach(o => { o.visible = true; });
+          }
+
+          // Composite: blend depth-discontinuity + furniture material-seam
+          // outlines over the rendered scene, straight to the canvas.
+          renderer.setRenderTarget(null);
+          _postMat.uniforms.tColor.value          = _mainRT.texture;
+          _postMat.uniforms.tDepth.value           = s_depthOutlines ? _depthOnlyRT.depthTexture : _mainRT.depthTexture;
+          _postMat.uniforms.tEdgeId.value          = _edgeIdRT.texture;
+          _postMat.uniforms.tEdgeIdDepth.value     = _edgeIdRT.depthTexture;
+          _postMat.uniforms.tSceneDepth.value      = _mainRT.depthTexture;
+          _postMat.uniforms.uCameraNear.value      = camera.near;
+          _postMat.uniforms.uCameraFar.value       = camera.far;
+          _postMat.uniforms.uDepthOutlinesOn.value = s_depthOutlines ? 1 : 0;
+          _postMat.uniforms.uDepthThreshScale.value = s_depthOutlineThreshScale;
+          renderer.render(_postScene, _postCamera);
+        } else {
+          renderer.setRenderTarget(null);
+          renderer.render(activeScene, camera);
+          // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
+          if (_targetOutlineMeshes.length > 0) {
+            renderer.autoClearColor = false;
+            renderer.autoClearDepth = false;
+            scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
+            camera.layers.set(2);
+            renderer.render(scene, camera);
+            camera.layers.enableAll();
+            scene.overrideMaterial = null;
+            renderer.autoClearColor = true;
+            renderer.autoClearDepth = true;
+          }
         }
 
         // ── 2D overlays (rain, lighting) ─────────────────────────
