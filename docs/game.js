@@ -832,6 +832,11 @@
         slash: { damage: 24, halfConeRad: 62 * Math.PI / 180, rangePx: TILE * 1.35, staminaCost: 20 },
       };
 
+      // Z-target-style auto lock: while a hostile is this close, facing tracks
+      // it instead of movement direction, so strafing/repositioning in combat
+      // doesn't spin the character away from the thing it's fighting.
+      const AUTO_TARGET_RANGE_PX = TILE * 5.5;
+
       const PLAYER_STAMINA_REGEN = 14;   // per second
       const PLAYER_HEALTH_REGEN  = 1.2;  // per second, passive
       const DODGE_DUR_S = 0.22;
@@ -1950,6 +1955,17 @@
         if (hits <= 0) return { hits: 0, message: '' };
         const verb = action === 'slash' ? 'Slashed' : 'Cut';
         return { hits, message: hits > 1 ? `${verb} ${hits} creatures!` : `${verb} the ${lastName}!` };
+      }
+
+      // Nearest live hostile in the player's current area within lock-on range, or null.
+      function findAutoTarget() {
+        let best = null, bestDist = AUTO_TARGET_RANGE_PX;
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          const dist = Math.hypot(c.x - player.x, c.y - player.y);
+          if (dist <= bestDist) { best = c; bestDist = dist; }
+        }
+        return best;
       }
 
       function moveCreatureToward(c, tx, ty, speed, dt) {
@@ -5722,7 +5738,16 @@
         }
 
         if (!mouseLookActive || !isDesktop) {
-          if (inputStrength > 0.001) {
+          const autoTarget = findAutoTarget();
+          if (autoTarget) {
+            // Combat: lock facing onto the nearest nearby hostile instead of
+            // movement direction, akin to Z-targeting.
+            const targetAngle = Math.atan2(autoTarget.y - player.y, autoTarget.x - player.x);
+            const diff = angleDiff(targetAngle, facingAngle);
+            facingAngle += diff * Math.min(1, FACING_LERP * 2 * dt);
+            if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
+            cardinalHoldTimer = CARDINAL_HOLD;
+          } else if (inputStrength > 0.001) {
             lastMoveAngle = Math.atan2(iy, ix);
             cardinalHoldTimer = CARDINAL_HOLD;
             const diff = angleDiff(lastMoveAngle, facingAngle);
