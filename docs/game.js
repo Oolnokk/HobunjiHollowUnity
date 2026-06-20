@@ -1031,7 +1031,7 @@
           moveSpeed: 165, chaseSpeed: 220,
           attackDamage: 10, attackRangePx: TILE * 0.9, attackHalfConeRad: 45 * Math.PI / 180,
           attackStaminaCost: 14, attackCooldownS: 1.1,
-          modelWidth: 0.95, tint: 0xffffff,
+          modelWidth: 1.9, tint: 0xffffff,
           sprites: {
             idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
             run: ['assets/creaturesprites/dabinggi-hound_run1.png', 'assets/creaturesprites/dabinggi-hound_run2.png'],
@@ -1044,7 +1044,7 @@
           attackDamage: 12, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
           attackStaminaCost: 12, attackCooldownS: 1.0,
           aggroRangePx: TILE * 6.2, leashRangePx: TILE * 9,
-          modelWidth: 1.05, tint: 0xffffff,
+          modelWidth: 2.1, tint: 0xffffff,
           sprites: {
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
@@ -1057,7 +1057,7 @@
           attackDamage: 18, attackRangePx: TILE * 0.95, attackHalfConeRad: 46 * Math.PI / 180,
           attackStaminaCost: 16, attackCooldownS: 1.0,
           aggroRangePx: TILE * 7, leashRangePx: TILE * 10,
-          modelWidth: 1.55, tint: 0xffb0a0,
+          modelWidth: 3.1, tint: 0xffb0a0,
           sprites: {
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
