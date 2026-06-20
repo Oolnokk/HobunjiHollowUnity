@@ -1577,6 +1577,8 @@
         if (!def) return null;
         const mesh = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color);
         mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
+        _markOutline(mesh);
+        _markFurnitureEdgeId(mesh);
         scene.add(mesh);
 
         return {
@@ -1659,6 +1661,7 @@
         const group = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color || 0x8b6540);
         group.position.set(col + (def.fw || 1) * 0.5, 0, row + (def.fd || 1) * 0.5);
         _markOutline(group);
+        _markFurnitureEdgeId(group);
         targetScene.add(group);
 
         let light = null;
@@ -3727,6 +3730,7 @@
               model.rotation.y = rotRad;
               model.scale.set(scX, scY, scZ);
               _markOutline(model);
+              _markFurnitureEdgeId(model);
               bScene.add(model);
             } else {
               // Fallback: no procedural recipe found for this furniture key
@@ -3735,6 +3739,7 @@
               ph.rotation.y = rotRad;
               ph.scale.set(scX, scY, scZ);
               _markOutline(ph);
+              _markFurnitureEdgeId(ph);
               bScene.add(ph);
             }
           }
@@ -8220,6 +8225,125 @@
         return out;
       }
 
+      // ── Screen-space outline pass (depth edges + furniture material seams) ──
+      // Two extra outline sources layered on top of the per-mesh shell outline
+      // above, both detected as a post-process over the rendered frame:
+      //   1. Depth discontinuities — catches silhouettes the shell pass misses,
+      //      e.g. one object's edge against another object/the floor behind it.
+      //   2. Furniture "material ID" seams — catches boundaries between two
+      //      touching parts of the same furniture group (e.g. a chair leg
+      //      against the seat) where depth is continuous but the part changes,
+      //      so neither the shell pass nor depth edges would draw a line.
+      // Layer 3 is reserved for furniture parts feeding the material-ID buffer.
+      let _furnitureEdgeIdSeq = 0;
+      function _markFurnitureEdgeId(obj) {
+        if (!obj) return;
+        const apply = (m) => {
+          m.layers.enable(3);
+          const hue = (_furnitureEdgeIdSeq++ * 0.6180339887) % 1;
+          const idColor = new THREE.Color().setHSL(hue, 0.85, 0.55);
+          m.onBeforeRender = function (renderer, scene, camera, geometry, material) {
+            if (material === _furnitureIdMat) _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
+          };
+        };
+        if (obj.isMesh) { apply(obj); return; }
+        obj.traverse(child => { if (child.isMesh) apply(child); });
+      }
+
+      // Flat-unlit material shared by every furniture part during the ID-buffer
+      // pass; each part's onBeforeRender (above) stamps its own colour into the
+      // shared uniform right before its draw call.
+      const _furnitureIdMat = new THREE.ShaderMaterial({
+        uniforms: { uIdColor: { value: new THREE.Color(0, 0, 0) } },
+        vertexShader: `
+          void main() {
+            #ifdef USE_INSTANCING
+              gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+            #else
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            #endif
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 uIdColor;
+          void main() { gl_FragColor = vec4(uIdColor, 1.0); }
+        `,
+      });
+
+      // Main colour pass render target — keeps a depth texture around so the
+      // composite shader below can read real per-pixel scene depth.
+      function _makeSceneRT(w, h) {
+        const rt = new THREE.WebGLRenderTarget(w, h, {
+          minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat,
+        });
+        rt.depthTexture = new THREE.DepthTexture(w, h);
+        return rt;
+      }
+      const _mainRT   = _makeSceneRT(1, 1);
+      // Furniture material-ID buffer — alpha 0 means "no furniture here".
+      const _edgeIdRT = new THREE.WebGLRenderTarget(1, 1, {
+        minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat,
+      });
+      function _resizeOutlineTargets(pixelW, pixelH) {
+        _mainRT.setSize(pixelW, pixelH);
+        _edgeIdRT.setSize(pixelW, pixelH);
+        _postMat.uniforms.uTexel.value.set(1 / pixelW, 1 / pixelH);
+      }
+
+      // Fullscreen composite — blends depth-edge and furniture-seam outlines
+      // over the rendered colour buffer.
+      const _postScene  = new THREE.Scene();
+      const _postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      const _postMat = new THREE.ShaderMaterial({
+        uniforms: {
+          tColor: { value: null }, tDepth: { value: null }, tEdgeId: { value: null },
+          uTexel: { value: new THREE.Vector2(1, 1) },
+          uCameraNear: { value: 0.1 }, uCameraFar: { value: 200 },
+        },
+        depthTest: false, depthWrite: false,
+        vertexShader: `
+          varying vec2 vUv;
+          void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+        `,
+        fragmentShader: `
+          uniform sampler2D tColor, tDepth, tEdgeId;
+          uniform vec2 uTexel;
+          uniform float uCameraNear, uCameraFar;
+          varying vec2 vUv;
+          float linearDepth(float z) {
+            float zNdc = z * 2.0 - 1.0;
+            return (2.0 * uCameraNear * uCameraFar) / (uCameraFar + uCameraNear - zNdc * (uCameraFar - uCameraNear));
+          }
+          void main() {
+            vec3 color = texture2D(tColor, vUv).rgb;
+
+            float d0 = linearDepth(texture2D(tDepth, vUv).r);
+            float dL = linearDepth(texture2D(tDepth, vUv - vec2(uTexel.x, 0.0)).r);
+            float dR = linearDepth(texture2D(tDepth, vUv + vec2(uTexel.x, 0.0)).r);
+            float dU = linearDepth(texture2D(tDepth, vUv + vec2(0.0, uTexel.y)).r);
+            float dD = linearDepth(texture2D(tDepth, vUv - vec2(0.0, uTexel.y)).r);
+            float depthDelta  = max(max(abs(d0 - dL), abs(d0 - dR)), max(abs(d0 - dU), abs(d0 - dD)));
+            float depthThresh = mix(0.015, 0.6, clamp(d0 / uCameraFar, 0.0, 1.0));
+            float depthEdge   = step(depthThresh, depthDelta);
+
+            vec4 id0 = texture2D(tEdgeId, vUv);
+            vec4 idL = texture2D(tEdgeId, vUv - vec2(uTexel.x, 0.0));
+            vec4 idR = texture2D(tEdgeId, vUv + vec2(uTexel.x, 0.0));
+            vec4 idU = texture2D(tEdgeId, vUv + vec2(0.0, uTexel.y));
+            vec4 idD = texture2D(tEdgeId, vUv - vec2(0.0, uTexel.y));
+            float idEdge = 0.0;
+            idEdge = max(idEdge, (id0.a > 0.5 && idL.a > 0.5 && distance(id0.rgb, idL.rgb) > 0.1) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idR.a > 0.5 && distance(id0.rgb, idR.rgb) > 0.1) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idU.a > 0.5 && distance(id0.rgb, idU.rgb) > 0.1) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idD.a > 0.5 && distance(id0.rgb, idD.rgb) > 0.1) ? 1.0 : 0.0);
+
+            float edge = max(depthEdge, idEdge);
+            gl_FragColor = vec4(mix(color, vec3(0.0), edge), 1.0);
+          }
+        `,
+      });
+      _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
+
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
       let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72;
@@ -10822,6 +10946,8 @@
         const h = rect.height || window.innerHeight;
         renderer.setPixelRatio(dpr * s_resScale);
         renderer.setSize(w, h);
+        const bufSize = renderer.getDrawingBufferSize(new THREE.Vector2());
+        _resizeOutlineTargets(bufSize.x, bufSize.y);
         overlayCanvas.width  = Math.round(w * dpr);
         overlayCanvas.height = Math.round(h * dpr);
         octx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -11025,31 +11151,69 @@
 
         // ── Render active scene ──────────────────────────────────
         const activeScene = getActiveScene();
-        renderer.render(activeScene, camera);
-        // Selective shell outline pass (layer-1 objects only)
         if (s_outlines) {
-          const _outlineScene = activeScene;
+          // Colour + depth into an offscreen target so the post-process
+          // composite below can read real per-pixel depth afterwards —
+          // rendering straight to the canvas would lose that depth buffer
+          // the moment the fullscreen composite quad overwrites it.
+          renderer.setRenderTarget(_mainRT);
+          renderer.render(activeScene, camera);
+
+          // Selective shell outline pass (layer-1 objects only)
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
-          _outlineScene.overrideMaterial = shellOutlineMat;
+          activeScene.overrideMaterial = shellOutlineMat;
           camera.layers.set(1);
-          renderer.render(_outlineScene, camera);
+          renderer.render(activeScene, camera);
           camera.layers.enableAll();
-          _outlineScene.overrideMaterial = null;
+          activeScene.overrideMaterial = null;
+
+          // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
+          if (_targetOutlineMeshes.length > 0) {
+            scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
+            camera.layers.set(2);
+            renderer.render(scene, camera);
+            camera.layers.enableAll();
+            scene.overrideMaterial = null;
+          }
           renderer.autoClearColor = true;
           renderer.autoClearDepth = true;
-        }
-        // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
-        if (_targetOutlineMeshes.length > 0) {
-          renderer.autoClearColor = false;
-          renderer.autoClearDepth = false;
-          scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
-          camera.layers.set(2);
-          renderer.render(scene, camera);
+
+          // Furniture material-ID buffer (layer-3 objects only) — feeds the
+          // material-seam edge detection in the composite shader below.
+          renderer.setRenderTarget(_edgeIdRT);
+          renderer.setClearColor(0x000000, 0);
+          renderer.clear(true, true, false);
+          camera.layers.set(3);
+          activeScene.overrideMaterial = _furnitureIdMat;
+          renderer.render(activeScene, camera);
+          activeScene.overrideMaterial = null;
           camera.layers.enableAll();
-          scene.overrideMaterial = null;
-          renderer.autoClearColor = true;
-          renderer.autoClearDepth = true;
+
+          // Composite: blend depth-discontinuity + furniture material-seam
+          // outlines over the rendered scene, straight to the canvas.
+          renderer.setRenderTarget(null);
+          _postMat.uniforms.tColor.value      = _mainRT.texture;
+          _postMat.uniforms.tDepth.value      = _mainRT.depthTexture;
+          _postMat.uniforms.tEdgeId.value     = _edgeIdRT.texture;
+          _postMat.uniforms.uCameraNear.value = camera.near;
+          _postMat.uniforms.uCameraFar.value  = camera.far;
+          renderer.render(_postScene, _postCamera);
+        } else {
+          renderer.setRenderTarget(null);
+          renderer.render(activeScene, camera);
+          // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
+          if (_targetOutlineMeshes.length > 0) {
+            renderer.autoClearColor = false;
+            renderer.autoClearDepth = false;
+            scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
+            camera.layers.set(2);
+            renderer.render(scene, camera);
+            camera.layers.enableAll();
+            scene.overrideMaterial = null;
+            renderer.autoClearColor = true;
+            renderer.autoClearDepth = true;
+          }
         }
 
         // ── 2D overlays (rain, lighting) ─────────────────────────
