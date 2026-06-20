@@ -5723,6 +5723,7 @@
 
       function updateMovement(dt) {
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
+        if (fishingMinigame?.active) return;
 
         if (player.dodging) {
           player.dodgeT -= dt;
@@ -6567,7 +6568,8 @@
           messageType: '',
         };
         fishPickTargetVel(fishingMinigame);
-        paused = true;
+        // World time/NPCs/weather keep running during the minigame — only
+        // player movement is suspended (see the guard in updateMovement).
         renderFishingOverlay();
         fishingOverlayEl.classList.add('open');
       }
@@ -6577,7 +6579,6 @@
         fishingMinigame = null;
         fishingOverlayEl.classList.remove('open');
         fishingOverlayEl.innerHTML = '';
-        paused = false;
       }
 
       function fireFishingBridge() {
