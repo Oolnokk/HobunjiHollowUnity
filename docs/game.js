@@ -771,7 +771,7 @@
         machete: ['cut', 'slash'],
         axe:     ['cut', 'slash'],
         pick:    ['dig', 'raise', 'fill'],
-        harpoon: ['cut', 'slash'],
+        harpoon: ['cut', 'slash', 'fish'],
         weapon:  ['cut', 'slash'],
       };
 
@@ -785,6 +785,7 @@
         cut:        ['🗡️', 'Cut'],
         slash:      ['💥', 'Slash'],
         harvest:    ['🧺', 'Harvest'],
+        fish:       ['🎣', 'Fish'],
       };
 
       const tileStyles = {
@@ -969,8 +970,12 @@
       const TOOL_ITEM_DEFS = {
         bronzehoe:    { label: 'Bronze Hoe',    icon: '🪓', sprite: 'assets/toolsprites/hoe_bronzehoe.png',        slots: ['hoe'],                    animStyle: 'chop'   },
         hatchet:      { label: 'Hatchet',       icon: '🪓', sprite: 'assets/toolsprites/axe_hatchet.png',          slots: ['axe', 'weapon'],           animStyle: 'sweep'  },
-        fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep'  },
-        fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'sweep'  },
+        // `spinning` distinguishes the harpoon-slot sprite's in-hand behavior: mace-mode items
+        // twirl around their own axis through the swing (call it "spinning" rather than
+        // "mace mode" since fishing hatchets or other harpoon variants may reuse the same flag),
+        // while spear-mode items stay rigidly oriented like the hatchet sweep.
+        fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true  },
+        fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: false },
         pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust' },
       };
 
@@ -1729,7 +1734,6 @@
         const ANIMAL_W = 1.275;
         const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
         const halfH = ANIMAL_H / 2;
-        const CREATURE_PERPS = [Math.PI / 2, -Math.PI / 2];
 
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, "assets/creaturesprites/uumkao'ii.png", {
           modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
@@ -1790,7 +1794,7 @@
             this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
             this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
 
-            const { effectiveTarget, snapTo } = perpClamp(this.perpState, this.targetRot, CREATURE_PERPS);
+            const { effectiveTarget, snapTo } = perpClamp(this.perpState, this.targetRot, cameraRelativePerps());
             if (snapTo !== null) this.groupRot = effectiveTarget;
             else this.groupRot += angleDiff(effectiveTarget, this.groupRot) * 0.18;
             this.avatarRef.group.rotation.y = this.groupRot;
@@ -1860,8 +1864,6 @@
           child.material.needsUpdate = true;
         }
       }
-
-      const CREATURE_PERPS = [Math.PI / 2, -Math.PI / 2];
 
       function makeCreatureEntity(creatureKey, x, y, opts = {}) {
         const def = CREATURE_DB[creatureKey];
@@ -2019,7 +2021,7 @@
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
-        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, CREATURE_PERPS);
+        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativePerps());
         if (snapTo !== null) c.groupRot = effectiveTarget;
         else c.groupRot += angleDiff(effectiveTarget, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
@@ -2278,6 +2280,21 @@
       let npcDialogueStaging = null;
       let activeCameraMode   = cameraConfig().defaultMode || 'default';
       let activeCameraTarget = null;
+      let _prevCameraMode    = null; // saved mode to restore when the fishing minigame closes
+      let _prevCameraTarget  = null; // saved target to restore when the fishing minigame closes
+      // Camera azimuth (radians, rotated from due-south toward east) for the active
+      // mode. Everything except "fishing" stays at 0 (camera due south, as before).
+      function activeCameraAzimuthRad() {
+        return THREE.MathUtils.degToRad(cameraModeConfig(activeCameraMode).azimuthDeg ?? 0);
+      }
+      // Billboard sprites go edge-on (and effectively disappear) when rotated
+      // perpendicular to the camera's current viewing axis. perpClamp's dead zones
+      // need to rotate along with the camera's azimuth so this still works once the
+      // camera isn't pointed due north (e.g. the "fishing" mode's diagonal framing).
+      function cameraRelativePerps() {
+        const az = activeCameraAzimuthRad();
+        return [Math.PI / 2 + az, -Math.PI / 2 + az];
+      }
       let dialogueCameraZoomPercent = cameraModeConfig(npcDialogueCameraMode()).runtimeZoom?.initialPercent ?? 0;
       const dialogueZoomPointers = new Map();
       let dialoguePinchDistance = null;
@@ -3029,7 +3046,7 @@
             root.position.x += dx / d * speed * dt;
             root.position.z += dz / d * speed * dt;
             const rawRot = -Math.atan2(dz, dx) + Math.PI / 2;
-            const { effectiveTarget, snapTo } = perpClamp(this.perpState, rawRot, [Math.PI / 2, -Math.PI / 2]);
+            const { effectiveTarget, snapTo } = perpClamp(this.perpState, rawRot, cameraRelativePerps());
             if (snapTo !== null) this.rot = effectiveTarget;
             else this.rot += angleDiff(effectiveTarget, this.rot) * 0.15;
             root.rotation.y = this.rot;
@@ -4607,6 +4624,76 @@
         }
       });
 
+      // ── Fish catalog ────────────────────────────────────────────
+      // Keyed by zone category. "town" is the only zone with real river/stream
+      // tiles today; northernCliffs/cloudForest are existing map IDs that have
+      // no water bodies yet, and westernSlope/easternMire aren't built as zones
+      // at all — all three are kept here so the catalog is ready the moment
+      // those areas grow water. `seasons`/`timesOfDay` are 'any' or a subset of
+      // the `seasons` array's `.name` values / ['dawn','day','dusk','night'].
+      const FISH_DEFS = {
+        farm: [
+          { key: 'fish_riverMinnow',     label: 'River Minnow',     icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: 'any',            fishClass: 'smooth',  difficulty: 28 },
+          { key: 'fish_speckledCarp',    label: 'Speckled Carp',    icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['day', 'dusk'],   fishClass: 'sinker',  difficulty: 35 },
+        ],
+        town: [
+          { key: 'fish_riverMinnow',     label: 'River Minnow',     icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: 'any',            fishClass: 'smooth',  difficulty: 28 },
+          { key: 'fish_speckledCarp',    label: 'Speckled Carp',    icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['day', 'dusk'],   fishClass: 'sinker',  difficulty: 35 },
+          { key: 'fish_bronzefinTrout',  label: 'Bronzefin Trout',  icon: '🐡', rarity: 'uncommon', sellPrice: 22, seasons: ['Early Dry', 'Late Dry'],          timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 52 },
+          { key: 'fish_mossbackCatfish', label: 'Mossback Catfish', icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: ['First Rains', 'Wet Peak'],        timesOfDay: ['night'],         fishClass: 'floater', difficulty: 48 },
+          { key: 'fish_goldenKoi',       label: 'Golden Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 60, seasons: 'any', timesOfDay: ['dawn'],          fishClass: 'mixed',   difficulty: 70 },
+        ],
+        northernCliffs: [
+          { key: 'fish_cliffsideChar',   label: 'Cliffside Char',   icon: '🐟', rarity: 'common',   sellPrice: 10, seasons: ['Early Dry', 'Late Dry'],          timesOfDay: 'any',             fishClass: 'dart',    difficulty: 38 },
+          { key: 'fish_stonebellyTrout', label: 'Stonebelly Trout', icon: '🐠', rarity: 'common',   sellPrice: 11, seasons: 'any', timesOfDay: ['day'],           fishClass: 'sinker',  difficulty: 34 },
+          { key: 'fish_frostWhiskerEel', label: 'Frost Whisker Eel',icon: '🐡', rarity: 'uncommon', sellPrice: 26, seasons: ['First Rains', 'Wet Peak'],        timesOfDay: ['night'],         fishClass: 'smooth',  difficulty: 50 },
+          { key: 'fish_cliffHawkSalmon', label: 'Cliff Hawk Salmon',icon: '🐠', rarity: 'rare',     sellPrice: 65, seasons: ['Wet Peak'],                       timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 72 },
+          { key: 'fish_ironscalePike',   label: 'Ironscale Pike',   icon: '🐟', rarity: 'rare',     sellPrice: 58, seasons: 'any', timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 68 },
+        ],
+        cloudForest: [
+          { key: 'fish_cloudmistGuppy',  label: 'Cloudmist Guppy',  icon: '🐠', rarity: 'common',   sellPrice: 7,  seasons: 'any', timesOfDay: ['dawn', 'dusk'],  fishClass: 'floater', difficulty: 26 },
+          { key: 'fish_fernshadeLoach',  label: 'Fernshade Loach',  icon: '🐟', rarity: 'common',   sellPrice: 9,  seasons: ['First Rains', 'Wet Peak'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
+          { key: 'fish_orchidBetta',     label: 'Orchid Betta',     icon: '🐡', rarity: 'uncommon', sellPrice: 28, seasons: ['Wet Peak'],                       timesOfDay: ['day'],           fishClass: 'mixed',   difficulty: 46 },
+          { key: 'fish_vinehookGar',     label: 'Vinehook Gar',     icon: '🐟', rarity: 'uncommon', sellPrice: 25, seasons: 'any', timesOfDay: ['night'],         fishClass: 'dart',    difficulty: 49 },
+          { key: 'fish_canopyKoi',       label: 'Canopy Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 62, seasons: ['First Rains'],                    timesOfDay: ['dawn'],          fishClass: 'floater', difficulty: 71 },
+        ],
+        westernSlope: [
+          { key: 'fish_glacierSmelt',    label: 'Glacier Smelt',    icon: '🐟', rarity: 'common',   sellPrice: 8,  seasons: ['Early Dry', 'Late Dry'],          timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
+          { key: 'fish_frostbellyGrayling', label: 'Frostbelly Grayling', icon: '🐠', rarity: 'common', sellPrice: 10, seasons: 'any', timesOfDay: ['day'],     fishClass: 'dart',    difficulty: 37 },
+          { key: 'fish_iceveilWhitefish',label: 'Iceveil Whitefish',icon: '🐡', rarity: 'uncommon', sellPrice: 27, seasons: ['Late Dry', 'First Rains'],        timesOfDay: ['dusk', 'night'], fishClass: 'sinker',  difficulty: 51 },
+          { key: 'fish_snowmeltSalmon',  label: 'Snowmelt Salmon',  icon: '🐠', rarity: 'uncommon', sellPrice: 30, seasons: ['First Rains'],                    timesOfDay: ['dawn'],          fishClass: 'dart',    difficulty: 55 },
+          { key: 'fish_glassfinChar',    label: 'Glassfin Char',    icon: '🐟', rarity: 'rare',     sellPrice: 64, seasons: ['Wet Peak'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 73 },
+          { key: 'fish_permafrostEel',   label: 'Permafrost Eel',   icon: '🐡', rarity: 'rare',     sellPrice: 59, seasons: ['Early Dry'],                      timesOfDay: ['night'],         fishClass: 'floater', difficulty: 69 },
+        ],
+        easternMire: [
+          { key: 'fish_mudskipper',      label: 'Mudskipper',       icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: ['day'],           fishClass: 'sinker',  difficulty: 27 },
+          { key: 'fish_swampBullhead',   label: 'Swamp Bullhead',   icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['dusk', 'night'], fishClass: 'floater', difficulty: 33 },
+          { key: 'fish_mireleafTetra',   label: 'Mireleaf Tetra',   icon: '🐡', rarity: 'uncommon', sellPrice: 23, seasons: ['Wet Peak', 'First Rains'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 45 },
+          { key: 'fish_bogLamprey',      label: 'Bog Lamprey',      icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: 'any', timesOfDay: ['night'],         fishClass: 'dart',    difficulty: 50 },
+          { key: 'fish_murkwaterGar',    label: 'Murkwater Gar',    icon: '🐠', rarity: 'rare',     sellPrice: 61, seasons: ['Wet Peak'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 70 },
+          { key: 'fish_willOWispEel',    label: "Will-o'-Wisp Eel", icon: '🐡', rarity: 'rare',     sellPrice: 66, seasons: ['First Rains'],                    timesOfDay: ['night'],         fishClass: 'floater', difficulty: 74 },
+        ],
+      };
+      const FISH_ZONE_LABELS = {
+        farm: 'Farm Pond', town: 'Town River', northernCliffs: 'Northern Cliffs', cloudForest: 'Southern Cloud Forest',
+        westernSlope: 'Western Slope', easternMire: 'Eastern Mire',
+      };
+
+      Object.entries(FISH_DEFS).forEach(([zoneKey, list]) => {
+        list.forEach(fish => {
+          if (!inventoryItems.some(item => item.key === fish.key)) {
+            inventoryItems.push({ key: fish.key, icon: fish.icon, label: fish.label.toUpperCase(), max: 99 });
+          }
+          if (!ITEM_DEFS[fish.key]) {
+            ITEM_DEFS[fish.key] = {
+              icon: fish.icon, label: fish.label, cat: 'material', sellPrice: fish.sellPrice,
+              tags: ['Fish', fish.rarity, FISH_ZONE_LABELS[zoneKey]],
+              desc: `A ${fish.rarity} fish speared in the ${FISH_ZONE_LABELS[zoneKey]}.`,
+            };
+          }
+        });
+      });
+
       function itemIconForKey(key) {
         return ITEM_DEFS[key]?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon || '□';
       }
@@ -5615,6 +5702,11 @@
         rocks.forEach(([col, row]) => { nextGrid[row][col].type = TileType.ROCK; });
         shrubs.forEach(([col, row]) => { nextGrid[row][col].type = TileType.SHRUB; });
 
+        // Small test pond in the top-left corner — lets fishing be checked on
+        // the farm (otherwise only town/wilderness zones have fishable water).
+        const farmPondTiles = [[1,1],[2,1],[1,2],[2,2],[3,2],[2,3]];
+        farmPondTiles.forEach(([col, row]) => { nextGrid[row][col].type = TileType.RIVER; nextGrid[row][col].water = MAX_WATER; });
+
         // Path from farm (col 17, row 0 = north exit to town) going south into the farmstead
         const farmPathTiles = [
           [16,0],[17,0],[18,0],
@@ -5652,6 +5744,7 @@
 
       function updateMovement(dt) {
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
+        if (fishingMinigame?.active) return;
 
         if (player.dodging) {
           player.dodgeT -= dt;
@@ -5861,6 +5954,9 @@
           if (action === 'smooth') return [TileType.TILLED, TileType.RAISED, TileType.PADDY].includes(tile.type) && !tile.crop;
         }
         if (tool === 'weapon') return true; // combat hits are cone-based, not tile-gated
+        if (tool === 'harpoon' && action === 'fish') {
+          return tile.type === TileType.RIVER || tile.type === TileType.STREAM;
+        }
         if (tool === 'machete' || tool === 'axe' || tool === 'harpoon') {
           const targets = getMacheteTargets(col, row, action);
           const tgrid = getActiveGrid();
@@ -6204,6 +6300,17 @@
           showToast(npcDialogueButtonConfig().noTargetMessage || 'No one nearby to talk to.', false);
           return;
         }
+        // Spearfishing bypasses the normal swing timer entirely — it opens
+        // its own minigame overlay instead of queuing a pendingAction.
+        if (activeTool === 'harpoon' && activeAction === 'fish') {
+          const reticle = getReticleTile();
+          if (!canUseAction('harpoon', 'fish', reticle.col, reticle.row)) {
+            showToast('No river or stream here to fish.', false);
+            return;
+          }
+          startFishingMinigame();
+          return;
+        }
         if (activeTool === 'weapon') {
           const abil = WEAPON_ABILITY[activeAction];
           if (abil && player.stamina < abil.staminaCost) {
@@ -6304,6 +6411,670 @@
         while (d >  Math.PI) d -= Math.PI * 2;
         while (d < -Math.PI) d += Math.PI * 2;
         return d;
+      }
+
+      // ── Spearfishing minigame: Spear Bridge ─────────────────────
+      // Ported from the spearfishing prototype's "Spear Bridge" preset only
+      // (no fourSpear/ringStardew). One simplification vs. the prototype:
+      // catch detection is a geometric point-to-segment distance test instead
+      // of a pixel alpha-mask read. The fish and harpoon/mace render using the
+      // same real assets and per-frame bone-slice "skinning" deform as the
+      // prototype (see FISHING_BRIDGE_ART below). The fish still patrols a 1D
+      // position mapped to a ring angle (FishBehavior.stepBase1D) and the
+      // bridge mechanic (rotating aim segment → two-tap markers → spear
+      // travel/retract → catch-or-panic) is otherwise numerically identical.
+      const FISHING_RING = {
+        cx: 160, cy: 160,
+        fishRadius: 96,      // ring the fish patrols (== prototype's grooveRadius)
+        outerOffset: 56,     // bridge ring sits this far outside the fish ring
+        segmentSize: 18,     // degrees, width of the rotating aim segment
+        sweepSpeed: 240,     // degrees/sec
+        shotDuration: 0.16,
+        retractDuration: 0.28,
+        panicStep: 34,
+        panicMax: 100,
+      };
+      const FISH_CLASS_VEL_RANGE = {
+        smooth:  [-0.15, 0.15],
+        sinker:  [0.05, 0.55],
+        floater: [-0.55, -0.05],
+        dart:    [-0.55, 0.55],
+        mixed:   [-0.35, 0.35],
+      };
+      const FISH_CLASS_RETARGET   = { smooth: 0.25, mixed: 0.55, sinker: 0.5, floater: 0.5, dart: 1.2 };
+      const FISH_CLASS_SMOOTHNESS = { smooth: 0.8,  mixed: 1.4,  sinker: 1.5, floater: 1.5, dart: 4.0 };
+
+      // Real-asset rendering for the fish silhouette + harpoon/mace sprite, ported
+      // from the spearfishing prototype's ensureFishDeformCanvas/renderImageFish/
+      // renderBridgeSpearSprite. The fish body+whiskers PNGs face left, same as the
+      // prototype's source art, so the same flipX/rotation convention applies as-is.
+      const FISHING_BRIDGE_ART = {
+        imgW: 64, imgH: 40,                 // deformed fish draw size (~matches the body PNG's aspect ratio)
+        deformSlices: 28, boneCount: 6,
+        boneAmpScale: 0.82, whiskerBoneAmpScale: 0.3, whiskerRate: 0.38,
+        flipX: -1,                          // source silhouettes face left; mirror so facing=1 points right
+        spriteWidth: 46, spriteHeight: 122,  // harpoon/mace sprite box (preserveAspectRatio keeps the real PNG shape)
+        spriteRotationOffset: -90,          // the PNG's business end is at the bottom, not the top
+        ropeAttachBack: 23, spearAttachFront: 10,
+        ropeSag: 0.1,
+        maceSpinRateDeg: 9720,              // ~27 spins/sec while the mace is outbound
+      };
+
+      let fishBodySpriteImage = null, fishWhiskersSpriteImage = null;
+      let harpoonSpearSpriteImage = null, harpoonMaceSpriteImage = null;
+      { const _img = new Image(); _img.onload = () => { fishBodySpriteImage = _img; }; _img.src = 'assets/hud/fish_silhouette-body.png'; }
+      { const _img = new Image(); _img.onload = () => { fishWhiskersSpriteImage = _img; }; _img.src = 'assets/hud/fish_silhouette-whiskers.png'; }
+      { const _img = new Image(); _img.onload = () => { harpoonSpearSpriteImage = _img; }; _img.src = 'assets/toolsprites/harpoon_fishingspear.png'; }
+      { const _img = new Image(); _img.onload = () => { harpoonMaceSpriteImage = _img; }; _img.src = 'assets/toolsprites/harpoon_fishingmace.png'; }
+
+      let fishDeformCanvas = null, fishDeformCtx = null;
+      function ensureFishDeformCanvas(width, height) {
+        const w = Math.max(48, Math.round(width));
+        const h = Math.max(24, Math.round(height));
+        if (!fishDeformCanvas) { fishDeformCanvas = document.createElement('canvas'); fishDeformCtx = fishDeformCanvas.getContext('2d'); }
+        if (fishDeformCanvas.width !== w || fishDeformCanvas.height !== h) { fishDeformCanvas.width = w; fishDeformCanvas.height = h; }
+        return { canvas: fishDeformCanvas, ctx: fishDeformCtx, w, h };
+      }
+
+      // Small spline-skeleton "bone" offsets sampled across deformSlices vertical strips,
+      // tapered toward the head/tail so the deform bends most in the middle of the body.
+      function buildFishBoneOffsets(sliceCount, amp, phase, rateScale) {
+        const boneCount = FISHING_BRIDGE_ART.boneCount;
+        const bones = [];
+        for (let i = 0; i < boneCount; i++) {
+          const t01 = boneCount === 1 ? 0.5 : i / (boneCount - 1);
+          const taper = Math.sin(Math.PI * t01);
+          const leadLag = t01 * Math.PI * 2.15;
+          bones.push(Math.sin(phase * rateScale + leadLag) * amp * taper);
+        }
+        const offsets = [];
+        for (let i = 0; i < sliceCount; i++) {
+          const t01 = sliceCount === 1 ? 0.5 : i / (sliceCount - 1);
+          const scaled = t01 * (bones.length - 1);
+          const left = Math.max(0, Math.min(bones.length - 2, Math.floor(scaled)));
+          const local = scaled - left;
+          offsets.push(bones[left] + (bones[left + 1] - bones[left]) * local);
+        }
+        return offsets;
+      }
+
+      function drawFishImageAlongBones(ctx, image, canvasW, canvasH, drawW, drawH, offsets, alpha) {
+        if (!image || !image.naturalWidth || !image.naturalHeight) return;
+        const sliceCount = Math.max(4, offsets.length || 4);
+        const srcSliceW = image.naturalWidth / sliceCount;
+        const dstSliceW = drawW / sliceCount;
+        const startX = (canvasW - drawW) * 0.5;
+        const startY = (canvasH - drawH) * 0.5;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.imageSmoothingEnabled = true;
+        for (let i = 0; i < sliceCount; i++) {
+          const nextOffset = offsets[Math.min(offsets.length - 1, i + 1)] ?? offsets[i] ?? 0;
+          const offset = offsets[i] || 0;
+          const shear = clamp((nextOffset - offset) / Math.max(1, dstSliceW), -0.32, 0.32);
+          const sx = i * srcSliceW;
+          const dx = startX + i * dstSliceW;
+          const dy = startY + offset;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(dx - 1, 0, dstSliceW + 2, canvasH);
+          ctx.clip();
+          ctx.transform(1, shear, 0, 1, 0, 0);
+          ctx.drawImage(image, sx, 0, srcSliceW + 1, image.naturalHeight, dx, dy - shear * dx, dstSliceW + 1.5, drawH);
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+
+      function renderFishDeformedTexture(fm) {
+        if (!fishBodySpriteImage || !fishBodySpriteImage.naturalWidth) return null;
+        const art = FISHING_BRIDGE_ART;
+        const pad = Math.ceil(art.imgH * 0.45);
+        const targetW = Math.ceil(art.imgW + pad * 2);
+        const targetH = Math.ceil(art.imgH + pad * 2);
+        const { canvas, ctx, w, h } = ensureFishDeformCanvas(targetW, targetH);
+        ctx.clearRect(0, 0, w, h);
+
+        const phase = fm.fishAnimT * 7.5 + fm.fish.angle * 0.025;
+        const bodyAmp = Math.max(2, art.imgH * 0.075 * art.boneAmpScale);
+        const bodyOffsets = buildFishBoneOffsets(art.deformSlices, bodyAmp, phase, 1);
+        const whiskerOffsets = buildFishBoneOffsets(art.deformSlices, bodyAmp * art.whiskerBoneAmpScale, phase + 0.85, art.whiskerRate);
+
+        drawFishImageAlongBones(ctx, fishBodySpriteImage, w, h, art.imgW, art.imgH, bodyOffsets, 1);
+        if (fishWhiskersSpriteImage && fishWhiskersSpriteImage.naturalWidth) {
+          drawFishImageAlongBones(ctx, fishWhiskersSpriteImage, w, h, art.imgW, art.imgH, whiskerOffsets, 0.95);
+        }
+        try { return { url: canvas.toDataURL('image/png'), w, h }; } catch (err) { return null; }
+      }
+
+      let fishingMinigame = null; // non-null while the spear-bridge overlay is open
+      let fishingEls = null;      // cached persistent DOM refs, rebuilt each time the overlay opens
+      const fishingOverlayEl = document.getElementById('fishingOverlay');
+
+      function currentFishZoneKey() {
+        if (currentArea === 'farm') return 'farm';
+        if (currentArea === 'town') return 'town';
+        if (currentArea === 'map_northern_cliffs') return 'northernCliffs';
+        if (currentArea === 'map_southern_cloud_forest') return 'cloudForest';
+        return null;
+      }
+
+      function fishingTimeOfDay() {
+        const h = getHour();
+        if (h < 8)  return 'dawn';
+        if (h < 17) return 'day';
+        if (h < 20) return 'dusk';
+        return 'night';
+      }
+
+      function pickFishForCurrentZone() {
+        const zoneKey = currentFishZoneKey();
+        if (!zoneKey) return null;
+        const list = FISH_DEFS[zoneKey] || [];
+        if (!list.length) return null;
+        const season = currentSeason().name;
+        const tod = fishingTimeOfDay();
+        let pool = list.filter(f =>
+          (f.seasons === 'any' || f.seasons.includes(season)) &&
+          (f.timesOfDay === 'any' || f.timesOfDay.includes(tod)));
+        if (!pool.length) pool = list;
+        const rarityWeight = { common: 6, uncommon: 3, rare: 1 };
+        const weights = pool.map(f => rarityWeight[f.rarity] || 1);
+        let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+        for (let i = 0; i < pool.length; i++) {
+          r -= weights[i];
+          if (r <= 0) return { fish: pool[i], zoneKey };
+        }
+        return { fish: pool[pool.length - 1], zoneKey };
+      }
+
+      function fishPickTargetVel(fm) {
+        const [min, max] = FISH_CLASS_VEL_RANGE[fm.fishClass] || FISH_CLASS_VEL_RANGE.mixed;
+        const d = fm.difficulty / 100;
+        fm.fish.targetVel = (min + Math.random() * (max - min)) * (0.6 + d * 0.9);
+      }
+
+      function fishStartTurnaround(fm, nextDir) {
+        const f = fm.fish;
+        if (!nextDir || nextDir === f.moveDir) return;
+        f.turning = true;
+        f.pendingMoveDir = nextDir;
+        f.turnProgress = 0;
+      }
+
+      function fishUpdateTurnaround(fm, dt) {
+        const f = fm.fish;
+        if (!f.turning) return;
+        f.turnProgress = clamp(f.turnProgress + dt / 0.24, 0, 1);
+        f.localFacingScale = f.moveDir * Math.cos(Math.PI * f.turnProgress);
+        if (f.turnProgress >= 1) {
+          f.turning = false;
+          f.moveDir = f.pendingMoveDir || -f.moveDir;
+          f.turnProgress = 0;
+          f.localFacingScale = f.moveDir;
+          f.vel = Math.abs(f.vel) * f.moveDir * 0.35;
+          f.targetVel = Math.abs(f.targetVel) * f.moveDir;
+        }
+      }
+
+      function fishStepMotion(fm, dt) {
+        const f = fm.fish;
+        const cls = fm.fishClass;
+        const retargetChance = (FISH_CLASS_RETARGET[cls] ?? 0.55) * dt;
+        const smoothness = FISH_CLASS_SMOOTHNESS[cls] ?? 1.4;
+        const d = fm.difficulty / 100;
+
+        if (Math.random() < retargetChance) fishPickTargetVel(fm);
+
+        const desiredSource = Math.abs(f.targetVel) > 0.01 ? f.targetVel : (Math.abs(f.vel) > 0.01 ? f.vel : f.moveDir);
+        const desiredDir = desiredSource < 0 ? -1 : 1;
+        if (!f.turning && desiredDir !== f.moveDir) fishStartTurnaround(fm, desiredDir);
+        fishUpdateTurnaround(fm, dt);
+
+        let appliedTargetVel = f.turning ? Math.abs(f.targetVel) * f.moveDir : f.targetVel;
+        f.vel += (appliedTargetVel - f.vel) * Math.min(1, dt * (2.5 + smoothness * 2.2));
+        if (cls === 'sinker')  f.vel += 0.08 * dt * (0.5 + d);
+        if (cls === 'floater') f.vel -= 0.08 * dt * (0.5 + d);
+        if (f.turning) f.vel = Math.abs(f.vel) * f.moveDir;
+
+        f.pos = clamp(f.pos + f.vel * dt, 0, 1);
+        if (f.pos <= 0.02) {
+          f.pos = 0.02;
+          if (!f.turning) {
+            f.vel = Math.abs(f.vel) * 0.18;
+            f.targetVel = Math.max(0.04, Math.abs(f.targetVel));
+            if (f.moveDir < 0) fishStartTurnaround(fm, 1);
+          }
+        } else if (f.pos >= 0.98) {
+          f.pos = 0.98;
+          if (!f.turning) {
+            f.vel = -Math.abs(f.vel) * 0.18;
+            f.targetVel = -Math.max(0.04, Math.abs(f.targetVel));
+            if (f.moveDir > 0) fishStartTurnaround(fm, -1);
+          }
+        }
+        f.angle = (f.pos * 359) % 360;
+      }
+
+      function fishingPolarToXY(angleDeg, radius) {
+        const rad = (angleDeg - 90) * Math.PI / 180; // 0deg = top, matches prototype orientation
+        return { x: FISHING_RING.cx + Math.cos(rad) * radius, y: FISHING_RING.cy + Math.sin(rad) * radius };
+      }
+
+      function fishingDistPointToSegment(px, py, x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const len2 = dx * dx + dy * dy;
+        if (len2 <= 0.0001) return Math.hypot(px - x1, py - y1);
+        const t = clamp(((px - x1) * dx + (py - y1) * dy) / len2, 0, 1);
+        return Math.hypot(px - (x1 + dx * t), py - (y1 + dy * t));
+      }
+
+      function startFishingMinigame() {
+        const picked = pickFishForCurrentZone();
+        if (!picked) { showToast('No fish here.', false); return; }
+        const { fish, zoneKey } = picked;
+        // Anchor the floating ring over the actual river tile being fished, so it
+        // tracks the live 3D scene's camera angle instead of sitting in a fixed
+        // modal position (see updateFishingRingScreenPosition/worldToOverlay).
+        const reticle = getReticleTile();
+        const reticleTile = getActiveTileAt(reticle.col, reticle.row);
+        const anchorWorld = {
+          x: reticle.col + 0.5,
+          z: reticle.row + 0.5,
+          y: tileSurfaceY(reticleTile.type) + 0.35,
+        };
+        fishingMinigame = {
+          active: true,
+          fishDef: fish,
+          zoneKey,
+          difficulty: fish.difficulty,
+          fishClass: fish.fishClass,
+          fishAnimT: 0,
+          anchorWorld,
+          fish: {
+            pos: Math.random(), vel: 0, targetVel: 0, angle: 0,
+            moveDir: 1, pendingMoveDir: 1, turning: false, turnProgress: 0, localFacingScale: 1,
+          },
+          bridge: {
+            angle: 0, direction: 1, segmentSize: FISHING_RING.segmentSize, speed: FISHING_RING.sweepSpeed,
+            markerA: null, markerB: null, spearActive: false, lineA: null, lineB: null,
+            shotTimer: 0, retractTimer: 0, tipX: 0, tipY: 0, prevTipX: 0, prevTipY: 0, caughtFish: false,
+            weaponSpinDeg: 0, frozenWeaponAngleDeg: 0,
+          },
+          panic: 0,
+          resolved: false,
+          resultTimer: 0,
+          message: 'Tap Fire to drop the first marker.',
+          messageType: '',
+        };
+        fishPickTargetVel(fishingMinigame);
+        window.__farmLog?.(`fishing started: zone=${zoneKey} fish=${fish.key} anchor=(${anchorWorld.x.toFixed(2)},${anchorWorld.y.toFixed(2)},${anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`);
+        // World time/NPCs/weather keep running during the minigame — only
+        // player movement is suspended (see the guard in updateMovement).
+        renderFishingOverlay();
+        fishingOverlayEl.classList.add('open');
+
+        // Swap to the "fishing" camera mode (fixed diagonal offset, matching the
+        // (HA)SpearFishingMinigameV2 prototype's cube/river framing) and track the
+        // fished water tile instead of the player while the minigame is open.
+        _prevCameraMode = activeCameraMode;
+        _prevCameraTarget = activeCameraTarget;
+        activeCameraMode = 'fishing';
+        activeCameraTarget = { position: new THREE.Vector3(anchorWorld.x, anchorWorld.y, anchorWorld.z) };
+      }
+
+      function closeFishingMinigame() {
+        if (!fishingMinigame) return;
+        fishingMinigame = null;
+        fishingOverlayEl.classList.remove('open');
+        fishingOverlayEl.innerHTML = '';
+        fishingEls = null;
+        if (_prevCameraMode !== null) { activeCameraMode = _prevCameraMode; _prevCameraMode = null; }
+        activeCameraTarget = _prevCameraTarget;
+        _prevCameraTarget = null;
+      }
+
+      function fireFishingBridge() {
+        const fm = fishingMinigame;
+        if (!fm || fm.resolved || fm.bridge.spearActive) return;
+        const b = fm.bridge;
+        const currentAngle = b.angle;
+        if (b.markerA == null) {
+          b.markerA = currentAngle;
+          b.markerB = null;
+          fm.message = 'First marker placed. Tap Fire again.';
+          fm.messageType = '';
+          return;
+        }
+        b.markerB = currentAngle;
+        b.lineA = b.markerA;
+        b.lineB = b.markerB;
+        b.spearActive = true;
+        b.shotTimer = 0;
+        b.retractTimer = 0;
+        b.caughtFish = false;
+        const outerRadius = FISHING_RING.fishRadius + FISHING_RING.outerOffset;
+        const a = fishingPolarToXY(b.lineA, outerRadius);
+        b.tipX = b.prevTipX = a.x;
+        b.tipY = b.prevTipY = a.y;
+        b.direction *= -1;
+        b.markerA = null;
+        b.markerB = null;
+        fm.message = 'Spear thrown!';
+        fm.messageType = '';
+      }
+
+      function fishingTryTipCatch(fm) {
+        const b = fm.bridge;
+        if (b.caughtFish || !b.spearActive) return false;
+        const fishPos = fishingPolarToXY(fm.fish.angle, FISHING_RING.fishRadius);
+        const colliderRadius = 14;
+        const dist = fishingDistPointToSegment(fishPos.x, fishPos.y, b.prevTipX, b.prevTipY, b.tipX, b.tipY);
+        if (dist <= colliderRadius) { b.caughtFish = true; return true; }
+        return false;
+      }
+
+      function resolveFishingRound(fm, caught) {
+        fm.resolved = true;
+        fm.resultTimer = 1.1;
+        if (caught) {
+          inventory[fm.fishDef.key] = Math.min(99, (inventory[fm.fishDef.key] || 0) + 1);
+          fm.message = `Caught a ${fm.fishDef.label}! ${fm.fishDef.icon}`;
+          fm.messageType = 'good';
+          lastActionMessage = fm.message;
+        } else {
+          fm.message = 'The fish fled into the pool.';
+          fm.messageType = 'bad';
+          lastActionMessage = fm.message;
+        }
+      }
+
+      function updateFishingMinigame(dt) {
+        const fm = fishingMinigame;
+        if (!fm) return;
+        if (fm.resolved) {
+          fm.resultTimer -= dt;
+          if (fm.resultTimer <= 0) { closeFishingMinigame(); return; }
+          renderFishingOverlay();
+          return;
+        }
+
+        fm.fishAnimT += dt;
+        fishStepMotion(fm, dt);
+
+        const b = fm.bridge;
+        b.angle = (b.angle + b.speed * b.direction * dt + 360) % 360;
+
+        if (b.spearActive) {
+          const outerRadius = FISHING_RING.fishRadius + FISHING_RING.outerOffset;
+          const a = fishingPolarToXY(b.lineA, outerRadius);
+          const bPt = fishingPolarToXY(b.lineB, outerRadius);
+          b.prevTipX = b.tipX;
+          b.prevTipY = b.tipY;
+
+          if (b.shotTimer < FISHING_RING.shotDuration) {
+            b.weaponSpinDeg = (b.weaponSpinDeg + FISHING_BRIDGE_ART.maceSpinRateDeg * dt) % 360;
+            b.frozenWeaponAngleDeg = Math.atan2(bPt.y - a.y, bPt.x - a.x) * 180 / Math.PI + FISHING_BRIDGE_ART.spriteRotationOffset;
+            b.shotTimer = Math.min(FISHING_RING.shotDuration, b.shotTimer + dt);
+            const t = b.shotTimer / FISHING_RING.shotDuration;
+            b.tipX = a.x + (bPt.x - a.x) * t;
+            b.tipY = a.y + (bPt.y - a.y) * t;
+            fishingTryTipCatch(fm);
+          } else if (b.retractTimer < FISHING_RING.retractDuration) {
+            b.weaponSpinDeg = 0;
+            b.frozenWeaponAngleDeg = Math.atan2(bPt.y - a.y, bPt.x - a.x) * 180 / Math.PI + FISHING_BRIDGE_ART.spriteRotationOffset;
+            b.retractTimer = Math.min(FISHING_RING.retractDuration, b.retractTimer + dt);
+            const t = b.retractTimer / FISHING_RING.retractDuration;
+            b.tipX = bPt.x + (a.x - bPt.x) * t;
+            b.tipY = bPt.y + (a.y - bPt.y) * t;
+          } else {
+            if (b.caughtFish) {
+              resolveFishingRound(fm, true);
+            } else {
+              fm.panic = Math.min(FISHING_RING.panicMax, fm.panic + FISHING_RING.panicStep);
+              if (fm.panic >= FISHING_RING.panicMax) {
+                resolveFishingRound(fm, false);
+              } else {
+                fm.message = 'Missed! Panic rising.';
+                fm.messageType = 'bad';
+              }
+            }
+            b.spearActive = false;
+            b.lineA = null;
+            b.lineB = null;
+            b.shotTimer = 0;
+            b.retractTimer = 0;
+            b.caughtFish = false;
+          }
+        }
+
+        renderFishingOverlay();
+      }
+
+      // Builds the static overlay markup once per minigame session; per-frame updates
+      // only touch attributes on the cached nodes below (renderFishingOverlay), so the
+      // deformed-fish canvas/dataURL churn each frame doesn't force a full innerHTML
+      // rebuild + listener rebind every tick.
+      function buildFishingOverlayDom(fm) {
+        const R = FISHING_RING;
+        const outerRadius = R.fishRadius + R.outerOffset;
+        fishingOverlayEl.innerHTML = `
+          <div class="fish-ring-wrap" id="fishRingWrap">
+            <svg viewBox="0 0 ${R.cx * 2} ${R.cy * 2}">
+              <circle cx="${R.cx}" cy="${R.cy}" r="${R.fishRadius}" fill="none" stroke="rgba(127,232,154,0.4)" stroke-width="2"/>
+              <circle cx="${R.cx}" cy="${R.cy}" r="${outerRadius}" fill="none" stroke="rgba(255,255,255,0.32)" stroke-width="2"/>
+              <path id="fishSegArc" fill="none" stroke="#f9e28a" stroke-width="6" stroke-linecap="round"/>
+              <circle id="fishMarkerA" r="5" fill="#ff8060" opacity="0"/>
+              <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
+              <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
+              <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
+              <ellipse id="fishContrastHalo" fill="rgba(3,8,12,0.82)" stroke="rgba(255,255,255,0.3)" stroke-width="2" opacity="0" style="filter:blur(3px)"/>
+              <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
+            </svg>
+          </div>
+          <div class="fish-dock">
+            <div class="fish-title">${FISH_ZONE_LABELS[fm.zoneKey]} — Spearfishing</div>
+            <div class="fish-hint">Tap Fire once to drop marker 1, again for marker 2. The spear flies the chord between them — line it up with the fish.</div>
+            <div class="fish-status" id="fishStatus"></div>
+            <div class="fish-panic-wrap"><div class="fish-panic-fill" id="fishPanicFill"></div></div>
+            <button class="fish-fire-btn" id="fishFireBtn">Fire (Space)</button>
+            <button class="fish-cancel-btn" id="fishCancelBtn">Give up</button>
+          </div>`;
+
+        fishingEls = {
+          ringWrap: document.getElementById('fishRingWrap'),
+          segArc: document.getElementById('fishSegArc'),
+          markerA: document.getElementById('fishMarkerA'),
+          markerB: document.getElementById('fishMarkerB'),
+          spearRope: document.getElementById('fishSpearRope'),
+          spearSpriteWrap: document.getElementById('fishSpearSpriteWrap'),
+          spearImage: document.getElementById('fishSpearImage'),
+          fishContrastHalo: document.getElementById('fishContrastHalo'),
+          fishImageRig: document.getElementById('fishImageRig'),
+          fishImageTransform: document.getElementById('fishImageTransform'),
+          fishDeformedImage: document.getElementById('fishDeformedImage'),
+          status: document.getElementById('fishStatus'),
+          panicFill: document.getElementById('fishPanicFill'),
+          dock: document.querySelector('.fish-dock'),
+        };
+
+        const fireBtn = document.getElementById('fishFireBtn');
+        if (fireBtn) fireBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); fireFishingBridge(); });
+        const cancelBtn = document.getElementById('fishCancelBtn');
+        if (cancelBtn) cancelBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); closeFishingMinigame(); });
+      }
+
+      // Ported from the prototype's renderBridgeSpearSprite: positions the real
+      // harpoon/mace PNG (business end at the image's bottom) rotated along the
+      // flight chord, with a quadratic-bezier rope back to the launch point, and
+      // (mace only) a rapid spin while outbound that freezes once retracting.
+      function renderFishingSpearSprite(startPoint, endPoint) {
+        const art = FISHING_BRIDGE_ART;
+        const useMace = equipmentSlots.harpoon === 'fishingmace';
+        const spriteImg = useMace ? harpoonMaceSpriteImage : harpoonSpearSpriteImage;
+        const dx = endPoint.x - startPoint.x, dy = endPoint.y - startPoint.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const nx = -uy, ny = ux;
+        const ropeEndX = useMace ? endPoint.x : endPoint.x - ux * art.ropeAttachBack;
+        const ropeEndY = useMace ? endPoint.y : endPoint.y - uy * art.ropeAttachBack;
+        const sag = Math.min(22, len * art.ropeSag);
+        const ctrlX = (startPoint.x + ropeEndX) * 0.5 + nx * sag;
+        const ctrlY = (startPoint.y + ropeEndY) * 0.5 + ny * sag;
+        fishingEls.spearRope.setAttribute('d', `M ${startPoint.x.toFixed(2)} ${startPoint.y.toFixed(2)} Q ${ctrlX.toFixed(2)} ${ctrlY.toFixed(2)} ${ropeEndX.toFixed(2)} ${ropeEndY.toFixed(2)}`);
+        fishingEls.spearRope.setAttribute('opacity', '1');
+
+        if (!spriteImg || !spriteImg.naturalWidth) { fishingEls.spearSpriteWrap.setAttribute('opacity', '0'); return; }
+
+        const spriteW = art.spriteWidth, spriteH = art.spriteHeight, front = art.spearAttachFront;
+        fishingEls.spearImage.setAttribute('href', spriteImg.src);
+        fishingEls.spearImage.setAttribute('x', (-spriteW * 0.5).toFixed(2));
+        fishingEls.spearImage.setAttribute('y', (useMace ? -spriteH * 0.5 : -front).toFixed(2));
+        fishingEls.spearImage.setAttribute('width', spriteW.toFixed(2));
+        fishingEls.spearImage.setAttribute('height', spriteH.toFixed(2));
+        fishingEls.spearImage.setAttribute('transform', 'scale(1 -1)');
+
+        const baseAngleDeg = Math.atan2(dy, dx) * 180 / Math.PI + art.spriteRotationOffset;
+        const b = fishingMinigame.bridge;
+        const isOutbound = b.spearActive && b.shotTimer < FISHING_RING.shotDuration;
+        let angleDeg = baseAngleDeg;
+        if (useMace) {
+          if (isOutbound) angleDeg = baseAngleDeg + (b.weaponSpinDeg || 0);
+          else if (Number.isFinite(b.frozenWeaponAngleDeg)) angleDeg = b.frozenWeaponAngleDeg;
+        }
+        fishingEls.spearSpriteWrap.setAttribute('transform', `translate(${endPoint.x.toFixed(2)} ${endPoint.y.toFixed(2)}) rotate(${angleDeg.toFixed(2)})`);
+        fishingEls.spearSpriteWrap.setAttribute('opacity', '1');
+      }
+
+      // Ported from the prototype's renderImageFish: positions the deformed/skinned
+      // fish silhouette (see renderFishDeformedTexture) at its ring point, rotated to
+      // the ring angle and mirrored by localFacingScale for left/right turnarounds.
+      function renderFishingImageFish(fm) {
+        const fishPt = fishingPolarToXY(fm.fish.angle, FISHING_RING.fishRadius);
+        const deform = renderFishDeformedTexture(fm);
+        // Only log on a state change (loaded vs. not), so the debug panel gets one
+        // entry per session instead of one per frame at 60fps.
+        if (fm._pngLogState !== !!deform) {
+          fm._pngLogState = !!deform;
+          window.__farmLog?.(
+            `fish png render: ${deform ? 'OK (' + deform.w.toFixed(0) + 'x' + deform.h.toFixed(0) + ')' : 'FAILED'} ` +
+            `bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`,
+            deform ? 'info' : 'warn'
+          );
+        }
+        if (!deform) {
+          fishingEls.fishImageRig.setAttribute('opacity', '0');
+          fishingEls.fishContrastHalo.setAttribute('opacity', '0');
+          return;
+        }
+
+        const art = FISHING_BRIDGE_ART;
+        const requested = fm.fish.localFacingScale;
+        const localFacingScale = Math.abs(requested) < 0.035 ? 0.035 * Math.sign(requested || 1) : requested;
+        const scaleX = art.flipX * localFacingScale;
+
+        // A soft dark disc directly behind the fish so the silhouette keeps
+        // contrast against whatever live 3D scene happens to be behind the
+        // floating ring (bright town grass/water reads very differently than
+        // the dark farm backdrop the glow-only look was originally tuned for).
+        const haloR = Math.hypot(art.imgW, art.imgH) * 0.62;
+        fishingEls.fishContrastHalo.setAttribute('cx', fishPt.x.toFixed(2));
+        fishingEls.fishContrastHalo.setAttribute('cy', fishPt.y.toFixed(2));
+        fishingEls.fishContrastHalo.setAttribute('rx', haloR.toFixed(2));
+        fishingEls.fishContrastHalo.setAttribute('ry', haloR.toFixed(2));
+        fishingEls.fishContrastHalo.setAttribute('opacity', '1');
+
+        fishingEls.fishImageRig.setAttribute('opacity', '1');
+        fishingEls.fishImageRig.setAttribute('transform', `translate(${fishPt.x.toFixed(2)} ${fishPt.y.toFixed(2)})`);
+        fishingEls.fishImageTransform.setAttribute('transform', `rotate(${fm.fish.angle.toFixed(2)}) scale(${scaleX.toFixed(4)} 1)`);
+        fishingEls.fishDeformedImage.setAttribute('href', deform.url);
+        fishingEls.fishDeformedImage.setAttribute('x', (-deform.w / 2).toFixed(2));
+        fishingEls.fishDeformedImage.setAttribute('y', (-deform.h / 2).toFixed(2));
+        fishingEls.fishDeformedImage.setAttribute('width', deform.w.toFixed(2));
+        fishingEls.fishDeformedImage.setAttribute('height', deform.h.toFixed(2));
+      }
+
+      // Floats the ring over the live 3D scene at the river tile's projected screen
+      // position instead of centering it in a modal — same camera-angle-tracking
+      // intent as the prototype's backdrop demo (cube player + river prism).
+      function updateFishingRingScreenPosition(fm) {
+        if (!fishingEls || !fm.anchorWorld) return;
+        const proj = worldToOverlay(fm.anchorWorld.x, fm.anchorWorld.y, fm.anchorWorld.z);
+        if (!proj.visible) return;
+        const halfRing = 160; // matches the ring-wrap's max 320px size
+        const rect = _threeRect;
+        const left = clamp(proj.x, halfRing, Math.max(halfRing, rect.width - halfRing));
+        const top = clamp(proj.y, halfRing, Math.max(halfRing, rect.height - halfRing));
+        fishingEls.ringWrap.style.left = (rect.left + left) + 'px';
+        fishingEls.ringWrap.style.top = (rect.top + top) + 'px';
+      }
+
+      // Keeps the title/hint/status/panic dock parked just to the left of the
+      // player avatar on screen, instead of pinned to the bottom of the page,
+      // so it reads as attached to the character doing the fishing.
+      function updateFishingDockScreenPosition() {
+        if (!fishingEls?.dock || !playerMesh) return;
+        const proj = worldToOverlay(playerMesh.position.x, playerMesh.position.y + 0.6, playerMesh.position.z);
+        if (!proj.visible) return;
+        const dockGap = 105;
+        const dockWidth = 105; // keeps the dock's left edge from running off-screen
+        const rect = _threeRect;
+        const left = clamp(proj.x - dockGap, dockWidth, rect.width);
+        const top = clamp(proj.y, 0, rect.height);
+        fishingEls.dock.style.left = (rect.left + left) + 'px';
+        fishingEls.dock.style.top = (rect.top + top) + 'px';
+      }
+
+      function renderFishingOverlay() {
+        const fm = fishingMinigame;
+        if (!fm) return;
+        if (!fishingEls) buildFishingOverlayDom(fm);
+        updateFishingRingScreenPosition(fm);
+        updateFishingDockScreenPosition();
+
+        const R = FISHING_RING;
+        const outerRadius = R.fishRadius + R.outerOffset;
+        const half = R.segmentSize / 2;
+
+        fishingEls.segArc.setAttribute('d', describeFishingArc(outerRadius, fm.bridge.angle - half, fm.bridge.angle + half));
+
+        if (fm.bridge.markerA != null) {
+          const p = fishingPolarToXY(fm.bridge.markerA, outerRadius);
+          fishingEls.markerA.setAttribute('cx', p.x.toFixed(1));
+          fishingEls.markerA.setAttribute('cy', p.y.toFixed(1));
+          fishingEls.markerA.setAttribute('opacity', '1');
+        } else {
+          fishingEls.markerA.setAttribute('opacity', '0');
+        }
+        if (fm.bridge.markerB != null) {
+          const p = fishingPolarToXY(fm.bridge.markerB, outerRadius);
+          fishingEls.markerB.setAttribute('cx', p.x.toFixed(1));
+          fishingEls.markerB.setAttribute('cy', p.y.toFixed(1));
+          fishingEls.markerB.setAttribute('opacity', '1');
+        } else {
+          fishingEls.markerB.setAttribute('opacity', '0');
+        }
+
+        if (fm.bridge.spearActive && fm.bridge.lineA != null) {
+          const spearA = fishingPolarToXY(fm.bridge.lineA, outerRadius);
+          renderFishingSpearSprite(spearA, { x: fm.bridge.tipX, y: fm.bridge.tipY });
+        } else {
+          fishingEls.spearRope.setAttribute('opacity', '0');
+          fishingEls.spearSpriteWrap.setAttribute('opacity', '0');
+        }
+
+        renderFishingImageFish(fm);
+
+        fishingEls.status.textContent = fm.message;
+        fishingEls.status.className = 'fish-status' + (fm.messageType ? ' ' + fm.messageType : '');
+        fishingEls.panicFill.style.width = fm.panic + '%';
+      }
+
+      function describeFishingArc(radius, startDeg, endDeg) {
+        const start = fishingPolarToXY(startDeg, radius);
+        const end = fishingPolarToXY(endDeg, radius);
+        const largeArc = Math.abs(endDeg - startDeg) > 180 ? 1 : 0;
+        return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
       }
 
       const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
@@ -6929,15 +7700,19 @@
         const baseDistance = modeCfg.distanceTiles ?? 14;
         const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
         const angle = THREE.MathUtils.degToRad(modeCfg.angleFromGroundDeg ?? 32.73);
+        const azimuth = THREE.MathUtils.degToRad(modeCfg.azimuthDeg ?? 0);
         const tx = camTargetX, tz = camTargetZ;
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
         const lookY = portraitAim?.lookY ?? (modeCfg.targetYOffsetTiles ?? 0);
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
-        // Camera sits due south of target, elevated, looking straight north.
+        const groundDistance = Math.cos(angle) * distance;
+        // Camera sits at `azimuth` east of due-south from the target, elevated,
+        // looking back at it. azimuth=0 (every mode but "fishing") reduces to the
+        // original due-south-looking-north framing.
         camera.position.set(
-          portraitAim?.targetX ?? tx,
+          (portraitAim?.targetX ?? tx) + Math.sin(azimuth) * groundDistance,
           cameraY,
-          (portraitAim?.targetZ ?? tz) + Math.cos(angle) * distance  // +Z = south
+          (portraitAim?.targetZ ?? tz) + Math.cos(azimuth) * groundDistance  // +Z = south
         );
         camera.lookAt(portraitAim?.targetX ?? tx, lookY, portraitAim?.targetZ ?? tz);
         camera.fov = modeCfg.fovDeg ?? 42;
@@ -8357,6 +9132,9 @@
       // Per-tool swing durations: thrust fast, chop medium, sweep slow.
       let toolSwingT   = 0;
       let toolSwingDur = 0.22;
+      // Full rotations a "spinning" harpoon sprite (e.g. the fishing mace) twirls through over
+      // one complete swing; spear-mode harpoon items leave their `spinning` flag false/unset.
+      const TOOL_SPIN_REVOLUTIONS = 2.5;
 
       // Reference width in world units; height is derived from the image's aspect ratio,
       // matching the pattern used by buildAnimalPlaneAvatarModel (modelWidth × h/w).
@@ -8402,6 +9180,10 @@
         // Sweep tools: rotate image 90° in the flat plane so blade aligns parallel to player body
         if (TOOL_ITEM_DEFS[itemKey]?.animStyle === 'sweep') plane.rotation.z = -Math.PI / 2;
         g.add(plane);
+        // Keep a handle on the sprite plane and its rest rotation so updateToolMesh can layer a
+        // continuous "spinning" twirl on top for mace-mode harpoon items without disturbing chop/thrust tools.
+        g.userData.toolPlane    = plane;
+        g.userData.basePlaneRotZ = plane.rotation.z;
         return g;
       }
 
@@ -8516,6 +9298,17 @@
             playerMesh.position.y + 0.18,
             playerMesh.position.z + vRZ * 0.20 + vFZ * 0.16
           );
+        }
+
+        // Layer the sprite's own "spinning" twirl on top of whichever swing style is active —
+        // mace-mode harpoon items spin through the swing, spear-mode ones hold their rest pose.
+        const spinItemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
+        const spinPlane    = toolMeshMap[activeTool]?.userData?.toolPlane;
+        if (spinPlane) {
+          const baseRotZ = toolMeshMap[activeTool].userData.basePlaneRotZ || 0;
+          spinPlane.rotation.z = TOOL_ITEM_DEFS[spinItemKey]?.spinning
+            ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
+            : baseRotZ;
         }
 
         if (pendingAction && !strikeFired && progress >= SF) {
@@ -9206,7 +9999,11 @@
               const key  = col + ',' + row;
               const tile = townGrid[row][col];
 
-              if (isSolid(tile.type) || tile.water < 0.003) {
+              // Town rivers/streams already have their own static water-surface
+              // mesh (_townRiverWaterMeshes, built in buildTownScene) — skip them
+              // here so this irrigation-style dynamic mesh doesn't double up.
+              if (isSolid(tile.type) || tile.water < 0.003 ||
+                  tile.type === TileType.RIVER || tile.type === TileType.STREAM) {
                 const old = townWaterMeshes.get(key);
                 if (old) { townScene.remove(old); townWaterMeshes.delete(key); }
                 continue;
@@ -9281,7 +10078,7 @@
         // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
         if (!player.perpState) player.perpState = {};
         const rawTargetRotY = -facingAngle + Math.PI / 2;
-        const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, [Math.PI / 2, -Math.PI / 2]);
+        const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, cameraRelativePerps());
         if (pSnapTo !== null) playerFacing = pEffTarget;
         else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
         playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
@@ -9504,6 +10301,8 @@
         }
 
         updateSceneTransition(dt);
+
+        if (fishingMinigame?.active) updateFishingMinigame(dt);
 
         if (!paused) {
           updateCalendar(dt);
@@ -9844,6 +10643,13 @@
             if (isSolid(t.type)) continue;
             t.flow = false;
 
+            // Rivers/streams are a permanent water body, not part of the
+            // irrigation sim — always full, never absorbed/evaporated/drained.
+            if (t.type === TileType.RIVER || t.type === TileType.STREAM) {
+              t.water = MAX_WATER;
+              continue;
+            }
+
             if (isRaining) {
               const rainMul = t.type === TileType.TRENCH ? 2.0
                             : t.type === TileType.PADDY  ? 1.4 : 1.0;
@@ -9878,7 +10684,8 @@
         for (let row = rows - 1; row >= 0; row--) {
           for (let col = 0; col < cols; col++) {
             const t = targetGrid[row][col];
-            if (isSolid(t.type) || t.water <= 0) continue;
+            // Rivers/streams donate no water to neighbours — contained body, no spillover.
+            if (isSolid(t.type) || t.water <= 0 || t.type === TileType.RIVER || t.type === TileType.STREAM) continue;
 
             let surfA = floorZ(t.type) + t.water;
 
@@ -10647,6 +11454,7 @@
         if (action === 'cut')   return 'Cut';
         if (action === 'slash') return 'Slash 3×';
         if (action === 'harvest') return tile.cropReady ? '✓ Harvest' : 'Growing';
+        if (action === 'fish') return 'Fish';
         if (action.startsWith('place_')) return 'Place';
         if (action.startsWith('obj_process_')) return 'Process';
         return action;
@@ -10998,6 +11806,11 @@
 
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
+        if (fishingMinigame?.active) {
+          if (key === 'escape') { event.preventDefault(); closeFishingMinigame(); return; }
+          if (key === ' ' || key === 'enter') { event.preventDefault(); fireFishingBridge(); }
+          return;
+        }
         if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
         if (menuOpen) return;
         if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd'].includes(key)) {
