@@ -6831,19 +6831,22 @@
             const srcM = makeSource(0.95);
             const srcL = makeSource(0.81);
 
+            // Tighter Q than the original port (and quieter master gain below) —
+            // same scuffy/noise-heavy, narrow-band treatment given to footsteps
+            // (FOOTSTEP_POST_FX bandpass Q ~0.9-2.8) instead of smooth broadband hiss.
             const hpf = ctx.createBiquadFilter();
-            hpf.type = 'highpass'; hpf.frequency.value = 950; hpf.Q.value = 0.5;
+            hpf.type = 'highpass'; hpf.frequency.value = 950; hpf.Q.value = 1.6;
             const bpf = ctx.createBiquadFilter();
-            bpf.type = 'bandpass'; bpf.frequency.value = 330; bpf.Q.value = 1.1;
+            bpf.type = 'bandpass'; bpf.frequency.value = 330; bpf.Q.value = 1.8;
             lpf = ctx.createBiquadFilter();
-            lpf.type = 'lowpass'; lpf.frequency.value = 115; lpf.Q.value = 0.7;
+            lpf.type = 'lowpass'; lpf.frequency.value = 115; lpf.Q.value = 1.4;
 
             gainH = ctx.createGain(); gainH.gain.value = 0;
             gainM = ctx.createGain(); gainM.gain.value = 0;
             gainL = ctx.createGain(); gainL.gain.value = 0;
 
             const master = ctx.createGain();
-            master.gain.value = Math.max(0, Number(window.SCRATCHBONES_CONFIG?.game?.audio?.rainVolume) || 0.58);
+            master.gain.value = Math.max(0, Number(window.SCRATCHBONES_CONFIG?.game?.audio?.rainVolume) || 0.20);
 
             srcH.connect(hpf); hpf.connect(gainH); gainH.connect(master);
             srcM.connect(bpf); bpf.connect(gainM); gainM.connect(master);
