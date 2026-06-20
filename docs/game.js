@@ -6685,7 +6685,7 @@
         }
       }
 
-      function getLightingState() {
+      function _computeRawLightingState() {
         const hour = getHour(); // 6..22
         const season = currentSeason();
         const isRaining = calendar.isRaining;
@@ -6725,7 +6725,32 @@
         if (isStorm) { r = r * 0.5 + 30 * 0.5; g = g * 0.5 + 45 * 0.5; b = b * 0.5 + 70 * 0.5; a = Math.min(0.85, a + 0.25); }
         else if (isRaining) { r = r * 0.7 + 50 * 0.3; g = g * 0.7 + 65 * 0.3; b = b * 0.7 + 90 * 0.3; a = Math.min(0.78, a + 0.12); }
 
-        return { r: Math.round(r), g: Math.round(g), b: Math.round(b), a };
+        return { r, g, b, a };
+      }
+
+      // Smoothed lighting state — eases toward the raw target each frame so
+      // the lantern's punched-through clarity (and the sky/ambient tint) fade
+      // gradually instead of snapping, most noticeably at the day-rollover
+      // instant when getHour() jumps straight from ~22 back to 6.
+      let _lightR = 10, _lightG = 10, _lightB = 40, _lightA = 0.72;
+      let _lightingInitialized = false;
+      function _advanceSmoothedLighting(dt) {
+        const raw = _computeRawLightingState();
+        if (!_lightingInitialized) {
+          _lightR = raw.r; _lightG = raw.g; _lightB = raw.b; _lightA = raw.a;
+          _lightingInitialized = true;
+          return;
+        }
+        const tc = 1.5; // seconds — gentle fade, imperceptible as a "step"
+        const k = 1 - Math.exp(-dt / tc);
+        _lightR += (raw.r - _lightR) * k;
+        _lightG += (raw.g - _lightG) * k;
+        _lightB += (raw.b - _lightB) * k;
+        _lightA += (raw.a - _lightA) * k;
+      }
+
+      function getLightingState() {
+        return { r: Math.round(_lightR), g: Math.round(_lightG), b: Math.round(_lightB), a: _lightA };
       }
 
       function updateWaterParticles(dt) {
@@ -9834,6 +9859,7 @@
 
         if (!paused) {
           updateCalendar(dt);
+          _advanceSmoothedLighting(dt);
           updateRainAudio();
           updateMovement(dt);
           updatePlayerVitals(dt);
