@@ -3655,9 +3655,6 @@
             toScene.add(toolHolder); toScene.add(reticleMesh);
             toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
             toScene.add(reticleWavyGroup);
-            // updateToolMesh() only runs in the farm; keep the held-tool mesh
-            // hidden rather than frozen at its last farm position/visibility.
-            if (returnArea === 'town') toolHolder.visible = false;
           }
           refreshActionBar();
           logMapSwap('exitBuilding', currentArea);
@@ -3688,9 +3685,6 @@
         zi.scene.add(toolHolder); zi.scene.add(reticleMesh);
         zi.scene.add(reticleCircleMesh); zi.scene.add(reticleRingMesh);
         zi.scene.add(reticleWavyGroup);
-        // updateToolMesh() only runs in the farm, so the held-tool mesh would
-        // otherwise stay frozen at its last farm position/visibility forever.
-        toolHolder.visible = false;
         refreshActionBar();
         logMapSwap('enterZone', currentArea);
       }
@@ -4044,9 +4038,6 @@
           townScene.add(reticleCircleMesh);
           townScene.add(reticleRingMesh);
           townScene.add(reticleWavyGroup);
-          // updateToolMesh() only runs in the farm, so the held-tool mesh would
-          // otherwise stay frozen at its last farm position/visibility forever.
-          toolHolder.visible = false;
         }
         refreshActionBar();
       }
@@ -4273,9 +4264,6 @@
           toScene.add(reticleCircleMesh);
           toScene.add(reticleRingMesh);
           toScene.add(reticleWavyGroup);
-          // updateToolMesh() only runs in the farm; keep the held-tool mesh
-          // hidden rather than frozen at its last farm position/visibility.
-          if (returnArea === 'town') toolHolder.visible = false;
           refreshActionBar();
         });
       }
@@ -6198,7 +6186,7 @@
         if (!pendingAction) return;
         const { col, row, action, tool } = pendingAction;
         pendingAction = null;
-        const tile = grid[row][col];
+        const tile = getActiveGrid()[row][col];
         let result;
         if (action.startsWith('place_decor_')) {
           result = placeDecorativeFurniture(col, row, action.slice(12));
@@ -6217,8 +6205,12 @@
         showToast(result.message, result.ok !== false);
         spawnActionParticles(col, row, action, result.ok !== false);
         debugLog(`${result.ok ? 'ok' : 'blocked'} ${action} @ c${col},r${row}: ${result.message}`);
-        recomputeWater(false);
-        if (result.ok !== false) markTileDirty(col, row);
+        // The farm tile-mesh/water systems below are farm-grid specific; off
+        // the farm (town, zones) col/row index into a different grid entirely.
+        if (currentArea === 'farm') {
+          recomputeWater(false);
+          if (result.ok !== false) markTileDirty(col, row);
+        }
         refreshActionBar();
       }
 
@@ -9240,7 +9232,7 @@
       // ── Update reticle ────────────────────────────────────────────
       function updateReticleMesh() {
         const reticle = getReticleTile();
-        const tile    = grid[reticle.row]?.[reticle.col];
+        const tile    = getActiveGrid()[reticle.row]?.[reticle.col];
         if (!tile) {
           reticleCircleMesh.visible = false;
           reticleRingMesh.visible   = false;
@@ -9515,12 +9507,17 @@
           updateTownWaterMeshes();
           updateTownThreeLighting();
         }
+        // The player can wield tools/weapons outside the farm too (town,
+        // exterior zones) — buildings/farmhouse interior intentionally
+        // exclude toolHolder/reticle meshes from their scene graph instead.
+        if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
+          updateToolMesh(dt);
+          updateReticleMesh();
+        }
         if (currentArea === 'farm') {
           updateWaterMeshes();
           updateCropMeshes();
           updateAnimalMeshes(dt);
-          updateToolMesh(dt);
-          updateReticleMesh();
           updateThreeLighting();
 
           // Wind animation on vegetation
@@ -10257,15 +10254,13 @@
           return btns;
         }
 
-        // Town: only spot transitions (require explicit input)
-        if (currentArea === 'town') {
-          if (_pendingSpotTransition) {
-            const t = _pendingSpotTransition;
-            const icon = t.target === 'building' ? '🚪' : '🏘';
-            const label = t.label || (t.target === 'building' ? 'Enter' : 'Leave Town');
-            return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
-          }
-          return [];
+        // Town: spot transitions take priority (require explicit input); otherwise
+        // fall through below so tools/weapons remain usable in town.
+        if (currentArea === 'town' && _pendingSpotTransition) {
+          const t = _pendingSpotTransition;
+          const icon = t.target === 'building' ? '🚪' : '🏘';
+          const label = t.label || (t.target === 'building' ? 'Enter' : 'Leave Town');
+          return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
         }
 
         // Building interior: spot transitions require explicit input
