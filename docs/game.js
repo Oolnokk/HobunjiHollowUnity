@@ -1876,7 +1876,7 @@
           health: def.maxHealth, maxHealth: def.maxHealth,
           stamina: def.maxStamina, maxStamina: def.maxStamina,
           facing: 0, groupRot: 0, perpState: {},
-          attackCooldownT: 0, hitFlashT: 0,
+          attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
           runFrame: 0, runFrameT: 0, currentFrameUrl: def.sprites.idle,
           isCompanion: false,
           name: def.label,
@@ -2021,6 +2021,9 @@
         }
       }
 
+      const JUMP_BACK_DUR_S = 0.4;
+      const JUMP_BACK_SPEED = 260;
+
       function updateHostiles(dt) {
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
@@ -2039,12 +2042,20 @@
 
           let moving = false, aimAngle = c.facing || 0;
           if (c.state === 'chase') {
-            moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(dyp, dxp);
-            if (distToPlayer <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
-              c.stamina -= def.attackStaminaCost;
-              c.attackCooldownT = def.attackCooldownS;
-              damagePlayer(def.attackDamage);
+            if (c.retreatT > 0) {
+              // Jump back after landing a bite, keeping eyes on the player.
+              c.retreatT = Math.max(0, c.retreatT - dt);
+              const awayAng = Math.atan2(-dyp, -dxp);
+              moving = moveCreatureToward(c, c.x + Math.cos(awayAng) * TILE, c.y + Math.sin(awayAng) * TILE, JUMP_BACK_SPEED, dt);
+            } else {
+              moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
+              if (distToPlayer <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+                c.stamina -= def.attackStaminaCost;
+                c.attackCooldownT = def.attackCooldownS;
+                damagePlayer(def.attackDamage);
+                c.retreatT = JUMP_BACK_DUR_S;
+              }
             }
           } else if (c.state === 'return') {
             moving = moveCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
@@ -6246,23 +6257,33 @@
       // state: persistent object per entity (must survive across frames).
       // Returns { effectiveTarget, snapTo } where snapTo is non-null when the model
       // should teleport (raw target crossed through a perp to the far side).
+      //
+      // Only the perp nearest rawTarget is ever evaluated. angleDiff wraps at
+      // ±π, so a *far* perp's side classification flips discontinuously right
+      // at that far perp's antipodal point — which is exactly where the
+      // *near* perp sits. Evaluating every perp every frame let that far-side
+      // flip fire a spurious snapTo while the model was stably locked near
+      // the near perp, producing rapid alternation between two rotations.
       function perpClamp(state, rawTarget, perps) {
         if (!state.perpSides) state.perpSides = perps.map(() => null);
+        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
+        for (let i = 0; i < perps.length; i++) {
+          const dT = angleDiff(rawTarget, perps[i]);
+          const a = Math.abs(dT);
+          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
+        }
+        const P = perps[nearestI];
         let effectiveTarget = rawTarget;
         let snapTo = null;
-        for (let i = 0; i < perps.length; i++) {
-          const P = perps[i];
-          const dT = angleDiff(rawTarget, P);
-          if (Math.abs(dT) >= PERP_DEAD_RAD) {
-            const newSide = dT > 0 ? 1 : -1;
-            if (state.perpSides[i] !== null && state.perpSides[i] !== newSide) {
-              snapTo = P + newSide * PERP_DEAD_RAD;
-            }
-            state.perpSides[i] = newSide;
-          } else {
-            if (state.perpSides[i] === null) state.perpSides[i] = dT >= 0 ? 1 : -1;
-            effectiveTarget = P + state.perpSides[i] * PERP_DEAD_RAD;
+        if (nearestAbs >= PERP_DEAD_RAD) {
+          const newSide = nearestDT > 0 ? 1 : -1;
+          if (state.perpSides[nearestI] !== null && state.perpSides[nearestI] !== newSide) {
+            snapTo = P + newSide * PERP_DEAD_RAD;
           }
+          state.perpSides[nearestI] = newSide;
+        } else {
+          if (state.perpSides[nearestI] === null) state.perpSides[nearestI] = nearestDT >= 0 ? 1 : -1;
+          effectiveTarget = P + state.perpSides[nearestI] * PERP_DEAD_RAD;
         }
         return { effectiveTarget, snapTo };
       }
