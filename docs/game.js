@@ -802,22 +802,29 @@
       };
 
       // ── Footstep SFX ──────────────────────────────────────────────────
-      // Placeholder synthesized footfalls, keyed by a coarse "surface" rather
-      // than raw TileType — several tile types share a footstep (e.g. grass
-      // and weeds both sound like grass underfoot). Interior floors always
-      // map to 'wood' regardless of the (irrelevant) tile type beneath them.
-      // Swap in real recordings later by setting `url` on a surface entry,
-      // same convention as _playNpcDialogueLetterSfx's cfg.url.
-      // Mostly filtered-noise "scuffs" with just a faint tonal body underneath —
-      // quieter and scratchier than a clean synth click.
-      const FOOTSTEP_SOUNDS = Object.freeze({
-        grass: { waveform: 'triangle', freq: 110, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.26 },
-        dirt:  { waveform: 'triangle', freq: 90,  freqVarianceHz: 12, durationMs: 65, noiseMix: 0.85, volume: 0.28 },
-        path:  { waveform: 'square',   freq: 200, freqVarianceHz: 22, durationMs: 35, noiseMix: 0.6,  volume: 0.22 },
-        mud:   { waveform: 'sine',     freq: 65,  freqVarianceHz: 8,  durationMs: 95, noiseMix: 0.9,  volume: 0.3  },
-        water: { waveform: 'sine',     freq: 260, freqVarianceHz: 55, durationMs: 70, noiseMix: 0.92, volume: 0.28 },
-        rock:  { waveform: 'square',   freq: 220, freqVarianceHz: 18, durationMs: 30, noiseMix: 0.55, volume: 0.24 },
-        wood:  { waveform: 'triangle', freq: 160, freqVarianceHz: 12, durationMs: 40, noiseMix: 0.65, volume: 0.22 },
+      // Placeholder footfalls, keyed by a coarse "surface" rather than raw
+      // TileType — several tile types share a footstep (e.g. grass and weeds
+      // both sound like grass underfoot). Interior floors always map to
+      // 'wood' regardless of the (irrelevant) tile type beneath them.
+      //
+      // Every surface reuses the exact same oscillator+noise voice (the only
+      // one of our synth attempts that reads as a footstep rather than a
+      // sound effect) — they're differentiated purely by post effects
+      // (filter shape/cutoff/Q, pitch, decay length), not a different recipe.
+      const FOOTSTEP_BASE = Object.freeze({
+        waveform: 'triangle', freq: 55, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.26,
+      });
+
+      // Swap in real recordings later by setting `url` on a surface's post-fx
+      // entry, same convention as _playNpcDialogueLetterSfx's cfg.url.
+      const FOOTSTEP_POST_FX = Object.freeze({
+        grass: {},
+        dirt:  { filterFreqMul: 2.4, filterQ: 1.2, durationMul: 1.15 },
+        path:  { filterFreqMul: 4.6, filterQ: 2.4, durationMul: 0.6,  pitchMul: 1.2,  volumeMul: 0.9 },
+        mud:   { filterFreqMul: 1.5, filterQ: 0.9, durationMul: 1.8,  pitchMul: 0.7,  volumeMul: 1.1 },
+        water: { filterFreqMul: 5.5, filterQ: 1.0, durationMul: 1.3,  pitchMul: 1.7,  volumeMul: 1.0, filterType: 'highpass' },
+        rock:  { filterFreqMul: 5.2, filterQ: 2.8, durationMul: 0.5,  pitchMul: 1.35, volumeMul: 0.95 },
+        wood:  { filterFreqMul: 3.6, filterQ: 1.8, durationMul: 0.75, pitchMul: 1.1,  volumeMul: 0.9 },
       });
 
       // Distance an entity must travel between alternating footfalls, in world px
@@ -826,6 +833,13 @@
       const FOOTSTEP_STRIDE_PX = TILE * 0.45;
       // Beyond this distance from the player, NPC/creature footsteps are inaudible.
       const FOOTSTEP_EARSHOT_PX = TILE * 9;
+      // NPC/enemy footsteps pan hard left/right within this distance — keeps
+      // them clearly directional without needing real spatial audio.
+      const FOOTSTEP_PAN_RANGE_PX = TILE * 5;
+      // The player and whistled companion animals tread much more quietly
+      // than NPCs/hostiles, and aren't panned (the player is the listener;
+      // a companion is always close at hand).
+      const FOOTSTEP_QUIET_SCALE = 0.35;
 
       function footstepSurfaceKey(area, type) {
         if (area === 'interior' || _isBuildingArea(area)) return 'wood';
@@ -865,20 +879,24 @@
         return true;
       }
 
-      function playFootstepSfx(area, type, volumeScale = 1) {
+      // `pan` is -1 (full left) .. 1 (full right); leave at 0 for the player
+      // (the listener) and companions (always close, not worth panning).
+      function playFootstepSfx(area, type, volumeScale = 1, pan = 0) {
         const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
         if (audioCfg.enabled === false) return;
         const footstepCfg = audioCfg.footsteps || {};
         if (footstepCfg.enabled === false) return;
         const surfaceKey = footstepSurfaceKey(area, type);
-        const surface = { ...FOOTSTEP_SOUNDS[surfaceKey], ...(footstepCfg.surfaces?.[surfaceKey] || {}) };
+        const postFx = { ...FOOTSTEP_POST_FX[surfaceKey], ...(footstepCfg.surfaces?.[surfaceKey] || {}) };
+        const base = FOOTSTEP_BASE;
         const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
         const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1)
-          * Math.max(0, volumeScale) * Math.max(0, Number(surface.volume) || 0.5);
+          * Math.max(0, volumeScale) * Math.max(0, Number(base.volume) || 0.26)
+          * Math.max(0, Number(postFx.volumeMul) || 1);
         if (volume <= 0.002) return;
 
-        if (surface.url) {
-          const snd = new Audio(surface.url);
+        if (postFx.url) {
+          const snd = new Audio(postFx.url);
           snd.volume = Math.min(1, volume);
           snd.playbackRate = 0.92 + Math.random() * 0.16;
           snd.play().catch(() => {});
@@ -890,19 +908,27 @@
         const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
         if (ctx.state === 'suspended') ctx.resume().catch(() => {});
         const now = ctx.currentTime;
-        const durationS = Math.max(0.02, (Number(surface.durationMs) || 60) / 1000);
-        const noiseMix = Math.max(0, Math.min(1, Number(surface.noiseMix) ?? 0.5));
-        const baseFreq = Math.max(20, Number(surface.freq) || 140);
-        const variance = Math.max(0, Number(surface.freqVarianceHz) || 15);
+        const pitchMul = Number(postFx.pitchMul) || 1;
+        const durationS = Math.max(0.02, (Number(base.durationMs) || 55) / 1000 * (Number(postFx.durationMul) || 1));
+        const noiseMix = Math.max(0, Math.min(1, Number(base.noiseMix) ?? 0.82));
+        const baseFreq = Math.max(20, Number(base.freq) * pitchMul);
+        const variance = Math.max(0, Number(base.freqVarianceHz) || 15);
+
+        const panNode = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+        if (panNode) {
+          panNode.pan.value = Math.max(-1, Math.min(1, pan));
+          panNode.connect(ctx.destination);
+        }
+        const outNode = panNode || ctx.destination;
 
         if (noiseMix < 1) {
           const osc = ctx.createOscillator();
           const oscGain = ctx.createGain();
-          osc.type = surface.waveform || 'triangle';
+          osc.type = base.waveform || 'triangle';
           osc.frequency.value = baseFreq + (Math.random() * 2 - 1) * variance;
           oscGain.gain.setValueAtTime(volume * (1 - noiseMix), now);
           oscGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
-          osc.connect(oscGain).connect(ctx.destination);
+          osc.connect(oscGain).connect(outNode);
           osc.start(now);
           osc.stop(now + durationS);
         }
@@ -915,13 +941,13 @@
           const noise = ctx.createBufferSource();
           noise.buffer = buffer;
           const filter = ctx.createBiquadFilter();
-          filter.type = 'bandpass';
-          filter.frequency.value = baseFreq * 3.2;
-          filter.Q.value = 1.6;
+          filter.type = postFx.filterType || 'bandpass';
+          filter.frequency.value = baseFreq * (Number(postFx.filterFreqMul) || 3.2);
+          filter.Q.value = Number(postFx.filterQ) || 1.6;
           const noiseGain = ctx.createGain();
           noiseGain.gain.setValueAtTime(volume * noiseMix, now);
           noiseGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
-          noise.connect(filter).connect(noiseGain).connect(ctx.destination);
+          noise.connect(filter).connect(noiseGain).connect(outNode);
           noise.start(now);
           noise.stop(now + durationS);
         }
@@ -2117,9 +2143,13 @@
         if (!_footstepAdvance(c, distPx)) return;
         const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
         if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-        const volumeScale = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+        const falloff = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
         const type = footstepTileTypeAt(c.areaId, c.x, c.y, c.areaGrid);
-        playFootstepSfx(c.areaId, type, volumeScale);
+        // Whistled companions stay quiet (like the player) and unpanned —
+        // hostiles/wild creatures get the full directional treatment.
+        if (c.isCompanion) { playFootstepSfx(c.areaId, type, falloff * FOOTSTEP_QUIET_SCALE); return; }
+        const pan = Math.max(-1, Math.min(1, (c.x - player.x) / FOOTSTEP_PAN_RANGE_PX));
+        playFootstepSfx(c.areaId, type, falloff, pan);
       }
 
       function moveCreatureToward(c, tx, ty, speed, dt) {
@@ -3167,9 +3197,10 @@
             const wx = root.position.x * TILE, wy = root.position.z * TILE;
             const distToPlayer = Math.hypot(wx - player.x, wy - player.y);
             if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-            const volumeScale = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+            const falloff = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+            const pan = Math.max(-1, Math.min(1, (wx - player.x) / FOOTSTEP_PAN_RANGE_PX));
             const type = footstepTileTypeAt(this.area, wx, wy, npcGridForArea(this.area));
-            playFootstepSfx(this.area, type, volumeScale);
+            playFootstepSfx(this.area, type, falloff, pan);
           },
           moveToward(tx, tz, dt) {
             const cfg = npcMovementConfig();
@@ -5810,7 +5841,7 @@
         const dist = Math.hypot(player.x - prevX, player.y - prevY);
         if (!_footstepAdvance(player, dist)) return;
         const type = footstepTileTypeAt(currentArea, player.x, player.y, getActiveGrid());
-        playFootstepSfx(currentArea, type, 1);
+        playFootstepSfx(currentArea, type, FOOTSTEP_QUIET_SCALE);
       }
 
       function updateMovement(dt) {
