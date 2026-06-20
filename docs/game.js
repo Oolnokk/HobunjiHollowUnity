@@ -6856,6 +6856,7 @@
 
       function _createRainAudio() {
         let ctx = null, gainH = null, gainM = null, gainL = null, lpf = null, started = false;
+        let lastIntensity = 0;
 
         function start() {
           if (started) return;
@@ -6904,7 +6905,12 @@
         function setIntensity(v) {
           if (!ctx || !gainH) return;
           if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-          const now = ctx.currentTime, tc = 1.2;
+          const now = ctx.currentTime;
+          // Stopping rain (e.g. weather just flipped to clear) should cut the hiss
+          // quickly rather than trail off over several seconds — otherwise the
+          // audio is still audible well after the HUD/sky already read "clear".
+          const tc = v < lastIntensity ? 0.35 : 1.2;
+          lastIntensity = v;
           gainH.gain.setTargetAtTime(v * 1.0, now, tc);
           gainM.gain.setTargetAtTime(v * 0.72, now, tc);
           const lv = v > 0.5 ? Math.pow((v - 0.5) * 2, 1.6) : 0;
