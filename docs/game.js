@@ -6487,6 +6487,7 @@
       let harpoonSpearSpriteImage = null, harpoonMaceSpriteImage = null;
       function loadFishSprite(src, onOk) {
         const img = new Image();
+        img.crossOrigin = 'anonymous';
         img.onload = () => {
           onOk(img);
           window.__farmLog?.(`sprite loaded OK: ${src} (${img.naturalWidth}x${img.naturalHeight})`, 'fish');
