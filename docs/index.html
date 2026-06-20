@@ -62,6 +62,18 @@
     <span class="sb-gold" id="spGold">💰 0g</span>
   </div>
 
+  <!-- Player vitals: health + stamina bars (top-left) -->
+  <div id="vitalsBar">
+    <div class="vb-row">
+      <span class="vb-icon">❤️</span>
+      <div class="vb-track"><div class="vb-fill vb-health" id="vbHealthFill"></div></div>
+    </div>
+    <div class="vb-row">
+      <span class="vb-icon">⚡</span>
+      <div class="vb-track"><div class="vb-fill vb-stamina" id="vbStaminaFill"></div></div>
+    </div>
+  </div>
+
   <!-- Farm editor toggle button (top-right, beside menu) -->
   <button id="farmEditBtn" aria-label="Toggle farm editor" title="Farm Editor" onclick="window._farmEditor?.toggle()">✏️</button>
 
@@ -219,7 +231,7 @@
           </div>
           <div class="inv-gear-extra-section">
             <div class="inv-gear-extra-label">🎵 Whistles</div>
-            <div class="inv-gear-extra-empty">No whistles equipped. <span class="inv-gear-coming">Not yet implemented.</span></div>
+            <div id="invWhistleSection"></div>
           </div>
           <div class="inv-gear-carry-note">Gear Inventory saves with your character and carries between worlds.</div>
         </div>
@@ -527,6 +539,13 @@
   <div id="arcContainer">
     <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
     <div id="toolSelect">
+      <!-- Dodge: tap dodges in current facing direction. Only shown (via
+           .combat-active) while a hostile is within auto-target range —
+           dodging doesn't matter outside combat. Desktop: X key, no button. -->
+      <button id="dodgeBtn" class="abt" aria-label="Dodge">
+        <span class="abt-icon">💨</span>
+        <span class="abt-label">Dodge</span>
+      </button>
       <div id="toolPicker" role="menu" aria-label="Select tool">
         <div class="tool-pick-row">
           <span class="tool-pick-chip">Shovel</span>
