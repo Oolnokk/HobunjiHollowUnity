@@ -6549,6 +6549,15 @@
         ctx.restore();
       }
 
+      // toDataURL() is a synchronous PNG encode — doing it every animation frame
+      // (60/sec) is what was tripping the browser's "requestAnimationFrame handler
+      // took Nms" violation while fishing. The deform itself still redraws every
+      // frame (cheap drawImage calls), but the expensive re-encode to a data URL
+      // only happens a few times a second; the SVG <image> keeps showing the last
+      // encoded frame in between, which reads as smooth at this swim speed.
+      let _fishDeformUrlCache = null;
+      let _fishDeformUrlCacheAt = -Infinity;
+      const FISH_DEFORM_REENCODE_INTERVAL = 1 / 12; // seconds
       function renderFishDeformedTexture(fm) {
         if (!fishBodySpriteImage || !fishBodySpriteImage.naturalWidth) return null;
         const art = FISHING_BRIDGE_ART;
@@ -6567,7 +6576,14 @@
         if (fishWhiskersSpriteImage && fishWhiskersSpriteImage.naturalWidth) {
           drawFishImageAlongBones(ctx, fishWhiskersSpriteImage, w, h, art.imgW, art.imgH, whiskerOffsets, 0.95);
         }
-        try { return { url: canvas.toDataURL('image/png'), w, h }; } catch (err) { return null; }
+        if (_fishDeformUrlCache && fm.fishAnimT - _fishDeformUrlCacheAt < FISH_DEFORM_REENCODE_INTERVAL) {
+          return { url: _fishDeformUrlCache, w, h };
+        }
+        try {
+          _fishDeformUrlCache = canvas.toDataURL('image/png');
+          _fishDeformUrlCacheAt = fm.fishAnimT;
+          return { url: _fishDeformUrlCache, w, h };
+        } catch (err) { return null; }
       }
 
       let fishingMinigame = null; // non-null while the spear-bridge overlay is open
@@ -6737,6 +6753,8 @@
           },
         };
         fishPickTargetVel(fishingMinigame);
+        _fishDeformUrlCache = null;
+        _fishDeformUrlCacheAt = -Infinity;
         window.__farmLog?.(`fishing started: zone=${zoneKey} fish=${fish.key} anchor=(${anchorWorld.x.toFixed(2)},${anchorWorld.y.toFixed(2)},${anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`);
         // World time/NPCs/weather keep running during the minigame — only
         // player movement is suspended (see the guard in updateMovement).
