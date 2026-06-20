@@ -7061,7 +7061,6 @@
               <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
               <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
               <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
-              <ellipse id="fishContrastHalo" fill="rgba(3,8,12,0.82)" stroke="rgba(255,255,255,0.3)" stroke-width="2" opacity="0" style="filter:blur(3px)"/>
               <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
             </svg>
           </div>
@@ -7082,7 +7081,6 @@
           spearRope: document.getElementById('fishSpearRope'),
           spearSpriteWrap: document.getElementById('fishSpearSpriteWrap'),
           spearImage: document.getElementById('fishSpearImage'),
-          fishContrastHalo: document.getElementById('fishContrastHalo'),
           fishImageRig: document.getElementById('fishImageRig'),
           fishImageTransform: document.getElementById('fishImageTransform'),
           fishDeformedImage: document.getElementById('fishDeformedImage'),
@@ -7146,7 +7144,6 @@
         const pose = getRespawnFishPose(fm);
         if (pose && pose.scale <= 0.01) {
           fishingEls.fishImageRig.setAttribute('opacity', '0');
-          fishingEls.fishContrastHalo.setAttribute('opacity', '0');
           return;
         }
         const renderAngle = pose ? pose.angle : fm.fish.angle;
@@ -7166,7 +7163,6 @@
         }
         if (!deform) {
           fishingEls.fishImageRig.setAttribute('opacity', '0');
-          fishingEls.fishContrastHalo.setAttribute('opacity', '0');
           return;
         }
 
@@ -7174,17 +7170,6 @@
         const requested = fm.fish.localFacingScale;
         const localFacingScale = Math.abs(requested) < 0.035 ? 0.035 * Math.sign(requested || 1) : requested;
         const scaleX = art.flipX * localFacingScale;
-
-        // A soft dark disc directly behind the fish so the silhouette keeps
-        // contrast against whatever live 3D scene happens to be behind the
-        // floating ring (bright town grass/water reads very differently than
-        // the dark farm backdrop the glow-only look was originally tuned for).
-        const haloR = Math.hypot(art.imgW, art.imgH) * 0.62 * renderScale;
-        fishingEls.fishContrastHalo.setAttribute('cx', fishPt.x.toFixed(2));
-        fishingEls.fishContrastHalo.setAttribute('cy', fishPt.y.toFixed(2));
-        fishingEls.fishContrastHalo.setAttribute('rx', haloR.toFixed(2));
-        fishingEls.fishContrastHalo.setAttribute('ry', haloR.toFixed(2));
-        fishingEls.fishContrastHalo.setAttribute('opacity', '1');
 
         const w = deform.w * renderScale, h = deform.h * renderScale;
         fishingEls.fishImageRig.setAttribute('opacity', '1');
