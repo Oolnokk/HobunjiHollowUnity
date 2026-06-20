@@ -3644,6 +3644,9 @@
             toScene.add(toolHolder); toScene.add(reticleMesh);
             toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
             toScene.add(reticleWavyGroup);
+            // updateToolMesh() only runs in the farm; keep the held-tool mesh
+            // hidden rather than frozen at its last farm position/visibility.
+            if (returnArea === 'town') toolHolder.visible = false;
           }
           refreshActionBar();
           logMapSwap('exitBuilding', currentArea);
@@ -3674,6 +3677,9 @@
         zi.scene.add(toolHolder); zi.scene.add(reticleMesh);
         zi.scene.add(reticleCircleMesh); zi.scene.add(reticleRingMesh);
         zi.scene.add(reticleWavyGroup);
+        // updateToolMesh() only runs in the farm, so the held-tool mesh would
+        // otherwise stay frozen at its last farm position/visibility forever.
+        toolHolder.visible = false;
         refreshActionBar();
         logMapSwap('enterZone', currentArea);
       }
@@ -4027,6 +4033,9 @@
           townScene.add(reticleCircleMesh);
           townScene.add(reticleRingMesh);
           townScene.add(reticleWavyGroup);
+          // updateToolMesh() only runs in the farm, so the held-tool mesh would
+          // otherwise stay frozen at its last farm position/visibility forever.
+          toolHolder.visible = false;
         }
         refreshActionBar();
       }
@@ -4253,6 +4262,9 @@
           toScene.add(reticleCircleMesh);
           toScene.add(reticleRingMesh);
           toScene.add(reticleWavyGroup);
+          // updateToolMesh() only runs in the farm; keep the held-tool mesh
+          // hidden rather than frozen at its last farm position/visibility.
+          if (returnArea === 'town') toolHolder.visible = false;
           refreshActionBar();
         });
       }
