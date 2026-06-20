@@ -109,7 +109,7 @@ window.SCRATCHBONES_CONFIG = {
           }
         },
         "fishing": {
-          "distanceTiles": 15.3,
+          "distanceTiles": 11.475,
           "angleFromGroundDeg": 25.5,
           "azimuthDeg": 34,
           "fovDeg": 42,

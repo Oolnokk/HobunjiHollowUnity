@@ -1974,35 +1974,35 @@
     .fish-ring-wrap svg { width: 100%; height: 100%; display: block; }
     .fish-dock {
       position: absolute; left: 0; top: 0; transform: translate(-100%, -50%);
-      display: flex; flex-direction: column; align-items: center; gap: 6px;
-      max-width: min(70vw, 210px);
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      max-width: min(35vw, 105px);
       background: var(--glass-2); border: 1px solid var(--border-bright);
-      border-radius: var(--r); padding: 8px 12px 10px;
+      border-radius: var(--r); padding: 4px 6px 5px;
       box-shadow: 0 12px 40px rgba(0,0,0,0.5);
       backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
       pointer-events: auto;
     }
-    .fish-title { font-family: 'Pixelify Sans', monospace; font-size: 12px; color: var(--accent); letter-spacing: 0.04em; }
-    .fish-hint { font-size: 9px; color: var(--muted); text-align: center; max-width: 190px; }
+    .fish-title { font-family: 'Pixelify Sans', monospace; font-size: 9px; color: var(--accent); letter-spacing: 0.03em; }
+    .fish-hint { font-size: 7px; color: var(--muted); text-align: center; max-width: 95px; }
     /* Fish render is a pure-black silhouette PNG (see fish_silhouette-body.png); without a
        light halo it nearly disappears against the dark backdrop, so give it the same white
        glow trick the prototype used on .fish-image-rig, just stronger for our darker scene. */
     #fishImageRig {
-      filter: drop-shadow(0 0 2px rgba(255,255,255,0.95)) drop-shadow(0 0 6px rgba(255,255,255,0.55));
+      filter: drop-shadow(0 0 2px rgba(255,255,255,0.95)) drop-shadow(0 0 6px rgba(255,255,255,0.65)) drop-shadow(0 0 11px rgba(255,255,255,0.4));
     }
-    .fish-status { font-size: 10px; color: var(--text); min-height: 14px; text-align: center; }
+    .fish-status { font-size: 8px; color: var(--text); min-height: 11px; text-align: center; }
     .fish-status.good { color: var(--ok); }
     .fish-status.bad  { color: var(--danger); }
-    .fish-panic-wrap { width: 100%; height: 6px; border-radius: 4px; background: rgba(255,255,255,0.1); overflow: hidden; }
-    .fish-panic-fill { height: 100%; width: 0%; border-radius: 4px; background: var(--danger); transition: width 0.15s; }
+    .fish-panic-wrap { width: 100%; height: 4px; border-radius: 3px; background: rgba(255,255,255,0.1); overflow: hidden; }
+    .fish-panic-fill { height: 100%; width: 0%; border-radius: 3px; background: var(--danger); transition: width 0.15s; }
     .fish-fire-btn {
-      width: 100%; padding: 7px 0; border-radius: 8px;
+      width: 100%; padding: 4px 0; border-radius: 6px;
       background: rgba(249,226,138,0.16); border: 1px solid rgba(249,226,138,0.5);
-      color: var(--accent); font-family: 'Pixelify Sans', monospace; font-size: 11px;
-      letter-spacing: 0.04em; cursor: pointer;
+      color: var(--accent); font-family: 'Pixelify Sans', monospace; font-size: 8px;
+      letter-spacing: 0.03em; cursor: pointer;
     }
     .fish-fire-btn:active { background: rgba(249,226,138,0.3); }
     .fish-cancel-btn {
-      font-size: 10px; color: var(--muted); background: none; border: none;
-      cursor: pointer; text-decoration: underline; letter-spacing: 0.03em;
+      font-size: 7px; color: var(--muted); background: none; border: none;
+      cursor: pointer; text-decoration: underline; letter-spacing: 0.02em;
     }

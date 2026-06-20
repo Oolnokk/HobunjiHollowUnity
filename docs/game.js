@@ -4632,6 +4632,10 @@
       // those areas grow water. `seasons`/`timesOfDay` are 'any' or a subset of
       // the `seasons` array's `.name` values / ['dawn','day','dusk','night'].
       const FISH_DEFS = {
+        farm: [
+          { key: 'fish_riverMinnow',     label: 'River Minnow',     icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: 'any',            fishClass: 'smooth',  difficulty: 28 },
+          { key: 'fish_speckledCarp',    label: 'Speckled Carp',    icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['day', 'dusk'],   fishClass: 'sinker',  difficulty: 35 },
+        ],
         town: [
           { key: 'fish_riverMinnow',     label: 'River Minnow',     icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: 'any',            fishClass: 'smooth',  difficulty: 28 },
           { key: 'fish_speckledCarp',    label: 'Speckled Carp',    icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['day', 'dusk'],   fishClass: 'sinker',  difficulty: 35 },
@@ -4671,7 +4675,7 @@
         ],
       };
       const FISH_ZONE_LABELS = {
-        town: 'Town River', northernCliffs: 'Northern Cliffs', cloudForest: 'Southern Cloud Forest',
+        farm: 'Farm Pond', town: 'Town River', northernCliffs: 'Northern Cliffs', cloudForest: 'Southern Cloud Forest',
         westernSlope: 'Western Slope', easternMire: 'Eastern Mire',
       };
 
@@ -5698,6 +5702,11 @@
         rocks.forEach(([col, row]) => { nextGrid[row][col].type = TileType.ROCK; });
         shrubs.forEach(([col, row]) => { nextGrid[row][col].type = TileType.SHRUB; });
 
+        // Small test pond in the top-left corner — lets fishing be checked on
+        // the farm (otherwise only town/wilderness zones have fishable water).
+        const farmPondTiles = [[1,1],[2,1],[1,2],[2,2],[3,2],[2,3]];
+        farmPondTiles.forEach(([col, row]) => { nextGrid[row][col].type = TileType.RIVER; nextGrid[row][col].water = MAX_WATER; });
+
         // Path from farm (col 17, row 0 = north exit to town) going south into the farmstead
         const farmPathTiles = [
           [16,0],[17,0],[18,0],
@@ -6543,6 +6552,7 @@
       const fishingOverlayEl = document.getElementById('fishingOverlay');
 
       function currentFishZoneKey() {
+        if (currentArea === 'farm') return 'farm';
         if (currentArea === 'town') return 'town';
         if (currentArea === 'map_northern_cliffs') return 'northernCliffs';
         if (currentArea === 'map_southern_cloud_forest') return 'cloudForest';
@@ -6858,7 +6868,7 @@
               <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
               <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
               <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
-              <ellipse id="fishContrastHalo" fill="rgba(4,10,16,0.58)" opacity="0" style="filter:blur(7px)"/>
+              <ellipse id="fishContrastHalo" fill="rgba(3,8,12,0.82)" stroke="rgba(255,255,255,0.3)" stroke-width="2" opacity="0" style="filter:blur(3px)"/>
               <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
             </svg>
           </div>
@@ -6967,7 +6977,7 @@
         // contrast against whatever live 3D scene happens to be behind the
         // floating ring (bright town grass/water reads very differently than
         // the dark farm backdrop the glow-only look was originally tuned for).
-        const haloR = Math.hypot(art.imgW, art.imgH) * 0.46;
+        const haloR = Math.hypot(art.imgW, art.imgH) * 0.62;
         fishingEls.fishContrastHalo.setAttribute('cx', fishPt.x.toFixed(2));
         fishingEls.fishContrastHalo.setAttribute('cy', fishPt.y.toFixed(2));
         fishingEls.fishContrastHalo.setAttribute('rx', haloR.toFixed(2));
@@ -7006,8 +7016,8 @@
         if (!fishingEls?.dock || !playerMesh) return;
         const proj = worldToOverlay(playerMesh.position.x, playerMesh.position.y + 0.6, playerMesh.position.z);
         if (!proj.visible) return;
-        const dockGap = 70;
-        const dockWidth = 210; // keeps the dock's left edge from running off-screen
+        const dockGap = 105;
+        const dockWidth = 105; // keeps the dock's left edge from running off-screen
         const rect = _threeRect;
         const left = clamp(proj.x - dockGap, dockWidth, rect.width);
         const top = clamp(proj.y, 0, rect.height);
@@ -9989,7 +9999,11 @@
               const key  = col + ',' + row;
               const tile = townGrid[row][col];
 
-              if (isSolid(tile.type) || tile.water < 0.003) {
+              // Town rivers/streams already have their own static water-surface
+              // mesh (_townRiverWaterMeshes, built in buildTownScene) — skip them
+              // here so this irrigation-style dynamic mesh doesn't double up.
+              if (isSolid(tile.type) || tile.water < 0.003 ||
+                  tile.type === TileType.RIVER || tile.type === TileType.STREAM) {
                 const old = townWaterMeshes.get(key);
                 if (old) { townScene.remove(old); townWaterMeshes.delete(key); }
                 continue;
@@ -10629,6 +10643,13 @@
             if (isSolid(t.type)) continue;
             t.flow = false;
 
+            // Rivers/streams are a permanent water body, not part of the
+            // irrigation sim — always full, never absorbed/evaporated/drained.
+            if (t.type === TileType.RIVER || t.type === TileType.STREAM) {
+              t.water = MAX_WATER;
+              continue;
+            }
+
             if (isRaining) {
               const rainMul = t.type === TileType.TRENCH ? 2.0
                             : t.type === TileType.PADDY  ? 1.4 : 1.0;
@@ -10663,7 +10684,8 @@
         for (let row = rows - 1; row >= 0; row--) {
           for (let col = 0; col < cols; col++) {
             const t = targetGrid[row][col];
-            if (isSolid(t.type) || t.water <= 0) continue;
+            // Rivers/streams donate no water to neighbours — contained body, no spillover.
+            if (isSolid(t.type) || t.water <= 0 || t.type === TileType.RIVER || t.type === TileType.STREAM) continue;
 
             let surfA = floorZ(t.type) + t.water;
 
