@@ -6485,10 +6485,22 @@
 
       let fishBodySpriteImage = null, fishWhiskersSpriteImage = null;
       let harpoonSpearSpriteImage = null, harpoonMaceSpriteImage = null;
-      { const _img = new Image(); _img.onload = () => { fishBodySpriteImage = _img; }; _img.src = 'assets/hud/fish_silhouette-body.png'; }
-      { const _img = new Image(); _img.onload = () => { fishWhiskersSpriteImage = _img; }; _img.src = 'assets/hud/fish_silhouette-whiskers.png'; }
-      { const _img = new Image(); _img.onload = () => { harpoonSpearSpriteImage = _img; }; _img.src = 'assets/toolsprites/harpoon_fishingspear.png'; }
-      { const _img = new Image(); _img.onload = () => { harpoonMaceSpriteImage = _img; }; _img.src = 'assets/toolsprites/harpoon_fishingmace.png'; }
+      function loadFishSprite(src, onOk) {
+        const img = new Image();
+        img.onload = () => {
+          onOk(img);
+          window.__farmLog?.(`sprite loaded OK: ${src} (${img.naturalWidth}x${img.naturalHeight})`, 'fish');
+        };
+        img.onerror = (ev) => {
+          window.__farmLog?.(`sprite FAILED to load: ${src}`, 'fish');
+        };
+        img.src = src;
+        return img;
+      }
+      loadFishSprite('assets/hud/fish_silhouette-body.png', (img) => { fishBodySpriteImage = img; });
+      loadFishSprite('assets/hud/fish_silhouette-whiskers.png', (img) => { fishWhiskersSpriteImage = img; });
+      loadFishSprite('assets/toolsprites/harpoon_fishingspear.png', (img) => { harpoonSpearSpriteImage = img; });
+      loadFishSprite('assets/toolsprites/harpoon_fishingmace.png', (img) => { harpoonMaceSpriteImage = img; });
 
       let fishDeformCanvas = null, fishDeformCtx = null;
       function ensureFishDeformCanvas(width, height) {
@@ -6558,8 +6570,15 @@
       let _fishDeformUrlCache = null;
       let _fishDeformUrlCacheAt = -Infinity;
       const FISH_DEFORM_REENCODE_INTERVAL = 1 / 12; // seconds
+      let _fishDeformLastFailReason = null;
       function renderFishDeformedTexture(fm) {
-        if (!fishBodySpriteImage || !fishBodySpriteImage.naturalWidth) return null;
+        if (!fishBodySpriteImage || !fishBodySpriteImage.naturalWidth) {
+          if (_fishDeformLastFailReason !== 'noimg') {
+            _fishDeformLastFailReason = 'noimg';
+            window.__farmLog?.('fish render: body sprite not loaded yet, skipping draw', 'fish');
+          }
+          return null;
+        }
         const art = FISHING_BRIDGE_ART;
         const pad = Math.ceil(art.imgH * 0.45);
         const targetW = Math.ceil(art.imgW + pad * 2);
@@ -6582,8 +6601,15 @@
         try {
           _fishDeformUrlCache = canvas.toDataURL('image/png');
           _fishDeformUrlCacheAt = fm.fishAnimT;
+          _fishDeformLastFailReason = null;
           return { url: _fishDeformUrlCache, w, h };
-        } catch (err) { return null; }
+        } catch (err) {
+          if (_fishDeformLastFailReason !== 'tainted') {
+            _fishDeformLastFailReason = 'tainted';
+            window.__farmLog?.(`fish render: canvas.toDataURL() threw (${err.name}: ${err.message}) — canvas likely tainted by a cross-origin sprite load`, 'fish');
+          }
+          return null;
+        }
       }
 
       let fishingMinigame = null; // non-null while the spear-bridge overlay is open
