@@ -3702,6 +3702,7 @@
           const wallPanels = buildWallPanelsFromFloorSet(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
           if (wallPanels.length) {
             const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+            _markOutline(wallGroup);
             bScene.add(wallGroup);
           }
           // Furniture: build combined itemKey -> def/furnitureKey lookup
@@ -3725,6 +3726,7 @@
               model.position.set(bx, by, bz);
               model.rotation.y = rotRad;
               model.scale.set(scX, scY, scZ);
+              _markOutline(model);
               bScene.add(model);
             } else {
               // Fallback: no procedural recipe found for this furniture key
@@ -3732,6 +3734,7 @@
               ph.position.set(bx, by + 0.4, bz);
               ph.rotation.y = rotRad;
               ph.scale.set(scX, scY, scZ);
+              _markOutline(ph);
               bScene.add(ph);
             }
           }
@@ -3807,6 +3810,7 @@
         const wallPanels = buildWallPanelsForRoom(cols, rows, INTERIOR_WALL_HEIGHT, exitT);
         if (wallPanels.length) {
           const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+          _markOutline(wallGroup);
           bScene.add(wallGroup);
         }
         const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId };
