@@ -6394,12 +6394,13 @@
 
       // ── Spearfishing minigame: Spear Bridge ─────────────────────
       // Ported from the spearfishing prototype's "Spear Bridge" preset only
-      // (no fourSpear/ringStardew). Two simplifications vs. the prototype:
+      // (no fourSpear/ringStardew). One simplification vs. the prototype:
       // catch detection is a geometric point-to-segment distance test instead
-      // of a pixel alpha-mask read, and the fish/spear render as flat emoji
-      // glyphs on an SVG ring instead of spline-deformed PNG sprites. The fish
-      // still patrols a 1D position mapped to a ring angle (FishBehavior.stepBase1D)
-      // and the bridge mechanic (rotating aim segment → two-tap markers → spear
+      // of a pixel alpha-mask read. The fish and harpoon/mace render using the
+      // same real assets and per-frame bone-slice "skinning" deform as the
+      // prototype (see FISHING_BRIDGE_ART below). The fish still patrols a 1D
+      // position mapped to a ring angle (FishBehavior.stepBase1D) and the
+      // bridge mechanic (rotating aim segment → two-tap markers → spear
       // travel/retract → catch-or-panic) is otherwise numerically identical.
       const FISHING_RING = {
         cx: 160, cy: 160,
@@ -6422,7 +6423,111 @@
       const FISH_CLASS_RETARGET   = { smooth: 0.25, mixed: 0.55, sinker: 0.5, floater: 0.5, dart: 1.2 };
       const FISH_CLASS_SMOOTHNESS = { smooth: 0.8,  mixed: 1.4,  sinker: 1.5, floater: 1.5, dart: 4.0 };
 
+      // Real-asset rendering for the fish silhouette + harpoon/mace sprite, ported
+      // from the spearfishing prototype's ensureFishDeformCanvas/renderImageFish/
+      // renderBridgeSpearSprite. The fish body+whiskers PNGs face left, same as the
+      // prototype's source art, so the same flipX/rotation convention applies as-is.
+      const FISHING_BRIDGE_ART = {
+        imgW: 64, imgH: 40,                 // deformed fish draw size (~matches the body PNG's aspect ratio)
+        deformSlices: 28, boneCount: 6,
+        boneAmpScale: 0.82, whiskerBoneAmpScale: 0.3, whiskerRate: 0.38,
+        flipX: -1,                          // source silhouettes face left; mirror so facing=1 points right
+        spriteWidth: 46, spriteHeight: 122,  // harpoon/mace sprite box (preserveAspectRatio keeps the real PNG shape)
+        spriteRotationOffset: -90,          // the PNG's business end is at the bottom, not the top
+        ropeAttachBack: 23, spearAttachFront: 10,
+        ropeSag: 0.1,
+        maceSpinRateDeg: 9720,              // ~27 spins/sec while the mace is outbound
+      };
+
+      let fishBodySpriteImage = null, fishWhiskersSpriteImage = null;
+      let harpoonSpearSpriteImage = null, harpoonMaceSpriteImage = null;
+      { const _img = new Image(); _img.onload = () => { fishBodySpriteImage = _img; }; _img.src = 'assets/hud/fish_silhouette-body.png'; }
+      { const _img = new Image(); _img.onload = () => { fishWhiskersSpriteImage = _img; }; _img.src = 'assets/hud/fish_silhouette-whiskers.png'; }
+      { const _img = new Image(); _img.onload = () => { harpoonSpearSpriteImage = _img; }; _img.src = 'assets/toolsprites/harpoon_fishingspear.png'; }
+      { const _img = new Image(); _img.onload = () => { harpoonMaceSpriteImage = _img; }; _img.src = 'assets/toolsprites/harpoon_fishingmace.png'; }
+
+      let fishDeformCanvas = null, fishDeformCtx = null;
+      function ensureFishDeformCanvas(width, height) {
+        const w = Math.max(48, Math.round(width));
+        const h = Math.max(24, Math.round(height));
+        if (!fishDeformCanvas) { fishDeformCanvas = document.createElement('canvas'); fishDeformCtx = fishDeformCanvas.getContext('2d'); }
+        if (fishDeformCanvas.width !== w || fishDeformCanvas.height !== h) { fishDeformCanvas.width = w; fishDeformCanvas.height = h; }
+        return { canvas: fishDeformCanvas, ctx: fishDeformCtx, w, h };
+      }
+
+      // Small spline-skeleton "bone" offsets sampled across deformSlices vertical strips,
+      // tapered toward the head/tail so the deform bends most in the middle of the body.
+      function buildFishBoneOffsets(sliceCount, amp, phase, rateScale) {
+        const boneCount = FISHING_BRIDGE_ART.boneCount;
+        const bones = [];
+        for (let i = 0; i < boneCount; i++) {
+          const t01 = boneCount === 1 ? 0.5 : i / (boneCount - 1);
+          const taper = Math.sin(Math.PI * t01);
+          const leadLag = t01 * Math.PI * 2.15;
+          bones.push(Math.sin(phase * rateScale + leadLag) * amp * taper);
+        }
+        const offsets = [];
+        for (let i = 0; i < sliceCount; i++) {
+          const t01 = sliceCount === 1 ? 0.5 : i / (sliceCount - 1);
+          const scaled = t01 * (bones.length - 1);
+          const left = Math.max(0, Math.min(bones.length - 2, Math.floor(scaled)));
+          const local = scaled - left;
+          offsets.push(bones[left] + (bones[left + 1] - bones[left]) * local);
+        }
+        return offsets;
+      }
+
+      function drawFishImageAlongBones(ctx, image, canvasW, canvasH, drawW, drawH, offsets, alpha) {
+        if (!image || !image.naturalWidth || !image.naturalHeight) return;
+        const sliceCount = Math.max(4, offsets.length || 4);
+        const srcSliceW = image.naturalWidth / sliceCount;
+        const dstSliceW = drawW / sliceCount;
+        const startX = (canvasW - drawW) * 0.5;
+        const startY = (canvasH - drawH) * 0.5;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.imageSmoothingEnabled = true;
+        for (let i = 0; i < sliceCount; i++) {
+          const nextOffset = offsets[Math.min(offsets.length - 1, i + 1)] ?? offsets[i] ?? 0;
+          const offset = offsets[i] || 0;
+          const shear = clamp((nextOffset - offset) / Math.max(1, dstSliceW), -0.32, 0.32);
+          const sx = i * srcSliceW;
+          const dx = startX + i * dstSliceW;
+          const dy = startY + offset;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(dx - 1, 0, dstSliceW + 2, canvasH);
+          ctx.clip();
+          ctx.transform(1, shear, 0, 1, 0, 0);
+          ctx.drawImage(image, sx, 0, srcSliceW + 1, image.naturalHeight, dx, dy - shear * dx, dstSliceW + 1.5, drawH);
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+
+      function renderFishDeformedTexture(fm) {
+        if (!fishBodySpriteImage || !fishBodySpriteImage.naturalWidth) return null;
+        const art = FISHING_BRIDGE_ART;
+        const pad = Math.ceil(art.imgH * 0.45);
+        const targetW = Math.ceil(art.imgW + pad * 2);
+        const targetH = Math.ceil(art.imgH + pad * 2);
+        const { canvas, ctx, w, h } = ensureFishDeformCanvas(targetW, targetH);
+        ctx.clearRect(0, 0, w, h);
+
+        const phase = fm.fishAnimT * 7.5 + fm.fish.angle * 0.025;
+        const bodyAmp = Math.max(2, art.imgH * 0.075 * art.boneAmpScale);
+        const bodyOffsets = buildFishBoneOffsets(art.deformSlices, bodyAmp, phase, 1);
+        const whiskerOffsets = buildFishBoneOffsets(art.deformSlices, bodyAmp * art.whiskerBoneAmpScale, phase + 0.85, art.whiskerRate);
+
+        drawFishImageAlongBones(ctx, fishBodySpriteImage, w, h, art.imgW, art.imgH, bodyOffsets, 1);
+        if (fishWhiskersSpriteImage && fishWhiskersSpriteImage.naturalWidth) {
+          drawFishImageAlongBones(ctx, fishWhiskersSpriteImage, w, h, art.imgW, art.imgH, whiskerOffsets, 0.95);
+        }
+        try { return { url: canvas.toDataURL('image/png'), w, h }; } catch (err) { return null; }
+      }
+
       let fishingMinigame = null; // non-null while the spear-bridge overlay is open
+      let fishingEls = null;      // cached persistent DOM refs, rebuilt each time the overlay opens
       const fishingOverlayEl = document.getElementById('fishingOverlay');
 
       function currentFishZoneKey() {
@@ -6552,6 +6657,7 @@
           zoneKey,
           difficulty: fish.difficulty,
           fishClass: fish.fishClass,
+          fishAnimT: 0,
           fish: {
             pos: Math.random(), vel: 0, targetVel: 0, angle: 0,
             moveDir: 1, pendingMoveDir: 1, turning: false, turnProgress: 0, localFacingScale: 1,
@@ -6560,6 +6666,7 @@
             angle: 0, direction: 1, segmentSize: FISHING_RING.segmentSize, speed: FISHING_RING.sweepSpeed,
             markerA: null, markerB: null, spearActive: false, lineA: null, lineB: null,
             shotTimer: 0, retractTimer: 0, tipX: 0, tipY: 0, prevTipX: 0, prevTipY: 0, caughtFish: false,
+            weaponSpinDeg: 0, frozenWeaponAngleDeg: 0,
           },
           panic: 0,
           resolved: false,
@@ -6579,6 +6686,7 @@
         fishingMinigame = null;
         fishingOverlayEl.classList.remove('open');
         fishingOverlayEl.innerHTML = '';
+        fishingEls = null;
       }
 
       function fireFishingBridge() {
@@ -6646,6 +6754,7 @@
           return;
         }
 
+        fm.fishAnimT += dt;
         fishStepMotion(fm, dt);
 
         const b = fm.bridge;
@@ -6659,12 +6768,16 @@
           b.prevTipY = b.tipY;
 
           if (b.shotTimer < FISHING_RING.shotDuration) {
+            b.weaponSpinDeg = (b.weaponSpinDeg + FISHING_BRIDGE_ART.maceSpinRateDeg * dt) % 360;
+            b.frozenWeaponAngleDeg = Math.atan2(bPt.y - a.y, bPt.x - a.x) * 180 / Math.PI + FISHING_BRIDGE_ART.spriteRotationOffset;
             b.shotTimer = Math.min(FISHING_RING.shotDuration, b.shotTimer + dt);
             const t = b.shotTimer / FISHING_RING.shotDuration;
             b.tipX = a.x + (bPt.x - a.x) * t;
             b.tipY = a.y + (bPt.y - a.y) * t;
             fishingTryTipCatch(fm);
           } else if (b.retractTimer < FISHING_RING.retractDuration) {
+            b.weaponSpinDeg = 0;
+            b.frozenWeaponAngleDeg = Math.atan2(bPt.y - a.y, bPt.x - a.x) * 180 / Math.PI + FISHING_BRIDGE_ART.spriteRotationOffset;
             b.retractTimer = Math.min(FISHING_RING.retractDuration, b.retractTimer + dt);
             const t = b.retractTimer / FISHING_RING.retractDuration;
             b.tipX = bPt.x + (a.x - bPt.x) * t;
@@ -6693,19 +6806,13 @@
         renderFishingOverlay();
       }
 
-      function renderFishingOverlay() {
-        const fm = fishingMinigame;
-        if (!fm) return;
+      // Builds the static overlay markup once per minigame session; per-frame updates
+      // only touch attributes on the cached nodes below (renderFishingOverlay), so the
+      // deformed-fish canvas/dataURL churn each frame doesn't force a full innerHTML
+      // rebuild + listener rebind every tick.
+      function buildFishingOverlayDom(fm) {
         const R = FISHING_RING;
         const outerRadius = R.fishRadius + R.outerOffset;
-        const half = R.segmentSize / 2;
-        const fishPt = fishingPolarToXY(fm.fish.angle, R.fishRadius);
-        const segArc = describeFishingArc(outerRadius, fm.bridge.angle - half, fm.bridge.angle + half);
-        const markerA = fm.bridge.markerA != null ? fishingPolarToXY(fm.bridge.markerA, outerRadius) : null;
-        const markerB = fm.bridge.markerB != null ? fishingPolarToXY(fm.bridge.markerB, outerRadius) : null;
-        const spearVisible = fm.bridge.spearActive && fm.bridge.lineA != null;
-        const spearA = spearVisible ? fishingPolarToXY(fm.bridge.lineA, outerRadius) : null;
-
         fishingOverlayEl.innerHTML = `
           <div class="fish-card">
             <div class="fish-title">${FISH_ZONE_LABELS[fm.zoneKey]} — Spearfishing</div>
@@ -6714,24 +6821,146 @@
               <svg viewBox="0 0 ${R.cx * 2} ${R.cy * 2}">
                 <circle cx="${R.cx}" cy="${R.cy}" r="${R.fishRadius}" fill="none" stroke="rgba(127,232,154,0.25)" stroke-width="2"/>
                 <circle cx="${R.cx}" cy="${R.cy}" r="${outerRadius}" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="2"/>
-                <path d="${segArc}" fill="none" stroke="#f9e28a" stroke-width="6" stroke-linecap="round"/>
-                ${markerA ? `<circle cx="${markerA.x.toFixed(1)}" cy="${markerA.y.toFixed(1)}" r="5" fill="#ff8060"/>` : ''}
-                ${markerB ? `<circle cx="${markerB.x.toFixed(1)}" cy="${markerB.y.toFixed(1)}" r="5" fill="#ff8060"/>` : ''}
-                ${spearVisible ? `<line x1="${spearA.x.toFixed(1)}" y1="${spearA.y.toFixed(1)}" x2="${fm.bridge.tipX.toFixed(1)}" y2="${fm.bridge.tipY.toFixed(1)}" stroke="#f0ffe6" stroke-width="3"/>` : ''}
-                ${spearVisible ? `<circle cx="${fm.bridge.tipX.toFixed(1)}" cy="${fm.bridge.tipY.toFixed(1)}" r="5" fill="#f0ffe6"/>` : ''}
-                <text x="${fishPt.x.toFixed(1)}" y="${fishPt.y.toFixed(1)}" font-size="22" text-anchor="middle" dominant-baseline="middle" transform="scale(${fm.fish.localFacingScale < 0 ? -1 : 1},1) translate(${fm.fish.localFacingScale < 0 ? -2 * fishPt.x : 0},0)">${fm.fishDef.icon}</text>
+                <path id="fishSegArc" fill="none" stroke="#f9e28a" stroke-width="6" stroke-linecap="round"/>
+                <circle id="fishMarkerA" r="5" fill="#ff8060" opacity="0"/>
+                <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
+                <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
+                <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
+                <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
               </svg>
             </div>
-            <div class="fish-status${fm.messageType ? ' ' + fm.messageType : ''}">${fm.message}</div>
-            <div class="fish-panic-wrap"><div class="fish-panic-fill" style="width:${fm.panic}%"></div></div>
+            <div class="fish-status" id="fishStatus"></div>
+            <div class="fish-panic-wrap"><div class="fish-panic-fill" id="fishPanicFill"></div></div>
             <button class="fish-fire-btn" id="fishFireBtn">Fire (Space)</button>
             <button class="fish-cancel-btn" id="fishCancelBtn">Give up</button>
           </div>`;
+
+        fishingEls = {
+          segArc: document.getElementById('fishSegArc'),
+          markerA: document.getElementById('fishMarkerA'),
+          markerB: document.getElementById('fishMarkerB'),
+          spearRope: document.getElementById('fishSpearRope'),
+          spearSpriteWrap: document.getElementById('fishSpearSpriteWrap'),
+          spearImage: document.getElementById('fishSpearImage'),
+          fishImageRig: document.getElementById('fishImageRig'),
+          fishImageTransform: document.getElementById('fishImageTransform'),
+          fishDeformedImage: document.getElementById('fishDeformedImage'),
+          status: document.getElementById('fishStatus'),
+          panicFill: document.getElementById('fishPanicFill'),
+        };
 
         const fireBtn = document.getElementById('fishFireBtn');
         if (fireBtn) fireBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); fireFishingBridge(); });
         const cancelBtn = document.getElementById('fishCancelBtn');
         if (cancelBtn) cancelBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); closeFishingMinigame(); });
+      }
+
+      // Ported from the prototype's renderBridgeSpearSprite: positions the real
+      // harpoon/mace PNG (business end at the image's bottom) rotated along the
+      // flight chord, with a quadratic-bezier rope back to the launch point, and
+      // (mace only) a rapid spin while outbound that freezes once retracting.
+      function renderFishingSpearSprite(startPoint, endPoint) {
+        const art = FISHING_BRIDGE_ART;
+        const useMace = equipmentSlots.harpoon === 'fishingmace';
+        const spriteImg = useMace ? harpoonMaceSpriteImage : harpoonSpearSpriteImage;
+        const dx = endPoint.x - startPoint.x, dy = endPoint.y - startPoint.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const nx = -uy, ny = ux;
+        const ropeEndX = useMace ? endPoint.x : endPoint.x - ux * art.ropeAttachBack;
+        const ropeEndY = useMace ? endPoint.y : endPoint.y - uy * art.ropeAttachBack;
+        const sag = Math.min(22, len * art.ropeSag);
+        const ctrlX = (startPoint.x + ropeEndX) * 0.5 + nx * sag;
+        const ctrlY = (startPoint.y + ropeEndY) * 0.5 + ny * sag;
+        fishingEls.spearRope.setAttribute('d', `M ${startPoint.x.toFixed(2)} ${startPoint.y.toFixed(2)} Q ${ctrlX.toFixed(2)} ${ctrlY.toFixed(2)} ${ropeEndX.toFixed(2)} ${ropeEndY.toFixed(2)}`);
+        fishingEls.spearRope.setAttribute('opacity', '1');
+
+        if (!spriteImg || !spriteImg.naturalWidth) { fishingEls.spearSpriteWrap.setAttribute('opacity', '0'); return; }
+
+        const spriteW = art.spriteWidth, spriteH = art.spriteHeight, front = art.spearAttachFront;
+        fishingEls.spearImage.setAttribute('href', spriteImg.src);
+        fishingEls.spearImage.setAttribute('x', (-spriteW * 0.5).toFixed(2));
+        fishingEls.spearImage.setAttribute('y', (useMace ? -spriteH * 0.5 : -front).toFixed(2));
+        fishingEls.spearImage.setAttribute('width', spriteW.toFixed(2));
+        fishingEls.spearImage.setAttribute('height', spriteH.toFixed(2));
+        fishingEls.spearImage.setAttribute('transform', 'scale(1 -1)');
+
+        const baseAngleDeg = Math.atan2(dy, dx) * 180 / Math.PI + art.spriteRotationOffset;
+        const b = fishingMinigame.bridge;
+        const isOutbound = b.spearActive && b.shotTimer < FISHING_RING.shotDuration;
+        let angleDeg = baseAngleDeg;
+        if (useMace) {
+          if (isOutbound) angleDeg = baseAngleDeg + (b.weaponSpinDeg || 0);
+          else if (Number.isFinite(b.frozenWeaponAngleDeg)) angleDeg = b.frozenWeaponAngleDeg;
+        }
+        fishingEls.spearSpriteWrap.setAttribute('transform', `translate(${endPoint.x.toFixed(2)} ${endPoint.y.toFixed(2)}) rotate(${angleDeg.toFixed(2)})`);
+        fishingEls.spearSpriteWrap.setAttribute('opacity', '1');
+      }
+
+      // Ported from the prototype's renderImageFish: positions the deformed/skinned
+      // fish silhouette (see renderFishDeformedTexture) at its ring point, rotated to
+      // the ring angle and mirrored by localFacingScale for left/right turnarounds.
+      function renderFishingImageFish(fm) {
+        const fishPt = fishingPolarToXY(fm.fish.angle, FISHING_RING.fishRadius);
+        const deform = renderFishDeformedTexture(fm);
+        if (!deform) { fishingEls.fishImageRig.setAttribute('opacity', '0'); return; }
+
+        const art = FISHING_BRIDGE_ART;
+        const requested = fm.fish.localFacingScale;
+        const localFacingScale = Math.abs(requested) < 0.035 ? 0.035 * Math.sign(requested || 1) : requested;
+        const scaleX = art.flipX * localFacingScale;
+
+        fishingEls.fishImageRig.setAttribute('opacity', '1');
+        fishingEls.fishImageRig.setAttribute('transform', `translate(${fishPt.x.toFixed(2)} ${fishPt.y.toFixed(2)})`);
+        fishingEls.fishImageTransform.setAttribute('transform', `rotate(${fm.fish.angle.toFixed(2)}) scale(${scaleX.toFixed(4)} 1)`);
+        fishingEls.fishDeformedImage.setAttribute('href', deform.url);
+        fishingEls.fishDeformedImage.setAttribute('x', (-deform.w / 2).toFixed(2));
+        fishingEls.fishDeformedImage.setAttribute('y', (-deform.h / 2).toFixed(2));
+        fishingEls.fishDeformedImage.setAttribute('width', deform.w.toFixed(2));
+        fishingEls.fishDeformedImage.setAttribute('height', deform.h.toFixed(2));
+      }
+
+      function renderFishingOverlay() {
+        const fm = fishingMinigame;
+        if (!fm) return;
+        if (!fishingEls) buildFishingOverlayDom(fm);
+
+        const R = FISHING_RING;
+        const outerRadius = R.fishRadius + R.outerOffset;
+        const half = R.segmentSize / 2;
+
+        fishingEls.segArc.setAttribute('d', describeFishingArc(outerRadius, fm.bridge.angle - half, fm.bridge.angle + half));
+
+        if (fm.bridge.markerA != null) {
+          const p = fishingPolarToXY(fm.bridge.markerA, outerRadius);
+          fishingEls.markerA.setAttribute('cx', p.x.toFixed(1));
+          fishingEls.markerA.setAttribute('cy', p.y.toFixed(1));
+          fishingEls.markerA.setAttribute('opacity', '1');
+        } else {
+          fishingEls.markerA.setAttribute('opacity', '0');
+        }
+        if (fm.bridge.markerB != null) {
+          const p = fishingPolarToXY(fm.bridge.markerB, outerRadius);
+          fishingEls.markerB.setAttribute('cx', p.x.toFixed(1));
+          fishingEls.markerB.setAttribute('cy', p.y.toFixed(1));
+          fishingEls.markerB.setAttribute('opacity', '1');
+        } else {
+          fishingEls.markerB.setAttribute('opacity', '0');
+        }
+
+        if (fm.bridge.spearActive && fm.bridge.lineA != null) {
+          const spearA = fishingPolarToXY(fm.bridge.lineA, outerRadius);
+          renderFishingSpearSprite(spearA, { x: fm.bridge.tipX, y: fm.bridge.tipY });
+        } else {
+          fishingEls.spearRope.setAttribute('opacity', '0');
+          fishingEls.spearSpriteWrap.setAttribute('opacity', '0');
+        }
+
+        renderFishingImageFish(fm);
+
+        fishingEls.status.textContent = fm.message;
+        fishingEls.status.className = 'fish-status' + (fm.messageType ? ' ' + fm.messageType : '');
+        fishingEls.panicFill.style.width = fm.panic + '%';
       }
 
       function describeFishingArc(radius, startDeg, endDeg) {
