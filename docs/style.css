@@ -1963,7 +1963,7 @@
        in game.js) the same way the prototype's cube-player/river-prism demo showed. */
     #fishingOverlay {
       display: none; position: fixed; inset: 0;
-      z-index: 240; touch-action: none; pointer-events: none;
+      z-index: 240; touch-action: none; pointer-events: auto;
     }
     #fishingOverlay.open { display: block; }
     .fish-ring-wrap {
