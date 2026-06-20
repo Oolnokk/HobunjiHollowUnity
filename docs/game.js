@@ -6834,6 +6834,7 @@
               <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
               <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
               <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
+              <ellipse id="fishContrastHalo" fill="rgba(4,10,16,0.58)" opacity="0" style="filter:blur(7px)"/>
               <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
             </svg>
           </div>
@@ -6854,11 +6855,13 @@
           spearRope: document.getElementById('fishSpearRope'),
           spearSpriteWrap: document.getElementById('fishSpearSpriteWrap'),
           spearImage: document.getElementById('fishSpearImage'),
+          fishContrastHalo: document.getElementById('fishContrastHalo'),
           fishImageRig: document.getElementById('fishImageRig'),
           fishImageTransform: document.getElementById('fishImageTransform'),
           fishDeformedImage: document.getElementById('fishDeformedImage'),
           status: document.getElementById('fishStatus'),
           panicFill: document.getElementById('fishPanicFill'),
+          dock: document.querySelector('.fish-dock'),
         };
 
         const fireBtn = document.getElementById('fishFireBtn');
@@ -6915,12 +6918,27 @@
       function renderFishingImageFish(fm) {
         const fishPt = fishingPolarToXY(fm.fish.angle, FISHING_RING.fishRadius);
         const deform = renderFishDeformedTexture(fm);
-        if (!deform) { fishingEls.fishImageRig.setAttribute('opacity', '0'); return; }
+        if (!deform) {
+          fishingEls.fishImageRig.setAttribute('opacity', '0');
+          fishingEls.fishContrastHalo.setAttribute('opacity', '0');
+          return;
+        }
 
         const art = FISHING_BRIDGE_ART;
         const requested = fm.fish.localFacingScale;
         const localFacingScale = Math.abs(requested) < 0.035 ? 0.035 * Math.sign(requested || 1) : requested;
         const scaleX = art.flipX * localFacingScale;
+
+        // A soft dark disc directly behind the fish so the silhouette keeps
+        // contrast against whatever live 3D scene happens to be behind the
+        // floating ring (bright town grass/water reads very differently than
+        // the dark farm backdrop the glow-only look was originally tuned for).
+        const haloR = Math.hypot(art.imgW, art.imgH) * 0.46;
+        fishingEls.fishContrastHalo.setAttribute('cx', fishPt.x.toFixed(2));
+        fishingEls.fishContrastHalo.setAttribute('cy', fishPt.y.toFixed(2));
+        fishingEls.fishContrastHalo.setAttribute('rx', haloR.toFixed(2));
+        fishingEls.fishContrastHalo.setAttribute('ry', haloR.toFixed(2));
+        fishingEls.fishContrastHalo.setAttribute('opacity', '1');
 
         fishingEls.fishImageRig.setAttribute('opacity', '1');
         fishingEls.fishImageRig.setAttribute('transform', `translate(${fishPt.x.toFixed(2)} ${fishPt.y.toFixed(2)})`);
@@ -6947,11 +6965,28 @@
         fishingEls.ringWrap.style.top = (rect.top + top) + 'px';
       }
 
+      // Keeps the title/hint/status/panic dock parked just to the left of the
+      // player avatar on screen, instead of pinned to the bottom of the page,
+      // so it reads as attached to the character doing the fishing.
+      function updateFishingDockScreenPosition() {
+        if (!fishingEls?.dock || !playerMesh) return;
+        const proj = worldToOverlay(playerMesh.position.x, playerMesh.position.y + 0.6, playerMesh.position.z);
+        if (!proj.visible) return;
+        const dockGap = 36;
+        const dockWidth = 280; // keeps the dock's left edge from running off-screen
+        const rect = _threeRect;
+        const left = clamp(proj.x - dockGap, dockWidth, rect.width);
+        const top = clamp(proj.y, 0, rect.height);
+        fishingEls.dock.style.left = (rect.left + left) + 'px';
+        fishingEls.dock.style.top = (rect.top + top) + 'px';
+      }
+
       function renderFishingOverlay() {
         const fm = fishingMinigame;
         if (!fm) return;
         if (!fishingEls) buildFishingOverlayDom(fm);
         updateFishingRingScreenPosition(fm);
+        updateFishingDockScreenPosition();
 
         const R = FISHING_RING;
         const outerRadius = R.fishRadius + R.outerOffset;
