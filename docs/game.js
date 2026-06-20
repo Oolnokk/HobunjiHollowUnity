@@ -771,7 +771,7 @@
         machete: ['cut', 'slash'],
         axe:     ['cut', 'slash'],
         pick:    ['dig', 'raise', 'fill'],
-        harpoon: ['cut', 'slash'],
+        harpoon: ['cut', 'slash', 'fish'],
         weapon:  ['cut', 'slash'],
       };
 
@@ -785,6 +785,7 @@
         cut:        ['🗡️', 'Cut'],
         slash:      ['💥', 'Slash'],
         harvest:    ['🧺', 'Harvest'],
+        fish:       ['🎣', 'Fish'],
       };
 
       const tileStyles = {
@@ -4611,6 +4612,72 @@
         }
       });
 
+      // ── Fish catalog ────────────────────────────────────────────
+      // Keyed by zone category. "town" is the only zone with real river/stream
+      // tiles today; northernCliffs/cloudForest are existing map IDs that have
+      // no water bodies yet, and westernSlope/easternMire aren't built as zones
+      // at all — all three are kept here so the catalog is ready the moment
+      // those areas grow water. `seasons`/`timesOfDay` are 'any' or a subset of
+      // the `seasons` array's `.name` values / ['dawn','day','dusk','night'].
+      const FISH_DEFS = {
+        town: [
+          { key: 'fish_riverMinnow',     label: 'River Minnow',     icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: 'any',            fishClass: 'smooth',  difficulty: 28 },
+          { key: 'fish_speckledCarp',    label: 'Speckled Carp',    icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['day', 'dusk'],   fishClass: 'sinker',  difficulty: 35 },
+          { key: 'fish_bronzefinTrout',  label: 'Bronzefin Trout',  icon: '🐡', rarity: 'uncommon', sellPrice: 22, seasons: ['Early Dry', 'Late Dry'],          timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 52 },
+          { key: 'fish_mossbackCatfish', label: 'Mossback Catfish', icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: ['First Rains', 'Wet Peak'],        timesOfDay: ['night'],         fishClass: 'floater', difficulty: 48 },
+          { key: 'fish_goldenKoi',       label: 'Golden Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 60, seasons: 'any', timesOfDay: ['dawn'],          fishClass: 'mixed',   difficulty: 70 },
+        ],
+        northernCliffs: [
+          { key: 'fish_cliffsideChar',   label: 'Cliffside Char',   icon: '🐟', rarity: 'common',   sellPrice: 10, seasons: ['Early Dry', 'Late Dry'],          timesOfDay: 'any',             fishClass: 'dart',    difficulty: 38 },
+          { key: 'fish_stonebellyTrout', label: 'Stonebelly Trout', icon: '🐠', rarity: 'common',   sellPrice: 11, seasons: 'any', timesOfDay: ['day'],           fishClass: 'sinker',  difficulty: 34 },
+          { key: 'fish_frostWhiskerEel', label: 'Frost Whisker Eel',icon: '🐡', rarity: 'uncommon', sellPrice: 26, seasons: ['First Rains', 'Wet Peak'],        timesOfDay: ['night'],         fishClass: 'smooth',  difficulty: 50 },
+          { key: 'fish_cliffHawkSalmon', label: 'Cliff Hawk Salmon',icon: '🐠', rarity: 'rare',     sellPrice: 65, seasons: ['Wet Peak'],                       timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 72 },
+          { key: 'fish_ironscalePike',   label: 'Ironscale Pike',   icon: '🐟', rarity: 'rare',     sellPrice: 58, seasons: 'any', timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 68 },
+        ],
+        cloudForest: [
+          { key: 'fish_cloudmistGuppy',  label: 'Cloudmist Guppy',  icon: '🐠', rarity: 'common',   sellPrice: 7,  seasons: 'any', timesOfDay: ['dawn', 'dusk'],  fishClass: 'floater', difficulty: 26 },
+          { key: 'fish_fernshadeLoach',  label: 'Fernshade Loach',  icon: '🐟', rarity: 'common',   sellPrice: 9,  seasons: ['First Rains', 'Wet Peak'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
+          { key: 'fish_orchidBetta',     label: 'Orchid Betta',     icon: '🐡', rarity: 'uncommon', sellPrice: 28, seasons: ['Wet Peak'],                       timesOfDay: ['day'],           fishClass: 'mixed',   difficulty: 46 },
+          { key: 'fish_vinehookGar',     label: 'Vinehook Gar',     icon: '🐟', rarity: 'uncommon', sellPrice: 25, seasons: 'any', timesOfDay: ['night'],         fishClass: 'dart',    difficulty: 49 },
+          { key: 'fish_canopyKoi',       label: 'Canopy Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 62, seasons: ['First Rains'],                    timesOfDay: ['dawn'],          fishClass: 'floater', difficulty: 71 },
+        ],
+        westernSlope: [
+          { key: 'fish_glacierSmelt',    label: 'Glacier Smelt',    icon: '🐟', rarity: 'common',   sellPrice: 8,  seasons: ['Early Dry', 'Late Dry'],          timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
+          { key: 'fish_frostbellyGrayling', label: 'Frostbelly Grayling', icon: '🐠', rarity: 'common', sellPrice: 10, seasons: 'any', timesOfDay: ['day'],     fishClass: 'dart',    difficulty: 37 },
+          { key: 'fish_iceveilWhitefish',label: 'Iceveil Whitefish',icon: '🐡', rarity: 'uncommon', sellPrice: 27, seasons: ['Late Dry', 'First Rains'],        timesOfDay: ['dusk', 'night'], fishClass: 'sinker',  difficulty: 51 },
+          { key: 'fish_snowmeltSalmon',  label: 'Snowmelt Salmon',  icon: '🐠', rarity: 'uncommon', sellPrice: 30, seasons: ['First Rains'],                    timesOfDay: ['dawn'],          fishClass: 'dart',    difficulty: 55 },
+          { key: 'fish_glassfinChar',    label: 'Glassfin Char',    icon: '🐟', rarity: 'rare',     sellPrice: 64, seasons: ['Wet Peak'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 73 },
+          { key: 'fish_permafrostEel',   label: 'Permafrost Eel',   icon: '🐡', rarity: 'rare',     sellPrice: 59, seasons: ['Early Dry'],                      timesOfDay: ['night'],         fishClass: 'floater', difficulty: 69 },
+        ],
+        easternMire: [
+          { key: 'fish_mudskipper',      label: 'Mudskipper',       icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: ['day'],           fishClass: 'sinker',  difficulty: 27 },
+          { key: 'fish_swampBullhead',   label: 'Swamp Bullhead',   icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['dusk', 'night'], fishClass: 'floater', difficulty: 33 },
+          { key: 'fish_mireleafTetra',   label: 'Mireleaf Tetra',   icon: '🐡', rarity: 'uncommon', sellPrice: 23, seasons: ['Wet Peak', 'First Rains'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 45 },
+          { key: 'fish_bogLamprey',      label: 'Bog Lamprey',      icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: 'any', timesOfDay: ['night'],         fishClass: 'dart',    difficulty: 50 },
+          { key: 'fish_murkwaterGar',    label: 'Murkwater Gar',    icon: '🐠', rarity: 'rare',     sellPrice: 61, seasons: ['Wet Peak'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 70 },
+          { key: 'fish_willOWispEel',    label: "Will-o'-Wisp Eel", icon: '🐡', rarity: 'rare',     sellPrice: 66, seasons: ['First Rains'],                    timesOfDay: ['night'],         fishClass: 'floater', difficulty: 74 },
+        ],
+      };
+      const FISH_ZONE_LABELS = {
+        town: 'Town River', northernCliffs: 'Northern Cliffs', cloudForest: 'Southern Cloud Forest',
+        westernSlope: 'Western Slope', easternMire: 'Eastern Mire',
+      };
+
+      Object.entries(FISH_DEFS).forEach(([zoneKey, list]) => {
+        list.forEach(fish => {
+          if (!inventoryItems.some(item => item.key === fish.key)) {
+            inventoryItems.push({ key: fish.key, icon: fish.icon, label: fish.label.toUpperCase(), max: 99 });
+          }
+          if (!ITEM_DEFS[fish.key]) {
+            ITEM_DEFS[fish.key] = {
+              icon: fish.icon, label: fish.label, cat: 'material', sellPrice: fish.sellPrice,
+              tags: ['Fish', fish.rarity, FISH_ZONE_LABELS[zoneKey]],
+              desc: `A ${fish.rarity} fish speared in the ${FISH_ZONE_LABELS[zoneKey]}.`,
+            };
+          }
+        });
+      });
+
       function itemIconForKey(key) {
         return ITEM_DEFS[key]?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon || '□';
       }
@@ -5865,6 +5932,9 @@
           if (action === 'smooth') return [TileType.TILLED, TileType.RAISED, TileType.PADDY].includes(tile.type) && !tile.crop;
         }
         if (tool === 'weapon') return true; // combat hits are cone-based, not tile-gated
+        if (tool === 'harpoon' && action === 'fish') {
+          return tile.type === TileType.RIVER || tile.type === TileType.STREAM;
+        }
         if (tool === 'machete' || tool === 'axe' || tool === 'harpoon') {
           const targets = getMacheteTargets(col, row, action);
           const tgrid = getActiveGrid();
@@ -6208,6 +6278,17 @@
           showToast(npcDialogueButtonConfig().noTargetMessage || 'No one nearby to talk to.', false);
           return;
         }
+        // Spearfishing bypasses the normal swing timer entirely — it opens
+        // its own minigame overlay instead of queuing a pendingAction.
+        if (activeTool === 'harpoon' && activeAction === 'fish') {
+          const reticle = getReticleTile();
+          if (!canUseAction('harpoon', 'fish', reticle.col, reticle.row)) {
+            showToast('No river or stream here to fish.', false);
+            return;
+          }
+          startFishingMinigame();
+          return;
+        }
         if (activeTool === 'weapon') {
           const abil = WEAPON_ABILITY[activeAction];
           if (abil && player.stamina < abil.staminaCost) {
@@ -6308,6 +6389,355 @@
         while (d >  Math.PI) d -= Math.PI * 2;
         while (d < -Math.PI) d += Math.PI * 2;
         return d;
+      }
+
+      // ── Spearfishing minigame: Spear Bridge ─────────────────────
+      // Ported from the spearfishing prototype's "Spear Bridge" preset only
+      // (no fourSpear/ringStardew). Two simplifications vs. the prototype:
+      // catch detection is a geometric point-to-segment distance test instead
+      // of a pixel alpha-mask read, and the fish/spear render as flat emoji
+      // glyphs on an SVG ring instead of spline-deformed PNG sprites. The fish
+      // still patrols a 1D position mapped to a ring angle (FishBehavior.stepBase1D)
+      // and the bridge mechanic (rotating aim segment → two-tap markers → spear
+      // travel/retract → catch-or-panic) is otherwise numerically identical.
+      const FISHING_RING = {
+        cx: 160, cy: 160,
+        fishRadius: 96,      // ring the fish patrols (== prototype's grooveRadius)
+        outerOffset: 56,     // bridge ring sits this far outside the fish ring
+        segmentSize: 18,     // degrees, width of the rotating aim segment
+        sweepSpeed: 240,     // degrees/sec
+        shotDuration: 0.16,
+        retractDuration: 0.28,
+        panicStep: 34,
+        panicMax: 100,
+      };
+      const FISH_CLASS_VEL_RANGE = {
+        smooth:  [-0.15, 0.15],
+        sinker:  [0.05, 0.55],
+        floater: [-0.55, -0.05],
+        dart:    [-0.55, 0.55],
+        mixed:   [-0.35, 0.35],
+      };
+      const FISH_CLASS_RETARGET   = { smooth: 0.25, mixed: 0.55, sinker: 0.5, floater: 0.5, dart: 1.2 };
+      const FISH_CLASS_SMOOTHNESS = { smooth: 0.8,  mixed: 1.4,  sinker: 1.5, floater: 1.5, dart: 4.0 };
+
+      let fishingMinigame = null; // non-null while the spear-bridge overlay is open
+      const fishingOverlayEl = document.getElementById('fishingOverlay');
+
+      function currentFishZoneKey() {
+        if (currentArea === 'town') return 'town';
+        if (currentArea === 'map_northern_cliffs') return 'northernCliffs';
+        if (currentArea === 'map_southern_cloud_forest') return 'cloudForest';
+        return null;
+      }
+
+      function fishingTimeOfDay() {
+        const h = getHour();
+        if (h < 8)  return 'dawn';
+        if (h < 17) return 'day';
+        if (h < 20) return 'dusk';
+        return 'night';
+      }
+
+      function pickFishForCurrentZone() {
+        const zoneKey = currentFishZoneKey();
+        if (!zoneKey) return null;
+        const list = FISH_DEFS[zoneKey] || [];
+        if (!list.length) return null;
+        const season = currentSeason().name;
+        const tod = fishingTimeOfDay();
+        let pool = list.filter(f =>
+          (f.seasons === 'any' || f.seasons.includes(season)) &&
+          (f.timesOfDay === 'any' || f.timesOfDay.includes(tod)));
+        if (!pool.length) pool = list;
+        const rarityWeight = { common: 6, uncommon: 3, rare: 1 };
+        const weights = pool.map(f => rarityWeight[f.rarity] || 1);
+        let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+        for (let i = 0; i < pool.length; i++) {
+          r -= weights[i];
+          if (r <= 0) return { fish: pool[i], zoneKey };
+        }
+        return { fish: pool[pool.length - 1], zoneKey };
+      }
+
+      function fishPickTargetVel(fm) {
+        const [min, max] = FISH_CLASS_VEL_RANGE[fm.fishClass] || FISH_CLASS_VEL_RANGE.mixed;
+        const d = fm.difficulty / 100;
+        fm.fish.targetVel = (min + Math.random() * (max - min)) * (0.6 + d * 0.9);
+      }
+
+      function fishStartTurnaround(fm, nextDir) {
+        const f = fm.fish;
+        if (!nextDir || nextDir === f.moveDir) return;
+        f.turning = true;
+        f.pendingMoveDir = nextDir;
+        f.turnProgress = 0;
+      }
+
+      function fishUpdateTurnaround(fm, dt) {
+        const f = fm.fish;
+        if (!f.turning) return;
+        f.turnProgress = clamp(f.turnProgress + dt / 0.24, 0, 1);
+        f.localFacingScale = f.moveDir * Math.cos(Math.PI * f.turnProgress);
+        if (f.turnProgress >= 1) {
+          f.turning = false;
+          f.moveDir = f.pendingMoveDir || -f.moveDir;
+          f.turnProgress = 0;
+          f.localFacingScale = f.moveDir;
+          f.vel = Math.abs(f.vel) * f.moveDir * 0.35;
+          f.targetVel = Math.abs(f.targetVel) * f.moveDir;
+        }
+      }
+
+      function fishStepMotion(fm, dt) {
+        const f = fm.fish;
+        const cls = fm.fishClass;
+        const retargetChance = (FISH_CLASS_RETARGET[cls] ?? 0.55) * dt;
+        const smoothness = FISH_CLASS_SMOOTHNESS[cls] ?? 1.4;
+        const d = fm.difficulty / 100;
+
+        if (Math.random() < retargetChance) fishPickTargetVel(fm);
+
+        const desiredSource = Math.abs(f.targetVel) > 0.01 ? f.targetVel : (Math.abs(f.vel) > 0.01 ? f.vel : f.moveDir);
+        const desiredDir = desiredSource < 0 ? -1 : 1;
+        if (!f.turning && desiredDir !== f.moveDir) fishStartTurnaround(fm, desiredDir);
+        fishUpdateTurnaround(fm, dt);
+
+        let appliedTargetVel = f.turning ? Math.abs(f.targetVel) * f.moveDir : f.targetVel;
+        f.vel += (appliedTargetVel - f.vel) * Math.min(1, dt * (2.5 + smoothness * 2.2));
+        if (cls === 'sinker')  f.vel += 0.08 * dt * (0.5 + d);
+        if (cls === 'floater') f.vel -= 0.08 * dt * (0.5 + d);
+        if (f.turning) f.vel = Math.abs(f.vel) * f.moveDir;
+
+        f.pos = clamp(f.pos + f.vel * dt, 0, 1);
+        if (f.pos <= 0.02) {
+          f.pos = 0.02;
+          if (!f.turning) {
+            f.vel = Math.abs(f.vel) * 0.18;
+            f.targetVel = Math.max(0.04, Math.abs(f.targetVel));
+            if (f.moveDir < 0) fishStartTurnaround(fm, 1);
+          }
+        } else if (f.pos >= 0.98) {
+          f.pos = 0.98;
+          if (!f.turning) {
+            f.vel = -Math.abs(f.vel) * 0.18;
+            f.targetVel = -Math.max(0.04, Math.abs(f.targetVel));
+            if (f.moveDir > 0) fishStartTurnaround(fm, -1);
+          }
+        }
+        f.angle = (f.pos * 359) % 360;
+      }
+
+      function fishingPolarToXY(angleDeg, radius) {
+        const rad = (angleDeg - 90) * Math.PI / 180; // 0deg = top, matches prototype orientation
+        return { x: FISHING_RING.cx + Math.cos(rad) * radius, y: FISHING_RING.cy + Math.sin(rad) * radius };
+      }
+
+      function fishingDistPointToSegment(px, py, x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const len2 = dx * dx + dy * dy;
+        if (len2 <= 0.0001) return Math.hypot(px - x1, py - y1);
+        const t = clamp(((px - x1) * dx + (py - y1) * dy) / len2, 0, 1);
+        return Math.hypot(px - (x1 + dx * t), py - (y1 + dy * t));
+      }
+
+      function startFishingMinigame() {
+        const picked = pickFishForCurrentZone();
+        if (!picked) { showToast('No fish here.', false); return; }
+        const { fish, zoneKey } = picked;
+        fishingMinigame = {
+          active: true,
+          fishDef: fish,
+          zoneKey,
+          difficulty: fish.difficulty,
+          fishClass: fish.fishClass,
+          fish: {
+            pos: Math.random(), vel: 0, targetVel: 0, angle: 0,
+            moveDir: 1, pendingMoveDir: 1, turning: false, turnProgress: 0, localFacingScale: 1,
+          },
+          bridge: {
+            angle: 0, direction: 1, segmentSize: FISHING_RING.segmentSize, speed: FISHING_RING.sweepSpeed,
+            markerA: null, markerB: null, spearActive: false, lineA: null, lineB: null,
+            shotTimer: 0, retractTimer: 0, tipX: 0, tipY: 0, prevTipX: 0, prevTipY: 0, caughtFish: false,
+          },
+          panic: 0,
+          resolved: false,
+          resultTimer: 0,
+          message: 'Tap Fire to drop the first marker.',
+          messageType: '',
+        };
+        fishPickTargetVel(fishingMinigame);
+        paused = true;
+        renderFishingOverlay();
+        fishingOverlayEl.classList.add('open');
+      }
+
+      function closeFishingMinigame() {
+        if (!fishingMinigame) return;
+        fishingMinigame = null;
+        fishingOverlayEl.classList.remove('open');
+        fishingOverlayEl.innerHTML = '';
+        paused = false;
+      }
+
+      function fireFishingBridge() {
+        const fm = fishingMinigame;
+        if (!fm || fm.resolved || fm.bridge.spearActive) return;
+        const b = fm.bridge;
+        const currentAngle = b.angle;
+        if (b.markerA == null) {
+          b.markerA = currentAngle;
+          b.markerB = null;
+          fm.message = 'First marker placed. Tap Fire again.';
+          fm.messageType = '';
+          return;
+        }
+        b.markerB = currentAngle;
+        b.lineA = b.markerA;
+        b.lineB = b.markerB;
+        b.spearActive = true;
+        b.shotTimer = 0;
+        b.retractTimer = 0;
+        b.caughtFish = false;
+        const outerRadius = FISHING_RING.fishRadius + FISHING_RING.outerOffset;
+        const a = fishingPolarToXY(b.lineA, outerRadius);
+        b.tipX = b.prevTipX = a.x;
+        b.tipY = b.prevTipY = a.y;
+        b.direction *= -1;
+        b.markerA = null;
+        b.markerB = null;
+        fm.message = 'Spear thrown!';
+        fm.messageType = '';
+      }
+
+      function fishingTryTipCatch(fm) {
+        const b = fm.bridge;
+        if (b.caughtFish || !b.spearActive) return false;
+        const fishPos = fishingPolarToXY(fm.fish.angle, FISHING_RING.fishRadius);
+        const colliderRadius = 14;
+        const dist = fishingDistPointToSegment(fishPos.x, fishPos.y, b.prevTipX, b.prevTipY, b.tipX, b.tipY);
+        if (dist <= colliderRadius) { b.caughtFish = true; return true; }
+        return false;
+      }
+
+      function resolveFishingRound(fm, caught) {
+        fm.resolved = true;
+        fm.resultTimer = 1.1;
+        if (caught) {
+          inventory[fm.fishDef.key] = Math.min(99, (inventory[fm.fishDef.key] || 0) + 1);
+          fm.message = `Caught a ${fm.fishDef.label}! ${fm.fishDef.icon}`;
+          fm.messageType = 'good';
+          lastActionMessage = fm.message;
+        } else {
+          fm.message = 'The fish fled into the pool.';
+          fm.messageType = 'bad';
+          lastActionMessage = fm.message;
+        }
+      }
+
+      function updateFishingMinigame(dt) {
+        const fm = fishingMinigame;
+        if (!fm) return;
+        if (fm.resolved) {
+          fm.resultTimer -= dt;
+          if (fm.resultTimer <= 0) { closeFishingMinigame(); return; }
+          renderFishingOverlay();
+          return;
+        }
+
+        fishStepMotion(fm, dt);
+
+        const b = fm.bridge;
+        b.angle = (b.angle + b.speed * b.direction * dt + 360) % 360;
+
+        if (b.spearActive) {
+          const outerRadius = FISHING_RING.fishRadius + FISHING_RING.outerOffset;
+          const a = fishingPolarToXY(b.lineA, outerRadius);
+          const bPt = fishingPolarToXY(b.lineB, outerRadius);
+          b.prevTipX = b.tipX;
+          b.prevTipY = b.tipY;
+
+          if (b.shotTimer < FISHING_RING.shotDuration) {
+            b.shotTimer = Math.min(FISHING_RING.shotDuration, b.shotTimer + dt);
+            const t = b.shotTimer / FISHING_RING.shotDuration;
+            b.tipX = a.x + (bPt.x - a.x) * t;
+            b.tipY = a.y + (bPt.y - a.y) * t;
+            fishingTryTipCatch(fm);
+          } else if (b.retractTimer < FISHING_RING.retractDuration) {
+            b.retractTimer = Math.min(FISHING_RING.retractDuration, b.retractTimer + dt);
+            const t = b.retractTimer / FISHING_RING.retractDuration;
+            b.tipX = bPt.x + (a.x - bPt.x) * t;
+            b.tipY = bPt.y + (a.y - bPt.y) * t;
+          } else {
+            if (b.caughtFish) {
+              resolveFishingRound(fm, true);
+            } else {
+              fm.panic = Math.min(FISHING_RING.panicMax, fm.panic + FISHING_RING.panicStep);
+              if (fm.panic >= FISHING_RING.panicMax) {
+                resolveFishingRound(fm, false);
+              } else {
+                fm.message = 'Missed! Panic rising.';
+                fm.messageType = 'bad';
+              }
+            }
+            b.spearActive = false;
+            b.lineA = null;
+            b.lineB = null;
+            b.shotTimer = 0;
+            b.retractTimer = 0;
+            b.caughtFish = false;
+          }
+        }
+
+        renderFishingOverlay();
+      }
+
+      function renderFishingOverlay() {
+        const fm = fishingMinigame;
+        if (!fm) return;
+        const R = FISHING_RING;
+        const outerRadius = R.fishRadius + R.outerOffset;
+        const half = R.segmentSize / 2;
+        const fishPt = fishingPolarToXY(fm.fish.angle, R.fishRadius);
+        const segArc = describeFishingArc(outerRadius, fm.bridge.angle - half, fm.bridge.angle + half);
+        const markerA = fm.bridge.markerA != null ? fishingPolarToXY(fm.bridge.markerA, outerRadius) : null;
+        const markerB = fm.bridge.markerB != null ? fishingPolarToXY(fm.bridge.markerB, outerRadius) : null;
+        const spearVisible = fm.bridge.spearActive && fm.bridge.lineA != null;
+        const spearA = spearVisible ? fishingPolarToXY(fm.bridge.lineA, outerRadius) : null;
+
+        fishingOverlayEl.innerHTML = `
+          <div class="fish-card">
+            <div class="fish-title">${FISH_ZONE_LABELS[fm.zoneKey]} — Spearfishing</div>
+            <div class="fish-hint">Tap Fire once to drop marker 1, again for marker 2. The spear flies the chord between them — line it up with the fish.</div>
+            <div class="fish-ring-wrap">
+              <svg viewBox="0 0 ${R.cx * 2} ${R.cy * 2}">
+                <circle cx="${R.cx}" cy="${R.cy}" r="${R.fishRadius}" fill="none" stroke="rgba(127,232,154,0.25)" stroke-width="2"/>
+                <circle cx="${R.cx}" cy="${R.cy}" r="${outerRadius}" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="2"/>
+                <path d="${segArc}" fill="none" stroke="#f9e28a" stroke-width="6" stroke-linecap="round"/>
+                ${markerA ? `<circle cx="${markerA.x.toFixed(1)}" cy="${markerA.y.toFixed(1)}" r="5" fill="#ff8060"/>` : ''}
+                ${markerB ? `<circle cx="${markerB.x.toFixed(1)}" cy="${markerB.y.toFixed(1)}" r="5" fill="#ff8060"/>` : ''}
+                ${spearVisible ? `<line x1="${spearA.x.toFixed(1)}" y1="${spearA.y.toFixed(1)}" x2="${fm.bridge.tipX.toFixed(1)}" y2="${fm.bridge.tipY.toFixed(1)}" stroke="#f0ffe6" stroke-width="3"/>` : ''}
+                ${spearVisible ? `<circle cx="${fm.bridge.tipX.toFixed(1)}" cy="${fm.bridge.tipY.toFixed(1)}" r="5" fill="#f0ffe6"/>` : ''}
+                <text x="${fishPt.x.toFixed(1)}" y="${fishPt.y.toFixed(1)}" font-size="22" text-anchor="middle" dominant-baseline="middle" transform="scale(${fm.fish.localFacingScale < 0 ? -1 : 1},1) translate(${fm.fish.localFacingScale < 0 ? -2 * fishPt.x : 0},0)">${fm.fishDef.icon}</text>
+              </svg>
+            </div>
+            <div class="fish-status${fm.messageType ? ' ' + fm.messageType : ''}">${fm.message}</div>
+            <div class="fish-panic-wrap"><div class="fish-panic-fill" style="width:${fm.panic}%"></div></div>
+            <button class="fish-fire-btn" id="fishFireBtn">Fire (Space)</button>
+            <button class="fish-cancel-btn" id="fishCancelBtn">Give up</button>
+          </div>`;
+
+        const fireBtn = document.getElementById('fishFireBtn');
+        if (fireBtn) fireBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); fireFishingBridge(); });
+        const cancelBtn = document.getElementById('fishCancelBtn');
+        if (cancelBtn) cancelBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); closeFishingMinigame(); });
+      }
+
+      function describeFishingArc(radius, startDeg, endDeg) {
+        const start = fishingPolarToXY(startDeg, radius);
+        const end = fishingPolarToXY(endDeg, radius);
+        const largeArc = Math.abs(endDeg - startDeg) > 180 ? 1 : 0;
+        return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
       }
 
       const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
@@ -9527,6 +9957,8 @@
 
         updateSceneTransition(dt);
 
+        if (fishingMinigame?.active) updateFishingMinigame(dt);
+
         if (!paused) {
           updateCalendar(dt);
           updateMovement(dt);
@@ -10669,6 +11101,7 @@
         if (action === 'cut')   return 'Cut';
         if (action === 'slash') return 'Slash 3×';
         if (action === 'harvest') return tile.cropReady ? '✓ Harvest' : 'Growing';
+        if (action === 'fish') return 'Fish';
         if (action.startsWith('place_')) return 'Place';
         if (action.startsWith('obj_process_')) return 'Process';
         return action;
@@ -11020,6 +11453,11 @@
 
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
+        if (fishingMinigame?.active) {
+          if (key === 'escape') { event.preventDefault(); closeFishingMinigame(); return; }
+          if (key === ' ' || key === 'enter') { event.preventDefault(); fireFishingBridge(); }
+          return;
+        }
         if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
         if (menuOpen) return;
         if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd'].includes(key)) {

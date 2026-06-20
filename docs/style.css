@@ -1956,3 +1956,39 @@
       touch-action: pan-y;
       -webkit-overflow-scrolling: touch;
     }
+
+    /* ── Spearfishing minigame (Spear Bridge) ────────────────── */
+    #fishingOverlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(4,12,9,0.72);
+      z-index: 240; touch-action: none;
+      align-items: center; justify-content: center;
+    }
+    #fishingOverlay.open { display: flex; }
+    .fish-card {
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+      background: var(--glass-2); border: 1px solid var(--border-bright);
+      border-radius: var(--r); padding: 16px 20px 18px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    }
+    .fish-title { font-family: 'Pixelify Sans', monospace; font-size: 15px; color: var(--accent); letter-spacing: 0.04em; }
+    .fish-hint { font-size: 11px; color: var(--muted); text-align: center; max-width: 260px; }
+    .fish-ring-wrap { position: relative; width: min(72vw, 320px); }
+    .fish-ring-wrap svg { width: 100%; height: 100%; display: block; }
+    .fish-status { font-size: 12px; color: var(--text); min-height: 16px; text-align: center; }
+    .fish-status.good { color: var(--ok); }
+    .fish-status.bad  { color: var(--danger); }
+    .fish-panic-wrap { width: 100%; height: 7px; border-radius: 4px; background: rgba(255,255,255,0.1); overflow: hidden; }
+    .fish-panic-fill { height: 100%; width: 0%; border-radius: 4px; background: var(--danger); transition: width 0.15s; }
+    .fish-fire-btn {
+      width: 100%; padding: 10px 0; border-radius: 10px;
+      background: rgba(249,226,138,0.16); border: 1px solid rgba(249,226,138,0.5);
+      color: var(--accent); font-family: 'Pixelify Sans', monospace; font-size: 13px;
+      letter-spacing: 0.04em; cursor: pointer;
+    }
+    .fish-fire-btn:active { background: rgba(249,226,138,0.3); }
+    .fish-cancel-btn {
+      font-size: 10px; color: var(--muted); background: none; border: none;
+      cursor: pointer; text-decoration: underline; letter-spacing: 0.03em;
+    }
