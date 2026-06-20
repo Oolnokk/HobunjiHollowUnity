@@ -6477,7 +6477,7 @@
         boneAmpScale: 0.82, whiskerBoneAmpScale: 0.3, whiskerRate: 0.38,
         flipX: -1,                          // source silhouettes face left; mirror so facing=1 points right
         spriteWidth: 46, spriteHeight: 122,  // harpoon/mace sprite box (preserveAspectRatio keeps the real PNG shape)
-        spriteRotationOffset: -90,          // the PNG's business end is at the bottom, not the top
+        spriteRotationOffset: 90,           // the PNG's business end is at the bottom, not the top
         ropeAttachBack: 23, spearAttachFront: 10,
         ropeSag: 0.1,
         maceSpinRateDeg: 9720,              // ~27 spins/sec while the mace is outbound
@@ -6836,6 +6836,16 @@
         b.markerB = null;
         fm.message = 'Spear thrown!';
         fm.messageType = '';
+
+        // Cosmetic 3D-world throw: reuse the hoe/chop swing arc (raise → slam) but
+        // fly the held harpoon mesh out to the fishing anchor mid-slam instead of
+        // slamming it down at the player's feet, then ease it back to the hand.
+        // Duration must stay under the 2D ring's shot+retract window (~0.44s) so a
+        // repeat cast can't restart the swing while the mesh is still mid-flight.
+        toolSwingDur = 0.42;
+        toolSwingT = toolSwingDur;
+        strikeFired = true; // fishing has no pendingAction to fire on strike
+        fishThrowActive = true;
       }
 
       function fishingTryTipCatch(fm) {
@@ -9320,6 +9330,9 @@
       // Per-tool swing durations: thrust fast, chop medium, sweep slow.
       let toolSwingT   = 0;
       let toolSwingDur = 0.22;
+      // Set true for the duration of a fishing-spear throw swing so updateToolMesh
+      // flies the harpoon mesh out to the water anchor instead of slamming in place.
+      let fishThrowActive = false;
       // Full rotations a "spinning" harpoon sprite (e.g. the fishing mace) twirls through over
       // one complete swing; spear-mode harpoon items leave their `spinning` flag false/unset.
       const TOOL_SPIN_REVOLUTIONS = 2.5;
@@ -9425,7 +9438,7 @@
         _qFac.setFromAxisAngle(_tUp, θ);
         _swAxis.set(rightX, 0, rightZ);
 
-        const anim = activeAnimStyle();
+        const anim = fishThrowActive ? 'chop' : activeAnimStyle();
         const WF = 0.16, SF = 0.28;  // windup 16%, strike 12%, return 72% — strike faster than windup
 
         if (anim === 'thrust') {
@@ -9458,11 +9471,24 @@
           }
           _qAnim.setFromAxisAngle(_swAxis, chopAngle);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
-          toolHolder.position.set(
-            playerMesh.position.x + rightX * 0.28,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + rightZ * 0.28
-          );
+          const handX = playerMesh.position.x + rightX * 0.28;
+          const handY = playerMesh.position.y + 0.18;
+          const handZ = playerMesh.position.z + rightZ * 0.28;
+          if (fishThrowActive && fishingMinigame?.anchorWorld) {
+            // Out during the slam (WF→SF), back during the return (SF→1).
+            let travel;
+            if (progress <= WF) travel = 0;
+            else if (progress <= SF) travel = (progress - WF) / (SF - WF);
+            else travel = 1 - (progress - SF) / (1.0 - SF);
+            const aw = fishingMinigame.anchorWorld;
+            toolHolder.position.set(
+              handX + (aw.x - handX) * travel,
+              handY + (aw.y - handY) * travel,
+              handZ + (aw.z - handZ) * travel
+            );
+          } else {
+            toolHolder.position.set(handX, handY, handZ);
+          }
 
         } else {
           // SWEEP — body rotates through windup-strike-return arc; axe locked in hand.
@@ -9503,6 +9529,7 @@
           strikeFired = true;
           firePendingAction();
         }
+        if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
       }
 
       // Initialize mesh map after toolHolder exists
