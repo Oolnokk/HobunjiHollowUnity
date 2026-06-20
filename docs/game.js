@@ -4214,6 +4214,7 @@
           const mesh = new THREE.Mesh(merged, tileMats[matKey] || tileMats.grass);
           mesh.receiveShadow = true;
           townScene.add(mesh);
+          _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
         }
 
         // River/stream water surface — an animated translucent plane sitting
@@ -4249,6 +4250,7 @@
           wm.receiveShadow = false;
           wm.position.set(c + 0.5, NORMAL_TOP - (deep ? 0.10 : 0.05), r + 0.5);
           townScene.add(wm);
+          _markTerrainEdgeId(wm, 'water');
           return wm;
         });
 
@@ -8258,7 +8260,13 @@
           const hue = (_furnitureEdgeIdSeq++ * 0.6180339887) % 1;
           const idColor = new THREE.Color().setHSL(hue, 0.85, 0.55);
           m.onBeforeRender = function (renderer, scene, camera, geometry, material) {
-            if (material === _furnitureIdMat) _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
+            if (material !== _furnitureIdMat) return;
+            _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
+            // Every tagged part shares this one material instance, so the
+            // renderer's "material/program unchanged since last draw" cache
+            // would otherwise skip re-uploading the uniform we just mutated —
+            // only the first part drawn each frame would ever reach the GPU.
+            _furnitureIdMat.uniformsNeedUpdate = true;
           };
         };
         if (obj.isMesh) { apply(obj); return; }
@@ -8295,10 +8303,15 @@
         return rt;
       }
       const _mainRT   = _makeSceneRT(1, 1);
-      // Furniture material-ID buffer — alpha 0 means "no furniture here".
-      const _edgeIdRT = new THREE.WebGLRenderTarget(1, 1, {
-        minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat,
-      });
+      // Furniture/terrain material-ID buffer — alpha 0 means "nothing tagged
+      // here". Carries its own depth texture (depth of the tagged objects
+      // only, since the pass that fills this target restricts the camera to
+      // layer 3) so the composite shader can tell whether a tagged surface is
+      // actually the frontmost thing at that pixel before drawing its seam —
+      // without that check, a tagged object hidden behind a wall would still
+      // contribute an edge, since nothing else was rendered into this target
+      // to occlude it.
+      const _edgeIdRT = _makeSceneRT(1, 1);
       // Depth-only source for depth-edge detection — rendered with PNG-plane
       // avatars hidden (see _markPngPlane above) so the detector only sees
       // solid-geometry depth, never sprite-cutout silhouettes. colorWrite is
@@ -8319,6 +8332,7 @@
       const _postMat = new THREE.ShaderMaterial({
         uniforms: {
           tColor: { value: null }, tDepth: { value: null }, tEdgeId: { value: null },
+          tEdgeIdDepth: { value: null }, tSceneDepth: { value: null },
           uTexel: { value: new THREE.Vector2(1, 1) },
           uCameraNear: { value: 0.1 }, uCameraFar: { value: 200 },
           uDepthOutlinesOn: { value: 0 }, uDepthThreshScale: { value: 1 },
@@ -8329,7 +8343,7 @@
           void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
         `,
         fragmentShader: `
-          uniform sampler2D tColor, tDepth, tEdgeId;
+          uniform sampler2D tColor, tDepth, tEdgeId, tEdgeIdDepth, tSceneDepth;
           uniform vec2 uTexel;
           uniform float uCameraNear, uCameraFar;
           uniform float uDepthOutlinesOn, uDepthThreshScale;
@@ -8360,6 +8374,15 @@
             idEdge = max(idEdge, (id0.a > 0.5 && idR.a > 0.5 && distance(id0.rgb, idR.rgb) > 0.1) ? 1.0 : 0.0);
             idEdge = max(idEdge, (id0.a > 0.5 && idU.a > 0.5 && distance(id0.rgb, idU.rgb) > 0.1) ? 1.0 : 0.0);
             idEdge = max(idEdge, (id0.a > 0.5 && idD.a > 0.5 && distance(id0.rgb, idD.rgb) > 0.1) ? 1.0 : 0.0);
+
+            // Occlusion test — the ID buffer was rendered with only the
+            // tagged objects in view, so it has no idea a wall or other
+            // untagged object sits in front of them. Compare its own depth
+            // against the real scene depth at this pixel and drop the seam
+            // if something closer to the camera is actually there.
+            float idDepth    = linearDepth(texture2D(tEdgeIdDepth, vUv).r);
+            float sceneDepth = linearDepth(texture2D(tSceneDepth, vUv).r);
+            idEdge *= step(idDepth, sceneDepth + 0.05);
 
             float edge = max(depthEdge, idEdge);
             gl_FragColor = vec4(mix(color, vec3(0.0), edge), 1.0);
@@ -8471,6 +8494,37 @@
       };
       // Floor material for vegetation tiles — matches weed foliage HSL color
       const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
+
+      // Fixed per-terrain-type ID colours feeding the same material-ID-seam
+      // outline used for furniture (see _markFurnitureEdgeId), generalized to
+      // ground tiles: unlike furniture (every part gets its own unique
+      // colour, since any two touching parts should show a seam), terrain
+      // tiles of the same type must share one colour so the seam only shows
+      // up at real material boundaries — path/grass, stone/grass, water's
+      // edge, etc. — not at every tile-to-tile grid line.
+      const _terrainIdColors = (() => {
+        const colors = {};
+        let i = 0;
+        for (const key of Object.keys(tileMats)) colors[key] = new THREE.Color().setHSL((i++ * 0.6180339887) % 1, 0.85, 0.55);
+        colors.water = new THREE.Color().setHSL((i++ * 0.6180339887) % 1, 0.85, 0.55);
+        return colors;
+      })();
+      function _terrainCategoryFor(type) {
+        return tileMats[type] ? type : TileType.GRASS;
+      }
+      function _markTerrainEdgeId(mesh, category) {
+        if (!mesh) return;
+        const idColor = _terrainIdColors[category] || _terrainIdColors[TileType.GRASS];
+        mesh.layers.enable(3);
+        mesh.onBeforeRender = function (renderer, scene, camera, geometry, material) {
+          if (material !== _furnitureIdMat) return;
+          _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
+          // See _markFurnitureEdgeId above — required so each tile's colour
+          // actually reaches the GPU instead of reusing whatever the
+          // previous tile sharing this material last uploaded.
+          _furnitureIdMat.uniformsNeedUpdate = true;
+        };
+      }
       // ── Water shader — flow lines + ripple rings ───────────────────
       // Each water plane gets its own ShaderMaterial instance with per-tile uniforms.
       // uFlow: vec2 flow direction (normalised), zero = still water → ripple mode
@@ -10478,6 +10532,7 @@
           floorMesh.position.set(col + 0.5, NORMAL_TOP - SLAB_H / 2, row + 0.5);
           scene.add(floorMesh);
           tileMeshes[i] = floorMesh;
+          _markTerrainEdgeId(floorMesh, TileType.GRASS);
           // Plateau mound: stone for elevated/cliff cells, grass for ground-level base
           const { stoneGeo, grassGeo } = buildRockTileGeo(col, row);
           let moundRoot = null;
@@ -10486,6 +10541,7 @@
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
+            _markTerrainEdgeId(m, TileType.ROCK);
             moundRoot = m;
           }
           if (grassGeo) {
@@ -10493,6 +10549,7 @@
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
+            _markTerrainEdgeId(m, TileType.GRASS);
             if (!moundRoot) moundRoot = m;
           }
           if (moundRoot) moundRoot._windAmp = 0;  // wind loop skips _windAmp=0
@@ -10508,6 +10565,7 @@
           floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
           scene.add(floorMesh);
           tileMeshes[i] = floorMesh;
+          _markTerrainEdgeId(floorMesh, TileType.GRASS);
 
           const vegGroup = window.FoliageGenerator.buildShrubMesh(col, row);
           vegGroup._windPhase = (col * 1.7 + row * 2.3) % (Math.PI * 2);
@@ -10527,6 +10585,7 @@
           floorMesh.position.set(col + 0.5, tileYCenter(TileType.GRASS), row + 0.5);
           scene.add(floorMesh);
           tileMeshes[i] = floorMesh;
+          _markTerrainEdgeId(floorMesh, TileType.GRASS);
 
           if (s_weed3D && window.FoliageGenerator) {
             // Mode B: procedural 3D weeds, subject to shell outline
@@ -10560,6 +10619,7 @@
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
             m.layers.enable(1);  // material transition outline
+            _markTerrainEdgeId(m, TileType.TRENCH);
             primary = m;
           }
           if (grassGeo) {
@@ -10569,6 +10629,7 @@
             m._windAmp = 0;
             scene.add(m);
             m.layers.enable(1);  // material transition outline
+            _markTerrainEdgeId(m, TileType.GRASS);
             setVegFoliageMesh(i, m);
             if (!primary) primary = m;
           }
@@ -10583,6 +10644,7 @@
             const m = new THREE.Mesh(pathGeo, tileMats.path);
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
+            _markTerrainEdgeId(m, TileType.PATH);
             scene.add(m);
             primary = m;
           }
@@ -10591,6 +10653,7 @@
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
+            _markTerrainEdgeId(m, TileType.GRASS);
             if (!primary) primary = m;
           }
           tileMeshes[i] = primary;
@@ -10614,6 +10677,10 @@
         // Rock and fallback vegetation get outlines; flat floor tiles do not.
         if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) {
           mesh.layers.enable(1);
+        } else {
+          // Flat ground tiles (grass/tilled/paddy/river/stream bed) — fallback
+          // foliage billboards above are skipped since they aren't flat ground.
+          _markTerrainEdgeId(mesh, _terrainCategoryFor(tile.type));
         }
       }
 
@@ -10703,6 +10770,7 @@
                 const wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
                 wm.receiveShadow = false;
                 scene.add(wm);
+                _markTerrainEdgeId(wm, 'water');
                 setWaterMesh(i, wm);
               }
               const wm = waterMeshes[i];
@@ -10780,6 +10848,7 @@
                 wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
                 wm.receiveShadow = false;
                 townScene.add(wm);
+                _markTerrainEdgeId(wm, 'water');
                 townWaterMeshes.set(key, wm);
               }
               wm.position.set(col + 0.5, surfaceA + 0.015, row + 0.5);
@@ -11247,6 +11316,8 @@
           _postMat.uniforms.tColor.value          = _mainRT.texture;
           _postMat.uniforms.tDepth.value           = s_depthOutlines ? _depthOnlyRT.depthTexture : _mainRT.depthTexture;
           _postMat.uniforms.tEdgeId.value          = _edgeIdRT.texture;
+          _postMat.uniforms.tEdgeIdDepth.value     = _edgeIdRT.depthTexture;
+          _postMat.uniforms.tSceneDepth.value      = _mainRT.depthTexture;
           _postMat.uniforms.uCameraNear.value      = camera.near;
           _postMat.uniforms.uCameraFar.value       = camera.far;
           _postMat.uniforms.uDepthOutlinesOn.value = s_depthOutlines ? 1 : 0;
