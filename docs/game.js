@@ -808,14 +808,16 @@
       // map to 'wood' regardless of the (irrelevant) tile type beneath them.
       // Swap in real recordings later by setting `url` on a surface entry,
       // same convention as _playNpcDialogueLetterSfx's cfg.url.
+      // Mostly filtered-noise "scuffs" with just a faint tonal body underneath —
+      // quieter and scratchier than a clean synth click.
       const FOOTSTEP_SOUNDS = Object.freeze({
-        grass: { waveform: 'triangle', freq: 130, freqVarianceHz: 18, durationMs: 70, noiseMix: 0.6,  volume: 0.5  },
-        dirt:  { waveform: 'triangle', freq: 100, freqVarianceHz: 14, durationMs: 85, noiseMix: 0.75, volume: 0.55 },
-        path:  { waveform: 'square',   freq: 230, freqVarianceHz: 25, durationMs: 45, noiseMix: 0.3,  volume: 0.45 },
-        mud:   { waveform: 'sine',     freq: 75,  freqVarianceHz: 10, durationMs: 130, noiseMix: 0.85, volume: 0.6  },
-        water: { waveform: 'sine',     freq: 320, freqVarianceHz: 60, durationMs: 95,  noiseMix: 0.9,  volume: 0.55 },
-        rock:  { waveform: 'square',   freq: 260, freqVarianceHz: 20, durationMs: 40,  noiseMix: 0.2,  volume: 0.5  },
-        wood:  { waveform: 'triangle', freq: 190, freqVarianceHz: 15, durationMs: 55,  noiseMix: 0.35, volume: 0.45 },
+        grass: { waveform: 'triangle', freq: 110, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.26 },
+        dirt:  { waveform: 'triangle', freq: 90,  freqVarianceHz: 12, durationMs: 65, noiseMix: 0.85, volume: 0.28 },
+        path:  { waveform: 'square',   freq: 200, freqVarianceHz: 22, durationMs: 35, noiseMix: 0.6,  volume: 0.22 },
+        mud:   { waveform: 'sine',     freq: 65,  freqVarianceHz: 8,  durationMs: 95, noiseMix: 0.9,  volume: 0.3  },
+        water: { waveform: 'sine',     freq: 260, freqVarianceHz: 55, durationMs: 70, noiseMix: 0.92, volume: 0.28 },
+        rock:  { waveform: 'square',   freq: 220, freqVarianceHz: 18, durationMs: 30, noiseMix: 0.55, volume: 0.24 },
+        wood:  { waveform: 'triangle', freq: 160, freqVarianceHz: 12, durationMs: 40, noiseMix: 0.65, volume: 0.22 },
       });
 
       // Distance an entity must travel between alternating footfalls, in world px
@@ -870,7 +872,7 @@
         if (footstepCfg.enabled === false) return;
         const surfaceKey = footstepSurfaceKey(area, type);
         const surface = { ...FOOTSTEP_SOUNDS[surfaceKey], ...(footstepCfg.surfaces?.[surfaceKey] || {}) };
-        const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 1));
+        const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
         const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1)
           * Math.max(0, volumeScale) * Math.max(0, Number(surface.volume) || 0.5);
         if (volume <= 0.002) return;
@@ -914,8 +916,8 @@
           noise.buffer = buffer;
           const filter = ctx.createBiquadFilter();
           filter.type = 'bandpass';
-          filter.frequency.value = baseFreq * 2.2;
-          filter.Q.value = 0.7;
+          filter.frequency.value = baseFreq * 3.2;
+          filter.Q.value = 1.6;
           const noiseGain = ctx.createGain();
           noiseGain.gain.setValueAtTime(volume * noiseMix, now);
           noiseGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
