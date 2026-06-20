@@ -1906,6 +1906,7 @@
         const initSurfY = tileSurfaceY(grid[row][col].type);
         avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
         avatarRef.group.rotation.y = Math.PI / 2; // start facing east
+        _markPngPlane(avatarRef.group);
         scene.add(avatarRef.group);
 
         let tickCounter = 0;
@@ -2053,6 +2054,7 @@
         const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
         const surfY = targetGrid[row]?.[col] ? tileSurfaceY(targetGrid[row][col].type) : 0;
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
+        _markPngPlane(avatarRef.group);
         targetScene.add(avatarRef.group);
 
         const creature = {
@@ -3167,6 +3169,7 @@
         );
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
+        _markPngPlane(avatarGroup);
         const root = new THREE.Group();
         root.name = 'npc_walker_' + (rec?.id || rec?.name || '');
         const groundShadow = makeCharacterGroundShadow('npc_ground_shadow');
@@ -5352,6 +5355,7 @@
         avatarGroup.name = 'player_avatar';
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
+        _markPngPlane(avatarGroup);
         if (refreshGeneration !== playerAvatarRefreshGeneration) {
           disposeAvatarGroup(avatarGroup);
           return;
@@ -8235,6 +8239,17 @@
       //      against the seat) where depth is continuous but the part changes,
       //      so neither the shell pass nor depth edges would draw a line.
       // Layer 3 is reserved for furniture parts feeding the material-ID buffer.
+
+      // PNG-plane avatars (player/NPCs/animals/creatures) are flat cutout
+      // sprites — running depth-edge detection against them would outline
+      // every alpha-cutout silhouette edge of the sprite art itself, which
+      // reads as noise rather than a deliberate outline. Tagging their root
+      // group lets the depth-only source pass below hide them temporarily
+      // without touching the main colour pass that actually shows them.
+      function _markPngPlane(obj) {
+        if (obj) obj.userData.isPngPlane = true;
+      }
+
       let _furnitureEdgeIdSeq = 0;
       function _markFurnitureEdgeId(obj) {
         if (!obj) return;
@@ -8284,9 +8299,16 @@
       const _edgeIdRT = new THREE.WebGLRenderTarget(1, 1, {
         minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat,
       });
+      // Depth-only source for depth-edge detection — rendered with PNG-plane
+      // avatars hidden (see _markPngPlane above) so the detector only sees
+      // solid-geometry depth, never sprite-cutout silhouettes. colorWrite is
+      // off since only the attached depth texture is read back.
+      const _depthOnlyRT = _makeSceneRT(1, 1);
+      const _depthOnlyMat = new THREE.MeshBasicMaterial({ colorWrite: false });
       function _resizeOutlineTargets(pixelW, pixelH) {
         _mainRT.setSize(pixelW, pixelH);
         _edgeIdRT.setSize(pixelW, pixelH);
+        _depthOnlyRT.setSize(pixelW, pixelH);
         _postMat.uniforms.uTexel.value.set(1 / pixelW, 1 / pixelH);
       }
 
@@ -8299,6 +8321,7 @@
           tColor: { value: null }, tDepth: { value: null }, tEdgeId: { value: null },
           uTexel: { value: new THREE.Vector2(1, 1) },
           uCameraNear: { value: 0.1 }, uCameraFar: { value: 200 },
+          uDepthOutlinesOn: { value: 0 }, uDepthThreshScale: { value: 1 },
         },
         depthTest: false, depthWrite: false,
         vertexShader: `
@@ -8309,6 +8332,7 @@
           uniform sampler2D tColor, tDepth, tEdgeId;
           uniform vec2 uTexel;
           uniform float uCameraNear, uCameraFar;
+          uniform float uDepthOutlinesOn, uDepthThreshScale;
           varying vec2 vUv;
           float linearDepth(float z) {
             float zNdc = z * 2.0 - 1.0;
@@ -8323,8 +8347,8 @@
             float dU = linearDepth(texture2D(tDepth, vUv + vec2(0.0, uTexel.y)).r);
             float dD = linearDepth(texture2D(tDepth, vUv - vec2(0.0, uTexel.y)).r);
             float depthDelta  = max(max(abs(d0 - dL), abs(d0 - dR)), max(abs(d0 - dU), abs(d0 - dD)));
-            float depthThresh = mix(0.015, 0.6, clamp(d0 / uCameraFar, 0.0, 1.0));
-            float depthEdge   = step(depthThresh, depthDelta);
+            float depthThresh = mix(0.015, 0.6, clamp(d0 / uCameraFar, 0.0, 1.0)) * uDepthThreshScale;
+            float depthEdge   = step(depthThresh, depthDelta) * uDepthOutlinesOn;
 
             vec4 id0 = texture2D(tEdgeId, vUv);
             vec4 idL = texture2D(tEdgeId, vUv - vec2(uTexel.x, 0.0));
@@ -10958,6 +10982,8 @@
 
       // ── Visual feature toggles (Settings tab) ────────────────────
       let s_outlines  = true;
+      let s_depthOutlines = false;       // extra depth-seam outline pass — off by default (heavier)
+      let s_depthOutlineThreshScale = 1; // sensitivity: lower = catches smaller depth gaps
       let s_grass     = true;
       let s_weed3D    = false;  // false = Mode A (oversized billboards), true = Mode B (3D foliage)
       let s_billWind  = true;
@@ -10973,6 +10999,15 @@
       // ── Settings tab checkbox wiring ──────────────────────────────
       document.getElementById('settingOutlines').addEventListener('change', e => {
         s_outlines = e.target.checked;
+      });
+      document.getElementById('settingDepthOutlines').addEventListener('change', e => {
+        s_depthOutlines = e.target.checked;
+      });
+      document.getElementById('settingDepthOutlineSensitivity').addEventListener('input', e => {
+        // Slider is "sensitivity" (higher = catches smaller depth gaps), so
+        // invert it into the threshold-scale multiplier used by the shader.
+        const sensitivity = Number(e.target.value);
+        s_depthOutlineThreshScale = 2.0 + (0.25 - 2.0) * sensitivity;
       });
       document.getElementById('settingGrass').addEventListener('change', e => {
         s_grass = e.target.checked;
@@ -11190,14 +11225,32 @@
           activeScene.overrideMaterial = null;
           camera.layers.enableAll();
 
+          // Depth-only source for the depth-edge detector, PNG-plane avatars
+          // hidden for this pass only (see _markPngPlane) so sprite cutout
+          // silhouettes never feed the detector. Opt-in/off by default since
+          // it's an extra full scene pass on top of everything above.
+          if (s_depthOutlines) {
+            const _hiddenPngPlanes = [];
+            activeScene.traverse(o => {
+              if (o.userData.isPngPlane && o.visible) { o.visible = false; _hiddenPngPlanes.push(o); }
+            });
+            renderer.setRenderTarget(_depthOnlyRT);
+            activeScene.overrideMaterial = _depthOnlyMat;
+            renderer.render(activeScene, camera);
+            activeScene.overrideMaterial = null;
+            _hiddenPngPlanes.forEach(o => { o.visible = true; });
+          }
+
           // Composite: blend depth-discontinuity + furniture material-seam
           // outlines over the rendered scene, straight to the canvas.
           renderer.setRenderTarget(null);
-          _postMat.uniforms.tColor.value      = _mainRT.texture;
-          _postMat.uniforms.tDepth.value      = _mainRT.depthTexture;
-          _postMat.uniforms.tEdgeId.value     = _edgeIdRT.texture;
-          _postMat.uniforms.uCameraNear.value = camera.near;
-          _postMat.uniforms.uCameraFar.value  = camera.far;
+          _postMat.uniforms.tColor.value          = _mainRT.texture;
+          _postMat.uniforms.tDepth.value           = s_depthOutlines ? _depthOnlyRT.depthTexture : _mainRT.depthTexture;
+          _postMat.uniforms.tEdgeId.value          = _edgeIdRT.texture;
+          _postMat.uniforms.uCameraNear.value      = camera.near;
+          _postMat.uniforms.uCameraFar.value       = camera.far;
+          _postMat.uniforms.uDepthOutlinesOn.value = s_depthOutlines ? 1 : 0;
+          _postMat.uniforms.uDepthThreshScale.value = s_depthOutlineThreshScale;
           renderer.render(_postScene, _postCamera);
         } else {
           renderer.setRenderTarget(null);
