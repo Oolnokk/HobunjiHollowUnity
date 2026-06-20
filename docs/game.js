@@ -831,6 +831,11 @@
       // (TILE-scaled so the same constant works for player/creature px coords
       // and NPC tile-unit coords once converted to px).
       const FOOTSTEP_STRIDE_PX = TILE * 0.45;
+      // The player moves much faster (px/s) than NPCs/creatures, so the same
+      // per-distance stride would trigger footsteps far more often in real
+      // time than it does for them — use a longer player-only stride so the
+      // cadence (not the tone) matches how often NPC footsteps land.
+      const FOOTSTEP_PLAYER_STRIDE_PX = TILE * 1.35;
       // Beyond this distance from the player, NPC/creature footsteps are inaudible.
       const FOOTSTEP_EARSHOT_PX = TILE * 9;
       // NPC/enemy footsteps pan hard left/right within this distance — keeps
@@ -870,11 +875,11 @@
       // Advances a per-entity footstep stride accumulator; returns true (and
       // resets the remainder) exactly when a footfall should sound, so cadence
       // naturally scales with how fast the entity is actually moving.
-      function _footstepAdvance(state, distPx) {
+      function _footstepAdvance(state, distPx, stridePx = FOOTSTEP_STRIDE_PX) {
         if (!(distPx > 0)) return false;
         state.footstepAccum = (state.footstepAccum || 0) + distPx;
-        if (state.footstepAccum < FOOTSTEP_STRIDE_PX) return false;
-        state.footstepAccum -= FOOTSTEP_STRIDE_PX;
+        if (state.footstepAccum < stridePx) return false;
+        state.footstepAccum -= stridePx;
         state.footstepFoot = !state.footstepFoot;
         return true;
       }
@@ -5839,7 +5844,7 @@
 
       function tickPlayerFootsteps(prevX, prevY) {
         const dist = Math.hypot(player.x - prevX, player.y - prevY);
-        if (!_footstepAdvance(player, dist)) return;
+        if (!_footstepAdvance(player, dist, FOOTSTEP_PLAYER_STRIDE_PX)) return;
         const type = footstepTileTypeAt(currentArea, player.x, player.y, getActiveGrid());
         playFootstepSfx(currentArea, type, FOOTSTEP_QUIET_SCALE);
       }
