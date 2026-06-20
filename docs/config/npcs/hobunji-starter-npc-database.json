@@ -6,7 +6,113 @@
     "contentPolicy": "Use design-doc facts only. Unknowns use specific suggestion placeholders.",
     "avatarImport": "Import Avatar JSON expects export JSON from the character studio / portrait editor."
   },
-  "worldContext": {},
+  "worldContext": {
+    "setting": {
+      "region": "The Highlands of Northwestern Tanka",
+      "premise": "A Stardew-Valley-style farming/life-sim set among the native Highland peoples, disrupted by the arrival of an exploitative outside mining company during a regional trade crisis.",
+      "nativeSpecies": [
+        "Mao-ao",
+        "Engh-sho",
+        "Mashtzarr",
+        "Kenkari",
+        "<suggestion: species detail — Slagothim — mentioned in the design doc among the native races but not present in the 6-rig species list (mao-ao/tletingan/kenkari/rakakoan/engh-sho/mashtzarr); decide whether Slagothim maps onto an existing rig (e.g. rakakoan) or needs a new one>"
+      ],
+      "tone": "<suggestion: tone — design doc establishes setting/factions but not an explicit target tone — cozy-with-stakes? bittersweet? confirm how dark the colonial/war/ghost-army threads should read on screen>"
+    },
+    "seasons": {
+      "cycle": "wet/dry, four seasons",
+      "list": [
+        {
+          "name": "Deadgrass",
+          "type": "<suggestion: season type — wet or dry — and what gameplay effects (crops, weather, events) it carries>"
+        },
+        {
+          "name": "Stormtide",
+          "type": "<suggestion: season type — wet or dry — and what gameplay effects it carries>"
+        },
+        {
+          "name": "Coldmuck",
+          "type": "<suggestion: season type — wet or dry — and what gameplay effects it carries>"
+        },
+        {
+          "name": "Longpour",
+          "type": "<suggestion: season type — wet or dry — and what gameplay effects it carries>"
+        }
+      ]
+    },
+    "economy": {
+      "tradeValueMechanic": "<suggestion: mechanic design — the design doc references a 'Trade Value' mechanic underlying the Trade Shortage crisis — needs the actual formula/system: what raises/lowers it, how it gates the Khannibarri Mining Company's arrival, and how the player can affect it>"
+    },
+    "crises": {
+      "tradeShortage": {
+        "summary": "A regional trade crisis drops the village's Trade Value, opening the door for the Khannibarri Imperial Mining Company (this game's Jojamart/Joja Corp analogue) to move in and undercut local trade.",
+        "keyNpcs": [
+          "khannibarri_agent",
+          "village_elder"
+        ],
+        "openQuestions": "<suggestion: plot design — how the player can resist or reverse the Trade Shortage, and what victory/defeat looks like for this thread>"
+      },
+      "ghostArmy": {
+        "summary": "The Harlyao Ghost Army threatens the region. Resolving it requires bringing offerings to four Great Fae shrines, each Fae solving a different practical problem (snow/farming, a generalist trickster's riddle-games, fishing via a Fifteen Fish Pie, and a multi-stage alchemy plan) in exchange for help.",
+        "shrines": [
+          {
+            "fae": "nohuknuk",
+            "domain": "snow / farming solution"
+          },
+          {
+            "fae": "hiki_hiki",
+            "domain": "trickster / generalist solution"
+          },
+          {
+            "fae": "banubu",
+            "domain": "fishing solution"
+          },
+          {
+            "fae": "mother_rahayobi",
+            "domain": "alchemy solution"
+          }
+        ],
+        "openQuestions": "<suggestion: plot design — what the Ghost Army actually is/wants, what happens once all four shrines are satisfied, and how this thread resolves narratively>"
+      },
+      "tribalWar": {
+        "summary": "A long-running war between the Baruhi and Porakaneki tribes, which the player can potentially get drawn into.",
+        "keyNpcs": [
+          "baruhi_chief",
+          "porakaneki_chief"
+        ],
+        "openQuestions": "<suggestion: plot design — the war's root cause, whether peace is achievable, and how/whether it connects to the Trade Shortage or Ghost Army threads>"
+      },
+      "infestedOldMine": {
+        "summary": "A 100-layer procedurally generated dungeon beneath the village.",
+        "layers": "<suggestion: dungeon design — the design doc calls for 100 procgen layers but the specific layer bands/biomes/boss layers/loot tables were not captured in this pass — needs the full layer-by-layer (or banded) breakdown>",
+        "connectionToTradeShortage": "<suggestion: plot design — confirm whether village_elder tips off khannibarri_agent specifically about this mine, and what the company does once it learns of it>"
+      }
+    },
+    "museum": {
+      "curator": "garanki_gabu",
+      "summary": "<suggestion: museum design — the design doc names Garanki Gabu as the museum/anthropology contact but the donation categories, rewards, and how this ties to the native-species lore were not fully captured here>"
+    },
+    "areas": {
+      "northernCliffs": {
+        "resources": "<suggestion: area design — the design doc lists specific resources for the Northern Cliffs that weren't fully itemized in this pass — needs the full resource/forageable/fish/ore list>",
+        "notableLocations": [
+          "banubu_cave_northern_cliffs"
+        ]
+      },
+      "southernForest": {
+        "resources": "<suggestion: area design — full resource/forageable list for the Southern Forest>"
+      },
+      "easternFogplains": {
+        "resources": "<suggestion: area design — full resource/forageable list for the Eastern Fog-plains>",
+        "notableLocations": [
+          "rahayobi_shrine_eastern_fogplains"
+        ]
+      },
+      "westernIncline": {
+        "resources": "<suggestion: area design — full resource/forageable list for the Western Incline>"
+      }
+    }
+  },
   "npcs": [
     {
       "id": "garanki_gabu",
@@ -21,7 +127,7 @@
         "researcher",
         "villager"
       ],
-      "bio": "Researcher’s Tent resident. Age noted as <carter’s age>.",
+      "bio": "Mao'ao professor of Ikiology (anthropology) from the Tower of Learning in Kumapirra, drawn to the Highlands by its unstudied ruins and uncatalogued wildlife. Cheerful, a little oblivious to how remote he really is.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -109,7 +215,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_garanki_gabu_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_garanki_gabu_1",
+          "nodes": [
+            {
+              "id": "n_garanki_gabu_1",
+              "type": "text",
+              "text": "Oh — hello! <suggestion: dialogue — Garanki's opening line; excitable, slightly rambling academic energy> You wouldn't believe how little has been written about this region.",
+              "next": "n_garanki_gabu_2"
+            },
+            {
+              "id": "n_garanki_gabu_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Find anything interesting lately?",
+                  "next": "n_garanki_gabu_3a"
+                },
+                {
+                  "label": "Why come all the way out here?",
+                  "next": "n_garanki_gabu_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_garanki_gabu_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — Garanki describes his most recent find — name a specific relic/flora/fauna discovery and why it excited him>",
+              "next": "n_garanki_gabu_4"
+            },
+            {
+              "id": "n_garanki_gabu_3b",
+              "type": "text",
+              "text": "The Tower of Learning in Kumapirra has shelves on shelves about the lowlands, but almost nothing on the Highlands. <suggestion: dialogue — his personal reason for caring so much about being the one to fix that>",
+              "next": "n_garanki_gabu_4"
+            },
+            {
+              "id": "n_garanki_gabu_4",
+              "type": "text",
+              "text": "If you ever find something unusual — an old relic, a strange fish, a mineral you don't recognize — bring it here. I'll make sure the whole world hears about it.",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -142,7 +296,12 @@
           "c": 2,
           "r": 2
         }
-      }
+      },
+      "loreBackground": "Garanki came to the Highlands because the region has never been properly catalogued — too remote, too dangerous, and too unprofitable for most academics to bother with. He's effectively self-funding the expedition out of his Researcher's Tent and writes up every donation to mail back to the Tower. <suggestion: backstory — does he have a sponsor, a rival academic back home, or a reason this trip matters more than a normal sabbatical?>",
+      "questHooks": [
+        "Accepts donations of Relics, Flora, Fish, and Minerals; each new donation raises the town's [Trade Value] as he mails findings back to the Tower of Learning.",
+        "<suggestion: quest design — define the donation tiers/milestones and what unlocks at each Trade Value threshold from his findings specifically>"
+      ]
     },
     {
       "id": "gorobi_ginju",
@@ -157,7 +316,7 @@
         "farmer",
         "villager"
       ],
-      "bio": "Middle aged man; friendly, but <unspecified complication>.",
+      "bio": "Patriarch of the Ginju farming family on the northeast edge of town — Hobunji's longest-running farm, and proud of it. Friendly to your face, but treats every good harvest you bring in as a personal challenge.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -273,7 +432,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_gorobi_ginju_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_gorobi_ginju_1",
+          "nodes": [
+            {
+              "id": "n_gorobi_ginju_1",
+              "type": "text",
+              "text": "New farmer, huh. <suggestion: dialogue — Gorobi's opening once-over; competitive but not hostile> Well, welcome to the neighborhood.",
+              "next": "n_gorobi_ginju_2"
+            },
+            {
+              "id": "n_gorobi_ginju_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Got any tips for a beginner?",
+                  "next": "n_gorobi_ginju_3a"
+                },
+                {
+                  "label": "Worried about the competition?",
+                  "next": "n_gorobi_ginju_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_gorobi_ginju_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — a real piece of farming advice in Gorobi's voice, plus a competitive jab>",
+              "next": "n_gorobi_ginju_4"
+            },
+            {
+              "id": "n_gorobi_ginju_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — Gorobi's bravado/defensiveness about being outfarmed>",
+              "next": "n_gorobi_ginju_4"
+            },
+            {
+              "id": "n_gorobi_ginju_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — a gruff but not unkind sign-off line>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -327,7 +534,8 @@
           "c": 4,
           "r": 3
         }
-      }
+      },
+      "loreBackground": "<suggestion: backstory — how Gorobi really feels about a new rival farmer arriving — does he warm up over time, and what's his own history with the land?>"
     },
     {
       "id": "gikali_ginju",
@@ -342,7 +550,7 @@
         "farmer",
         "villager"
       ],
-      "bio": "Middle aged woman; kind, but anxious.",
+      "bio": "Gorobi's <suggestion: relationship — wife, sister, or business partner — the source material doesn't specify how Gikali relates to Gorobi>, kind-hearted but anxious, especially now that the farm has competition in town.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -454,7 +662,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_gikali_ginju_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_gikali_ginju_1",
+          "nodes": [
+            {
+              "id": "n_gikali_ginju_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Gikali's nervous, fretful greeting — likely about weather, crop quality, or the season>",
+              "next": "n_gikali_ginju_2"
+            },
+            {
+              "id": "n_gikali_ginju_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Everything okay?",
+                  "next": "n_gikali_ginju_3a"
+                },
+                {
+                  "label": "The farm looks great.",
+                  "next": "n_gikali_ginju_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_gikali_ginju_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — what specifically is worrying her this season>",
+              "next": "n_gikali_ginju_4"
+            },
+            {
+              "id": "n_gikali_ginju_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — her flustered, grateful response>",
+              "next": "n_gikali_ginju_4"
+            },
+            {
+              "id": "n_gikali_ginju_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — closing line, kind but anxious>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -512,7 +768,7 @@
         "farmstead resident",
         "romanceable"
       ],
-      "bio": "Romanceable; young woman; dutiful.",
+      "bio": "Gorobi and Gikali's daughter; dutiful and a little competitive about the family farm, though she warms up fast to her new 'rival.' Keeps an eye on her little brother Gantami.",
       "relationship": {
         "canBefriend": true,
         "canDate": true,
@@ -1073,7 +1329,7 @@
         "child",
         "villager"
       ],
-      "bio": "Little boy; rascal.",
+      "bio": "The Ginju family's little brother — a rascal who's always getting into trouble somewhere in town. <suggestion: personality — his signature prank or running source of trouble>",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -1177,7 +1433,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_gantami_ginju_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_gantami_ginju_1",
+          "nodes": [
+            {
+              "id": "n_gantami_ginju_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Gantami's gleeful, slightly guilty greeting>",
+              "next": "n_gantami_ginju_2"
+            },
+            {
+              "id": "n_gantami_ginju_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "What are you up to?",
+                  "next": "n_gantami_ginju_3a"
+                },
+                {
+                  "label": "Does your sister know about this?",
+                  "next": "n_gantami_ginju_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_gantami_ginju_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — whatever mischief he's currently in the middle of>",
+              "next": "n_gantami_ginju_4"
+            },
+            {
+              "id": "n_gantami_ginju_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — his panicked deflection / bargaining>",
+              "next": "n_gantami_ginju_4"
+            },
+            {
+              "id": "n_gantami_ginju_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — a kid-appropriate sign-off, maybe a dare or a secret>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -1227,7 +1531,7 @@
         "swamp resident",
         "villager"
       ],
-      "bio": "Old Engh Sho man; quiet, grumpy but restrained.",
+      "bio": "Quiet, grumpy-but-restrained old Engh-sho fisherman living alone in the swamp house. <suggestion: widower status — the concept notes mark the swamp-house pair (Leaf and Pahu) as a widower and his late husband, but leave open which of the two actually died, with a note to 'swap' as needed — decide which one is deceased, or whether to keep them both alive as a couple instead>",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -1345,7 +1649,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_leaf_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_leaf_1",
+          "nodes": [
+            {
+              "id": "n_leaf_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Leaf's terse, grumpy greeting — restrained rather than outright unfriendly>",
+              "next": "n_leaf_2"
+            },
+            {
+              "id": "n_leaf_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Catch anything good today?",
+                  "next": "n_leaf_3a"
+                },
+                {
+                  "label": "You live out here alone?",
+                  "next": "n_leaf_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_leaf_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — a short, dry answer about the river/fishing>",
+              "next": "n_leaf_4"
+            },
+            {
+              "id": "n_leaf_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — depends on the widower decision above — either a guarded answer about Pahu, or a flat 'no' if they're kept together>",
+              "next": "n_leaf_4"
+            },
+            {
+              "id": "n_leaf_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — a curt but not cold sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -1378,7 +1730,8 @@
           "c": 6,
           "r": 43
         }
-      }
+      },
+      "loreBackground": "Original concept: a lonely fisherman mourning a dead Kenkari husband named Pahu ao Pakamu. The current schedule keeps both Leaf and Pahu alive and active in town, which contradicts the widower framing. <suggestion: decision needed — either retcon one of them as deceased (and rewrite their relationship status/schedule/dialogue accordingly) or drop the widower angle and keep them as a living couple>"
     },
     {
       "id": "pahu",
@@ -1393,7 +1746,7 @@
         "festival lover",
         "villager"
       ],
-      "bio": "Old Kenkari man; silly, friendly, loves festivals and dragging Leaf out of his shell.",
+      "bio": "Old Kenkari man, silly and warm, who loves festivals and dragging Leaf out of his shell. <suggestion: widower status — see Leaf's entry — the concept notes mark one of this pair as the other's late husband; decide whether that applies to Pahu>",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -1501,7 +1854,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_pahu_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_pahu_1",
+          "nodes": [
+            {
+              "id": "n_pahu_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Pahu's enthusiastic, festival-loving greeting>",
+              "next": "n_pahu_2"
+            },
+            {
+              "id": "n_pahu_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Any festivals coming up?",
+                  "next": "n_pahu_3a"
+                },
+                {
+                  "label": "How's Leaf doing?",
+                  "next": "n_pahu_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_pahu_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — a specific upcoming festival and why he's excited>",
+              "next": "n_pahu_4"
+            },
+            {
+              "id": "n_pahu_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — an affectionate, slightly teasing answer about Leaf>",
+              "next": "n_pahu_4"
+            },
+            {
+              "id": "n_pahu_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — a warm, energetic sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -1561,7 +1962,7 @@
         "shopkeep",
         "villager"
       ],
-      "bio": "Middle aged shopkeep; friendly but overworked; always looks tired.",
+      "bio": "Widower running the general store almost single-handedly; warm but visibly worn down, especially since his only living family is a son who has no interest in inheriting the shop. <suggestion: backstory — how his wife died, and how long ago>",
       "shopHours": "<suggestion: general store hours should be decided here>",
       "portrait": {
         "asset": "",
@@ -1868,7 +2269,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_furunji_funji_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_furunji_funji_1",
+          "nodes": [
+            {
+              "id": "n_furunji_funji_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Furunji's tired-but-friendly shopkeep greeting>",
+              "next": "n_furunji_funji_2"
+            },
+            {
+              "id": "n_furunji_funji_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Long day?",
+                  "next": "n_furunji_funji_3a"
+                },
+                {
+                  "label": "How's Foroji doing?",
+                  "next": "n_furunji_funji_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_furunji_funji_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — his exhausted, self-deprecating answer about running the store alone>",
+              "next": "n_furunji_funji_4"
+            },
+            {
+              "id": "n_furunji_funji_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — his complicated, disappointed-but-loving answer about his son's music dream>",
+              "next": "n_furunji_funji_4"
+            },
+            {
+              "id": "n_furunji_funji_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — his closing shopkeep sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "map_i_general_store",
@@ -1910,7 +2359,8 @@
           }
         ],
         "defaultStationId": "station_p2x4t"
-      }
+      },
+      "loreBackground": "Doesn't believe in Foroji's dream of being a bard — wants him to take over the store instead. <suggestion: backstory — what Furunji actually says when pressed about Foroji's music, and whether he's softening over time>"
     },
     {
       "id": "foroji_funji",
@@ -1925,7 +2375,7 @@
         "bard",
         "romanceable"
       ],
-      "bio": "Romanceable son; bard; only living family member of Furunji but does not want to inherit.",
+      "bio": "Furunji's son and heir to the general store — except he's a bard at heart with no interest in inheriting it. <suggestion: personality — his instrument/genre of choice, and what he actually dreams of beyond Hobunji>",
       "relationship": {
         "canBefriend": true,
         "canDate": true,
@@ -2231,7 +2681,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_foroji_funji_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_foroji_funji_1",
+          "nodes": [
+            {
+              "id": "n_foroji_funji_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Foroji's easygoing, dreamer greeting>",
+              "next": "n_foroji_funji_2"
+            },
+            {
+              "id": "n_foroji_funji_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Play me something?",
+                  "next": "n_foroji_funji_3a"
+                },
+                {
+                  "label": "Does your dad know how you feel about the shop?",
+                  "next": "n_foroji_funji_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_foroji_funji_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — a snippet of a song or a description of his style>",
+              "next": "n_foroji_funji_4"
+            },
+            {
+              "id": "n_foroji_funji_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — his conflicted answer about disappointing his dad>",
+              "next": "n_foroji_funji_4"
+            },
+            {
+              "id": "n_foroji_funji_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — a hopeful, dreamer sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "map_hobunji_town",
@@ -2288,7 +2786,7 @@
         "smith",
         "villager"
       ],
-      "bio": "Late middle aged Mashtzarr smith; very kind, but very protective of Sloomi.",
+      "bio": "Late-middle-aged Mashtzarr smith, broad and gentle despite the trade. Fiercely protective of his adopted daughter Sloomi — losing his whole birth family to plague left him treating her like a second chance he refuses to risk losing.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -2398,7 +2896,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_kzubug_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_kzubug_1",
+          "nodes": [
+            {
+              "id": "n_kzubug_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Kzubug's warm, gruff smithy greeting>",
+              "next": "n_kzubug_2"
+            },
+            {
+              "id": "n_kzubug_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Need an extra pair of hands?",
+                  "next": "n_kzubug_3a"
+                },
+                {
+                  "label": "Sloomi's lucky to have you.",
+                  "next": "n_kzubug_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_kzubug_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — a smithing-flavored answer, maybe a small task or tip>",
+              "next": "n_kzubug_4"
+            },
+            {
+              "id": "n_kzubug_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — his guarded, emotional reaction — careful not to spoil the backstory above>",
+              "next": "n_kzubug_4"
+            },
+            {
+              "id": "n_kzubug_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — his closing sign-off, warm but a little weary>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -2452,7 +2998,8 @@
           "c": 4,
           "r": 3
         }
-      }
+      },
+      "loreBackground": "SPOILER — not for casual player-facing dialogue. Sloomi is the half-sister of Jubmir the trader. Jubmir's father Slorik was a trader who got injured near Hobunji and was taken in by Kzubug's family. Slorik saw how loving Kzubug's household was and wanted that for himself, despite having already been chosen to sire one son (Jubmir) with the Doromabi of his home village. Slorik returned to a guard job near Jubmir in secret, fell in love with Jubmir's Mabinga, Yanmira, and the two eloped into the Slagothi'ey wilderness with Jubmir when Yanmira became pregnant with Sloomi. When the Doromabi found their hideout, Yanmira and Slorik were killed; Jubmir escaped with infant Sloomi on his father's last instructions, found Dugmir (an old trade-route friend of Slorik's), and had Sloomi delivered to Kzubug while Jubmir himself returned to his Doro as the only one who hadn't committed or resulted from a crime. By the time Sloomi arrived, plague had wiped out Kzubug's whole family, so he took her in as divine providence and has been overprotective of her ever since. Jubmir knows the full story; Sloomi does not. It's the biggest reason Jubmir keeps making his barely-profitable trade runs to Hobunji. <suggestion: backstory — the plague's name/cause, the exact timeline (years since), and whether/when Sloomi ever learns the truth>"
     },
     {
       "id": "sloomi",
@@ -2467,7 +3014,7 @@
         "apprentice smith",
         "romanceable"
       ],
-      "bio": "Romanceable adopted daughter and apprentice smith; nice but quiet; aggressive when people she cares about are hurt physically or emotionally.",
+      "bio": "Kzubug's adopted Slagothim apprentice; soft-spoken most of the time, but turns fierce if anyone she cares about is hurt, physically or emotionally. Doesn't know who her birth parents were.",
       "relationship": {
         "canBefriend": true,
         "canDate": true,
@@ -2555,7 +3102,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_sloomi_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_sloomi_1",
+          "nodes": [
+            {
+              "id": "n_sloomi_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Sloomi's quiet, slightly guarded greeting>",
+              "next": "n_sloomi_2"
+            },
+            {
+              "id": "n_sloomi_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "How's the apprenticeship going?",
+                  "next": "n_sloomi_3a"
+                },
+                {
+                  "label": "You and Kzubug seem close.",
+                  "next": "n_sloomi_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_sloomi_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — her measured, proud-of-her-skill answer>",
+              "next": "n_sloomi_4"
+            },
+            {
+              "id": "n_sloomi_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — her affectionate but careful answer — she doesn't know the full story>",
+              "next": "n_sloomi_4"
+            },
+            {
+              "id": "n_sloomi_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — her closing sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -2608,11 +3203,12 @@
           "c": 11,
           "r": 21
         }
-      }
+      },
+      "loreBackground": "See Kzubug's loreBackground for the full secret — Sloomi is Jubmir's half-sister and doesn't know it. <suggestion: dialogue writing — how close dialogue can get to the truth before it would need to actually reveal it, and whether there's a reveal questline planned>"
     },
     {
       "id": "hreesh",
-      "name": "Hreesh",
+      "name": "Hreesh Nakheez",
       "homeId": "inn",
       "species": "Mashtzarr",
       "gender": "male",
@@ -2623,7 +3219,7 @@
         "innkeeper",
         "villager"
       ],
-      "bio": "Amicable but blunt Mashtzarr innkeeper.",
+      "bio": "Mashtzarr barkeep and innkeeper — blunt to the point of rudeness, but never unkind underneath it. <suggestion: personality — a specific running bit or catchphrase that softens the bluntness>",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -2731,7 +3327,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_hreesh_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_hreesh_1",
+          "nodes": [
+            {
+              "id": "n_hreesh_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Hreesh's blunt, no-nonsense greeting>",
+              "next": "n_hreesh_2"
+            },
+            {
+              "id": "n_hreesh_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Got a room available?",
+                  "next": "n_hreesh_3a"
+                },
+                {
+                  "label": "Anything interesting happen here lately?",
+                  "next": "n_hreesh_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_hreesh_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — his matter-of-fact answer about rates/availability>",
+              "next": "n_hreesh_4"
+            },
+            {
+              "id": "n_hreesh_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — local gossip filtered through his blunt delivery>",
+              "next": "n_hreesh_4"
+            },
+            {
+              "id": "n_hreesh_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — his closing sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -2779,7 +3423,7 @@
         "visitor",
         "romanceable"
       ],
-      "bio": "Romanceable when in town.",
+      "bio": "The only Slagothim trader who still bothers with Hobunji's bi-weekly sell, despite the route barely turning a profit — he keeps coming because he genuinely cares about the village. Secretly half-Slagothim nobility by blood, though almost no one here knows it.",
       "relationship": {
         "canBefriend": true,
         "canDate": true,
@@ -2891,7 +3535,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_jubmir_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_jubmir_1",
+          "nodes": [
+            {
+              "id": "n_jubmir_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Jubmir's warm, road-worn trader greeting>",
+              "next": "n_jubmir_2"
+            },
+            {
+              "id": "n_jubmir_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Why keep coming back here?",
+                  "next": "n_jubmir_3a"
+                },
+                {
+                  "label": "Got anything good to sell?",
+                  "next": "n_jubmir_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_jubmir_3a",
+              "type": "text",
+              "text": "Hobunji's not exactly a profitable stop. <suggestion: dialogue — his deflection — he can't reveal the real reason (Sloomi) without spoiling the secret>",
+              "next": "n_jubmir_4"
+            },
+            {
+              "id": "n_jubmir_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — a description of his current stock, flavored by however his inventory currently scales with Trade Value>",
+              "next": "n_jubmir_4"
+            },
+            {
+              "id": "n_jubmir_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — his closing sign-off, maybe a hint that he'll be back soon>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -2925,7 +3617,13 @@
           "c": 27,
           "r": 26
         }
-      }
+      },
+      "loreBackground": "Full secret backstory shared with Kzubug's entry: Jubmir is Sloomi's half-brother, son of the trader Slorik and a Doromabi he was chosen to mate with. After Slorik died eloping with Yanmira (Sloomi's mother), Jubmir carried infant Sloomi to safety, arranged for her to be raised by Kzubug, and returned alone to his Doro. Sloomi does not know this; Jubmir does, and it's the core reason he keeps risking the unprofitable trade route to Hobunji. He's also secretly protecting the Hakaru twins: he buys newspapers from other traders at an inflated price, resells them after removing any mention of the twins' bounty, and Father Hunundi quietly reimburses part of his losses out of his own temple salary. <suggestion: backstory — what Jubmir's life is like back among the Slagothim — does he have his own Doro/family obligations waiting, and does he resent them?>",
+      "questHooks": [
+        "Currently the only trader willing to make the Hobunji run; stays only 2 days a week and sells on a bi-weekly cycle at game start.",
+        "His visit frequency and time spent in town scale up with the town's [Trade Value] — eventually attracting other Slagothim traders too.",
+        "<suggestion: quest design — the exact Trade Value thresholds for each increase in Jubmir's visit frequency/duration, and what unlocks when other traders start showing up>"
+      ]
     },
     {
       "id": "father_hunundi_hodu",
@@ -2940,7 +3638,7 @@
         "priest",
         "villager"
       ],
-      "bio": "Late middle aged priest; gets player fixed up and suggests settling in abandoned farmstead after player does not remember home.",
+      "bio": "Late middle-aged Life Priest who runs the village's morning service on <suggestion: schedule — the design notes literally leave this weekday blank — pick one>. Gentle and quietly protective of anyone in trouble, including the Hakaru twins.",
       "appearance": {
         "speciesId": "mao-ao",
         "gender": "male",
@@ -3066,7 +3764,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_father_hunundi_hodu_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_father_hunundi_hodu_1",
+          "nodes": [
+            {
+              "id": "n_father_hunundi_hodu_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Father Hunundi's calm, welcoming greeting>",
+              "next": "n_father_hunundi_hodu_2"
+            },
+            {
+              "id": "n_father_hunundi_hodu_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "When's the next service?",
+                  "next": "n_father_hunundi_hodu_3a"
+                },
+                {
+                  "label": "How are the twins settling in?",
+                  "next": "n_father_hunundi_hodu_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_father_hunundi_hodu_3a",
+              "type": "text",
+              "text": "Morning service is <suggestion: schedule — the actual weekday and any seasonal exceptions>",
+              "next": "n_father_hunundi_hodu_4"
+            },
+            {
+              "id": "n_father_hunundi_hodu_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — a careful, protective answer that doesn't give away the bounty secret>",
+              "next": "n_father_hunundi_hodu_4"
+            },
+            {
+              "id": "n_father_hunundi_hodu_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — his closing blessing/sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -3120,7 +3866,11 @@
           "c": 7,
           "r": 4
         }
-      }
+      },
+      "loreBackground": "Shelters the wanted Hakaru twins (Namu'i and Taku'a) at the temple and actively works with Jubmir to keep news of their bounty from reaching the villagers — Jubmir overpays for newspapers elsewhere and resells them with the bounty mentions removed, and Father Hunundi reimburses part of that loss out of his own salary. Also present (but not leading) during Eldress Teacup's nightly spirit communion services for the Engh-sho villagers, mostly to keep the other races at ease. <suggestion: backstory — how he first found the twins / decided to protect them, and how long this arrangement with Jubmir has been running>",
+      "questHooks": [
+        "<suggestion: quest design — does the player ever learn about the twins' bounty / the Jubmir arrangement through Father Hunundi specifically, or only through the twins themselves?>"
+      ]
     },
     {
       "id": "namui_u_hakaru",
@@ -3134,7 +3884,7 @@
         "temple",
         "romanceable"
       ],
-      "bio": "Romanceable temple resident.",
+      "bio": "Long-orphaned Kenkari twin who came to Hobunji looking for a normal life. Wanted, with a sizable bounty on her head, but truly wants to live an honest life rather than run from it.",
       "relationship": {
         "canBefriend": true,
         "canDate": true,
@@ -3240,7 +3990,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_namui_u_hakaru_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_namui_u_hakaru_1",
+          "nodes": [
+            {
+              "id": "n_namui_u_hakaru_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Namu'i's guarded, hopeful greeting>",
+              "next": "n_namui_u_hakaru_2"
+            },
+            {
+              "id": "n_namui_u_hakaru_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Settling in okay?",
+                  "next": "n_namui_u_hakaru_3a"
+                },
+                {
+                  "label": "People seem suspicious of you and your brother.",
+                  "next": "n_namui_u_hakaru_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_namui_u_hakaru_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — her wary but hopeful answer about trying to build a normal life here>",
+              "next": "n_namui_u_hakaru_4"
+            },
+            {
+              "id": "n_namui_u_hakaru_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — her resigned, defensive-but-honest reaction>",
+              "next": "n_namui_u_hakaru_4"
+            },
+            {
+              "id": "n_namui_u_hakaru_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — her closing sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -3283,7 +4081,11 @@
           "c": 11,
           "r": 4
         }
-      }
+      },
+      "loreBackground": "Staying at the temple under Father Hunundi's protection alongside her brother Taku'a. Most villagers are wary rather than hateful — they just won't risk hiring a suspected criminal — except Kinami Kunji, who has it out for her specifically. <suggestion: backstory — what she and Taku'a actually did to earn the bounty, and how large it is>",
+      "questHooks": [
+        "<suggestion: quest design — what kind of work would let her start paying off her own bounty, and what happens once it's paid>"
+      ]
     },
     {
       "id": "takua_ao_hakaru",
@@ -3297,7 +4099,7 @@
         "temple",
         "romanceable"
       ],
-      "bio": "Romanceable temple resident.",
+      "bio": "Long-orphaned Kenkari twin, brother to Namu'i. Wanted alongside her, hoping to find honest work to pay off his own bounty. Becomes the village's miner once the Old Mine's first layer is cleared.",
       "relationship": {
         "canBefriend": true,
         "canDate": true,
@@ -3411,7 +4213,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_takua_ao_hakaru_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_takua_ao_hakaru_1",
+          "nodes": [
+            {
+              "id": "n_takua_ao_hakaru_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Taku'a's guarded, hopeful greeting>",
+              "next": "n_takua_ao_hakaru_2"
+            },
+            {
+              "id": "n_takua_ao_hakaru_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Settling in okay?",
+                  "next": "n_takua_ao_hakaru_3a"
+                },
+                {
+                  "label": "Ever think about working the old mine?",
+                  "next": "n_takua_ao_hakaru_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_takua_ao_hakaru_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — his wary but hopeful answer>",
+              "next": "n_takua_ao_hakaru_4"
+            },
+            {
+              "id": "n_takua_ao_hakaru_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — his interest/hesitation about the mine, foreshadowing his eventual role there>",
+              "next": "n_takua_ao_hakaru_4"
+            },
+            {
+              "id": "n_takua_ao_hakaru_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — his closing sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -3455,7 +4305,11 @@
           "c": 3,
           "r": 4
         }
-      }
+      },
+      "loreBackground": "<suggestion: backstory — what specifically drives Taku'a toward mining once given the chance, and how that differs from Namu'i's path>",
+      "questHooks": [
+        "Becomes the village miner NPC after the Old Mine's layers 1–20 boss is cleared and the tunnel collapse opens the next layer."
+      ]
     },
     {
       "id": "kaboku_kunji",
@@ -3470,7 +4324,7 @@
         "potion shop resident",
         "villager"
       ],
-      "bio": "Old man at Potion Shop. He and Kinami had a falling out a few years ago and now avoid sharing a room except during dinner and sleep.",
+      "bio": "Old man at the Potion Shop; kind-hearted and giving by nature, and lets his wife Kinami boss him around without complaint. He and Kinami had a falling out a few years ago and now avoid sharing a room except at dinner and bedtime.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -3580,7 +4434,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_kaboku_kunji_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_kaboku_kunji_1",
+          "nodes": [
+            {
+              "id": "n_kaboku_kunji_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Kaboku's soft-spoken, agreeable greeting>",
+              "next": "n_kaboku_kunji_2"
+            },
+            {
+              "id": "n_kaboku_kunji_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "How are things with Kinami?",
+                  "next": "n_kaboku_kunji_3a"
+                },
+                {
+                  "label": "Anything I can help with around the shop?",
+                  "next": "n_kaboku_kunji_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_kaboku_kunji_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — his deflecting, good-natured non-answer>",
+              "next": "n_kaboku_kunji_4"
+            },
+            {
+              "id": "n_kaboku_kunji_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — a small task or kindly offered tip>",
+              "next": "n_kaboku_kunji_4"
+            },
+            {
+              "id": "n_kaboku_kunji_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — his closing sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -3701,7 +4603,8 @@
           "r": 2
         },
         "defaultStationId": "station_di22s"
-      }
+      },
+      "loreBackground": "<suggestion: backstory — what the falling out was actually about, and whether his passivity is contentment, exhaustion, or something sadder>"
     },
     {
       "id": "kinami_kunji",
@@ -3716,7 +4619,7 @@
         "potion shop resident",
         "villager"
       ],
-      "bio": "Potion Shop resident. She and Kaboku had a falling out a few years ago and now avoid sharing a room except during dinner and sleep.",
+      "bio": "Potion Shop resident; spiteful, racist, and an inveterate gossip who bosses her husband Kaboku around. Has a particular vendetta against the Hakaru twins. She and Kaboku had a falling out a few years ago and now avoid sharing a room except at dinner and bedtime.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -3830,7 +4733,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_kinami_kunji_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_kinami_kunji_1",
+          "nodes": [
+            {
+              "id": "n_kinami_kunji_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Kinami's sharp-tongued, gossiping greeting>",
+              "next": "n_kinami_kunji_2"
+            },
+            {
+              "id": "n_kinami_kunji_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "What's the latest gossip?",
+                  "next": "n_kinami_kunji_3a"
+                },
+                {
+                  "label": "You're awfully hard on the Hakaru twins.",
+                  "next": "n_kinami_kunji_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_kinami_kunji_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — current town gossip, delivered with her particular bite>",
+              "next": "n_kinami_kunji_4"
+            },
+            {
+              "id": "n_kinami_kunji_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — her self-righteous justification — she's not wrong about them being wanted, but her reasoning/tone should still read as bigoted rather than purely vindicated>",
+              "next": "n_kinami_kunji_4"
+            },
+            {
+              "id": "n_kinami_kunji_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — her closing sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -3963,7 +4914,8 @@
           "r": 2
         },
         "defaultStationId": "station_20tpy"
-      }
+      },
+      "loreBackground": "The strongest voice of suspicion against Namu'i and Taku'a Hakaru — her instincts about them happen to be correct (they are wanted thieves), which only fuels her certainty about everyone else she distrusts. <suggestion: backstory — what specifically she says about other races/villagers, calibrated to be hateful without making her a cartoon — and whether anyone in town ever pushes back on her>"
     },
     {
       "id": "dzibim_khibu",
@@ -4440,8 +5392,8 @@
     },
     {
       "id": "teacup_unumanuk",
-      "name": "Teacup Unumanuk",
-      "homeId": "engh_sho_clans",
+      "name": "Eldress Teacup Unumanuk",
+      "homeId": "unumanuk_household",
       "species": "Engh-Sho",
       "gender": "female",
       "ageBand": "elder",
@@ -4451,7 +5403,7 @@
         "eldress",
         "villager"
       ],
-      "bio": "Unumanuk Clan eldress.",
+      "bio": "Unumanuk Clan eldress who runs the nightly spirit communion service for the Engh-sho villagers, who attend both the morning temple service and her communion. Holds it in the temple building at night, since it tends to unsettle the other races. Lives with her son Spearhead and grandson Oddclaw in the overcrowded Unumanuk household.",
       "portrait": {
         "asset": "",
         "avatarKey": ""
@@ -4561,7 +5513,55 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_teacup_unumanuk_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_teacup_unumanuk_1",
+          "nodes": [
+            {
+              "id": "n_teacup_unumanuk_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Eldress Teacup's measured, elder greeting>",
+              "next": "n_teacup_unumanuk_2"
+            },
+            {
+              "id": "n_teacup_unumanuk_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "What happens at the spirit communion?",
+                  "next": "n_teacup_unumanuk_3a"
+                },
+                {
+                  "label": "Does Father Hunundi mind sharing the temple at night?",
+                  "next": "n_teacup_unumanuk_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_teacup_unumanuk_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — a description of the nightly service appropriate for an outsider to hear>",
+              "next": "n_teacup_unumanuk_4"
+            },
+            {
+              "id": "n_teacup_unumanuk_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — her answer about the arrangement between the two faiths>",
+              "next": "n_teacup_unumanuk_4"
+            },
+            {
+              "id": "n_teacup_unumanuk_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — her closing sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",
@@ -4569,43 +5569,34 @@
         "shopHours": "",
         "rules": [
           {
+            "activity": "elder duties",
             "from": "09:00",
-            "to": "14:00",
-            "mapId": "map_hobunji_town",
-            "position": {
-              "c": 50,
-              "r": 38
-            },
-            "activity": "clan home"
-          },
-          {
-            "from": "14:00",
-            "to": "18:00",
             "mapId": "map_hobunji_town",
             "position": {
               "c": 30,
               "r": 31
             },
             "routeId": "route_main_ns",
-            "activity": "elder duties"
+            "to": "18:00"
           },
           {
+            "activity": "home",
             "from": "18:00",
-            "to": "09:00",
             "mapId": "map_hobunji_town",
             "position": {
-              "c": 50,
-              "r": 38
+              "c": 45,
+              "r": 28
             },
-            "activity": "home"
+            "to": "09:00"
           }
         ],
         "defaultPosition": {
           "area": "town",
-          "c": 50,
-          "r": 38
+          "c": 45,
+          "r": 28
         }
-      }
+      },
+      "loreBackground": "Father Hunundi attends her nightly services without leading them, mostly to keep the other villagers at ease and to be present in case 'something goes awry.' <suggestion: backstory — what spirit communion actually involves mechanically, and what 'going awry' has historically meant> The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds."
     },
     {
       "id": "binding_hatayap",
@@ -4788,7 +5779,7 @@
     {
       "id": "spearhead_unumanuk",
       "name": "Spearhead Unumanuk",
-      "homeId": "watch",
+      "homeId": "unumanuk_household",
       "species": "Engh-Sho",
       "gender": "male",
       "ageBand": "<unknown age>",
@@ -4954,23 +5945,24 @@
             "to": "07:00",
             "mapId": "map_hobunji_town",
             "position": {
-              "c": 23,
-              "r": 22
+              "c": 45,
+              "r": 28
             },
             "activity": "home"
           }
         ],
         "defaultPosition": {
           "area": "town",
-          "c": 23,
-          "r": 22
+          "c": 45,
+          "r": 28
         }
-      }
+      },
+      "loreBackground": "The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds."
     },
     {
       "id": "oddclaw_unumanuk",
       "name": "Oddclaw Unumanuk",
-      "homeId": "watch",
+      "homeId": "unumanuk_household",
       "species": "Engh-Sho",
       "gender": "male",
       "ageBand": "<unknown age>",
@@ -5141,18 +6133,19 @@
             "to": "08:00",
             "mapId": "map_hobunji_town",
             "position": {
-              "c": 23,
-              "r": 22
+              "c": 45,
+              "r": 28
             },
             "activity": "home"
           }
         ],
         "defaultPosition": {
           "area": "town",
-          "c": 23,
-          "r": 22
+          "c": 45,
+          "r": 28
         }
-      }
+      },
+      "loreBackground": "The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds."
     },
     {
       "id": "tooth_hatayap",
@@ -5695,11 +6688,1694 @@
           "r": 15
         }
       }
+    },
+    {
+      "id": "bird_bone",
+      "name": "Bird Bone",
+      "homeId": "<suggestion: location — needs a hunter's lodge/cabin placed near the town outskirts; no building exists for him yet>",
+      "species": "Engh-sho",
+      "gender": "male",
+      "ageBand": "<suggestion: age — design doc only says 'guy'>",
+      "role": "hunter",
+      "tags": [
+        "hunter",
+        "romanceable",
+        "villager"
+      ],
+      "bio": "Engh-sho hunter who supplies game, hides, and the rare animal parts Mother Rahayobi's potion recipes call for. <suggestion: personality — design doc only specifies 'marriageable' — needs a voice>",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": true,
+        "canMarry": true,
+        "maxHearts": 14,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [
+        {
+          "id": "tree_bird_bone_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_bird_bone_1",
+          "nodes": [
+            {
+              "id": "n_bird_bone_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Bird Bone's opening greeting — gruff but kind, probably hunting- or weather-flavored>",
+              "next": "n_bird_bone_2"
+            },
+            {
+              "id": "n_bird_bone_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Looking for work?",
+                  "next": "n_bird_bone_3a"
+                },
+                {
+                  "label": "Got any rare parts to sell?",
+                  "next": "n_bird_bone_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_bird_bone_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — his answer about hunting work / what he's tracking lately>",
+              "next": "n_bird_bone_4"
+            },
+            {
+              "id": "n_bird_bone_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — a price-flavored answer hinting at how expensive his rare stock is>",
+              "next": "n_bird_bone_4"
+            },
+            {
+              "id": "n_bird_bone_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — his closing sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "workBuildingId": "<suggestion: location — needs a hunter's lodge/cabin placed near the town outskirts; no building exists for him yet>",
+        "shopHours": "",
+        "rules": [],
+        "defaultPosition": {
+          "area": "town",
+          "c": 0,
+          "r": 0
+        }
+      },
+      "questHooks": [
+        "Sells rare animal parts directly (at a steep price) for Mother Rahayobi's multi-mixture potion quest.",
+        "<suggestion: shop design — his full price list, which parts he stocks vs. which the player must hunt personally>"
+      ]
+    },
+    {
+      "id": "khazud",
+      "name": "Khazud",
+      "homeId": "<suggestion: location — needs a woodcutter's cabin/yard placed near the Southern Forest or town; no building exists for him yet>",
+      "species": "Mashtzarr",
+      "gender": "male",
+      "ageBand": "young adult",
+      "role": "woodcutter",
+      "tags": [
+        "woodcutter",
+        "romanceable",
+        "villager"
+      ],
+      "bio": "Young Mashtzarr woodcutter. <suggestion: personality/voice — design doc only specifies 'younger, marriageable Mashtzarr' — needs a personality>",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mashtzarr",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mashtzarr",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": true,
+        "canMarry": true,
+        "maxHearts": 14,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [
+        {
+          "id": "tree_khazud_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_khazud_1",
+          "nodes": [
+            {
+              "id": "n_khazud_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Khazud's greeting — young, probably more easygoing than the older Mashtzarr cast>",
+              "next": "n_khazud_2"
+            },
+            {
+              "id": "n_khazud_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Need a hand cutting wood?",
+                  "next": "n_khazud_3a"
+                },
+                {
+                  "label": "How long have you lived in Hobunji?",
+                  "next": "n_khazud_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_khazud_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — his answer, maybe pride in his trade or banter about Kzubug's smithy needing his wood>",
+              "next": "n_khazud_4"
+            },
+            {
+              "id": "n_khazud_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — his backstory hook — where he's from, why he's here>",
+              "next": "n_khazud_4"
+            },
+            {
+              "id": "n_khazud_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — his closing sign-off>",
+              "next": null
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "workBuildingId": "<suggestion: location — needs a woodcutter's cabin/yard placed near the Southern Forest or town; no building exists for him yet>",
+        "shopHours": "",
+        "rules": [],
+        "defaultPosition": {
+          "area": "town",
+          "c": 0,
+          "r": 0
+        }
+      }
+    },
+    {
+      "id": "nohuknuk",
+      "name": "Old Man Nohuknuk",
+      "homeId": "shrine_nohuknuk_western_incline",
+      "species": "<suggestion: species — described as 'the snow's incarnation' — a quadrupedal Nelk wearing Engh-sho-style snow clothing, walking upright with a staff; not one of the six playable rigs, needs a custom model>",
+      "gender": "<suggestion: gender — design doc only calls him 'Old Man'>",
+      "ageBand": "ancient",
+      "role": "great fae / farming solution",
+      "tags": [
+        "great_fae",
+        "shrine",
+        "quest_giver",
+        "ghost_army"
+      ],
+      "bio": "The incarnation of snow itself, given the shape of an old quadrupedal Nelk dressed in Engh-sho snow clothes. Walks upright with a staff, and can manifest from any snowbank, in any size.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [
+        {
+          "id": "tree_nohuknuk_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_nohuknuk_1",
+          "nodes": [
+            {
+              "id": "n_nohuknuk_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Nohuknuk's slow, ancient voice — explains he's never tasted a vegetable in any of his long winters>",
+              "next": "n_nohuknuk_2"
+            },
+            {
+              "id": "n_nohuknuk_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "I brought you something to try.",
+                  "next": "n_nohuknuk_3a"
+                },
+                {
+                  "label": "Why do you want to help the village?",
+                  "next": "n_nohuknuk_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_nohuknuk_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — his reaction to tasting a vegetable for the first time, scaled to which season it's from>",
+              "next": "n_nohuknuk_4"
+            },
+            {
+              "id": "n_nohuknuk_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — his motive — simple curiosity, kinship with the land, or something deeper>",
+              "next": "n_nohuknuk_4"
+            },
+            {
+              "id": "n_nohuknuk_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — his closing line about the blizzard wall / the Ghost Army>",
+              "next": null
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "workBuildingId": "shrine_nohuknuk_western_incline",
+        "shopHours": "",
+        "rules": [],
+        "defaultPosition": {
+          "area": "town",
+          "c": 0,
+          "r": 0
+        }
+      },
+      "loreBackground": "Asks for an offering of vegetables from each of the four seasons, since he's never tasted any. In return he raises a great blizzard wall along the town's western side, redirecting the Harlyao Ghost Army's weekly patrol on his designated day. <suggestion: quest design — which weekday his redirection covers, and the specific named vegetables that satisfy each season's offering>",
+      "questHooks": [
+        "Offering: one vegetable from each of the four seasons (Deadgrass, Stormtide, Coldmuck, Longpour).",
+        "Reward: a blizzard wall on the western side of town that misdirects the Ghost Army on his patrol day, raising the town's [Trade Value].",
+        "<suggestion: quest design — exact vegetable items required and his patrol-day assignment>"
+      ]
+    },
+    {
+      "id": "hiki_hiki",
+      "name": "Hiki-hiki",
+      "homeId": "shrine_hikihiki_southern_forest",
+      "species": "<suggestion: species — a talking, hat-wearing Drenkiira trickster — not one of the six playable rigs, needs a custom model>",
+      "gender": "<suggestion: gender — not specified in the design doc>",
+      "ageBand": "<suggestion: age — not specified>",
+      "role": "great fae / generalist solution / trickster",
+      "tags": [
+        "great_fae",
+        "shrine",
+        "quest_giver",
+        "ghost_army",
+        "riddles"
+      ],
+      "bio": "A talking, hat-wearing Drenkiira trickster who sends visitors on a scavenger hunt of riddles to figure out what offering he actually wants. Swaps his current hat for a new one every time you guess correctly.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [
+        {
+          "id": "tree_hiki_hiki_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_hiki_hiki_1",
+          "nodes": [
+            {
+              "id": "n_hiki_hiki_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Hiki-hiki's playful, riddling greeting — should sound like he's already mid-joke>",
+              "next": "n_hiki_hiki_2"
+            },
+            {
+              "id": "n_hiki_hiki_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Give me a riddle, then.",
+                  "next": "n_hiki_hiki_3a"
+                },
+                {
+                  "label": "Why riddles instead of just telling me?",
+                  "next": "n_hiki_hiki_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_hiki_hiki_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — his first riddle, pointing toward the first offering>",
+              "next": "n_hiki_hiki_4"
+            },
+            {
+              "id": "n_hiki_hiki_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — his trickster justification for making everything a game>",
+              "next": "n_hiki_hiki_4"
+            },
+            {
+              "id": "n_hiki_hiki_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — his closing tease, hinting at the next hat>",
+              "next": null
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "workBuildingId": "shrine_hikihiki_southern_forest",
+        "shopHours": "",
+        "rules": [],
+        "defaultPosition": {
+          "area": "town",
+          "c": 0,
+          "r": 0
+        }
+      },
+      "loreBackground": "Each correct offering earns the player his current hat and reveals a new riddle pointing toward the next offering. <suggestion: quest design — the full riddle text and answers, how many offerings the chain has, and what the collected hats are used for>",
+      "questHooks": [
+        "Each successful offering triggers the next riddle and a hat swap.",
+        "<suggestion: quest design — the riddle chain content and whether the retired hats become wearable cosmetics for the player>"
+      ]
+    },
+    {
+      "id": "banubu",
+      "name": "Banubu",
+      "homeId": "banubu_cave_northern_cliffs",
+      "species": "<suggestion: species — the 'Sleepy Grehlr' — glowing green eyes, perpetual mist; not one of the six playable rigs, needs a custom model>",
+      "gender": "<suggestion: gender — not specified in the design doc>",
+      "ageBand": "<suggestion: age — not specified>",
+      "role": "great fae / fishing solution",
+      "tags": [
+        "great_fae",
+        "shrine",
+        "quest_giver",
+        "ghost_army"
+      ],
+      "bio": "The Sleepy Grehlr — glowing green eyes, perpetual mist, living in a ruin-filled cave overlooking the river. Too tired to help because he's too hungry to hunt, and too hungry because he's too tired to hunt.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mashtzarr",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mashtzarr",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [
+        {
+          "id": "tree_banubu_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_banubu_1",
+          "nodes": [
+            {
+              "id": "n_banubu_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Banubu's drowsy, mist-shrouded greeting — explains he's too tired to help>",
+              "next": "n_banubu_2"
+            },
+            {
+              "id": "n_banubu_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Why are you so tired?",
+                  "next": "n_banubu_3a"
+                },
+                {
+                  "label": "What's in this cave with you?",
+                  "next": "n_banubu_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_banubu_3a",
+              "type": "text",
+              "text": "I'm hungry. And I'm too tired to hunt because I'm hungry. <suggestion: dialogue — his circular, sleepy explanation, and his request for Fifteen Fish Pie>",
+              "next": "n_banubu_4"
+            },
+            {
+              "id": "n_banubu_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — details about the ruins inside his cave>",
+              "next": "n_banubu_4"
+            },
+            {
+              "id": "n_banubu_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — his sleepy closing line>",
+              "next": null
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "workBuildingId": "banubu_cave_northern_cliffs",
+        "shopHours": "",
+        "rules": [],
+        "defaultPosition": {
+          "area": "town",
+          "c": 0,
+          "r": 0
+        }
+      },
+      "loreBackground": "Needs a 'Fifteen Fish Pie' to get the energy to help — quite literally fifteen different fish, each one only catchable in a specific season + weather + time + location combination around the town's outskirts. <suggestion: quest design — the actual list of fifteen fish and their catch conditions, plus the pie recipe itself>",
+      "questHooks": [
+        "Requires a Fifteen Fish Pie built from fish that are each catchable only in one specific season/weather/time/location combination.",
+        "<suggestion: quest design — full fish list, catch conditions, and recipe>"
+      ]
+    },
+    {
+      "id": "mother_rahayobi",
+      "name": "Mother Rahayobi",
+      "homeId": "rahayobi_shrine_eastern_fogplains",
+      "species": "<suggestion: species — a hag who appears as an old Harlyao woman — clarify if she's truly Harlyao or just wears that appearance>",
+      "gender": "female",
+      "ageBand": "ancient",
+      "role": "great fae / hag / alchemy solution",
+      "tags": [
+        "great_fae",
+        "shrine",
+        "quest_giver",
+        "ghost_army"
+      ],
+      "bio": "A hag who appears as an old Harlyao woman. Agrees readily to drive off the Ghost Army — she has her own reasons — and has a multi-stage potion plan to do it.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "female",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "female",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [
+        {
+          "id": "tree_mother_rahayobi_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_mother_rahayobi_1",
+          "nodes": [
+            {
+              "id": "n_mother_rahayobi_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Mother Rahayobi's knowing, slightly mischievous greeting — she's eager to help, for her own reasons>",
+              "next": "n_mother_rahayobi_2"
+            },
+            {
+              "id": "n_mother_rahayobi_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Why do you want the Ghost Army gone?",
+                  "next": "n_mother_rahayobi_3a"
+                },
+                {
+                  "label": "What do you need from me?",
+                  "next": "n_mother_rahayobi_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_mother_rahayobi_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — her real motive — kept vague/foreboding rather than fully explained up front>",
+              "next": "n_mother_rahayobi_4"
+            },
+            {
+              "id": "n_mother_rahayobi_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — her explanation of the multi-stage potion plan and the first mixture she needs>",
+              "next": "n_mother_rahayobi_4"
+            },
+            {
+              "id": "n_mother_rahayobi_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — her closing line, maybe a hint of what she's really after>",
+              "next": null
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "workBuildingId": "rahayobi_shrine_eastern_fogplains",
+        "shopHours": "",
+        "rules": [],
+        "defaultPosition": {
+          "area": "town",
+          "c": 0,
+          "r": 0
+        }
+      },
+      "loreBackground": "Her potion needs separate mixtures made from foragables and animal parts from every zone × weather × season combination; rare animal parts can be bought directly (expensively) from Bird Bone. Each turned-in mixture teaches the player a free set of special potion recipes. <suggestion: quest design — her real motive for wanting the Ghost Army gone, the full mixture list/recipes, and exactly which special potions each mixture unlocks>",
+      "questHooks": [
+        "Multi-stage potion quest: separate mixtures per zone × weather × season combination.",
+        "Each submitted mixture teaches the player a new special potion recipe for free.",
+        "<suggestion: quest design — her real motive, full mixture/recipe list, and taught potions>"
+      ]
+    },
+    {
+      "id": "baruhi_chief",
+      "name": "<suggestion: name — the Baruhi war leader's name isn't given in the design doc>",
+      "homeId": "<suggestion: location — needs a Baruhi camp/longhouse placed in the contested territory>",
+      "species": "Engh-sho",
+      "gender": "<suggestion: gender — not specified>",
+      "ageBand": "adult",
+      "role": "tribal war leader",
+      "tags": [
+        "baruhi",
+        "tribal_war",
+        "quest_giver"
+      ],
+      "bio": "Leader of the Baruhi, one of the two tribes locked in a long-running war over <suggestion: war cause — the design doc names the conflict but not the specific cause — land, a resource, an old grudge?>.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [
+        {
+          "id": "tree_baruhi_chief_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_baruhi_chief_1",
+          "nodes": [
+            {
+              "id": "n_baruhi_chief_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — the chief's wary, battle-hardened greeting to an outsider>",
+              "next": "n_baruhi_chief_2"
+            },
+            {
+              "id": "n_baruhi_chief_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Tell me about your war with the Porakaneki.",
+                  "next": "n_baruhi_chief_3a"
+                },
+                {
+                  "label": "Why does this conflict matter to the village?",
+                  "next": "n_baruhi_chief_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_baruhi_chief_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — the Baruhi's side of the conflict's origin and grievances>",
+              "next": "n_baruhi_chief_4"
+            },
+            {
+              "id": "n_baruhi_chief_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — how the war spills over into the player's town/region>",
+              "next": "n_baruhi_chief_4"
+            },
+            {
+              "id": "n_baruhi_chief_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — a guarded closing line, leaving the door open for the player to get involved>",
+              "next": null
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "workBuildingId": "<suggestion: location — needs a Baruhi camp/longhouse placed in the contested territory>",
+        "shopHours": "",
+        "rules": [],
+        "defaultPosition": {
+          "area": "town",
+          "c": 0,
+          "r": 0
+        }
+      },
+      "loreBackground": "The Baruhi/Porakaneki war is a major subplot the player can get drawn into, possibly choosing a side or brokering peace. <suggestion: plot design — what triggers player involvement, whether peace is achievable, what each side wants, and how this ties (if at all) to the Khannibarri Trade Shortage crisis or the Ghost Army>",
+      "questHooks": [
+        "<suggestion: quest design — an introductory quest where the player first encounters the Baruhi side of the conflict>",
+        "<suggestion: quest design — whether the player can ally with, betray, or make peace between the Baruhi and Porakaneki>"
+      ]
+    },
+    {
+      "id": "porakaneki_chief",
+      "name": "<suggestion: name — the Porakaneki war leader's name isn't given in the design doc>",
+      "homeId": "<suggestion: location — needs a Porakaneki camp/longhouse placed in the contested territory>",
+      "species": "<suggestion: species — not specified — could be Engh-sho like the Baruhi, or a different native people>",
+      "gender": "<suggestion: gender — not specified>",
+      "ageBand": "adult",
+      "role": "tribal war leader",
+      "tags": [
+        "porakaneki",
+        "tribal_war",
+        "quest_giver"
+      ],
+      "bio": "Leader of the Porakaneki, the tribe opposing the Baruhi in a long-running war over <suggestion: war cause — the design doc names the conflict but not the specific cause>.",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "engh-sho",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "engh-sho",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [
+        {
+          "id": "tree_porakaneki_chief_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_porakaneki_chief_1",
+          "nodes": [
+            {
+              "id": "n_porakaneki_chief_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — the chief's wary greeting, coloured by suspicion that the player has already spoken to the Baruhi>",
+              "next": "n_porakaneki_chief_2"
+            },
+            {
+              "id": "n_porakaneki_chief_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Tell me about your war with the Baruhi.",
+                  "next": "n_porakaneki_chief_3a"
+                },
+                {
+                  "label": "What would it take to end this?",
+                  "next": "n_porakaneki_chief_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_porakaneki_chief_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — the Porakaneki's side of the conflict's origin and grievances>",
+              "next": "n_porakaneki_chief_4"
+            },
+            {
+              "id": "n_porakaneki_chief_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — the chief's conditions for peace, or refusal to consider it>",
+              "next": "n_porakaneki_chief_4"
+            },
+            {
+              "id": "n_porakaneki_chief_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — a guarded closing line>",
+              "next": null
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "workBuildingId": "<suggestion: location — needs a Porakaneki camp/longhouse placed in the contested territory>",
+        "shopHours": "",
+        "rules": [],
+        "defaultPosition": {
+          "area": "town",
+          "c": 0,
+          "r": 0
+        }
+      },
+      "loreBackground": "Mirror counterpart to the Baruhi chief. <suggestion: plot design — the Porakaneki's side of the grievance, whether it's morally one-sided or genuinely two-sided, and what resolution (victory/peace/mutual destruction) the design intends>",
+      "questHooks": [
+        "<suggestion: quest design — an introductory quest where the player first encounters the Porakaneki side of the conflict>",
+        "<suggestion: quest design — whether siding with the Porakaneki forecloses the Baruhi questline or vice versa>"
+      ]
+    },
+    {
+      "id": "khannibarri_agent",
+      "name": "<suggestion: name — the Khannibarri Imperial Mining Company's local representative isn't named in the design doc>",
+      "homeId": "<suggestion: location — needs a company office/outpost built in town — the design doc establishes the company opens up shop in the village>",
+      "species": "<suggestion: species — not specified — possibly a non-native species to mark them as outsiders/colonial presence>",
+      "gender": "<suggestion: gender — not specified>",
+      "ageBand": "adult",
+      "role": "antagonist / mining company agent",
+      "tags": [
+        "khannibarri",
+        "antagonist",
+        "jojamart_analog",
+        "trade_shortage"
+      ],
+      "bio": "Local face of the Khannibarri Imperial Mining Company, the predatory corporate antagonist (this game's Jojamart/Joja Corp analogue) that moves in during the Trade Shortage crisis. <suggestion: personality — design doc establishes the company's role but not this individual's voice/manner — oily corporate charm? cold bureaucrat? true believer?>",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [
+        {
+          "id": "tree_khannibarri_agent_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_khannibarri_agent_1",
+          "nodes": [
+            {
+              "id": "n_khannibarri_agent_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — the agent's falsely friendly corporate sales pitch on first meeting>",
+              "next": "n_khannibarri_agent_2"
+            },
+            {
+              "id": "n_khannibarri_agent_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "What does your company want here?",
+                  "next": "n_khannibarri_agent_3a"
+                },
+                {
+                  "label": "The locals don't trust you.",
+                  "next": "n_khannibarri_agent_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_khannibarri_agent_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — the company's stated (and probably misleading) goals in the village>",
+              "next": "n_khannibarri_agent_4"
+            },
+            {
+              "id": "n_khannibarri_agent_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — the agent's dismissive or defensive reaction, hinting at the company's real intentions>",
+              "next": "n_khannibarri_agent_4"
+            },
+            {
+              "id": "n_khannibarri_agent_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — a closing line with a thinly-veiled threat or sales pitch>",
+              "next": null
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "workBuildingId": "<suggestion: location — needs a company office/outpost built in town — the design doc establishes the company opens up shop in the village>",
+        "shopHours": "",
+        "rules": [],
+        "defaultPosition": {
+          "area": "town",
+          "c": 0,
+          "r": 0
+        }
+      },
+      "loreBackground": "Represents the Khannibarri Imperial Mining Company, which exploits the Trade Shortage to gain a foothold in the village, undercutting local trade and eventually expressing interest in the Infested Old Mine after the <suggestion: plot detail — the village elder is the one who tips them off about the old mine — confirm whether this agent is the one who receives that tip, or a separate company official>. <suggestion: plot design — the full arc of the company's takeover attempt, what the player can do to resist/undermine it, and how it resolves>",
+      "questHooks": [
+        "<suggestion: quest design — an early quest establishing the Trade Shortage and the company's arrival as a 'solution'>",
+        "<suggestion: quest design — a late-game questline where the player can sabotage, expose, or drive out the company>",
+        "<suggestion: quest design — ties to the Infested Old Mine — does the company try to claim/exploit it once its existence becomes known?>"
+      ]
+    },
+    {
+      "id": "village_elder",
+      "name": "<suggestion: name — the unnamed civic leader who tips off the Mining Company about the old mine isn't named in the design doc>",
+      "homeId": "<suggestion: location — needs a town hall / elder's house placed in town>",
+      "species": "<suggestion: species — not specified>",
+      "gender": "<suggestion: gender — not specified>",
+      "ageBand": "elder",
+      "role": "village leader",
+      "tags": [
+        "civic_leader",
+        "trade_shortage",
+        "infested_mine"
+      ],
+      "bio": "The village's civic leader. <suggestion: characterization — design doc only establishes that this person tells the Khannibarri Mining Company about the old mine — is this a betrayal, desperation during the Trade Shortage, naivety, or something more sympathetic?>",
+      "portrait": {
+        "asset": "",
+        "avatarKey": ""
+      },
+      "appearance": {
+        "speciesId": "mao-ao",
+        "gender": "male",
+        "cosmetics": {},
+        "bodyColors": {
+          "A": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "B": {
+            "h": -70,
+            "s": -0.8,
+            "v": -0.55
+          },
+          "C": {
+            "h": -70,
+            "s": -0.75,
+            "v": -0.37
+          }
+        },
+        "chatColor": {
+          "h": 210,
+          "s": 75,
+          "l": 68
+        }
+      },
+      "equippedCosmetics": [],
+      "appliedDyes": {},
+      "avatarEditor": {
+        "sourceFormat": "npc_avatar_editor_export",
+        "rawExport": {
+          "schema": "npc_avatar_editor_export.v1",
+          "source": "character-studio default",
+          "appearance": {
+            "speciesId": "mao-ao",
+            "gender": "male",
+            "cosmetics": {},
+            "bodyColors": {
+              "A": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "B": {
+                "h": -70,
+                "s": -0.8,
+                "v": -0.55
+              },
+              "C": {
+                "h": -70,
+                "s": -0.75,
+                "v": -0.37
+              }
+            },
+            "chatColor": {
+              "h": 210,
+              "s": 75,
+              "l": 68
+            }
+          },
+          "equippedCosmetics": [],
+          "appliedDyes": {}
+        }
+      },
+      "relationship": {
+        "canBefriend": true,
+        "canDate": false,
+        "canMarry": false,
+        "maxHearts": 10,
+        "decayRule": "unknown",
+        "baseDisposition": 0,
+        "speciesStartingDisposition": [],
+        "friendshipUnlocks": []
+      },
+      "gifts": {
+        "loved": [],
+        "liked": [],
+        "neutral": [],
+        "disliked": [],
+        "hated": [],
+        "categoryNotes": []
+      },
+      "dialogueTrees": [
+        {
+          "id": "tree_village_elder_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_village_elder_1",
+          "nodes": [
+            {
+              "id": "n_village_elder_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — the elder's weary, dutiful greeting — a respected figure under pressure>",
+              "next": "n_village_elder_2"
+            },
+            {
+              "id": "n_village_elder_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "How are the trade troubles affecting us?",
+                  "next": "n_village_elder_3a"
+                },
+                {
+                  "label": "What do you know about the old mine?",
+                  "next": "n_village_elder_3b"
+                }
+              ]
+            },
+            {
+              "id": "n_village_elder_3a",
+              "type": "text",
+              "text": "<suggestion: dialogue — the elder's account of the Trade Shortage and its toll on the village>",
+              "next": "n_village_elder_4"
+            },
+            {
+              "id": "n_village_elder_3b",
+              "type": "text",
+              "text": "<suggestion: dialogue — a guarded or evasive answer, foreshadowing the elder's tip-off to the Mining Company>",
+              "next": "n_village_elder_4"
+            },
+            {
+              "id": "n_village_elder_4",
+              "type": "text",
+              "text": "<suggestion: dialogue — a closing line tinged with guilt or resignation>",
+              "next": null
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "scheduleHooks": {
+        "defaultMapId": "hobunji_main_town",
+        "workBuildingId": "<suggestion: location — needs a town hall / elder's house placed in town>",
+        "shopHours": "",
+        "rules": [],
+        "defaultPosition": {
+          "area": "town",
+          "c": 0,
+          "r": 0
+        }
+      },
+      "loreBackground": "Pivotal to the Trade Shortage/Infested Old Mine crossover: this elder is the one who informs the Khannibarri Imperial Mining Company about the Infested Old Mine's existence, setting the company's sights on it. <suggestion: plot design — the elder's motive for telling them, whether the player can prevent/discover this beforehand, and the fallout once it's known>",
+      "questHooks": [
+        "<suggestion: quest design — a quest or revelation where the player learns the elder tipped off the Mining Company>",
+        "<suggestion: quest design — whether the player can confront, forgive, or expose the elder, and what consequences follow>"
+      ]
     }
   ],
   "exportedAt": "2026-06-15T00:00:00.000Z",
   "summary": {
-    "npcCount": 29,
+    "npcCount": 39,
     "romanceableCount": 6,
     "placeholderCount": 1
   },
