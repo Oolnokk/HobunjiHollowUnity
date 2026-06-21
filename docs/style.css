@@ -1120,7 +1120,7 @@
       min-height: 0;
       display: none;
       align-items: center;
-      padding: 0 10px;
+      padding: 4px 10px;
       font-size: 11px;
       color: var(--text);
       background: transparent;
@@ -1129,12 +1129,22 @@
       text-align: left;
       cursor: pointer;
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
       transition: background 0.1s;
     }
     .dlg-opt.dlg-opt-visible { display: flex; }
     .dlg-opt:active { background: rgba(255,255,255,0.08); }
+    /* Wraps up to 3 lines; game.js shrinks font-size further if it still overflows. */
+    .dlg-opt-label {
+      flex: 1;
+      min-width: 0;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      overflow: hidden;
+      line-height: 1.25;
+      white-space: normal;
+      word-wrap: break-word;
+    }
 
     /* Action row: Leave (x:0 w:3) + Continue (x:3 w:5) of 8-col sub-grid */
     #npcDialogueActions {

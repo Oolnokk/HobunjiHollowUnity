@@ -316,14 +316,35 @@
         return trees.sort((a, b) => (b.priority || 0) - (a.priority || 0))[0] || null;
       }
 
+      // Shrinks a .dlg-opt-label's font-size (down from the CSS default) until its
+      // 3-line-clamped content stops overflowing the option button's allotted height.
+      function _fitDlgOptionLabel(el) {
+        const label = el.querySelector('.dlg-opt-label');
+        if (!label) return;
+        const baseSize = 11, minSize = 8;
+        let size = baseSize;
+        label.style.fontSize = size + 'px';
+        while (size > minSize && label.scrollHeight > el.clientHeight) {
+          size -= 1;
+          label.style.fontSize = size + 'px';
+        }
+      }
+
       function _showDlgChoices(node) {
         const choices = node.choices || [];
         const optEls  = [1,2,3,4,5,6].map(i => document.getElementById(`dlgOpt${i}`));
-        optEls.forEach(el => { if (el) { el.textContent = ''; el.classList.remove('dlg-opt-visible'); el.onclick = null; } });
+        optEls.forEach(el => {
+          if (!el) return;
+          const label = el.querySelector('.dlg-opt-label');
+          if (label) { label.textContent = ''; label.style.fontSize = ''; }
+          el.classList.remove('dlg-opt-visible');
+          el.onclick = null;
+        });
         choices.slice(0, 6).forEach((c, i) => {
           const el = optEls[i];
           if (!el) return;
-          el.textContent = _resolveTokens(c.label || '', _dlgNpcRec);
+          const label = el.querySelector('.dlg-opt-label');
+          if (label) label.textContent = _resolveTokens(c.label || '', _dlgNpcRec);
           el.classList.add('dlg-opt-visible');
           el.onclick = () => {
             if (!dialogueOpen) return;
@@ -344,6 +365,9 @@
             if (!skipNav) _navigateDlgTo(c.next);
           };
         });
+        // Run after all options are flagged visible so each one's flex-allotted
+        // height (which depends on how many siblings are showing) is settled.
+        optEls.forEach(el => { if (el && el.classList.contains('dlg-opt-visible')) _fitDlgOptionLabel(el); });
         const continueBtn = document.getElementById('npcDialogueContinue');
         if (continueBtn) continueBtn.style.display = choices.length ? 'none' : '';
       }
@@ -351,7 +375,10 @@
       function _hideChoiceButtons() {
         [1,2,3,4,5,6].forEach(i => {
           const el = document.getElementById(`dlgOpt${i}`);
-          if (el) { el.textContent = ''; el.classList.remove('dlg-opt-visible'); el.onclick = null; }
+          if (!el) return;
+          const label = el.querySelector('.dlg-opt-label');
+          if (label) { label.textContent = ''; label.style.fontSize = ''; }
+          el.classList.remove('dlg-opt-visible'); el.onclick = null;
         });
         const continueBtn = document.getElementById('npcDialogueContinue');
         if (continueBtn) continueBtn.style.display = '';
