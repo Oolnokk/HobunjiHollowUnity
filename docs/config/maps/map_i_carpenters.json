@@ -1780,5 +1780,40 @@
       "postSY": 1,
       "postSZ": 1
     }
+  ],
+  "npcStations": [
+    {
+      "id": "station_car_counter",
+      "label": "Carpentry Work",
+      "col": 4,
+      "row": 4,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_car_crates",
+      "label": "Hauling Lumber",
+      "col": 4,
+      "row": 9,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_car_inventory",
+      "label": "Taking Inventory",
+      "col": 9,
+      "row": 8,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
   ]
 }

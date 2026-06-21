@@ -491,19 +491,20 @@
             "from": "06:00",
             "to": "12:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_ginju_field_nw",
             "position": {
-              "c": 35,
-              "r": 14
+              "c": 33,
+              "r": 12
             },
-            "routeId": "route_farmstead_path",
             "activity": "farming"
           },
           {
             "from": "12:00",
             "to": "14:00",
             "mapId": "map_i_ginju_farmstead",
+            "stationId": "station_ginju_table_sit1",
             "position": {
-              "c": 4,
+              "c": 9,
               "r": 3
             },
             "activity": "resting"
@@ -512,9 +513,10 @@
             "from": "14:00",
             "to": "19:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_ginju_field_sw",
             "position": {
               "c": 33,
-              "r": 16
+              "r": 15
             },
             "activity": "farming"
           },
@@ -522,18 +524,15 @@
             "from": "19:00",
             "to": "06:00",
             "mapId": "map_i_ginju_farmstead",
+            "stationId": "station_ginju_bed_parents",
             "position": {
-              "c": 4,
-              "r": 3
+              "c": 7,
+              "r": 14
             },
-            "activity": "home"
+            "activity": "sleeping"
           }
         ],
-        "defaultPosition": {
-          "area": "map_i_ginju_farmstead",
-          "c": 4,
-          "r": 3
-        }
+        "defaultStationId": "station_ginju_bed_parents"
       },
       "loreBackground": "<suggestion: backstory — how Gorobi really feels about a new rival farmer arriving — does he warm up over time, and what's his own history with the land?>"
     },
@@ -721,16 +720,18 @@
             "from": "07:00",
             "to": "09:00",
             "mapId": "map_i_ginju_farmstead",
+            "stationId": "station_ginju_cook",
             "position": {
               "c": 3,
-              "r": 5
+              "r": 3
             },
-            "activity": "home"
+            "activity": "cooking breakfast"
           },
           {
             "from": "09:00",
             "to": "18:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_ginju_field_ne",
             "position": {
               "c": 36,
               "r": 12
@@ -741,18 +742,15 @@
             "from": "18:00",
             "to": "07:00",
             "mapId": "map_i_ginju_farmstead",
+            "stationId": "station_ginju_bed_parents",
             "position": {
-              "c": 3,
-              "r": 5
+              "c": 7,
+              "r": 14
             },
-            "activity": "home"
+            "activity": "sleeping"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 35,
-          "r": 9
-        }
+        "defaultStationId": "station_ginju_bed_parents"
       }
     },
     {
@@ -1279,41 +1277,37 @@
             "from": "07:00",
             "to": "12:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_ginju_field_se",
             "position": {
-              "c": 34,
-              "r": 13
+              "c": 36,
+              "r": 15
             },
-            "routeId": "route_farmstead_path",
             "activity": "farming"
           },
           {
             "from": "12:00",
             "to": "17:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_aliri_freetime",
             "position": {
-              "c": 25,
+              "c": 22,
               "r": 32
             },
-            "routeId": "route_wjhen",
             "activity": "free time"
           },
           {
             "from": "17:00",
             "to": "07:00",
             "mapId": "map_i_ginju_farmstead",
+            "stationId": "station_ginju_bed_aliri",
             "position": {
-              "c": 7,
-              "r": 5
+              "c": 12,
+              "r": 14
             },
-            "routeId": "route_farmstead_path",
             "activity": "home"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 35,
-          "r": 9
-        }
+        "defaultStationId": "station_ginju_bed_aliri"
       }
     },
     {
@@ -1492,30 +1486,26 @@
             "from": "08:00",
             "to": "19:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_gantami_play",
             "position": {
-              "c": 28,
-              "r": 30
+              "c": 21,
+              "r": 29
             },
-            "routeId": "route_wjhen",
             "activity": "playing"
           },
           {
             "from": "19:00",
             "to": "08:00",
             "mapId": "map_i_ginju_farmstead",
+            "stationId": "station_ginju_rug_gantami",
             "position": {
-              "c": 4,
-              "r": 5
+              "c": 9,
+              "r": 9
             },
-            "routeId": "route_farmstead_path",
             "activity": "home"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 35,
-          "r": 9
-        }
+        "defaultStationId": "station_ginju_rug_gantami"
       }
     },
     {
@@ -1708,6 +1698,7 @@
             "from": "10:00",
             "to": "18:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_leaf_sit",
             "position": {
               "c": 7,
               "r": 42
@@ -1725,11 +1716,7 @@
             "activity": "home"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 6,
-          "r": 43
-        }
+        "defaultStationId": "station_leaf_sit"
       },
       "loreBackground": "Original concept: a lonely fisherman mourning a dead Kenkari husband named Pahu ao Pakamu. The current schedule keeps both Leaf and Pahu alive and active in town, which contradicts the widower framing. <suggestion: decision needed — either retcon one of them as deceased (and rewrite their relationship status/schedule/dialogue accordingly) or drop the widower angle and keep them as a living couple>"
     },
@@ -1913,22 +1900,22 @@
             "from": "08:00",
             "to": "14:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_pahu_social",
             "position": {
-              "c": 22,
-              "r": 33
+              "c": 19,
+              "r": 32
             },
-            "routeId": "route_wjhen",
             "activity": "socializing"
           },
           {
             "from": "14:00",
             "to": "20:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_pahu_town",
             "position": {
-              "c": 28,
+              "c": 33,
               "r": 30
             },
-            "routeId": "route_main_ns",
             "activity": "enjoying town"
           },
           {
@@ -1942,11 +1929,7 @@
             "activity": "home"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 6,
-          "r": 43
-        }
+        "defaultStationId": "station_pahu_town"
       }
     },
     {
@@ -2752,11 +2735,12 @@
             "to": "19:00",
             "mapId": "map_hobunji_town",
             "position": {
-              "c": 25,
+              "c": 31,
               "r": 31
             },
             "routeId": "route_wjhen",
-            "activity": "playing music"
+            "activity": "playing music",
+            "stationId": "station_foroji_music"
           },
           {
             "from": "19:00",
@@ -2955,20 +2939,21 @@
             "from": "07:00",
             "to": "12:00",
             "mapId": "map_i_smithy",
+            "stationId": "station_smi_forge",
             "position": {
               "c": 4,
               "r": 3
             },
-            "routeId": "route_west_road",
             "activity": "smithing"
           },
           {
             "from": "12:00",
             "to": "13:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_smithy",
+            "stationId": "station_smi_evening_kzubug",
             "position": {
-              "c": 10,
-              "r": 22
+              "c": 9,
+              "r": 5
             },
             "activity": "lunch break"
           },
@@ -2976,6 +2961,7 @@
             "from": "13:00",
             "to": "18:00",
             "mapId": "map_i_smithy",
+            "stationId": "station_smi_forge",
             "position": {
               "c": 4,
               "r": 3
@@ -2985,19 +2971,16 @@
           {
             "from": "18:00",
             "to": "07:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_smithy",
+            "stationId": "station_smi_evening_kzubug",
             "position": {
-              "c": 11,
-              "r": 22
+              "c": 9,
+              "r": 5
             },
             "activity": "home"
           }
         ],
-        "defaultPosition": {
-          "area": "map_i_smithy",
-          "c": 4,
-          "r": 3
-        }
+        "defaultStationId": "station_smi_forge"
       },
       "loreBackground": "SPOILER — not for casual player-facing dialogue. Sloomi is the half-sister of Jubmir the trader. Jubmir's father Slorik was a trader who got injured near Hobunji and was taken in by Kzubug's family. Slorik saw how loving Kzubug's household was and wanted that for himself, despite having already been chosen to sire one son (Jubmir) with the Doromabi of his home village. Slorik returned to a guard job near Jubmir in secret, fell in love with Jubmir's Mabinga, Yanmira, and the two eloped into the Slagothi'ey wilderness with Jubmir when Yanmira became pregnant with Sloomi. When the Doromabi found their hideout, Yanmira and Slorik were killed; Jubmir escaped with infant Sloomi on his father's last instructions, found Dugmir (an old trade-route friend of Slorik's), and had Sloomi delivered to Kzubug while Jubmir himself returned to his Doro as the only one who hadn't committed or resulted from a crime. By the time Sloomi arrived, plague had wiped out Kzubug's whole family, so he took her in as divine providence and has been overprotective of her ever since. Jubmir knows the full story; Sloomi does not. It's the biggest reason Jubmir keeps making his barely-profitable trade runs to Hobunji. <suggestion: backstory — the plague's name/cause, the exact timeline (years since), and whether/when Sloomi ever learns the truth>"
     },
@@ -3161,6 +3144,7 @@
             "from": "07:30",
             "to": "12:00",
             "mapId": "map_i_smithy",
+            "stationId": "station_smi_apprentice",
             "position": {
               "c": 5,
               "r": 4
@@ -3170,10 +3154,11 @@
           {
             "from": "12:00",
             "to": "13:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_smithy",
+            "stationId": "station_smi_evening_sloomi",
             "position": {
-              "c": 11,
-              "r": 23
+              "c": 9,
+              "r": 7
             },
             "activity": "break"
           },
@@ -3181,6 +3166,7 @@
             "from": "13:00",
             "to": "17:30",
             "mapId": "map_i_smithy",
+            "stationId": "station_smi_apprentice",
             "position": {
               "c": 5,
               "r": 4
@@ -3190,19 +3176,16 @@
           {
             "from": "17:30",
             "to": "07:30",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_smithy",
+            "stationId": "station_smi_evening_sloomi",
             "position": {
-              "c": 11,
-              "r": 22
+              "c": 9,
+              "r": 7
             },
             "activity": "home"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 11,
-          "r": 21
-        }
+        "defaultStationId": "station_smi_apprentice"
       },
       "loreBackground": "See Kzubug's loreBackground for the full secret — Sloomi is Jubmir's half-sister and doesn't know it. <suggestion: dialogue writing — how close dialogue can get to the truth before it would need to actually reveal it, and whether there's a reveal questline planned>"
     },
@@ -3386,9 +3369,10 @@
             "from": "06:00",
             "to": "22:00",
             "mapId": "map_i_inn",
+            "stationId": "station_inn_counter",
             "position": {
-              "c": 3,
-              "r": 1
+              "c": 2,
+              "r": 3
             },
             "activity": "innkeeping"
           },
@@ -3396,18 +3380,15 @@
             "from": "22:00",
             "to": "06:00",
             "mapId": "map_i_inn",
+            "stationId": "station_inn_bed_hreesh",
             "position": {
-              "c": 1,
-              "r": 1
+              "c": 3,
+              "r": 14
             },
             "activity": "resting"
           }
         ],
-        "defaultPosition": {
-          "area": "map_i_inn",
-          "c": 3,
-          "r": 1
-        }
+        "defaultStationId": "station_inn_bed_hreesh"
       }
     },
     {
@@ -3594,29 +3575,26 @@
             "from": "09:00",
             "to": "17:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_jubmir_explore",
             "position": {
-              "c": 25,
-              "r": 30
+              "c": 32,
+              "r": 31
             },
-            "routeId": "route_wjhen",
             "activity": "exploring town"
           },
           {
             "from": "17:00",
             "to": "09:00",
             "mapId": "map_i_inn",
+            "stationId": "station_inn_bed_jubmir",
             "position": {
               "c": 8,
-              "r": 5
+              "r": 14
             },
             "activity": "at inn"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 27,
-          "r": 26
-        }
+        "defaultStationId": "station_inn_bed_jubmir"
       },
       "loreBackground": "Full secret backstory shared with Kzubug's entry: Jubmir is Sloomi's half-brother, son of the trader Slorik and a Doromabi he was chosen to mate with. After Slorik died eloping with Yanmira (Sloomi's mother), Jubmir carried infant Sloomi to safety, arranged for her to be raised by Kzubug, and returned alone to his Doro. Sloomi does not know this; Jubmir does, and it's the core reason he keeps risking the unprofitable trade route to Hobunji. He's also secretly protecting the Hakaru twins: he buys newspapers from other traders at an inflated price, resells them after removing any mention of the twins' bounty, and Father Hunundi quietly reimburses part of his losses out of his own temple salary. <suggestion: backstory — what Jubmir's life is like back among the Slagothim — does he have his own Doro/family obligations waiting, and does he resent them?>",
       "questHooks": [
@@ -3823,9 +3801,10 @@
             "from": "07:00",
             "to": "10:00",
             "mapId": "map_i_temple",
+            "stationId": "station_temple_altar",
             "position": {
-              "c": 7,
-              "r": 4
+              "c": 9,
+              "r": 5
             },
             "activity": "morning prayers"
           },
@@ -3833,20 +3812,21 @@
             "from": "10:00",
             "to": "14:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_father_town",
             "position": {
-              "c": 22,
-              "r": 33
+              "c": 14,
+              "r": 31
             },
-            "routeId": "route_west_road",
             "activity": "in town"
           },
           {
             "from": "14:00",
             "to": "19:00",
             "mapId": "map_i_temple",
+            "stationId": "station_temple_altar",
             "position": {
-              "c": 7,
-              "r": 4
+              "c": 9,
+              "r": 5
             },
             "activity": "temple duties"
           },
@@ -3854,18 +3834,15 @@
             "from": "19:00",
             "to": "07:00",
             "mapId": "map_i_temple",
+            "stationId": "station_temple_evening",
             "position": {
-              "c": 7,
-              "r": 7
+              "c": 9,
+              "r": 11
             },
             "activity": "evening prayers"
           }
         ],
-        "defaultPosition": {
-          "area": "map_i_temple",
-          "c": 7,
-          "r": 4
-        }
+        "defaultStationId": "station_temple_altar"
       },
       "loreBackground": "Shelters the wanted Hakaru twins (Namu'i and Taku'a) at the temple and actively works with Jubmir to keep news of their bounty from reaching the villagers — Jubmir overpays for newspapers elsewhere and resells them with the bounty mentions removed, and Father Hunundi reimburses part of that loss out of his own salary. Also present (but not leading) during Eldress Teacup's nightly spirit communion services for the Engh-sho villagers, mostly to keep the other races at ease. <suggestion: backstory — how he first found the twins / decided to protect them, and how long this arrangement with Jubmir has been running>",
       "questHooks": [
@@ -4049,9 +4026,10 @@
             "from": "08:00",
             "to": "12:00",
             "mapId": "map_i_temple",
+            "stationId": "station_temple_candles",
             "position": {
               "c": 11,
-              "r": 4
+              "r": 5
             },
             "activity": "temple"
           },
@@ -4059,9 +4037,10 @@
             "from": "12:00",
             "to": "17:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_namui_grounds",
             "position": {
-              "c": 13,
-              "r": 37
+              "c": 12,
+              "r": 33
             },
             "activity": "temple grounds"
           },
@@ -4069,18 +4048,15 @@
             "from": "17:00",
             "to": "08:00",
             "mapId": "map_i_temple",
+            "stationId": "station_temple_candles",
             "position": {
               "c": 11,
-              "r": 4
+              "r": 5
             },
             "activity": "temple"
           }
         ],
-        "defaultPosition": {
-          "area": "map_i_temple",
-          "c": 11,
-          "r": 4
-        }
+        "defaultStationId": "station_temple_candles"
       },
       "loreBackground": "Staying at the temple under Father Hunundi's protection alongside her brother Taku'a. Most villagers are wary rather than hateful — they just won't risk hiring a suspected criminal — except Kinami Kunji, who has it out for her specifically. <suggestion: backstory — what she and Taku'a actually did to earn the bounty, and how large it is>",
       "questHooks": [
@@ -4272,9 +4248,10 @@
             "from": "09:00",
             "to": "13:00",
             "mapId": "map_i_temple",
+            "stationId": "station_temple_reflection",
             "position": {
-              "c": 3,
-              "r": 4
+              "c": 6,
+              "r": 7
             },
             "activity": "temple"
           },
@@ -4282,29 +4259,26 @@
             "from": "13:00",
             "to": "18:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_takua_wander",
             "position": {
-              "c": 14,
-              "r": 37
+              "c": 16,
+              "r": 34
             },
-            "routeId": "route_west_road",
             "activity": "wandering"
           },
           {
             "from": "18:00",
             "to": "09:00",
             "mapId": "map_i_temple",
+            "stationId": "station_temple_reflection",
             "position": {
-              "c": 3,
-              "r": 4
+              "c": 6,
+              "r": 7
             },
             "activity": "temple"
           }
         ],
-        "defaultPosition": {
-          "area": "map_i_temple",
-          "c": 3,
-          "r": 4
-        }
+        "defaultStationId": "station_temple_reflection"
       },
       "loreBackground": "<suggestion: backstory — what specifically drives Taku'a toward mining once given the chance, and how that differs from Namu'i's path>",
       "questHooks": [
@@ -4566,11 +4540,12 @@
             "to": "19:00",
             "mapId": "map_hobunji_town",
             "position": {
-              "c": 48,
-              "r": 29
+              "c": 49,
+              "r": 26
             },
             "routeId": "route_7g7ae",
-            "activity": "staying out of Kinami's way"
+            "activity": "staying out of Kinami's way",
+            "stationId": "station_kaboku_avoid"
           },
           {
             "from": "19:00",
@@ -4797,7 +4772,8 @@
               "r": 37
             },
             "routeId": "route_vjlr1",
-            "activity": "morning errands away from Kaboku"
+            "activity": "morning errands away from Kaboku",
+            "stationId": "station_kinami_errand"
           },
           {
             "from": "12:00",
@@ -5051,20 +5027,21 @@
             "from": "07:00",
             "to": "12:00",
             "mapId": "map_i_carpenters",
+            "stationId": "station_car_counter",
             "position": {
-              "c": 2,
-              "r": 2
+              "c": 4,
+              "r": 4
             },
-            "routeId": "route_east_market",
             "activity": "carpentry"
           },
           {
             "from": "12:00",
             "to": "13:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_dzibim_lunch",
             "position": {
               "c": 38,
-              "r": 29
+              "r": 26
             },
             "activity": "lunch"
           },
@@ -5072,9 +5049,10 @@
             "from": "13:00",
             "to": "17:00",
             "mapId": "map_i_carpenters",
+            "stationId": "station_car_counter",
             "position": {
-              "c": 2,
-              "r": 2
+              "c": 4,
+              "r": 4
             },
             "activity": "carpentry"
           },
@@ -5082,18 +5060,15 @@
             "from": "17:00",
             "to": "07:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_dzibim_home",
             "position": {
               "c": 37,
-              "r": 26
+              "r": 25
             },
             "activity": "home"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 37,
-          "r": 27
-        }
+        "defaultStationId": "station_dzibim_home"
       }
     },
     {
@@ -5222,9 +5197,10 @@
             "from": "08:00",
             "to": "17:00",
             "mapId": "map_i_carpenters",
+            "stationId": "station_car_crates",
             "position": {
-              "c": 3,
-              "r": 4
+              "c": 4,
+              "r": 9
             },
             "activity": "carpentry"
           },
@@ -5232,18 +5208,15 @@
             "from": "17:00",
             "to": "08:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_dzahiri_home",
             "position": {
-              "c": 37,
-              "r": 26
+              "c": 38,
+              "r": 25
             },
             "activity": "home"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 38,
-          "r": 27
-        }
+        "defaultStationId": "station_dzahiri_home"
       }
     },
     {
@@ -5366,9 +5339,10 @@
             "from": "08:00",
             "to": "17:00",
             "mapId": "map_i_carpenters",
+            "stationId": "station_car_inventory",
             "position": {
-              "c": 5,
-              "r": 4
+              "c": 9,
+              "r": 8
             },
             "activity": "carpentry work"
           },
@@ -5376,18 +5350,15 @@
             "from": "17:00",
             "to": "08:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_nashka_home",
             "position": {
-              "c": 37,
-              "r": 26
+              "c": 39,
+              "r": 25
             },
             "activity": "home"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 36,
-          "r": 27
-        }
+        "defaultStationId": "station_nashka_home"
       }
     },
     {
@@ -5569,32 +5540,29 @@
         "shopHours": "",
         "rules": [
           {
-            "activity": "elder duties",
             "from": "09:00",
+            "to": "18:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_teacup_duties",
             "position": {
-              "c": 30,
-              "r": 31
+              "c": 32,
+              "r": 33
             },
-            "routeId": "route_main_ns",
-            "to": "18:00"
+            "activity": "elder duties"
           },
           {
-            "activity": "home",
             "from": "18:00",
-            "mapId": "map_hobunji_town",
+            "to": "09:00",
+            "mapId": "map_i_unumanuk_household",
+            "stationId": "station_unmh_teacup_bed",
             "position": {
-              "c": 45,
-              "r": 28
+              "c": 2,
+              "r": 16
             },
-            "to": "09:00"
+            "activity": "home"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 45,
-          "r": 28
-        }
+        "defaultStationId": "station_unmh_teacup_bed"
       },
       "loreBackground": "Father Hunundi attends her nightly services without leading them, mostly to keep the other villagers at ease and to be present in case 'something goes awry.' <suggestion: backstory — what spirit communion actually involves mechanically, and what 'going awry' has historically meant> The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds."
     },
@@ -5728,52 +5696,28 @@
         "rules": [
           {
             "from": "07:00",
-            "to": "08:00",
-            "mapId": "map_hobunji_town",
-            "position": {
-              "c": 35,
-              "r": 9
-            },
-            "routeId": "route_farmstead_path",
-            "activity": "commuting to farm"
-          },
-          {
-            "from": "08:00",
-            "to": "18:00",
-            "mapId": "map_hobunji_town",
-            "position": {
-              "c": 34,
-              "r": 11
-            },
-            "activity": "working the farm"
-          },
-          {
-            "from": "18:00",
             "to": "19:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_ginju_field_c",
             "position": {
-              "c": 28,
-              "r": 27
+              "c": 35,
+              "r": 13
             },
-            "routeId": "route_farmstead_path",
-            "activity": "commuting home"
+            "activity": "working the farm"
           },
           {
             "from": "19:00",
             "to": "07:00",
             "mapId": "map_i_inn",
+            "stationId": "station_inn_rug_binding",
             "position": {
-              "c": 8,
-              "r": 5
+              "c": 9,
+              "r": 6
             },
             "activity": "resting at inn"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 28,
-          "r": 27
-        }
+        "defaultStationId": "station_inn_rug_binding"
       }
     },
     {
@@ -5912,20 +5856,21 @@
             "from": "07:00",
             "to": "12:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_spearhead_p1",
             "position": {
               "c": 28,
               "r": 20
             },
-            "routeId": "route_patrol_ring",
             "activity": "morning patrol"
           },
           {
             "from": "12:00",
             "to": "15:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_spearhead_p2",
             "position": {
-              "c": 23,
-              "r": 22
+              "c": 20,
+              "r": 21
             },
             "activity": "watch post"
           },
@@ -5933,29 +5878,26 @@
             "from": "15:00",
             "to": "20:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_spearhead_p3",
             "position": {
-              "c": 20,
-              "r": 35
+              "c": 18,
+              "r": 32
             },
-            "routeId": "route_patrol_ring",
             "activity": "afternoon patrol"
           },
           {
             "from": "20:00",
             "to": "07:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_unumanuk_household",
+            "stationId": "station_unmh_spearhead_bed",
             "position": {
-              "c": 45,
-              "r": 28
+              "c": 6,
+              "r": 14
             },
             "activity": "home"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 45,
-          "r": 28
-        }
+        "defaultStationId": "station_unmh_spearhead_bed"
       },
       "loreBackground": "The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds."
     },
@@ -6099,51 +6041,48 @@
             "from": "08:00",
             "to": "12:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_oddclaw_p1",
             "position": {
-              "c": 15,
-              "r": 10
+              "c": 17,
+              "r": 7
             },
-            "routeId": "route_patrol_ring",
             "activity": "patrol"
           },
           {
             "from": "12:00",
             "to": "14:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_oddclaw_lunch",
             "position": {
-              "c": 25,
-              "r": 28
+              "c": 27,
+              "r": 27
             },
-            "routeId": "route_main_ns",
             "activity": "lunch break"
           },
           {
             "from": "14:00",
             "to": "20:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_oddclaw_p2",
             "position": {
-              "c": 50,
-              "r": 15
+              "c": 46,
+              "r": 14
             },
-            "routeId": "route_patrol_ring",
             "activity": "patrol"
           },
           {
             "from": "20:00",
             "to": "08:00",
-            "mapId": "map_hobunji_town",
+            "mapId": "map_i_unumanuk_household",
+            "stationId": "station_unmh_oddclaw_bed",
             "position": {
-              "c": 45,
-              "r": 28
+              "c": 6,
+              "r": 15
             },
             "activity": "home"
           }
         ],
-        "defaultPosition": {
-          "area": "town",
-          "c": 45,
-          "r": 28
-        }
+        "defaultStationId": "station_unmh_oddclaw_bed"
       },
       "loreBackground": "The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds."
     },
@@ -6287,20 +6226,21 @@
             "from": "07:00",
             "to": "15:00",
             "mapId": "map_i_inn",
+            "stationId": "station_inn_serving",
             "position": {
               "c": 7,
-              "r": 4
+              "r": 6
             },
-            "routeId": "route_main_ns",
             "activity": "morning shift at inn"
           },
           {
             "from": "15:00",
             "to": "17:00",
             "mapId": "map_hobunji_town",
+            "stationId": "station_tooth_break",
             "position": {
-              "c": 27,
-              "r": 30
+              "c": 33,
+              "r": 32
             },
             "activity": "break"
           },
@@ -6308,9 +6248,10 @@
             "from": "17:00",
             "to": "22:00",
             "mapId": "map_i_inn",
+            "stationId": "station_inn_serving",
             "position": {
               "c": 7,
-              "r": 4
+              "r": 6
             },
             "activity": "evening dinner shift"
           },
@@ -6318,18 +6259,15 @@
             "from": "22:00",
             "to": "07:00",
             "mapId": "map_i_inn",
+            "stationId": "station_inn_bed_tooth",
             "position": {
-              "c": 6,
-              "r": 8
+              "c": 12,
+              "r": 14
             },
             "activity": "resting"
           }
         ],
-        "defaultPosition": {
-          "area": "map_i_inn",
-          "c": 7,
-          "r": 4
-        }
+        "defaultStationId": "station_inn_bed_tooth"
       }
     },
     {

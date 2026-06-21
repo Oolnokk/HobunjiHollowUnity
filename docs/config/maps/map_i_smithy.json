@@ -1753,5 +1753,51 @@
       "postSY": 1,
       "postSZ": 1
     }
+  ],
+  "npcStations": [
+    {
+      "id": "station_smi_forge",
+      "label": "Smithing",
+      "col": 4,
+      "row": 3,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_smi_apprentice",
+      "label": "Apprentice Smithing",
+      "col": 5,
+      "row": 4,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_smi_evening_kzubug",
+      "label": "Evening at the Forge",
+      "col": 9,
+      "row": 5,
+      "rotY": 270,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_smi_evening_sloomi",
+      "label": "Evening Chores",
+      "col": 9,
+      "row": 7,
+      "rotY": 90,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
   ]
 }

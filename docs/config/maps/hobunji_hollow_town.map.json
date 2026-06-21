@@ -3639,37 +3639,37 @@
     {
       "c": 32,
       "r": 11,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 33,
       "r": 11,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 34,
       "r": 11,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 35,
       "r": 11,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 36,
       "r": 11,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 37,
       "r": 11,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
@@ -3945,37 +3945,37 @@
     {
       "c": 32,
       "r": 12,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 33,
       "r": 12,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 34,
       "r": 12,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 35,
       "r": 12,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 36,
       "r": 12,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 37,
       "r": 12,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
@@ -4239,37 +4239,37 @@
     {
       "c": 32,
       "r": 13,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 33,
       "r": 13,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 34,
       "r": 13,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 35,
       "r": 13,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 36,
       "r": 13,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 37,
       "r": 13,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
@@ -4503,37 +4503,37 @@
     {
       "c": 32,
       "r": 14,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 33,
       "r": 14,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 34,
       "r": 14,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 35,
       "r": 14,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 36,
       "r": 14,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 37,
       "r": 14,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
@@ -4761,37 +4761,37 @@
     {
       "c": 32,
       "r": 15,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 33,
       "r": 15,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 34,
       "r": 15,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 35,
       "r": 15,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 36,
       "r": 15,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 37,
       "r": 15,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
@@ -5037,37 +5037,37 @@
     {
       "c": 32,
       "r": 16,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 33,
       "r": 16,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 34,
       "r": 16,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 35,
       "r": 16,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 36,
       "r": 16,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
       "c": 37,
       "r": 16,
-      "type": "grass",
+      "type": "tilled",
       "crop": ""
     },
     {
@@ -18408,7 +18408,327 @@
       "targetSpotId": "sp_scloud_n"
     }
   ],
-  "npcStations": [],
+  "npcStations": [
+    {
+      "id": "station_ginju_field_nw",
+      "label": "Hoeing the North Field",
+      "col": 33,
+      "row": 12,
+      "rotY": 90,
+      "pose": "stand",
+      "toolKey": "bronzehoe",
+      "toolIntervalSec": 1.4,
+      "toolAnimStyle": "chop"
+    },
+    {
+      "id": "station_ginju_field_ne",
+      "label": "Hoeing the North Field",
+      "col": 36,
+      "row": 12,
+      "rotY": 270,
+      "pose": "stand",
+      "toolKey": "bronzehoe",
+      "toolIntervalSec": 1.4,
+      "toolAnimStyle": "chop"
+    },
+    {
+      "id": "station_ginju_field_sw",
+      "label": "Turning the Soil",
+      "col": 33,
+      "row": 15,
+      "rotY": 90,
+      "pose": "stand",
+      "toolKey": "pickshovel",
+      "toolIntervalSec": 1.6,
+      "toolAnimStyle": "thrust"
+    },
+    {
+      "id": "station_ginju_field_se",
+      "label": "Turning the Soil",
+      "col": 36,
+      "row": 15,
+      "rotY": 270,
+      "pose": "stand",
+      "toolKey": "pickshovel",
+      "toolIntervalSec": 1.6,
+      "toolAnimStyle": "thrust"
+    },
+    {
+      "id": "station_ginju_field_c",
+      "label": "Working the Field",
+      "col": 35,
+      "row": 13,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "bronzehoe",
+      "toolIntervalSec": 1.4,
+      "toolAnimStyle": "chop"
+    },
+    {
+      "id": "station_gantami_play",
+      "label": "Playing Near the Square",
+      "col": 21,
+      "row": 29,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_aliri_freetime",
+      "label": "Relaxing by the Square",
+      "col": 22,
+      "row": 32,
+      "rotY": 0,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_namui_grounds",
+      "label": "Tending the Temple Grounds",
+      "col": 12,
+      "row": 33,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_takua_wander",
+      "label": "Wandering the Temple Path",
+      "col": 16,
+      "row": 34,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_pahu_social",
+      "label": "Socializing by the Temple Path",
+      "col": 19,
+      "row": 32,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_father_town",
+      "label": "Walking Among the Faithful",
+      "col": 14,
+      "row": 31,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_pahu_town",
+      "label": "Enjoying the Town Square",
+      "col": 33,
+      "row": 30,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_jubmir_explore",
+      "label": "Exploring the Square",
+      "col": 32,
+      "row": 31,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_tooth_break",
+      "label": "Taking a Break",
+      "col": 33,
+      "row": 32,
+      "rotY": 0,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_teacup_duties",
+      "label": "Overseeing Elder Duties",
+      "col": 32,
+      "row": 33,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_foroji_music",
+      "label": "Playing Music in the Square",
+      "col": 31,
+      "row": 31,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_dzibim_lunch",
+      "label": "Lunch Break",
+      "col": 38,
+      "row": 26,
+      "rotY": 0,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_dzibim_home",
+      "label": "At Home",
+      "col": 37,
+      "row": 25,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_dzahiri_home",
+      "label": "At Home",
+      "col": 38,
+      "row": 25,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_nashka_home",
+      "label": "At Home",
+      "col": 39,
+      "row": 25,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_spearhead_p1",
+      "label": "Morning Patrol Post",
+      "col": 28,
+      "row": 20,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_spearhead_p2",
+      "label": "West Road Watch Post",
+      "col": 20,
+      "row": 21,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_spearhead_p3",
+      "label": "Southern Road Watch Post",
+      "col": 18,
+      "row": 32,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_oddclaw_p1",
+      "label": "Northern Watch Post",
+      "col": 17,
+      "row": 7,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_oddclaw_p2",
+      "label": "Eastern Watch Post",
+      "col": 46,
+      "row": 14,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_oddclaw_lunch",
+      "label": "Lunch Break",
+      "col": 27,
+      "row": 27,
+      "rotY": 0,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_leaf_sit",
+      "label": "Sitting Outside the Swamp House",
+      "col": 7,
+      "row": 42,
+      "rotY": 0,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_kaboku_avoid",
+      "label": "Avoiding Kinami's Wrath",
+      "col": 49,
+      "row": 26,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_kinami_errand",
+      "label": "Running Errands",
+      "col": 49,
+      "row": 37,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
+  ],
   "buildings": [
     {
       "id": "bldg_3bhxe",

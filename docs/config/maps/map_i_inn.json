@@ -1845,5 +1845,73 @@
       "postSY": 1,
       "postSZ": 1
     }
+  ],
+  "npcStations": [
+    {
+      "id": "station_inn_counter",
+      "label": "Tending the Bar",
+      "col": 2,
+      "row": 3,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_inn_serving",
+      "label": "Serving Tables",
+      "col": 7,
+      "row": 6,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_inn_bed_hreesh",
+      "label": "Innkeeper's Bed",
+      "col": 3,
+      "row": 14,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_inn_bed_jubmir",
+      "label": "Guest Bed",
+      "col": 8,
+      "row": 14,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_inn_bed_tooth",
+      "label": "Staff Bed",
+      "col": 12,
+      "row": 14,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_inn_rug_binding",
+      "label": "Resting by the Fire",
+      "col": 9,
+      "row": 6,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
   ]
 }
