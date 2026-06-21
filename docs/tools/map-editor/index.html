@@ -55,6 +55,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
   <div id="topbar">
     <h1>MAP EDITOR</h1>
     <span class="pill" id="activeMapPill">no map</span>
+    <button class="sec" id="upToParentBtn" style="display:none">⬆ Parent map</button>
     <div id="topbar-right">
       <button class="ok" id="playBtn">🎮 Send to Game &amp; Play</button>
       <button class="sec" id="undoBtn">↶ Undo</button>
@@ -82,6 +83,8 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <button class="sec" data-mode="river">🌊 River</button>
         <button class="sec" data-mode="spot">🔁 Spot</button>
         <button class="sec" data-mode="station">🧍 Station</button>
+        <button class="sec" data-mode="plateau">⛰ Plateau</button>
+        <button class="sec" data-mode="ramp">🪜 Ramp</button>
         <button class="sec" data-mode="erase">⌫ Erase</button>
         <button class="sec" id="fitBtn" style="margin-left:auto">Fit</button>
       </div>
@@ -97,6 +100,14 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
             <button class="sec" id="dupMapBtn">Duplicate</button>
             <button class="bad" id="delMapBtn">Delete</button>
           </div>
+        </div>
+
+        <!-- PLATEAU GROUPS -->
+        <div class="section" style="--sec:#c084fc;--secBg:rgba(192,132,252,.08)">
+          <div class="sect-head"><b>Plateau Groups</b><span class="sect-tag" id="plateauGroupCountTag">0</span></div>
+          <div class="itemlist" id="plateauGroupList"></div>
+          <button class="ok" id="newPlateauGroupBtn" style="width:100%;margin-top:6px">+ New plateau group</button>
+          <p class="muted" style="margin-top:5px">Each group raises (or drops) the tiles painted with it by its elevation. The first tile painted with a group on a map auto-generates an editable sub-map for that group's footprint there.</p>
         </div>
 
         <!-- MAP SETTINGS -->
@@ -223,7 +234,9 @@ const TILE_INFO = {
   shrub:  { label:'Shrub',  color:'#2f6f3f' },
   path:   { label:'Path',   color:'#b8956a' },
   river:  { label:'River',  color:'#2f6fb8' },
-  stream: { label:'Stream', color:'#4f9bd9' }
+  stream: { label:'Stream', color:'#4f9bd9' },
+  waterfall: { label:'Waterfall', color:'#bfe9f7' },
+  ramp:   { label:'Ramp',   color:'#c2b280' }
 };
 const TILE_SETS = {
   exterior: ['grass','weeds','tilled','trench','raised','paddy','rock','shrub','path','river','stream'],
@@ -301,7 +314,7 @@ function makeMap(name, category, cols, rows) {
   return {
     schema: 'hobunji_map.v1',
     id: uid('map'), name, category, cols, rows,
-    tiles: {},        // "c,r" -> { type, crop }
+    tiles: {},        // "c,r" -> { type, crop, plateau?, rampElevation? }
     objects: {},      // objectKey -> [c, r]
     furniture: [],    // { key, col, row }
     decor: [],        // { key, col, row }
@@ -311,6 +324,12 @@ function makeMap(name, category, cols, rows) {
     transitions: [],  // { id, label, col, row, targetMapId, targetSpotId }
     npcStations: [], // { id, label, col, row, rotY, pose, toolKey, toolIntervalSec, toolAnimStyle }
     buildings: [],    // { id, label, pieceFile, gridX, gridZ, footprintW, footprintD, wbOpts, wbGableOpts }
+    // Plateau / elevation: a map is either a root map (isSubmap=false, elevation=0) or an
+    // auto-generated sub-map representing one plateau group's footprint on its parent.
+    isSubmap: false,
+    parentMapId: null,
+    plateauGroupId: null,
+    elevation: 0,
   };
 }
 
@@ -448,6 +467,7 @@ function computeMapDiff(m) {
 
 let ws = loadWorkspace();
 ws.maps.forEach(captureBaseline);
+recomputeAllElevations();
 function loadWorkspace() {
   try {
     const raw = localStorage.getItem(WS_KEY);
@@ -460,6 +480,10 @@ function loadWorkspace() {
           m.npcPaths = Array.isArray(m.npcPaths) ? m.npcPaths : [];
           m.transitions = Array.isArray(m.transitions) ? m.transitions : [];
           m.npcStations = Array.isArray(m.npcStations) ? m.npcStations : [];
+          m.isSubmap = !!m.isSubmap;
+          m.parentMapId = m.parentMapId || null;
+          m.plateauGroupId = m.plateauGroupId || null;
+          m.elevation = Number.isFinite(m.elevation) ? m.elevation : 0;
           // Migrate old houseLibrary/houseAssignments → buildings array
           if (!Array.isArray(m.buildings)) {
             m.buildings = [];
@@ -478,6 +502,8 @@ function loadWorkspace() {
         });
         w.gameLink = w.gameLink || { exteriorId: '', interiorId: '', townId: '' };
         w.gameLink.townId = w.gameLink.townId || '';
+        w.plateauGroups = Array.isArray(w.plateauGroups) ? w.plateauGroups : [];
+        w.ramps = Array.isArray(w.ramps) ? w.ramps : [];
         return w;
       }
     }
@@ -485,7 +511,7 @@ function loadWorkspace() {
   const farm = makeMap('Farm', 'exterior', GAME.farm.cols, GAME.farm.rows);
   const house = makeMap('Farmhouse', 'interior', GAME.interior.cols, GAME.interior.rows);
   applyFarmhouseFloor(house);
-  return { maps: [farm, house], activeId: farm.id, gameLink: { exteriorId: farm.id, interiorId: house.id, townId: '' } };
+  return { maps: [farm, house], activeId: farm.id, gameLink: { exteriorId: farm.id, interiorId: house.id, townId: '' }, plateauGroups: [], ramps: [] };
 }
 let _saveT = null;
 function saveWorkspace() {
@@ -494,6 +520,79 @@ function saveWorkspace() {
 }
 function activeMap() { return ws.maps.find(m => m.id === ws.activeId) || ws.maps[0]; }
 function mapById(id) { return ws.maps.find(m => m.id === id) || null; }
+
+// ── Plateau groups & elevation sub-maps ──────────────────────────────────────
+// A plateau group is a workspace-wide, manually-authored palette entry (number +
+// elevation delta + color). Painting a group's number onto a map cell locks that
+// cell (it can't be repainted by tile/fill/crop or another group — only erased)
+// and lazily generates a same-size sub-map representing the raised/lowered
+// ground there. Sub-maps are ordinary map entries (so they're fully editable,
+// including placing further plateau tiles to nest sub-sub-maps) tagged with
+// parentMapId/plateauGroupId so their absolute elevation can be derived.
+const PLATEAU_COLORS = ['#f97316','#22c55e','#3b82f6','#e11d48','#a855f7','#facc15','#06b6d4','#84cc16'];
+function nextPlateauNumber() {
+  const used = new Set((ws.plateauGroups || []).map(g => g.number));
+  let n = 1; while (used.has(n)) n++; return n;
+}
+function plateauGroupById(id) { return (ws.plateauGroups || []).find(g => g.id === id) || null; }
+function createPlateauGroup() {
+  ws.plateauGroups = ws.plateauGroups || [];
+  const g = { id: uid('plat'), number: nextPlateauNumber(), label: `Plateau ${ws.plateauGroups.length + 1}`,
+              elevation: 1, color: PLATEAU_COLORS[ws.plateauGroups.length % PLATEAU_COLORS.length] };
+  ws.plateauGroups.push(g);
+  return g;
+}
+function isPlateauLocked(m, key) { return !!(m.tiles[key] && m.tiles[key].plateau); }
+function setTileType(m, key, type, { preserveCrop = true } = {}) {
+  if (isPlateauLocked(m, key)) return false;
+  m.tiles[key] = { type, crop: preserveCrop ? (m.tiles[key]?.crop || '') : '' };
+  return true;
+}
+function recomputeElevation(m) {
+  if (!m || !m.isSubmap) { if (m) m.elevation = 0; return 0; }
+  const parent = mapById(m.parentMapId);
+  const group = plateauGroupById(m.plateauGroupId);
+  const parentElev = parent ? recomputeElevation(parent) : 0;
+  m.elevation = parentElev + (group ? group.elevation : 0);
+  return m.elevation;
+}
+function recomputeAllElevations() { ws.maps.forEach(recomputeElevation); }
+function submapsOf(parentId) { return ws.maps.filter(x => x.parentMapId === parentId); }
+function getOrCreateSubmap(parentMap, group) {
+  let sm = ws.maps.find(x => x.parentMapId === parentMap.id && x.plateauGroupId === group.id);
+  if (sm) return sm;
+  sm = makeMap(`${parentMap.name} — ${group.label}`, parentMap.category, parentMap.cols, parentMap.rows);
+  sm.isSubmap = true; sm.parentMapId = parentMap.id; sm.plateauGroupId = group.id;
+  recomputeElevation(sm);
+  ws.maps.push(sm);
+  captureBaseline(sm);
+  return sm;
+}
+function plateauFootprint(m, groupId) {
+  const out = new Set();
+  Object.keys(m.tiles).forEach(k => { if (m.tiles[k] && m.tiles[k].plateau === groupId) out.add(k); });
+  return out;
+}
+function activePlateauGroupsOn(m) {
+  return (ws.plateauGroups || []).filter(g => Object.keys(m.tiles).some(k => m.tiles[k]?.plateau === g.id));
+}
+function deleteMapCascade(id) {
+  submapsOf(id).forEach(k => deleteMapCascade(k.id));
+  ws.maps = ws.maps.filter(x => x.id !== id);
+  ws.ramps = (ws.ramps || []).filter(r => r.fromMapId !== id && r.toMapId !== id);
+}
+function resizeMapAndSubmaps(m, nc, nr) {
+  m.cols = nc; m.rows = nr;
+  Object.keys(m.tiles).forEach(k => { const [c,r] = k.split(',').map(Number); if (c >= nc || r >= nr) delete m.tiles[k]; });
+  Object.keys(m.objects).forEach(k => { const [c,r] = m.objects[k]; if (c >= nc || r >= nr) delete m.objects[k]; });
+  m.furniture = m.furniture.filter(f => f.col < nc && f.row < nr);
+  m.decor = m.decor.filter(d => { const inf = DECOR[d.key]; return inf && d.col + inf.fw <= nc && d.row + inf.fd <= nr; });
+  ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c < nc && r < nr); });
+  (m.rivers || []).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c < nc && r < nr); });
+  m.transitions = (m.transitions || []).filter(t => t.col < nc && t.row < nr);
+  m.npcStations = (m.npcStations || []).filter(st => st.col < nc && st.row < nr);
+  submapsOf(m.id).forEach(sm => resizeMapAndSubmaps(sm, nc, nr));
+}
 
 function applyFarmhouseFloor(m) {
   // Mirrors interiorGrid in game.js: floor where (r<=4 && c<=5) or (r==5 && 2<=c<=3).
@@ -540,6 +639,7 @@ let _gizmos   = [];       // [{type,sx,sy,r}] rebuilt each draw(); used for hit-
 let _bldgDrag = null;     // {bid,ox,oz,px0,py0} during drag-move of a building
 let _routeNodeDrag = null; // {routeId,index} during drag-move of a route node
 let _riverNodeDrag = null; // {riverId,index} during drag-move of a river node
+let _rampNodeDrag  = null; // {rampId,index} during drag-move of a ramp node
 let _spotDrag      = null; // {spotId} during drag-move of a transition spot
 let _stationDrag   = null; // {stationId} during drag-move of an NPC station
 
@@ -737,15 +837,62 @@ function renderBuildingPanel() {
   }
 }
 
+// ── Plateau group list (sidebar) ─────────────────────────────────────────────
+function renderPlateauGroupList() {
+  const groups = ws.plateauGroups || [];
+  $('plateauGroupCountTag').textContent = String(groups.length);
+  $('plateauGroupList').innerHTML = groups.map(g => `<div class="item" data-platid="${g.id}">
+      <div class="row"><span class="palSw" style="background:${g.color}"></span>
+        <input data-platlabel="${g.id}" value="${g.label.replace(/"/g,'&quot;')}" style="flex:1">
+        <button class="bad" data-platdel="${g.id}" style="padding:3px 8px">✕</button></div>
+      <div class="g2" style="margin-top:4px">
+        <div><label>Number</label><input data-platnum="${g.id}" type="number" min="1" value="${g.number}"></div>
+        <div><label>Elevation</label><input data-platelev="${g.id}" type="number" step="0.5" value="${g.elevation}"></div>
+      </div>
+      <div class="item-meta">id: ${g.id}</div>
+    </div>`).join('') || '<p class="muted">No plateau groups yet.</p>';
+  $('plateauGroupList').querySelectorAll('[data-platlabel]').forEach(el => el.addEventListener('change', () => {
+    const g = plateauGroupById(el.dataset.platlabel); if (g) { g.label = el.value.trim() || g.label; renderPalette(); saveWorkspace(); }
+  }));
+  $('plateauGroupList').querySelectorAll('[data-platnum]').forEach(el => el.addEventListener('change', () => {
+    const g = plateauGroupById(el.dataset.platnum); if (!g) return;
+    const n = parseInt(el.value) || g.number;
+    if ((ws.plateauGroups || []).some(x => x.id !== g.id && x.number === n)) { el.value = g.number; setStatus(`Plateau number ${n} is already used.`); return; }
+    g.number = n; draw(); saveWorkspace();
+  }));
+  $('plateauGroupList').querySelectorAll('[data-platelev]').forEach(el => el.addEventListener('change', () => {
+    const g = plateauGroupById(el.dataset.platelev); if (!g) return;
+    pushUndo();
+    g.elevation = Number(el.value) || 0;
+    recomputeAllElevations();
+    ws.maps.forEach(m => { (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id).forEach(rp => { if (rp.paintTiles !== false) paintRampTiles(rp); }); });
+    draw(); refreshPreview(); saveWorkspace();
+  }));
+  $('plateauGroupList').querySelectorAll('[data-platdel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation();
+    const g = plateauGroupById(el.dataset.platdel); if (!g) return;
+    if (!confirm(`Delete plateau group "${g.label}"? Its sub-maps (and any nested sub-maps) will be deleted too.`)) return;
+    pushUndo();
+    ws.maps.filter(m => m.plateauGroupId === g.id).forEach(sm => deleteMapCascade(sm.id));
+    ws.maps.forEach(m => { Object.keys(m.tiles).forEach(k => { if (m.tiles[k]?.plateau === g.id) delete m.tiles[k].plateau; }); });
+    ws.plateauGroups = (ws.plateauGroups || []).filter(x => x.id !== g.id);
+    if (brush.plateauGroup === g.id) brush.plateauGroup = '';
+    if (ws.activeId && !mapById(ws.activeId)) ws.activeId = ws.maps[0]?.id || null;
+    updateAll();
+  }));
+}
+
 // ── Mode / brush state ────────────────────────────────────────────────────────
 let mode = 'pan';
-let brush = { tile: 'grass', crop: 'needlegrain', object: 'sellCrate', furniture: 'pestle', decor: 'basicBed' };
+let brush = { tile: 'grass', crop: 'needlegrain', object: 'sellCrate', furniture: 'pestle', decor: 'basicBed', plateauGroup: '' };
 let activePathId = null;   // route being extended in route mode
 let activeRouteNodeIndex = null; // selected node index in active route
 let activeRiverId = null;  // river/stream being extended in river mode
 let activeRiverNodeIndex = null; // selected node index in active river
 let activeSpotId = null;   // transition spot selected in spot mode
 let activeStationId = null; // NPC station selected in station mode
+let activeRampId = null;   // ramp being extended in ramp mode
+let activeRampNodeIndex = null; // selected node index in active ramp
 
 function setMode(m) {
   mode = m;
@@ -763,6 +910,8 @@ function updateBrushPill() {
   if (mode === 'decor') t = `decor: ${DECOR[brush.decor]?.label}`;
   if (mode === 'path') { const p = (activeMap().routes || activeMap().npcPaths || []).find(x => x.id === activePathId); t = p ? `route: ${p.label}${activeRouteNodeIndex!==null?' node '+(activeRouteNodeIndex+1):''}` : 'route: (click to start one)'; }
   if (mode === 'river') { const rv = (activeMap().rivers || []).find(x => x.id === activeRiverId); t = rv ? `${rv.kind||'river'}: ${rv.label}${activeRiverNodeIndex!==null?' node '+(activeRiverNodeIndex+1):''}` : 'river: (click to start one)'; }
+  if (mode === 'plateau') { const g = plateauGroupById(brush.plateauGroup); t = g ? `plateau: #${g.number} ${g.label} (${g.elevation>=0?'+':''}${g.elevation})` : 'plateau: (add a group first)'; }
+  if (mode === 'ramp') { const rp = (ws.ramps || []).find(x => x.id === activeRampId); t = rp ? `ramp: ${rp.label}${activeRampNodeIndex!==null?' node '+(activeRampNodeIndex+1):''}` : 'ramp: (click to start one)'; }
   if (mode === 'spot') t = 'spot: click map to place';
   if (mode === 'station') { const st = (activeMap().npcStations || []).find(x => x.id === activeStationId); t = st ? `station: ${st.label}` : 'station: click map to place'; }
   $('brushPill').textContent = t;
@@ -788,12 +937,12 @@ function bresenham(x0, y0, x1, y1) {
 // persisted with the map.
 const _paintedKeysByEntity = new Map();
 function applyPaintDiff(entityId, newKeys, tileType, m, { preserveCrop = true } = {}) {
-  const next = new Set(newKeys);
+  const next = new Set([...newKeys].filter(k => !isPlateauLocked(m, k)));
   const prevEntry = _paintedKeysByEntity.get(entityId);
   if (prevEntry) {
     const sameType = prevEntry.type === tileType;
     for (const k of prevEntry.keys) {
-      if ((!sameType || !next.has(k)) && m.tiles[k]?.type === prevEntry.type) delete m.tiles[k];
+      if ((!sameType || !next.has(k)) && m.tiles[k]?.type === prevEntry.type && !isPlateauLocked(m, k)) delete m.tiles[k];
     }
   }
   for (const k of next) m.tiles[k] = { type: tileType, crop: preserveCrop ? (m.tiles[k]?.crop || '') : '' };
@@ -824,6 +973,7 @@ function paintRouteTiles(route, m) {
 }
 function floodFill(m, startC, startR, newType) {
   const k0 = `${startC},${startR}`;
+  if (isPlateauLocked(m, k0)) return false;
   const oldType = m.tiles[k0]?.type ?? null;
   if (oldType === newType) return false;
   const queue = [[startC, startR]];
@@ -831,12 +981,13 @@ function floodFill(m, startC, startR, newType) {
   while (queue.length) {
     const [c, r] = queue.shift();
     const k = `${c},${r}`;
-    m.tiles[k] = { type: newType, crop: m.tiles[k]?.crop || '' };
+    setTileType(m, k, newType);
     for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
       const nc = c+dc, nr = r+dr;
       if (nc < 0 || nc >= m.cols || nr < 0 || nr >= m.rows) continue;
       const nk = `${nc},${nr}`;
       if (visited.has(nk)) continue;
+      if (isPlateauLocked(m, nk)) continue;
       if ((m.tiles[nk]?.type ?? null) === oldType) { visited.add(nk); queue.push([nc, nr]); }
     }
   }
@@ -886,10 +1037,12 @@ function buildRiverPath(river) {
   }
   return out;
 }
-function paintRiverTiles(river, m) {
+// Geometric river footprint, independent of what's actually paintable on m
+// (plateau-locked cells still count as "river passes through here" so the
+// plateau sub-map can mirror the river even though the parent map can't).
+function riverPathKeys(river, m) {
   const path = buildRiverPath(river).map(([x, y]) => [Math.round(x), Math.round(y)]);
   const rad = Math.floor(((river.width || (river.kind === 'stream' ? 1 : 3)) - 1) / 2);
-  const tileType = river.kind === 'stream' ? 'stream' : 'river';
   const keys = [];
   for (let i = 0; i < path.length - 1; i++) {
     for (const [bc, br] of bresenham(path[i][0], path[i][1], path[i+1][0], path[i+1][1])) {
@@ -902,11 +1055,95 @@ function paintRiverTiles(river, m) {
       }
     }
   }
-  applyPaintDiff(river.id, keys, tileType, m, { preserveCrop: false });
+  return keys;
+}
+function paintRiverTiles(river, m) {
+  const tileType = river.kind === 'stream' ? 'stream' : 'river';
+  applyPaintDiff(river.id, riverPathKeys(river, m), tileType, m, { preserveCrop: false });
 }
 function maybePaintRiver(m) {
   const river = (m.rivers || []).find(r => r.id === activeRiverId);
-  if (river && river.paintTiles !== false) { paintRiverTiles(river, m); draw(); refreshPreview(); saveWorkspace(); }
+  if (river && river.paintTiles !== false) { paintRiverTiles(river, m); syncPlateauEffects(m); draw(); refreshPreview(); saveWorkspace(); }
+}
+
+// ── Plateau side-effects: river mirroring + waterfalls ───────────────────────
+// A river drawn on a map also appears, at the matching elevation, on every
+// plateau sub-map of that map (and recursively into nested sub-maps), so a
+// river crossing raised/lowered ground reads as continuous. Where the river
+// enters or leaves a plateau footprint, the boundary cell is stamped as a
+// waterfall instead of plain river/stream so the elevation change is legible.
+function mirrorRiverAcrossPlateau(river, m, sm, group) {
+  const footprint = plateauFootprint(m, group.id);
+  const tileType = river.kind === 'stream' ? 'stream' : 'river';
+  const pathKeys = new Set(riverPathKeys(river, m));
+  const mirroredKeys = [];
+  const waterfallKeys = [];
+  for (const k of footprint) {
+    if (!pathKeys.has(k)) continue;
+    mirroredKeys.push(k);
+    const [c, r] = k.split(',').map(Number);
+    for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nk = `${c+dc},${r+dr}`;
+      if (footprint.has(nk)) continue; // interior cell, not a plateau boundary
+      if (pathKeys.has(nk)) { waterfallKeys.push(k); break; } // river continues outside the footprint at a different elevation
+    }
+  }
+  applyPaintDiff(`${river.id}__${sm.id}`, mirroredKeys, tileType, sm, { preserveCrop: false });
+  applyPaintDiff(`${river.id}__${sm.id}__wf`, waterfallKeys, 'waterfall', sm, { preserveCrop: false });
+}
+function syncPlateauEffects(m) {
+  const rivers = m.rivers || [];
+  for (const group of activePlateauGroupsOn(m)) {
+    const sm = getOrCreateSubmap(m, group);
+    for (const river of rivers) mirrorRiverAcrossPlateau(river, m, sm, group);
+    syncPlateauEffects(sm); // recurse into nested plateaus on the sub-map itself
+  }
+}
+
+// ── Ramp tiles: a node path that lerps elevation between a from-map/sub-map
+// and a to-map/sub-map, painted (at matching c,r coordinates) onto both. ──────
+function buildRampPath(ramp) {
+  const nodes = ramp.nodes || [];
+  if (nodes.length < 2) return nodes.map(([c, r]) => [c, r]);
+  const out = [nodes[0]];
+  for (let i = 0; i < nodes.length - 1; i++) {
+    const pts = bresenham(nodes[i][0], nodes[i][1], nodes[i+1][0], nodes[i+1][1]);
+    for (let j = 1; j < pts.length; j++) out.push(pts[j]);
+  }
+  return out;
+}
+function paintRampTiles(ramp) {
+  const fromMap = mapById(ramp.fromMapId), toMap = mapById(ramp.toMapId);
+  if (!fromMap || !toMap) return;
+  const path = buildRampPath(ramp);
+  const rad = Math.floor(((ramp.width || 3) - 1) / 2);
+  const maxC = Math.min(fromMap.cols, toMap.cols), maxR = Math.min(fromMap.rows, toMap.rows);
+  const fromElev = recomputeElevation(fromMap), toElev = recomputeElevation(toMap);
+  const elevByKey = new Map();
+  for (let i = 0; i < path.length; i++) {
+    const t = path.length > 1 ? i / (path.length - 1) : 0;
+    const [bc, br] = path[i];
+    for (let dc = -rad; dc <= rad; dc++) {
+      for (let dr = -rad; dr <= rad; dr++) {
+        const nc = bc+dc, nr = br+dr;
+        if (nc < 0 || nc >= maxC || nr < 0 || nr >= maxR) continue;
+        const key = `${nc},${nr}`;
+        if (!elevByKey.has(key) || t > elevByKey.get(key)) elevByKey.set(key, t);
+      }
+    }
+  }
+  const keys = [...elevByKey.keys()];
+  applyPaintDiff(`${ramp.id}__${fromMap.id}`, keys, 'ramp', fromMap, { preserveCrop: false });
+  if (toMap.id !== fromMap.id) applyPaintDiff(`${ramp.id}__${toMap.id}`, keys, 'ramp', toMap, { preserveCrop: false });
+  for (const [key, t] of elevByKey) {
+    const elev = fromElev + (toElev - fromElev) * t;
+    if (fromMap.tiles[key]?.type === 'ramp') fromMap.tiles[key].rampElevation = elev;
+    if (toMap.id !== fromMap.id && toMap.tiles[key]?.type === 'ramp') toMap.tiles[key].rampElevation = elev;
+  }
+}
+function maybePaintRamp() {
+  const ramp = (ws.ramps || []).find(x => x.id === activeRampId);
+  if (ramp && ramp.paintTiles !== false) { paintRampTiles(ramp); draw(); refreshPreview(); saveWorkspace(); }
 }
 
 // ── Palette UI ────────────────────────────────────────────────────────────────
@@ -933,6 +1170,18 @@ function renderPalette() {
     else html = Object.keys(CROPS).map(c =>
       `<button class="sec palBtn ${brush.crop===c?'act':''}" data-pal="crop" data-val="${c}">${CROPS[c]} ${c}</button>`).join('')
       + '<p class="muted" style="margin-top:4px">Paints a crop onto the tile (game spawns it half-grown). Crop requires a painted tile.</p>';
+  } else if (mode === 'plateau') {
+    if (m.category !== 'exterior') html = '<p class="muted">Plateaus are exterior-only.</p>';
+    else if (!(ws.plateauGroups || []).length) html = '<p class="muted">No plateau groups yet — add one in the Plateau Groups section below, then come back here to paint with it.</p>';
+    else {
+      if (!brush.plateauGroup || !plateauGroupById(brush.plateauGroup)) brush.plateauGroup = ws.plateauGroups[0].id;
+      html = ws.plateauGroups.map(g =>
+        `<button class="sec palBtn ${brush.plateauGroup===g.id?'act':''}" data-pal="plateauGroup" data-val="${g.id}"><span class="palSw" style="background:${g.color}"></span>#${g.number} ${g.label} (${g.elevation>=0?'+':''}${g.elevation})</button>`).join('');
+      const g = plateauGroupById(brush.plateauGroup);
+      const sm = g ? (ws.maps.find(x => x.parentMapId === m.id && x.plateauGroupId === g.id)) : null;
+      if (sm) html += `<button class="sec" id="editSubmapBtn" data-submapid="${sm.id}" style="width:100%;margin-top:6px">Edit Sub-map ↗ (${sm.name})</button>`;
+      html += '<p class="muted" style="margin-top:5px">Paint tiles to mark them as part of the selected plateau group. Plateau tiles can\'t be overwritten by other tiles or tools — erase them first to free the cell. The group\'s sub-map is auto-created the first time you paint with it here.</p>';
+    }
   } else if (mode === 'object') {
     if (m.category !== 'exterior') html = '<p class="muted">Objects are exterior-only.</p>';
     else html = Object.keys(OBJECTS).map(k =>
@@ -1002,6 +1251,37 @@ function renderPalette() {
       }
       html += '<p class="muted" style="margin-top:5px">Select a river and click the map to append control nodes. The tool procedurally meanders a path between them (using the same terrain hash-noise as day-one terrain) and paints river/stream tiles along it. Drag nodes to reshape, reroll the seed for a different meander. Erase mode removes nodes.</p>';
     }
+  } else if (mode === 'ramp') {
+    if (m.category !== 'exterior') html = '<p class="muted">Ramps are exterior-only.</p>';
+    else {
+      const allExt = ws.maps.filter(x => x.category === 'exterior');
+      html = `<button class="ok" id="newRampBtn" style="width:100%;margin-bottom:6px">+ New ramp</button>` +
+        (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id).map(rp =>
+          `<div class="item ${rp.id===activeRampId?'sel':''}" data-rampsel="${rp.id}">
+            <div class="item-name">🪜 ${rp.label}</div>
+            <div class="item-meta">${rp.nodes.length} nodes <button class="bad" data-rampdel="${rp.id}" style="float:right;padding:1px 7px;font-size:10px">✕</button></div>
+          </div>`).join('') || '<p class="muted">No ramps on this map yet.</p>';
+      const arp = (ws.ramps || []).find(p => p.id === activeRampId);
+      if (arp) {
+        html += `<div class="g2" style="margin-top:6px">
+          <div><label>Label</label><input id="rampLabelIn" value="${arp.label.replace(/"/g,'&quot;')}"></div>
+          <div><label>Width</label><input id="rampWidthIn" type="number" min="1" max="20" value="${arp.width||3}"></div>
+        </div>
+        <div class="g2" style="margin-top:6px">
+          <div><label>From map</label><select id="rampFromIn">${allExt.map(x => `<option value="${x.id}" ${arp.fromMapId===x.id?'selected':''}>${x.name}</option>`).join('')}</select></div>
+          <div><label>To map</label><select id="rampToIn">${allExt.map(x => `<option value="${x.id}" ${arp.toMapId===x.id?'selected':''}>${x.name}</option>`).join('')}</select></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;cursor:pointer">
+          <input type="checkbox" id="rampPaintTilesChk" ${arp.paintTiles!==false?'checked':''}>
+          Paint ramp tiles on both endpoint maps
+        </label>`;
+        html += `<div style="margin-top:6px"><label>Nodes (shared c,r coords on both maps; select one, then click map to branch from it)</label>${arp.nodes.map((n,i) =>
+          `<div class="item ${i===activeRampNodeIndex?'sel':''}" data-rampnodesel="${i}" style="padding:4px 7px;margin-bottom:3px">
+            <div class="row"><span style="flex:1">#${i+1} (${n[0]}, ${n[1]})</span><button class="bad" data-rampnodedel="${i}" style="padding:1px 7px;font-size:10px">✕</button></div>
+          </div>`).join('') || '<p class="muted">No nodes yet.</p>'}</div>`;
+      }
+      html += '<p class="muted" style="margin-top:5px">Pick a From map and To map (e.g. a parent map and one of its plateau sub-maps), then click the map to lay down node-path coordinates shared by both. Ramp tiles are stamped on both maps with elevation lerped between the two map elevations along the path.</p>';
+    }
   } else if (mode === 'spot') {
     html = m.transitions.map(t => {
       const others = ws.maps.filter(x => x.id !== m.id);
@@ -1066,9 +1346,7 @@ function renderPalette() {
     const set = TILE_SETS[fm.category] || TILE_SETS.exterior;
     const t = set.includes(brush.tile) ? brush.tile : set[0];
     pushUndo();
-    for (let r = 0; r < fm.rows; r++) for (let c = 0; c < fm.cols; c++) {
-      const k = `${c},${r}`; fm.tiles[k] = { type: t, crop: (fm.tiles[k]?.crop || '') };
-    }
+    for (let r = 0; r < fm.rows; r++) for (let c = 0; c < fm.cols; c++) setTileType(fm, `${c},${r}`, t);
     draw(); refreshPreview(); saveWorkspace(); setStatus(`Filled ${fm.cols}×${fm.rows} with ${t}.`);
   });
   const fillFarmBtn2 = box.querySelector('#fillFarmBtn');
@@ -1077,15 +1355,15 @@ function renderPalette() {
     const set = TILE_SETS[fm.category] || TILE_SETS.exterior;
     const t = set.includes(brush.tile) ? brush.tile : set[0];
     pushUndo();
-    for (let r = 0; r < GAME.farm.rows; r++) for (let c = 0; c < GAME.farm.cols; c++) {
-      const k = `${c},${r}`; fm.tiles[k] = { type: t, crop: (fm.tiles[k]?.crop || '') };
-    }
+    for (let r = 0; r < GAME.farm.rows; r++) for (let c = 0; c < GAME.farm.cols; c++) setTileType(fm, `${c},${r}`, t);
     draw(); refreshPreview(); saveWorkspace(); setStatus(`Filled farm ${GAME.farm.cols}×${GAME.farm.rows} with ${t}.`);
   });
   const clearTilesBtn = box.querySelector('#clearTilesBtn');
   if (clearTilesBtn) clearTilesBtn.addEventListener('click', () => {
-    if (!confirm('Clear all painted tiles from this map?')) return;
-    pushUndo(); activeMap().tiles = {};
+    if (!confirm('Clear all painted tiles from this map? (Plateau-locked tiles are kept — erase them individually first.)')) return;
+    pushUndo();
+    const fm = activeMap();
+    Object.keys(fm.tiles).forEach(k => { if (!isPlateauLocked(fm, k)) delete fm.tiles[k]; });
     draw(); refreshPreview(); saveWorkspace(); setStatus('Tiles cleared.');
   });
   // Route palette wiring
@@ -1208,6 +1486,81 @@ function renderPalette() {
     maybePaintRiver(m);
     renderPalette(); draw(); refreshPreview(); saveWorkspace(); updateBrushPill();
   }));
+  // Plateau palette wiring
+  const esmb = box.querySelector('#editSubmapBtn');
+  if (esmb) esmb.addEventListener('click', () => {
+    ws.activeId = esmb.dataset.submapid; undoStack.length = 0; redoStack.length = 0;
+    activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null;
+    updateAll(); fitView();
+  });
+  // Ramp palette wiring
+  const nrmpb = box.querySelector('#newRampBtn');
+  if (nrmpb) nrmpb.addEventListener('click', () => {
+    pushUndo();
+    ws.ramps = ws.ramps || [];
+    const rp = { id: uid('ramp'), label: `Ramp ${ws.ramps.length+1}`, fromMapId: m.id, toMapId: m.id, width: 3, paintTiles: true, nodes: [] };
+    ws.ramps.push(rp); activeRampId = rp.id;
+    renderPalette(); updateBrushPill(); refreshPreview(); saveWorkspace();
+  });
+  box.querySelectorAll('[data-rampsel]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-rampdel]')) return;
+    activeRampId = el.dataset.rampsel; renderPalette(); updateBrushPill();
+  }));
+  box.querySelectorAll('[data-rampdel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); pushUndo();
+    const rp = (ws.ramps || []).find(x => x.id === el.dataset.rampdel);
+    if (rp) { clearPaintedTiles(`${rp.id}__${rp.fromMapId}`, mapById(rp.fromMapId) || m); clearPaintedTiles(`${rp.id}__${rp.toMapId}`, mapById(rp.toMapId) || m); }
+    ws.ramps = (ws.ramps || []).filter(x => x.id !== el.dataset.rampdel);
+    if (activeRampId === el.dataset.rampdel) activeRampId = null;
+    renderPalette(); draw(); refreshPreview(); saveWorkspace();
+  }));
+  const rmpl = box.querySelector('#rampLabelIn');
+  if (rmpl) rmpl.addEventListener('change', () => { const rp = (ws.ramps || []).find(x => x.id === activeRampId); if (rp) { rp.label = rmpl.value.trim() || rp.label; renderPalette(); refreshPreview(); saveWorkspace(); } });
+  const rmpw = box.querySelector('#rampWidthIn');
+  if (rmpw) rmpw.addEventListener('change', () => {
+    const rp = (ws.ramps || []).find(x => x.id === activeRampId); if (!rp) return;
+    rp.width = Math.max(1, parseInt(rmpw.value) || 1);
+    if (rp.paintTiles !== false) { pushUndo(); paintRampTiles(rp); draw(); refreshPreview(); }
+    saveWorkspace();
+  });
+  const rmpFrom = box.querySelector('#rampFromIn');
+  if (rmpFrom) rmpFrom.addEventListener('change', () => {
+    const rp = (ws.ramps || []).find(x => x.id === activeRampId); if (!rp) return;
+    pushUndo();
+    rp.fromMapId = rmpFrom.value;
+    if (rp.paintTiles !== false) paintRampTiles(rp);
+    renderPalette(); draw(); refreshPreview(); saveWorkspace();
+  });
+  const rmpTo = box.querySelector('#rampToIn');
+  if (rmpTo) rmpTo.addEventListener('change', () => {
+    const rp = (ws.ramps || []).find(x => x.id === activeRampId); if (!rp) return;
+    pushUndo();
+    rp.toMapId = rmpTo.value;
+    if (rp.paintTiles !== false) paintRampTiles(rp);
+    renderPalette(); draw(); refreshPreview(); saveWorkspace();
+  });
+  const rampPaintChk = box.querySelector('#rampPaintTilesChk');
+  if (rampPaintChk) rampPaintChk.addEventListener('change', () => {
+    const rp = (ws.ramps || []).find(x => x.id === activeRampId); if (!rp) return;
+    rp.paintTiles = rampPaintChk.checked;
+    pushUndo();
+    if (rp.paintTiles) { paintRampTiles(rp); } else {
+      clearPaintedTiles(`${rp.id}__${rp.fromMapId}`, mapById(rp.fromMapId) || m);
+      clearPaintedTiles(`${rp.id}__${rp.toMapId}`, mapById(rp.toMapId) || m);
+    }
+    draw(); refreshPreview(); saveWorkspace();
+  });
+  box.querySelectorAll('[data-rampnodesel]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-rampnodedel]')) return;
+    activeRampNodeIndex = Number(el.dataset.rampnodesel); renderPalette(); updateBrushPill(); draw();
+  }));
+  box.querySelectorAll('[data-rampnodedel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); pushUndo();
+    const rp = (ws.ramps || []).find(x => x.id === activeRampId); if (!rp) return;
+    rp.nodes.splice(Number(el.dataset.rampnodedel), 1); activeRampNodeIndex = null;
+    maybePaintRamp();
+    renderPalette(); draw(); refreshPreview(); saveWorkspace(); updateBrushPill();
+  }));
   // Station palette wiring
   box.querySelectorAll('[data-stationsel]').forEach(el => el.addEventListener('click', e => {
     if (e.target.closest('button,input,select')) return;
@@ -1312,6 +1665,19 @@ function draw() {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(CROPS[t.crop] || '🌱', p.x + z/2, p.y + z/2);
     }
+  });
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+
+  // Plateau overlay: tint + group number on every plateau-locked tile
+  ctx.font = `${Math.floor(z*0.5)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  Object.keys(m.tiles).forEach(key => {
+    const t = m.tiles[key]; if (!t.plateau) return;
+    const group = plateauGroupById(t.plateau); if (!group) return;
+    const [c, rr] = key.split(',').map(Number);
+    const p = w2s(c, rr);
+    ctx.fillStyle = group.color; ctx.globalAlpha = .30; ctx.fillRect(p.x, p.y, z, z); ctx.globalAlpha = 1;
+    ctx.strokeStyle = group.color; ctx.lineWidth = 1; ctx.strokeRect(p.x+.5, p.y+.5, z-1, z-1);
+    if (z > 9) { ctx.fillStyle = '#fff'; ctx.fillText(String(group.number), p.x + z/2, p.y + z/2); }
   });
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
@@ -1450,6 +1816,27 @@ function draw() {
     });
     ctx.lineWidth = 1;
   });
+  // Ramps (node-paths shared between this map and another, lerping elevation)
+  (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id).forEach(rp => {
+    const isActive = rp.id === activeRampId;
+    if (rp.nodes.length > 1) {
+      ctx.strokeStyle = isActive ? '#fef08a' : 'rgba(194,178,128,.75)';
+      ctx.lineWidth = isActive ? 4 : 3;
+      ctx.setLineDash([8,4]);
+      ctx.beginPath();
+      rp.nodes.forEach(([c, rr], i) => { const s = w2s(c+.5, rr+.5); i === 0 ? ctx.moveTo(s.x, s.y) : ctx.lineTo(s.x, s.y); });
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    rp.nodes.forEach(([c, rr], i) => {
+      const s = w2s(c+.5, rr+.5);
+      ctx.fillStyle = isActive && i === activeRampNodeIndex ? '#fef08a' : (isActive ? '#fff' : '#c2b280');
+      ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(3.5, z*.18), 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#3a3220'; ctx.lineWidth = 1.5; ctx.stroke();
+      if (z > 13) { ctx.fillStyle = '#fdf6e3'; ctx.font = `${clamp(z*.28,9,12)}px system-ui`; ctx.fillText(String(i+1), s.x + z*.22, s.y - z*.18); }
+    });
+    ctx.lineWidth = 1;
+  });
   // Transition spots (gold diamonds)
   ctx.font = `${Math.floor(z*0.5)}px system-ui`; ctx.textAlign='center'; ctx.textBaseline='middle';
   (m.transitions || []).forEach(t => {
@@ -1495,10 +1882,20 @@ function applyAt(tile) {
     const set = TILE_SETS[m.category] || TILE_SETS.exterior;
     const t = set.includes(brush.tile) ? brush.tile : set[0];
     const existing = m.tiles[key];
-    if (!existing || existing.type !== t) m.tiles[key] = { type: t, crop: existing?.crop || '' };
+    if (!existing || existing.type !== t) setTileType(m, key, t);
   } else if (mode === 'crop' && m.category === 'exterior') {
+    if (isPlateauLocked(m, key)) return;
     if (!m.tiles[key]) m.tiles[key] = { type: 'tilled', crop: '' };
     m.tiles[key].crop = brush.crop;
+  } else if (mode === 'plateau' && m.category === 'exterior') {
+    const group = plateauGroupById(brush.plateauGroup) || (ws.plateauGroups || [])[0];
+    if (!group) return;
+    const existing = m.tiles[key];
+    if (existing?.plateau && existing.plateau !== group.id) return; // locked by a different plateau group
+    if (existing?.plateau === group.id) return; // already this group, nothing to do
+    m.tiles[key] = { type: existing?.type || (TILE_SETS[m.category] || TILE_SETS.exterior)[0], crop: existing?.crop || '', plateau: group.id };
+    getOrCreateSubmap(m, group);
+    syncPlateauEffects(m);
   } else if (mode === 'object' && m.category === 'exterior') {
     m.objects[brush.object] = [c, r];
   } else if (mode === 'furniture' && m.category === 'exterior') {
@@ -1535,6 +1932,19 @@ function applyAt(tile) {
     }
     maybePaintRiver(m);
     renderPalette(); updateBrushPill();
+  } else if (mode === 'ramp') {
+    ws.ramps = ws.ramps || [];
+    let rp = ws.ramps.find(x => x.id === activeRampId);
+    if (!rp) { rp = { id: uid('ramp'), label: `Ramp ${ws.ramps.length+1}`, fromMapId: m.id, toMapId: m.id, width: 3, paintTiles: true, nodes: [] }; ws.ramps.push(rp); activeRampId = rp.id; }
+    if (activeRampNodeIndex !== null && activeRampNodeIndex >= 0 && activeRampNodeIndex < rp.nodes.length) {
+      rp.nodes.splice(activeRampNodeIndex + 1, 0, [c, r]);
+      activeRampNodeIndex += 1;
+    } else {
+      rp.nodes.push([c, r]);
+      activeRampNodeIndex = rp.nodes.length - 1;
+    }
+    maybePaintRamp();
+    renderPalette(); updateBrushPill();
   } else if (mode === 'station') {
     m.npcStations = m.npcStations || [];
     const existing = m.npcStations.find(st => st.col === c && st.row === r);
@@ -1558,7 +1968,8 @@ function applyAt(tile) {
     if (!floodFill(m, c, r, t)) return;
   } else if (mode === 'erase') {
     let did = false;
-    if (m.tiles[key]) { delete m.tiles[key]; did = true; }
+    if (m.tiles[key]?.plateau) { delete m.tiles[key].plateau; syncPlateauEffects(m); did = true; }
+    else if (m.tiles[key]) { delete m.tiles[key]; did = true; }
     Object.keys(m.objects).forEach(k => { const [oc,or] = m.objects[k]; if (oc===c && or===r) { delete m.objects[k]; did = true; } });
     const fi = m.furniture.findIndex(f => f.col===c && f.row===r); if (fi >= 0) { m.furniture.splice(fi,1); did = true; }
     const di = m.decor.findIndex(d => { const inf = DECOR[d.key]; return inf && c >= d.col && c < d.col+inf.fw && r >= d.row && r < d.row+inf.fd; });
@@ -1568,6 +1979,9 @@ function applyAt(tile) {
     });
     (m.rivers || []).forEach(p => {
       for (let i = p.nodes.length-1; i >= 0; i--) if (p.nodes[i][0] === c && p.nodes[i][1] === r) { p.nodes.splice(i,1); did = true; }
+    });
+    (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id).forEach(rp => {
+      for (let i = rp.nodes.length-1; i >= 0; i--) if (rp.nodes[i][0] === c && rp.nodes[i][1] === r) { rp.nodes.splice(i,1); did = true; paintRampTiles(rp); }
     });
     const ti = (m.transitions || []).findIndex(t => t.col === c && t.row === r);
     if (ti >= 0) { if (m.transitions[ti].id === activeSpotId) activeSpotId = null; m.transitions.splice(ti,1); did = true; }
@@ -1584,8 +1998,8 @@ function overlaps(d, c, r, fw, fd) {
   return d.col < c+fw && d.col+inf.fw > c && d.row < r+fd && d.row+inf.fd > r;
 }
 
-const PAINT_MODES = ['tile','crop','erase'];   // drag-paintable
-const TAP_MODES = ['object','furniture','decor','path','river','spot','station','fill'];
+const PAINT_MODES = ['tile','crop','erase','plateau'];   // drag-paintable
+const TAP_MODES = ['object','furniture','decor','path','river','ramp','spot','station','fill'];
 
 canvas.addEventListener('pointerdown', e => {
   canvas.setPointerCapture?.(e.pointerId); ptrs.set(e.pointerId, canvasPt(e));
@@ -1661,6 +2075,20 @@ canvas.addEventListener('pointerdown', e => {
       }
     }
   }
+  if (mode === 'ramp') {
+    const m = activeMap();
+    const ramps = (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id)
+      .filter(rp => !activeRampId || rp.id === activeRampId);
+    for (const rp of ramps) {
+      for (let i = 0; i < (rp.nodes || []).length; i++) {
+        const n = rp.nodes[i];
+        if (Math.hypot(w.x - (n[0] + 0.5), w.y - (n[1] + 0.5)) <= 0.45) {
+          pushUndo(); activeRampId = rp.id; activeRampNodeIndex = i; _rampNodeDrag = { rampId: rp.id, index: i };
+          renderPalette(); updateBrushPill(); draw(); return;
+        }
+      }
+    }
+  }
   if (mode === 'spot') {
     const m = activeMap();
     for (const t of (m.transitions || [])) {
@@ -1710,6 +2138,14 @@ canvas.addEventListener('pointermove', e => {
     }
     return;
   }
+  if (_rampNodeDrag) {
+    const m = activeMap(); const rp = (ws.ramps || []).find(r => r.id === _rampNodeDrag.rampId);
+    if (rp?.nodes?.[_rampNodeDrag.index]) {
+      rp.nodes[_rampNodeDrag.index] = [clamp(Math.floor(w.x), 0, m.cols - 1), clamp(Math.floor(w.y), 0, m.rows - 1)];
+      renderPalette(); draw();
+    }
+    return;
+  }
   if (_spotDrag) {
     const m = activeMap(); const t = (m.transitions || []).find(t => t.id === _spotDrag.spotId);
     if (t) { t.col = clamp(Math.floor(w.x), 0, m.cols - 1); t.row = clamp(Math.floor(w.y), 0, m.rows - 1); renderPalette(); draw(); }
@@ -1738,6 +2174,7 @@ function endPtr(e) {
   ptrs.delete(e.pointerId);
   if (_routeNodeDrag) { maybePaintRoute(activeMap()); saveWorkspace(); refreshPreview(); _routeNodeDrag = null; }
   if (_riverNodeDrag) { maybePaintRiver(activeMap()); saveWorkspace(); refreshPreview(); _riverNodeDrag = null; }
+  if (_rampNodeDrag)  { maybePaintRamp(); saveWorkspace(); refreshPreview(); _rampNodeDrag = null; }
   if (_spotDrag)      { saveWorkspace(); refreshPreview(); _spotDrag = null; }
   if (_stationDrag)   { saveWorkspace(); refreshPreview(); _stationDrag = null; }
   if (_bldgDrag) { saveWorkspace(); renderBuildingPanel(); _bldgDrag = null; }
@@ -1760,13 +2197,18 @@ window.addEventListener('keydown', e => {
 // ── Map management UI ────────────────────────────────────────────────────────
 function renderMapList() {
   const icon = m => m.category==='building_interior'?'🏛':m.category==='interior'?'🏠':'🗺';
-  $('mapList').innerHTML = ws.maps.map(m =>
-    `<div class="item ${m.id===ws.activeId?'sel':''}" data-id="${m.id}">
-      <div class="item-name">${icon(m)} ${m.name}</div>
-      <div class="item-meta">${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.rivers||[]).length} rivers · ${(m.transitions||[]).length} spots · ${(m.npcStations||[]).length} stations</div>
-    </div>`).join('');
+  const depthOf = m => { let d = 0, p = m; while (p?.isSubmap && (p = mapById(p.parentMapId))) d++; return d; };
+  $('mapList').innerHTML = ws.maps.map(m => {
+    const group = m.isSubmap ? plateauGroupById(m.plateauGroupId) : null;
+    const indent = m.isSubmap ? depthOf(m) * 14 : 0;
+    const submapTag = m.isSubmap ? `<span style="color:${group?.color||'#c084fc'}">⛰ ${group ? `#${group.number} ` : ''}elev ${m.elevation>=0?'+':''}${m.elevation} ·</span> ` : '';
+    return `<div class="item ${m.id===ws.activeId?'sel':''}" data-id="${m.id}" style="margin-left:${indent}px">
+      <div class="item-name">${m.isSubmap ? '↳ ' : ''}${icon(m)} ${m.name}</div>
+      <div class="item-meta">${submapTag}${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.rivers||[]).length} rivers · ${(m.transitions||[]).length} spots · ${(m.npcStations||[]).length} stations</div>
+    </div>`;
+  }).join('');
   $('mapList').querySelectorAll('.item').forEach(el => el.addEventListener('click', () => {
-    ws.activeId = el.dataset.id; undoStack.length = 0; redoStack.length = 0; activePathId = null; activeRiverId = null; activeSpotId = null; updateAll(); fitView();
+    ws.activeId = el.dataset.id; undoStack.length = 0; redoStack.length = 0; activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null; updateAll(); fitView();
   }));
   $('mapCountTag').textContent = String(ws.maps.length);
   // Game link dropdowns
@@ -1782,8 +2224,12 @@ function fillSettings() {
   $('mapName').value = m.name;
   $('mapCategory').value = m.category;
   $('mapCols').value = m.cols; $('mapRows').value = m.rows;
+  $('mapCols').disabled = $('mapRows').disabled = !!m.isSubmap;
+  $('mapCols').title = $('mapRows').title = m.isSubmap ? "Plateau sub-maps always match their parent map's size — resize the parent instead." : '';
   $('catTag').textContent = m.category;
-  $('activeMapPill').textContent = `${m.name} (${m.cols}×${m.rows})`;
+  const group = m.isSubmap ? plateauGroupById(m.plateauGroupId) : null;
+  $('activeMapPill').textContent = `${m.name} (${m.cols}×${m.rows})${m.isSubmap ? ` · elev ${m.elevation>=0?'+':''}${m.elevation}${group ? ` · #${group.number}` : ''}` : ''}`;
+  $('upToParentBtn').style.display = (m.isSubmap && mapById(m.parentMapId)) ? '' : 'none';
   $('floorTemplateBtn').style.display = (m.category === 'interior' || m.category === 'building_interior') ? '' : 'none';
 }
 
@@ -1794,7 +2240,7 @@ function refreshPreview() {
 }
 
 function setStatus(msg) { $('statusPill').textContent = msg; }
-function updateAll() { renderMapList(); fillSettings(); renderPalette(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
+function updateAll() { renderMapList(); fillSettings(); renderPalette(); renderPlateauGroupList(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
 
 // ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
 function buildFarmLayoutV3() {
@@ -2082,21 +2528,39 @@ $('fromLayoutBtn').addEventListener('click', async () => {
   undoStack.length = 0; redoStack.length = 0;
   updateAll(); fitView(); setStatus('Created building interior from layout: ' + entry.name);
 });
+$('upToParentBtn').addEventListener('click', () => {
+  const m = activeMap();
+  if (!m.isSubmap || !mapById(m.parentMapId)) return;
+  ws.activeId = m.parentMapId; undoStack.length = 0; redoStack.length = 0;
+  activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null;
+  updateAll(); fitView();
+});
+$('newPlateauGroupBtn').addEventListener('click', () => {
+  pushUndo();
+  const g = createPlateauGroup();
+  brush.plateauGroup = g.id;
+  updateAll();
+});
 $('dupMapBtn').addEventListener('click', () => {
   const src = activeMap(); const copy = JSON.parse(JSON.stringify(src));
   copy.id = uid('map'); copy.name = src.name + ' copy';
   ws.maps.push(copy); ws.activeId = copy.id; undoStack.length = 0; redoStack.length = 0;
   updateAll(); setStatus('Duplicated.');
 });
+function countCascade(id) { return 1 + submapsOf(id).reduce((n, sm) => n + countCascade(sm.id), 0); }
 $('delMapBtn').addEventListener('click', () => {
-  if (ws.maps.length <= 1) { setStatus('Cannot delete the last map.'); return; }
   const m = activeMap();
-  if (!confirm(`Delete map "${m.name}"?`)) return;
-  ws.maps = ws.maps.filter(x => x.id !== m.id);
+  const cascadeCount = countCascade(m.id);
+  if (cascadeCount >= ws.maps.length) { setStatus('Cannot delete the last remaining map(s).'); return; }
+  const subCount = cascadeCount - 1;
+  if (!confirm(`Delete map "${m.name}"?${subCount ? ` This also deletes ${subCount} plateau sub-map(s) (and any nested sub-maps of those).` : ''}`)) return;
+  const parentId = m.parentMapId;
+  deleteMapCascade(m.id);
   if (ws.gameLink.exteriorId === m.id) ws.gameLink.exteriorId = '';
   if (ws.gameLink.interiorId === m.id) ws.gameLink.interiorId = '';
   if (ws.gameLink.townId     === m.id) ws.gameLink.townId     = '';
-  ws.activeId = ws.maps[0].id; undoStack.length = 0; redoStack.length = 0;
+  ws.activeId = (parentId && mapById(parentId)) ? parentId : (ws.maps[0]?.id || null);
+  undoStack.length = 0; redoStack.length = 0;
   updateAll(); fitView(); setStatus('Deleted.');
 });
 
@@ -2113,17 +2577,10 @@ $('applyMapBtn').addEventListener('click', () => {
     if (ws.gameLink.interiorId === m.id && newCat !== 'interior') ws.gameLink.interiorId = '';
     if (ws.gameLink.townId     === m.id && newCat !== 'exterior') ws.gameLink.townId     = '';
   }
-  const nc = clamp(Math.round(Number($('mapCols').value)||m.cols), 2, 400);
-  const nr = clamp(Math.round(Number($('mapRows').value)||m.rows), 2, 400);
-  if (nc !== m.cols || nr !== m.rows) {
-    m.cols = nc; m.rows = nr;
-    Object.keys(m.tiles).forEach(k => { const [c,r] = k.split(',').map(Number); if (c >= nc || r >= nr) delete m.tiles[k]; });
-    Object.keys(m.objects).forEach(k => { const [c,r] = m.objects[k]; if (c >= nc || r >= nr) delete m.objects[k]; });
-    m.furniture = m.furniture.filter(f => f.col < nc && f.row < nr);
-    m.decor = m.decor.filter(d => { const inf = DECOR[d.key]; return inf && d.col + inf.fw <= nc && d.row + inf.fd <= nr; });
-    ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c < nc && r < nr); });
-    m.transitions = (m.transitions || []).filter(t => t.col < nc && t.row < nr);
-    m.npcStations = (m.npcStations || []).filter(st => st.col < nc && st.row < nr);
+  if (!m.isSubmap) {
+    const nc = clamp(Math.round(Number($('mapCols').value)||m.cols), 2, 400);
+    const nr = clamp(Math.round(Number($('mapRows').value)||m.rows), 2, 400);
+    if (nc !== m.cols || nr !== m.rows) resizeMapAndSubmaps(m, nc, nr);
   }
   updateAll(); fitView(); setStatus('Applied.');
 });
