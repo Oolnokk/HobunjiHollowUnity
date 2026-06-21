@@ -1287,13 +1287,13 @@
           {
             "from": "12:00",
             "to": "17:00",
-            "mapId": "map_hobunji_town",
-            "stationId": "station_aliri_freetime",
+            "mapId": "map_i_inn",
+            "stationId": "station_inn_stool_e_n",
             "position": {
-              "c": 22,
-              "r": 32
+              "c": 14,
+              "r": 7
             },
-            "activity": "free time"
+            "activity": "having a drink at the inn"
           },
           {
             "from": "17:00",
@@ -1697,13 +1697,13 @@
           {
             "from": "10:00",
             "to": "18:00",
-            "mapId": "map_hobunji_town",
-            "stationId": "station_leaf_sit",
+            "mapId": "map_i_inn",
+            "stationId": "station_inn_stool_e_s",
             "position": {
-              "c": 7,
-              "r": 42
+              "c": 14,
+              "r": 11
             },
-            "activity": "sitting outside"
+            "activity": "relaxing at the inn"
           },
           {
             "from": "18:00",
@@ -1716,7 +1716,7 @@
             "activity": "home"
           }
         ],
-        "defaultStationId": "station_leaf_sit"
+        "defaultStationId": "station_inn_stool_e_s"
       },
       "loreBackground": "Original concept: a lonely fisherman mourning a dead Kenkari husband named Pahu ao Pakamu. The current schedule keeps both Leaf and Pahu alive and active in town, which contradicts the widower framing. <suggestion: decision needed — either retcon one of them as deceased (and rewrite their relationship status/schedule/dialogue accordingly) or drop the widower angle and keep them as a living couple>"
     },
@@ -1899,24 +1899,24 @@
           {
             "from": "08:00",
             "to": "14:00",
-            "mapId": "map_hobunji_town",
-            "stationId": "station_pahu_social",
+            "mapId": "map_i_inn",
+            "stationId": "station_inn_stool_w_n",
             "position": {
-              "c": 19,
-              "r": 32
+              "c": 4,
+              "r": 7
             },
-            "activity": "socializing"
+            "activity": "socializing at the inn"
           },
           {
             "from": "14:00",
             "to": "20:00",
-            "mapId": "map_hobunji_town",
-            "stationId": "station_pahu_town",
+            "mapId": "map_i_inn",
+            "stationId": "station_inn_stool_w_s",
             "position": {
-              "c": 33,
-              "r": 30
+              "c": 4,
+              "r": 11
             },
-            "activity": "enjoying town"
+            "activity": "enjoying the inn"
           },
           {
             "from": "20:00",
@@ -1929,7 +1929,7 @@
             "activity": "home"
           }
         ],
-        "defaultStationId": "station_pahu_town"
+        "defaultStationId": "station_inn_stool_w_s"
       }
     },
     {
@@ -3367,28 +3367,39 @@
         "rules": [
           {
             "from": "06:00",
+            "to": "16:00",
+            "mapId": "map_i_inn",
+            "stationId": "station_inn_bar_stand",
+            "position": {
+              "c": 3,
+              "r": 4
+            },
+            "activity": "standing behind bar"
+          },
+          {
+            "from": "16:00",
             "to": "22:00",
             "mapId": "map_i_inn",
-            "stationId": "station_inn_counter",
+            "stationId": "station_inn_bar_kegs",
             "position": {
-              "c": 2,
-              "r": 3
+              "c": 7,
+              "r": 4
             },
-            "activity": "innkeeping"
+            "activity": "checking kegs"
           },
           {
             "from": "22:00",
             "to": "06:00",
-            "mapId": "map_i_inn",
-            "stationId": "station_inn_bed_hreesh",
+            "mapId": "map_i_inn_F2",
+            "stationId": "station_inn_dorm_bed",
             "position": {
-              "c": 3,
-              "r": 14
+              "c": 9,
+              "r": 4
             },
             "activity": "resting"
           }
         ],
-        "defaultStationId": "station_inn_bed_hreesh"
+        "defaultStationId": "station_inn_dorm_bed"
       }
     },
     {
@@ -3585,16 +3596,16 @@
           {
             "from": "17:00",
             "to": "09:00",
-            "mapId": "map_i_inn",
-            "stationId": "station_inn_bed_jubmir",
+            "mapId": "map_i_inn_F2",
+            "stationId": "station_inn_dorm_bed",
             "position": {
-              "c": 8,
-              "r": 14
+              "c": 9,
+              "r": 4
             },
-            "activity": "at inn"
+            "activity": "sleeping"
           }
         ],
-        "defaultStationId": "station_inn_bed_jubmir"
+        "defaultStationId": "station_inn_dorm_bed"
       },
       "loreBackground": "Full secret backstory shared with Kzubug's entry: Jubmir is Sloomi's half-brother, son of the trader Slorik and a Doromabi he was chosen to mate with. After Slorik died eloping with Yanmira (Sloomi's mother), Jubmir carried infant Sloomi to safety, arranged for her to be raised by Kzubug, and returned alone to his Doro. Sloomi does not know this; Jubmir does, and it's the core reason he keeps risking the unprofitable trade route to Hobunji. He's also secretly protecting the Hakaru twins: he buys newspapers from other traders at an inflated price, resells them after removing any mention of the twins' bounty, and Father Hunundi quietly reimburses part of his losses out of his own temple salary. <suggestion: backstory — what Jubmir's life is like back among the Slagothim — does he have his own Doro/family obligations waiting, and does he resent them?>",
       "questHooks": [
@@ -3832,7 +3843,7 @@
           },
           {
             "from": "19:00",
-            "to": "07:00",
+            "to": "22:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_evening",
             "position": {
@@ -3840,6 +3851,17 @@
               "r": 11
             },
             "activity": "evening prayers"
+          },
+          {
+            "from": "22:00",
+            "to": "07:00",
+            "mapId": "map_i_inn_F2",
+            "stationId": "station_inn_dorm_bed",
+            "position": {
+              "c": 9,
+              "r": 4
+            },
+            "activity": "sleeping"
           }
         ],
         "defaultStationId": "station_temple_altar"
@@ -4046,7 +4068,7 @@
           },
           {
             "from": "17:00",
-            "to": "08:00",
+            "to": "21:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_candles",
             "position": {
@@ -4054,6 +4076,17 @@
               "r": 5
             },
             "activity": "temple"
+          },
+          {
+            "from": "21:00",
+            "to": "08:00",
+            "mapId": "map_i_inn_F2",
+            "stationId": "station_inn_dorm_bed",
+            "position": {
+              "c": 9,
+              "r": 4
+            },
+            "activity": "sleeping"
           }
         ],
         "defaultStationId": "station_temple_candles"
@@ -4268,7 +4301,7 @@
           },
           {
             "from": "18:00",
-            "to": "09:00",
+            "to": "21:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_reflection",
             "position": {
@@ -4276,6 +4309,17 @@
               "r": 7
             },
             "activity": "temple"
+          },
+          {
+            "from": "21:00",
+            "to": "09:00",
+            "mapId": "map_i_inn_F2",
+            "stationId": "station_inn_dorm_bed",
+            "position": {
+              "c": 9,
+              "r": 4
+            },
+            "activity": "sleeping"
           }
         ],
         "defaultStationId": "station_temple_reflection"
@@ -5708,16 +5752,16 @@
           {
             "from": "19:00",
             "to": "07:00",
-            "mapId": "map_i_inn",
-            "stationId": "station_inn_rug_binding",
+            "mapId": "map_i_inn_F2",
+            "stationId": "station_inn_dorm_bed",
             "position": {
               "c": 9,
-              "r": 6
+              "r": 4
             },
-            "activity": "resting at inn"
+            "activity": "resting at the inn"
           }
         ],
-        "defaultStationId": "station_inn_rug_binding"
+        "defaultStationId": "station_inn_dorm_bed"
       }
     },
     {
@@ -6226,10 +6270,10 @@
             "from": "07:00",
             "to": "15:00",
             "mapId": "map_i_inn",
-            "stationId": "station_inn_serving",
+            "stationId": "station_inn_bar_kegs",
             "position": {
               "c": 7,
-              "r": 6
+              "r": 4
             },
             "activity": "morning shift at inn"
           },
@@ -6248,26 +6292,26 @@
             "from": "17:00",
             "to": "22:00",
             "mapId": "map_i_inn",
-            "stationId": "station_inn_serving",
+            "stationId": "station_inn_bar_stand",
             "position": {
-              "c": 7,
-              "r": 6
+              "c": 3,
+              "r": 4
             },
             "activity": "evening dinner shift"
           },
           {
             "from": "22:00",
             "to": "07:00",
-            "mapId": "map_i_inn",
-            "stationId": "station_inn_bed_tooth",
+            "mapId": "map_i_inn_F2",
+            "stationId": "station_inn_dorm_bed",
             "position": {
-              "c": 12,
-              "r": 14
+              "c": 9,
+              "r": 4
             },
             "activity": "resting"
           }
         ],
-        "defaultStationId": "station_inn_bed_tooth"
+        "defaultStationId": "station_inn_dorm_bed"
       }
     },
     {
