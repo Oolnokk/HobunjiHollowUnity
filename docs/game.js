@@ -6182,6 +6182,9 @@
         const tile = getActiveGrid()[row][col];
         if (tile.type === TileType.ROCK) return false;
         if (currentArea === 'farm' && isHouseFootprint(col, row) && !isHouseEntranceTile(col, row)) return false;
+        // Town terrain is fixed set-dressing — dig/fill/raise/till/smooth are
+        // farm-only mechanics, and pick duplicates the shovel's terrain actions.
+        if (currentArea === 'town' && (tool === 'shovel' || tool === 'hoe' || tool === 'pick')) return false;
         if (tool === 'shovel') {
           if (action === 'dig') {
             if (blocksDiggingUnder(tile)) return false;
@@ -10770,7 +10773,11 @@
                 const wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
                 wm.receiveShadow = false;
                 scene.add(wm);
-                _markTerrainEdgeId(wm, 'water');
+                // Only tag dedicated water-holding features (trench/paddy) for the
+                // material-edge outline — rain wets every non-solid tile, and tagging
+                // that incidental puddle film too would seam-outline the entire tile
+                // grid the moment it starts raining.
+                if (tile.type === TileType.TRENCH || tile.type === TileType.PADDY) _markTerrainEdgeId(wm, 'water');
                 setWaterMesh(i, wm);
               }
               const wm = waterMeshes[i];
@@ -10848,7 +10855,9 @@
                 wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
                 wm.receiveShadow = false;
                 townScene.add(wm);
-                _markTerrainEdgeId(wm, 'water');
+                // See farm updateWaterMeshes() — only outline dedicated water-holding
+                // ditches, not every tile's incidental rain puddle.
+                if (tile.type === TileType.TRENCH || tile.type === TileType.PADDY) _markTerrainEdgeId(wm, 'water');
                 townWaterMeshes.set(key, wm);
               }
               wm.position.set(col + 0.5, surfaceA + 0.015, row + 0.5);
