@@ -1988,7 +1988,11 @@
             this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
             this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
 
-            const { effectiveTarget, snapTo } = perpClamp(this.perpState, this.targetRot, cameraRelativeCreaturePerps());
+            // Once it's settled at its target tile (not mid-hop), an animal has no
+            // specific direction to look — let it rest broadside to the camera.
+            const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
+            const lookTarget = idle ? nearestAngleAmong(this.groupRot, cameraRelativePerps()) : this.targetRot;
+            const { effectiveTarget, snapTo } = perpClamp(this.perpState, lookTarget, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
             if (snapTo !== null) this.groupRot = effectiveTarget;
             else this.groupRot += angleDiff(effectiveTarget, this.groupRot) * 0.18;
             this.avatarRef.group.rotation.y = this.groupRot;
@@ -2233,7 +2237,7 @@
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
-        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps());
+        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
         if (snapTo !== null) c.groupRot = effectiveTarget;
         else c.groupRot += angleDiff(effectiveTarget, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
@@ -2313,7 +2317,9 @@
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
           } else {
             moving = wanderTick(c, dt, c.homeX, c.homeY, TILE * 2.2);
-            if (moving) aimAngle = Math.atan2(c.vy, c.vx);
+            // Wandering has an explicit heading; paused between legs, there's no
+            // specific direction to look, so settle broadside to the camera.
+            aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
           }
           c.facing = aimAngle;
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
@@ -2514,6 +2520,27 @@
       function cameraRelativeCreaturePerps() {
         const az = activeCameraAzimuthRad();
         return [0 + az, Math.PI + az];
+      }
+      function nearestAngleAmong(current, candidates) {
+        let best = candidates[0], bestAbs = Infinity;
+        for (const c of candidates) {
+          const a = Math.abs(angleDiff(c, current));
+          if (a < bestAbs) { bestAbs = a; best = c; }
+        }
+        return best;
+      }
+      // updateCreatureMesh derives a creature's group rotation from an aimAngle via
+      // rawTargetRotY = -(aimAngle) + PI/2; this inverts that to get the aimAngle
+      // that would produce a desired group-rotation-Y.
+      function creatureAimAngleForGroupRot(groupRotY) {
+        return Math.PI / 2 - groupRotY;
+      }
+      // Idle creatures with no explicit look target settle broadside to the camera
+      // (cameraRelativePerps — full side profile visible) instead of holding
+      // whatever direction they last moved in.
+      function idleCreatureAimAngle(currentGroupRotY) {
+        const broadside = nearestAngleAmong(currentGroupRotY, cameraRelativePerps());
+        return creatureAimAngleForGroupRot(broadside);
       }
       let dialogueCameraZoomPercent = cameraModeConfig(npcDialogueCameraMode()).runtimeZoom?.initialPercent ?? 0;
       const dialogueZoomPointers = new Map();
@@ -7579,8 +7606,17 @@
 
       const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
       const PERP_DEAD_RAD = PERP_DEAD_DEG * Math.PI / 180;
+      // Creatures get a narrower dead zone than player/NPC (see cameraRelativeCreaturePerps).
+      const CREATURE_PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.creaturePerpRotDeadzoneDeg ?? 30;
+      const CREATURE_PERP_DEAD_RAD = CREATURE_PERP_DEAD_DEG * Math.PI / 180;
+      // Extra margin required to *exit* a dead zone once locked into it, on top of
+      // the radius required to *enter* it. Without this, a rawTarget hovering right
+      // at the dead zone's edge (e.g. from per-frame tracking noise while chasing a
+      // moving target) flips in and out every frame — visible as rotation flicker.
+      const PERP_DEAD_HYSTERESIS_RAD = THREE.MathUtils.degToRad(6);
 
-      // Keeps model rotation outside ±15° dead zones around each perp angle.
+      // Keeps model rotation outside dead zones around each perp angle (radius given
+      // by deadRad, defaulting to PERP_DEAD_RAD).
       // state: persistent object per entity (must survive across frames).
       // Returns { effectiveTarget, snapTo } where snapTo is non-null when the model
       // should teleport (raw target crossed through a perp to the far side).
@@ -7591,8 +7627,9 @@
       // *near* perp sits. Evaluating every perp every frame let that far-side
       // flip fire a spurious snapTo while the model was stably locked near
       // the near perp, producing rapid alternation between two rotations.
-      function perpClamp(state, rawTarget, perps) {
+      function perpClamp(state, rawTarget, perps, deadRad = PERP_DEAD_RAD) {
         if (!state.perpSides) state.perpSides = perps.map(() => null);
+        if (!state.locked) state.locked = perps.map(() => false);
         let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
         for (let i = 0; i < perps.length; i++) {
           const dT = angleDiff(rawTarget, perps[i]);
@@ -7600,18 +7637,24 @@
           if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
         }
         const P = perps[nearestI];
+        // Hysteresis: once locked, require crossing the wider exit radius before
+        // unlocking; once free, require crossing the (narrower) entry radius before
+        // locking. Prevents boundary chatter when rawTarget hovers near the edge.
+        const wasLocked = state.locked[nearestI];
+        const isLocked = wasLocked ? nearestAbs < deadRad + PERP_DEAD_HYSTERESIS_RAD : nearestAbs < deadRad;
         let effectiveTarget = rawTarget;
         let snapTo = null;
-        if (nearestAbs >= PERP_DEAD_RAD) {
+        if (!isLocked) {
           const newSide = nearestDT > 0 ? 1 : -1;
           if (state.perpSides[nearestI] !== null && state.perpSides[nearestI] !== newSide) {
-            snapTo = P + newSide * PERP_DEAD_RAD;
+            snapTo = P + newSide * deadRad;
           }
           state.perpSides[nearestI] = newSide;
         } else {
           if (state.perpSides[nearestI] === null) state.perpSides[nearestI] = nearestDT >= 0 ? 1 : -1;
-          effectiveTarget = P + state.perpSides[nearestI] * PERP_DEAD_RAD;
+          effectiveTarget = P + state.perpSides[nearestI] * deadRad;
         }
+        state.locked[nearestI] = isLocked;
         return { effectiveTarget, snapTo };
       }
 
