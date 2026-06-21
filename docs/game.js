@@ -321,10 +321,13 @@
       function _fitDlgOptionLabel(el) {
         const label = el.querySelector('.dlg-opt-label');
         if (!label) return;
-        const baseSize = 11, minSize = 8;
+        const baseSize = 11, minSize = 3;
         let size = baseSize;
         label.style.fontSize = size + 'px';
-        while (size > minSize && label.scrollHeight > el.clientHeight) {
+        // Compare against the label's OWN (3-line-clamped) box height, not the
+        // button's — with align-items:center the label never stretches to fill
+        // the button, so checking the button's height let overflow through.
+        while (size > minSize && label.scrollHeight > label.clientHeight) {
           size -= 1;
           label.style.fontSize = size + 'px';
         }
