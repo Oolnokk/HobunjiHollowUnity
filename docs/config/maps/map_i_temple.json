@@ -39,9 +39,9 @@
           4
         ]
       ],
-      "targetMap": "",
-      "spawnCol": 0,
-      "spawnRow": 0
+      "targetMap": "map_i_temple_basement",
+      "spawnCol": 9,
+      "spawnRow": 3
     }
   ],
   "colliders": [],

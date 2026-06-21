@@ -3855,10 +3855,10 @@
           {
             "from": "22:00",
             "to": "07:00",
-            "mapId": "map_i_inn_F2",
-            "stationId": "station_inn_dorm_bed",
+            "mapId": "map_i_temple_basement",
+            "stationId": "station_temple_bsmt_hunundi",
             "position": {
-              "c": 9,
+              "c": 8,
               "r": 4
             },
             "activity": "sleeping"
@@ -4080,8 +4080,8 @@
           {
             "from": "21:00",
             "to": "08:00",
-            "mapId": "map_i_inn_F2",
-            "stationId": "station_inn_dorm_bed",
+            "mapId": "map_i_temple_basement",
+            "stationId": "station_temple_bsmt_namui",
             "position": {
               "c": 9,
               "r": 4
@@ -4313,10 +4313,10 @@
           {
             "from": "21:00",
             "to": "09:00",
-            "mapId": "map_i_inn_F2",
-            "stationId": "station_inn_dorm_bed",
+            "mapId": "map_i_temple_basement",
+            "stationId": "station_temple_bsmt_takua",
             "position": {
-              "c": 9,
+              "c": 10,
               "r": 4
             },
             "activity": "sleeping"
@@ -5613,7 +5613,7 @@
     {
       "id": "binding_hatayap",
       "name": "Binding Hatayap",
-      "homeId": "ginju_farmstead",
+      "homeId": "unumanuk_household",
       "species": "Engh-Sho",
       "gender": "female",
       "ageBand": "<unknown age>",
@@ -5752,16 +5752,16 @@
           {
             "from": "19:00",
             "to": "07:00",
-            "mapId": "map_i_inn_F2",
-            "stationId": "station_inn_dorm_bed",
+            "mapId": "map_i_unumanuk_household",
+            "stationId": "station_unmh_binding_bed",
             "position": {
-              "c": 9,
-              "r": 4
+              "c": 7,
+              "r": 14
             },
-            "activity": "resting at the inn"
+            "activity": "resting at home"
           }
         ],
-        "defaultStationId": "station_inn_dorm_bed"
+        "defaultStationId": "station_unmh_binding_bed"
       }
     },
     {
@@ -6133,7 +6133,7 @@
     {
       "id": "tooth_hatayap",
       "name": "Tooth Hatayap",
-      "homeId": "inn",
+      "homeId": "unumanuk_household",
       "species": "Engh-Sho",
       "gender": "female",
       "ageBand": "<unknown age>",
@@ -6302,16 +6302,16 @@
           {
             "from": "22:00",
             "to": "07:00",
-            "mapId": "map_i_inn_F2",
-            "stationId": "station_inn_dorm_bed",
+            "mapId": "map_i_unumanuk_household",
+            "stationId": "station_unmh_tooth_bed",
             "position": {
-              "c": 9,
-              "r": 4
+              "c": 8,
+              "r": 14
             },
-            "activity": "resting"
+            "activity": "resting at home"
           }
         ],
-        "defaultStationId": "station_inn_dorm_bed"
+        "defaultStationId": "station_unmh_tooth_bed"
       }
     },
     {
