@@ -1988,7 +1988,7 @@
             this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
             this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
 
-            const { effectiveTarget, snapTo } = perpClamp(this.perpState, this.targetRot, cameraRelativePerps());
+            const { effectiveTarget, snapTo } = perpClamp(this.perpState, this.targetRot, cameraRelativeCreaturePerps());
             if (snapTo !== null) this.groupRot = effectiveTarget;
             else this.groupRot += angleDiff(effectiveTarget, this.groupRot) * 0.18;
             this.avatarRef.group.rotation.y = this.groupRot;
@@ -2233,7 +2233,7 @@
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
-        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativePerps());
+        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps());
         if (snapTo !== null) c.groupRot = effectiveTarget;
         else c.groupRot += angleDiff(effectiveTarget, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
@@ -2506,6 +2506,14 @@
       function cameraRelativePerps() {
         const az = activeCameraAzimuthRad();
         return [Math.PI / 2 + az, -Math.PI / 2 + az];
+      }
+      // Creatures (buildAnimalPlaneAvatarModel) use a side-view two-plane sprite, the
+      // opposite convention from the front-facing player/NPC sprite: they go edge-on
+      // when facing straight toward/away from the camera (group rotation 0/PI), not
+      // when broadside to it. So their dead zones center on those angles instead.
+      function cameraRelativeCreaturePerps() {
+        const az = activeCameraAzimuthRad();
+        return [0 + az, Math.PI + az];
       }
       let dialogueCameraZoomPercent = cameraModeConfig(npcDialogueCameraMode()).runtimeZoom?.initialPercent ?? 0;
       const dialogueZoomPointers = new Map();
