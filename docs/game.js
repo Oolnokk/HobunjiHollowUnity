@@ -6182,6 +6182,9 @@
         const tile = getActiveGrid()[row][col];
         if (tile.type === TileType.ROCK) return false;
         if (currentArea === 'farm' && isHouseFootprint(col, row) && !isHouseEntranceTile(col, row)) return false;
+        // Town terrain is fixed set-dressing — dig/fill/raise/till/smooth are
+        // farm-only mechanics, and pick duplicates the shovel's terrain actions.
+        if (currentArea === 'town' && (tool === 'shovel' || tool === 'hoe' || tool === 'pick')) return false;
         if (tool === 'shovel') {
           if (action === 'dig') {
             if (blocksDiggingUnder(tile)) return false;
