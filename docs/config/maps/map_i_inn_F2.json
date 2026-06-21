@@ -1,0 +1,26 @@
+{
+  "schema": "hobunji_building_interior.v1",
+  "id": "map_i_inn_F2",
+  "name": "Inn - Shared Dormitory",
+  "cols": 20,
+  "rows": 20,
+  "furniture": [
+    { "id": "f_inn_f2_bed", "itemKey": "basicBedFurniture", "col": 9, "row": 4, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 }
+  ],
+  "exits": [
+    { "id": "exit_inn_f2_down", "label": "Stairs Down", "tiles": [[9, 1]], "targetMap": "map_i_inn", "spawnCol": 9, "spawnRow": 3 }
+  ],
+  "colliders": [],
+  "vendorZones": [],
+  "floor": [
+    [7, 1], [8, 1], [9, 1], [10, 1], [11, 1],
+    [7, 2], [8, 2], [9, 2], [10, 2], [11, 2],
+    [7, 3], [8, 3], [9, 3], [10, 3], [11, 3],
+    [7, 4], [8, 4], [9, 4], [10, 4], [11, 4],
+    [7, 5], [8, 5], [9, 5], [10, 5], [11, 5],
+    [7, 6], [8, 6], [9, 6], [10, 6], [11, 6]
+  ],
+  "npcStations": [
+    { "id": "station_inn_dorm_bed", "label": "Shared Lodging", "col": 9, "row": 4, "rotY": 0, "pose": "lie", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" }
+  ]
+}

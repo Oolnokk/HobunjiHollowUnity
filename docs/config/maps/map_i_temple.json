@@ -39,9 +39,9 @@
           4
         ]
       ],
-      "targetMap": "",
-      "spawnCol": 0,
-      "spawnRow": 0
+      "targetMap": "map_i_temple_basement",
+      "spawnCol": 9,
+      "spawnRow": 3
     }
   ],
   "colliders": [],
@@ -710,6 +710,52 @@
       "postSX": 1,
       "postSY": 1,
       "postSZ": 1
+    }
+  ],
+  "npcStations": [
+    {
+      "id": "station_temple_altar",
+      "label": "Leading Prayers",
+      "col": 9,
+      "row": 5,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_temple_evening",
+      "label": "Evening Prayers at the Shrine",
+      "col": 9,
+      "row": 11,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_temple_candles",
+      "label": "Tending the Candles",
+      "col": 11,
+      "row": 5,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_temple_reflection",
+      "label": "Sitting in Quiet Reflection",
+      "col": 6,
+      "row": 7,
+      "rotY": 0,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
     }
   ]
 }

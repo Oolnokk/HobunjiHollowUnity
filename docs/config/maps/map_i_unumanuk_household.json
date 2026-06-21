@@ -1970,5 +1970,62 @@
       "postSY": 1,
       "postSZ": 1
     }
+  ],
+  "npcStations": [
+    {
+      "id": "station_unmh_teacup_bed",
+      "label": "Teacup's Bed",
+      "col": 2,
+      "row": 16,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_unmh_spearhead_bed",
+      "label": "Spearhead's Bedroll",
+      "col": 6,
+      "row": 14,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_unmh_oddclaw_bed",
+      "label": "Oddclaw's Bedroll",
+      "col": 6,
+      "row": 15,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_unmh_binding_bed",
+      "label": "Binding's Bedroll",
+      "col": 7,
+      "row": 14,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_unmh_tooth_bed",
+      "label": "Tooth's Bedroll",
+      "col": 8,
+      "row": 14,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
   ]
 }

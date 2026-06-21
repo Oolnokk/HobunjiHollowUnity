@@ -1833,5 +1833,73 @@
       "postSY": 1,
       "postSZ": 1
     }
+  ],
+  "npcStations": [
+    {
+      "id": "station_ginju_cook",
+      "label": "Cooking at the Hearth",
+      "col": 3,
+      "row": 3,
+      "rotY": 180,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_ginju_bed_parents",
+      "label": "Sleeping",
+      "col": 7,
+      "row": 14,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_ginju_table_sit1",
+      "label": "Sitting at the Table",
+      "col": 9,
+      "row": 3,
+      "rotY": 180,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_ginju_bed_aliri",
+      "label": "Aliri's Bed",
+      "col": 12,
+      "row": 14,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_ginju_rug_gantami",
+      "label": "Gantami's Floor Mat",
+      "col": 9,
+      "row": 9,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_ginju_stool",
+      "label": "Sitting by the Mill",
+      "col": 12,
+      "row": 4,
+      "rotY": 0,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
   ]
 }

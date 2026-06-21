@@ -316,14 +316,38 @@
         return trees.sort((a, b) => (b.priority || 0) - (a.priority || 0))[0] || null;
       }
 
+      // Shrinks a .dlg-opt-label's font-size (down from the CSS default) until its
+      // 3-line-clamped content stops overflowing the option button's allotted height.
+      function _fitDlgOptionLabel(el) {
+        const label = el.querySelector('.dlg-opt-label');
+        if (!label) return;
+        const baseSize = 11, minSize = 3;
+        let size = baseSize;
+        label.style.fontSize = size + 'px';
+        // Compare against the label's OWN (3-line-clamped) box height, not the
+        // button's — with align-items:center the label never stretches to fill
+        // the button, so checking the button's height let overflow through.
+        while (size > minSize && label.scrollHeight > label.clientHeight) {
+          size -= 1;
+          label.style.fontSize = size + 'px';
+        }
+      }
+
       function _showDlgChoices(node) {
         const choices = node.choices || [];
         const optEls  = [1,2,3,4,5,6].map(i => document.getElementById(`dlgOpt${i}`));
-        optEls.forEach(el => { if (el) { el.textContent = ''; el.classList.remove('dlg-opt-visible'); el.onclick = null; } });
+        optEls.forEach(el => {
+          if (!el) return;
+          const label = el.querySelector('.dlg-opt-label');
+          if (label) { label.textContent = ''; label.style.fontSize = ''; }
+          el.classList.remove('dlg-opt-visible');
+          el.onclick = null;
+        });
         choices.slice(0, 6).forEach((c, i) => {
           const el = optEls[i];
           if (!el) return;
-          el.textContent = _resolveTokens(c.label || '', _dlgNpcRec);
+          const label = el.querySelector('.dlg-opt-label');
+          if (label) label.textContent = _resolveTokens(c.label || '', _dlgNpcRec);
           el.classList.add('dlg-opt-visible');
           el.onclick = () => {
             if (!dialogueOpen) return;
@@ -344,6 +368,9 @@
             if (!skipNav) _navigateDlgTo(c.next);
           };
         });
+        // Run after all options are flagged visible so each one's flex-allotted
+        // height (which depends on how many siblings are showing) is settled.
+        optEls.forEach(el => { if (el && el.classList.contains('dlg-opt-visible')) _fitDlgOptionLabel(el); });
         const continueBtn = document.getElementById('npcDialogueContinue');
         if (continueBtn) continueBtn.style.display = choices.length ? 'none' : '';
       }
@@ -351,7 +378,10 @@
       function _hideChoiceButtons() {
         [1,2,3,4,5,6].forEach(i => {
           const el = document.getElementById(`dlgOpt${i}`);
-          if (el) { el.textContent = ''; el.classList.remove('dlg-opt-visible'); el.onclick = null; }
+          if (!el) return;
+          const label = el.querySelector('.dlg-opt-label');
+          if (label) { label.textContent = ''; label.style.fontSize = ''; }
+          el.classList.remove('dlg-opt-visible'); el.onclick = null;
         });
         const continueBtn = document.getElementById('npcDialogueContinue');
         if (continueBtn) continueBtn.style.display = '';
@@ -1971,7 +2001,11 @@
             this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
             this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
 
-            const { effectiveTarget, snapTo } = perpClamp(this.perpState, this.targetRot, cameraRelativePerps());
+            // Once it's settled at its target tile (not mid-hop), an animal has no
+            // specific direction to look — let it rest broadside to the camera.
+            const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
+            const lookTarget = idle ? nearestAngleAmong(this.groupRot, cameraRelativePerps()) : this.targetRot;
+            const { effectiveTarget, snapTo } = perpClamp(this.perpState, lookTarget, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
             if (snapTo !== null) this.groupRot = effectiveTarget;
             else this.groupRot += angleDiff(effectiveTarget, this.groupRot) * 0.18;
             this.avatarRef.group.rotation.y = this.groupRot;
@@ -2216,7 +2250,7 @@
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
-        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativePerps());
+        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
         if (snapTo !== null) c.groupRot = effectiveTarget;
         else c.groupRot += angleDiff(effectiveTarget, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
@@ -2296,7 +2330,9 @@
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
           } else {
             moving = wanderTick(c, dt, c.homeX, c.homeY, TILE * 2.2);
-            if (moving) aimAngle = Math.atan2(c.vy, c.vx);
+            // Wandering has an explicit heading; paused between legs, there's no
+            // specific direction to look, so settle broadside to the camera.
+            aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
           }
           c.facing = aimAngle;
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
@@ -2489,6 +2525,35 @@
       function cameraRelativePerps() {
         const az = activeCameraAzimuthRad();
         return [Math.PI / 2 + az, -Math.PI / 2 + az];
+      }
+      // Creatures (buildAnimalPlaneAvatarModel) use a side-view two-plane sprite, the
+      // opposite convention from the front-facing player/NPC sprite: they go edge-on
+      // when facing straight toward/away from the camera (group rotation 0/PI), not
+      // when broadside to it. So their dead zones center on those angles instead.
+      function cameraRelativeCreaturePerps() {
+        const az = activeCameraAzimuthRad();
+        return [0 + az, Math.PI + az];
+      }
+      function nearestAngleAmong(current, candidates) {
+        let best = candidates[0], bestAbs = Infinity;
+        for (const c of candidates) {
+          const a = Math.abs(angleDiff(c, current));
+          if (a < bestAbs) { bestAbs = a; best = c; }
+        }
+        return best;
+      }
+      // updateCreatureMesh derives a creature's group rotation from an aimAngle via
+      // rawTargetRotY = -(aimAngle) + PI/2; this inverts that to get the aimAngle
+      // that would produce a desired group-rotation-Y.
+      function creatureAimAngleForGroupRot(groupRotY) {
+        return Math.PI / 2 - groupRotY;
+      }
+      // Idle creatures with no explicit look target settle broadside to the camera
+      // (cameraRelativePerps — full side profile visible) instead of holding
+      // whatever direction they last moved in.
+      function idleCreatureAimAngle(currentGroupRotY) {
+        const broadside = nearestAngleAmong(currentGroupRotY, cameraRelativePerps());
+        return creatureAimAngleForGroupRot(broadside);
       }
       let dialogueCameraZoomPercent = cameraModeConfig(npcDialogueCameraMode()).runtimeZoom?.initialPercent ?? 0;
       const dialogueZoomPointers = new Map();
@@ -3151,6 +3216,9 @@
         console.log('[NPC] Areas:', npcWalkers.map(w => (w.rec?.id || '?') + '@' + (w.area || w.root?._pendingBuildingAdd || (w.root?._pendingTownAdd ? 'town(pending)' : '?'))));
       }
 
+      // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.
+      const NPC_TOOL_SWING_AXIS = new THREE.Vector3(-1, 0, 0);
+
       async function makeNpcWalker(rec, initialTarget) {
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
         const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
@@ -3308,13 +3376,32 @@
                   if (this.stationToolMesh) root.remove(this.stationToolMesh);
                   this.stationToolMesh = makeToolPlaneMesh(target.toolKey);
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
-                  if (this.stationToolMesh) { this.stationToolMesh.position.set(0.25, 0.75, 0.15); root.add(this.stationToolMesh); }
+                  if (this.stationToolMesh) root.add(this.stationToolMesh);
                 }
                 if (this.stationToolMesh) {
+                  // Repeats the player's own chop/thrust swing curve (see updateToolMesh)
+                  // entirely in root-local space: the mesh is a child of `root`, so root's
+                  // own rotation.y already carries this NPC's facing — using the fixed
+                  // local right/forward axes here reproduces the player's world-space
+                  // swing for whichever way this NPC happens to be facing.
                   const interval = Math.max(0.2, target.toolIntervalSec || 2);
                   this.stationToolT = (this.stationToolT + dt) % interval;
-                  const swing = Math.sin((this.stationToolT / interval) * Math.PI * 2);
-                  this.stationToolMesh.rotation.z = swing * 0.45;
+                  const progress = this.stationToolT / interval;
+                  const anim = target.toolAnimStyle || TOOL_ITEM_DEFS[target.toolKey]?.animStyle || 'chop';
+                  const WF = 0.16, SF = 0.28;
+                  let swingAngle = 0, fwdOff = 0;
+                  if (anim === 'thrust') {
+                    swingAngle = 0.18;
+                    if (progress <= WF) fwdOff = -0.22 * (progress / WF);
+                    else if (progress <= SF) fwdOff = -0.22 + 0.54 * ((progress - WF) / (SF - WF));
+                    else fwdOff = 0.32 * (1.0 - (progress - SF) / (1.0 - SF));
+                  } else {
+                    if (progress <= WF) swingAngle = 0.82 + 0.98 * (progress / WF);
+                    else if (progress <= SF) swingAngle = 1.80 - 3.30 * ((progress - WF) / (SF - WF));
+                    else swingAngle = -1.50 + 2.32 * ((progress - SF) / (1.0 - SF));
+                  }
+                  this.stationToolMesh.position.set(-0.28, 0.18, fwdOff);
+                  this.stationToolMesh.quaternion.setFromAxisAngle(NPC_TOOL_SWING_AXIS, swingAngle);
                 }
               } else if (this.stationToolMesh) {
                 root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = '';
@@ -7561,8 +7648,17 @@
 
       const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
       const PERP_DEAD_RAD = PERP_DEAD_DEG * Math.PI / 180;
+      // Creatures get a narrower dead zone than player/NPC (see cameraRelativeCreaturePerps).
+      const CREATURE_PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.creaturePerpRotDeadzoneDeg ?? 30;
+      const CREATURE_PERP_DEAD_RAD = CREATURE_PERP_DEAD_DEG * Math.PI / 180;
+      // Extra margin required to *exit* a dead zone once locked into it, on top of
+      // the radius required to *enter* it. Without this, a rawTarget hovering right
+      // at the dead zone's edge (e.g. from per-frame tracking noise while chasing a
+      // moving target) flips in and out every frame — visible as rotation flicker.
+      const PERP_DEAD_HYSTERESIS_RAD = THREE.MathUtils.degToRad(6);
 
-      // Keeps model rotation outside ±15° dead zones around each perp angle.
+      // Keeps model rotation outside dead zones around each perp angle (radius given
+      // by deadRad, defaulting to PERP_DEAD_RAD).
       // state: persistent object per entity (must survive across frames).
       // Returns { effectiveTarget, snapTo } where snapTo is non-null when the model
       // should teleport (raw target crossed through a perp to the far side).
@@ -7573,8 +7669,9 @@
       // *near* perp sits. Evaluating every perp every frame let that far-side
       // flip fire a spurious snapTo while the model was stably locked near
       // the near perp, producing rapid alternation between two rotations.
-      function perpClamp(state, rawTarget, perps) {
+      function perpClamp(state, rawTarget, perps, deadRad = PERP_DEAD_RAD) {
         if (!state.perpSides) state.perpSides = perps.map(() => null);
+        if (!state.locked) state.locked = perps.map(() => false);
         let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
         for (let i = 0; i < perps.length; i++) {
           const dT = angleDiff(rawTarget, perps[i]);
@@ -7582,18 +7679,24 @@
           if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
         }
         const P = perps[nearestI];
+        // Hysteresis: once locked, require crossing the wider exit radius before
+        // unlocking; once free, require crossing the (narrower) entry radius before
+        // locking. Prevents boundary chatter when rawTarget hovers near the edge.
+        const wasLocked = state.locked[nearestI];
+        const isLocked = wasLocked ? nearestAbs < deadRad + PERP_DEAD_HYSTERESIS_RAD : nearestAbs < deadRad;
         let effectiveTarget = rawTarget;
         let snapTo = null;
-        if (nearestAbs >= PERP_DEAD_RAD) {
+        if (!isLocked) {
           const newSide = nearestDT > 0 ? 1 : -1;
           if (state.perpSides[nearestI] !== null && state.perpSides[nearestI] !== newSide) {
-            snapTo = P + newSide * PERP_DEAD_RAD;
+            snapTo = P + newSide * deadRad;
           }
           state.perpSides[nearestI] = newSide;
         } else {
           if (state.perpSides[nearestI] === null) state.perpSides[nearestI] = nearestDT >= 0 ? 1 : -1;
-          effectiveTarget = P + state.perpSides[nearestI] * PERP_DEAD_RAD;
+          effectiveTarget = P + state.perpSides[nearestI] * deadRad;
         }
+        state.locked[nearestI] = isLocked;
         return { effectiveTarget, snapTo };
       }
 
