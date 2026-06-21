@@ -493,8 +493,8 @@
             "mapId": "map_hobunji_town",
             "stationId": "station_ginju_field_nw",
             "position": {
-              "c": 33,
-              "r": 12
+              "c": 41,
+              "r": 5
             },
             "activity": "farming"
           },
@@ -515,8 +515,8 @@
             "mapId": "map_hobunji_town",
             "stationId": "station_ginju_field_sw",
             "position": {
-              "c": 33,
-              "r": 15
+              "c": 41,
+              "r": 12
             },
             "activity": "farming"
           },
@@ -733,8 +733,8 @@
             "mapId": "map_hobunji_town",
             "stationId": "station_ginju_field_ne",
             "position": {
-              "c": 36,
-              "r": 12
+              "c": 49,
+              "r": 5
             },
             "activity": "farming"
           },
@@ -1279,8 +1279,8 @@
             "mapId": "map_hobunji_town",
             "stationId": "station_ginju_field_se",
             "position": {
-              "c": 36,
-              "r": 15
+              "c": 49,
+              "r": 14
             },
             "activity": "farming"
           },
@@ -5700,8 +5700,8 @@
             "mapId": "map_hobunji_town",
             "stationId": "station_ginju_field_c",
             "position": {
-              "c": 35,
-              "r": 13
+              "c": 45,
+              "r": 16
             },
             "activity": "working the farm"
           },

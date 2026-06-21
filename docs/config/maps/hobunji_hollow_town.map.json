@@ -1,7 +1,7 @@
 {
   "schema": "hobunji_map.v1",
   "id": "map_hobunji_town",
-  "name": "Hobunji Hollow \u2014 Town",
+  "name": "Hobunji Hollow — Town",
   "category": "exterior",
   "cols": 60,
   "rows": 50,
@@ -3639,37 +3639,37 @@
     {
       "c": 32,
       "r": 11,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 33,
       "r": 11,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 34,
       "r": 11,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 35,
       "r": 11,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 36,
       "r": 11,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 37,
       "r": 11,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -3945,37 +3945,37 @@
     {
       "c": 32,
       "r": 12,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 33,
       "r": 12,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 34,
       "r": 12,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 35,
       "r": 12,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 36,
       "r": 12,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 37,
       "r": 12,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -4239,37 +4239,37 @@
     {
       "c": 32,
       "r": 13,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 33,
       "r": 13,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 34,
       "r": 13,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 35,
       "r": 13,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 36,
       "r": 13,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 37,
       "r": 13,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -4503,37 +4503,37 @@
     {
       "c": 32,
       "r": 14,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 33,
       "r": 14,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 34,
       "r": 14,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 35,
       "r": 14,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 36,
       "r": 14,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 37,
       "r": 14,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -4761,37 +4761,37 @@
     {
       "c": 32,
       "r": 15,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 33,
       "r": 15,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 34,
       "r": 15,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 35,
       "r": 15,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 36,
       "r": 15,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 37,
       "r": 15,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -5037,37 +5037,37 @@
     {
       "c": 32,
       "r": 16,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 33,
       "r": 16,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 34,
       "r": 16,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 35,
       "r": 16,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 36,
       "r": 16,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
       "c": 37,
       "r": 16,
-      "type": "tilled",
+      "type": "grass",
       "crop": ""
     },
     {
@@ -18412,8 +18412,8 @@
     {
       "id": "station_ginju_field_nw",
       "label": "Hoeing the North Field",
-      "col": 33,
-      "row": 12,
+      "col": 41,
+      "row": 5,
       "rotY": 90,
       "pose": "stand",
       "toolKey": "bronzehoe",
@@ -18423,8 +18423,8 @@
     {
       "id": "station_ginju_field_ne",
       "label": "Hoeing the North Field",
-      "col": 36,
-      "row": 12,
+      "col": 49,
+      "row": 5,
       "rotY": 270,
       "pose": "stand",
       "toolKey": "bronzehoe",
@@ -18434,8 +18434,8 @@
     {
       "id": "station_ginju_field_sw",
       "label": "Turning the Soil",
-      "col": 33,
-      "row": 15,
+      "col": 41,
+      "row": 12,
       "rotY": 90,
       "pose": "stand",
       "toolKey": "pickshovel",
@@ -18445,8 +18445,8 @@
     {
       "id": "station_ginju_field_se",
       "label": "Turning the Soil",
-      "col": 36,
-      "row": 15,
+      "col": 49,
+      "row": 14,
       "rotY": 270,
       "pose": "stand",
       "toolKey": "pickshovel",
@@ -18456,8 +18456,8 @@
     {
       "id": "station_ginju_field_c",
       "label": "Working the Field",
-      "col": 35,
-      "row": 13,
+      "col": 45,
+      "row": 16,
       "rotY": 0,
       "pose": "stand",
       "toolKey": "bronzehoe",
