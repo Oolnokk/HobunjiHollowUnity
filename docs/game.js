@@ -3138,6 +3138,9 @@
         console.log('[NPC] Areas:', npcWalkers.map(w => (w.rec?.id || '?') + '@' + (w.area || w.root?._pendingBuildingAdd || (w.root?._pendingTownAdd ? 'town(pending)' : '?'))));
       }
 
+      // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.
+      const NPC_TOOL_SWING_AXIS = new THREE.Vector3(-1, 0, 0);
+
       async function makeNpcWalker(rec, initialTarget) {
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
         const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
@@ -3295,13 +3298,32 @@
                   if (this.stationToolMesh) root.remove(this.stationToolMesh);
                   this.stationToolMesh = makeToolPlaneMesh(target.toolKey);
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
-                  if (this.stationToolMesh) { this.stationToolMesh.position.set(0.25, 0.75, 0.15); root.add(this.stationToolMesh); }
+                  if (this.stationToolMesh) root.add(this.stationToolMesh);
                 }
                 if (this.stationToolMesh) {
+                  // Repeats the player's own chop/thrust swing curve (see updateToolMesh)
+                  // entirely in root-local space: the mesh is a child of `root`, so root's
+                  // own rotation.y already carries this NPC's facing — using the fixed
+                  // local right/forward axes here reproduces the player's world-space
+                  // swing for whichever way this NPC happens to be facing.
                   const interval = Math.max(0.2, target.toolIntervalSec || 2);
                   this.stationToolT = (this.stationToolT + dt) % interval;
-                  const swing = Math.sin((this.stationToolT / interval) * Math.PI * 2);
-                  this.stationToolMesh.rotation.z = swing * 0.45;
+                  const progress = this.stationToolT / interval;
+                  const anim = target.toolAnimStyle || TOOL_ITEM_DEFS[target.toolKey]?.animStyle || 'chop';
+                  const WF = 0.16, SF = 0.28;
+                  let swingAngle = 0, fwdOff = 0;
+                  if (anim === 'thrust') {
+                    swingAngle = 0.18;
+                    if (progress <= WF) fwdOff = -0.22 * (progress / WF);
+                    else if (progress <= SF) fwdOff = -0.22 + 0.54 * ((progress - WF) / (SF - WF));
+                    else fwdOff = 0.32 * (1.0 - (progress - SF) / (1.0 - SF));
+                  } else {
+                    if (progress <= WF) swingAngle = 0.82 + 0.98 * (progress / WF);
+                    else if (progress <= SF) swingAngle = 1.80 - 3.30 * ((progress - WF) / (SF - WF));
+                    else swingAngle = -1.50 + 2.32 * ((progress - SF) / (1.0 - SF));
+                  }
+                  this.stationToolMesh.position.set(-0.28, 0.18, fwdOff);
+                  this.stationToolMesh.quaternion.setFromAxisAngle(NPC_TOOL_SWING_AXIS, swingAngle);
                 }
               } else if (this.stationToolMesh) {
                 root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = '';
