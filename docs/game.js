@@ -6598,7 +6598,7 @@
         // sustained hold through multiple ramping/timed swings rather than a single
         // tap — hand off to the charge state machine instead of a normal swing.
         if (wouldStartCharge(activeTool, activeAction)) {
-          startChargeAction(getReticleTile(), activeAction === 'fill' ? FILL_TRENCH_STAGE_DURATIONS : DIG_NEW_TRENCH_STAGE_DURATIONS);
+          startChargeAction(getReticleTile(), activeAction === 'fill' ? FILL_TRENCH_STAGES : DIG_NEW_TRENCH_STAGES);
           return;
         }
 
@@ -9941,13 +9941,22 @@
       // existing one in. Each stage plays one tool swing (sized by digSpeed); the
       // action only actually happens once every stage completes uninterrupted.
       let chargeAction = null;
-      // Digging a new trench takes 4 swings ramping from a slow 2s heave down to
-      // a quick 0.25s finishing chop. Filling one back in takes 3 even 1s swings.
-      const DIG_STAGE_FIRST = 2.0, DIG_STAGE_LAST = 0.25, DIG_STAGE_COUNT = 4;
-      const DIG_NEW_TRENCH_STAGE_DURATIONS = Array.from({ length: DIG_STAGE_COUNT }, (_, i) =>
-        DIG_STAGE_FIRST + (DIG_STAGE_LAST - DIG_STAGE_FIRST) * (i / (DIG_STAGE_COUNT - 1))
-      );
-      const FILL_TRENCH_STAGE_DURATIONS = [1, 1, 1];
+      // Digging a new trench alternates two animations across 4 stages: the dig
+      // swing itself (lift & jab, ramping 1s → 1/4s) and a reverse-hoe toss that
+      // lifts and throws dirt out behind the player (ramping 2s → 3/4s). Each
+      // anim plays twice, fastest by the final rep. Filling a trench back in
+      // takes 3 even 1s swings at the tool's normal animation.
+      const DIG_NEW_TRENCH_STAGES = [
+        { anim: 'thrust', dur: 1.0  },
+        { anim: 'toss',   dur: 2.0  },
+        { anim: 'thrust', dur: 0.25 },
+        { anim: 'toss',   dur: 0.75 },
+      ];
+      const FILL_TRENCH_STAGES = [{ dur: 1 }, { dur: 1 }, { dur: 1 }];
+
+      // Forces a specific swing animation during a charge stage (e.g. the
+      // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
+      let chargeAnimOverride = null;
 
       function getDigSpeedMultiplier() {
         return Math.max(0.01, player.digSpeed || 1);
@@ -9965,30 +9974,34 @@
         return tile.type !== TileType.TRENCH;
       }
 
-      function startChargeAction(reticle, stageDurations) {
+      function startChargeAction(reticle, stages) {
         if (chargeAction) return;
-        chargeAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool, stage: 0, stages: stageDurations };
+        chargeAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool, stage: 0, stages };
         beginChargeStage();
       }
 
       function beginChargeStage() {
         if (!chargeAction) return;
-        const dur = chargeAction.stages[chargeAction.stage] / getDigSpeedMultiplier();
+        const stageDef = chargeAction.stages[chargeAction.stage];
+        const dur = stageDef.dur / getDigSpeedMultiplier();
         toolSwingDur = dur;
         toolSwingT   = dur;
         strikeFired  = false;
         pendingAction = null;
+        chargeAnimOverride = stageDef.anim || null;
       }
 
       function cancelChargeAction() {
         if (!chargeAction) return;
         chargeAction = null;
         toolSwingT = 0;
+        chargeAnimOverride = null;
       }
 
       function completeChargeAction() {
         const { col, row, action, tool } = chargeAction;
         chargeAction = null;
+        chargeAnimOverride = null;
         const result = applyAction(tool, action, col, row);
         lastActionMessage = result.message;
         showToast(result.message, result.ok !== false);
@@ -10138,7 +10151,7 @@
         _qFac.setFromAxisAngle(_tUp, θ);
         _swAxis.set(rightX, 0, rightZ);
 
-        const anim = fishThrowActive ? 'chop' : activeAnimStyle();
+        const anim = fishThrowActive ? 'chop' : (chargeAnimOverride || activeAnimStyle());
         const WF = 0.16, SF = 0.28;  // windup 16%, strike 12%, return 72% — strike faster than windup
 
         if (anim === 'thrust') {
@@ -10189,6 +10202,25 @@
           } else {
             toolHolder.position.set(handX, handY, handZ);
           }
+
+        } else if (anim === 'toss') {
+          // TOSS — reverse hoe: lift the load on the windup, then heave it up
+          // and back over the shoulder on the strike to throw dirt out behind you.
+          let tossAngle;
+          if (progress <= WF) {
+            tossAngle = -1.50 + 1.18 * (progress / WF);                // lift from a low scoop: −1.50 → −0.32
+          } else if (progress <= SF) {
+            tossAngle = -0.32 - 2.68 * ((progress - WF) / (SF - WF));  // heave up & over the shoulder: −0.32 → −3.00
+          } else {
+            tossAngle = -3.00 + 1.50 * ((progress - SF) / (1.0 - SF));// settle back to the low scoop: −3.00 → −1.50
+          }
+          _qAnim.setFromAxisAngle(_swAxis, tossAngle);
+          toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
+          toolHolder.position.set(
+            playerMesh.position.x + rightX * 0.28,
+            playerMesh.position.y + 0.18,
+            playerMesh.position.z + rightZ * 0.28
+          );
 
         } else {
           // SWEEP — body rotates through windup-strike-return arc; axe locked in hand.
