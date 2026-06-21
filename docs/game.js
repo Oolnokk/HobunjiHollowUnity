@@ -6564,6 +6564,9 @@
 
       function useActiveAction() {
         if (dialogueOpen) { advanceNpcDialogue(); return; }
+        if (activeTool === 'shovel' || activeTool === 'pick') {
+          activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
+        }
         if (activeAction === generalStoreAction()) {
           if (nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) && !farmEditMode) { openMenu('generalStore'); return; }
           showToast(generalStoreButtonConfig().noTargetMessage || 'The general store is not available right now.', false);
@@ -9942,17 +9945,27 @@
       // action only actually happens once every stage completes uninterrupted.
       let chargeAction = null;
       // Digging a new trench alternates two animations across 4 stages: the dig
-      // swing itself (lift & jab, ramping 1s → 1/4s) and a reverse-hoe toss that
-      // lifts and throws dirt out behind the player (ramping 2s → 3/4s). Each
-      // anim plays twice, fastest by the final rep. Filling a trench back in
-      // takes 3 even 1s swings at the tool's normal animation.
-      const DIG_NEW_TRENCH_STAGES = [
-        { anim: 'thrust', dur: 1.0  },
-        { anim: 'toss',   dur: 2.0  },
-        { anim: 'thrust', dur: 0.25 },
-        { anim: 'toss',   dur: 0.75 },
+      // swing itself (lift & jab) and a reverse-hoe toss that lifts and throws
+      // dirt out behind the player. Each pair shares one duration, ramping
+      // from 1s+1s on the first rep down to 1/4s+1/4s on the final rep.
+      const DIG_NEW_TRENCH_REP_DURATIONS = [1.0, 0.25];
+      const DIG_NEW_TRENCH_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.flatMap(dur => [
+        { anim: 'thrust', dur },
+        { anim: 'toss',   dur },
+      ]);
+      // Filling a trench back in plays a repeating 5-stage flourish: turn 45°
+      // toward the camera and swing, turn back and strike again (no recoil),
+      // then a paused 180° length-wise twist of the shovel out and back, and a
+      // quick stance reset. Repeats 3x like the old plain fill swings did.
+      const REFILL_TURN_ANGLE = Math.PI / 4;
+      const REFILL_FLOURISH_REP = [
+        { anim: 'refillTurnOut',    dur: 1.0  },
+        { anim: 'refillStrikeBack', dur: 0.5  },
+        { anim: 'refillTwistOut',   dur: 0.25 },
+        { anim: 'refillTwistBack',  dur: 0.25 },
+        { anim: 'refillReset',      dur: 0.15 },
       ];
-      const FILL_TRENCH_STAGES = [{ dur: 1 }, { dur: 1 }, { dur: 1 }];
+      const FILL_TRENCH_STAGES = [...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP];
 
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
@@ -9962,21 +9975,40 @@
         return Math.max(0.01, player.digSpeed || 1);
       }
 
+      // Collapses the separate Dig/Fill action slots into one contextual input:
+      // whichever of the two the player has selected, resolve to whichever is
+      // actually valid for the targeted tile. Dig (including redigging a shallow
+      // trench) takes priority; fall back to fill only when dig isn't valid,
+      // i.e. an already-full trench — so the same input digs or fills depending
+      // on what's targeted, on desktop and mobile alike.
+      function resolveDigFillAction(tool, action, reticle) {
+        if (!((tool === 'shovel' || tool === 'pick') && (action === 'dig' || action === 'fill'))) return action;
+        if (canUseAction(tool, 'dig', reticle.col, reticle.row)) return 'dig';
+        if (canUseAction(tool, 'fill', reticle.col, reticle.row)) return 'fill';
+        return action;
+      }
+
       // Whether starting this tool/action right now would kick off a multi-stage
       // charge (new trench dig, or filling one in) rather than firing immediately.
       // Redigging an existing shallow trench is a normal single-tap swing instead.
       function wouldStartCharge(tool, action) {
         if (!((tool === 'shovel' || tool === 'pick') && (action === 'dig' || action === 'fill'))) return false;
         const reticle = getReticleTile();
-        if (!canUseAction(tool, action, reticle.col, reticle.row)) return false;
-        if (action === 'fill') return true; // canUseAction already required an existing trench
+        const resolved = resolveDigFillAction(tool, action, reticle);
+        if (!canUseAction(tool, resolved, reticle.col, reticle.row)) return false;
+        if (resolved === 'fill') return true; // canUseAction already required an existing trench
         const tile = getActiveGrid()[reticle.row][reticle.col];
         return tile.type !== TileType.TRENCH;
       }
 
       function startChargeAction(reticle, stages) {
         if (chargeAction) return;
-        chargeAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool, stage: 0, stages };
+        // Which way the refill flourish's camera-facing turn should rotate —
+        // whichever side of "facing the camera" (angle 0) the player is
+        // currently closer to, so the turn-out reads as a natural pivot.
+        const turnDelta = angleDiff(0, playerFacing);
+        const refillTurnSign = turnDelta === 0 ? 1 : Math.sign(turnDelta);
+        chargeAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool, stage: 0, stages, refillTurnSign };
         beginChargeStage();
       }
 
@@ -10222,6 +10254,84 @@
             playerMesh.position.z + rightZ * 0.28
           );
 
+        } else if (anim === 'refillTurnOut') {
+          // REFILL #1 — pivot up to 45° toward the camera while swinging the
+          // basic shovel thrust (the same windup→jab→return as 'thrust').
+          const sign = chargeAction?.refillTurnSign || 1;
+          const rotAngle = progress <= WF
+            ? REFILL_TURN_ANGLE * sign * (progress / WF)
+            : REFILL_TURN_ANGLE * sign;
+          let jabOff;
+          if (progress <= WF) jabOff = -0.22 * (progress / WF);
+          else if (progress <= SF) jabOff = -0.22 + 0.54 * ((progress - WF) / (SF - WF));
+          else jabOff = 0.32 * (1.0 - (progress - SF) / (1.0 - SF));
+          const vθ = θ + rotAngle;
+          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
+          playerMesh.rotation.y = vθ;
+          _qFac.setFromAxisAngle(_tUp, vθ);
+          _qAnim.setFromAxisAngle(_swAxis, 0.18);
+          toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
+          toolHolder.position.set(
+            playerMesh.position.x + vRX * 0.28 + vFX * jabOff,
+            playerMesh.position.y + 0.18,
+            playerMesh.position.z + vRZ * 0.28 + vFZ * jabOff
+          );
+
+        } else if (anim === 'refillStrikeBack') {
+          // REFILL #2 — pivot back to face the trench, then strike with no
+          // recoil: the jab holds at full extension instead of returning.
+          const sign = chargeAction?.refillTurnSign || 1;
+          let rotAngle, jabOff;
+          if (progress <= WF) {
+            rotAngle = REFILL_TURN_ANGLE * sign * (1 - progress / WF);
+            jabOff   = -0.22 * (progress / WF);
+          } else if (progress <= SF) {
+            rotAngle = 0;
+            jabOff   = -0.22 + 0.54 * ((progress - WF) / (SF - WF));
+          } else {
+            rotAngle = 0;
+            jabOff   = 0.32;
+          }
+          const vθ = θ + rotAngle;
+          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
+          playerMesh.rotation.y = vθ;
+          _qFac.setFromAxisAngle(_tUp, vθ);
+          _qAnim.setFromAxisAngle(_swAxis, 0.18);
+          toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
+          toolHolder.position.set(
+            playerMesh.position.x + vRX * 0.28 + vFX * jabOff,
+            playerMesh.position.y + 0.18,
+            playerMesh.position.z + vRZ * 0.28 + vFZ * jabOff
+          );
+
+        } else if (anim === 'refillTwistOut' || anim === 'refillTwistBack') {
+          // REFILL #3/#4 — held at full extension facing the trench; the
+          // 180° length-wise twist itself is layered onto spinPlane below.
+          playerMesh.rotation.y = θ;
+          _qFac.setFromAxisAngle(_tUp, θ);
+          _qAnim.setFromAxisAngle(_swAxis, 0.18);
+          toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
+          toolHolder.position.set(
+            playerMesh.position.x + rightX * 0.28 + fwdX * 0.32,
+            playerMesh.position.y + 0.18,
+            playerMesh.position.z + rightZ * 0.28 + fwdZ * 0.32
+          );
+
+        } else if (anim === 'refillReset') {
+          // REFILL #5 — quick stance reset: jab eases back to neutral.
+          const jabOff = 0.32 * (1.0 - progress);
+          playerMesh.rotation.y = θ;
+          _qFac.setFromAxisAngle(_tUp, θ);
+          _qAnim.setFromAxisAngle(_swAxis, 0.18);
+          toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
+          toolHolder.position.set(
+            playerMesh.position.x + rightX * 0.28 + fwdX * jabOff,
+            playerMesh.position.y + 0.18,
+            playerMesh.position.z + rightZ * 0.28 + fwdZ * jabOff
+          );
+
         } else {
           // SWEEP — body rotates through windup-strike-return arc; axe locked in hand.
           const WINDUP_ANGLE = -2.20, STRIKE_ANGLE = 2.12;
@@ -10257,9 +10367,17 @@
           // the static twist reads as a facing-independent "global" rotation on top of the
           // facing-relative chop tilt, only happening to cancel out at one specific facing.
           const baseRotZ = fishThrowActive ? 0 : (toolMeshMap[activeTool].userData.basePlaneRotZ || 0);
-          spinPlane.rotation.z = TOOL_ITEM_DEFS[spinItemKey]?.spinning
-            ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
-            : baseRotZ;
+          if (anim === 'refillTwistOut') {
+            // Lerp a 180° length-wise spin out, independent of any item's own "spinning" flag.
+            spinPlane.rotation.z = baseRotZ + progress * Math.PI;
+          } else if (anim === 'refillTwistBack') {
+            // Reverse of the twist-out: lerp back from 180° to 0°.
+            spinPlane.rotation.z = baseRotZ + Math.PI * (1 - progress);
+          } else {
+            spinPlane.rotation.z = TOOL_ITEM_DEFS[spinItemKey]?.spinning
+              ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
+              : baseRotZ;
+          }
         }
 
         if (pendingAction && !strikeFired && progress >= SF) {
@@ -11921,7 +12039,7 @@
 
         function _outerR() {
           const colPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--col'));
-          return Number.isFinite(colPx) && colPx > 0 ? colPx * 7.8 : _clampedVmin(outerArchRadiusClamp);
+          return Number.isFinite(colPx) && colPx > 0 ? colPx * 10 : _clampedVmin(outerArchRadiusClamp);
         }
         function _arcPt(deg) {
           const r = _outerR(), a = deg * Math.PI / 180;
