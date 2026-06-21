@@ -561,9 +561,10 @@
     #arcContainer.arc-hidden { display: none; }
 
     /* ── Outer arch (tool dial + item dial) ─────────────────── */
-    /* R = 7.8 col. toolBtn at 150° (clock ~9:50), itemBtn at 120° (clock ~10:30). */
+    /* R = 10 col (pushed out from 7.8 to clear the action arch). toolBtn at
+       150° (clock ~9:50), itemBtn at 120° (clock ~10:30). */
     #toolSelect {
-      --ar2: calc(7.8 * var(--col));
+      --ar2: calc(10 * var(--col));
       position: absolute; right: 0; bottom: 0;
       width: 0; height: 0; overflow: visible; z-index: 2; touch-action: none;
     }
@@ -574,7 +575,7 @@
       right:  calc(-1*cos(150deg)*var(--ar2));
       bottom: calc(   sin(150deg)*var(--ar2));
       transform: translate(50%, 50%);
-      width: clamp(44px, var(--col), 62px); height: clamp(44px, var(--col), 62px);
+      width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
       background: var(--glass); border: 1.5px solid var(--border-bright);
       backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
@@ -585,18 +586,18 @@
       box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
     #toolBtn:active { transform: translate(50%,50%) scale(0.92); }
-    .ts-icon { font-size: 1.4em; line-height: 1; pointer-events: none; }
+    .ts-icon { font-size: 0.85em; line-height: 1; pointer-events: none; }
     .ts-lbl  { display: none; }
     #itemBtn {
       position: absolute;
       right:  calc(-1*cos(120deg)*var(--ar2));
       bottom: calc(   sin(120deg)*var(--ar2));
       transform: translate(50%, 50%);
-      width: clamp(44px, var(--col), 62px); height: clamp(44px, var(--col), 62px);
+      width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
       border-radius: 50%;
       background: rgba(255,211,125,0.09); border: 1.5px solid rgba(255,211,125,0.46);
       backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-      color: var(--text); font-size: 1.4em;
+      color: var(--text); font-size: 0.85em;
       display: flex; align-items: center; justify-content: center;
       padding: 0; font-family: inherit; cursor: pointer;
       transition: transform 0.08s; overflow: hidden;
