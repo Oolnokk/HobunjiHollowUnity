@@ -10770,7 +10770,11 @@
                 const wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
                 wm.receiveShadow = false;
                 scene.add(wm);
-                _markTerrainEdgeId(wm, 'water');
+                // Only tag dedicated water-holding features (trench/paddy) for the
+                // material-edge outline — rain wets every non-solid tile, and tagging
+                // that incidental puddle film too would seam-outline the entire tile
+                // grid the moment it starts raining.
+                if (tile.type === TileType.TRENCH || tile.type === TileType.PADDY) _markTerrainEdgeId(wm, 'water');
                 setWaterMesh(i, wm);
               }
               const wm = waterMeshes[i];
@@ -10848,7 +10852,9 @@
                 wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
                 wm.receiveShadow = false;
                 townScene.add(wm);
-                _markTerrainEdgeId(wm, 'water');
+                // See farm updateWaterMeshes() — only outline dedicated water-holding
+                // ditches, not every tile's incidental rain puddle.
+                if (tile.type === TileType.TRENCH || tile.type === TileType.PADDY) _markTerrainEdgeId(wm, 'water');
                 townWaterMeshes.set(key, wm);
               }
               wm.position.set(col + 0.5, surfaceA + 0.015, row + 0.5);
