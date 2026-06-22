@@ -2439,8 +2439,8 @@
         const zi = buildZoneScene(currentArea);
         if (!zdef || !zi) return;
         for (let attempt = 0; attempt < 8; attempt++) {
-          const col = Math.floor(Math.random() * zdef.cols);
-          const row = Math.floor(Math.random() * zdef.rows);
+          const col = Math.floor(Math.random() * zi.cols);
+          const row = Math.floor(Math.random() * zi.rows);
           const x = col * TILE + TILE * 0.5, y = row * TILE + TILE * 0.5;
           if (Math.hypot(x - player.x, y - player.y) < TILE * 5) continue;
           const creature = makeCreatureEntity(zdef.hostileKey, x, y, { homeX: x, homeY: y, state: 'idle' });
@@ -2577,40 +2577,334 @@
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       const _zoneScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions }
+      // mapId → { cols, rows, tiles: [{c,r,type}], transitions } — real authored map
+      // data resolved from town-workspace-v1.json by _loadTownFromWorkspace(), used in
+      // place of EXTERIOR_ZONES' tiny flat placeholder grid whenever it's available.
+      const _zoneLayouts = new Map();
 
       function buildZoneScene(mapId) {
         if (_zoneScenes.has(mapId)) return _zoneScenes.get(mapId);
         const zdef = EXTERIOR_ZONES[mapId];
         if (!zdef) return null;
+        const zoneData = _zoneLayouts.get(mapId);
+        const ZCOLS = zoneData?.cols || zdef.cols, ZROWS = zoneData?.rows || zdef.rows;
+
         const zScene = new THREE.Scene();
         zScene.background = new THREE.Color(zdef.fogColor);
-        zScene.fog = new THREE.FogExp2(zdef.fogColor, 0.022);
-        zScene.add(new THREE.AmbientLight(0xffffff, 0.65));
-        const sun = new THREE.DirectionalLight(0xffffff, 0.85);
-        sun.position.set(zdef.cols * 0.3, 18, zdef.rows * 0.2);
+        zScene.fog = new THREE.FogExp2(zdef.fogColor, 0.018); // match town/farm fog density
+        zScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
+        const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
+        sun.position.set(4, 8, 2);
         zScene.add(sun);
 
-        const zGrid = Array.from({ length: zdef.rows }, () =>
-          Array.from({ length: zdef.cols }, () => ({
+        const zGrid = Array.from({ length: ZROWS }, () =>
+          Array.from({ length: ZCOLS }, () => ({
             type: TileType.GRASS, water: 0, crop: CropType.NONE,
             cropAge: 0, cropReady: false, stress: '', variation: 0,
           }))
         );
+        for (const { c, r, type } of (zoneData?.tiles || [])) {
+          if (zGrid[r]?.[c]) zGrid[r][c].type = type || TileType.GRASS;
+        }
 
-        const groundGeo = new THREE.PlaneGeometry(zdef.cols, zdef.rows);
-        groundGeo.rotateX(-Math.PI / 2);
-        const ground = new THREE.Mesh(groundGeo, new THREE.MeshLambertMaterial({ color: zdef.groundColor }));
-        ground.position.set(zdef.cols / 2, 0, zdef.rows / 2);
-        zScene.add(ground);
+        // Ground: same per-vertex seam-safe heightfield pipeline as the town/farm
+        // (makeFloorGeo / buildTerrainTileGeo / buildPathNetworkGeo), merged into one
+        // mesh per material. Rock tiles get the farm's real stone-mound geometry
+        // (buildRockTileGeo) instead of town's flatten-to-grass treatment, since here
+        // rock tiles are actual cliff terrain, not building footprint markers.
+        const _floorBuckets = new Map();
+        const _addToBucket = (matKey, geo, x, y, z) => {
+          if (!geo) return;
+          let arr = _floorBuckets.get(matKey);
+          if (!arr) { arr = []; _floorBuckets.set(matKey, arr); }
+          arr.push({ geo, x, y, z });
+        };
 
+        const pathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS);
+        if (pathNet) {
+          _addToBucket(TileType.PATH,  pathNet.pathGeo,  0, NORMAL_TOP, 0);
+          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
+        }
+
+        for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
+          const tile = zGrid[r][c];
+          const cx = c + 0.5, cz = r + 0.5;
+
+          if (tile.type === TileType.ROCK) {
+            // Base floor slab (full footprint) so the rock mound never leaves a
+            // gap, same as the farm's per-tile rock rendering.
+            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS), cz);
+            const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
+            _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP, cz);
+            continue;
+          }
+          if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED ||
+              tile.type === TileType.RIVER || tile.type === TileType.STREAM) {
+            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid);
+            const bedMatKey = (tile.type === TileType.RIVER || tile.type === TileType.STREAM) ? tile.type : TileType.TRENCH;
+            _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP, cz);
+            continue;
+          }
+          if (tile.type === TileType.PATH ||
+              (pathNet && pathNet.inBounds(c, r) && !pathNet.isExcludedTile(c, r) && tile.type === TileType.GRASS)) {
+            continue; // covered by the path network mesh above
+          }
+          if (tile.type === TileType.SHRUB) {
+            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS), cz);
+            if (window.FoliageGenerator) {
+              const vegGroup = window.FoliageGenerator.buildShrubMesh(c, r);
+              vegGroup.scale.set(2, 2, 2);
+              vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS), cz);
+              zScene.add(vegGroup);
+              _markOutline(vegGroup);
+            }
+            continue;
+          }
+          const matKey = tileMats[tile.type] ? tile.type : TileType.GRASS;
+          _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tile.type), cz);
+        }
+
+        for (const [matKey, entries] of _floorBuckets) {
+          const merged = _mergeTileGeos(entries);
+          const mesh = new THREE.Mesh(merged, tileMats[matKey] || tileMats.grass);
+          mesh.receiveShadow = true;
+          zScene.add(mesh);
+          _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
+        }
+
+        _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
+        buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId);
+
+        const toTownExit = zoneData?.toTownExit;
         const transitions = [{
-          id: mapId + '_exit', label: 'Back to Town', col: zdef.exitCol, row: zdef.exitRow,
+          id: mapId + '_exit', label: toTownExit?.label || 'Back to Town',
+          col: toTownExit?.col ?? zdef.exitCol, row: toTownExit?.row ?? zdef.exitRow,
           target: 'town', targetCol: zdef.townReturnCol, targetRow: zdef.townReturnRow,
-        }];
+        }, ...(zoneData?.transitions || [])];
 
-        const info = { scene: zScene, grid: zGrid, cols: zdef.cols, rows: zdef.rows, transitions };
+        // Gold ring markers for zone transitions, matching town's
+        const ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+        for (const t of transitions) {
+          const tile = zGrid[t.row]?.[t.col];
+          const ring = new THREE.Mesh(ringGeo, ringMat);
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.set(t.col + 0.5, tileSurfaceY((tile?.type) || TileType.GRASS) + 0.02, t.row + 0.5);
+          zScene.add(ring);
+        }
+
+        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions };
         _zoneScenes.set(mapId, info);
         return info;
+      }
+
+      // Grass billboard tufts for a zone — mirrors _buildTownGrassBillboards but
+      // parameterized so each zone gets its own InstancedMesh sized to its real grid.
+      function _buildZoneGrassBillboards(zScene, zGrid, zcols, zrows) {
+        if (!grassBillboardMat) return;
+        let count = 0;
+        for (let row = 0; row < zrows; row++)
+          for (let col = 0; col < zcols; col++)
+            if (zGrid[row]?.[col]?.type === TileType.GRASS) count++;
+        if (count === 0) return;
+
+        const mesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
+        mesh.frustumCulled = false;
+        mesh.visible = s_grass;
+        const dummy = new THREE.Object3D();
+        let idx = 0;
+        for (let row = 0; row < zrows; row++) {
+          for (let col = 0; col < zcols; col++) {
+            if (zGrid[row]?.[col]?.type !== TileType.GRASS) continue;
+            idx = _fillBillboardInstances(mesh, dummy, idx, col, row, 1.0);
+          }
+        }
+        mesh.count = idx;
+        mesh.instanceMatrix.needsUpdate = true;
+        zScene.add(mesh);
+      }
+
+      // Procedural cliff/border ring around a zone's playable area — same
+      // rugged-plain + distant-cliffs passes as buildTownBorderTerrain, parameterized
+      // by the zone's real size and a per-zone seed so each zone's border is distinct
+      // but stable across visits.
+      function buildZoneBorderTerrain(zScene, zcols, zrows, mapId) {
+        const BORDER_W    = 18;
+        const SEED        = (mapId.split('').reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 0)) || 1;
+        const BLEND_STEPS = 8;
+
+        const BV  = BORDER_W * 2;
+        const PVW = zcols * 2, PVH = zrows * 2;
+        const GW  = PVW + 2*BV + 1;
+        const GH  = PVH + 2*BV + 1;
+        const CW  = GW - 1, CH = GH - 1;
+
+        let _s = SEED >>> 0;
+        const rng = () => {
+          _s += 0x6D2B79F5;
+          let t = Math.imul(_s ^ _s>>>15, _s|1);
+          t ^= t + Math.imul(t ^ t>>>7, t|61);
+          return ((t ^ t>>>14) >>> 0) / 4294967296;
+        };
+
+        const hashDisp = (vi, vj) => {
+          let h = (2166136261 ^ (vi * 374761393) ^ (vj * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+
+        const vSteps = (gi, gj) => {
+          const vi = gi - BV, vj = gj - BV;
+          const dx = Math.max(0, -vi, vi - PVW);
+          const dz = Math.max(0, -vj, vj - PVH);
+          return Math.sqrt(dx*dx + dz*dz);
+        };
+
+        const isPlayable = (ci, cj) => ci>=BV && ci<BV+PVW && cj>=BV && cj<BV+PVH;
+
+        const Y = new Float32Array(GW * GH);
+        for (let gj = 0; gj < GH; gj++)
+          for (let gi = 0; gi < GW; gi++)
+            Y[gj*GW+gi] = NORMAL_TOP + hashDisp(gi-BV, gj-BV);
+
+        const cv4 = (ci, cj) => [cj*GW+ci, cj*GW+ci+1, (cj+1)*GW+ci, (cj+1)*GW+ci+1];
+
+        function pickGroup(ci0, cj0, maxSz) {
+          const group = [], seen = new Set([cj0*CW+ci0]);
+          const front = [[ci0, cj0]];
+          while (front.length && group.length < maxSz) {
+            const fi = Math.floor(rng() * front.length);
+            const [ci, cj] = front.splice(fi, 1)[0];
+            group.push([ci, cj]);
+            for (const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+              const ni=ci+dc, nj=cj+dr;
+              if (ni<0||ni>=CW||nj<0||nj>=CH) continue;
+              const nk = nj*CW+ni;
+              if (seen.has(nk) || isPlayable(ni,nj)) continue;
+              seen.add(nk); front.push([ni,nj]);
+            }
+          }
+          return group;
+        }
+
+        function raiseGroup(group, amount) {
+          let maxY = -Infinity;
+          const verts = new Set();
+          for (const [ci,cj] of group)
+            for (const vi of cv4(ci,cj)) { verts.add(vi); if(Y[vi]>maxY) maxY=Y[vi]; }
+          const target = maxY + amount;
+          for (const vi of verts) {
+            const gi = vi%GW, gj = vi/GW|0;
+            const st = vSteps(gi, gj);
+            if (st === 0) continue;
+            const blend  = Math.min(1, st / BLEND_STEPS);
+            const raised = NORMAL_TOP + hashDisp(gi-BV, gj-BV) + blend*(target - NORMAL_TOP);
+            if (raised > Y[vi]) Y[vi] = raised;
+          }
+        }
+
+        function pickCell(outerBias) {
+          const rim = BV >> 2;
+          for (let attempt = 0; attempt < 300; attempt++) {
+            let ci, cj;
+            if (rng() < outerBias) {
+              const side = Math.floor(rng() * 4);
+              if (side===0) { ci=Math.floor(rng()*CW); cj=Math.floor(rng()*rim); }
+              else if(side===1){ ci=Math.floor(rng()*CW); cj=(CH-1-Math.floor(rng()*rim))|0; }
+              else if(side===2){ ci=Math.floor(rng()*rim); cj=Math.floor(rng()*CH); }
+              else              { ci=(CW-1-Math.floor(rng()*rim))|0; cj=Math.floor(rng()*CH); }
+            } else {
+              ci=Math.floor(rng()*CW); cj=Math.floor(rng()*CH);
+            }
+            if (!isPlayable(ci,cj)) return [ci,cj];
+          }
+          return [0,0];
+        }
+
+        for (let p = 0; p < 55; p++) {
+          const [ci,cj] = pickCell(0.12);
+          raiseGroup(pickGroup(ci, cj, 4 + Math.floor(rng()*18)), 0.05 + rng()*0.32);
+        }
+        for (let p = 0; p < 32; p++) {
+          const [ci,cj] = pickCell(0.88);
+          raiseGroup(pickGroup(ci, cj, 10 + Math.floor(rng()*38)), 0.9 + rng()*3.2);
+        }
+
+        const RIM_V   = 20;
+        const RIM_MIN = NORMAL_TOP + 3.0;
+        for (let gj = 0; gj < GH; gj++) {
+          for (let gi = 0; gi < GW; gi++) {
+            if (gj >= RIM_V && gj <= GH-1-RIM_V &&
+                gi >= RIM_V && gi <= GW-1-RIM_V) continue;
+            const k = gj * GW + gi;
+            if (Y[k] < RIM_MIN) Y[k] = RIM_MIN;
+          }
+        }
+
+        const pos = new Float32Array(GW * GH * 3);
+        for (let gj = 0; gj < GH; gj++)
+          for (let gi = 0; gi < GW; gi++) {
+            const k = gj*GW+gi;
+            pos[k*3]   = (gi-BV)*0.5;
+            pos[k*3+1] = Y[k];
+            pos[k*3+2] = (gj-BV)*0.5;
+          }
+
+        const idx = [];
+        for (let cj = 0; cj < CH; cj++) {
+          for (let ci = 0; ci < CW; ci++) {
+            if (isPlayable(ci, cj)) continue;
+            const [v00,v10,v01,v11] = cv4(ci,cj);
+            idx.push(v00, v01, v11, v00, v11, v10);
+          }
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        mesh.receiveShadow = true;
+        zScene.add(mesh);
+
+        // Stone cliff skin: same normal-based overlay rule as the farm/town border
+        // terrain — faces steeper than ~41° from horizontal get a stone skin instead
+        // of grass (cnx²+cnz² > 0.194 for a 0.5×0.5 cell, see buildBorderTerrain).
+        const cliffMat = new THREE.MeshLambertMaterial({
+          color: 0x6a6460, side: THREE.DoubleSide,
+          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+        });
+
+        function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
+          const skinPos = [], idxArr = [];
+          let vi = 0;
+          for (let gj = gjMin; gj < gjMax; gj++) {
+            for (let gi = giMin; gi < giMax; gi++) {
+              const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
+              const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
+              const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+              const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
+              if (cnx * cnx + cnz * cnz <= 0.194) continue;  // near-horizontal → grass
+              const x0=(gi-BV)*0.5, x1=x0+0.5;
+              const z0=(gj-BV)*0.5, z1=z0+0.5;
+              skinPos.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
+              idxArr.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
+            }
+          }
+          if (!skinPos.length) return;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.Float32BufferAttribute(skinPos, 3));
+          g.setIndex(new THREE.BufferAttribute(idxArr.length > 65535 ? new Uint32Array(idxArr) : new Uint16Array(idxArr), 1));
+          g.computeVertexNormals();
+          zScene.add(new THREE.Mesh(g, cliffMat));
+        }
+
+        elevStoneSkin(0,           BV,          0,          GW - 1); // north strip
+        elevStoneSkin(GH - 1 - BV, GH - 1,      0,          GW - 1); // south strip
+        elevStoneSkin(BV,          GH - 1 - BV, 0,          BV);      // west strip
+        elevStoneSkin(BV,          GH - 1 - BV, GW - 1 - BV, GW - 1); // east strip
       }
 
       function initWorldTravel(layout) {
@@ -3543,6 +3837,36 @@
             } catch(_) { return m; }
           }));
           _workspaceMaps = resolvedMaps;
+          // Resolve real authored tile/transition data for any exterior zone (Northern
+          // Cliffs, Southern Cloud Forest, ...) found in the workspace, so buildZoneScene
+          // can render actual cliff/terrain content instead of EXTERIOR_ZONES' tiny flat
+          // placeholder grid.
+          for (const zoneMapId of Object.keys(EXTERIOR_ZONES)) {
+            const zm = resolvedMaps.find(m => m.id === zoneMapId);
+            if (!zm) continue;
+            const zTiles = [];
+            for (let r = 0; r < zm.rows; r++) for (let c = 0; c < zm.cols; c++) {
+              const t = zm.tiles?.[`${c},${r}`];
+              if (t) zTiles.push({ c, r, type: t.type || 'grass' });
+            }
+            const zTransitions = [];
+            let toTownExit = null;
+            (zm.transitions || []).forEach(t => {
+              if (!t.targetMapId) return;
+              if (t.targetMapId === 'map_hobunji_town') {
+                // Real authored exit back to town — buildZoneScene uses this position
+                // (instead of EXTERIOR_ZONES' placeholder exitCol/exitRow) for the
+                // "Back to Town" transition, so the gold ring lands where the map
+                // was actually drawn to connect to town.
+                if (!toTownExit) toTownExit = t;
+              } else if (_isBuildingArea(t.targetMapId)) {
+                zTransitions.push({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId });
+              } else if (EXTERIOR_ZONES[t.targetMapId]) {
+                zTransitions.push({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
+              }
+            });
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit });
+          }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
           const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [] };
