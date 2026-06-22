@@ -565,7 +565,10 @@ function submapsOf(parentId) { return ws.maps.filter(x => x.parentMapId === pare
 function getOrCreateSubmap(parentMap, group) {
   let sm = ws.maps.find(x => x.parentMapId === parentMap.id && x.plateauGroupId === group.id);
   if (sm) return sm;
-  sm = makeMap(`${parentMap.name} — ${group.label}`, parentMap.category, parentMap.cols, parentMap.rows);
+  // The submap's flat walkable top is inset 1 tile from its parent's plateau footprint
+  // on every side; that 1-tile margin is reserved (in-game) for the smooth cliff-face
+  // blend down to ground level, so the submap itself is always 2 smaller per axis.
+  sm = makeMap(`${parentMap.name} — ${group.label}`, parentMap.category, Math.max(1, parentMap.cols - 2), Math.max(1, parentMap.rows - 2));
   sm.isSubmap = true; sm.parentMapId = parentMap.id; sm.plateauGroupId = group.id;
   recomputeElevation(sm);
   ws.maps.push(sm);
@@ -596,7 +599,7 @@ function resizeMapAndSubmaps(m, nc, nr) {
   (m.rivers || []).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c < nc && r < nr); });
   m.transitions = (m.transitions || []).filter(t => t.col < nc && t.row < nr);
   m.npcStations = (m.npcStations || []).filter(st => st.col < nc && st.row < nr);
-  submapsOf(m.id).forEach(sm => resizeMapAndSubmaps(sm, nc, nr));
+  submapsOf(m.id).forEach(sm => resizeMapAndSubmaps(sm, Math.max(1, nc - 2), Math.max(1, nr - 2)));
 }
 
 function applyFarmhouseFloor(m) {
@@ -2230,7 +2233,7 @@ function fillSettings() {
   $('mapCategory').value = m.category;
   $('mapCols').value = m.cols; $('mapRows').value = m.rows;
   $('mapCols').disabled = $('mapRows').disabled = !!m.isSubmap;
-  $('mapCols').title = $('mapRows').title = m.isSubmap ? "Plateau sub-maps always match their parent map's size — resize the parent instead." : '';
+  $('mapCols').title = $('mapRows').title = m.isSubmap ? "Plateau sub-maps are always 1 tile smaller than their parent map on every side — resize the parent instead." : '';
   $('catTag').textContent = m.category;
   const group = m.isSubmap ? plateauGroupById(m.plateauGroupId) : null;
   $('activeMapPill').textContent = `${m.name} (${m.cols}×${m.rows})${m.isSubmap ? ` · elev ${m.elevation>=0?'+':''}${m.elevation}${group ? ` · #${group.number}` : ''}` : ''}`;

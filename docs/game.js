@@ -2604,10 +2604,11 @@
           }))
         );
         // Plateau-tagged tiles (authored in the Map Editor's plateau tool) carry an
-        // elevation tier — raise their geometry by PLATEAU_UNIT per tier below, with
-        // a solid pedestal mesh per group so the raised block reads as a real cliff
-        // rather than floating tiles. Decorative (non-plateau) rock has already been
-        // converted to grass upstream in _loadTownFromWorkspace.
+        // elevation tier — each group's footprint is rendered below as one continuous
+        // heightfield mesa (buildPlateauMesa), raised by PLATEAU_UNIT per tier, in the
+        // same visual style as the distant boundary terrain beyond the playable area.
+        // Decorative (non-plateau) rock has already been converted to grass upstream
+        // in _loadTownFromWorkspace.
         const PLATEAU_UNIT = 2.5;
         const plateauGroupBBox = new Map(); // groupId → { minC, maxC, minR, maxR, elevation }
         for (const { c, r, type, plateau, elevation } of (zoneData?.tiles || [])) {
@@ -2652,14 +2653,13 @@
           const tile = zGrid[r][c];
           const cx = c + 0.5, cz = r + 0.5;
 
+          if (tile.plateauElevation > 0) continue; // covered by the plateau mesa mesh below
+
           if (tile.type === TileType.ROCK) {
-            // Plateau-tagged rock (the actual cliff-face footprint) sits on top of
-            // its pedestal mesh (added below); ordinary rock sits at ground level.
-            const elevOffset = (tile.plateauElevation || 0) * PLATEAU_UNIT;
-            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + elevOffset, cz);
+            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS), cz);
             const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
-            _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + elevOffset, cz);
-            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + elevOffset, cz);
+            _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP, cz);
             continue;
           }
           if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED ||
@@ -2697,20 +2697,16 @@
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
         }
 
-        // Solid stone pedestal under each plateau group's footprint so the raised
-        // cliff-face block reads as a real mesa instead of floating rock tiles.
+        // Each plateau group's footprint renders as one continuous heightfield mesa —
+        // same seam-noise/blend/steep-face-skin technique as the distant boundary
+        // terrain beyond the playable area (buildZoneBorderTerrain) — instead of a
+        // hard box: flat raised top in the interior, smoothly blending down to ground
+        // level across the outer 1-tile margin (which is exactly how much smaller the
+        // plateau's submap is than its parent, so that margin is the cliff-face band).
         for (const [groupId, bb] of plateauGroupBBox) {
           const elevOffset = (bb.elevation || 0) * PLATEAU_UNIT;
           if (elevOffset <= 0) continue;
-          const width = bb.maxC - bb.minC + 1, depth = bb.maxR - bb.minR + 1;
-          const top = NORMAL_TOP + elevOffset, bottom = NORMAL_TOP - 1.0;
-          const pedestalGeo = new THREE.BoxGeometry(width, top - bottom, depth);
-          const pedestal = new THREE.Mesh(pedestalGeo, tileMats.rock);
-          pedestal.position.set(bb.minC + width / 2, (top + bottom) / 2, bb.minR + depth / 2);
-          pedestal.receiveShadow = true;
-          pedestal.castShadow = true;
-          zScene.add(pedestal);
-          console.log(`%c[zone:${mapId}] pedestal added for plateau group ${groupId}: ${width}x${depth} tiles, top=${top.toFixed(2)}`, 'color:#22c55e;font-weight:bold');
+          buildPlateauMesa(zScene, mapId, groupId, bb, elevOffset);
         }
 
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
@@ -2737,6 +2733,94 @@
         const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions };
         _zoneScenes.set(mapId, info);
         return info;
+      }
+
+      // One plateau group's footprint as a continuous heightfield mesa: flat raised
+      // top across the interior, blending smoothly down to ground level over the
+      // outer MARGIN_TILES band — the same seam-hash + blend + steep-face-stone-skin
+      // technique buildZoneBorderTerrain uses for the distant boundary terrain beyond
+      // the playable area, so an in-bounds plateau reads visually like those same
+      // mesas instead of a flat-sided box. The margin band's width matches exactly
+      // how much smaller each plateau's submap is than its parent (see
+      // getOrCreateSubmap/resizeMapAndSubmaps in the Map Editor), since that band is
+      // reserved for this cliff-face blend.
+      function buildPlateauMesa(zScene, mapId, groupId, bb, elevOffset) {
+        const MARGIN_TILES = 1;
+        const W = bb.maxC - bb.minC + 1, D = bb.maxR - bb.minR + 1;
+        const GW = W * 2 + 1, GH = D * 2 + 1; // vertices, 0.5-tile spacing, matching makeFloorGeo
+
+        const hashDisp = (kx, kz) => {
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+
+        const Y = new Float32Array(GW * GH);
+        for (let gj = 0; gj < GH; gj++) {
+          for (let gi = 0; gi < GW; gi++) {
+            const edgeDistTiles = Math.min(gi, GW - 1 - gi, gj, GH - 1 - gj) * 0.5;
+            const blend = Math.min(1, edgeDistTiles / MARGIN_TILES);
+            const kx = bb.minC * 2 + gi, kz = bb.minR * 2 + gj; // absolute seam-hash key, matches adjacent makeFloorGeo tiles
+            Y[gj*GW+gi] = NORMAL_TOP + hashDisp(kx, kz) + blend * elevOffset;
+          }
+        }
+
+        const pos = new Float32Array(GW * GH * 3);
+        for (let gj = 0; gj < GH; gj++)
+          for (let gi = 0; gi < GW; gi++) {
+            const k = gj*GW+gi;
+            pos[k*3]   = bb.minC + gi * 0.5;
+            pos[k*3+1] = Y[k];
+            pos[k*3+2] = bb.minR + gj * 0.5;
+          }
+
+        const idx = [];
+        for (let gj = 0; gj < GH - 1; gj++) {
+          for (let gi = 0; gi < GW - 1; gi++) {
+            const v00 = gj*GW+gi, v10 = gj*GW+gi+1, v01 = (gj+1)*GW+gi, v11 = (gj+1)*GW+gi+1;
+            idx.push(v00, v01, v11, v00, v11, v10);
+          }
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        mesh.receiveShadow = true;
+        zScene.add(mesh);
+
+        // Stone cliff skin on steep faces only (same 0.194 normal-slope threshold as
+        // buildZoneBorderTerrain's elevStoneSkin) — flat interior/top stays grass,
+        // the rising margin band reads as bare rock where it's steep enough.
+        const cliffMat = new THREE.MeshLambertMaterial({
+          color: 0x6a6460, side: THREE.DoubleSide,
+          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+        });
+        const skinPos = [], skinIdx = [];
+        let vi = 0;
+        for (let gj = 0; gj < GH - 1; gj++) {
+          for (let gi = 0; gi < GW - 1; gi++) {
+            const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
+            const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
+            const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+            const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
+            if (cnx * cnx + cnz * cnz <= 0.194) continue; // near-horizontal → grass
+            const x0 = bb.minC + gi * 0.5, x1 = x0 + 0.5;
+            const z0 = bb.minR + gj * 0.5, z1 = z0 + 0.5;
+            skinPos.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
+            skinIdx.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi += 4;
+          }
+        }
+        if (skinPos.length) {
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.Float32BufferAttribute(skinPos, 3));
+          g.setIndex(new THREE.BufferAttribute(skinIdx.length > 65535 ? new Uint32Array(skinIdx) : new Uint16Array(skinIdx), 1));
+          g.computeVertexNormals();
+          zScene.add(new THREE.Mesh(g, cliffMat));
+        }
+
+        console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(NORMAL_TOP+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s)`, 'color:#22c55e;font-weight:bold');
       }
 
       // Grass billboard tufts for a zone — mirrors _buildTownGrassBillboards but
