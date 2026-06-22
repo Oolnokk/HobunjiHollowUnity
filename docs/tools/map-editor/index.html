@@ -1199,34 +1199,58 @@ function buildRampPath(ramp) {
 function paintRampTiles(ramp) {
   const fromMap = mapById(ramp.fromMapId), toMap = mapById(ramp.toMapId);
   if (!fromMap || !toMap) return;
-  const path = buildRampPath(ramp);
+  const path = buildRampPath(ramp); // in WORLD coords — see node-add/drag/erase handlers
   const rad = Math.floor(((ramp.width || 3) - 1) / 2);
-  const maxC = Math.min(fromMap.cols, toMap.cols), maxR = Math.min(fromMap.rows, toMap.rows);
   const fromElev = recomputeElevation(fromMap), toElev = recomputeElevation(toMap);
-  const elevByKey = new Map();
-  for (let i = 0; i < path.length; i++) {
-    const t = path.length > 1 ? i / (path.length - 1) : 0;
-    const [bc, br] = path[i];
-    for (let dc = -rad; dc <= rad; dc++) {
-      for (let dr = -rad; dr <= rad; dr++) {
-        const nc = bc+dc, nr = br+dr;
-        if (nc < 0 || nc >= maxC || nr < 0 || nr >= maxR) continue;
-        const key = `${nc},${nr}`;
-        if (!elevByKey.has(key) || t > elevByKey.get(key)) elevByKey.set(key, t);
+  // fromMap and toMap usually sit at different plateau tiers, each with its own
+  // world offset (see mapWorldInfo) — a ramp's path is one continuous line in
+  // WORLD space, but it has to be painted into EACH map's own local tile grid
+  // separately, translating by that map's own offset and clipping to its own
+  // bounds (its local grid is tiny and only covers its own tier's footprint).
+  function paintOnto(targetMap, off) {
+    const elevByKey = new Map();
+    let bestT = null, bestDist = Infinity, bestC = 0, bestR = 0;
+    for (let i = 0; i < path.length; i++) {
+      const t = path.length > 1 ? i / (path.length - 1) : 0;
+      const [wc, wr] = path[i];
+      const bc = wc - off.offsetC, br = wr - off.offsetR;
+      const cc = clamp(bc, 0, targetMap.cols - 1), cr = clamp(br, 0, targetMap.rows - 1);
+      const dist = Math.hypot(bc - cc, br - cr);
+      if (dist < bestDist) { bestDist = dist; bestT = t; bestC = cc; bestR = cr; }
+      for (let dc = -rad; dc <= rad; dc++) {
+        for (let dr = -rad; dr <= rad; dr++) {
+          const nc = bc+dc, nr = br+dr;
+          if (nc < 0 || nc >= targetMap.cols || nr < 0 || nr >= targetMap.rows) continue;
+          const key = `${nc},${nr}`;
+          if (!elevByKey.has(key) || t > elevByKey.get(key)) elevByKey.set(key, t);
+        }
       }
     }
+    // A tier's footprint can be so tiny (post-migration of legacy data, or a very
+    // short plateau) that the literal path never lands inside it at all — fall
+    // back to the single closest in-bounds cell so the ramp stays connected
+    // instead of silently painting nothing into this map.
+    if (elevByKey.size === 0 && bestT !== null) {
+      for (let dc = -rad; dc <= rad; dc++) {
+        for (let dr = -rad; dr <= rad; dr++) {
+          const nc = bestC+dc, nr = bestR+dr;
+          if (nc < 0 || nc >= targetMap.cols || nr < 0 || nr >= targetMap.rows) continue;
+          elevByKey.set(`${nc},${nr}`, bestT);
+        }
+      }
+    }
+    const keys = [...elevByKey.keys()];
+    // A ramp is the one explicit, deliberate way to cut through a plateau's
+    // auto-incline ring (the outer 1-tile band normally reserved/locked for the
+    // cliff-face blend) — so unlike ordinary painting, it's allowed to override it.
+    applyPaintDiff(`${ramp.id}__${targetMap.id}`, keys, 'ramp', targetMap, { preserveCrop: false, allowPlateauOverride: true });
+    for (const [key, t] of elevByKey) {
+      const elev = fromElev + (toElev - fromElev) * t;
+      if (targetMap.tiles[key]?.type === 'ramp') targetMap.tiles[key].rampElevation = elev;
+    }
   }
-  const keys = [...elevByKey.keys()];
-  // A ramp is the one explicit, deliberate way to cut through a plateau's
-  // auto-incline ring (the outer 1-tile band normally reserved/locked for the
-  // cliff-face blend) — so unlike ordinary painting, it's allowed to override it.
-  applyPaintDiff(`${ramp.id}__${fromMap.id}`, keys, 'ramp', fromMap, { preserveCrop: false, allowPlateauOverride: true });
-  if (toMap.id !== fromMap.id) applyPaintDiff(`${ramp.id}__${toMap.id}`, keys, 'ramp', toMap, { preserveCrop: false, allowPlateauOverride: true });
-  for (const [key, t] of elevByKey) {
-    const elev = fromElev + (toElev - fromElev) * t;
-    if (fromMap.tiles[key]?.type === 'ramp') fromMap.tiles[key].rampElevation = elev;
-    if (toMap.id !== fromMap.id && toMap.tiles[key]?.type === 'ramp') toMap.tiles[key].rampElevation = elev;
-  }
+  paintOnto(fromMap, mapWorldInfo(fromMap));
+  if (toMap.id !== fromMap.id) paintOnto(toMap, mapWorldInfo(toMap));
 }
 function maybePaintRamp() {
   const ramp = (ws.ramps || []).find(x => x.id === activeRampId);
@@ -1362,7 +1386,7 @@ function renderPalette() {
           <input type="checkbox" id="rampPaintTilesChk" ${arp.paintTiles!==false?'checked':''}>
           Paint ramp tiles on both endpoint maps
         </label>`;
-        html += `<div style="margin-top:6px"><label>Nodes (shared c,r coords on both maps; select one, then click map to branch from it)</label>${arp.nodes.map((n,i) =>
+        html += `<div style="margin-top:6px"><label>Nodes (world c,r coords, shared between both endpoint maps; select one, then click map to branch from it)</label>${arp.nodes.map((n,i) =>
           `<div class="item ${i===activeRampNodeIndex?'sel':''}" data-rampnodesel="${i}" style="padding:4px 7px;margin-bottom:3px">
             <div class="row"><span style="flex:1">#${i+1} (${n[0]}, ${n[1]})</span><button class="bad" data-rampnodedel="${i}" style="padding:1px 7px;font-size:10px">✕</button></div>
           </div>`).join('') || '<p class="muted">No nodes yet.</p>'}</div>`;
@@ -1960,7 +1984,9 @@ function draw() {
     });
     ctx.lineWidth = 1;
   });
-  // Ramps (node-paths shared between this map and another, lerping elevation)
+  // Ramps (node-paths in WORLD coords, shared between this map and another,
+  // lerping elevation — drawn with w2sCam since the nodes are already world-
+  // space and shouldn't get this map's own viewOffset added again).
   (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id).forEach(rp => {
     const isActive = rp.id === activeRampId;
     if (rp.nodes.length > 1) {
@@ -1968,12 +1994,12 @@ function draw() {
       ctx.lineWidth = isActive ? 4 : 3;
       ctx.setLineDash([8,4]);
       ctx.beginPath();
-      rp.nodes.forEach(([c, rr], i) => { const s = w2s(c+.5, rr+.5); i === 0 ? ctx.moveTo(s.x, s.y) : ctx.lineTo(s.x, s.y); });
+      rp.nodes.forEach(([c, rr], i) => { const s = w2sCam(c+.5, rr+.5); i === 0 ? ctx.moveTo(s.x, s.y) : ctx.lineTo(s.x, s.y); });
       ctx.stroke();
       ctx.setLineDash([]);
     }
     rp.nodes.forEach(([c, rr], i) => {
-      const s = w2s(c+.5, rr+.5);
+      const s = w2sCam(c+.5, rr+.5);
       ctx.fillStyle = isActive && i === activeRampNodeIndex ? '#fef08a' : (isActive ? '#fff' : '#c2b280');
       ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(3.5, z*.18), 0, Math.PI*2); ctx.fill();
       ctx.strokeStyle = '#3a3220'; ctx.lineWidth = 1.5; ctx.stroke();
@@ -2080,11 +2106,15 @@ function applyAt(tile) {
     ws.ramps = ws.ramps || [];
     let rp = ws.ramps.find(x => x.id === activeRampId);
     if (!rp) { rp = { id: uid('ramp'), label: `Ramp ${ws.ramps.length+1}`, fromMapId: m.id, toMapId: m.id, width: 3, paintTiles: true, nodes: [] }; ws.ramps.push(rp); activeRampId = rp.id; }
+    // Ramp nodes are stored in WORLD coords (see paintRampTiles) so the same path
+    // stays correct regardless of which of its two endpoint maps is active when
+    // a node is placed.
+    const wn = [c + viewOffset.c, r + viewOffset.r];
     if (activeRampNodeIndex !== null && activeRampNodeIndex >= 0 && activeRampNodeIndex < rp.nodes.length) {
-      rp.nodes.splice(activeRampNodeIndex + 1, 0, [c, r]);
+      rp.nodes.splice(activeRampNodeIndex + 1, 0, wn);
       activeRampNodeIndex += 1;
     } else {
-      rp.nodes.push([c, r]);
+      rp.nodes.push(wn);
       activeRampNodeIndex = rp.nodes.length - 1;
     }
     maybePaintRamp();
@@ -2125,7 +2155,8 @@ function applyAt(tile) {
       for (let i = p.nodes.length-1; i >= 0; i--) if (p.nodes[i][0] === c && p.nodes[i][1] === r) { p.nodes.splice(i,1); did = true; }
     });
     (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id).forEach(rp => {
-      for (let i = rp.nodes.length-1; i >= 0; i--) if (rp.nodes[i][0] === c && rp.nodes[i][1] === r) { rp.nodes.splice(i,1); did = true; paintRampTiles(rp); }
+      const wc = c + viewOffset.c, wr = r + viewOffset.r; // ramp nodes are stored in WORLD coords
+      for (let i = rp.nodes.length-1; i >= 0; i--) if (rp.nodes[i][0] === wc && rp.nodes[i][1] === wr) { rp.nodes.splice(i,1); did = true; paintRampTiles(rp); }
     });
     const ti = (m.transitions || []).findIndex(t => t.col === c && t.row === r);
     if (ti >= 0) { if (m.transitions[ti].id === activeSpotId) activeSpotId = null; m.transitions.splice(ti,1); did = true; }
@@ -2225,8 +2256,9 @@ canvas.addEventListener('pointerdown', e => {
       .filter(rp => !activeRampId || rp.id === activeRampId);
     for (const rp of ramps) {
       for (let i = 0; i < (rp.nodes || []).length; i++) {
-        const n = rp.nodes[i];
-        if (Math.hypot(w.x - (n[0] + 0.5), w.y - (n[1] + 0.5)) <= 0.45) {
+        const n = rp.nodes[i]; // world coords — compare against w (active map's local) via viewOffset
+        const lc = n[0] - viewOffset.c, lr = n[1] - viewOffset.r;
+        if (Math.hypot(w.x - (lc + 0.5), w.y - (lr + 0.5)) <= 0.45) {
           pushUndo(); activeRampId = rp.id; activeRampNodeIndex = i; _rampNodeDrag = { rampId: rp.id, index: i };
           renderPalette(); updateBrushPill(); draw(); return;
         }
@@ -2285,7 +2317,8 @@ canvas.addEventListener('pointermove', e => {
   if (_rampNodeDrag) {
     const m = activeMap(); const rp = (ws.ramps || []).find(r => r.id === _rampNodeDrag.rampId);
     if (rp?.nodes?.[_rampNodeDrag.index]) {
-      rp.nodes[_rampNodeDrag.index] = [clamp(Math.floor(w.x), 0, m.cols - 1), clamp(Math.floor(w.y), 0, m.rows - 1)];
+      const lc = clamp(Math.floor(w.x), 0, m.cols - 1), lr = clamp(Math.floor(w.y), 0, m.rows - 1);
+      rp.nodes[_rampNodeDrag.index] = [lc + viewOffset.c, lr + viewOffset.r]; // store as world coords
       renderPalette(); draw();
     }
     return;
