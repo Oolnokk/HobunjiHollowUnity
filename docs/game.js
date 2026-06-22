@@ -2603,8 +2603,30 @@
             cropAge: 0, cropReady: false, stress: '', variation: 0,
           }))
         );
-        for (const { c, r, type } of (zoneData?.tiles || [])) {
-          if (zGrid[r]?.[c]) zGrid[r][c].type = type || TileType.GRASS;
+        // Plateau-tagged tiles (authored in the Map Editor's plateau tool) carry an
+        // elevation tier — raise their geometry by PLATEAU_UNIT per tier below, with
+        // a solid pedestal mesh per group so the raised block reads as a real cliff
+        // rather than floating tiles. Decorative (non-plateau) rock has already been
+        // converted to grass upstream in _loadTownFromWorkspace.
+        const PLATEAU_UNIT = 2.5;
+        const plateauGroupBBox = new Map(); // groupId → { minC, maxC, minR, maxR, elevation }
+        for (const { c, r, type, plateau, elevation } of (zoneData?.tiles || [])) {
+          if (zGrid[r]?.[c]) {
+            zGrid[r][c].type = type || TileType.GRASS;
+            zGrid[r][c].plateauElevation = elevation || 0;
+          }
+          if (plateau) {
+            let bb = plateauGroupBBox.get(plateau);
+            if (!bb) { bb = { minC: c, maxC: c, minR: r, maxR: r, elevation: elevation || 0 }; plateauGroupBBox.set(plateau, bb); }
+            else { bb.minC = Math.min(bb.minC, c); bb.maxC = Math.max(bb.maxC, c); bb.minR = Math.min(bb.minR, r); bb.maxR = Math.max(bb.maxR, r); }
+          }
+        }
+        if (plateauGroupBBox.size) {
+          console.log(`%c[zone:${mapId}] ${plateauGroupBBox.size} plateau group(s) found: ` +
+            [...plateauGroupBBox.entries()].map(([id, bb]) => `${id}(${bb.maxC-bb.minC+1}x${bb.maxR-bb.minR+1} @elev${bb.elevation})`).join(', '),
+            'color:#22c55e;font-weight:bold');
+        } else {
+          console.log(`%c[zone:${mapId}] no plateau-tagged tiles found in authored data`, 'color:#22c55e;font-weight:bold');
         }
 
         // Ground: same per-vertex seam-safe heightfield pipeline as the town/farm
@@ -2631,12 +2653,13 @@
           const cx = c + 0.5, cz = r + 0.5;
 
           if (tile.type === TileType.ROCK) {
-            // Base floor slab (full footprint) so the rock mound never leaves a
-            // gap, same as the farm's per-tile rock rendering.
-            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS), cz);
+            // Plateau-tagged rock (the actual cliff-face footprint) sits on top of
+            // its pedestal mesh (added below); ordinary rock sits at ground level.
+            const elevOffset = (tile.plateauElevation || 0) * PLATEAU_UNIT;
+            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + elevOffset, cz);
             const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
-            _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP, cz);
-            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP, cz);
+            _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + elevOffset, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + elevOffset, cz);
             continue;
           }
           if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED ||
@@ -2672,6 +2695,22 @@
           mesh.receiveShadow = true;
           zScene.add(mesh);
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
+        }
+
+        // Solid stone pedestal under each plateau group's footprint so the raised
+        // cliff-face block reads as a real mesa instead of floating rock tiles.
+        for (const [groupId, bb] of plateauGroupBBox) {
+          const elevOffset = (bb.elevation || 0) * PLATEAU_UNIT;
+          if (elevOffset <= 0) continue;
+          const width = bb.maxC - bb.minC + 1, depth = bb.maxR - bb.minR + 1;
+          const top = NORMAL_TOP + elevOffset, bottom = NORMAL_TOP - 1.0;
+          const pedestalGeo = new THREE.BoxGeometry(width, top - bottom, depth);
+          const pedestal = new THREE.Mesh(pedestalGeo, tileMats.rock);
+          pedestal.position.set(bb.minC + width / 2, (top + bottom) / 2, bb.minR + depth / 2);
+          pedestal.receiveShadow = true;
+          pedestal.castShadow = true;
+          zScene.add(pedestal);
+          console.log(`%c[zone:${mapId}] pedestal added for plateau group ${groupId}: ${width}x${depth} tiles, top=${top.toFixed(2)}`, 'color:#22c55e;font-weight:bold');
         }
 
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
@@ -3801,9 +3840,25 @@
       // Mirrors the map editor's buildTownLayout() conversion.
       async function _loadTownFromWorkspace() {
         try {
-          const resp = await fetch('config/town-workspace-v1.json');
-          if (!resp.ok) return;
-          const ws = await resp.json();
+          // One-shot override: docs/tools/index.html's "Open Game" button stashes the
+          // map editor's live (possibly unsaved) workspace here so testing in-progress
+          // edits doesn't require exporting to the on-disk JSON first. Consumed once —
+          // cleared immediately so a plain reload goes back to the real saved file.
+          const GAME_WS_OVERRIDE_KEY = 'hobunji_game_workspace_override_v1';
+          let ws;
+          const overrideRaw = localStorage.getItem(GAME_WS_OVERRIDE_KEY);
+          if (overrideRaw) {
+            localStorage.removeItem(GAME_WS_OVERRIDE_KEY);
+            try {
+              ws = JSON.parse(overrideRaw);
+              console.log('%c[workspace] using live unsaved map-editor data from "Open Game"', 'color:#22c55e;font-weight:bold');
+            } catch (_) { ws = null; }
+          }
+          if (!ws) {
+            const resp = await fetch('config/town-workspace-v1.json');
+            if (!resp.ok) return;
+            ws = await resp.json();
+          }
           // Load map index so individual map files take priority over workspace inline data
           let mapFileIndex = {};
           try {
@@ -3841,14 +3896,32 @@
           // Cliffs, Southern Cloud Forest, ...) found in the workspace, so buildZoneScene
           // can render actual cliff/terrain content instead of EXTERIOR_ZONES' tiny flat
           // placeholder grid.
+          const plateauElevById = new Map((ws.plateauGroups || []).map(g => [g.id, g.elevation || 0]));
           for (const zoneMapId of Object.keys(EXTERIOR_ZONES)) {
             const zm = resolvedMaps.find(m => m.id === zoneMapId);
             if (!zm) continue;
             const zTiles = [];
+            let rockCount = 0, plateauTileCount = 0, decorativeRockCleared = 0;
             for (let r = 0; r < zm.rows; r++) for (let c = 0; c < zm.cols; c++) {
               const t = zm.tiles?.[`${c},${r}`];
-              if (t) zTiles.push({ c, r, type: t.type || 'grass' });
+              if (!t) continue;
+              let type = t.type || 'grass';
+              const plateauId = t.plateau || null;
+              if (plateauId) {
+                plateauTileCount++;
+              } else if (type === 'rock') {
+                // Decorative (non-plateau) rock tiles are always-solid in the engine
+                // (isSolid()), and Northern Cliffs' authored data scatters hundreds of
+                // them across the walkable ground — turn the un-tagged ones back to
+                // grass so the real plateau cliff-face (plateau-tagged rock) reads as
+                // the only solid rock terrain, and the zone is actually walkable.
+                type = 'grass';
+                decorativeRockCleared++;
+              }
+              if (type === 'rock') rockCount++;
+              zTiles.push({ c, r, type, plateau: plateauId, elevation: plateauId ? (plateauElevById.get(plateauId) || 0) : 0 });
             }
+            console.log(`%c[zone:${zoneMapId}] tiles=${zTiles.length} rock=${rockCount} plateauTiles=${plateauTileCount} decorativeRockClearedToGrass=${decorativeRockCleared}`, 'color:#22c55e;font-weight:bold');
             const zTransitions = [];
             let toTownExit = null;
             (zm.transitions || []).forEach(t => {
@@ -3865,7 +3938,8 @@
                 zTransitions.push({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
               }
             });
-            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit });
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, plateauGroups: ws.plateauGroups || [] });
+            console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;

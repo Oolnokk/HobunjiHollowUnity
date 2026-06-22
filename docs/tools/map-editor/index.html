@@ -468,6 +468,10 @@ function computeMapDiff(m) {
 let ws = loadWorkspace();
 ws.maps.forEach(captureBaseline);
 recomputeAllElevations();
+// Lets the dev-tools hub (docs/tools/index.html) read the live in-memory workspace
+// — including unsaved edits — when its "Open Game" button is clicked, rather than
+// only whatever was last written to localStorage.
+window._mapEditorBridge = { getWorkspace: () => ws };
 function loadWorkspace() {
   try {
     const raw = localStorage.getItem(WS_KEY);
