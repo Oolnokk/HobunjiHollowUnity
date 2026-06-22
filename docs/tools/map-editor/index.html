@@ -608,6 +608,50 @@ function getOrCreateSubmap(parentMap, group) {
 function activePlateauGroupsOn(m) {
   return (ws.plateauGroups || []).filter(g => Object.keys(m.tiles).some(k => m.tiles[k]?.plateau === g.id));
 }
+// World placement of a map within the single continuous scene it belongs to —
+// mirrors the offset math game.js's mergeZoneTiles uses to stitch plateau tiers
+// together. Walks the parent chain once; `ancestors` lists each one (root first)
+// together with ITS OWN offset, for drawing every tier's reference layer at the
+// right place. offsetC/offsetR is where THIS map's local (0,0) sits in root space.
+function mapWorldInfo(m) {
+  if (!m.isSubmap) return { root: m, offsetC: 0, offsetR: 0, ancestors: [] };
+  const parent = mapById(m.parentMapId);
+  if (!parent) return { root: m, offsetC: 0, offsetR: 0, ancestors: [] };
+  const group = plateauGroupById(m.plateauGroupId);
+  const bbox = group && plateauFootprintBBox(parent, group.id);
+  const localOffC = bbox ? bbox.minC + 1 : 0;
+  const localOffR = bbox ? bbox.minR + 1 : 0;
+  const parentInfo = mapWorldInfo(parent);
+  return {
+    root: parentInfo.root,
+    offsetC: parentInfo.offsetC + localOffC,
+    offsetR: parentInfo.offsetR + localOffR,
+    ancestors: [...parentInfo.ancestors, { map: parent, offsetC: parentInfo.offsetC, offsetR: parentInfo.offsetR }]
+  };
+}
+// Cached once per map-switch (see syncViewOffset) rather than recomputed inside
+// w2s/s2w or per-tile in draw() — those run many times per frame.
+let viewOffset = { c: 0, r: 0 };
+let viewRoot = null;
+let viewAncestors = [];
+function syncViewOffset() {
+  const info = mapWorldInfo(activeMap());
+  viewOffset = { c: info.offsetC, r: info.offsetR };
+  viewRoot = info.root;
+  viewAncestors = info.ancestors;
+}
+// Onion-skin tint for the reference layer showing what's beneath the active
+// plateau tier: desaturate towards gray, then brighten, so it reads as a faded
+// backdrop rather than live paint.
+function _dimAncestorColor(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n>>16)&255, g = (n>>8)&255, b = n&255;
+  const gray = (r+g+b)/3, desat = .55, bright = 60;
+  r = Math.min(255, r+(gray-r)*desat+bright);
+  g = Math.min(255, g+(gray-g)*desat+bright);
+  b = Math.min(255, b+(gray-b)*desat+bright);
+  return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+}
 function deleteMapCascade(id) {
   submapsOf(id).forEach(k => deleteMapCascade(k.id));
   ws.maps = ws.maps.filter(x => x.id !== id);
@@ -1655,15 +1699,26 @@ let drag = false, dragStart = null, painting = false;
 const ptrs = new Map();
 let pinchStart = null;
 
-const w2s = (x,y) => ({ x: x*cam.zoom + cam.x, y: y*cam.zoom + cam.y });
-const s2w = (x,y) => ({ x: (x-cam.x)/cam.zoom, y: (y-cam.y)/cam.zoom });
+// Offset-aware: maps the ACTIVE map's own local (c,r) tile coords to screen,
+// shifted by viewOffset so they land at their true position within the
+// root-sized canvas. Every existing call site already works in the active
+// map's own local coords, so they need no changes.
+const w2s = (x,y) => ({ x: (x+viewOffset.c)*cam.zoom + cam.x, y: (y+viewOffset.r)*cam.zoom + cam.y });
+const s2w = (x,y) => ({ x: (x-cam.x)/cam.zoom - viewOffset.c, y: (y-cam.y)/cam.zoom - viewOffset.r });
+// Raw/offset-free pair, for root-space drawing: the full root grid, and each
+// ancestor's own tiles (which each have their own distinct offset, supplied
+// explicitly rather than baked into these).
+const w2sCam = (x,y) => ({ x: x*cam.zoom + cam.x, y: y*cam.zoom + cam.y });
+const s2wCam = (x,y) => ({ x: (x-cam.x)/cam.zoom, y: (y-cam.y)/cam.zoom });
 const canvasPt = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX-r.left, y: e.clientY-r.top }; };
 
 function fitView() {
-  const m = activeMap(); const r = canvas.getBoundingClientRect();
-  cam.zoom = Math.max(6, Math.min((r.width-48)/m.cols, (r.height-48)/m.rows));
-  cam.x = (r.width - m.cols*cam.zoom)/2;
-  cam.y = (r.height - m.rows*cam.zoom)/2;
+  syncViewOffset();
+  const root = viewRoot || activeMap();
+  const r = canvas.getBoundingClientRect();
+  cam.zoom = Math.max(6, Math.min((r.width-48)/root.cols, (r.height-48)/root.rows));
+  cam.x = (r.width - root.cols*cam.zoom)/2;
+  cam.y = (r.height - root.rows*cam.zoom)/2;
   draw();
 }
 function resizeCanvas() {
@@ -1683,6 +1738,23 @@ function draw() {
 
   const isFarmLinked = m.category === 'exterior' && ws.gameLink.exteriorId === m.id;
   const showBase = isFarmLinked && $('showBaseChk').checked;
+
+  // Ancestor reference layer: everything beneath the active plateau tier
+  // (parent, grandparent, ... down to the root map), drawn as a faded
+  // onion-skin at its own world offset so the artist can see exactly how the
+  // new tier aligns with what's underneath it. Drawn first so it's the
+  // backdrop for everything else below.
+  viewAncestors.forEach(({ map: anc, offsetC, offsetR }) => {
+    Object.keys(anc.tiles).forEach(key => {
+      const [c, rr] = key.split(',').map(Number);
+      const t = anc.tiles[key];
+      const p = w2sCam(c + offsetC, rr + offsetR);
+      ctx.fillStyle = _dimAncestorColor((TILE_INFO[t.type] || { color:'#888' }).color);
+      ctx.globalAlpha = .35;
+      ctx.fillRect(p.x, p.y, z, z);
+    });
+  });
+  ctx.globalAlpha = 1;
 
   // Base day-one farm underlay (real game terrain)
   if (showBase) {
@@ -1786,12 +1858,22 @@ function draw() {
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   }
 
-  // Grid
+  // Grid — drawn across the full root map's extent (cam, not viewOffset) so
+  // every plateau tier always shows "the same tile count as the base map",
+  // regardless of how small the active submap's own footprint is.
+  const root = viewRoot || m;
   ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = 1;
-  for (let x = 0; x <= m.cols; x++) { const p = w2s(x,0); ctx.beginPath(); ctx.moveTo(p.x, cam.y); ctx.lineTo(p.x, cam.y + m.rows*z); ctx.stroke(); }
-  for (let y = 0; y <= m.rows; y++) { const p = w2s(0,y); ctx.beginPath(); ctx.moveTo(cam.x, p.y); ctx.lineTo(cam.x + m.cols*z, p.y); ctx.stroke(); }
+  for (let x = 0; x <= root.cols; x++) { const p = w2sCam(x,0); ctx.beginPath(); ctx.moveTo(p.x, cam.y); ctx.lineTo(p.x, cam.y + root.rows*z); ctx.stroke(); }
+  for (let y = 0; y <= root.rows; y++) { const p = w2sCam(0,y); ctx.beginPath(); ctx.moveTo(cam.x, p.y); ctx.lineTo(cam.x + root.cols*z, p.y); ctx.stroke(); }
   ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 2;
-  ctx.strokeRect(cam.x, cam.y, m.cols*z, m.rows*z);
+  ctx.strokeRect(cam.x, cam.y, root.cols*z, root.rows*z);
+  // Active map's own true editable region — highlighted distinctly when it's
+  // a submap sitting somewhere inside the larger root-sized canvas.
+  if (m.isSubmap) {
+    const p0 = w2s(0, 0);
+    ctx.strokeStyle = 'rgba(125,211,252,.85)'; ctx.lineWidth = 2.5;
+    ctx.strokeRect(p0.x, p0.y, m.cols*z, m.rows*z);
+  }
 
   // Game farm bounds + house footprint when linked
   if (isFarmLinked) {
@@ -2257,10 +2339,22 @@ window.addEventListener('keydown', e => {
 });
 
 // ── Map management UI ────────────────────────────────────────────────────────
+// Depth-first ordering: each submap is listed right after its parent (and its
+// own submaps after it), instead of wherever it happens to sit in ws.maps
+// (new submaps are always appended to the end of that array). Purely a
+// display order — ws.maps itself is left untouched.
+function orderedMapList() {
+  const out = [];
+  const visited = new Set();
+  const addWithChildren = m => { if (visited.has(m.id)) return; visited.add(m.id); out.push(m); submapsOf(m.id).forEach(addWithChildren); };
+  ws.maps.filter(m => !m.isSubmap).forEach(addWithChildren);
+  ws.maps.forEach(m => addWithChildren(m)); // orphaned submaps (missing parent), if any
+  return out;
+}
 function renderMapList() {
   const icon = m => m.category==='building_interior'?'🏛':m.category==='interior'?'🏠':'🗺';
   const depthOf = m => { let d = 0, p = m; while (p?.isSubmap && (p = mapById(p.parentMapId))) d++; return d; };
-  $('mapList').innerHTML = ws.maps.map(m => {
+  $('mapList').innerHTML = orderedMapList().map(m => {
     const group = m.isSubmap ? plateauGroupById(m.plateauGroupId) : null;
     const indent = m.isSubmap ? depthOf(m) * 14 : 0;
     const submapTag = m.isSubmap ? `<span style="color:${group?.color||'#c084fc'}">⛰ ${group ? `#${group.number} ` : ''}elev ${m.elevation>=0?'+':''}${m.elevation} ·</span> ` : '';
@@ -2302,7 +2396,7 @@ function refreshPreview() {
 }
 
 function setStatus(msg) { $('statusPill').textContent = msg; }
-function updateAll() { renderMapList(); fillSettings(); renderPalette(); renderPlateauGroupList(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
+function updateAll() { syncViewOffset(); renderMapList(); fillSettings(); renderPalette(); renderPlateauGroupList(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
 
 // ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
 function buildFarmLayoutV3() {
