@@ -2581,23 +2581,17 @@
       // data resolved from town-workspace-v1.json by _loadTownFromWorkspace(), used in
       // place of EXTERIOR_ZONES' tiny flat placeholder grid whenever it's available.
       const _zoneLayouts = new Map();
-      // mapId → absolute plateau elevation tier (0 for ground-level maps), mirroring
-      // the Map Editor's recomputeElevation(): root maps are 0, a plateau sub-map's
-      // tier is its parent's tier + its own plateau group's elevation. Populated by
-      // _loadTownFromWorkspace() so every zone (including plateau sub-maps that have
-      // no EXTERIOR_ZONES entry of their own) can render its ground at the correct
-      // absolute world height.
-      const _mapElevTiers = new Map();
-      function zoneElevOffsetWorld(mapId) { return (_mapElevTiers.get(mapId) || 0) * PLATEAU_UNIT; }
-      function _areaElevOffsetWorld(area) { return _isZoneArea(area) ? zoneElevOffsetWorld(area) : 0; }
-      // Surface Y for a tile actually standing inside an exterior zone — unlike the
-      // plain tileSurfaceY(type), this accounts for the zone's own absolute elevation
-      // tier, and (for authored ramp tiles) the ramp's own absolute rampElevation
-      // instead of the zone-uniform offset, so players/creatures crossing a ramp
-      // follow its slope rather than snapping to the zone's flat base height.
+      // Surface Y for a tile actually standing inside an exterior zone. Plateau
+      // sub-maps are purely an authoring convenience in the Map Editor — in-game
+      // every tier of a plateau stack is merged into its root zone's single grid,
+      // so each tile itself (not the zone as a whole) carries its own absolute
+      // elevation tier (tile.elevTier, set by _loadTownFromWorkspace's recursive
+      // merge). Authored ramp tiles use their own absolute rampElevation instead,
+      // so players/creatures crossing a ramp follow its slope rather than snapping
+      // to a flat tier height.
       function tileSurfaceYInArea(tile, areaId) {
         if (tile && tile.type === TileType.RAMP) return NORMAL_TOP + (tile.rampElevation || 0) * PLATEAU_UNIT;
-        return tileSurfaceY(tile ? tile.type : TileType.GRASS) + _areaElevOffsetWorld(areaId);
+        return tileSurfaceY(tile ? tile.type : TileType.GRASS) + (tile?.elevTier || 0) * PLATEAU_UNIT;
       }
 
       function buildZoneScene(mapId) {
@@ -2606,7 +2600,6 @@
         const zoneData = _zoneLayouts.get(mapId);
         if (!zdef && !zoneData) return null;
         const ZCOLS = zoneData?.cols || zdef?.cols, ZROWS = zoneData?.rows || zdef?.rows;
-        const zoneBaseElev = zoneElevOffsetWorld(mapId);
 
         const fogColor = zdef?.fogColor ?? 0x33404a;
         const zScene = new THREE.Scene();
@@ -2623,32 +2616,21 @@
             cropAge: 0, cropReady: false, stress: '', variation: 0,
           }))
         );
-        // Plateau-tagged tiles (authored in the Map Editor's plateau tool) carry an
-        // elevation tier — each group's footprint is rendered below as one continuous
-        // heightfield mesa (buildPlateauMesa), raised by PLATEAU_UNIT per tier, in the
-        // same visual style as the distant boundary terrain beyond the playable area.
-        // Decorative (non-plateau) rock has already been converted to grass upstream
-        // in _loadTownFromWorkspace.
-        const plateauGroupBBox = new Map(); // groupId → { minC, maxC, minR, maxR, elevation }
-        for (const { c, r, type, plateau, elevation, rampElevation } of (zoneData?.tiles || [])) {
-          if (zGrid[r]?.[c]) {
-            zGrid[r][c].type = type || TileType.GRASS;
-            zGrid[r][c].plateauElevation = elevation || 0;
-            if (type === TileType.RAMP) zGrid[r][c].rampElevation = rampElevation || 0;
-          }
-          if (plateau) {
-            let bb = plateauGroupBBox.get(plateau);
-            if (!bb) { bb = { minC: c, maxC: c, minR: r, maxR: r, elevation: elevation || 0 }; plateauGroupBBox.set(plateau, bb); }
-            else { bb.minC = Math.min(bb.minC, c); bb.maxC = Math.max(bb.maxC, c); bb.minR = Math.min(bb.minR, r); bb.maxR = Math.max(bb.maxR, r); }
-          }
+        // Plateau sub-maps are purely an authoring convenience in the Map Editor —
+        // _loadTownFromWorkspace already recursively merged every tier of a plateau
+        // stack into this one grid, so each tile here just carries its own absolute
+        // elevTier (rendered below as continuous heightfield mesas, one per tier
+        // transition, in the same visual style as the distant boundary terrain beyond
+        // the playable area) and, for ramp tiles, its own slope-following rampElevation.
+        for (const { c, r, type, elevTier, rampElevation, skipFloor } of (zoneData?.tiles || [])) {
+          if (!zGrid[r]?.[c]) continue;
+          zGrid[r][c].type = type || TileType.GRASS;
+          zGrid[r][c].elevTier = elevTier || 0;
+          zGrid[r][c].skipFloor = !!skipFloor;
+          if (type === TileType.RAMP) zGrid[r][c].rampElevation = rampElevation || 0;
         }
-        if (plateauGroupBBox.size) {
-          console.log(`%c[zone:${mapId}] ${plateauGroupBBox.size} plateau group(s) found: ` +
-            [...plateauGroupBBox.entries()].map(([id, bb]) => `${id}(${bb.maxC-bb.minC+1}x${bb.maxR-bb.minR+1} @elev${bb.elevation})`).join(', '),
-            'color:#22c55e;font-weight:bold');
-        } else {
-          console.log(`%c[zone:${mapId}] no plateau-tagged tiles found in authored data`, 'color:#22c55e;font-weight:bold');
-        }
+        const plateauMesas = zoneData?.mesas || [];
+        console.log(`%c[zone:${mapId}] ${plateauMesas.length} plateau tier transition(s)`, 'color:#22c55e;font-weight:bold');
 
         // Ground: same per-vertex seam-safe heightfield pipeline as the town/farm
         // (makeFloorGeo / buildTerrainTileGeo / buildPathNetworkGeo), merged into one
@@ -2665,30 +2647,31 @@
 
         const pathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS);
         if (pathNet) {
-          _addToBucket(TileType.PATH,  pathNet.pathGeo,  0, NORMAL_TOP + zoneBaseElev, 0);
-          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP + zoneBaseElev, 0);
+          _addToBucket(TileType.PATH,  pathNet.pathGeo,  0, NORMAL_TOP, 0);
+          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
         }
 
         for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
           const tile = zGrid[r][c];
           const cx = c + 0.5, cz = r + 0.5;
+          const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
 
-          if (tile.plateauElevation > 0) continue; // covered by the plateau mesa mesh below
+          if (tile.skipFloor) continue; // covered by a plateau tier's mesa mesh below
           if (tile.type === TileType.RAMP) continue; // covered by the ramp slope mesh below
 
           if (tile.type === TileType.ROCK) {
-            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + zoneBaseElev, cz);
+            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
-            _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + zoneBaseElev, cz);
-            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + zoneBaseElev, cz);
+            _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + tierY, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
             continue;
           }
           if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED ||
               tile.type === TileType.RIVER || tile.type === TileType.STREAM) {
             const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid);
             const bedMatKey = (tile.type === TileType.RIVER || tile.type === TileType.STREAM) ? tile.type : TileType.TRENCH;
-            _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP + zoneBaseElev, cz);
-            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + zoneBaseElev, cz);
+            _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP + tierY, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
             continue;
           }
           if (tile.type === TileType.PATH ||
@@ -2696,18 +2679,18 @@
             continue; // covered by the path network mesh above
           }
           if (tile.type === TileType.SHRUB) {
-            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + zoneBaseElev, cz);
+            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             if (window.FoliageGenerator) {
               const vegGroup = window.FoliageGenerator.buildShrubMesh(c, r);
               vegGroup.scale.set(2, 2, 2);
-              vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS) + zoneBaseElev, cz);
+              vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS) + tierY, cz);
               zScene.add(vegGroup);
               _markOutline(vegGroup);
             }
             continue;
           }
           const matKey = tileMats[tile.type] ? tile.type : TileType.GRASS;
-          _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tile.type) + zoneBaseElev, cz);
+          _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tile.type) + tierY, cz);
         }
 
         for (const [matKey, entries] of _floorBuckets) {
@@ -2718,22 +2701,23 @@
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
         }
 
-        // Each plateau group's footprint renders as one continuous heightfield mesa —
-        // same seam-noise/blend/steep-face-skin technique as the distant boundary
-        // terrain beyond the playable area (buildZoneBorderTerrain) — instead of a
-        // hard box: flat raised top in the interior, smoothly blending down to ground
-        // level across the outer 1-tile margin (which is exactly how much smaller the
-        // plateau's submap is than its parent, so that margin is the cliff-face band).
-        for (const [groupId, bb] of plateauGroupBBox) {
-          const elevOffset = (bb.elevation || 0) * PLATEAU_UNIT;
-          if (elevOffset <= 0) continue;
-          buildPlateauMesa(zScene, mapId, groupId, bb, elevOffset, zoneBaseElev);
-        }
+        // Each tier transition in the merged plateau stack renders as one continuous
+        // heightfield mesa — same seam-noise/blend/steep-face-skin technique as the
+        // distant boundary terrain beyond the playable area (buildZoneBorderTerrain)
+        // — instead of a hard box: flat raised top across (almost) the whole tier's
+        // footprint, smoothly blending down to the tier below across the outer
+        // 1-tile margin (exactly how much smaller each plateau sub-map is than its
+        // parent, so that margin is the cliff-face band).
+        plateauMesas.forEach((mesa, i) => {
+          const elevOffset = (mesa.toTier - mesa.fromTier) * PLATEAU_UNIT;
+          if (elevOffset <= 0) return;
+          buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * PLATEAU_UNIT);
+        });
 
         buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
 
-        _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS, zoneBaseElev);
-        buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, zoneBaseElev);
+        _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
+        buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId);
 
         const toTownExit = zoneData?.toTownExit;
         const backToTown = (toTownExit || zdef) ? [{
@@ -4048,56 +4032,77 @@
             } catch(_) { return m; }
           }));
           _workspaceMaps = resolvedMaps;
-          // Absolute plateau elevation tier for every map — already baked into each
-          // submap's own `elevation` field by the Map Editor's recomputeElevation()
-          // (parent's tier + its own plateau group's elevation), so zoneElevOffsetWorld
-          // can offset a zone's ground to the correct world height even for plateau
-          // sub-maps that have no EXTERIOR_ZONES entry of their own.
-          _mapElevTiers.clear();
-          for (const m of resolvedMaps) _mapElevTiers.set(m.id, m.elevation || 0);
 
-          // Resolve real authored tile/transition data for every exterior map — the two
-          // top-level EXTERIOR_ZONES (Northern Cliffs, Southern Cloud Forest) plus any
-          // plateau sub-map authored beneath them — so buildZoneScene can render actual
-          // cliff/terrain content instead of EXTERIOR_ZONES' tiny flat placeholder grid,
-          // and plateau sub-maps become visitable even without a placeholder entry.
-          const allZoneMapIds = new Set(Object.keys(EXTERIOR_ZONES));
+          // Plateau sub-maps are purely an authoring convenience in the Map Editor —
+          // in-game every tier of a plateau stack is merged into its root zone's
+          // single grid (see tileSurfaceYInArea / buildZoneScene), so only root
+          // (non-submap) exterior maps get their own zone entry below.
+          const childByParentGroup = new Map();
           for (const m of resolvedMaps) {
-            if (m.category === 'exterior' && m.id !== 'map_hobunji_town') allZoneMapIds.add(m.id);
+            if (m.isSubmap && m.parentMapId && m.plateauGroupId) {
+              childByParentGroup.set(`${m.parentMapId}__${m.plateauGroupId}`, m);
+            }
           }
-
           const plateauElevById = new Map((ws.plateauGroups || []).map(g => [g.id, g.elevation || 0]));
-          const zTilesByMap = new Map();
-          for (const zoneMapId of allZoneMapIds) {
-            const zm = resolvedMaps.find(m => m.id === zoneMapId);
-            if (!zm) continue;
-            const zTiles = [];
-            let rockCount = 0, plateauTileCount = 0, decorativeRockCleared = 0, rampCount = 0;
-            for (let r = 0; r < zm.rows; r++) for (let c = 0; c < zm.cols; c++) {
-              const t = zm.tiles?.[`${c},${r}`];
+
+          // Recursively folds map `m` (at recursion depth `depth`, absolute
+          // elevation tier `baseTier`) into `outTiles` (world-keyed "c,r" → tile).
+          // Each plateau sub-map sits inset exactly 1 tile from its parent's full
+          // extent on every side (matching getOrCreateSubmap/resizeMapAndSubmaps in
+          // the Map Editor), so descending into tier N+1 just means shifting its
+          // local (c,r) by +1 on both axes per tier crossed (i.e. by `depth`).
+          // Whenever a plateau group actually has an authored child submap, this
+          // also records a `{minC,maxC,minR,maxR,fromTier,toTier}` mesa entry (in
+          // world coords) for the continuous heightfield buildZoneScene renders at
+          // that tier transition, and marks every tile this call writes as
+          // skipFloor so the normal per-tile floor loop leaves that area to the mesa.
+          function mergeZoneTiles(m, depth, baseTier, outTiles, mesas) {
+            const activeGroups = new Set();
+            for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+              const plateauId = m.tiles?.[`${c},${r}`]?.plateau;
+              if (plateauId) activeGroups.add(plateauId);
+            }
+            const recursingGroups = [...activeGroups].filter(gid => childByParentGroup.has(`${m.id}__${gid}`));
+            const skipFloor = recursingGroups.length > 0;
+
+            for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+              const t = m.tiles?.[`${c},${r}`];
               if (!t) continue;
               let type = t.type || 'grass';
-              const plateauId = t.plateau || null;
-              if (plateauId) {
-                plateauTileCount++;
-              } else if (type === 'rock') {
-                // Decorative (non-plateau) rock tiles are always-solid in the engine
-                // (isSolid()), and Northern Cliffs' authored data scatters hundreds of
-                // them across the walkable ground — turn the un-tagged ones back to
-                // grass so the real plateau cliff-face (plateau-tagged rock) reads as
-                // the only solid rock terrain, and the zone is actually walkable.
-                type = 'grass';
-                decorativeRockCleared++;
-              }
-              if (type === 'rock') rockCount++;
-              if (type === 'ramp') rampCount++;
-              zTiles.push({
-                c, r, type, plateau: plateauId,
-                elevation: plateauId ? (plateauElevById.get(plateauId) || 0) : 0,
+              // Decorative (non-plateau) rock tiles are always-solid in the engine
+              // (isSolid()), and Northern Cliffs' authored data scatters hundreds of
+              // them across the walkable ground — turn the un-tagged ones back to
+              // grass so the real plateau cliff-face (plateau-tagged rock) reads as
+              // the only solid rock terrain, and the zone is actually walkable.
+              if (!t.plateau && type === 'rock') type = 'grass';
+              outTiles.set(`${c + depth},${r + depth}`, {
+                c: c + depth, r: r + depth, type, elevTier: baseTier, skipFloor,
                 rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0,
               });
             }
-            console.log(`%c[zone:${zoneMapId}] tiles=${zTiles.length} rock=${rockCount} plateauTiles=${plateauTileCount} ramp=${rampCount} decorativeRockClearedToGrass=${decorativeRockCleared}`, 'color:#22c55e;font-weight:bold');
+
+            for (const gid of recursingGroups) {
+              const toTier = baseTier + (plateauElevById.get(gid) || 0);
+              mesas.push({ minC: depth, maxC: depth + m.cols - 1, minR: depth, maxR: depth + m.rows - 1, fromTier: baseTier, toTier });
+              mergeZoneTiles(childByParentGroup.get(`${m.id}__${gid}`), depth + 1, toTier, outTiles, mesas);
+            }
+          }
+
+          // Resolve real authored tile/transition data for every top-level exterior
+          // zone (Northern Cliffs, Southern Cloud Forest) so buildZoneScene can
+          // render actual cliff/terrain content instead of EXTERIOR_ZONES' tiny flat
+          // placeholder grid.
+          const allZoneMapIds = new Set(Object.keys(EXTERIOR_ZONES));
+          for (const m of resolvedMaps) {
+            if (m.category === 'exterior' && m.id !== 'map_hobunji_town' && !m.isSubmap) allZoneMapIds.add(m.id);
+          }
+
+          for (const zoneMapId of allZoneMapIds) {
+            const zm = resolvedMaps.find(m => m.id === zoneMapId);
+            if (!zm) continue;
+            const outTiles = new Map(), mesas = [];
+            mergeZoneTiles(zm, 0, 0, outTiles, mesas);
+            const zTiles = [...outTiles.values()];
             const zTransitions = [];
             let toTownExit = null;
             (zm.transitions || []).forEach(t => {
@@ -4114,55 +4119,8 @@
                 zTransitions.push({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
               }
             });
-            zTilesByMap.set(zoneMapId, { cols: zm.cols, rows: zm.rows, zTiles, zTransitions, toTownExit });
-          }
-
-          // Ramps connect two zone maps at matching (c,r). The tile actually used as
-          // the bidirectional transition trigger isn't stored anywhere, so recompute
-          // the same candidate path-key set the Map Editor's paintRampTiles() used
-          // (bresenham walk + width radius), then cross-reference which of those keys
-          // actually survived as type 'ramp' in each side's own tiles (a tile near the
-          // "far" end can be excluded from one map if it falls inside that map's own
-          // plateau footprint): the ascend trigger in fromMap is its highest surviving
-          // rampElevation tile, the descend trigger in toMap is its lowest.
-          const _rampBresenham = (x0, y0, x1, y1) => {
-            const pts = [];
-            let dx = Math.abs(x1-x0), sx = x0<x1?1:-1;
-            let dy = -Math.abs(y1-y0), sy = y0<y1?1:-1, err = dx+dy;
-            for (;;) {
-              pts.push([x0, y0]);
-              if (x0===x1 && y0===y1) break;
-              const e2 = 2*err;
-              if (e2 >= dy) { err += dy; x0 += sx; }
-              if (e2 <= dx) { err += dx; y0 += sy; }
-            }
-            return pts;
-          };
-          for (const ramp of (ws.ramps || [])) {
-            const fromEntry = zTilesByMap.get(ramp.fromMapId), toEntry = zTilesByMap.get(ramp.toMapId);
-            const nodes = ramp.nodes || [];
-            if (!fromEntry || !toEntry || nodes.length < 2) continue;
-            const path = [nodes[0]];
-            for (let i = 0; i < nodes.length - 1; i++) {
-              const pts = _rampBresenham(nodes[i][0], nodes[i][1], nodes[i+1][0], nodes[i+1][1]);
-              for (let j = 1; j < pts.length; j++) path.push(pts[j]);
-            }
-            const rad = Math.floor(((ramp.width || 3) - 1) / 2);
-            const candKeys = new Set();
-            for (const [bc, br] of path)
-              for (let dc = -rad; dc <= rad; dc++) for (let dr = -rad; dr <= rad; dr++) candKeys.add(`${bc+dc},${br+dr}`);
-            const fromRampTiles = fromEntry.zTiles.filter(t => t.type === 'ramp' && candKeys.has(`${t.c},${t.r}`));
-            const toRampTiles = toEntry.zTiles.filter(t => t.type === 'ramp' && candKeys.has(`${t.c},${t.r}`));
-            if (!fromRampTiles.length || !toRampTiles.length) continue;
-            const ascend = fromRampTiles.reduce((a, b) => (b.rampElevation > a.rampElevation ? b : a));
-            const descend = toRampTiles.reduce((a, b) => (b.rampElevation < a.rampElevation ? b : a));
-            fromEntry.zTransitions.push({ id: ramp.id + '_up', label: ramp.label || 'Ramp', col: ascend.c, row: ascend.r, target: 'zone', targetMapId: ramp.toMapId, targetCol: ascend.c, targetRow: ascend.r });
-            toEntry.zTransitions.push({ id: ramp.id + '_down', label: ramp.label || 'Ramp', col: descend.c, row: descend.r, target: 'zone', targetMapId: ramp.fromMapId, targetCol: descend.c, targetRow: descend.r });
-          }
-
-          for (const [zoneMapId, entry] of zTilesByMap) {
-            _zoneLayouts.set(zoneMapId, { cols: entry.cols, rows: entry.rows, tiles: entry.zTiles, transitions: entry.zTransitions, toTownExit: entry.toTownExit, plateauGroups: ws.plateauGroups || [] });
-            console.log(`%c[zone:${zoneMapId}] loaded ${entry.cols}x${entry.rows}, toTownExit=${entry.toTownExit ? `(${entry.toTownExit.col},${entry.toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${entry.zTransitions.length}`, 'color:#22c55e;font-weight:bold');
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas });
+            console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
@@ -9411,9 +9369,9 @@
       const TRENCH_TOP = -0.5;  // top surface of trench
       const NORMAL_TOP =  0.0;  // top surface of grass/tilled/etc
       const RAISED_TOP = +0.5;  // top surface of raised bed
-      // World-Y rise per plateau elevation tier (absolute units shared by
-      // recomputeElevation()-style map elevation and authored ramp.rampElevation
-      // values — see _mapElevTiers / zoneElevOffsetWorld below).
+      // World-Y rise per plateau elevation tier (absolute units shared by each
+      // merged tile's elevTier and authored ramp.rampElevation values — see
+      // tileSurfaceYInArea / _loadTownFromWorkspace's mergeZoneTiles).
       const PLATEAU_UNIT = 2.5;
       const RIVER_TOP  = -0.55; // river bed — a wide channel, at least trench-deep
       const STREAM_TOP = -0.55; // stream bed — the actual painted waterway in current maps; same depth as the river
