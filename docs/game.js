@@ -8539,6 +8539,8 @@
       });
       _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
 
+      let s_zoomScale = 1.5; // camera zoom level (Settings tab) — higher = camera sits closer to the player (default 150%)
+
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
       let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72;
@@ -8585,7 +8587,7 @@
 
       function updateCameraPosition() {
         const modeCfg = cameraModeConfig(activeCameraMode);
-        const baseDistance = modeCfg.distanceTiles ?? 14;
+        const baseDistance = (modeCfg.distanceTiles ?? 14) / s_zoomScale;
         const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
         const angle = THREE.MathUtils.degToRad(modeCfg.angleFromGroundDeg ?? 32.73);
         const azimuth = THREE.MathUtils.degToRad(modeCfg.azimuthDeg ?? 0);
@@ -11485,6 +11487,10 @@
       document.getElementById('settingResolution').addEventListener('change', e => {
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
+      });
+      document.getElementById('settingZoom').addEventListener('change', e => {
+        s_zoomScale = parseFloat(e.target.value) || 1.5;
+        updateCameraPosition();
       });
 
       function gameLoop(now) {
