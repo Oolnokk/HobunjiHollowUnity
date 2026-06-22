@@ -3195,8 +3195,7 @@
           player.y = (r + 0.5) * TILE;
         }
         player.vx = 0;  player.vy = 0;
-        camTargetX = player.x / TILE;
-        camTargetZ = player.y / TILE;
+        _snapCameraTarget();
         _transitionLatch = travelAreaKey();
         if (t.target !== 'building' && t.target !== 'exit_building') logMapSwap('travel', currentArea, { target: t.target || 'farm' });
       }
@@ -4054,20 +4053,22 @@
           // Whenever a plateau group actually has an authored child submap, this
           // also records a `{minC,maxC,minR,maxR,fromTier,toTier}` mesa entry (in
           // world coords) for the continuous heightfield buildZoneScene renders at
-          // that tier transition, and marks every tile this call writes as
-          // skipFloor so the normal per-tile floor loop leaves that area to the mesa.
+          // that tier transition.
           function mergeZoneTiles(m, depth, baseTier, outTiles, mesas) {
-            const activeGroups = new Set();
-            for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
-              const plateauId = m.tiles?.[`${c},${r}`]?.plateau;
-              if (plateauId) activeGroups.add(plateauId);
-            }
-            const recursingGroups = [...activeGroups].filter(gid => childByParentGroup.has(`${m.id}__${gid}`));
-            const skipFloor = recursingGroups.length > 0;
-
+            // `m.tiles` is sparse — most cells (including almost all of a plateau
+            // submap's own extent, which artists only ever paint a handful of
+            // marker/ramp tiles on) have no entry. Explicit tiles always win; a
+            // missing entry only defaults to flat grass if no caller has already
+            // written this world cell — a parent's recursing-group bulk pre-fill
+            // (below) already raised the whole footprint to the correct tier, and
+            // a sparse child must not stomp that back down to its own baseTier.
             for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
               const t = m.tiles?.[`${c},${r}`];
-              if (!t) continue;
+              const key = `${c + depth},${r + depth}`;
+              if (!t) {
+                if (!outTiles.has(key)) outTiles.set(key, { c: c + depth, r: r + depth, type: 'grass', elevTier: baseTier, skipFloor: false, rampElevation: 0 });
+                continue;
+              }
               let type = t.type || 'grass';
               // Decorative (non-plateau) rock tiles are always-solid in the engine
               // (isSolid()), and Northern Cliffs' authored data scatters hundreds of
@@ -4075,16 +4076,35 @@
               // grass so the real plateau cliff-face (plateau-tagged rock) reads as
               // the only solid rock terrain, and the zone is actually walkable.
               if (!t.plateau && type === 'rock') type = 'grass';
-              outTiles.set(`${c + depth},${r + depth}`, {
-                c: c + depth, r: r + depth, type, elevTier: baseTier, skipFloor,
+              outTiles.set(key, {
+                c: c + depth, r: r + depth, type, elevTier: baseTier, skipFloor: false,
                 rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0,
               });
             }
 
-            for (const gid of recursingGroups) {
+            const activeGroups = new Set();
+            for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+              const plateauId = m.tiles?.[`${c},${r}`]?.plateau;
+              if (plateauId) activeGroups.add(plateauId);
+            }
+            for (const gid of activeGroups) {
+              const child = childByParentGroup.get(`${m.id}__${gid}`);
+              if (!child) continue; // plateau group marked but no authored child submap yet
               const toTier = baseTier + (plateauElevById.get(gid) || 0);
-              mesas.push({ minC: depth, maxC: depth + m.cols - 1, minR: depth, maxR: depth + m.rows - 1, fromTier: baseTier, toTier });
-              mergeZoneTiles(childByParentGroup.get(`${m.id}__${gid}`), depth + 1, toTier, outTiles, mesas);
+              const childDepth = depth + 1;
+              // The raised footprint is the CHILD submap's own extent (inset 1 tile
+              // from `m`'s on every side), not `m`'s own — that 1-tile inset ring is
+              // exactly the still-ground-level rim this tier's mesa blends up from.
+              const minC = childDepth, maxC = childDepth + child.cols - 1, minR = childDepth, maxR = childDepth + child.rows - 1;
+              mesas.push({ minC, maxC, minR, maxR, fromTier: baseTier, toTier });
+              // Pre-raise the whole footprint to the new tier (flat grass, hidden
+              // under the mesa mesh) before recursing — the child's own (sparse)
+              // tiles, painted below, then poke through wherever it actually
+              // authored something (its own plateau marker, a ramp, etc.).
+              for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
+                outTiles.set(`${c},${r}`, { c, r, type: 'grass', elevTier: toTier, skipFloor: true, rampElevation: 0 });
+              }
+              mergeZoneTiles(child, childDepth, toTier, outTiles, mesas);
             }
           }
 
@@ -4451,7 +4471,7 @@
               const sp = buildingSpawnFromExit(info, cols, rows);
               player.x = (sp.col + 0.5) * TILE;
               player.y = (sp.row + 0.5) * TILE;
-              camTargetX = player.x / TILE; camTargetZ = player.y / TILE;
+              _snapCameraTarget();
             }
           }
           debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ') [v1]');
@@ -4577,7 +4597,7 @@
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         facingAngle = Math.PI / 2; player.angle = facingAngle;
-        camTargetX = player.x / TILE; camTargetZ = player.y / TILE;
+        _snapCameraTarget();
         if (fromScene) {
           fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow);
           fromScene.remove(toolHolder); fromScene.remove(reticleMesh);
@@ -4602,7 +4622,7 @@
             player.angle = farmPlayerSave.angle; facingAngle = farmPlayerSave.angle;
           }
           player.vx = 0; player.vy = 0;
-          camTargetX = player.x / TILE; camTargetZ = player.y / TILE;
+          _snapCameraTarget();
           const toScene = returnArea === 'town' ? townScene : scene;
           if (toScene) {
             toScene.add(playerMesh); toScene.add(playerGroundShadow);
@@ -4629,7 +4649,7 @@
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         facingAngle = -Math.PI / 2; player.angle = facingAngle;
-        camTargetX = player.x / TILE; camTargetZ = player.y / TILE;
+        _snapCameraTarget();
         if (fromScene) {
           fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow);
           fromScene.remove(toolHolder); fromScene.remove(reticleMesh);
@@ -4976,8 +4996,7 @@
         player.vx = 0; player.vy = 0;
         facingAngle = -Math.PI / 2;
         player.angle = facingAngle;
-        camTargetX = player.x / TILE;
-        camTargetZ = player.y / TILE;
+        _snapCameraTarget();
         if (fromScene) {
           fromScene.remove(playerMesh);
           fromScene.remove(playerGroundShadow);
@@ -5180,8 +5199,7 @@
         player.vx      = 0;  player.vy = 0;
         facingAngle    = Math.PI / 2;   // face south (into the room)
         player.angle   = facingAngle;
-        camTargetX     = player.x / TILE;
-        camTargetZ     = player.y / TILE;
+        _snapCameraTarget();
         // Move player mesh into interior scene
         fromScene.remove(playerMesh);
         fromScene.remove(playerGroundShadow);
@@ -5208,8 +5226,7 @@
             facingAngle  = farmPlayerSave.angle;
           }
           player.vx  = 0;  player.vy = 0;
-          camTargetX = player.x / TILE;
-          camTargetZ = player.y / TILE;
+          _snapCameraTarget();
           // Move player mesh back to the scene they came from
           const toScene = returnArea === 'town' ? townScene : scene;
           interiorScene.remove(playerMesh);
@@ -9121,7 +9138,23 @@
 
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
-      let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72;
+      let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72, camTargetY = 0;
+      // Snaps the camera's follow target to the player's current position,
+      // including ground height — exterior zones now carry real per-tile
+      // elevTier (plateau tiers merged into one scene, ramps sloping between
+      // them), so the camera must track actual terrain height instead of
+      // assuming a flat Y=0 ground plane, or a player standing on an elevated
+      // tier renders far below where the camera is looking.
+      function _playerGroundY() {
+        const col = Math.floor(player.x / TILE), row = Math.floor(player.y / TILE);
+        const tile = getActiveGrid()?.[row]?.[col];
+        return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
+      }
+      function _snapCameraTarget() {
+        camTargetX = player.x / TILE;
+        camTargetZ = player.y / TILE;
+        camTargetY = _playerGroundY();
+      }
 
       function portraitAvatarCenterWorldPosition(root) {
         let avatarRoot = null;
@@ -9171,7 +9204,7 @@
         const azimuth = THREE.MathUtils.degToRad(modeCfg.azimuthDeg ?? 0);
         const tx = camTargetX, tz = camTargetZ;
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
-        const lookY = portraitAim?.lookY ?? (modeCfg.targetYOffsetTiles ?? 0);
+        const lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
         const groundDistance = Math.cos(angle) * distance;
         // Camera sits at `azimuth` east of due-south from the target, elevated,
@@ -12148,9 +12181,11 @@
         const targetPosition = activeCameraTarget?.position;
         const wx = targetPosition ? targetPosition.x : player.x / TILE;
         const wz = targetPosition ? targetPosition.z : player.y / TILE;
+        const wy = targetPosition ? targetPosition.y : _playerGroundY();
         const camLerp = cameraModeConfig(activeCameraMode).followLerp ?? 0.08;
         camTargetX += (wx - camTargetX) * camLerp;
         camTargetZ += (wz - camTargetZ) * camLerp;
+        camTargetY += (wy - camTargetY) * camLerp;
         updateCameraPosition();
 
         // ── Three.js updates ─────────────────────────────────────
