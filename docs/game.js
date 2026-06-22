@@ -2513,10 +2513,15 @@
       let activeCameraTarget = null;
       let _prevCameraMode    = null; // saved mode to restore when the fishing minigame closes
       let _prevCameraTarget  = null; // saved target to restore when the fishing minigame closes
+      // Mobile drag-to-look offsets, layered on top of the active mode's base
+      // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,
+      // not a free-orbit camera.
+      let cameraAzimuthOffsetDeg = 0;
+      let cameraAngleOffsetDeg   = 0;
       // Camera azimuth (radians, rotated from due-south toward east) for the active
       // mode. Everything except "fishing" stays at 0 (camera due south, as before).
       function activeCameraAzimuthRad() {
-        return THREE.MathUtils.degToRad(cameraModeConfig(activeCameraMode).azimuthDeg ?? 0);
+        return THREE.MathUtils.degToRad((cameraModeConfig(activeCameraMode).azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
       }
       // Billboard sprites go edge-on (and effectively disappear) when rotated
       // perpendicular to the camera's current viewing axis. perpClamp's dead zones
@@ -8589,8 +8594,8 @@
         const modeCfg = cameraModeConfig(activeCameraMode);
         const baseDistance = (modeCfg.distanceTiles ?? 14) / s_zoomScale;
         const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
-        const angle = THREE.MathUtils.degToRad(modeCfg.angleFromGroundDeg ?? 32.73);
-        const azimuth = THREE.MathUtils.degToRad(modeCfg.azimuthDeg ?? 0);
+        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
+        const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
         const tx = camTargetX, tz = camTargetZ;
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
         const lookY = portraitAim?.lookY ?? (modeCfg.targetYOffsetTiles ?? 0);
@@ -13226,6 +13231,37 @@
       }
       window.addEventListener('pointerup', clearDialogueZoomPointer);
       window.addEventListener('pointercancel', clearDialogueZoomPointer);
+
+      // ── Mobile camera drag: single-finger drag nudges the look angle, clamped to ±45° ──
+      const CAMERA_DRAG_DEG_PER_PX = 0.15;
+      const CAMERA_DRAG_CLAMP_DEG = 45;
+      let cameraDragPointerId = null;
+      let cameraDragStartX = 0, cameraDragStartY = 0;
+      let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
+      function cameraDragAllowed() {
+        return !isDesktop && !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active;
+      }
+      threeContainer.addEventListener('pointerdown', (e) => {
+        if (e.pointerType !== 'touch' || !cameraDragAllowed()) return;
+        cameraDragPointerId = e.pointerId;
+        cameraDragStartX = e.clientX;
+        cameraDragStartY = e.clientY;
+        cameraDragStartAzimuthOffset = cameraAzimuthOffsetDeg;
+        cameraDragStartAngleOffset = cameraAngleOffsetDeg;
+      });
+      threeContainer.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
+        const dx = e.clientX - cameraDragStartX;
+        const dy = e.clientY - cameraDragStartY;
+        cameraAzimuthOffsetDeg = clamp(cameraDragStartAzimuthOffset + dx * CAMERA_DRAG_DEG_PER_PX, -CAMERA_DRAG_CLAMP_DEG, CAMERA_DRAG_CLAMP_DEG);
+        cameraAngleOffsetDeg   = clamp(cameraDragStartAngleOffset   - dy * CAMERA_DRAG_DEG_PER_PX, -CAMERA_DRAG_CLAMP_DEG, CAMERA_DRAG_CLAMP_DEG);
+        updateCameraPosition();
+      });
+      function clearCameraDragPointer(e) {
+        if (e.pointerId === cameraDragPointerId) cameraDragPointerId = null;
+      }
+      window.addEventListener('pointerup', clearCameraDragPointer);
+      window.addEventListener('pointercancel', clearCameraDragPointer);
 
       // Left click = primary action, right click = secondary action (desktop play)
       if (isDesktop) {
