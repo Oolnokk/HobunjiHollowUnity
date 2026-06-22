@@ -566,6 +566,7 @@ function getOrCreateSubmap(parentMap, group) {
   recomputeElevation(sm);
   ws.maps.push(sm);
   captureBaseline(sm);
+  renderMapList();
   return sm;
 }
 function plateauFootprint(m, groupId) {
@@ -2467,17 +2468,31 @@ function importAny(obj) {
       m.buildings = Array.isArray(src.buildings) ? src.buildings : [];
       m.npcStations = Array.isArray(src.npcStations) ? src.npcStations : [];
       if (src.buildingInteriorBase) m.buildingInteriorBase = src.buildingInteriorBase;
+      m.isSubmap = !!src.isSubmap;
+      m.parentMapId = src.parentMapId || null;
+      m.plateauGroupId = src.plateauGroupId || null;
+      m.elevation = Number.isFinite(src.elevation) ? src.elevation : 0;
       return m;
     });
+    const incomingGroups = Array.isArray(obj.plateauGroups) ? obj.plateauGroups : [];
+    const incomingRamps = Array.isArray(obj.ramps) ? obj.ramps : [];
     if (doMerge) {
       // Add only maps whose IDs aren't already present
       const existing = new Set(ws.maps.map(m => m.id));
       incoming.forEach(m => { if (!existing.has(m.id)) ws.maps.push(m); });
+      ws.plateauGroups = ws.plateauGroups || [];
+      const existingGroups = new Set(ws.plateauGroups.map(g => g.id));
+      incomingGroups.forEach(g => { if (!existingGroups.has(g.id)) ws.plateauGroups.push(g); });
+      ws.ramps = ws.ramps || [];
+      const existingRamps = new Set(ws.ramps.map(r => r.id));
+      incomingRamps.forEach(r => { if (!existingRamps.has(r.id)) ws.ramps.push(r); });
       setStatus(`Merged ${incoming.filter(m => !existing.has(m.id)).length} new maps.`);
     } else {
       ws.maps = incoming;
       ws.activeId = obj.activeId || incoming[0].id;
       ws.gameLink = obj.gameLink || { exteriorId:'', interiorId:'' };
+      ws.plateauGroups = incomingGroups;
+      ws.ramps = incomingRamps;
       setStatus(`Loaded workspace: ${incoming.length} maps.`);
     }
     undoStack.length = 0; redoStack.length = 0;
