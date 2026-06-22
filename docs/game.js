@@ -2622,11 +2622,12 @@
         // elevTier (rendered below as continuous heightfield mesas, one per tier
         // transition, in the same visual style as the distant boundary terrain beyond
         // the playable area) and, for ramp tiles, its own slope-following rampElevation.
-        for (const { c, r, type, elevTier, rampElevation, skipFloor } of (zoneData?.tiles || [])) {
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline } of (zoneData?.tiles || [])) {
           if (!zGrid[r]?.[c]) continue;
           zGrid[r][c].type = type || TileType.GRASS;
           zGrid[r][c].elevTier = elevTier || 0;
           zGrid[r][c].skipFloor = !!skipFloor;
+          zGrid[r][c].incline = !!incline;
           if (type === TileType.RAMP) zGrid[r][c].rampElevation = rampElevation || 0;
         }
         const plateauMesas = zoneData?.mesas || [];
@@ -4044,29 +4045,69 @@
           }
           const plateauElevById = new Map((ws.plateauGroups || []).map(g => [g.id, g.elevation || 0]));
 
-          // Recursively folds map `m` (at recursion depth `depth`, absolute
-          // elevation tier `baseTier`) into `outTiles` (world-keyed "c,r" → tile).
-          // Each plateau sub-map sits inset exactly 1 tile from its parent's full
-          // extent on every side (matching getOrCreateSubmap/resizeMapAndSubmaps in
-          // the Map Editor), so descending into tier N+1 just means shifting its
-          // local (c,r) by +1 on both axes per tier crossed (i.e. by `depth`).
+          // Recursively folds map `m` (placed at world offset `offsetC`/`offsetR`,
+          // absolute elevation tier `baseTier`) into `outTiles` (world-keyed "c,r"
+          // → tile). A tier's footprint is the bounding box of whichever tiles in
+          // the PARENT are actually tagged `plateau: <thisGroupId>` — the artist
+          // paints however large a region they want a tier to occupy. The OUTER
+          // 1-tile ring of that painted bbox is reserved (automatically, not by
+          // painting) as the cliff-face lerp between this tier and the one below:
+          // those ring cells are flagged `incline` (always solid/impassable —
+          // see tileSpeedAt) unless the map explicitly paints something else there
+          // (a ramp tile, typically), which always wins over the auto-incline. The
+          // child sub-map's own local (0,0) is placed one tile inside that ring,
+          // i.e. at the bbox's top-left corner + 1.
           // Whenever a plateau group actually has an authored child submap, this
           // also records a `{minC,maxC,minR,maxR,fromTier,toTier}` mesa entry (in
           // world coords) for the continuous heightfield buildZoneScene renders at
           // that tier transition.
-          function mergeZoneTiles(m, depth, baseTier, outTiles, mesas) {
+          function mergeZoneTiles(m, offsetC, offsetR, baseTier, outTiles, mesas) {
+            const groupBBox = new Map(); // plateauGroupId -> parent-local {minC,maxC,minR,maxR}
+            for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+              const plateauId = m.tiles?.[`${c},${r}`]?.plateau;
+              if (!plateauId) continue;
+              const bb = groupBBox.get(plateauId);
+              if (!bb) groupBBox.set(plateauId, { minC: c, maxC: c, minR: r, maxR: r });
+              else { bb.minC = Math.min(bb.minC, c); bb.maxC = Math.max(bb.maxC, c); bb.minR = Math.min(bb.minR, r); bb.maxR = Math.max(bb.maxR, r); }
+            }
+
+            // Stake out each recursing group's footprint (incline ring + raised
+            // interior) BEFORE writing this map's own tiles below, so any tile `m`
+            // explicitly authored inside that footprint (a ramp cut through the
+            // incline ring, a plateau marker, etc.) always overwrites/wins.
+            const children = [];
+            for (const [gid, bb] of groupBBox) {
+              const child = childByParentGroup.get(`${m.id}__${gid}`);
+              if (!child) continue; // plateau group marked but no authored child submap yet
+              const toTier = baseTier + (plateauElevById.get(gid) || 0);
+              const minC = offsetC + bb.minC, maxC = offsetC + bb.maxC, minR = offsetR + bb.minR, maxR = offsetR + bb.maxR;
+              mesas.push({ minC, maxC, minR, maxR, fromTier: baseTier, toTier });
+              for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
+                const onRing = (c === minC || c === maxC || r === minR || r === maxR);
+                outTiles.set(`${c},${r}`, {
+                  c, r, type: 'grass', elevTier: onRing ? baseTier : toTier,
+                  skipFloor: true, rampElevation: 0, incline: onRing,
+                });
+              }
+              children.push({ child, childOffsetC: minC + 1, childOffsetR: minR + 1, toTier });
+            }
+
             // `m.tiles` is sparse — most cells (including almost all of a plateau
             // submap's own extent, which artists only ever paint a handful of
-            // marker/ramp tiles on) have no entry. Explicit tiles always win; a
-            // missing entry only defaults to flat grass if no caller has already
-            // written this world cell — a parent's recursing-group bulk pre-fill
-            // (below) already raised the whole footprint to the correct tier, and
-            // a sparse child must not stomp that back down to its own baseTier.
+            // marker/ramp tiles on) have no entry. Explicit NON-plateau-tagged
+            // tiles always win over the bulk pre-fill above (this is how a ramp
+            // cuts through the auto-incline ring: paintRampTiles strips the
+            // `.plateau` tag from any cell it stamps, so it falls through here).
+            // A missing entry, OR an entry that's still tagged `.plateau` (i.e.
+            // it's part of the painted footprint shape itself, not a deliberate
+            // override), must NOT stomp the ring/interior staking already written
+            // above — only default to flat grass if no caller has touched this
+            // world cell yet.
             for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
               const t = m.tiles?.[`${c},${r}`];
-              const key = `${c + depth},${r + depth}`;
-              if (!t) {
-                if (!outTiles.has(key)) outTiles.set(key, { c: c + depth, r: r + depth, type: 'grass', elevTier: baseTier, skipFloor: false, rampElevation: 0 });
+              const key = `${c + offsetC},${r + offsetR}`;
+              if (!t || t.plateau) {
+                if (!outTiles.has(key)) outTiles.set(key, { c: c + offsetC, r: r + offsetR, type: 'grass', elevTier: baseTier, skipFloor: false, rampElevation: 0, incline: false });
                 continue;
               }
               let type = t.type || 'grass';
@@ -4077,34 +4118,13 @@
               // the only solid rock terrain, and the zone is actually walkable.
               if (!t.plateau && type === 'rock') type = 'grass';
               outTiles.set(key, {
-                c: c + depth, r: r + depth, type, elevTier: baseTier, skipFloor: false,
-                rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0,
+                c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
+                rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
               });
             }
 
-            const activeGroups = new Set();
-            for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
-              const plateauId = m.tiles?.[`${c},${r}`]?.plateau;
-              if (plateauId) activeGroups.add(plateauId);
-            }
-            for (const gid of activeGroups) {
-              const child = childByParentGroup.get(`${m.id}__${gid}`);
-              if (!child) continue; // plateau group marked but no authored child submap yet
-              const toTier = baseTier + (plateauElevById.get(gid) || 0);
-              const childDepth = depth + 1;
-              // The raised footprint is the CHILD submap's own extent (inset 1 tile
-              // from `m`'s on every side), not `m`'s own — that 1-tile inset ring is
-              // exactly the still-ground-level rim this tier's mesa blends up from.
-              const minC = childDepth, maxC = childDepth + child.cols - 1, minR = childDepth, maxR = childDepth + child.rows - 1;
-              mesas.push({ minC, maxC, minR, maxR, fromTier: baseTier, toTier });
-              // Pre-raise the whole footprint to the new tier (flat grass, hidden
-              // under the mesa mesh) before recursing — the child's own (sparse)
-              // tiles, painted below, then poke through wherever it actually
-              // authored something (its own plateau marker, a ramp, etc.).
-              for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
-                outTiles.set(`${c},${r}`, { c, r, type: 'grass', elevTier: toTier, skipFloor: true, rampElevation: 0 });
-              }
-              mergeZoneTiles(child, childDepth, toTier, outTiles, mesas);
+            for (const { child, childOffsetC, childOffsetR, toTier } of children) {
+              mergeZoneTiles(child, childOffsetC, childOffsetR, toTier, outTiles, mesas);
             }
           }
 
@@ -4121,7 +4141,7 @@
             const zm = resolvedMaps.find(m => m.id === zoneMapId);
             if (!zm) continue;
             const outTiles = new Map(), mesas = [];
-            mergeZoneTiles(zm, 0, 0, outTiles, mesas);
+            mergeZoneTiles(zm, 0, 0, 0, outTiles, mesas);
             const zTiles = [...outTiles.values()];
             const zTransitions = [];
             let toTownExit = null;
@@ -8703,8 +8723,12 @@
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return null;
         const col  = Math.floor(wx / TILE);
         const row  = Math.floor(wy / TILE);
-        const type = getActiveGrid()[row][col].type;
+        const tile = getActiveGrid()[row][col];
+        const type = tile.type;
         if (isSolid(type)) return null;
+        // Auto-reserved plateau cliff-face ring — impassable except where a
+        // ramp tile explicitly cuts through it (which never sets `incline`).
+        if (tile.incline) return null;
         // Rivers/streams are a real crossing obstacle — block like a solid tile.
         if (type === TileType.RIVER || type === TileType.STREAM) return null;
         // Block structural building tiles on exterior maps (player must use doors/transitions).

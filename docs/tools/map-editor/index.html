@@ -562,24 +562,48 @@ function recomputeElevation(m) {
 }
 function recomputeAllElevations() { ws.maps.forEach(recomputeElevation); }
 function submapsOf(parentId) { return ws.maps.filter(x => x.parentMapId === parentId); }
+function plateauFootprint(m, groupId) {
+  const out = new Set();
+  Object.keys(m.tiles).forEach(k => { if (m.tiles[k] && m.tiles[k].plateau === groupId) out.add(k); });
+  return out;
+}
+// Bounding box (in m's local coords) of every tile painted with this plateau
+// group, or null if nothing's painted yet. The footprint is whatever shape the
+// artist actually paints — it is NOT derived from the parent map's full size.
+function plateauFootprintBBox(m, groupId) {
+  let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+  for (const k in m.tiles) {
+    if (m.tiles[k]?.plateau !== groupId) continue;
+    const [c, r] = k.split(',').map(Number);
+    if (c < minC) minC = c; if (c > maxC) maxC = c;
+    if (r < minR) minR = r; if (r > maxR) maxR = r;
+  }
+  return minC === Infinity ? null : { minC, maxC, minR, maxR };
+}
+// The outer 1-tile ring of a painted footprint is reserved for the auto cliff-face
+// incline (collision, lerped height) — the submap's own flat walkable top is the
+// footprint inset by that ring, so it's always 2 smaller than the footprint per axis.
+function resizeSubmapToFootprint(sm, bbox) {
+  const nc = Math.max(1, bbox.maxC - bbox.minC + 1 - 2);
+  const nr = Math.max(1, bbox.maxR - bbox.minR + 1 - 2);
+  if (sm.cols !== nc || sm.rows !== nr) resizeMapAndSubmaps(sm, nc, nr);
+}
 function getOrCreateSubmap(parentMap, group) {
   let sm = ws.maps.find(x => x.parentMapId === parentMap.id && x.plateauGroupId === group.id);
-  if (sm) return sm;
-  // The submap's flat walkable top is inset 1 tile from its parent's plateau footprint
-  // on every side; that 1-tile margin is reserved (in-game) for the smooth cliff-face
-  // blend down to ground level, so the submap itself is always 2 smaller per axis.
-  sm = makeMap(`${parentMap.name} — ${group.label}`, parentMap.category, Math.max(1, parentMap.cols - 2), Math.max(1, parentMap.rows - 2));
+  const bbox = plateauFootprintBBox(parentMap, group.id);
+  if (sm) {
+    if (bbox) resizeSubmapToFootprint(sm, bbox);
+    return sm;
+  }
+  if (!bbox) return null; // nothing painted for this group yet — can't size a submap
+  sm = makeMap(`${parentMap.name} — ${group.label}`, parentMap.category,
+    Math.max(1, bbox.maxC - bbox.minC + 1 - 2), Math.max(1, bbox.maxR - bbox.minR + 1 - 2));
   sm.isSubmap = true; sm.parentMapId = parentMap.id; sm.plateauGroupId = group.id;
   recomputeElevation(sm);
   ws.maps.push(sm);
   captureBaseline(sm);
   renderMapList();
   return sm;
-}
-function plateauFootprint(m, groupId) {
-  const out = new Set();
-  Object.keys(m.tiles).forEach(k => { if (m.tiles[k] && m.tiles[k].plateau === groupId) out.add(k); });
-  return out;
 }
 function activePlateauGroupsOn(m) {
   return (ws.plateauGroups || []).filter(g => Object.keys(m.tiles).some(k => m.tiles[k]?.plateau === g.id));
@@ -599,7 +623,14 @@ function resizeMapAndSubmaps(m, nc, nr) {
   (m.rivers || []).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c < nc && r < nr); });
   m.transitions = (m.transitions || []).filter(t => t.col < nc && t.row < nr);
   m.npcStations = (m.npcStations || []).filter(st => st.col < nc && st.row < nr);
-  submapsOf(m.id).forEach(sm => resizeMapAndSubmaps(sm, Math.max(1, nc - 2), Math.max(1, nr - 2)));
+  // Submaps are sized from their own painted plateau footprint (see
+  // getOrCreateSubmap), not from a fixed offset off this map's dimensions —
+  // resizing `m` only matters here if it truncated away some of that footprint.
+  submapsOf(m.id).forEach(sm => {
+    const group = plateauGroupById(sm.plateauGroupId);
+    const bbox = group && plateauFootprintBBox(m, group.id);
+    if (bbox) resizeSubmapToFootprint(sm, bbox);
+  });
 }
 
 function applyFarmhouseFloor(m) {
@@ -944,13 +975,13 @@ function bresenham(x0, y0, x1, y1) {
 // path instead of only ever adding new ones. Keyed by entity id; not
 // persisted with the map.
 const _paintedKeysByEntity = new Map();
-function applyPaintDiff(entityId, newKeys, tileType, m, { preserveCrop = true } = {}) {
-  const next = new Set([...newKeys].filter(k => !isPlateauLocked(m, k)));
+function applyPaintDiff(entityId, newKeys, tileType, m, { preserveCrop = true, allowPlateauOverride = false } = {}) {
+  const next = new Set([...newKeys].filter(k => allowPlateauOverride || !isPlateauLocked(m, k)));
   const prevEntry = _paintedKeysByEntity.get(entityId);
   if (prevEntry) {
     const sameType = prevEntry.type === tileType;
     for (const k of prevEntry.keys) {
-      if ((!sameType || !next.has(k)) && m.tiles[k]?.type === prevEntry.type && !isPlateauLocked(m, k)) delete m.tiles[k];
+      if ((!sameType || !next.has(k)) && m.tiles[k]?.type === prevEntry.type && (allowPlateauOverride || !isPlateauLocked(m, k))) delete m.tiles[k];
     }
   }
   for (const k of next) m.tiles[k] = { type: tileType, crop: preserveCrop ? (m.tiles[k]?.crop || '') : '' };
@@ -1103,6 +1134,7 @@ function syncPlateauEffects(m) {
   const rivers = m.rivers || [];
   for (const group of activePlateauGroupsOn(m)) {
     const sm = getOrCreateSubmap(m, group);
+    if (!sm) continue;
     for (const river of rivers) mirrorRiverAcrossPlateau(river, m, sm, group);
     syncPlateauEffects(sm); // recurse into nested plateaus on the sub-map itself
   }
@@ -1141,8 +1173,11 @@ function paintRampTiles(ramp) {
     }
   }
   const keys = [...elevByKey.keys()];
-  applyPaintDiff(`${ramp.id}__${fromMap.id}`, keys, 'ramp', fromMap, { preserveCrop: false });
-  if (toMap.id !== fromMap.id) applyPaintDiff(`${ramp.id}__${toMap.id}`, keys, 'ramp', toMap, { preserveCrop: false });
+  // A ramp is the one explicit, deliberate way to cut through a plateau's
+  // auto-incline ring (the outer 1-tile band normally reserved/locked for the
+  // cliff-face blend) — so unlike ordinary painting, it's allowed to override it.
+  applyPaintDiff(`${ramp.id}__${fromMap.id}`, keys, 'ramp', fromMap, { preserveCrop: false, allowPlateauOverride: true });
+  if (toMap.id !== fromMap.id) applyPaintDiff(`${ramp.id}__${toMap.id}`, keys, 'ramp', toMap, { preserveCrop: false, allowPlateauOverride: true });
   for (const [key, t] of elevByKey) {
     const elev = fromElev + (toElev - fromElev) * t;
     if (fromMap.tiles[key]?.type === 'ramp') fromMap.tiles[key].rampElevation = elev;
@@ -1188,7 +1223,7 @@ function renderPalette() {
       const g = plateauGroupById(brush.plateauGroup);
       const sm = g ? (ws.maps.find(x => x.parentMapId === m.id && x.plateauGroupId === g.id)) : null;
       if (sm) html += `<button class="sec" id="editSubmapBtn" data-submapid="${sm.id}" style="width:100%;margin-top:6px">Edit Sub-map ↗ (${sm.name})</button>`;
-      html += '<p class="muted" style="margin-top:5px">Paint tiles to mark them as part of the selected plateau group. Plateau tiles can\'t be overwritten by other tiles or tools — erase them first to free the cell. The group\'s sub-map is auto-created the first time you paint with it here.</p>';
+      html += '<p class="muted" style="margin-top:5px">Paint tiles to mark them as part of the selected plateau group. Plateau tiles can\'t be overwritten by other tiles or tools — erase them first to free the cell. The group\'s sub-map is auto-created/resized from the painted footprint. The outer 1-tile ring of that footprint (shown in red) is reserved automatically for the cliff-face blend down to the tier below and is always solid in-game — the only way through it is a ramp tile painted over it.</p>';
     }
   } else if (mode === 'object') {
     if (m.category !== 'exterior') html = '<p class="muted">Objects are exterior-only.</p>';
@@ -1688,6 +1723,25 @@ function draw() {
     if (z > 9) { ctx.fillStyle = '#fff'; ctx.fillText(String(group.number), p.x + z/2, p.y + z/2); }
   });
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+
+  // Incline-ring overlay: the outer 1-tile ring of each painted plateau footprint
+  // is auto-reserved as the impassable cliff-face lerp down to the tier below —
+  // highlight it in red so it's obvious which tiles those are. A cell painted over
+  // with a ramp (no more `.plateau` tag, type 'ramp') has cut through the ring, so
+  // it's excluded here — the ramp's own rendering already shows it as crossable.
+  for (const group of activePlateauGroupsOn(m)) {
+    const bbox = plateauFootprintBBox(m, group.id);
+    if (!bbox) continue;
+    for (let rr = bbox.minR; rr <= bbox.maxR; rr++) for (let c = bbox.minC; c <= bbox.maxC; c++) {
+      const onRing = (c === bbox.minC || c === bbox.maxC || rr === bbox.minR || rr === bbox.maxR);
+      if (!onRing) continue;
+      const t = m.tiles[`${c},${rr}`];
+      if (!t || t.plateau !== group.id) continue; // ramp (or anything else) cut through here
+      const p = w2s(c, rr);
+      ctx.fillStyle = '#ef4444'; ctx.globalAlpha = .45; ctx.fillRect(p.x, p.y, z, z); ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.strokeRect(p.x+1, p.y+1, z-2, z-2);
+    }
+  }
 
   // Building overlays (placed buildings from map.buildings)
   _gizmos = [];
@@ -2233,7 +2287,7 @@ function fillSettings() {
   $('mapCategory').value = m.category;
   $('mapCols').value = m.cols; $('mapRows').value = m.rows;
   $('mapCols').disabled = $('mapRows').disabled = !!m.isSubmap;
-  $('mapCols').title = $('mapRows').title = m.isSubmap ? "Plateau sub-maps are always 1 tile smaller than their parent map on every side — resize the parent instead." : '';
+  $('mapCols').title = $('mapRows').title = m.isSubmap ? "Plateau sub-maps are sized automatically from the painted footprint (inset 1 tile per side for the auto-incline ring) — paint more/less of the plateau on the parent map instead." : '';
   $('catTag').textContent = m.category;
   const group = m.isSubmap ? plateauGroupById(m.plateauGroupId) : null;
   $('activeMapPill').textContent = `${m.name} (${m.cols}×${m.rows})${m.isSubmap ? ` · elev ${m.elevation>=0?'+':''}${m.elevation}${group ? ` · #${group.number}` : ''}` : ''}`;
