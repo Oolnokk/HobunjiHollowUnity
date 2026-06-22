@@ -2513,10 +2513,15 @@
       let activeCameraTarget = null;
       let _prevCameraMode    = null; // saved mode to restore when the fishing minigame closes
       let _prevCameraTarget  = null; // saved target to restore when the fishing minigame closes
+      // Mobile drag-to-look offsets, layered on top of the active mode's base
+      // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,
+      // not a free-orbit camera.
+      let cameraAzimuthOffsetDeg = 0;
+      let cameraAngleOffsetDeg   = 0;
       // Camera azimuth (radians, rotated from due-south toward east) for the active
       // mode. Everything except "fishing" stays at 0 (camera due south, as before).
       function activeCameraAzimuthRad() {
-        return THREE.MathUtils.degToRad(cameraModeConfig(activeCameraMode).azimuthDeg ?? 0);
+        return THREE.MathUtils.degToRad((cameraModeConfig(activeCameraMode).azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
       }
       // Billboard sprites go edge-on (and effectively disappear) when rotated
       // perpendicular to the camera's current viewing axis. perpClamp's dead zones
@@ -8539,6 +8544,8 @@
       });
       _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
 
+      let s_zoomScale = 1.5; // camera zoom level (Settings tab) — higher = camera sits closer to the player (default 150%)
+
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
       let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72;
@@ -8585,10 +8592,10 @@
 
       function updateCameraPosition() {
         const modeCfg = cameraModeConfig(activeCameraMode);
-        const baseDistance = modeCfg.distanceTiles ?? 14;
+        const baseDistance = (modeCfg.distanceTiles ?? 14) / s_zoomScale;
         const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
-        const angle = THREE.MathUtils.degToRad(modeCfg.angleFromGroundDeg ?? 32.73);
-        const azimuth = THREE.MathUtils.degToRad(modeCfg.azimuthDeg ?? 0);
+        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
+        const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
         const tx = camTargetX, tz = camTargetZ;
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
         const lookY = portraitAim?.lookY ?? (modeCfg.targetYOffsetTiles ?? 0);
@@ -11486,6 +11493,10 @@
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
       });
+      document.getElementById('settingZoom').addEventListener('change', e => {
+        s_zoomScale = parseFloat(e.target.value) || 1.5;
+        updateCameraPosition();
+      });
 
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
@@ -13221,11 +13232,47 @@
       window.addEventListener('pointerup', clearDialogueZoomPointer);
       window.addEventListener('pointercancel', clearDialogueZoomPointer);
 
+      // ── Camera drag-to-look: single-finger drag on mobile, Shift+drag on desktop.
+      // Nudges the look angle on top of the active mode's base framing, clamped to ±45°.
+      const CAMERA_DRAG_DEG_PER_PX = 0.15;
+      const CAMERA_DRAG_CLAMP_DEG = 45;
+      let cameraDragPointerId = null;
+      let cameraDragStartX = 0, cameraDragStartY = 0;
+      let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
+      function cameraDragAllowed() {
+        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active;
+      }
+      function cameraDragRequested(e) {
+        return e.pointerType === 'touch' || (isDesktop && e.pointerType === 'mouse' && e.shiftKey && e.button === 0);
+      }
+      threeContainer.addEventListener('pointerdown', (e) => {
+        if (!cameraDragRequested(e) || !cameraDragAllowed()) return;
+        cameraDragPointerId = e.pointerId;
+        cameraDragStartX = e.clientX;
+        cameraDragStartY = e.clientY;
+        cameraDragStartAzimuthOffset = cameraAzimuthOffsetDeg;
+        cameraDragStartAngleOffset = cameraAngleOffsetDeg;
+        threeContainer.setPointerCapture?.(e.pointerId);
+      });
+      threeContainer.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
+        const dx = e.clientX - cameraDragStartX;
+        const dy = e.clientY - cameraDragStartY;
+        cameraAzimuthOffsetDeg = clamp(cameraDragStartAzimuthOffset + dx * CAMERA_DRAG_DEG_PER_PX, -CAMERA_DRAG_CLAMP_DEG, CAMERA_DRAG_CLAMP_DEG);
+        cameraAngleOffsetDeg   = clamp(cameraDragStartAngleOffset   - dy * CAMERA_DRAG_DEG_PER_PX, -CAMERA_DRAG_CLAMP_DEG, CAMERA_DRAG_CLAMP_DEG);
+        updateCameraPosition();
+      });
+      function clearCameraDragPointer(e) {
+        if (e.pointerId === cameraDragPointerId) cameraDragPointerId = null;
+      }
+      window.addEventListener('pointerup', clearCameraDragPointer);
+      window.addEventListener('pointercancel', clearCameraDragPointer);
+
       // Left click = primary action, right click = secondary action (desktop play)
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
-          if (menuOpen || farmEditMode) return;
+          if (menuOpen || farmEditMode || e.shiftKey) return;
           if (e.button === 0) {
             actionHeldDown = true;
             useActiveAction();
@@ -13241,6 +13288,7 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          if (cameraDragPointerId !== null) return; // Shift+drag is rotating the camera, not aiming
           const rect = threeContainer.getBoundingClientRect();
           _mouseNDC.x =  ((e.clientX - rect.left)  / rect.width)  * 2 - 1;
           _mouseNDC.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;
