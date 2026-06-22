@@ -13232,22 +13232,27 @@
       window.addEventListener('pointerup', clearDialogueZoomPointer);
       window.addEventListener('pointercancel', clearDialogueZoomPointer);
 
-      // ── Mobile camera drag: single-finger drag nudges the look angle, clamped to ±45° ──
+      // ── Camera drag-to-look: single-finger drag on mobile, Shift+drag on desktop.
+      // Nudges the look angle on top of the active mode's base framing, clamped to ±45°.
       const CAMERA_DRAG_DEG_PER_PX = 0.15;
       const CAMERA_DRAG_CLAMP_DEG = 45;
       let cameraDragPointerId = null;
       let cameraDragStartX = 0, cameraDragStartY = 0;
       let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
       function cameraDragAllowed() {
-        return !isDesktop && !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active;
+        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active;
+      }
+      function cameraDragRequested(e) {
+        return e.pointerType === 'touch' || (isDesktop && e.pointerType === 'mouse' && e.shiftKey && e.button === 0);
       }
       threeContainer.addEventListener('pointerdown', (e) => {
-        if (e.pointerType !== 'touch' || !cameraDragAllowed()) return;
+        if (!cameraDragRequested(e) || !cameraDragAllowed()) return;
         cameraDragPointerId = e.pointerId;
         cameraDragStartX = e.clientX;
         cameraDragStartY = e.clientY;
         cameraDragStartAzimuthOffset = cameraAzimuthOffsetDeg;
         cameraDragStartAngleOffset = cameraAngleOffsetDeg;
+        threeContainer.setPointerCapture?.(e.pointerId);
       });
       threeContainer.addEventListener('pointermove', (e) => {
         if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
@@ -13267,7 +13272,7 @@
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
-          if (menuOpen || farmEditMode) return;
+          if (menuOpen || farmEditMode || e.shiftKey) return;
           if (e.button === 0) {
             actionHeldDown = true;
             useActiveAction();
@@ -13283,6 +13288,7 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          if (cameraDragPointerId !== null) return; // Shift+drag is rotating the camera, not aiming
           const rect = threeContainer.getBoundingClientRect();
           _mouseNDC.x =  ((e.clientX - rect.left)  / rect.width)  * 2 - 1;
           _mouseNDC.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;
