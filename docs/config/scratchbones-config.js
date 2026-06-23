@@ -127,6 +127,29 @@ window.SCRATCHBONES_CONFIG = {
       "wheelZoomMin": 0.75,
       "wheelZoomMax": 2.5
     },
+    "input": {
+      "storageKey": "scratchbones.inputBindings.v1",
+      "gamepadDeadzone": 0.24,
+      "actions": [
+        { "id": "primary", "label": "Primary Action", "desktop": "KeyE", "controller": "Button0" },
+        { "id": "secondary", "label": "Secondary Action", "desktop": "KeyQ", "controller": "Button2" },
+        { "id": "dodge", "label": "Dodge", "desktop": "KeyX", "controller": "Button1" },
+        { "id": "cycleToolAction", "label": "Cycle Tool Action", "desktop": "KeyR", "controller": "Button3" },
+        { "id": "itemPrev", "label": "Previous Item", "desktop": "Comma", "controller": "Button4" },
+        { "id": "itemNext", "label": "Next Item", "desktop": "Period", "controller": "Button5" },
+        { "id": "tool1", "label": "Tool 1: Shovel", "desktop": "Digit1", "controller": "Button12" },
+        { "id": "tool2", "label": "Tool 2: Hoe", "desktop": "Digit2", "controller": "Button13" },
+        { "id": "tool3", "label": "Tool 3: Weapon", "desktop": "Digit3", "controller": "Button14" },
+        { "id": "tool4", "label": "Tool 4: Axe", "desktop": "Digit4", "controller": "Button15" },
+        { "id": "tool5", "label": "Tool 5: Pick", "desktop": "Digit5", "controller": "Button8" },
+        { "id": "tool6", "label": "Tool 6: Harpoon", "desktop": "Digit6", "controller": "Button9" }
+      ],
+      "modeShifts": [
+        { "id": "desktop-q", "label": "Desktop Held Q", "device": "desktop", "button": "KeyQ", "bindings": { "WheelUp": "itemPrev", "WheelDown": "itemNext" } },
+        { "id": "desktop-e", "label": "Desktop Held E", "device": "desktop", "button": "KeyE", "bindings": { "WheelUp": "toolPrev", "WheelDown": "toolNext" } },
+        { "id": "controller-left-bumper", "label": "Controller Held LB", "device": "controller", "button": "Button4", "bindings": { "Button0": "itemPrev", "Button1": "itemNext", "Button2": "cycleToolAction" } }
+      ]
+    },
     "gameplayShortcuts": {
       "focusChat": {
         "enabled": true,
