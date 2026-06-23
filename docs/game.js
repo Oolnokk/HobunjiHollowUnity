@@ -2857,6 +2857,41 @@
           }
         }
 
+        // A ramp painted through this mesa's footprint (e.g. spooling around the
+        // mesa's perimeter while climbing) doesn't follow this mesa's generic
+        // 1-tile linear blend — it has its own, usually much slower, climb rate —
+        // so the two heightfields disagree and visibly fight/clip where they
+        // overlap. Wherever a ramp tile sits inside this bbox, snap that tile's
+        // 3x3 vertex block onto the ramp's own corner heights (same averaging
+        // buildZoneRampMeshes/buildRampCurtainMeshes use) instead of the BFS
+        // blend, so the mesa surface there literally follows the ramp instead of
+        // independently re-deriving a conflicting slope.
+        const rampCornerY = (ci, cj) => {
+          let sum = 0, n = 0;
+          for (const [dc, dr] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
+            const t = zGrid?.[cj + dr]?.[ci + dc];
+            if (t && t.type === TileType.RAMP) { sum += NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT; n++; }
+          }
+          return n ? sum / n : null;
+        };
+        const isRampTile = (tc, tr) => zGrid?.[bb.minR + tr]?.[bb.minC + tc]?.type === TileType.RAMP;
+        for (let tr = 0; tr < D; tr++) {
+          for (let tc = 0; tc < W; tc++) {
+            if (!isRampTile(tc, tr)) continue;
+            const wc = bb.minC + tc, wr = bb.minR + tr;
+            const y00 = rampCornerY(wc, wr), y10 = rampCornerY(wc + 1, wr);
+            const y01 = rampCornerY(wc, wr + 1), y11 = rampCornerY(wc + 1, wr + 1);
+            for (let dj = 0; dj <= 2; dj++) {
+              const fr = dj * 0.5;
+              for (let di = 0; di <= 2; di++) {
+                const fc = di * 0.5;
+                const y = y00*(1-fc)*(1-fr) + y10*fc*(1-fr) + y01*(1-fc)*fr + y11*fc*fr;
+                Y[(2*tr+dj)*GW + (2*tc+di)] = y;
+              }
+            }
+          }
+        }
+
         const pos = new Float32Array(GW * GH * 3);
         for (let gj = 0; gj < GH; gj++)
           for (let gi = 0; gi < GW; gi++) {
@@ -2866,9 +2901,14 @@
             pos[k*3+2] = bb.minR + gj * 0.5;
           }
 
+        // Quads fully inside a ramp tile are left as holes — buildZoneRampMeshes
+        // already renders that tile's own surface; doubling it here (even at a
+        // matching height) just invites z-fighting.
+        const quadIsRamp = (gi, gj) => isRampTile(Math.floor(gi / 2), Math.floor(gj / 2));
         const idx = [];
         for (let gj = 0; gj < GH - 1; gj++) {
           for (let gi = 0; gi < GW - 1; gi++) {
+            if (quadIsRamp(gi, gj)) continue;
             const v00 = gj*GW+gi, v10 = gj*GW+gi+1, v01 = (gj+1)*GW+gi, v11 = (gj+1)*GW+gi+1;
             idx.push(v00, v01, v11, v00, v11, v10);
           }
@@ -2893,6 +2933,7 @@
         let vi = 0;
         for (let gj = 0; gj < GH - 1; gj++) {
           for (let gi = 0; gi < GW - 1; gi++) {
+            if (quadIsRamp(gi, gj)) continue;
             const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
             const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
             const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
