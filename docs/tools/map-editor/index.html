@@ -567,6 +567,59 @@ function plateauFootprint(m, groupId) {
   Object.keys(m.tiles).forEach(k => { if (m.tiles[k] && m.tiles[k].plateau === groupId) out.add(k); });
   return out;
 }
+// Boundary cells of a painted footprint: any mask cell with at least one 4-neighbor
+// NOT in the mask (a real edge of whatever shape the artist painted — concave
+// notches and all — not just the 4 sides of its bounding rectangle).
+function plateauFootprintRing(m, groupId) {
+  const mask = plateauFootprint(m, groupId);
+  const ring = new Set();
+  for (const k of mask) {
+    const [c, r] = k.split(',').map(Number);
+    for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      if (!mask.has(`${c+dc},${r+dr}`)) { ring.add(k); break; }
+    }
+  }
+  return ring;
+}
+// For a plateau sub-map, which of ITS OWN local cells actually fall inside the
+// irregular shape the artist painted on the parent (vs. a "gap" cell that's
+// inside the bounding rectangle but outside the real painted footprint — e.g.
+// the missing corner of an L-shape). Returns null for non-submaps.
+function plateauMaskLocal(sm) {
+  if (!sm.isSubmap) return null;
+  const parent = mapById(sm.parentMapId);
+  const group = plateauGroupById(sm.plateauGroupId);
+  if (!parent || !group) return null;
+  const mask = plateauFootprint(parent, group.id);
+  const anchorC = sm.anchorC ?? 0, anchorR = sm.anchorR ?? 0;
+  const out = new Set();
+  for (let r = 0; r < sm.rows; r++) for (let c = 0; c < sm.cols; c++) {
+    if (mask.has(`${c+anchorC},${r+anchorR}`)) out.add(`${c},${r}`);
+  }
+  return out;
+}
+// Strokes the boundary between cells where inMaskFn(c,r) is true/false (treating
+// anything outside [0,cols)x[0,rows) as false) — draws a clean outline of an
+// arbitrary, possibly-concave region instead of a bounding rectangle.
+function strokeMaskBoundary(inMaskFn, cols, rows, projectFn, color, lineWidth) {
+  ctx.strokeStyle = color; ctx.lineWidth = lineWidth; ctx.beginPath();
+  const at = (c, r) => (c >= 0 && c < cols && r >= 0 && r < rows) ? inMaskFn(c, r) : false;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const here = at(c, r);
+    const edges = [
+      [here !== at(c, r-1), [c,r], [c+1,r]],     // top
+      [here !== at(c+1, r), [c+1,r], [c+1,r+1]], // right
+      [here !== at(c, r+1), [c,r+1], [c+1,r+1]], // bottom
+      [here !== at(c-1, r), [c,r], [c,r+1]],     // left
+    ];
+    for (const [draw, p1, p2] of edges) {
+      if (!draw) continue;
+      const s1 = projectFn(...p1), s2 = projectFn(...p2);
+      ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+    }
+  }
+  ctx.stroke();
+}
 // Bounding box (in m's local coords) of every tile painted with this plateau
 // group, or null if nothing's painted yet. The footprint is whatever shape the
 // artist actually paints — it is NOT derived from the parent map's full size.
@@ -583,10 +636,43 @@ function plateauFootprintBBox(m, groupId) {
 // The outer 1-tile ring of a painted footprint is reserved for the auto cliff-face
 // incline (collision, lerped height) — the submap's own flat walkable top is the
 // footprint inset by that ring, so it's always 2 smaller than the footprint per axis.
+// The footprint's bbox top-left corner (its "anchor" in the parent's coordinate
+// space) can itself move as the artist paints/erases — e.g. extending the shape
+// up-and-left of everything painted so far. When that happens the submap's own
+// local (0,0) moves too, so its already-painted content has to shift by the same
+// delta to stay put — otherwise every existing tile/object/route on it silently
+// drifts out of alignment with the parent the next time it's viewed.
 function resizeSubmapToFootprint(sm, bbox) {
   const nc = Math.max(1, bbox.maxC - bbox.minC + 1 - 2);
   const nr = Math.max(1, bbox.maxR - bbox.minR + 1 - 2);
-  if (sm.cols !== nc || sm.rows !== nr) resizeMapAndSubmaps(sm, nc, nr);
+  const newAnchorC = bbox.minC + 1, newAnchorR = bbox.minR + 1;
+  const shiftC = (sm.anchorC ?? newAnchorC) - newAnchorC;
+  const shiftR = (sm.anchorR ?? newAnchorR) - newAnchorR;
+  sm.anchorC = newAnchorC; sm.anchorR = newAnchorR;
+  if (shiftC || shiftR) shiftMapContents(sm, shiftC, shiftR);
+  if (shiftC || shiftR || sm.cols !== nc || sm.rows !== nr) resizeMapAndSubmaps(sm, nc, nr);
+}
+// Re-keys every local-coordinate piece of a map's own content by (dc,dr) — used
+// when a plateau sub-map's anchor moves (see resizeSubmapToFootprint). Ramp
+// tiles are dropped rather than shifted (paintRampTiles regenerates them fresh
+// from their WORLD-coordinate nodes, which don't need to move at all).
+function shiftMapContents(m, dc, dr) {
+  const newTiles = {};
+  for (const k in m.tiles) {
+    if (m.tiles[k].type === 'ramp') continue;
+    const [c, r] = k.split(',').map(Number);
+    newTiles[`${c+dc},${r+dr}`] = m.tiles[k];
+  }
+  m.tiles = newTiles;
+  const newObjects = {};
+  for (const k in m.objects) { const [c, r] = m.objects[k]; newObjects[k] = [c+dc, r+dr]; }
+  m.objects = newObjects;
+  (m.furniture || []).forEach(f => { f.col += dc; f.row += dr; });
+  (m.decor || []).forEach(d => { d.col += dc; d.row += dr; });
+  ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.map(([c,r]) => [c+dc, r+dr]); });
+  (m.rivers || []).forEach(p => { p.nodes = p.nodes.map(([c,r]) => [c+dc, r+dr]); });
+  (m.transitions || []).forEach(t => { t.col += dc; t.row += dr; });
+  (m.npcStations || []).forEach(st => { st.col += dc; st.row += dr; });
 }
 function getOrCreateSubmap(parentMap, group) {
   let sm = ws.maps.find(x => x.parentMapId === parentMap.id && x.plateauGroupId === group.id);
@@ -599,6 +685,7 @@ function getOrCreateSubmap(parentMap, group) {
   sm = makeMap(`${parentMap.name} — ${group.label}`, parentMap.category,
     Math.max(1, bbox.maxC - bbox.minC + 1 - 2), Math.max(1, bbox.maxR - bbox.minR + 1 - 2));
   sm.isSubmap = true; sm.parentMapId = parentMap.id; sm.plateauGroupId = group.id;
+  sm.anchorC = bbox.minC + 1; sm.anchorR = bbox.minR + 1;
   recomputeElevation(sm);
   ws.maps.push(sm);
   captureBaseline(sm);
@@ -659,14 +746,14 @@ function deleteMapCascade(id) {
 }
 function resizeMapAndSubmaps(m, nc, nr) {
   m.cols = nc; m.rows = nr;
-  Object.keys(m.tiles).forEach(k => { const [c,r] = k.split(',').map(Number); if (c >= nc || r >= nr) delete m.tiles[k]; });
-  Object.keys(m.objects).forEach(k => { const [c,r] = m.objects[k]; if (c >= nc || r >= nr) delete m.objects[k]; });
-  m.furniture = m.furniture.filter(f => f.col < nc && f.row < nr);
-  m.decor = m.decor.filter(d => { const inf = DECOR[d.key]; return inf && d.col + inf.fw <= nc && d.row + inf.fd <= nr; });
-  ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c < nc && r < nr); });
-  (m.rivers || []).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c < nc && r < nr); });
-  m.transitions = (m.transitions || []).filter(t => t.col < nc && t.row < nr);
-  m.npcStations = (m.npcStations || []).filter(st => st.col < nc && st.row < nr);
+  Object.keys(m.tiles).forEach(k => { const [c,r] = k.split(',').map(Number); if (c < 0 || r < 0 || c >= nc || r >= nr) delete m.tiles[k]; });
+  Object.keys(m.objects).forEach(k => { const [c,r] = m.objects[k]; if (c < 0 || r < 0 || c >= nc || r >= nr) delete m.objects[k]; });
+  m.furniture = m.furniture.filter(f => f.col >= 0 && f.row >= 0 && f.col < nc && f.row < nr);
+  m.decor = m.decor.filter(d => { const inf = DECOR[d.key]; return inf && d.col >= 0 && d.row >= 0 && d.col + inf.fw <= nc && d.row + inf.fd <= nr; });
+  ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c >= 0 && r >= 0 && c < nc && r < nr); });
+  (m.rivers || []).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c >= 0 && r >= 0 && c < nc && r < nr); });
+  m.transitions = (m.transitions || []).filter(t => t.col >= 0 && t.row >= 0 && t.col < nc && t.row < nr);
+  m.npcStations = (m.npcStations || []).filter(st => st.col >= 0 && st.row >= 0 && st.col < nc && st.row < nr);
   // Submaps are sized from their own painted plateau footprint (see
   // getOrCreateSubmap), not from a fixed offset off this map's dimensions —
   // resizing `m` only matters here if it truncated away some of that footprint.
@@ -675,6 +762,9 @@ function resizeMapAndSubmaps(m, nc, nr) {
     const bbox = group && plateauFootprintBBox(m, group.id);
     if (bbox) resizeSubmapToFootprint(sm, bbox);
   });
+  // Anything resized here may have moved relative to ramps anchored to it (their
+  // nodes are stored in world coords and don't move, but the painted tiles do).
+  (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id).forEach(rp => paintRampTiles(rp));
 }
 
 function applyFarmhouseFloor(m) {
@@ -1826,12 +1916,10 @@ function draw() {
   // with a ramp (no more `.plateau` tag, type 'ramp') has cut through the ring, so
   // it's excluded here — the ramp's own rendering already shows it as crossable.
   for (const group of activePlateauGroupsOn(m)) {
-    const bbox = plateauFootprintBBox(m, group.id);
-    if (!bbox) continue;
-    for (let rr = bbox.minR; rr <= bbox.maxR; rr++) for (let c = bbox.minC; c <= bbox.maxC; c++) {
-      const onRing = (c === bbox.minC || c === bbox.maxC || rr === bbox.minR || rr === bbox.maxR);
-      if (!onRing) continue;
-      const t = m.tiles[`${c},${rr}`];
+    const ring = plateauFootprintRing(m, group.id);
+    for (const key of ring) {
+      const [c, rr] = key.split(',').map(Number);
+      const t = m.tiles[key];
       if (!t || t.plateau !== group.id) continue; // ramp (or anything else) cut through here
       const p = w2s(c, rr);
       ctx.fillStyle = '#ef4444'; ctx.globalAlpha = .45; ctx.fillRect(p.x, p.y, z, z); ctx.globalAlpha = 1;
@@ -1894,9 +1982,25 @@ function draw() {
   // Active map's own true editable region — highlighted distinctly when it's
   // a submap sitting somewhere inside the larger root-sized canvas.
   if (m.isSubmap) {
-    const p0 = w2s(0, 0);
-    ctx.strokeStyle = 'rgba(125,211,252,.85)'; ctx.lineWidth = 2.5;
-    ctx.strokeRect(p0.x, p0.y, m.cols*z, m.rows*z);
+    const mask = plateauMaskLocal(m);
+    if (mask && mask.size < m.cols * m.rows) {
+      // Hatch the "gap" cells — inside the submap's bounding rect but outside the
+      // real painted shape (e.g. the missing corner of an L) — so it reads as
+      // dead space rather than ordinary editable ground.
+      ctx.save();
+      ctx.fillStyle = 'rgba(15,23,42,.55)';
+      for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+        if (mask.has(`${c},${r}`)) continue;
+        const p = w2s(c, r);
+        ctx.fillRect(p.x, p.y, z, z);
+      }
+      ctx.restore();
+      strokeMaskBoundary((c, r) => mask.has(`${c},${r}`), m.cols, m.rows, w2s, 'rgba(125,211,252,.85)', 2.5);
+    } else {
+      const p0 = w2s(0, 0);
+      ctx.strokeStyle = 'rgba(125,211,252,.85)'; ctx.lineWidth = 2.5;
+      ctx.strokeRect(p0.x, p0.y, m.cols*z, m.rows*z);
+    }
   }
 
   // Game farm bounds + house footprint when linked
@@ -2047,6 +2151,14 @@ function applyAt(tile) {
   const { x: c, y: r } = tile;
   if (c < 0 || r < 0 || c >= m.cols || r >= m.rows) return;
   const key = `${c},${r}`;
+  // "Gap" cells — inside a submap's bounding rect but outside the real painted
+  // shape on the parent (e.g. the missing corner of an L) — aren't part of the
+  // plateau at all, so they're not paintable (mirrors the dimmed/hatched overlay
+  // in draw()).
+  if (mode !== 'plateau') {
+    const mask = plateauMaskLocal(m);
+    if (mask && !mask.has(key)) return;
+  }
 
   if (mode === 'tile') {
     const set = TILE_SETS[m.category] || TILE_SETS.exterior;
@@ -2142,7 +2254,17 @@ function applyAt(tile) {
     if (!floodFill(m, c, r, t)) return;
   } else if (mode === 'erase') {
     let did = false;
-    if (m.tiles[key]?.plateau) { delete m.tiles[key].plateau; syncPlateauEffects(m); did = true; }
+    if (m.tiles[key]?.plateau) {
+      const erasedGroup = plateauGroupById(m.tiles[key].plateau);
+      delete m.tiles[key].plateau;
+      syncPlateauEffects(m);
+      if (erasedGroup) {
+        const bbox = plateauFootprintBBox(m, erasedGroup.id);
+        const sm = ws.maps.find(x => x.parentMapId === m.id && x.plateauGroupId === erasedGroup.id);
+        if (sm && bbox) resizeSubmapToFootprint(sm, bbox);
+      }
+      did = true;
+    }
     else if (m.tiles[key]) { delete m.tiles[key]; did = true; }
     Object.keys(m.objects).forEach(k => { const [oc,or] = m.objects[k]; if (oc===c && or===r) { delete m.objects[k]; did = true; } });
     const fi = m.furniture.findIndex(f => f.col===c && f.row===r); if (fi >= 0) { m.furniture.splice(fi,1); did = true; }

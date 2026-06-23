@@ -2765,11 +2765,49 @@
           return (h / 4294967296 - 0.5) * 0.026;
         };
 
+        // Per-TILE distance (in whole tiles, capped at MARGIN_TILES) to the nearest
+        // cell that's either outside the painted footprint mask or on the bbox's
+        // literal edge (which always borders "outside" the footprint, even on a
+        // perfectly rectangular one) — a multi-source BFS so an irregular/concave
+        // footprint's cliff-face blend follows its real silhouette, not just the
+        // bounding rectangle's 4 sides. No mask (legacy/defensive) = whole rect is
+        // the footprint, matching the old behavior for plain rectangles.
+        const mask = bb.maskWorldKeys || null;
+        const inMask = (c, r) => !mask || mask.has(`${c},${r}`);
+        const ti = (tc, tr) => tr * W + tc;
+        const tileDist = new Float32Array(W * D).fill(MARGIN_TILES);
+        const queue = [];
+        for (let tr = 0; tr < D; tr++) for (let tc = 0; tc < W; tc++) {
+          const isEdge = tc === 0 || tc === W - 1 || tr === 0 || tr === D - 1;
+          if (isEdge || !inMask(bb.minC + tc, bb.minR + tr)) { tileDist[ti(tc, tr)] = 0; queue.push([tc, tr]); }
+        }
+        for (let qi = 0; qi < queue.length; qi++) {
+          const [tc, tr] = queue[qi], d0 = tileDist[ti(tc, tr)];
+          if (d0 >= MARGIN_TILES) continue;
+          for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+            const ntc = tc + dc, ntr = tr + dr;
+            if (ntc < 0 || ntc >= W || ntr < 0 || ntr >= D) continue;
+            if (d0 + 1 < tileDist[ti(ntc, ntr)]) { tileDist[ti(ntc, ntr)] = d0 + 1; queue.push([ntc, ntr]); }
+          }
+        }
+        // Which tile(s) a vertex index borders along one axis — even gi sit on a
+        // tile boundary (shared by the tile each side), odd gi sit at a single
+        // tile's center.
+        const axisTiles = (gi, N) => {
+          const lo = Math.floor((gi - 1) / 2), hi = Math.floor(gi / 2), out = [];
+          if (lo >= 0 && lo < N) out.push(lo);
+          if (hi >= 0 && hi < N && hi !== lo) out.push(hi);
+          return out;
+        };
+
         const Y = new Float32Array(GW * GH);
         for (let gj = 0; gj < GH; gj++) {
+          const trs = axisTiles(gj, D);
           for (let gi = 0; gi < GW; gi++) {
-            const edgeDistTiles = Math.min(gi, GW - 1 - gi, gj, GH - 1 - gj) * 0.5;
-            const blend = Math.min(1, edgeDistTiles / MARGIN_TILES);
+            const tcs = axisTiles(gi, W);
+            let vertDist = MARGIN_TILES;
+            for (const tc of tcs) for (const tr of trs) vertDist = Math.min(vertDist, tileDist[ti(tc, tr)]);
+            const blend = Math.min(1, vertDist / MARGIN_TILES);
             const kx = bb.minC * 2 + gi, kz = bb.minR * 2 + gj; // absolute seam-hash key, matches adjacent makeFloorGeo tiles
             Y[gj*GW+gi] = BASE + hashDisp(kx, kz) + blend * elevOffset;
           }
@@ -4062,34 +4100,45 @@
           // world coords) for the continuous heightfield buildZoneScene renders at
           // that tier transition.
           function mergeZoneTiles(m, offsetC, offsetR, baseTier, outTiles, mesas) {
-            const groupBBox = new Map(); // plateauGroupId -> parent-local {minC,maxC,minR,maxR}
+            const groupMask = new Map(); // plateauGroupId -> Set of parent-local "c,r" actually painted
             for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
               const plateauId = m.tiles?.[`${c},${r}`]?.plateau;
               if (!plateauId) continue;
-              const bb = groupBBox.get(plateauId);
-              if (!bb) groupBBox.set(plateauId, { minC: c, maxC: c, minR: r, maxR: r });
-              else { bb.minC = Math.min(bb.minC, c); bb.maxC = Math.max(bb.maxC, c); bb.minR = Math.min(bb.minR, r); bb.maxR = Math.max(bb.maxR, r); }
+              let mask = groupMask.get(plateauId);
+              if (!mask) { mask = new Set(); groupMask.set(plateauId, mask); }
+              mask.add(`${c},${r}`);
             }
 
             // Stake out each recursing group's footprint (incline ring + raised
             // interior) BEFORE writing this map's own tiles below, so any tile `m`
             // explicitly authored inside that footprint (a ramp cut through the
-            // incline ring, a plateau marker, etc.) always overwrites/wins.
+            // incline ring, a plateau marker, etc.) always overwrites/wins. Only the
+            // ACTUAL painted shape is staked — not its bounding rectangle — so a
+            // concave/irregular footprint's "gap" cells (inside the bbox but never
+            // painted) are left untouched here and fall through to this map's own
+            // per-cell loop below, which fills them in as ordinary ground at this
+            // tier instead of getting raised along with the rest of the rectangle.
             const children = [];
-            for (const [gid, bb] of groupBBox) {
+            for (const [gid, mask] of groupMask) {
               const child = childByParentGroup.get(`${m.id}__${gid}`);
               if (!child) continue; // plateau group marked but no authored child submap yet
               const toTier = baseTier + (plateauElevById.get(gid) || 0);
-              const minC = offsetC + bb.minC, maxC = offsetC + bb.maxC, minR = offsetR + bb.minR, maxR = offsetR + bb.maxR;
-              mesas.push({ minC, maxC, minR, maxR, fromTier: baseTier, toTier });
-              for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
-                const onRing = (c === minC || c === maxC || r === minR || r === maxR);
+              let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+              for (const k of mask) { const [c, r] = k.split(',').map(Number); if (c<minC)minC=c; if (c>maxC)maxC=c; if (r<minR)minR=r; if (r>maxR)maxR=r; }
+              const worldMinC = offsetC + minC, worldMaxC = offsetC + maxC, worldMinR = offsetR + minR, worldMaxR = offsetR + maxR;
+              const maskWorldKeys = new Set();
+              for (const k of mask) { const [c, r] = k.split(',').map(Number); maskWorldKeys.add(`${c + offsetC},${r + offsetR}`); }
+              mesas.push({ minC: worldMinC, maxC: worldMaxC, minR: worldMinR, maxR: worldMaxR, fromTier: baseTier, toTier, maskWorldKeys });
+              for (const k of mask) {
+                const [lc, lr] = k.split(',').map(Number);
+                const c = lc + offsetC, r = lr + offsetR;
+                const onRing = [[1,0],[-1,0],[0,1],[0,-1]].some(([dc,dr]) => !mask.has(`${lc+dc},${lr+dr}`));
                 outTiles.set(`${c},${r}`, {
                   c, r, type: 'grass', elevTier: onRing ? baseTier : toTier,
                   skipFloor: true, rampElevation: 0, incline: onRing,
                 });
               }
-              children.push({ child, childOffsetC: minC + 1, childOffsetR: minR + 1, toTier });
+              children.push({ child, childOffsetC: worldMinC + 1, childOffsetR: worldMinR + 1, toTier });
             }
 
             // `m.tiles` is sparse — most cells (including almost all of a plateau
