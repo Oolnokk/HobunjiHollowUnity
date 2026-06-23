@@ -2826,6 +2826,23 @@
         const vIdx = (gi, gj) => gj * GW + gi;
         const CAP = MARGIN_TILES * 2; // hops (0.5 tile each) — cap matches old margin in tiles
         const vertHops = new Int32Array(GW * GH).fill(CAP);
+        // A higher tier's footprint sometimes lands right at the edge of a LOWER
+        // tier's own ring band instead of fully inset onto its flat top (a tight
+        // or irregularly-shaped lower mesa can leave less than one full margin
+        // tile of flat interior at some rows/columns). Anchoring every seed
+        // vertex to this mesa's own flat `BASE` then makes the upper curtain
+        // float a flat ledge above the lower curtain's real (still-sloping,
+        // lower) surface — two independently-blended heightfields disagreeing
+        // right where they overlap. Anchor each seed to the ACTUAL elevation
+        // already staked for whatever tile triggered it instead, so the upper
+        // curtain starts from the lower curtain's real height there and the two
+        // read as one continuous slope.
+        const TOP = BASE + elevOffset;
+        const seedHeightAt = (c, r) => {
+          const t = zGrid?.[r]?.[c];
+          return (t && typeof t.elevTier === 'number') ? NORMAL_TOP + t.elevTier * PLATEAU_UNIT : BASE;
+        };
+        const vertSeedY = new Float32Array(GW * GH).fill(BASE);
         const queue = [];
         for (let gj = 0; gj < GH; gj++) {
           const trs = axisTiles(gj, D);
@@ -2834,26 +2851,36 @@
             // A real outer edge (no neighboring mesa raised to match) naturally
             // seeds here too: inMask(c,r) for a world tile beyond the live grid
             // (zGrid[r]?.[c] undefined) falls through to false.
-            const bordersOutside = tcs.some(tc => trs.some(tr => !inMask(bb.minC + tc, bb.minR + tr)));
-            if (bordersOutside) { vertHops[vIdx(gi, gj)] = 0; queue.push([gi, gj]); }
+            let seedY = Infinity;
+            for (const tc of tcs) for (const tr of trs) {
+              const c = bb.minC + tc, r = bb.minR + tr;
+              if (!inMask(c, r)) seedY = Math.min(seedY, seedHeightAt(c, r));
+            }
+            if (seedY !== Infinity) {
+              const k = vIdx(gi, gj);
+              vertHops[k] = 0; vertSeedY[k] = seedY; queue.push([gi, gj]);
+            }
           }
         }
         for (let qi = 0; qi < queue.length; qi++) {
-          const [gi, gj] = queue[qi], d0 = vertHops[vIdx(gi, gj)];
+          const [gi, gj] = queue[qi], k0 = vIdx(gi, gj), d0 = vertHops[k0];
           if (d0 >= CAP) continue;
           for (const [dgi, dgj] of [[1,0],[-1,0],[0,1],[0,-1]]) {
             const ngi = gi + dgi, ngj = gj + dgj;
             if (ngi < 0 || ngi >= GW || ngj < 0 || ngj >= GH) continue;
-            if (d0 + 1 < vertHops[vIdx(ngi, ngj)]) { vertHops[vIdx(ngi, ngj)] = d0 + 1; queue.push([ngi, ngj]); }
+            const nk = vIdx(ngi, ngj);
+            if (d0 + 1 < vertHops[nk]) { vertHops[nk] = d0 + 1; vertSeedY[nk] = vertSeedY[k0]; queue.push([ngi, ngj]); }
           }
         }
 
         const Y = new Float32Array(GW * GH);
         for (let gj = 0; gj < GH; gj++) {
           for (let gi = 0; gi < GW; gi++) {
-            const blend = Math.min(1, (vertHops[vIdx(gi, gj)] * 0.5) / MARGIN_TILES);
+            const k = gj*GW+gi;
+            const blend = Math.min(1, (vertHops[k] * 0.5) / MARGIN_TILES);
             const kx = bb.minC * 2 + gi, kz = bb.minR * 2 + gj; // absolute seam-hash key, matches adjacent makeFloorGeo tiles
-            Y[gj*GW+gi] = BASE + hashDisp(kx, kz) + blend * elevOffset;
+            const seedY = vertSeedY[k];
+            Y[k] = seedY + blend * (TOP - seedY) + hashDisp(kx, kz);
           }
         }
 
@@ -2905,10 +2932,21 @@
         // already renders that tile's own surface; doubling it here (even at a
         // matching height) just invites z-fighting.
         const quadIsRamp = (gi, gj) => isRampTile(Math.floor(gi / 2), Math.floor(gj / 2));
+        // The bbox is just this mesa's bounding rectangle, not its painted shape —
+        // an irregular/concave brush stroke leaves bbox cells that were never
+        // painted at all. Those still get a flat BFS-blended Y above (so the BFS
+        // distance field stays correct for the cells that ARE painted near them),
+        // but they must NOT turn into a rendered quad, or the whole bbox reads as
+        // a solid rectangular sheet regardless of the actual footprint. Gate on
+        // the literal own-mask (bb.maskWorldKeys), not the broader inMask() —
+        // inMask() also accepts a tile a DIFFERENT mesa already raised to match,
+        // which must still skip rendering here since that tile belongs to the
+        // other mesa, not this one.
+        const quadInOwnMask = (gi, gj) => !mask || mask.has(`${bb.minC + Math.floor(gi/2)},${bb.minR + Math.floor(gj/2)}`);
         const idx = [];
         for (let gj = 0; gj < GH - 1; gj++) {
           for (let gi = 0; gi < GW - 1; gi++) {
-            if (quadIsRamp(gi, gj)) continue;
+            if (quadIsRamp(gi, gj) || !quadInOwnMask(gi, gj)) continue;
             const v00 = gj*GW+gi, v10 = gj*GW+gi+1, v01 = (gj+1)*GW+gi, v11 = (gj+1)*GW+gi+1;
             idx.push(v00, v01, v11, v00, v11, v10);
           }
@@ -2933,7 +2971,7 @@
         let vi = 0;
         for (let gj = 0; gj < GH - 1; gj++) {
           for (let gi = 0; gi < GW - 1; gi++) {
-            if (quadIsRamp(gi, gj)) continue;
+            if (quadIsRamp(gi, gj) || !quadInOwnMask(gi, gj)) continue;
             const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
             const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
             const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
