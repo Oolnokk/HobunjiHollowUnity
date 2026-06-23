@@ -163,6 +163,21 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "controller-left-bumper", "label": "Controller Held LB", "device": "controller", "button": "Button4", "bindings": { "RightStickLeft": "toolPrev", "RightStickRight": "toolNext", "RightStickUp": "itemPrev", "RightStickDown": "itemNext" } }
       ]
     },
+    "combat": {
+      "autoTargetRangeTiles": 5.5,
+      "weaponAbilities": {
+        "cut": { "damage": 14, "halfConeDeg": 18, "rangeTiles": 1.05, "staminaCost": 12, "knockbackPxS": 360, "trailHalfWidthTiles": 0.38, "trailFarTiles": 1.05, "trailMaxAgeSeconds": 0.24 },
+        "slash": { "damage": 24, "halfConeDeg": 62, "rangeTiles": 1.35, "staminaCost": 20, "knockbackPxS": 520, "trailHalfWidthTiles": 1.35, "trailFarTiles": 1.02, "trailMaxAgeSeconds": 0.34 }
+      },
+      "weaponTrailLimit": 5,
+      "combatConeReticle": {
+        "enabled": true,
+        "color": "#d9ffe0",
+        "alpha": 0.24,
+        "lineWidth": 2,
+        "lineDash": [8, 7]
+      }
+    },
     "gameplayShortcuts": {
       "focusChat": {
         "enabled": true,

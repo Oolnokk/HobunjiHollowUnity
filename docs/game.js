@@ -1026,19 +1026,29 @@
         knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
       };
 
-      // Combat tuning for the weapon tool's two abilities. Cone hit-tests use
-      // continuous angle+range against creatures (not tile snapped). 'slash'
-      // is the big sweep: bigger cone, more damage, costs more stamina, and
-      // knocks targets back further.
-      const WEAPON_ABILITY = {
-        cut:   { damage: 14, halfConeRad: 32 * Math.PI / 180, rangePx: TILE * 1.05, staminaCost: 12, knockbackPxS: 360 },
-        slash: { damage: 24, halfConeRad: 62 * Math.PI / 180, rangePx: TILE * 1.35, staminaCost: 20, knockbackPxS: 520 },
-      };
+      // Combat tuning is config-backed so tool hit cones, stamina costs, trails,
+      // and combat reticles can be tuned without changing code.
+      function combatConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.combat || {};
+      }
+      function weaponAbility(action) {
+        const cfg = combatConfig().weaponAbilities?.[action];
+        if (!cfg) return null;
+        return {
+          damage: Number(cfg.damage) || 0,
+          halfConeRad: (Number(cfg.halfConeDeg) || 0) * Math.PI / 180,
+          rangePx: TILE * (Number(cfg.rangeTiles) || 0),
+          staminaCost: Number(cfg.staminaCost) || 0,
+          knockbackPxS: Number(cfg.knockbackPxS) || 0,
+          trailHalfWidthTiles: Number(cfg.trailHalfWidthTiles) || 0,
+          trailFarTiles: Number(cfg.trailFarTiles) || 0,
+          trailMaxAgeSeconds: Number(cfg.trailMaxAgeSeconds) || 0
+        };
+      }
 
       // Z-target-style auto lock: while a hostile is this close, facing tracks
       // it instead of movement direction, so strafing/repositioning in combat
       // doesn't spin the character away from the thing it's fighting.
-      const AUTO_TARGET_RANGE_PX = TILE * 5.5;
 
       // Knockback shared by all combat attacks: a short impulse that overrides
       // normal movement/AI while it decays, applied away from the attacker.
@@ -2170,7 +2180,7 @@
       }
 
       function resolveWeaponHit(action) {
-        const abil = WEAPON_ABILITY[action];
+        const abil = weaponAbility(action);
         if (!abil) return { hits: 0, message: '' };
         let hits = 0;
         let lastName = '';
@@ -2189,7 +2199,7 @@
 
       // Nearest live hostile in the player's current area within lock-on range, or null.
       function findAutoTarget() {
-        let best = null, bestDist = AUTO_TARGET_RANGE_PX;
+        let best = null, bestDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
@@ -6440,7 +6450,8 @@
         const baseY = tileSurfaceY(agrid[row][col].type) + 0.16 + Math.max(0, agrid[row][col].water * WATER_UNIT);
         actionTileEffects.push({ col, row, action, ok, age: 0, maxAge: ok ? 0.58 : 0.44, color: profile.ring });
         while (actionTileEffects.length > 8) actionTileEffects.shift();
-        if (action === 'slash') spawnWeaponTrailEffect(col, row, ok);
+        if ((action === 'cut' || action === 'slash') && activeTool === 'weapon') spawnWeaponTrailEffect(action, ok);
+        else if (action === 'slash') spawnWeaponTrailEffect(action, ok, col, row);
 
         for (let i = 0; i < profile.count; i++) {
           if (actionParticles.length >= ACTION_FX_LIMIT) actionParticles.shift();
@@ -6465,28 +6476,35 @@
       }
 
 
-      function spawnWeaponTrailEffect(col, row, ok) {
-        const dir = facingCardinal(player.angle);
-        const side = dir.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 };
-        const targets = getMacheteTargets(col, row, 'slash');
+      function spawnWeaponTrailEffect(action, ok, col = null, row = null) {
+        const abil = weaponAbility(action) || weaponAbility('slash');
+        const dir = { x: Math.cos(player.angle), y: Math.sin(player.angle) };
+        const side = { x: -dir.y, y: dir.x };
         const tgrid = getActiveGrid();
-        const surfaceY = targets.reduce((sum, t) => sum + tileSurfaceY(tgrid[t.row][t.col].type), 0) / Math.max(1, targets.length);
+        const sampleCol = clamp(Math.floor(player.x / TILE), 0, getActiveCols() - 1);
+        const sampleRow = clamp(Math.floor(player.y / TILE), 0, getActiveRows() - 1);
+        const surfaceY = tileSurfaceY(tgrid[sampleRow]?.[sampleCol]?.type || TileType.GRASS);
         weaponTrailEffects.push({
-          col, row, dir, side,
+          x: col === null ? player.x / TILE : col + 0.5,
+          z: row === null ? player.y / TILE : row + 0.5,
+          dir, side, action,
+          halfWidth: abil.trailHalfWidthTiles,
+          far: abil.trailFarTiles,
           age: 0,
-          maxAge: ok ? 0.34 : 0.24,
+          maxAge: ok ? abil.trailMaxAgeSeconds : Math.max(abil.trailMaxAgeSeconds * 0.72, 0.1),
           ok,
           y: surfaceY + 0.18,
         });
-        while (weaponTrailEffects.length > 5) weaponTrailEffects.shift();
+        const limit = Number(combatConfig().weaponTrailLimit) || 5;
+        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
       }
 
       function slashTrailWorldPoints(fx) {
-        const cx = fx.col + 0.5;
-        const cz = fx.row + 0.5;
+        const cx = fx.x;
+        const cz = fx.z;
         const near = 0.02;
-        const far = 1.02;
-        const halfWidth = 1.35;
+        const far = fx.far;
+        const halfWidth = fx.halfWidth;
         return [
           { x: cx + fx.dir.x * near - fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * near - fx.side.y * halfWidth },
           { x: cx + fx.dir.x * far  - fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * far  - fx.side.y * halfWidth },
@@ -6524,6 +6542,38 @@
           y: (-v.y * 0.5 + 0.5) * _threeRect.height,
           visible: v.z >= -1 && v.z <= 1
         };
+      }
+
+      function drawCombatConeReticle() {
+        const cfg = combatConfig().combatConeReticle || {};
+        if (cfg.enabled === false || activeTool !== 'weapon' || !findAutoTarget()) return;
+        const abil = weaponAbility(activeAction) || weaponAbility('cut');
+        if (!abil) return;
+        const rangeTiles = abil.rangePx / TILE;
+        const baseX = player.x / TILE;
+        const baseZ = player.y / TILE;
+        const y = tileSurfaceY(getActiveTileAt(Math.floor(baseX), Math.floor(baseZ)).type) + 0.035;
+        const alpha = Number(cfg.alpha) || 0.24;
+        const lineWidth = Number(cfg.lineWidth) || 2;
+        const color = cfg.color || '#d9ffe0';
+        const left = player.angle - abil.halfConeRad;
+        const right = player.angle + abil.halfConeRad;
+        const leftEnd = worldToOverlay(baseX + Math.cos(left) * rangeTiles, y, baseZ + Math.sin(left) * rangeTiles);
+        const rightEnd = worldToOverlay(baseX + Math.cos(right) * rangeTiles, y, baseZ + Math.sin(right) * rangeTiles);
+        const origin = worldToOverlay(baseX, y, baseZ);
+        if (!origin.visible || !leftEnd.visible || !rightEnd.visible) return;
+        octx.save();
+        octx.globalAlpha = alpha;
+        octx.strokeStyle = color;
+        octx.lineWidth = lineWidth;
+        octx.setLineDash(Array.isArray(cfg.lineDash) ? cfg.lineDash : []);
+        octx.beginPath();
+        octx.moveTo(origin.x, origin.y);
+        octx.lineTo(leftEnd.x, leftEnd.y);
+        octx.moveTo(origin.x, origin.y);
+        octx.lineTo(rightEnd.x, rightEnd.y);
+        octx.stroke();
+        octx.restore();
       }
 
       function drawWeaponTrailEffects() {
@@ -6692,7 +6742,7 @@
           return;
         }
         if (activeTool === 'weapon') {
-          const abil = WEAPON_ABILITY[activeAction];
+          const abil = weaponAbility(activeAction);
           if (abil && player.stamina < abil.staminaCost) {
             showToast('Too winded to swing!', false);
             return;
@@ -11815,6 +11865,7 @@
           octx.globalAlpha = 1;
         }
 
+        drawCombatConeReticle();
         drawWeaponTrailEffects();
         drawActionTileEffects();
         drawActionParticles();
