@@ -13273,29 +13273,35 @@
       });
 
       // Scroll wheel: Q+wheel swaps items, E+wheel swaps tools, otherwise zooms the camera.
-      threeContainer.addEventListener('wheel', (e) => {
-        if (menuOpen || farmEditMode) return;
-        e.preventDefault();
+      function handleGameWheel(e, heldOnly = false) {
+        if (menuOpen || farmEditMode) return false;
         const dir = e.deltaY > 0 ? 1 : -1;
         if (isDesktop && desktopHoldKeys.q.down) {
+          e.preventDefault();
           openDesktopHoldArc('q');
           window._desktopSelectionArc?.scrollItem(dir);
-          return;
+          return true;
         }
         if (isDesktop && desktopHoldKeys.e.down) {
+          e.preventDefault();
           openDesktopHoldArc('e');
           window._desktopSelectionArc?.scrollTool(dir);
-          return;
+          return true;
         }
+        if (heldOnly) return false;
+        e.preventDefault();
         if (dialogueZoomActive()) {
           const sensitivity = dialogueZoomConfig().wheelSensitivity ?? 0.0015;
           setDialogueCameraZoomPercent(dialogueCameraZoomPercent + (-e.deltaY * sensitivity * 100));
-          return;
+          return true;
         }
         const cfg = desktopControlsConfig();
         const step = Number.isFinite(Number(cfg.wheelZoomStep)) ? Number(cfg.wheelZoomStep) : 0.05;
         setCameraZoomScale(s_zoomScale + (-dir * step));
-      }, { passive: false });
+        return true;
+      }
+      window.addEventListener('wheel', (e) => { if (handleGameWheel(e, true)) e.stopPropagation(); }, { passive: false, capture: true });
+      threeContainer.addEventListener('wheel', (e) => { handleGameWheel(e, false); }, { passive: false });
 
       function updateDialoguePinchDistance() {
         const points = [...dialogueZoomPointers.values()];
@@ -13389,8 +13395,8 @@
             const cfg = desktopControlsConfig();
             const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
             const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
-            cameraAzimuthOffsetDeg = clamp(cameraAzimuthOffsetDeg + e.movementX * degPerPx, -clampDeg, clampDeg);
-            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg - e.movementY * degPerPx, -clampDeg, clampDeg);
+            cameraAzimuthOffsetDeg = clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
             updateCameraPosition();
             return;
           }
