@@ -31,7 +31,7 @@
   // Mirrors docs/game.js mergeZoneTiles exactly (including the pinhole-fill
   // pass), generalized to take its two lookups as params instead of closing
   // over _loadTownFromWorkspace's locals.
-  function mergeZoneTilesInto(m, offsetC, offsetR, baseTier, outTiles, mesas, childByParentGroup, plateauElevById) {
+  function mergeZoneTilesInto(m, offsetC, offsetR, baseTier, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings) {
     const groupMask = new Map();
     for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
       const plateauId = m.tiles?.[`${c},${r}`]?.plateau;
@@ -97,8 +97,12 @@
       });
     }
 
+    for (const b of (m.buildings || [])) {
+      outBuildings.push({ ...b, gridX: (b.gridX || 0) + offsetC, gridZ: (b.gridZ || 0) + offsetR, _baseTier: baseTier });
+    }
+
     for (const { child, childOffsetC, childOffsetR, toTier } of children) {
-      mergeZoneTilesInto(child, childOffsetC, childOffsetR, toTier, outTiles, mesas, childByParentGroup, plateauElevById);
+      mergeZoneTilesInto(child, childOffsetC, childOffsetR, toTier, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings);
     }
   }
 
@@ -109,8 +113,8 @@
     const maps = ws.maps || [];
     const mapsById = new Map(maps.map(m => [m.id, m]));
     const rootMap = mapsById.get(rootMapId);
-    const outTiles = new Map(), mesas = [];
-    if (!rootMap) return { cols: 0, rows: 0, tiles: outTiles, mesas, rootMap: null };
+    const outTiles = new Map(), mesas = [], outBuildings = [];
+    if (!rootMap) return { cols: 0, rows: 0, tiles: outTiles, mesas, rootMap: null, buildings: outBuildings };
 
     const childByParentGroup = new Map();
     for (const m of maps) {
@@ -120,8 +124,13 @@
     }
     const plateauElevById = new Map((ws.plateauGroups || []).map(g => [g.id, g.elevation || 0]));
 
-    mergeZoneTilesInto(rootMap, 0, 0, 0, outTiles, mesas, childByParentGroup, plateauElevById);
-    return { cols: rootMap.cols, rows: rootMap.rows, tiles: outTiles, mesas, rootMap };
+    mergeZoneTilesInto(rootMap, 0, 0, 0, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings);
+    for (const b of outBuildings) {
+      const t = outTiles.get(`${b.gridX},${b.gridZ}`);
+      b.elevTier = (t && typeof t.elevTier === 'number') ? t.elevTier : (b._baseTier || 0);
+      delete b._baseTier;
+    }
+    return { cols: rootMap.cols, rows: rootMap.rows, tiles: outTiles, mesas, rootMap, buildings: outBuildings };
   }
 
   // ── zGrid: dense [r][c] grid buildPlateauMesa/ramp geometry reads ──────────

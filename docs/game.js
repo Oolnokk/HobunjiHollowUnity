@@ -2577,10 +2577,17 @@
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       const _zoneScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions }
-      // mapId → { cols, rows, tiles: [{c,r,type}], transitions } — real authored map
-      // data resolved from town-workspace-v1.json by _loadTownFromWorkspace(), used in
-      // place of EXTERIOR_ZONES' tiny flat placeholder grid whenever it's available.
+      // mapId → { cols, rows, tiles: [{c,r,type}], transitions, buildings } — real
+      // authored map data resolved from town-workspace-v1.json by
+      // _loadTownFromWorkspace(), used in place of EXTERIOR_ZONES' tiny flat
+      // placeholder grid whenever it's available. `buildings` entries already
+      // carry world-space gridX/gridZ (folded through the same plateau-stack
+      // offset every tile goes through) and a resolved elevTier looked up at
+      // that anchor cell — see mergeZoneTiles.
       const _zoneLayouts = new Map();
+      // mapId → [{ group, bldg, piece, wbOpts, wbGableOpts }] — mirrors
+      // _townBuildingGroups but per zone map; see _spawnZoneBuildings.
+      const _zoneBuildingGroups = new Map();
       // Surface Y for a tile actually standing inside an exterior zone. Plateau
       // sub-maps are purely an authoring convenience in the Map Editor — in-game
       // every tier of a plateau stack is merged into its root zone's single grid,
@@ -2764,6 +2771,7 @@
 
         const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions };
         _zoneScenes.set(mapId, info);
+        _spawnZoneBuildings(mapId);
         return info;
       }
 
@@ -3743,6 +3751,7 @@
         if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
         if (area !== 'town' && interiorFurnitureObjects.some(o => o.area === area && o.col === c && o.row === r)) return false;
         if (area === 'town' && isTownBuildingCollisionTile(c, r)) return false;
+        if (_isZoneArea(area) && isTownBuildingCollisionTile(c, r, area)) return false;
         if (_isBuildingArea(area)) { const g = npcGridForArea(area); return !!g?.[r]?.[c] && !isSolid(g[r][c].type); }
         return true;
       }
@@ -4293,8 +4302,13 @@
           // Whenever a plateau group actually has an authored child submap, this
           // also records a `{minC,maxC,minR,maxR,fromTier,toTier}` mesa entry (in
           // world coords) for the continuous heightfield buildZoneScene renders at
-          // that tier transition.
-          function mergeZoneTiles(m, offsetC, offsetR, baseTier, outTiles, mesas) {
+          // that tier transition. Also folds `m.buildings` (placed by the Map
+          // Editor on this root zone or any of its plateau-tier sub-maps) into
+          // `outBuildings`, translating their authored local gridX/gridZ by the
+          // same offsetC/offsetR every tile here gets, so a building on a raised
+          // sub-map ends up at its correct world position — its final `elevTier`
+          // is resolved by the caller from `outTiles` once the whole stack is in.
+          function mergeZoneTiles(m, offsetC, offsetR, baseTier, outTiles, mesas, outBuildings) {
             const groupMask = new Map(); // plateauGroupId -> Set of parent-local "c,r" actually painted
             for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
               const plateauId = m.tiles?.[`${c},${r}`]?.plateau;
@@ -4393,8 +4407,12 @@
               });
             }
 
+            for (const b of (m.buildings || [])) {
+              outBuildings.push({ ...b, gridX: (b.gridX || 0) + offsetC, gridZ: (b.gridZ || 0) + offsetR, _baseTier: baseTier });
+            }
+
             for (const { child, childOffsetC, childOffsetR, toTier } of children) {
-              mergeZoneTiles(child, childOffsetC, childOffsetR, toTier, outTiles, mesas);
+              mergeZoneTiles(child, childOffsetC, childOffsetR, toTier, outTiles, mesas, outBuildings);
             }
           }
 
@@ -4410,9 +4428,14 @@
           for (const zoneMapId of allZoneMapIds) {
             const zm = resolvedMaps.find(m => m.id === zoneMapId);
             if (!zm) continue;
-            const outTiles = new Map(), mesas = [];
-            mergeZoneTiles(zm, 0, 0, 0, outTiles, mesas);
+            const outTiles = new Map(), mesas = [], outBuildings = [];
+            mergeZoneTiles(zm, 0, 0, 0, outTiles, mesas, outBuildings);
             const zTiles = [...outTiles.values()];
+            for (const b of outBuildings) {
+              const t = outTiles.get(`${b.gridX},${b.gridZ}`);
+              b.elevTier = (t && typeof t.elevTier === 'number') ? t.elevTier : (b._baseTier || 0);
+              delete b._baseTier;
+            }
             const zTransitions = [];
             let toTownExit = null;
             (zm.transitions || []).forEach(t => {
@@ -4429,8 +4452,8 @@
                 zTransitions.push({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
               }
             });
-            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas });
-            console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings });
+            console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
@@ -5118,6 +5141,94 @@
                 _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
               }
             }).catch(e => debugLog('Town building GLB error: ' + e, 'warn'));
+          }
+        });
+      }
+
+      // Mirrors _spawnTownBuildings for an exterior zone map (Northern Cliffs,
+      // its plateau-tier sub-maps, etc.) — buildings placed there get the same
+      // piece-JSON geometry, but lifted to their anchor tile's plateau tier
+      // (zoneData.buildings[].elevTier, resolved in the mergeZoneTiles loop
+      // above) via HousePieceGen's elevationY option, instead of always
+      // sitting at world Y 0 the way town buildings do today.
+      let _zoneBuildingsGlbUpgradePending = new Set();
+      function _spawnZoneBuildings(mapId) {
+        const zoneData = _zoneLayouts.get(mapId);
+        const buildingDefs = zoneData?.buildings || [];
+        if (!buildingDefs.length) return;
+        if (typeof HousePieceGen === 'undefined') {
+          debugLog('HousePieceGen not loaded — skipping zone buildings', 'warn');
+          return;
+        }
+        if (_zoneBuildingGroups.has(mapId)) return; // already spawned for this zone scene
+
+        const groups = [];
+        _zoneBuildingGroups.set(mapId, groups);
+
+        const _wbDefaults = { unitMult: 0.4375, rockScale: 1.5,
+                              preScale: [1, 1, 0.6],
+                              brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
+        const _boardsMat = new THREE.MeshLambertMaterial({ color: 0x8b6914, side: THREE.DoubleSide });
+        new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          _boardsMat.map = tex; _boardsMat.color.set(0xffffff); _boardsMat.needsUpdate = true;
+        }, undefined, () => {});
+
+        Promise.all(buildingDefs.map(bldg => {
+          if (!bldg.pieceFile) return Promise.resolve({ bldg, piece: null });
+          return fetch(bldg.pieceFile)
+            .then(r => r.json())
+            .then(piece => ({ bldg, piece }))
+            .catch(e => { debugLog('Zone piece load error (' + bldg.id + '): ' + e, 'warn'); return { bldg, piece: null }; });
+        })).then(results => {
+          const scene = _zoneScenes.get(mapId)?.scene;
+          if (!scene) return;
+
+          for (const { bldg, piece } of results) {
+            const wbOpts      = bldg.wbOpts      || _wbDefaults;
+            const wbGableOpts = bldg.wbGableOpts || undefined;
+            const elevationY  = NORMAL_TOP + (bldg.elevTier || 0) * PLATEAU_UNIT;
+
+            let g = new THREE.Group();
+            if (piece) {
+              g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
+                wallBuilder: houseWallBuilder, wbUsePlaceholder: true,
+                wbOpts, wbGableOpts, matBoards: _boardsMat,
+                rotationDeg: bldg.rotationDeg || 0, elevationY,
+              });
+            }
+            scene.add(g);
+            groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
+          }
+
+          debugLog(`_spawnZoneBuildings(${mapId}): built ${groups.length} buildings from piece JSON`);
+
+          if (!_zoneBuildingsGlbUpgradePending.has(mapId)) {
+            _zoneBuildingsGlbUpgradePending.add(mapId);
+            Promise.all([
+              houseWallBuilder.loadDefaultGlb(),
+              HousePieceGen.loadShingleGlb('assets/models/'),
+            ]).then(() => {
+              _zoneBuildingsGlbUpgradePending.delete(mapId);
+              const scene2 = _zoneScenes.get(mapId)?.scene;
+              if (!scene2) return;
+              debugLog(`Zone buildings (${mapId}): upgrading to real bricks + shingle GLB`);
+              const prev = groups.slice();
+              groups.length = 0;
+              for (const { group, bldg, piece, wbOpts, wbGableOpts } of prev) {
+                scene2.remove(group);
+                group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+                if (!piece) continue;
+                const elevationY = NORMAL_TOP + (bldg.elevTier || 0) * PLATEAU_UNIT;
+                const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
+                  wallBuilder: houseWallBuilder, wbUsePlaceholder: false,
+                  wbOpts, wbGableOpts, matBoards: _boardsMat,
+                  rotationDeg: bldg.rotationDeg || 0, elevationY,
+                });
+                scene2.add(g);
+                groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
+              }
+            }).catch(e => debugLog('Zone building GLB error: ' + e, 'warn'));
           }
         });
       }
@@ -6773,57 +6884,68 @@
         if (rot === 270) return { x: depth - 1 - localY, y: localX };
         return { x: localX, y: localY };
       }
-      function isTownBuildingCollisionTile(col, row) {
-        // Building-entrance transition tiles are always walkable (they ARE the door approach)
-        if (worldTownTransitions.some(t => t.target === 'building' && t.col === col && t.row === row)) return false;
+      function _buildingFootprintBlocks(bldg, piece, col, row) {
+        const originX = bldg.gridX ?? bldg.col ?? 0;
+        const originZ = bldg.gridZ ?? bldg.row ?? 0;
 
-        const loadedBuildingGroups = _townBuildingGroups.filter(entry => entry.piece?.footprint);
-        const buildingSources = loadedBuildingGroups.length
-          ? loadedBuildingGroups
-          : _townBuildingDefs.map(bldg => ({ bldg, piece: null }));
+        if (!piece?.footprint) {
+          const fbRot = ((Math.round((bldg.rotationDeg || bldg.rotation || 0) / 90) * 90) % 360 + 360) % 360;
+          const fbSwap = fbRot === 90 || fbRot === 270;
+          const width = fbSwap ? (bldg.footprintD ?? bldg.h ?? 1) : (bldg.footprintW ?? bldg.w ?? 1);
+          const depth = fbSwap ? (bldg.footprintW ?? bldg.w ?? 1) : (bldg.footprintD ?? bldg.h ?? 1);
+          return col >= originX && row >= originZ && col < originX + width && row < originZ + depth;
+        }
 
-        return buildingSources.some(({ bldg, piece }) => {
-          const originX = bldg.gridX ?? bldg.col ?? 0;
-          const originZ = bldg.gridZ ?? bldg.row ?? 0;
+        const structuralCells = piece.footprint.cells || [];
+        const fencePostCells = piece.footprint.extensions?.railings || [];
+        const collisionCells = structuralCells.concat(fencePostCells);
+        if (!collisionCells.length) return false;
 
-          if (!piece?.footprint) {
-            const fbRot = ((Math.round((bldg.rotationDeg || bldg.rotation || 0) / 90) * 90) % 360 + 360) % 360;
-            const fbSwap = fbRot === 90 || fbRot === 270;
-            const width = fbSwap ? (bldg.footprintD ?? bldg.h ?? 1) : (bldg.footprintW ?? bldg.w ?? 1);
-            const depth = fbSwap ? (bldg.footprintW ?? bldg.w ?? 1) : (bldg.footprintD ?? bldg.h ?? 1);
-            return col >= originX && row >= originZ && col < originX + width && row < originZ + depth;
-          }
+        const allBuildingCells = []
+          .concat(piece.footprint.cells || [])
+          .concat(piece.footprint.extensions?.entryTunnels || [])
+          .concat(piece.footprint.extensions?.chimneys || [])
+          .concat(piece.footprint.extensions?.porches || [])
+          .concat(piece.footprint.extensions?.porchStairs || [])
+          .concat(piece.footprint.extensions?.railings || []);
+        const minX = Math.min(...allBuildingCells.map(cell => cell.x));
+        const minY = Math.min(...allBuildingCells.map(cell => cell.y));
+        const maxX = Math.max(...allBuildingCells.map(cell => cell.x));
+        const maxY = Math.max(...allBuildingCells.map(cell => cell.y));
+        const width = maxX - minX + 1;
+        const depth = maxY - minY + 1;
 
-          const structuralCells = piece.footprint.cells || [];
-          const fencePostCells = piece.footprint.extensions?.railings || [];
-          const collisionCells = structuralCells.concat(fencePostCells);
-          if (!collisionCells.length) return false;
-
-          const allBuildingCells = []
-            .concat(piece.footprint.cells || [])
-            .concat(piece.footprint.extensions?.entryTunnels || [])
-            .concat(piece.footprint.extensions?.chimneys || [])
-            .concat(piece.footprint.extensions?.porches || [])
-            .concat(piece.footprint.extensions?.porchStairs || [])
-            .concat(piece.footprint.extensions?.railings || []);
-          const minX = Math.min(...allBuildingCells.map(cell => cell.x));
-          const minY = Math.min(...allBuildingCells.map(cell => cell.y));
-          const maxX = Math.max(...allBuildingCells.map(cell => cell.x));
-          const maxY = Math.max(...allBuildingCells.map(cell => cell.y));
-          const width = maxX - minX + 1;
-          const depth = maxY - minY + 1;
-
-          return collisionCells.some(cell => {
-            const rotated = rotateBuildingCollisionCell(
-              cell.x - minX,
-              cell.y - minY,
-              width,
-              depth,
-              bldg.rotationDeg || bldg.rotation || 0,
-            );
-            return col === originX + rotated.x && row === originZ + rotated.y;
-          });
+        return collisionCells.some(cell => {
+          const rotated = rotateBuildingCollisionCell(
+            cell.x - minX,
+            cell.y - minY,
+            width,
+            depth,
+            bldg.rotationDeg || bldg.rotation || 0,
+          );
+          return col === originX + rotated.x && row === originZ + rotated.y;
         });
+      }
+      // `area` defaults to 'town'; any zone mapId with its own merged buildings
+      // (see _spawnZoneBuildings / _zoneBuildingGroups) is also accepted, so the
+      // same collision rules apply to a building placed on a plateau zone map.
+      function isTownBuildingCollisionTile(col, row, area) {
+        area = area || 'town';
+        if (area === 'town') {
+          // Building-entrance transition tiles are always walkable (they ARE the door approach)
+          if (worldTownTransitions.some(t => t.target === 'building' && t.col === col && t.row === row)) return false;
+          const loadedBuildingGroups = _townBuildingGroups.filter(entry => entry.piece?.footprint);
+          const buildingSources = loadedBuildingGroups.length
+            ? loadedBuildingGroups
+            : _townBuildingDefs.map(bldg => ({ bldg, piece: null }));
+          return buildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row));
+        }
+
+        const loadedZoneGroups = (_zoneBuildingGroups.get(area) || []).filter(entry => entry.piece?.footprint);
+        const zoneBuildingSources = loadedZoneGroups.length
+          ? loadedZoneGroups
+          : (_zoneLayouts.get(area)?.buildings || []).map(bldg => ({ bldg, piece: null }));
+        return zoneBuildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row));
       }
       // The two tiles immediately north of the door act as a second entrance
       function isHouseEntranceTile(col, row) {
@@ -9004,6 +9126,7 @@
         // Block structural building tiles on exterior maps (player must use doors/transitions).
         if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
         if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
+        if (_isZoneArea(currentArea) && isTownBuildingCollisionTile(col, row, currentArea)) return null;
         // Farm terrain no longer slows movement — keeps farm traversal feeling
         // as snappy as town, matching the player's uniform GRASS speed there.
         if (currentArea === 'farm') return 1.00;
