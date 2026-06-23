@@ -44,7 +44,15 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #modeBar{display:flex;gap:4px;padding:6px 8px;background:var(--panel2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
 #view{flex:1;position:relative;min-width:0;min-height:0}
 #canvas2d{display:block;width:100%;height:100%;touch-action:none}
+#canvas3d{display:none;width:100%;height:100%;touch-action:none}
+#canvas3d.active{display:block}
+#canvas2d.hidden3d{display:none}
 #hud{position:absolute;left:8px;top:8px;display:flex;gap:5px;flex-wrap:wrap;pointer-events:none;max-width:calc(100% - 16px)}
+#validateList{max-height:220px;overflow-y:auto}
+.vIssue{border-radius:6px;padding:5px 7px;margin-bottom:4px;font-size:11px;line-height:1.4}
+.vIssue.error{background:rgba(251,113,133,.14);border:1px solid rgba(251,113,133,.35)}
+.vIssue.warning{background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.32)}
+.vIssue.info{background:rgba(106,167,255,.1);border:1px solid rgba(106,167,255,.28)}
 .palBtn{display:flex;align-items:center;gap:6px;width:100%;text-align:left;margin-bottom:4px;padding:6px 9px}
 .palSw{width:14px;height:14px;border-radius:4px;border:1px solid rgba(255,255,255,.4);flex:0 0 auto}
 .itemlist{max-height:200px;overflow-y:auto;padding-right:2px}
@@ -87,6 +95,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <button class="sec" data-mode="ramp">🪜 Ramp</button>
         <button class="sec" data-mode="erase">⌫ Erase</button>
         <button class="sec" id="fitBtn" style="margin-left:auto">Fit</button>
+        <button class="sec" id="toggle3dBtn" title="Live 3D render of the merged plateau/ramp terrain — same heightfield math as the real game">🧊 3D</button>
       </div>
       <div id="sidebar-scroll">
 
@@ -108,6 +117,14 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <div class="itemlist" id="plateauGroupList"></div>
           <button class="ok" id="newPlateauGroupBtn" style="width:100%;margin-top:6px">+ New plateau group</button>
           <p class="muted" style="margin-top:5px">Each group raises (or drops) the tiles painted with it by its elevation. The first tile painted with a group on a map auto-generates an editable sub-map for that group's footprint there.</p>
+        </div>
+
+        <!-- TERRAIN WATERTIGHTNESS -->
+        <div class="section" style="--sec:#fb7185;--secBg:rgba(251,113,133,.08)">
+          <div class="sect-head"><b>Terrain Check</b><span class="sect-tag" id="validateCountTag">—</span></div>
+          <button class="sec" id="validateBtn" style="width:100%">Check watertightness</button>
+          <div id="validateList" style="margin-top:6px"></div>
+          <p class="muted" style="margin-top:5px">Runs the same merge + heightfield math as the live 3D preview and the real game against the active map's root, looking for gaps, orphaned plateau refs, and tier seam mismatches.</p>
         </div>
 
         <!-- MAP SETTINGS -->
@@ -182,6 +199,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 
     <div id="view">
       <canvas id="canvas2d"></canvas>
+      <canvas id="canvas3d"></canvas>
       <div id="hud">
         <span class="pill" id="modePill">Mode: pan</span>
         <span class="pill" id="cursorPill">—</span>
@@ -205,6 +223,9 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 </div>
 
 <script src="../../js/repo-picker.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="../../js/terrain-preview.js"></script>
 <script>
 (() => {
 'use strict';
@@ -1868,6 +1889,7 @@ function renderPalette() {
 
 // ── Canvas ────────────────────────────────────────────────────────────────────
 const canvas = $('canvas2d');
+const canvas3d = $('canvas3d');
 const ctx = canvas.getContext('2d');
 let cam = { x: 0, y: 0, zoom: 24 };
 let drag = false, dragStart = null, painting = false;
@@ -2624,6 +2646,162 @@ function refreshPreview() {
   const m = activeMap();
   const out = { ...m, tiles: Object.keys(m.tiles).map(k => { const [c,r] = k.split(',').map(Number); return { c, r, ...m.tiles[k] }; }) };
   $('jsonPreview').value = JSON.stringify(out, null, 2);
+  schedule3DRebuild();
+}
+
+// ── Live 3D terrain preview ──────────────────────────────────────────────────
+// Shares its math (docs/js/terrain-preview.js) with the live game's
+// buildZoneScene/buildPlateauMesa and with scripts/check-terrain.js, so what's
+// shown here is exactly what the real game would build for this merged
+// plateau/ramp footprint — not a separate approximation.
+let three3d = null; // { renderer, scene, camera, controls, group, raf }
+let _3dDirty = true;
+let _3dRebuildTimer = null;
+
+function schedule3DRebuild() {
+  _3dDirty = true;
+  if (!three3d || !canvas3d.classList.contains('active')) return;
+  clearTimeout(_3dRebuildTimer);
+  _3dRebuildTimer = setTimeout(rebuild3D, 150);
+}
+
+function init3D() {
+  if (three3d || typeof THREE === 'undefined') return;
+  const renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true });
+  renderer.setClearColor(0x07101a, 1);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+  camera.position.set(20, 25, 20);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.85);
+  sun.position.set(40, 60, 20);
+  scene.add(sun);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  const group = new THREE.Group();
+  scene.add(group);
+  three3d = { renderer, scene, camera, controls, group };
+
+  function tick() {
+    three3d.raf = requestAnimationFrame(tick);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  tick();
+}
+
+function resize3D() {
+  if (!three3d) return;
+  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  const r = canvas3d.getBoundingClientRect();
+  three3d.renderer.setPixelRatio(dpr);
+  three3d.renderer.setSize(r.width, r.height, false);
+  three3d.camera.aspect = r.width / Math.max(1, r.height);
+  three3d.camera.updateProjectionMatrix();
+}
+
+function _terrainGeometryFromArrays(pos, idx) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function rebuild3D() {
+  if (!three3d) return;
+  _3dDirty = false;
+  const { group } = three3d;
+  while (group.children.length) {
+    const o = group.children.pop();
+    o.geometry?.dispose(); o.material?.dispose();
+  }
+
+  const root = viewRoot || activeMap();
+  let merged;
+  try { merged = TerrainPreview.buildMergedZoneGrid(ws, root.id); }
+  catch (e) { setStatus('3D preview failed: ' + e.message); return; }
+
+  const zGrid = TerrainPreview.buildZGrid(merged.cols, merged.rows, merged.tiles);
+  TerrainPreview.applyRampCurtainFlags(zGrid, merged.cols, merged.rows);
+
+  // Flat floor quads for every tile not covered by a mesa/ramp/curtain mesh,
+  // colored by tile type and lifted to its own tier's elevation.
+  const floorMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const fPos = [], fCol = [], fIdx = [];
+  const colorOf = hex => { const n = parseInt(hex.slice(1), 16); return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255]; };
+  for (let r = 0; r < merged.rows; r++) {
+    for (let c = 0; c < merged.cols; c++) {
+      const t = zGrid[r][c];
+      if (!t || t.skipFloor) continue;
+      const tile = merged.tiles.get(`${c},${r}`);
+      if (!tile || tile.type === 'ramp') continue;
+      const y = TerrainPreview.NORMAL_TOP + (t.elevTier || 0) * TerrainPreview.PLATEAU_UNIT;
+      const col = colorOf((TILE_INFO[tile.type] || { color: '#888' }).color);
+      const base = fPos.length / 3;
+      fPos.push(c,y,r,  c+1,y,r,  c+1,y,r+1,  c,y,r+1);
+      for (let k = 0; k < 4; k++) fCol.push(...col);
+      fIdx.push(base,base+1,base+2, base,base+2,base+3);
+    }
+  }
+  if (fIdx.length) {
+    const fGeo = new THREE.BufferGeometry();
+    fGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fPos), 3));
+    fGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(fCol), 3));
+    fGeo.setIndex(fIdx);
+    fGeo.computeVertexNormals();
+    group.add(new THREE.Mesh(fGeo, floorMat));
+  }
+
+  // Plateau mesa heightfields (top sheet + cliff skin) per tier transition.
+  const mesaMat = new THREE.MeshLambertMaterial({ color: 0xa8835a, side: THREE.DoubleSide });
+  const skinMat = new THREE.MeshLambertMaterial({ color: 0x6b5638, side: THREE.DoubleSide });
+  for (const mesa of merged.mesas) {
+    const elevOffset = (mesa.toTier - mesa.fromTier) * TerrainPreview.PLATEAU_UNIT;
+    if (elevOffset <= 0) continue;
+    let geo;
+    try { geo = TerrainPreview.buildPlateauMesaGeometry(mesa, elevOffset, mesa.fromTier * TerrainPreview.PLATEAU_UNIT, zGrid); }
+    catch (e) { continue; }
+    if (geo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.pos, geo.idx), mesaMat));
+    if (geo.skinIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.skinPos, geo.skinIdx), skinMat));
+  }
+
+  // Ramp surfaces + their skirt curtains.
+  const rampMat = new THREE.MeshLambertMaterial({ color: 0xc2b280, side: THREE.DoubleSide });
+  const curtainMat = new THREE.MeshLambertMaterial({ color: 0x8a7550, side: THREE.DoubleSide });
+  try {
+    const rampGeo = TerrainPreview.buildRampMeshGeometry(zGrid, merged.cols, merged.rows);
+    if (rampGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(rampGeo.pos, rampGeo.idx), rampMat));
+    const curtainGeo = TerrainPreview.buildRampCurtainGeometry(zGrid, merged.cols, merged.rows);
+    if (curtainGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.pos, curtainGeo.idx), curtainMat));
+    if (curtainGeo.skinIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.skinPos, curtainGeo.skinIdx), skinMat));
+  } catch (e) { /* ramp geometry is best-effort for the preview */ }
+
+  three3d.controls.target.set(merged.cols/2, 0, merged.rows/2);
+  three3d.camera.lookAt(three3d.controls.target);
+}
+
+function toggle3D(show) {
+  const willShow = show !== undefined ? show : !canvas3d.classList.contains('active');
+  canvas3d.classList.toggle('active', willShow);
+  canvas.classList.toggle('hidden3d', willShow);
+  if (willShow) {
+    init3D();
+    resize3D();
+    if (_3dDirty) rebuild3D();
+  }
+}
+
+function runValidation() {
+  const root = viewRoot || activeMap();
+  let issues = [];
+  try { issues = TerrainPreview.validateTerrain(ws, root.id); }
+  catch (e) { setStatus('Validation failed: ' + e.message); return; }
+  $('validateCountTag').textContent = issues.length;
+  $('validateList').innerHTML = issues.length
+    ? issues.map(i => `<div class="vIssue ${i.severity}"><b>${i.code}</b><br>${i.message}</div>`).join('')
+    : '<p class="muted">No issues found.</p>';
+  setStatus(`Checked ${root.name}: ${issues.length} issue${issues.length===1?'':'s'} found.`);
 }
 
 function setStatus(msg) { $('statusPill').textContent = msg; }
@@ -3119,7 +3297,10 @@ $('delBldgBtn').addEventListener('click', () => {
   renderBuildingPanel(); draw(); saveWorkspace(); setStatus('Building removed.');
 });
 
-window.addEventListener('resize', resizeCanvas);
+$('toggle3dBtn').addEventListener('click', () => toggle3D());
+$('validateBtn').addEventListener('click', runValidation);
+
+window.addEventListener('resize', () => { resizeCanvas(); resize3D(); });
 window.addEventListener('error', e => setStatus('Error: ' + e.message));
 
 $('farmDimsNote').textContent = `${GAME.farm.cols}×${GAME.farm.rows}`;
