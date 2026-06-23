@@ -130,24 +130,33 @@ window.SCRATCHBONES_CONFIG = {
     "input": {
       "storageKey": "scratchbones.inputBindings.v1",
       "gamepadDeadzone": 0.24,
+      "axisPressThreshold": 0.55,
       "actions": [
-        { "id": "primary", "label": "Primary Action", "desktop": "KeyE", "controller": "Button0" },
-        { "id": "secondary", "label": "Secondary Action", "desktop": "KeyQ", "controller": "Button2" },
+        { "id": "interact", "label": "Interact", "desktop": "KeyE", "controller": "Button0" },
         { "id": "dodge", "label": "Dodge", "desktop": "KeyX", "controller": "Button1" },
-        { "id": "cycleToolAction", "label": "Cycle Tool Action", "desktop": "KeyR", "controller": "Button3" },
-        { "id": "itemPrev", "label": "Previous Item", "desktop": "Comma", "controller": "Button4" },
-        { "id": "itemNext", "label": "Next Item", "desktop": "Period", "controller": "Button5" },
-        { "id": "tool1", "label": "Tool 1: Shovel", "desktop": "Digit1", "controller": "Button12" },
-        { "id": "tool2", "label": "Tool 2: Hoe", "desktop": "Digit2", "controller": "Button13" },
-        { "id": "tool3", "label": "Tool 3: Weapon", "desktop": "Digit3", "controller": "Button14" },
-        { "id": "tool4", "label": "Tool 4: Axe", "desktop": "Digit4", "controller": "Button15" },
-        { "id": "tool5", "label": "Tool 5: Pick", "desktop": "Digit5", "controller": "Button8" },
-        { "id": "tool6", "label": "Tool 6: Harpoon", "desktop": "Digit6", "controller": "Button9" }
+        { "id": "action1", "label": "Tool/Item Action 1", "desktop": "Space", "controller": "RightTrigger" },
+        { "id": "action2", "label": "Tool/Item Action 2", "desktop": "KeyQ", "controller": "LeftTrigger" },
+        { "id": "action3", "label": "Tool/Item Action 3", "desktop": "KeyR", "controller": "Button2" },
+        { "id": "action4", "label": "Tool/Item Action 4", "desktop": "Enter", "controller": "Button3" },
+        { "id": "action5", "label": "Tool/Item Action 5", "desktop": "Digit7", "controller": "Button12" },
+        { "id": "action6", "label": "Tool/Item Action 6", "desktop": "Digit8", "controller": "Button13" },
+        { "id": "action7", "label": "Tool/Item Action 7", "desktop": "Digit9", "controller": "Button14" },
+        { "id": "action8", "label": "Tool/Item Action 8", "desktop": "Digit0", "controller": "Button15" },
+        { "id": "itemPrev", "label": "Previous Item", "desktop": "Comma", "controller": null },
+        { "id": "itemNext", "label": "Next Item", "desktop": "Period", "controller": null },
+        { "id": "toolPrev", "label": "Previous Tool", "desktop": "BracketLeft", "controller": null },
+        { "id": "toolNext", "label": "Next Tool", "desktop": "BracketRight", "controller": null },
+        { "id": "tool1", "label": "Tool 1: Shovel", "desktop": "Digit1", "controller": null },
+        { "id": "tool2", "label": "Tool 2: Hoe", "desktop": "Digit2", "controller": null },
+        { "id": "tool3", "label": "Tool 3: Weapon", "desktop": "Digit3", "controller": null },
+        { "id": "tool4", "label": "Tool 4: Axe", "desktop": "Digit4", "controller": null },
+        { "id": "tool5", "label": "Tool 5: Pick", "desktop": "Digit5", "controller": null },
+        { "id": "tool6", "label": "Tool 6: Harpoon", "desktop": "Digit6", "controller": null }
       ],
       "modeShifts": [
         { "id": "desktop-q", "label": "Desktop Held Q", "device": "desktop", "button": "KeyQ", "bindings": { "WheelUp": "itemPrev", "WheelDown": "itemNext" } },
         { "id": "desktop-e", "label": "Desktop Held E", "device": "desktop", "button": "KeyE", "bindings": { "WheelUp": "toolPrev", "WheelDown": "toolNext" } },
-        { "id": "controller-left-bumper", "label": "Controller Held LB", "device": "controller", "button": "Button4", "bindings": { "Button0": "itemPrev", "Button1": "itemNext", "Button2": "cycleToolAction" } }
+        { "id": "controller-left-bumper", "label": "Controller Held LB", "device": "controller", "button": "Button4", "bindings": { "RightStickLeft": "toolPrev", "RightStickRight": "toolNext", "RightStickUp": "itemPrev", "RightStickDown": "itemNext" } }
       ]
     },
     "gameplayShortcuts": {

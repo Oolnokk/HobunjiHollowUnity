@@ -5986,6 +5986,8 @@
       const MOUSE_IDLE_MS  = 1800;  // ms before reverting to input-direction mode
       let mouseLookAngle   = -Math.PI / 2;
       let mouseLookActive  = false;
+      let controllerLookAngle = -Math.PI / 2;
+      let controllerLookActive = false;
       let lastMouseMoveTime = 0;
       const _raycaster     = isDesktop ? new THREE.Raycaster() : null;
       const _mouseNDC      = isDesktop ? new THREE.Vector2()   : null;
@@ -6205,7 +6207,12 @@
         const autoTarget = findAutoTarget();
         dodgeBtn?.classList.toggle('combat-active', !!autoTarget);
 
-        if (isDesktop && mouseLookActive) {
+        if (controllerLookActive) {
+          const diff = angleDiff(controllerLookAngle, facingAngle);
+          facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
+          player.angle = facingAngle;
+          if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
+        } else if (isDesktop && mouseLookActive) {
           if (performance.now() - lastMouseMoveTime > MOUSE_IDLE_MS) {
             mouseLookActive = false;
           } else {
@@ -6216,7 +6223,7 @@
           }
         }
 
-        if (!mouseLookActive || !isDesktop) {
+        if (!controllerLookActive && (!mouseLookActive || !isDesktop)) {
           if (autoTarget) {
             // Combat: lock facing onto the nearest nearby hostile instead of
             // movement direction, akin to Z-targeting.
@@ -13185,6 +13192,7 @@
         return {
           storageKey: cfg.storageKey || 'scratchbones.inputBindings.v1',
           deadzone: Number(cfg.gamepadDeadzone) || 0.24,
+          axisPressThreshold: Number(cfg.axisPressThreshold) || 0.55,
           actions,
           desktop: Object.fromEntries(actions.map(a => [a.id, a.desktop]).filter(([, v]) => v)),
           controller: Object.fromEntries(actions.map(a => [a.id, a.controller]).filter(([, v]) => v)),
@@ -13193,6 +13201,13 @@
       })();
       const inputBindings = loadInputBindings();
       const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null };
+      const CONTROLLER_INPUT_OPTIONS = [
+        'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
+        'LeftTrigger', 'RightTrigger',
+        'Button8', 'Button9', 'Button10', 'Button11',
+        'Button12', 'Button13', 'Button14', 'Button15',
+        'RightStickLeft', 'RightStickRight', 'RightStickUp', 'RightStickDown'
+      ];
 
       function loadInputBindings() {
         try {
@@ -13226,25 +13241,41 @@
         return INPUT_DEFAULTS.actions.find(a => a.id === id)?.label || id;
       }
       function buttonLabel(code) {
-        return String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
+        const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓' };
+        return labels[code] || String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
+      }
+      function runActionButtonAtSlot(slotIndex) {
+        const btn = computeActionButtons()[slotIndex - 1];
+        if (!btn) return;
+        activeAction = btn.action;
+        actionHeldDown = slotIndex === 1;
+        useActiveAction();
+      }
+      function runInteractAction() {
+        const toolSet = new Set(Object.values(toolActions).flat());
+        const btn = computeActionButtons().find(b => b.allowed !== false && !toolSet.has(b.action) && !String(b.action || '').startsWith('plant_') && !String(b.action || '').startsWith('place_') && b.action !== 'harvest');
+        if (!btn) return;
+        activeAction = btn.action;
+        useActiveAction();
+      }
+      function cycleActiveTool(delta) {
+        const idx = WHEEL_SLOTS.indexOf(activeTool);
+        const next = (idx + delta + WHEEL_SLOTS.length) % WHEEL_SLOTS.length;
+        setActiveTool(WHEEL_SLOTS[next]);
       }
       function runInputAction(actionId, phase = 'press') {
         if (phase === 'release') {
-          if (actionId === 'primary') actionHeldDown = false;
+          if (actionId === 'action1') actionHeldDown = false;
           return;
         }
         if (fishingMinigame?.active) {
-          if (actionId === 'primary') fireFishingBridge();
+          if (actionId === 'interact' || actionId === 'action1') fireFishingBridge();
           return;
         }
         if (menuOpen || farmEditMode) return;
-        if (actionId === 'primary') { actionHeldDown = true; useActiveAction(); return; }
-        if (actionId === 'secondary') {
-          const btns = computeActionButtons();
-          const second = btns.find((b, i) => i > 0 && b.allowed);
-          if (second) { activeAction = second.action; useActiveAction(); }
-          return;
-        }
+        if (actionId === 'interact') { runInteractAction(); return; }
+        const actionSlot = /^action(\d+)$/.exec(actionId);
+        if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
         if (actionId === 'dodge') { performDodge(player.angle); return; }
         if (actionId === 'cycleToolAction') {
           const actions = toolActions[activeTool];
@@ -13257,6 +13288,7 @@
           cycleActiveInventoryItem(actionId === 'itemPrev' ? -1 : 1);
           refreshItemScroll(); refreshActionBar(); return;
         }
+        if (actionId === 'toolPrev' || actionId === 'toolNext') { cycleActiveTool(actionId === 'toolPrev' ? -1 : 1); return; }
         const tool = { tool1: 'shovel', tool2: 'hoe', tool3: 'weapon', tool4: 'axe', tool5: 'pick', tool6: 'harpoon' }[actionId];
         if (tool) setActiveTool(tool);
       }
@@ -13273,10 +13305,22 @@
         const dz = INPUT_DEFAULTS.deadzone;
         const ax = Math.abs(pad.axes[0] || 0) >= dz ? pad.axes[0] : 0;
         const ay = Math.abs(pad.axes[1] || 0) >= dz ? pad.axes[1] : 0;
+        const rx = Math.abs(pad.axes[2] || 0) >= dz ? pad.axes[2] : 0;
+        const ry = Math.abs(pad.axes[3] || 0) >= dz ? pad.axes[3] : 0;
         input.x = ax; input.y = ay;
+        controllerLookActive = Math.hypot(rx, ry) >= dz;
+        if (controllerLookActive) controllerLookAngle = Math.atan2(ry, rx);
         const down = new Set();
         pad.buttons.forEach((button, index) => { if (button?.pressed) down.add(`Button${index}`); });
+        if ((pad.buttons[6]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('LeftTrigger');
+        if ((pad.buttons[7]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('RightTrigger');
+        const axisPress = INPUT_DEFAULTS.axisPressThreshold;
+        if (rx <= -axisPress) down.add('RightStickLeft');
+        if (rx >= axisPress) down.add('RightStickRight');
+        if (ry <= -axisPress) down.add('RightStickUp');
+        if (ry >= axisPress) down.add('RightStickDown');
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
+        if (heldShift) controllerLookActive = false;
         for (const button of down) {
           if (gamepadState.previous.has(button) || button === heldShift?.button) continue;
           const actionId = getActionForButton('controller', button, heldShift);
@@ -13291,8 +13335,8 @@
         gamepadState.activeShift = heldShift || null;
       }
       window.addEventListener('focus', () => { gamepadState.focused = true; });
-      window.addEventListener('blur', () => { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; } });
+      window.addEventListener('blur', () => { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; } });
 
       function renderInputSettings() {
         const desktopEl = document.getElementById('desktopInputBindings');
@@ -13303,9 +13347,16 @@
           el.innerHTML = '';
           for (const action of INPUT_DEFAULTS.actions) {
             const row = document.createElement('div'); row.className = 'input-binding-row';
-            row.innerHTML = `<span class="settings-name">${action.label}</span><button type="button" class="input-bind-btn">${buttonLabel(inputBindings[device][action.id])}</button><div class="input-binding-warning"></div>`;
-            const btn = row.querySelector('button'); const warn = row.querySelector('.input-binding-warning');
-            btn.addEventListener('click', () => { btn.classList.add('is-listening'); btn.textContent = 'Press input…'; const once = ev => { ev.preventDefault(); const code = ev.code; const conflict = bindingConflict(device, code, action.id); if (conflict) warn.textContent = conflict; else { inputBindings[device][action.id] = code; warn.textContent = ''; saveInputBindings(); renderInputSettings(); } window.removeEventListener('keydown', once, true); }; window.addEventListener('keydown', once, true); });
+            row.innerHTML = `<span class="settings-name">${action.label}</span>${device === 'controller' ? '<select class="settings-select"></select>' : `<button type="button" class="input-bind-btn">${buttonLabel(inputBindings[device][action.id])}</button>`}<div class="input-binding-warning"></div>`;
+            const control = row.children[1]; const warn = row.querySelector('.input-binding-warning');
+            if (device === 'controller') {
+              control.add(new Option('Unbound', ''));
+              CONTROLLER_INPUT_OPTIONS.forEach(code => control.add(new Option(buttonLabel(code), code)));
+              control.value = inputBindings.controller[action.id] || '';
+              control.addEventListener('change', () => { const conflict = bindingConflict(device, control.value, action.id); if (conflict) { warn.textContent = conflict; control.value = inputBindings.controller[action.id] || ''; } else { inputBindings.controller[action.id] = control.value || null; warn.textContent = ''; saveInputBindings(); } });
+            } else {
+              control.addEventListener('click', () => { control.classList.add('is-listening'); control.textContent = 'Press input…'; const once = ev => { ev.preventDefault(); const code = ev.code; const conflict = bindingConflict(device, code, action.id); if (conflict) warn.textContent = conflict; else { inputBindings[device][action.id] = code; warn.textContent = ''; saveInputBindings(); renderInputSettings(); } window.removeEventListener('keydown', once, true); }; window.addEventListener('keydown', once, true); });
+            }
             el.appendChild(row);
           }
         }
@@ -13337,8 +13388,9 @@
               add.classList.add('is-listening'); add.textContent = 'Press shifted input…';
               const once = ev => {
                 ev.preventDefault();
-                const button = ev.code;
-                const actionId = INPUT_DEFAULTS.actions[0]?.id || 'primary';
+                const manual = window.prompt?.('Input code (examples: RightStickLeft, RightTrigger, Button0)') || '';
+                const button = manual.trim() || ev.code;
+                const actionId = INPUT_DEFAULTS.actions[0]?.id || 'interact';
                 const conflict = bindingConflict(shift.device || 'desktop', button, actionId, shift);
                 if (!conflict) { shift.bindings = shift.bindings || {}; shift.bindings[button] = actionId; saveInputBindings(); }
                 window.removeEventListener('keydown', once, true); renderInputSettings();
