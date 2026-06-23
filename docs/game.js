@@ -13279,13 +13279,13 @@
         if (isDesktop && desktopHoldKeys.q.down) {
           e.preventDefault();
           openDesktopHoldArc('q');
-          window._desktopSelectionArc?.scrollItem(dir);
+          window._desktopSelectionArc?.scrollItem(-dir);
           return true;
         }
         if (isDesktop && desktopHoldKeys.e.down) {
           e.preventDefault();
           openDesktopHoldArc('e');
-          window._desktopSelectionArc?.scrollTool(dir);
+          window._desktopSelectionArc?.scrollTool(-dir);
           return true;
         }
         if (heldOnly) return false;
