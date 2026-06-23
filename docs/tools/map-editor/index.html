@@ -41,7 +41,19 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 .sect-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
 .sect-head b{font-size:12px;text-transform:uppercase;letter-spacing:.3px}
 .sect-tag{font-size:10px;color:var(--muted);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:2px 7px}
-#modeBar{display:flex;gap:4px;padding:6px 8px;background:var(--panel2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#modeBar{display:flex;gap:3px;padding:4px 6px;background:var(--panel2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#modeBar button{padding:4px 7px;font-size:11px;font-weight:600;border-radius:7px}
+#sidebarToc{background:var(--panel2);border-bottom:1px solid var(--border);padding:7px 10px;flex-shrink:0}
+#sidebarToc b{font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);display:block;margin-bottom:5px}
+#sidebarToc .row{gap:4px}
+#sidebarToc a{font-size:11px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);border-radius:999px;padding:3px 9px;color:var(--text);text-decoration:none;cursor:pointer}
+#sidebarToc a:hover{background:rgba(255,255,255,.1)}
+#tocJumpBtn{position:fixed;right:14px;bottom:14px;z-index:500;padding:6px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.4)}
+.sect-head-actions{display:flex;align-items:center;gap:6px}
+.iconBtn{padding:2px 7px;font-size:11px;border-radius:6px}
+#quickCheckPopover{position:fixed;z-index:900;max-width:320px;background:var(--panel);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none}
+#quickCheckPopover.show{display:block}
+#quickCheckPopover .sect-head{margin-bottom:6px}
 #view{flex:1;position:relative;min-width:0;min-height:0}
 #canvas2d{display:block;width:100%;height:100%;touch-action:none}
 #canvas3d{display:none;width:100%;height:100%;touch-action:none}
@@ -96,12 +108,29 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <button class="sec" data-mode="building" id="buildingModeBtn">🏠 Building</button>
         <button class="sec" data-mode="erase">⌫ Erase</button>
         <button class="sec" id="fitBtn" style="margin-left:auto">Fit</button>
+        <button class="sec" id="quickCheckBtn" title="Run the watertightness check now, without switching mode">💧 Check</button>
         <button class="sec" id="toggle3dBtn" title="Live 3D render of the merged plateau/ramp terrain — same heightfield math as the real game">🧊 3D</button>
+      </div>
+      <div id="quickCheckPopover">
+        <div class="sect-head">
+          <b>Watertightness</b>
+          <div class="sect-head-actions">
+            <span class="sect-tag" id="quickCheckCountTag">—</span>
+            <button class="sec iconBtn" id="quickCheckCopyBtn" title="Copy report to clipboard">📋</button>
+            <button class="bad iconBtn" id="quickCheckCloseBtn" title="Close">✕</button>
+          </div>
+        </div>
+        <div id="quickCheckList" style="max-height:260px;overflow-y:auto"></div>
       </div>
       <div id="sidebar-scroll">
 
+        <div id="sidebarToc">
+          <b>Jump to</b>
+          <div class="row" id="tocLinks"></div>
+        </div>
+
         <!-- MAPS -->
-        <div class="section" style="--sec:#94a3b8;--secBg:rgba(148,163,184,.08)">
+        <div class="section" id="mapsSection" style="--sec:#94a3b8;--secBg:rgba(148,163,184,.08)">
           <div class="sect-head"><b>Maps</b><span class="sect-tag" id="mapCountTag">0</span></div>
           <div class="itemlist" id="mapList"></div>
           <div class="row" style="margin-top:6px">
@@ -122,14 +151,19 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 
         <!-- TERRAIN WATERTIGHTNESS (Plateau/Ramp modes only) -->
         <div class="section" id="terrainCheckSection" style="--sec:#fb7185;--secBg:rgba(251,113,133,.08);display:none">
-          <div class="sect-head"><b>Terrain Check</b><span class="sect-tag" id="validateCountTag">—</span></div>
+          <div class="sect-head"><b>Terrain Check</b>
+            <div class="sect-head-actions">
+              <span class="sect-tag" id="validateCountTag">—</span>
+              <button class="sec iconBtn" id="copyValidationBtn" title="Copy report to clipboard">📋</button>
+            </div>
+          </div>
           <button class="sec" id="validateBtn" style="width:100%">Check watertightness</button>
           <div id="validateList" style="margin-top:6px"></div>
           <p class="muted" style="margin-top:5px">Runs the same merge + heightfield math as the live 3D preview and the real game against the active map's root, looking for gaps, orphaned plateau refs, and tier seam mismatches.</p>
         </div>
 
         <!-- MAP SETTINGS -->
-        <div class="section" style="--sec:#6aa7ff;--secBg:rgba(106,167,255,.08)">
+        <div class="section" id="mapSettingsSection" style="--sec:#6aa7ff;--secBg:rgba(106,167,255,.08)">
           <div class="sect-head"><b>Map Settings</b><span class="sect-tag" id="catTag">—</span></div>
           <div class="g2">
             <div><label>Name</label><input id="mapName"></div>
@@ -146,13 +180,13 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         </div>
 
         <!-- PALETTE -->
-        <div class="section" style="--sec:#34d399;--secBg:rgba(52,211,153,.08)">
+        <div class="section" id="paletteSection" style="--sec:#34d399;--secBg:rgba(52,211,153,.08)">
           <div class="sect-head"><b>Palette</b><span class="sect-tag" id="paletteTag">tile</span></div>
           <div id="paletteBox"></div>
         </div>
 
         <!-- GAME LINK -->
-        <div class="section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.08)">
+        <div class="section" id="gameLinkSection" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.08)">
           <div class="sect-head"><b>Game Link</b><span class="sect-tag">hobunji_farm_layout_v3</span></div>
           <div><label>Farm map (exterior, sent as tile layout)</label><select id="linkExterior"></select></div>
           <div style="margin-top:6px"><label>Farmhouse map (interior, sent as decor)</label><select id="linkInterior"></select></div>
@@ -190,7 +224,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         </div>
 
         <!-- STATUS / JSON -->
-        <div class="section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.06)">
+        <div class="section" id="statusSection" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.06)">
           <div class="sect-head"><b>Active Map JSON</b><span class="sect-tag" id="statusPill">Ready</span></div>
           <textarea id="jsonPreview" rows="8" readonly></textarea>
         </div>
@@ -209,6 +243,8 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
     </div>
   </div>
 </div>
+
+<button id="tocJumpBtn" class="sec" title="Jump to the sidebar's table of contents">⤴ TOC</button>
 
 <div id="diffModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);overflow:auto;padding:20px">
   <div style="max-width:760px;margin:0 auto;background:#111b28;border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:20px">
@@ -1113,6 +1149,25 @@ function updateSectionVisibility() {
   $('plateauGroupsSection').style.display = (mode === 'plateau') ? '' : 'none';
   $('terrainCheckSection').style.display = (mode === 'plateau' || mode === 'ramp') ? '' : 'none';
   $('buildingsSection').style.display = (isExterior && mode === 'building') ? '' : 'none';
+  renderToc();
+}
+// The TOC only lists sections that are actually visible right now, so it stays
+// a quick "what's here" map of the sidebar instead of a static list of everything.
+const TOC_SECTIONS = [
+  { id: 'mapsSection', label: 'Maps' },
+  { id: 'plateauGroupsSection', label: 'Plateau Groups' },
+  { id: 'terrainCheckSection', label: 'Terrain Check' },
+  { id: 'mapSettingsSection', label: 'Map Settings' },
+  { id: 'paletteSection', label: 'Palette' },
+  { id: 'gameLinkSection', label: 'Game Link' },
+  { id: 'buildingsSection', label: 'Buildings' },
+  { id: 'statusSection', label: 'Active Map JSON' },
+];
+function renderToc() {
+  $('tocLinks').innerHTML = TOC_SECTIONS
+    .filter(s => $(s.id).style.display !== 'none')
+    .map(s => `<a data-target="${s.id}">${s.label}</a>`)
+    .join('');
 }
 function updateBrushPill() {
   let t = '—';
@@ -2837,16 +2892,52 @@ function toggle3D(show) {
   }
 }
 
-function runValidation() {
+let _lastValidationIssues = [];
+let _lastValidationMapName = '';
+function computeValidationIssues() {
   const root = viewRoot || activeMap();
-  let issues = [];
+  let issues;
   try { issues = TerrainPreview.validateTerrain(ws, root.id); }
-  catch (e) { setStatus('Validation failed: ' + e.message); return; }
-  $('validateCountTag').textContent = issues.length;
-  $('validateList').innerHTML = issues.length
+  catch (e) { setStatus('Validation failed: ' + e.message); return null; }
+  _lastValidationIssues = issues;
+  _lastValidationMapName = root.name;
+  return { issues, root };
+}
+function renderValidationInto(issues, listEl, countEl) {
+  countEl.textContent = issues.length;
+  listEl.innerHTML = issues.length
     ? issues.map(i => `<div class="vIssue ${i.severity}"><b>${i.code}</b><br>${i.message}</div>`).join('')
     : '<p class="muted">No issues found.</p>';
-  setStatus(`Checked ${root.name}: ${issues.length} issue${issues.length===1?'':'s'} found.`);
+}
+function validationReportText(issues, mapName) {
+  if (!issues.length) return `Watertightness check — ${mapName}: no issues found.`;
+  const lines = [`Watertightness check — ${mapName}: ${issues.length} issue${issues.length===1?'':'s'}`, ''];
+  for (const i of issues) lines.push(`[${i.severity.toUpperCase()}] ${i.code}: ${i.message}`);
+  return lines.join('\n');
+}
+async function copyValidationReport() {
+  const text = validationReportText(_lastValidationIssues, _lastValidationMapName);
+  try { await navigator.clipboard.writeText(text); setStatus('Copied watertightness report to clipboard.'); }
+  catch (e) { setStatus('Copy failed: ' + e.message); }
+}
+function runValidation() {
+  const result = computeValidationIssues();
+  if (!result) return;
+  renderValidationInto(result.issues, $('validateList'), $('validateCountTag'));
+  setStatus(`Checked ${result.root.name}: ${result.issues.length} issue${result.issues.length===1?'':'s'} found.`);
+}
+// Quick check: runs the same validation from the modeBar button without
+// switching the user's mode, showing results in a popover near the button.
+function runQuickCheck() {
+  const result = computeValidationIssues();
+  if (!result) return;
+  renderValidationInto(result.issues, $('quickCheckList'), $('quickCheckCountTag'));
+  const r = $('quickCheckBtn').getBoundingClientRect();
+  const pop = $('quickCheckPopover');
+  pop.style.left = Math.max(8, r.left) + 'px';
+  pop.style.top = (r.bottom + 6) + 'px';
+  pop.classList.add('show');
+  setStatus(`Checked ${result.root.name}: ${result.issues.length} issue${result.issues.length===1?'':'s'} found.`);
 }
 
 function setStatus(msg) { $('statusPill').textContent = msg; }
@@ -3344,6 +3435,22 @@ $('delBldgBtn').addEventListener('click', () => {
 
 $('toggle3dBtn').addEventListener('click', () => toggle3D());
 $('validateBtn').addEventListener('click', runValidation);
+$('copyValidationBtn').addEventListener('click', copyValidationReport);
+$('quickCheckBtn').addEventListener('click', runQuickCheck);
+$('quickCheckCopyBtn').addEventListener('click', copyValidationReport);
+$('quickCheckCloseBtn').addEventListener('click', () => $('quickCheckPopover').classList.remove('show'));
+document.addEventListener('click', e => {
+  const pop = $('quickCheckPopover');
+  if (!pop.classList.contains('show')) return;
+  if (pop.contains(e.target) || e.target === $('quickCheckBtn')) return;
+  pop.classList.remove('show');
+});
+$('tocLinks').addEventListener('click', e => {
+  const a = e.target.closest('a[data-target]');
+  if (!a) return;
+  $(a.dataset.target).scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$('tocJumpBtn').addEventListener('click', () => $('sidebarToc').scrollIntoView({ behavior: 'smooth', block: 'start' }));
 
 window.addEventListener('resize', () => { resizeCanvas(); resize3D(); });
 window.addEventListener('error', e => setStatus('Error: ' + e.message));
