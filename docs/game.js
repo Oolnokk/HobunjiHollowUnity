@@ -2630,6 +2630,20 @@
           zGrid[r][c].incline = !!incline;
           if (type === TileType.RAMP) zGrid[r][c].rampElevation = rampElevation || 0;
         }
+        // Ramp curtains: any non-ramp cell directly beside a ramp cell gets folded
+        // into the ramp's slope as a 1-tile-wide skirt instead of sitting flat —
+        // this is what stops players walking off the side of an elevated ramp, and
+        // gives the ramp the same cliff-face treatment a plateau gets. Cells already
+        // `incline` (an existing plateau wall) are left alone so the ramp blends
+        // into that wall instead of doubling it up (see buildRampCurtainMeshes).
+        for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
+          if (zGrid[r][c].type !== TileType.RAMP) continue;
+          for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+            const nt = zGrid[r + dr]?.[c + dc];
+            if (!nt || nt.type === TileType.RAMP || nt.incline) continue;
+            nt.incline = true; nt.skipFloor = true; nt.rampCurtain = true;
+          }
+        }
         const plateauMesas = zoneData?.mesas || [];
         console.log(`%c[zone:${mapId}] ${plateauMesas.length} plateau tier transition(s)`, 'color:#22c55e;font-weight:bold');
 
@@ -2712,10 +2726,11 @@
         plateauMesas.forEach((mesa, i) => {
           const elevOffset = (mesa.toTier - mesa.fromTier) * PLATEAU_UNIT;
           if (elevOffset <= 0) return;
-          buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * PLATEAU_UNIT);
+          buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * PLATEAU_UNIT, zGrid);
         });
 
         buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
+        buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
 
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
         buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId);
@@ -2753,7 +2768,7 @@
       // how much smaller each plateau's submap is than its parent (see
       // getOrCreateSubmap/resizeMapAndSubmaps in the Map Editor), since that band is
       // reserved for this cliff-face blend.
-      function buildPlateauMesa(zScene, mapId, groupId, bb, elevOffset, zoneBaseElev = 0) {
+      function buildPlateauMesa(zScene, mapId, groupId, bb, elevOffset, zoneBaseElev = 0, zGrid = null) {
         const MARGIN_TILES = 1;
         const BASE = NORMAL_TOP + zoneBaseElev;
         const W = bb.maxC - bb.minC + 1, D = bb.maxR - bb.minR + 1;
@@ -2777,14 +2792,27 @@
         // internal gap as fully raised even though mergeZoneTiles' onRing logic
         // treats them as low ring tiles — both produced the grass-overhang bug.)
         const mask = bb.maskWorldKeys || null;
-        const inMask = (c, r) => !mask || mask.has(`${c},${r}`);
+        // A neighbor is also "inside" (no blend needed there) if a different,
+        // touching mesa has already raised it to at least this tier — without
+        // this, two side-by-side mesas at the same height each independently
+        // trench their own margin band right at the shared border instead of
+        // merging into one continuous top ("blending curtains together").
+        // Ring cells of another, still-sloping mesa don't count: only an
+        // already-flat raised top at >= this tier reads as a seamless match.
+        const inMask = (c, r) => {
+          if (!mask) return true;
+          if (mask.has(`${c},${r}`)) return true;
+          const t = zGrid?.[r]?.[c];
+          return !!(t && !t.incline && (t.elevTier || 0) >= bb.toTier);
+        };
         // Which tile(s) a vertex index borders along one axis — even gi sit on a
         // tile boundary (shared by the tile each side), odd gi sit at a single
-        // tile's center.
+        // tile's center. Deliberately NOT clamped to [0,N) — a perimeter vertex
+        // (gi=0 or gi=GW-1) needs to see one tile step beyond this mesa's own
+        // bbox too, so inMask can detect an adjacent mesa sitting right outside it.
         const axisTiles = (gi, N) => {
-          const lo = Math.floor((gi - 1) / 2), hi = Math.floor(gi / 2), out = [];
-          if (lo >= 0 && lo < N) out.push(lo);
-          if (hi >= 0 && hi < N && hi !== lo) out.push(hi);
+          const lo = Math.floor((gi - 1) / 2), hi = Math.floor(gi / 2), out = [lo];
+          if (hi !== lo) out.push(hi);
           return out;
         };
         const vIdx = (gi, gj) => gj * GW + gi;
@@ -2795,8 +2823,10 @@
           const trs = axisTiles(gj, D);
           for (let gi = 0; gi < GW; gi++) {
             const tcs = axisTiles(gi, W);
-            const isEdge = gi === 0 || gi === GW - 1 || gj === 0 || gj === GH - 1;
-            const bordersOutside = isEdge || tcs.some(tc => trs.some(tr => !inMask(bb.minC + tc, bb.minR + tr)));
+            // A real outer edge (no neighboring mesa raised to match) naturally
+            // seeds here too: inMask(c,r) for a world tile beyond the live grid
+            // (zGrid[r]?.[c] undefined) falls through to false.
+            const bordersOutside = tcs.some(tc => trs.some(tr => !inMask(bb.minC + tc, bb.minR + tr)));
             if (bordersOutside) { vertHops[vIdx(gi, gj)] = 0; queue.push([gi, gj]); }
           }
         }
@@ -2921,6 +2951,78 @@
         _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.PATH));
 
         console.log(`%c[zone:${mapId}] ramp mesh built: ${rampCells.length} tile(s)`, 'color:#22c55e;font-weight:bold');
+      }
+
+      // Ramp side curtains: a 1-tile sloped skirt on every cell flagged `rampCurtain`
+      // (see buildZoneScene) — each corner takes the average height of whichever
+      // adjacent RAMP cells touch it (same averaging buildZoneRampMeshes uses for
+      // the ramp surface itself), falling back to the curtain cell's own natural
+      // ground height at corners that don't touch a ramp. That tapers the skirt
+      // from the ramp's edge down to ground over one tile — the same margin width
+      // buildPlateauMesa uses for its cliff face — and picks up the same steep-face
+      // stone skin so a ramp's sides read as a cut bank rather than floating grass.
+      function buildRampCurtainMeshes(zScene, zGrid, zcols, zrows, mapId) {
+        const cells = [];
+        for (let r = 0; r < zrows; r++)
+          for (let c = 0; c < zcols; c++)
+            if (zGrid[r]?.[c]?.rampCurtain) cells.push([c, r]);
+        if (!cells.length) return;
+
+        const cornerY = (ci, cj, fallback) => {
+          let sum = 0, n = 0;
+          for (const [dc, dr] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
+            const t = zGrid[cj + dr]?.[ci + dc];
+            if (t && t.type === TileType.RAMP) { sum += NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT; n++; }
+          }
+          return n ? sum / n : fallback;
+        };
+
+        const pos = [], idx = [];
+        const skinPos = [], skinIdx = [];
+        let vi = 0, svi = 0;
+        for (const [c, r] of cells) {
+          const ground = NORMAL_TOP + (zGrid[r][c].elevTier || 0) * PLATEAU_UNIT;
+          const y00 = cornerY(c, r, ground);
+          const y10 = cornerY(c + 1, r, ground);
+          const y01 = cornerY(c, r + 1, ground);
+          const y11 = cornerY(c + 1, r + 1, ground);
+          pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
+          idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
+
+          // Same steep-face test buildPlateauMesa/buildZoneBorderTerrain use: only
+          // skin the skirt with stone where it's actually sloped enough to read as
+          // a cliff face — a skirt that happens to be flat (e.g. abutting ground at
+          // the same height as the ramp) stays grass like the floor around it.
+          const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+          const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
+          if (cnx * cnx + cnz * cnz > 0.194) {
+            skinPos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
+            skinIdx.push(svi, svi + 2, svi + 3, svi, svi + 3, svi + 1); svi += 4;
+          }
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        mesh.receiveShadow = true;
+        zScene.add(mesh);
+        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.GRASS));
+
+        if (skinPos.length) {
+          const cliffMat = new THREE.MeshLambertMaterial({
+            color: 0x6a6460, side: THREE.DoubleSide,
+            polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+          });
+          const sg = new THREE.BufferGeometry();
+          sg.setAttribute('position', new THREE.Float32BufferAttribute(skinPos, 3));
+          sg.setIndex(new THREE.BufferAttribute(skinIdx.length > 65535 ? new Uint32Array(skinIdx) : new Uint16Array(skinIdx), 1));
+          sg.computeVertexNormals();
+          zScene.add(new THREE.Mesh(sg, cliffMat));
+        }
+
+        console.log(`%c[zone:${mapId}] ramp curtain skirt built: ${cells.length} tile(s)`, 'color:#22c55e;font-weight:bold');
       }
 
       // Grass billboard tufts for a zone — mirrors _buildTownGrassBillboards but

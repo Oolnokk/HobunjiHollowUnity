@@ -1059,7 +1059,7 @@ function renderPlateauGroupList() {
 
 // ── Mode / brush state ────────────────────────────────────────────────────────
 let mode = 'pan';
-let brush = { tile: 'grass', crop: 'needlegrain', object: 'sellCrate', furniture: 'pestle', decor: 'basicBed', plateauGroup: '' };
+let brush = { tile: 'grass', crop: 'needlegrain', object: 'sellCrate', furniture: 'pestle', decor: 'basicBed', plateauGroup: '', plateauRadius: 0 };
 let activePathId = null;   // route being extended in route mode
 let activeRouteNodeIndex = null; // selected node index in active route
 let activeRiverId = null;  // river/stream being extended in river mode
@@ -1085,7 +1085,7 @@ function updateBrushPill() {
   if (mode === 'decor') t = `decor: ${DECOR[brush.decor]?.label}`;
   if (mode === 'path') { const p = (activeMap().routes || activeMap().npcPaths || []).find(x => x.id === activePathId); t = p ? `route: ${p.label}${activeRouteNodeIndex!==null?' node '+(activeRouteNodeIndex+1):''}` : 'route: (click to start one)'; }
   if (mode === 'river') { const rv = (activeMap().rivers || []).find(x => x.id === activeRiverId); t = rv ? `${rv.kind||'river'}: ${rv.label}${activeRiverNodeIndex!==null?' node '+(activeRiverNodeIndex+1):''}` : 'river: (click to start one)'; }
-  if (mode === 'plateau') { const g = plateauGroupById(brush.plateauGroup); t = g ? `plateau: #${g.number} ${g.label} (${g.elevation>=0?'+':''}${g.elevation})` : 'plateau: (add a group first)'; }
+  if (mode === 'plateau') { const g = plateauGroupById(brush.plateauGroup); t = g ? `plateau: #${g.number} ${g.label} (${g.elevation>=0?'+':''}${g.elevation})${brush.plateauRadius>0?` ⬤ r${brush.plateauRadius}`:''}` : 'plateau: (add a group first)'; }
   if (mode === 'ramp') { const rp = (ws.ramps || []).find(x => x.id === activeRampId); t = rp ? `ramp: ${rp.label}${activeRampNodeIndex!==null?' node '+(activeRampNodeIndex+1):''}` : 'ramp: (click to start one)'; }
   if (mode === 'spot') t = 'spot: click map to place';
   if (mode === 'station') { const st = (activeMap().npcStations || []).find(x => x.id === activeStationId); t = st ? `station: ${st.label}` : 'station: click map to place'; }
@@ -1430,10 +1430,14 @@ function renderPalette() {
       if (!brush.plateauGroup || !plateauGroupById(brush.plateauGroup)) brush.plateauGroup = ws.plateauGroups[0].id;
       html = ws.plateauGroups.map(g =>
         `<button class="sec palBtn ${brush.plateauGroup===g.id?'act':''}" data-pal="plateauGroup" data-val="${g.id}"><span class="palSw" style="background:${g.color}"></span>#${g.number} ${g.label} (${g.elevation>=0?'+':''}${g.elevation})</button>`).join('');
+      html += `<div class="row" style="margin-top:8px;gap:6px;align-items:center">
+        <label style="flex:1">Brush radius</label>
+        <input id="plateauRadiusIn" type="number" min="0" max="12" value="${brush.plateauRadius||0}" style="width:56px">
+      </div>`;
       const g = plateauGroupById(brush.plateauGroup);
       const sm = g ? (ws.maps.find(x => x.parentMapId === m.id && x.plateauGroupId === g.id)) : null;
       if (sm) html += `<button class="sec" id="editSubmapBtn" data-submapid="${sm.id}" style="width:100%;margin-top:6px">Edit Sub-map ↗ (${sm.name})</button>`;
-      html += '<p class="muted" style="margin-top:5px">Paint tiles to mark them as part of the selected plateau group. Plateau tiles can\'t be overwritten by other tiles or tools — erase them first to free the cell. The group\'s sub-map is auto-created/resized from the painted footprint. The outer 1-tile ring of that footprint (shown in red) is reserved automatically for the cliff-face blend down to the tier below and is always solid in-game — the only way through it is a ramp tile painted over it.</p>';
+      html += `<p class="muted" style="margin-top:5px">Paint tiles to mark them as part of the selected plateau group. Plateau tiles can't be overwritten by other tiles or tools — erase them first to free the cell. ${brush.plateauRadius>0?`Brush radius ${brush.plateauRadius} stamps a circle of cells per click/drag step instead of just one. `:''}The group's sub-map is auto-created/resized from the painted footprint. The outer 1-tile ring of that footprint (shown in red) is reserved automatically for the cliff-face blend down to the tier below and is always solid in-game — the only way through it is a ramp tile painted over it.</p>`;
     }
   } else if (mode === 'object') {
     if (m.category !== 'exterior') html = '<p class="muted">Objects are exterior-only.</p>';
@@ -1592,6 +1596,11 @@ function renderPalette() {
     brush[b.dataset.pal] = b.dataset.val;
     renderPalette(); updateBrushPill();
   }));
+  const pradIn = box.querySelector('#plateauRadiusIn');
+  if (pradIn) pradIn.addEventListener('change', () => {
+    brush.plateauRadius = Math.max(0, Math.min(12, parseInt(pradIn.value) || 0));
+    renderPalette(); updateBrushPill();
+  });
   // Tile fill / clear wiring
   const fillMapBtn = box.querySelector('#fillMapBtn');
   if (fillMapBtn) fillMapBtn.addEventListener('click', () => {
@@ -2224,10 +2233,25 @@ function applyAt(tile) {
   } else if (mode === 'plateau' && m.category === 'exterior') {
     const group = plateauGroupById(brush.plateauGroup) || (ws.plateauGroups || [])[0];
     if (!group) return;
-    const existing = m.tiles[key];
-    if (existing?.plateau && existing.plateau !== group.id) return; // locked by a different plateau group
-    if (existing?.plateau === group.id) return; // already this group, nothing to do
-    m.tiles[key] = { type: existing?.type || (TILE_SETS[m.category] || TILE_SETS.exterior)[0], crop: existing?.crop || '', plateau: group.id };
+    const set = TILE_SETS[m.category] || TILE_SETS.exterior;
+    const rad = Math.max(0, Math.floor(brush.plateauRadius) || 0);
+    const rad2 = rad * rad + 0.25; // +0.25 rounds a discrete brush into a circle rather than a diamond/square
+    let painted = false;
+    for (let dr = -rad; dr <= rad; dr++) {
+      for (let dc = -rad; dc <= rad; dc++) {
+        if (dc*dc + dr*dr > rad2) continue;
+        const cc = c + dc, rr = r + dr;
+        if (cc < 0 || rr < 0 || cc >= m.cols || rr >= m.rows) continue;
+        const ck = `${cc},${rr}`;
+        if (mask && !mask.has(ck)) continue; // gap cell — not actually part of the plateau
+        const existing = m.tiles[ck];
+        if (existing?.plateau && existing.plateau !== group.id) continue; // locked by a different plateau group
+        if (existing?.plateau === group.id) continue; // already this group, nothing to do
+        m.tiles[ck] = { type: existing?.type || set[0], crop: existing?.crop || '', plateau: group.id };
+        painted = true;
+      }
+    }
+    if (!painted) return;
     getOrCreateSubmap(m, group);
     syncPlateauEffects(m);
   } else if (mode === 'object' && m.category === 'exterior') {
