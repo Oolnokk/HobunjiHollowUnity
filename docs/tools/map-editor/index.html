@@ -466,6 +466,8 @@ function computeMapDiff(m) {
 }
 
 let ws = loadWorkspace();
+migrateSubmapAnchors();
+sanitizePlateauGaps();
 ws.maps.forEach(captureBaseline);
 recomputeAllElevations();
 // Lets the dev-tools hub (docs/tools/index.html) read the live in-memory workspace
@@ -1272,6 +1274,56 @@ function syncPlateauEffects(m) {
     for (const river of rivers) mirrorRiverAcrossPlateau(river, m, sm, group);
     syncPlateauEffects(sm); // recurse into nested plateaus on the sub-map itself
   }
+}
+// Submaps saved before the anchorC/anchorR field existed have neither, so
+// plateauMaskLocal's `?? 0` fallback puts their mask check at the parent's
+// local (0,0) instead of their real position — making every one of their own
+// cells look like a "gap" to sanitizePlateauGaps below, which would then
+// resize/delete perfectly valid legacy submaps. Backfill the anchor the same
+// way getOrCreateSubmap/resizeSubmapToFootprint derive it (from the parent's
+// own painted footprint for that group) before any gap check ever runs.
+function migrateSubmapAnchors() {
+  for (const sm of ws.maps.filter(x => x.isSubmap)) {
+    if (Number.isFinite(sm.anchorC) && Number.isFinite(sm.anchorR)) continue;
+    const parent = mapById(sm.parentMapId);
+    if (!parent) continue;
+    const bbox = plateauFootprintBBox(parent, sm.plateauGroupId);
+    sm.anchorC = bbox ? bbox.minC + 1 : 0;
+    sm.anchorR = bbox ? bbox.minR + 1 : 0;
+  }
+}
+// One-time data-repair pass for workspaces saved by an older build that let a
+// nested plateau group get painted onto a "gap" cell — inside a submap's
+// bounding rect but outside its parent's real (possibly irregular) painted
+// mask (applyAt used to skip the gap lock for mode === 'plateau'; now fixed).
+// A gap-painted tag like that produces a deeper tier with no supporting cliff
+// face beneath it once stitched into the single continuous scene in game.js —
+// a tier floating over nothing. This strips those invalid tags and cascades
+// the resulting footprint change (resize, or delete if now empty) to the
+// affected submap. Safe to call repeatedly; a no-op once data is clean.
+function sanitizePlateauGaps() {
+  let changed = false, dirty = true;
+  while (dirty) {
+    dirty = false;
+    for (const sm of ws.maps.filter(x => x.isSubmap)) {
+      const mask = plateauMaskLocal(sm);
+      if (!mask) continue;
+      for (const key in sm.tiles) {
+        if (sm.tiles[key]?.plateau && !mask.has(key)) { delete sm.tiles[key].plateau; dirty = true; changed = true; }
+      }
+    }
+    if (!dirty) break;
+    for (const parent of ws.maps) {
+      for (const group of (ws.plateauGroups || [])) {
+        const sm = ws.maps.find(x => x.parentMapId === parent.id && x.plateauGroupId === group.id);
+        if (!sm) continue;
+        const bbox = plateauFootprintBBox(parent, group.id);
+        if (bbox) resizeSubmapToFootprint(sm, bbox);
+        else deleteMapCascade(sm.id);
+      }
+    }
+  }
+  return changed;
 }
 
 // ── Ramp tiles: a node path that lerps elevation between a from-map/sub-map
@@ -2154,11 +2206,11 @@ function applyAt(tile) {
   // "Gap" cells — inside a submap's bounding rect but outside the real painted
   // shape on the parent (e.g. the missing corner of an L) — aren't part of the
   // plateau at all, so they're not paintable (mirrors the dimmed/hatched overlay
-  // in draw()).
-  if (mode !== 'plateau') {
-    const mask = plateauMaskLocal(m);
-    if (mask && !mask.has(key)) return;
-  }
+  // in draw()). This must apply to plateau painting too — otherwise a deeper
+  // tier can get anchored over a gap in its parent's mask, producing a tier
+  // that floats over nothing once rendered in-game.
+  const mask = plateauMaskLocal(m);
+  if (mask && !mask.has(key)) return;
 
   if (mode === 'tile') {
     const set = TILE_SETS[m.category] || TILE_SETS.exterior;
@@ -2806,6 +2858,8 @@ function importAny(obj) {
       setStatus(`Loaded workspace: ${incoming.length} maps.`);
     }
     undoStack.length = 0; redoStack.length = 0;
+    migrateSubmapAnchors();
+    sanitizePlateauGaps();
     ws.maps.forEach(captureBaseline);
     updateAll(); fitView();
     return;
