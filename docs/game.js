@@ -2765,31 +2765,19 @@
           return (h / 4294967296 - 0.5) * 0.026;
         };
 
-        // Per-TILE distance (in whole tiles, capped at MARGIN_TILES) to the nearest
-        // cell that's either outside the painted footprint mask or on the bbox's
-        // literal edge (which always borders "outside" the footprint, even on a
-        // perfectly rectangular one) — a multi-source BFS so an irregular/concave
-        // footprint's cliff-face blend follows its real silhouette, not just the
-        // bounding rectangle's 4 sides. No mask (legacy/defensive) = whole rect is
-        // the footprint, matching the old behavior for plain rectangles.
+        // Multi-source BFS directly on the VERTEX grid (0.5-tile spacing, same
+        // grid as the position buffer below) so every vertex's blend reflects its
+        // own true distance to the nearest "outside" point — the bbox's literal
+        // edge, or an internal gap in an irregular/concave mask. A vertex is an
+        // "outside" seed if it touches the literal grid perimeter, or if any tile
+        // it borders is outside the painted footprint mask. Each BFS hop is 0.5
+        // tile, so hops*0.5 is exactly the tile-distance the old formula used.
+        // (Doing this per-tile-then-min-over-adjacent-tiles, as before, collapses
+        // the whole outer ring tile to blend 0 and renders mask cells next to an
+        // internal gap as fully raised even though mergeZoneTiles' onRing logic
+        // treats them as low ring tiles — both produced the grass-overhang bug.)
         const mask = bb.maskWorldKeys || null;
         const inMask = (c, r) => !mask || mask.has(`${c},${r}`);
-        const ti = (tc, tr) => tr * W + tc;
-        const tileDist = new Float32Array(W * D).fill(MARGIN_TILES);
-        const queue = [];
-        for (let tr = 0; tr < D; tr++) for (let tc = 0; tc < W; tc++) {
-          const isEdge = tc === 0 || tc === W - 1 || tr === 0 || tr === D - 1;
-          if (isEdge || !inMask(bb.minC + tc, bb.minR + tr)) { tileDist[ti(tc, tr)] = 0; queue.push([tc, tr]); }
-        }
-        for (let qi = 0; qi < queue.length; qi++) {
-          const [tc, tr] = queue[qi], d0 = tileDist[ti(tc, tr)];
-          if (d0 >= MARGIN_TILES) continue;
-          for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-            const ntc = tc + dc, ntr = tr + dr;
-            if (ntc < 0 || ntc >= W || ntr < 0 || ntr >= D) continue;
-            if (d0 + 1 < tileDist[ti(ntc, ntr)]) { tileDist[ti(ntc, ntr)] = d0 + 1; queue.push([ntc, ntr]); }
-          }
-        }
         // Which tile(s) a vertex index borders along one axis — even gi sit on a
         // tile boundary (shared by the tile each side), odd gi sit at a single
         // tile's center.
@@ -2799,15 +2787,33 @@
           if (hi >= 0 && hi < N && hi !== lo) out.push(hi);
           return out;
         };
-
-        const Y = new Float32Array(GW * GH);
+        const vIdx = (gi, gj) => gj * GW + gi;
+        const CAP = MARGIN_TILES * 2; // hops (0.5 tile each) — cap matches old margin in tiles
+        const vertHops = new Int32Array(GW * GH).fill(CAP);
+        const queue = [];
         for (let gj = 0; gj < GH; gj++) {
           const trs = axisTiles(gj, D);
           for (let gi = 0; gi < GW; gi++) {
             const tcs = axisTiles(gi, W);
-            let vertDist = MARGIN_TILES;
-            for (const tc of tcs) for (const tr of trs) vertDist = Math.min(vertDist, tileDist[ti(tc, tr)]);
-            const blend = Math.min(1, vertDist / MARGIN_TILES);
+            const isEdge = gi === 0 || gi === GW - 1 || gj === 0 || gj === GH - 1;
+            const bordersOutside = isEdge || tcs.some(tc => trs.some(tr => !inMask(bb.minC + tc, bb.minR + tr)));
+            if (bordersOutside) { vertHops[vIdx(gi, gj)] = 0; queue.push([gi, gj]); }
+          }
+        }
+        for (let qi = 0; qi < queue.length; qi++) {
+          const [gi, gj] = queue[qi], d0 = vertHops[vIdx(gi, gj)];
+          if (d0 >= CAP) continue;
+          for (const [dgi, dgj] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+            const ngi = gi + dgi, ngj = gj + dgj;
+            if (ngi < 0 || ngi >= GW || ngj < 0 || ngj >= GH) continue;
+            if (d0 + 1 < vertHops[vIdx(ngi, ngj)]) { vertHops[vIdx(ngi, ngj)] = d0 + 1; queue.push([ngi, ngj]); }
+          }
+        }
+
+        const Y = new Float32Array(GW * GH);
+        for (let gj = 0; gj < GH; gj++) {
+          for (let gi = 0; gi < GW; gi++) {
+            const blend = Math.min(1, (vertHops[vIdx(gi, gj)] * 0.5) / MARGIN_TILES);
             const kx = bb.minC * 2 + gi, kz = bb.minR * 2 + gj; // absolute seam-hash key, matches adjacent makeFloorGeo tiles
             Y[gj*GW+gi] = BASE + hashDisp(kx, kz) + blend * elevOffset;
           }
