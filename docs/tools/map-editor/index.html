@@ -1918,15 +1918,19 @@ function loadFromGame() {
   Object.keys(layout.objects || {}).forEach(k => { ext.objects[k] = [...layout.objects[k]]; });
   (layout.furniture || []).forEach(f => ext.furniture.push({ key: f.key, col: f.col, row: f.row }));
   let intM = mapById(ws.gameLink.interiorId);
+  const layoutMapAudio = Array.isArray(layout.mapAudio) ? layout.mapAudio : [];
   const needInterior = (layout.decor || []).some(d => d.area === 'interior')
     || (layout.routes || []).some(p => p.area === 'interior')
     || (layout.npcPaths || []).some(p => p.area === 'interior')
     || (layout.npcStations || []).some(st => st.area === 'interior')
-    || (layout.transitions || []).some(t => t.area === 'interior');
+    || (layout.transitions || []).some(t => t.area === 'interior')
+    || layoutMapAudio.some(a => a.area === 'interior');
   if (!intM && needInterior) {
     intM = makeMap('Farmhouse', 'interior', GAME.interior.cols, GAME.interior.rows);
     applyFarmhouseFloor(intM); ws.maps.push(intM); ws.gameLink.interiorId = intM.id;
   }
+  ext.audioIndex = layoutMapAudio.find(a => (a.area || 'farm') === 'farm')?.audioIndex || '';
+  if (intM) intM.audioIndex = layoutMapAudio.find(a => a.area === 'interior')?.audioIndex || '';
   (layout.decor || []).forEach(d => {
     if (d.area === 'interior') intM.decor.push({ key: d.key, col: d.col, row: d.row });
     else ext.decor.push({ key: d.key, col: d.col, row: d.row });

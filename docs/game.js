@@ -2619,8 +2619,8 @@
 
       function resetAmbientCueTimer(area = currentArea) {
         const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
-        const minSec = Number(audioCfg.ambientCueMinDelaySec) || 45;
-        const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 120);
+        const minSec = Number(audioCfg.ambientCueMinDelaySec) || 0.1;
+        const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 10);
         _ambientCueState.area = area;
         _ambientCueState.indexId = resolveAreaAudioIndex(area);
         _ambientCueState.nextAt = performance.now() + (minSec + Math.random() * (maxSec - minSec)) * 1000;
@@ -2646,10 +2646,15 @@
         const cue = cues[Math.floor(Math.random() * cues.length)];
         if (!cue?.file) { resetAmbientCueTimer(currentArea); return; }
         const snd = new Audio((idx.__basePath || '') + cue.file);
+        const finishCue = () => {
+          if (_ambientCueState.current === snd) _ambientCueState.current = null;
+          resetAmbientCueTimer(currentArea);
+        };
         snd.volume = Math.max(0, Math.min(1, Number(cue.volume) || Number(audioCfg.bgmVolume) || 0.7));
-        snd.addEventListener('ended', () => resetAmbientCueTimer(currentArea), { once: true });
-        snd.play().catch(() => resetAmbientCueTimer(currentArea));
+        snd.addEventListener('ended', finishCue, { once: true });
+        snd.addEventListener('error', finishCue, { once: true });
         _ambientCueState.current = snd;
+        snd.play().catch(finishCue);
       }
 
       function buildZoneScene(mapId) {

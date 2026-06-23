@@ -3126,8 +3126,8 @@ window.SCRATCHBONES_CONFIG = {
         "sfxVolume": 0.92,
         "bgmVolume": 0.48,
         "musicFadeMs": 280,
-        "ambientCueMinDelaySec": 45,
-        "ambientCueMaxDelaySec": 120,
+        "ambientCueMinDelaySec": 0.1,
+        "ambientCueMaxDelaySec": 10,
         "movement": {
           "handToTable": { "url": "./docs/assets/audio/sfx/tablesounds/boneclack1.m4a", "pitch": 1.0, "tempo": 1.0, "volume": 0.95 },
           "tableToClaim": { "url": "./docs/assets/audio/sfx/tablesounds/boneclack1.m4a", "pitch": 1.08, "tempo": 1.0, "volume": 0.9 },
