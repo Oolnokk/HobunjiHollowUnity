@@ -4271,10 +4271,11 @@
             // explicitly authored inside that footprint (a ramp cut through the
             // incline ring, a plateau marker, etc.) always overwrites/wins. Only the
             // ACTUAL painted shape is staked — not its bounding rectangle — so a
-            // concave/irregular footprint's "gap" cells (inside the bbox but never
-            // painted) are left untouched here and fall through to this map's own
-            // per-cell loop below, which fills them in as ordinary ground at this
-            // tier instead of getting raised along with the rest of the rectangle.
+            // genuine concave/irregular footprint's "gap" cells (inside the bbox,
+            // unpainted, and not just a stray pinhole — see the fill pass below)
+            // are left untouched here and fall through to this map's own per-cell
+            // loop below, which fills them in as ordinary ground at this tier
+            // instead of getting raised along with the rest of the rectangle.
             const children = [];
             for (const [gid, mask] of groupMask) {
               const child = childByParentGroup.get(`${m.id}__${gid}`);
@@ -4282,6 +4283,31 @@
               const toTier = baseTier + (plateauElevById.get(gid) || 0);
               let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
               for (const k of mask) { const [c, r] = k.split(',').map(Number); if (c<minC)minC=c; if (c>maxC)maxC=c; if (r<minR)minR=r; if (r>maxR)maxR=r; }
+
+              // A brush stroke can leave a single un-stamped pinhole inside an
+              // otherwise-solid blob (the circular stamp's own rounding, or a
+              // missed click) — that cell has NO tile entry at all, so it isn't a
+              // deliberate concave notch, just a gap. Adopt any untouched cell
+              // that's mostly surrounded by this same mask (3+ of its 4 cardinal
+              // neighbors already painted) into the mask too, so it gets raised
+              // and ringed along with the rest of the blob instead of sinking
+              // back to flat ground in the middle of the mesa. Iterate so a short
+              // chain of adjacent pinholes fills in one cell at a time; capped so
+              // a genuinely open notch (few neighbors painted at any point along
+              // it) is left alone.
+              for (let pass = 0; pass < 8; pass++) {
+                let filled = false;
+                for (let r = minR; r <= maxR; r++) {
+                  for (let c = minC; c <= maxC; c++) {
+                    const k = `${c},${r}`;
+                    if (mask.has(k) || m.tiles?.[k]) continue;
+                    const neighborCount = [[1,0],[-1,0],[0,1],[0,-1]].filter(([dc,dr]) => mask.has(`${c+dc},${r+dr}`)).length;
+                    if (neighborCount >= 3) { mask.add(k); filled = true; }
+                  }
+                }
+                if (!filled) break;
+              }
+
               const worldMinC = offsetC + minC, worldMaxC = offsetC + maxC, worldMinR = offsetR + minR, worldMaxR = offsetR + maxR;
               const maskWorldKeys = new Set();
               for (const k of mask) { const [c, r] = k.split(',').map(Number); maskWorldKeys.add(`${c + offsetC},${r + offsetR}`); }
