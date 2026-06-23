@@ -1118,6 +1118,7 @@
           entryCol: 11, entryRow: 14,
           exitCol: 11, exitRow: 15,
           townReturnCol: 30, townReturnRow: 2,
+          audioIndex: 'northern_cliffs',
         },
         map_southern_cloud_forest: {
           label: 'Southern Cloud Forest',
@@ -2582,6 +2583,79 @@
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       const _zoneScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions }
+      const _audioCueIndexes = new Map();
+      const _mapAudioIndexes = new Map();
+      let _ambientCueState = { area: '', indexId: '', nextAt: 0, current: null };
+
+      async function loadAudioCueIndexes() {
+        try {
+          const res = await fetch('assets/audio/music/cues/index.json');
+          if (!res.ok) return;
+          const registry = await res.json();
+          await Promise.all((registry.indexes || []).map(async entry => {
+            if (!entry?.id || !entry.file) return;
+            const r = await fetch(entry.file);
+            if (!r.ok) return;
+            const data = await r.json();
+            data.__basePath = entry.file.replace(/[^/]+$/, '');
+            _audioCueIndexes.set(entry.id, data);
+          }));
+        } catch(e) { debugLog('Audio cue index load failed: ' + e.message, 'warn'); }
+      }
+
+      function registerMapAudio(entries) {
+        for (const e of (entries || [])) {
+          const area = e.area || e.mapId;
+          if (area && e.audioIndex) _mapAudioIndexes.set(area, e.audioIndex);
+        }
+      }
+
+      function resolveAreaAudioIndex(area) {
+        if (_mapAudioIndexes.has(area)) return _mapAudioIndexes.get(area);
+        if (_isZoneArea(area)) return EXTERIOR_ZONES[area].audioIndex || '';
+        const wsMap = _workspaceMaps?.find(m => (m.id === area) || (area === 'town' && m.id === 'map_hobunji_town'));
+        return wsMap?.audioIndex || '';
+      }
+
+      function resetAmbientCueTimer(area = currentArea) {
+        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const minSec = Number(audioCfg.ambientCueMinDelaySec) || 0.1;
+        const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 10);
+        _ambientCueState.area = area;
+        _ambientCueState.indexId = resolveAreaAudioIndex(area);
+        _ambientCueState.nextAt = performance.now() + (minSec + Math.random() * (maxSec - minSec)) * 1000;
+      }
+
+      function stopAmbientCue() {
+        if (_ambientCueState.current) {
+          _ambientCueState.current.pause();
+          _ambientCueState.current = null;
+        }
+      }
+
+      function updateAmbientCues() {
+        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        if (audioCfg.enabled === false) return;
+        if (_ambientCueState.area !== currentArea) { stopAmbientCue(); resetAmbientCueTimer(currentArea); }
+        const idx = _audioCueIndexes.get(_ambientCueState.indexId);
+        const cues = idx?.ambient_cues || [];
+        if (!cues.length) return;
+        if (_ambientCueState.current && !_ambientCueState.current.ended) return;
+        _ambientCueState.current = null;
+        if (performance.now() < _ambientCueState.nextAt) return;
+        const cue = cues[Math.floor(Math.random() * cues.length)];
+        if (!cue?.file) { resetAmbientCueTimer(currentArea); return; }
+        const snd = new Audio((idx.__basePath || '') + cue.file);
+        const finishCue = () => {
+          if (_ambientCueState.current === snd) _ambientCueState.current = null;
+          resetAmbientCueTimer(currentArea);
+        };
+        snd.volume = Math.max(0, Math.min(1, Number(cue.volume) || Number(audioCfg.bgmVolume) || 0.7));
+        snd.addEventListener('ended', finishCue, { once: true });
+        snd.addEventListener('error', finishCue, { once: true });
+        _ambientCueState.current = snd;
+        snd.play().catch(finishCue);
+      }
 
       function buildZoneScene(mapId) {
         if (_zoneScenes.has(mapId)) return _zoneScenes.get(mapId);
@@ -2628,6 +2702,7 @@
             (layout.routes || []).filter(r => (r.area || 'farm') !== 'town'),
             worldNpcPaths);
           registerNpcStations(layout.npcStations, null);
+          registerMapAudio(layout.mapAudio);
           rebuildRouteGraphs();
         }
         // Don't fire a spot the player happens to spawn on
@@ -3606,6 +3681,7 @@
           p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
         worldTownRoutes = normalizeRoutes(layout.routes, townPaths).map(r => ({ ...r, area: 'town' }));
         registerNpcStations(layout.npcStations, 'town');
+        registerMapAudio(layout.mapAudio);
         rebuildRouteGraphs();
         // If town scene was already built before this layout arrived, spawn buildings now
         if (_townSceneBuilt && townScene) {
@@ -11535,6 +11611,7 @@
           updateCalendar(dt);
           _advanceSmoothedLighting(dt);
           updateRainAudio();
+          updateAmbientCues();
           updateMovement(dt);
           updatePlayerVitals(dt);
 
@@ -13461,6 +13538,7 @@
         buildTransitionMarkers();
       }
       // Load town layout from workspace config (authoritative source)
+      loadAudioCueIndexes().then(() => resetAmbientCueTimer()).catch(() => resetAmbientCueTimer());
       _loadTownFromWorkspace().catch(() => {});
       debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
 
