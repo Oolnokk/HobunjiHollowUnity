@@ -119,6 +119,14 @@ window.SCRATCHBONES_CONFIG = {
         }
       }
     },
+    "desktopControls": {
+      "tapWindowMs": 350,
+      "cameraRotateDegPerPx": 0.15,
+      "cameraRotateClampDeg": 45,
+      "wheelZoomStep": 0.05,
+      "wheelZoomMin": 0.75,
+      "wheelZoomMax": 2.5
+    },
     "gameplayShortcuts": {
       "focusChat": {
         "enabled": true,

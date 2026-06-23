@@ -2799,6 +2799,7 @@
       function resetDialogueCameraZoom() {
         setDialogueCameraZoomPercent(dialogueZoomConfig().initialPercent ?? 0);
       }
+      function desktopControlsConfig() { return window.SCRATCHBONES_CONFIG?.game?.desktopControls || {}; }
       function npcDialogueButtonConfig() {
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.npcDialogueButton || {};
       }
@@ -8544,7 +8545,7 @@
       });
       _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
 
-      let s_zoomScale = 1.5; // camera zoom level (Settings tab) — higher = camera sits closer to the player (default 150%)
+      let s_zoomScale = 1.5; // camera zoom level — higher = camera sits closer to the player (default 150%)
 
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
@@ -11493,9 +11494,17 @@
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
       });
-      document.getElementById('settingZoom').addEventListener('change', e => {
-        s_zoomScale = parseFloat(e.target.value) || 1.5;
+      function setCameraZoomScale(value) {
+        const cfg = desktopControlsConfig();
+        const min = Number.isFinite(Number(cfg.wheelZoomMin)) ? Number(cfg.wheelZoomMin) : 0.75;
+        const max = Number.isFinite(Number(cfg.wheelZoomMax)) ? Number(cfg.wheelZoomMax) : 2.5;
+        s_zoomScale = clamp(Number(value) || 1.5, min, max);
+        const zoomSetting = document.getElementById('settingZoom');
+        if (zoomSetting) zoomSetting.value = String(s_zoomScale);
         updateCameraPosition();
+      }
+      document.getElementById('settingZoom').addEventListener('change', e => {
+        setCameraZoomScale(parseFloat(e.target.value) || 1.5);
       });
 
       function gameLoop(now) {
@@ -12315,6 +12324,38 @@
           _clearArc();
         }
 
+        window._desktopSelectionArc = {
+          openTool() { if (_arcOpen !== 'tool') _openToolArc(); },
+          openItem() { if (_arcOpen !== 'item') _openItemArc(); },
+          scrollTool(dir) {
+            if (_arcOpen !== 'tool') _openToolArc();
+            const idx = WHEEL_SLOTS.indexOf(activeTool);
+            const next = (idx + dir + WHEEL_SLOTS.length) % WHEEL_SLOTS.length;
+            heldMode = 'tool';
+            _lastHeldTool = WHEEL_SLOTS[next];
+            setActiveTool(WHEEL_SLOTS[next]);
+            _arcSlots.forEach((s, i) => {
+              const active = s.data === activeTool;
+              s.el.classList.toggle('arc-active', active);
+              if (active) _arcActive = i;
+            });
+          },
+          scrollItem(dir) {
+            if (_arcOpen !== 'item') _openItemArc();
+            heldMode = 'item';
+            cycleActiveInventoryItem(dir);
+            refreshItemScroll(); refreshActionBar();
+            _iScroll = Math.max(0, Math.min(getInventoryStackItems().length - ITEM_VIS, activeItemIndex - Math.floor(ITEM_VIS / 2)));
+            _buildItemSlots();
+            _arcSlots.forEach((s, i) => {
+              const active = s.data.type === 'item' && s.data.index === activeItemIndex;
+              s.el.classList.toggle('arc-active', active);
+              if (active) _arcActive = i;
+            });
+          },
+          close() { _clearArc(); }
+        };
+
         let _tPtId = null, _tHeld = false, _tTimer = null, _tDx = 0, _tDy = 0, _tMoved = false;
         toolBtn.addEventListener('pointerdown', ev => {
           if (_tPtId !== null) return;
@@ -13107,6 +13148,36 @@
         performDodge(player.angle);
       });
 
+      const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs) || 350;
+      const desktopHoldKeys = {
+        q: { down: false, held: false, timer: null, arc: 'item' },
+        e: { down: false, held: false, timer: null, arc: 'tool' }
+      };
+      function openDesktopHoldArc(key) {
+        const state = desktopHoldKeys[key];
+        if (!state || !state.down) return;
+        state.held = true;
+        if (state.arc === 'item') window._desktopSelectionArc?.openItem();
+        else window._desktopSelectionArc?.openTool();
+      }
+      function startDesktopHoldKey(key, event) {
+        const state = desktopHoldKeys[key];
+        if (!state || state.down || event.repeat) return;
+        state.down = true;
+        state.held = false;
+        state.timer = setTimeout(() => openDesktopHoldArc(key), desktopTapWindowMs());
+      }
+      function finishDesktopHoldKey(key) {
+        const state = desktopHoldKeys[key];
+        if (!state || !state.down) return false;
+        state.down = false;
+        if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+        const wasHeld = state.held;
+        state.held = false;
+        if (wasHeld) window._desktopSelectionArc?.close();
+        return wasHeld;
+      }
+
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
         if (fishingMinigame?.active) {
@@ -13120,27 +13191,26 @@
           event.preventDefault(); input.keys.add(key);
         }
 
-        // Primary action: Space, Enter, or E
+        if (key === 'e') {
+          event.preventDefault();
+          if (isDesktop) { startDesktopHoldKey('e', event); return; }
+        }
+        if (key === 'q') {
+          event.preventDefault();
+          if (isDesktop) { startDesktopHoldKey('q', event); return; }
+          const actions = toolActions[activeTool];
+          const idx = actions.indexOf(activeAction);
+          activeAction = actions[(idx + 1) % actions.length];
+          refreshActionBar();
+          return;
+        }
+
+        // Primary action: Space, Enter, or E (E only taps on desktop; hold opens tool selection)
         if (key === ' ' || key === 'enter' || key === 'e') {
           event.preventDefault();
           if (!event.repeat) {
             actionHeldDown = true;
             useActiveAction();
-          }
-          return;
-        }
-
-        // Secondary action: Q fires second button on desktop, cycles tool action on touch
-        if (key === 'q') {
-          if (isDesktop) {
-            const btns = computeActionButtons();
-            const second = btns.find((b, i) => i > 0 && b.allowed);
-            if (second) { activeAction = second.action; useActiveAction(); }
-          } else {
-            const actions = toolActions[activeTool];
-            const idx = actions.indexOf(activeAction);
-            activeAction = actions[(idx + 1) % actions.length];
-            refreshActionBar();
           }
           return;
         }
@@ -13153,13 +13223,13 @@
         if (key === '6') setActiveTool('harpoon');
 
         // Item scroll: , / . or Tab/Shift+Tab
-        if (key === ',' || key === 'shift') {
+        if (key === ',') {
           cycleActiveInventoryItem(-1);
           refreshItemScroll(); refreshActionBar();
         }
         if (key === '.' || key === 'tab') {
           event.preventDefault();
-          cycleActiveInventoryItem(1);
+          cycleActiveInventoryItem(event.shiftKey ? -1 : 1);
           refreshItemScroll(); refreshActionBar();
         }
 
@@ -13183,22 +13253,48 @@
       window.addEventListener('keyup', (event) => {
         const key = event.key.toLowerCase();
         input.keys.delete(key);
+        if (key === 'e' && isDesktop) {
+          event.preventDefault();
+          const wasHeld = finishDesktopHoldKey('e');
+          if (!wasHeld) { actionHeldDown = true; useActiveAction(); actionHeldDown = false; }
+          return;
+        }
+        if (key === 'q' && isDesktop) {
+          event.preventDefault();
+          const wasHeld = finishDesktopHoldKey('q');
+          if (!wasHeld) {
+            const btns = computeActionButtons();
+            const second = btns.find((b, i) => i > 0 && b.allowed);
+            if (second) { activeAction = second.action; useActiveAction(); }
+          }
+          return;
+        }
         if (key === ' ' || key === 'enter' || key === 'e') actionHeldDown = false;
       });
 
-      // Scroll wheel: zooms the active conversation camera; otherwise cycles tools forward/backward.
+      // Scroll wheel: Q+wheel swaps items, E+wheel swaps tools, otherwise zooms the camera.
       threeContainer.addEventListener('wheel', (e) => {
         if (menuOpen || farmEditMode) return;
         e.preventDefault();
+        const dir = e.deltaY > 0 ? 1 : -1;
+        if (isDesktop && desktopHoldKeys.q.down) {
+          openDesktopHoldArc('q');
+          window._desktopSelectionArc?.scrollItem(dir);
+          return;
+        }
+        if (isDesktop && desktopHoldKeys.e.down) {
+          openDesktopHoldArc('e');
+          window._desktopSelectionArc?.scrollTool(dir);
+          return;
+        }
         if (dialogueZoomActive()) {
           const sensitivity = dialogueZoomConfig().wheelSensitivity ?? 0.0015;
           setDialogueCameraZoomPercent(dialogueCameraZoomPercent + (-e.deltaY * sensitivity * 100));
           return;
         }
-        const tools = ['shovel', 'hoe', 'weapon', 'axe', 'pick', 'harpoon'];
-        const idx = tools.indexOf(activeTool);
-        const next = (idx + (e.deltaY > 0 ? 1 : -1) + tools.length) % tools.length;
-        setActiveTool(tools[next]);
+        const cfg = desktopControlsConfig();
+        const step = Number.isFinite(Number(cfg.wheelZoomStep)) ? Number(cfg.wheelZoomStep) : 0.05;
+        setCameraZoomScale(s_zoomScale + (-dir * step));
       }, { passive: false });
 
       function updateDialoguePinchDistance() {
@@ -13232,10 +13328,8 @@
       window.addEventListener('pointerup', clearDialogueZoomPointer);
       window.addEventListener('pointercancel', clearDialogueZoomPointer);
 
-      // ── Camera drag-to-look: single-finger drag on mobile, Shift+drag on desktop.
-      // Nudges the look angle on top of the active mode's base framing, clamped to ±45°.
-      const CAMERA_DRAG_DEG_PER_PX = 0.15;
-      const CAMERA_DRAG_CLAMP_DEG = 45;
+      // ── Camera drag-to-look: single-finger drag on mobile, Shift+mouse movement on desktop.
+      // Nudges the look angle on top of the active mode's base framing, clamped to the configured range.
       let cameraDragPointerId = null;
       let cameraDragStartX = 0, cameraDragStartY = 0;
       let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
@@ -13243,7 +13337,7 @@
         return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active;
       }
       function cameraDragRequested(e) {
-        return e.pointerType === 'touch' || (isDesktop && e.pointerType === 'mouse' && e.shiftKey && e.button === 0);
+        return e.pointerType === 'touch';
       }
       threeContainer.addEventListener('pointerdown', (e) => {
         if (!cameraDragRequested(e) || !cameraDragAllowed()) return;
@@ -13258,8 +13352,11 @@
         if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
         const dx = e.clientX - cameraDragStartX;
         const dy = e.clientY - cameraDragStartY;
-        cameraAzimuthOffsetDeg = clamp(cameraDragStartAzimuthOffset + dx * CAMERA_DRAG_DEG_PER_PX, -CAMERA_DRAG_CLAMP_DEG, CAMERA_DRAG_CLAMP_DEG);
-        cameraAngleOffsetDeg   = clamp(cameraDragStartAngleOffset   - dy * CAMERA_DRAG_DEG_PER_PX, -CAMERA_DRAG_CLAMP_DEG, CAMERA_DRAG_CLAMP_DEG);
+        const cfg = desktopControlsConfig();
+        const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
+        const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
+        cameraAzimuthOffsetDeg = clamp(cameraDragStartAzimuthOffset + dx * degPerPx, -clampDeg, clampDeg);
+        cameraAngleOffsetDeg   = clamp(cameraDragStartAngleOffset   - dy * degPerPx, -clampDeg, clampDeg);
         updateCameraPosition();
       });
       function clearCameraDragPointer(e) {
@@ -13288,7 +13385,17 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
-          if (cameraDragPointerId !== null) return; // Shift+drag is rotating the camera, not aiming
+          if (e.shiftKey && cameraDragAllowed()) {
+            const cfg = desktopControlsConfig();
+            const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
+            const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
+            cameraAzimuthOffsetDeg = clamp(cameraAzimuthOffsetDeg + e.movementX * degPerPx, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg - e.movementY * degPerPx, -clampDeg, clampDeg);
+            updateCameraPosition();
+            return;
+          }
+
+          if (cameraDragPointerId !== null || e.shiftKey) return; // Shift+mouse movement is rotating the camera, not aiming
           const rect = threeContainer.getBoundingClientRect();
           _mouseNDC.x =  ((e.clientX - rect.left)  / rect.width)  * 2 - 1;
           _mouseNDC.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;
