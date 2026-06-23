@@ -2630,17 +2630,25 @@
           zGrid[r][c].incline = !!incline;
           if (type === TileType.RAMP) zGrid[r][c].rampElevation = rampElevation || 0;
         }
-        // Ramp curtains: any non-ramp cell directly beside a ramp cell gets folded
-        // into the ramp's slope as a 1-tile-wide skirt instead of sitting flat —
-        // this is what stops players walking off the side of an elevated ramp, and
-        // gives the ramp the same cliff-face treatment a plateau gets. Cells already
+        // Ramp curtains: a non-ramp cell beside a ramp cell gets folded into the
+        // ramp's slope as a 1-tile-wide skirt instead of sitting flat — this is
+        // what stops players walking off the side of an elevated ramp, and gives
+        // the ramp the same cliff-face treatment a plateau gets. Cells already
         // `incline` (an existing plateau wall) are left alone so the ramp blends
         // into that wall instead of doubling it up (see buildRampCurtainMeshes).
+        // A neighbor whose own ground height already matches the ramp there is
+        // NOT a cliff — it's the flush approach/exit tile at the ramp's low or
+        // high end (rampElevation lerps to exactly that tier's height at t=0/1) —
+        // so it must stay walkable, not get walled off.
+        const RAMP_FLUSH_EPS = 0.5; // world-Y; absorbs wide-ramp t fuzz near an end without masking a real side drop
         for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
           if (zGrid[r][c].type !== TileType.RAMP) continue;
+          const rampY = NORMAL_TOP + (zGrid[r][c].rampElevation || 0) * PLATEAU_UNIT;
           for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
             const nt = zGrid[r + dr]?.[c + dc];
             if (!nt || nt.type === TileType.RAMP || nt.incline) continue;
+            const groundY = NORMAL_TOP + (nt.elevTier || 0) * PLATEAU_UNIT;
+            if (Math.abs(rampY - groundY) < RAMP_FLUSH_EPS) continue;
             nt.incline = true; nt.skipFloor = true; nt.rampCurtain = true;
           }
         }
