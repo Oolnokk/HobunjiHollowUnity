@@ -5980,6 +5980,7 @@
       const CARDINAL_HOLD  = 0.13;      // seconds to hold last cardinal after input stops
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
+      let targetAimAngle = -Math.PI / 2;
 
       // Mouse-look: on desktop, facing tracks the mouse cursor in world space.
       // After MOUSE_IDLE_MS of no mouse movement, reverts to input-direction facing.
@@ -6138,6 +6139,8 @@
           inputStrength = usingKeyboard ? 1 : clamp(inputLen, 0, 1);
           ix /= inputLen;
           iy /= inputLen;
+          const aimDeadzone = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.inputAimDeadzone) || 0.08;
+          if (inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
         }
 
         // ── Cardinal bias ────────────────────────────────────
@@ -6775,17 +6778,25 @@
         refreshActionBar();
       }
 
+      function targetingConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.input?.targeting || {};
+      }
+
       function getReticleTile() {
-        const dir = facingCardinal(player.angle);
-        // Cast a ray from the player's world position in the facing direction.
-        // Using 0.7×TILE ensures we always land in the next tile regardless of
-        // where within the current tile the player is standing.
-        const probeX = player.x + dir.x * TILE * 0.7;
-        const probeY = player.y + dir.y * TILE * 0.7;
+        const cfg = targetingConfig();
+        const orbitRadiusTiles = Number.isFinite(Number(cfg.orbitRadiusTiles)) ? Number(cfg.orbitRadiusTiles) : 0.62;
+        const angle = targetAimAngle;
+        const dir = { x: Math.cos(angle), y: Math.sin(angle), name: facingCardinal(angle).name };
+        // Ground-level probe: a tight orbit around the player's actual position,
+        // aimed by raw input/look rotation rather than the tile the player stands on.
+        const probeX = player.x + dir.x * TILE * orbitRadiusTiles;
+        const probeY = player.y + dir.y * TILE * orbitRadiusTiles;
         return {
           col: clamp(Math.floor(probeX / TILE), 0, getActiveCols() - 1),
           row: clamp(Math.floor(probeY / TILE), 0, getActiveRows() - 1),
-          dir
+          dir,
+          probeX,
+          probeY
         };
       }
 
@@ -13309,7 +13320,10 @@
         const ry = Math.abs(pad.axes[3] || 0) >= dz ? pad.axes[3] : 0;
         input.x = ax; input.y = ay;
         controllerLookActive = Math.hypot(rx, ry) >= dz;
-        if (controllerLookActive) controllerLookAngle = Math.atan2(ry, rx);
+        if (controllerLookActive) {
+          controllerLookAngle = Math.atan2(ry, rx);
+          targetAimAngle = controllerLookAngle;
+        }
         const down = new Set();
         pad.buttons.forEach((button, index) => { if (button?.pressed) down.add(`Button${index}`); });
         if ((pad.buttons[6]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('LeftTrigger');
@@ -13645,6 +13659,7 @@
             if (Math.hypot(dx, dz) > 0.3) {
               // atan2 in Three.js XZ: angle from +X axis, but game uses -Z=north
               mouseLookAngle = Math.atan2(dz, dx);
+              targetAimAngle = mouseLookAngle;
               mouseLookActive = true;
               lastMouseMoveTime = performance.now();
             }

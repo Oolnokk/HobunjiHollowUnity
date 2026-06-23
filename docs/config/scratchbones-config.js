@@ -131,6 +131,10 @@ window.SCRATCHBONES_CONFIG = {
       "storageKey": "scratchbones.inputBindings.v1",
       "gamepadDeadzone": 0.24,
       "axisPressThreshold": 0.55,
+      "targeting": {
+        "orbitRadiusTiles": 0.62,
+        "inputAimDeadzone": 0.08
+      },
       "actions": [
         { "id": "interact", "label": "Interact", "desktop": "KeyE", "controller": "Button0" },
         { "id": "dodge", "label": "Dodge", "desktop": "KeyX", "controller": "Button1" },
