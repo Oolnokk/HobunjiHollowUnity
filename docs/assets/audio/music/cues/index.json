@@ -5,6 +5,11 @@
       "id": "northern_cliffs",
       "name": "Northern Cliffs",
       "file": "assets/audio/music/cues/northern_cliffs/index.json"
+    },
+    {
+      "id": "general",
+      "name": "General",
+      "file": "assets/audio/music/cues/general/index.json"
     }
   ]
 }

@@ -3182,8 +3182,34 @@ window.SCRATCHBONES_CONFIG = {
         "sfxVolume": 0.92,
         "bgmVolume": 0.48,
         "musicFadeMs": 280,
-        "ambientCueMinDelaySec": 0.1,
-        "ambientCueMaxDelaySec": 10,
+        "ambientCueMinDelaySec": 300,
+        "ambientCueMaxDelaySec": 600,
+        "areaBgm": {
+          "farm": [
+            { "url": "assets/audio/music/bgm/bgm_farm1.m4a" },
+            { "url": "assets/audio/music/bgm/bgm_follow_the_signs.ogg", "nightOnly": true }
+          ],
+          "town": [
+            { "url": "assets/audio/music/bgm/bgm_farm1.m4a" },
+            { "url": "assets/audio/music/bgm/bgm_follow_the_signs.ogg", "nightOnly": true }
+          ],
+          "map_northern_cliffs": [
+            { "url": "assets/audio/music/bgm/bgm_what_the_winds_carry.mp3" }
+          ]
+        },
+        "bgs": {
+          "birds": "assets/audio/sfx/bgs/bgs_birds1.mp3",
+          "birdsVolume": 0.24,
+          "nightbugs": "assets/audio/sfx/bgs/bgs_nightbugs1.wav",
+          "nightbugsVolume": 0.22,
+          "wind1": "assets/audio/sfx/bgs/bgs_wind1.mp3",
+          "wind1Volume": 0.24,
+          "wind2": "assets/audio/sfx/bgs/bgs_wind2.mp3",
+          "wind2Volume": 0.18
+        },
+        "furnitureSfx": {
+          "fireplace": { "url": "assets/audio/sfx/bgs/bgs_fire1.wav", "rangeTiles": 6, "volume": 0.65 }
+        },
         "movement": {
           "handToTable": { "url": "./docs/assets/audio/sfx/tablesounds/boneclack1.m4a", "pitch": 1.0, "tempo": 1.0, "volume": 0.95 },
           "tableToClaim": { "url": "./docs/assets/audio/sfx/tablesounds/boneclack1.m4a", "pitch": 1.08, "tempo": 1.0, "volume": 0.9 },
