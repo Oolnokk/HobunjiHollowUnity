@@ -11884,6 +11884,7 @@
         }
 
         if (!gameStarted) {
+          audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
           renderer.render(scene, camera);
           requestAnimationFrame(gameLoop);
           return;
@@ -11893,14 +11894,16 @@
 
         if (fishingMinigame?.active) updateFishingMinigame(dt);
 
+        updateRainAudio();
+        updateExteriorBgs();
+        updateFurnitureSfxSources();
+        updateAmbientCues();
+        audioDebug('audio tick active area=' + currentArea + ' paused=' + paused + ' gameStarted=' + gameStarted, 'audio-tick-' + currentArea, 5000);
+
         if (!paused) {
           updateCalendar(dt);
           _advanceSmoothedLighting(dt);
-          updateRainAudio();
-          updateExteriorBgs();
-          updateFurnitureSfxSources();
           pollControllerInput();
-          updateAmbientCues();
           updateMovement(dt);
           updatePlayerVitals(dt);
 
