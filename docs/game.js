@@ -1070,9 +1070,11 @@
         const cfg = creatureCombatConfig().attack || {};
         return {
           windupS: Math.max(0, Number(cfg.windupSeconds) || 0.45),
-          rangeMultiplier: Math.max(0.1, Number(cfg.rangeMultiplier) || 1.35),
-          squishY: Math.max(0.1, Number(cfg.windupSquishY) || 0.72),
-          squishXZ: Math.max(0.1, Number(cfg.windupSquishXZ) || 1.12)
+          rangeMultiplier: Math.max(0.1, Number(cfg.rangeMultiplier) || 1.8),
+          halfConeMultiplier: Math.max(0.1, Number(cfg.halfConeMultiplier) || 0.55),
+          startDistanceFactor: Math.max(0.1, Math.min(1, Number(cfg.startDistanceFactor) || 0.75)),
+          squishY: Math.max(0.1, Number(cfg.windupSquishY) || 0.52),
+          squishXZ: Math.max(0.1, Number(cfg.windupSquishXZ) || 1.28)
         };
       }
 
@@ -1137,6 +1139,12 @@
       function effectiveCreatureAttackRangePx(def) {
         const baseTiles = Number(def.attackRangeTiles) || 1;
         return TILE * baseTiles * creatureAttackTuning().rangeMultiplier;
+      }
+      function effectiveCreatureAttackHalfConeRad(def) {
+        return def.attackHalfConeRad * creatureAttackTuning().halfConeMultiplier;
+      }
+      function creatureAttackStartDistancePx(def) {
+        return effectiveCreatureAttackRangePx(def) * creatureAttackTuning().startDistanceFactor;
       }
 
       // Minimal standalone exterior zones reachable from the town's pre-authored
@@ -2302,12 +2310,12 @@
         c.stamina -= def.attackStaminaCost;
         c.attackCooldownT = def.attackCooldownS;
         if (damageTarget === player) {
-          if (inCone(c.x, c.y, c.attackWindupFacing, player.x, player.y, effectiveCreatureAttackRangePx(def), def.attackHalfConeRad)) {
+          if (inCone(c.x, c.y, c.attackWindupFacing, player.x, player.y, effectiveCreatureAttackRangePx(def), effectiveCreatureAttackHalfConeRad(def))) {
             damagePlayer(def.attackDamage, c.x, c.y, knockbackPxS);
           }
           c.retreatT = JUMP_BACK_DUR_S;
         } else if (damageTarget?.health > 0) {
-          if (inCone(c.x, c.y, c.attackWindupFacing, damageTarget.x, damageTarget.y, effectiveCreatureAttackRangePx(def), def.attackHalfConeRad)) {
+          if (inCone(c.x, c.y, c.attackWindupFacing, damageTarget.x, damageTarget.y, effectiveCreatureAttackRangePx(def), effectiveCreatureAttackHalfConeRad(def))) {
             damageCreature(damageTarget, def.attackDamage, c.x, c.y, knockbackPxS);
           }
         }
@@ -2319,7 +2327,8 @@
         if (cfg.enabled === false || c.attackWindupT <= 0 || c.isCompanion) { c.telegraphMesh.visible = false; return; }
         const rangeTiles = effectiveCreatureAttackRangePx(c.def) / TILE;
         const shownTiles = Math.max(0.001, rangeTiles * progress);
-        const widthTiles = Math.max(0.08, Math.tan(c.def.attackHalfConeRad) * shownTiles * 2);
+        const widthMultiplier = Math.max(0.1, Number(cfg.widthMultiplier) || 0.65);
+        const widthTiles = Math.max(0.08, Math.tan(effectiveCreatureAttackHalfConeRad(c.def)) * shownTiles * 2 * widthMultiplier);
         const angle = c.attackWindupFacing;
         const startOffsetTiles = Math.max(0.15, Number(cfg.startOffsetTiles) || 0.28);
         const centerDistTiles = startOffsetTiles + shownTiles * 0.5;
@@ -2423,12 +2432,11 @@
               c.retreatT = Math.max(0, c.retreatT - dt);
               const awayAng = Math.atan2(-dyp, -dxp);
               moving = moveCreatureToward(c, c.x + Math.cos(awayAng) * TILE, c.y + Math.sin(awayAng) * TILE, JUMP_BACK_SPEED, dt);
+            } else if (distToPlayer <= creatureAttackStartDistancePx(def) && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+              beginCreatureAttackWindup(c, player, aimAngle);
+              moving = false;
             } else {
               moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
-              if (distToPlayer <= effectiveCreatureAttackRangePx(def) && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
-                beginCreatureAttackWindup(c, player, aimAngle);
-                moving = false;
-              }
             }
           } else if (c.state === 'return') {
             moving = moveCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
@@ -2476,9 +2484,9 @@
             if (c.attackWindupT <= 0) finishCreatureAttack(c, c.attackTarget, COMPANION_BITE_KNOCKBACK_PX_S);
           } else if (target) {
             const dist = Math.hypot(target.x - c.x, target.y - c.y);
-            if (dist > effectiveCreatureAttackRangePx(def) * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
+            if (dist > creatureAttackStartDistancePx(def)) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
-            if (dist <= effectiveCreatureAttackRangePx(def) && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+            if (dist <= creatureAttackStartDistancePx(def) && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
               beginCreatureAttackWindup(c, target, aimAngle);
               moving = false;
             }

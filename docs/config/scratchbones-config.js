@@ -185,15 +185,18 @@ window.SCRATCHBONES_CONFIG = {
       "creatures": {
         "attack": {
           "windupSeconds": 0.45,
-          "rangeMultiplier": 1.35,
-          "windupSquishY": 0.72,
-          "windupSquishXZ": 1.12
+          "rangeMultiplier": 1.8,
+          "halfConeMultiplier": 0.55,
+          "startDistanceFactor": 0.75,
+          "windupSquishY": 0.52,
+          "windupSquishXZ": 1.28
         },
         "telegraph": {
           "enabled": true,
           "color": "#ff3b1f",
           "alpha": 0.34,
-          "startOffsetTiles": 0.28
+          "startOffsetTiles": 0.28,
+          "widthMultiplier": 0.65
         }
       }
     },
