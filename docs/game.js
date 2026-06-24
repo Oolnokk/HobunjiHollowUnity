@@ -2603,14 +2603,74 @@
       const _furnitureSfxSources = [];
       const _loopingBgs = new Map();
       const _audioDebugLast = new Map();
+      const _gameAudioElements = new Set();
+      let _gameAudioUnlocked = false;
 
       function audioDebug(message, key = message, throttleMs = 1200) {
         const now = performance.now();
-        const last = _audioDebugLast.get(key) || 0;
+        const last = _audioDebugLast.has(key) ? _audioDebugLast.get(key) : -Infinity;
         if (now - last < throttleMs) return;
         _audioDebugLast.set(key, now);
         debugLog('[audio] ' + message, 'audio');
       }
+
+      function audioTraceEnabled() {
+        return window.SCRATCHBONES_CONFIG?.game?.debug?.trace?.audio !== false;
+      }
+
+      function audioTrace(message, key = message, throttleMs = 2000) {
+        if (!audioTraceEnabled()) return;
+        audioDebug(message, key, throttleMs);
+      }
+
+      function resolveAudioUrl(url) {
+        if (!url) return '';
+        try { return new URL(url, document.baseURI).href; }
+        catch { return url; }
+      }
+
+      function audioReadyStateLabel(snd) {
+        const labels = ['HAVE_NOTHING', 'HAVE_METADATA', 'HAVE_CURRENT_DATA', 'HAVE_FUTURE_DATA', 'HAVE_ENOUGH_DATA'];
+        return labels[snd?.readyState] || String(snd?.readyState ?? 'none');
+      }
+
+      function makeGameAudio(url, { loop = false, preload = 'auto' } = {}) {
+        const snd = new Audio(resolveAudioUrl(url));
+        snd.loop = !!loop;
+        snd.preload = preload;
+        snd.addEventListener('loadstart', () => audioTrace('loadstart ' + snd.src, 'media-loadstart-' + snd.src, 0), { once: true });
+        snd.addEventListener('canplaythrough', () => audioTrace('canplaythrough ' + snd.src + ' ready=' + audioReadyStateLabel(snd), 'media-canplay-' + snd.src, 0), { once: true });
+        snd.addEventListener('error', () => audioDebug('media error ' + snd.src + ' code=' + (snd.error?.code || 'none') + ' message=' + (snd.error?.message || ''), 'media-error-' + snd.src, 0));
+        _gameAudioElements.add(snd);
+        try { snd.load(); } catch {}
+        return snd;
+      }
+
+      function describeAudioConfigForArea(area) {
+        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const bgs = audioCfg.bgs || {};
+        audioTrace('config area=' + area + ' enabled=' + (audioCfg.enabled !== false) + ' bgmCount=' + ((audioCfg.areaBgm?.[area] || []).length) + ' bgs birds=' + !!bgs.birds + ' nightbugs=' + !!bgs.nightbugs + ' wind1=' + !!bgs.wind1 + ' wind2=' + !!bgs.wind2, 'audio-config-' + area, 5000);
+      }
+
+      function unlockGameAudio(reason = 'user gesture') {
+        if (_gameAudioUnlocked) return;
+        _gameAudioUnlocked = true;
+        audioDebug('audio unlock from ' + reason + '; retrying audible loops=' + _gameAudioElements.size, 'audio-unlock', 0);
+        const rainCtx = window._rainAudioCtx;
+        if (rainCtx?.state === 'suspended') rainCtx.resume().catch(err => audioDebug('rain audio resume failed: ' + (err?.name || err), 'rain-resume-fail', 0));
+        for (const snd of _gameAudioElements) {
+          if (!snd || snd.volume <= 0 || !snd.paused) continue;
+          snd.play().then(() => {
+            audioTrace('unlock replay started ' + snd.src, 'unlock-play-' + snd.src, 0);
+          }).catch(err => {
+            audioDebug('unlock replay blocked/failed ' + snd.src + ': ' + (err?.name || err), 'unlock-fail-' + snd.src, 0);
+          });
+        }
+      }
+
+      document.addEventListener('pointerdown', () => unlockGameAudio('pointerdown'), { once: true, capture: true });
+      document.addEventListener('keydown', () => unlockGameAudio('keydown'), { once: true, capture: true });
+      document.addEventListener('touchstart', () => unlockGameAudio('touchstart'), { once: true, capture: true, passive: true });
 
       async function loadAudioCueIndexes() {
         try {
@@ -2650,6 +2710,7 @@
         _ambientCueState.mode = 'bgm';
         _ambientCueState.nextAt = 0;
         audioDebug('ambient area=' + area + ' cueIndex=' + (_ambientCueState.indexId || 'none') + ' mode=bgm', 'ambient-area-' + area, 0);
+        describeAudioConfigForArea(area);
       }
 
       function stopAmbientCue() {
@@ -2681,10 +2742,11 @@
 
       function updateAmbientCues() {
         const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
-        if (audioCfg.enabled === false) return;
+        if (audioCfg.enabled === false) { audioTrace('ambient disabled by config', 'ambient-disabled', 3000); return; }
         if (_ambientCueState.area !== currentArea) { stopAmbientCue(); resetAmbientCueTimer(currentArea); }
         const idx = _audioCueIndexes.get(_ambientCueState.indexId);
         const cues = idx?.ambient_cues || [];
+        audioTrace('ambient state area=' + currentArea + ' mode=' + _ambientCueState.mode + ' index=' + (_ambientCueState.indexId || 'none') + ' cues=' + cues.length + ' bgmActive=' + !!_ambientCueState.currentBgm + ' cueActive=' + !!_ambientCueState.currentCue + ' nextInMs=' + Math.max(0, Math.round((_ambientCueState.nextAt || 0) - performance.now())), 'ambient-state-' + currentArea, 5000);
         if (_ambientCueState.currentCue && !_ambientCueState.currentCue.ended) return;
         if (_ambientCueState.currentCue?.ended) _ambientCueState.currentCue = null;
 
@@ -2693,7 +2755,7 @@
           if (!cues.length) { _ambientCueState.mode = 'bgm'; return; }
           const cue = cues[Math.floor(Math.random() * cues.length)];
           if (!cue?.file) { scheduleNextCueDelay(); return; }
-          const snd = new Audio((idx.__basePath || '') + cue.file);
+          const snd = makeGameAudio((idx.__basePath || '') + cue.file);
           const finishCue = () => {
             if (_ambientCueState.currentCue === snd) _ambientCueState.currentCue = null;
             _ambientCueState.mode = 'bgm';
@@ -2716,8 +2778,8 @@
         _ambientCueState.currentBgm = null;
         if (performance.now() < _ambientCueState.nextAt) return;
         const bgmUrl = resolveAreaBgm(currentArea);
-        if (!bgmUrl) { _ambientCueState.mode = 'cue_wait'; scheduleNextCueDelay(); return; }
-        const snd = new Audio(bgmUrl);
+        if (!bgmUrl) { audioDebug('no bgm configured for area=' + currentArea + '; scheduling cues only', 'bgm-missing-' + currentArea, 3000); _ambientCueState.mode = 'cue_wait'; scheduleNextCueDelay(); return; }
+        const snd = makeGameAudio(bgmUrl);
         const finishBgm = () => {
           if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
           _ambientCueState.mode = 'cue_wait';
@@ -2740,8 +2802,7 @@
         const v = Math.max(0, Math.min(1, Number(volume) || 0));
         let snd = _loopingBgs.get(id);
         if (!snd && url) {
-          snd = new Audio(url);
-          snd.loop = true;
+          snd = makeGameAudio(url, { loop: true });
           _loopingBgs.set(id, snd);
         }
         if (!snd) return;
@@ -2770,6 +2831,7 @@
         const exterior = currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea);
         const rainy = calendar.isRaining;
         const night = isNightTime();
+        audioTrace('bgs resolve area=' + currentArea + ' exterior=' + exterior + ' rainy=' + rainy + ' night=' + night + ' rainStrength=' + (calendar.rainStrength || 0), 'bgs-resolve-' + currentArea, 5000);
         setLoopingBgs('birds', bgs.birds, exterior && !night && !rainy ? (bgs.birdsVolume ?? 0.25) : 0);
         setLoopingBgs('nightbugs', bgs.nightbugs, exterior && night ? (bgs.nightbugsVolume ?? 0.23) : 0);
         const wind01 = exterior ? Math.max(0, Math.min(1, (calendar.rainStrength || 0) / 3)) : 0;
@@ -2786,8 +2848,7 @@
 
       function registerFurnitureSfxSource(area, x, z, sfx) {
         if (!sfx?.url) return null;
-        const audio = new Audio(sfx.url);
-        audio.loop = true;
+        const audio = makeGameAudio(sfx.url, { loop: true });
         audio.volume = 0;
         const source = { area, x, z, range: Number(sfx.rangeTiles) || 5, maxVolume: Number(sfx.volume) || 0.7, audio };
         _furnitureSfxSources.push(source);
@@ -2801,6 +2862,7 @@
         if (i >= 0) _furnitureSfxSources.splice(i, 1);
         source.audio.pause();
         source.audio.currentTime = 0;
+        _gameAudioElements.delete(source.audio);
         audioDebug('unregistered furniture sfx area=' + source.area + ' pos=' + source.x.toFixed(2) + ',' + source.z.toFixed(2), 'furn-unregister-' + source.area + '-' + source.x + '-' + source.z, 0);
       }
 

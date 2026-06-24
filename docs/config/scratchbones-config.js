@@ -19,7 +19,7 @@ window.SCRATCHBONES_CONFIG = {
       "trace": {
         "gameplayFlow": true,
         "layerPromotion": false,
-        "audio": false,
+        "audio": true,
         "candlelight": false,
         "actions": true
       }
