@@ -6450,7 +6450,7 @@
         const baseY = tileSurfaceY(agrid[row][col].type) + 0.16 + Math.max(0, agrid[row][col].water * WATER_UNIT);
         actionTileEffects.push({ col, row, action, ok, age: 0, maxAge: ok ? 0.58 : 0.44, color: profile.ring });
         while (actionTileEffects.length > 8) actionTileEffects.shift();
-        if ((action === 'cut' || action === 'slash') && activeTool === 'weapon') spawnWeaponTrailEffect(action, ok);
+        if (activeTool === 'weapon' && action === 'cut') spawnWeaponTrailEffect(action, ok);
         else if (action === 'slash') spawnWeaponTrailEffect(action, ok, col, row);
 
         for (let i = 0; i < profile.count; i++) {
@@ -6478,12 +6478,16 @@
 
       function spawnWeaponTrailEffect(action, ok, col = null, row = null) {
         const abil = weaponAbility(action) || weaponAbility('slash');
-        const dir = { x: Math.cos(player.angle), y: Math.sin(player.angle) };
-        const side = { x: -dir.y, y: dir.x };
+        const tileAnchored = col !== null && row !== null;
+        const dir = tileAnchored ? facingCardinal(player.angle) : { x: Math.cos(player.angle), y: Math.sin(player.angle) };
+        const side = tileAnchored
+          ? (dir.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 })
+          : { x: -dir.y, y: dir.x };
         const tgrid = getActiveGrid();
         const sampleCol = clamp(Math.floor(player.x / TILE), 0, getActiveCols() - 1);
         const sampleRow = clamp(Math.floor(player.y / TILE), 0, getActiveRows() - 1);
-        const surfaceY = tileSurfaceY(tgrid[sampleRow]?.[sampleCol]?.type || TileType.GRASS);
+        const targets = tileAnchored ? getMacheteTargets(col, row, 'slash') : [{ col: sampleCol, row: sampleRow }];
+        const surfaceY = targets.reduce((sum, t) => sum + tileSurfaceY(tgrid[t.row]?.[t.col]?.type || TileType.GRASS), 0) / Math.max(1, targets.length);
         weaponTrailEffects.push({
           x: col === null ? player.x / TILE : col + 0.5,
           z: row === null ? player.y / TILE : row + 0.5,
@@ -6547,7 +6551,7 @@
       function drawCombatConeReticle() {
         const cfg = combatConfig().combatConeReticle || {};
         if (cfg.enabled === false || activeTool !== 'weapon' || !findAutoTarget()) return;
-        const abil = weaponAbility(activeAction) || weaponAbility('cut');
+        const abil = weaponAbility('cut');
         if (!abil) return;
         const rangeTiles = abil.rangePx / TILE;
         const baseX = player.x / TILE;
@@ -8433,6 +8437,7 @@
       function clearTargetHighlights() {
         for (const m of _targetOutlineMeshes) m.layers.disable(2);
         _targetOutlineMeshes = [];
+        updateCuttableBillboardGlow(0, 0, false);
       }
       function findTargetMeshes(col, row) {
         const i = row * COLS + col;
@@ -10701,6 +10706,8 @@
 
       const _grassTint = new THREE.Color().setHSL(108 / 360, 0.58, 0.28);
       let grassBillboardMat = null;
+      let cuttableBillboardGlowMat = null;
+      let cuttableBillboardGlowMesh = null;
 
       new THREE.TextureLoader().load('assets/leaves/grass_1.png', (tex) => {
         tex.magFilter = THREE.NearestFilter;
@@ -10716,6 +10723,26 @@
           vertexShader:   _grassBillVert,
           fragmentShader: _grassBillFrag,
           alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
+        });
+        cuttableBillboardGlowMat = new THREE.ShaderMaterial({
+          uniforms: {
+            uGrassTex: { value: tex },
+            uColor: { value: new THREE.Color(combatConfig().cuttableTargetGlow?.color || '#ff2a1f') },
+            uAlpha: { value: Number(combatConfig().cuttableTargetGlow?.alpha) || 0.42 }
+          },
+          vertexShader: _grassBillVert,
+          fragmentShader: `
+            uniform sampler2D uGrassTex;
+            uniform vec3 uColor;
+            uniform float uAlpha;
+            varying vec2 vUv;
+            void main() {
+              vec4 texel = texture2D(uGrassTex, vUv);
+              if (texel.a < 0.5) discard;
+              gl_FragColor = vec4(uColor, uAlpha * texel.a);
+            }
+          `,
+          transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
         });
         _rebuildFarmBillboards();
         if (_townSceneBuilt) {
@@ -10751,6 +10778,19 @@
         return idx;
       }
 
+      function updateCuttableBillboardGlow(col, row, visible) {
+        if (!cuttableBillboardGlowMesh || !cuttableBillboardGlowMat) return;
+        if (!visible || combatConfig().cuttableTargetGlow?.enabled === false) {
+          cuttableBillboardGlowMesh.count = 0;
+          return;
+        }
+        cuttableBillboardGlowMat.uniforms.uColor.value.set(combatConfig().cuttableTargetGlow?.color || '#ff2a1f');
+        cuttableBillboardGlowMat.uniforms.uAlpha.value = Number(combatConfig().cuttableTargetGlow?.alpha) || 0.42;
+        const dummy = new THREE.Object3D();
+        cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0);
+        cuttableBillboardGlowMesh.instanceMatrix.needsUpdate = true;
+      }
+
       // Farm grass (GRASS tiles, gated by s_grass) and weeds (WEEDS tiles in
       // Mode A, always on) each get one InstancedMesh sized for the worst case
       // (every farm tile being that type), so edits just refill the buffer and
@@ -10769,6 +10809,11 @@
         farmWeedBillMesh.frustumCulled = false;
         farmWeedBillMesh.count = 0;
         scene.add(farmWeedBillMesh);
+
+        cuttableBillboardGlowMesh = new THREE.InstancedMesh(_grassBladeGeo, cuttableBillboardGlowMat || grassBillboardMat, 28);
+        cuttableBillboardGlowMesh.frustumCulled = false;
+        cuttableBillboardGlowMesh.count = 0;
+        scene.add(cuttableBillboardGlowMesh);
       }
 
       function _rebuildFarmBillboards() {
@@ -11378,15 +11423,18 @@
         const pulse   = 1 + 0.06 * Math.sin(t / 300);
 
         const onFarm     = currentArea === 'farm';
-        const isExcavate = onFarm && allowed && (activeAction === 'dig' || activeAction === 'raise');
-        const isHoeWork  = onFarm && allowed && activeTool === 'hoe';
+        const weaponEquipped = activeTool === 'weapon';
+        const isExcavate = onFarm && !weaponEquipped && allowed && (activeAction === 'dig' || activeAction === 'raise');
+        const isHoeWork  = onFarm && !weaponEquipped && allowed && activeTool === 'hoe';
         const showTile   = isExcavate || isHoeWork;
-        const isObjTarget = onFarm && allowed && !showTile;
+        const isObjTarget = onFarm && allowed && !showTile && !weaponEquipped;
         const i = reticle.row * COLS + reticle.col;
+        const cuttableTarget = onFarm && weaponEquipped && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB || !!vegFoliageMeshes[i]);
         const isWeedBlock = onFarm && !allowed && activeTool === 'hoe' && activeAction === 'till'
                          && (tile.type === TileType.WEEDS || !!vegFoliageMeshes[i]);
 
         // Base tile box
+        reticleMesh.visible = !weaponEquipped;
         reticleMesh.position.set(reticle.col + 0.5, surfY, reticle.row + 0.5);
         reticleMesh.material = showTile ? reticleIntenseMat
                              : (allowed ? reticleMat : reticleBlockedMat);
@@ -11414,12 +11462,16 @@
 
         // Object outline (layer 2) and fallback ring
         clearTargetHighlights();
-        if (isObjTarget || isWeedBlock) {
-          const meshes = findTargetMeshes(reticle.col, reticle.row);
+        if (isObjTarget || isWeedBlock || cuttableTarget) {
+          const meshes = cuttableTarget && tile.type === TileType.WEEDS && !s_weed3D ? [] : findTargetMeshes(reticle.col, reticle.row);
           if (meshes.length > 0) {
             for (const m of meshes) m.layers.enable(2);
             _targetOutlineMeshes = meshes;
             _targetOutlineAllowed = isObjTarget;
+            updateCuttableBillboardGlow(0, 0, false);
+            reticleRingMesh.visible = false;
+          } else if (cuttableTarget && tile.type === TileType.WEEDS && !s_weed3D) {
+            updateCuttableBillboardGlow(reticle.col, reticle.row, true);
             reticleRingMesh.visible = false;
           } else {
             // No specific mesh — fall back to floating ring

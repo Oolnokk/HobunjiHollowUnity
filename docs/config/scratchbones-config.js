@@ -172,10 +172,15 @@ window.SCRATCHBONES_CONFIG = {
       "weaponTrailLimit": 5,
       "combatConeReticle": {
         "enabled": true,
-        "color": "#d9ffe0",
-        "alpha": 0.24,
+        "color": "#ffffff",
+        "alpha": 0.11,
         "lineWidth": 2,
         "lineDash": [8, 7]
+      },
+      "cuttableTargetGlow": {
+        "enabled": true,
+        "color": "#ff2a1f",
+        "alpha": 0.42
       }
     },
     "gameplayShortcuts": {
