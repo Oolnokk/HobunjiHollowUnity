@@ -1706,7 +1706,7 @@
         return !interiorFurnitureObjects.find(o => o.col === col && o.row === row);
       }
 
-      function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene) {
+      function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
         const group = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color || 0x8b6540);
@@ -1721,9 +1721,9 @@
           light.position.set(col + 0.5, def.light.height || 0.6, row + 0.5);
           targetScene.add(light);
         }
-        registerFurnitureSfxSource(currentArea, col + (def.fw || 1) * 0.5, row + (def.fd || 1) * 0.5, resolveFurnitureSfx(def));
+        const sfxSource = registerFurnitureSfxSource(area, col + (def.fw || 1) * 0.5, row + (def.fd || 1) * 0.5, resolveFurnitureSfx(def));
 
-        return { mesh: group, light };
+        return { mesh: group, light, sfxSource };
       }
 
       function placeDecorativeFurniture(col, row, furnitureKey) {
@@ -1737,11 +1737,11 @@
         const itemKey = def.itemKey;
         if ((inventory[itemKey] || 0) < 1) return { ok: false, message: `No ${def.name} in inventory.` };
         const targetScene = isInInterior ? interiorScene : scene;
-        const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene);
+        const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, currentArea);
         if (!result) return { ok: false, message: 'Could not create furniture mesh.' };
         inventory[itemKey]--;
         clampInventoryStack(itemKey);
-        interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh: result.mesh, light: result.light, area: currentArea });
+        interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea });
         refreshItemScroll();
         saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
@@ -1756,6 +1756,7 @@
             if (child.material) child.material.dispose();
           });
           if (obj.light) s.remove(obj.light);
+          unregisterFurnitureSfxSource(obj.sfxSource);
         });
         interiorFurnitureObjects.length = 0;
       }
@@ -1828,6 +1829,7 @@
               if (child.material) child.material.dispose();
             });
             if (d.light) scene.remove(d.light);
+            unregisterFurnitureSfxSource(d.sfxSource);
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
@@ -1934,9 +1936,10 @@
         (layout.decor || []).forEach(({ key, col, row, area }) => {
           const def = DECORATIVE_FURNITURE_DEFS[key];
           if (!def) return;
-          const targetScene = area === 'interior' ? interiorScene : scene;
-          const result = makeDecorativeFurnitureMesh(col, row, key, targetScene);
-          if (result) interiorFurnitureObjects.push({ key, col, row, mesh: result.mesh, light: result.light, area });
+          const decorArea = area || 'farm';
+          const targetScene = decorArea === 'interior' ? interiorScene : scene;
+          const result = makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea);
+          if (result) interiorFurnitureObjects.push({ key, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea });
         });
       }
 
@@ -2728,6 +2731,13 @@
 
       function updateExteriorBgs() {
         const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        if (audioCfg.enabled === false) {
+          setLoopingBgs('birds', '', 0);
+          setLoopingBgs('nightbugs', '', 0);
+          setLoopingBgs('wind1', '', 0);
+          setLoopingBgs('wind2', '', 0);
+          return;
+        }
         const bgs = audioCfg.bgs || {};
         const exterior = currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea);
         const rainy = calendar.isRaining;
@@ -2747,14 +2757,32 @@
       }
 
       function registerFurnitureSfxSource(area, x, z, sfx) {
-        if (!sfx?.url) return;
+        if (!sfx?.url) return null;
         const audio = new Audio(sfx.url);
         audio.loop = true;
         audio.volume = 0;
-        _furnitureSfxSources.push({ area, x, z, range: Number(sfx.rangeTiles) || 5, maxVolume: Number(sfx.volume) || 0.7, audio });
+        const source = { area, x, z, range: Number(sfx.rangeTiles) || 5, maxVolume: Number(sfx.volume) || 0.7, audio };
+        _furnitureSfxSources.push(source);
+        return source;
+      }
+
+      function unregisterFurnitureSfxSource(source) {
+        if (!source) return;
+        const i = _furnitureSfxSources.indexOf(source);
+        if (i >= 0) _furnitureSfxSources.splice(i, 1);
+        source.audio.pause();
+        source.audio.currentTime = 0;
       }
 
       function updateFurnitureSfxSources() {
+        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        if (audioCfg.enabled === false) {
+          for (const src of _furnitureSfxSources) {
+            src.audio.volume = 0;
+            if (!src.audio.paused) src.audio.pause();
+          }
+          return;
+        }
         for (const src of _furnitureSfxSources) {
           const active = src.area === currentArea;
           const dx = player.x / TILE - src.x;
@@ -13413,9 +13441,10 @@
             (_rl.decor || []).forEach(({ key, col, row, area }) => {
               const def = DECORATIVE_FURNITURE_DEFS[key];
               if (!def) return;
-              const tgt = area === 'interior' ? interiorScene : scene;
-              const r = makeDecorativeFurnitureMesh(col, row, key, tgt);
-              if (r) interiorFurnitureObjects.push({ key, col, row, mesh: r.mesh, light: r.light, area });
+              const decorArea = area || 'farm';
+              const tgt = decorArea === 'interior' ? interiorScene : scene;
+              const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea);
+              if (r) interiorFurnitureObjects.push({ key, col, row, mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea });
             });
           }
         } catch {}
