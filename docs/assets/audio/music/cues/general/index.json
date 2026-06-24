@@ -1,0 +1,32 @@
+{
+  "schema": "hobunji_audio_cue_index.v1",
+  "id": "general",
+  "name": "General",
+  "ambient_cues": [
+    {
+      "id": "to1",
+      "file": "to1.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "to2",
+      "file": "to2.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "to3",
+      "file": "to3.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "to4",
+      "file": "to4.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "to5",
+      "file": "to5.ogg",
+      "volume": 0.7
+    }
+  ]
+}
