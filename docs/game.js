@@ -214,6 +214,12 @@
         _toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2800);
       }
 
+      function gameAudioConfig() {
+        const direct = window.SCRATCHBONES_CONFIG?.game?.audio;
+        if (direct && Object.keys(direct).length) return direct;
+        return window.SCRATCHBONES_CONFIG?.game?.assets?.audio || {};
+      }
+
       // ── NPC Dialogue ───────────────────────────────────────────
       const _npcDialogueEl      = document.getElementById('npcDialogue');
       const _npcPortraitCanvas  = document.getElementById('npcPortraitCanvas');
@@ -227,7 +233,7 @@
       }
 
       function npcDialogueLetterSfxConfig(rec = _dlgNpcRec || _dialogueWalker?.rec) {
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         const dialogueCfg = audioCfg.dialogueLetter || {};
         const npcOverrides = dialogueCfg.npcs || {};
         const speciesOverrides = dialogueCfg.species || {};
@@ -404,7 +410,7 @@
       function _playNpcDialogueLetterSfx(char, rec = _dlgNpcRec || _dialogueWalker?.rec) {
         const cfg = npcDialogueLetterSfxConfig(rec);
         if (cfg.enabled === false || !char || /\s/.test(char)) return;
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) return;
         const volume = Math.max(0, Math.min(1, Number(cfg.volume) || 0.18)) * Math.max(0, Number(audioCfg.sfxVolume) || 1);
         if (volume <= 0) return;
@@ -923,7 +929,7 @@
       // `pan` is -1 (full left) .. 1 (full right); leave at 0 for the player
       // (the listener) and companions (always close, not worth panning).
       function playFootstepSfx(area, type, volumeScale = 1, pan = 0) {
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) return;
         const footstepCfg = audioCfg.footsteps || {};
         if (footstepCfg.enabled === false) return;
@@ -2660,7 +2666,7 @@
       }
 
       function describeAudioConfigForArea(area) {
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         const bgs = audioCfg.bgs || {};
         audioTrace('config area=' + area + ' enabled=' + (audioCfg.enabled !== false) + ' bgmCount=' + ((audioCfg.areaBgm?.[area] || []).length) + ' bgs birds=' + !!bgs.birds + ' nightbugs=' + !!bgs.nightbugs + ' wind1=' + !!bgs.wind1 + ' wind2=' + !!bgs.wind2, 'audio-config-' + area, 5000);
       }
@@ -2740,7 +2746,7 @@
       }
 
       function resolveAreaBgm(area) {
-        const sets = window.SCRATCHBONES_CONFIG?.game?.audio?.areaBgm || {};
+        const sets = gameAudioConfig().areaBgm || {};
         const all = (sets[area] || []).filter(track => track?.url && (!track.nightOnly || isNightTime()));
         const playable = all.filter(track => !audioUrlFailed(track.url));
         if (!playable.length) {
@@ -2753,14 +2759,14 @@
       }
 
       function scheduleNextCueDelay() {
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         const minSec = Number(audioCfg.ambientCueMinDelaySec) || 300;
         const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 600);
         _ambientCueState.nextAt = performance.now() + (minSec + Math.random() * (maxSec - minSec)) * 1000;
       }
 
       function updateAmbientCues() {
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) { audioTrace('ambient disabled by config', 'ambient-disabled', 3000); return; }
         if (_ambientCueState.area !== currentArea) { stopAmbientCue(); resetAmbientCueTimer(currentArea); }
         const idx = _audioCueIndexes.get(_ambientCueState.indexId);
@@ -2839,7 +2845,7 @@
       }
 
       function updateExteriorBgs() {
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) {
           audioDebug('exterior bgs disabled by config', 'bgs-disabled');
           setLoopingBgs('birds', '', 0);
@@ -2864,7 +2870,7 @@
         if (!def) return null;
         if (def.sfx) return def.sfx;
         const key = def.sfxKey;
-        return key ? window.SCRATCHBONES_CONFIG?.game?.audio?.furnitureSfx?.[key] : null;
+        return key ? gameAudioConfig().furnitureSfx?.[key] : null;
       }
 
       function registerFurnitureSfxSource(area, x, z, sfx) {
@@ -2888,7 +2894,7 @@
       }
 
       function updateFurnitureSfxSources() {
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) {
           for (const src of _furnitureSfxSources) {
             src.audio.volume = 0;
@@ -8465,7 +8471,7 @@
             gainL = ctx.createGain(); gainL.gain.value = 0;
 
             const master = ctx.createGain();
-            master.gain.value = Math.max(0, Number(window.SCRATCHBONES_CONFIG?.game?.audio?.rainVolume) || 0.20);
+            master.gain.value = Math.max(0, Number(gameAudioConfig().rainVolume) || 0.20);
 
             srcH.connect(hpf); hpf.connect(gainH); gainH.connect(master);
             srcM.connect(bpf); bpf.connect(gainM); gainM.connect(master);
@@ -8492,7 +8498,7 @@
 
       let _rainAudio = null;
       function updateRainAudio() {
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) return;
         const outdoors = currentArea === 'farm' || currentArea === 'town';
         const indoors = currentArea === 'interior' || _isBuildingArea(currentArea);
