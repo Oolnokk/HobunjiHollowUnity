@@ -1,0 +1,52 @@
+{
+  "schema": "hobunji_audio_cue_index.v1",
+  "id": "northern_cliffs",
+  "name": "Northern Cliffs",
+  "ambient_cues": [
+    {
+      "id": "cc1",
+      "file": "cc1.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "cc2",
+      "file": "cc2.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "cc3",
+      "file": "cc3.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "cc4",
+      "file": "cc4.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "cc5",
+      "file": "cc5.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "cc6",
+      "file": "cc6.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "cc7",
+      "file": "cc7.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "cc8",
+      "file": "cc8.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "cc9",
+      "file": "cc9.ogg",
+      "volume": 0.7
+    }
+  ]
+}
