@@ -12,7 +12,7 @@
     function _renderDebugPanel() {
       const panel = document.getElementById('debugLog');
       if (!panel) return;
-      const COLOR = { error: '#f87171', warn: '#fb923c', promise: '#c084fc', info: '#d1d5db', fish: '#60a5fa' };
+      const COLOR = { error: '#f87171', warn: '#fb923c', promise: '#c084fc', info: '#d1d5db', fish: '#60a5fa', audio: '#ff66cc' };
       panel.innerHTML = window.__farmDebugLog.map(e => {
         const c = COLOR[e.lvl] || COLOR.info;
         const safe = e.msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
