@@ -3187,12 +3187,12 @@ window.SCRATCHBONES_CONFIG = {
         "areaBgm": {
           "farm": [
             { "url": "assets/audio/music/bgm/bgm_farm1.m4a" },
-            { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "fallback": true },
+            { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 },
             { "url": "assets/audio/music/bgm/bgm_follow_the_signs.ogg", "nightOnly": true }
           ],
           "town": [
             { "url": "assets/audio/music/bgm/bgm_farm1.m4a" },
-            { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "fallback": true },
+            { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 },
             { "url": "assets/audio/music/bgm/bgm_follow_the_signs.ogg", "nightOnly": true }
           ],
           "map_northern_cliffs": [

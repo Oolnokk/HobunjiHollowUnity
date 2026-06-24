@@ -2612,6 +2612,7 @@
       const _gameAudioElements = new Set();
       let _gameAudioUnlocked = false;
       const _audioFailedUrls = new Set();
+      const _dailyBgmPlayed = new Set();
 
       function audioDebug(message, key = message, throttleMs = 1200) {
         const now = performance.now();
@@ -2745,17 +2746,37 @@
         return hour < 7 || hour >= 19;
       }
 
+      function bgmDailyKey(track) {
+        return calendar.day + ':' + resolveAudioUrl(track?.url || '');
+      }
+
+      function isSunriseBgmEligible(track) {
+        if (!track?.sunriseOnly) return true;
+        const sunriseHour = Number.isFinite(Number(track.sunriseHour)) ? Number(track.sunriseHour) : MORNING_HOUR;
+        const windowHours = Math.max(0, Number(track.sunriseWindowHours) || 0);
+        const hour = getHour();
+        return hour >= sunriseHour && hour < sunriseHour + windowHours;
+      }
+
+      function isBgmTrackEligible(track) {
+        if (!track?.url) return false;
+        if (track.nightOnly && !isNightTime()) return false;
+        if (!isSunriseBgmEligible(track)) return false;
+        if (track.oncePerDay && _dailyBgmPlayed.has(bgmDailyKey(track))) return false;
+        return !audioUrlFailed(track.url);
+      }
+
       function resolveAreaBgm(area) {
         const sets = gameAudioConfig().areaBgm || {};
-        const all = (sets[area] || []).filter(track => track?.url && (!track.nightOnly || isNightTime()));
-        const playable = all.filter(track => !audioUrlFailed(track.url));
+        const all = (sets[area] || []).filter(track => track?.url);
+        const playable = all.filter(isBgmTrackEligible);
         if (!playable.length) {
-          if (all.length) audioDebug('all bgm candidates failed for area=' + area + '; waiting for a valid config/media file', 'bgm-all-failed-' + area, 3000);
-          return '';
+          if (all.length) audioDebug('no eligible bgm candidates for area=' + area + '; waiting for time window or valid media', 'bgm-all-failed-' + area, 3000);
+          return null;
         }
         const preferred = playable.filter(track => !track.fallback);
         const list = preferred.length ? preferred : playable;
-        return list[Math.floor(Math.random() * list.length)].url || '';
+        return list[Math.floor(Math.random() * list.length)] || null;
       }
 
       function scheduleNextCueDelay() {
@@ -2802,8 +2823,9 @@
         if (_ambientCueState.currentBgm && !_ambientCueState.currentBgm.ended) return;
         _ambientCueState.currentBgm = null;
         if (performance.now() < _ambientCueState.nextAt) return;
-        const bgmUrl = resolveAreaBgm(currentArea);
-        if (!bgmUrl) { audioDebug('no playable bgm for area=' + currentArea + '; retrying bgm resolution soon', 'bgm-missing-' + currentArea, 3000); _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
+        const bgmTrack = resolveAreaBgm(currentArea);
+        const bgmUrl = bgmTrack?.url || '';
+        if (!bgmUrl) { audioDebug('no eligible bgm for area=' + currentArea + '; retrying bgm resolution soon', 'bgm-missing-' + currentArea, 3000); _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
         const snd = makeGameAudio(bgmUrl);
         const finishBgm = () => {
           if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
@@ -2815,7 +2837,12 @@
         snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0); markAudioUrlFailed(bgmUrl, 'media error'); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
         _ambientCueState.currentBgm = snd;
         audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' volume=' + snd.volume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0);
-        snd.play().catch(err => {
+        snd.play().then(() => {
+          if (bgmTrack?.oncePerDay) {
+            _dailyBgmPlayed.add(bgmDailyKey(bgmTrack));
+            audioDebug('marked once-per-day bgm played url=' + snd.src + ' day=' + calendar.day, 'bgm-daily-' + bgmDailyKey(bgmTrack), 0);
+          }
+        }).catch(err => {
           audioDebug('bgm play blocked/failed area=' + currentArea + ': ' + (err?.name || err), 'bgm-fail-' + currentArea, 0);
           if ((err?.name || '') !== 'NotAllowedError') markAudioUrlFailed(bgmUrl, err?.name || err || 'play failed');
           if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
