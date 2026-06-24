@@ -181,6 +181,20 @@ window.SCRATCHBONES_CONFIG = {
         "enabled": true,
         "color": "#ff2a1f",
         "alpha": 0.42
+      },
+      "creatures": {
+        "attack": {
+          "windupSeconds": 0.45,
+          "rangeMultiplier": 1.35,
+          "windupSquishY": 0.72,
+          "windupSquishXZ": 1.12
+        },
+        "telegraph": {
+          "enabled": true,
+          "color": "#ff3b1f",
+          "alpha": 0.34,
+          "startOffsetTiles": 0.28
+        }
       }
     },
     "gameplayShortcuts": {
