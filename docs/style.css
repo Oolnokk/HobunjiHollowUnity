@@ -1326,6 +1326,17 @@
     .settings-toggle input:checked + .toggle-slider::before {
       transform: translateX(16px); background: var(--accent);
     }
+    .settings-row--stacked { align-items: stretch; flex-direction: column; cursor: default; }
+    .input-bindings-grid, .mode-shift-list { display: grid; gap: 6px; width: 100%; }
+    .input-binding-row, .mode-shift-row { display: grid; grid-template-columns: minmax(120px, 1fr) auto; gap: 8px; align-items: center; }
+    .mode-shift-row { grid-template-columns: minmax(90px, 1fr) auto auto auto; }
+    .input-bind-btn, .settings-small-btn {
+      font-size: 11px; padding: 5px 8px; border-radius: 7px; cursor: pointer;
+      color: var(--text); background: rgba(255,255,255,.06); border: 1px solid var(--border-bright);
+    }
+    .input-bind-btn.is-listening { border-color: var(--accent); color: var(--accent); }
+    .settings-select { font-size: 11px; padding: 5px 8px; border-radius: 7px; color: var(--text); background: rgba(255,255,255,.06); border: 1px solid var(--border-bright); }
+    .input-binding-warning { color: #f87171; font-size: 10px; min-height: 12px; }
 
     /* ── Inventory pane ─────────────────────────────────────────
        Uses the same locked 16:9 grid math as gameplay controls.

@@ -1026,19 +1026,29 @@
         knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
       };
 
-      // Combat tuning for the weapon tool's two abilities. Cone hit-tests use
-      // continuous angle+range against creatures (not tile snapped). 'slash'
-      // is the big sweep: bigger cone, more damage, costs more stamina, and
-      // knocks targets back further.
-      const WEAPON_ABILITY = {
-        cut:   { damage: 14, halfConeRad: 32 * Math.PI / 180, rangePx: TILE * 1.05, staminaCost: 12, knockbackPxS: 360 },
-        slash: { damage: 24, halfConeRad: 62 * Math.PI / 180, rangePx: TILE * 1.35, staminaCost: 20, knockbackPxS: 520 },
-      };
+      // Combat tuning is config-backed so tool hit cones, stamina costs, trails,
+      // and combat reticles can be tuned without changing code.
+      function combatConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.combat || {};
+      }
+      function weaponAbility(action) {
+        const cfg = combatConfig().weaponAbilities?.[action];
+        if (!cfg) return null;
+        return {
+          damage: Number(cfg.damage) || 0,
+          halfConeRad: (Number(cfg.halfConeDeg) || 0) * Math.PI / 180,
+          rangePx: TILE * (Number(cfg.rangeTiles) || 0),
+          staminaCost: Number(cfg.staminaCost) || 0,
+          knockbackPxS: Number(cfg.knockbackPxS) || 0,
+          trailHalfWidthTiles: Number(cfg.trailHalfWidthTiles) || 0,
+          trailFarTiles: Number(cfg.trailFarTiles) || 0,
+          trailMaxAgeSeconds: Number(cfg.trailMaxAgeSeconds) || 0
+        };
+      }
 
       // Z-target-style auto lock: while a hostile is this close, facing tracks
       // it instead of movement direction, so strafing/repositioning in combat
       // doesn't spin the character away from the thing it's fighting.
-      const AUTO_TARGET_RANGE_PX = TILE * 5.5;
 
       // Knockback shared by all combat attacks: a short impulse that overrides
       // normal movement/AI while it decays, applied away from the attacker.
@@ -2171,7 +2181,7 @@
       }
 
       function resolveWeaponHit(action) {
-        const abil = WEAPON_ABILITY[action];
+        const abil = weaponAbility(action);
         if (!abil) return { hits: 0, message: '' };
         let hits = 0;
         let lastName = '';
@@ -2190,7 +2200,7 @@
 
       // Nearest live hostile in the player's current area within lock-on range, or null.
       function findAutoTarget() {
-        let best = null, bestDist = AUTO_TARGET_RANGE_PX;
+        let best = null, bestDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
@@ -6056,12 +6066,15 @@
       const CARDINAL_HOLD  = 0.13;      // seconds to hold last cardinal after input stops
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
+      let targetAimAngle = -Math.PI / 2;
 
       // Mouse-look: on desktop, facing tracks the mouse cursor in world space.
       // After MOUSE_IDLE_MS of no mouse movement, reverts to input-direction facing.
       const MOUSE_IDLE_MS  = 1800;  // ms before reverting to input-direction mode
       let mouseLookAngle   = -Math.PI / 2;
       let mouseLookActive  = false;
+      let controllerLookAngle = -Math.PI / 2;
+      let controllerLookActive = false;
       let lastMouseMoveTime = 0;
       const _raycaster     = isDesktop ? new THREE.Raycaster() : null;
       const _mouseNDC      = isDesktop ? new THREE.Vector2()   : null;
@@ -6212,6 +6225,8 @@
           inputStrength = usingKeyboard ? 1 : clamp(inputLen, 0, 1);
           ix /= inputLen;
           iy /= inputLen;
+          const aimDeadzone = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.inputAimDeadzone) || 0.08;
+          if (inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
         }
 
         // ── Cardinal bias ────────────────────────────────────
@@ -6281,7 +6296,12 @@
         const autoTarget = findAutoTarget();
         dodgeBtn?.classList.toggle('combat-active', !!autoTarget);
 
-        if (isDesktop && mouseLookActive) {
+        if (controllerLookActive) {
+          const diff = angleDiff(controllerLookAngle, facingAngle);
+          facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
+          player.angle = facingAngle;
+          if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
+        } else if (isDesktop && mouseLookActive) {
           if (performance.now() - lastMouseMoveTime > MOUSE_IDLE_MS) {
             mouseLookActive = false;
           } else {
@@ -6292,7 +6312,7 @@
           }
         }
 
-        if (!mouseLookActive || !isDesktop) {
+        if (!controllerLookActive && (!mouseLookActive || !isDesktop)) {
           if (autoTarget) {
             // Combat: lock facing onto the nearest nearby hostile instead of
             // movement direction, akin to Z-targeting.
@@ -6506,7 +6526,8 @@
         const baseY = tileSurfaceY(agrid[row][col].type) + 0.16 + Math.max(0, agrid[row][col].water * WATER_UNIT);
         actionTileEffects.push({ col, row, action, ok, age: 0, maxAge: ok ? 0.58 : 0.44, color: profile.ring });
         while (actionTileEffects.length > 8) actionTileEffects.shift();
-        if (action === 'slash') spawnWeaponTrailEffect(col, row, ok);
+        if (activeTool === 'weapon' && action === 'cut') spawnWeaponTrailEffect(action, ok);
+        else if (action === 'slash') spawnWeaponTrailEffect(action, ok, col, row);
 
         for (let i = 0; i < profile.count; i++) {
           if (actionParticles.length >= ACTION_FX_LIMIT) actionParticles.shift();
@@ -6531,28 +6552,39 @@
       }
 
 
-      function spawnWeaponTrailEffect(col, row, ok) {
-        const dir = facingCardinal(player.angle);
-        const side = dir.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 };
-        const targets = getMacheteTargets(col, row, 'slash');
+      function spawnWeaponTrailEffect(action, ok, col = null, row = null) {
+        const abil = weaponAbility(action) || weaponAbility('slash');
+        const tileAnchored = col !== null && row !== null;
+        const dir = tileAnchored ? facingCardinal(player.angle) : { x: Math.cos(player.angle), y: Math.sin(player.angle) };
+        const side = tileAnchored
+          ? (dir.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 })
+          : { x: -dir.y, y: dir.x };
         const tgrid = getActiveGrid();
-        const surfaceY = targets.reduce((sum, t) => sum + tileSurfaceY(tgrid[t.row][t.col].type), 0) / Math.max(1, targets.length);
+        const sampleCol = clamp(Math.floor(player.x / TILE), 0, getActiveCols() - 1);
+        const sampleRow = clamp(Math.floor(player.y / TILE), 0, getActiveRows() - 1);
+        const targets = tileAnchored ? getMacheteTargets(col, row, 'slash') : [{ col: sampleCol, row: sampleRow }];
+        const surfaceY = targets.reduce((sum, t) => sum + tileSurfaceY(tgrid[t.row]?.[t.col]?.type || TileType.GRASS), 0) / Math.max(1, targets.length);
         weaponTrailEffects.push({
-          col, row, dir, side,
+          x: col === null ? player.x / TILE : col + 0.5,
+          z: row === null ? player.y / TILE : row + 0.5,
+          dir, side, action,
+          halfWidth: abil.trailHalfWidthTiles,
+          far: abil.trailFarTiles,
           age: 0,
-          maxAge: ok ? 0.34 : 0.24,
+          maxAge: ok ? abil.trailMaxAgeSeconds : Math.max(abil.trailMaxAgeSeconds * 0.72, 0.1),
           ok,
           y: surfaceY + 0.18,
         });
-        while (weaponTrailEffects.length > 5) weaponTrailEffects.shift();
+        const limit = Number(combatConfig().weaponTrailLimit) || 5;
+        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
       }
 
       function slashTrailWorldPoints(fx) {
-        const cx = fx.col + 0.5;
-        const cz = fx.row + 0.5;
+        const cx = fx.x;
+        const cz = fx.z;
         const near = 0.02;
-        const far = 1.02;
-        const halfWidth = 1.35;
+        const far = fx.far;
+        const halfWidth = fx.halfWidth;
         return [
           { x: cx + fx.dir.x * near - fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * near - fx.side.y * halfWidth },
           { x: cx + fx.dir.x * far  - fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * far  - fx.side.y * halfWidth },
@@ -6590,6 +6622,38 @@
           y: (-v.y * 0.5 + 0.5) * _threeRect.height,
           visible: v.z >= -1 && v.z <= 1
         };
+      }
+
+      function drawCombatConeReticle() {
+        const cfg = combatConfig().combatConeReticle || {};
+        if (cfg.enabled === false || activeTool !== 'weapon' || !findAutoTarget()) return;
+        const abil = weaponAbility('cut');
+        if (!abil) return;
+        const rangeTiles = abil.rangePx / TILE;
+        const baseX = player.x / TILE;
+        const baseZ = player.y / TILE;
+        const y = tileSurfaceY(getActiveTileAt(Math.floor(baseX), Math.floor(baseZ)).type) + 0.035;
+        const alpha = Number(cfg.alpha) || 0.24;
+        const lineWidth = Number(cfg.lineWidth) || 2;
+        const color = cfg.color || '#d9ffe0';
+        const left = player.angle - abil.halfConeRad;
+        const right = player.angle + abil.halfConeRad;
+        const leftEnd = worldToOverlay(baseX + Math.cos(left) * rangeTiles, y, baseZ + Math.sin(left) * rangeTiles);
+        const rightEnd = worldToOverlay(baseX + Math.cos(right) * rangeTiles, y, baseZ + Math.sin(right) * rangeTiles);
+        const origin = worldToOverlay(baseX, y, baseZ);
+        if (!origin.visible || !leftEnd.visible || !rightEnd.visible) return;
+        octx.save();
+        octx.globalAlpha = alpha;
+        octx.strokeStyle = color;
+        octx.lineWidth = lineWidth;
+        octx.setLineDash(Array.isArray(cfg.lineDash) ? cfg.lineDash : []);
+        octx.beginPath();
+        octx.moveTo(origin.x, origin.y);
+        octx.lineTo(leftEnd.x, leftEnd.y);
+        octx.moveTo(origin.x, origin.y);
+        octx.lineTo(rightEnd.x, rightEnd.y);
+        octx.stroke();
+        octx.restore();
       }
 
       function drawWeaponTrailEffects() {
@@ -6758,7 +6822,7 @@
           return;
         }
         if (activeTool === 'weapon') {
-          const abil = WEAPON_ABILITY[activeAction];
+          const abil = weaponAbility(activeAction);
           if (abil && player.stamina < abil.staminaCost) {
             showToast('Too winded to swing!', false);
             return;
@@ -6844,17 +6908,25 @@
         refreshActionBar();
       }
 
+      function targetingConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.input?.targeting || {};
+      }
+
       function getReticleTile() {
-        const dir = facingCardinal(player.angle);
-        // Cast a ray from the player's world position in the facing direction.
-        // Using 0.7×TILE ensures we always land in the next tile regardless of
-        // where within the current tile the player is standing.
-        const probeX = player.x + dir.x * TILE * 0.7;
-        const probeY = player.y + dir.y * TILE * 0.7;
+        const cfg = targetingConfig();
+        const orbitRadiusTiles = Number.isFinite(Number(cfg.orbitRadiusTiles)) ? Number(cfg.orbitRadiusTiles) : 0.62;
+        const angle = targetAimAngle;
+        const dir = { x: Math.cos(angle), y: Math.sin(angle), name: facingCardinal(angle).name };
+        // Ground-level probe: a tight orbit around the player's actual position,
+        // aimed by raw input/look rotation rather than the tile the player stands on.
+        const probeX = player.x + dir.x * TILE * orbitRadiusTiles;
+        const probeY = player.y + dir.y * TILE * orbitRadiusTiles;
         return {
           col: clamp(Math.floor(probeX / TILE), 0, getActiveCols() - 1),
           row: clamp(Math.floor(probeY / TILE), 0, getActiveRows() - 1),
-          dir
+          dir,
+          probeX,
+          probeY
         };
       }
 
@@ -8441,6 +8513,7 @@
       function clearTargetHighlights() {
         for (const m of _targetOutlineMeshes) m.layers.disable(2);
         _targetOutlineMeshes = [];
+        updateCuttableBillboardGlow(0, 0, false);
       }
       function findTargetMeshes(col, row) {
         const i = row * COLS + col;
@@ -10709,6 +10782,8 @@
 
       const _grassTint = new THREE.Color().setHSL(108 / 360, 0.58, 0.28);
       let grassBillboardMat = null;
+      let cuttableBillboardGlowMat = null;
+      let cuttableBillboardGlowMesh = null;
 
       new THREE.TextureLoader().load('assets/leaves/grass_1.png', (tex) => {
         tex.magFilter = THREE.NearestFilter;
@@ -10724,6 +10799,26 @@
           vertexShader:   _grassBillVert,
           fragmentShader: _grassBillFrag,
           alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
+        });
+        cuttableBillboardGlowMat = new THREE.ShaderMaterial({
+          uniforms: {
+            uGrassTex: { value: tex },
+            uColor: { value: new THREE.Color(combatConfig().cuttableTargetGlow?.color || '#ff2a1f') },
+            uAlpha: { value: Number(combatConfig().cuttableTargetGlow?.alpha) || 0.42 }
+          },
+          vertexShader: _grassBillVert,
+          fragmentShader: `
+            uniform sampler2D uGrassTex;
+            uniform vec3 uColor;
+            uniform float uAlpha;
+            varying vec2 vUv;
+            void main() {
+              vec4 texel = texture2D(uGrassTex, vUv);
+              if (texel.a < 0.5) discard;
+              gl_FragColor = vec4(uColor, uAlpha * texel.a);
+            }
+          `,
+          transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
         });
         _rebuildFarmBillboards();
         if (_townSceneBuilt) {
@@ -10759,6 +10854,19 @@
         return idx;
       }
 
+      function updateCuttableBillboardGlow(col, row, visible) {
+        if (!cuttableBillboardGlowMesh || !cuttableBillboardGlowMat) return;
+        if (!visible || combatConfig().cuttableTargetGlow?.enabled === false) {
+          cuttableBillboardGlowMesh.count = 0;
+          return;
+        }
+        cuttableBillboardGlowMat.uniforms.uColor.value.set(combatConfig().cuttableTargetGlow?.color || '#ff2a1f');
+        cuttableBillboardGlowMat.uniforms.uAlpha.value = Number(combatConfig().cuttableTargetGlow?.alpha) || 0.42;
+        const dummy = new THREE.Object3D();
+        cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0);
+        cuttableBillboardGlowMesh.instanceMatrix.needsUpdate = true;
+      }
+
       // Farm grass (GRASS tiles, gated by s_grass) and weeds (WEEDS tiles in
       // Mode A, always on) each get one InstancedMesh sized for the worst case
       // (every farm tile being that type), so edits just refill the buffer and
@@ -10777,6 +10885,11 @@
         farmWeedBillMesh.frustumCulled = false;
         farmWeedBillMesh.count = 0;
         scene.add(farmWeedBillMesh);
+
+        cuttableBillboardGlowMesh = new THREE.InstancedMesh(_grassBladeGeo, cuttableBillboardGlowMat || grassBillboardMat, 28);
+        cuttableBillboardGlowMesh.frustumCulled = false;
+        cuttableBillboardGlowMesh.count = 0;
+        scene.add(cuttableBillboardGlowMesh);
       }
 
       function _rebuildFarmBillboards() {
@@ -11386,15 +11499,18 @@
         const pulse   = 1 + 0.06 * Math.sin(t / 300);
 
         const onFarm     = currentArea === 'farm';
-        const isExcavate = onFarm && allowed && (activeAction === 'dig' || activeAction === 'raise');
-        const isHoeWork  = onFarm && allowed && activeTool === 'hoe';
+        const weaponEquipped = activeTool === 'weapon';
+        const isExcavate = onFarm && !weaponEquipped && allowed && (activeAction === 'dig' || activeAction === 'raise');
+        const isHoeWork  = onFarm && !weaponEquipped && allowed && activeTool === 'hoe';
         const showTile   = isExcavate || isHoeWork;
-        const isObjTarget = onFarm && allowed && !showTile;
+        const isObjTarget = onFarm && allowed && !showTile && !weaponEquipped;
         const i = reticle.row * COLS + reticle.col;
+        const cuttableTarget = onFarm && weaponEquipped && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB || !!vegFoliageMeshes[i]);
         const isWeedBlock = onFarm && !allowed && activeTool === 'hoe' && activeAction === 'till'
                          && (tile.type === TileType.WEEDS || !!vegFoliageMeshes[i]);
 
         // Base tile box
+        reticleMesh.visible = !weaponEquipped;
         reticleMesh.position.set(reticle.col + 0.5, surfY, reticle.row + 0.5);
         reticleMesh.material = showTile ? reticleIntenseMat
                              : (allowed ? reticleMat : reticleBlockedMat);
@@ -11422,12 +11538,16 @@
 
         // Object outline (layer 2) and fallback ring
         clearTargetHighlights();
-        if (isObjTarget || isWeedBlock) {
-          const meshes = findTargetMeshes(reticle.col, reticle.row);
+        if (isObjTarget || isWeedBlock || cuttableTarget) {
+          const meshes = cuttableTarget && tile.type === TileType.WEEDS && !s_weed3D ? [] : findTargetMeshes(reticle.col, reticle.row);
           if (meshes.length > 0) {
             for (const m of meshes) m.layers.enable(2);
             _targetOutlineMeshes = meshes;
             _targetOutlineAllowed = isObjTarget;
+            updateCuttableBillboardGlow(0, 0, false);
+            reticleRingMesh.visible = false;
+          } else if (cuttableTarget && tile.type === TileType.WEEDS && !s_weed3D) {
+            updateCuttableBillboardGlow(reticle.col, reticle.row, true);
             reticleRingMesh.visible = false;
           } else {
             // No specific mesh — fall back to floating ring
@@ -11611,6 +11731,7 @@
           updateCalendar(dt);
           _advanceSmoothedLighting(dt);
           updateRainAudio();
+          pollControllerInput();
           updateAmbientCues();
           updateMovement(dt);
           updatePlayerVitals(dt);
@@ -11873,6 +11994,7 @@
           octx.globalAlpha = 1;
         }
 
+        drawCombatConeReticle();
         drawWeaponTrailEffects();
         drawActionTileEffects();
         drawActionParticles();
@@ -13255,6 +13377,228 @@
         return wasHeld;
       }
 
+      const INPUT_DEFAULTS = (() => {
+        const cfg = window.SCRATCHBONES_CONFIG?.game?.input || {};
+        const actions = Array.isArray(cfg.actions) ? cfg.actions : [];
+        return {
+          storageKey: cfg.storageKey || 'scratchbones.inputBindings.v1',
+          deadzone: Number(cfg.gamepadDeadzone) || 0.24,
+          axisPressThreshold: Number(cfg.axisPressThreshold) || 0.55,
+          actions,
+          desktop: Object.fromEntries(actions.map(a => [a.id, a.desktop]).filter(([, v]) => v)),
+          controller: Object.fromEntries(actions.map(a => [a.id, a.controller]).filter(([, v]) => v)),
+          modeShifts: Array.isArray(cfg.modeShifts) ? cfg.modeShifts : []
+        };
+      })();
+      const inputBindings = loadInputBindings();
+      const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null };
+      const CONTROLLER_INPUT_OPTIONS = [
+        'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
+        'LeftTrigger', 'RightTrigger',
+        'Button8', 'Button9', 'Button10', 'Button11',
+        'Button12', 'Button13', 'Button14', 'Button15',
+        'RightStickLeft', 'RightStickRight', 'RightStickUp', 'RightStickDown'
+      ];
+
+      function loadInputBindings() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(INPUT_DEFAULTS.storageKey) || 'null');
+          return {
+            desktop: { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) },
+            controller: { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) },
+            modeShifts: Array.isArray(saved?.modeShifts) ? saved.modeShifts : INPUT_DEFAULTS.modeShifts
+          };
+        } catch (_err) {
+          return { desktop: { ...INPUT_DEFAULTS.desktop }, controller: { ...INPUT_DEFAULTS.controller }, modeShifts: INPUT_DEFAULTS.modeShifts };
+        }
+      }
+      function saveInputBindings() {
+        localStorage.setItem(INPUT_DEFAULTS.storageKey, JSON.stringify(inputBindings));
+      }
+      function bindingConflict(device, button, actionId, modeShift = null) {
+        if (!button) return '';
+        if (modeShift && button === modeShift.button) return 'Shifted input cannot use its held mode-shift button.';
+        const bindings = inputBindings[device] || {};
+        for (const [otherAction, otherButton] of Object.entries(bindings)) {
+          if (otherAction !== actionId && otherButton === button) return `Already bound to ${actionLabel(otherAction)}.`;
+        }
+        if (!modeShift) return '';
+        for (const [otherButton, otherAction] of Object.entries(modeShift.bindings || {})) {
+          if (otherAction === actionId && otherButton === button) return `Already bound to ${actionLabel(actionId)} in this mode shift.`;
+        }
+        return '';
+      }
+      function actionLabel(id) {
+        return INPUT_DEFAULTS.actions.find(a => a.id === id)?.label || id;
+      }
+      function buttonLabel(code) {
+        const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓' };
+        return labels[code] || String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
+      }
+      function runActionButtonAtSlot(slotIndex) {
+        const btn = computeActionButtons()[slotIndex - 1];
+        if (!btn) return;
+        activeAction = btn.action;
+        actionHeldDown = slotIndex === 1;
+        useActiveAction();
+      }
+      function runInteractAction() {
+        const toolSet = new Set(Object.values(toolActions).flat());
+        const btn = computeActionButtons().find(b => b.allowed !== false && !toolSet.has(b.action) && !String(b.action || '').startsWith('plant_') && !String(b.action || '').startsWith('place_') && b.action !== 'harvest');
+        if (!btn) return;
+        activeAction = btn.action;
+        useActiveAction();
+      }
+      function cycleActiveTool(delta) {
+        const idx = WHEEL_SLOTS.indexOf(activeTool);
+        const next = (idx + delta + WHEEL_SLOTS.length) % WHEEL_SLOTS.length;
+        setActiveTool(WHEEL_SLOTS[next]);
+      }
+      function runInputAction(actionId, phase = 'press') {
+        if (phase === 'release') {
+          if (actionId === 'action1') actionHeldDown = false;
+          return;
+        }
+        if (fishingMinigame?.active) {
+          if (actionId === 'interact' || actionId === 'action1') fireFishingBridge();
+          return;
+        }
+        if (menuOpen || farmEditMode) return;
+        if (actionId === 'interact') { runInteractAction(); return; }
+        const actionSlot = /^action(\d+)$/.exec(actionId);
+        if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
+        if (actionId === 'dodge') { performDodge(player.angle); return; }
+        if (actionId === 'cycleToolAction') {
+          const actions = toolActions[activeTool];
+          const idx = actions.indexOf(activeAction);
+          activeAction = actions[(idx + 1) % actions.length];
+          refreshActionBar();
+          return;
+        }
+        if (actionId === 'itemPrev' || actionId === 'itemNext') {
+          cycleActiveInventoryItem(actionId === 'itemPrev' ? -1 : 1);
+          refreshItemScroll(); refreshActionBar(); return;
+        }
+        if (actionId === 'toolPrev' || actionId === 'toolNext') { cycleActiveTool(actionId === 'toolPrev' ? -1 : 1); return; }
+        const tool = { tool1: 'shovel', tool2: 'hoe', tool3: 'weapon', tool4: 'axe', tool5: 'pick', tool6: 'harpoon' }[actionId];
+        if (tool) setActiveTool(tool);
+      }
+      function getActionForButton(device, button, heldShift = null) {
+        if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
+        const bindings = inputBindings[device] || {};
+        return Object.keys(bindings).find(actionId => bindings[actionId] === button) || null;
+      }
+      function pollControllerInput() {
+        if (!gamepadState.focused) return;
+        const pads = navigator.getGamepads?.() || [];
+        const pad = Array.from(pads).find(Boolean);
+        if (!pad) { input.x = 0; input.y = 0; return; }
+        const dz = INPUT_DEFAULTS.deadzone;
+        const ax = Math.abs(pad.axes[0] || 0) >= dz ? pad.axes[0] : 0;
+        const ay = Math.abs(pad.axes[1] || 0) >= dz ? pad.axes[1] : 0;
+        const rx = Math.abs(pad.axes[2] || 0) >= dz ? pad.axes[2] : 0;
+        const ry = Math.abs(pad.axes[3] || 0) >= dz ? pad.axes[3] : 0;
+        input.x = ax; input.y = ay;
+        controllerLookActive = Math.hypot(rx, ry) >= dz;
+        if (controllerLookActive) {
+          controllerLookAngle = Math.atan2(ry, rx);
+          targetAimAngle = controllerLookAngle;
+        }
+        const down = new Set();
+        pad.buttons.forEach((button, index) => { if (button?.pressed) down.add(`Button${index}`); });
+        if ((pad.buttons[6]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('LeftTrigger');
+        if ((pad.buttons[7]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('RightTrigger');
+        const axisPress = INPUT_DEFAULTS.axisPressThreshold;
+        if (rx <= -axisPress) down.add('RightStickLeft');
+        if (rx >= axisPress) down.add('RightStickRight');
+        if (ry <= -axisPress) down.add('RightStickUp');
+        if (ry >= axisPress) down.add('RightStickDown');
+        const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
+        if (heldShift) controllerLookActive = false;
+        for (const button of down) {
+          if (gamepadState.previous.has(button) || button === heldShift?.button) continue;
+          const actionId = getActionForButton('controller', button, heldShift);
+          if (actionId) runInputAction(actionId, 'press');
+        }
+        for (const button of gamepadState.previous) {
+          if (down.has(button)) continue;
+          const actionId = getActionForButton('controller', button, gamepadState.activeShift);
+          if (actionId) runInputAction(actionId, 'release');
+        }
+        gamepadState.previous = down;
+        gamepadState.activeShift = heldShift || null;
+      }
+      window.addEventListener('focus', () => { gamepadState.focused = true; });
+      window.addEventListener('blur', () => { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; } });
+
+      function renderInputSettings() {
+        const desktopEl = document.getElementById('desktopInputBindings');
+        const controllerEl = document.getElementById('controllerInputBindings');
+        const shiftsEl = document.getElementById('modeShiftList');
+        function renderDevice(el, device) {
+          if (!el) return;
+          el.innerHTML = '';
+          for (const action of INPUT_DEFAULTS.actions) {
+            const row = document.createElement('div'); row.className = 'input-binding-row';
+            row.innerHTML = `<span class="settings-name">${action.label}</span>${device === 'controller' ? '<select class="settings-select"></select>' : `<button type="button" class="input-bind-btn">${buttonLabel(inputBindings[device][action.id])}</button>`}<div class="input-binding-warning"></div>`;
+            const control = row.children[1]; const warn = row.querySelector('.input-binding-warning');
+            if (device === 'controller') {
+              control.add(new Option('Unbound', ''));
+              CONTROLLER_INPUT_OPTIONS.forEach(code => control.add(new Option(buttonLabel(code), code)));
+              control.value = inputBindings.controller[action.id] || '';
+              control.addEventListener('change', () => { const conflict = bindingConflict(device, control.value, action.id); if (conflict) { warn.textContent = conflict; control.value = inputBindings.controller[action.id] || ''; } else { inputBindings.controller[action.id] = control.value || null; warn.textContent = ''; saveInputBindings(); } });
+            } else {
+              control.addEventListener('click', () => { control.classList.add('is-listening'); control.textContent = 'Press input…'; const once = ev => { ev.preventDefault(); const code = ev.code; const conflict = bindingConflict(device, code, action.id); if (conflict) warn.textContent = conflict; else { inputBindings[device][action.id] = code; warn.textContent = ''; saveInputBindings(); renderInputSettings(); } window.removeEventListener('keydown', once, true); }; window.addEventListener('keydown', once, true); });
+            }
+            el.appendChild(row);
+          }
+        }
+        renderDevice(desktopEl, 'desktop'); renderDevice(controllerEl, 'controller');
+        if (shiftsEl) {
+          shiftsEl.innerHTML = '';
+          inputBindings.modeShifts.forEach((shift, idx) => {
+            const row = document.createElement('div'); row.className = 'mode-shift-row';
+            row.innerHTML = `<input class="settings-select" value="${shift.label || ''}"><select class="settings-select"><option value="desktop">Desktop</option><option value="controller">Controller</option></select><input class="settings-select" value="${shift.button || ''}"><button type="button" class="settings-small-btn">Remove</button>`;
+            row.children[1].value = shift.device || 'desktop';
+            row.children[0].addEventListener('change', e => { shift.label = e.target.value; saveInputBindings(); });
+            row.children[1].addEventListener('change', e => { shift.device = e.target.value; saveInputBindings(); });
+            row.children[2].addEventListener('change', e => { shift.button = e.target.value; saveInputBindings(); });
+            row.children[3].addEventListener('click', () => { inputBindings.modeShifts.splice(idx, 1); saveInputBindings(); renderInputSettings(); });
+            shiftsEl.appendChild(row);
+            const bindings = document.createElement('div'); bindings.className = 'input-bindings-grid';
+            Object.entries(shift.bindings || {}).forEach(([button, actionId]) => {
+              const bRow = document.createElement('div'); bRow.className = 'mode-shift-row';
+              bRow.innerHTML = `<span class="settings-name">${buttonLabel(button)}</span><select class="settings-select"></select><span class="input-binding-warning"></span><button type="button" class="settings-small-btn">Remove</button>`;
+              const select = bRow.children[1];
+              INPUT_DEFAULTS.actions.forEach(action => select.add(new Option(action.label, action.id)));
+              select.value = actionId;
+              select.addEventListener('change', e => { shift.bindings[button] = e.target.value; saveInputBindings(); renderInputSettings(); });
+              bRow.children[3].addEventListener('click', () => { delete shift.bindings[button]; saveInputBindings(); renderInputSettings(); });
+              bindings.appendChild(bRow);
+            });
+            const add = document.createElement('button'); add.type = 'button'; add.className = 'settings-small-btn'; add.textContent = 'Add Shifted Binding';
+            add.addEventListener('click', () => {
+              add.classList.add('is-listening'); add.textContent = 'Press shifted input…';
+              const once = ev => {
+                ev.preventDefault();
+                const manual = window.prompt?.('Input code (examples: RightStickLeft, RightTrigger, Button0)') || '';
+                const button = manual.trim() || ev.code;
+                const actionId = INPUT_DEFAULTS.actions[0]?.id || 'interact';
+                const conflict = bindingConflict(shift.device || 'desktop', button, actionId, shift);
+                if (!conflict) { shift.bindings = shift.bindings || {}; shift.bindings[button] = actionId; saveInputBindings(); }
+                window.removeEventListener('keydown', once, true); renderInputSettings();
+              };
+              window.addEventListener('keydown', once, true);
+            });
+            bindings.appendChild(add);
+            shiftsEl.appendChild(bindings);
+          });
+        }
+      }
+      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, label: 'Custom Shift', device: 'controller', button: 'Button4', bindings: {} }); saveInputBindings(); renderInputSettings(); });
+      renderInputSettings();
+
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
         if (fishingMinigame?.active) {
@@ -13264,6 +13608,12 @@
         }
         if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
         if (menuOpen) return;
+        const boundDesktopAction = getActionForButton('desktop', event.code);
+        if (boundDesktopAction && !['KeyE', 'KeyQ'].includes(event.code)) {
+          event.preventDefault();
+          if (!event.repeat) runInputAction(boundDesktopAction, 'press');
+          return;
+        }
         if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd'].includes(key)) {
           event.preventDefault(); input.keys.add(key);
         }
@@ -13489,6 +13839,7 @@
             if (Math.hypot(dx, dz) > 0.3) {
               // atan2 in Three.js XZ: angle from +X axis, but game uses -Z=north
               mouseLookAngle = Math.atan2(dz, dx);
+              targetAimAngle = mouseLookAngle;
               mouseLookActive = true;
               lastMouseMoveTime = performance.now();
             }
