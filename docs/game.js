@@ -2605,6 +2605,7 @@
       const _audioDebugLast = new Map();
       const _gameAudioElements = new Set();
       let _gameAudioUnlocked = false;
+      const _audioFailedUrls = new Set();
 
       function audioDebug(message, key = message, throttleMs = 1200) {
         const now = performance.now();
@@ -2644,6 +2645,18 @@
         _gameAudioElements.add(snd);
         try { snd.load(); } catch {}
         return snd;
+      }
+
+      function markAudioUrlFailed(url, reason) {
+        const resolved = resolveAudioUrl(url);
+        if (!resolved) return;
+        _audioFailedUrls.add(resolved);
+        audioDebug('marked audio failed url=' + resolved + ' reason=' + reason, 'audio-failed-' + resolved, 0);
+      }
+
+      function audioUrlFailed(url) {
+        const resolved = resolveAudioUrl(url);
+        return !!resolved && _audioFailedUrls.has(resolved);
       }
 
       function describeAudioConfigForArea(area) {
@@ -2728,8 +2741,14 @@
 
       function resolveAreaBgm(area) {
         const sets = window.SCRATCHBONES_CONFIG?.game?.audio?.areaBgm || {};
-        const list = (sets[area] || []).filter(track => !track.nightOnly || isNightTime());
-        if (!list.length) return '';
+        const all = (sets[area] || []).filter(track => track?.url && (!track.nightOnly || isNightTime()));
+        const playable = all.filter(track => !audioUrlFailed(track.url));
+        if (!playable.length) {
+          if (all.length) audioDebug('all bgm candidates failed for area=' + area + '; waiting for a valid config/media file', 'bgm-all-failed-' + area, 3000);
+          return '';
+        }
+        const preferred = playable.filter(track => !track.fallback);
+        const list = preferred.length ? preferred : playable;
         return list[Math.floor(Math.random() * list.length)].url || '';
       }
 
@@ -2778,7 +2797,7 @@
         _ambientCueState.currentBgm = null;
         if (performance.now() < _ambientCueState.nextAt) return;
         const bgmUrl = resolveAreaBgm(currentArea);
-        if (!bgmUrl) { audioDebug('no bgm configured for area=' + currentArea + '; scheduling cues only', 'bgm-missing-' + currentArea, 3000); _ambientCueState.mode = 'cue_wait'; scheduleNextCueDelay(); return; }
+        if (!bgmUrl) { audioDebug('no playable bgm for area=' + currentArea + '; retrying bgm resolution soon', 'bgm-missing-' + currentArea, 3000); _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
         const snd = makeGameAudio(bgmUrl);
         const finishBgm = () => {
           if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
@@ -2787,14 +2806,15 @@
         };
         snd.volume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
         snd.addEventListener('ended', finishBgm, { once: true });
-        snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0); finishBgm(); }, { once: true });
+        snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0); markAudioUrlFailed(bgmUrl, 'media error'); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
         _ambientCueState.currentBgm = snd;
         audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' volume=' + snd.volume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0);
         snd.play().catch(err => {
           audioDebug('bgm play blocked/failed area=' + currentArea + ': ' + (err?.name || err), 'bgm-fail-' + currentArea, 0);
+          if ((err?.name || '') !== 'NotAllowedError') markAudioUrlFailed(bgmUrl, err?.name || err || 'play failed');
           if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
           _ambientCueState.mode = 'bgm';
-          _ambientCueState.nextAt = performance.now() + 3000;
+          _ambientCueState.nextAt = performance.now() + 1000;
         });
       }
 
@@ -2807,6 +2827,7 @@
         }
         if (!snd) return;
         snd.volume = v;
+        audioTrace('bgs state ' + id + ' volume=' + v.toFixed(2) + ' paused=' + snd.paused + ' ready=' + audioReadyStateLabel(snd) + ' url=' + snd.src, 'bgs-state-' + id, 5000);
         if (v > 0 && snd.paused) {
           audioDebug('starting bgs ' + id + ' url=' + snd.src + ' volume=' + v.toFixed(2), 'bgs-start-' + id, 0);
           snd.play().catch(err => audioDebug('bgs play blocked/failed ' + id + ': ' + (err?.name || err), 'bgs-fail-' + id, 0));
