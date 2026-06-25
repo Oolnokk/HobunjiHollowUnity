@@ -1072,9 +1072,11 @@
           windupS: Math.max(0, Number(cfg.windupSeconds) || 0.45),
           rangeMultiplier: Math.max(0.1, Number(cfg.rangeMultiplier) || 1.8),
           halfConeMultiplier: Math.max(0.1, Number(cfg.halfConeMultiplier) || 0.55),
-          startDistanceFactor: Math.max(0.1, Math.min(1, Number(cfg.startDistanceFactor) || 0.75)),
-          squishY: Math.max(0.1, Number(cfg.windupSquishY) || 0.52),
-          squishXZ: Math.max(0.1, Number(cfg.windupSquishXZ) || 1.28)
+          startDistanceFactor: Math.max(0.1, Number(cfg.startDistanceFactor) || 1),
+          pounceDistanceFactor: Math.max(0, Number(cfg.pounceDistanceFactor) || 0.75),
+          pounceStopDistanceFactor: Math.max(0, Number(cfg.pounceStopDistanceFactor) || 0.18),
+          squishY: Math.max(0.1, Number(cfg.windupSquishY) || 0.38),
+          squishXZ: Math.max(0.1, Number(cfg.windupSquishXZ) || 1.42)
         };
       }
 
@@ -2133,12 +2135,14 @@
         const gridRows = optRows || getActiveRows();
         const modelWidth = def.modelWidth;
         const modelHeight = modelWidth * (600 / 1375); // all creature sprites are 1375×600px
-        const halfH = modelHeight / 2;
         const idUniq = (performance.now() | 0) + '_' + Math.floor(Math.random() * 100000);
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
           modelWidth, modelHeight,
           name: creatureKey + '_' + idUniq,
         });
+        // Lift only the sprite planes, leaving the creature group at ground level.
+        // Windup scale now pivots from the bottom edge of the PNG instead of its center.
+        for (const child of avatarRef.group.children) child.position.y = modelHeight / 2;
         if (def.tint && def.tint !== 0xffffff) {
           for (const child of avatarRef.group.children) {
             if (child.material) child.material.color.setHex(def.tint);
@@ -2147,7 +2151,7 @@
         const col = clamp(Math.floor(x / TILE), 0, gridCols - 1);
         const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
         const surfY = targetGrid[row]?.[col] ? tileSurfaceY(targetGrid[row][col].type) : 0;
-        avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
+        avatarRef.group.position.set(x / TILE, surfY, y / TILE);
         _markPngPlane(avatarRef.group);
         targetScene.add(avatarRef.group);
         const telegraphMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), creatureTelegraphMat.clone());
@@ -2159,7 +2163,6 @@
           id: creatureKey + '_' + idUniq,
           creatureKey, def, avatarRef, telegraphMesh,
           x, y, vx: 0, vy: 0,
-          halfHeight: halfH,
           health: def.maxHealth, maxHealth: def.maxHealth,
           stamina: def.maxStamina, maxStamina: def.maxStamina,
           facing: 0, groupRot: 0, perpState: {},
@@ -2303,9 +2306,24 @@
         c.vx = 0; c.vy = 0;
       }
 
+      function pounceCreatureTowardAttackTarget(c, damageTarget) {
+        if (!damageTarget) return;
+        const tuning = creatureAttackTuning();
+        const rangePx = effectiveCreatureAttackRangePx(c.def);
+        const dx = damageTarget.x - c.x;
+        const dy = damageTarget.y - c.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= 0.001) return;
+        const stopPx = rangePx * tuning.pounceStopDistanceFactor;
+        const pouncePx = Math.min(rangePx * tuning.pounceDistanceFactor, Math.max(0, dist - stopPx));
+        c.x += Math.cos(c.attackWindupFacing) * pouncePx;
+        c.y += Math.sin(c.attackWindupFacing) * pouncePx;
+      }
+
       function finishCreatureAttack(c, damageTarget, knockbackPxS) {
         const def = c.def;
         c.attackWindupT = 0;
+        pounceCreatureTowardAttackTarget(c, damageTarget);
         c.attackTarget = null;
         c.stamina -= def.attackStaminaCost;
         c.attackCooldownT = def.attackCooldownS;
@@ -2346,7 +2364,7 @@
         const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
         const surfY = g[row]?.[col] ? tileSurfaceY(g[row][col].type) : 0;
         const grp = c.avatarRef.group;
-        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight;
+        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY;
         grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
         grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
