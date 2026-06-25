@@ -1072,10 +1072,10 @@
           windupS: Math.max(0, Number(cfg.windupSeconds) || 0.45),
           rangeMultiplier: Math.max(0.1, Number(cfg.rangeMultiplier) || 1.8),
           rangeBonusTiles: Math.max(0, Number(cfg.rangeBonusTiles) || 1),
-          halfConeMultiplier: Math.max(0.1, Number(cfg.halfConeMultiplier) || 0.55),
           strikeReticleRadiusTiles: Math.max(0.1, Number(cfg.strikeReticleRadiusTiles) || 0.75),
           pounceDistanceFactor: Math.max(0, Number(cfg.pounceDistanceFactor) || 1),
           pounceStopDistanceFactor: Math.max(0, Number(cfg.pounceStopDistanceFactor) || 0.12),
+          pounceStaminaFraction: Math.max(0, Number(cfg.pounceStaminaFraction) || 0.6),
           evasionS: Math.max(0, Number(cfg.evasionSeconds) || 0.55),
           evasionSpeedPxS: Math.max(0, Number(cfg.evasionSpeedPxS) || 300),
           evasionSideAngleRad: Math.max(0, Number(cfg.evasionSideAngleDeg) || 38) * Math.PI / 180,
@@ -1093,6 +1093,29 @@
 
       const PLAYER_STAMINA_REGEN = 14;   // per second
       const PLAYER_HEALTH_REGEN  = 1.2;  // per second, passive
+      function creatureTelegraphConfig() {
+        const cfg = creatureCombatConfig().telegraph || {};
+        return {
+          enabled: cfg.enabled !== false,
+          color: cfg.color || '#ff3b1f',
+          alpha: Math.max(0, Math.min(1, Number(cfg.alpha) || 0.34)),
+          circleSegments: Math.max(12, Math.round(Number(cfg.circleSegments) || 40))
+        };
+      }
+
+      function creatureStaminaBarConfig() {
+        const cfg = creatureCombatConfig().staminaBar || {};
+        return {
+          enabled: cfg.enabled !== false,
+          widthTiles: Math.max(0.1, Number(cfg.widthTiles) || 0.72),
+          heightTiles: Math.max(0.01, Number(cfg.heightTiles) || 0.055),
+          yOffsetTiles: Math.max(0, Number(cfg.yOffsetTiles) || 0.18),
+          backgroundColor: cfg.backgroundColor || '#20150c',
+          fillColor: cfg.fillColor || '#f2c94c',
+          alpha: Math.max(0, Math.min(1, Number(cfg.alpha) || 0.92))
+        };
+      }
+
       function playerDodgeTuning() {
         const cfg = combatConfig().playerDodge || {};
         return {
@@ -1111,7 +1134,7 @@
           label: 'Dabinggi-hound', hostile: false,
           maxHealth: 50, maxStamina: 40,
           moveSpeed: 165, chaseSpeed: 220,
-          attackDamage: 10, attackRangeTiles: 0.9, attackHalfConeRad: 45 * Math.PI / 180,
+          attackDamage: 10, attackRangeTiles: 0.9,
           attackStaminaCost: 14, attackCooldownS: 1.1,
           modelWidth: 1.9, tint: 0xffffff,
           sprites: {
@@ -1123,7 +1146,7 @@
           label: 'Gar-wolf', hostile: true,
           maxHealth: 38, maxStamina: 30,
           moveSpeed: 130, chaseSpeed: 195,
-          attackDamage: 12, attackRangeTiles: 0.85, attackHalfConeRad: 42 * Math.PI / 180,
+          attackDamage: 12, attackRangeTiles: 0.85,
           attackStaminaCost: 12, attackCooldownS: 1.0,
           aggroRangePx: TILE * 6.2, leashRangePx: TILE * 9,
           modelWidth: 2.1, tint: 0xffffff,
@@ -1136,7 +1159,7 @@
           label: 'Gar-wolf Alpha', hostile: true,
           maxHealth: 78, maxStamina: 46,
           moveSpeed: 140, chaseSpeed: 205,
-          attackDamage: 18, attackRangeTiles: 0.95, attackHalfConeRad: 46 * Math.PI / 180,
+          attackDamage: 18, attackRangeTiles: 0.95,
           attackStaminaCost: 16, attackCooldownS: 1.0,
           aggroRangePx: TILE * 7, leashRangePx: TILE * 10,
           modelWidth: 3.1, tint: 0xffb0a0,
@@ -1151,9 +1174,6 @@
         const baseTiles = Number(def.attackRangeTiles) || 1;
         const tuning = creatureAttackTuning();
         return TILE * (baseTiles * tuning.rangeMultiplier + tuning.rangeBonusTiles);
-      }
-      function effectiveCreatureAttackHalfConeRad(def) {
-        return def.attackHalfConeRad * creatureAttackTuning().halfConeMultiplier;
       }
       function creatureStrikeReticle(c, facingAngle = c.facing || 0) {
         const rangePx = effectiveCreatureAttackRangePx(c.def);
@@ -1170,6 +1190,14 @@
         if (!target) return false;
         const reticle = creatureStrikeReticle(c, facingAngle);
         return Math.hypot(target.x - reticle.x, target.y - reticle.y) <= reticle.radiusPx;
+      }
+      function creatureTargetInRadialDamage(target, reticle) {
+        if (!target || !reticle) return false;
+        return Math.hypot(target.x - reticle.x, target.y - reticle.y) <= reticle.radiusPx;
+      }
+      function creatureAttackStaminaCost(c) {
+        const tuning = creatureAttackTuning();
+        return Math.max(Number(c.def.attackStaminaCost) || 0, c.maxStamina * tuning.pounceStaminaFraction);
       }
 
       // Minimal standalone exterior zones reachable from the town's pre-authored
@@ -2148,6 +2176,27 @@
         }
       }
 
+      function makeCreatureStaminaBar(modelHeight) {
+        const cfg = creatureStaminaBarConfig();
+        const group = new THREE.Group();
+        group.visible = cfg.enabled;
+        const bgMat = new THREE.MeshBasicMaterial({ color: cfg.backgroundColor, transparent: true, opacity: cfg.alpha, depthWrite: false, side: THREE.DoubleSide });
+        const fillMat = new THREE.MeshBasicMaterial({ color: cfg.fillColor, transparent: true, opacity: cfg.alpha, depthWrite: false, side: THREE.DoubleSide });
+        const geo = new THREE.PlaneGeometry(1, 1);
+        const bg = new THREE.Mesh(geo, bgMat);
+        const fill = new THREE.Mesh(geo.clone(), fillMat);
+        const width = cfg.widthTiles;
+        const height = cfg.heightTiles;
+        bg.scale.set(width, height, 1);
+        fill.scale.set(width, height, 1);
+        fill.position.z = 0.002;
+        group.add(bg, fill);
+        group.position.y = modelHeight + cfg.yOffsetTiles;
+        group.userData.fill = fill;
+        group.userData.width = width;
+        return group;
+      }
+
       function makeCreatureEntity(creatureKey, x, y, opts = {}) {
         const def = CREATURE_DB[creatureKey];
         if (!def) return null;
@@ -2171,25 +2220,27 @@
             if (child.material) child.material.color.setHex(def.tint);
           }
         }
+        const staminaBar = makeCreatureStaminaBar(modelHeight);
+        avatarRef.group.add(staminaBar);
         const col = clamp(Math.floor(x / TILE), 0, gridCols - 1);
         const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
         const surfY = targetGrid[row]?.[col] ? tileSurfaceY(targetGrid[row][col].type) : 0;
         avatarRef.group.position.set(x / TILE, surfY, y / TILE);
         _markPngPlane(avatarRef.group);
         targetScene.add(avatarRef.group);
-        const telegraphMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), creatureTelegraphMat.clone());
+        const telegraphMesh = new THREE.Mesh(new THREE.CircleGeometry(0.5, creatureTelegraphConfig().circleSegments), creatureTelegraphMat.clone());
         telegraphMesh.rotation.x = -Math.PI / 2;
         telegraphMesh.visible = false;
         targetScene.add(telegraphMesh);
 
         const creature = {
           id: creatureKey + '_' + idUniq,
-          creatureKey, def, avatarRef, telegraphMesh,
+          creatureKey, def, avatarRef, telegraphMesh, staminaBar,
           x, y, vx: 0, vy: 0,
           health: def.maxHealth, maxHealth: def.maxHealth,
           stamina: def.maxStamina, maxStamina: def.maxStamina,
           facing: 0, groupRot: 0, perpState: {},
-          attackCooldownT: 0, attackWindupT: 0, attackWindupTotal: 0, attackWindupFacing: 0, attackTarget: null, evasionT: 0, evasionAngle: 0, hitFlashT: 0,
+          attackCooldownT: 0, attackWindupT: 0, attackWindupTotal: 0, attackWindupFacing: 0, attackTarget: null, attackReticle: null, evasionT: 0, evasionAngle: 0, hitFlashT: 0,
           knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
           runFrame: 0, runFrameT: 0, currentFrameUrl: def.sprites.idle,
           isCompanion: false,
@@ -2209,6 +2260,12 @@
           (c.scene || scene).remove(c.telegraphMesh);
           c.telegraphMesh.geometry?.dispose?.();
           c.telegraphMesh.material?.dispose?.();
+        }
+        if (c.staminaBar) {
+          for (const child of c.staminaBar.children) {
+            child.geometry?.dispose?.();
+            child.material?.dispose?.();
+          }
         }
         c.avatarRef.dispose();
       }
@@ -2326,6 +2383,7 @@
         c.attackWindupTotal = tuning.windupS;
         c.attackWindupFacing = facingAngle;
         c.attackTarget = target;
+        c.attackReticle = creatureStrikeReticle(c, facingAngle);
         c.vx = 0; c.vy = 0;
       }
 
@@ -2355,17 +2413,19 @@
       function finishCreatureAttack(c, damageTarget, knockbackPxS) {
         const def = c.def;
         c.attackWindupT = 0;
+        const damageReticle = c.attackReticle || creatureStrikeReticle(c, c.attackWindupFacing);
         pounceCreatureTowardAttackTarget(c, damageTarget);
         c.attackTarget = null;
-        c.stamina -= def.attackStaminaCost;
+        c.attackReticle = null;
+        c.stamina = Math.max(0, c.stamina - creatureAttackStaminaCost(c));
         c.attackCooldownT = def.attackCooldownS;
         beginCreatureEvasion(c, damageTarget);
         if (damageTarget === player) {
-          if (inCone(c.x, c.y, c.attackWindupFacing, player.x, player.y, effectiveCreatureAttackRangePx(def), effectiveCreatureAttackHalfConeRad(def))) {
+          if (creatureTargetInRadialDamage(player, damageReticle)) {
             damagePlayer(def.attackDamage, c.x, c.y, knockbackPxS);
           }
         } else if (damageTarget?.health > 0) {
-          if (inCone(c.x, c.y, c.attackWindupFacing, damageTarget.x, damageTarget.y, effectiveCreatureAttackRangePx(def), effectiveCreatureAttackHalfConeRad(def))) {
+          if (creatureTargetInRadialDamage(damageTarget, damageReticle)) {
             damageCreature(damageTarget, def.attackDamage, c.x, c.y, knockbackPxS);
           }
         }
@@ -2373,21 +2433,16 @@
 
       function updateCreatureTelegraph(c, progress) {
         if (!c.telegraphMesh) return;
-        const cfg = creatureCombatConfig().telegraph || {};
-        if (cfg.enabled === false || c.attackWindupT <= 0 || c.isCompanion) { c.telegraphMesh.visible = false; return; }
-        const rangeTiles = effectiveCreatureAttackRangePx(c.def) / TILE;
-        const shownTiles = Math.max(0.001, rangeTiles * progress);
-        const widthMultiplier = Math.max(0.1, Number(cfg.widthMultiplier) || 0.65);
-        const widthTiles = Math.max(0.08, Math.tan(effectiveCreatureAttackHalfConeRad(c.def)) * shownTiles * 2 * widthMultiplier);
-        const angle = c.attackWindupFacing;
-        const startOffsetTiles = Math.max(0.15, Number(cfg.startOffsetTiles) || 0.28);
-        const centerDistTiles = startOffsetTiles + shownTiles * 0.5;
+        const cfg = creatureTelegraphConfig();
+        if (!cfg.enabled || c.attackWindupT <= 0 || c.isCompanion) { c.telegraphMesh.visible = false; return; }
+        const reticle = c.attackReticle || creatureStrikeReticle(c, c.attackWindupFacing);
+        const shownRadiusTiles = Math.max(0.001, (reticle.radiusPx / TILE) * progress);
         c.telegraphMesh.visible = true;
-        c.telegraphMesh.position.set(c.x / TILE + Math.cos(angle) * centerDistTiles, 0.035, c.y / TILE + Math.sin(angle) * centerDistTiles);
-        c.telegraphMesh.rotation.z = -angle;
-        c.telegraphMesh.scale.set(shownTiles, widthTiles, 1);
-        c.telegraphMesh.material.color.set(cfg.color || '#ff3b1f');
-        c.telegraphMesh.material.opacity = (Number(cfg.alpha) || 0.34) * progress;
+        c.telegraphMesh.position.set(reticle.x / TILE, 0.035, reticle.y / TILE);
+        c.telegraphMesh.rotation.z = 0;
+        c.telegraphMesh.scale.set(shownRadiusTiles * 2, shownRadiusTiles * 2, 1);
+        c.telegraphMesh.material.color.set(cfg.color);
+        c.telegraphMesh.material.opacity = cfg.alpha * progress;
       }
 
       function updateCreatureMesh(c, dt, aimAngle) {
@@ -2416,6 +2471,18 @@
           1 + (tuning.squishXZ - 1) * windupProgress
         );
         updateCreatureTelegraph(c, windupProgress);
+
+        if (c.staminaBar) {
+          const cfg = creatureStaminaBarConfig();
+          c.staminaBar.visible = cfg.enabled && c.health > 0;
+          const fill = c.staminaBar.userData.fill;
+          const width = c.staminaBar.userData.width || cfg.widthTiles;
+          const pct = c.maxStamina > 0 ? clamp(c.stamina / c.maxStamina, 0, 1) : 0;
+          if (fill) {
+            fill.scale.x = width * pct;
+            fill.position.x = -(width * (1 - pct)) * 0.5;
+          }
+        }
 
         if (c.hitFlashT > 0) {
           c.hitFlashT = Math.max(0, c.hitFlashT - dt);
@@ -2489,7 +2556,7 @@
             if (c.evasionT > 0) {
               // After striking, dart away at an angle while keeping eyes on the player.
               moving = updateCreatureEvasion(c, dt);
-            } else if (creatureHasTargetInStrikeReticle(c, player, aimAngle) && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+            } else if (creatureHasTargetInStrikeReticle(c, player, aimAngle) && c.attackCooldownT <= 0 && c.stamina >= creatureAttackStaminaCost(c)) {
               beginCreatureAttackWindup(c, player, aimAngle);
               moving = false;
             } else {
@@ -2544,7 +2611,7 @@
             aimAngle = c.facing || aimAngle;
           } else if (target) {
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
-            if (creatureHasTargetInStrikeReticle(c, target, aimAngle) && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+            if (creatureHasTargetInStrikeReticle(c, target, aimAngle) && c.attackCooldownT <= 0 && c.stamina >= creatureAttackStaminaCost(c)) {
               beginCreatureAttackWindup(c, target, aimAngle);
               moving = false;
             } else {

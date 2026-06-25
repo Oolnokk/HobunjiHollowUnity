@@ -194,10 +194,10 @@ window.SCRATCHBONES_CONFIG = {
           "windupSeconds": 0.45,
           "rangeMultiplier": 2.4,
           "rangeBonusTiles": 1.0,
-          "halfConeMultiplier": 0.4,
           "strikeReticleRadiusTiles": 0.75,
           "pounceDistanceFactor": 1.0,
           "pounceStopDistanceFactor": 0.12,
+          "pounceStaminaFraction": 0.6,
           "evasionSeconds": 0.55,
           "evasionSpeedPxS": 300,
           "evasionSideAngleDeg": 38,
@@ -208,8 +208,16 @@ window.SCRATCHBONES_CONFIG = {
           "enabled": true,
           "color": "#ff3b1f",
           "alpha": 0.34,
-          "startOffsetTiles": 0.28,
-          "widthMultiplier": 0.45
+          "circleSegments": 40
+        },
+        "staminaBar": {
+          "enabled": true,
+          "widthTiles": 0.72,
+          "heightTiles": 0.055,
+          "yOffsetTiles": 0.18,
+          "backgroundColor": "#20150c",
+          "fillColor": "#f2c94c",
+          "alpha": 0.92
         }
       }
     },
