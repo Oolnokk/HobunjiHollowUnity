@@ -45,7 +45,9 @@
     for (const [gid, mask] of groupMask) {
       const child = childByParentGroup.get(`${m.id}__${gid}`);
       if (!child) continue; // plateau group marked but no authored child submap yet
-      const toTier = baseTier + (plateauElevById.get(gid) || 0);
+      // Elevation is absolute from the root map, not cumulative through nesting —
+      // a group's stored elevation IS its final tier, regardless of how deep it's nested.
+      const toTier = (plateauElevById.get(gid) || 0);
       let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
       for (const k of mask) { const [c, r] = k.split(',').map(Number); if (c < minC) minC = c; if (c > maxC) maxC = c; if (r < minR) minR = r; if (r > maxR) maxR = r; }
 

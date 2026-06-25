@@ -4288,10 +4288,16 @@
           const plateauElevById = new Map((ws.plateauGroups || []).map(g => [g.id, g.elevation || 0]));
 
           // Recursively folds map `m` (placed at world offset `offsetC`/`offsetR`,
-          // absolute elevation tier `baseTier`) into `outTiles` (world-keyed "c,r"
-          // → tile). A tier's footprint is the bounding box of whichever tiles in
-          // the PARENT are actually tagged `plateau: <thisGroupId>` — the artist
-          // paints however large a region they want a tier to occupy. The OUTER
+          // floor elevation tier `baseTier`) into `outTiles` (world-keyed "c,r"
+          // → tile). Every plateau group's elevation is absolute, measured from the
+          // root map — NOT cumulative through nesting depth — so a group's stored
+          // elevation IS the final tier its tiles render at, however deep it's
+          // nested. `baseTier` here is only the floor height THIS map's own plain
+          // ground sits at (i.e. its parent tier's resolved toTier); it is no longer
+          // added on top of a child group's elevation. A tier's footprint is the
+          // bounding box of whichever tiles in the PARENT are actually tagged
+          // `plateau: <thisGroupId>` — the artist paints however large a region
+          // they want a tier to occupy. The OUTER
           // 1-tile ring of that painted bbox is reserved (automatically, not by
           // painting) as the cliff-face lerp between this tier and the one below:
           // those ring cells are flagged `incline` (always solid/impassable —
@@ -4332,7 +4338,7 @@
             for (const [gid, mask] of groupMask) {
               const child = childByParentGroup.get(`${m.id}__${gid}`);
               if (!child) continue; // plateau group marked but no authored child submap yet
-              const toTier = baseTier + (plateauElevById.get(gid) || 0);
+              const toTier = (plateauElevById.get(gid) || 0);
               let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
               for (const k of mask) { const [c, r] = k.split(',').map(Number); if (c<minC)minC=c; if (c>maxC)maxC=c; if (r<minR)minR=r; if (r>maxR)maxR=r; }
 
