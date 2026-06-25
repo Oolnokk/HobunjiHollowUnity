@@ -1071,10 +1071,14 @@
         return {
           windupS: Math.max(0, Number(cfg.windupSeconds) || 0.45),
           rangeMultiplier: Math.max(0.1, Number(cfg.rangeMultiplier) || 1.8),
+          rangeBonusTiles: Math.max(0, Number(cfg.rangeBonusTiles) || 1),
           halfConeMultiplier: Math.max(0.1, Number(cfg.halfConeMultiplier) || 0.55),
-          startDistanceFactor: Math.max(0.1, Number(cfg.startDistanceFactor) || 1),
-          pounceDistanceFactor: Math.max(0, Number(cfg.pounceDistanceFactor) || 0.75),
-          pounceStopDistanceFactor: Math.max(0, Number(cfg.pounceStopDistanceFactor) || 0.18),
+          strikeReticleRadiusTiles: Math.max(0.1, Number(cfg.strikeReticleRadiusTiles) || 0.75),
+          pounceDistanceFactor: Math.max(0, Number(cfg.pounceDistanceFactor) || 1),
+          pounceStopDistanceFactor: Math.max(0, Number(cfg.pounceStopDistanceFactor) || 0.12),
+          evasionS: Math.max(0, Number(cfg.evasionSeconds) || 0.55),
+          evasionSpeedPxS: Math.max(0, Number(cfg.evasionSpeedPxS) || 300),
+          evasionSideAngleRad: Math.max(0, Number(cfg.evasionSideAngleDeg) || 38) * Math.PI / 180,
           squishY: Math.max(0.1, Number(cfg.windupSquishY) || 0.38),
           squishXZ: Math.max(0.1, Number(cfg.windupSquishXZ) || 1.42)
         };
@@ -1089,11 +1093,16 @@
 
       const PLAYER_STAMINA_REGEN = 14;   // per second
       const PLAYER_HEALTH_REGEN  = 1.2;  // per second, passive
-      const DODGE_DUR_S = 0.22;
-      const DODGE_SPEED_PX = 640;
-      const DODGE_IFRAME_MS = 380;
-      const DODGE_COOLDOWN_S = 0.6;
-      const DODGE_STAMINA_COST = 18;
+      function playerDodgeTuning() {
+        const cfg = combatConfig().playerDodge || {};
+        return {
+          durationS: Math.max(0.01, Number(cfg.durationSeconds) || 0.22),
+          speedPxS: Math.max(0, Number(cfg.speedPxS) || 640),
+          iframeMs: Math.max(0, Number(cfg.iframeMs) || 380),
+          cooldownS: Math.max(0, Number(cfg.cooldownSeconds) || 0.6),
+          staminaCost: Math.max(0, Number(cfg.staminaCost) || 18)
+        };
+      }
 
       // Global creature database — companions (whistle-bound) and hostiles
       // (ambient-spawned) are both built from this table.
@@ -1140,13 +1149,27 @@
 
       function effectiveCreatureAttackRangePx(def) {
         const baseTiles = Number(def.attackRangeTiles) || 1;
-        return TILE * baseTiles * creatureAttackTuning().rangeMultiplier;
+        const tuning = creatureAttackTuning();
+        return TILE * (baseTiles * tuning.rangeMultiplier + tuning.rangeBonusTiles);
       }
       function effectiveCreatureAttackHalfConeRad(def) {
         return def.attackHalfConeRad * creatureAttackTuning().halfConeMultiplier;
       }
-      function creatureAttackStartDistancePx(def) {
-        return effectiveCreatureAttackRangePx(def) * creatureAttackTuning().startDistanceFactor;
+      function creatureStrikeReticle(c, facingAngle = c.facing || 0) {
+        const rangePx = effectiveCreatureAttackRangePx(c.def);
+        const radiusPx = creatureAttackTuning().strikeReticleRadiusTiles * TILE;
+        const centerDistPx = Math.max(radiusPx, rangePx - radiusPx);
+        return {
+          x: c.x + Math.cos(facingAngle) * centerDistPx,
+          y: c.y + Math.sin(facingAngle) * centerDistPx,
+          radiusPx,
+          rangePx
+        };
+      }
+      function creatureHasTargetInStrikeReticle(c, target, facingAngle) {
+        if (!target) return false;
+        const reticle = creatureStrikeReticle(c, facingAngle);
+        return Math.hypot(target.x - reticle.x, target.y - reticle.y) <= reticle.radiusPx;
       }
 
       // Minimal standalone exterior zones reachable from the town's pre-authored
@@ -2166,7 +2189,7 @@
           health: def.maxHealth, maxHealth: def.maxHealth,
           stamina: def.maxStamina, maxStamina: def.maxStamina,
           facing: 0, groupRot: 0, perpState: {},
-          attackCooldownT: 0, attackWindupT: 0, attackWindupTotal: 0, attackWindupFacing: 0, attackTarget: null, retreatT: 0, hitFlashT: 0,
+          attackCooldownT: 0, attackWindupT: 0, attackWindupTotal: 0, attackWindupFacing: 0, attackTarget: null, evasionT: 0, evasionAngle: 0, hitFlashT: 0,
           knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
           runFrame: 0, runFrameT: 0, currentFrameUrl: def.sprites.idle,
           isCompanion: false,
@@ -2320,6 +2343,15 @@
         c.y += Math.sin(c.attackWindupFacing) * pouncePx;
       }
 
+      function beginCreatureEvasion(c, damageTarget) {
+        const tuning = creatureAttackTuning();
+        if (tuning.evasionS <= 0 || tuning.evasionSpeedPxS <= 0 || !damageTarget) return;
+        const awayAngle = Math.atan2(c.y - damageTarget.y, c.x - damageTarget.x);
+        const sideSign = Math.random() < 0.5 ? -1 : 1;
+        c.evasionT = tuning.evasionS;
+        c.evasionAngle = awayAngle + sideSign * tuning.evasionSideAngleRad;
+      }
+
       function finishCreatureAttack(c, damageTarget, knockbackPxS) {
         const def = c.def;
         c.attackWindupT = 0;
@@ -2327,11 +2359,11 @@
         c.attackTarget = null;
         c.stamina -= def.attackStaminaCost;
         c.attackCooldownT = def.attackCooldownS;
+        beginCreatureEvasion(c, damageTarget);
         if (damageTarget === player) {
           if (inCone(c.x, c.y, c.attackWindupFacing, player.x, player.y, effectiveCreatureAttackRangePx(def), effectiveCreatureAttackHalfConeRad(def))) {
             damagePlayer(def.attackDamage, c.x, c.y, knockbackPxS);
           }
-          c.retreatT = JUMP_BACK_DUR_S;
         } else if (damageTarget?.health > 0) {
           if (inCone(c.x, c.y, c.attackWindupFacing, damageTarget.x, damageTarget.y, effectiveCreatureAttackRangePx(def), effectiveCreatureAttackHalfConeRad(def))) {
             damageCreature(damageTarget, def.attackDamage, c.x, c.y, knockbackPxS);
@@ -2414,8 +2446,17 @@
         }
       }
 
-      const JUMP_BACK_DUR_S = 0.4;
-      const JUMP_BACK_SPEED = 260;
+      function updateCreatureEvasion(c, dt) {
+        const tuning = creatureAttackTuning();
+        c.evasionT = Math.max(0, c.evasionT - dt);
+        return moveCreatureToward(
+          c,
+          c.x + Math.cos(c.evasionAngle) * TILE,
+          c.y + Math.sin(c.evasionAngle) * TILE,
+          tuning.evasionSpeedPxS,
+          dt
+        );
+      }
 
       function updateHostiles(dt) {
         for (const c of hostileObjects) {
@@ -2445,12 +2486,10 @@
             c.y += c.knockbackVY * dt;
           } else if (c.state === 'chase') {
             aimAngle = Math.atan2(dyp, dxp);
-            if (c.retreatT > 0) {
-              // Jump back after landing a bite, keeping eyes on the player.
-              c.retreatT = Math.max(0, c.retreatT - dt);
-              const awayAng = Math.atan2(-dyp, -dxp);
-              moving = moveCreatureToward(c, c.x + Math.cos(awayAng) * TILE, c.y + Math.sin(awayAng) * TILE, JUMP_BACK_SPEED, dt);
-            } else if (distToPlayer <= creatureAttackStartDistancePx(def) && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+            if (c.evasionT > 0) {
+              // After striking, dart away at an angle while keeping eyes on the player.
+              moving = updateCreatureEvasion(c, dt);
+            } else if (creatureHasTargetInStrikeReticle(c, player, aimAngle) && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
               beginCreatureAttackWindup(c, player, aimAngle);
               moving = false;
             } else {
@@ -2500,13 +2539,16 @@
             c.attackWindupT = Math.max(0, c.attackWindupT - dt);
             aimAngle = c.attackWindupFacing;
             if (c.attackWindupT <= 0) finishCreatureAttack(c, c.attackTarget, COMPANION_BITE_KNOCKBACK_PX_S);
+          } else if (c.evasionT > 0) {
+            moving = updateCreatureEvasion(c, dt);
+            aimAngle = c.facing || aimAngle;
           } else if (target) {
-            const dist = Math.hypot(target.x - c.x, target.y - c.y);
-            if (dist > creatureAttackStartDistancePx(def)) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
-            if (dist <= creatureAttackStartDistancePx(def) && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+            if (creatureHasTargetInStrikeReticle(c, target, aimAngle) && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
               beginCreatureAttackWindup(c, target, aimAngle);
               moving = false;
+            } else {
+              moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
             }
           } else if (distToPlayer > FOLLOW_FAR_PX) {
             moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
@@ -2590,19 +2632,28 @@
         refreshVitalsHud();
       }
 
-      function performDodge(angle) {
+      function currentMovementInputAngle() {
+        const keyboardVector = getKeyboardVector();
+        const ix = keyboardVector.active ? keyboardVector.x : input.x;
+        const iy = keyboardVector.active ? keyboardVector.y : input.y;
+        return Math.hypot(ix, iy) > 0.001 ? Math.atan2(iy, ix) : lastMoveAngle;
+      }
+
+      function performDodge() {
+        const dodge = playerDodgeTuning();
         if (player.dodging || player.dodgeCooldownT > 0) return false;
-        if (player.stamina < DODGE_STAMINA_COST) {
+        if (player.stamina < dodge.staminaCost) {
           showToast('Too winded to dodge!', false);
           return false;
         }
-        player.stamina -= DODGE_STAMINA_COST;
+        const angle = currentMovementInputAngle();
+        player.stamina -= dodge.staminaCost;
         player.dodging = true;
-        player.dodgeT = DODGE_DUR_S;
+        player.dodgeT = dodge.durationS;
         player.dodgeDirX = Math.cos(angle);
         player.dodgeDirY = Math.sin(angle);
-        player.dodgeCooldownT = DODGE_COOLDOWN_S;
-        player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
+        player.dodgeCooldownT = dodge.cooldownS;
+        player.invulnUntil = performance.now() + dodge.iframeMs;
         return true;
       }
 
@@ -6576,14 +6627,15 @@
 
         if (player.dodging) {
           player.dodgeT -= dt;
+          const dodgeSpeed = playerDodgeTuning().speedPxS;
           const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
           const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-          const desiredX = clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
-          const desiredY = clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
+          const desiredX = clamp(player.x + player.dodgeDirX * dodgeSpeed * dt, minX, maxX);
+          const desiredY = clamp(player.y + player.dodgeDirY * dodgeSpeed * dt, minY, maxY);
           if (canPlayerOccupy(desiredX, player.y)) player.x = desiredX;
           if (canPlayerOccupy(player.x, desiredY)) player.y = desiredY;
-          player.vx = player.dodgeDirX * DODGE_SPEED_PX;
-          player.vy = player.dodgeDirY * DODGE_SPEED_PX;
+          player.vx = player.dodgeDirX * dodgeSpeed;
+          player.vy = player.dodgeDirY * dodgeSpeed;
           if (player.dodgeT <= 0) {
             player.dodging = false;
             player.vx = 0; player.vy = 0;
@@ -13743,12 +13795,12 @@
       joystickZone.addEventListener('pointerup', handleJoystickPointerUp);
       joystickZone.addEventListener('pointercancel', handleJoystickPointerUp);
 
-      // Dodge button: a plain tap, dodging in the current facing direction.
+      // Dodge button: a plain tap, dodging along movement input or the last movement direction.
       // Only shown (via .combat-active, toggled in updateMovement) while a
       // hostile is within auto-target range, since dodging is moot outside combat.
       dodgeBtn?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
-        performDodge(player.angle);
+        performDodge();
       });
 
       const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs) || 350;
@@ -13871,7 +13923,7 @@
         if (actionId === 'interact') { runInteractAction(); return; }
         const actionSlot = /^action(\d+)$/.exec(actionId);
         if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
-        if (actionId === 'dodge') { performDodge(player.angle); return; }
+        if (actionId === 'dodge') { performDodge(); return; }
         if (actionId === 'cycleToolAction') {
           const actions = toolActions[activeTool];
           const idx = actions.indexOf(activeAction);
@@ -14064,10 +14116,10 @@
           refreshItemScroll(); refreshActionBar();
         }
 
-        // X: dodge in the current facing direction, with i-frames
+        // X: dodge along movement input (or the last movement direction), with i-frames
         if (key === 'x') {
           event.preventDefault();
-          performDodge(player.angle);
+          performDodge();
           return;
         }
 

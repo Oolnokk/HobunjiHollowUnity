@@ -170,6 +170,13 @@ window.SCRATCHBONES_CONFIG = {
         "slash": { "damage": 24, "halfConeDeg": 62, "rangeTiles": 1.35, "staminaCost": 20, "knockbackPxS": 520, "trailHalfWidthTiles": 1.35, "trailFarTiles": 1.02, "trailMaxAgeSeconds": 0.34 }
       },
       "weaponTrailLimit": 5,
+      "playerDodge": {
+        "durationSeconds": 0.22,
+        "speedPxS": 640,
+        "iframeMs": 380,
+        "cooldownSeconds": 0.6,
+        "staminaCost": 18
+      },
       "combatConeReticle": {
         "enabled": true,
         "color": "#ffffff",
@@ -186,10 +193,14 @@ window.SCRATCHBONES_CONFIG = {
         "attack": {
           "windupSeconds": 0.45,
           "rangeMultiplier": 2.4,
+          "rangeBonusTiles": 1.0,
           "halfConeMultiplier": 0.4,
-          "startDistanceFactor": 1.0,
-          "pounceDistanceFactor": 0.75,
-          "pounceStopDistanceFactor": 0.18,
+          "strikeReticleRadiusTiles": 0.75,
+          "pounceDistanceFactor": 1.0,
+          "pounceStopDistanceFactor": 0.12,
+          "evasionSeconds": 0.55,
+          "evasionSpeedPxS": 300,
+          "evasionSideAngleDeg": 38,
           "windupSquishY": 0.38,
           "windupSquishXZ": 1.42
         },
