@@ -699,6 +699,16 @@
         ROCK: 'rock', SHRUB: 'shrub', PATH: 'path',
         RIVER: 'river', STREAM: 'stream', RAMP: 'ramp', WATERFALL: 'waterfall'
       });
+      // Tile types whose own heightfield (buildTerrainTileGeo) carves a depression
+      // or rise into the ground — a plateau mesa's flat lid/skin must never also
+      // render a quad over one of these, or the carved bed renders buried under it.
+      const CARVED_TILE_TYPES = new Set([TileType.RIVER, TileType.STREAM, TileType.WATERFALL, TileType.TRENCH, TileType.RAISED]);
+      // river/stream/waterfall are one continuous waterway — a cell of one type
+      // bordering a cell of another in this family should blend as "open" (full
+      // depth carries through) instead of tapering back to flat ground right at
+      // that family-internal seam.
+      const WATERWAY_TYPES = new Set([TileType.RIVER, TileType.STREAM, TileType.WATERFALL]);
+      const sameWaterway = (a, b) => a === b || (WATERWAY_TYPES.has(a) && WATERWAY_TYPES.has(b));
 
       const CropType = Object.freeze({
         NONE: '',
@@ -3331,10 +3341,17 @@
         // which must still skip rendering here since that tile belongs to the
         // other mesa, not this one.
         const quadInOwnMask = (gi, gj) => !mask || mask.has(`${bb.minC + Math.floor(gi/2)},${bb.minR + Math.floor(gj/2)}`);
+        // A river/stream/waterfall/trench/raised cell carved INTO this mesa's own
+        // footprint still gets a mask-passing, BFS-blended Y above (so neighboring
+        // carved-tile geometry keeps blending against a sane height), but the flat
+        // mesa lid/skin must not also render a quad on top of it — buildTerrainTileGeo
+        // builds that cell's own carved-bed mesh, and without this check the mesa's
+        // solid lid simply painted over it, hiding the channel under flat ground.
+        const quadIsCarved = (gi, gj) => CARVED_TILE_TYPES.has(zGrid?.[bb.minR + Math.floor(gj/2)]?.[bb.minC + Math.floor(gi/2)]?.type);
         const idx = [];
         for (let gj = 0; gj < GH - 1; gj++) {
           for (let gi = 0; gi < GW - 1; gi++) {
-            if (quadIsRamp(gi, gj) || !quadInOwnMask(gi, gj)) continue;
+            if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
             const v00 = gj*GW+gi, v10 = gj*GW+gi+1, v01 = (gj+1)*GW+gi, v11 = (gj+1)*GW+gi+1;
             idx.push(v00, v01, v11, v00, v11, v10);
           }
@@ -3359,7 +3376,7 @@
         let vi = 0;
         for (let gj = 0; gj < GH - 1; gj++) {
           for (let gi = 0; gi < GW - 1; gi++) {
-            if (quadIsRamp(gi, gj) || !quadInOwnMask(gi, gj)) continue;
+            if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
             const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
             const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
             const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
@@ -10986,16 +11003,16 @@
           ? depressionTop - NORMAL_TOP
           : RAISED_TOP - NORMAL_TOP;  // +0.5
 
-        const openN = srcGrid[row - 1]?.[col]?.type === type;
-        const openS = srcGrid[row + 1]?.[col]?.type === type;
-        const openW = srcGrid[row]?.[col - 1]?.type === type;
-        const openE = srcGrid[row]?.[col + 1]?.type === type;
+        const openN = sameWaterway(srcGrid[row - 1]?.[col]?.type, type);
+        const openS = sameWaterway(srcGrid[row + 1]?.[col]?.type, type);
+        const openW = sameWaterway(srcGrid[row]?.[col - 1]?.type, type);
+        const openE = sameWaterway(srcGrid[row]?.[col + 1]?.type, type);
 
         // Diagonal tiles — used to seal the inner corner of L-shaped turns
-        const diagNW = srcGrid[row-1]?.[col-1]?.type === type;
-        const diagNE = srcGrid[row-1]?.[col+1]?.type === type;
-        const diagSW = srcGrid[row+1]?.[col-1]?.type === type;
-        const diagSE = srcGrid[row+1]?.[col+1]?.type === type;
+        const diagNW = sameWaterway(srcGrid[row-1]?.[col-1]?.type, type);
+        const diagNE = sameWaterway(srcGrid[row-1]?.[col+1]?.type, type);
+        const diagSW = sameWaterway(srcGrid[row+1]?.[col-1]?.type, type);
+        const diagSE = sameWaterway(srcGrid[row+1]?.[col+1]?.type, type);
 
         const seamDisp = (vx, vz) => {
           const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;

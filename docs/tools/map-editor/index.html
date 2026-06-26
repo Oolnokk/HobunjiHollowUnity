@@ -1385,6 +1385,73 @@ function mirrorRiverAcrossPlateau(river, m, sm, group) {
   // — so every key has to be re-based to sm-local coords, and ring cells that
   // fall outside sm's own bounds (no local cell to paint) have to be dropped.
   const anchorC = sm.anchorC ?? 0, anchorR = sm.anchorR ?? 0;
+
+  // A river can only genuinely exit the plateau in the direction it's actually
+  // flowing. An irregular/staircase-shaped footprint boundary can still put a
+  // footprint-external pathKeys cell on a PERPENDICULAR side of a boundary
+  // corner (e.g. a single-tile "tooth" that pokes one row further out than its
+  // neighbors has both a south-external AND a west-external neighbor) even
+  // though the river never flows that second way — that's a boundary-shape
+  // artifact, not a second crossing. Use the river's own overall node path to
+  // pick the one real flow axis and never even consider the other.
+  const nodes = river.nodes || [];
+  const first = nodes[0], last = nodes[nodes.length - 1];
+  const vertical = !first || !last || Math.abs(last[1] - first[1]) >= Math.abs(last[0] - first[0]);
+  const dirs = vertical ? [[0,1],[0,-1]] : [[1,0],[-1,0]];
+
+  // A "band" is one crossing of the footprint boundary: a fixed row (vertical
+  // exit, dr!=0) or column (horizontal exit, dc!=0) at which the river leaves
+  // the plateau. Find every (direction, fixed coordinate) pair where a
+  // footprint-internal river cell borders a footprint-external pathKeys cell,
+  // restricted to the river's actual flow axis, and remember which
+  // varying-axis position(s) actually triggered it.
+  const bands = new Map(); // `${dc},${dr},${fixed}` -> { dc, dr, fixed, seeds: Set<vary> }
+  for (const k of footprint) {
+    if (!pathKeys.has(k)) continue;
+    const [c, r] = k.split(',').map(Number);
+    for (const [dc, dr] of dirs) {
+      const nk = `${c + dc},${r + dr}`;
+      if (footprint.has(nk) || !pathKeys.has(nk)) continue;
+      const fixed = dr !== 0 ? r : c;
+      const key = `${dc},${dr},${fixed}`;
+      if (!bands.has(key)) bands.set(key, { dc, dr, fixed, seeds: new Set() });
+      bands.get(key).seeds.add(dr !== 0 ? c : r);
+    }
+  }
+
+  // The waterfall's width at a crossing is the full CONTIGUOUS span of
+  // footprint∩pathKeys cells reachable from an actual triggering cell by
+  // walking along the varying axis without ever leaving footprint∩pathKeys —
+  // not just the subset that individually happens to have a footprint-
+  // external pathKeys neighbor (a meandered path's rasterized width can drift
+  // by a column right at the boundary, so widening to the full contiguous
+  // span keeps the waterfall matching the river's actual width on top of the
+  // plateau), and NOT any cell anywhere that merely shares the same fixed
+  // row/column (an irregular footprint can revisit the same row/column in an
+  // unrelated, disconnected part of its boundary).
+  const inSet = (c, r) => { const k = `${c},${r}`; return footprint.has(k) && pathKeys.has(k); };
+  const bandVary = new Map(); // band key -> Set of varying-axis coords present in the widened band
+  for (const [key, band] of bands) {
+    const vary = new Set();
+    const stack = [...band.seeds];
+    while (stack.length) {
+      const v = stack.pop();
+      if (vary.has(v)) continue;
+      const c = band.dr !== 0 ? v : band.fixed, r = band.dr !== 0 ? band.fixed : v;
+      if (!inSet(c, r)) continue;
+      vary.add(v);
+      stack.push(v - 1, v + 1);
+    }
+    bandVary.set(key, vary);
+  }
+  const waterfallSet = new Set();
+  for (const [key, band] of bands) {
+    for (const v of bandVary.get(key)) {
+      const c = band.dr !== 0 ? v : band.fixed, r = band.dr !== 0 ? band.fixed : v;
+      waterfallSet.add(`${c},${r}`);
+    }
+  }
+
   const mirroredKeys = [];
   const waterfallKeys = [];
   for (const k of footprint) {
@@ -1393,16 +1460,25 @@ function mirrorRiverAcrossPlateau(river, m, sm, group) {
     const lc = c - anchorC, lr = r - anchorR;
     if (lc < 0 || lc >= sm.cols || lr < 0 || lr >= sm.rows) continue; // outer ring — not part of sm's own grid
     const lk = `${lc},${lr}`;
-    let isWaterfall = false;
-    for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-      const nk = `${c+dc},${r+dr}`;
-      if (footprint.has(nk)) continue; // interior cell, not a plateau boundary
-      if (pathKeys.has(nk)) { isWaterfall = true; break; } // river continues outside the footprint at a different elevation
-    }
-    (isWaterfall ? waterfallKeys : mirroredKeys).push(lk);
+    (waterfallSet.has(k) ? waterfallKeys : mirroredKeys).push(lk);
   }
   applyPaintDiff(`${river.id}__${sm.id}`, mirroredKeys, tileType, sm, { preserveCrop: false });
   applyPaintDiff(`${river.id}__${sm.id}__wf`, waterfallKeys, 'waterfall', sm, { preserveCrop: false });
+
+  // Widen the parent map's immediate next row/column just outside the
+  // footprint (the river tiles right at the foot of the waterfall) to the
+  // same full band width, so the channel doesn't narrow back down the instant
+  // it lands.
+  const widenKeys = [];
+  for (const [key, band] of bands) {
+    for (const v of bandVary.get(key)) {
+      const c = band.dr !== 0 ? v : band.fixed + band.dc;
+      const r = band.dr !== 0 ? band.fixed + band.dr : v;
+      if (c < 0 || c >= m.cols || r < 0 || r >= m.rows) continue;
+      widenKeys.push(`${c},${r}`);
+    }
+  }
+  applyPaintDiff(`${river.id}__${m.id}__${group.id}__wfwiden`, widenKeys, tileType, m, { preserveCrop: false });
 }
 function syncPlateauEffects(m) {
   const rivers = m.rivers || [];
