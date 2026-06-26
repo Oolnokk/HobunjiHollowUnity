@@ -12033,6 +12033,17 @@
         chargeAnimOverride = stageDef.anim || null;
       }
 
+      // Plays the weapon's existing arm-swing mesh animation for durationS without
+      // queuing a pendingAction — used by Combat ability modules that resolve their
+      // own hit logic and just want the legacy swing's visual flourish to match.
+      function triggerWeaponSwingVisual(durationS) {
+        if (activeTool !== 'weapon') return;
+        toolSwingDur = Math.max(0.05, durationS);
+        toolSwingT = toolSwingDur;
+        strikeFired = false;
+        pendingAction = null;
+      }
+
       function cancelChargeAction() {
         if (!chargeAction) return;
         chargeAction = null;
@@ -15779,6 +15790,8 @@
         combatConfig,
         resolveWeaponHit,
         findAutoTarget,
+        showToast,
+        triggerWeaponSwingVisual,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module
