@@ -214,6 +214,12 @@
         _toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2800);
       }
 
+      function gameAudioConfig() {
+        const direct = window.SCRATCHBONES_CONFIG?.game?.audio;
+        if (direct && Object.keys(direct).length) return direct;
+        return window.SCRATCHBONES_CONFIG?.game?.assets?.audio || {};
+      }
+
       // ── NPC Dialogue ───────────────────────────────────────────
       const _npcDialogueEl      = document.getElementById('npcDialogue');
       const _npcPortraitCanvas  = document.getElementById('npcPortraitCanvas');
@@ -227,7 +233,7 @@
       }
 
       function npcDialogueLetterSfxConfig(rec = _dlgNpcRec || _dialogueWalker?.rec) {
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         const dialogueCfg = audioCfg.dialogueLetter || {};
         const npcOverrides = dialogueCfg.npcs || {};
         const speciesOverrides = dialogueCfg.species || {};
@@ -404,7 +410,7 @@
       function _playNpcDialogueLetterSfx(char, rec = _dlgNpcRec || _dialogueWalker?.rec) {
         const cfg = npcDialogueLetterSfxConfig(rec);
         if (cfg.enabled === false || !char || /\s/.test(char)) return;
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) return;
         const volume = Math.max(0, Math.min(1, Number(cfg.volume) || 0.18)) * Math.max(0, Number(audioCfg.sfxVolume) || 1);
         if (volume <= 0) return;
@@ -923,7 +929,7 @@
       // `pan` is -1 (full left) .. 1 (full right); leave at 0 for the player
       // (the listener) and companions (always close, not worth panning).
       function playFootstepSfx(area, type, volumeScale = 1, pan = 0) {
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) return;
         const footstepCfg = audioCfg.footsteps || {};
         if (footstepCfg.enabled === false) return;
@@ -1026,19 +1032,29 @@
         knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
       };
 
-      // Combat tuning for the weapon tool's two abilities. Cone hit-tests use
-      // continuous angle+range against creatures (not tile snapped). 'slash'
-      // is the big sweep: bigger cone, more damage, costs more stamina, and
-      // knocks targets back further.
-      const WEAPON_ABILITY = {
-        cut:   { damage: 14, halfConeRad: 32 * Math.PI / 180, rangePx: TILE * 1.05, staminaCost: 12, knockbackPxS: 360 },
-        slash: { damage: 24, halfConeRad: 62 * Math.PI / 180, rangePx: TILE * 1.35, staminaCost: 20, knockbackPxS: 520 },
-      };
+      // Combat tuning is config-backed so tool hit cones, stamina costs, trails,
+      // and combat reticles can be tuned without changing code.
+      function combatConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.combat || {};
+      }
+      function weaponAbility(action) {
+        const cfg = combatConfig().weaponAbilities?.[action];
+        if (!cfg) return null;
+        return {
+          damage: Number(cfg.damage) || 0,
+          halfConeRad: (Number(cfg.halfConeDeg) || 0) * Math.PI / 180,
+          rangePx: TILE * (Number(cfg.rangeTiles) || 0),
+          staminaCost: Number(cfg.staminaCost) || 0,
+          knockbackPxS: Number(cfg.knockbackPxS) || 0,
+          trailHalfWidthTiles: Number(cfg.trailHalfWidthTiles) || 0,
+          trailFarTiles: Number(cfg.trailFarTiles) || 0,
+          trailMaxAgeSeconds: Number(cfg.trailMaxAgeSeconds) || 0
+        };
+      }
 
       // Z-target-style auto lock: while a hostile is this close, facing tracks
       // it instead of movement direction, so strafing/repositioning in combat
       // doesn't spin the character away from the thing it's fighting.
-      const AUTO_TARGET_RANGE_PX = TILE * 5.5;
 
       // Knockback shared by all combat attacks: a short impulse that overrides
       // normal movement/AI while it decays, applied away from the attacker.
@@ -1118,6 +1134,7 @@
           entryCol: 11, entryRow: 14,
           exitCol: 11, exitRow: 15,
           townReturnCol: 30, townReturnRow: 2,
+          audioIndex: 'northern_cliffs',
         },
         map_southern_cloud_forest: {
           label: 'Southern Cloud Forest',
@@ -1295,7 +1312,7 @@
         copperBarrel:  { itemKey: 'copperBarrelFurniture',  icon: '🛢️', name: 'Copper Barrel',        modelFile: 'barrel_copper_hoop.glb',       price: 20, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A sturdy copper-hooped barrel.' },
         desk:          { itemKey: 'deskFurniture',          icon: '✍️', name: 'Writing Desk',         modelFile: 'desk_writing.glb',             price: 38, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A fine writing desk with drawers.' },
         dresser:       { itemKey: 'dresserFurniture',       icon: '🗄️', name: 'Low Dresser',          modelFile: 'dresser_low.glb',              price: 30, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low dresser with drawers.' },
-        hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.', light: { color: 0xff7722, intensity: 1.4, distance: 7, height: 0.4 } },
+        hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.', light: { color: 0xff7722, intensity: 1.4, distance: 7, height: 0.4 }, sfxKey: 'fireplace' },
         loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', desc: 'A small decorative woven rug.' },
@@ -1695,7 +1712,7 @@
         return !interiorFurnitureObjects.find(o => o.col === col && o.row === row);
       }
 
-      function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene) {
+      function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
         const group = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color || 0x8b6540);
@@ -1710,8 +1727,9 @@
           light.position.set(col + 0.5, def.light.height || 0.6, row + 0.5);
           targetScene.add(light);
         }
+        const sfxSource = registerFurnitureSfxSource(area, col + (def.fw || 1) * 0.5, row + (def.fd || 1) * 0.5, resolveFurnitureSfx(def));
 
-        return { mesh: group, light };
+        return { mesh: group, light, sfxSource };
       }
 
       function placeDecorativeFurniture(col, row, furnitureKey) {
@@ -1725,11 +1743,11 @@
         const itemKey = def.itemKey;
         if ((inventory[itemKey] || 0) < 1) return { ok: false, message: `No ${def.name} in inventory.` };
         const targetScene = isInInterior ? interiorScene : scene;
-        const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene);
+        const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, currentArea);
         if (!result) return { ok: false, message: 'Could not create furniture mesh.' };
         inventory[itemKey]--;
         clampInventoryStack(itemKey);
-        interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh: result.mesh, light: result.light, area: currentArea });
+        interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea });
         refreshItemScroll();
         saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
@@ -1744,6 +1762,7 @@
             if (child.material) child.material.dispose();
           });
           if (obj.light) s.remove(obj.light);
+          unregisterFurnitureSfxSource(obj.sfxSource);
         });
         interiorFurnitureObjects.length = 0;
       }
@@ -1816,6 +1835,7 @@
               if (child.material) child.material.dispose();
             });
             if (d.light) scene.remove(d.light);
+            unregisterFurnitureSfxSource(d.sfxSource);
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
@@ -1922,9 +1942,10 @@
         (layout.decor || []).forEach(({ key, col, row, area }) => {
           const def = DECORATIVE_FURNITURE_DEFS[key];
           if (!def) return;
-          const targetScene = area === 'interior' ? interiorScene : scene;
-          const result = makeDecorativeFurnitureMesh(col, row, key, targetScene);
-          if (result) interiorFurnitureObjects.push({ key, col, row, mesh: result.mesh, light: result.light, area });
+          const decorArea = area || 'farm';
+          const targetScene = decorArea === 'interior' ? interiorScene : scene;
+          const result = makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea);
+          if (result) interiorFurnitureObjects.push({ key, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea });
         });
       }
 
@@ -2170,7 +2191,7 @@
       }
 
       function resolveWeaponHit(action) {
-        const abil = WEAPON_ABILITY[action];
+        const abil = weaponAbility(action);
         if (!abil) return { hits: 0, message: '' };
         let hits = 0;
         let lastName = '';
@@ -2189,7 +2210,7 @@
 
       // Nearest live hostile in the player's current area within lock-on range, or null.
       function findAutoTarget() {
-        let best = null, bestDist = AUTO_TARGET_RANGE_PX;
+        let best = null, bestDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
@@ -2513,10 +2534,15 @@
       let activeCameraTarget = null;
       let _prevCameraMode    = null; // saved mode to restore when the fishing minigame closes
       let _prevCameraTarget  = null; // saved target to restore when the fishing minigame closes
+      // Mobile drag-to-look offsets, layered on top of the active mode's base
+      // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,
+      // not a free-orbit camera.
+      let cameraAzimuthOffsetDeg = 0;
+      let cameraAngleOffsetDeg   = 0;
       // Camera azimuth (radians, rotated from due-south toward east) for the active
       // mode. Everything except "fishing" stays at 0 (camera due south, as before).
       function activeCameraAzimuthRad() {
-        return THREE.MathUtils.degToRad(cameraModeConfig(activeCameraMode).azimuthDeg ?? 0);
+        return THREE.MathUtils.degToRad((cameraModeConfig(activeCameraMode).azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
       }
       // Billboard sprites go edge-on (and effectively disappear) when rotated
       // perpendicular to the camera's current viewing axis. perpClamp's dead zones
@@ -2599,6 +2625,350 @@
       function tileSurfaceYInArea(tile, areaId) {
         if (tile && tile.type === TileType.RAMP) return NORMAL_TOP + (tile.rampElevation || 0) * PLATEAU_UNIT;
         return tileSurfaceY(tile ? tile.type : TileType.GRASS) + (tile?.elevTier || 0) * PLATEAU_UNIT;
+      }
+
+      const _audioCueIndexes = new Map();
+      const _mapAudioIndexes = new Map();
+      let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null };
+      const _furnitureSfxSources = [];
+      const _loopingBgs = new Map();
+      const _audioDebugLast = new Map();
+      const _gameAudioElements = new Set();
+      let _gameAudioUnlocked = false;
+      const _audioFailedUrls = new Set();
+      const _dailyBgmPlayed = new Set();
+
+      function audioDebug(message, key = message, throttleMs = 1200) {
+        const now = performance.now();
+        const last = _audioDebugLast.has(key) ? _audioDebugLast.get(key) : -Infinity;
+        if (now - last < throttleMs) return;
+        _audioDebugLast.set(key, now);
+        debugLog('[audio] ' + message, 'audio');
+      }
+
+      function audioTraceEnabled() {
+        return window.SCRATCHBONES_CONFIG?.game?.debug?.trace?.audio !== false;
+      }
+
+      function audioTrace(message, key = message, throttleMs = 2000) {
+        if (!audioTraceEnabled()) return;
+        audioDebug(message, key, throttleMs);
+      }
+
+      function resolveAudioUrl(url) {
+        if (!url) return '';
+        try { return new URL(url, document.baseURI).href; }
+        catch { return url; }
+      }
+
+      function audioReadyStateLabel(snd) {
+        const labels = ['HAVE_NOTHING', 'HAVE_METADATA', 'HAVE_CURRENT_DATA', 'HAVE_FUTURE_DATA', 'HAVE_ENOUGH_DATA'];
+        return labels[snd?.readyState] || String(snd?.readyState ?? 'none');
+      }
+
+      function makeGameAudio(url, { loop = false, preload = 'auto' } = {}) {
+        const snd = new Audio(resolveAudioUrl(url));
+        snd.loop = !!loop;
+        snd.preload = preload;
+        snd.addEventListener('loadstart', () => audioTrace('loadstart ' + snd.src, 'media-loadstart-' + snd.src, 0), { once: true });
+        snd.addEventListener('canplaythrough', () => audioTrace('canplaythrough ' + snd.src + ' ready=' + audioReadyStateLabel(snd), 'media-canplay-' + snd.src, 0), { once: true });
+        snd.addEventListener('error', () => audioDebug('media error ' + snd.src + ' code=' + (snd.error?.code || 'none') + ' message=' + (snd.error?.message || ''), 'media-error-' + snd.src, 0));
+        _gameAudioElements.add(snd);
+        try { snd.load(); } catch {}
+        return snd;
+      }
+
+      function markAudioUrlFailed(url, reason) {
+        const resolved = resolveAudioUrl(url);
+        if (!resolved) return;
+        _audioFailedUrls.add(resolved);
+        audioDebug('marked audio failed url=' + resolved + ' reason=' + reason, 'audio-failed-' + resolved, 0);
+      }
+
+      function audioUrlFailed(url) {
+        const resolved = resolveAudioUrl(url);
+        return !!resolved && _audioFailedUrls.has(resolved);
+      }
+
+      function describeAudioConfigForArea(area) {
+        const audioCfg = gameAudioConfig();
+        const bgs = audioCfg.bgs || {};
+        audioTrace('config area=' + area + ' enabled=' + (audioCfg.enabled !== false) + ' bgmCount=' + ((audioCfg.areaBgm?.[area] || []).length) + ' bgs birds=' + !!bgs.birds + ' nightbugs=' + !!bgs.nightbugs + ' wind1=' + !!bgs.wind1 + ' wind2=' + !!bgs.wind2, 'audio-config-' + area, 5000);
+      }
+
+      function unlockGameAudio(reason = 'user gesture') {
+        if (_gameAudioUnlocked) return;
+        _gameAudioUnlocked = true;
+        audioDebug('audio unlock from ' + reason + '; retrying audible loops=' + _gameAudioElements.size, 'audio-unlock', 0);
+        const rainCtx = window._rainAudioCtx;
+        if (rainCtx?.state === 'suspended') rainCtx.resume().catch(err => audioDebug('rain audio resume failed: ' + (err?.name || err), 'rain-resume-fail', 0));
+        for (const snd of _gameAudioElements) {
+          if (!snd || snd.volume <= 0 || !snd.paused) continue;
+          snd.play().then(() => {
+            audioTrace('unlock replay started ' + snd.src, 'unlock-play-' + snd.src, 0);
+          }).catch(err => {
+            audioDebug('unlock replay blocked/failed ' + snd.src + ': ' + (err?.name || err), 'unlock-fail-' + snd.src, 0);
+          });
+        }
+      }
+
+      document.addEventListener('pointerdown', () => unlockGameAudio('pointerdown'), { once: true, capture: true });
+      document.addEventListener('keydown', () => unlockGameAudio('keydown'), { once: true, capture: true });
+      document.addEventListener('touchstart', () => unlockGameAudio('touchstart'), { once: true, capture: true, passive: true });
+
+      async function loadAudioCueIndexes() {
+        try {
+          const res = await fetch('assets/audio/music/cues/index.json');
+          if (!res.ok) return;
+          const registry = await res.json();
+          await Promise.all((registry.indexes || []).map(async entry => {
+            if (!entry?.id || !entry.file) return;
+            const r = await fetch(entry.file);
+            if (!r.ok) return;
+            const data = await r.json();
+            data.__basePath = entry.file.replace(/[^/]+$/, '');
+            _audioCueIndexes.set(entry.id, data);
+            audioDebug('loaded cue index ' + entry.id + ' (' + ((data.ambient_cues || []).length) + ' cues)', 'cue-index-' + entry.id, 0);
+          }));
+        } catch(e) { debugLog('Audio cue index load failed: ' + e.message, 'warn'); }
+      }
+
+      function registerMapAudio(entries) {
+        for (const e of (entries || [])) {
+          const area = e.area || e.mapId;
+          if (area && e.audioIndex) _mapAudioIndexes.set(area, e.audioIndex);
+        }
+      }
+
+      function resolveAreaAudioIndex(area) {
+        if (area === 'farm' || area === 'town') return 'general';
+        if (_mapAudioIndexes.has(area)) return _mapAudioIndexes.get(area);
+        if (_isZoneArea(area)) return EXTERIOR_ZONES[area].audioIndex || '';
+        const wsMap = _workspaceMaps?.find(m => (m.id === area) || (area === 'town' && m.id === 'map_hobunji_town'));
+        return wsMap?.audioIndex || '';
+      }
+
+      function resetAmbientCueTimer(area = currentArea) {
+        _ambientCueState.area = area;
+        _ambientCueState.indexId = resolveAreaAudioIndex(area);
+        _ambientCueState.mode = 'bgm';
+        _ambientCueState.nextAt = 0;
+        audioDebug('ambient area=' + area + ' cueIndex=' + (_ambientCueState.indexId || 'none') + ' mode=bgm', 'ambient-area-' + area, 0);
+        describeAudioConfigForArea(area);
+      }
+
+      function stopAmbientCue() {
+        for (const key of ['currentCue', 'currentBgm']) {
+          const snd = _ambientCueState[key];
+          if (snd) snd.pause();
+          _ambientCueState[key] = null;
+        }
+      }
+
+      function isNightTime() {
+        const hour = getHour();
+        return hour < 7 || hour >= 19;
+      }
+
+      function bgmDailyKey(track) {
+        return calendar.day + ':' + resolveAudioUrl(track?.url || '');
+      }
+
+      function isSunriseBgmEligible(track) {
+        if (!track?.sunriseOnly) return true;
+        const sunriseHour = Number.isFinite(Number(track.sunriseHour)) ? Number(track.sunriseHour) : MORNING_HOUR;
+        const windowHours = Math.max(0, Number(track.sunriseWindowHours) || 0);
+        const hour = getHour();
+        return hour >= sunriseHour && hour < sunriseHour + windowHours;
+      }
+
+      function isBgmTrackEligible(track) {
+        if (!track?.url) return false;
+        if (track.nightOnly && !isNightTime()) return false;
+        if (!isSunriseBgmEligible(track)) return false;
+        if (track.oncePerDay && _dailyBgmPlayed.has(bgmDailyKey(track))) return false;
+        return !audioUrlFailed(track.url);
+      }
+
+      function resolveAreaBgm(area) {
+        const sets = gameAudioConfig().areaBgm || {};
+        const all = (sets[area] || []).filter(track => track?.url);
+        const playable = all.filter(isBgmTrackEligible);
+        if (!playable.length) {
+          if (all.length) audioDebug('no eligible bgm candidates for area=' + area + '; waiting for time window or valid media', 'bgm-all-failed-' + area, 3000);
+          return null;
+        }
+        const preferred = playable.filter(track => !track.fallback);
+        const list = preferred.length ? preferred : playable;
+        return list[Math.floor(Math.random() * list.length)] || null;
+      }
+
+      function scheduleNextCueDelay() {
+        const audioCfg = gameAudioConfig();
+        const minSec = Number(audioCfg.ambientCueMinDelaySec) || 300;
+        const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 600);
+        _ambientCueState.nextAt = performance.now() + (minSec + Math.random() * (maxSec - minSec)) * 1000;
+      }
+
+      function updateAmbientCues() {
+        const audioCfg = gameAudioConfig();
+        if (audioCfg.enabled === false) { audioTrace('ambient disabled by config', 'ambient-disabled', 3000); return; }
+        if (_ambientCueState.area !== currentArea) { stopAmbientCue(); resetAmbientCueTimer(currentArea); }
+        const idx = _audioCueIndexes.get(_ambientCueState.indexId);
+        const cues = idx?.ambient_cues || [];
+        audioTrace('ambient state area=' + currentArea + ' mode=' + _ambientCueState.mode + ' index=' + (_ambientCueState.indexId || 'none') + ' cues=' + cues.length + ' bgmActive=' + !!_ambientCueState.currentBgm + ' cueActive=' + !!_ambientCueState.currentCue + ' nextInMs=' + Math.max(0, Math.round((_ambientCueState.nextAt || 0) - performance.now())), 'ambient-state-' + currentArea, 5000);
+        if (_ambientCueState.currentCue && !_ambientCueState.currentCue.ended) return;
+        if (_ambientCueState.currentCue?.ended) _ambientCueState.currentCue = null;
+
+        if (_ambientCueState.mode === 'cue_wait') {
+          if (performance.now() < _ambientCueState.nextAt) return;
+          if (!cues.length) { _ambientCueState.mode = 'bgm'; return; }
+          const cue = cues[Math.floor(Math.random() * cues.length)];
+          if (!cue?.file) { scheduleNextCueDelay(); return; }
+          const snd = makeGameAudio((idx.__basePath || '') + cue.file);
+          const finishCue = () => {
+            if (_ambientCueState.currentCue === snd) _ambientCueState.currentCue = null;
+            _ambientCueState.mode = 'bgm';
+          };
+          snd.volume = Math.max(0, Math.min(1, Number(cue.volume) || Number(audioCfg.bgmVolume) || 0.7));
+          snd.addEventListener('ended', finishCue, { once: true });
+          snd.addEventListener('error', () => { audioDebug('cue error ' + snd.src, 'cue-error-' + cue.id, 0); finishCue(); }, { once: true });
+          _ambientCueState.currentCue = snd;
+          audioDebug('playing cue area=' + currentArea + ' id=' + cue.id + ' url=' + snd.src + ' volume=' + snd.volume.toFixed(2), 'cue-play-' + cue.id, 0);
+          snd.play().catch(err => {
+            audioDebug('cue play blocked/failed id=' + cue.id + ': ' + (err?.name || err), 'cue-fail-' + cue.id, 0);
+            _ambientCueState.currentCue = null;
+            _ambientCueState.mode = 'cue_wait';
+            _ambientCueState.nextAt = performance.now() + 3000;
+          });
+          return;
+        }
+
+        if (_ambientCueState.currentBgm && !_ambientCueState.currentBgm.ended) return;
+        _ambientCueState.currentBgm = null;
+        if (performance.now() < _ambientCueState.nextAt) return;
+        const bgmTrack = resolveAreaBgm(currentArea);
+        const bgmUrl = bgmTrack?.url || '';
+        if (!bgmUrl) { audioDebug('no eligible bgm for area=' + currentArea + '; retrying bgm resolution soon', 'bgm-missing-' + currentArea, 3000); _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
+        const snd = makeGameAudio(bgmUrl);
+        const finishBgm = () => {
+          if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
+          _ambientCueState.mode = 'cue_wait';
+          scheduleNextCueDelay();
+        };
+        snd.volume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
+        snd.addEventListener('ended', finishBgm, { once: true });
+        snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0); markAudioUrlFailed(bgmUrl, 'media error'); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
+        _ambientCueState.currentBgm = snd;
+        audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' volume=' + snd.volume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0);
+        snd.play().then(() => {
+          if (bgmTrack?.oncePerDay) {
+            _dailyBgmPlayed.add(bgmDailyKey(bgmTrack));
+            audioDebug('marked once-per-day bgm played url=' + snd.src + ' day=' + calendar.day, 'bgm-daily-' + bgmDailyKey(bgmTrack), 0);
+          }
+        }).catch(err => {
+          audioDebug('bgm play blocked/failed area=' + currentArea + ': ' + (err?.name || err), 'bgm-fail-' + currentArea, 0);
+          if ((err?.name || '') !== 'NotAllowedError') markAudioUrlFailed(bgmUrl, err?.name || err || 'play failed');
+          if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
+          _ambientCueState.mode = 'bgm';
+          _ambientCueState.nextAt = performance.now() + 1000;
+        });
+      }
+
+      function setLoopingBgs(id, url, volume) {
+        const v = Math.max(0, Math.min(1, Number(volume) || 0));
+        let snd = _loopingBgs.get(id);
+        if (!snd && url) {
+          snd = makeGameAudio(url, { loop: true });
+          _loopingBgs.set(id, snd);
+        }
+        if (!snd) return;
+        snd.volume = v;
+        audioTrace('bgs state ' + id + ' volume=' + v.toFixed(2) + ' paused=' + snd.paused + ' ready=' + audioReadyStateLabel(snd) + ' url=' + snd.src, 'bgs-state-' + id, 5000);
+        if (v > 0 && snd.paused) {
+          audioDebug('starting bgs ' + id + ' url=' + snd.src + ' volume=' + v.toFixed(2), 'bgs-start-' + id, 0);
+          snd.play().catch(err => audioDebug('bgs play blocked/failed ' + id + ': ' + (err?.name || err), 'bgs-fail-' + id, 0));
+        }
+        if (v <= 0 && !snd.paused) {
+          audioDebug('stopping bgs ' + id, 'bgs-stop-' + id, 0);
+          snd.pause();
+        }
+      }
+
+      function updateExteriorBgs() {
+        const audioCfg = gameAudioConfig();
+        if (audioCfg.enabled === false) {
+          audioDebug('exterior bgs disabled by config', 'bgs-disabled');
+          setLoopingBgs('birds', '', 0);
+          setLoopingBgs('nightbugs', '', 0);
+          setLoopingBgs('wind1', '', 0);
+          setLoopingBgs('wind2', '', 0);
+          return;
+        }
+        const bgs = audioCfg.bgs || {};
+        const exterior = currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea);
+        const rainy = calendar.isRaining;
+        const night = isNightTime();
+        audioTrace('bgs resolve area=' + currentArea + ' exterior=' + exterior + ' rainy=' + rainy + ' night=' + night + ' rainStrength=' + (calendar.rainStrength || 0), 'bgs-resolve-' + currentArea, 5000);
+        setLoopingBgs('birds', bgs.birds, exterior && !night && !rainy ? (bgs.birdsVolume ?? 0.25) : 0);
+        setLoopingBgs('nightbugs', bgs.nightbugs, exterior && night ? (bgs.nightbugsVolume ?? 0.23) : 0);
+        const wind01 = exterior ? Math.max(0, Math.min(1, (calendar.rainStrength || 0) / 3)) : 0;
+        setLoopingBgs('wind1', bgs.wind1, (bgs.wind1Volume ?? 0.20) * Math.max(0, wind01 - 0.35) / 0.65);
+        setLoopingBgs('wind2', bgs.wind2, (bgs.wind2Volume ?? 0.18) * (exterior ? Math.max(0.15, wind01 * 0.75) : 0));
+      }
+
+      function resolveFurnitureSfx(def) {
+        if (!def) return null;
+        if (def.sfx) return def.sfx;
+        const key = def.sfxKey;
+        return key ? gameAudioConfig().furnitureSfx?.[key] : null;
+      }
+
+      function registerFurnitureSfxSource(area, x, z, sfx) {
+        if (!sfx?.url) return null;
+        const audio = makeGameAudio(sfx.url, { loop: true });
+        audio.volume = 0;
+        const source = { area, x, z, range: Number(sfx.rangeTiles) || 5, maxVolume: Number(sfx.volume) || 0.7, audio };
+        _furnitureSfxSources.push(source);
+        audioDebug('registered furniture sfx area=' + area + ' url=' + audio.src + ' pos=' + x.toFixed(2) + ',' + z.toFixed(2) + ' range=' + source.range, 'furn-register-' + area + '-' + x + '-' + z, 0);
+        return source;
+      }
+
+      function unregisterFurnitureSfxSource(source) {
+        if (!source) return;
+        const i = _furnitureSfxSources.indexOf(source);
+        if (i >= 0) _furnitureSfxSources.splice(i, 1);
+        source.audio.pause();
+        source.audio.currentTime = 0;
+        _gameAudioElements.delete(source.audio);
+        audioDebug('unregistered furniture sfx area=' + source.area + ' pos=' + source.x.toFixed(2) + ',' + source.z.toFixed(2), 'furn-unregister-' + source.area + '-' + source.x + '-' + source.z, 0);
+      }
+
+      function updateFurnitureSfxSources() {
+        const audioCfg = gameAudioConfig();
+        if (audioCfg.enabled === false) {
+          for (const src of _furnitureSfxSources) {
+            src.audio.volume = 0;
+            if (!src.audio.paused) src.audio.pause();
+          }
+          return;
+        }
+        for (const src of _furnitureSfxSources) {
+          const active = src.area === currentArea;
+          const dx = player.x / TILE - src.x;
+          const dz = player.y / TILE - src.z;
+          const dist = Math.hypot(dx, dz);
+          const v = active ? src.maxVolume * Math.max(0, 1 - dist / src.range) : 0;
+          src.audio.volume = Math.max(0, Math.min(1, v));
+          if (v > 0.01 && src.audio.paused) {
+            audioDebug('starting furniture sfx area=' + src.area + ' url=' + src.audio.src + ' volume=' + src.audio.volume.toFixed(2), 'furn-start-' + src.area + '-' + src.x + '-' + src.z, 0);
+            src.audio.play().catch(err => audioDebug('furniture sfx play blocked/failed area=' + src.area + ': ' + (err?.name || err), 'furn-fail-' + src.area + '-' + src.x + '-' + src.z, 0));
+          }
+          if (v <= 0.01 && !src.audio.paused) {
+            audioDebug('stopping furniture sfx area=' + src.area + ' pos=' + src.x.toFixed(2) + ',' + src.z.toFixed(2), 'furn-stop-' + src.area + '-' + src.x + '-' + src.z, 0);
+            src.audio.pause();
+          }
+        }
       }
 
       function buildZoneScene(mapId) {
@@ -3338,6 +3708,7 @@
             (layout.routes || []).filter(r => (r.area || 'farm') !== 'town'),
             worldNpcPaths);
           registerNpcStations(layout.npcStations, null);
+          registerMapAudio(layout.mapAudio);
           rebuildRouteGraphs();
         }
         // Don't fire a spot the player happens to spawn on
@@ -3508,6 +3879,7 @@
       function resetDialogueCameraZoom() {
         setDialogueCameraZoomPercent(dialogueZoomConfig().initialPercent ?? 0);
       }
+      function desktopControlsConfig() { return window.SCRATCHBONES_CONFIG?.game?.desktopControls || {}; }
       function npcDialogueButtonConfig() {
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.npcDialogueButton || {};
       }
@@ -4518,6 +4890,7 @@
           p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
         worldTownRoutes = normalizeRoutes(layout.routes, townPaths).map(r => ({ ...r, area: 'town' }));
         registerNpcStations(layout.npcStations, 'town');
+        registerMapAudio(layout.mapAudio);
         rebuildRouteGraphs();
         // If town scene was already built before this layout arrived, spawn buildings now
         if (_townSceneBuilt && townScene) {
@@ -4753,6 +5126,7 @@
               _markOutline(model);
               _markFurnitureEdgeId(model);
               bScene.add(model);
+              registerFurnitureSfxSource(mapId, bx, bz, resolveFurnitureSfx(def));
             } else {
               // Fallback: no procedural recipe found for this furniture key
               const ph = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshLambertMaterial({ color }));
@@ -4762,6 +5136,7 @@
               _markOutline(ph);
               _markFurnitureEdgeId(ph);
               bScene.add(ph);
+              registerFurnitureSfxSource(mapId, bx, bz, resolveFurnitureSfx(def));
             }
           }
           const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
@@ -6989,12 +7364,15 @@
       const CARDINAL_HOLD  = 0.13;      // seconds to hold last cardinal after input stops
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
+      let targetAimAngle = -Math.PI / 2;
 
       // Mouse-look: on desktop, facing tracks the mouse cursor in world space.
       // After MOUSE_IDLE_MS of no mouse movement, reverts to input-direction facing.
       const MOUSE_IDLE_MS  = 1800;  // ms before reverting to input-direction mode
       let mouseLookAngle   = -Math.PI / 2;
       let mouseLookActive  = false;
+      let controllerLookAngle = -Math.PI / 2;
+      let controllerLookActive = false;
       let lastMouseMoveTime = 0;
       const _raycaster     = isDesktop ? new THREE.Raycaster() : null;
       const _mouseNDC      = isDesktop ? new THREE.Vector2()   : null;
@@ -7145,6 +7523,8 @@
           inputStrength = usingKeyboard ? 1 : clamp(inputLen, 0, 1);
           ix /= inputLen;
           iy /= inputLen;
+          const aimDeadzone = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.inputAimDeadzone) || 0.08;
+          if (inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
         }
 
         // ── Cardinal bias ────────────────────────────────────
@@ -7214,7 +7594,12 @@
         const autoTarget = findAutoTarget();
         dodgeBtn?.classList.toggle('combat-active', !!autoTarget);
 
-        if (isDesktop && mouseLookActive) {
+        if (controllerLookActive) {
+          const diff = angleDiff(controllerLookAngle, facingAngle);
+          facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
+          player.angle = facingAngle;
+          if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
+        } else if (isDesktop && mouseLookActive) {
           if (performance.now() - lastMouseMoveTime > MOUSE_IDLE_MS) {
             mouseLookActive = false;
           } else {
@@ -7225,7 +7610,7 @@
           }
         }
 
-        if (!mouseLookActive || !isDesktop) {
+        if (!controllerLookActive && (!mouseLookActive || !isDesktop)) {
           if (autoTarget) {
             // Combat: lock facing onto the nearest nearby hostile instead of
             // movement direction, akin to Z-targeting.
@@ -7439,7 +7824,8 @@
         const baseY = tileSurfaceY(agrid[row][col].type) + 0.16 + Math.max(0, agrid[row][col].water * WATER_UNIT);
         actionTileEffects.push({ col, row, action, ok, age: 0, maxAge: ok ? 0.58 : 0.44, color: profile.ring });
         while (actionTileEffects.length > 8) actionTileEffects.shift();
-        if (action === 'slash') spawnWeaponTrailEffect(col, row, ok);
+        if (activeTool === 'weapon' && action === 'cut') spawnWeaponTrailEffect(action, ok);
+        else if (action === 'slash') spawnWeaponTrailEffect(action, ok, col, row);
 
         for (let i = 0; i < profile.count; i++) {
           if (actionParticles.length >= ACTION_FX_LIMIT) actionParticles.shift();
@@ -7464,28 +7850,39 @@
       }
 
 
-      function spawnWeaponTrailEffect(col, row, ok) {
-        const dir = facingCardinal(player.angle);
-        const side = dir.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 };
-        const targets = getMacheteTargets(col, row, 'slash');
+      function spawnWeaponTrailEffect(action, ok, col = null, row = null) {
+        const abil = weaponAbility(action) || weaponAbility('slash');
+        const tileAnchored = col !== null && row !== null;
+        const dir = tileAnchored ? facingCardinal(player.angle) : { x: Math.cos(player.angle), y: Math.sin(player.angle) };
+        const side = tileAnchored
+          ? (dir.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 })
+          : { x: -dir.y, y: dir.x };
         const tgrid = getActiveGrid();
-        const surfaceY = targets.reduce((sum, t) => sum + tileSurfaceY(tgrid[t.row][t.col].type), 0) / Math.max(1, targets.length);
+        const sampleCol = clamp(Math.floor(player.x / TILE), 0, getActiveCols() - 1);
+        const sampleRow = clamp(Math.floor(player.y / TILE), 0, getActiveRows() - 1);
+        const targets = tileAnchored ? getMacheteTargets(col, row, 'slash') : [{ col: sampleCol, row: sampleRow }];
+        const surfaceY = targets.reduce((sum, t) => sum + tileSurfaceY(tgrid[t.row]?.[t.col]?.type || TileType.GRASS), 0) / Math.max(1, targets.length);
         weaponTrailEffects.push({
-          col, row, dir, side,
+          x: col === null ? player.x / TILE : col + 0.5,
+          z: row === null ? player.y / TILE : row + 0.5,
+          dir, side, action,
+          halfWidth: abil.trailHalfWidthTiles,
+          far: abil.trailFarTiles,
           age: 0,
-          maxAge: ok ? 0.34 : 0.24,
+          maxAge: ok ? abil.trailMaxAgeSeconds : Math.max(abil.trailMaxAgeSeconds * 0.72, 0.1),
           ok,
           y: surfaceY + 0.18,
         });
-        while (weaponTrailEffects.length > 5) weaponTrailEffects.shift();
+        const limit = Number(combatConfig().weaponTrailLimit) || 5;
+        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
       }
 
       function slashTrailWorldPoints(fx) {
-        const cx = fx.col + 0.5;
-        const cz = fx.row + 0.5;
+        const cx = fx.x;
+        const cz = fx.z;
         const near = 0.02;
-        const far = 1.02;
-        const halfWidth = 1.35;
+        const far = fx.far;
+        const halfWidth = fx.halfWidth;
         return [
           { x: cx + fx.dir.x * near - fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * near - fx.side.y * halfWidth },
           { x: cx + fx.dir.x * far  - fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * far  - fx.side.y * halfWidth },
@@ -7523,6 +7920,38 @@
           y: (-v.y * 0.5 + 0.5) * _threeRect.height,
           visible: v.z >= -1 && v.z <= 1
         };
+      }
+
+      function drawCombatConeReticle() {
+        const cfg = combatConfig().combatConeReticle || {};
+        if (cfg.enabled === false || activeTool !== 'weapon' || !findAutoTarget()) return;
+        const abil = weaponAbility('cut');
+        if (!abil) return;
+        const rangeTiles = abil.rangePx / TILE;
+        const baseX = player.x / TILE;
+        const baseZ = player.y / TILE;
+        const y = tileSurfaceY(getActiveTileAt(Math.floor(baseX), Math.floor(baseZ)).type) + 0.035;
+        const alpha = Number(cfg.alpha) || 0.24;
+        const lineWidth = Number(cfg.lineWidth) || 2;
+        const color = cfg.color || '#d9ffe0';
+        const left = player.angle - abil.halfConeRad;
+        const right = player.angle + abil.halfConeRad;
+        const leftEnd = worldToOverlay(baseX + Math.cos(left) * rangeTiles, y, baseZ + Math.sin(left) * rangeTiles);
+        const rightEnd = worldToOverlay(baseX + Math.cos(right) * rangeTiles, y, baseZ + Math.sin(right) * rangeTiles);
+        const origin = worldToOverlay(baseX, y, baseZ);
+        if (!origin.visible || !leftEnd.visible || !rightEnd.visible) return;
+        octx.save();
+        octx.globalAlpha = alpha;
+        octx.strokeStyle = color;
+        octx.lineWidth = lineWidth;
+        octx.setLineDash(Array.isArray(cfg.lineDash) ? cfg.lineDash : []);
+        octx.beginPath();
+        octx.moveTo(origin.x, origin.y);
+        octx.lineTo(leftEnd.x, leftEnd.y);
+        octx.moveTo(origin.x, origin.y);
+        octx.lineTo(rightEnd.x, rightEnd.y);
+        octx.stroke();
+        octx.restore();
       }
 
       function drawWeaponTrailEffects() {
@@ -7691,7 +8120,7 @@
           return;
         }
         if (activeTool === 'weapon') {
-          const abil = WEAPON_ABILITY[activeAction];
+          const abil = weaponAbility(activeAction);
           if (abil && player.stamina < abil.staminaCost) {
             showToast('Too winded to swing!', false);
             return;
@@ -7777,17 +8206,25 @@
         refreshActionBar();
       }
 
+      function targetingConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.input?.targeting || {};
+      }
+
       function getReticleTile() {
-        const dir = facingCardinal(player.angle);
-        // Cast a ray from the player's world position in the facing direction.
-        // Using 0.7×TILE ensures we always land in the next tile regardless of
-        // where within the current tile the player is standing.
-        const probeX = player.x + dir.x * TILE * 0.7;
-        const probeY = player.y + dir.y * TILE * 0.7;
+        const cfg = targetingConfig();
+        const orbitRadiusTiles = Number.isFinite(Number(cfg.orbitRadiusTiles)) ? Number(cfg.orbitRadiusTiles) : 0.62;
+        const angle = targetAimAngle;
+        const dir = { x: Math.cos(angle), y: Math.sin(angle), name: facingCardinal(angle).name };
+        // Ground-level probe: a tight orbit around the player's actual position,
+        // aimed by raw input/look rotation rather than the tile the player stands on.
+        const probeX = player.x + dir.x * TILE * orbitRadiusTiles;
+        const probeY = player.y + dir.y * TILE * orbitRadiusTiles;
         return {
           col: clamp(Math.floor(probeX / TILE), 0, getActiveCols() - 1),
           row: clamp(Math.floor(probeY / TILE), 0, getActiveRows() - 1),
-          dir
+          dir,
+          probeX,
+          probeY
         };
       }
 
@@ -9077,7 +9514,7 @@
             gainL = ctx.createGain(); gainL.gain.value = 0;
 
             const master = ctx.createGain();
-            master.gain.value = Math.max(0, Number(window.SCRATCHBONES_CONFIG?.game?.audio?.rainVolume) || 0.20);
+            master.gain.value = Math.max(0, Number(gameAudioConfig().rainVolume) || 0.20);
 
             srcH.connect(hpf); hpf.connect(gainH); gainH.connect(master);
             srcM.connect(bpf); bpf.connect(gainM); gainM.connect(master);
@@ -9104,7 +9541,7 @@
 
       let _rainAudio = null;
       function updateRainAudio() {
-        const audioCfg = window.SCRATCHBONES_CONFIG?.game?.audio || {};
+        const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) return;
         const outdoors = currentArea === 'farm' || currentArea === 'town';
         const indoors = currentArea === 'interior' || _isBuildingArea(currentArea);
@@ -9379,6 +9816,7 @@
       function clearTargetHighlights() {
         for (const m of _targetOutlineMeshes) m.layers.disable(2);
         _targetOutlineMeshes = [];
+        updateCuttableBillboardGlow(0, 0, false);
       }
       function findTargetMeshes(col, row) {
         const i = row * COLS + col;
@@ -9559,6 +9997,8 @@
       });
       _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
 
+      let s_zoomScale = 1.5; // camera zoom level — higher = camera sits closer to the player (default 150%)
+
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
       let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72, camTargetY = 0;
@@ -9621,10 +10061,10 @@
 
       function updateCameraPosition() {
         const modeCfg = cameraModeConfig(activeCameraMode);
-        const baseDistance = modeCfg.distanceTiles ?? 14;
+        const baseDistance = (modeCfg.distanceTiles ?? 14) / s_zoomScale;
         const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
-        const angle = THREE.MathUtils.degToRad(modeCfg.angleFromGroundDeg ?? 32.73);
-        const azimuth = THREE.MathUtils.degToRad(modeCfg.azimuthDeg ?? 0);
+        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
+        const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
         const tx = camTargetX, tz = camTargetZ;
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
         const lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
@@ -11665,6 +12105,8 @@
 
       const _grassTint = new THREE.Color().setHSL(108 / 360, 0.58, 0.28);
       let grassBillboardMat = null;
+      let cuttableBillboardGlowMat = null;
+      let cuttableBillboardGlowMesh = null;
 
       new THREE.TextureLoader().load('assets/leaves/grass_1.png', (tex) => {
         tex.magFilter = THREE.NearestFilter;
@@ -11680,6 +12122,26 @@
           vertexShader:   _grassBillVert,
           fragmentShader: _grassBillFrag,
           alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
+        });
+        cuttableBillboardGlowMat = new THREE.ShaderMaterial({
+          uniforms: {
+            uGrassTex: { value: tex },
+            uColor: { value: new THREE.Color(combatConfig().cuttableTargetGlow?.color || '#ff2a1f') },
+            uAlpha: { value: Number(combatConfig().cuttableTargetGlow?.alpha) || 0.42 }
+          },
+          vertexShader: _grassBillVert,
+          fragmentShader: `
+            uniform sampler2D uGrassTex;
+            uniform vec3 uColor;
+            uniform float uAlpha;
+            varying vec2 vUv;
+            void main() {
+              vec4 texel = texture2D(uGrassTex, vUv);
+              if (texel.a < 0.5) discard;
+              gl_FragColor = vec4(uColor, uAlpha * texel.a);
+            }
+          `,
+          transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
         });
         _rebuildFarmBillboards();
         if (_townSceneBuilt) {
@@ -11715,6 +12177,19 @@
         return idx;
       }
 
+      function updateCuttableBillboardGlow(col, row, visible) {
+        if (!cuttableBillboardGlowMesh || !cuttableBillboardGlowMat) return;
+        if (!visible || combatConfig().cuttableTargetGlow?.enabled === false) {
+          cuttableBillboardGlowMesh.count = 0;
+          return;
+        }
+        cuttableBillboardGlowMat.uniforms.uColor.value.set(combatConfig().cuttableTargetGlow?.color || '#ff2a1f');
+        cuttableBillboardGlowMat.uniforms.uAlpha.value = Number(combatConfig().cuttableTargetGlow?.alpha) || 0.42;
+        const dummy = new THREE.Object3D();
+        cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0);
+        cuttableBillboardGlowMesh.instanceMatrix.needsUpdate = true;
+      }
+
       // Farm grass (GRASS tiles, gated by s_grass) and weeds (WEEDS tiles in
       // Mode A, always on) each get one InstancedMesh sized for the worst case
       // (every farm tile being that type), so edits just refill the buffer and
@@ -11733,6 +12208,11 @@
         farmWeedBillMesh.frustumCulled = false;
         farmWeedBillMesh.count = 0;
         scene.add(farmWeedBillMesh);
+
+        cuttableBillboardGlowMesh = new THREE.InstancedMesh(_grassBladeGeo, cuttableBillboardGlowMat || grassBillboardMat, 28);
+        cuttableBillboardGlowMesh.frustumCulled = false;
+        cuttableBillboardGlowMesh.count = 0;
+        scene.add(cuttableBillboardGlowMesh);
       }
 
       function _rebuildFarmBillboards() {
@@ -12342,15 +12822,18 @@
         const pulse   = 1 + 0.06 * Math.sin(t / 300);
 
         const onFarm     = currentArea === 'farm';
-        const isExcavate = onFarm && allowed && (activeAction === 'dig' || activeAction === 'raise');
-        const isHoeWork  = onFarm && allowed && activeTool === 'hoe';
+        const weaponEquipped = activeTool === 'weapon';
+        const isExcavate = onFarm && !weaponEquipped && allowed && (activeAction === 'dig' || activeAction === 'raise');
+        const isHoeWork  = onFarm && !weaponEquipped && allowed && activeTool === 'hoe';
         const showTile   = isExcavate || isHoeWork;
-        const isObjTarget = onFarm && allowed && !showTile;
+        const isObjTarget = onFarm && allowed && !showTile && !weaponEquipped;
         const i = reticle.row * COLS + reticle.col;
+        const cuttableTarget = onFarm && weaponEquipped && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB || !!vegFoliageMeshes[i]);
         const isWeedBlock = onFarm && !allowed && activeTool === 'hoe' && activeAction === 'till'
                          && (tile.type === TileType.WEEDS || !!vegFoliageMeshes[i]);
 
         // Base tile box
+        reticleMesh.visible = !weaponEquipped;
         reticleMesh.position.set(reticle.col + 0.5, surfY, reticle.row + 0.5);
         reticleMesh.material = showTile ? reticleIntenseMat
                              : (allowed ? reticleMat : reticleBlockedMat);
@@ -12378,12 +12861,16 @@
 
         // Object outline (layer 2) and fallback ring
         clearTargetHighlights();
-        if (isObjTarget || isWeedBlock) {
-          const meshes = findTargetMeshes(reticle.col, reticle.row);
+        if (isObjTarget || isWeedBlock || cuttableTarget) {
+          const meshes = cuttableTarget && tile.type === TileType.WEEDS && !s_weed3D ? [] : findTargetMeshes(reticle.col, reticle.row);
           if (meshes.length > 0) {
             for (const m of meshes) m.layers.enable(2);
             _targetOutlineMeshes = meshes;
             _targetOutlineAllowed = isObjTarget;
+            updateCuttableBillboardGlow(0, 0, false);
+            reticleRingMesh.visible = false;
+          } else if (cuttableTarget && tile.type === TileType.WEEDS && !s_weed3D) {
+            updateCuttableBillboardGlow(reticle.col, reticle.row, true);
             reticleRingMesh.visible = false;
           } else {
             // No specific mesh — fall back to floating ring
@@ -12526,6 +13013,18 @@
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
       });
+      function setCameraZoomScale(value) {
+        const cfg = desktopControlsConfig();
+        const min = Number.isFinite(Number(cfg.wheelZoomMin)) ? Number(cfg.wheelZoomMin) : 0.75;
+        const max = Number.isFinite(Number(cfg.wheelZoomMax)) ? Number(cfg.wheelZoomMax) : 2.5;
+        s_zoomScale = clamp(Number(value) || 1.5, min, max);
+        const zoomSetting = document.getElementById('settingZoom');
+        if (zoomSetting) zoomSetting.value = String(s_zoomScale);
+        updateCameraPosition();
+      }
+      document.getElementById('settingZoom').addEventListener('change', e => {
+        setCameraZoomScale(parseFloat(e.target.value) || 1.5);
+      });
 
       function gameLoop(now) {
         const dt = Math.min(0.04, (now - lastTime) / 1000);
@@ -12542,6 +13041,7 @@
         }
 
         if (!gameStarted) {
+          audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
           renderer.render(scene, camera);
           requestAnimationFrame(gameLoop);
           return;
@@ -12551,10 +13051,16 @@
 
         if (fishingMinigame?.active) updateFishingMinigame(dt);
 
+        updateRainAudio();
+        updateExteriorBgs();
+        updateFurnitureSfxSources();
+        updateAmbientCues();
+        audioDebug('audio tick active area=' + currentArea + ' paused=' + paused + ' gameStarted=' + gameStarted, 'audio-tick-' + currentArea, 5000);
+
         if (!paused) {
           updateCalendar(dt);
           _advanceSmoothedLighting(dt);
-          updateRainAudio();
+          pollControllerInput();
           updateMovement(dt);
           updatePlayerVitals(dt);
 
@@ -12818,6 +13324,7 @@
           octx.globalAlpha = 1;
         }
 
+        drawCombatConeReticle();
         drawWeaponTrailEffects();
         drawActionTileEffects();
         drawActionParticles();
@@ -13345,6 +13852,38 @@
           }
           _clearArc();
         }
+
+        window._desktopSelectionArc = {
+          openTool() { if (_arcOpen !== 'tool') _openToolArc(); },
+          openItem() { if (_arcOpen !== 'item') _openItemArc(); },
+          scrollTool(dir) {
+            if (_arcOpen !== 'tool') _openToolArc();
+            const idx = WHEEL_SLOTS.indexOf(activeTool);
+            const next = (idx + dir + WHEEL_SLOTS.length) % WHEEL_SLOTS.length;
+            heldMode = 'tool';
+            _lastHeldTool = WHEEL_SLOTS[next];
+            setActiveTool(WHEEL_SLOTS[next]);
+            _arcSlots.forEach((s, i) => {
+              const active = s.data === activeTool;
+              s.el.classList.toggle('arc-active', active);
+              if (active) _arcActive = i;
+            });
+          },
+          scrollItem(dir) {
+            if (_arcOpen !== 'item') _openItemArc();
+            heldMode = 'item';
+            cycleActiveInventoryItem(dir);
+            refreshItemScroll(); refreshActionBar();
+            _iScroll = Math.max(0, Math.min(getInventoryStackItems().length - ITEM_VIS, activeItemIndex - Math.floor(ITEM_VIS / 2)));
+            _buildItemSlots();
+            _arcSlots.forEach((s, i) => {
+              const active = s.data.type === 'item' && s.data.index === activeItemIndex;
+              s.el.classList.toggle('arc-active', active);
+              if (active) _arcActive = i;
+            });
+          },
+          close() { _clearArc(); }
+        };
 
         let _tPtId = null, _tHeld = false, _tTimer = null, _tDx = 0, _tDy = 0, _tMoved = false;
         toolBtn.addEventListener('pointerdown', ev => {
@@ -14100,9 +14639,10 @@
             (_rl.decor || []).forEach(({ key, col, row, area }) => {
               const def = DECORATIVE_FURNITURE_DEFS[key];
               if (!def) return;
-              const tgt = area === 'interior' ? interiorScene : scene;
-              const r = makeDecorativeFurnitureMesh(col, row, key, tgt);
-              if (r) interiorFurnitureObjects.push({ key, col, row, mesh: r.mesh, light: r.light, area });
+              const decorArea = area || 'farm';
+              const tgt = decorArea === 'interior' ? interiorScene : scene;
+              const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea);
+              if (r) interiorFurnitureObjects.push({ key, col, row, mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea });
             });
           }
         } catch {}
@@ -14138,6 +14678,258 @@
         performDodge(player.angle);
       });
 
+      const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs) || 350;
+      const desktopHoldKeys = {
+        q: { down: false, held: false, timer: null, arc: 'item' },
+        e: { down: false, held: false, timer: null, arc: 'tool' }
+      };
+      function openDesktopHoldArc(key) {
+        const state = desktopHoldKeys[key];
+        if (!state || !state.down) return;
+        state.held = true;
+        if (state.arc === 'item') window._desktopSelectionArc?.openItem();
+        else window._desktopSelectionArc?.openTool();
+      }
+      function startDesktopHoldKey(key, event) {
+        const state = desktopHoldKeys[key];
+        if (!state || state.down || event.repeat) return;
+        state.down = true;
+        state.held = false;
+        state.timer = setTimeout(() => openDesktopHoldArc(key), desktopTapWindowMs());
+      }
+      function finishDesktopHoldKey(key) {
+        const state = desktopHoldKeys[key];
+        if (!state || !state.down) return false;
+        state.down = false;
+        if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+        const wasHeld = state.held;
+        state.held = false;
+        if (wasHeld) window._desktopSelectionArc?.close();
+        return wasHeld;
+      }
+
+      const INPUT_DEFAULTS = (() => {
+        const cfg = window.SCRATCHBONES_CONFIG?.game?.input || {};
+        const actions = Array.isArray(cfg.actions) ? cfg.actions : [];
+        return {
+          storageKey: cfg.storageKey || 'scratchbones.inputBindings.v1',
+          deadzone: Number(cfg.gamepadDeadzone) || 0.24,
+          axisPressThreshold: Number(cfg.axisPressThreshold) || 0.55,
+          actions,
+          desktop: Object.fromEntries(actions.map(a => [a.id, a.desktop]).filter(([, v]) => v)),
+          controller: Object.fromEntries(actions.map(a => [a.id, a.controller]).filter(([, v]) => v)),
+          modeShifts: Array.isArray(cfg.modeShifts) ? cfg.modeShifts : []
+        };
+      })();
+      const inputBindings = loadInputBindings();
+      const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null };
+      const CONTROLLER_INPUT_OPTIONS = [
+        'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
+        'LeftTrigger', 'RightTrigger',
+        'Button8', 'Button9', 'Button10', 'Button11',
+        'Button12', 'Button13', 'Button14', 'Button15',
+        'RightStickLeft', 'RightStickRight', 'RightStickUp', 'RightStickDown'
+      ];
+
+      function loadInputBindings() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(INPUT_DEFAULTS.storageKey) || 'null');
+          return {
+            desktop: { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) },
+            controller: { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) },
+            modeShifts: Array.isArray(saved?.modeShifts) ? saved.modeShifts : INPUT_DEFAULTS.modeShifts
+          };
+        } catch (_err) {
+          return { desktop: { ...INPUT_DEFAULTS.desktop }, controller: { ...INPUT_DEFAULTS.controller }, modeShifts: INPUT_DEFAULTS.modeShifts };
+        }
+      }
+      function saveInputBindings() {
+        localStorage.setItem(INPUT_DEFAULTS.storageKey, JSON.stringify(inputBindings));
+      }
+      function bindingConflict(device, button, actionId, modeShift = null) {
+        if (!button) return '';
+        if (modeShift && button === modeShift.button) return 'Shifted input cannot use its held mode-shift button.';
+        const bindings = inputBindings[device] || {};
+        for (const [otherAction, otherButton] of Object.entries(bindings)) {
+          if (otherAction !== actionId && otherButton === button) return `Already bound to ${actionLabel(otherAction)}.`;
+        }
+        if (!modeShift) return '';
+        for (const [otherButton, otherAction] of Object.entries(modeShift.bindings || {})) {
+          if (otherAction === actionId && otherButton === button) return `Already bound to ${actionLabel(actionId)} in this mode shift.`;
+        }
+        return '';
+      }
+      function actionLabel(id) {
+        return INPUT_DEFAULTS.actions.find(a => a.id === id)?.label || id;
+      }
+      function buttonLabel(code) {
+        const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓' };
+        return labels[code] || String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
+      }
+      function runActionButtonAtSlot(slotIndex) {
+        const btn = computeActionButtons()[slotIndex - 1];
+        if (!btn) return;
+        activeAction = btn.action;
+        actionHeldDown = slotIndex === 1;
+        useActiveAction();
+      }
+      function runInteractAction() {
+        const toolSet = new Set(Object.values(toolActions).flat());
+        const btn = computeActionButtons().find(b => b.allowed !== false && !toolSet.has(b.action) && !String(b.action || '').startsWith('plant_') && !String(b.action || '').startsWith('place_') && b.action !== 'harvest');
+        if (!btn) return;
+        activeAction = btn.action;
+        useActiveAction();
+      }
+      function cycleActiveTool(delta) {
+        const idx = WHEEL_SLOTS.indexOf(activeTool);
+        const next = (idx + delta + WHEEL_SLOTS.length) % WHEEL_SLOTS.length;
+        setActiveTool(WHEEL_SLOTS[next]);
+      }
+      function runInputAction(actionId, phase = 'press') {
+        if (phase === 'release') {
+          if (actionId === 'action1') actionHeldDown = false;
+          return;
+        }
+        if (fishingMinigame?.active) {
+          if (actionId === 'interact' || actionId === 'action1') fireFishingBridge();
+          return;
+        }
+        if (menuOpen || farmEditMode) return;
+        if (actionId === 'interact') { runInteractAction(); return; }
+        const actionSlot = /^action(\d+)$/.exec(actionId);
+        if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
+        if (actionId === 'dodge') { performDodge(player.angle); return; }
+        if (actionId === 'cycleToolAction') {
+          const actions = toolActions[activeTool];
+          const idx = actions.indexOf(activeAction);
+          activeAction = actions[(idx + 1) % actions.length];
+          refreshActionBar();
+          return;
+        }
+        if (actionId === 'itemPrev' || actionId === 'itemNext') {
+          cycleActiveInventoryItem(actionId === 'itemPrev' ? -1 : 1);
+          refreshItemScroll(); refreshActionBar(); return;
+        }
+        if (actionId === 'toolPrev' || actionId === 'toolNext') { cycleActiveTool(actionId === 'toolPrev' ? -1 : 1); return; }
+        const tool = { tool1: 'shovel', tool2: 'hoe', tool3: 'weapon', tool4: 'axe', tool5: 'pick', tool6: 'harpoon' }[actionId];
+        if (tool) setActiveTool(tool);
+      }
+      function getActionForButton(device, button, heldShift = null) {
+        if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
+        const bindings = inputBindings[device] || {};
+        return Object.keys(bindings).find(actionId => bindings[actionId] === button) || null;
+      }
+      function pollControllerInput() {
+        if (!gamepadState.focused) return;
+        const pads = navigator.getGamepads?.() || [];
+        const pad = Array.from(pads).find(Boolean);
+        if (!pad) { input.x = 0; input.y = 0; return; }
+        const dz = INPUT_DEFAULTS.deadzone;
+        const ax = Math.abs(pad.axes[0] || 0) >= dz ? pad.axes[0] : 0;
+        const ay = Math.abs(pad.axes[1] || 0) >= dz ? pad.axes[1] : 0;
+        const rx = Math.abs(pad.axes[2] || 0) >= dz ? pad.axes[2] : 0;
+        const ry = Math.abs(pad.axes[3] || 0) >= dz ? pad.axes[3] : 0;
+        input.x = ax; input.y = ay;
+        controllerLookActive = Math.hypot(rx, ry) >= dz;
+        if (controllerLookActive) {
+          controllerLookAngle = Math.atan2(ry, rx);
+          targetAimAngle = controllerLookAngle;
+        }
+        const down = new Set();
+        pad.buttons.forEach((button, index) => { if (button?.pressed) down.add(`Button${index}`); });
+        if ((pad.buttons[6]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('LeftTrigger');
+        if ((pad.buttons[7]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('RightTrigger');
+        const axisPress = INPUT_DEFAULTS.axisPressThreshold;
+        if (rx <= -axisPress) down.add('RightStickLeft');
+        if (rx >= axisPress) down.add('RightStickRight');
+        if (ry <= -axisPress) down.add('RightStickUp');
+        if (ry >= axisPress) down.add('RightStickDown');
+        const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
+        if (heldShift) controllerLookActive = false;
+        for (const button of down) {
+          if (gamepadState.previous.has(button) || button === heldShift?.button) continue;
+          const actionId = getActionForButton('controller', button, heldShift);
+          if (actionId) runInputAction(actionId, 'press');
+        }
+        for (const button of gamepadState.previous) {
+          if (down.has(button)) continue;
+          const actionId = getActionForButton('controller', button, gamepadState.activeShift);
+          if (actionId) runInputAction(actionId, 'release');
+        }
+        gamepadState.previous = down;
+        gamepadState.activeShift = heldShift || null;
+      }
+      window.addEventListener('focus', () => { gamepadState.focused = true; });
+      window.addEventListener('blur', () => { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; } });
+
+      function renderInputSettings() {
+        const desktopEl = document.getElementById('desktopInputBindings');
+        const controllerEl = document.getElementById('controllerInputBindings');
+        const shiftsEl = document.getElementById('modeShiftList');
+        function renderDevice(el, device) {
+          if (!el) return;
+          el.innerHTML = '';
+          for (const action of INPUT_DEFAULTS.actions) {
+            const row = document.createElement('div'); row.className = 'input-binding-row';
+            row.innerHTML = `<span class="settings-name">${action.label}</span>${device === 'controller' ? '<select class="settings-select"></select>' : `<button type="button" class="input-bind-btn">${buttonLabel(inputBindings[device][action.id])}</button>`}<div class="input-binding-warning"></div>`;
+            const control = row.children[1]; const warn = row.querySelector('.input-binding-warning');
+            if (device === 'controller') {
+              control.add(new Option('Unbound', ''));
+              CONTROLLER_INPUT_OPTIONS.forEach(code => control.add(new Option(buttonLabel(code), code)));
+              control.value = inputBindings.controller[action.id] || '';
+              control.addEventListener('change', () => { const conflict = bindingConflict(device, control.value, action.id); if (conflict) { warn.textContent = conflict; control.value = inputBindings.controller[action.id] || ''; } else { inputBindings.controller[action.id] = control.value || null; warn.textContent = ''; saveInputBindings(); } });
+            } else {
+              control.addEventListener('click', () => { control.classList.add('is-listening'); control.textContent = 'Press input…'; const once = ev => { ev.preventDefault(); const code = ev.code; const conflict = bindingConflict(device, code, action.id); if (conflict) warn.textContent = conflict; else { inputBindings[device][action.id] = code; warn.textContent = ''; saveInputBindings(); renderInputSettings(); } window.removeEventListener('keydown', once, true); }; window.addEventListener('keydown', once, true); });
+            }
+            el.appendChild(row);
+          }
+        }
+        renderDevice(desktopEl, 'desktop'); renderDevice(controllerEl, 'controller');
+        if (shiftsEl) {
+          shiftsEl.innerHTML = '';
+          inputBindings.modeShifts.forEach((shift, idx) => {
+            const row = document.createElement('div'); row.className = 'mode-shift-row';
+            row.innerHTML = `<input class="settings-select" value="${shift.label || ''}"><select class="settings-select"><option value="desktop">Desktop</option><option value="controller">Controller</option></select><input class="settings-select" value="${shift.button || ''}"><button type="button" class="settings-small-btn">Remove</button>`;
+            row.children[1].value = shift.device || 'desktop';
+            row.children[0].addEventListener('change', e => { shift.label = e.target.value; saveInputBindings(); });
+            row.children[1].addEventListener('change', e => { shift.device = e.target.value; saveInputBindings(); });
+            row.children[2].addEventListener('change', e => { shift.button = e.target.value; saveInputBindings(); });
+            row.children[3].addEventListener('click', () => { inputBindings.modeShifts.splice(idx, 1); saveInputBindings(); renderInputSettings(); });
+            shiftsEl.appendChild(row);
+            const bindings = document.createElement('div'); bindings.className = 'input-bindings-grid';
+            Object.entries(shift.bindings || {}).forEach(([button, actionId]) => {
+              const bRow = document.createElement('div'); bRow.className = 'mode-shift-row';
+              bRow.innerHTML = `<span class="settings-name">${buttonLabel(button)}</span><select class="settings-select"></select><span class="input-binding-warning"></span><button type="button" class="settings-small-btn">Remove</button>`;
+              const select = bRow.children[1];
+              INPUT_DEFAULTS.actions.forEach(action => select.add(new Option(action.label, action.id)));
+              select.value = actionId;
+              select.addEventListener('change', e => { shift.bindings[button] = e.target.value; saveInputBindings(); renderInputSettings(); });
+              bRow.children[3].addEventListener('click', () => { delete shift.bindings[button]; saveInputBindings(); renderInputSettings(); });
+              bindings.appendChild(bRow);
+            });
+            const add = document.createElement('button'); add.type = 'button'; add.className = 'settings-small-btn'; add.textContent = 'Add Shifted Binding';
+            add.addEventListener('click', () => {
+              add.classList.add('is-listening'); add.textContent = 'Press shifted input…';
+              const once = ev => {
+                ev.preventDefault();
+                const manual = window.prompt?.('Input code (examples: RightStickLeft, RightTrigger, Button0)') || '';
+                const button = manual.trim() || ev.code;
+                const actionId = INPUT_DEFAULTS.actions[0]?.id || 'interact';
+                const conflict = bindingConflict(shift.device || 'desktop', button, actionId, shift);
+                if (!conflict) { shift.bindings = shift.bindings || {}; shift.bindings[button] = actionId; saveInputBindings(); }
+                window.removeEventListener('keydown', once, true); renderInputSettings();
+              };
+              window.addEventListener('keydown', once, true);
+            });
+            bindings.appendChild(add);
+            shiftsEl.appendChild(bindings);
+          });
+        }
+      }
+      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, label: 'Custom Shift', device: 'controller', button: 'Button4', bindings: {} }); saveInputBindings(); renderInputSettings(); });
+      renderInputSettings();
+
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
         if (fishingMinigame?.active) {
@@ -14147,31 +14939,36 @@
         }
         if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
         if (menuOpen) return;
+        const boundDesktopAction = getActionForButton('desktop', event.code);
+        if (boundDesktopAction && !['KeyE', 'KeyQ'].includes(event.code)) {
+          event.preventDefault();
+          if (!event.repeat) runInputAction(boundDesktopAction, 'press');
+          return;
+        }
         if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd'].includes(key)) {
           event.preventDefault(); input.keys.add(key);
         }
 
-        // Primary action: Space, Enter, or E
+        if (key === 'e') {
+          event.preventDefault();
+          if (isDesktop) { startDesktopHoldKey('e', event); return; }
+        }
+        if (key === 'q') {
+          event.preventDefault();
+          if (isDesktop) { startDesktopHoldKey('q', event); return; }
+          const actions = toolActions[activeTool];
+          const idx = actions.indexOf(activeAction);
+          activeAction = actions[(idx + 1) % actions.length];
+          refreshActionBar();
+          return;
+        }
+
+        // Primary action: Space, Enter, or E (E only taps on desktop; hold opens tool selection)
         if (key === ' ' || key === 'enter' || key === 'e') {
           event.preventDefault();
           if (!event.repeat) {
             actionHeldDown = true;
             useActiveAction();
-          }
-          return;
-        }
-
-        // Secondary action: Q fires second button on desktop, cycles tool action on touch
-        if (key === 'q') {
-          if (isDesktop) {
-            const btns = computeActionButtons();
-            const second = btns.find((b, i) => i > 0 && b.allowed);
-            if (second) { activeAction = second.action; useActiveAction(); }
-          } else {
-            const actions = toolActions[activeTool];
-            const idx = actions.indexOf(activeAction);
-            activeAction = actions[(idx + 1) % actions.length];
-            refreshActionBar();
           }
           return;
         }
@@ -14184,13 +14981,13 @@
         if (key === '6') setActiveTool('harpoon');
 
         // Item scroll: , / . or Tab/Shift+Tab
-        if (key === ',' || key === 'shift') {
+        if (key === ',') {
           cycleActiveInventoryItem(-1);
           refreshItemScroll(); refreshActionBar();
         }
         if (key === '.' || key === 'tab') {
           event.preventDefault();
-          cycleActiveInventoryItem(1);
+          cycleActiveInventoryItem(event.shiftKey ? -1 : 1);
           refreshItemScroll(); refreshActionBar();
         }
 
@@ -14214,23 +15011,55 @@
       window.addEventListener('keyup', (event) => {
         const key = event.key.toLowerCase();
         input.keys.delete(key);
+        if (key === 'e' && isDesktop) {
+          event.preventDefault();
+          const wasHeld = finishDesktopHoldKey('e');
+          if (!wasHeld) { actionHeldDown = true; useActiveAction(); actionHeldDown = false; }
+          return;
+        }
+        if (key === 'q' && isDesktop) {
+          event.preventDefault();
+          const wasHeld = finishDesktopHoldKey('q');
+          if (!wasHeld) {
+            const btns = computeActionButtons();
+            const second = btns.find((b, i) => i > 0 && b.allowed);
+            if (second) { activeAction = second.action; useActiveAction(); }
+          }
+          return;
+        }
         if (key === ' ' || key === 'enter' || key === 'e') actionHeldDown = false;
       });
 
-      // Scroll wheel: zooms the active conversation camera; otherwise cycles tools forward/backward.
-      threeContainer.addEventListener('wheel', (e) => {
-        if (menuOpen || farmEditMode) return;
+      // Scroll wheel: Q+wheel swaps items, E+wheel swaps tools, otherwise zooms the camera.
+      function handleGameWheel(e, heldOnly = false) {
+        if (menuOpen || farmEditMode) return false;
+        const dir = e.deltaY > 0 ? 1 : -1;
+        if (isDesktop && desktopHoldKeys.q.down) {
+          e.preventDefault();
+          openDesktopHoldArc('q');
+          window._desktopSelectionArc?.scrollItem(-dir);
+          return true;
+        }
+        if (isDesktop && desktopHoldKeys.e.down) {
+          e.preventDefault();
+          openDesktopHoldArc('e');
+          window._desktopSelectionArc?.scrollTool(-dir);
+          return true;
+        }
+        if (heldOnly) return false;
         e.preventDefault();
         if (dialogueZoomActive()) {
           const sensitivity = dialogueZoomConfig().wheelSensitivity ?? 0.0015;
           setDialogueCameraZoomPercent(dialogueCameraZoomPercent + (-e.deltaY * sensitivity * 100));
-          return;
+          return true;
         }
-        const tools = ['shovel', 'hoe', 'weapon', 'axe', 'pick', 'harpoon'];
-        const idx = tools.indexOf(activeTool);
-        const next = (idx + (e.deltaY > 0 ? 1 : -1) + tools.length) % tools.length;
-        setActiveTool(tools[next]);
-      }, { passive: false });
+        const cfg = desktopControlsConfig();
+        const step = Number.isFinite(Number(cfg.wheelZoomStep)) ? Number(cfg.wheelZoomStep) : 0.05;
+        setCameraZoomScale(s_zoomScale + (-dir * step));
+        return true;
+      }
+      window.addEventListener('wheel', (e) => { if (handleGameWheel(e, true)) e.stopPropagation(); }, { passive: false, capture: true });
+      threeContainer.addEventListener('wheel', (e) => { handleGameWheel(e, false); }, { passive: false });
 
       function updateDialoguePinchDistance() {
         const points = [...dialogueZoomPointers.values()];
@@ -14263,11 +15092,48 @@
       window.addEventListener('pointerup', clearDialogueZoomPointer);
       window.addEventListener('pointercancel', clearDialogueZoomPointer);
 
+      // ── Camera drag-to-look: single-finger drag on mobile, Shift+mouse movement on desktop.
+      // Nudges the look angle on top of the active mode's base framing, clamped to the configured range.
+      let cameraDragPointerId = null;
+      let cameraDragStartX = 0, cameraDragStartY = 0;
+      let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
+      function cameraDragAllowed() {
+        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active;
+      }
+      function cameraDragRequested(e) {
+        return e.pointerType === 'touch';
+      }
+      threeContainer.addEventListener('pointerdown', (e) => {
+        if (!cameraDragRequested(e) || !cameraDragAllowed()) return;
+        cameraDragPointerId = e.pointerId;
+        cameraDragStartX = e.clientX;
+        cameraDragStartY = e.clientY;
+        cameraDragStartAzimuthOffset = cameraAzimuthOffsetDeg;
+        cameraDragStartAngleOffset = cameraAngleOffsetDeg;
+        threeContainer.setPointerCapture?.(e.pointerId);
+      });
+      threeContainer.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
+        const dx = e.clientX - cameraDragStartX;
+        const dy = e.clientY - cameraDragStartY;
+        const cfg = desktopControlsConfig();
+        const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
+        const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
+        cameraAzimuthOffsetDeg = clamp(cameraDragStartAzimuthOffset + dx * degPerPx, -clampDeg, clampDeg);
+        cameraAngleOffsetDeg   = clamp(cameraDragStartAngleOffset   - dy * degPerPx, -clampDeg, clampDeg);
+        updateCameraPosition();
+      });
+      function clearCameraDragPointer(e) {
+        if (e.pointerId === cameraDragPointerId) cameraDragPointerId = null;
+      }
+      window.addEventListener('pointerup', clearCameraDragPointer);
+      window.addEventListener('pointercancel', clearCameraDragPointer);
+
       // Left click = primary action, right click = secondary action (desktop play)
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
-          if (menuOpen || farmEditMode) return;
+          if (menuOpen || farmEditMode || e.shiftKey) return;
           if (e.button === 0) {
             actionHeldDown = true;
             useActiveAction();
@@ -14283,6 +15149,17 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          if (e.shiftKey && cameraDragAllowed()) {
+            const cfg = desktopControlsConfig();
+            const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
+            const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
+            cameraAzimuthOffsetDeg = clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
+            updateCameraPosition();
+            return;
+          }
+
+          if (cameraDragPointerId !== null || e.shiftKey) return; // Shift+mouse movement is rotating the camera, not aiming
           const rect = threeContainer.getBoundingClientRect();
           _mouseNDC.x =  ((e.clientX - rect.left)  / rect.width)  * 2 - 1;
           _mouseNDC.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;
@@ -14293,6 +15170,7 @@
             if (Math.hypot(dx, dz) > 0.3) {
               // atan2 in Three.js XZ: angle from +X axis, but game uses -Z=north
               mouseLookAngle = Math.atan2(dz, dx);
+              targetAimAngle = mouseLookAngle;
               mouseLookActive = true;
               lastMouseMoveTime = performance.now();
             }
@@ -14342,6 +15220,7 @@
         buildTransitionMarkers();
       }
       // Load town layout from workspace config (authoritative source)
+      loadAudioCueIndexes().then(() => resetAmbientCueTimer()).catch(() => resetAmbientCueTimer());
       _loadTownFromWorkspace().catch(() => {});
       debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
 

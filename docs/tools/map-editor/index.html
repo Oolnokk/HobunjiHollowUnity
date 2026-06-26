@@ -174,6 +174,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
             <div><label>Rows</label><input id="mapRows" type="number" min="2" max="400"></div>
             <div style="display:flex;align-items:flex-end"><button class="sec" id="applyMapBtn" style="width:100%">Apply</button></div>
           </div>
+          <div style="margin-top:6px"><label>Audio cue index</label><select id="mapAudioIndex"><option value="">— none —</option></select></div>
           <div class="row" style="margin-top:6px">
             <button class="sec" id="floorTemplateBtn" title="Interior only">Farmhouse floor template</button>
           </div>
@@ -367,6 +368,7 @@ function dayOneType(c, r) {
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
 const WS_KEY = 'hobunji_map_editor_workspace_v1';
+let audioCueIndexEntries = [];
 
 function makeMap(name, category, cols, rows) {
   return {
@@ -388,6 +390,7 @@ function makeMap(name, category, cols, rows) {
     parentMapId: null,
     plateauGroupId: null,
     elevation: 0,
+    audioIndex: '',    // cues index id/file selected for this map
   };
 }
 
@@ -2718,6 +2721,7 @@ function fillSettings() {
   $('mapCols').value = m.cols; $('mapRows').value = m.rows;
   $('mapCols').disabled = $('mapRows').disabled = !!m.isSubmap;
   $('mapCols').title = $('mapRows').title = m.isSubmap ? "Plateau sub-maps are sized automatically from the painted footprint (inset 1 tile per side for the auto-incline ring) — paint more/less of the plateau on the parent map instead." : '';
+  $('mapAudioIndex').innerHTML = '<option value="">— none —</option>' + audioCueIndexEntries.map(e => `<option value="${e.id || e.file}" ${(m.audioIndex || '') === (e.id || e.file) ? 'selected' : ''}>${e.name || e.id || e.file}</option>`).join('');
   $('catTag').textContent = m.category;
   const group = m.isSubmap ? plateauGroupById(m.plateauGroupId) : null;
   $('activeMapPill').textContent = `${m.name} (${m.cols}×${m.rows})${m.isSubmap ? ` · tier ${m.elevation}${group ? ` · #${group.number}` : ''}` : ''}`;
@@ -2952,7 +2956,7 @@ function updateAll() { syncViewOffset(); renderMapList(); fillSettings(); render
 // ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
 function buildFarmLayoutV3() {
   const ext = mapById(ws.gameLink.exteriorId);
-  const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], routes: [], npcPaths: [], transitions: [], npcStations: [] };
+  const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], routes: [], npcPaths: [], transitions: [], npcStations: [], mapAudio: [] };
   const areaOf = id => id === ws.gameLink.interiorId ? 'interior' : id === ws.gameLink.exteriorId ? 'farm' : id === ws.gameLink.townId ? 'town' : '';
   const pushTravel = (m, area) => {
     (m.routes || []).forEach(p => {
@@ -2964,6 +2968,7 @@ function buildFarmLayoutV3() {
       layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area, nodes: p.nodes.map(n => [n[0], n[1]]) });
     });
     (m.npcStations || []).forEach(st => layout.npcStations.push({ ...st, area }));
+    if (m.audioIndex) layout.mapAudio.push({ mapId: m.id, area, audioIndex: m.audioIndex });
     (m.transitions || []).forEach(t => {
       const target = areaOf(t.targetMapId);
       const spot = mapById(t.targetMapId)?.transitions.find(s => s.id === t.targetSpotId) || null;
@@ -3004,7 +3009,7 @@ function buildTownLayout() {
   const townM = mapById(ws.gameLink.townId);
   if (!townM) return null;
   const layout = { version: 1, cols: townM.cols, rows: townM.rows, tiles: [], routes: [], npcPaths: [], transitions: [], npcStations: [],
-                   buildings: townM.buildings || [] };
+                   buildings: townM.buildings || [], mapAudio: [] };
   // Tiles
   for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
     const t = townM.tiles[`${c},${r}`];
@@ -3021,6 +3026,7 @@ function buildTownLayout() {
     layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
   });
   (townM.npcStations || []).forEach(st => layout.npcStations.push({ ...st, area: 'town' }));
+  if (townM.audioIndex) layout.mapAudio.push({ mapId: townM.id, area: 'town', audioIndex: townM.audioIndex });
   // Transitions — resolve farm side: target 'farm', targetCol/Row from the farm-side spot
   const farmM = mapById(ws.gameLink.exteriorId);
   (townM.transitions || []).forEach(t => {
@@ -3065,15 +3071,19 @@ function loadFromGame() {
   Object.keys(layout.objects || {}).forEach(k => { ext.objects[k] = [...layout.objects[k]]; });
   (layout.furniture || []).forEach(f => ext.furniture.push({ key: f.key, col: f.col, row: f.row }));
   let intM = mapById(ws.gameLink.interiorId);
+  const layoutMapAudio = Array.isArray(layout.mapAudio) ? layout.mapAudio : [];
   const needInterior = (layout.decor || []).some(d => d.area === 'interior')
     || (layout.routes || []).some(p => p.area === 'interior')
     || (layout.npcPaths || []).some(p => p.area === 'interior')
     || (layout.npcStations || []).some(st => st.area === 'interior')
-    || (layout.transitions || []).some(t => t.area === 'interior');
+    || (layout.transitions || []).some(t => t.area === 'interior')
+    || layoutMapAudio.some(a => a.area === 'interior');
   if (!intM && needInterior) {
     intM = makeMap('Farmhouse', 'interior', GAME.interior.cols, GAME.interior.rows);
     applyFarmhouseFloor(intM); ws.maps.push(intM); ws.gameLink.interiorId = intM.id;
   }
+  ext.audioIndex = layoutMapAudio.find(a => (a.area || 'farm') === 'farm')?.audioIndex || '';
+  if (intM) intM.audioIndex = layoutMapAudio.find(a => a.area === 'interior')?.audioIndex || '';
   (layout.decor || []).forEach(d => {
     if (d.area === 'interior') intM.decor.push({ key: d.key, col: d.col, row: d.row });
     else ext.decor.push({ key: d.key, col: d.col, row: d.row });
@@ -3149,6 +3159,7 @@ function importAny(obj) {
     m.transitions = Array.isArray(obj.transitions) ? obj.transitions : [];
     m.buildings = Array.isArray(obj.buildings) ? obj.buildings : [];
     m.npcStations = Array.isArray(obj.npcStations) ? obj.npcStations : [];
+    m.audioIndex = obj.audioIndex || '';
     ws.maps.push(m); ws.activeId = m.id;
     captureBaseline(m);
     updateAll(); fitView(); setStatus('Imported map: ' + m.name);
@@ -3173,6 +3184,7 @@ function importAny(obj) {
       m.transitions = Array.isArray(src.transitions) ? src.transitions : [];
       m.buildings = Array.isArray(src.buildings) ? src.buildings : [];
       m.npcStations = Array.isArray(src.npcStations) ? src.npcStations : [];
+      m.audioIndex = src.audioIndex || '';
       if (src.buildingInteriorBase) m.buildingInteriorBase = src.buildingInteriorBase;
       m.isSubmap = !!src.isSubmap;
       m.parentMapId = src.parentMapId || null;
@@ -3291,6 +3303,7 @@ $('applyMapBtn').addEventListener('click', () => {
   const m = activeMap();
   pushUndo();
   m.name = $('mapName').value.trim() || m.name;
+  m.audioIndex = $('mapAudioIndex').value || '';
   const newCat = $('mapCategory').value;
   if (newCat !== m.category) {
     m.category = newCat;
@@ -3463,6 +3476,16 @@ window.addEventListener('error', e => setStatus('Error: ' + e.message));
 
 $('farmDimsNote').textContent = `${GAME.farm.cols}×${GAME.farm.rows}`;
 
+async function loadAudioCueIndexes() {
+  try {
+    const res = await fetch('../../assets/audio/music/cues/index.json');
+    if (!res.ok) return;
+    const idx = await res.json();
+    audioCueIndexEntries = Array.isArray(idx.indexes) ? idx.indexes : [];
+    fillSettings();
+  } catch(e) { setStatus('Could not load audio cue index list: ' + e.message); }
+}
+
 // ── Building interior map mirror ──────────────────────────────────────────────
 async function loadBuildingInteriorMaps() {
   let index;
@@ -3491,6 +3514,7 @@ async function loadBuildingInteriorMaps() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 resizeCanvas(); updateAll(); fitView();
+loadAudioCueIndexes();
 loadBuildingInteriorMaps();
 })();
 </script>

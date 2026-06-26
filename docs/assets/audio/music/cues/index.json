@@ -1,0 +1,15 @@
+{
+  "schema": "hobunji_audio_cue_indexes.v1",
+  "indexes": [
+    {
+      "id": "northern_cliffs",
+      "name": "Northern Cliffs",
+      "file": "assets/audio/music/cues/northern_cliffs/index.json"
+    },
+    {
+      "id": "general",
+      "name": "General",
+      "file": "assets/audio/music/cues/general/index.json"
+    }
+  ]
+}

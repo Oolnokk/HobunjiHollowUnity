@@ -19,7 +19,7 @@ window.SCRATCHBONES_CONFIG = {
       "trace": {
         "gameplayFlow": true,
         "layerPromotion": false,
-        "audio": false,
+        "audio": true,
         "candlelight": false,
         "actions": true
       }
@@ -117,6 +117,70 @@ window.SCRATCHBONES_CONFIG = {
           "followLerp": 0.15,
           "targetYOffsetTiles": 0.35
         }
+      }
+    },
+    "desktopControls": {
+      "tapWindowMs": 350,
+      "cameraRotateDegPerPx": 0.15,
+      "cameraRotateClampDeg": 45,
+      "wheelZoomStep": 0.05,
+      "wheelZoomMin": 0.75,
+      "wheelZoomMax": 2.5
+    },
+    "input": {
+      "storageKey": "scratchbones.inputBindings.v1",
+      "gamepadDeadzone": 0.24,
+      "axisPressThreshold": 0.55,
+      "targeting": {
+        "orbitRadiusTiles": 0.62,
+        "inputAimDeadzone": 0.08
+      },
+      "actions": [
+        { "id": "interact", "label": "Interact", "desktop": "KeyE", "controller": "Button0" },
+        { "id": "dodge", "label": "Dodge", "desktop": "KeyX", "controller": "Button1" },
+        { "id": "action1", "label": "Tool/Item Action 1", "desktop": "Space", "controller": "RightTrigger" },
+        { "id": "action2", "label": "Tool/Item Action 2", "desktop": "KeyQ", "controller": "LeftTrigger" },
+        { "id": "action3", "label": "Tool/Item Action 3", "desktop": "KeyR", "controller": "Button2" },
+        { "id": "action4", "label": "Tool/Item Action 4", "desktop": "Enter", "controller": "Button3" },
+        { "id": "action5", "label": "Tool/Item Action 5", "desktop": "Digit7", "controller": "Button12" },
+        { "id": "action6", "label": "Tool/Item Action 6", "desktop": "Digit8", "controller": "Button13" },
+        { "id": "action7", "label": "Tool/Item Action 7", "desktop": "Digit9", "controller": "Button14" },
+        { "id": "action8", "label": "Tool/Item Action 8", "desktop": "Digit0", "controller": "Button15" },
+        { "id": "itemPrev", "label": "Previous Item", "desktop": "Comma", "controller": null },
+        { "id": "itemNext", "label": "Next Item", "desktop": "Period", "controller": null },
+        { "id": "toolPrev", "label": "Previous Tool", "desktop": "BracketLeft", "controller": null },
+        { "id": "toolNext", "label": "Next Tool", "desktop": "BracketRight", "controller": null },
+        { "id": "tool1", "label": "Tool 1: Shovel", "desktop": "Digit1", "controller": null },
+        { "id": "tool2", "label": "Tool 2: Hoe", "desktop": "Digit2", "controller": null },
+        { "id": "tool3", "label": "Tool 3: Weapon", "desktop": "Digit3", "controller": null },
+        { "id": "tool4", "label": "Tool 4: Axe", "desktop": "Digit4", "controller": null },
+        { "id": "tool5", "label": "Tool 5: Pick", "desktop": "Digit5", "controller": null },
+        { "id": "tool6", "label": "Tool 6: Harpoon", "desktop": "Digit6", "controller": null }
+      ],
+      "modeShifts": [
+        { "id": "desktop-q", "label": "Desktop Held Q", "device": "desktop", "button": "KeyQ", "bindings": { "WheelUp": "itemPrev", "WheelDown": "itemNext" } },
+        { "id": "desktop-e", "label": "Desktop Held E", "device": "desktop", "button": "KeyE", "bindings": { "WheelUp": "toolPrev", "WheelDown": "toolNext" } },
+        { "id": "controller-left-bumper", "label": "Controller Held LB", "device": "controller", "button": "Button4", "bindings": { "RightStickLeft": "toolPrev", "RightStickRight": "toolNext", "RightStickUp": "itemPrev", "RightStickDown": "itemNext" } }
+      ]
+    },
+    "combat": {
+      "autoTargetRangeTiles": 5.5,
+      "weaponAbilities": {
+        "cut": { "damage": 14, "halfConeDeg": 18, "rangeTiles": 1.05, "staminaCost": 12, "knockbackPxS": 360, "trailHalfWidthTiles": 0.38, "trailFarTiles": 1.05, "trailMaxAgeSeconds": 0.24 },
+        "slash": { "damage": 24, "halfConeDeg": 62, "rangeTiles": 1.35, "staminaCost": 20, "knockbackPxS": 520, "trailHalfWidthTiles": 1.35, "trailFarTiles": 1.02, "trailMaxAgeSeconds": 0.34 }
+      },
+      "weaponTrailLimit": 5,
+      "combatConeReticle": {
+        "enabled": true,
+        "color": "#ffffff",
+        "alpha": 0.11,
+        "lineWidth": 2,
+        "lineDash": [8, 7]
+      },
+      "cuttableTargetGlow": {
+        "enabled": true,
+        "color": "#ff2a1f",
+        "alpha": 0.42
       }
     },
     "gameplayShortcuts": {
@@ -3118,6 +3182,36 @@ window.SCRATCHBONES_CONFIG = {
         "sfxVolume": 0.92,
         "bgmVolume": 0.48,
         "musicFadeMs": 280,
+        "ambientCueMinDelaySec": 300,
+        "ambientCueMaxDelaySec": 600,
+        "areaBgm": {
+          "farm": [
+            { "url": "assets/audio/music/bgm/bgm_farm1.m4a" },
+            { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 },
+            { "url": "assets/audio/music/bgm/bgm_follow_the_signs.ogg", "nightOnly": true }
+          ],
+          "town": [
+            { "url": "assets/audio/music/bgm/bgm_farm1.m4a" },
+            { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 },
+            { "url": "assets/audio/music/bgm/bgm_follow_the_signs.ogg", "nightOnly": true }
+          ],
+          "map_northern_cliffs": [
+            { "url": "assets/audio/music/bgm/bgm_what_the_winds_carry.mp3" }
+          ]
+        },
+        "bgs": {
+          "birds": "assets/audio/sfx/bgs/bgs_birds1.mp3",
+          "birdsVolume": 0.24,
+          "nightbugs": "assets/audio/sfx/bgs/bgs_nightbugs1.wav",
+          "nightbugsVolume": 0.22,
+          "wind1": "assets/audio/sfx/bgs/bgs_wind1.mp3",
+          "wind1Volume": 0.24,
+          "wind2": "assets/audio/sfx/bgs/bgs_wind2.mp3",
+          "wind2Volume": 0.18
+        },
+        "furnitureSfx": {
+          "fireplace": { "url": "assets/audio/sfx/bgs/bgs_fire1.wav", "rangeTiles": 6, "volume": 0.65 }
+        },
         "movement": {
           "handToTable": { "url": "./docs/assets/audio/sfx/tablesounds/boneclack1.m4a", "pitch": 1.0, "tempo": 1.0, "volume": 0.95 },
           "tableToClaim": { "url": "./docs/assets/audio/sfx/tablesounds/boneclack1.m4a", "pitch": 1.08, "tempo": 1.0, "volume": 0.9 },

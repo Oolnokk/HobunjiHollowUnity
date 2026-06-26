@@ -1,0 +1,77 @@
+{
+  "schema": "hobunji_audio_cue_index.v1",
+  "id": "northern_cliffs",
+  "name": "Northern Cliffs",
+  "ambient_cues": [
+    {
+      "id": "mas1",
+      "file": "mas1.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas2",
+      "file": "mas2.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas3",
+      "file": "mas3.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas4",
+      "file": "mas4.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas5",
+      "file": "mas5.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas6",
+      "file": "mas6.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas7",
+      "file": "mas7.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas8",
+      "file": "mas8.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas9",
+      "file": "mas9.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas10",
+      "file": "mas10.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas11",
+      "file": "mas11.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas12",
+      "file": "mas12.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas13",
+      "file": "mas13.ogg",
+      "volume": 0.7
+    },
+    {
+      "id": "mas14",
+      "file": "mas14.ogg",
+      "volume": 0.7
+    }
+  ]
+}
