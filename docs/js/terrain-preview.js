@@ -20,11 +20,12 @@
 
   const PLATEAU_UNIT = 2.5;
   const NORMAL_TOP = 0.0;
+  const RIVER_TOP = -0.55; // mirrors docs/game.js RIVER_TOP/STREAM_TOP — river/stream/waterfall bed depth
   const TileType = Object.freeze({
     GRASS: 'grass', WEEDS: 'weeds', TILLED: 'tilled',
     TRENCH: 'trench', RAISED: 'raised', PADDY: 'paddy',
     ROCK: 'rock', SHRUB: 'shrub', PATH: 'path',
-    RIVER: 'river', STREAM: 'stream', RAMP: 'ramp',
+    RIVER: 'river', STREAM: 'stream', RAMP: 'ramp', WATERFALL: 'waterfall',
   });
 
   // ── Merge: fold a plateau stack's tiers into one world-keyed tile map ──────
@@ -403,6 +404,46 @@
     return { pos, idx, skinPos, skinIdx };
   }
 
+  // ── Waterwalls: vertical water curtains where a river crosses a plateau edge ─
+  // A WATERFALL cell sits on a plateau sub-map right at its own outer edge (see
+  // game.js/index.html's mirrorRiverAcrossPlateau) — its merged-grid neighbor one
+  // step further out is the footprint's 1-tile cliff-face ring, which mergeZoneTiles
+  // always stakes flat at `type: 'grass'` (it's covered by the mesa wall mesh, not
+  // a real floor tile) at the LOWER tier the cliff drops to. So unlike ramp
+  // curtains, a waterfall's far side is never itself water-typed — the elevTier
+  // step alone marks the boundary the water has to climb. Builds one vertical
+  // quad per such edge, from this cell's own bed down to ground level at the
+  // neighbor's (lower, usually) tier.
+  function buildWaterfallWallGeometry(zGrid, cols, rows) {
+    const cells = [];
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols; c++)
+        if (zGrid[r]?.[c]?.type === TileType.WATERFALL) cells.push([c, r]);
+    if (!cells.length) return { pos: [], idx: [] };
+
+    const pos = [], idx = [];
+    let vi = 0;
+    for (const [c, r] of cells) {
+      const t = zGrid[r][c];
+      const selfY = RIVER_TOP + (t.elevTier || 0) * PLATEAU_UNIT;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nt = zGrid[r + dr]?.[c + dc];
+        if (!nt || (nt.elevTier || 0) === (t.elevTier || 0)) continue;
+        const neighborIsWater = nt.type === TileType.RIVER || nt.type === TileType.STREAM || nt.type === TileType.WATERFALL;
+        const neighborY = (neighborIsWater ? RIVER_TOP : NORMAL_TOP) + (nt.elevTier || 0) * PLATEAU_UNIT;
+        const top = Math.max(selfY, neighborY), bottom = Math.min(selfY, neighborY);
+        let x0, z0, x1, z1;
+        if (dc === 1) { x0 = c + 1; z0 = r; x1 = c + 1; z1 = r + 1; }
+        else if (dc === -1) { x0 = c; z0 = r + 1; x1 = c; z1 = r; }
+        else if (dr === 1) { x0 = c; z0 = r + 1; x1 = c + 1; z1 = r + 1; }
+        else /* dr === -1 */ { x0 = c + 1; z0 = r; x1 = c; z1 = r; }
+        pos.push(x0, top, z0, x1, top, z1, x0, bottom, z0, x1, bottom, z1);
+        idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
+      }
+    }
+    return { pos, idx };
+  }
+
   // ── Watertightness checks ───────────────────────────────────────────────────
   // None of this exists in docs/game.js — it's new tooling, not a mirror of
   // anything. Walks a workspace's plateau authoring data (independent of any
@@ -530,6 +571,6 @@
     PLATEAU_UNIT, NORMAL_TOP, TileType,
     buildMergedZoneGrid, buildZGrid, applyRampCurtainFlags,
     buildPlateauMesaGeometry, buildRampMeshGeometry, buildRampCurtainGeometry,
-    validateTerrain,
+    buildWaterfallWallGeometry, validateTerrain,
   };
 });

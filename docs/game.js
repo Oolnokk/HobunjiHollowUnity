@@ -697,7 +697,7 @@
         GRASS: 'grass', WEEDS: 'weeds', TILLED: 'tilled',
         TRENCH: 'trench', RAISED: 'raised', PADDY: 'paddy',
         ROCK: 'rock', SHRUB: 'shrub', PATH: 'path',
-        RIVER: 'river', STREAM: 'stream', RAMP: 'ramp'
+        RIVER: 'river', STREAM: 'stream', RAMP: 'ramp', WATERFALL: 'waterfall'
       });
 
       const CropType = Object.freeze({
@@ -2603,17 +2603,25 @@
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       const _zoneScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions }
-      // mapId → { cols, rows, tiles: [{c,r,type}], transitions, buildings } — real
-      // authored map data resolved from town-workspace-v1.json by
-      // _loadTownFromWorkspace(), used in place of EXTERIOR_ZONES' tiny flat
-      // placeholder grid whenever it's available. `buildings` entries already
-      // carry world-space gridX/gridZ (folded through the same plateau-stack
-      // offset every tile goes through) and a resolved elevTier looked up at
-      // that anchor cell — see mergeZoneTiles.
+      // mapId → { cols, rows, tiles: [{c,r,type}], transitions, buildings, decor,
+      // furniture } — real authored map data resolved from town-workspace-v1.json
+      // by _loadTownFromWorkspace(), used in place of EXTERIOR_ZONES' tiny flat
+      // placeholder grid whenever it's available. `buildings`/`decor`/`furniture`
+      // entries already carry world-space col/row (folded through the same
+      // plateau-stack offset every tile goes through) and a resolved elevTier
+      // looked up at that anchor cell — see mergeZoneTiles.
       const _zoneLayouts = new Map();
       // mapId → [{ group, bldg, piece, wbOpts, wbGableOpts }] — mirrors
       // _townBuildingGroups but per zone map; see _spawnZoneBuildings.
       const _zoneBuildingGroups = new Map();
+      // mapId → [THREE.Object3D, ...] (meshes + point lights) — decor/processing
+      // furniture props spawned for a zone map; see _spawnZoneDecorFurniture.
+      const _zoneDecorFurnitureGroups = new Map();
+      // mapId → [THREE.Mesh, ...] (animated waterfall curtain meshes) — see
+      // buildWaterfallCurtainMeshes/updateZoneWaterMeshes. Mirrors
+      // _townRiverWaterMeshes but per zone map, since a zone's water tiles never
+      // share the town's flat single-tier grid.
+      const _zoneWaterMeshes = new Map();
       // Surface Y for a tile actually standing inside an exterior zone. Plateau
       // sub-maps are purely an authoring convenience in the Map Editor — in-game
       // every tier of a plateau stack is merged into its root zone's single grid,
@@ -3067,9 +3075,9 @@
             continue;
           }
           if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED ||
-              tile.type === TileType.RIVER || tile.type === TileType.STREAM) {
+              tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) {
             const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid);
-            const bedMatKey = (tile.type === TileType.RIVER || tile.type === TileType.STREAM) ? tile.type : TileType.TRENCH;
+            const bedMatKey = (tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) ? tile.type : TileType.TRENCH;
             _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP + tierY, cz);
             _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
             continue;
@@ -3116,6 +3124,7 @@
 
         buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
+        _zoneWaterMeshes.set(mapId, buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId));
 
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
         buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId);
@@ -3142,6 +3151,7 @@
         const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions };
         _zoneScenes.set(mapId, info);
         _spawnZoneBuildings(mapId);
+        _spawnZoneDecorFurniture(mapId);
         return info;
       }
 
@@ -3488,6 +3498,76 @@
         }
 
         console.log(`%c[zone:${mapId}] ramp curtain skirt built: ${cells.length} tile(s)`, 'color:#22c55e;font-weight:bold');
+      }
+
+      // Waterwall curtains: an animated vertical water sheet wherever a river
+      // crosses a plateau edge (TileType.WATERFALL, stamped by the Map Editor's
+      // mirrorRiverAcrossPlateau — see docs/js/terrain-preview.js's
+      // buildWaterfallWallGeometry, which this mirrors). A waterfall cell's
+      // merged-grid neighbor one step toward the footprint edge is always the
+      // cliff-face ring — mergeZoneTiles always stakes that flat at `type:
+      // 'grass'` on the lower tier (it's covered by the mesa mesh, not a real
+      // floor tile) — so the elevTier step alone marks where the water needs to
+      // climb, the same way buildRampCurtainMeshes uses an elevTier step to find
+      // a ramp's sides. Returns the spawned mesh(es) for _zoneWaterMeshes.
+      function buildWaterfallCurtainMeshes(zScene, zGrid, zcols, zrows, mapId) {
+        const cells = [];
+        for (let r = 0; r < zrows; r++)
+          for (let c = 0; c < zcols; c++)
+            if (zGrid[r]?.[c]?.type === TileType.WATERFALL) cells.push([c, r]);
+        if (!cells.length) return [];
+
+        const pos = [], uv = [], idx = [];
+        let vi = 0;
+        for (const [c, r] of cells) {
+          const t = zGrid[r][c];
+          const selfY = RIVER_TOP + (t.elevTier || 0) * PLATEAU_UNIT;
+          for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+            const nt = zGrid[r + dr]?.[c + dc];
+            if (!nt || (nt.elevTier || 0) === (t.elevTier || 0)) continue;
+            const neighborIsWater = nt.type === TileType.RIVER || nt.type === TileType.STREAM || nt.type === TileType.WATERFALL;
+            const neighborY = (neighborIsWater ? RIVER_TOP : NORMAL_TOP) + (nt.elevTier || 0) * PLATEAU_UNIT;
+            const top = Math.max(selfY, neighborY), bottom = Math.min(selfY, neighborY);
+            if (top - bottom < 0.01) continue;
+            let x0, z0, x1, z1;
+            if (dc === 1)       { x0 = c+1; z0 = r;   x1 = c+1; z1 = r+1; }
+            else if (dc === -1) { x0 = c;   z0 = r+1; x1 = c;   z1 = r;   }
+            else if (dr === 1)  { x0 = c;   z0 = r+1; x1 = c+1; z1 = r+1; }
+            else /* dr === -1 */{ x0 = c+1; z0 = r;   x1 = c;   z1 = r;   }
+            pos.push(x0, top, z0,  x1, top, z1,  x0, bottom, z0,  x1, bottom, z1);
+            uv.push(0,1, 1,1, 0,0, 1,0); // v=1 at top so uFlow=(0,1) scrolls downward
+            idx.push(vi, vi+2, vi+3, vi, vi+3, vi+1); vi += 4;
+          }
+        }
+        if (!pos.length) return [];
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        geo.computeVertexNormals();
+
+        const mat = new THREE.ShaderMaterial({
+          uniforms: {
+            uTime:  { value: 0 },
+            uPhase: { value: 0 },
+            uDepth: { value: 0.85 },
+            uFlow:  { value: new THREE.Vector2(0, 1) }, // local UV-space "down" — always set, never still-mode
+            uColor: { value: new THREE.Color(0x1f6f9c) },
+          },
+          vertexShader:   waterVertShader,
+          fragmentShader: waterFragShader,
+          transparent:    true,
+          depthWrite:     false,
+          side:           THREE.DoubleSide,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.receiveShadow = false;
+        zScene.add(mesh);
+        _markTerrainEdgeId(mesh, 'water');
+
+        console.log(`%c[zone:${mapId}] waterfall wall built: ${cells.length} cell(s)`, 'color:#22c55e;font-weight:bold');
+        return [mesh];
       }
 
       // Grass billboard tufts for a zone — mirrors _buildTownGrassBillboards but
@@ -4688,11 +4768,14 @@
           // world coords) for the continuous heightfield buildZoneScene renders at
           // that tier transition. Also folds `m.buildings` (placed by the Map
           // Editor on this root zone or any of its plateau-tier sub-maps) into
-          // `outBuildings`, translating their authored local gridX/gridZ by the
-          // same offsetC/offsetR every tile here gets, so a building on a raised
+          // `outBuildings`/`outDecor`/`outFurniture`, translating their authored
+          // local col/row (gridX/gridZ for buildings) by the same offsetC/offsetR
+          // every tile here gets, so a building/decor/furniture piece on a raised
           // sub-map ends up at its correct world position — its final `elevTier`
-          // is resolved by the caller from `outTiles` once the whole stack is in.
-          function mergeZoneTiles(m, offsetC, offsetR, baseTier, outTiles, mesas, outBuildings) {
+          // is resolved by the caller from `outTiles` once the whole stack is in,
+          // so houses, decor, and processing furniture all sit on top of whatever
+          // plateau tier their anchor cell landed on instead of at ground level.
+          function mergeZoneTiles(m, offsetC, offsetR, baseTier, outTiles, mesas, outBuildings, outDecor, outFurniture) {
             const groupMask = new Map(); // plateauGroupId -> Set of parent-local "c,r" actually painted
             for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
               const plateauId = m.tiles?.[`${c},${r}`]?.plateau;
@@ -4814,9 +4897,15 @@
             for (const b of (m.buildings || [])) {
               outBuildings.push({ ...b, gridX: (b.gridX || 0) + offsetC, gridZ: (b.gridZ || 0) + offsetR, _baseTier: baseTier });
             }
+            for (const d of (m.decor || [])) {
+              outDecor.push({ ...d, col: (d.col || 0) + offsetC, row: (d.row || 0) + offsetR, _baseTier: baseTier });
+            }
+            for (const f of (m.furniture || [])) {
+              outFurniture.push({ ...f, col: (f.col || 0) + offsetC, row: (f.row || 0) + offsetR, _baseTier: baseTier });
+            }
 
             for (const { child, childOffsetC, childOffsetR, toTier } of children) {
-              mergeZoneTiles(child, childOffsetC, childOffsetR, toTier, outTiles, mesas, outBuildings);
+              mergeZoneTiles(child, childOffsetC, childOffsetR, toTier, outTiles, mesas, outBuildings, outDecor, outFurniture);
             }
           }
 
@@ -4832,13 +4921,23 @@
           for (const zoneMapId of allZoneMapIds) {
             const zm = resolvedMaps.find(m => m.id === zoneMapId);
             if (!zm) continue;
-            const outTiles = new Map(), mesas = [], outBuildings = [];
-            mergeZoneTiles(zm, 0, 0, 0, outTiles, mesas, outBuildings);
+            const outTiles = new Map(), mesas = [], outBuildings = [], outDecor = [], outFurniture = [];
+            mergeZoneTiles(zm, 0, 0, 0, outTiles, mesas, outBuildings, outDecor, outFurniture);
             const zTiles = [...outTiles.values()];
             for (const b of outBuildings) {
               const t = outTiles.get(`${b.gridX},${b.gridZ}`);
               b.elevTier = (t && typeof t.elevTier === 'number') ? t.elevTier : (b._baseTier || 0);
               delete b._baseTier;
+            }
+            for (const d of outDecor) {
+              const t = outTiles.get(`${d.col},${d.row}`);
+              d.elevTier = (t && typeof t.elevTier === 'number') ? t.elevTier : (d._baseTier || 0);
+              delete d._baseTier;
+            }
+            for (const f of outFurniture) {
+              const t = outTiles.get(`${f.col},${f.row}`);
+              f.elevTier = (t && typeof t.elevTier === 'number') ? t.elevTier : (f._baseTier || 0);
+              delete f._baseTier;
             }
             const zTransitions = [];
             let toTownExit = null;
@@ -4856,8 +4955,8 @@
                 zTransitions.push({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
               }
             });
-            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings });
-            console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture });
+            console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, decor=${outDecor.length}, furniture=${outFurniture.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
@@ -5638,6 +5737,45 @@
             }).catch(e => debugLog('Zone building GLB error: ' + e, 'warn'));
           }
         });
+      }
+
+      function _spawnZoneDecorFurniture(mapId) {
+        const zoneData = _zoneLayouts.get(mapId);
+        const decorDefs = zoneData?.decor || [];
+        const furnitureDefs = zoneData?.furniture || [];
+        if (!decorDefs.length && !furnitureDefs.length) return;
+        if (typeof window.ProceduralFurniture === 'undefined') {
+          debugLog('ProceduralFurniture not loaded — skipping zone decor/furniture', 'warn');
+          return;
+        }
+        if (_zoneDecorFurnitureGroups.has(mapId)) return; // already spawned for this zone scene
+        const scene = _zoneScenes.get(mapId)?.scene;
+        if (!scene) return;
+
+        const meshes = [];
+        _zoneDecorFurnitureGroups.set(mapId, meshes);
+
+        for (const d of decorDefs) {
+          const result = makeDecorativeFurnitureMesh(d.col, d.row, d.key, scene, mapId);
+          if (!result) continue;
+          const y = NORMAL_TOP + (d.elevTier || 0) * PLATEAU_UNIT;
+          result.mesh.position.y += y;
+          if (result.light) result.light.position.y += y;
+          meshes.push(result.mesh);
+        }
+        for (const f of furnitureDefs) {
+          const def = PROCESSING_FURNITURE_DEFS[f.key];
+          if (!def) continue;
+          const group = window.ProceduralFurniture.buildFurnitureGroup(f.key, def.color || 0x888888);
+          const y = NORMAL_TOP + (f.elevTier || 0) * PLATEAU_UNIT;
+          group.position.set(f.col + 0.5, y, f.row + 0.5);
+          _markOutline(group);
+          _markFurnitureEdgeId(group);
+          scene.add(group);
+          meshes.push(group);
+          registerFurnitureSfxSource(mapId, f.col + 0.5, f.row + 0.5, resolveFurnitureSfx(def));
+        }
+        debugLog(`_spawnZoneDecorFurniture(${mapId}): built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
       }
 
       function buildTownScene() {
@@ -10141,6 +10279,7 @@
         path:   new THREE.MeshLambertMaterial({ color: 0xb8956a }),
         river:  new THREE.MeshLambertMaterial({ color: 0x3a4a3f }), // silty bed, seen through the water surface
         stream: new THREE.MeshLambertMaterial({ color: 0x6b5a3a }), // sandy streambed
+        waterfall: new THREE.MeshLambertMaterial({ color: 0x3a4a3f }), // same bed as river — seen at the base of the curtain
       };
       // Floor material for vegetation tiles — matches weed foliage HSL color
       const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
@@ -10301,9 +10440,10 @@
       const ROCK_TOP   = NORMAL_TOP + ROCK_H;
       // Tile types whose ground geometry sinks below NORMAL_TOP (vs. RAISED, which rises).
       const DEPRESSION_TOP = {
-        [TileType.TRENCH]: TRENCH_TOP,
-        [TileType.RIVER]:  RIVER_TOP,
-        [TileType.STREAM]: STREAM_TOP,
+        [TileType.TRENCH]:    TRENCH_TOP,
+        [TileType.RIVER]:     RIVER_TOP,
+        [TileType.STREAM]:    STREAM_TOP,
+        [TileType.WATERFALL]: RIVER_TOP,
       };
 
       const WATER_UNIT = SLAB_H / MAX_WATER; // world-Y per water depth unit
@@ -10311,10 +10451,11 @@
       // Y center of each tile's primary mesh
       function tileYCenter(type) {
         switch (type) {
-          case TileType.TRENCH: return TRENCH_TOP - SLAB_H / 2;   // -0.75
-          case TileType.RIVER:  return RIVER_TOP  - SLAB_H / 2;
-          case TileType.STREAM: return STREAM_TOP - SLAB_H / 2;
-          case TileType.RAISED: return RAISED_TOP - SLAB_H / 2;   // +0.25
+          case TileType.TRENCH:    return TRENCH_TOP - SLAB_H / 2;   // -0.75
+          case TileType.RIVER:     return RIVER_TOP  - SLAB_H / 2;
+          case TileType.STREAM:    return STREAM_TOP - SLAB_H / 2;
+          case TileType.WATERFALL: return RIVER_TOP  - SLAB_H / 2;
+          case TileType.RAISED:    return RAISED_TOP - SLAB_H / 2;   // +0.25
           case TileType.ROCK:   return NORMAL_TOP + ROCK_H / 2;   // +0.375
           case TileType.SHRUB:  return NORMAL_TOP + VEG_H / 2;    // slab on surface
           case TileType.WEEDS:  return NORMAL_TOP + VEG_H / 2;
@@ -10325,11 +10466,12 @@
       // Surface top Y for water placement and player standing
       function tileSurfaceY(type) {
         switch (type) {
-          case TileType.TRENCH: return TRENCH_TOP;
-          case TileType.RIVER:  return RIVER_TOP;
-          case TileType.STREAM: return STREAM_TOP;
-          case TileType.RAISED: return RAISED_TOP;
-          case TileType.ROCK:   return ROCK_TOP;
+          case TileType.TRENCH:    return TRENCH_TOP;
+          case TileType.RIVER:     return RIVER_TOP;
+          case TileType.STREAM:    return STREAM_TOP;
+          case TileType.WATERFALL: return RIVER_TOP;
+          case TileType.RAISED:    return RAISED_TOP;
+          case TileType.ROCK:      return ROCK_TOP;
           default:              return NORMAL_TOP;
         }
       }
@@ -12798,6 +12940,17 @@
         }
       }
 
+      // Animates a zone's waterfall curtain mesh(es) (see
+      // buildWaterfallCurtainMeshes) — there's no per-tile dynamic water sim
+      // here like updateTownWaterMeshes/updateWaterMeshes, just the uTime
+      // uniform driving the shader's scroll/ripple, so this is a thin loop.
+      function updateZoneWaterMeshes(mapId) {
+        waterTime += 0.016;
+        const meshes = _zoneWaterMeshes.get(mapId);
+        if (!meshes) return;
+        for (const wm of meshes) wm.material.uniforms.uTime.value = waterTime;
+      }
+
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
         // Convert 2D grid coords to 3D world coords
@@ -13152,6 +13305,9 @@
         if (currentArea === 'town') {
           updateTownWaterMeshes();
           updateTownThreeLighting();
+        }
+        if (_isZoneArea(currentArea)) {
+          updateZoneWaterMeshes(currentArea);
         }
         // The player can wield tools/weapons outside the farm too (town,
         // exterior zones) — buildings/farmhouse interior intentionally

@@ -100,7 +100,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <button class="sec" data-mode="furniture">⚙️ Processor</button>
         <button class="sec" data-mode="decor">🪑 Decor</button>
         <button class="sec" data-mode="path">🛤 Route</button>
-        <button class="sec" data-mode="river">🌊 River</button>
+        <button class="sec" data-mode="river" id="riverModeBtn">🌊 River</button>
         <button class="sec" data-mode="spot">🔁 Spot</button>
         <button class="sec" data-mode="station">🧍 Station</button>
         <button class="sec" data-mode="plateau" id="plateauModeBtn">⛰ Plateau</button>
@@ -1172,6 +1172,12 @@ function updateSectionVisibility() {
   // of letting it silently no-op.
   $('plateauModeBtn').disabled = !!m.isSubmap;
   $('plateauModeBtn').title = m.isSubmap ? "Plateau groups are always direct children of the main map — can't paint a plateau onto a sub-map" : '';
+  // Rivers are authored only on the base map — syncPlateauEffects mirrors them
+  // onto every plateau sub-map automatically (with waterfalls stamped where the
+  // path crosses a footprint's edge), so drawing a second, disconnected river
+  // directly on a sub-map would fight that mirroring instead of joining it.
+  $('riverModeBtn').disabled = !!m.isSubmap;
+  $('riverModeBtn').title = m.isSubmap ? "Rivers are drawn on the base map only — they mirror onto plateau sub-maps automatically" : '';
   $('plateauGroupsSection').style.display = (mode === 'plateau') ? '' : 'none';
   $('terrainCheckSection').style.display = (mode === 'plateau' || mode === 'ramp') ? '' : 'none';
   $('buildingsSection').style.display = (isExterior && mode === 'building') ? '' : 'none';
@@ -1370,17 +1376,27 @@ function mirrorRiverAcrossPlateau(river, m, sm, group) {
   const footprint = plateauFootprint(m, group.id);
   const tileType = river.kind === 'stream' ? 'stream' : 'river';
   const pathKeys = new Set(riverPathKeys(river, m));
+  // footprint/pathKeys are in m's (parent) coordinate space, but sm's own grid
+  // is anchored at (anchorC,anchorR) within that space and only covers the
+  // footprint INSET by the 1-tile cliff-face ring (see resizeSubmapToFootprint)
+  // — so every key has to be re-based to sm-local coords, and ring cells that
+  // fall outside sm's own bounds (no local cell to paint) have to be dropped.
+  const anchorC = sm.anchorC ?? 0, anchorR = sm.anchorR ?? 0;
   const mirroredKeys = [];
   const waterfallKeys = [];
   for (const k of footprint) {
     if (!pathKeys.has(k)) continue;
-    mirroredKeys.push(k);
     const [c, r] = k.split(',').map(Number);
+    const lc = c - anchorC, lr = r - anchorR;
+    if (lc < 0 || lc >= sm.cols || lr < 0 || lr >= sm.rows) continue; // outer ring — not part of sm's own grid
+    const lk = `${lc},${lr}`;
+    let isWaterfall = false;
     for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
       const nk = `${c+dc},${r+dr}`;
       if (footprint.has(nk)) continue; // interior cell, not a plateau boundary
-      if (pathKeys.has(nk)) { waterfallKeys.push(k); break; } // river continues outside the footprint at a different elevation
+      if (pathKeys.has(nk)) { isWaterfall = true; break; } // river continues outside the footprint at a different elevation
     }
+    (isWaterfall ? waterfallKeys : mirroredKeys).push(lk);
   }
   applyPaintDiff(`${river.id}__${sm.id}`, mirroredKeys, tileType, sm, { preserveCrop: false });
   applyPaintDiff(`${river.id}__${sm.id}__wf`, waterfallKeys, 'waterfall', sm, { preserveCrop: false });
@@ -1599,6 +1615,7 @@ function renderPalette() {
     html += '<p class="muted" style="margin-top:5px">Select a route and click the map to append nodes. Select a node to branch from it; the next map click inserts after that node. Drag nodes on the map to clean up large route networks. Erase mode removes nodes.</p>';
   } else if (mode === 'river') {
     if (m.category !== 'exterior') html = '<p class="muted">Rivers are exterior-only.</p>';
+    else if (m.isSubmap) html = '<p class="muted">Rivers are drawn on the base map only — they mirror onto plateau sub-maps automatically, with waterfalls where they cross the edge.</p>';
     else {
       html = `<button class="ok" id="newRiverBtn" style="width:100%;margin-bottom:6px">+ New river</button>` +
         (m.rivers || []).map(p =>
@@ -2415,7 +2432,7 @@ function applyAt(tile) {
     }
     maybePaintRoute(m);
     renderPalette(); updateBrushPill();
-  } else if (mode === 'river' && m.category === 'exterior') {
+  } else if (mode === 'river' && m.category === 'exterior' && !m.isSubmap) {
     m.rivers = m.rivers || [];
     let p = m.rivers.find(x => x.id === activeRiverId);
     if (!p) { p = { id: uid('river'), label: `River ${m.rivers.length+1}`, kind: 'river', width: 3, seed: Math.floor(Math.random()*1000000)+1, paintTiles: true, nodes: [] }; m.rivers.push(p); activeRiverId = p.id; }
@@ -2896,6 +2913,16 @@ function rebuild3D() {
     if (curtainGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.pos, curtainGeo.idx), curtainMat));
     if (curtainGeo.skinIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.skinPos, curtainGeo.skinIdx), skinMat));
   } catch (e) { /* ramp geometry is best-effort for the preview */ }
+
+  // Waterwall curtains: vertical translucent water sheets where a river
+  // crosses a plateau edge (TileType.WATERFALL — see
+  // TerrainPreview.buildWaterfallWallGeometry / docs/game.js's
+  // buildWaterfallCurtainMeshes, which this preview mirrors).
+  const waterfallMat = new THREE.MeshBasicMaterial({ color: 0x2f8fc2, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
+  try {
+    const wfGeo = TerrainPreview.buildWaterfallWallGeometry(zGrid, merged.cols, merged.rows);
+    if (wfGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(wfGeo.pos, wfGeo.idx), waterfallMat));
+  } catch (e) { /* waterfall geometry is best-effort for the preview */ }
 
   // Building footprint boxes, lifted to their anchor tile's resolved plateau
   // tier (merged.buildings[].elevTier — see TerrainPreview.buildMergedZoneGrid)
