@@ -646,15 +646,6 @@ const BASE_SPECIES_DATA = {
   },
 };
 
-
-// Female Tletingan currently uses the shared Tletingan appearance overlays; the
-// species config supplies the uploaded female head sprite for the portrait rig.
-BASE_SPECIES_DATA['tletingan'].female = JSON.parse(JSON.stringify(BASE_SPECIES_DATA['tletingan'].male));
-// Female Mashtzarr has uploaded head/body sprites but no female beard or mouth
-// expression set yet, so keep the Mao-ao hair overlays and omit facial hair.
-BASE_SPECIES_DATA['mashtzarr'].female = JSON.parse(JSON.stringify(BASE_SPECIES_DATA['mashtzarr'].male));
-BASE_SPECIES_DATA['mashtzarr'].female.slots = BASE_SPECIES_DATA['mashtzarr'].female.slots.filter(slot => slot.slot !== 'facialHair');
-
 const CONFIG_SPECIES_DATA = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {};
 const CONFIG_SPECIES_AVAILABILITY = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.availability || {};
 
@@ -677,6 +668,20 @@ const SPECIES_DATA = withConfiguredSpeciesAvailability(Object.fromEntries(
     { ...(BASE_SPECIES_DATA[key] || {}), ...(CONFIG_SPECIES_DATA[key] || value || {}) },
   ])
 ));
+function synthesizeFemaleSpeciesDefaults(speciesId, options = {}) {
+  const species = SPECIES_DATA[speciesId];
+  if (!species || species.female || !species.male) return;
+  species.female = clone(species.male);
+  if (options.omitFacialHair) {
+    species.female.slots = (species.female.slots || []).filter(slot => slot.slot !== 'facialHair');
+  }
+}
+// Female Tletingan currently uses the shared Tletingan appearance overlays; the
+// species JSON supplies the uploaded female head sprite for the portrait rig.
+synthesizeFemaleSpeciesDefaults('tletingan');
+// Female Mashtzarr has uploaded head/body sprites but no female beard or mouth
+// expression set yet, so keep the Mao-ao hair overlays and omit facial hair.
+synthesizeFemaleSpeciesDefaults('mashtzarr', { omitFacialHair: true });
 
 const DEFAULT_BODY_COLORS = { A: { h: 0, s: -0.70, v: -0.30 }, B: { h: 0, s: -0.70, v: -0.50 }, C: { h: 0, s: -0.65, v: -0.12 } };
 
