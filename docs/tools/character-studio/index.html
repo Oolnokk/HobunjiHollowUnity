@@ -68,6 +68,11 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
   writing-mode:vertical-lr;direction:rtl;
   width:20px;height:222px;margin:4px 0;accent-color:var(--acc)}
 .aimSliderCol .help{font-size:11px;margin-top:2px;text-align:center}
+.spineChkRow{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--muted)}
+.spineChkRow input[type=checkbox]{width:auto;margin:0}
+.spineTweaks{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.spineTweaks label{font-size:11px;color:var(--muted);margin-bottom:2px}
+.spineTweaks input[type=number]{padding:5px 6px;font-size:12px}
 .selGroup{display:flex;gap:6px;flex-wrap:wrap}
 .selBtn{padding:6px 12px;border-radius:8px;font-weight:650;font-size:13px;
   border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:var(--text);cursor:pointer}
@@ -180,6 +185,28 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
           <div class="row" style="margin-top:6px">
             <button id="resetCamBtn" class="secondary" style="flex:1">Reset camera</button>
             <button id="resetAimBtn" class="secondary" style="flex:1">Reset aim</button>
+          </div>
+          <label class="spineChkRow"><input type="checkbox" id="showSpineChk"> Show spine (pivot → face hinge)</label>
+          <div class="spineTweaks">
+            <div>
+              <label for="tweakEyeHeight">Eye height (ratio)</label>
+              <input id="tweakEyeHeight" type="number" step="0.01" min="0" max="1.5">
+            </div>
+            <div>
+              <label for="tweakSegments">Bend segments</label>
+              <input id="tweakSegments" type="number" step="1" min="1" max="32">
+            </div>
+            <div>
+              <label for="tweakMaxBend">Max bend (°)</label>
+              <input id="tweakMaxBend" type="number" step="1" min="5" max="90">
+            </div>
+            <div>
+              <label for="tweakBendWeight">Bend weight (lerp)</label>
+              <input id="tweakBendWeight" type="number" step="0.01" min="0.02" max="1">
+            </div>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <button id="resetTweaksBtn" class="secondary" style="flex:1">Reset spine tweaks</button>
           </div>
         </div>
         <div class="hr"></div>
@@ -962,8 +989,71 @@ function previewLoop() {
 }
 
 // ── 3D PNG-plane preview (from npc-avatar-preview) ───────────────────────────
-const threeD = { enabled: false, loading: false, THREE: null, renderer: null, scene: null, camera: null, controls: null, model: null, aimPitchDeg: 0, lastTickTime: 0 };
+const threeD = {
+  enabled: false, loading: false, THREE: null, renderer: null, scene: null, camera: null, controls: null, model: null,
+  aimPitchDeg: 0, lastTickTime: 0, showSpine: false, spineHelper: null,
+  overrides: { placementRatio: undefined },
+};
 const cfg3d = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+// Snapshot the as-shipped tuning values once, so "Reset spine tweaks" can
+// restore them even after the studio has mutated cfg3d in place for live testing.
+const _pngDefaults = {
+  bendHeightSegments: cfg3d.bendHeightSegments ?? 16,
+  maxBendAngleDeg: cfg3d.maxBendAngleDeg ?? 50,
+  bendPitchLerp: cfg3d.bendPitchLerp ?? 0.15,
+};
+
+// Mirrors the vertical-bend GLSL in png-plane-avatar.js so the spine helper
+// can show the actual bent world-space face position, not just the rest pose.
+function applyBendCPU_vertical(localPos, u, THREE) {
+  const bendAngle = u.uBendAngle.value;
+  const pivot = u.uPivotCoord.value, face = u.uFaceCoord.value;
+  let t = (localPos.y - pivot) / Math.max(1e-5, face - pivot);
+  t = Math.max(0, Math.min(1, t));
+  const w = t * t * (3 - 2 * t);
+  const ang = w * bendAngle;
+  const C = Math.cos(ang), S = Math.sin(ang);
+  const relY = localPos.y - pivot, relZ = localPos.z;
+  return new THREE.Vector3(localPos.x, pivot + relY * C + relZ * S, relZ * C - relY * S);
+}
+
+function ensureSpineHelper() {
+  if (threeD.spineHelper || !threeD.THREE) return;
+  const THREE = threeD.THREE;
+  const group = new THREE.Group();
+  group.name = 'spine_debug_helper';
+  group.renderOrder = 999;
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+    new THREE.LineBasicMaterial({ color: 0x6aa7ff, depthTest: false, transparent: true })
+  );
+  const pivotMarker = new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 12), new THREE.MeshBasicMaterial({ color: 0xfb7185, depthTest: false }));
+  const faceMarker = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 12), new THREE.MeshBasicMaterial({ color: 0x34d399, depthTest: false }));
+  group.add(line, pivotMarker, faceMarker);
+  group.userData = { line, pivotMarker, faceMarker };
+  threeD.spineHelper = group;
+}
+function updateSpineHelperVisibility() {
+  if (!threeD.spineHelper) return;
+  const shouldShow = threeD.showSpine && !!threeD.model;
+  if (shouldShow && !threeD.spineHelper.parent) threeD.scene.add(threeD.spineHelper);
+  else if (!shouldShow && threeD.spineHelper.parent) threeD.scene.remove(threeD.spineHelper);
+}
+function tickSpineHelper() {
+  if (!threeD.showSpine || !threeD.model || !threeD.spineHelper?.parent) return;
+  const THREE = threeD.THREE;
+  let bendMesh = null;
+  threeD.model.traverse(o => { if (!bendMesh && o.material?.userData?.bendUniforms) bendMesh = o; });
+  if (!bendMesh) return;
+  const u = bendMesh.material.userData.bendUniforms;
+  bendMesh.updateMatrixWorld(true);
+  const pivotWorld = new THREE.Vector3(0, u.uPivotCoord.value, 0).applyMatrix4(bendMesh.matrixWorld);
+  const faceWorld = applyBendCPU_vertical(new THREE.Vector3(0, u.uFaceCoord.value, 0), u, THREE).applyMatrix4(bendMesh.matrixWorld);
+  const { line, pivotMarker, faceMarker } = threeD.spineHelper.userData;
+  line.geometry.setFromPoints([pivotWorld, faceWorld]);
+  pivotMarker.position.copy(pivotWorld);
+  faceMarker.position.copy(faceWorld);
+}
 
 function resize3d() {
   if (!threeD.renderer || !threeD.camera) return;
@@ -992,6 +1082,7 @@ function tick3d(now) {
     const targetRad = (threeD.aimPitchDeg || 0) * Math.PI / 180;
     window.PNGPlaneAvatar.setAvatarAimPitch(threeD.model, targetRad, dt);
   }
+  tickSpineHelper();
   threeD.renderer?.render(threeD.scene, threeD.camera);
   threeD.controls?.update();
   requestAnimationFrame(tick3d);
@@ -1037,8 +1128,10 @@ async function update3DModel() {
     profile,
     name: 'Studio_Preview_Avatar',
     userData: { source: 'character-studio' },
+    placementRatioOverride: threeD.overrides.placementRatio,
   });
   threeD.scene.add(threeD.model);
+  updateSpineHelperVisibility();
 }
 async function toggle3d() {
   if (threeD.enabled) {
@@ -1057,6 +1150,7 @@ async function toggle3d() {
       threeD.THREE = mods.THREE;
       threeD.enabled = true;
       $('view3dWrap').classList.add('visible3d');
+      ensureSpineHelper();
       await init3dScene();
       if (mods.OrbitControls) {
         threeD.controls = new mods.OrbitControls(threeD.camera, $('view3d'));
@@ -1997,6 +2091,52 @@ $('resetAimBtn').onclick = () => {
   $('aimPitchSlider').value = 0;
   threeD.aimPitchDeg = 0;
   $('aimPitchLabel').textContent = '0°';
+};
+
+$('tweakEyeHeight').value = avatarPlacementRatioFor_studioDefault();
+$('tweakSegments').value = _pngDefaults.bendHeightSegments;
+$('tweakMaxBend').value = _pngDefaults.maxBendAngleDeg;
+$('tweakBendWeight').value = _pngDefaults.bendPitchLerp;
+
+function avatarPlacementRatioFor_studioDefault() {
+  const ap = work?.appearance || {};
+  return window.PNGPlaneAvatar.avatarPlacementRatioFor({ speciesId: ap.speciesId, gender: ap.gender }).toFixed(3);
+}
+
+$('showSpineChk').onchange = (e) => {
+  threeD.showSpine = e.target.checked;
+  ensureSpineHelper();
+  updateSpineHelperVisibility();
+};
+
+$('tweakEyeHeight').oninput = (e) => {
+  const v = Number(e.target.value);
+  threeD.overrides.placementRatio = Number.isFinite(v) ? v : undefined;
+  update3DModel().catch(err => log('Spine tweak rebuild failed: ' + err.message, 'error'));
+};
+$('tweakSegments').oninput = (e) => {
+  const v = Math.max(1, Math.round(Number(e.target.value) || _pngDefaults.bendHeightSegments));
+  cfg3d.bendHeightSegments = v;
+  update3DModel().catch(err => log('Spine tweak rebuild failed: ' + err.message, 'error'));
+};
+$('tweakMaxBend').oninput = (e) => {
+  const v = Number(e.target.value);
+  cfg3d.maxBendAngleDeg = Number.isFinite(v) ? v : _pngDefaults.maxBendAngleDeg;
+};
+$('tweakBendWeight').oninput = (e) => {
+  const v = Number(e.target.value);
+  cfg3d.bendPitchLerp = Number.isFinite(v) ? v : _pngDefaults.bendPitchLerp;
+};
+$('resetTweaksBtn').onclick = () => {
+  threeD.overrides.placementRatio = undefined;
+  cfg3d.bendHeightSegments = _pngDefaults.bendHeightSegments;
+  cfg3d.maxBendAngleDeg = _pngDefaults.maxBendAngleDeg;
+  cfg3d.bendPitchLerp = _pngDefaults.bendPitchLerp;
+  $('tweakEyeHeight').value = avatarPlacementRatioFor_studioDefault();
+  $('tweakSegments').value = _pngDefaults.bendHeightSegments;
+  $('tweakMaxBend').value = _pngDefaults.maxBendAngleDeg;
+  $('tweakBendWeight').value = _pngDefaults.bendPitchLerp;
+  update3DModel().catch(err => log('Spine tweak reset failed: ' + err.message, 'error'));
 };
 $('exportApBtn').onclick = exportAppearance;
 $('importApBtn').onclick = () => $('importApFile').click();

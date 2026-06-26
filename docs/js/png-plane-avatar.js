@@ -265,6 +265,7 @@
   }
 
   function avatarPlacementRatioFor(options = {}) {
+    if (Number.isFinite(Number(options.placementRatioOverride))) return Number(options.placementRatioOverride);
     const placement = cfg().portraitVerticalPlacement || {};
     const defaultRatio = Number.isFinite(Number(placement.default)) ? Number(placement.default) : 0.5;
     const { species, gender } = avatarSpeciesAndGender(options);
