@@ -8479,7 +8479,7 @@
         }
 
         if (tool === 'weapon') {
-          const hitResult = resolveWeaponHit(action);
+          const hitResult = window.Combat ? window.Combat.resolveWeaponHit(action, resolveWeaponHit) : resolveWeaponHit(action);
           if (hitResult.hits > 0) return { ok: true, message: hitResult.message };
           const vegResult = clearVegetationAt(col, row, action);
           if (vegResult.cleared > 0) {
@@ -13574,6 +13574,7 @@
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
           updateToolMesh(dt);
           updateChargeAction();
+          window.Combat?.update(dt);
           updateReticleMesh();
         }
         if (currentArea === 'farm') {
@@ -15721,6 +15722,22 @@
         _playerData = window.__hobunjiPlayerProfile;
         spawnPlayerAvatar(window.__hobunjiPlayerProfile);
       }
+
+      window.Combat?.init({
+        player,
+        TILE,
+        hostileObjects,
+        companionObjects,
+        getCurrentArea: () => currentArea,
+        inCone,
+        damageCreature,
+        damagePlayer,
+        applyKnockback,
+        weaponAbility,
+        combatConfig,
+        resolveWeaponHit,
+        findAutoTarget,
+      });
 
       requestAnimationFrame(gameLoop);
     })();
