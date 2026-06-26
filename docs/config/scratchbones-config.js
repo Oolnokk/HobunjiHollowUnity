@@ -257,8 +257,12 @@ window.SCRATCHBONES_CONFIG = {
     "appearanceEditor": {
       "availability": {
         "tletingan": {
-          "genders": ["male"],
-          "randomizableGenders": ["male"]
+          "genders": ["male", "female"],
+          "randomizableGenders": ["male", "female"]
+        },
+        "mashtzarr": {
+          "genders": ["male", "female"],
+          "randomizableGenders": ["male", "female"]
         }
       },
       "species": {
@@ -357,7 +361,7 @@ window.SCRATCHBONES_CONFIG = {
         },
         "mashtzarr": {
           "label": "Mashtzarr",
-          "genders": ["male"],
+          "genders": ["male", "female"],
           "male": {
             "slots": [
               { "slot": "hairFront", "label": "Front Hair", "options": [
@@ -3358,10 +3362,10 @@ window.SCRATCHBONES_CONFIG = {
         "portraitVerticalPlacement": {
           "default": 0.5,
           "kenkari": { "female": 0.562, "male": 0.618 },
-          "tletingan": { "male": 0.629 },
+          "tletingan": { "female": 0.629, "male": 0.629 },
           "engh-sho": { "female": 0.674, "male": 0.719 },
           "mao-ao": { "female": 0.831, "male": 0.865 },
-          "mashtzarr": { "male": 1.079 }
+          "mashtzarr": { "female": 1.079, "male": 1.079 }
         },
         "behindView": {
           "headUrls": {
@@ -3374,7 +3378,8 @@ window.SCRATCHBONES_CONFIG = {
               "female": "fightersprites/special_cases/head-behind_engh_f.png"
             },
             "mashtzarr": {
-              "male": "fightersprites/special_cases/head-behind_mashtz_m.png"
+              "male": "fightersprites/special_cases/head-behind_mashtz_m.png",
+              "female": "fightersprites/special_cases/head-behind_mashtz_f.png"
             }
           },
           "layerReplacements": [
