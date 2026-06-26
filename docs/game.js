@@ -1047,6 +1047,12 @@
       function combatConfig() {
         return window.SCRATCHBONES_CONFIG?.game?.combat || {};
       }
+
+      // Spine-aiming priorities (where creatures/player/NPCs pitch their
+      // face/snout) read their tunables from here.
+      function aimingConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.aiming || {};
+      }
       function weaponAbility(action) {
         const cfg = combatConfig().weaponAbilities?.[action];
         if (!cfg) return null;
@@ -2269,7 +2275,7 @@
         return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
       }
 
-      function updateCreatureMesh(c, dt, aimAngle) {
+      function updateCreatureMesh(c, dt, aimAngle, aimPitchTarget) {
         const g = c.areaGrid || grid;
         const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
         const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
@@ -2285,6 +2291,11 @@
         if (snapTo !== null) c.groupRot = effectiveTarget;
         else c.groupRot += angleDiff(effectiveTarget, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
+
+        if (aimingConfig().enabled !== false && window.PNGPlaneAvatar?.setAvatarAimPitch) {
+          const pitch = aimPitchTarget ? spineAimPitchAngle(creatureFaceWorldPosition(c), aimPitchTarget) : 0;
+          window.PNGPlaneAvatar.setAvatarAimPitch(grp, pitch, dt);
+        }
 
         if (c.hitFlashT > 0) {
           c.hitFlashT = Math.max(0, c.hitFlashT - dt);
@@ -2369,7 +2380,14 @@
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
-          updateCreatureMesh(c, dt, aimAngle);
+          // Spine-aiming pitch: snout at the player's head height in combat,
+          // else a food object if eating it (c.eatingTarget is an inert hook
+          // — nothing sets it today since there's no eating gameplay yet).
+          let aimPitchTarget = null;
+          if (c.state === 'chase') aimPitchTarget = portraitAvatarCenterWorldPosition(playerMesh);
+          else if (c.eatingTarget) aimPitchTarget = c.eatingTarget.isVector3 ? c.eatingTarget : c.eatingTarget.getWorldPosition?.(new THREE.Vector3());
+
+          updateCreatureMesh(c, dt, aimAngle, aimPitchTarget);
           updateCreatureAnimFrame(c, dt, moving);
         }
       }
@@ -2416,7 +2434,13 @@
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
-          updateCreatureMesh(c, dt, aimAngle);
+          // Companion spine-aiming: snout at the closest detected threat
+          // (priority #3 for animal companions), else a food target if set.
+          let aimPitchTarget = null;
+          if (target) aimPitchTarget = creatureFaceWorldPosition(target);
+          else if (c.eatingTarget) aimPitchTarget = c.eatingTarget.isVector3 ? c.eatingTarget : c.eatingTarget.getWorldPosition?.(new THREE.Vector3());
+
+          updateCreatureMesh(c, dt, aimAngle, aimPitchTarget);
           updateCreatureAnimFrame(c, dt, moving);
         }
       }
@@ -4269,6 +4293,12 @@
           toolKey: station.toolKey || '',
           toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
           toolAnimStyle: station.toolAnimStyle || '',
+          // Optional explicit vertical look target: { c, r, area?, heightTiles? }.
+          // When set, this overrides the default "look at whoever's nearby and
+          // faced" spine-aiming fallback while the NPC is at this station.
+          lookAt: (station.lookAt && Number.isFinite(station.lookAt.c) && Number.isFinite(station.lookAt.r))
+            ? { c: station.lookAt.c, r: station.lookAt.r, area: station.lookAt.area, heightTiles: station.lookAt.heightTiles }
+            : null,
         };
       }
       function registerNpcStations(stations, fallbackArea) {
@@ -4457,6 +4487,27 @@
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
+          // Spine-aiming: a station's explicit `lookAt` wins outright; otherwise
+          // fall back to whichever nearby player/NPC is in this NPC's faced cone.
+          _resolveAimPitchTarget(target) {
+            if (aimingConfig().enabled === false) return null;
+            if (target?.lookAt) {
+              const la = target.lookAt;
+              const laArea = normalizeNpcArea(la.area || this.area);
+              if (laArea !== this.area) return null;
+              const h = Number.isFinite(la.heightTiles) ? la.heightTiles : (Number(aimingConfig().interactableAimHeightTiles) || 0.5);
+              return new THREE.Vector3(la.c + 0.5, npcSurfaceY(laArea, la.c, la.r) + h, la.r + 0.5);
+            }
+            const rawFacing = Math.PI / 2 - this.rot;
+            return findFacedLookAtTarget(root.position.x, root.position.z, this.area, rawFacing, { excludeWalker: this });
+          },
+          _applyAimPitch(dt, target) {
+            if (!window.PNGPlaneAvatar?.setAvatarAimPitch) return;
+            const targetPos = this._resolveAimPitchTarget(target);
+            const fromPos = portraitAvatarCenterWorldPosition(root);
+            const pitch = targetPos ? spineAimPitchAngle(fromPos, targetPos) : 0;
+            window.PNGPlaneAvatar.setAvatarAimPitch(root, pitch, dt);
+          },
           resetRouteState() {
             this.state = 'idle';
             this.routeNode = null;
@@ -4591,6 +4642,7 @@
                 root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = '';
               }
               groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
+              this._applyAimPitch(dt, target);
               return;
             }
             if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; }
@@ -4632,6 +4684,7 @@
             root.position.y += (ty - root.position.y) * 0.2;
             root.position.y += Math.sin(performance.now() / 140) * 0.012;
             groundShadow.position.y = ty - root.position.y + characterGroundShadowSurfaceOffset();
+            this._applyAimPitch(dt, target);
           },
         };
         return walker;
@@ -10215,6 +10268,86 @@
         return center;
       }
 
+      // World position of a creature's snout, for spine-aiming pitch. The
+      // snout's small horizontal offset from the avatar group's center
+      // (along its facing direction) is ignored — only the configured
+      // vertical snout height matters at the aim distances this drives.
+      function creatureFaceWorldPosition(c) {
+        const grp = c?.avatarRef?.group;
+        if (!grp) return null;
+        const snoutLocalHeight = grp.userData?.snoutLocalHeight ?? 0;
+        return new THREE.Vector3(grp.position.x, grp.position.y + snoutLocalHeight, grp.position.z);
+      }
+
+      // Pitch angle (radians, positive = look up) a face/snout at `fromPos`
+      // should bend to point at `toPos`. Both positions are world-space,
+      // tile-unit coordinates (same space as playerMesh/npcWalker/creature
+      // group positions).
+      function spineAimPitchAngle(fromPos, toPos) {
+        if (!fromPos || !toPos) return 0;
+        const dx = toPos.x - fromPos.x, dz = toPos.z - fromPos.z;
+        const horizDist = Math.hypot(dx, dz);
+        const dy = toPos.y - fromPos.y;
+        return Math.atan2(dy, Math.max(0.0001, horizDist));
+      }
+
+      // Nearest player/NPC face within `aimingConfig().npcLookAtRadiusTiles`
+      // and inside a forward cone (`lookAtFacedConeHalfDeg`), used by both the
+      // player and idle NPCs to turn toward whoever's nearby and in front of
+      // them. `rawFacingAngle` must be in atan2(dz,dx)-space — that's
+      // `player.angle`/`facingAngle` directly, or `Math.PI/2 - walker.rot` for
+      // an NPC walker (walker.rot lives in the rotation.y convention).
+      function findFacedLookAtTarget(fromCx, fromCz, areaId, rawFacingAngle, opts) {
+        const cfg = aimingConfig();
+        const radius = Number(cfg.npcLookAtRadiusTiles) || 3;
+        const halfCone = ((Number(cfg.lookAtFacedConeHalfDeg) ?? 85) * Math.PI) / 180;
+        const excludeWalker = opts?.excludeWalker || null;
+        const includePlayer = opts?.includePlayer !== false;
+        let bestPos = null, bestDist = radius;
+        const tryCandidate = (cx, cz, getFacePos) => {
+          const dx = cx - fromCx, dz = cz - fromCz;
+          const dist = Math.hypot(dx, dz);
+          if (dist < 1e-4 || dist > bestDist) return;
+          const angleTo = Math.atan2(dz, dx);
+          if (Math.abs(angleDiff(angleTo, rawFacingAngle)) > halfCone) return;
+          const pos = getFacePos();
+          if (!pos) return;
+          bestPos = pos; bestDist = dist;
+        };
+        if (includePlayer && areaId === currentArea) {
+          tryCandidate(player.x / TILE, player.y / TILE, () => portraitAvatarCenterWorldPosition(playerMesh));
+        }
+        for (const w of npcWalkers) {
+          if (w === excludeWalker || w.area !== areaId) continue;
+          tryCandidate(w.root.position.x, w.root.position.z, () => portraitAvatarCenterWorldPosition(w.root));
+        }
+        return bestPos;
+      }
+
+      // Resolves which world point (if any) the player's face should bend
+      // toward this frame, in priority order: combat target head height,
+      // a nearby faced NPC/player, an interactable on the tile in front,
+      // then the tile in front itself if the held tool can alter it.
+      function playerAimPitchTarget() {
+        const cfg = aimingConfig();
+        if (cfg.enabled === false) return null;
+        const autoTarget = findAutoTarget();
+        if (autoTarget) return creatureFaceWorldPosition(autoTarget);
+        const lookAt = findFacedLookAtTarget(player.x / TILE, player.y / TILE, currentArea, player.angle, { includePlayer: false });
+        if (lookAt) return lookAt;
+        const reticle = getReticleTile();
+        const tile = getActiveGrid()[reticle.row]?.[reticle.col];
+        if (!tile) return null;
+        const groundY = tileSurfaceYInArea(tile, currentArea) + (Number(cfg.interactableAimHeightTiles) || 0.5);
+        const obj = getWorldObjectAt(reticle.col, reticle.row);
+        if (obj) return new THREE.Vector3(reticle.col + 0.5, groundY, reticle.row + 0.5);
+        const tileAltering = Array.isArray(cfg.tileAlteringTools) && cfg.tileAlteringTools.includes(activeTool);
+        if (tileAltering && canUseAction(activeTool, activeAction, reticle.col, reticle.row)) {
+          return new THREE.Vector3(reticle.col + 0.5, groundY, reticle.row + 0.5);
+        }
+        return null;
+      }
+
       function dialoguePortraitCameraAim(modeCfg, tx, tz, distance, baseAngle) {
         if (!modeCfg.alignToDialoguePortraitCenters || !_dialogueWalker?.root) return null;
         const playerCenter = portraitAvatarCenterWorldPosition(playerMesh);
@@ -12997,6 +13130,15 @@
         const speed = Math.hypot(player.vx, player.vy);
         if (speed > 5) {
           playerMesh.position.y += Math.sin(performance.now() / 120) * 0.03;
+        }
+
+        // Spine-aiming: bend the player's face toward whatever priority
+        // target resolves this frame (combat target, nearby faced NPC,
+        // interactable, or tile-altering tool feedback).
+        if (aimingConfig().enabled !== false && window.PNGPlaneAvatar?.setAvatarAimPitch) {
+          const targetPos = playerAimPitchTarget();
+          const pitch = targetPos ? spineAimPitchAngle(portraitAvatarCenterWorldPosition(playerMesh), targetPos) : 0;
+          window.PNGPlaneAvatar.setAvatarAimPitch(playerMesh, pitch, dt);
         }
       }
 

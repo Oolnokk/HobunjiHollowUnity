@@ -183,6 +183,13 @@ window.SCRATCHBONES_CONFIG = {
         "alpha": 0.42
       }
     },
+    "aiming": {
+      "enabled": true,
+      "npcLookAtRadiusTiles": 3,
+      "lookAtFacedConeHalfDeg": 85,
+      "tileAlteringTools": ["shovel", "hoe", "pick", "axe", "machete"],
+      "interactableAimHeightTiles": 0.5
+    },
     "gameplayShortcuts": {
       "focusChat": {
         "enabled": true,
@@ -3355,6 +3362,11 @@ window.SCRATCHBONES_CONFIG = {
         "anchorZ": 0,
         "alphaTest": 0.001,
         "backPlaneOffsetZ": 0.001,
+        "bendHeightSegments": 16,
+        "maxBendAngleDeg": 50,
+        "bendPitchLerp": 0.15,
+        "creatureSnoutHeightRatio": 0.68,
+        "creatureNeckPivotRatio": 0.45,
         "portraitVerticalPlacement": {
           "default": 0.5,
           "kenkari": { "female": 0.562, "male": 0.618 },

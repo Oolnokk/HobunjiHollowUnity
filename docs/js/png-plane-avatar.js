@@ -67,6 +67,117 @@
     });
   }
 
+  // ── Spine-aiming bend deformer ──────────────────────────────────────
+  // Flat plane "avatars" have no skeleton, so aiming the face/snout at a
+  // target is done by bending the (subdivided) plane geometry itself in
+  // the vertex shader — like a soft hinge that gradually curls from a
+  // fixed pivot (ground for bipeds, neck for creatures) up to full
+  // rotation at the face/snout point, rather than rotating the whole
+  // plane rigidly around one joint.
+  //
+  // Both helpers below inject the same general technique via
+  // onBeforeCompile: weight(coord) ramps 0→1 between a pivot coordinate
+  // and a face coordinate (clamped smoothstep, computed manually instead
+  // of GLSL smoothstep() since pivot may be greater or less than face),
+  // then rotates the vertex by weight*bendAngle around the relevant axis.
+  // `sign` exists because the front/back plane pair is the same body
+  // mirrored via a static Y rotation, and whether that mirroring flips
+  // the world-space effect of the bend depends on which local axis the
+  // bend rotates: for the vertical bend (rotates the Y-Z plane), the
+  // biped's 180° Y mirror negates Z, so the back mesh needs the negated
+  // angle (sign=-1) to bend the same way in world space. For the nod
+  // bend (rotates the X-Y plane), the creature's ±90° Y mirror leaves
+  // the bend's world-Y effect unchanged between front/back, so both use
+  // sign=+1 — see the matching call sites in createSinglePlaneAssembly
+  // and buildAnimalPlaneAvatarModel.
+  function attachVerticalBend(material, sign) {
+    const uniforms = {
+      uBendAngle: { value: 0 },
+      uPivotCoord: { value: 0 },
+      uFaceCoord: { value: 0 },
+    };
+    material.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, uniforms);
+      shader.vertexShader =
+        'uniform float uBendAngle;\nuniform float uPivotCoord;\nuniform float uFaceCoord;\n' + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        {
+          float bendT = clamp((transformed.y - uPivotCoord) / max(1e-5, uFaceCoord - uPivotCoord), 0.0, 1.0);
+          float bendW = bendT * bendT * (3.0 - 2.0 * bendT);
+          float bendAng = bendW * uBendAngle;
+          float bendS = sin(bendAng), bendC = cos(bendAng);
+          float bendRelY = transformed.y - uPivotCoord;
+          float bendRelZ = transformed.z;
+          transformed.y = uPivotCoord + bendRelY * bendC + bendRelZ * bendS;
+          transformed.z = bendRelZ * bendC - bendRelY * bendS;
+        }`
+      );
+    };
+    material.customProgramCacheKey = () => 'spine_bend_vertical';
+    material.userData = material.userData || {};
+    material.userData.bendUniforms = uniforms;
+    material.userData.bendSign = sign;
+    return uniforms;
+  }
+
+  function attachNodBend(material, sign) {
+    const uniforms = {
+      uBendAngle: { value: 0 },
+      uPivotCoord: { value: 0 },
+      uFaceCoord: { value: 0 },
+      uNeckHeight: { value: 0 },
+    };
+    material.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, uniforms);
+      shader.vertexShader =
+        'uniform float uBendAngle;\nuniform float uPivotCoord;\nuniform float uFaceCoord;\nuniform float uNeckHeight;\n' + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        {
+          float bendSpan = uFaceCoord - uPivotCoord;
+          bendSpan = bendSpan >= 0.0 ? max(bendSpan, 1e-5) : min(bendSpan, -1e-5);
+          float bendT = clamp((transformed.x - uPivotCoord) / bendSpan, 0.0, 1.0);
+          float bendW = bendT * bendT * (3.0 - 2.0 * bendT);
+          float bendAng = bendW * uBendAngle;
+          float bendS = sin(bendAng), bendC = cos(bendAng);
+          float bendRelX = transformed.x - uPivotCoord;
+          float bendRelY = transformed.y - uNeckHeight;
+          transformed.x = uPivotCoord + bendRelX * bendC + bendRelY * bendS;
+          transformed.y = uNeckHeight + bendRelY * bendC - bendRelX * bendS;
+        }`
+      );
+    };
+    material.customProgramCacheKey = () => 'spine_bend_nod';
+    material.userData = material.userData || {};
+    material.userData.bendUniforms = uniforms;
+    material.userData.bendSign = sign;
+    return uniforms;
+  }
+
+  // Smoothly drives every bend-deformed material under `root` toward
+  // `targetAngleRad` (clamped to maxBendAngleDeg), applying each mesh's
+  // sign so the front/back plane pair bends together in world space.
+  function setAvatarAimPitch(root, targetAngleRad, dt) {
+    if (!root) return;
+    const maxAngle = (cfg().maxBendAngleDeg ?? 50) * Math.PI / 180;
+    const clampedTarget = Math.max(-maxAngle, Math.min(maxAngle, targetAngleRad || 0));
+    const lerpRate = cfg().bendPitchLerp ?? 0.15;
+    const k = Number.isFinite(dt) ? Math.min(1, dt * 10) : lerpRate;
+    if (!root.userData) root.userData = {};
+    const current = root.userData._bendAngle ?? 0;
+    const next = current + (clampedTarget - current) * k;
+    root.userData._bendAngle = next;
+    root.traverse(child => {
+      const bend = child.material?.userData?.bendUniforms;
+      if (!bend) return;
+      const sign = child.material.userData.bendSign ?? 1;
+      bend.uBendAngle.value = next * sign;
+    });
+  }
+
   function buildTextureSet(THREE, image, backImage) {
     const rearSource = backImage || image;
     const rearOptions = backImage ? { flipX: true } : { flipX: true, blackSilhouette: true };
@@ -171,14 +282,30 @@
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_single_plane_assembly';
 
-    const planeGeo = new THREE.PlaneGeometry(config.planeWidth, config.planeHeight);
-    const frontMesh = new THREE.Mesh(planeGeo, makeSpriteMaterial(THREE, config.textures.frontOriginal, 'npc_avatar_front_material'));
+    // Face is always local_y=0 by construction (this assembly's own origin
+    // is the avatar's "face center" — see buildSinglePlaneAvatarModel).
+    // Pivot (ground) is supplied by the caller, derived from the species/
+    // gender portraitVerticalPlacement ratio already used for placement.
+    const faceLocalY = 0;
+    const pivotLocalY = config.pivotLocalY ?? -config.planeHeight / 2;
+    const heightSegments = Math.max(1, Math.round(cfg().bendHeightSegments ?? 16));
+
+    const planeGeo = new THREE.PlaneGeometry(config.planeWidth, config.planeHeight, 1, heightSegments);
+    const frontMat = makeSpriteMaterial(THREE, config.textures.frontOriginal, 'npc_avatar_front_material');
+    const frontBend = attachVerticalBend(frontMat, 1);
+    frontBend.uPivotCoord.value = pivotLocalY;
+    frontBend.uFaceCoord.value = faceLocalY;
+    const frontMesh = new THREE.Mesh(planeGeo, frontMat);
     frontMesh.name = 'npc_avatar_front_plane';
     frontMesh.position.z = config.anchorZ;
     frontMesh.renderOrder = 2;
     group.add(frontMesh);
 
-    const backMesh = new THREE.Mesh(planeGeo.clone(), makeSpriteMaterial(THREE, config.textures.backForOriginal, 'npc_avatar_back_material'));
+    const backMat = makeSpriteMaterial(THREE, config.textures.backForOriginal, 'npc_avatar_back_material');
+    const backBend = attachVerticalBend(backMat, -1);
+    backBend.uPivotCoord.value = pivotLocalY;
+    backBend.uFaceCoord.value = faceLocalY;
+    const backMesh = new THREE.Mesh(planeGeo.clone(), backMat);
     backMesh.name = 'npc_avatar_back_plane';
     backMesh.position.z = config.anchorZ - (cfg().backPlaneOffsetZ ?? 0.001);
     backMesh.rotation.y = Math.PI;
@@ -216,7 +343,25 @@
     const frontMat = new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_front_mat', map: frontTex });
     const backMat  = new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_back_mat',  map: backTex  });
 
-    const frontGeo = new THREE.PlaneGeometry(modelWidth, modelHeight);
+    // Spine-aiming "nod": weight ramps along local X (front-to-back axis
+    // of the side profile) from a neck pivot toward the snout at the left
+    // edge, rotating in the X/Y plane around a neck-height pivot — like a
+    // horse lowering/raising its head, not a whole-body rotation.
+    const widthSegments = Math.max(1, Math.round(cfg().bendHeightSegments ?? 16));
+    const faceLocalX = -modelWidth / 2;
+    const pivotLocalX = faceLocalX * (cfg().creatureNeckPivotRatio ?? 0.45);
+    const snoutHeightRatio = Number.isFinite(options.snoutHeightRatio) ? options.snoutHeightRatio : (cfg().creatureSnoutHeightRatio ?? 0.68);
+    const neckHeight = (snoutHeightRatio - 0.5) * modelHeight;
+    const frontBend = attachNodBend(frontMat, 1);
+    frontBend.uPivotCoord.value = pivotLocalX;
+    frontBend.uFaceCoord.value = faceLocalX;
+    frontBend.uNeckHeight.value = neckHeight;
+    const backBend = attachNodBend(backMat, 1);
+    backBend.uPivotCoord.value = pivotLocalX;
+    backBend.uFaceCoord.value = faceLocalX;
+    backBend.uNeckHeight.value = neckHeight;
+
+    const frontGeo = new THREE.PlaneGeometry(modelWidth, modelHeight, widthSegments, 1);
     const backGeo  = frontGeo.clone();
 
     const frontMesh = new THREE.Mesh(frontGeo, frontMat);
@@ -233,6 +378,8 @@
     group.name = (options.name || 'animal_plane') + '_group';
     group.add(frontMesh);
     group.add(backMesh);
+    group.userData.snoutHeightRatio = snoutHeightRatio;
+    group.userData.snoutLocalHeight = neckHeight;
 
     return {
       group,
@@ -277,6 +424,12 @@
       planeHeight: modelHeight,
       anchorZ,
       textures,
+      // Ground, expressed in the assembly's own local space (whose origin
+      // is the face — see createSinglePlaneAssembly), is always at
+      // -placementRatio * modelHeight: the assembly sits placementRatio*
+      // modelHeight above the avatar root's ground-level parent, so this
+      // is just that offset's negative, in the assembly's own coordinates.
+      pivotLocalY: -placementRatio * modelHeight,
       name: `${root.name}_single_plane_assembly`,
     });
     assembly.position.y = (placementRatio - 0.5) * modelHeight;
@@ -348,5 +501,6 @@
     isChildAvatar,
     disposeAvatarModel,
     loadThreeModules,
+    setAvatarAimPitch,
   };
 })();
