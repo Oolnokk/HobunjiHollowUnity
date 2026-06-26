@@ -14908,7 +14908,7 @@
         };
       })();
       const inputBindings = loadInputBindings();
-      const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null };
+      const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null, hadPad: false };
       const CONTROLLER_INPUT_OPTIONS = [
         'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
         'LeftTrigger', 'RightTrigger',
@@ -15009,7 +15009,15 @@
         if (!gamepadState.focused) return;
         const pads = navigator.getGamepads?.() || [];
         const pad = Array.from(pads).find(Boolean);
-        if (!pad) { input.x = 0; input.y = 0; return; }
+        if (!pad) {
+          // Only clear movement input on an actual gamepad disconnect, not every
+          // frame — otherwise this stomps the touch joystick (and keyboard) on
+          // any device with no gamepad, which is virtually all mobile devices.
+          if (gamepadState.hadPad) { input.x = 0; input.y = 0; }
+          gamepadState.hadPad = false;
+          return;
+        }
+        gamepadState.hadPad = true;
         const dz = INPUT_DEFAULTS.deadzone;
         const ax = Math.abs(pad.axes[0] || 0) >= dz ? pad.axes[0] : 0;
         const ay = Math.abs(pad.axes[1] || 0) >= dz ? pad.axes[1] : 0;
