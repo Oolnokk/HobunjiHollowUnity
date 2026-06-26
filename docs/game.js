@@ -14593,6 +14593,7 @@
             let _ptId = null, _cx = 0, _cy = 0, _sockR = 0;
             let _drag = false, _rtimer = null, _socket = null;
             let _chargeFiredOnPress = false;
+            let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
             const DRAG_THRESH = 10;
             const _stack = document.getElementById('actionStack');
 
@@ -14603,6 +14604,21 @@
               // Navigation/interaction actions always fire; tool actions respect swing cooldown
               const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_');
               if (isNavAction || toolSwingT <= 0) useActiveAction();
+            }
+
+            // Weapon tool-action buttons (cut/slash) route taps through the
+            // loadout's ability slots instead of firing the swing directly —
+            // every other button keeps using _abtFire() unchanged.
+            function _weaponSlotFor(act) {
+              if (activeTool !== 'weapon' || !window.Combat?.input) return null;
+              if (act === toolActions.weapon[0]) return 1;
+              if (act === toolActions.weapon[1]) return 2;
+              return null;
+            }
+            function _resolveFire() {
+              const slot = _weaponSlotFor(el.dataset.action);
+              if (slot) { window.Combat.input.fireTap(slot); return; }
+              _abtFire();
             }
 
             el.addEventListener('pointerdown', ev => {
@@ -14633,6 +14649,8 @@
                 _abtFire();
               } else {
                 actionHeldDown = true;
+                _pressSlot = _weaponSlotFor(act);
+                if (_pressSlot) window.Combat.input.pressStart(_pressSlot);
               }
             });
 
@@ -14652,8 +14670,11 @@
                 if (!_drag) {
                   _drag = true;
                   _stack.classList.add('drag-active');
-                  _abtFire();
-                  _rtimer = setInterval(_abtFire, 120);
+                  // Aiming takes over firing from here — disarm the tap/hold
+                  // timer so release doesn't also fire/end an ability.
+                  if (_pressSlot) { window.Combat.input.cancelPress(_pressSlot); _pressSlot = null; }
+                  _resolveFire();
+                  _rtimer = setInterval(_resolveFire, 120);
                 }
               }
             });
@@ -14668,9 +14689,13 @@
               el.style.transition = 'transform 0.14s ease-out';
               el.style.transform  = 'translate(50%, 50%)';
               setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
-              if (!_drag && !_chargeFiredOnPress) _abtFire();
+              if (!_drag && !_chargeFiredOnPress) {
+                if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
+                else _abtFire();
+              }
               _drag = false;
               _chargeFiredOnPress = false;
+              _pressSlot = null;
             }
 
             el.addEventListener('pointerup', _abtUp);
@@ -15579,11 +15604,20 @@
       window.addEventListener('pointerup', clearCameraDragPointer);
       window.addEventListener('pointercancel', clearCameraDragPointer);
 
-      // Left click = primary action, right click = secondary action (desktop play)
+      // Left click = tool action 1 (tap/hold), right click = tool action 2
+      // (tap/hold) when wielding the weapon tool — routed through
+      // Combat.input so the loadout's 4 ability slots can claim them.
+      // Every other tool keeps its previous click behavior unchanged: left
+      // click = primary action, right click = secondary action.
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
           if (menuOpen || farmEditMode || e.shiftKey) return;
+          if (activeTool === 'weapon' && window.Combat?.input) {
+            if (e.button === 0) { actionHeldDown = true; window.Combat.input.pressStart(1); }
+            else if (e.button === 2) { window.Combat.input.pressStart(2); }
+            return;
+          }
           if (e.button === 0) {
             actionHeldDown = true;
             useActiveAction();
@@ -15594,7 +15628,15 @@
           }
         });
       }
-      window.addEventListener('pointerup', (e) => { if (e.pointerType === 'mouse' && e.button === 0) actionHeldDown = false; });
+      window.addEventListener('pointerup', (e) => {
+        if (e.pointerType !== 'mouse') return;
+        if (activeTool === 'weapon' && window.Combat?.input) {
+          if (e.button === 0) { actionHeldDown = false; window.Combat.input.pressEnd(1); }
+          else if (e.button === 2) { window.Combat.input.pressEnd(2); }
+          return;
+        }
+        if (e.button === 0) actionHeldDown = false;
+      });
 
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
@@ -15737,6 +15779,15 @@
         combatConfig,
         resolveWeaponHit,
         findAutoTarget,
+        // Fires the weapon tool's plain cut/slash swing exactly as it
+        // behaved before the loadout system existed — the fallback
+        // combat-input.js uses for a tap slot until an ability module
+        // claims it.
+        fireLegacyWeaponAction: (slotIndex) => {
+          if (activeTool !== 'weapon') return;
+          activeAction = toolActions.weapon[slotIndex - 1];
+          useActiveAction();
+        },
       });
 
       requestAnimationFrame(gameLoop);
