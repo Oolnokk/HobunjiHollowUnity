@@ -170,6 +170,9 @@
         window.__farmDebugLog = [];
         if (window._renderDebugPanel) window._renderDebugPanel();
       });
+      // Debug log copy-to-clipboard button
+      const _dbgCopy = document.getElementById('debugCopyBtn');
+      if (_dbgCopy) _dbgCopy.addEventListener('click', () => copyDebugLog());
       // Inventory category filter
       document.querySelectorAll('.inv-cat').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -2645,21 +2648,21 @@
       const MUSIC_LOUDNESS_GAIN_MIN = 0.5;
       const MUSIC_LOUDNESS_GAIN_MAX = 2.2;
 
-      function audioDebug(message, key = message, throttleMs = 1200) {
+      function audioDebug(message, key = message, throttleMs = 1200, category = 'audio') {
         const now = performance.now();
         const last = _audioDebugLast.has(key) ? _audioDebugLast.get(key) : -Infinity;
         if (now - last < throttleMs) return;
         _audioDebugLast.set(key, now);
-        debugLog('[audio] ' + message, 'audio');
+        debugLog('[audio] ' + message, category);
       }
 
       function audioTraceEnabled() {
         return window.SCRATCHBONES_CONFIG?.game?.debug?.trace?.audio !== false;
       }
 
-      function audioTrace(message, key = message, throttleMs = 2000) {
+      function audioTrace(message, key = message, throttleMs = 2000, category = 'audio') {
         if (!audioTraceEnabled()) return;
-        audioDebug(message, key, throttleMs);
+        audioDebug(message, key, throttleMs, category);
       }
 
       function resolveAudioUrl(url) {
@@ -2928,7 +2931,7 @@
             const data = await r.json();
             data.__basePath = entry.file.replace(/[^/]+$/, '');
             _audioCueIndexes.set(entry.id, data);
-            audioDebug('loaded cue index ' + entry.id + ' (' + ((data.ambient_cues || []).length) + ' cues)', 'cue-index-' + entry.id, 0);
+            audioDebug('loaded cue index ' + entry.id + ' (' + ((data.ambient_cues || []).length) + ' cues)', 'cue-index-' + entry.id, 0, 'cue');
           }));
         } catch(e) { debugLog('Audio cue index load failed: ' + e.message, 'warn'); }
       }
@@ -2953,7 +2956,7 @@
         _ambientCueState.indexId = resolveAreaAudioIndex(area);
         _ambientCueState.mode = 'bgm';
         _ambientCueState.nextAt = 0;
-        audioDebug('ambient area=' + area + ' cueIndex=' + (_ambientCueState.indexId || 'none') + ' mode=bgm', 'ambient-area-' + area, 0);
+        audioDebug('ambient area=' + area + ' cueIndex=' + (_ambientCueState.indexId || 'none') + ' mode=bgm', 'ambient-area-' + area, 0, 'bgm');
         describeAudioConfigForArea(area);
       }
 
@@ -2998,7 +3001,7 @@
         const all = (sets[area] || []).filter(track => track?.url);
         const playable = all.filter(isBgmTrackEligible);
         if (!playable.length) {
-          if (all.length) audioDebug('no eligible bgm candidates for area=' + area + '; waiting for time window or valid media', 'bgm-all-failed-' + area, 3000);
+          if (all.length) audioDebug('no eligible bgm candidates for area=' + area + '; waiting for time window or valid media', 'bgm-all-failed-' + area, 3000, 'bgm');
           return null;
         }
         const preferred = playable.filter(track => !track.fallback);
@@ -3038,11 +3041,11 @@
             _ambientCueState.mode = 'bgm';
           };
           snd.addEventListener('ended', finishCue, { once: true });
-          snd.addEventListener('error', () => { audioDebug('cue error ' + snd.src, 'cue-error-' + cue.id, 0); finishCue(); }, { once: true });
+          snd.addEventListener('error', () => { audioDebug('cue error ' + snd.src, 'cue-error-' + cue.id, 0, 'cue'); finishCue(); }, { once: true });
           _ambientCueState.currentCue = snd;
-          audioDebug('playing cue area=' + currentArea + ' id=' + cue.id + ' url=' + snd.src + ' baseVolume=' + cueBaseVolume.toFixed(2), 'cue-play-' + cue.id, 0);
+          audioDebug('playing cue area=' + currentArea + ' id=' + cue.id + ' url=' + snd.src + ' baseVolume=' + cueBaseVolume.toFixed(2), 'cue-play-' + cue.id, 0, 'cue');
           snd.play().catch(err => {
-            audioDebug('cue play blocked/failed id=' + cue.id + ': ' + (err?.name || err), 'cue-fail-' + cue.id, 0);
+            audioDebug('cue play blocked/failed id=' + cue.id + ': ' + (err?.name || err), 'cue-fail-' + cue.id, 0, 'cue');
             releaseMusicGain(snd);
             _ambientCueState.currentCue = null;
             _ambientCueState.mode = 'cue_wait';
@@ -3056,7 +3059,7 @@
         if (performance.now() < _ambientCueState.nextAt) return;
         const bgmTrack = resolveAreaBgm(currentArea);
         const bgmUrl = bgmTrack?.url || '';
-        if (!bgmUrl) { audioDebug('no eligible bgm for area=' + currentArea + '; retrying bgm resolution soon', 'bgm-missing-' + currentArea, 3000); _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
+        if (!bgmUrl) { audioDebug('no eligible bgm for area=' + currentArea + '; retrying bgm resolution soon', 'bgm-missing-' + currentArea, 3000, 'bgm'); _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
         const fade = musicFadeConfig();
         const bgmBaseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
         const snd = playMusicTrack(bgmUrl, bgmBaseVolume, fade.songFadeInMs, fade.songFadeOutMs);
@@ -3067,16 +3070,16 @@
           scheduleNextCueDelay();
         };
         snd.addEventListener('ended', finishBgm, { once: true });
-        snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0); markAudioUrlFailed(bgmUrl, 'media error'); releaseMusicGain(snd); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
+        snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0, 'bgm'); markAudioUrlFailed(bgmUrl, 'media error'); releaseMusicGain(snd); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
         _ambientCueState.currentBgm = snd;
-        audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' baseVolume=' + bgmBaseVolume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0);
+        audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' baseVolume=' + bgmBaseVolume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0, 'bgm');
         snd.play().then(() => {
           if (bgmTrack?.oncePerDay) {
             _dailyBgmPlayed.add(bgmDailyKey(bgmTrack));
-            audioDebug('marked once-per-day bgm played url=' + snd.src + ' day=' + calendar.day, 'bgm-daily-' + bgmDailyKey(bgmTrack), 0);
+            audioDebug('marked once-per-day bgm played url=' + snd.src + ' day=' + calendar.day, 'bgm-daily-' + bgmDailyKey(bgmTrack), 0, 'bgm');
           }
         }).catch(err => {
-          audioDebug('bgm play blocked/failed area=' + currentArea + ': ' + (err?.name || err), 'bgm-fail-' + currentArea, 0);
+          audioDebug('bgm play blocked/failed area=' + currentArea + ': ' + (err?.name || err), 'bgm-fail-' + currentArea, 0, 'bgm');
           if ((err?.name || '') !== 'NotAllowedError') markAudioUrlFailed(bgmUrl, err?.name || err || 'play failed');
           releaseMusicGain(snd);
           if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
@@ -3094,13 +3097,13 @@
         }
         if (!snd) return;
         snd.volume = v;
-        audioTrace('bgs state ' + id + ' volume=' + v.toFixed(2) + ' paused=' + snd.paused + ' ready=' + audioReadyStateLabel(snd) + ' url=' + snd.src, 'bgs-state-' + id, 5000);
+        audioTrace('bgs state ' + id + ' volume=' + v.toFixed(2) + ' paused=' + snd.paused + ' ready=' + audioReadyStateLabel(snd) + ' url=' + snd.src, 'bgs-state-' + id, 5000, 'bgs');
         if (v > 0 && snd.paused) {
-          audioDebug('starting bgs ' + id + ' url=' + snd.src + ' volume=' + v.toFixed(2), 'bgs-start-' + id, 0);
-          snd.play().catch(err => audioDebug('bgs play blocked/failed ' + id + ': ' + (err?.name || err), 'bgs-fail-' + id, 0));
+          audioDebug('starting bgs ' + id + ' url=' + snd.src + ' volume=' + v.toFixed(2), 'bgs-start-' + id, 0, 'bgs');
+          snd.play().catch(err => audioDebug('bgs play blocked/failed ' + id + ': ' + (err?.name || err), 'bgs-fail-' + id, 0, 'bgs'));
         }
         if (v <= 0 && !snd.paused) {
-          audioDebug('stopping bgs ' + id, 'bgs-stop-' + id, 0);
+          audioDebug('stopping bgs ' + id, 'bgs-stop-' + id, 0, 'bgs');
           snd.pause();
         }
       }
@@ -3108,7 +3111,7 @@
       function updateExteriorBgs() {
         const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) {
-          audioDebug('exterior bgs disabled by config', 'bgs-disabled');
+          audioDebug('exterior bgs disabled by config', 'bgs-disabled', 1200, 'bgs');
           setLoopingBgs('birds', '', 0);
           setLoopingBgs('nightbugs', '', 0);
           setLoopingBgs('wind1', '', 0);
@@ -14760,7 +14763,7 @@
           `Tool/action: ${toolName(activeTool)} / ${actionName(activeAction)}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           '--- raw log ---',
-          ...(window.__farmDebugLog || [])
+          ...(window.__farmDebugLog || []).map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
         ];
         const text = lines.join('\n');
         try {

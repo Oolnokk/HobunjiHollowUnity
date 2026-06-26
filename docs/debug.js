@@ -12,13 +12,17 @@
     function _renderDebugPanel() {
       const panel = document.getElementById('debugLog');
       if (!panel) return;
-      const COLOR = { error: '#f87171', warn: '#fb923c', promise: '#c084fc', info: '#d1d5db', fish: '#60a5fa', audio: '#ff66cc' };
+      const COLOR = { error: '#f87171', warn: '#fb923c', promise: '#c084fc', info: '#d1d5db', fish: '#60a5fa', audio: '#ff66cc', bgm: '#4ade80', cue: '#4ade80', bgs: '#fada5e' };
+      // Only follow new entries to the bottom if the user hasn't scrolled up
+      // to read older ones — otherwise re-rendering would yank them back down.
+      const stuckToBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 16;
+      const prevScrollTop = panel.scrollTop;
       panel.innerHTML = window.__farmDebugLog.map(e => {
         const c = COLOR[e.lvl] || COLOR.info;
         const safe = e.msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         return `<span style="color:#6b7280">[${e.t}]</span> <span style="color:${c}">${safe}</span>`;
       }).join('\n');
-      panel.scrollTop = panel.scrollHeight;
+      panel.scrollTop = stuckToBottom ? panel.scrollHeight : prevScrollTop;
     }
 
     window._renderDebugPanel = _renderDebugPanel;
