@@ -23,7 +23,7 @@
   // nonexistent) hold slots.
   const DEFAULT_LOADOUT = {
     tap1: 'swingCombo',
-    tap2: 'quickAttacks',
+    tap2: 'opportunistJab',
     hold1: 'counterShield',
     hold2: 'chargedBreaker',
   };
