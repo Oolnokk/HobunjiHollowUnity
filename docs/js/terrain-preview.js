@@ -21,6 +21,8 @@
   const PLATEAU_UNIT = 2.5;
   const NORMAL_TOP = 0.0;
   const RIVER_TOP = -0.55; // mirrors docs/game.js RIVER_TOP/STREAM_TOP — river/stream/waterfall bed depth
+  const TRENCH_TOP = -0.5; // mirrors docs/game.js TRENCH_TOP
+  const RAISED_TOP = 0.5;  // mirrors docs/game.js RAISED_TOP
   const TileType = Object.freeze({
     GRASS: 'grass', WEEDS: 'weeds', TILLED: 'tilled',
     TRENCH: 'trench', RAISED: 'raised', PADDY: 'paddy',
@@ -188,6 +190,97 @@
         nt.incline = true; nt.skipFloor = true; nt.rampCurtain = true;
       }
     }
+  }
+
+  // ── Terrain tile heightfield: carved channel/ditch beds (pure data) ─────────
+  // Mirrors docs/game.js buildTerrainTileGeo exactly, up to (but not including)
+  // the THREE.BufferGeometry construction — and with one deliberate deviation:
+  // game.js's positions are tile-local (-0.5..0.5, translated via the mesh's
+  // own position at the call site), whereas this returns absolute world x/z
+  // (col..col+1, row..row+1) to match this module's other geometry builders
+  // (buildRampMeshGeometry etc.), which bake world coords directly so the
+  // caller never needs a separate per-tile mesh transform.
+  const DEPRESSION_TOP = {
+    [TileType.TRENCH]: TRENCH_TOP,
+    [TileType.RIVER]: RIVER_TOP,
+    [TileType.STREAM]: RIVER_TOP,
+    [TileType.WATERFALL]: RIVER_TOP,
+  };
+  function buildTerrainTileGeo(col, row, type, zGrid) {
+    const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
+    const BLEND_V = 2;
+    const PLATEAU = type === TileType.RAISED ? 3.0 : 1.5; // raised = wide flat top
+    const depressionTop = DEPRESSION_TOP[type];
+    const isDepression = depressionTop !== undefined;
+    const targetDY = isDepression
+      ? depressionTop - NORMAL_TOP
+      : RAISED_TOP - NORMAL_TOP; // +0.5
+
+    const openN = zGrid[row - 1]?.[col]?.type === type;
+    const openS = zGrid[row + 1]?.[col]?.type === type;
+    const openW = zGrid[row]?.[col - 1]?.type === type;
+    const openE = zGrid[row]?.[col + 1]?.type === type;
+
+    // Diagonal tiles — used to seal the inner corner of L-shaped turns
+    const diagNW = zGrid[row - 1]?.[col - 1]?.type === type;
+    const diagNE = zGrid[row - 1]?.[col + 1]?.type === type;
+    const diagSW = zGrid[row + 1]?.[col - 1]?.type === type;
+    const diagSE = zGrid[row + 1]?.[col + 1]?.type === type;
+
+    const seamDisp = (vx, vz) => {
+      const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+      let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+      h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+      return (h / 4294967296 - 0.5) * 0.026;
+    };
+    const roughDisp = (vx, vz) => {
+      const kx = Math.round(vx * 6) | 0, kz = Math.round(vz * 6) | 0;
+      let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+      h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+      return (h / 4294967296 - 0.5) * 0.035;
+    };
+    const smooth = t => t * t * (3 - 2 * t);
+
+    const Y = new Float32Array(VERTS * VERTS);
+    for (let vj = 0; vj < VERTS; vj++) {
+      for (let vi = 0; vi < VERTS; vi++) {
+        const bW = openW ? 1 : smooth(Math.min(1, vi / BLEND_V));
+        const bE = openE ? 1 : smooth(Math.min(1, (CELLS - vi) / BLEND_V));
+        const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
+        const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
+
+        const bDiagNW = (openW && openN && !diagNW) ? smooth(Math.min(1, Math.max(vi, vj)               / BLEND_V)) : 1;
+        const bDiagNE = (openE && openN && !diagNE) ? smooth(Math.min(1, Math.max(CELLS - vi, vj)       / BLEND_V)) : 1;
+        const bDiagSW = (openW && openS && !diagSW) ? smooth(Math.min(1, Math.max(vi, CELLS - vj)       / BLEND_V)) : 1;
+        const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, Math.max(CELLS - vi, CELLS - vj) / BLEND_V)) : 1;
+
+        const blend = Math.min(1, bW * bE * bN * bS * bDiagNW * bDiagNE * bDiagSW * bDiagSE * PLATEAU);
+        const vx = col + vi * STEP, vz = row + vj * STEP;
+        Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * targetDY + blend * roughDisp(vx, vz);
+      }
+    }
+
+    const pos = [];
+    for (let vj = 0; vj < VERTS; vj++)
+      for (let vi = 0; vi < VERTS; vi++)
+        pos.push(col + vi * STEP, Y[vj * VERTS + vi], row + vj * STEP);
+
+    // Split cells: dirt where significantly depressed/elevated, grass on flat
+    // edge cells that blend back to ground level.
+    const DIRT_THRESH = 0.05;
+    const dirtIdx = [], grassIdx = [];
+    for (let cj = 0; cj < CELLS; cj++)
+      for (let ci = 0; ci < CELLS; ci++) {
+        const v00 = cj * VERTS + ci, v10 = cj * VERTS + ci + 1;
+        const v01 = (cj + 1) * VERTS + ci, v11 = (cj + 1) * VERTS + ci + 1;
+        const y00 = Y[v00], y10 = Y[v10], y01 = Y[v01], y11 = Y[v11];
+        const isDirt = isDepression
+          ? Math.min(y00, y10, y01, y11) < -DIRT_THRESH
+          : Math.max(y00, y10, y01, y11) > DIRT_THRESH;
+        (isDirt ? dirtIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+      }
+
+    return { pos, dirtIdx, grassIdx };
   }
 
   // ── Plateau mesa heightfield geometry (pure data) ───────────────────────────
@@ -571,6 +664,6 @@
     PLATEAU_UNIT, NORMAL_TOP, TileType,
     buildMergedZoneGrid, buildZGrid, applyRampCurtainFlags,
     buildPlateauMesaGeometry, buildRampMeshGeometry, buildRampCurtainGeometry,
-    buildWaterfallWallGeometry, validateTerrain,
+    buildWaterfallWallGeometry, buildTerrainTileGeo, validateTerrain,
   };
 });

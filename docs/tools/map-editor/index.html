@@ -2863,7 +2863,10 @@ function rebuild3D() {
   TerrainPreview.applyRampCurtainFlags(zGrid, merged.cols, merged.rows);
 
   // Flat floor quads for every tile not covered by a mesa/ramp/curtain mesh,
-  // colored by tile type and lifted to its own tier's elevation.
+  // colored by tile type and lifted to its own tier's elevation. Carved-bed
+  // types (river/stream/waterfall/trench/raised) are rendered separately
+  // below via TerrainPreview.buildTerrainTileGeo instead of a flat quad.
+  const CARVED_TYPES = { river: 0x2f6fa8, stream: 0x2f6fa8, waterfall: 0x2f6fa8, trench: 0x6b5638, raised: 0x6b5638 };
   const floorMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const fPos = [], fCol = [], fIdx = [];
   const colorOf = hex => { const n = parseInt(hex.slice(1), 16); return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255]; };
@@ -2872,7 +2875,7 @@ function rebuild3D() {
       const t = zGrid[r][c];
       if (!t || t.skipFloor) continue;
       const tile = merged.tiles.get(`${c},${r}`);
-      if (!tile || tile.type === 'ramp') continue;
+      if (!tile || tile.type === 'ramp' || CARVED_TYPES[tile.type] !== undefined) continue;
       const y = TerrainPreview.NORMAL_TOP + (t.elevTier || 0) * TerrainPreview.PLATEAU_UNIT;
       const col = colorOf((TILE_INFO[tile.type] || { color: '#888' }).color);
       const base = fPos.length / 3;
@@ -2888,6 +2891,30 @@ function rebuild3D() {
     fGeo.setIndex(fIdx);
     fGeo.computeVertexNormals();
     group.add(new THREE.Mesh(fGeo, floorMat));
+  }
+
+  // Carved beds for river/stream/waterfall/trench/raised tiles — the same
+  // per-tile heightfield docs/game.js's buildTerrainTileGeo already carves in
+  // the live game, mirrored here (TerrainPreview.buildTerrainTileGeo) so the
+  // preview shows a sunken/raised channel instead of a flat colored quad.
+  const carvedGrassMat = new THREE.MeshLambertMaterial({ color: 0x4f9a4f, side: THREE.DoubleSide });
+  for (const [type, bedColor] of Object.entries(CARVED_TYPES)) {
+    const bedMat = new THREE.MeshLambertMaterial({ color: bedColor, side: THREE.DoubleSide });
+    const cPos = [], dIdx = [], gIdx = [];
+    for (let r = 0; r < merged.rows; r++) {
+      for (let c = 0; c < merged.cols; c++) {
+        if (zGrid[r][c].type !== type) continue;
+        let geo;
+        try { geo = TerrainPreview.buildTerrainTileGeo(c, r, type, zGrid); }
+        catch (e) { continue; }
+        const base = cPos.length / 3;
+        cPos.push(...geo.pos);
+        for (const v of geo.dirtIdx) dIdx.push(v + base);
+        for (const v of geo.grassIdx) gIdx.push(v + base);
+      }
+    }
+    if (dIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(cPos, dIdx), bedMat));
+    if (gIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(cPos, gIdx), carvedGrassMat));
   }
 
   // Plateau mesa heightfields (top sheet + cliff skin) per tier transition.
