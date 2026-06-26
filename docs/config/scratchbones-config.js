@@ -3182,6 +3182,8 @@ window.SCRATCHBONES_CONFIG = {
         "sfxVolume": 0.92,
         "bgmVolume": 0.48,
         "musicFadeMs": 280,
+        "songFadeInMs": 2200,
+        "songFadeOutMs": 2600,
         "ambientCueMinDelaySec": 300,
         "ambientCueMaxDelaySec": 600,
         "areaBgm": {

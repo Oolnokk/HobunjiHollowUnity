@@ -170,6 +170,9 @@
         window.__farmDebugLog = [];
         if (window._renderDebugPanel) window._renderDebugPanel();
       });
+      // Debug log copy-to-clipboard button
+      const _dbgCopy = document.getElementById('debugCopyBtn');
+      if (_dbgCopy) _dbgCopy.addEventListener('click', () => copyDebugLog());
       // Inventory category filter
       document.querySelectorAll('.inv-cat').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -2655,22 +2658,29 @@
       let _gameAudioUnlocked = false;
       const _audioFailedUrls = new Set();
       const _dailyBgmPlayed = new Set();
+      let _musicAudioCtx = null;
+      const _musicGainNodes = new Map();       // music <audio> element -> { ctx, gain, target }
+      const _musicLoudnessGain = new Map();    // resolved track url -> measured normalization multiplier
+      const _musicLoudnessPending = new Map(); // resolved track url -> in-flight analysis promise
+      const MUSIC_TARGET_RMS = 0.16;
+      const MUSIC_LOUDNESS_GAIN_MIN = 0.5;
+      const MUSIC_LOUDNESS_GAIN_MAX = 2.2;
 
-      function audioDebug(message, key = message, throttleMs = 1200) {
+      function audioDebug(message, key = message, throttleMs = 1200, category = 'audio') {
         const now = performance.now();
         const last = _audioDebugLast.has(key) ? _audioDebugLast.get(key) : -Infinity;
         if (now - last < throttleMs) return;
         _audioDebugLast.set(key, now);
-        debugLog('[audio] ' + message, 'audio');
+        debugLog(message, category);
       }
 
       function audioTraceEnabled() {
         return window.SCRATCHBONES_CONFIG?.game?.debug?.trace?.audio !== false;
       }
 
-      function audioTrace(message, key = message, throttleMs = 2000) {
+      function audioTrace(message, key = message, throttleMs = 2000, category = 'audio') {
         if (!audioTraceEnabled()) return;
-        audioDebug(message, key, throttleMs);
+        audioDebug(message, key, throttleMs, category);
       }
 
       function resolveAudioUrl(url) {
@@ -2696,6 +2706,197 @@
         return snd;
       }
 
+      function getMusicAudioCtx() {
+        if (_musicAudioCtx) return _musicAudioCtx;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return null;
+        try { _musicAudioCtx = new AudioCtx(); }
+        catch (e) { audioDebug('music audio context unavailable: ' + (e?.message || e), 'music-ctx-fail', 0); _musicAudioCtx = null; }
+        return _musicAudioCtx;
+      }
+
+      // Routes a music <audio> element through a GainNode so it can be faded
+      // smoothly and boosted past the element's volume<=1 ceiling (needed to
+      // normalize quiet tracks up to the target level). Falls back to plain
+      // `snd.volume` (capped at 1, no boosting) if Web Audio is unavailable.
+      function attachMusicGain(snd) {
+        const ctx = getMusicAudioCtx();
+        if (!ctx) return null;
+        if (_musicGainNodes.has(snd)) return _musicGainNodes.get(snd);
+        try {
+          const source = ctx.createMediaElementSource(snd);
+          const gain = ctx.createGain();
+          gain.gain.value = 0;
+          source.connect(gain).connect(ctx.destination);
+          const node = { ctx, gain, target: 0 };
+          _musicGainNodes.set(snd, node);
+          return node;
+        } catch (e) {
+          audioDebug('music gain attach failed ' + snd.src + ': ' + (e?.message || e), 'music-gain-attach-fail', 0);
+          return null;
+        }
+      }
+
+      function releaseMusicGain(snd) {
+        const node = _musicGainNodes.get(snd);
+        if (node) { try { node.gain.disconnect(); } catch {} }
+        _musicGainNodes.delete(snd);
+      }
+
+      function setMusicVolumeNow(snd, value) {
+        const v = Math.max(0, value);
+        const node = _musicGainNodes.get(snd);
+        const clampedTarget = Math.max(0, Math.min(1, v));
+        if (node) {
+          node.target = v;
+          node.gain.gain.cancelScheduledValues(node.ctx.currentTime);
+          node.gain.gain.setValueAtTime(v, node.ctx.currentTime);
+          // The element's own .volume no longer affects audible output once
+          // routed through the GainNode, but unlockGameAudio()'s retry loop
+          // still reads it to tell "should be audible" apart from
+          // "intentionally silent/stopped" — keep it mirroring the target.
+          snd.volume = clampedTarget;
+        } else {
+          snd.volume = clampedTarget;
+        }
+      }
+
+      // Ramps a music element's volume to `target` over `durationMs`. Uses
+      // Web Audio gain automation when available (immune to rAF/timer jitter),
+      // and a rAF-driven fallback on `.volume` otherwise. `onDone` fires once
+      // this specific ramp completes (skipped if a later fade supersedes it).
+      function fadeMusicVolume(snd, target, durationMs, onDone) {
+        const v = Math.max(0, target);
+        const dur = Math.max(0, Number(durationMs) || 0);
+        const clampedTarget = Math.max(0, Math.min(1, v));
+        const node = _musicGainNodes.get(snd);
+        if (node) {
+          node.target = v;
+          const now = node.ctx.currentTime;
+          node.gain.gain.cancelScheduledValues(now);
+          node.gain.gain.setValueAtTime(node.gain.gain.value, now);
+          if (dur <= 0) node.gain.gain.setValueAtTime(v, now);
+          else node.gain.gain.linearRampToValueAtTime(v, now + dur / 1000);
+          // Mirror the *target* onto .volume immediately (not waiting for the
+          // ramp) — it no longer drives audible output once routed through
+          // the GainNode, but unlockGameAudio()'s retry loop reads it to know
+          // whether a paused element wants to be playing.
+          snd.volume = clampedTarget;
+          if (onDone) setTimeout(() => { if (node.target === v) onDone(); }, dur);
+          return;
+        }
+        if (dur <= 0) { snd.volume = clampedTarget; onDone?.(); return; }
+        const start = snd.volume;
+        const startTime = performance.now();
+        const token = {};
+        snd._fadeToken = token;
+        const step = now => {
+          if (snd._fadeToken !== token) return;
+          const t = Math.min(1, (now - startTime) / dur);
+          snd.volume = start + (clampedTarget - start) * t;
+          if (t < 1) requestAnimationFrame(step);
+          else onDone?.();
+        };
+        requestAnimationFrame(step);
+      }
+
+      function computeAudioBufferRms(buffer) {
+        let sumSquares = 0, count = 0;
+        const step = Math.max(1, Math.floor(buffer.sampleRate / 4000));
+        for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+          const data = buffer.getChannelData(ch);
+          for (let i = 0; i < data.length; i += step) { sumSquares += data[i] * data[i]; count++; }
+        }
+        return count ? Math.sqrt(sumSquares / count) : 0;
+      }
+
+      // Lazily measures a track's loudness via Web Audio and caches a gain
+      // multiplier that brings it to MUSIC_TARGET_RMS, so songs/cues recorded
+      // or mastered at different levels come out at a consistent perceived
+      // volume automatically, without hand-tuning each file's `volume` field.
+      function musicLoudnessGain(url) {
+        const resolved = resolveAudioUrl(url);
+        if (!resolved) return Promise.resolve(1);
+        if (_musicLoudnessGain.has(resolved)) return Promise.resolve(_musicLoudnessGain.get(resolved));
+        if (_musicLoudnessPending.has(resolved)) return _musicLoudnessPending.get(resolved);
+        const ctx = getMusicAudioCtx();
+        if (!ctx) return Promise.resolve(1);
+        const promise = fetch(resolved)
+          .then(res => res.arrayBuffer())
+          .then(buf => ctx.decodeAudioData(buf))
+          .then(audioBuf => {
+            const rms = computeAudioBufferRms(audioBuf);
+            const gain = rms > 0.0001 ? clamp(MUSIC_TARGET_RMS / rms, MUSIC_LOUDNESS_GAIN_MIN, MUSIC_LOUDNESS_GAIN_MAX) : 1;
+            _musicLoudnessGain.set(resolved, gain);
+            audioDebug('measured loudness url=' + resolved + ' rms=' + rms.toFixed(4) + ' gain=' + gain.toFixed(2), 'music-loudness-' + resolved, 0);
+            return gain;
+          })
+          .catch(e => {
+            audioDebug('loudness analysis failed url=' + resolved + ': ' + (e?.message || e), 'music-loudness-fail-' + resolved, 0);
+            _musicLoudnessGain.set(resolved, 1);
+            return 1;
+          })
+          .finally(() => _musicLoudnessPending.delete(resolved));
+        _musicLoudnessPending.set(resolved, promise);
+        return promise;
+      }
+
+      function musicFadeConfig() {
+        const audioCfg = gameAudioConfig();
+        return {
+          songFadeInMs: Math.max(0, Number(audioCfg.songFadeInMs) || 2200),
+          songFadeOutMs: Math.max(0, Number(audioCfg.songFadeOutMs) || 2600),
+          cueFadeMs: Math.max(0, Number(audioCfg.musicFadeMs) || 280),
+          interruptFadeMs: Math.max(0, Number(audioCfg.musicFadeMs) || 280)
+        };
+      }
+
+      // Plays a music track (BGM song or ambient cue) with automatic loudness
+      // normalization and a fade-in at the start / fade-out before it ends
+      // naturally. `baseVolume` is the pre-normalization target (0..1) from
+      // config; the measured loudness multiplier is layered on top once the
+      // (cached, async) analysis resolves. Returns the <audio> element, with
+      // a `_stopMusic(fadeMs)` helper attached for fading out an interruption
+      // (e.g. switching areas) instead of cutting the track off mid-note.
+      function playMusicTrack(url, baseVolume, fadeInMs, fadeOutMs) {
+        const snd = makeGameAudio(url);
+        attachMusicGain(snd);
+        setMusicVolumeNow(snd, 0);
+        let fadingOut = false;
+        const targetVolume = () => Math.max(0, baseVolume) * (_musicLoudnessGain.get(resolveAudioUrl(url)) ?? 1);
+        fadeMusicVolume(snd, targetVolume(), fadeInMs);
+        musicLoudnessGain(url).then(() => {
+          if (!fadingOut && !snd.paused) fadeMusicVolume(snd, targetVolume(), 400);
+        });
+        if (fadeOutMs > 0) {
+          snd.addEventListener('timeupdate', () => {
+            if (fadingOut) return;
+            const remaining = (snd.duration || 0) - snd.currentTime;
+            if (Number.isFinite(remaining) && remaining > 0 && remaining <= fadeOutMs / 1000) {
+              fadingOut = true;
+              fadeMusicVolume(snd, 0, remaining * 1000);
+            }
+          });
+        }
+        snd._stopMusic = (stopFadeMs = fadeOutMs) => new Promise(resolve => {
+          fadingOut = true;
+          fadeMusicVolume(snd, 0, stopFadeMs, () => { snd.pause(); releaseMusicGain(snd); resolve(); });
+        });
+        // Some decode failures never surface as an 'error' event: the element
+        // reports paused=false (and the gain ramp completes normally) but
+        // currentTime never advances — silently stuck forever with nothing
+        // for a caller's 'error' listener to catch. Lets callers detect that
+        // and recover instead of leaving the track stuck mute indefinitely.
+        snd._watchForStall = (timeoutMs, onStalled) => {
+          setTimeout(() => {
+            if (fadingOut || snd.paused || snd.ended) return;
+            if (snd.currentTime > 0.05) return;
+            onStalled();
+          }, timeoutMs);
+        };
+        return snd;
+      }
+
       function markAudioUrlFailed(url, reason) {
         const resolved = resolveAudioUrl(url);
         if (!resolved) return;
@@ -2715,11 +2916,25 @@
       }
 
       function unlockGameAudio(reason = 'user gesture') {
-        if (_gameAudioUnlocked) return;
-        _gameAudioUnlocked = true;
-        audioDebug('audio unlock from ' + reason + '; retrying audible loops=' + _gameAudioElements.size, 'audio-unlock', 0);
+        // Resuming suspended AudioContexts must happen on every gesture, not just
+        // the first: _musicAudioCtx/_rainAudioCtx are created lazily (the first
+        // time music or rain actually tries to play), which is often well after
+        // the player's first click/tap — by which point a one-shot unlock would
+        // already be spent and the newly-created context would stay suspended
+        // (silently) forever.
         const rainCtx = window._rainAudioCtx;
         if (rainCtx?.state === 'suspended') rainCtx.resume().catch(err => audioDebug('rain audio resume failed: ' + (err?.name || err), 'rain-resume-fail', 0));
+        if (_musicAudioCtx?.state === 'suspended') _musicAudioCtx.resume().catch(err => audioDebug('music audio resume failed: ' + (err?.name || err), 'music-resume-fail', 0));
+        if (!_gameAudioUnlocked) {
+          _gameAudioUnlocked = true;
+          audioDebug('audio unlock from ' + reason, 'audio-unlock', 0);
+        }
+        // Retry blocked playback on every gesture, not just the first: every
+        // bgm/cue track is a freshly-created <audio> element (see
+        // playMusicTrack), so a track that starts well after the player's
+        // first click/tap can still get autoplay-blocked and needs its own
+        // later gesture to retry play() — a one-shot retry only ever catches
+        // whatever happened to be paused at that first moment.
         for (const snd of _gameAudioElements) {
           if (!snd || snd.volume <= 0 || !snd.paused) continue;
           snd.play().then(() => {
@@ -2730,9 +2945,9 @@
         }
       }
 
-      document.addEventListener('pointerdown', () => unlockGameAudio('pointerdown'), { once: true, capture: true });
-      document.addEventListener('keydown', () => unlockGameAudio('keydown'), { once: true, capture: true });
-      document.addEventListener('touchstart', () => unlockGameAudio('touchstart'), { once: true, capture: true, passive: true });
+      document.addEventListener('pointerdown', () => unlockGameAudio('pointerdown'), { capture: true });
+      document.addEventListener('keydown', () => unlockGameAudio('keydown'), { capture: true });
+      document.addEventListener('touchstart', () => unlockGameAudio('touchstart'), { capture: true, passive: true });
 
       async function loadAudioCueIndexes() {
         try {
@@ -2746,7 +2961,7 @@
             const data = await r.json();
             data.__basePath = entry.file.replace(/[^/]+$/, '');
             _audioCueIndexes.set(entry.id, data);
-            audioDebug('loaded cue index ' + entry.id + ' (' + ((data.ambient_cues || []).length) + ' cues)', 'cue-index-' + entry.id, 0);
+            audioDebug('loaded cue index ' + entry.id + ' (' + ((data.ambient_cues || []).length) + ' cues)', 'cue-index-' + entry.id, 0, 'cue');
           }));
         } catch(e) { debugLog('Audio cue index load failed: ' + e.message, 'warn'); }
       }
@@ -2771,15 +2986,18 @@
         _ambientCueState.indexId = resolveAreaAudioIndex(area);
         _ambientCueState.mode = 'bgm';
         _ambientCueState.nextAt = 0;
-        audioDebug('ambient area=' + area + ' cueIndex=' + (_ambientCueState.indexId || 'none') + ' mode=bgm', 'ambient-area-' + area, 0);
+        audioDebug('ambient area=' + area + ' cueIndex=' + (_ambientCueState.indexId || 'none') + ' mode=bgm', 'ambient-area-' + area, 0, 'bgm');
         describeAudioConfigForArea(area);
       }
 
       function stopAmbientCue() {
+        const fade = musicFadeConfig();
         for (const key of ['currentCue', 'currentBgm']) {
           const snd = _ambientCueState[key];
-          if (snd) snd.pause();
           _ambientCueState[key] = null;
+          if (!snd) continue;
+          if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
+          else snd.pause();
         }
       }
 
@@ -2813,7 +3031,7 @@
         const all = (sets[area] || []).filter(track => track?.url);
         const playable = all.filter(isBgmTrackEligible);
         if (!playable.length) {
-          if (all.length) audioDebug('no eligible bgm candidates for area=' + area + '; waiting for time window or valid media', 'bgm-all-failed-' + area, 3000);
+          if (all.length) audioDebug('no eligible bgm candidates for area=' + area + '; waiting for time window or valid media', 'bgm-all-failed-' + area, 3000, 'bgm');
           return null;
         }
         const preferred = playable.filter(track => !track.fallback);
@@ -2843,18 +3061,27 @@
           if (!cues.length) { _ambientCueState.mode = 'bgm'; return; }
           const cue = cues[Math.floor(Math.random() * cues.length)];
           if (!cue?.file) { scheduleNextCueDelay(); return; }
-          const snd = makeGameAudio((idx.__basePath || '') + cue.file);
+          const fade = musicFadeConfig();
+          const cueUrl = (idx.__basePath || '') + cue.file;
+          const cueBaseVolume = Math.max(0, Math.min(1, Number(cue.volume) || Number(audioCfg.bgmVolume) || 0.7));
+          const snd = playMusicTrack(cueUrl, cueBaseVolume, fade.cueFadeMs, fade.cueFadeMs);
           const finishCue = () => {
             if (_ambientCueState.currentCue === snd) _ambientCueState.currentCue = null;
+            releaseMusicGain(snd);
             _ambientCueState.mode = 'bgm';
           };
-          snd.volume = Math.max(0, Math.min(1, Number(cue.volume) || Number(audioCfg.bgmVolume) || 0.7));
           snd.addEventListener('ended', finishCue, { once: true });
-          snd.addEventListener('error', () => { audioDebug('cue error ' + snd.src, 'cue-error-' + cue.id, 0); finishCue(); }, { once: true });
+          snd.addEventListener('error', () => { audioDebug('cue error ' + snd.src, 'cue-error-' + cue.id, 0, 'cue'); finishCue(); }, { once: true });
+          snd._watchForStall(6000, () => {
+            if (_ambientCueState.currentCue !== snd) return;
+            audioDebug('cue stalled (no playback progress) ' + snd.src, 'cue-stall-' + cue.id, 0, 'cue');
+            finishCue();
+          });
           _ambientCueState.currentCue = snd;
-          audioDebug('playing cue area=' + currentArea + ' id=' + cue.id + ' url=' + snd.src + ' volume=' + snd.volume.toFixed(2), 'cue-play-' + cue.id, 0);
+          audioDebug('playing cue area=' + currentArea + ' id=' + cue.id + ' url=' + snd.src + ' baseVolume=' + cueBaseVolume.toFixed(2), 'cue-play-' + cue.id, 0, 'cue');
           snd.play().catch(err => {
-            audioDebug('cue play blocked/failed id=' + cue.id + ': ' + (err?.name || err), 'cue-fail-' + cue.id, 0);
+            audioDebug('cue play blocked/failed id=' + cue.id + ': ' + (err?.name || err), 'cue-fail-' + cue.id, 0, 'cue');
+            releaseMusicGain(snd);
             _ambientCueState.currentCue = null;
             _ambientCueState.mode = 'cue_wait';
             _ambientCueState.nextAt = performance.now() + 3000;
@@ -2867,26 +3094,41 @@
         if (performance.now() < _ambientCueState.nextAt) return;
         const bgmTrack = resolveAreaBgm(currentArea);
         const bgmUrl = bgmTrack?.url || '';
-        if (!bgmUrl) { audioDebug('no eligible bgm for area=' + currentArea + '; retrying bgm resolution soon', 'bgm-missing-' + currentArea, 3000); _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
-        const snd = makeGameAudio(bgmUrl);
+        if (!bgmUrl) { audioDebug('no eligible bgm for area=' + currentArea + '; retrying bgm resolution soon', 'bgm-missing-' + currentArea, 3000, 'bgm'); _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
+        const fade = musicFadeConfig();
+        const bgmBaseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
+        const snd = playMusicTrack(bgmUrl, bgmBaseVolume, fade.songFadeInMs, fade.songFadeOutMs);
         const finishBgm = () => {
           if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
+          releaseMusicGain(snd);
           _ambientCueState.mode = 'cue_wait';
           scheduleNextCueDelay();
         };
-        snd.volume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
         snd.addEventListener('ended', finishBgm, { once: true });
-        snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0); markAudioUrlFailed(bgmUrl, 'media error'); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
+        snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0, 'bgm'); markAudioUrlFailed(bgmUrl, 'media error'); releaseMusicGain(snd); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
+        snd._watchForStall(6000, () => {
+          if (_ambientCueState.currentBgm !== snd) return;
+          // Not marked failed (unlike the 'error' case above) — a stall can
+          // be a transient slow-load/decode hiccup rather than a permanently
+          // broken file, and blacklisting would wrongly exclude it forever.
+          audioDebug('bgm stalled (no playback progress) ' + snd.src, 'bgm-stall-' + currentArea + '-' + bgmUrl, 0, 'bgm');
+          releaseMusicGain(snd);
+          _ambientCueState.currentBgm = null;
+          _ambientCueState.mode = 'bgm';
+          _ambientCueState.nextAt = performance.now() + 1000;
+          snd.pause();
+        });
         _ambientCueState.currentBgm = snd;
-        audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' volume=' + snd.volume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0);
+        audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' baseVolume=' + bgmBaseVolume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0, 'bgm');
         snd.play().then(() => {
           if (bgmTrack?.oncePerDay) {
             _dailyBgmPlayed.add(bgmDailyKey(bgmTrack));
-            audioDebug('marked once-per-day bgm played url=' + snd.src + ' day=' + calendar.day, 'bgm-daily-' + bgmDailyKey(bgmTrack), 0);
+            audioDebug('marked once-per-day bgm played url=' + snd.src + ' day=' + calendar.day, 'bgm-daily-' + bgmDailyKey(bgmTrack), 0, 'bgm');
           }
         }).catch(err => {
-          audioDebug('bgm play blocked/failed area=' + currentArea + ': ' + (err?.name || err), 'bgm-fail-' + currentArea, 0);
+          audioDebug('bgm play blocked/failed area=' + currentArea + ': ' + (err?.name || err), 'bgm-fail-' + currentArea, 0, 'bgm');
           if ((err?.name || '') !== 'NotAllowedError') markAudioUrlFailed(bgmUrl, err?.name || err || 'play failed');
+          releaseMusicGain(snd);
           if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
           _ambientCueState.mode = 'bgm';
           _ambientCueState.nextAt = performance.now() + 1000;
@@ -2902,13 +3144,13 @@
         }
         if (!snd) return;
         snd.volume = v;
-        audioTrace('bgs state ' + id + ' volume=' + v.toFixed(2) + ' paused=' + snd.paused + ' ready=' + audioReadyStateLabel(snd) + ' url=' + snd.src, 'bgs-state-' + id, 5000);
+        audioTrace('bgs state ' + id + ' volume=' + v.toFixed(2) + ' paused=' + snd.paused + ' ready=' + audioReadyStateLabel(snd) + ' url=' + snd.src, 'bgs-state-' + id, 5000, 'bgs');
         if (v > 0 && snd.paused) {
-          audioDebug('starting bgs ' + id + ' url=' + snd.src + ' volume=' + v.toFixed(2), 'bgs-start-' + id, 0);
-          snd.play().catch(err => audioDebug('bgs play blocked/failed ' + id + ': ' + (err?.name || err), 'bgs-fail-' + id, 0));
+          audioDebug('starting bgs ' + id + ' url=' + snd.src + ' volume=' + v.toFixed(2), 'bgs-start-' + id, 0, 'bgs');
+          snd.play().catch(err => audioDebug('bgs play blocked/failed ' + id + ': ' + (err?.name || err), 'bgs-fail-' + id, 0, 'bgs'));
         }
         if (v <= 0 && !snd.paused) {
-          audioDebug('stopping bgs ' + id, 'bgs-stop-' + id, 0);
+          audioDebug('stopping bgs ' + id, 'bgs-stop-' + id, 0, 'bgs');
           snd.pause();
         }
       }
@@ -2916,7 +3158,7 @@
       function updateExteriorBgs() {
         const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) {
-          audioDebug('exterior bgs disabled by config', 'bgs-disabled');
+          audioDebug('exterior bgs disabled by config', 'bgs-disabled', 1200, 'bgs');
           setLoopingBgs('birds', '', 0);
           setLoopingBgs('nightbugs', '', 0);
           setLoopingBgs('wind1', '', 0);
@@ -14749,7 +14991,7 @@
           `Tool/action: ${toolName(activeTool)} / ${actionName(activeAction)}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           '--- raw log ---',
-          ...(window.__farmDebugLog || [])
+          ...(window.__farmDebugLog || []).map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
         ];
         const text = lines.join('\n');
         try {
@@ -14921,7 +15163,7 @@
         };
       })();
       const inputBindings = loadInputBindings();
-      const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null };
+      const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null, hadPad: false };
       const CONTROLLER_INPUT_OPTIONS = [
         'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
         'LeftTrigger', 'RightTrigger',
@@ -15022,7 +15264,15 @@
         if (!gamepadState.focused) return;
         const pads = navigator.getGamepads?.() || [];
         const pad = Array.from(pads).find(Boolean);
-        if (!pad) { input.x = 0; input.y = 0; return; }
+        if (!pad) {
+          // Only clear movement input on an actual gamepad disconnect, not every
+          // frame — otherwise this stomps the touch joystick (and keyboard) on
+          // any device with no gamepad, which is virtually all mobile devices.
+          if (gamepadState.hadPad) { input.x = 0; input.y = 0; }
+          gamepadState.hadPad = false;
+          return;
+        }
+        gamepadState.hadPad = true;
         const dz = INPUT_DEFAULTS.deadzone;
         const ax = Math.abs(pad.axes[0] || 0) >= dz ? pad.axes[0] : 0;
         const ay = Math.abs(pad.axes[1] || 0) >= dz ? pad.axes[1] : 0;
