@@ -3419,7 +3419,9 @@ window.SCRATCHBONES_CONFIG = {
         "previewCameraFovDeg": 45,
         "previewCameraDistance": 3.2,
         "previewGridSize": 5,
-        "previewGridDivisions": 10
+        "previewGridDivisions": 10,
+        "aimCubeForwardDist": 1,
+        "aimCubeMaxHeightOffset": 0.7
       }
     },
 

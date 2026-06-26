@@ -186,6 +186,7 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
             <button id="resetCamBtn" class="secondary" style="flex:1">Reset camera</button>
             <button id="resetAimBtn" class="secondary" style="flex:1">Reset aim</button>
           </div>
+          <label class="spineChkRow"><input type="checkbox" id="aimAtCubeChk"> Aim at target cube (slider sets cube height)</label>
           <label class="spineChkRow"><input type="checkbox" id="showSpineChk"> Show spine (5-bone chain)</label>
           <div class="spineTweaks">
             <div>
@@ -1000,6 +1001,7 @@ function previewLoop() {
 const threeD = {
   enabled: false, loading: false, THREE: null, renderer: null, scene: null, camera: null, controls: null, model: null,
   aimPitchDeg: 0, lastTickTime: 0, showSpine: false, spineHelper: null,
+  aimAtCube: false, aimCube: null,
   overrides: { placementRatio: undefined },
 };
 const cfg3d = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
@@ -1073,11 +1075,21 @@ function updateSpineHelperVisibility() {
   if (shouldShow && !threeD.spineHelper.parent) threeD.scene.add(threeD.spineHelper);
   else if (!shouldShow && threeD.spineHelper.parent) threeD.scene.remove(threeD.spineHelper);
 }
+// The first bend-deformed mesh's own origin is the avatar's "face anchor"
+// in world space (see createSinglePlaneAssembly: faceLocalY/faceLocalX is
+// always 0, the mesh's local origin). Bending happens in the vertex
+// shader only, so this point is stable regardless of the current bend
+// angle — useful as a fixed reference for both the spine helper and the
+// aim-cube tracker below.
+function firstBendMesh(model) {
+  let found = null;
+  model?.traverse(o => { if (!found && o.material?.userData?.bendUniforms) found = o; });
+  return found;
+}
 function tickSpineHelper() {
   if (!threeD.showSpine || !threeD.model || !threeD.spineHelper?.parent) return;
   const THREE = threeD.THREE;
-  let bendMesh = null;
-  threeD.model.traverse(o => { if (!bendMesh && o.material?.userData?.bendUniforms) bendMesh = o; });
+  const bendMesh = firstBendMesh(threeD.model);
   if (!bendMesh) return;
   const u = bendMesh.material.userData.bendUniforms;
   bendMesh.updateMatrixWorld(true);
@@ -1094,6 +1106,44 @@ function tickSpineHelper() {
       marker.visible = false;
     }
   });
+}
+
+function ensureAimCubeHelper() {
+  if (threeD.aimCube || !threeD.THREE) return;
+  const THREE = threeD.THREE;
+  const cube = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.08, 0.08),
+    new THREE.MeshBasicMaterial({ color: 0x22d3ee, depthTest: false })
+  );
+  cube.name = 'aim_target_cube';
+  cube.renderOrder = 999;
+  threeD.aimCube = cube;
+}
+function updateAimCubeVisibility() {
+  if (!threeD.aimCube) return;
+  const shouldShow = threeD.aimAtCube && !!threeD.model;
+  if (shouldShow && !threeD.aimCube.parent) threeD.scene.add(threeD.aimCube);
+  else if (!shouldShow && threeD.aimCube.parent) threeD.scene.remove(threeD.aimCube);
+}
+// Moves the target cube to the slider-controlled height in front of the
+// avatar's face anchor, then returns the elevation angle from that face
+// anchor to the cube. setAvatarAimPitch already expects a target angle in
+// this exact convention (radians, positive = up) from the raw degree
+// slider, so feeding it this computed angle makes the spine react as if
+// it were actually tracking the cube instead of being driven directly.
+function tickAimCube() {
+  if (!threeD.aimCube) return 0;
+  const bendMesh = firstBendMesh(threeD.model);
+  if (!bendMesh) return 0;
+  bendMesh.updateMatrixWorld(true);
+  const facePos = new threeD.THREE.Vector3().setFromMatrixPosition(bendMesh.matrixWorld);
+  const forwardDist = cfg3d.aimCubeForwardDist ?? 1;
+  const maxHeightOffset = cfg3d.aimCubeMaxHeightOffset ?? 0.7;
+  const heightOffset = (threeD.aimPitchDeg / 50) * maxHeightOffset;
+  threeD.aimCube.position.set(facePos.x, facePos.y + heightOffset, facePos.z + forwardDist);
+  const dy = threeD.aimCube.position.y - facePos.y;
+  const dz = threeD.aimCube.position.z - facePos.z;
+  return Math.atan2(dy, dz);
 }
 
 function resize3d() {
@@ -1120,7 +1170,7 @@ function tick3d(now) {
   const dt = threeD.lastTickTime ? Math.min(0.1, (t - threeD.lastTickTime) / 1000) : 0;
   threeD.lastTickTime = t;
   if (threeD.model) {
-    const targetRad = (threeD.aimPitchDeg || 0) * Math.PI / 180;
+    const targetRad = threeD.aimAtCube ? tickAimCube() : (threeD.aimPitchDeg || 0) * Math.PI / 180;
     window.PNGPlaneAvatar.setAvatarAimPitch(threeD.model, targetRad, dt);
   }
   tickSpineHelper();
@@ -1173,6 +1223,7 @@ async function update3DModel() {
   });
   threeD.scene.add(threeD.model);
   updateSpineHelperVisibility();
+  updateAimCubeVisibility();
 }
 async function toggle3d() {
   if (threeD.enabled) {
@@ -1192,6 +1243,7 @@ async function toggle3d() {
       threeD.enabled = true;
       $('view3dWrap').classList.add('visible3d');
       ensureSpineHelper();
+      ensureAimCubeHelper();
       await init3dScene();
       if (mods.OrbitControls) {
         threeD.controls = new mods.OrbitControls(threeD.camera, $('view3d'));
@@ -2124,14 +2176,32 @@ $('loadPlayerBtn').onclick = loadPlayerIntoEditor;
 $('applyNpcBtn').onclick = applyWorkToNpc;
 $('toggle3dBtn').onclick = () => { toggle3d().catch(e => log('3D toggle failed: ' + e.message, 'error')); };
 $('resetCamBtn').onclick = frameCamera3d;
+function updateAimSliderLabel() {
+  if (threeD.aimAtCube) {
+    const maxHeightOffset = cfg3d.aimCubeMaxHeightOffset ?? 0.7;
+    const h = (threeD.aimPitchDeg / 50) * maxHeightOffset;
+    $('aimPitchLabel').textContent = `${h >= 0 ? '+' : ''}${h.toFixed(2)}u`;
+  } else {
+    $('aimPitchLabel').textContent = `${threeD.aimPitchDeg > 0 ? '+' : ''}${threeD.aimPitchDeg}°`;
+  }
+}
 $('aimPitchSlider').oninput = (e) => {
   threeD.aimPitchDeg = Number(e.target.value) || 0;
-  $('aimPitchLabel').textContent = `${threeD.aimPitchDeg > 0 ? '+' : ''}${threeD.aimPitchDeg}°`;
+  updateAimSliderLabel();
 };
 $('resetAimBtn').onclick = () => {
   $('aimPitchSlider').value = 0;
   threeD.aimPitchDeg = 0;
-  $('aimPitchLabel').textContent = '0°';
+  updateAimSliderLabel();
+};
+$('aimAtCubeChk').onchange = (e) => {
+  threeD.aimAtCube = e.target.checked;
+  ensureAimCubeHelper();
+  updateAimCubeVisibility();
+  updateAimSliderLabel();
+  $('aimPitchSlider').title = threeD.aimAtCube
+    ? 'Aim cube height — the spine tries to look at this cube instead of being driven directly'
+    : 'Aim pitch (look up/down) — tests the spine-bend deformation';
 };
 
 $('tweakEyeHeight').value = avatarPlacementRatioFor_studioDefault();
