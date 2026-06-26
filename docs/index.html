@@ -43,6 +43,7 @@
   <script src="js/combat/combat-blink-dodge.js"></script>
   <script src="js/combat/combat-charged-breaker.js"></script>
   <script src="js/combat/combat-flurry.js"></script>
+  <script src="js/combat/combat-loadout-ui.js"></script>
 </head>
 <body>
   <!-- Game world -->
@@ -166,6 +167,7 @@
         <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
         <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
+        <button class="mp-tab"        data-mpanel="loadout"       role="tab">⚔ Loadout</button>
         <button class="mp-tab"        data-mpanel="settings"      role="tab">⚙ Settings</button>
         <button class="mp-tab"        data-mpanel="debug"         role="tab">🐛 Debug</button>
       </div>
@@ -415,6 +417,11 @@
       <!-- ── Stub panes ──────────────────────────────────── -->
       <div class="mp-pane" id="mpTasks">        <div class="mp-stub">📋 Tasks — coming soon</div></div>
       <div class="mp-pane" id="mpRelationships"><div class="mp-stub">💬 Relationships — coming soon</div></div>
+
+      <!-- ── Combat loadout pane (filled by combat-loadout-ui.js) ── -->
+      <div class="mp-pane" id="mpLoadout">
+        <div class="settings-pane" id="combatLoadoutPane"></div>
+      </div>
 
       <!-- ── Settings pane ──────────────────────────────── -->
       <div class="mp-pane" id="mpSettings">
