@@ -2637,6 +2637,13 @@
       let _gameAudioUnlocked = false;
       const _audioFailedUrls = new Set();
       const _dailyBgmPlayed = new Set();
+      let _musicAudioCtx = null;
+      const _musicGainNodes = new Map();       // music <audio> element -> { ctx, gain, target }
+      const _musicLoudnessGain = new Map();    // resolved track url -> measured normalization multiplier
+      const _musicLoudnessPending = new Map(); // resolved track url -> in-flight analysis promise
+      const MUSIC_TARGET_RMS = 0.16;
+      const MUSIC_LOUDNESS_GAIN_MIN = 0.5;
+      const MUSIC_LOUDNESS_GAIN_MAX = 2.2;
 
       function audioDebug(message, key = message, throttleMs = 1200) {
         const now = performance.now();
@@ -2678,6 +2685,174 @@
         return snd;
       }
 
+      function getMusicAudioCtx() {
+        if (_musicAudioCtx) return _musicAudioCtx;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return null;
+        try { _musicAudioCtx = new AudioCtx(); }
+        catch (e) { audioDebug('music audio context unavailable: ' + (e?.message || e), 'music-ctx-fail', 0); _musicAudioCtx = null; }
+        return _musicAudioCtx;
+      }
+
+      // Routes a music <audio> element through a GainNode so it can be faded
+      // smoothly and boosted past the element's volume<=1 ceiling (needed to
+      // normalize quiet tracks up to the target level). Falls back to plain
+      // `snd.volume` (capped at 1, no boosting) if Web Audio is unavailable.
+      function attachMusicGain(snd) {
+        const ctx = getMusicAudioCtx();
+        if (!ctx) return null;
+        if (_musicGainNodes.has(snd)) return _musicGainNodes.get(snd);
+        try {
+          const source = ctx.createMediaElementSource(snd);
+          const gain = ctx.createGain();
+          gain.gain.value = 0;
+          source.connect(gain).connect(ctx.destination);
+          const node = { ctx, gain, target: 0 };
+          _musicGainNodes.set(snd, node);
+          return node;
+        } catch (e) {
+          audioDebug('music gain attach failed ' + snd.src + ': ' + (e?.message || e), 'music-gain-attach-fail', 0);
+          return null;
+        }
+      }
+
+      function releaseMusicGain(snd) {
+        const node = _musicGainNodes.get(snd);
+        if (node) { try { node.gain.disconnect(); } catch {} }
+        _musicGainNodes.delete(snd);
+      }
+
+      function setMusicVolumeNow(snd, value) {
+        const v = Math.max(0, value);
+        const node = _musicGainNodes.get(snd);
+        if (node) {
+          node.target = v;
+          node.gain.gain.cancelScheduledValues(node.ctx.currentTime);
+          node.gain.gain.setValueAtTime(v, node.ctx.currentTime);
+        } else {
+          snd.volume = Math.max(0, Math.min(1, v));
+        }
+      }
+
+      // Ramps a music element's volume to `target` over `durationMs`. Uses
+      // Web Audio gain automation when available (immune to rAF/timer jitter),
+      // and a rAF-driven fallback on `.volume` otherwise. `onDone` fires once
+      // this specific ramp completes (skipped if a later fade supersedes it).
+      function fadeMusicVolume(snd, target, durationMs, onDone) {
+        const v = Math.max(0, target);
+        const dur = Math.max(0, Number(durationMs) || 0);
+        const node = _musicGainNodes.get(snd);
+        if (node) {
+          node.target = v;
+          const now = node.ctx.currentTime;
+          node.gain.gain.cancelScheduledValues(now);
+          node.gain.gain.setValueAtTime(node.gain.gain.value, now);
+          if (dur <= 0) node.gain.gain.setValueAtTime(v, now);
+          else node.gain.gain.linearRampToValueAtTime(v, now + dur / 1000);
+          if (onDone) setTimeout(() => { if (node.target === v) onDone(); }, dur);
+          return;
+        }
+        const clampedTarget = Math.max(0, Math.min(1, v));
+        if (dur <= 0) { snd.volume = clampedTarget; onDone?.(); return; }
+        const start = snd.volume;
+        const startTime = performance.now();
+        const token = {};
+        snd._fadeToken = token;
+        const step = now => {
+          if (snd._fadeToken !== token) return;
+          const t = Math.min(1, (now - startTime) / dur);
+          snd.volume = start + (clampedTarget - start) * t;
+          if (t < 1) requestAnimationFrame(step);
+          else onDone?.();
+        };
+        requestAnimationFrame(step);
+      }
+
+      function computeAudioBufferRms(buffer) {
+        let sumSquares = 0, count = 0;
+        const step = Math.max(1, Math.floor(buffer.sampleRate / 4000));
+        for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+          const data = buffer.getChannelData(ch);
+          for (let i = 0; i < data.length; i += step) { sumSquares += data[i] * data[i]; count++; }
+        }
+        return count ? Math.sqrt(sumSquares / count) : 0;
+      }
+
+      // Lazily measures a track's loudness via Web Audio and caches a gain
+      // multiplier that brings it to MUSIC_TARGET_RMS, so songs/cues recorded
+      // or mastered at different levels come out at a consistent perceived
+      // volume automatically, without hand-tuning each file's `volume` field.
+      function musicLoudnessGain(url) {
+        const resolved = resolveAudioUrl(url);
+        if (!resolved) return Promise.resolve(1);
+        if (_musicLoudnessGain.has(resolved)) return Promise.resolve(_musicLoudnessGain.get(resolved));
+        if (_musicLoudnessPending.has(resolved)) return _musicLoudnessPending.get(resolved);
+        const ctx = getMusicAudioCtx();
+        if (!ctx) return Promise.resolve(1);
+        const promise = fetch(resolved)
+          .then(res => res.arrayBuffer())
+          .then(buf => ctx.decodeAudioData(buf))
+          .then(audioBuf => {
+            const rms = computeAudioBufferRms(audioBuf);
+            const gain = rms > 0.0001 ? clamp(MUSIC_TARGET_RMS / rms, MUSIC_LOUDNESS_GAIN_MIN, MUSIC_LOUDNESS_GAIN_MAX) : 1;
+            _musicLoudnessGain.set(resolved, gain);
+            audioDebug('measured loudness url=' + resolved + ' rms=' + rms.toFixed(4) + ' gain=' + gain.toFixed(2), 'music-loudness-' + resolved, 0);
+            return gain;
+          })
+          .catch(e => {
+            audioDebug('loudness analysis failed url=' + resolved + ': ' + (e?.message || e), 'music-loudness-fail-' + resolved, 0);
+            _musicLoudnessGain.set(resolved, 1);
+            return 1;
+          })
+          .finally(() => _musicLoudnessPending.delete(resolved));
+        _musicLoudnessPending.set(resolved, promise);
+        return promise;
+      }
+
+      function musicFadeConfig() {
+        const audioCfg = gameAudioConfig();
+        return {
+          songFadeInMs: Math.max(0, Number(audioCfg.songFadeInMs) || 2200),
+          songFadeOutMs: Math.max(0, Number(audioCfg.songFadeOutMs) || 2600),
+          cueFadeMs: Math.max(0, Number(audioCfg.musicFadeMs) || 280),
+          interruptFadeMs: Math.max(0, Number(audioCfg.musicFadeMs) || 280)
+        };
+      }
+
+      // Plays a music track (BGM song or ambient cue) with automatic loudness
+      // normalization and a fade-in at the start / fade-out before it ends
+      // naturally. `baseVolume` is the pre-normalization target (0..1) from
+      // config; the measured loudness multiplier is layered on top once the
+      // (cached, async) analysis resolves. Returns the <audio> element, with
+      // a `_stopMusic(fadeMs)` helper attached for fading out an interruption
+      // (e.g. switching areas) instead of cutting the track off mid-note.
+      function playMusicTrack(url, baseVolume, fadeInMs, fadeOutMs) {
+        const snd = makeGameAudio(url);
+        attachMusicGain(snd);
+        setMusicVolumeNow(snd, 0);
+        let fadingOut = false;
+        const targetVolume = () => Math.max(0, baseVolume) * (_musicLoudnessGain.get(resolveAudioUrl(url)) ?? 1);
+        fadeMusicVolume(snd, targetVolume(), fadeInMs);
+        musicLoudnessGain(url).then(() => {
+          if (!fadingOut && !snd.paused) fadeMusicVolume(snd, targetVolume(), 400);
+        });
+        if (fadeOutMs > 0) {
+          snd.addEventListener('timeupdate', () => {
+            if (fadingOut) return;
+            const remaining = (snd.duration || 0) - snd.currentTime;
+            if (Number.isFinite(remaining) && remaining > 0 && remaining <= fadeOutMs / 1000) {
+              fadingOut = true;
+              fadeMusicVolume(snd, 0, remaining * 1000);
+            }
+          });
+        }
+        snd._stopMusic = (stopFadeMs = fadeOutMs) => new Promise(resolve => {
+          fadingOut = true;
+          fadeMusicVolume(snd, 0, stopFadeMs, () => { snd.pause(); releaseMusicGain(snd); resolve(); });
+        });
+        return snd;
+      }
+
       function markAudioUrlFailed(url, reason) {
         const resolved = resolveAudioUrl(url);
         if (!resolved) return;
@@ -2702,6 +2877,7 @@
         audioDebug('audio unlock from ' + reason + '; retrying audible loops=' + _gameAudioElements.size, 'audio-unlock', 0);
         const rainCtx = window._rainAudioCtx;
         if (rainCtx?.state === 'suspended') rainCtx.resume().catch(err => audioDebug('rain audio resume failed: ' + (err?.name || err), 'rain-resume-fail', 0));
+        if (_musicAudioCtx?.state === 'suspended') _musicAudioCtx.resume().catch(err => audioDebug('music audio resume failed: ' + (err?.name || err), 'music-resume-fail', 0));
         for (const snd of _gameAudioElements) {
           if (!snd || snd.volume <= 0 || !snd.paused) continue;
           snd.play().then(() => {
@@ -2758,10 +2934,13 @@
       }
 
       function stopAmbientCue() {
+        const fade = musicFadeConfig();
         for (const key of ['currentCue', 'currentBgm']) {
           const snd = _ambientCueState[key];
-          if (snd) snd.pause();
           _ambientCueState[key] = null;
+          if (!snd) continue;
+          if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
+          else snd.pause();
         }
       }
 
@@ -2825,18 +3004,22 @@
           if (!cues.length) { _ambientCueState.mode = 'bgm'; return; }
           const cue = cues[Math.floor(Math.random() * cues.length)];
           if (!cue?.file) { scheduleNextCueDelay(); return; }
-          const snd = makeGameAudio((idx.__basePath || '') + cue.file);
+          const fade = musicFadeConfig();
+          const cueUrl = (idx.__basePath || '') + cue.file;
+          const cueBaseVolume = Math.max(0, Math.min(1, Number(cue.volume) || Number(audioCfg.bgmVolume) || 0.7));
+          const snd = playMusicTrack(cueUrl, cueBaseVolume, fade.cueFadeMs, fade.cueFadeMs);
           const finishCue = () => {
             if (_ambientCueState.currentCue === snd) _ambientCueState.currentCue = null;
+            releaseMusicGain(snd);
             _ambientCueState.mode = 'bgm';
           };
-          snd.volume = Math.max(0, Math.min(1, Number(cue.volume) || Number(audioCfg.bgmVolume) || 0.7));
           snd.addEventListener('ended', finishCue, { once: true });
           snd.addEventListener('error', () => { audioDebug('cue error ' + snd.src, 'cue-error-' + cue.id, 0); finishCue(); }, { once: true });
           _ambientCueState.currentCue = snd;
-          audioDebug('playing cue area=' + currentArea + ' id=' + cue.id + ' url=' + snd.src + ' volume=' + snd.volume.toFixed(2), 'cue-play-' + cue.id, 0);
+          audioDebug('playing cue area=' + currentArea + ' id=' + cue.id + ' url=' + snd.src + ' baseVolume=' + cueBaseVolume.toFixed(2), 'cue-play-' + cue.id, 0);
           snd.play().catch(err => {
             audioDebug('cue play blocked/failed id=' + cue.id + ': ' + (err?.name || err), 'cue-fail-' + cue.id, 0);
+            releaseMusicGain(snd);
             _ambientCueState.currentCue = null;
             _ambientCueState.mode = 'cue_wait';
             _ambientCueState.nextAt = performance.now() + 3000;
@@ -2850,17 +3033,19 @@
         const bgmTrack = resolveAreaBgm(currentArea);
         const bgmUrl = bgmTrack?.url || '';
         if (!bgmUrl) { audioDebug('no eligible bgm for area=' + currentArea + '; retrying bgm resolution soon', 'bgm-missing-' + currentArea, 3000); _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
-        const snd = makeGameAudio(bgmUrl);
+        const fade = musicFadeConfig();
+        const bgmBaseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
+        const snd = playMusicTrack(bgmUrl, bgmBaseVolume, fade.songFadeInMs, fade.songFadeOutMs);
         const finishBgm = () => {
           if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
+          releaseMusicGain(snd);
           _ambientCueState.mode = 'cue_wait';
           scheduleNextCueDelay();
         };
-        snd.volume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
         snd.addEventListener('ended', finishBgm, { once: true });
-        snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0); markAudioUrlFailed(bgmUrl, 'media error'); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
+        snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0); markAudioUrlFailed(bgmUrl, 'media error'); releaseMusicGain(snd); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
         _ambientCueState.currentBgm = snd;
-        audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' volume=' + snd.volume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0);
+        audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' baseVolume=' + bgmBaseVolume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0);
         snd.play().then(() => {
           if (bgmTrack?.oncePerDay) {
             _dailyBgmPlayed.add(bgmDailyKey(bgmTrack));
@@ -2869,6 +3054,7 @@
         }).catch(err => {
           audioDebug('bgm play blocked/failed area=' + currentArea + ': ' + (err?.name || err), 'bgm-fail-' + currentArea, 0);
           if ((err?.name || '') !== 'NotAllowedError') markAudioUrlFailed(bgmUrl, err?.name || err || 'play failed');
+          releaseMusicGain(snd);
           if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
           _ambientCueState.mode = 'bgm';
           _ambientCueState.nextAt = performance.now() + 1000;
