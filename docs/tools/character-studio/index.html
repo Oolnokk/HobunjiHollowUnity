@@ -186,14 +186,18 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
             <button id="resetCamBtn" class="secondary" style="flex:1">Reset camera</button>
             <button id="resetAimBtn" class="secondary" style="flex:1">Reset aim</button>
           </div>
-          <label class="spineChkRow"><input type="checkbox" id="showSpineChk"> Show spine (pivot → face hinge)</label>
+          <label class="spineChkRow"><input type="checkbox" id="showSpineChk"> Show spine (5-bone chain)</label>
           <div class="spineTweaks">
             <div>
               <label for="tweakEyeHeight">Eye height (ratio)</label>
               <input id="tweakEyeHeight" type="number" step="0.01" min="0" max="1.5">
             </div>
             <div>
-              <label for="tweakSegments">Bend segments</label>
+              <label for="tweakBoneCount">Spine bones</label>
+              <input id="tweakBoneCount" type="number" step="1" min="1" max="8">
+            </div>
+            <div>
+              <label for="tweakSegments">Mesh segments</label>
               <input id="tweakSegments" type="number" step="1" min="1" max="32">
             </div>
             <div>
@@ -995,26 +999,37 @@ const threeD = {
   overrides: { placementRatio: undefined },
 };
 const cfg3d = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+const MAX_BEND_BONES_STUDIO = 8;
 // Snapshot the as-shipped tuning values once, so "Reset spine tweaks" can
 // restore them even after the studio has mutated cfg3d in place for live testing.
 const _pngDefaults = {
   bendHeightSegments: cfg3d.bendHeightSegments ?? 16,
+  bendBoneCount: cfg3d.bendBoneCount ?? 5,
   maxBendAngleDeg: cfg3d.maxBendAngleDeg ?? 50,
   bendPitchLerp: cfg3d.bendPitchLerp ?? 0.15,
 };
 
-// Mirrors the vertical-bend GLSL in png-plane-avatar.js so the spine helper
-// can show the actual bent world-space face position, not just the rest pose.
-function applyBendCPU_vertical(localPos, u, THREE) {
-  const bendAngle = u.uBendAngle.value;
+// Mirrors the vertical-bend rigid bone-chain GLSL in png-plane-avatar.js:
+// the pivot→face span is split into uBoneCount equal rigid bones, each
+// rotated by its own equal share of uBendAngle, chained end-to-end. Returns
+// the chain's local-space joints (pivot, then each bone's end), so the spine
+// helper can draw the actual curved arch rather than a single hinge line.
+function boneChainJointsCPU_vertical(u) {
+  const boneCount = Math.max(1, Math.min(MAX_BEND_BONES_STUDIO, Math.round(u.uBoneCount.value || 5)));
   const pivot = u.uPivotCoord.value, face = u.uFaceCoord.value;
-  let t = (localPos.y - pivot) / Math.max(1e-5, face - pivot);
-  t = Math.max(0, Math.min(1, t));
-  const w = t * t * (3 - 2 * t);
-  const ang = w * bendAngle;
-  const C = Math.cos(ang), S = Math.sin(ang);
-  const relY = localPos.y - pivot, relZ = localPos.z;
-  return new THREE.Vector3(localPos.x, pivot + relY * C + relZ * S, relZ * C - relY * S);
+  const bendAngle = u.uBendAngle.value;
+  const boneLen = (face - pivot) / boneCount;
+  const boneAngle = bendAngle / boneCount;
+  const joints = [{ y: pivot, z: 0 }];
+  let jointY = pivot, jointZ = 0, cum = 0;
+  for (let i = 0; i < boneCount; i++) {
+    cum += boneAngle;
+    const c = Math.cos(cum), s = Math.sin(cum);
+    jointY += boneLen * c;
+    jointZ -= boneLen * s;
+    joints.push({ y: jointY, z: jointZ });
+  }
+  return joints;
 }
 
 function ensureSpineHelper() {
@@ -1027,10 +1042,19 @@ function ensureSpineHelper() {
     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
     new THREE.LineBasicMaterial({ color: 0x6aa7ff, depthTest: false, transparent: true })
   );
-  const pivotMarker = new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 12), new THREE.MeshBasicMaterial({ color: 0xfb7185, depthTest: false }));
-  const faceMarker = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 12), new THREE.MeshBasicMaterial({ color: 0x34d399, depthTest: false }));
-  group.add(line, pivotMarker, faceMarker);
-  group.userData = { line, pivotMarker, faceMarker };
+  // One marker pool sized for the max bone count; joint 0 = pivot (red),
+  // last joint = face/tip (green), in-between joints are amber.
+  const markers = [];
+  for (let i = 0; i <= MAX_BEND_BONES_STUDIO; i++) {
+    const color = i === 0 ? 0xfb7185 : 0xf5b942;
+    const radius = i === 0 ? 0.025 : 0.02;
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 12), new THREE.MeshBasicMaterial({ color, depthTest: false }));
+    marker.visible = false;
+    markers.push(marker);
+    group.add(marker);
+  }
+  group.add(line);
+  group.userData = { line, markers };
   threeD.spineHelper = group;
 }
 function updateSpineHelperVisibility() {
@@ -1047,12 +1071,19 @@ function tickSpineHelper() {
   if (!bendMesh) return;
   const u = bendMesh.material.userData.bendUniforms;
   bendMesh.updateMatrixWorld(true);
-  const pivotWorld = new THREE.Vector3(0, u.uPivotCoord.value, 0).applyMatrix4(bendMesh.matrixWorld);
-  const faceWorld = applyBendCPU_vertical(new THREE.Vector3(0, u.uFaceCoord.value, 0), u, THREE).applyMatrix4(bendMesh.matrixWorld);
-  const { line, pivotMarker, faceMarker } = threeD.spineHelper.userData;
-  line.geometry.setFromPoints([pivotWorld, faceWorld]);
-  pivotMarker.position.copy(pivotWorld);
-  faceMarker.position.copy(faceWorld);
+  const joints = boneChainJointsCPU_vertical(u);
+  const worldPoints = joints.map(j => new THREE.Vector3(0, j.y, j.z).applyMatrix4(bendMesh.matrixWorld));
+  const { line, markers } = threeD.spineHelper.userData;
+  line.geometry.setFromPoints(worldPoints);
+  markers.forEach((marker, i) => {
+    if (i < worldPoints.length) {
+      marker.position.copy(worldPoints[i]);
+      marker.material.color.setHex(i === worldPoints.length - 1 ? 0x34d399 : (i === 0 ? 0xfb7185 : 0xf5b942));
+      marker.visible = true;
+    } else {
+      marker.visible = false;
+    }
+  });
 }
 
 function resize3d() {
@@ -2094,6 +2125,7 @@ $('resetAimBtn').onclick = () => {
 };
 
 $('tweakEyeHeight').value = avatarPlacementRatioFor_studioDefault();
+$('tweakBoneCount').value = _pngDefaults.bendBoneCount;
 $('tweakSegments').value = _pngDefaults.bendHeightSegments;
 $('tweakMaxBend').value = _pngDefaults.maxBendAngleDeg;
 $('tweakBendWeight').value = _pngDefaults.bendPitchLerp;
@@ -2101,6 +2133,16 @@ $('tweakBendWeight').value = _pngDefaults.bendPitchLerp;
 function avatarPlacementRatioFor_studioDefault() {
   const ap = work?.appearance || {};
   return window.PNGPlaneAvatar.avatarPlacementRatioFor({ speciesId: ap.speciesId, gender: ap.gender }).toFixed(3);
+}
+
+// Bone count is just a shader uniform (no geometry rebuild needed), so it
+// can be applied live to the already-built model's materials.
+function applyBoneCountLive(v) {
+  cfg3d.bendBoneCount = v;
+  threeD.model?.traverse(child => {
+    const bend = child.material?.userData?.bendUniforms;
+    if (bend?.uBoneCount) bend.uBoneCount.value = v;
+  });
 }
 
 $('showSpineChk').onchange = (e) => {
@@ -2113,6 +2155,10 @@ $('tweakEyeHeight').oninput = (e) => {
   const v = Number(e.target.value);
   threeD.overrides.placementRatio = Number.isFinite(v) ? v : undefined;
   update3DModel().catch(err => log('Spine tweak rebuild failed: ' + err.message, 'error'));
+};
+$('tweakBoneCount').oninput = (e) => {
+  const v = Math.max(1, Math.min(8, Math.round(Number(e.target.value) || _pngDefaults.bendBoneCount)));
+  applyBoneCountLive(v);
 };
 $('tweakSegments').oninput = (e) => {
   const v = Math.max(1, Math.round(Number(e.target.value) || _pngDefaults.bendHeightSegments));
@@ -2132,7 +2178,9 @@ $('resetTweaksBtn').onclick = () => {
   cfg3d.bendHeightSegments = _pngDefaults.bendHeightSegments;
   cfg3d.maxBendAngleDeg = _pngDefaults.maxBendAngleDeg;
   cfg3d.bendPitchLerp = _pngDefaults.bendPitchLerp;
+  applyBoneCountLive(_pngDefaults.bendBoneCount);
   $('tweakEyeHeight').value = avatarPlacementRatioFor_studioDefault();
+  $('tweakBoneCount').value = _pngDefaults.bendBoneCount;
   $('tweakSegments').value = _pngDefaults.bendHeightSegments;
   $('tweakMaxBend').value = _pngDefaults.maxBendAngleDeg;
   $('tweakBendWeight').value = _pngDefaults.bendPitchLerp;

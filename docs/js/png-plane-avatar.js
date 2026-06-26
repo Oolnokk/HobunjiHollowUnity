@@ -70,16 +70,23 @@
   // ── Spine-aiming bend deformer ──────────────────────────────────────
   // Flat plane "avatars" have no skeleton, so aiming the face/snout at a
   // target is done by bending the (subdivided) plane geometry itself in
-  // the vertex shader — like a soft hinge that gradually curls from a
-  // fixed pivot (ground for bipeds, neck for creatures) up to full
-  // rotation at the face/snout point, rather than rotating the whole
-  // plane rigidly around one joint.
+  // the vertex shader — via a literal rigid bone chain (default 5 bones),
+  // mirroring how this would eventually be rigged with real bones: bone 0
+  // is rooted at the fixed pivot (ground for bipeds, neck for creatures),
+  // each subsequent bone is anchored to the end of the previous one, and
+  // the total aim angle is split evenly across all bones, so the chain
+  // curves into an arch rather than hinging at a single joint.
   //
   // Both helpers below inject the same general technique via
-  // onBeforeCompile: weight(coord) ramps 0→1 between a pivot coordinate
-  // and a face coordinate (clamped smoothstep, computed manually instead
-  // of GLSL smoothstep() since pivot may be greater or less than face),
-  // then rotates the vertex by weight*bendAngle around the relevant axis.
+  // onBeforeCompile: the pivot→face span is divided into uBoneCount equal
+  // segments; a vertex's bone index is selected from its *rest-pose*
+  // coordinate (clamped so geometry below the pivot or above the face
+  // doesn't get reassigned to a different bone), then the vertex is
+  // rotated rigidly — by that bone's full cumulative angle, no blending
+  // within a bone — about the bone's own start joint. `MAX_BEND_BONES` is
+  // a compile-time array bound; `uBoneCount` (set from
+  // cfg().bendBoneCount, default 5) is the actual live segment count, so
+  // the studio can retune bone count without a shader recompile.
   // `sign` exists because the front/back plane pair is the same body
   // mirrored via a static Y rotation, and whether that mirroring flips
   // the world-space effect of the bend depends on which local axis the
@@ -90,32 +97,54 @@
   // the bend's world-Y effect unchanged between front/back, so both use
   // sign=+1 — see the matching call sites in createSinglePlaneAssembly
   // and buildAnimalPlaneAvatarModel.
+  const MAX_BEND_BONES = 8;
+
   function attachVerticalBend(material, sign) {
     const uniforms = {
       uBendAngle: { value: 0 },
       uPivotCoord: { value: 0 },
       uFaceCoord: { value: 0 },
+      uBoneCount: { value: 5 },
     };
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
       shader.vertexShader =
-        'uniform float uBendAngle;\nuniform float uPivotCoord;\nuniform float uFaceCoord;\n' + shader.vertexShader;
+        'uniform float uBendAngle;\nuniform float uPivotCoord;\nuniform float uFaceCoord;\nuniform float uBoneCount;\n' + shader.vertexShader;
       shader.vertexShader = shader.vertexShader.replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
         {
-          float bendT = clamp((transformed.y - uPivotCoord) / max(1e-5, uFaceCoord - uPivotCoord), 0.0, 1.0);
-          float bendW = bendT * bendT * (3.0 - 2.0 * bendT);
-          float bendAng = bendW * uBendAngle;
-          float bendS = sin(bendAng), bendC = cos(bendAng);
-          float bendRelY = transformed.y - uPivotCoord;
-          float bendRelZ = transformed.z;
-          transformed.y = uPivotCoord + bendRelY * bendC + bendRelZ * bendS;
-          transformed.z = bendRelZ * bendC - bendRelY * bendS;
+          const int MAX_BEND_BONES = ${MAX_BEND_BONES};
+          int boneCount = clamp(int(uBoneCount + 0.5), 1, MAX_BEND_BONES);
+          float bendSpan = uFaceCoord - uPivotCoord;
+          bendSpan = bendSpan >= 0.0 ? max(bendSpan, 1e-5) : min(bendSpan, -1e-5);
+          float boneLen = bendSpan / float(boneCount);
+          float boneAngle = uBendAngle / float(boneCount);
+          float bendT = clamp((transformed.y - uPivotCoord) / bendSpan, 0.0, 1.0);
+          int boneIdx = min(int(bendT * float(boneCount)), boneCount - 1);
+
+          float jointY = uPivotCoord;
+          float jointZ = 0.0;
+          float cum = 0.0;
+          for (int i = 0; i < MAX_BEND_BONES; i++) {
+            if (i >= boneCount) break;
+            cum += boneAngle;
+            float c = cos(cum), s = sin(cum);
+            if (i == boneIdx) {
+              float boneStartY = uPivotCoord + float(i) * boneLen;
+              float relY = transformed.y - boneStartY;
+              float relZ = transformed.z;
+              transformed.y = jointY + relY * c + relZ * s;
+              transformed.z = jointZ + relZ * c - relY * s;
+              break;
+            }
+            jointY += boneLen * c;
+            jointZ -= boneLen * s;
+          }
         }`
       );
     };
-    material.customProgramCacheKey = () => 'spine_bend_vertical';
+    material.customProgramCacheKey = () => 'spine_bend_vertical_chain';
     material.userData = material.userData || {};
     material.userData.bendUniforms = uniforms;
     material.userData.bendSign = sign;
@@ -128,29 +157,47 @@
       uPivotCoord: { value: 0 },
       uFaceCoord: { value: 0 },
       uNeckHeight: { value: 0 },
+      uBoneCount: { value: 5 },
     };
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
       shader.vertexShader =
-        'uniform float uBendAngle;\nuniform float uPivotCoord;\nuniform float uFaceCoord;\nuniform float uNeckHeight;\n' + shader.vertexShader;
+        'uniform float uBendAngle;\nuniform float uPivotCoord;\nuniform float uFaceCoord;\nuniform float uNeckHeight;\nuniform float uBoneCount;\n' + shader.vertexShader;
       shader.vertexShader = shader.vertexShader.replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
         {
+          const int MAX_BEND_BONES = ${MAX_BEND_BONES};
+          int boneCount = clamp(int(uBoneCount + 0.5), 1, MAX_BEND_BONES);
           float bendSpan = uFaceCoord - uPivotCoord;
           bendSpan = bendSpan >= 0.0 ? max(bendSpan, 1e-5) : min(bendSpan, -1e-5);
+          float boneLen = bendSpan / float(boneCount);
+          float boneAngle = uBendAngle / float(boneCount);
           float bendT = clamp((transformed.x - uPivotCoord) / bendSpan, 0.0, 1.0);
-          float bendW = bendT * bendT * (3.0 - 2.0 * bendT);
-          float bendAng = bendW * uBendAngle;
-          float bendS = sin(bendAng), bendC = cos(bendAng);
-          float bendRelX = transformed.x - uPivotCoord;
-          float bendRelY = transformed.y - uNeckHeight;
-          transformed.x = uPivotCoord + bendRelX * bendC + bendRelY * bendS;
-          transformed.y = uNeckHeight + bendRelY * bendC - bendRelX * bendS;
+          int boneIdx = min(int(bendT * float(boneCount)), boneCount - 1);
+
+          float jointX = uPivotCoord;
+          float jointY = uNeckHeight;
+          float cum = 0.0;
+          for (int i = 0; i < MAX_BEND_BONES; i++) {
+            if (i >= boneCount) break;
+            cum += boneAngle;
+            float c = cos(cum), s = sin(cum);
+            if (i == boneIdx) {
+              float boneStartX = uPivotCoord + float(i) * boneLen;
+              float relX = transformed.x - boneStartX;
+              float relY = transformed.y - uNeckHeight;
+              transformed.x = jointX + relX * c + relY * s;
+              transformed.y = jointY + relY * c - relX * s;
+              break;
+            }
+            jointX += boneLen * c;
+            jointY -= boneLen * s;
+          }
         }`
       );
     };
-    material.customProgramCacheKey = () => 'spine_bend_nod';
+    material.customProgramCacheKey = () => 'spine_bend_nod_chain';
     material.userData = material.userData || {};
     material.userData.bendUniforms = uniforms;
     material.userData.bendSign = sign;
@@ -290,12 +337,14 @@
     const faceLocalY = 0;
     const pivotLocalY = config.pivotLocalY ?? -config.planeHeight / 2;
     const heightSegments = Math.max(1, Math.round(cfg().bendHeightSegments ?? 16));
+    const boneCount = Math.max(1, Math.min(MAX_BEND_BONES, Math.round(cfg().bendBoneCount ?? 5)));
 
     const planeGeo = new THREE.PlaneGeometry(config.planeWidth, config.planeHeight, 1, heightSegments);
     const frontMat = makeSpriteMaterial(THREE, config.textures.frontOriginal, 'npc_avatar_front_material');
     const frontBend = attachVerticalBend(frontMat, 1);
     frontBend.uPivotCoord.value = pivotLocalY;
     frontBend.uFaceCoord.value = faceLocalY;
+    frontBend.uBoneCount.value = boneCount;
     const frontMesh = new THREE.Mesh(planeGeo, frontMat);
     frontMesh.name = 'npc_avatar_front_plane';
     frontMesh.position.z = config.anchorZ;
@@ -306,6 +355,7 @@
     const backBend = attachVerticalBend(backMat, -1);
     backBend.uPivotCoord.value = pivotLocalY;
     backBend.uFaceCoord.value = faceLocalY;
+    backBend.uBoneCount.value = boneCount;
     const backMesh = new THREE.Mesh(planeGeo.clone(), backMat);
     backMesh.name = 'npc_avatar_back_plane';
     backMesh.position.z = config.anchorZ - (cfg().backPlaneOffsetZ ?? 0.001);
@@ -349,6 +399,7 @@
     // edge, rotating in the X/Y plane around a neck-height pivot — like a
     // horse lowering/raising its head, not a whole-body rotation.
     const widthSegments = Math.max(1, Math.round(cfg().bendHeightSegments ?? 16));
+    const boneCount = Math.max(1, Math.min(MAX_BEND_BONES, Math.round(cfg().bendBoneCount ?? 5)));
     const faceLocalX = -modelWidth / 2;
     const pivotLocalX = faceLocalX * (cfg().creatureNeckPivotRatio ?? 0.45);
     const snoutHeightRatio = Number.isFinite(options.snoutHeightRatio) ? options.snoutHeightRatio : (cfg().creatureSnoutHeightRatio ?? 0.68);
@@ -357,10 +408,12 @@
     frontBend.uPivotCoord.value = pivotLocalX;
     frontBend.uFaceCoord.value = faceLocalX;
     frontBend.uNeckHeight.value = neckHeight;
+    frontBend.uBoneCount.value = boneCount;
     const backBend = attachNodBend(backMat, 1);
     backBend.uPivotCoord.value = pivotLocalX;
     backBend.uFaceCoord.value = faceLocalX;
     backBend.uNeckHeight.value = neckHeight;
+    backBend.uBoneCount.value = boneCount;
 
     const frontGeo = new THREE.PlaneGeometry(modelWidth, modelHeight, widthSegments, 1);
     const backGeo  = frontGeo.clone();
