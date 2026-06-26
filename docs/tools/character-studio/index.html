@@ -676,9 +676,9 @@ function synthesizeFemaleSpeciesDefaults(speciesId, options = {}) {
     species.female.slots = (species.female.slots || []).filter(slot => slot.slot !== 'facialHair');
   }
 }
-// Female Tletingan currently uses the shared Tletingan appearance overlays; the
-// species JSON supplies the uploaded female head sprite for the portrait rig.
-synthesizeFemaleSpeciesDefaults('tletingan');
+// Female Tletingan uses shared front/back hair plus female-specific side-hair
+// variants from the cosmetics config; omit beard until a female beard exists.
+synthesizeFemaleSpeciesDefaults('tletingan', { omitFacialHair: true });
 // Female Mashtzarr has uploaded head/body sprites but no female beard or mouth
 // expression set yet, so keep the Mao-ao hair overlays and omit facial hair.
 synthesizeFemaleSpeciesDefaults('mashtzarr', { omitFacialHair: true });
