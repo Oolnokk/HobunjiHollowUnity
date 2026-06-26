@@ -2293,11 +2293,19 @@
         else c.groupRot += angleDiff(effectiveTarget, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
 
-        if (c.hitFlashT > 0) {
-          c.hitFlashT = Math.max(0, c.hitFlashT - dt);
-          const flashColor = c.hitFlashT > 0 ? 0xff5050 : (c.def.tint || 0xffffff);
+        if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
+        // Telegraph tell (combat-enemy-telegraph.js) takes a back seat to the
+        // hit flash so "you damaged it" feedback still reads clearly even if
+        // a strike lands mid-windup. Resolved every frame (not just on
+        // change) so the tint always reverts cleanly once both clear.
+        const desiredTint = c.hitFlashT > 0 ? 0xff5050
+          : c.telegraphState === 'strike' ? 0xffffff
+          : c.telegraphState === 'windup' ? 0xffc23d
+          : (c.def.tint || 0xffffff);
+        if (c._tintHex !== desiredTint) {
+          c._tintHex = desiredTint;
           for (const child of grp.children) {
-            if (child.material) child.material.color.setHex(flashColor);
+            if (child.material) child.material.color.setHex(desiredTint);
           }
         }
       }
@@ -2325,6 +2333,13 @@
       const JUMP_BACK_DUR_S = 0.4;
       const JUMP_BACK_SPEED = 260;
 
+      // Bite-attack telegraph timing, ported from the sandbox's dummy AI
+      // attack (its only enemy-side attack: windup 0.54s, strike 0.20s) —
+      // reused for both hostiles and companions since they share this same
+      // chase-then-bite shape.
+      const BITE_TELEGRAPH_WINDUP_S = 0.54;
+      const BITE_TELEGRAPH_STRIKE_S = 0.20;
+
       function updateHostiles(dt) {
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
@@ -2340,6 +2355,9 @@
           if (c.state !== 'chase' && distToPlayer <= def.aggroRangePx) c.state = 'chase';
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
+          // Leaving chase mid-windup (player broke the leash) abandons the
+          // telegraphed bite rather than landing it from way out of range.
+          if (c.state !== 'chase' && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
 
           let moving = false, aimAngle = c.facing || 0;
           if (c.knockbackT > 0) {
@@ -2354,13 +2372,26 @@
               c.retreatT = Math.max(0, c.retreatT - dt);
               const awayAng = Math.atan2(-dyp, -dxp);
               moving = moveCreatureToward(c, c.x + Math.cos(awayAng) * TILE, c.y + Math.sin(awayAng) * TILE, JUMP_BACK_SPEED, dt);
+            } else if (window.Combat?.telegraph?.isBusy(c)) {
+              // Stand and wind up — the tell (game.js's tint) is the
+              // player's cue to step out of attackRangePx before the strike
+              // frame's range check below fires.
+              window.Combat.telegraph.update(c, dt);
             } else {
               moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
               if (distToPlayer <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
                 c.stamina -= def.attackStaminaCost;
                 c.attackCooldownT = def.attackCooldownS;
-                damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
-                c.retreatT = JUMP_BACK_DUR_S;
+                window.Combat.telegraph.start(c, {
+                  windupS: BITE_TELEGRAPH_WINDUP_S,
+                  strikeS: BITE_TELEGRAPH_STRIKE_S,
+                  onStrike: () => {
+                    if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
+                      damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
+                    }
+                    c.retreatT = JUMP_BACK_DUR_S;
+                  },
+                });
               }
             }
           } else if (c.state === 'return') {
@@ -2402,15 +2433,29 @@
             if (Math.hypot(h.x - player.x, h.y - player.y) <= ALERT_RANGE_PX) { target = h; break; }
           }
 
+          if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
+
           let moving = false, aimAngle = c.facing || 0;
           if (target) {
             const dist = Math.hypot(target.x - c.x, target.y - c.y);
-            if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
-            if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
-              c.stamina -= def.attackStaminaCost;
-              c.attackCooldownT = def.attackCooldownS;
-              damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
+            if (window.Combat?.telegraph?.isBusy(c)) {
+              window.Combat.telegraph.update(c, dt);
+            } else {
+              if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
+              if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+                c.stamina -= def.attackStaminaCost;
+                c.attackCooldownT = def.attackCooldownS;
+                window.Combat.telegraph.start(c, {
+                  windupS: BITE_TELEGRAPH_WINDUP_S,
+                  strikeS: BITE_TELEGRAPH_STRIKE_S,
+                  onStrike: () => {
+                    if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
+                      damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
+                    }
+                  },
+                });
+              }
             }
           } else if (distToPlayer > FOLLOW_FAR_PX) {
             moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
