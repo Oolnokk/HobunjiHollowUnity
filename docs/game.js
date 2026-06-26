@@ -2864,6 +2864,18 @@
           fadingOut = true;
           fadeMusicVolume(snd, 0, stopFadeMs, () => { snd.pause(); releaseMusicGain(snd); resolve(); });
         });
+        // Some decode failures never surface as an 'error' event: the element
+        // reports paused=false (and the gain ramp completes normally) but
+        // currentTime never advances — silently stuck forever with nothing
+        // for a caller's 'error' listener to catch. Lets callers detect that
+        // and recover instead of leaving the track stuck mute indefinitely.
+        snd._watchForStall = (timeoutMs, onStalled) => {
+          setTimeout(() => {
+            if (fadingOut || snd.paused || snd.ended) return;
+            if (snd.currentTime > 0.05) return;
+            onStalled();
+          }, timeoutMs);
+        };
         return snd;
       }
 
@@ -3042,6 +3054,11 @@
           };
           snd.addEventListener('ended', finishCue, { once: true });
           snd.addEventListener('error', () => { audioDebug('cue error ' + snd.src, 'cue-error-' + cue.id, 0, 'cue'); finishCue(); }, { once: true });
+          snd._watchForStall(6000, () => {
+            if (_ambientCueState.currentCue !== snd) return;
+            audioDebug('cue stalled (no playback progress) ' + snd.src, 'cue-stall-' + cue.id, 0, 'cue');
+            finishCue();
+          });
           _ambientCueState.currentCue = snd;
           audioDebug('playing cue area=' + currentArea + ' id=' + cue.id + ' url=' + snd.src + ' baseVolume=' + cueBaseVolume.toFixed(2), 'cue-play-' + cue.id, 0, 'cue');
           snd.play().catch(err => {
@@ -3071,6 +3088,18 @@
         };
         snd.addEventListener('ended', finishBgm, { once: true });
         snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0, 'bgm'); markAudioUrlFailed(bgmUrl, 'media error'); releaseMusicGain(snd); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
+        snd._watchForStall(6000, () => {
+          if (_ambientCueState.currentBgm !== snd) return;
+          // Not marked failed (unlike the 'error' case above) — a stall can
+          // be a transient slow-load/decode hiccup rather than a permanently
+          // broken file, and blacklisting would wrongly exclude it forever.
+          audioDebug('bgm stalled (no playback progress) ' + snd.src, 'bgm-stall-' + currentArea + '-' + bgmUrl, 0, 'bgm');
+          releaseMusicGain(snd);
+          _ambientCueState.currentBgm = null;
+          _ambientCueState.mode = 'bgm';
+          _ambientCueState.nextAt = performance.now() + 1000;
+          snd.pause();
+        });
         _ambientCueState.currentBgm = snd;
         audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' baseVolume=' + bgmBaseVolume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0, 'bgm');
         snd.play().then(() => {
