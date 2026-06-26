@@ -17,6 +17,7 @@ button.ok{border-color:rgba(52,211,153,.42);background:rgba(52,211,153,.14)}
 button.warn{border-color:rgba(251,191,36,.42);background:rgba(251,191,36,.12)}
 button.bad{border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.12)}
 button.act{outline:2px solid var(--acc);outline-offset:1px}
+button.restricted{opacity:.45}
 input,select,textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:var(--text);padding:7px 9px;outline:none}
 textarea{min-height:60px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.35}
 label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
@@ -100,10 +101,10 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <button class="sec" data-mode="furniture">⚙️ Processor</button>
         <button class="sec" data-mode="decor">🪑 Decor</button>
         <button class="sec" data-mode="path">🛤 Route</button>
-        <button class="sec" data-mode="river">🌊 River</button>
+        <button class="sec" data-mode="river" id="riverModeBtn">🌊 River</button>
         <button class="sec" data-mode="spot">🔁 Spot</button>
         <button class="sec" data-mode="station">🧍 Station</button>
-        <button class="sec" data-mode="plateau">⛰ Plateau</button>
+        <button class="sec" data-mode="plateau" id="plateauModeBtn">⛰ Plateau</button>
         <button class="sec" data-mode="ramp">🪜 Ramp</button>
         <button class="sec" data-mode="building" id="buildingModeBtn">🏠 Building</button>
         <button class="sec" data-mode="erase">⌫ Erase</button>
@@ -590,12 +591,19 @@ function mapById(id) { return ws.maps.find(m => m.id === id) || null; }
 
 // ── Plateau groups & elevation sub-maps ──────────────────────────────────────
 // A plateau group is a workspace-wide, manually-authored palette entry (number +
-// elevation delta + color). Painting a group's number onto a map cell locks that
-// cell (it can't be repainted by tile/fill/crop or another group — only erased)
-// and lazily generates a same-size sub-map representing the raised/lowered
-// ground there. Sub-maps are ordinary map entries (so they're fully editable,
-// including placing further plateau tiles to nest sub-sub-maps) tagged with
-// parentMapId/plateauGroupId so their absolute elevation can be derived.
+// absolute elevation + color). Painting a group's number onto a root (non-submap)
+// map cell locks that cell against tile/fill/crop brushes — only erased, or
+// repainted by ANOTHER plateau group, which simply reassigns it (last brush
+// stroke wins) — and lazily generates a same-size sub-map representing the
+// raised/lowered ground there. All plateau groups are siblings painted directly
+// on the same root map, never on each other's sub-maps (the Map Editor refuses
+// plateau brush strokes while a sub-map is active), so every plateau sub-map is
+// always a direct child of that root map — one sub-map per group. Two groups
+// whose footprints touch share a seamless lerp at the boundary instead of each
+// independently sloping down to the root's own ground level (see mergeZoneTiles
+// in game.js / mergeZoneTilesInto in terrain-preview.js). Sub-maps are ordinary
+// map entries (so they're fully editable — ramps, decor, buildings, etc.) tagged
+// with parentMapId/plateauGroupId so their absolute elevation can be derived.
 const PLATEAU_COLORS = ['#f97316','#22c55e','#3b82f6','#e11d48','#a855f7','#facc15','#06b6d4','#84cc16'];
 function nextPlateauNumber() {
   const used = new Set((ws.plateauGroups || []).map(g => g.number));
@@ -1021,6 +1029,11 @@ function refreshBuildingDetection() {
   // mergeZoneTiles/TerrainPreview.buildMergedZoneGrid's `buildings` output).
   const isBuildable = m.category === 'exterior';
   updateSectionVisibility();
+  // Plateau groups are flat siblings of the main map now — a sub-map can't
+  // host another plateau group, so bounce out of Plateau mode if the user
+  // switches onto one (applyAt already no-ops the paint, this just avoids
+  // leaving the tool sitting on a mode that can't do anything here).
+  if (mode === 'plateau' && m.isSubmap) setMode('pan');
   if (!isBuildable) { if (mode === 'building') setMode('pan'); return; }
   if (!Array.isArray(m.buildings)) m.buildings = [];
   $('buildingCountTag').textContent = m.buildings.length;
@@ -1155,6 +1168,19 @@ function updateSectionVisibility() {
   const m = activeMap();
   const isExterior = m.category === 'exterior';
   $('buildingModeBtn').style.display = isExterior ? '' : 'none';
+  // A sub-map is itself a plateau group's footprint — plateau groups can't be
+  // painted onto another plateau's sub-map, so disable the tool there instead
+  // of letting it silently no-op.
+  $('plateauModeBtn').disabled = !!m.isSubmap;
+  $('plateauModeBtn').title = m.isSubmap ? "Plateau groups are always direct children of the main map — can't paint a plateau onto a sub-map" : '';
+  // Rivers are authored only on the base map — syncPlateauEffects mirrors them
+  // onto every plateau sub-map automatically (with waterfalls stamped where the
+  // path crosses a footprint's edge), so drawing a second, disconnected river
+  // directly on a sub-map would fight that mirroring instead of joining it.
+  // Stays clickable (not a native `disabled`) so tapping it on a sub-map still
+  // gives feedback via setStatus below instead of silently doing nothing.
+  $('riverModeBtn').classList.toggle('restricted', !!m.isSubmap);
+  $('riverModeBtn').title = m.isSubmap ? "Rivers are drawn on the base map only — they mirror onto plateau sub-maps automatically" : '';
   $('plateauGroupsSection').style.display = (mode === 'plateau') ? '' : 'none';
   $('terrainCheckSection').style.display = (mode === 'plateau' || mode === 'ramp') ? '' : 'none';
   $('buildingsSection').style.display = (isExterior && mode === 'building') ? '' : 'none';
@@ -1353,20 +1379,106 @@ function mirrorRiverAcrossPlateau(river, m, sm, group) {
   const footprint = plateauFootprint(m, group.id);
   const tileType = river.kind === 'stream' ? 'stream' : 'river';
   const pathKeys = new Set(riverPathKeys(river, m));
+  // footprint/pathKeys are in m's (parent) coordinate space, but sm's own grid
+  // is anchored at (anchorC,anchorR) within that space and only covers the
+  // footprint INSET by the 1-tile cliff-face ring (see resizeSubmapToFootprint)
+  // — so every key has to be re-based to sm-local coords, and ring cells that
+  // fall outside sm's own bounds (no local cell to paint) have to be dropped.
+  const anchorC = sm.anchorC ?? 0, anchorR = sm.anchorR ?? 0;
+
+  // A river can only genuinely exit the plateau in the direction it's actually
+  // flowing. An irregular/staircase-shaped footprint boundary can still put a
+  // footprint-external pathKeys cell on a PERPENDICULAR side of a boundary
+  // corner (e.g. a single-tile "tooth" that pokes one row further out than its
+  // neighbors has both a south-external AND a west-external neighbor) even
+  // though the river never flows that second way — that's a boundary-shape
+  // artifact, not a second crossing. Use the river's own overall node path to
+  // pick the one real flow axis and never even consider the other.
+  const nodes = river.nodes || [];
+  const first = nodes[0], last = nodes[nodes.length - 1];
+  const vertical = !first || !last || Math.abs(last[1] - first[1]) >= Math.abs(last[0] - first[0]);
+  const dirs = vertical ? [[0,1],[0,-1]] : [[1,0],[-1,0]];
+
+  // A "band" is one crossing of the footprint boundary: a fixed row (vertical
+  // exit, dr!=0) or column (horizontal exit, dc!=0) at which the river leaves
+  // the plateau. Find every (direction, fixed coordinate) pair where a
+  // footprint-internal river cell borders a footprint-external pathKeys cell,
+  // restricted to the river's actual flow axis, and remember which
+  // varying-axis position(s) actually triggered it.
+  const bands = new Map(); // `${dc},${dr},${fixed}` -> { dc, dr, fixed, seeds: Set<vary> }
+  for (const k of footprint) {
+    if (!pathKeys.has(k)) continue;
+    const [c, r] = k.split(',').map(Number);
+    for (const [dc, dr] of dirs) {
+      const nk = `${c + dc},${r + dr}`;
+      if (footprint.has(nk) || !pathKeys.has(nk)) continue;
+      const fixed = dr !== 0 ? r : c;
+      const key = `${dc},${dr},${fixed}`;
+      if (!bands.has(key)) bands.set(key, { dc, dr, fixed, seeds: new Set() });
+      bands.get(key).seeds.add(dr !== 0 ? c : r);
+    }
+  }
+
+  // The waterfall's width at a crossing is the full CONTIGUOUS span of
+  // footprint∩pathKeys cells reachable from an actual triggering cell by
+  // walking along the varying axis without ever leaving footprint∩pathKeys —
+  // not just the subset that individually happens to have a footprint-
+  // external pathKeys neighbor (a meandered path's rasterized width can drift
+  // by a column right at the boundary, so widening to the full contiguous
+  // span keeps the waterfall matching the river's actual width on top of the
+  // plateau), and NOT any cell anywhere that merely shares the same fixed
+  // row/column (an irregular footprint can revisit the same row/column in an
+  // unrelated, disconnected part of its boundary).
+  const inSet = (c, r) => { const k = `${c},${r}`; return footprint.has(k) && pathKeys.has(k); };
+  const bandVary = new Map(); // band key -> Set of varying-axis coords present in the widened band
+  for (const [key, band] of bands) {
+    const vary = new Set();
+    const stack = [...band.seeds];
+    while (stack.length) {
+      const v = stack.pop();
+      if (vary.has(v)) continue;
+      const c = band.dr !== 0 ? v : band.fixed, r = band.dr !== 0 ? band.fixed : v;
+      if (!inSet(c, r)) continue;
+      vary.add(v);
+      stack.push(v - 1, v + 1);
+    }
+    bandVary.set(key, vary);
+  }
+  const waterfallSet = new Set();
+  for (const [key, band] of bands) {
+    for (const v of bandVary.get(key)) {
+      const c = band.dr !== 0 ? v : band.fixed, r = band.dr !== 0 ? band.fixed : v;
+      waterfallSet.add(`${c},${r}`);
+    }
+  }
+
   const mirroredKeys = [];
   const waterfallKeys = [];
   for (const k of footprint) {
     if (!pathKeys.has(k)) continue;
-    mirroredKeys.push(k);
     const [c, r] = k.split(',').map(Number);
-    for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-      const nk = `${c+dc},${r+dr}`;
-      if (footprint.has(nk)) continue; // interior cell, not a plateau boundary
-      if (pathKeys.has(nk)) { waterfallKeys.push(k); break; } // river continues outside the footprint at a different elevation
-    }
+    const lc = c - anchorC, lr = r - anchorR;
+    if (lc < 0 || lc >= sm.cols || lr < 0 || lr >= sm.rows) continue; // outer ring — not part of sm's own grid
+    const lk = `${lc},${lr}`;
+    (waterfallSet.has(k) ? waterfallKeys : mirroredKeys).push(lk);
   }
   applyPaintDiff(`${river.id}__${sm.id}`, mirroredKeys, tileType, sm, { preserveCrop: false });
   applyPaintDiff(`${river.id}__${sm.id}__wf`, waterfallKeys, 'waterfall', sm, { preserveCrop: false });
+
+  // Widen the parent map's immediate next row/column just outside the
+  // footprint (the river tiles right at the foot of the waterfall) to the
+  // same full band width, so the channel doesn't narrow back down the instant
+  // it lands.
+  const widenKeys = [];
+  for (const [key, band] of bands) {
+    for (const v of bandVary.get(key)) {
+      const c = band.dr !== 0 ? v : band.fixed + band.dc;
+      const r = band.dr !== 0 ? band.fixed + band.dr : v;
+      if (c < 0 || c >= m.cols || r < 0 || r >= m.rows) continue;
+      widenKeys.push(`${c},${r}`);
+    }
+  }
+  applyPaintDiff(`${river.id}__${m.id}__${group.id}__wfwiden`, widenKeys, tileType, m, { preserveCrop: false });
 }
 function syncPlateauEffects(m) {
   const rivers = m.rivers || [];
@@ -1374,7 +1486,10 @@ function syncPlateauEffects(m) {
     const sm = getOrCreateSubmap(m, group);
     if (!sm) continue;
     for (const river of rivers) mirrorRiverAcrossPlateau(river, m, sm, group);
-    syncPlateauEffects(sm); // recurse into nested plateaus on the sub-map itself
+    // Plateau groups are never painted onto a sub-map (see applyAt), so this
+    // recursion is normally a no-op — kept defensively in case older/imported
+    // workspace data still has a nested group on some sub-map.
+    syncPlateauEffects(sm);
   }
 }
 // Submaps saved before the anchorC/anchorR field existed have neither, so
@@ -1579,6 +1694,7 @@ function renderPalette() {
     html += '<p class="muted" style="margin-top:5px">Select a route and click the map to append nodes. Select a node to branch from it; the next map click inserts after that node. Drag nodes on the map to clean up large route networks. Erase mode removes nodes.</p>';
   } else if (mode === 'river') {
     if (m.category !== 'exterior') html = '<p class="muted">Rivers are exterior-only.</p>';
+    else if (m.isSubmap) html = '<p class="muted">Rivers are drawn on the base map only — they mirror onto plateau sub-maps automatically, with waterfalls where they cross the edge.</p>';
     else {
       html = `<button class="ok" id="newRiverBtn" style="width:100%;margin-bottom:6px">+ New river</button>` +
         (m.rivers || []).map(p =>
@@ -2335,13 +2451,17 @@ function applyAt(tile) {
     if (isPlateauLocked(m, key)) return;
     if (!m.tiles[key]) m.tiles[key] = { type: 'tilled', crop: '' };
     m.tiles[key].crop = brush.crop;
-  } else if (mode === 'plateau' && m.category === 'exterior') {
+  } else if (mode === 'plateau' && m.category === 'exterior' && !m.isSubmap) {
+    // Plateau groups may only be painted on a root (non-submap) map — never on
+    // another group's sub-map — so every group ends up a direct sibling child
+    // of the same root, not nested under another tier (see header comment above).
     const group = plateauGroupById(brush.plateauGroup) || (ws.plateauGroups || [])[0];
     if (!group) return;
     const set = TILE_SETS[m.category] || TILE_SETS.exterior;
     const rad = Math.max(0, Math.floor(brush.plateauRadius) || 0);
     const rad2 = rad * rad + 0.25; // +0.25 rounds a discrete brush into a circle rather than a diamond/square
     let painted = false;
+    const overwrittenGroupIds = new Set();
     for (let dr = -rad; dr <= rad; dr++) {
       for (let dc = -rad; dc <= rad; dc++) {
         if (dc*dc + dr*dr > rad2) continue;
@@ -2350,14 +2470,23 @@ function applyAt(tile) {
         const ck = `${cc},${rr}`;
         if (mask && !mask.has(ck)) continue; // gap cell — not actually part of the plateau
         const existing = m.tiles[ck];
-        if (existing?.plateau && existing.plateau !== group.id) continue; // locked by a different plateau group
         if (existing?.plateau === group.id) continue; // already this group, nothing to do
+        // A different plateau group's cell — tiles overwrite each other when
+        // painted over (last brush stroke wins), they don't lock each other out;
+        // track it so that group's sub-map can be resynced to its new footprint.
+        if (existing?.plateau) overwrittenGroupIds.add(existing.plateau);
         m.tiles[ck] = { type: existing?.type || set[0], crop: existing?.crop || '', plateau: group.id };
         painted = true;
       }
     }
     if (!painted) return;
     getOrCreateSubmap(m, group);
+    for (const gid of overwrittenGroupIds) {
+      const og = plateauGroupById(gid);
+      const sm = og && ws.maps.find(x => x.parentMapId === m.id && x.plateauGroupId === og.id);
+      const bbox = og && plateauFootprintBBox(m, og.id);
+      if (sm && bbox) resizeSubmapToFootprint(sm, bbox);
+    }
     syncPlateauEffects(m);
   } else if (mode === 'object' && m.category === 'exterior') {
     m.objects[brush.object] = [c, r];
@@ -2382,7 +2511,7 @@ function applyAt(tile) {
     }
     maybePaintRoute(m);
     renderPalette(); updateBrushPill();
-  } else if (mode === 'river' && m.category === 'exterior') {
+  } else if (mode === 'river' && m.category === 'exterior' && !m.isSubmap) {
     m.rivers = m.rivers || [];
     let p = m.rivers.find(x => x.id === activeRiverId);
     if (!p) { p = { id: uid('river'), label: `River ${m.rivers.length+1}`, kind: 'river', width: 3, seed: Math.floor(Math.random()*1000000)+1, paintTiles: true, nodes: [] }; m.rivers.push(p); activeRiverId = p.id; }
@@ -2813,7 +2942,10 @@ function rebuild3D() {
   TerrainPreview.applyRampCurtainFlags(zGrid, merged.cols, merged.rows);
 
   // Flat floor quads for every tile not covered by a mesa/ramp/curtain mesh,
-  // colored by tile type and lifted to its own tier's elevation.
+  // colored by tile type and lifted to its own tier's elevation. Carved-bed
+  // types (river/stream/waterfall/trench/raised) are rendered separately
+  // below via TerrainPreview.buildTerrainTileGeo instead of a flat quad.
+  const CARVED_TYPES = { river: 0x2f6fa8, stream: 0x2f6fa8, waterfall: 0x2f6fa8, trench: 0x6b5638, raised: 0x6b5638 };
   const floorMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const fPos = [], fCol = [], fIdx = [];
   const colorOf = hex => { const n = parseInt(hex.slice(1), 16); return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255]; };
@@ -2822,7 +2954,7 @@ function rebuild3D() {
       const t = zGrid[r][c];
       if (!t || t.skipFloor) continue;
       const tile = merged.tiles.get(`${c},${r}`);
-      if (!tile || tile.type === 'ramp') continue;
+      if (!tile || tile.type === 'ramp' || CARVED_TYPES[tile.type] !== undefined) continue;
       const y = TerrainPreview.NORMAL_TOP + (t.elevTier || 0) * TerrainPreview.PLATEAU_UNIT;
       const col = colorOf((TILE_INFO[tile.type] || { color: '#888' }).color);
       const base = fPos.length / 3;
@@ -2838,6 +2970,37 @@ function rebuild3D() {
     fGeo.setIndex(fIdx);
     fGeo.computeVertexNormals();
     group.add(new THREE.Mesh(fGeo, floorMat));
+  }
+
+  // Carved beds for river/stream/waterfall/trench/raised tiles — the same
+  // per-tile heightfield docs/game.js's buildTerrainTileGeo already carves in
+  // the live game, mirrored here (TerrainPreview.buildTerrainTileGeo) so the
+  // preview shows a sunken/raised channel instead of a flat colored quad.
+  const carvedGrassMat = new THREE.MeshLambertMaterial({ color: 0x4f9a4f, side: THREE.DoubleSide });
+  for (const [type, bedColor] of Object.entries(CARVED_TYPES)) {
+    const bedMat = new THREE.MeshLambertMaterial({ color: bedColor, side: THREE.DoubleSide });
+    const cPos = [], dIdx = [], gIdx = [];
+    for (let r = 0; r < merged.rows; r++) {
+      for (let c = 0; c < merged.cols; c++) {
+        if (zGrid[r][c].type !== type) continue;
+        let geo;
+        try { geo = TerrainPreview.buildTerrainTileGeo(c, r, type, zGrid); }
+        catch (e) { continue; }
+        const base = cPos.length / 3;
+        // buildTerrainTileGeo returns world X/Z but tier-unaware Y (the live
+        // game adds its tier offset externally via bucket positioning) — add
+        // it here too, or carved river/stream/trench beds on a plateau render
+        // sunk at the base elevation instead of carved into the mesa top.
+        const tierY = (zGrid[r][c].elevTier || 0) * TerrainPreview.PLATEAU_UNIT;
+        const gp = geo.pos;
+        if (tierY) for (let k = 1; k < gp.length; k += 3) gp[k] += tierY;
+        cPos.push(...gp);
+        for (const v of geo.dirtIdx) dIdx.push(v + base);
+        for (const v of geo.grassIdx) gIdx.push(v + base);
+      }
+    }
+    if (dIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(cPos, dIdx), bedMat));
+    if (gIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(cPos, gIdx), carvedGrassMat));
   }
 
   // Plateau mesa heightfields (top sheet + cliff skin) per tier transition.
@@ -2863,6 +3026,16 @@ function rebuild3D() {
     if (curtainGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.pos, curtainGeo.idx), curtainMat));
     if (curtainGeo.skinIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.skinPos, curtainGeo.skinIdx), skinMat));
   } catch (e) { /* ramp geometry is best-effort for the preview */ }
+
+  // Waterwall curtains: vertical translucent water sheets where a river
+  // crosses a plateau edge (TileType.WATERFALL — see
+  // TerrainPreview.buildWaterfallWallGeometry / docs/game.js's
+  // buildWaterfallCurtainMeshes, which this preview mirrors).
+  const waterfallMat = new THREE.MeshBasicMaterial({ color: 0x2f8fc2, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
+  try {
+    const wfGeo = TerrainPreview.buildWaterfallWallGeometry(zGrid, merged.cols, merged.rows);
+    if (wfGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(wfGeo.pos, wfGeo.idx), waterfallMat));
+  } catch (e) { /* waterfall geometry is best-effort for the preview */ }
 
   // Building footprint boxes, lifted to their anchor tile's resolved plateau
   // tier (merged.buildings[].elevTier — see TerrainPreview.buildMergedZoneGrid)
@@ -3156,6 +3329,7 @@ function importAny(obj) {
     m.objects = obj.objects || {}; m.furniture = obj.furniture || []; m.decor = obj.decor || [];
     m.routes = Array.isArray(obj.routes) ? obj.routes : (Array.isArray(obj.npcPaths) ? obj.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(obj.npcPaths) ? obj.npcPaths : [];
+    m.rivers = Array.isArray(obj.rivers) ? obj.rivers : [];
     m.transitions = Array.isArray(obj.transitions) ? obj.transitions : [];
     m.buildings = Array.isArray(obj.buildings) ? obj.buildings : [];
     m.npcStations = Array.isArray(obj.npcStations) ? obj.npcStations : [];
@@ -3181,6 +3355,7 @@ function importAny(obj) {
       m.objects = src.objects || {}; m.furniture = src.furniture || []; m.decor = src.decor || [];
       m.routes = Array.isArray(src.routes) ? src.routes : (Array.isArray(src.npcPaths) ? src.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(src.npcPaths) ? src.npcPaths : [];
+      m.rivers = Array.isArray(src.rivers) ? src.rivers : [];
       m.transitions = Array.isArray(src.transitions) ? src.transitions : [];
       m.buildings = Array.isArray(src.buildings) ? src.buildings : [];
       m.npcStations = Array.isArray(src.npcStations) ? src.npcStations : [];
@@ -3224,7 +3399,13 @@ function importAny(obj) {
 }
 
 // ── Wire up ───────────────────────────────────────────────────────────────────
-document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.addEventListener('click', () => {
+  if (b.id === 'riverModeBtn' && activeMap().isSubmap) {
+    setStatus("Rivers are drawn on the base map only — they mirror onto plateau sub-maps automatically.");
+    return;
+  }
+  setMode(b.dataset.mode);
+}));
 $('fitBtn').addEventListener('click', fitView);
 $('undoBtn').addEventListener('click', undo);
 $('redoBtn').addEventListener('click', redo);

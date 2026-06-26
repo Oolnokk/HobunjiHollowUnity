@@ -20,12 +20,25 @@
 
   const PLATEAU_UNIT = 2.5;
   const NORMAL_TOP = 0.0;
+  const RIVER_TOP = -0.55; // mirrors docs/game.js RIVER_TOP/STREAM_TOP — river/stream/waterfall bed depth
+  const TRENCH_TOP = -0.5; // mirrors docs/game.js TRENCH_TOP
+  const RAISED_TOP = 0.5;  // mirrors docs/game.js RAISED_TOP
   const TileType = Object.freeze({
     GRASS: 'grass', WEEDS: 'weeds', TILLED: 'tilled',
     TRENCH: 'trench', RAISED: 'raised', PADDY: 'paddy',
     ROCK: 'rock', SHRUB: 'shrub', PATH: 'path',
-    RIVER: 'river', STREAM: 'stream', RAMP: 'ramp',
+    RIVER: 'river', STREAM: 'stream', RAMP: 'ramp', WATERFALL: 'waterfall',
   });
+  // Tile types whose own heightfield (buildTerrainTileGeo) carves a depression
+  // or rise into the ground — a plateau mesa's flat lid/skin must never also
+  // render a quad over one of these, or the carved bed renders buried under it.
+  const CARVED_TILE_TYPES = new Set([TileType.RIVER, TileType.STREAM, TileType.WATERFALL, TileType.TRENCH, TileType.RAISED]);
+  // river/stream/waterfall are one continuous waterway — a cell of one type
+  // bordering a cell of another in this family should blend as "open" (full
+  // depth carries through) instead of tapering back to flat ground right at
+  // that family-internal seam.
+  const WATERWAY_TYPES = new Set([TileType.RIVER, TileType.STREAM, TileType.WATERFALL]);
+  const sameWaterway = (a, b) => a === b || (WATERWAY_TYPES.has(a) && WATERWAY_TYPES.has(b));
 
   // ── Merge: fold a plateau stack's tiers into one world-keyed tile map ──────
   // Mirrors docs/game.js mergeZoneTiles exactly (including the pinhole-fill
@@ -40,6 +53,20 @@
       if (!mask) { mask = new Set(); groupMask.set(plateauId, mask); }
       mask.add(`${c},${r}`);
     }
+    // Every plateau group painted on `m` is a sibling here (painting one
+    // group's brush over another's cells reassigns them — see applyAt — so
+    // groupMask's per-group masks are already disjoint). A ring cell's actual
+    // support height is therefore whichever group (if any) owns its missing
+    // neighbor, not always this map's own baseTier — that's what lets two
+    // plateaus sharing this map blend straight into each other (a lower
+    // tier's cells bordering a higher sibling's footprint stay flat at their
+    // own tier instead of sloping down to baseTier, since the riser is
+    // entirely the higher sibling's own mesa wall) while a true outer edge
+    // (bordering ungraded ground, or a still-lower sibling) still ramps down.
+    const tierAt = (c, r) => {
+      const pid = m.tiles?.[`${c},${r}`]?.plateau;
+      return pid ? (plateauElevById.get(pid) ?? baseTier) : baseTier;
+    };
 
     const children = [];
     for (const [gid, mask] of groupMask) {
@@ -75,9 +102,15 @@
       for (const k of mask) {
         const [lc, lr] = k.split(',').map(Number);
         const c = lc + offsetC, r = lr + offsetR;
-        const onRing = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dc, dr]) => !mask.has(`${lc + dc},${lr + dr}`));
+        let ringTier = null; // null => fully interior, no slope needed here
+        for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          if (mask.has(`${lc + dc},${lr + dr}`)) continue;
+          const supportTier = tierAt(lc + dc, lr + dr);
+          if (supportTier < toTier) ringTier = ringTier === null ? supportTier : Math.min(ringTier, supportTier);
+        }
+        const onRing = ringTier !== null;
         outTiles.set(`${c},${r}`, {
-          c, r, type: 'grass', elevTier: onRing ? baseTier : toTier,
+          c, r, type: 'grass', elevTier: onRing ? ringTier : toTier,
           skipFloor: true, rampElevation: 0, incline: onRing,
         });
       }
@@ -167,6 +200,97 @@
         nt.incline = true; nt.skipFloor = true; nt.rampCurtain = true;
       }
     }
+  }
+
+  // ── Terrain tile heightfield: carved channel/ditch beds (pure data) ─────────
+  // Mirrors docs/game.js buildTerrainTileGeo exactly, up to (but not including)
+  // the THREE.BufferGeometry construction — and with one deliberate deviation:
+  // game.js's positions are tile-local (-0.5..0.5, translated via the mesh's
+  // own position at the call site), whereas this returns absolute world x/z
+  // (col..col+1, row..row+1) to match this module's other geometry builders
+  // (buildRampMeshGeometry etc.), which bake world coords directly so the
+  // caller never needs a separate per-tile mesh transform.
+  const DEPRESSION_TOP = {
+    [TileType.TRENCH]: TRENCH_TOP,
+    [TileType.RIVER]: RIVER_TOP,
+    [TileType.STREAM]: RIVER_TOP,
+    [TileType.WATERFALL]: RIVER_TOP,
+  };
+  function buildTerrainTileGeo(col, row, type, zGrid) {
+    const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
+    const BLEND_V = 2;
+    const PLATEAU = type === TileType.RAISED ? 3.0 : 1.5; // raised = wide flat top
+    const depressionTop = DEPRESSION_TOP[type];
+    const isDepression = depressionTop !== undefined;
+    const targetDY = isDepression
+      ? depressionTop - NORMAL_TOP
+      : RAISED_TOP - NORMAL_TOP; // +0.5
+
+    const openN = sameWaterway(zGrid[row - 1]?.[col]?.type, type);
+    const openS = sameWaterway(zGrid[row + 1]?.[col]?.type, type);
+    const openW = sameWaterway(zGrid[row]?.[col - 1]?.type, type);
+    const openE = sameWaterway(zGrid[row]?.[col + 1]?.type, type);
+
+    // Diagonal tiles — used to seal the inner corner of L-shaped turns
+    const diagNW = sameWaterway(zGrid[row - 1]?.[col - 1]?.type, type);
+    const diagNE = sameWaterway(zGrid[row - 1]?.[col + 1]?.type, type);
+    const diagSW = sameWaterway(zGrid[row + 1]?.[col - 1]?.type, type);
+    const diagSE = sameWaterway(zGrid[row + 1]?.[col + 1]?.type, type);
+
+    const seamDisp = (vx, vz) => {
+      const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+      let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+      h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+      return (h / 4294967296 - 0.5) * 0.026;
+    };
+    const roughDisp = (vx, vz) => {
+      const kx = Math.round(vx * 6) | 0, kz = Math.round(vz * 6) | 0;
+      let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+      h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+      return (h / 4294967296 - 0.5) * 0.035;
+    };
+    const smooth = t => t * t * (3 - 2 * t);
+
+    const Y = new Float32Array(VERTS * VERTS);
+    for (let vj = 0; vj < VERTS; vj++) {
+      for (let vi = 0; vi < VERTS; vi++) {
+        const bW = openW ? 1 : smooth(Math.min(1, vi / BLEND_V));
+        const bE = openE ? 1 : smooth(Math.min(1, (CELLS - vi) / BLEND_V));
+        const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
+        const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
+
+        const bDiagNW = (openW && openN && !diagNW) ? smooth(Math.min(1, Math.max(vi, vj)               / BLEND_V)) : 1;
+        const bDiagNE = (openE && openN && !diagNE) ? smooth(Math.min(1, Math.max(CELLS - vi, vj)       / BLEND_V)) : 1;
+        const bDiagSW = (openW && openS && !diagSW) ? smooth(Math.min(1, Math.max(vi, CELLS - vj)       / BLEND_V)) : 1;
+        const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, Math.max(CELLS - vi, CELLS - vj) / BLEND_V)) : 1;
+
+        const blend = Math.min(1, bW * bE * bN * bS * bDiagNW * bDiagNE * bDiagSW * bDiagSE * PLATEAU);
+        const vx = col + vi * STEP, vz = row + vj * STEP;
+        Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * targetDY + blend * roughDisp(vx, vz);
+      }
+    }
+
+    const pos = [];
+    for (let vj = 0; vj < VERTS; vj++)
+      for (let vi = 0; vi < VERTS; vi++)
+        pos.push(col + vi * STEP, Y[vj * VERTS + vi], row + vj * STEP);
+
+    // Split cells: dirt where significantly depressed/elevated, grass on flat
+    // edge cells that blend back to ground level.
+    const DIRT_THRESH = 0.05;
+    const dirtIdx = [], grassIdx = [];
+    for (let cj = 0; cj < CELLS; cj++)
+      for (let ci = 0; ci < CELLS; ci++) {
+        const v00 = cj * VERTS + ci, v10 = cj * VERTS + ci + 1;
+        const v01 = (cj + 1) * VERTS + ci, v11 = (cj + 1) * VERTS + ci + 1;
+        const y00 = Y[v00], y10 = Y[v10], y01 = Y[v01], y11 = Y[v11];
+        const isDirt = isDepression
+          ? Math.min(y00, y10, y01, y11) < -DIRT_THRESH
+          : Math.max(y00, y10, y01, y11) > DIRT_THRESH;
+        (isDirt ? dirtIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+      }
+
+    return { pos, dirtIdx, grassIdx };
   }
 
   // ── Plateau mesa heightfield geometry (pure data) ───────────────────────────
@@ -283,10 +407,17 @@
 
     const quadIsRamp = (gi, gj) => isRampTile(Math.floor(gi / 2), Math.floor(gj / 2));
     const quadInOwnMask = (gi, gj) => !mask || mask.has(`${bb.minC + Math.floor(gi / 2)},${bb.minR + Math.floor(gj / 2)}`);
+    // A river/stream/waterfall/trench/raised cell carved INTO this mesa's own
+    // footprint still gets a mask-passing, BFS-blended Y above (so neighboring
+    // carved-tile geometry keeps blending against a sane height), but the flat
+    // mesa lid/skin must not also render a quad on top of it — buildTerrainTileGeo
+    // builds that cell's own carved-bed mesh, and without this check the mesa's
+    // solid lid simply painted over it, hiding the channel under flat ground.
+    const quadIsCarved = (gi, gj) => CARVED_TILE_TYPES.has(zGrid?.[bb.minR + Math.floor(gj / 2)]?.[bb.minC + Math.floor(gi / 2)]?.type);
     const idx = [];
     for (let gj = 0; gj < GH - 1; gj++) {
       for (let gi = 0; gi < GW - 1; gi++) {
-        if (quadIsRamp(gi, gj) || !quadInOwnMask(gi, gj)) continue;
+        if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
         const v00 = gj * GW + gi, v10 = gj * GW + gi + 1, v01 = (gj + 1) * GW + gi, v11 = (gj + 1) * GW + gi + 1;
         idx.push(v00, v01, v11, v00, v11, v10);
       }
@@ -296,7 +427,7 @@
     let vi = 0;
     for (let gj = 0; gj < GH - 1; gj++) {
       for (let gi = 0; gi < GW - 1; gi++) {
-        if (quadIsRamp(gi, gj) || !quadInOwnMask(gi, gj)) continue;
+        if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
         const y00 = Y[gj * GW + gi], y10 = Y[gj * GW + gi + 1];
         const y01 = Y[(gj + 1) * GW + gi], y11 = Y[(gj + 1) * GW + gi + 1];
         const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
@@ -383,6 +514,46 @@
     return { pos, idx, skinPos, skinIdx };
   }
 
+  // ── Waterwalls: vertical water curtains where a river crosses a plateau edge ─
+  // A WATERFALL cell sits on a plateau sub-map right at its own outer edge (see
+  // game.js/index.html's mirrorRiverAcrossPlateau) — its merged-grid neighbor one
+  // step further out is the footprint's 1-tile cliff-face ring, which mergeZoneTiles
+  // always stakes flat at `type: 'grass'` (it's covered by the mesa wall mesh, not
+  // a real floor tile) at the LOWER tier the cliff drops to. So unlike ramp
+  // curtains, a waterfall's far side is never itself water-typed — the elevTier
+  // step alone marks the boundary the water has to climb. Builds one vertical
+  // quad per such edge, from this cell's own bed down to ground level at the
+  // neighbor's (lower, usually) tier.
+  function buildWaterfallWallGeometry(zGrid, cols, rows) {
+    const cells = [];
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols; c++)
+        if (zGrid[r]?.[c]?.type === TileType.WATERFALL) cells.push([c, r]);
+    if (!cells.length) return { pos: [], idx: [] };
+
+    const pos = [], idx = [];
+    let vi = 0;
+    for (const [c, r] of cells) {
+      const t = zGrid[r][c];
+      const selfY = RIVER_TOP + (t.elevTier || 0) * PLATEAU_UNIT;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nt = zGrid[r + dr]?.[c + dc];
+        if (!nt || (nt.elevTier || 0) === (t.elevTier || 0)) continue;
+        const neighborIsWater = nt.type === TileType.RIVER || nt.type === TileType.STREAM || nt.type === TileType.WATERFALL;
+        const neighborY = (neighborIsWater ? RIVER_TOP : NORMAL_TOP) + (nt.elevTier || 0) * PLATEAU_UNIT;
+        const top = Math.max(selfY, neighborY), bottom = Math.min(selfY, neighborY);
+        let x0, z0, x1, z1;
+        if (dc === 1) { x0 = c + 1; z0 = r; x1 = c + 1; z1 = r + 1; }
+        else if (dc === -1) { x0 = c; z0 = r + 1; x1 = c; z1 = r; }
+        else if (dr === 1) { x0 = c; z0 = r + 1; x1 = c + 1; z1 = r + 1; }
+        else /* dr === -1 */ { x0 = c + 1; z0 = r; x1 = c; z1 = r; }
+        pos.push(x0, top, z0, x1, top, z1, x0, bottom, z0, x1, bottom, z1);
+        idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
+      }
+    }
+    return { pos, idx };
+  }
+
   // ── Watertightness checks ───────────────────────────────────────────────────
   // None of this exists in docs/game.js — it's new tooling, not a mirror of
   // anything. Walks a workspace's plateau authoring data (independent of any
@@ -392,7 +563,7 @@
   // seam-blend (buildPlateauMesaGeometry handles the last one correctly now,
   // but it's still useful to surface so a new map's tight margins are visible
   // before they're seen as a rendering glitch).
-  function floodFillComponents(mask) {
+  function floodFillComponents(mask, passable = mask) {
     const seen = new Set(), components = [];
     for (const start of mask) {
       if (seen.has(start)) continue;
@@ -400,11 +571,11 @@
       seen.add(start);
       while (stack.length) {
         const k = stack.pop();
-        comp.push(k);
+        if (mask.has(k)) comp.push(k);
         const [c, r] = k.split(',').map(Number);
         for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           const nk = `${c + dc},${r + dr}`;
-          if (mask.has(nk) && !seen.has(nk)) { seen.add(nk); stack.push(nk); }
+          if (passable.has(nk) && !seen.has(nk)) { seen.add(nk); stack.push(nk); }
         }
       }
       components.push(comp);
@@ -457,7 +628,21 @@
           issues.push({ severity: 'warning', code: 'MISSING_CHILD_SUBMAP', mapId: m.id, groupId: gid, message: `Map "${m.name || m.id}" paints plateau group "${gid}" but has no authored child sub-map for it yet — that tier won't be staked or rendered.` });
           continue;
         }
-        const components = floodFillComponents(mask);
+        // A taller sibling plateau painted on the same map punches a hole in
+        // this group's mask (it overwrote those cells), which would otherwise
+        // look like a disconnected blob even though the footprint is one
+        // contiguous ring around its taller neighbor. Let connectivity pass
+        // through cells owned by any strictly-taller group so only genuine
+        // stray strokes get flagged.
+        const passable = new Set(mask);
+        for (const [otherGid, otherMask] of localMask) {
+          if (otherGid === gid) continue;
+          const otherElev = groupsById.get(otherGid)?.elevation ?? 0;
+          if (otherElev > (groupsById.get(gid)?.elevation ?? 0)) {
+            for (const k of otherMask) passable.add(k);
+          }
+        }
+        const components = floodFillComponents(mask, passable);
         if (components.length > 1) {
           issues.push({ severity: 'warning', code: 'DISCONNECTED_MASK', mapId: m.id, groupId: gid, message: `Plateau group "${gid}" on map "${m.name || m.id}" is painted as ${components.length} disconnected blobs (sizes: ${components.map(c => c.length).join(', ')}) — likely a stray brush stroke.`, cells: components });
         }
@@ -496,6 +681,6 @@
     PLATEAU_UNIT, NORMAL_TOP, TileType,
     buildMergedZoneGrid, buildZGrid, applyRampCurtainFlags,
     buildPlateauMesaGeometry, buildRampMeshGeometry, buildRampCurtainGeometry,
-    validateTerrain,
+    buildWaterfallWallGeometry, buildTerrainTileGeo, validateTerrain,
   };
 });
