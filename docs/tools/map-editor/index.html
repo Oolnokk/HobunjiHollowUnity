@@ -17,6 +17,7 @@ button.ok{border-color:rgba(52,211,153,.42);background:rgba(52,211,153,.14)}
 button.warn{border-color:rgba(251,191,36,.42);background:rgba(251,191,36,.12)}
 button.bad{border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.12)}
 button.act{outline:2px solid var(--acc);outline-offset:1px}
+button.restricted{opacity:.45}
 input,select,textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:var(--text);padding:7px 9px;outline:none}
 textarea{min-height:60px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.35}
 label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
@@ -1176,7 +1177,9 @@ function updateSectionVisibility() {
   // onto every plateau sub-map automatically (with waterfalls stamped where the
   // path crosses a footprint's edge), so drawing a second, disconnected river
   // directly on a sub-map would fight that mirroring instead of joining it.
-  $('riverModeBtn').disabled = !!m.isSubmap;
+  // Stays clickable (not a native `disabled`) so tapping it on a sub-map still
+  // gives feedback via setStatus below instead of silently doing nothing.
+  $('riverModeBtn').classList.toggle('restricted', !!m.isSubmap);
   $('riverModeBtn').title = m.isSubmap ? "Rivers are drawn on the base map only — they mirror onto plateau sub-maps automatically" : '';
   $('plateauGroupsSection').style.display = (mode === 'plateau') ? '' : 'none';
   $('terrainCheckSection').style.display = (mode === 'plateau' || mode === 'ramp') ? '' : 'none';
@@ -2908,7 +2911,14 @@ function rebuild3D() {
         try { geo = TerrainPreview.buildTerrainTileGeo(c, r, type, zGrid); }
         catch (e) { continue; }
         const base = cPos.length / 3;
-        cPos.push(...geo.pos);
+        // buildTerrainTileGeo returns world X/Z but tier-unaware Y (the live
+        // game adds its tier offset externally via bucket positioning) — add
+        // it here too, or carved river/stream/trench beds on a plateau render
+        // sunk at the base elevation instead of carved into the mesa top.
+        const tierY = (zGrid[r][c].elevTier || 0) * TerrainPreview.PLATEAU_UNIT;
+        const gp = geo.pos;
+        if (tierY) for (let k = 1; k < gp.length; k += 3) gp[k] += tierY;
+        cPos.push(...gp);
         for (const v of geo.dirtIdx) dIdx.push(v + base);
         for (const v of geo.grassIdx) gIdx.push(v + base);
       }
@@ -3313,7 +3323,13 @@ function importAny(obj) {
 }
 
 // ── Wire up ───────────────────────────────────────────────────────────────────
-document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.addEventListener('click', () => {
+  if (b.id === 'riverModeBtn' && activeMap().isSubmap) {
+    setStatus("Rivers are drawn on the base map only — they mirror onto plateau sub-maps automatically.");
+    return;
+  }
+  setMode(b.dataset.mode);
+}));
 $('fitBtn').addEventListener('click', fitView);
 $('undoBtn').addEventListener('click', undo);
 $('redoBtn').addEventListener('click', redo);
