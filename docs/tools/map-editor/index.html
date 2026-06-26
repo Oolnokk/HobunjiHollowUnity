@@ -41,10 +41,30 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 .sect-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
 .sect-head b{font-size:12px;text-transform:uppercase;letter-spacing:.3px}
 .sect-tag{font-size:10px;color:var(--muted);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:2px 7px}
-#modeBar{display:flex;gap:4px;padding:6px 8px;background:var(--panel2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#modeBar{display:flex;gap:3px;padding:4px 6px;background:var(--panel2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#modeBar button{padding:4px 7px;font-size:11px;font-weight:600;border-radius:7px}
+#sidebarToc{background:var(--panel2);border-bottom:1px solid var(--border);padding:7px 10px;flex-shrink:0}
+#sidebarToc b{font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);display:block;margin-bottom:5px}
+#sidebarToc .row{gap:4px}
+#sidebarToc a{font-size:11px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);border-radius:999px;padding:3px 9px;color:var(--text);text-decoration:none;cursor:pointer}
+#sidebarToc a:hover{background:rgba(255,255,255,.1)}
+#tocJumpBtn{position:fixed;right:14px;bottom:14px;z-index:500;padding:6px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.4)}
+.sect-head-actions{display:flex;align-items:center;gap:6px}
+.iconBtn{padding:2px 7px;font-size:11px;border-radius:6px}
+#quickCheckPopover{position:fixed;z-index:900;max-width:320px;background:var(--panel);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none}
+#quickCheckPopover.show{display:block}
+#quickCheckPopover .sect-head{margin-bottom:6px}
 #view{flex:1;position:relative;min-width:0;min-height:0}
 #canvas2d{display:block;width:100%;height:100%;touch-action:none}
+#canvas3d{display:none;width:100%;height:100%;touch-action:none}
+#canvas3d.active{display:block}
+#canvas2d.hidden3d{display:none}
 #hud{position:absolute;left:8px;top:8px;display:flex;gap:5px;flex-wrap:wrap;pointer-events:none;max-width:calc(100% - 16px)}
+#validateList{max-height:220px;overflow-y:auto}
+.vIssue{border-radius:6px;padding:5px 7px;margin-bottom:4px;font-size:11px;line-height:1.4}
+.vIssue.error{background:rgba(251,113,133,.14);border:1px solid rgba(251,113,133,.35)}
+.vIssue.warning{background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.32)}
+.vIssue.info{background:rgba(106,167,255,.1);border:1px solid rgba(106,167,255,.28)}
 .palBtn{display:flex;align-items:center;gap:6px;width:100%;text-align:left;margin-bottom:4px;padding:6px 9px}
 .palSw{width:14px;height:14px;border-radius:4px;border:1px solid rgba(255,255,255,.4);flex:0 0 auto}
 .itemlist{max-height:200px;overflow-y:auto;padding-right:2px}
@@ -55,6 +75,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
   <div id="topbar">
     <h1>MAP EDITOR</h1>
     <span class="pill" id="activeMapPill">no map</span>
+    <button class="sec" id="upToParentBtn" style="display:none">⬆ Parent map</button>
     <div id="topbar-right">
       <button class="ok" id="playBtn">🎮 Send to Game &amp; Play</button>
       <button class="sec" id="undoBtn">↶ Undo</button>
@@ -82,13 +103,34 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <button class="sec" data-mode="river">🌊 River</button>
         <button class="sec" data-mode="spot">🔁 Spot</button>
         <button class="sec" data-mode="station">🧍 Station</button>
+        <button class="sec" data-mode="plateau">⛰ Plateau</button>
+        <button class="sec" data-mode="ramp">🪜 Ramp</button>
+        <button class="sec" data-mode="building" id="buildingModeBtn">🏠 Building</button>
         <button class="sec" data-mode="erase">⌫ Erase</button>
         <button class="sec" id="fitBtn" style="margin-left:auto">Fit</button>
+        <button class="sec" id="quickCheckBtn" title="Run the watertightness check now, without switching mode">💧 Check</button>
+        <button class="sec" id="toggle3dBtn" title="Live 3D render of the merged plateau/ramp terrain — same heightfield math as the real game">🧊 3D</button>
+      </div>
+      <div id="quickCheckPopover">
+        <div class="sect-head">
+          <b>Watertightness</b>
+          <div class="sect-head-actions">
+            <span class="sect-tag" id="quickCheckCountTag">—</span>
+            <button class="sec iconBtn" id="quickCheckCopyBtn" title="Copy report to clipboard">📋</button>
+            <button class="bad iconBtn" id="quickCheckCloseBtn" title="Close">✕</button>
+          </div>
+        </div>
+        <div id="quickCheckList" style="max-height:260px;overflow-y:auto"></div>
       </div>
       <div id="sidebar-scroll">
 
+        <div id="sidebarToc">
+          <b>Jump to</b>
+          <div class="row" id="tocLinks"></div>
+        </div>
+
         <!-- MAPS -->
-        <div class="section" style="--sec:#94a3b8;--secBg:rgba(148,163,184,.08)">
+        <div class="section" id="mapsSection" style="--sec:#94a3b8;--secBg:rgba(148,163,184,.08)">
           <div class="sect-head"><b>Maps</b><span class="sect-tag" id="mapCountTag">0</span></div>
           <div class="itemlist" id="mapList"></div>
           <div class="row" style="margin-top:6px">
@@ -99,8 +141,29 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           </div>
         </div>
 
+        <!-- PLATEAU GROUPS (Plateau mode only) -->
+        <div class="section" id="plateauGroupsSection" style="--sec:#c084fc;--secBg:rgba(192,132,252,.08);display:none">
+          <div class="sect-head"><b>Plateau Groups</b><span class="sect-tag" id="plateauGroupCountTag">0</span></div>
+          <div class="itemlist" id="plateauGroupList"></div>
+          <button class="ok" id="newPlateauGroupBtn" style="width:100%;margin-top:6px">+ New plateau group</button>
+          <p class="muted" style="margin-top:5px">Each group's elevation is an absolute tier measured from the base map — not a bump relative to whatever it's painted on. The first tile painted with a group on a map auto-generates an editable sub-map for that group's footprint there.</p>
+        </div>
+
+        <!-- TERRAIN WATERTIGHTNESS (Plateau/Ramp modes only) -->
+        <div class="section" id="terrainCheckSection" style="--sec:#fb7185;--secBg:rgba(251,113,133,.08);display:none">
+          <div class="sect-head"><b>Terrain Check</b>
+            <div class="sect-head-actions">
+              <span class="sect-tag" id="validateCountTag">—</span>
+              <button class="sec iconBtn" id="copyValidationBtn" title="Copy report to clipboard">📋</button>
+            </div>
+          </div>
+          <button class="sec" id="validateBtn" style="width:100%">Check watertightness</button>
+          <div id="validateList" style="margin-top:6px"></div>
+          <p class="muted" style="margin-top:5px">Runs the same merge + heightfield math as the live 3D preview and the real game against the active map's root, looking for gaps, orphaned plateau refs, and tier seam mismatches.</p>
+        </div>
+
         <!-- MAP SETTINGS -->
-        <div class="section" style="--sec:#6aa7ff;--secBg:rgba(106,167,255,.08)">
+        <div class="section" id="mapSettingsSection" style="--sec:#6aa7ff;--secBg:rgba(106,167,255,.08)">
           <div class="sect-head"><b>Map Settings</b><span class="sect-tag" id="catTag">—</span></div>
           <div class="g2">
             <div><label>Name</label><input id="mapName"></div>
@@ -118,13 +181,13 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         </div>
 
         <!-- PALETTE -->
-        <div class="section" style="--sec:#34d399;--secBg:rgba(52,211,153,.08)">
+        <div class="section" id="paletteSection" style="--sec:#34d399;--secBg:rgba(52,211,153,.08)">
           <div class="sect-head"><b>Palette</b><span class="sect-tag" id="paletteTag">tile</span></div>
           <div id="paletteBox"></div>
         </div>
 
         <!-- GAME LINK -->
-        <div class="section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.08)">
+        <div class="section" id="gameLinkSection" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.08)">
           <div class="sect-head"><b>Game Link</b><span class="sect-tag">hobunji_farm_layout_v3</span></div>
           <div><label>Farm map (exterior, sent as tile layout)</label><select id="linkExterior"></select></div>
           <div style="margin-top:6px"><label>Farmhouse map (interior, sent as decor)</label><select id="linkInterior"></select></div>
@@ -140,7 +203,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <p class="muted" style="margin-top:5px">The game farm is <b id="farmDimsNote">36×26</b>. Tiles outside that range are clipped when sending. Unpainted tiles keep the game's day-one terrain.</p>
         </div>
 
-        <!-- BUILDINGS (town maps only) -->
+        <!-- BUILDINGS (Building mode only, exterior maps) -->
         <div class="section" id="buildingsSection" style="--sec:#f59e0b;--secBg:rgba(245,158,11,.08);display:none">
           <div class="sect-head"><b>Buildings</b><span class="sect-tag" id="buildingCountTag">0</span></div>
           <div id="addBuildingPicker"></div>
@@ -162,7 +225,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         </div>
 
         <!-- STATUS / JSON -->
-        <div class="section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.06)">
+        <div class="section" id="statusSection" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.06)">
           <div class="sect-head"><b>Active Map JSON</b><span class="sect-tag" id="statusPill">Ready</span></div>
           <textarea id="jsonPreview" rows="8" readonly></textarea>
         </div>
@@ -172,6 +235,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 
     <div id="view">
       <canvas id="canvas2d"></canvas>
+      <canvas id="canvas3d"></canvas>
       <div id="hud">
         <span class="pill" id="modePill">Mode: pan</span>
         <span class="pill" id="cursorPill">—</span>
@@ -180,6 +244,8 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
     </div>
   </div>
 </div>
+
+<button id="tocJumpBtn" class="sec" title="Jump to the sidebar's table of contents">⤴ TOC</button>
 
 <div id="diffModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);overflow:auto;padding:20px">
   <div style="max-width:760px;margin:0 auto;background:#111b28;border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:20px">
@@ -195,6 +261,9 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 </div>
 
 <script src="../../js/repo-picker.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="../../js/terrain-preview.js"></script>
 <script>
 (() => {
 'use strict';
@@ -224,7 +293,9 @@ const TILE_INFO = {
   shrub:  { label:'Shrub',  color:'#2f6f3f' },
   path:   { label:'Path',   color:'#b8956a' },
   river:  { label:'River',  color:'#2f6fb8' },
-  stream: { label:'Stream', color:'#4f9bd9' }
+  stream: { label:'Stream', color:'#4f9bd9' },
+  waterfall: { label:'Waterfall', color:'#bfe9f7' },
+  ramp:   { label:'Ramp',   color:'#c2b280' }
 };
 const TILE_SETS = {
   exterior: ['grass','weeds','tilled','trench','raised','paddy','rock','shrub','path','river','stream'],
@@ -303,7 +374,7 @@ function makeMap(name, category, cols, rows) {
   return {
     schema: 'hobunji_map.v1',
     id: uid('map'), name, category, cols, rows,
-    tiles: {},        // "c,r" -> { type, crop }
+    tiles: {},        // "c,r" -> { type, crop, plateau?, rampElevation? }
     objects: {},      // objectKey -> [c, r]
     furniture: [],    // { key, col, row }
     decor: [],        // { key, col, row }
@@ -313,6 +384,12 @@ function makeMap(name, category, cols, rows) {
     transitions: [],  // { id, label, col, row, targetMapId, targetSpotId }
     npcStations: [], // { id, label, col, row, rotY, pose, toolKey, toolIntervalSec, toolAnimStyle }
     buildings: [],    // { id, label, pieceFile, gridX, gridZ, footprintW, footprintD, wbOpts, wbGableOpts }
+    // Plateau / elevation: a map is either a root map (isSubmap=false, elevation=0) or an
+    // auto-generated sub-map representing one plateau group's footprint on its parent.
+    isSubmap: false,
+    parentMapId: null,
+    plateauGroupId: null,
+    elevation: 0,
     audioIndex: '',    // cues index id/file selected for this map
   };
 }
@@ -450,7 +527,14 @@ function computeMapDiff(m) {
 }
 
 let ws = loadWorkspace();
+migrateSubmapAnchors();
+sanitizePlateauGaps();
 ws.maps.forEach(captureBaseline);
+recomputeAllElevations();
+// Lets the dev-tools hub (docs/tools/index.html) read the live in-memory workspace
+// — including unsaved edits — when its "Open Game" button is clicked, rather than
+// only whatever was last written to localStorage.
+window._mapEditorBridge = { getWorkspace: () => ws };
 function loadWorkspace() {
   try {
     const raw = localStorage.getItem(WS_KEY);
@@ -463,6 +547,10 @@ function loadWorkspace() {
           m.npcPaths = Array.isArray(m.npcPaths) ? m.npcPaths : [];
           m.transitions = Array.isArray(m.transitions) ? m.transitions : [];
           m.npcStations = Array.isArray(m.npcStations) ? m.npcStations : [];
+          m.isSubmap = !!m.isSubmap;
+          m.parentMapId = m.parentMapId || null;
+          m.plateauGroupId = m.plateauGroupId || null;
+          m.elevation = Number.isFinite(m.elevation) ? m.elevation : 0;
           // Migrate old houseLibrary/houseAssignments → buildings array
           if (!Array.isArray(m.buildings)) {
             m.buildings = [];
@@ -481,6 +569,8 @@ function loadWorkspace() {
         });
         w.gameLink = w.gameLink || { exteriorId: '', interiorId: '', townId: '' };
         w.gameLink.townId = w.gameLink.townId || '';
+        w.plateauGroups = Array.isArray(w.plateauGroups) ? w.plateauGroups : [];
+        w.ramps = Array.isArray(w.ramps) ? w.ramps : [];
         return w;
       }
     }
@@ -488,7 +578,7 @@ function loadWorkspace() {
   const farm = makeMap('Farm', 'exterior', GAME.farm.cols, GAME.farm.rows);
   const house = makeMap('Farmhouse', 'interior', GAME.interior.cols, GAME.interior.rows);
   applyFarmhouseFloor(house);
-  return { maps: [farm, house], activeId: farm.id, gameLink: { exteriorId: farm.id, interiorId: house.id, townId: '' } };
+  return { maps: [farm, house], activeId: farm.id, gameLink: { exteriorId: farm.id, interiorId: house.id, townId: '' }, plateauGroups: [], ramps: [] };
 }
 let _saveT = null;
 function saveWorkspace() {
@@ -497,6 +587,254 @@ function saveWorkspace() {
 }
 function activeMap() { return ws.maps.find(m => m.id === ws.activeId) || ws.maps[0]; }
 function mapById(id) { return ws.maps.find(m => m.id === id) || null; }
+
+// ── Plateau groups & elevation sub-maps ──────────────────────────────────────
+// A plateau group is a workspace-wide, manually-authored palette entry (number +
+// elevation delta + color). Painting a group's number onto a map cell locks that
+// cell (it can't be repainted by tile/fill/crop or another group — only erased)
+// and lazily generates a same-size sub-map representing the raised/lowered
+// ground there. Sub-maps are ordinary map entries (so they're fully editable,
+// including placing further plateau tiles to nest sub-sub-maps) tagged with
+// parentMapId/plateauGroupId so their absolute elevation can be derived.
+const PLATEAU_COLORS = ['#f97316','#22c55e','#3b82f6','#e11d48','#a855f7','#facc15','#06b6d4','#84cc16'];
+function nextPlateauNumber() {
+  const used = new Set((ws.plateauGroups || []).map(g => g.number));
+  let n = 1; while (used.has(n)) n++; return n;
+}
+function plateauGroupById(id) { return (ws.plateauGroups || []).find(g => g.id === id) || null; }
+function createPlateauGroup() {
+  ws.plateauGroups = ws.plateauGroups || [];
+  // Default a new group to one tier above the active map's own (absolute)
+  // elevation — just a convenient starting point for authoring, since the
+  // value itself is absolute from the base map and editable afterward.
+  const m = activeMap();
+  const baseElev = (m && m.isSubmap && Number.isFinite(m.elevation)) ? m.elevation : 0;
+  const g = { id: uid('plat'), number: nextPlateauNumber(), label: `Plateau ${ws.plateauGroups.length + 1}`,
+              elevation: baseElev + 1, color: PLATEAU_COLORS[ws.plateauGroups.length % PLATEAU_COLORS.length] };
+  ws.plateauGroups.push(g);
+  return g;
+}
+function isPlateauLocked(m, key) { return !!(m.tiles[key] && m.tiles[key].plateau); }
+function setTileType(m, key, type, { preserveCrop = true } = {}) {
+  if (isPlateauLocked(m, key)) return false;
+  m.tiles[key] = { type, crop: preserveCrop ? (m.tiles[key]?.crop || '') : '' };
+  return true;
+}
+function recomputeElevation(m) {
+  // Elevation is absolute, measured from the root/base map — not cumulative
+  // through nesting depth — so a submap's elevation is simply its plateau
+  // group's own elevation value, however deep it's nested.
+  if (!m || !m.isSubmap) { if (m) m.elevation = 0; return 0; }
+  const group = plateauGroupById(m.plateauGroupId);
+  m.elevation = group ? group.elevation : 0;
+  return m.elevation;
+}
+function recomputeAllElevations() { ws.maps.forEach(recomputeElevation); }
+function submapsOf(parentId) { return ws.maps.filter(x => x.parentMapId === parentId); }
+function plateauFootprint(m, groupId) {
+  const out = new Set();
+  Object.keys(m.tiles).forEach(k => { if (m.tiles[k] && m.tiles[k].plateau === groupId) out.add(k); });
+  return out;
+}
+// Boundary cells of a painted footprint: any mask cell with at least one 4-neighbor
+// NOT in the mask (a real edge of whatever shape the artist painted — concave
+// notches and all — not just the 4 sides of its bounding rectangle).
+function plateauFootprintRing(m, groupId) {
+  const mask = plateauFootprint(m, groupId);
+  const ring = new Set();
+  for (const k of mask) {
+    const [c, r] = k.split(',').map(Number);
+    for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      if (!mask.has(`${c+dc},${r+dr}`)) { ring.add(k); break; }
+    }
+  }
+  return ring;
+}
+// For a plateau sub-map, which of ITS OWN local cells actually fall inside the
+// irregular shape the artist painted on the parent (vs. a "gap" cell that's
+// inside the bounding rectangle but outside the real painted footprint — e.g.
+// the missing corner of an L-shape). Returns null for non-submaps.
+function plateauMaskLocal(sm) {
+  if (!sm.isSubmap) return null;
+  const parent = mapById(sm.parentMapId);
+  const group = plateauGroupById(sm.plateauGroupId);
+  if (!parent || !group) return null;
+  const mask = plateauFootprint(parent, group.id);
+  const anchorC = sm.anchorC ?? 0, anchorR = sm.anchorR ?? 0;
+  const out = new Set();
+  for (let r = 0; r < sm.rows; r++) for (let c = 0; c < sm.cols; c++) {
+    if (mask.has(`${c+anchorC},${r+anchorR}`)) out.add(`${c},${r}`);
+  }
+  return out;
+}
+// Strokes the boundary between cells where inMaskFn(c,r) is true/false (treating
+// anything outside [0,cols)x[0,rows) as false) — draws a clean outline of an
+// arbitrary, possibly-concave region instead of a bounding rectangle.
+function strokeMaskBoundary(inMaskFn, cols, rows, projectFn, color, lineWidth) {
+  ctx.strokeStyle = color; ctx.lineWidth = lineWidth; ctx.beginPath();
+  const at = (c, r) => (c >= 0 && c < cols && r >= 0 && r < rows) ? inMaskFn(c, r) : false;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const here = at(c, r);
+    const edges = [
+      [here !== at(c, r-1), [c,r], [c+1,r]],     // top
+      [here !== at(c+1, r), [c+1,r], [c+1,r+1]], // right
+      [here !== at(c, r+1), [c,r+1], [c+1,r+1]], // bottom
+      [here !== at(c-1, r), [c,r], [c,r+1]],     // left
+    ];
+    for (const [draw, p1, p2] of edges) {
+      if (!draw) continue;
+      const s1 = projectFn(...p1), s2 = projectFn(...p2);
+      ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+    }
+  }
+  ctx.stroke();
+}
+// Bounding box (in m's local coords) of every tile painted with this plateau
+// group, or null if nothing's painted yet. The footprint is whatever shape the
+// artist actually paints — it is NOT derived from the parent map's full size.
+function plateauFootprintBBox(m, groupId) {
+  let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+  for (const k in m.tiles) {
+    if (m.tiles[k]?.plateau !== groupId) continue;
+    const [c, r] = k.split(',').map(Number);
+    if (c < minC) minC = c; if (c > maxC) maxC = c;
+    if (r < minR) minR = r; if (r > maxR) maxR = r;
+  }
+  return minC === Infinity ? null : { minC, maxC, minR, maxR };
+}
+// The outer 1-tile ring of a painted footprint is reserved for the auto cliff-face
+// incline (collision, lerped height) — the submap's own flat walkable top is the
+// footprint inset by that ring, so it's always 2 smaller than the footprint per axis.
+// The footprint's bbox top-left corner (its "anchor" in the parent's coordinate
+// space) can itself move as the artist paints/erases — e.g. extending the shape
+// up-and-left of everything painted so far. When that happens the submap's own
+// local (0,0) moves too, so its already-painted content has to shift by the same
+// delta to stay put — otherwise every existing tile/object/route on it silently
+// drifts out of alignment with the parent the next time it's viewed.
+function resizeSubmapToFootprint(sm, bbox) {
+  const nc = Math.max(1, bbox.maxC - bbox.minC + 1 - 2);
+  const nr = Math.max(1, bbox.maxR - bbox.minR + 1 - 2);
+  const newAnchorC = bbox.minC + 1, newAnchorR = bbox.minR + 1;
+  const shiftC = (sm.anchorC ?? newAnchorC) - newAnchorC;
+  const shiftR = (sm.anchorR ?? newAnchorR) - newAnchorR;
+  sm.anchorC = newAnchorC; sm.anchorR = newAnchorR;
+  if (shiftC || shiftR) shiftMapContents(sm, shiftC, shiftR);
+  if (shiftC || shiftR || sm.cols !== nc || sm.rows !== nr) resizeMapAndSubmaps(sm, nc, nr);
+}
+// Re-keys every local-coordinate piece of a map's own content by (dc,dr) — used
+// when a plateau sub-map's anchor moves (see resizeSubmapToFootprint). Ramp
+// tiles are dropped rather than shifted (paintRampTiles regenerates them fresh
+// from their WORLD-coordinate nodes, which don't need to move at all).
+function shiftMapContents(m, dc, dr) {
+  const newTiles = {};
+  for (const k in m.tiles) {
+    if (m.tiles[k].type === 'ramp') continue;
+    const [c, r] = k.split(',').map(Number);
+    newTiles[`${c+dc},${r+dr}`] = m.tiles[k];
+  }
+  m.tiles = newTiles;
+  const newObjects = {};
+  for (const k in m.objects) { const [c, r] = m.objects[k]; newObjects[k] = [c+dc, r+dr]; }
+  m.objects = newObjects;
+  (m.furniture || []).forEach(f => { f.col += dc; f.row += dr; });
+  (m.decor || []).forEach(d => { d.col += dc; d.row += dr; });
+  ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.map(([c,r]) => [c+dc, r+dr]); });
+  (m.rivers || []).forEach(p => { p.nodes = p.nodes.map(([c,r]) => [c+dc, r+dr]); });
+  (m.transitions || []).forEach(t => { t.col += dc; t.row += dr; });
+  (m.npcStations || []).forEach(st => { st.col += dc; st.row += dr; });
+}
+function getOrCreateSubmap(parentMap, group) {
+  let sm = ws.maps.find(x => x.parentMapId === parentMap.id && x.plateauGroupId === group.id);
+  const bbox = plateauFootprintBBox(parentMap, group.id);
+  if (sm) {
+    if (bbox) resizeSubmapToFootprint(sm, bbox);
+    return sm;
+  }
+  if (!bbox) return null; // nothing painted for this group yet — can't size a submap
+  sm = makeMap(`${parentMap.name} — ${group.label}`, parentMap.category,
+    Math.max(1, bbox.maxC - bbox.minC + 1 - 2), Math.max(1, bbox.maxR - bbox.minR + 1 - 2));
+  sm.isSubmap = true; sm.parentMapId = parentMap.id; sm.plateauGroupId = group.id;
+  sm.anchorC = bbox.minC + 1; sm.anchorR = bbox.minR + 1;
+  recomputeElevation(sm);
+  ws.maps.push(sm);
+  captureBaseline(sm);
+  renderMapList();
+  return sm;
+}
+function activePlateauGroupsOn(m) {
+  return (ws.plateauGroups || []).filter(g => Object.keys(m.tiles).some(k => m.tiles[k]?.plateau === g.id));
+}
+// World placement of a map within the single continuous scene it belongs to —
+// mirrors the offset math game.js's mergeZoneTiles uses to stitch plateau tiers
+// together. Walks the parent chain once; `ancestors` lists each one (root first)
+// together with ITS OWN offset, for drawing every tier's reference layer at the
+// right place. offsetC/offsetR is where THIS map's local (0,0) sits in root space.
+function mapWorldInfo(m) {
+  if (!m.isSubmap) return { root: m, offsetC: 0, offsetR: 0, ancestors: [] };
+  const parent = mapById(m.parentMapId);
+  if (!parent) return { root: m, offsetC: 0, offsetR: 0, ancestors: [] };
+  const group = plateauGroupById(m.plateauGroupId);
+  const bbox = group && plateauFootprintBBox(parent, group.id);
+  const localOffC = bbox ? bbox.minC + 1 : 0;
+  const localOffR = bbox ? bbox.minR + 1 : 0;
+  const parentInfo = mapWorldInfo(parent);
+  return {
+    root: parentInfo.root,
+    offsetC: parentInfo.offsetC + localOffC,
+    offsetR: parentInfo.offsetR + localOffR,
+    ancestors: [...parentInfo.ancestors, { map: parent, offsetC: parentInfo.offsetC, offsetR: parentInfo.offsetR }]
+  };
+}
+// Cached once per map-switch (see syncViewOffset) rather than recomputed inside
+// w2s/s2w or per-tile in draw() — those run many times per frame.
+let viewOffset = { c: 0, r: 0 };
+let viewRoot = null;
+let viewAncestors = [];
+function syncViewOffset() {
+  const info = mapWorldInfo(activeMap());
+  viewOffset = { c: info.offsetC, r: info.offsetR };
+  viewRoot = info.root;
+  viewAncestors = info.ancestors;
+}
+// Onion-skin tint for the reference layer showing what's beneath the active
+// plateau tier: desaturate towards gray, then brighten, so it reads as a faded
+// backdrop rather than live paint.
+function _dimAncestorColor(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n>>16)&255, g = (n>>8)&255, b = n&255;
+  const gray = (r+g+b)/3, desat = .55, bright = 60;
+  r = Math.min(255, r+(gray-r)*desat+bright);
+  g = Math.min(255, g+(gray-g)*desat+bright);
+  b = Math.min(255, b+(gray-b)*desat+bright);
+  return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+}
+function deleteMapCascade(id) {
+  submapsOf(id).forEach(k => deleteMapCascade(k.id));
+  ws.maps = ws.maps.filter(x => x.id !== id);
+  ws.ramps = (ws.ramps || []).filter(r => r.fromMapId !== id && r.toMapId !== id);
+}
+function resizeMapAndSubmaps(m, nc, nr) {
+  m.cols = nc; m.rows = nr;
+  Object.keys(m.tiles).forEach(k => { const [c,r] = k.split(',').map(Number); if (c < 0 || r < 0 || c >= nc || r >= nr) delete m.tiles[k]; });
+  Object.keys(m.objects).forEach(k => { const [c,r] = m.objects[k]; if (c < 0 || r < 0 || c >= nc || r >= nr) delete m.objects[k]; });
+  m.furniture = m.furniture.filter(f => f.col >= 0 && f.row >= 0 && f.col < nc && f.row < nr);
+  m.decor = m.decor.filter(d => { const inf = DECOR[d.key]; return inf && d.col >= 0 && d.row >= 0 && d.col + inf.fw <= nc && d.row + inf.fd <= nr; });
+  ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c >= 0 && r >= 0 && c < nc && r < nr); });
+  (m.rivers || []).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c >= 0 && r >= 0 && c < nc && r < nr); });
+  m.transitions = (m.transitions || []).filter(t => t.col >= 0 && t.row >= 0 && t.col < nc && t.row < nr);
+  m.npcStations = (m.npcStations || []).filter(st => st.col >= 0 && st.row >= 0 && st.col < nc && st.row < nr);
+  // Submaps are sized from their own painted plateau footprint (see
+  // getOrCreateSubmap), not from a fixed offset off this map's dimensions —
+  // resizing `m` only matters here if it truncated away some of that footprint.
+  submapsOf(m.id).forEach(sm => {
+    const group = plateauGroupById(sm.plateauGroupId);
+    const bbox = group && plateauFootprintBBox(m, group.id);
+    if (bbox) resizeSubmapToFootprint(sm, bbox);
+  });
+  // Anything resized here may have moved relative to ramps anchored to it (their
+  // nodes are stored in world coords and don't move, but the painted tiles do).
+  (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id).forEach(rp => paintRampTiles(rp));
+}
 
 function applyFarmhouseFloor(m) {
   // Mirrors interiorGrid in game.js: floor where (r<=4 && c<=5) or (r==5 && 2<=c<=3).
@@ -543,6 +881,7 @@ let _gizmos   = [];       // [{type,sx,sy,r}] rebuilt each draw(); used for hit-
 let _bldgDrag = null;     // {bid,ox,oz,px0,py0} during drag-move of a building
 let _routeNodeDrag = null; // {routeId,index} during drag-move of a route node
 let _riverNodeDrag = null; // {riverId,index} during drag-move of a river node
+let _rampNodeDrag  = null; // {rampId,index} during drag-move of a ramp node
 let _spotDrag      = null; // {spotId} during drag-move of a transition spot
 let _stationDrag   = null; // {stationId} during drag-move of an NPC station
 
@@ -676,9 +1015,13 @@ async function ensureBuildingDoors(m) {
 let _addBuildingPickerMounted = false;
 function refreshBuildingDetection() {
   const m = activeMap();
-  const isTown = m.category === 'exterior' && m.id === ws.gameLink.townId;
-  $('buildingsSection').style.display = isTown ? '' : 'none';
-  if (!isTown) return;
+  // Buildings can be placed on the Town map or any exterior zone map (including
+  // a plateau tier sub-map) — a zone building's elevation is snapped to its
+  // anchor tile's tier when the live game and 3D preview render it (see
+  // mergeZoneTiles/TerrainPreview.buildMergedZoneGrid's `buildings` output).
+  const isBuildable = m.category === 'exterior';
+  updateSectionVisibility();
+  if (!isBuildable) { if (mode === 'building') setMode('pan'); return; }
   if (!Array.isArray(m.buildings)) m.buildings = [];
   $('buildingCountTag').textContent = m.buildings.length;
   ensureBuildingDoors(m);
@@ -740,15 +1083,62 @@ function renderBuildingPanel() {
   }
 }
 
+// ── Plateau group list (sidebar) ─────────────────────────────────────────────
+function renderPlateauGroupList() {
+  const groups = ws.plateauGroups || [];
+  $('plateauGroupCountTag').textContent = String(groups.length);
+  $('plateauGroupList').innerHTML = groups.map(g => `<div class="item" data-platid="${g.id}">
+      <div class="row"><span class="palSw" style="background:${g.color}"></span>
+        <input data-platlabel="${g.id}" value="${g.label.replace(/"/g,'&quot;')}" style="flex:1">
+        <button class="bad" data-platdel="${g.id}" style="padding:3px 8px">✕</button></div>
+      <div class="g2" style="margin-top:4px">
+        <div><label>Number</label><input data-platnum="${g.id}" type="number" min="1" value="${g.number}"></div>
+        <div><label>Elevation (abs. tier)</label><input data-platelev="${g.id}" type="number" step="0.5" value="${g.elevation}"></div>
+      </div>
+      <div class="item-meta">id: ${g.id}</div>
+    </div>`).join('') || '<p class="muted">No plateau groups yet.</p>';
+  $('plateauGroupList').querySelectorAll('[data-platlabel]').forEach(el => el.addEventListener('change', () => {
+    const g = plateauGroupById(el.dataset.platlabel); if (g) { g.label = el.value.trim() || g.label; renderPalette(); saveWorkspace(); }
+  }));
+  $('plateauGroupList').querySelectorAll('[data-platnum]').forEach(el => el.addEventListener('change', () => {
+    const g = plateauGroupById(el.dataset.platnum); if (!g) return;
+    const n = parseInt(el.value) || g.number;
+    if ((ws.plateauGroups || []).some(x => x.id !== g.id && x.number === n)) { el.value = g.number; setStatus(`Plateau number ${n} is already used.`); return; }
+    g.number = n; draw(); saveWorkspace();
+  }));
+  $('plateauGroupList').querySelectorAll('[data-platelev]').forEach(el => el.addEventListener('change', () => {
+    const g = plateauGroupById(el.dataset.platelev); if (!g) return;
+    pushUndo();
+    g.elevation = Number(el.value) || 0;
+    recomputeAllElevations();
+    ws.maps.forEach(m => { (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id).forEach(rp => { if (rp.paintTiles !== false) paintRampTiles(rp); }); });
+    draw(); refreshPreview(); saveWorkspace();
+  }));
+  $('plateauGroupList').querySelectorAll('[data-platdel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation();
+    const g = plateauGroupById(el.dataset.platdel); if (!g) return;
+    if (!confirm(`Delete plateau group "${g.label}"? Its sub-maps (and any nested sub-maps) will be deleted too.`)) return;
+    pushUndo();
+    ws.maps.filter(m => m.plateauGroupId === g.id).forEach(sm => deleteMapCascade(sm.id));
+    ws.maps.forEach(m => { Object.keys(m.tiles).forEach(k => { if (m.tiles[k]?.plateau === g.id) delete m.tiles[k].plateau; }); });
+    ws.plateauGroups = (ws.plateauGroups || []).filter(x => x.id !== g.id);
+    if (brush.plateauGroup === g.id) brush.plateauGroup = '';
+    if (ws.activeId && !mapById(ws.activeId)) ws.activeId = ws.maps[0]?.id || null;
+    updateAll();
+  }));
+}
+
 // ── Mode / brush state ────────────────────────────────────────────────────────
 let mode = 'pan';
-let brush = { tile: 'grass', crop: 'needlegrain', object: 'sellCrate', furniture: 'pestle', decor: 'basicBed' };
+let brush = { tile: 'grass', crop: 'needlegrain', object: 'sellCrate', furniture: 'pestle', decor: 'basicBed', plateauGroup: '', plateauRadius: 0 };
 let activePathId = null;   // route being extended in route mode
 let activeRouteNodeIndex = null; // selected node index in active route
 let activeRiverId = null;  // river/stream being extended in river mode
 let activeRiverNodeIndex = null; // selected node index in active river
 let activeSpotId = null;   // transition spot selected in spot mode
 let activeStationId = null; // NPC station selected in station mode
+let activeRampId = null;   // ramp being extended in ramp mode
+let activeRampNodeIndex = null; // selected node index in active ramp
 
 function setMode(m) {
   mode = m;
@@ -756,6 +1146,37 @@ function setMode(m) {
   $('modePill').textContent = `Mode: ${m}`;
   renderPalette();
   updateBrushPill();
+  updateSectionVisibility();
+  draw();
+}
+// Sections that only matter for one tool are hidden until that tool is active,
+// so the sidebar shows just what's relevant to what you're doing right now.
+function updateSectionVisibility() {
+  const m = activeMap();
+  const isExterior = m.category === 'exterior';
+  $('buildingModeBtn').style.display = isExterior ? '' : 'none';
+  $('plateauGroupsSection').style.display = (mode === 'plateau') ? '' : 'none';
+  $('terrainCheckSection').style.display = (mode === 'plateau' || mode === 'ramp') ? '' : 'none';
+  $('buildingsSection').style.display = (isExterior && mode === 'building') ? '' : 'none';
+  renderToc();
+}
+// The TOC only lists sections that are actually visible right now, so it stays
+// a quick "what's here" map of the sidebar instead of a static list of everything.
+const TOC_SECTIONS = [
+  { id: 'mapsSection', label: 'Maps' },
+  { id: 'plateauGroupsSection', label: 'Plateau Groups' },
+  { id: 'terrainCheckSection', label: 'Terrain Check' },
+  { id: 'mapSettingsSection', label: 'Map Settings' },
+  { id: 'paletteSection', label: 'Palette' },
+  { id: 'gameLinkSection', label: 'Game Link' },
+  { id: 'buildingsSection', label: 'Buildings' },
+  { id: 'statusSection', label: 'Active Map JSON' },
+];
+function renderToc() {
+  $('tocLinks').innerHTML = TOC_SECTIONS
+    .filter(s => $(s.id).style.display !== 'none')
+    .map(s => `<a data-target="${s.id}">${s.label}</a>`)
+    .join('');
 }
 function updateBrushPill() {
   let t = '—';
@@ -766,6 +1187,8 @@ function updateBrushPill() {
   if (mode === 'decor') t = `decor: ${DECOR[brush.decor]?.label}`;
   if (mode === 'path') { const p = (activeMap().routes || activeMap().npcPaths || []).find(x => x.id === activePathId); t = p ? `route: ${p.label}${activeRouteNodeIndex!==null?' node '+(activeRouteNodeIndex+1):''}` : 'route: (click to start one)'; }
   if (mode === 'river') { const rv = (activeMap().rivers || []).find(x => x.id === activeRiverId); t = rv ? `${rv.kind||'river'}: ${rv.label}${activeRiverNodeIndex!==null?' node '+(activeRiverNodeIndex+1):''}` : 'river: (click to start one)'; }
+  if (mode === 'plateau') { const g = plateauGroupById(brush.plateauGroup); t = g ? `plateau: #${g.number} ${g.label} (tier ${g.elevation})${brush.plateauRadius>0?` ⬤ r${brush.plateauRadius}`:''}` : 'plateau: (add a group first)'; }
+  if (mode === 'ramp') { const rp = (ws.ramps || []).find(x => x.id === activeRampId); t = rp ? `ramp: ${rp.label}${activeRampNodeIndex!==null?' node '+(activeRampNodeIndex+1):''}` : 'ramp: (click to start one)'; }
   if (mode === 'spot') t = 'spot: click map to place';
   if (mode === 'station') { const st = (activeMap().npcStations || []).find(x => x.id === activeStationId); t = st ? `station: ${st.label}` : 'station: click map to place'; }
   $('brushPill').textContent = t;
@@ -790,13 +1213,13 @@ function bresenham(x0, y0, x1, y1) {
 // path instead of only ever adding new ones. Keyed by entity id; not
 // persisted with the map.
 const _paintedKeysByEntity = new Map();
-function applyPaintDiff(entityId, newKeys, tileType, m, { preserveCrop = true } = {}) {
-  const next = new Set(newKeys);
+function applyPaintDiff(entityId, newKeys, tileType, m, { preserveCrop = true, allowPlateauOverride = false } = {}) {
+  const next = new Set([...newKeys].filter(k => allowPlateauOverride || !isPlateauLocked(m, k)));
   const prevEntry = _paintedKeysByEntity.get(entityId);
   if (prevEntry) {
     const sameType = prevEntry.type === tileType;
     for (const k of prevEntry.keys) {
-      if ((!sameType || !next.has(k)) && m.tiles[k]?.type === prevEntry.type) delete m.tiles[k];
+      if ((!sameType || !next.has(k)) && m.tiles[k]?.type === prevEntry.type && (allowPlateauOverride || !isPlateauLocked(m, k))) delete m.tiles[k];
     }
   }
   for (const k of next) m.tiles[k] = { type: tileType, crop: preserveCrop ? (m.tiles[k]?.crop || '') : '' };
@@ -827,6 +1250,7 @@ function paintRouteTiles(route, m) {
 }
 function floodFill(m, startC, startR, newType) {
   const k0 = `${startC},${startR}`;
+  if (isPlateauLocked(m, k0)) return false;
   const oldType = m.tiles[k0]?.type ?? null;
   if (oldType === newType) return false;
   const queue = [[startC, startR]];
@@ -834,12 +1258,13 @@ function floodFill(m, startC, startR, newType) {
   while (queue.length) {
     const [c, r] = queue.shift();
     const k = `${c},${r}`;
-    m.tiles[k] = { type: newType, crop: m.tiles[k]?.crop || '' };
+    setTileType(m, k, newType);
     for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
       const nc = c+dc, nr = r+dr;
       if (nc < 0 || nc >= m.cols || nr < 0 || nr >= m.rows) continue;
       const nk = `${nc},${nr}`;
       if (visited.has(nk)) continue;
+      if (isPlateauLocked(m, nk)) continue;
       if ((m.tiles[nk]?.type ?? null) === oldType) { visited.add(nk); queue.push([nc, nr]); }
     }
   }
@@ -889,10 +1314,12 @@ function buildRiverPath(river) {
   }
   return out;
 }
-function paintRiverTiles(river, m) {
+// Geometric river footprint, independent of what's actually paintable on m
+// (plateau-locked cells still count as "river passes through here" so the
+// plateau sub-map can mirror the river even though the parent map can't).
+function riverPathKeys(river, m) {
   const path = buildRiverPath(river).map(([x, y]) => [Math.round(x), Math.round(y)]);
   const rad = Math.floor(((river.width || (river.kind === 'stream' ? 1 : 3)) - 1) / 2);
-  const tileType = river.kind === 'stream' ? 'stream' : 'river';
   const keys = [];
   for (let i = 0; i < path.length - 1; i++) {
     for (const [bc, br] of bresenham(path[i][0], path[i][1], path[i+1][0], path[i+1][1])) {
@@ -905,11 +1332,173 @@ function paintRiverTiles(river, m) {
       }
     }
   }
-  applyPaintDiff(river.id, keys, tileType, m, { preserveCrop: false });
+  return keys;
+}
+function paintRiverTiles(river, m) {
+  const tileType = river.kind === 'stream' ? 'stream' : 'river';
+  applyPaintDiff(river.id, riverPathKeys(river, m), tileType, m, { preserveCrop: false });
 }
 function maybePaintRiver(m) {
   const river = (m.rivers || []).find(r => r.id === activeRiverId);
-  if (river && river.paintTiles !== false) { paintRiverTiles(river, m); draw(); refreshPreview(); saveWorkspace(); }
+  if (river && river.paintTiles !== false) { paintRiverTiles(river, m); syncPlateauEffects(m); draw(); refreshPreview(); saveWorkspace(); }
+}
+
+// ── Plateau side-effects: river mirroring + waterfalls ───────────────────────
+// A river drawn on a map also appears, at the matching elevation, on every
+// plateau sub-map of that map (and recursively into nested sub-maps), so a
+// river crossing raised/lowered ground reads as continuous. Where the river
+// enters or leaves a plateau footprint, the boundary cell is stamped as a
+// waterfall instead of plain river/stream so the elevation change is legible.
+function mirrorRiverAcrossPlateau(river, m, sm, group) {
+  const footprint = plateauFootprint(m, group.id);
+  const tileType = river.kind === 'stream' ? 'stream' : 'river';
+  const pathKeys = new Set(riverPathKeys(river, m));
+  const mirroredKeys = [];
+  const waterfallKeys = [];
+  for (const k of footprint) {
+    if (!pathKeys.has(k)) continue;
+    mirroredKeys.push(k);
+    const [c, r] = k.split(',').map(Number);
+    for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nk = `${c+dc},${r+dr}`;
+      if (footprint.has(nk)) continue; // interior cell, not a plateau boundary
+      if (pathKeys.has(nk)) { waterfallKeys.push(k); break; } // river continues outside the footprint at a different elevation
+    }
+  }
+  applyPaintDiff(`${river.id}__${sm.id}`, mirroredKeys, tileType, sm, { preserveCrop: false });
+  applyPaintDiff(`${river.id}__${sm.id}__wf`, waterfallKeys, 'waterfall', sm, { preserveCrop: false });
+}
+function syncPlateauEffects(m) {
+  const rivers = m.rivers || [];
+  for (const group of activePlateauGroupsOn(m)) {
+    const sm = getOrCreateSubmap(m, group);
+    if (!sm) continue;
+    for (const river of rivers) mirrorRiverAcrossPlateau(river, m, sm, group);
+    syncPlateauEffects(sm); // recurse into nested plateaus on the sub-map itself
+  }
+}
+// Submaps saved before the anchorC/anchorR field existed have neither, so
+// plateauMaskLocal's `?? 0` fallback puts their mask check at the parent's
+// local (0,0) instead of their real position — making every one of their own
+// cells look like a "gap" to sanitizePlateauGaps below, which would then
+// resize/delete perfectly valid legacy submaps. Backfill the anchor the same
+// way getOrCreateSubmap/resizeSubmapToFootprint derive it (from the parent's
+// own painted footprint for that group) before any gap check ever runs.
+function migrateSubmapAnchors() {
+  for (const sm of ws.maps.filter(x => x.isSubmap)) {
+    if (Number.isFinite(sm.anchorC) && Number.isFinite(sm.anchorR)) continue;
+    const parent = mapById(sm.parentMapId);
+    if (!parent) continue;
+    const bbox = plateauFootprintBBox(parent, sm.plateauGroupId);
+    sm.anchorC = bbox ? bbox.minC + 1 : 0;
+    sm.anchorR = bbox ? bbox.minR + 1 : 0;
+  }
+}
+// One-time data-repair pass for workspaces saved by an older build that let a
+// nested plateau group get painted onto a "gap" cell — inside a submap's
+// bounding rect but outside its parent's real (possibly irregular) painted
+// mask (applyAt used to skip the gap lock for mode === 'plateau'; now fixed).
+// A gap-painted tag like that produces a deeper tier with no supporting cliff
+// face beneath it once stitched into the single continuous scene in game.js —
+// a tier floating over nothing. This strips those invalid tags and cascades
+// the resulting footprint change (resize, or delete if now empty) to the
+// affected submap. Safe to call repeatedly; a no-op once data is clean.
+function sanitizePlateauGaps() {
+  let changed = false, dirty = true;
+  while (dirty) {
+    dirty = false;
+    for (const sm of ws.maps.filter(x => x.isSubmap)) {
+      const mask = plateauMaskLocal(sm);
+      if (!mask) continue;
+      for (const key in sm.tiles) {
+        if (sm.tiles[key]?.plateau && !mask.has(key)) { delete sm.tiles[key].plateau; dirty = true; changed = true; }
+      }
+    }
+    if (!dirty) break;
+    for (const parent of ws.maps) {
+      for (const group of (ws.plateauGroups || [])) {
+        const sm = ws.maps.find(x => x.parentMapId === parent.id && x.plateauGroupId === group.id);
+        if (!sm) continue;
+        const bbox = plateauFootprintBBox(parent, group.id);
+        if (bbox) resizeSubmapToFootprint(sm, bbox);
+        else deleteMapCascade(sm.id);
+      }
+    }
+  }
+  return changed;
+}
+
+// ── Ramp tiles: a node path that lerps elevation between a from-map/sub-map
+// and a to-map/sub-map, painted (at matching c,r coordinates) onto both. ──────
+function buildRampPath(ramp) {
+  const nodes = ramp.nodes || [];
+  if (nodes.length < 2) return nodes.map(([c, r]) => [c, r]);
+  const out = [nodes[0]];
+  for (let i = 0; i < nodes.length - 1; i++) {
+    const pts = bresenham(nodes[i][0], nodes[i][1], nodes[i+1][0], nodes[i+1][1]);
+    for (let j = 1; j < pts.length; j++) out.push(pts[j]);
+  }
+  return out;
+}
+function paintRampTiles(ramp) {
+  const fromMap = mapById(ramp.fromMapId), toMap = mapById(ramp.toMapId);
+  if (!fromMap || !toMap) return;
+  const path = buildRampPath(ramp); // in WORLD coords — see node-add/drag/erase handlers
+  const rad = Math.floor(((ramp.width || 3) - 1) / 2);
+  const fromElev = recomputeElevation(fromMap), toElev = recomputeElevation(toMap);
+  // fromMap and toMap usually sit at different plateau tiers, each with its own
+  // world offset (see mapWorldInfo) — a ramp's path is one continuous line in
+  // WORLD space, but it has to be painted into EACH map's own local tile grid
+  // separately, translating by that map's own offset and clipping to its own
+  // bounds (its local grid is tiny and only covers its own tier's footprint).
+  function paintOnto(targetMap, off) {
+    const elevByKey = new Map();
+    let bestT = null, bestDist = Infinity, bestC = 0, bestR = 0;
+    for (let i = 0; i < path.length; i++) {
+      const t = path.length > 1 ? i / (path.length - 1) : 0;
+      const [wc, wr] = path[i];
+      const bc = wc - off.offsetC, br = wr - off.offsetR;
+      const cc = clamp(bc, 0, targetMap.cols - 1), cr = clamp(br, 0, targetMap.rows - 1);
+      const dist = Math.hypot(bc - cc, br - cr);
+      if (dist < bestDist) { bestDist = dist; bestT = t; bestC = cc; bestR = cr; }
+      for (let dc = -rad; dc <= rad; dc++) {
+        for (let dr = -rad; dr <= rad; dr++) {
+          const nc = bc+dc, nr = br+dr;
+          if (nc < 0 || nc >= targetMap.cols || nr < 0 || nr >= targetMap.rows) continue;
+          const key = `${nc},${nr}`;
+          if (!elevByKey.has(key) || t > elevByKey.get(key)) elevByKey.set(key, t);
+        }
+      }
+    }
+    // A tier's footprint can be so tiny (post-migration of legacy data, or a very
+    // short plateau) that the literal path never lands inside it at all — fall
+    // back to the single closest in-bounds cell so the ramp stays connected
+    // instead of silently painting nothing into this map.
+    if (elevByKey.size === 0 && bestT !== null) {
+      for (let dc = -rad; dc <= rad; dc++) {
+        for (let dr = -rad; dr <= rad; dr++) {
+          const nc = bestC+dc, nr = bestR+dr;
+          if (nc < 0 || nc >= targetMap.cols || nr < 0 || nr >= targetMap.rows) continue;
+          elevByKey.set(`${nc},${nr}`, bestT);
+        }
+      }
+    }
+    const keys = [...elevByKey.keys()];
+    // A ramp is the one explicit, deliberate way to cut through a plateau's
+    // auto-incline ring (the outer 1-tile band normally reserved/locked for the
+    // cliff-face blend) — so unlike ordinary painting, it's allowed to override it.
+    applyPaintDiff(`${ramp.id}__${targetMap.id}`, keys, 'ramp', targetMap, { preserveCrop: false, allowPlateauOverride: true });
+    for (const [key, t] of elevByKey) {
+      const elev = fromElev + (toElev - fromElev) * t;
+      if (targetMap.tiles[key]?.type === 'ramp') targetMap.tiles[key].rampElevation = elev;
+    }
+  }
+  paintOnto(fromMap, mapWorldInfo(fromMap));
+  if (toMap.id !== fromMap.id) paintOnto(toMap, mapWorldInfo(toMap));
+}
+function maybePaintRamp() {
+  const ramp = (ws.ramps || []).find(x => x.id === activeRampId);
+  if (ramp && ramp.paintTiles !== false) { paintRampTiles(ramp); draw(); refreshPreview(); saveWorkspace(); }
 }
 
 // ── Palette UI ────────────────────────────────────────────────────────────────
@@ -936,6 +1525,22 @@ function renderPalette() {
     else html = Object.keys(CROPS).map(c =>
       `<button class="sec palBtn ${brush.crop===c?'act':''}" data-pal="crop" data-val="${c}">${CROPS[c]} ${c}</button>`).join('')
       + '<p class="muted" style="margin-top:4px">Paints a crop onto the tile (game spawns it half-grown). Crop requires a painted tile.</p>';
+  } else if (mode === 'plateau') {
+    if (m.category !== 'exterior') html = '<p class="muted">Plateaus are exterior-only.</p>';
+    else if (!(ws.plateauGroups || []).length) html = '<p class="muted">No plateau groups yet — add one in the Plateau Groups section below, then come back here to paint with it.</p>';
+    else {
+      if (!brush.plateauGroup || !plateauGroupById(brush.plateauGroup)) brush.plateauGroup = ws.plateauGroups[0].id;
+      html = ws.plateauGroups.map(g =>
+        `<button class="sec palBtn ${brush.plateauGroup===g.id?'act':''}" data-pal="plateauGroup" data-val="${g.id}"><span class="palSw" style="background:${g.color}"></span>#${g.number} ${g.label} (tier ${g.elevation})</button>`).join('');
+      html += `<div class="row" style="margin-top:8px;gap:6px;align-items:center">
+        <label style="flex:1">Brush radius</label>
+        <input id="plateauRadiusIn" type="number" min="0" max="12" value="${brush.plateauRadius||0}" style="width:56px">
+      </div>`;
+      const g = plateauGroupById(brush.plateauGroup);
+      const sm = g ? (ws.maps.find(x => x.parentMapId === m.id && x.plateauGroupId === g.id)) : null;
+      if (sm) html += `<button class="sec" id="editSubmapBtn" data-submapid="${sm.id}" style="width:100%;margin-top:6px">Edit Sub-map ↗ (${sm.name})</button>`;
+      html += `<p class="muted" style="margin-top:5px">Paint tiles to mark them as part of the selected plateau group. Plateau tiles can't be overwritten by other tiles or tools — erase them first to free the cell. ${brush.plateauRadius>0?`Brush radius ${brush.plateauRadius} stamps a circle of cells per click/drag step instead of just one. `:''}The group's sub-map is auto-created/resized from the painted footprint. The outer 1-tile ring of that footprint (shown in red) is reserved automatically for the cliff-face blend down to the tier below and is always solid in-game — the only way through it is a ramp tile painted over it.</p>`;
+    }
   } else if (mode === 'object') {
     if (m.category !== 'exterior') html = '<p class="muted">Objects are exterior-only.</p>';
     else html = Object.keys(OBJECTS).map(k =>
@@ -1005,6 +1610,37 @@ function renderPalette() {
       }
       html += '<p class="muted" style="margin-top:5px">Select a river and click the map to append control nodes. The tool procedurally meanders a path between them (using the same terrain hash-noise as day-one terrain) and paints river/stream tiles along it. Drag nodes to reshape, reroll the seed for a different meander. Erase mode removes nodes.</p>';
     }
+  } else if (mode === 'ramp') {
+    if (m.category !== 'exterior') html = '<p class="muted">Ramps are exterior-only.</p>';
+    else {
+      const allExt = ws.maps.filter(x => x.category === 'exterior');
+      html = `<button class="ok" id="newRampBtn" style="width:100%;margin-bottom:6px">+ New ramp</button>` +
+        (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id).map(rp =>
+          `<div class="item ${rp.id===activeRampId?'sel':''}" data-rampsel="${rp.id}">
+            <div class="item-name">🪜 ${rp.label}</div>
+            <div class="item-meta">${rp.nodes.length} nodes <button class="bad" data-rampdel="${rp.id}" style="float:right;padding:1px 7px;font-size:10px">✕</button></div>
+          </div>`).join('') || '<p class="muted">No ramps on this map yet.</p>';
+      const arp = (ws.ramps || []).find(p => p.id === activeRampId);
+      if (arp) {
+        html += `<div class="g2" style="margin-top:6px">
+          <div><label>Label</label><input id="rampLabelIn" value="${arp.label.replace(/"/g,'&quot;')}"></div>
+          <div><label>Width</label><input id="rampWidthIn" type="number" min="1" max="20" value="${arp.width||3}"></div>
+        </div>
+        <div class="g2" style="margin-top:6px">
+          <div><label>From map</label><select id="rampFromIn">${allExt.map(x => `<option value="${x.id}" ${arp.fromMapId===x.id?'selected':''}>${x.name}</option>`).join('')}</select></div>
+          <div><label>To map</label><select id="rampToIn">${allExt.map(x => `<option value="${x.id}" ${arp.toMapId===x.id?'selected':''}>${x.name}</option>`).join('')}</select></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;cursor:pointer">
+          <input type="checkbox" id="rampPaintTilesChk" ${arp.paintTiles!==false?'checked':''}>
+          Paint ramp tiles on both endpoint maps
+        </label>`;
+        html += `<div style="margin-top:6px"><label>Nodes (world c,r coords, shared between both endpoint maps; select one, then click map to branch from it)</label>${arp.nodes.map((n,i) =>
+          `<div class="item ${i===activeRampNodeIndex?'sel':''}" data-rampnodesel="${i}" style="padding:4px 7px;margin-bottom:3px">
+            <div class="row"><span style="flex:1">#${i+1} (${n[0]}, ${n[1]})</span><button class="bad" data-rampnodedel="${i}" style="padding:1px 7px;font-size:10px">✕</button></div>
+          </div>`).join('') || '<p class="muted">No nodes yet.</p>'}</div>`;
+      }
+      html += '<p class="muted" style="margin-top:5px">Pick a From map and To map (e.g. a parent map and one of its plateau sub-maps), then click the map to lay down node-path coordinates shared by both. Ramp tiles are stamped on both maps with elevation lerped between the two map elevations along the path.</p>';
+    }
   } else if (mode === 'spot') {
     html = m.transitions.map(t => {
       const others = ws.maps.filter(x => x.id !== m.id);
@@ -1062,6 +1698,11 @@ function renderPalette() {
     brush[b.dataset.pal] = b.dataset.val;
     renderPalette(); updateBrushPill();
   }));
+  const pradIn = box.querySelector('#plateauRadiusIn');
+  if (pradIn) pradIn.addEventListener('change', () => {
+    brush.plateauRadius = Math.max(0, Math.min(12, parseInt(pradIn.value) || 0));
+    renderPalette(); updateBrushPill();
+  });
   // Tile fill / clear wiring
   const fillMapBtn = box.querySelector('#fillMapBtn');
   if (fillMapBtn) fillMapBtn.addEventListener('click', () => {
@@ -1069,9 +1710,7 @@ function renderPalette() {
     const set = TILE_SETS[fm.category] || TILE_SETS.exterior;
     const t = set.includes(brush.tile) ? brush.tile : set[0];
     pushUndo();
-    for (let r = 0; r < fm.rows; r++) for (let c = 0; c < fm.cols; c++) {
-      const k = `${c},${r}`; fm.tiles[k] = { type: t, crop: (fm.tiles[k]?.crop || '') };
-    }
+    for (let r = 0; r < fm.rows; r++) for (let c = 0; c < fm.cols; c++) setTileType(fm, `${c},${r}`, t);
     draw(); refreshPreview(); saveWorkspace(); setStatus(`Filled ${fm.cols}×${fm.rows} with ${t}.`);
   });
   const fillFarmBtn2 = box.querySelector('#fillFarmBtn');
@@ -1080,15 +1719,15 @@ function renderPalette() {
     const set = TILE_SETS[fm.category] || TILE_SETS.exterior;
     const t = set.includes(brush.tile) ? brush.tile : set[0];
     pushUndo();
-    for (let r = 0; r < GAME.farm.rows; r++) for (let c = 0; c < GAME.farm.cols; c++) {
-      const k = `${c},${r}`; fm.tiles[k] = { type: t, crop: (fm.tiles[k]?.crop || '') };
-    }
+    for (let r = 0; r < GAME.farm.rows; r++) for (let c = 0; c < GAME.farm.cols; c++) setTileType(fm, `${c},${r}`, t);
     draw(); refreshPreview(); saveWorkspace(); setStatus(`Filled farm ${GAME.farm.cols}×${GAME.farm.rows} with ${t}.`);
   });
   const clearTilesBtn = box.querySelector('#clearTilesBtn');
   if (clearTilesBtn) clearTilesBtn.addEventListener('click', () => {
-    if (!confirm('Clear all painted tiles from this map?')) return;
-    pushUndo(); activeMap().tiles = {};
+    if (!confirm('Clear all painted tiles from this map? (Plateau-locked tiles are kept — erase them individually first.)')) return;
+    pushUndo();
+    const fm = activeMap();
+    Object.keys(fm.tiles).forEach(k => { if (!isPlateauLocked(fm, k)) delete fm.tiles[k]; });
     draw(); refreshPreview(); saveWorkspace(); setStatus('Tiles cleared.');
   });
   // Route palette wiring
@@ -1211,6 +1850,81 @@ function renderPalette() {
     maybePaintRiver(m);
     renderPalette(); draw(); refreshPreview(); saveWorkspace(); updateBrushPill();
   }));
+  // Plateau palette wiring
+  const esmb = box.querySelector('#editSubmapBtn');
+  if (esmb) esmb.addEventListener('click', () => {
+    ws.activeId = esmb.dataset.submapid; undoStack.length = 0; redoStack.length = 0;
+    activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null;
+    updateAll(); fitView();
+  });
+  // Ramp palette wiring
+  const nrmpb = box.querySelector('#newRampBtn');
+  if (nrmpb) nrmpb.addEventListener('click', () => {
+    pushUndo();
+    ws.ramps = ws.ramps || [];
+    const rp = { id: uid('ramp'), label: `Ramp ${ws.ramps.length+1}`, fromMapId: m.id, toMapId: m.id, width: 3, paintTiles: true, nodes: [] };
+    ws.ramps.push(rp); activeRampId = rp.id;
+    renderPalette(); updateBrushPill(); refreshPreview(); saveWorkspace();
+  });
+  box.querySelectorAll('[data-rampsel]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-rampdel]')) return;
+    activeRampId = el.dataset.rampsel; renderPalette(); updateBrushPill();
+  }));
+  box.querySelectorAll('[data-rampdel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); pushUndo();
+    const rp = (ws.ramps || []).find(x => x.id === el.dataset.rampdel);
+    if (rp) { clearPaintedTiles(`${rp.id}__${rp.fromMapId}`, mapById(rp.fromMapId) || m); clearPaintedTiles(`${rp.id}__${rp.toMapId}`, mapById(rp.toMapId) || m); }
+    ws.ramps = (ws.ramps || []).filter(x => x.id !== el.dataset.rampdel);
+    if (activeRampId === el.dataset.rampdel) activeRampId = null;
+    renderPalette(); draw(); refreshPreview(); saveWorkspace();
+  }));
+  const rmpl = box.querySelector('#rampLabelIn');
+  if (rmpl) rmpl.addEventListener('change', () => { const rp = (ws.ramps || []).find(x => x.id === activeRampId); if (rp) { rp.label = rmpl.value.trim() || rp.label; renderPalette(); refreshPreview(); saveWorkspace(); } });
+  const rmpw = box.querySelector('#rampWidthIn');
+  if (rmpw) rmpw.addEventListener('change', () => {
+    const rp = (ws.ramps || []).find(x => x.id === activeRampId); if (!rp) return;
+    rp.width = Math.max(1, parseInt(rmpw.value) || 1);
+    if (rp.paintTiles !== false) { pushUndo(); paintRampTiles(rp); draw(); refreshPreview(); }
+    saveWorkspace();
+  });
+  const rmpFrom = box.querySelector('#rampFromIn');
+  if (rmpFrom) rmpFrom.addEventListener('change', () => {
+    const rp = (ws.ramps || []).find(x => x.id === activeRampId); if (!rp) return;
+    pushUndo();
+    rp.fromMapId = rmpFrom.value;
+    if (rp.paintTiles !== false) paintRampTiles(rp);
+    renderPalette(); draw(); refreshPreview(); saveWorkspace();
+  });
+  const rmpTo = box.querySelector('#rampToIn');
+  if (rmpTo) rmpTo.addEventListener('change', () => {
+    const rp = (ws.ramps || []).find(x => x.id === activeRampId); if (!rp) return;
+    pushUndo();
+    rp.toMapId = rmpTo.value;
+    if (rp.paintTiles !== false) paintRampTiles(rp);
+    renderPalette(); draw(); refreshPreview(); saveWorkspace();
+  });
+  const rampPaintChk = box.querySelector('#rampPaintTilesChk');
+  if (rampPaintChk) rampPaintChk.addEventListener('change', () => {
+    const rp = (ws.ramps || []).find(x => x.id === activeRampId); if (!rp) return;
+    rp.paintTiles = rampPaintChk.checked;
+    pushUndo();
+    if (rp.paintTiles) { paintRampTiles(rp); } else {
+      clearPaintedTiles(`${rp.id}__${rp.fromMapId}`, mapById(rp.fromMapId) || m);
+      clearPaintedTiles(`${rp.id}__${rp.toMapId}`, mapById(rp.toMapId) || m);
+    }
+    draw(); refreshPreview(); saveWorkspace();
+  });
+  box.querySelectorAll('[data-rampnodesel]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-rampnodedel]')) return;
+    activeRampNodeIndex = Number(el.dataset.rampnodesel); renderPalette(); updateBrushPill(); draw();
+  }));
+  box.querySelectorAll('[data-rampnodedel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); pushUndo();
+    const rp = (ws.ramps || []).find(x => x.id === activeRampId); if (!rp) return;
+    rp.nodes.splice(Number(el.dataset.rampnodedel), 1); activeRampNodeIndex = null;
+    maybePaintRamp();
+    renderPalette(); draw(); refreshPreview(); saveWorkspace(); updateBrushPill();
+  }));
   // Station palette wiring
   box.querySelectorAll('[data-stationsel]').forEach(el => el.addEventListener('click', e => {
     if (e.target.closest('button,input,select')) return;
@@ -1256,21 +1970,33 @@ function renderPalette() {
 
 // ── Canvas ────────────────────────────────────────────────────────────────────
 const canvas = $('canvas2d');
+const canvas3d = $('canvas3d');
 const ctx = canvas.getContext('2d');
 let cam = { x: 0, y: 0, zoom: 24 };
 let drag = false, dragStart = null, painting = false;
 const ptrs = new Map();
 let pinchStart = null;
 
-const w2s = (x,y) => ({ x: x*cam.zoom + cam.x, y: y*cam.zoom + cam.y });
-const s2w = (x,y) => ({ x: (x-cam.x)/cam.zoom, y: (y-cam.y)/cam.zoom });
+// Offset-aware: maps the ACTIVE map's own local (c,r) tile coords to screen,
+// shifted by viewOffset so they land at their true position within the
+// root-sized canvas. Every existing call site already works in the active
+// map's own local coords, so they need no changes.
+const w2s = (x,y) => ({ x: (x+viewOffset.c)*cam.zoom + cam.x, y: (y+viewOffset.r)*cam.zoom + cam.y });
+const s2w = (x,y) => ({ x: (x-cam.x)/cam.zoom - viewOffset.c, y: (y-cam.y)/cam.zoom - viewOffset.r });
+// Raw/offset-free pair, for root-space drawing: the full root grid, and each
+// ancestor's own tiles (which each have their own distinct offset, supplied
+// explicitly rather than baked into these).
+const w2sCam = (x,y) => ({ x: x*cam.zoom + cam.x, y: y*cam.zoom + cam.y });
+const s2wCam = (x,y) => ({ x: (x-cam.x)/cam.zoom, y: (y-cam.y)/cam.zoom });
 const canvasPt = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX-r.left, y: e.clientY-r.top }; };
 
 function fitView() {
-  const m = activeMap(); const r = canvas.getBoundingClientRect();
-  cam.zoom = Math.max(6, Math.min((r.width-48)/m.cols, (r.height-48)/m.rows));
-  cam.x = (r.width - m.cols*cam.zoom)/2;
-  cam.y = (r.height - m.rows*cam.zoom)/2;
+  syncViewOffset();
+  const root = viewRoot || activeMap();
+  const r = canvas.getBoundingClientRect();
+  cam.zoom = Math.max(6, Math.min((r.width-48)/root.cols, (r.height-48)/root.rows));
+  cam.x = (r.width - root.cols*cam.zoom)/2;
+  cam.y = (r.height - root.rows*cam.zoom)/2;
   draw();
 }
 function resizeCanvas() {
@@ -1290,6 +2016,23 @@ function draw() {
 
   const isFarmLinked = m.category === 'exterior' && ws.gameLink.exteriorId === m.id;
   const showBase = isFarmLinked && $('showBaseChk').checked;
+
+  // Ancestor reference layer: everything beneath the active plateau tier
+  // (parent, grandparent, ... down to the root map), drawn as a faded
+  // onion-skin at its own world offset so the artist can see exactly how the
+  // new tier aligns with what's underneath it. Drawn first so it's the
+  // backdrop for everything else below.
+  viewAncestors.forEach(({ map: anc, offsetC, offsetR }) => {
+    Object.keys(anc.tiles).forEach(key => {
+      const [c, rr] = key.split(',').map(Number);
+      const t = anc.tiles[key];
+      const p = w2sCam(c + offsetC, rr + offsetR);
+      ctx.fillStyle = _dimAncestorColor((TILE_INFO[t.type] || { color:'#888' }).color);
+      ctx.globalAlpha = .35;
+      ctx.fillRect(p.x, p.y, z, z);
+    });
+  });
+  ctx.globalAlpha = 1;
 
   // Base day-one farm underlay (real game terrain)
   if (showBase) {
@@ -1318,9 +2061,41 @@ function draw() {
   });
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
-  // Building overlays (placed buildings from map.buildings)
+  // Plateau overlay: tint + group number on every plateau-locked tile
+  ctx.font = `${Math.floor(z*0.5)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  Object.keys(m.tiles).forEach(key => {
+    const t = m.tiles[key]; if (!t.plateau) return;
+    const group = plateauGroupById(t.plateau); if (!group) return;
+    const [c, rr] = key.split(',').map(Number);
+    const p = w2s(c, rr);
+    ctx.fillStyle = group.color; ctx.globalAlpha = .30; ctx.fillRect(p.x, p.y, z, z); ctx.globalAlpha = 1;
+    ctx.strokeStyle = group.color; ctx.lineWidth = 1; ctx.strokeRect(p.x+.5, p.y+.5, z-1, z-1);
+    if (z > 9) { ctx.fillStyle = '#fff'; ctx.fillText(String(group.number), p.x + z/2, p.y + z/2); }
+  });
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+
+  // Incline-ring overlay: the outer 1-tile ring of each painted plateau footprint
+  // is auto-reserved as the impassable cliff-face lerp down to the tier below —
+  // highlight it in red so it's obvious which tiles those are. A cell painted over
+  // with a ramp (no more `.plateau` tag, type 'ramp') has cut through the ring, so
+  // it's excluded here — the ramp's own rendering already shows it as crossable.
+  for (const group of activePlateauGroupsOn(m)) {
+    const ring = plateauFootprintRing(m, group.id);
+    for (const key of ring) {
+      const [c, rr] = key.split(',').map(Number);
+      const t = m.tiles[key];
+      if (!t || t.plateau !== group.id) continue; // ramp (or anything else) cut through here
+      const p = w2s(c, rr);
+      ctx.fillStyle = '#ef4444'; ctx.globalAlpha = .45; ctx.fillRect(p.x, p.y, z, z); ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.strokeRect(p.x+1, p.y+1, z-2, z-2);
+    }
+  }
+
+  // Building overlays (placed buildings from map.buildings) — buildings can
+  // live on the Town map or any exterior zone map; gizmos (drag/rotate handles)
+  // only render in Building mode so they don't clutter other tools.
   _gizmos = [];
-  if (m.id === ws.gameLink.townId) {
+  if (m.category === 'exterior' && mode === 'building') {
     (m.buildings || []).forEach(b => {
       const isSel = b.id === _selectedBuildingId;
       const rot = b.rotationDeg || 0;
@@ -1361,12 +2136,38 @@ function draw() {
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   }
 
-  // Grid
+  // Grid — drawn across the full root map's extent (cam, not viewOffset) so
+  // every plateau tier always shows "the same tile count as the base map",
+  // regardless of how small the active submap's own footprint is.
+  const root = viewRoot || m;
   ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = 1;
-  for (let x = 0; x <= m.cols; x++) { const p = w2s(x,0); ctx.beginPath(); ctx.moveTo(p.x, cam.y); ctx.lineTo(p.x, cam.y + m.rows*z); ctx.stroke(); }
-  for (let y = 0; y <= m.rows; y++) { const p = w2s(0,y); ctx.beginPath(); ctx.moveTo(cam.x, p.y); ctx.lineTo(cam.x + m.cols*z, p.y); ctx.stroke(); }
+  for (let x = 0; x <= root.cols; x++) { const p = w2sCam(x,0); ctx.beginPath(); ctx.moveTo(p.x, cam.y); ctx.lineTo(p.x, cam.y + root.rows*z); ctx.stroke(); }
+  for (let y = 0; y <= root.rows; y++) { const p = w2sCam(0,y); ctx.beginPath(); ctx.moveTo(cam.x, p.y); ctx.lineTo(cam.x + root.cols*z, p.y); ctx.stroke(); }
   ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 2;
-  ctx.strokeRect(cam.x, cam.y, m.cols*z, m.rows*z);
+  ctx.strokeRect(cam.x, cam.y, root.cols*z, root.rows*z);
+  // Active map's own true editable region — highlighted distinctly when it's
+  // a submap sitting somewhere inside the larger root-sized canvas.
+  if (m.isSubmap) {
+    const mask = plateauMaskLocal(m);
+    if (mask && mask.size < m.cols * m.rows) {
+      // Hatch the "gap" cells — inside the submap's bounding rect but outside the
+      // real painted shape (e.g. the missing corner of an L) — so it reads as
+      // dead space rather than ordinary editable ground.
+      ctx.save();
+      ctx.fillStyle = 'rgba(15,23,42,.55)';
+      for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+        if (mask.has(`${c},${r}`)) continue;
+        const p = w2s(c, r);
+        ctx.fillRect(p.x, p.y, z, z);
+      }
+      ctx.restore();
+      strokeMaskBoundary((c, r) => mask.has(`${c},${r}`), m.cols, m.rows, w2s, 'rgba(125,211,252,.85)', 2.5);
+    } else {
+      const p0 = w2s(0, 0);
+      ctx.strokeStyle = 'rgba(125,211,252,.85)'; ctx.lineWidth = 2.5;
+      ctx.strokeRect(p0.x, p0.y, m.cols*z, m.rows*z);
+    }
+  }
 
   // Game farm bounds + house footprint when linked
   if (isFarmLinked) {
@@ -1453,6 +2254,29 @@ function draw() {
     });
     ctx.lineWidth = 1;
   });
+  // Ramps (node-paths in WORLD coords, shared between this map and another,
+  // lerping elevation — drawn with w2sCam since the nodes are already world-
+  // space and shouldn't get this map's own viewOffset added again).
+  (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id).forEach(rp => {
+    const isActive = rp.id === activeRampId;
+    if (rp.nodes.length > 1) {
+      ctx.strokeStyle = isActive ? '#fef08a' : 'rgba(194,178,128,.75)';
+      ctx.lineWidth = isActive ? 4 : 3;
+      ctx.setLineDash([8,4]);
+      ctx.beginPath();
+      rp.nodes.forEach(([c, rr], i) => { const s = w2sCam(c+.5, rr+.5); i === 0 ? ctx.moveTo(s.x, s.y) : ctx.lineTo(s.x, s.y); });
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    rp.nodes.forEach(([c, rr], i) => {
+      const s = w2sCam(c+.5, rr+.5);
+      ctx.fillStyle = isActive && i === activeRampNodeIndex ? '#fef08a' : (isActive ? '#fff' : '#c2b280');
+      ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(3.5, z*.18), 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#3a3220'; ctx.lineWidth = 1.5; ctx.stroke();
+      if (z > 13) { ctx.fillStyle = '#fdf6e3'; ctx.font = `${clamp(z*.28,9,12)}px system-ui`; ctx.fillText(String(i+1), s.x + z*.22, s.y - z*.18); }
+    });
+    ctx.lineWidth = 1;
+  });
   // Transition spots (gold diamonds)
   ctx.font = `${Math.floor(z*0.5)}px system-ui`; ctx.textAlign='center'; ctx.textBaseline='middle';
   (m.transitions || []).forEach(t => {
@@ -1493,15 +2317,48 @@ function applyAt(tile) {
   const { x: c, y: r } = tile;
   if (c < 0 || r < 0 || c >= m.cols || r >= m.rows) return;
   const key = `${c},${r}`;
+  // "Gap" cells — inside a submap's bounding rect but outside the real painted
+  // shape on the parent (e.g. the missing corner of an L) — aren't part of the
+  // plateau at all, so they're not paintable (mirrors the dimmed/hatched overlay
+  // in draw()). This must apply to plateau painting too — otherwise a deeper
+  // tier can get anchored over a gap in its parent's mask, producing a tier
+  // that floats over nothing once rendered in-game.
+  const mask = plateauMaskLocal(m);
+  if (mask && !mask.has(key)) return;
 
   if (mode === 'tile') {
     const set = TILE_SETS[m.category] || TILE_SETS.exterior;
     const t = set.includes(brush.tile) ? brush.tile : set[0];
     const existing = m.tiles[key];
-    if (!existing || existing.type !== t) m.tiles[key] = { type: t, crop: existing?.crop || '' };
+    if (!existing || existing.type !== t) setTileType(m, key, t);
   } else if (mode === 'crop' && m.category === 'exterior') {
+    if (isPlateauLocked(m, key)) return;
     if (!m.tiles[key]) m.tiles[key] = { type: 'tilled', crop: '' };
     m.tiles[key].crop = brush.crop;
+  } else if (mode === 'plateau' && m.category === 'exterior') {
+    const group = plateauGroupById(brush.plateauGroup) || (ws.plateauGroups || [])[0];
+    if (!group) return;
+    const set = TILE_SETS[m.category] || TILE_SETS.exterior;
+    const rad = Math.max(0, Math.floor(brush.plateauRadius) || 0);
+    const rad2 = rad * rad + 0.25; // +0.25 rounds a discrete brush into a circle rather than a diamond/square
+    let painted = false;
+    for (let dr = -rad; dr <= rad; dr++) {
+      for (let dc = -rad; dc <= rad; dc++) {
+        if (dc*dc + dr*dr > rad2) continue;
+        const cc = c + dc, rr = r + dr;
+        if (cc < 0 || rr < 0 || cc >= m.cols || rr >= m.rows) continue;
+        const ck = `${cc},${rr}`;
+        if (mask && !mask.has(ck)) continue; // gap cell — not actually part of the plateau
+        const existing = m.tiles[ck];
+        if (existing?.plateau && existing.plateau !== group.id) continue; // locked by a different plateau group
+        if (existing?.plateau === group.id) continue; // already this group, nothing to do
+        m.tiles[ck] = { type: existing?.type || set[0], crop: existing?.crop || '', plateau: group.id };
+        painted = true;
+      }
+    }
+    if (!painted) return;
+    getOrCreateSubmap(m, group);
+    syncPlateauEffects(m);
   } else if (mode === 'object' && m.category === 'exterior') {
     m.objects[brush.object] = [c, r];
   } else if (mode === 'furniture' && m.category === 'exterior') {
@@ -1538,6 +2395,23 @@ function applyAt(tile) {
     }
     maybePaintRiver(m);
     renderPalette(); updateBrushPill();
+  } else if (mode === 'ramp') {
+    ws.ramps = ws.ramps || [];
+    let rp = ws.ramps.find(x => x.id === activeRampId);
+    if (!rp) { rp = { id: uid('ramp'), label: `Ramp ${ws.ramps.length+1}`, fromMapId: m.id, toMapId: m.id, width: 3, paintTiles: true, nodes: [] }; ws.ramps.push(rp); activeRampId = rp.id; }
+    // Ramp nodes are stored in WORLD coords (see paintRampTiles) so the same path
+    // stays correct regardless of which of its two endpoint maps is active when
+    // a node is placed.
+    const wn = [c + viewOffset.c, r + viewOffset.r];
+    if (activeRampNodeIndex !== null && activeRampNodeIndex >= 0 && activeRampNodeIndex < rp.nodes.length) {
+      rp.nodes.splice(activeRampNodeIndex + 1, 0, wn);
+      activeRampNodeIndex += 1;
+    } else {
+      rp.nodes.push(wn);
+      activeRampNodeIndex = rp.nodes.length - 1;
+    }
+    maybePaintRamp();
+    renderPalette(); updateBrushPill();
   } else if (mode === 'station') {
     m.npcStations = m.npcStations || [];
     const existing = m.npcStations.find(st => st.col === c && st.row === r);
@@ -1561,7 +2435,18 @@ function applyAt(tile) {
     if (!floodFill(m, c, r, t)) return;
   } else if (mode === 'erase') {
     let did = false;
-    if (m.tiles[key]) { delete m.tiles[key]; did = true; }
+    if (m.tiles[key]?.plateau) {
+      const erasedGroup = plateauGroupById(m.tiles[key].plateau);
+      delete m.tiles[key].plateau;
+      syncPlateauEffects(m);
+      if (erasedGroup) {
+        const bbox = plateauFootprintBBox(m, erasedGroup.id);
+        const sm = ws.maps.find(x => x.parentMapId === m.id && x.plateauGroupId === erasedGroup.id);
+        if (sm && bbox) resizeSubmapToFootprint(sm, bbox);
+      }
+      did = true;
+    }
+    else if (m.tiles[key]) { delete m.tiles[key]; did = true; }
     Object.keys(m.objects).forEach(k => { const [oc,or] = m.objects[k]; if (oc===c && or===r) { delete m.objects[k]; did = true; } });
     const fi = m.furniture.findIndex(f => f.col===c && f.row===r); if (fi >= 0) { m.furniture.splice(fi,1); did = true; }
     const di = m.decor.findIndex(d => { const inf = DECOR[d.key]; return inf && c >= d.col && c < d.col+inf.fw && r >= d.row && r < d.row+inf.fd; });
@@ -1571,6 +2456,10 @@ function applyAt(tile) {
     });
     (m.rivers || []).forEach(p => {
       for (let i = p.nodes.length-1; i >= 0; i--) if (p.nodes[i][0] === c && p.nodes[i][1] === r) { p.nodes.splice(i,1); did = true; }
+    });
+    (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id).forEach(rp => {
+      const wc = c + viewOffset.c, wr = r + viewOffset.r; // ramp nodes are stored in WORLD coords
+      for (let i = rp.nodes.length-1; i >= 0; i--) if (rp.nodes[i][0] === wc && rp.nodes[i][1] === wr) { rp.nodes.splice(i,1); did = true; paintRampTiles(rp); }
     });
     const ti = (m.transitions || []).findIndex(t => t.col === c && t.row === r);
     if (ti >= 0) { if (m.transitions[ti].id === activeSpotId) activeSpotId = null; m.transitions.splice(ti,1); did = true; }
@@ -1587,8 +2476,8 @@ function overlaps(d, c, r, fw, fd) {
   return d.col < c+fw && d.col+inf.fw > c && d.row < r+fd && d.row+inf.fd > r;
 }
 
-const PAINT_MODES = ['tile','crop','erase'];   // drag-paintable
-const TAP_MODES = ['object','furniture','decor','path','river','spot','station','fill'];
+const PAINT_MODES = ['tile','crop','erase','plateau'];   // drag-paintable
+const TAP_MODES = ['object','furniture','decor','path','river','ramp','spot','station','fill'];
 
 canvas.addEventListener('pointerdown', e => {
   canvas.setPointerCapture?.(e.pointerId); ptrs.set(e.pointerId, canvasPt(e));
@@ -1600,6 +2489,9 @@ canvas.addEventListener('pointerdown', e => {
   }
   const p = canvasPt(e);
   if (mode === 'pan') {
+    drag = true; dragStart = { p, cx: cam.x, cy: cam.y }; return;
+  }
+  if (mode === 'building') {
     // ── Gizmo button priority ─────────────────────────────────────────────
     const gHit = _gizmos.find(g => Math.hypot(p.x - g.sx, p.y - g.sy) <= g.r + 4);
     if (gHit && _selectedBuildingId) {
@@ -1664,6 +2556,21 @@ canvas.addEventListener('pointerdown', e => {
       }
     }
   }
+  if (mode === 'ramp') {
+    const m = activeMap();
+    const ramps = (ws.ramps || []).filter(rp => rp.fromMapId === m.id || rp.toMapId === m.id)
+      .filter(rp => !activeRampId || rp.id === activeRampId);
+    for (const rp of ramps) {
+      for (let i = 0; i < (rp.nodes || []).length; i++) {
+        const n = rp.nodes[i]; // world coords — compare against w (active map's local) via viewOffset
+        const lc = n[0] - viewOffset.c, lr = n[1] - viewOffset.r;
+        if (Math.hypot(w.x - (lc + 0.5), w.y - (lr + 0.5)) <= 0.45) {
+          pushUndo(); activeRampId = rp.id; activeRampNodeIndex = i; _rampNodeDrag = { rampId: rp.id, index: i };
+          renderPalette(); updateBrushPill(); draw(); return;
+        }
+      }
+    }
+  }
   if (mode === 'spot') {
     const m = activeMap();
     for (const t of (m.transitions || [])) {
@@ -1713,6 +2620,15 @@ canvas.addEventListener('pointermove', e => {
     }
     return;
   }
+  if (_rampNodeDrag) {
+    const m = activeMap(); const rp = (ws.ramps || []).find(r => r.id === _rampNodeDrag.rampId);
+    if (rp?.nodes?.[_rampNodeDrag.index]) {
+      const lc = clamp(Math.floor(w.x), 0, m.cols - 1), lr = clamp(Math.floor(w.y), 0, m.rows - 1);
+      rp.nodes[_rampNodeDrag.index] = [lc + viewOffset.c, lr + viewOffset.r]; // store as world coords
+      renderPalette(); draw();
+    }
+    return;
+  }
   if (_spotDrag) {
     const m = activeMap(); const t = (m.transitions || []).find(t => t.id === _spotDrag.spotId);
     if (t) { t.col = clamp(Math.floor(w.x), 0, m.cols - 1); t.row = clamp(Math.floor(w.y), 0, m.rows - 1); renderPalette(); draw(); }
@@ -1741,6 +2657,7 @@ function endPtr(e) {
   ptrs.delete(e.pointerId);
   if (_routeNodeDrag) { maybePaintRoute(activeMap()); saveWorkspace(); refreshPreview(); _routeNodeDrag = null; }
   if (_riverNodeDrag) { maybePaintRiver(activeMap()); saveWorkspace(); refreshPreview(); _riverNodeDrag = null; }
+  if (_rampNodeDrag)  { maybePaintRamp(); saveWorkspace(); refreshPreview(); _rampNodeDrag = null; }
   if (_spotDrag)      { saveWorkspace(); refreshPreview(); _spotDrag = null; }
   if (_stationDrag)   { saveWorkspace(); refreshPreview(); _stationDrag = null; }
   if (_bldgDrag) { saveWorkspace(); renderBuildingPanel(); _bldgDrag = null; }
@@ -1761,15 +2678,32 @@ window.addEventListener('keydown', e => {
 });
 
 // ── Map management UI ────────────────────────────────────────────────────────
+// Depth-first ordering: each submap is listed right after its parent (and its
+// own submaps after it), instead of wherever it happens to sit in ws.maps
+// (new submaps are always appended to the end of that array). Purely a
+// display order — ws.maps itself is left untouched.
+function orderedMapList() {
+  const out = [];
+  const visited = new Set();
+  const addWithChildren = m => { if (visited.has(m.id)) return; visited.add(m.id); out.push(m); submapsOf(m.id).forEach(addWithChildren); };
+  ws.maps.filter(m => !m.isSubmap).forEach(addWithChildren);
+  ws.maps.forEach(m => addWithChildren(m)); // orphaned submaps (missing parent), if any
+  return out;
+}
 function renderMapList() {
   const icon = m => m.category==='building_interior'?'🏛':m.category==='interior'?'🏠':'🗺';
-  $('mapList').innerHTML = ws.maps.map(m =>
-    `<div class="item ${m.id===ws.activeId?'sel':''}" data-id="${m.id}">
-      <div class="item-name">${icon(m)} ${m.name}</div>
-      <div class="item-meta">${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.rivers||[]).length} rivers · ${(m.transitions||[]).length} spots · ${(m.npcStations||[]).length} stations</div>
-    </div>`).join('');
+  const depthOf = m => { let d = 0, p = m; while (p?.isSubmap && (p = mapById(p.parentMapId))) d++; return d; };
+  $('mapList').innerHTML = orderedMapList().map(m => {
+    const group = m.isSubmap ? plateauGroupById(m.plateauGroupId) : null;
+    const indent = m.isSubmap ? depthOf(m) * 14 : 0;
+    const submapTag = m.isSubmap ? `<span style="color:${group?.color||'#c084fc'}">⛰ ${group ? `#${group.number} ` : ''}tier ${m.elevation} ·</span> ` : '';
+    return `<div class="item ${m.id===ws.activeId?'sel':''}" data-id="${m.id}" style="margin-left:${indent}px">
+      <div class="item-name">${m.isSubmap ? '↳ ' : ''}${icon(m)} ${m.name}</div>
+      <div class="item-meta">${submapTag}${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.rivers||[]).length} rivers · ${(m.transitions||[]).length} spots · ${(m.npcStations||[]).length} stations</div>
+    </div>`;
+  }).join('');
   $('mapList').querySelectorAll('.item').forEach(el => el.addEventListener('click', () => {
-    ws.activeId = el.dataset.id; undoStack.length = 0; redoStack.length = 0; activePathId = null; activeRiverId = null; activeSpotId = null; updateAll(); fitView();
+    ws.activeId = el.dataset.id; undoStack.length = 0; redoStack.length = 0; activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null; updateAll(); fitView();
   }));
   $('mapCountTag').textContent = String(ws.maps.length);
   // Game link dropdowns
@@ -1785,9 +2719,13 @@ function fillSettings() {
   $('mapName').value = m.name;
   $('mapCategory').value = m.category;
   $('mapCols').value = m.cols; $('mapRows').value = m.rows;
+  $('mapCols').disabled = $('mapRows').disabled = !!m.isSubmap;
+  $('mapCols').title = $('mapRows').title = m.isSubmap ? "Plateau sub-maps are sized automatically from the painted footprint (inset 1 tile per side for the auto-incline ring) — paint more/less of the plateau on the parent map instead." : '';
   $('mapAudioIndex').innerHTML = '<option value="">— none —</option>' + audioCueIndexEntries.map(e => `<option value="${e.id || e.file}" ${(m.audioIndex || '') === (e.id || e.file) ? 'selected' : ''}>${e.name || e.id || e.file}</option>`).join('');
   $('catTag').textContent = m.category;
-  $('activeMapPill').textContent = `${m.name} (${m.cols}×${m.rows})`;
+  const group = m.isSubmap ? plateauGroupById(m.plateauGroupId) : null;
+  $('activeMapPill').textContent = `${m.name} (${m.cols}×${m.rows})${m.isSubmap ? ` · tier ${m.elevation}${group ? ` · #${group.number}` : ''}` : ''}`;
+  $('upToParentBtn').style.display = (m.isSubmap && mapById(m.parentMapId)) ? '' : 'none';
   $('floorTemplateBtn').style.display = (m.category === 'interior' || m.category === 'building_interior') ? '' : 'none';
 }
 
@@ -1795,10 +2733,225 @@ function refreshPreview() {
   const m = activeMap();
   const out = { ...m, tiles: Object.keys(m.tiles).map(k => { const [c,r] = k.split(',').map(Number); return { c, r, ...m.tiles[k] }; }) };
   $('jsonPreview').value = JSON.stringify(out, null, 2);
+  schedule3DRebuild();
+}
+
+// ── Live 3D terrain preview ──────────────────────────────────────────────────
+// Shares its math (docs/js/terrain-preview.js) with the live game's
+// buildZoneScene/buildPlateauMesa and with scripts/check-terrain.js, so what's
+// shown here is exactly what the real game would build for this merged
+// plateau/ramp footprint — not a separate approximation.
+let three3d = null; // { renderer, scene, camera, controls, group, raf }
+let _3dDirty = true;
+let _3dRebuildTimer = null;
+
+function schedule3DRebuild() {
+  _3dDirty = true;
+  if (!three3d || !canvas3d.classList.contains('active')) return;
+  clearTimeout(_3dRebuildTimer);
+  _3dRebuildTimer = setTimeout(rebuild3D, 150);
+}
+
+function init3D() {
+  if (three3d || typeof THREE === 'undefined') return;
+  const renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true });
+  renderer.setClearColor(0x07101a, 1);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+  camera.position.set(20, 25, 20);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.85);
+  sun.position.set(40, 60, 20);
+  scene.add(sun);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  const group = new THREE.Group();
+  scene.add(group);
+  three3d = { renderer, scene, camera, controls, group };
+
+  function tick() {
+    three3d.raf = requestAnimationFrame(tick);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  tick();
+}
+
+function resize3D() {
+  if (!three3d) return;
+  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  const r = canvas3d.getBoundingClientRect();
+  three3d.renderer.setPixelRatio(dpr);
+  three3d.renderer.setSize(r.width, r.height, false);
+  three3d.camera.aspect = r.width / Math.max(1, r.height);
+  three3d.camera.updateProjectionMatrix();
+}
+
+function _terrainGeometryFromArrays(pos, idx) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function rebuild3D() {
+  if (!three3d) return;
+  _3dDirty = false;
+  const { group } = three3d;
+  while (group.children.length) {
+    const o = group.children.pop();
+    o.geometry?.dispose(); o.material?.dispose();
+  }
+
+  const root = viewRoot || activeMap();
+  let merged;
+  try { merged = TerrainPreview.buildMergedZoneGrid(ws, root.id); }
+  catch (e) { setStatus('3D preview failed: ' + e.message); return; }
+
+  const zGrid = TerrainPreview.buildZGrid(merged.cols, merged.rows, merged.tiles);
+  TerrainPreview.applyRampCurtainFlags(zGrid, merged.cols, merged.rows);
+
+  // Flat floor quads for every tile not covered by a mesa/ramp/curtain mesh,
+  // colored by tile type and lifted to its own tier's elevation.
+  const floorMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const fPos = [], fCol = [], fIdx = [];
+  const colorOf = hex => { const n = parseInt(hex.slice(1), 16); return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255]; };
+  for (let r = 0; r < merged.rows; r++) {
+    for (let c = 0; c < merged.cols; c++) {
+      const t = zGrid[r][c];
+      if (!t || t.skipFloor) continue;
+      const tile = merged.tiles.get(`${c},${r}`);
+      if (!tile || tile.type === 'ramp') continue;
+      const y = TerrainPreview.NORMAL_TOP + (t.elevTier || 0) * TerrainPreview.PLATEAU_UNIT;
+      const col = colorOf((TILE_INFO[tile.type] || { color: '#888' }).color);
+      const base = fPos.length / 3;
+      fPos.push(c,y,r,  c+1,y,r,  c+1,y,r+1,  c,y,r+1);
+      for (let k = 0; k < 4; k++) fCol.push(...col);
+      fIdx.push(base,base+1,base+2, base,base+2,base+3);
+    }
+  }
+  if (fIdx.length) {
+    const fGeo = new THREE.BufferGeometry();
+    fGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fPos), 3));
+    fGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(fCol), 3));
+    fGeo.setIndex(fIdx);
+    fGeo.computeVertexNormals();
+    group.add(new THREE.Mesh(fGeo, floorMat));
+  }
+
+  // Plateau mesa heightfields (top sheet + cliff skin) per tier transition.
+  const mesaMat = new THREE.MeshLambertMaterial({ color: 0xa8835a, side: THREE.DoubleSide });
+  const skinMat = new THREE.MeshLambertMaterial({ color: 0x6b5638, side: THREE.DoubleSide });
+  for (const mesa of merged.mesas) {
+    const elevOffset = (mesa.toTier - mesa.fromTier) * TerrainPreview.PLATEAU_UNIT;
+    if (elevOffset <= 0) continue;
+    let geo;
+    try { geo = TerrainPreview.buildPlateauMesaGeometry(mesa, elevOffset, mesa.fromTier * TerrainPreview.PLATEAU_UNIT, zGrid); }
+    catch (e) { continue; }
+    if (geo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.pos, geo.idx), mesaMat));
+    if (geo.skinIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.skinPos, geo.skinIdx), skinMat));
+  }
+
+  // Ramp surfaces + their skirt curtains.
+  const rampMat = new THREE.MeshLambertMaterial({ color: 0xc2b280, side: THREE.DoubleSide });
+  const curtainMat = new THREE.MeshLambertMaterial({ color: 0x8a7550, side: THREE.DoubleSide });
+  try {
+    const rampGeo = TerrainPreview.buildRampMeshGeometry(zGrid, merged.cols, merged.rows);
+    if (rampGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(rampGeo.pos, rampGeo.idx), rampMat));
+    const curtainGeo = TerrainPreview.buildRampCurtainGeometry(zGrid, merged.cols, merged.rows);
+    if (curtainGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.pos, curtainGeo.idx), curtainMat));
+    if (curtainGeo.skinIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.skinPos, curtainGeo.skinIdx), skinMat));
+  } catch (e) { /* ramp geometry is best-effort for the preview */ }
+
+  // Building footprint boxes, lifted to their anchor tile's resolved plateau
+  // tier (merged.buildings[].elevTier — see TerrainPreview.buildMergedZoneGrid)
+  // so it's visually obvious whether a placed building sits on its plateau or
+  // floats above/sinks into it. Just a footprint placeholder, not the real
+  // piece geometry — the live game renders the actual model at the same Y.
+  const bldgMat = new THREE.MeshLambertMaterial({ color: 0xe85d4a, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+  const bldgEdgeMat = new THREE.LineBasicMaterial({ color: 0xffffff });
+  for (const b of (merged.buildings || [])) {
+    const rot = ((Math.round((b.rotationDeg || 0) / 90) * 90) % 360 + 360) % 360;
+    const swap = rot === 90 || rot === 270;
+    const w = swap ? (b.footprintD || 1) : (b.footprintW || 1);
+    const d = swap ? (b.footprintW || 1) : (b.footprintD || 1);
+    const h = TerrainPreview.PLATEAU_UNIT;
+    const y0 = TerrainPreview.NORMAL_TOP + (b.elevTier || 0) * TerrainPreview.PLATEAU_UNIT;
+    const boxGeo = new THREE.BoxGeometry(w, h, d);
+    const mesh = new THREE.Mesh(boxGeo, bldgMat);
+    mesh.position.set(b.gridX + w / 2, y0 + h / 2, b.gridZ + d / 2);
+    group.add(mesh);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo), bldgEdgeMat);
+    edges.position.copy(mesh.position);
+    group.add(edges);
+  }
+
+  three3d.controls.target.set(merged.cols/2, 0, merged.rows/2);
+  three3d.camera.lookAt(three3d.controls.target);
+}
+
+function toggle3D(show) {
+  const willShow = show !== undefined ? show : !canvas3d.classList.contains('active');
+  canvas3d.classList.toggle('active', willShow);
+  canvas.classList.toggle('hidden3d', willShow);
+  if (willShow) {
+    init3D();
+    resize3D();
+    if (_3dDirty) rebuild3D();
+  }
+}
+
+let _lastValidationIssues = [];
+let _lastValidationMapName = '';
+function computeValidationIssues() {
+  const root = viewRoot || activeMap();
+  let issues;
+  try { issues = TerrainPreview.validateTerrain(ws, root.id); }
+  catch (e) { setStatus('Validation failed: ' + e.message); return null; }
+  _lastValidationIssues = issues;
+  _lastValidationMapName = root.name;
+  return { issues, root };
+}
+function renderValidationInto(issues, listEl, countEl) {
+  countEl.textContent = issues.length;
+  listEl.innerHTML = issues.length
+    ? issues.map(i => `<div class="vIssue ${i.severity}"><b>${i.code}</b><br>${i.message}</div>`).join('')
+    : '<p class="muted">No issues found.</p>';
+}
+function validationReportText(issues, mapName) {
+  if (!issues.length) return `Watertightness check — ${mapName}: no issues found.`;
+  const lines = [`Watertightness check — ${mapName}: ${issues.length} issue${issues.length===1?'':'s'}`, ''];
+  for (const i of issues) lines.push(`[${i.severity.toUpperCase()}] ${i.code}: ${i.message}`);
+  return lines.join('\n');
+}
+async function copyValidationReport() {
+  const text = validationReportText(_lastValidationIssues, _lastValidationMapName);
+  try { await navigator.clipboard.writeText(text); setStatus('Copied watertightness report to clipboard.'); }
+  catch (e) { setStatus('Copy failed: ' + e.message); }
+}
+function runValidation() {
+  const result = computeValidationIssues();
+  if (!result) return;
+  renderValidationInto(result.issues, $('validateList'), $('validateCountTag'));
+  setStatus(`Checked ${result.root.name}: ${result.issues.length} issue${result.issues.length===1?'':'s'} found.`);
+}
+// Quick check: runs the same validation from the modeBar button without
+// switching the user's mode, showing results in a popover near the button.
+function runQuickCheck() {
+  const result = computeValidationIssues();
+  if (!result) return;
+  renderValidationInto(result.issues, $('quickCheckList'), $('quickCheckCountTag'));
+  const r = $('quickCheckBtn').getBoundingClientRect();
+  const pop = $('quickCheckPopover');
+  pop.style.left = Math.max(8, r.left) + 'px';
+  pop.style.top = (r.bottom + 6) + 'px';
+  pop.classList.add('show');
+  setStatus(`Checked ${result.root.name}: ${result.issues.length} issue${result.issues.length===1?'':'s'} found.`);
 }
 
 function setStatus(msg) { $('statusPill').textContent = msg; }
-function updateAll() { renderMapList(); fillSettings(); renderPalette(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
+function updateAll() { syncViewOffset(); renderMapList(); fillSettings(); renderPalette(); renderPlateauGroupList(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
 
 // ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
 function buildFarmLayoutV3() {
@@ -2033,20 +3186,36 @@ function importAny(obj) {
       m.npcStations = Array.isArray(src.npcStations) ? src.npcStations : [];
       m.audioIndex = src.audioIndex || '';
       if (src.buildingInteriorBase) m.buildingInteriorBase = src.buildingInteriorBase;
+      m.isSubmap = !!src.isSubmap;
+      m.parentMapId = src.parentMapId || null;
+      m.plateauGroupId = src.plateauGroupId || null;
+      m.elevation = Number.isFinite(src.elevation) ? src.elevation : 0;
       return m;
     });
+    const incomingGroups = Array.isArray(obj.plateauGroups) ? obj.plateauGroups : [];
+    const incomingRamps = Array.isArray(obj.ramps) ? obj.ramps : [];
     if (doMerge) {
       // Add only maps whose IDs aren't already present
       const existing = new Set(ws.maps.map(m => m.id));
       incoming.forEach(m => { if (!existing.has(m.id)) ws.maps.push(m); });
+      ws.plateauGroups = ws.plateauGroups || [];
+      const existingGroups = new Set(ws.plateauGroups.map(g => g.id));
+      incomingGroups.forEach(g => { if (!existingGroups.has(g.id)) ws.plateauGroups.push(g); });
+      ws.ramps = ws.ramps || [];
+      const existingRamps = new Set(ws.ramps.map(r => r.id));
+      incomingRamps.forEach(r => { if (!existingRamps.has(r.id)) ws.ramps.push(r); });
       setStatus(`Merged ${incoming.filter(m => !existing.has(m.id)).length} new maps.`);
     } else {
       ws.maps = incoming;
       ws.activeId = obj.activeId || incoming[0].id;
       ws.gameLink = obj.gameLink || { exteriorId:'', interiorId:'' };
+      ws.plateauGroups = incomingGroups;
+      ws.ramps = incomingRamps;
       setStatus(`Loaded workspace: ${incoming.length} maps.`);
     }
     undoStack.length = 0; redoStack.length = 0;
+    migrateSubmapAnchors();
+    sanitizePlateauGaps();
     ws.maps.forEach(captureBaseline);
     updateAll(); fitView();
     return;
@@ -2094,21 +3263,39 @@ $('fromLayoutBtn').addEventListener('click', async () => {
   undoStack.length = 0; redoStack.length = 0;
   updateAll(); fitView(); setStatus('Created building interior from layout: ' + entry.name);
 });
+$('upToParentBtn').addEventListener('click', () => {
+  const m = activeMap();
+  if (!m.isSubmap || !mapById(m.parentMapId)) return;
+  ws.activeId = m.parentMapId; undoStack.length = 0; redoStack.length = 0;
+  activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null;
+  updateAll(); fitView();
+});
+$('newPlateauGroupBtn').addEventListener('click', () => {
+  pushUndo();
+  const g = createPlateauGroup();
+  brush.plateauGroup = g.id;
+  updateAll();
+});
 $('dupMapBtn').addEventListener('click', () => {
   const src = activeMap(); const copy = JSON.parse(JSON.stringify(src));
   copy.id = uid('map'); copy.name = src.name + ' copy';
   ws.maps.push(copy); ws.activeId = copy.id; undoStack.length = 0; redoStack.length = 0;
   updateAll(); setStatus('Duplicated.');
 });
+function countCascade(id) { return 1 + submapsOf(id).reduce((n, sm) => n + countCascade(sm.id), 0); }
 $('delMapBtn').addEventListener('click', () => {
-  if (ws.maps.length <= 1) { setStatus('Cannot delete the last map.'); return; }
   const m = activeMap();
-  if (!confirm(`Delete map "${m.name}"?`)) return;
-  ws.maps = ws.maps.filter(x => x.id !== m.id);
+  const cascadeCount = countCascade(m.id);
+  if (cascadeCount >= ws.maps.length) { setStatus('Cannot delete the last remaining map(s).'); return; }
+  const subCount = cascadeCount - 1;
+  if (!confirm(`Delete map "${m.name}"?${subCount ? ` This also deletes ${subCount} plateau sub-map(s) (and any nested sub-maps of those).` : ''}`)) return;
+  const parentId = m.parentMapId;
+  deleteMapCascade(m.id);
   if (ws.gameLink.exteriorId === m.id) ws.gameLink.exteriorId = '';
   if (ws.gameLink.interiorId === m.id) ws.gameLink.interiorId = '';
   if (ws.gameLink.townId     === m.id) ws.gameLink.townId     = '';
-  ws.activeId = ws.maps[0].id; undoStack.length = 0; redoStack.length = 0;
+  ws.activeId = (parentId && mapById(parentId)) ? parentId : (ws.maps[0]?.id || null);
+  undoStack.length = 0; redoStack.length = 0;
   updateAll(); fitView(); setStatus('Deleted.');
 });
 
@@ -2126,17 +3313,10 @@ $('applyMapBtn').addEventListener('click', () => {
     if (ws.gameLink.interiorId === m.id && newCat !== 'interior') ws.gameLink.interiorId = '';
     if (ws.gameLink.townId     === m.id && newCat !== 'exterior') ws.gameLink.townId     = '';
   }
-  const nc = clamp(Math.round(Number($('mapCols').value)||m.cols), 2, 400);
-  const nr = clamp(Math.round(Number($('mapRows').value)||m.rows), 2, 400);
-  if (nc !== m.cols || nr !== m.rows) {
-    m.cols = nc; m.rows = nr;
-    Object.keys(m.tiles).forEach(k => { const [c,r] = k.split(',').map(Number); if (c >= nc || r >= nr) delete m.tiles[k]; });
-    Object.keys(m.objects).forEach(k => { const [c,r] = m.objects[k]; if (c >= nc || r >= nr) delete m.objects[k]; });
-    m.furniture = m.furniture.filter(f => f.col < nc && f.row < nr);
-    m.decor = m.decor.filter(d => { const inf = DECOR[d.key]; return inf && d.col + inf.fw <= nc && d.row + inf.fd <= nr; });
-    ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c < nc && r < nr); });
-    m.transitions = (m.transitions || []).filter(t => t.col < nc && t.row < nr);
-    m.npcStations = (m.npcStations || []).filter(st => st.col < nc && st.row < nr);
+  if (!m.isSubmap) {
+    const nc = clamp(Math.round(Number($('mapCols').value)||m.cols), 2, 400);
+    const nr = clamp(Math.round(Number($('mapRows').value)||m.rows), 2, 400);
+    if (nc !== m.cols || nr !== m.rows) resizeMapAndSubmaps(m, nc, nr);
   }
   updateAll(); fitView(); setStatus('Applied.');
 });
@@ -2272,7 +3452,26 @@ $('delBldgBtn').addEventListener('click', () => {
   renderBuildingPanel(); draw(); saveWorkspace(); setStatus('Building removed.');
 });
 
-window.addEventListener('resize', resizeCanvas);
+$('toggle3dBtn').addEventListener('click', () => toggle3D());
+$('validateBtn').addEventListener('click', runValidation);
+$('copyValidationBtn').addEventListener('click', copyValidationReport);
+$('quickCheckBtn').addEventListener('click', runQuickCheck);
+$('quickCheckCopyBtn').addEventListener('click', copyValidationReport);
+$('quickCheckCloseBtn').addEventListener('click', () => $('quickCheckPopover').classList.remove('show'));
+document.addEventListener('click', e => {
+  const pop = $('quickCheckPopover');
+  if (!pop.classList.contains('show')) return;
+  if (pop.contains(e.target) || e.target === $('quickCheckBtn')) return;
+  pop.classList.remove('show');
+});
+$('tocLinks').addEventListener('click', e => {
+  const a = e.target.closest('a[data-target]');
+  if (!a) return;
+  $(a.dataset.target).scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$('tocJumpBtn').addEventListener('click', () => $('sidebarToc').scrollIntoView({ behavior: 'smooth', block: 'start' }));
+
+window.addEventListener('resize', () => { resizeCanvas(); resize3D(); });
 window.addEventListener('error', e => setStatus('Error: ' + e.message));
 
 $('farmDimsNote').textContent = `${GAME.farm.cols}×${GAME.farm.rows}`;

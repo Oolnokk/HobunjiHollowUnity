@@ -1,0 +1,501 @@
+// Pure-data terrain merge/geometry math for the Map Editor's plateau system —
+// shared between the live 3D preview in docs/tools/map-editor/index.html and
+// the headless watertightness checker in scripts/check-terrain.js.
+//
+// This deliberately mirrors (not imports) the equivalent logic in
+// docs/game.js's _loadTownFromWorkspace() (mergeZoneTiles), buildZoneScene()
+// (zGrid construction, ramp-curtain flagging), buildPlateauMesa(),
+// buildZoneRampMeshes() and buildRampCurtainMeshes() — game.js's copies stay
+// the ones actually driving gameplay (the in-game closures pull in further
+// game-specific concerns like outline IDs and floor texturing this preview
+// doesn't need), so when the merge/heightfield MATH changes there, mirror the
+// change here too. Everything below is plain data (no THREE.js dependency)
+// so it runs unmodified in Node for the CLI checker and in the browser for
+// the live preview, and so it's directly unit-testable.
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.TerrainPreview = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const PLATEAU_UNIT = 2.5;
+  const NORMAL_TOP = 0.0;
+  const TileType = Object.freeze({
+    GRASS: 'grass', WEEDS: 'weeds', TILLED: 'tilled',
+    TRENCH: 'trench', RAISED: 'raised', PADDY: 'paddy',
+    ROCK: 'rock', SHRUB: 'shrub', PATH: 'path',
+    RIVER: 'river', STREAM: 'stream', RAMP: 'ramp',
+  });
+
+  // ── Merge: fold a plateau stack's tiers into one world-keyed tile map ──────
+  // Mirrors docs/game.js mergeZoneTiles exactly (including the pinhole-fill
+  // pass), generalized to take its two lookups as params instead of closing
+  // over _loadTownFromWorkspace's locals.
+  function mergeZoneTilesInto(m, offsetC, offsetR, baseTier, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings) {
+    const groupMask = new Map();
+    for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+      const plateauId = m.tiles?.[`${c},${r}`]?.plateau;
+      if (!plateauId) continue;
+      let mask = groupMask.get(plateauId);
+      if (!mask) { mask = new Set(); groupMask.set(plateauId, mask); }
+      mask.add(`${c},${r}`);
+    }
+
+    const children = [];
+    for (const [gid, mask] of groupMask) {
+      const child = childByParentGroup.get(`${m.id}__${gid}`);
+      if (!child) continue; // plateau group marked but no authored child submap yet
+      // Elevation is absolute from the root map, not cumulative through nesting —
+      // a group's stored elevation IS its final tier, regardless of how deep it's nested.
+      const toTier = (plateauElevById.get(gid) || 0);
+      let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+      for (const k of mask) { const [c, r] = k.split(',').map(Number); if (c < minC) minC = c; if (c > maxC) maxC = c; if (r < minR) minR = r; if (r > maxR) maxR = r; }
+
+      // Adopt any untouched bbox cell that's mostly surrounded (3+ of 4
+      // cardinal neighbors) by this same mask — a brush-stamp pinhole, not a
+      // deliberate notch. See docs/game.js mergeZoneTiles for the full
+      // rationale; kept verbatim here.
+      for (let pass = 0; pass < 8; pass++) {
+        let filled = false;
+        for (let r = minR; r <= maxR; r++) {
+          for (let c = minC; c <= maxC; c++) {
+            const k = `${c},${r}`;
+            if (mask.has(k) || m.tiles?.[k]) continue;
+            const neighborCount = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dc, dr]) => mask.has(`${c + dc},${r + dr}`)).length;
+            if (neighborCount >= 3) { mask.add(k); filled = true; }
+          }
+        }
+        if (!filled) break;
+      }
+
+      const worldMinC = offsetC + minC, worldMaxC = offsetC + maxC, worldMinR = offsetR + minR, worldMaxR = offsetR + maxR;
+      const maskWorldKeys = new Set();
+      for (const k of mask) { const [c, r] = k.split(',').map(Number); maskWorldKeys.add(`${c + offsetC},${r + offsetR}`); }
+      mesas.push({ minC: worldMinC, maxC: worldMaxC, minR: worldMinR, maxR: worldMaxR, fromTier: baseTier, toTier, maskWorldKeys, groupId: gid });
+      for (const k of mask) {
+        const [lc, lr] = k.split(',').map(Number);
+        const c = lc + offsetC, r = lr + offsetR;
+        const onRing = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dc, dr]) => !mask.has(`${lc + dc},${lr + dr}`));
+        outTiles.set(`${c},${r}`, {
+          c, r, type: 'grass', elevTier: onRing ? baseTier : toTier,
+          skipFloor: true, rampElevation: 0, incline: onRing,
+        });
+      }
+      children.push({ child, childOffsetC: worldMinC + 1, childOffsetR: worldMinR + 1, toTier });
+    }
+
+    for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+      const t = m.tiles?.[`${c},${r}`];
+      const key = `${c + offsetC},${r + offsetR}`;
+      if (!t || t.plateau) {
+        if (!outTiles.has(key)) outTiles.set(key, { c: c + offsetC, r: r + offsetR, type: 'grass', elevTier: baseTier, skipFloor: false, rampElevation: 0, incline: false });
+        continue;
+      }
+      let type = t.type || 'grass';
+      if (!t.plateau && type === 'rock') type = 'grass';
+      outTiles.set(key, {
+        c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
+        rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
+      });
+    }
+
+    for (const b of (m.buildings || [])) {
+      outBuildings.push({ ...b, gridX: (b.gridX || 0) + offsetC, gridZ: (b.gridZ || 0) + offsetR, _baseTier: baseTier });
+    }
+
+    for (const { child, childOffsetC, childOffsetR, toTier } of children) {
+      mergeZoneTilesInto(child, childOffsetC, childOffsetR, toTier, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings);
+    }
+  }
+
+  // Builds the lookups mergeZoneTilesInto needs from a Map Editor workspace
+  // (`{ maps:[...], plateauGroups:[...] }`) and folds `rootMapId`'s whole
+  // plateau stack into one world-keyed tile map + mesa list.
+  function buildMergedZoneGrid(ws, rootMapId) {
+    const maps = ws.maps || [];
+    const mapsById = new Map(maps.map(m => [m.id, m]));
+    const rootMap = mapsById.get(rootMapId);
+    const outTiles = new Map(), mesas = [], outBuildings = [];
+    if (!rootMap) return { cols: 0, rows: 0, tiles: outTiles, mesas, rootMap: null, buildings: outBuildings };
+
+    const childByParentGroup = new Map();
+    for (const m of maps) {
+      if (m.isSubmap && m.parentMapId && m.plateauGroupId) {
+        childByParentGroup.set(`${m.parentMapId}__${m.plateauGroupId}`, m);
+      }
+    }
+    const plateauElevById = new Map((ws.plateauGroups || []).map(g => [g.id, g.elevation || 0]));
+
+    mergeZoneTilesInto(rootMap, 0, 0, 0, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings);
+    for (const b of outBuildings) {
+      const t = outTiles.get(`${b.gridX},${b.gridZ}`);
+      b.elevTier = (t && typeof t.elevTier === 'number') ? t.elevTier : (b._baseTier || 0);
+      delete b._baseTier;
+    }
+    return { cols: rootMap.cols, rows: rootMap.rows, tiles: outTiles, mesas, rootMap, buildings: outBuildings };
+  }
+
+  // ── zGrid: dense [r][c] grid buildPlateauMesa/ramp geometry reads ──────────
+  // Mirrors the relevant slice of docs/game.js buildZoneScene (lines ~2613-2654
+  // at time of writing): seeds a flat grass grid, stamps the merged tiles onto
+  // it, then folds non-ramp neighbors of a ramp into a 1-tile "curtain" skirt
+  // exactly like the real zone scene does.
+  function buildZGrid(cols, rows, tiles) {
+    const zGrid = Array.from({ length: rows }, () =>
+      Array.from({ length: cols }, () => ({ type: TileType.GRASS, elevTier: 0, skipFloor: false, incline: false, rampElevation: 0 })));
+    for (const t of tiles.values()) {
+      if (!zGrid[t.r]?.[t.c]) continue;
+      zGrid[t.r][t.c].type = t.type || TileType.GRASS;
+      zGrid[t.r][t.c].elevTier = t.elevTier || 0;
+      zGrid[t.r][t.c].skipFloor = !!t.skipFloor;
+      zGrid[t.r][t.c].incline = !!t.incline;
+      if (t.type === TileType.RAMP) zGrid[t.r][t.c].rampElevation = t.rampElevation || 0;
+    }
+    return zGrid;
+  }
+
+  function applyRampCurtainFlags(zGrid, cols, rows) {
+    const RAMP_FLUSH_EPS = 0.5;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if (zGrid[r][c].type !== TileType.RAMP) continue;
+      const rampY = NORMAL_TOP + (zGrid[r][c].rampElevation || 0) * PLATEAU_UNIT;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nt = zGrid[r + dr]?.[c + dc];
+        if (!nt || nt.type === TileType.RAMP || nt.incline) continue;
+        const groundY = NORMAL_TOP + (nt.elevTier || 0) * PLATEAU_UNIT;
+        if (Math.abs(rampY - groundY) < RAMP_FLUSH_EPS) continue;
+        nt.incline = true; nt.skipFloor = true; nt.rampCurtain = true;
+      }
+    }
+  }
+
+  // ── Plateau mesa heightfield geometry (pure data) ───────────────────────────
+  // Mirrors docs/game.js buildPlateauMesa exactly, up to (but not including)
+  // the THREE.BufferGeometry/Mesh construction — this returns the same
+  // position/index arrays that function builds internally, so any change to
+  // the actual rendered mesa shape shows up here too the next time the two
+  // are eyeballed against each other.
+  function buildPlateauMesaGeometry(bb, elevOffset, zoneBaseElev, zGrid) {
+    const MARGIN_TILES = 1;
+    const BASE = NORMAL_TOP + zoneBaseElev;
+    const W = bb.maxC - bb.minC + 1, D = bb.maxR - bb.minR + 1;
+    const GW = W * 2 + 1, GH = D * 2 + 1;
+
+    const hashDisp = (kx, kz) => {
+      let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+      h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+      return (h / 4294967296 - 0.5) * 0.026;
+    };
+
+    const mask = bb.maskWorldKeys || null;
+    const inMask = (c, r) => {
+      if (!mask) return true;
+      if (mask.has(`${c},${r}`)) return true;
+      const t = zGrid?.[r]?.[c];
+      return !!(t && !t.incline && (t.elevTier || 0) >= bb.toTier);
+    };
+    const axisTiles = (gi, N) => {
+      const lo = Math.floor((gi - 1) / 2), hi = Math.floor(gi / 2), out = [lo];
+      if (hi !== lo) out.push(hi);
+      return out;
+    };
+    const vIdx = (gi, gj) => gj * GW + gi;
+    const CAP = MARGIN_TILES * 2;
+    const vertHops = new Int32Array(GW * GH).fill(CAP);
+    const TOP = BASE + elevOffset;
+    const seedHeightAt = (c, r) => {
+      const t = zGrid?.[r]?.[c];
+      return (t && typeof t.elevTier === 'number') ? NORMAL_TOP + t.elevTier * PLATEAU_UNIT : BASE;
+    };
+    const vertSeedY = new Float32Array(GW * GH).fill(BASE);
+    const queue = [];
+    for (let gj = 0; gj < GH; gj++) {
+      const trs = axisTiles(gj, D);
+      for (let gi = 0; gi < GW; gi++) {
+        const tcs = axisTiles(gi, W);
+        let seedY = Infinity;
+        for (const tc of tcs) for (const tr of trs) {
+          const c = bb.minC + tc, r = bb.minR + tr;
+          if (!inMask(c, r)) seedY = Math.min(seedY, seedHeightAt(c, r));
+        }
+        if (seedY !== Infinity) {
+          const k = vIdx(gi, gj);
+          vertHops[k] = 0; vertSeedY[k] = seedY; queue.push([gi, gj]);
+        }
+      }
+    }
+    for (let qi = 0; qi < queue.length; qi++) {
+      const [gi, gj] = queue[qi], k0 = vIdx(gi, gj), d0 = vertHops[k0];
+      if (d0 >= CAP) continue;
+      for (const [dgi, dgj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ngi = gi + dgi, ngj = gj + dgj;
+        if (ngi < 0 || ngi >= GW || ngj < 0 || ngj >= GH) continue;
+        const nk = vIdx(ngi, ngj);
+        if (d0 + 1 < vertHops[nk]) { vertHops[nk] = d0 + 1; vertSeedY[nk] = vertSeedY[k0]; queue.push([ngi, ngj]); }
+      }
+    }
+
+    const Y = new Float32Array(GW * GH);
+    for (let gj = 0; gj < GH; gj++) {
+      for (let gi = 0; gi < GW; gi++) {
+        const k = gj * GW + gi;
+        const blend = Math.min(1, (vertHops[k] * 0.5) / MARGIN_TILES);
+        const kx = bb.minC * 2 + gi, kz = bb.minR * 2 + gj;
+        const seedY = vertSeedY[k];
+        Y[k] = seedY + blend * (TOP - seedY) + hashDisp(kx, kz);
+      }
+    }
+
+    const rampCornerY = (ci, cj) => {
+      let sum = 0, n = 0;
+      for (const [dc, dr] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) {
+        const t = zGrid?.[cj + dr]?.[ci + dc];
+        if (t && t.type === TileType.RAMP) { sum += NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT; n++; }
+      }
+      return n ? sum / n : null;
+    };
+    const isRampTile = (tc, tr) => zGrid?.[bb.minR + tr]?.[bb.minC + tc]?.type === TileType.RAMP;
+    for (let tr = 0; tr < D; tr++) {
+      for (let tc = 0; tc < W; tc++) {
+        if (!isRampTile(tc, tr)) continue;
+        const wc = bb.minC + tc, wr = bb.minR + tr;
+        const y00 = rampCornerY(wc, wr), y10 = rampCornerY(wc + 1, wr);
+        const y01 = rampCornerY(wc, wr + 1), y11 = rampCornerY(wc + 1, wr + 1);
+        for (let dj = 0; dj <= 2; dj++) {
+          const fr = dj * 0.5;
+          for (let di = 0; di <= 2; di++) {
+            const fc = di * 0.5;
+            const y = y00 * (1 - fc) * (1 - fr) + y10 * fc * (1 - fr) + y01 * (1 - fc) * fr + y11 * fc * fr;
+            Y[(2 * tr + dj) * GW + (2 * tc + di)] = y;
+          }
+        }
+      }
+    }
+
+    const pos = new Float32Array(GW * GH * 3);
+    for (let gj = 0; gj < GH; gj++)
+      for (let gi = 0; gi < GW; gi++) {
+        const k = gj * GW + gi;
+        pos[k * 3] = bb.minC + gi * 0.5;
+        pos[k * 3 + 1] = Y[k];
+        pos[k * 3 + 2] = bb.minR + gj * 0.5;
+      }
+
+    const quadIsRamp = (gi, gj) => isRampTile(Math.floor(gi / 2), Math.floor(gj / 2));
+    const quadInOwnMask = (gi, gj) => !mask || mask.has(`${bb.minC + Math.floor(gi / 2)},${bb.minR + Math.floor(gj / 2)}`);
+    const idx = [];
+    for (let gj = 0; gj < GH - 1; gj++) {
+      for (let gi = 0; gi < GW - 1; gi++) {
+        if (quadIsRamp(gi, gj) || !quadInOwnMask(gi, gj)) continue;
+        const v00 = gj * GW + gi, v10 = gj * GW + gi + 1, v01 = (gj + 1) * GW + gi, v11 = (gj + 1) * GW + gi + 1;
+        idx.push(v00, v01, v11, v00, v11, v10);
+      }
+    }
+
+    const skinPos = [], skinIdx = [];
+    let vi = 0;
+    for (let gj = 0; gj < GH - 1; gj++) {
+      for (let gi = 0; gi < GW - 1; gi++) {
+        if (quadIsRamp(gi, gj) || !quadInOwnMask(gi, gj)) continue;
+        const y00 = Y[gj * GW + gi], y10 = Y[gj * GW + gi + 1];
+        const y01 = Y[(gj + 1) * GW + gi], y11 = Y[(gj + 1) * GW + gi + 1];
+        const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+        const cnz = 0.5 * ((y10 - y01) - (y11 - y00));
+        if (cnx * cnx + cnz * cnz <= 0.194) continue;
+        const x0 = bb.minC + gi * 0.5, x1 = x0 + 0.5;
+        const z0 = bb.minR + gj * 0.5, z1 = z0 + 0.5;
+        skinPos.push(x0, y00, z0, x1, y10, z0, x0, y01, z1, x1, y11, z1);
+        skinIdx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
+      }
+    }
+
+    return { pos, idx, skinPos, skinIdx, top: TOP, W, D, GW, GH };
+  }
+
+  // ── Ramp surface + curtain geometry (pure data) ─────────────────────────────
+  // Mirrors docs/game.js buildZoneRampMeshes exactly.
+  function buildRampMeshGeometry(zGrid, cols, rows) {
+    const rampCells = [];
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols; c++)
+        if (zGrid[r]?.[c]?.type === TileType.RAMP) rampCells.push([c, r]);
+    if (!rampCells.length) return { pos: [], idx: [] };
+
+    const cornerY = (ci, cj) => {
+      let sum = 0, n = 0;
+      for (const [dc, dr] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) {
+        const t = zGrid[cj + dr]?.[ci + dc];
+        if (t && t.type === TileType.RAMP) { sum += NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT; n++; }
+      }
+      return n ? sum / n : null;
+    };
+
+    const pos = [], idx = [];
+    let vi = 0;
+    for (const [c, r] of rampCells) {
+      const fallback = NORMAL_TOP + (zGrid[r][c].rampElevation || 0) * PLATEAU_UNIT;
+      const y00 = cornerY(c, r) ?? fallback;
+      const y10 = cornerY(c + 1, r) ?? fallback;
+      const y01 = cornerY(c, r + 1) ?? fallback;
+      const y11 = cornerY(c + 1, r + 1) ?? fallback;
+      pos.push(c, y00, r, c + 1, y10, r, c, y01, r + 1, c + 1, y11, r + 1);
+      idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
+    }
+    return { pos, idx };
+  }
+
+  // Mirrors docs/game.js buildRampCurtainMeshes exactly.
+  function buildRampCurtainGeometry(zGrid, cols, rows) {
+    const cells = [];
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols; c++)
+        if (zGrid[r]?.[c]?.rampCurtain) cells.push([c, r]);
+    if (!cells.length) return { pos: [], idx: [], skinPos: [], skinIdx: [] };
+
+    const cornerY = (ci, cj, fallback) => {
+      let sum = 0, n = 0;
+      for (const [dc, dr] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) {
+        const t = zGrid[cj + dr]?.[ci + dc];
+        if (t && t.type === TileType.RAMP) { sum += NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT; n++; }
+      }
+      return n ? sum / n : fallback;
+    };
+
+    const pos = [], idx = [];
+    const skinPos = [], skinIdx = [];
+    let vi = 0, svi = 0;
+    for (const [c, r] of cells) {
+      const ground = NORMAL_TOP + (zGrid[r][c].elevTier || 0) * PLATEAU_UNIT;
+      const y00 = cornerY(c, r, ground);
+      const y10 = cornerY(c + 1, r, ground);
+      const y01 = cornerY(c, r + 1, ground);
+      const y11 = cornerY(c + 1, r + 1, ground);
+      pos.push(c, y00, r, c + 1, y10, r, c, y01, r + 1, c + 1, y11, r + 1);
+      idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
+
+      const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+      const cnz = 0.5 * ((y10 - y01) - (y11 - y00));
+      if (cnx * cnx + cnz * cnz > 0.194) {
+        skinPos.push(c, y00, r, c + 1, y10, r, c, y01, r + 1, c + 1, y11, r + 1);
+        skinIdx.push(svi, svi + 2, svi + 3, svi, svi + 3, svi + 1); svi += 4;
+      }
+    }
+    return { pos, idx, skinPos, skinIdx };
+  }
+
+  // ── Watertightness checks ───────────────────────────────────────────────────
+  // None of this exists in docs/game.js — it's new tooling, not a mirror of
+  // anything. Walks a workspace's plateau authoring data (independent of any
+  // one map's merge) looking for the structural mistakes that have caused
+  // visible terrain bugs in the past: orphaned references, brush strokes left
+  // disconnected, groups that can never raise, and tier overlaps that need the
+  // seam-blend (buildPlateauMesaGeometry handles the last one correctly now,
+  // but it's still useful to surface so a new map's tight margins are visible
+  // before they're seen as a rendering glitch).
+  function floodFillComponents(mask) {
+    const seen = new Set(), components = [];
+    for (const start of mask) {
+      if (seen.has(start)) continue;
+      const stack = [start], comp = [];
+      seen.add(start);
+      while (stack.length) {
+        const k = stack.pop();
+        comp.push(k);
+        const [c, r] = k.split(',').map(Number);
+        for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nk = `${c + dc},${r + dr}`;
+          if (mask.has(nk) && !seen.has(nk)) { seen.add(nk); stack.push(nk); }
+        }
+      }
+      components.push(comp);
+    }
+    return components;
+  }
+
+  function ringOf(mask) {
+    const ring = new Set();
+    for (const k of mask) {
+      const [c, r] = k.split(',').map(Number);
+      const onRing = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dc, dr]) => !mask.has(`${c + dc},${r + dr}`));
+      if (onRing) ring.add(k);
+    }
+    return ring;
+  }
+
+  function validateTerrain(ws, rootMapId) {
+    const issues = [];
+    const maps = ws.maps || [];
+    const groupsById = new Map((ws.plateauGroups || []).map(g => [g.id, g]));
+    const mapsById = new Map(maps.map(m => [m.id, m]));
+    const childByParentGroup = new Map();
+    for (const m of maps) {
+      if (m.isSubmap && m.parentMapId && m.plateauGroupId) {
+        childByParentGroup.set(`${m.parentMapId}__${m.plateauGroupId}`, m);
+      }
+    }
+
+    for (const g of (ws.plateauGroups || [])) {
+      if (!(g.elevation > 0)) {
+        issues.push({ severity: 'error', code: 'ZERO_ELEVATION', groupId: g.id, message: `Plateau group "${g.label || g.id}" has elevation ${g.elevation ?? 0} — its mesa will never render raised.` });
+      }
+    }
+
+    for (const m of maps) {
+      const localMask = new Map();
+      for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+        const pid = m.tiles?.[`${c},${r}`]?.plateau;
+        if (!pid) continue;
+        let s = localMask.get(pid); if (!s) { s = new Set(); localMask.set(pid, s); }
+        s.add(`${c},${r}`);
+      }
+      for (const [gid, mask] of localMask) {
+        if (!groupsById.has(gid)) {
+          issues.push({ severity: 'error', code: 'ORPHANED_PLATEAU_REF', mapId: m.id, groupId: gid, message: `Map "${m.name || m.id}" paints plateau group "${gid}" which no longer exists in plateauGroups.` });
+          continue;
+        }
+        if (!childByParentGroup.has(`${m.id}__${gid}`)) {
+          issues.push({ severity: 'warning', code: 'MISSING_CHILD_SUBMAP', mapId: m.id, groupId: gid, message: `Map "${m.name || m.id}" paints plateau group "${gid}" but has no authored child sub-map for it yet — that tier won't be staked or rendered.` });
+          continue;
+        }
+        const components = floodFillComponents(mask);
+        if (components.length > 1) {
+          issues.push({ severity: 'warning', code: 'DISCONNECTED_MASK', mapId: m.id, groupId: gid, message: `Plateau group "${gid}" on map "${m.name || m.id}" is painted as ${components.length} disconnected blobs (sizes: ${components.map(c => c.length).join(', ')}) — likely a stray brush stroke.`, cells: components });
+        }
+      }
+    }
+
+    const merged = buildMergedZoneGrid(ws, rootMapId);
+    const mesas = merged.mesas;
+    for (let i = 0; i < mesas.length; i++) {
+      const ring = ringOf(mesas[i].maskWorldKeys);
+      for (let j = 0; j < mesas.length; j++) {
+        if (i === j) continue;
+        // A child tier's footprint is always nested inside its ancestors'
+        // footprints, so a lower/outer mesa's mask trivially "overlaps" every
+        // inner mesa's ring too — that's normal nesting, not a seam mismatch.
+        // The actual seam case (this mesh's BFS will misread the ring's real
+        // height) only exists when the OVERLAPPING mesa sits at a tier
+        // strictly higher than the ring's own base tier (ring cells are
+        // staked at exactly mesas[i].fromTier — see mergeZoneTilesInto).
+        if (!(mesas[j].fromTier > mesas[i].fromTier)) continue;
+        const overlap = [...mesas[j].maskWorldKeys].filter(k => ring.has(k));
+        if (overlap.length) {
+          issues.push({
+            severity: 'info', code: 'TIER_OVERLAP_RING', groupId: mesas[j].groupId, otherGroupId: mesas[i].groupId,
+            message: `Plateau group "${mesas[j].groupId}" footprint overlaps ${overlap.length} ring cell(s) of group "${mesas[i].groupId}" (tier ${mesas[i].fromTier}→${mesas[i].toTier}) — those cells sit on a still-sloping wall, not a flat top. The seam-blend handles this, but a wider margin there would be cleaner.`,
+            cells: overlap,
+          });
+        }
+      }
+    }
+
+    return issues;
+  }
+
+  return {
+    PLATEAU_UNIT, NORMAL_TOP, TileType,
+    buildMergedZoneGrid, buildZGrid, applyRampCurtainFlags,
+    buildPlateauMesaGeometry, buildRampMeshGeometry, buildRampCurtainGeometry,
+    validateTerrain,
+  };
+});

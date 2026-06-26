@@ -641,6 +641,7 @@
     var minCZ   = pcells.length ? Math.min.apply(null, pcells.map(function(c) { return c.y; })) : gc;
     var offX    = bldgMinC + (gc - minCX);
     var offZ    = bldgMinR + (gc - minCZ);
+    var offY    = opts.elevationY || 0;
 
     // Optional CW rotation (viewed from above) around piece footprint centre
     var rotDeg  = opts.rotationDeg || 0;
@@ -686,7 +687,7 @@
           wx = px * cosR - pz * sinR + pivX + txAdj;
           wz = px * sinR + pz * cosR + pivZ + tzAdj;
         }
-        return [wx, p[1], wz];
+        return [wx, p[1] + offY, wz];
       });
       var fOff = { v: vOff, tag: tag, id: f.id,
                    gableEnd: f.gableEnd, highlandFrustumWall: f.highlandFrustumWall,

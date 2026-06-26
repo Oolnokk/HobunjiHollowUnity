@@ -17,6 +17,8 @@ input{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,25
 #titlebar h1{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.4px}
 #titlebar a{margin-left:auto;font-size:11px;color:var(--acc);text-decoration:none;border:1px solid rgba(106,167,255,.3);border-radius:7px;padding:4px 8px}
 #titlebar a:hover{background:rgba(106,167,255,.1)}
+#titlebar #open-game-btn{margin-left:auto;font-size:11px;color:var(--acc);background:none}
+#titlebar #open-game-btn:hover{background:rgba(106,167,255,.1)}
 
 #body{display:flex;flex:1;min-height:0}
 
@@ -51,7 +53,7 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
 <div id="shell">
   <div id="titlebar">
     <h1>HOBUNJI HOLLOW — DEV TOOLS</h1>
-    <a href="../index.html" target="_blank">▶ Open Game</a>
+    <button id="open-game-btn">▶ Open Game</button>
   </div>
   <div id="body">
 
@@ -204,6 +206,24 @@ window.addEventListener('message', e => {
     if (attempts < 20) setTimeout(() => tryBridge(attempts + 1), 300);
   };
   tryBridge();
+});
+
+// ── "Open Game" with live unsaved map-editor data ────────────────────────────
+// The map editor only autosaves to localStorage (never to the on-disk JSON), so
+// reading straight from the editor's live in-memory workspace via its bridge
+// (falling back to its localStorage key if the iframe hasn't loaded yet) lets
+// "Open Game" reflect in-progress edits without having to export/save first.
+// The override is one-shot: game.js reads and immediately clears this key, so
+// reloading the game tab afterwards goes back to the real saved file.
+const GAME_WS_OVERRIDE_KEY = 'hobunji_game_workspace_override_v1';
+document.getElementById('open-game-btn').addEventListener('click', () => {
+  try {
+    const bridge = document.getElementById('if-map-editor')?.contentWindow?._mapEditorBridge;
+    const liveWs = bridge?.getWorkspace ? bridge.getWorkspace() : null;
+    const raw = liveWs ? JSON.stringify(liveWs) : localStorage.getItem('hobunji_map_editor_workspace_v1');
+    if (raw) localStorage.setItem(GAME_WS_OVERRIDE_KEY, raw);
+  } catch (_) {}
+  window.open('../index.html', '_blank');
 });
 </script>
 </body>
