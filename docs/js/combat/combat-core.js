@@ -114,6 +114,31 @@
     deps = injectedDeps;
   }
 
+  // ── Single-slot hooks for held defensive/movement abilities ───────────
+  //
+  // Only one hold1/hold2 ability can be actively held at a time, so a
+  // settable single slot (rather than a registry) is enough. Counter
+  // Shield uses the damage interceptor to turn an incoming hit into a
+  // block + riposte; Blink Dodge uses the speed multiplier to slow normal
+  // walking while it's converting movement into zips.
+  let playerDamageInterceptor = null;
+  let movementSpeedMul = null;
+
+  function setPlayerDamageInterceptor(fn) { playerDamageInterceptor = fn; }
+
+  // Called from game.js's damagePlayer() before it applies damage normally.
+  // Returns true if the hit was fully handled (blocked/absorbed) and
+  // game.js should skip its own damage application.
+  function tryInterceptPlayerDamage(amount, fromX, fromY) {
+    return !!(playerDamageInterceptor && playerDamageInterceptor(amount, fromX, fromY));
+  }
+
+  function setMovementSpeedMul(fn) { movementSpeedMul = fn; }
+
+  function getMovementSpeedMul() {
+    return movementSpeedMul ? movementSpeedMul() : 1;
+  }
+
   window.Combat = {
     init,
     registerWeaponAction,
@@ -121,6 +146,10 @@
     resolveWeaponHit,
     beginStagedAction,
     update,
+    setPlayerDamageInterceptor,
+    tryInterceptPlayerDamage,
+    setMovementSpeedMul,
+    getMovementSpeedMul,
     get deps() { return deps; },
   };
 })();

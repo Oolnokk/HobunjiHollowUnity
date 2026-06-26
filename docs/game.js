@@ -2179,6 +2179,10 @@
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S) {
         if (performance.now() < player.invulnUntil) return;
+        // Lets a held defensive ability (Counter Shield) absorb the hit and
+        // riposte instead of applying damage normally — only one hold
+        // ability can be active at a time, so this is a single settable slot.
+        if (window.Combat?.tryInterceptPlayerDamage?.(amount, fromX, fromY)) return;
         player.health = Math.max(0, player.health - amount);
         if (fromX !== undefined && player.health > 0) applyKnockback(player, fromX, fromY, knockbackPxS);
         if (player.health <= 0) respawnPlayer();
@@ -7950,6 +7954,12 @@
           if (inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
         }
 
+        // Raw per-frame move intent, read by hold abilities (Blink Dodge)
+        // that need to know which way the player is trying to go.
+        player.inputX = ix;
+        player.inputY = iy;
+        player.inputStrength = inputStrength;
+
         // ── Cardinal bias ────────────────────────────────────
         // Slightly guide near-cardinal movement without crushing diagonals.
         if (inputStrength > 0.001) {
@@ -7971,7 +7981,10 @@
 
         // ── Acceleration / deceleration ──────────────────────
         const analogEase = usingKeyboard ? 1 : (0.28 + 0.72 * inputStrength);
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase;
+        // Lets a held movement ability (Blink Dodge) slow normal walking
+        // while it's converting movement into zips; 1 (no change) otherwise.
+        const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul;
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
@@ -15790,6 +15803,7 @@
         combatConfig,
         resolveWeaponHit,
         findAutoTarget,
+        canPlayerOccupy,
         showToast,
         triggerWeaponSwingVisual,
         // Fires the weapon tool's plain cut/slash swing exactly as it
