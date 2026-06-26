@@ -103,7 +103,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <button class="sec" data-mode="river">🌊 River</button>
         <button class="sec" data-mode="spot">🔁 Spot</button>
         <button class="sec" data-mode="station">🧍 Station</button>
-        <button class="sec" data-mode="plateau">⛰ Plateau</button>
+        <button class="sec" data-mode="plateau" id="plateauModeBtn">⛰ Plateau</button>
         <button class="sec" data-mode="ramp">🪜 Ramp</button>
         <button class="sec" data-mode="building" id="buildingModeBtn">🏠 Building</button>
         <button class="sec" data-mode="erase">⌫ Erase</button>
@@ -590,12 +590,19 @@ function mapById(id) { return ws.maps.find(m => m.id === id) || null; }
 
 // ── Plateau groups & elevation sub-maps ──────────────────────────────────────
 // A plateau group is a workspace-wide, manually-authored palette entry (number +
-// elevation delta + color). Painting a group's number onto a map cell locks that
-// cell (it can't be repainted by tile/fill/crop or another group — only erased)
-// and lazily generates a same-size sub-map representing the raised/lowered
-// ground there. Sub-maps are ordinary map entries (so they're fully editable,
-// including placing further plateau tiles to nest sub-sub-maps) tagged with
-// parentMapId/plateauGroupId so their absolute elevation can be derived.
+// absolute elevation + color). Painting a group's number onto a root (non-submap)
+// map cell locks that cell against tile/fill/crop brushes — only erased, or
+// repainted by ANOTHER plateau group, which simply reassigns it (last brush
+// stroke wins) — and lazily generates a same-size sub-map representing the
+// raised/lowered ground there. All plateau groups are siblings painted directly
+// on the same root map, never on each other's sub-maps (the Map Editor refuses
+// plateau brush strokes while a sub-map is active), so every plateau sub-map is
+// always a direct child of that root map — one sub-map per group. Two groups
+// whose footprints touch share a seamless lerp at the boundary instead of each
+// independently sloping down to the root's own ground level (see mergeZoneTiles
+// in game.js / mergeZoneTilesInto in terrain-preview.js). Sub-maps are ordinary
+// map entries (so they're fully editable — ramps, decor, buildings, etc.) tagged
+// with parentMapId/plateauGroupId so their absolute elevation can be derived.
 const PLATEAU_COLORS = ['#f97316','#22c55e','#3b82f6','#e11d48','#a855f7','#facc15','#06b6d4','#84cc16'];
 function nextPlateauNumber() {
   const used = new Set((ws.plateauGroups || []).map(g => g.number));
@@ -1021,6 +1028,11 @@ function refreshBuildingDetection() {
   // mergeZoneTiles/TerrainPreview.buildMergedZoneGrid's `buildings` output).
   const isBuildable = m.category === 'exterior';
   updateSectionVisibility();
+  // Plateau groups are flat siblings of the main map now — a sub-map can't
+  // host another plateau group, so bounce out of Plateau mode if the user
+  // switches onto one (applyAt already no-ops the paint, this just avoids
+  // leaving the tool sitting on a mode that can't do anything here).
+  if (mode === 'plateau' && m.isSubmap) setMode('pan');
   if (!isBuildable) { if (mode === 'building') setMode('pan'); return; }
   if (!Array.isArray(m.buildings)) m.buildings = [];
   $('buildingCountTag').textContent = m.buildings.length;
@@ -1155,6 +1167,11 @@ function updateSectionVisibility() {
   const m = activeMap();
   const isExterior = m.category === 'exterior';
   $('buildingModeBtn').style.display = isExterior ? '' : 'none';
+  // A sub-map is itself a plateau group's footprint — plateau groups can't be
+  // painted onto another plateau's sub-map, so disable the tool there instead
+  // of letting it silently no-op.
+  $('plateauModeBtn').disabled = !!m.isSubmap;
+  $('plateauModeBtn').title = m.isSubmap ? "Plateau groups are always direct children of the main map — can't paint a plateau onto a sub-map" : '';
   $('plateauGroupsSection').style.display = (mode === 'plateau') ? '' : 'none';
   $('terrainCheckSection').style.display = (mode === 'plateau' || mode === 'ramp') ? '' : 'none';
   $('buildingsSection').style.display = (isExterior && mode === 'building') ? '' : 'none';
@@ -1374,7 +1391,10 @@ function syncPlateauEffects(m) {
     const sm = getOrCreateSubmap(m, group);
     if (!sm) continue;
     for (const river of rivers) mirrorRiverAcrossPlateau(river, m, sm, group);
-    syncPlateauEffects(sm); // recurse into nested plateaus on the sub-map itself
+    // Plateau groups are never painted onto a sub-map (see applyAt), so this
+    // recursion is normally a no-op — kept defensively in case older/imported
+    // workspace data still has a nested group on some sub-map.
+    syncPlateauEffects(sm);
   }
 }
 // Submaps saved before the anchorC/anchorR field existed have neither, so
@@ -2335,13 +2355,17 @@ function applyAt(tile) {
     if (isPlateauLocked(m, key)) return;
     if (!m.tiles[key]) m.tiles[key] = { type: 'tilled', crop: '' };
     m.tiles[key].crop = brush.crop;
-  } else if (mode === 'plateau' && m.category === 'exterior') {
+  } else if (mode === 'plateau' && m.category === 'exterior' && !m.isSubmap) {
+    // Plateau groups may only be painted on a root (non-submap) map — never on
+    // another group's sub-map — so every group ends up a direct sibling child
+    // of the same root, not nested under another tier (see header comment above).
     const group = plateauGroupById(brush.plateauGroup) || (ws.plateauGroups || [])[0];
     if (!group) return;
     const set = TILE_SETS[m.category] || TILE_SETS.exterior;
     const rad = Math.max(0, Math.floor(brush.plateauRadius) || 0);
     const rad2 = rad * rad + 0.25; // +0.25 rounds a discrete brush into a circle rather than a diamond/square
     let painted = false;
+    const overwrittenGroupIds = new Set();
     for (let dr = -rad; dr <= rad; dr++) {
       for (let dc = -rad; dc <= rad; dc++) {
         if (dc*dc + dr*dr > rad2) continue;
@@ -2350,14 +2374,23 @@ function applyAt(tile) {
         const ck = `${cc},${rr}`;
         if (mask && !mask.has(ck)) continue; // gap cell — not actually part of the plateau
         const existing = m.tiles[ck];
-        if (existing?.plateau && existing.plateau !== group.id) continue; // locked by a different plateau group
         if (existing?.plateau === group.id) continue; // already this group, nothing to do
+        // A different plateau group's cell — tiles overwrite each other when
+        // painted over (last brush stroke wins), they don't lock each other out;
+        // track it so that group's sub-map can be resynced to its new footprint.
+        if (existing?.plateau) overwrittenGroupIds.add(existing.plateau);
         m.tiles[ck] = { type: existing?.type || set[0], crop: existing?.crop || '', plateau: group.id };
         painted = true;
       }
     }
     if (!painted) return;
     getOrCreateSubmap(m, group);
+    for (const gid of overwrittenGroupIds) {
+      const og = plateauGroupById(gid);
+      const sm = og && ws.maps.find(x => x.parentMapId === m.id && x.plateauGroupId === og.id);
+      const bbox = og && plateauFootprintBBox(m, og.id);
+      if (sm && bbox) resizeSubmapToFootprint(sm, bbox);
+    }
     syncPlateauEffects(m);
   } else if (mode === 'object' && m.category === 'exterior') {
     m.objects[brush.object] = [c, r];

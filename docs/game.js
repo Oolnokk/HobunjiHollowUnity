@@ -4662,21 +4662,27 @@
           // Recursively folds map `m` (placed at world offset `offsetC`/`offsetR`,
           // floor elevation tier `baseTier`) into `outTiles` (world-keyed "c,r"
           // → tile). Every plateau group's elevation is absolute, measured from the
-          // root map — NOT cumulative through nesting depth — so a group's stored
-          // elevation IS the final tier its tiles render at, however deep it's
-          // nested. `baseTier` here is only the floor height THIS map's own plain
-          // ground sits at (i.e. its parent tier's resolved toTier); it is no longer
-          // added on top of a child group's elevation. A tier's footprint is the
-          // bounding box of whichever tiles in the PARENT are actually tagged
-          // `plateau: <thisGroupId>` — the artist paints however large a region
-          // they want a tier to occupy. The OUTER
-          // 1-tile ring of that painted bbox is reserved (automatically, not by
-          // painting) as the cliff-face lerp between this tier and the one below:
-          // those ring cells are flagged `incline` (always solid/impassable —
-          // see tileSpeedAt) unless the map explicitly paints something else there
-          // (a ramp tile, typically), which always wins over the auto-incline. The
-          // child sub-map's own local (0,0) is placed one tile inside that ring,
-          // i.e. at the bbox's top-left corner + 1.
+          // root map, so a group's stored elevation IS the final tier its tiles
+          // render at. Plateau groups are always painted as siblings directly on
+          // the root zone map (the Map Editor no longer allows painting a plateau
+          // group onto another plateau group's sub-map), so `m` here is normally
+          // the root zone itself — `baseTier` is just that root's own floor (0)
+          // for the outermost call, and a tier's resolved `toTier` for the one
+          // recursive call into each sibling's own (otherwise plateau-free)
+          // sub-map below, to fold in that tier's own ramps/buildings/decor. A
+          // tier's footprint is the bounding box of whichever tiles on the root
+          // are actually tagged `plateau: <thisGroupId>` — the artist paints
+          // however large a region they want a tier to occupy. The OUTER 1-tile
+          // ring of that painted bbox is reserved (automatically, not by
+          // painting) as the cliff-face lerp between this tier and whatever sits
+          // immediately around it — another sibling tier's footprint if one is
+          // adjacent (so two plateaus sharing this map blend straight into each
+          // other instead of each sloping all the way down to baseTier), or true
+          // ungraded ground otherwise. Ring cells are flagged `incline`
+          // (always solid/impassable — see tileSpeedAt) unless the map explicitly
+          // paints something else there (a ramp tile, typically), which always
+          // wins over the auto-incline. The child sub-map's own local (0,0) is
+          // placed one tile inside that ring, i.e. at the bbox's top-left corner + 1.
           // Whenever a plateau group actually has an authored child submap, this
           // also records a `{minC,maxC,minR,maxR,fromTier,toTier}` mesa entry (in
           // world coords) for the continuous heightfield buildZoneScene renders at
@@ -4695,6 +4701,20 @@
               if (!mask) { mask = new Set(); groupMask.set(plateauId, mask); }
               mask.add(`${c},${r}`);
             }
+            // Every plateau group painted on `m` is a sibling here (painting one
+            // group's brush over another's cells reassigns them — see applyAt — so
+            // groupMask's per-group masks are already disjoint). A ring cell's real
+            // support height is therefore whichever group (if any) owns its missing
+            // neighbor, not always this map's own baseTier — that's what lets two
+            // plateaus sharing this map blend straight into each other (a lower
+            // tier's cells bordering a higher sibling's footprint stay flat at their
+            // own tier instead of sloping down to baseTier, since the riser is
+            // entirely the higher sibling's own mesa wall) while a true outer edge
+            // (bordering ungraded ground, or a still-lower sibling) still ramps down.
+            const tierAt = (c, r) => {
+              const pid = m.tiles?.[`${c},${r}`]?.plateau;
+              return pid ? (plateauElevById.get(pid) || 0) : baseTier;
+            };
 
             // Stake out each recursing group's footprint (incline ring + raised
             // interior) BEFORE writing this map's own tiles below, so any tile `m`
@@ -4741,13 +4761,19 @@
               const worldMinC = offsetC + minC, worldMaxC = offsetC + maxC, worldMinR = offsetR + minR, worldMaxR = offsetR + maxR;
               const maskWorldKeys = new Set();
               for (const k of mask) { const [c, r] = k.split(',').map(Number); maskWorldKeys.add(`${c + offsetC},${r + offsetR}`); }
-              mesas.push({ minC: worldMinC, maxC: worldMaxC, minR: worldMinR, maxR: worldMaxR, fromTier: baseTier, toTier, maskWorldKeys });
+              mesas.push({ minC: worldMinC, maxC: worldMaxC, minR: worldMinR, maxR: worldMaxR, fromTier: baseTier, toTier, maskWorldKeys, groupId: gid });
               for (const k of mask) {
                 const [lc, lr] = k.split(',').map(Number);
                 const c = lc + offsetC, r = lr + offsetR;
-                const onRing = [[1,0],[-1,0],[0,1],[0,-1]].some(([dc,dr]) => !mask.has(`${lc+dc},${lr+dr}`));
+                let ringTier = null; // null => fully interior, no slope needed here
+                for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+                  if (mask.has(`${lc+dc},${lr+dr}`)) continue;
+                  const supportTier = tierAt(lc+dc, lr+dr);
+                  if (supportTier < toTier) ringTier = ringTier === null ? supportTier : Math.min(ringTier, supportTier);
+                }
+                const onRing = ringTier !== null;
                 outTiles.set(`${c},${r}`, {
-                  c, r, type: 'grass', elevTier: onRing ? baseTier : toTier,
+                  c, r, type: 'grass', elevTier: onRing ? ringTier : toTier,
                   skipFloor: true, rampElevation: 0, incline: onRing,
                 });
               }

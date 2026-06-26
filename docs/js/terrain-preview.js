@@ -40,6 +40,20 @@
       if (!mask) { mask = new Set(); groupMask.set(plateauId, mask); }
       mask.add(`${c},${r}`);
     }
+    // Every plateau group painted on `m` is a sibling here (painting one
+    // group's brush over another's cells reassigns them — see applyAt — so
+    // groupMask's per-group masks are already disjoint). A ring cell's actual
+    // support height is therefore whichever group (if any) owns its missing
+    // neighbor, not always this map's own baseTier — that's what lets two
+    // plateaus sharing this map blend straight into each other (a lower
+    // tier's cells bordering a higher sibling's footprint stay flat at their
+    // own tier instead of sloping down to baseTier, since the riser is
+    // entirely the higher sibling's own mesa wall) while a true outer edge
+    // (bordering ungraded ground, or a still-lower sibling) still ramps down.
+    const tierAt = (c, r) => {
+      const pid = m.tiles?.[`${c},${r}`]?.plateau;
+      return pid ? (plateauElevById.get(pid) ?? baseTier) : baseTier;
+    };
 
     const children = [];
     for (const [gid, mask] of groupMask) {
@@ -75,9 +89,15 @@
       for (const k of mask) {
         const [lc, lr] = k.split(',').map(Number);
         const c = lc + offsetC, r = lr + offsetR;
-        const onRing = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dc, dr]) => !mask.has(`${lc + dc},${lr + dr}`));
+        let ringTier = null; // null => fully interior, no slope needed here
+        for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          if (mask.has(`${lc + dc},${lr + dr}`)) continue;
+          const supportTier = tierAt(lc + dc, lr + dr);
+          if (supportTier < toTier) ringTier = ringTier === null ? supportTier : Math.min(ringTier, supportTier);
+        }
+        const onRing = ringTier !== null;
         outTiles.set(`${c},${r}`, {
-          c, r, type: 'grass', elevTier: onRing ? baseTier : toTier,
+          c, r, type: 'grass', elevTier: onRing ? ringTier : toTier,
           skipFloor: true, rampElevation: 0, incline: onRing,
         });
       }
@@ -392,7 +412,7 @@
   // seam-blend (buildPlateauMesaGeometry handles the last one correctly now,
   // but it's still useful to surface so a new map's tight margins are visible
   // before they're seen as a rendering glitch).
-  function floodFillComponents(mask) {
+  function floodFillComponents(mask, passable = mask) {
     const seen = new Set(), components = [];
     for (const start of mask) {
       if (seen.has(start)) continue;
@@ -400,11 +420,11 @@
       seen.add(start);
       while (stack.length) {
         const k = stack.pop();
-        comp.push(k);
+        if (mask.has(k)) comp.push(k);
         const [c, r] = k.split(',').map(Number);
         for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           const nk = `${c + dc},${r + dr}`;
-          if (mask.has(nk) && !seen.has(nk)) { seen.add(nk); stack.push(nk); }
+          if (passable.has(nk) && !seen.has(nk)) { seen.add(nk); stack.push(nk); }
         }
       }
       components.push(comp);
@@ -457,7 +477,21 @@
           issues.push({ severity: 'warning', code: 'MISSING_CHILD_SUBMAP', mapId: m.id, groupId: gid, message: `Map "${m.name || m.id}" paints plateau group "${gid}" but has no authored child sub-map for it yet — that tier won't be staked or rendered.` });
           continue;
         }
-        const components = floodFillComponents(mask);
+        // A taller sibling plateau painted on the same map punches a hole in
+        // this group's mask (it overwrote those cells), which would otherwise
+        // look like a disconnected blob even though the footprint is one
+        // contiguous ring around its taller neighbor. Let connectivity pass
+        // through cells owned by any strictly-taller group so only genuine
+        // stray strokes get flagged.
+        const passable = new Set(mask);
+        for (const [otherGid, otherMask] of localMask) {
+          if (otherGid === gid) continue;
+          const otherElev = groupsById.get(otherGid)?.elevation ?? 0;
+          if (otherElev > (groupsById.get(gid)?.elevation ?? 0)) {
+            for (const k of otherMask) passable.add(k);
+          }
+        }
+        const components = floodFillComponents(mask, passable);
         if (components.length > 1) {
           issues.push({ severity: 'warning', code: 'DISCONNECTED_MASK', mapId: m.id, groupId: gid, message: `Plateau group "${gid}" on map "${m.name || m.id}" is painted as ${components.length} disconnected blobs (sizes: ${components.map(c => c.length).join(', ')}) — likely a stray brush stroke.`, cells: components });
         }
