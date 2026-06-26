@@ -3363,6 +3363,8 @@ window.SCRATCHBONES_CONFIG = {
         "alphaTest": 0.001,
         "backPlaneOffsetZ": 0.001,
         "bendHeightSegments": 16,
+        "bendBoneCount": 5,
+        "bendNeckSharpness": 3,
         "maxBendAngleDeg": 50,
         "bendPitchLerp": 0.15,
         "creatureSnoutHeightRatio": 0.68,

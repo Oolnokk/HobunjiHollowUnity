@@ -197,6 +197,10 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
               <input id="tweakBoneCount" type="number" step="1" min="1" max="8">
             </div>
             <div>
+              <label for="tweakNeckSharpness">Neck sharpness</label>
+              <input id="tweakNeckSharpness" type="number" step="0.1" min="0.1" max="8">
+            </div>
+            <div>
               <label for="tweakSegments">Mesh segments</label>
               <input id="tweakSegments" type="number" step="1" min="1" max="32">
             </div>
@@ -1005,24 +1009,30 @@ const MAX_BEND_BONES_STUDIO = 8;
 const _pngDefaults = {
   bendHeightSegments: cfg3d.bendHeightSegments ?? 16,
   bendBoneCount: cfg3d.bendBoneCount ?? 5,
+  bendNeckSharpness: cfg3d.bendNeckSharpness ?? 3,
   maxBendAngleDeg: cfg3d.maxBendAngleDeg ?? 50,
   bendPitchLerp: cfg3d.bendPitchLerp ?? 0.15,
 };
 
 // Mirrors the vertical-bend rigid bone-chain GLSL in png-plane-avatar.js:
-// the pivot→face span is split into uBoneCount equal rigid bones, each
-// rotated by its own equal share of uBendAngle, chained end-to-end. Returns
-// the chain's local-space joints (pivot, then each bone's end), so the spine
-// helper can draw the actual curved arch rather than a single hinge line.
+// the pivot→face span is split into uBoneCount equal-length rigid bones,
+// but each bone's *share* of uBendAngle follows the same uNeckSharpness
+// power curve as the shader (frac(i)=((i+1)/N)^p, weight=frac(i)-frac(i-1)),
+// concentrating rotation at the face end ("the neck") as sharpness rises
+// above 1. Returns the chain's local-space joints (pivot, then each bone's
+// end), so the spine helper can draw the actual curved arch.
 function boneChainJointsCPU_vertical(u) {
   const boneCount = Math.max(1, Math.min(MAX_BEND_BONES_STUDIO, Math.round(u.uBoneCount.value || 5)));
+  const sharpness = Math.max(0.1, u.uNeckSharpness.value || 1);
   const pivot = u.uPivotCoord.value, face = u.uFaceCoord.value;
   const bendAngle = u.uBendAngle.value;
   const boneLen = (face - pivot) / boneCount;
-  const boneAngle = bendAngle / boneCount;
   const joints = [{ y: pivot, z: 0 }];
-  let jointY = pivot, jointZ = 0, cum = 0;
+  let jointY = pivot, jointZ = 0, cum = 0, prevFrac = 0;
   for (let i = 0; i < boneCount; i++) {
+    const frac = Math.pow((i + 1) / boneCount, sharpness);
+    const boneAngle = bendAngle * (frac - prevFrac);
+    prevFrac = frac;
     cum += boneAngle;
     const c = Math.cos(cum), s = Math.sin(cum);
     jointY += boneLen * c;
@@ -2126,6 +2136,7 @@ $('resetAimBtn').onclick = () => {
 
 $('tweakEyeHeight').value = avatarPlacementRatioFor_studioDefault();
 $('tweakBoneCount').value = _pngDefaults.bendBoneCount;
+$('tweakNeckSharpness').value = _pngDefaults.bendNeckSharpness;
 $('tweakSegments').value = _pngDefaults.bendHeightSegments;
 $('tweakMaxBend').value = _pngDefaults.maxBendAngleDeg;
 $('tweakBendWeight').value = _pngDefaults.bendPitchLerp;
@@ -2135,13 +2146,21 @@ function avatarPlacementRatioFor_studioDefault() {
   return window.PNGPlaneAvatar.avatarPlacementRatioFor({ speciesId: ap.speciesId, gender: ap.gender }).toFixed(3);
 }
 
-// Bone count is just a shader uniform (no geometry rebuild needed), so it
-// can be applied live to the already-built model's materials.
+// Bone count and neck sharpness are just shader uniforms (no geometry
+// rebuild needed), so they can be applied live to the already-built
+// model's materials.
 function applyBoneCountLive(v) {
   cfg3d.bendBoneCount = v;
   threeD.model?.traverse(child => {
     const bend = child.material?.userData?.bendUniforms;
     if (bend?.uBoneCount) bend.uBoneCount.value = v;
+  });
+}
+function applyNeckSharpnessLive(v) {
+  cfg3d.bendNeckSharpness = v;
+  threeD.model?.traverse(child => {
+    const bend = child.material?.userData?.bendUniforms;
+    if (bend?.uNeckSharpness) bend.uNeckSharpness.value = v;
   });
 }
 
@@ -2159,6 +2178,10 @@ $('tweakEyeHeight').oninput = (e) => {
 $('tweakBoneCount').oninput = (e) => {
   const v = Math.max(1, Math.min(8, Math.round(Number(e.target.value) || _pngDefaults.bendBoneCount)));
   applyBoneCountLive(v);
+};
+$('tweakNeckSharpness').oninput = (e) => {
+  const v = Math.max(0.1, Number(e.target.value) || _pngDefaults.bendNeckSharpness);
+  applyNeckSharpnessLive(v);
 };
 $('tweakSegments').oninput = (e) => {
   const v = Math.max(1, Math.round(Number(e.target.value) || _pngDefaults.bendHeightSegments));
@@ -2179,8 +2202,10 @@ $('resetTweaksBtn').onclick = () => {
   cfg3d.maxBendAngleDeg = _pngDefaults.maxBendAngleDeg;
   cfg3d.bendPitchLerp = _pngDefaults.bendPitchLerp;
   applyBoneCountLive(_pngDefaults.bendBoneCount);
+  applyNeckSharpnessLive(_pngDefaults.bendNeckSharpness);
   $('tweakEyeHeight').value = avatarPlacementRatioFor_studioDefault();
   $('tweakBoneCount').value = _pngDefaults.bendBoneCount;
+  $('tweakNeckSharpness').value = _pngDefaults.bendNeckSharpness;
   $('tweakSegments').value = _pngDefaults.bendHeightSegments;
   $('tweakMaxBend').value = _pngDefaults.maxBendAngleDeg;
   $('tweakBendWeight').value = _pngDefaults.bendPitchLerp;
