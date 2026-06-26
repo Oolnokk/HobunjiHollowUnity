@@ -2653,7 +2653,7 @@
         const last = _audioDebugLast.has(key) ? _audioDebugLast.get(key) : -Infinity;
         if (now - last < throttleMs) return;
         _audioDebugLast.set(key, now);
-        debugLog('[audio] ' + message, category);
+        debugLog(message, category);
       }
 
       function audioTraceEnabled() {
