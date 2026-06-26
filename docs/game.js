@@ -2725,12 +2725,18 @@
       function setMusicVolumeNow(snd, value) {
         const v = Math.max(0, value);
         const node = _musicGainNodes.get(snd);
+        const clampedTarget = Math.max(0, Math.min(1, v));
         if (node) {
           node.target = v;
           node.gain.gain.cancelScheduledValues(node.ctx.currentTime);
           node.gain.gain.setValueAtTime(v, node.ctx.currentTime);
+          // The element's own .volume no longer affects audible output once
+          // routed through the GainNode, but unlockGameAudio()'s retry loop
+          // still reads it to tell "should be audible" apart from
+          // "intentionally silent/stopped" — keep it mirroring the target.
+          snd.volume = clampedTarget;
         } else {
-          snd.volume = Math.max(0, Math.min(1, v));
+          snd.volume = clampedTarget;
         }
       }
 
@@ -2741,6 +2747,7 @@
       function fadeMusicVolume(snd, target, durationMs, onDone) {
         const v = Math.max(0, target);
         const dur = Math.max(0, Number(durationMs) || 0);
+        const clampedTarget = Math.max(0, Math.min(1, v));
         const node = _musicGainNodes.get(snd);
         if (node) {
           node.target = v;
@@ -2749,10 +2756,14 @@
           node.gain.gain.setValueAtTime(node.gain.gain.value, now);
           if (dur <= 0) node.gain.gain.setValueAtTime(v, now);
           else node.gain.gain.linearRampToValueAtTime(v, now + dur / 1000);
+          // Mirror the *target* onto .volume immediately (not waiting for the
+          // ramp) — it no longer drives audible output once routed through
+          // the GainNode, but unlockGameAudio()'s retry loop reads it to know
+          // whether a paused element wants to be playing.
+          snd.volume = clampedTarget;
           if (onDone) setTimeout(() => { if (node.target === v) onDone(); }, dur);
           return;
         }
-        const clampedTarget = Math.max(0, Math.min(1, v));
         if (dur <= 0) { snd.volume = clampedTarget; onDone?.(); return; }
         const start = snd.volume;
         const startTime = performance.now();
@@ -2872,12 +2883,25 @@
       }
 
       function unlockGameAudio(reason = 'user gesture') {
-        if (_gameAudioUnlocked) return;
-        _gameAudioUnlocked = true;
-        audioDebug('audio unlock from ' + reason + '; retrying audible loops=' + _gameAudioElements.size, 'audio-unlock', 0);
+        // Resuming suspended AudioContexts must happen on every gesture, not just
+        // the first: _musicAudioCtx/_rainAudioCtx are created lazily (the first
+        // time music or rain actually tries to play), which is often well after
+        // the player's first click/tap — by which point a one-shot unlock would
+        // already be spent and the newly-created context would stay suspended
+        // (silently) forever.
         const rainCtx = window._rainAudioCtx;
         if (rainCtx?.state === 'suspended') rainCtx.resume().catch(err => audioDebug('rain audio resume failed: ' + (err?.name || err), 'rain-resume-fail', 0));
         if (_musicAudioCtx?.state === 'suspended') _musicAudioCtx.resume().catch(err => audioDebug('music audio resume failed: ' + (err?.name || err), 'music-resume-fail', 0));
+        if (!_gameAudioUnlocked) {
+          _gameAudioUnlocked = true;
+          audioDebug('audio unlock from ' + reason, 'audio-unlock', 0);
+        }
+        // Retry blocked playback on every gesture, not just the first: every
+        // bgm/cue track is a freshly-created <audio> element (see
+        // playMusicTrack), so a track that starts well after the player's
+        // first click/tap can still get autoplay-blocked and needs its own
+        // later gesture to retry play() — a one-shot retry only ever catches
+        // whatever happened to be paused at that first moment.
         for (const snd of _gameAudioElements) {
           if (!snd || snd.volume <= 0 || !snd.paused) continue;
           snd.play().then(() => {
@@ -2888,9 +2912,9 @@
         }
       }
 
-      document.addEventListener('pointerdown', () => unlockGameAudio('pointerdown'), { once: true, capture: true });
-      document.addEventListener('keydown', () => unlockGameAudio('keydown'), { once: true, capture: true });
-      document.addEventListener('touchstart', () => unlockGameAudio('touchstart'), { once: true, capture: true, passive: true });
+      document.addEventListener('pointerdown', () => unlockGameAudio('pointerdown'), { capture: true });
+      document.addEventListener('keydown', () => unlockGameAudio('keydown'), { capture: true });
+      document.addEventListener('touchstart', () => unlockGameAudio('touchstart'), { capture: true, passive: true });
 
       async function loadAudioCueIndexes() {
         try {
