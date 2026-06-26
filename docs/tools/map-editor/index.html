@@ -3243,6 +3243,7 @@ function importAny(obj) {
     m.objects = obj.objects || {}; m.furniture = obj.furniture || []; m.decor = obj.decor || [];
     m.routes = Array.isArray(obj.routes) ? obj.routes : (Array.isArray(obj.npcPaths) ? obj.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(obj.npcPaths) ? obj.npcPaths : [];
+    m.rivers = Array.isArray(obj.rivers) ? obj.rivers : [];
     m.transitions = Array.isArray(obj.transitions) ? obj.transitions : [];
     m.buildings = Array.isArray(obj.buildings) ? obj.buildings : [];
     m.npcStations = Array.isArray(obj.npcStations) ? obj.npcStations : [];
@@ -3268,6 +3269,7 @@ function importAny(obj) {
       m.objects = src.objects || {}; m.furniture = src.furniture || []; m.decor = src.decor || [];
       m.routes = Array.isArray(src.routes) ? src.routes : (Array.isArray(src.npcPaths) ? src.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(src.npcPaths) ? src.npcPaths : [];
+      m.rivers = Array.isArray(src.rivers) ? src.rivers : [];
       m.transitions = Array.isArray(src.transitions) ? src.transitions : [];
       m.buildings = Array.isArray(src.buildings) ? src.buildings : [];
       m.npcStations = Array.isArray(src.npcStations) ? src.npcStations : [];
