@@ -385,6 +385,10 @@ function buildToolPlaneMesh(toolKey) {
       if (def.animStyle === 'sweep') plane.rotation.z = -Math.PI / 2;
       const g = new THREE.Group();
       g.add(plane);
+      // Mirror the sprite itself (not just its position/rotation) when the
+      // pose has been flipped across the midline, so asymmetric tools (e.g.
+      // an axe head) stay on the correct side instead of appearing reversed.
+      g.scale.x = toolMirrored ? -1 : 1;
       resolve(g);
     }, undefined, err => { logDebug(`Tool sprite load failed (${toolKey}): ${err?.message || err}`); resolve(null); });
   });
@@ -514,6 +518,7 @@ $('flipBtn').onclick = () => {
   anim.poses.strike = flipPose(anim.poses.strike);
   toolMirrored = !toolMirrored;
   toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
+  if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
   syncPosePanelFromState('windup');
   syncPosePanelFromState('strike');
   refreshJsonView();
