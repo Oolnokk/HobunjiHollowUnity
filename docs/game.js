@@ -2623,6 +2623,9 @@
       let _npcDialogueTypeIndex = 0;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
+      // Half the player avatar's actual scaled prism width/height (varies by species via
+      // portraitScaleBySpecies) — the base attach point updateToolMesh hangs tools/weapons from.
+      let playerToolBaseX = 0.45, playerToolBaseY = 0.45;
 
       // ── Dialogue tree runtime state ──────────────────────────────────
       let _dlgTree      = null;  // active tree object
@@ -7347,7 +7350,12 @@
         );
         avatarGroup.name = 'player_avatar';
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
+        const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
+        // Tools/weapons hang from half the prism's width (right-side plane) and half its
+        // height — recompute here since this is the only place the per-species scale is known.
+        playerToolBaseX = avatarWidth / 2;
+        playerToolBaseY = avatarHeight / 2;
         _markPngPlane(avatarGroup);
         if (refreshGeneration !== playerAvatarRefreshGeneration) {
           disposeAvatarGroup(avatarGroup);
@@ -12354,9 +12362,9 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * 0.28 + fwdX * jabOff,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + rightZ * 0.28 + fwdZ * jabOff
+            playerMesh.position.x + rightX * playerToolBaseX + fwdX * jabOff,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * jabOff
           );
 
         } else if (anim === 'chop') {
@@ -12373,9 +12381,9 @@
           }
           _qAnim.setFromAxisAngle(_swAxis, chopAngle);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
-          const handX = playerMesh.position.x + rightX * 0.28;
-          const handY = playerMesh.position.y + 0.18;
-          const handZ = playerMesh.position.z + rightZ * 0.28;
+          const handX = playerMesh.position.x + rightX * playerToolBaseX;
+          const handY = playerMesh.position.y + playerToolBaseY;
+          const handZ = playerMesh.position.z + rightZ * playerToolBaseX;
           if (fishThrowActive && fishingMinigame?.anchorWorld) {
             // Out during the slam (WF→SF), back during the return (SF→1).
             let travel;
@@ -12406,9 +12414,9 @@
           _qAnim.setFromAxisAngle(_swAxis, tossAngle);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * 0.28,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + rightZ * 0.28
+            playerMesh.position.x + rightX * playerToolBaseX,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + rightZ * playerToolBaseX
           );
 
         } else if (anim === 'refillTurnOut') {
@@ -12430,9 +12438,9 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + vRX * 0.28 + vFX * jabOff,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + vRZ * 0.28 + vFZ * jabOff
+            playerMesh.position.x + vRX * playerToolBaseX + vFX * jabOff,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + vRZ * playerToolBaseX + vFZ * jabOff
           );
 
         } else if (anim === 'refillStrikeBack') {
@@ -12458,9 +12466,9 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + vRX * 0.28 + vFX * jabOff,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + vRZ * 0.28 + vFZ * jabOff
+            playerMesh.position.x + vRX * playerToolBaseX + vFX * jabOff,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + vRZ * playerToolBaseX + vFZ * jabOff
           );
 
         } else if (anim === 'refillTwistOut' || anim === 'refillTwistBack') {
@@ -12471,9 +12479,9 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * 0.28 + fwdX * 0.32,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + rightZ * 0.28 + fwdZ * 0.32
+            playerMesh.position.x + rightX * playerToolBaseX + fwdX * 0.32,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * 0.32
           );
 
         } else if (anim === 'refillReset') {
@@ -12484,9 +12492,9 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * 0.28 + fwdX * jabOff,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + rightZ * 0.28 + fwdZ * jabOff
+            playerMesh.position.x + rightX * playerToolBaseX + fwdX * jabOff,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * jabOff
           );
 
         } else {
@@ -12511,9 +12519,9 @@
           _qFac.setFromAxisAngle(_tUp, vθ);
           toolHolder.quaternion.copy(_qFac);
           toolHolder.position.set(
-            playerMesh.position.x + vRX * 0.20 + vFX * 0.16,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + vRZ * 0.20 + vFZ * 0.16
+            playerMesh.position.x + vRX * playerToolBaseX + vFX * 0.16,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + vRZ * playerToolBaseX + vFZ * 0.16
           );
         }
 
