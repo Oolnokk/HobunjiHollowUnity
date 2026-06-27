@@ -95,7 +95,12 @@
         return;
       }
       deps.player.stamina = Math.max(0, deps.player.stamina - cost);
-      deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S);
+      // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
+      deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S, {
+        anim: 'thrust',
+        windupFrac: WINDUP_S / (WINDUP_S + STRIKE_S),
+        strikeFrac: 1,
+      });
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * tech.damageMul);

@@ -34,14 +34,22 @@
         return;
       }
       deps.player.stamina = Math.max(0, deps.player.stamina - cost);
-      deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S);
+      // Alternates side every strike — mirror the hatchet's sweep, flipping
+      // direction in sync with the existing left/right hit-cone wobble.
+      const dirSign = count % 2 === 0 ? -1 : 1;
+      deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S, {
+        anim: 'sweep',
+        dirSign,
+        windupFrac: WINDUP_S / (WINDUP_S + STRIKE_S),
+        strikeFrac: 1,
+      });
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * (DAMAGE_MUL_BASE + count * DAMAGE_MUL_PER_STRIKE));
       const rangePx = baseAbil.rangePx;
       const halfConeDeg = HALF_CONE_DEG_BASE + Math.min(HALF_CONE_DEG_MAX_GROWTH, count * HALF_CONE_DEG_GROWTH_PER_STRIKE);
       const knockbackPxS = baseAbil.knockbackPxS * (KNOCKBACK_MUL_BASE + count * KNOCKBACK_MUL_PER_STRIKE);
-      const sideDeg = (count % 2 === 0 ? -1 : 1) * SIDE_OFFSET_DEG;
+      const sideDeg = dirSign * SIDE_OFFSET_DEG;
       const strikeAngle = deps.player.angle + sideDeg * Math.PI / 180;
       const strikeIndex = count + 1;
 

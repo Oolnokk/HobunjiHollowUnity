@@ -43,10 +43,17 @@
       const rangePx = baseAbil.rangePx * COUNTER_RANGE_MUL;
       const halfConeRad = COUNTER_HALF_CONE_DEG * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * COUNTER_KNOCKBACK_MUL;
+      const COUNTER_WINDUP_S = 0.035, COUNTER_STRIKE_S = 0.16;
+      // Riposte is a snap stab — mirror the shovel's straight thrust.
+      deps.triggerWeaponSwingVisual(COUNTER_WINDUP_S + COUNTER_STRIKE_S, {
+        anim: 'thrust',
+        windupFrac: COUNTER_WINDUP_S / (COUNTER_WINDUP_S + COUNTER_STRIKE_S),
+        strikeFrac: 1,
+      });
 
       window.Combat.beginStagedAction({
-        windupS: 0.035,
-        strikeS: 0.16,
+        windupS: COUNTER_WINDUP_S,
+        strikeS: COUNTER_STRIKE_S,
         recoverS: 0,
         onStrike: () => {
           let hits = 0, lastName = '';

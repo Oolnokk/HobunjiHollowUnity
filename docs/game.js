@@ -12039,6 +12039,23 @@
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
       let chargeAnimOverride = null;
 
+      // Combat ability swing overrides (set by triggerWeaponSwingVisual's
+      // opts, called from combat-*.js modules), kept separate from
+      // chargeAnimOverride so farm tool charge-actions never collide with
+      // them. anim picks which of updateToolMesh's existing per-style arcs
+      // (thrust/sweep/chop) plays, regardless of the equipped weapon's own
+      // default style — e.g. a quick jab always plays the thrust arc even
+      // while wielding the hatchet. dirSign flips a sweep's rotation (and
+      // mirrors the weapon sprite) for alternating forehand/backhand combo
+      // steps. windupFrac/strikeFrac let each ability's own windupS/strikeS
+      // ratio drive how much of the cosmetic swing is spent winding up vs
+      // striking, instead of one fixed split for every attack. Cleared
+      // automatically once the swing's toolSwingT runs out.
+      let combatSwingAnim = null;
+      let combatSwingSign = 1;
+      let combatSwingWindupFrac = 0.16;
+      let combatSwingStrikeFrac = 0.28;
+
       function getDigSpeedMultiplier() {
         return Math.max(0.01, player.digSpeed || 1);
       }
@@ -12094,12 +12111,20 @@
       // Plays the weapon's existing arm-swing mesh animation for durationS without
       // queuing a pendingAction — used by Combat ability modules that resolve their
       // own hit logic and just want the legacy swing's visual flourish to match.
-      function triggerWeaponSwingVisual(durationS) {
+      // opts: { anim: 'thrust'|'sweep'|'chop', dirSign: 1|-1, windupFrac, strikeFrac }
+      // lets a combat ability pick the attack-shape its animation should use
+      // (independent of the equipped weapon's own default style) and how its
+      // own windupS/strikeS split maps onto the cosmetic swing arc.
+      function triggerWeaponSwingVisual(durationS, opts = {}) {
         if (activeTool !== 'weapon') return;
         toolSwingDur = Math.max(0.05, durationS);
         toolSwingT = toolSwingDur;
         strikeFired = false;
         pendingAction = null;
+        combatSwingAnim = opts.anim || null;
+        combatSwingSign = opts.dirSign || 1;
+        combatSwingWindupFrac = opts.windupFrac ?? 0.16;
+        combatSwingStrikeFrac = opts.strikeFrac ?? 0.28;
       }
 
       function cancelChargeAction() {
@@ -12262,16 +12287,25 @@
         _qFac.setFromAxisAngle(_tUp, θ);
         _swAxis.set(rightX, 0, rightZ);
 
-        const anim = fishThrowActive ? 'chop' : (chargeAnimOverride || activeAnimStyle());
-        const WF = 0.16, SF = 0.28;  // windup 16%, strike 12%, return 72% — strike faster than windup
+        const anim = fishThrowActive ? 'chop' : (chargeAnimOverride || combatSwingAnim || activeAnimStyle());
+        // Tool actions keep their original fixed 16%/28% split; combat
+        // triggers use each ability's own windupS/strikeS ratio (set via
+        // triggerWeaponSwingVisual's opts) so a heavily-telegraphed swing
+        // (e.g. Cleave) visibly winds up longer than a snap jab.
+        const WF = combatSwingAnim ? combatSwingWindupFrac : 0.16;
+        const SF = combatSwingAnim ? combatSwingStrikeFrac : 0.28;
 
         if (anim === 'thrust') {
-          // THRUST — windup (pull back) → jab forward → return
+          // THRUST — windup (pull back) → jab forward → return. Combat
+          // jabs pull back farther than a normal tool jab (-0.40 vs -0.22)
+          // so the windup itself reads as a clear "about to stab" tell;
+          // the strike still arrives at the same +0.32 extension either way.
+          const windupBack = combatSwingAnim ? -0.40 : -0.22;
           let jabOff;
           if (progress <= WF) {
-            jabOff = -0.22 * (progress / WF);
+            jabOff = windupBack * (progress / WF);
           } else if (progress <= SF) {
-            jabOff = -0.22 + 0.54 * ((progress - WF) / (SF - WF));  // −0.22 → +0.32
+            jabOff = windupBack + (0.32 - windupBack) * ((progress - WF) / (SF - WF));
           } else {
             jabOff = 0.32 * (1.0 - (progress - SF) / (1.0 - SF));
           }
@@ -12284,12 +12318,14 @@
           );
 
         } else if (anim === 'chop') {
-          // CHOP — windup (raise high) → slam down → return
+          // CHOP — windup (raise high) → slam down → return. Combat overheads
+          // raise farther back (2.05 vs 1.80) for a clearer "about to slam" tell.
+          const chopRaise = combatSwingAnim ? 2.05 : 1.80;
           let chopAngle;
           if (progress <= WF) {
-            chopAngle = 0.82 + 0.98 * (progress / WF);               // raise: 0.82 → 1.80
+            chopAngle = 0.82 + (chopRaise - 0.82) * (progress / WF);               // raise: 0.82 → chopRaise
           } else if (progress <= SF) {
-            chopAngle = 1.80 - 3.30 * ((progress - WF) / (SF - WF)); // slam:  1.80 → −1.50
+            chopAngle = chopRaise - (chopRaise + 1.50) * ((progress - WF) / (SF - WF)); // slam:  chopRaise → −1.50
           } else {
             chopAngle = -1.50 + 2.32 * ((progress - SF) / (1.0 - SF));// return: −1.50 → 0.82
           }
@@ -12413,7 +12449,11 @@
 
         } else {
           // SWEEP — body rotates through windup-strike-return arc; axe locked in hand.
-          const WINDUP_ANGLE = -2.20, STRIKE_ANGLE = 2.12;
+          // Combat swings can alternate direction (forehand/backhand) via
+          // combatSwingSign, and wind up farther back than a normal tool swing.
+          const sweepSign = combatSwingAnim ? combatSwingSign : 1;
+          const sweepWindupScale = combatSwingAnim ? 1.25 : 1;
+          const WINDUP_ANGLE = -2.20 * sweepWindupScale * sweepSign, STRIKE_ANGLE = 2.12 * sweepSign;
           let sweepOff;
           if (progress <= WF) {
             sweepOff = WINDUP_ANGLE * (progress / WF);
@@ -12457,6 +12497,8 @@
               ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
               : baseRotZ;
           }
+          // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc.
+          spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
         }
 
         if (pendingAction && !strikeFired && progress >= SF) {
@@ -12464,6 +12506,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
+        if (combatSwingAnim && toolSwingT <= 0) combatSwingAnim = null;
       }
 
       // Initialize mesh map after toolHolder exists

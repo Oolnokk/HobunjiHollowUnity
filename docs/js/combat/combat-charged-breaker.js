@@ -45,7 +45,12 @@
         return;
       }
       deps.player.stamina = Math.max(0, deps.player.stamina - cost);
-      deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S);
+      // Power attack — vertical heavy overhead slam, mirrors the hoe's chop.
+      deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S, {
+        anim: 'chop',
+        windupFrac: 0.5,
+        strikeFrac: 1,
+      });
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, chargeT));
