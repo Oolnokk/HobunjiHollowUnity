@@ -658,6 +658,22 @@
       <button class="abt" id="btnAction3" aria-label="Action 3"></button>
       <button class="abt abt-item" id="btnItemAction1" aria-label="Use item"></button>
       <button class="abt abt-item" id="btnItemAction2" aria-label="Use item 2"></button>
+      <!-- Swap Target: weapon-only. Acts as its own mini-stick — push it toward
+           a hostile to lock auto-targeting onto it. Icon is the universal
+           4-arrow "move/translate" cross used in art-program gizmos. -->
+      <button class="abt abt-swap abt-hidden" id="btnSwapTarget" aria-label="Swap target">
+        <span class="abt-icon">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="5 9 2 12 5 15"></polyline>
+            <polyline points="9 5 12 2 15 5"></polyline>
+            <polyline points="15 19 12 22 9 19"></polyline>
+            <polyline points="19 9 22 12 19 15"></polyline>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <line x1="12" y1="2" x2="12" y2="22"></line>
+          </svg>
+        </span>
+        <span class="abt-label">Swap Target</span>
+      </button>
     </div>
   </div>
 

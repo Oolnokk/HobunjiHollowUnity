@@ -10,6 +10,7 @@
       const joystickZone = document.getElementById('joystickZone');
       const joystickKnob = document.getElementById('joystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
+      const btnSwapTarget = document.getElementById('btnSwapTarget');
 
       // Status pill
       const spTime    = document.getElementById('spTime');
@@ -8114,6 +8115,7 @@
         // Auto-targeting only engages while the weapon tool is equipped.
         const autoTarget = activeTool === 'weapon' ? findAutoTarget() : null;
         dodgeBtn?.classList.toggle('combat-active', !!autoTarget);
+        btnSwapTarget?.classList.toggle('abt-hidden', activeTool !== 'weapon');
 
         if (controllerLookActive) {
           const diff = angleDiff(controllerLookAngle, facingAngle);
@@ -15301,6 +15303,59 @@
         ev.preventDefault();
         performDodge(player.angle);
       });
+
+      // Swap Target button: its own dedicated drag-direction stick (separate
+      // from applyAbt()'s tool/item-action wiring, which had its drag-repeat
+      // behavior disabled). Pushing it toward a hostile swaps auto-targeting
+      // onto it — fires once per drag, no repeat needed since it's a single
+      // selection, not a continuous action.
+      if (btnSwapTarget) {
+        let _stPtId = null, _stCx = 0, _stCy = 0, _stSockR = 0, _stDrag = false, _stSocket = null;
+        const ST_DRAG_THRESH = 10;
+        btnSwapTarget.addEventListener('pointerdown', ev => {
+          if (btnSwapTarget.classList.contains('abt-hidden')) return;
+          ev.preventDefault();
+          btnSwapTarget.setPointerCapture?.(ev.pointerId);
+          _stPtId = ev.pointerId;
+          const rect = btnSwapTarget.getBoundingClientRect();
+          _stCx = rect.left + rect.width / 2;
+          _stCy = rect.top + rect.height / 2;
+          _stSockR = rect.width * 0.55;
+          _stDrag = false;
+          _stSocket = document.createElement('div');
+          _stSocket.className = 'abt-socket';
+          _stSocket.style.left = _stCx + 'px';
+          _stSocket.style.top = _stCy + 'px';
+          _stSocket.style.width = _stSocket.style.height = (rect.width * 2.2) + 'px';
+          document.body.appendChild(_stSocket);
+          btnSwapTarget.style.transition = 'none';
+        });
+        btnSwapTarget.addEventListener('pointermove', ev => {
+          if (ev.pointerId !== _stPtId) return;
+          const dx = ev.clientX - _stCx, dy = ev.clientY - _stCy;
+          const dist = Math.hypot(dx, dy);
+          const r = Math.min(dist, _stSockR);
+          const nx = dist > 0.5 ? dx / dist * r : 0;
+          const ny = dist > 0.5 ? dy / dist * r : 0;
+          btnSwapTarget.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
+          if (!_stDrag && dist > ST_DRAG_THRESH) {
+            _stDrag = true;
+            swapAutoTarget(Math.atan2(dy, dx));
+          }
+        });
+        function _stUp(ev) {
+          if (ev.pointerId !== _stPtId) return;
+          _stPtId = null;
+          if (_stSocket) { _stSocket.remove(); _stSocket = null; }
+          btnSwapTarget.style.transition = 'transform 0.14s ease-out';
+          btnSwapTarget.style.transform = 'translate(50%, 50%)';
+          setTimeout(() => { btnSwapTarget.style.transition = ''; btnSwapTarget.style.transform = ''; }, 150);
+          if (!_stDrag) swapAutoTarget(player.angle);
+          _stDrag = false;
+        }
+        btnSwapTarget.addEventListener('pointerup', _stUp);
+        btnSwapTarget.addEventListener('pointercancel', _stUp);
+      }
 
       const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs) || 350;
       const desktopHoldKeys = {
