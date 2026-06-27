@@ -2625,7 +2625,8 @@
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
       // Half the player avatar's actual scaled prism width/height (varies by species via
       // portraitScaleBySpecies) — the base attach point updateToolMesh hangs tools/weapons from.
-      let playerToolBaseX = 0.45, playerToolBaseY = 0.45;
+      // X is negative because the tool hangs off the character's left-side plane (their POV).
+      let playerToolBaseX = -0.45, playerToolBaseY = 0.45;
 
       // ── Dialogue tree runtime state ──────────────────────────────────
       let _dlgTree      = null;  // active tree object
@@ -7352,9 +7353,10 @@
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
-        // Tools/weapons hang from half the prism's width (right-side plane) and half its
-        // height — recompute here since this is the only place the per-species scale is known.
-        playerToolBaseX = avatarWidth / 2;
+        // Tools/weapons hang from half the prism's width (left-side plane, character's POV)
+        // and half its height — recompute here since this is the only place the per-species
+        // scale is known.
+        playerToolBaseX = -avatarWidth / 2;
         playerToolBaseY = avatarHeight / 2;
         _markPngPlane(avatarGroup);
         if (refreshGeneration !== playerAvatarRefreshGeneration) {
