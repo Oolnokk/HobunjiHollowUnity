@@ -12671,13 +12671,18 @@
       const _grassBillFrag = `
         uniform sampler2D uGrassTex;
         uniform vec3 uTint;
+        uniform vec3 uLightColor;
+        uniform float uLightMul;
         varying vec2 vUv;
         void main() {
           vec4 texel = texture2D(uGrassTex, vUv);
           if (texel.a < 0.5) discard;
           // Treat grass_1.png as mint-toned; desaturate and re-tint to grass color
           float lum = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
-          vec3 tinted = uTint * (0.7 + lum * 0.8);
+          // Same day/night ambient color+brightness driving the ground tiles'
+          // Lambert shading, applied only to the tinted blade (not the outline)
+          // so blades dim/tint with the world instead of staying flat-lit.
+          vec3 tinted = uTint * (0.7 + lum * 0.8) * uLightColor * uLightMul;
           // Drawn outline pixels (near-black source) stay pure black; tint the rest
           vec3 col = mix(vec3(0.0), tinted, smoothstep(0.0, 0.15, lum));
           gl_FragColor = vec4(col, texel.a);
@@ -12693,10 +12698,12 @@
         tex.magFilter = THREE.NearestFilter;
         tex.minFilter = THREE.NearestFilter;
         const sharedUniforms = () => ({
-          uGrassTex: { value: tex },
-          uTint:     { value: _grassTint },
-          uTime:     { value: 0 },
-          uStrength: { value: 0.04 },
+          uGrassTex:   { value: tex },
+          uTint:       { value: _grassTint },
+          uTime:       { value: 0 },
+          uStrength:   { value: 0.04 },
+          uLightColor: { value: new THREE.Color(1, 1, 1) },
+          uLightMul:   { value: 1 },
         });
         grassBillboardMat = new THREE.ShaderMaterial({
           uniforms:       sharedUniforms(),
@@ -13499,6 +13506,13 @@
         );
         sunLight.intensity = brightnessMul * 1.2;
         sunLight.color.setRGB(r/255 * 0.5 + 0.5, g/255 * 0.5 + 0.5, b/255 * 0.4 + 0.6);
+        // Grass billboards are an unlit shader, not MeshLambertMaterial — drive their
+        // tint/brightness from the same values as ambientLight so blades match the
+        // ground's day/night response instead of staying a fixed brightness.
+        if (grassBillboardMat) {
+          grassBillboardMat.uniforms.uLightColor.value.setRGB(r/255 * 0.6 + 0.4, g/255 * 0.6 + 0.4, b/255 * 0.6 + 0.4);
+          grassBillboardMat.uniforms.uLightMul.value = 0.3 + brightnessMul * 0.7;
+        }
         // Fog colour matches sky
         scene.background.setRGB(
           Math.max(0, r/255 * 0.15 + 0.04),
@@ -13523,6 +13537,10 @@
         );
         townSunLight.intensity = brightnessMul * 1.2;
         townSunLight.color.setRGB(r/255 * 0.5 + 0.5, g/255 * 0.5 + 0.5, b/255 * 0.4 + 0.6);
+        if (grassBillboardMat) {
+          grassBillboardMat.uniforms.uLightColor.value.setRGB(r/255 * 0.6 + 0.4, g/255 * 0.6 + 0.4, b/255 * 0.6 + 0.4);
+          grassBillboardMat.uniforms.uLightMul.value = 0.3 + brightnessMul * 0.7;
+        }
         townScene.background.setRGB(
           Math.max(0, r/255 * 0.15 + 0.04),
           Math.max(0, g/255 * 0.15 + 0.08),
