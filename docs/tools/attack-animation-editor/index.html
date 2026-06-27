@@ -91,6 +91,13 @@ canvas{display:block;width:100%;height:100%}
     <div class="help">Style is just a label saved with the export — it doesn't change how the rig moves here.</div>
   </div>
 
+  <div class="card section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.10)">
+    <div class="sectionTitle"><b>Avatar</b><span class="sectionTag">species / height</span></div>
+    <div class="field"><label>Species</label><select id="avatarSpecies"></select></div>
+    <div class="field"><label>Gender</label><select id="avatarGender"></select></div>
+    <div class="help">Swaps the preview body for a PNG plane avatar at that species' actual in-game height, so weapon poses can be checked against different builds.</div>
+  </div>
+
   <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
     <div class="sectionTitle"><b>Timing</b><span class="sectionTag">windup → strike → return</span></div>
     <div class="field">
@@ -161,6 +168,11 @@ canvas{display:block;width:100%;height:100%}
   <div id="debug"></div>
 </div>
 </div>
+<script src="../../config/scratchbones-config.js"></script>
+<script src="../../js/portrait-utils.js"></script>
+<script src="../../js/portrait-breathing.js"></script>
+<script src="../../js/npc-avatar-preview-utils.js"></script>
+<script src="../../js/png-plane-avatar.js"></script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -197,29 +209,92 @@ scene.add(dirLight);
 scene.add(new THREE.GridHelper(4, 8, 0x335070, 0x1d2a3a));
 scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.01, 0), 0.7, 0x6aa7ff, 0.12, 0.08));
 
-// ── Placeholder rig: torso + head, with a shoulder anchor the weapon hangs off ──
+// ── Rig: PNG-plane avatar body, with a shoulder anchor the weapon hangs off ──
 const rig = new THREE.Group();
 scene.add(rig);
-
-const torso = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.17, 0.22, 0.85, 14),
-  new THREE.MeshStandardMaterial({ color: 0x60748e, roughness: 0.85 })
-);
-torso.position.set(0, 0.5, 0);
-rig.add(torso);
-
-const head = new THREE.Mesh(
-  new THREE.SphereGeometry(0.15, 16, 12),
-  new THREE.MeshStandardMaterial({ color: 0x9fb0c8, roughness: 0.85 })
-);
-head.position.set(0, 1.07, 0);
-rig.add(head);
 
 const shoulderAnchor = new THREE.Object3D();
 shoulderAnchor.position.set(0, 0.92, 0.04);
 rig.add(shoulderAnchor);
 const anchorDot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: 0x6aa7ff }));
 shoulderAnchor.add(anchorDot);
+
+// Same shoulder/height ratio the old placeholder pawn used (0.92 / ~1.22 total height),
+// so the weapon hangs at a believable spot regardless of which species' height is loaded.
+const SHOULDER_HEIGHT_RATIO = 0.754;
+let avatarModel = null;
+let _cosmeticsReady = null;
+function ensureCosmetics() {
+  if (!_cosmeticsReady) {
+    _cosmeticsReady = window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: '../../assets/', configBase: '../../config/' });
+  }
+  return _cosmeticsReady;
+}
+function buildDefaultAvatarExport(speciesId, gender) {
+  return {
+    schema: 'npc_avatar_editor_export.v1',
+    source: 'attack-animation-editor default',
+    appearance: { speciesId, gender, cosmetics: {} },
+    equippedCosmetics: [],
+    appliedDyes: {},
+  };
+}
+async function rebuildAvatar(speciesId, gender) {
+  await ensureCosmetics();
+  const npcExport = buildDefaultAvatarExport(speciesId, gender);
+  const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(npcExport);
+  if (!profile) { logDebug(`Avatar profile build failed for ${speciesId}/${gender}`); return; }
+  const size = 256;
+  const frontCanvas = document.createElement('canvas');
+  frontCanvas.width = size; frontCanvas.height = size;
+  await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+  const backCanvas = document.createElement('canvas');
+  backCanvas.width = size; backCanvas.height = size;
+  await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+  if (avatarModel) {
+    rig.remove(avatarModel);
+    window.PNGPlaneAvatar.disposeAvatarModel(avatarModel);
+  }
+  avatarModel = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, frontCanvas, {
+    backCanvas, profile, speciesId, gender, name: 'editor_preview_avatar',
+  });
+  const h = avatarModel.userData.portraitModelHeight || 1.1;
+  avatarModel.position.y = h / 2;
+  rig.add(avatarModel);
+  shoulderAnchor.position.y = h * SHOULDER_HEIGHT_RATIO;
+  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (height ${h.toFixed(2)})`);
+}
+
+const SPECIES_LIST = [
+  { id: 'mao-ao', label: 'Mao-ao' },
+  { id: 'engh-sho', label: 'Engh-sho' },
+  { id: 'kenkari', label: 'Kenkari' },
+  { id: 'tletingan', label: 'Tletingan' },
+  { id: 'rakakoan', label: "Rakako'an" },
+  { id: 'mashtzarr', label: 'Mashtzarr' },
+];
+function gendersForSpecies(speciesId) {
+  const avail = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.availability?.[speciesId];
+  if (Array.isArray(avail?.genders) && avail.genders.length) return avail.genders;
+  return ['male', 'female'];
+}
+function populateGenderSelect(speciesId, preferred) {
+  const genders = gendersForSpecies(speciesId);
+  const sel = $('avatarGender');
+  sel.innerHTML = genders.map(g => `<option value="${g}">${g[0].toUpperCase()}${g.slice(1)}</option>`).join('');
+  sel.value = genders.includes(preferred) ? preferred : genders[0];
+}
+$('avatarSpecies').innerHTML = SPECIES_LIST.map(s => `<option value="${s.id}">${s.label}</option>`).join('');
+populateGenderSelect(SPECIES_LIST[0].id, 'male');
+$('avatarSpecies').addEventListener('change', () => {
+  const speciesId = $('avatarSpecies').value;
+  populateGenderSelect(speciesId, $('avatarGender').value);
+  rebuildAvatar(speciesId, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
+});
+$('avatarGender').addEventListener('change', () => {
+  rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
+});
+rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 
 // toolHolder is what the authored pose (pos+pitch+yaw) actually drives.
 const toolHolder = new THREE.Object3D();
