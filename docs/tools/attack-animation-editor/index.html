@@ -49,10 +49,20 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #viewport{flex:1;position:relative;min-width:240px}
 canvas{display:block;width:100%;height:100%}
 
-.poseTabs{display:flex;gap:6px;margin-bottom:8px}
-.poseTab{flex:1;border-radius:9px;padding:7px 8px;text-align:center}
-.posePanel{display:none}
-.posePanel.active{display:block}
+.poseGroup{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:8px;margin-bottom:10px;background:rgba(255,255,255,.025)}
+.poseGroupHead{font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.poseGroupHead .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+#panelWindup .dot{background:var(--warn)}
+#panelStrike .dot{background:var(--bad)}
+.timeline{position:relative;height:26px;border-radius:8px;overflow:hidden;display:flex;
+  border:1px solid rgba(255,255,255,.16);margin-bottom:4px}
+.timelineSeg{height:100%;display:flex;align-items:center;justify-content:center;
+  font-size:9px;color:rgba(255,255,255,.78);text-transform:uppercase;letter-spacing:.3px;overflow:hidden;white-space:nowrap}
+#segWindup{background:rgba(251,191,36,.38)}
+#segStrike{background:rgba(251,113,133,.42)}
+#segReturn{background:rgba(106,167,255,.22)}
+.timelineMarker{position:absolute;top:-2px;bottom:-2px;width:2px;background:#fff;box-shadow:0 0 6px #fff;pointer-events:none}
+.timelineLabels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin:2px 0 10px}
 .phasePill{position:absolute;left:10px;top:10px;z-index:5}
 #debug{position:absolute;left:10px;bottom:10px;max-width:min(560px,92vw);white-space:pre-wrap;
   background:rgba(0,0,0,.48);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:9px;
@@ -88,7 +98,8 @@ canvas{display:block;width:100%;height:100%}
         <option value="toss">toss</option>
       </select>
     </div>
-    <div class="help">Style is just a label saved with the export — it doesn't change how the rig moves here.</div>
+    <div class="field"><label>Weapon sprite (visual reference)</label><select id="toolSpriteSelect"></select></div>
+    <div class="help">Style is just a label saved with the export — it doesn't change how the rig moves here. The weapon sprite is the actual in-game PNG plane, so you can see which end is the business end.</div>
   </div>
 
   <div class="card section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.10)">
@@ -115,21 +126,30 @@ canvas{display:block;width:100%;height:100%}
   </div>
 
   <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
-    <div class="sectionTitle"><b>Pose editor</b><span class="sectionTag">windup / strike</span></div>
-    <div class="poseTabs">
-      <button class="poseTab active" id="tabWindup" data-phase="windup">Windup</button>
-      <button class="poseTab secondary" id="tabStrike" data-phase="strike">Strike</button>
+    <div class="sectionTitle"><b>Pose editor</b><span class="sectionTag">windup &amp; strike, both always shown</span></div>
+    <div class="timeline" id="timeline">
+      <div class="timelineSeg" id="segWindup">windup</div>
+      <div class="timelineSeg" id="segStrike">strike</div>
+      <div class="timelineSeg" id="segReturn">return</div>
+      <div class="timelineMarker" id="timelineMarker"></div>
     </div>
-    <div class="posePanel active" id="panelWindup" data-phase="windup"></div>
-    <div class="posePanel" id="panelStrike" data-phase="strike"></div>
-    <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: swing left/right (+ = right)</div>
+    <div class="timelineLabels"><span>Neutral</span><span>Windup</span><span>Strike</span><span>Neutral</span></div>
+    <div class="poseGroup">
+      <div class="poseGroupHead"><span class="dot"></span>Windup pose</div>
+      <div id="panelWindup" data-phase="windup"></div>
+    </div>
+    <div class="poseGroup">
+      <div class="poseGroupHead"><span class="dot"></span>Strike pose</div>
+      <div id="panelStrike" data-phase="strike"></div>
+    </div>
+    <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: tool's own spin • body yaw: turns the whole character (sweep-style swings turn the body, not the tool)</div>
   </div>
 
   <div class="card section" style="--sec:#22d3ee;--secBg:rgba(34,211,238,.10)">
     <div class="sectionTitle"><b>Tool stance presets</b><span class="sectionTag">idle &amp; swing</span></div>
     <div class="field"><label>Preset</label><select id="presetSelect"></select></div>
     <div class="row"><button id="loadPresetBtn">Load Preset</button></div>
-    <div class="help">"Idle" presets freeze the preview on that tool's resting hold (no swing). "Swing" presets load that tool's in-game windup/strike shape as a starting point — approximated in this editor's pose space, not a literal unit-for-unit port.</div>
+    <div class="help">"Idle" presets freeze the preview on that tool's resting hold (no swing) and load that tool's sprite. "Swing" presets load that tool's in-game windup/strike shape as an exact port of game.js's updateToolMesh math (angles converted to degrees, positions relative to the same prism-derived base).</div>
   </div>
 
   <div class="card section" style="--sec:#fb7185;--secBg:rgba(251,113,133,.10)">
@@ -216,19 +236,26 @@ scene.add(dirLight);
 scene.add(new THREE.GridHelper(4, 8, 0x335070, 0x1d2a3a));
 scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.01, 0), 0.7, 0x6aa7ff, 0.12, 0.08));
 
-// ── Rig: PNG-plane avatar body, with a shoulder anchor the weapon hangs off ──
+// ── Rig: PNG-plane avatar body, with a toolBase the weapon hangs off ──
+// rig is the "whole character" — rotating rig.rotation.y is exactly the
+// body-rotation the live game does for sweep-style swings (playerMesh.rotation.y),
+// and since toolBase (and therefore the tool) is a child of rig, the tool is
+// carried along with the body automatically, same as game.js's parent/child setup.
 const rig = new THREE.Group();
 scene.add(rig);
 
-const shoulderAnchor = new THREE.Object3D();
-shoulderAnchor.position.set(0, 0.92, 0.04);
-rig.add(shoulderAnchor);
+// toolBase sits at half the avatar's actual prism width (the right-side plane)
+// and half its height — this matches refreshPlayerAvatar()/updateToolMesh() in
+// game.js exactly (playerToolBaseX/playerToolBaseY), recomputed per species below.
+const toolBase = new THREE.Object3D();
+rig.add(toolBase);
 const anchorDot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: 0x6aa7ff }));
-shoulderAnchor.add(anchorDot);
+toolBase.add(anchorDot);
 
-// Same shoulder/height ratio the old placeholder pawn used (0.92 / ~1.22 total height),
-// so the weapon hangs at a believable spot regardless of which species' height is loaded.
-const SHOULDER_HEIGHT_RATIO = 0.754;
+function avatarCfg() { return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {}; }
+// Same modelWidth===modelHeight square-prism scheme refreshPlayerAvatar() uses for the
+// live player avatar (worldModelWidth), not the design-tool default of 1.
+const MODEL_W = avatarCfg().worldModelWidth ?? 0.9;
 let avatarModel = null;
 let _cosmeticsReady = null;
 function ensureCosmetics() {
@@ -264,12 +291,14 @@ async function rebuildAvatar(speciesId, gender) {
   }
   avatarModel = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, frontCanvas, {
     backCanvas, profile, speciesId, gender, name: 'editor_preview_avatar',
+    modelWidth: MODEL_W, modelHeight: MODEL_W,
   });
-  const h = avatarModel.userData.portraitModelHeight || 1.1;
+  const h = avatarModel.userData.portraitModelHeight || MODEL_W;
+  const w = avatarModel.userData.portraitModelWidth || MODEL_W;
   avatarModel.position.y = h / 2;
   rig.add(avatarModel);
-  shoulderAnchor.position.y = h * SHOULDER_HEIGHT_RATIO;
-  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (height ${h.toFixed(2)})`);
+  toolBase.position.set(w / 2, h / 2, 0);
+  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, base at +${(w/2).toFixed(2)}/+${(h/2).toFixed(2)})`);
 }
 
 const SPECIES_LIST = [
@@ -305,37 +334,73 @@ rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logD
 
 // toolHolder is what the authored pose (pos+pitch+yaw) actually drives.
 const toolHolder = new THREE.Object3D();
-shoulderAnchor.add(toolHolder);
+toolBase.add(toolHolder);
 
-const weaponGroup = new THREE.Group();
-const blade = new THREE.Mesh(
-  new THREE.BoxGeometry(0.045, 0.045, 0.85),
-  new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.4, metalness: 0.35 })
-);
-blade.position.set(0, 0, 0.42);
-weaponGroup.add(blade);
-const guard = new THREE.Mesh(
-  new THREE.BoxGeometry(0.18, 0.045, 0.045),
-  new THREE.MeshStandardMaterial({ color: 0x9fb0c8, roughness: 0.6 })
-);
-weaponGroup.add(guard);
-const grip = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.025, 0.025, 0.2, 8),
-  new THREE.MeshStandardMaterial({ color: 0x3a4a5e, roughness: 0.8 })
-);
-grip.rotation.x = Math.PI / 2;
-grip.position.set(0, 0, -0.1);
-weaponGroup.add(grip);
-toolHolder.add(weaponGroup);
+// ── Weapon mesh: a real PNG sprite plane, same convention as game.js's
+// makeToolPlaneMesh (TOOL_MODEL_WIDTH, flat-in-XZ rotation, sweep tools get an
+// extra 90° twist) — so the editor shows the actual in-game sprite, not a stand-in
+// shape, and it's obvious which end is the tool's business end.
+const TOOL_MODEL_WIDTH = 0.5;
+const TOOL_SPRITE_DEFS = {
+  hatchet:      { label: 'Hatchet (sweep)',       sprite: '../../assets/toolsprites/axe_hatchet.png',         animStyle: 'sweep'  },
+  pickshovel:   { label: 'Pick-Shovel (thrust)',  sprite: '../../assets/toolsprites/shovel_pickshovel.png',   animStyle: 'thrust' },
+  bronzehoe:    { label: 'Bronze Hoe (chop)',     sprite: '../../assets/toolsprites/hoe_bronzehoe.png',       animStyle: 'chop'   },
+  fishingspear: { label: 'Fishing Spear (sweep)', sprite: '../../assets/toolsprites/harpoon_fishingspear.png',animStyle: 'sweep'  },
+  fishingmace:  { label: 'Fishing Mace (sweep)',  sprite: '../../assets/toolsprites/harpoon_fishingmace.png', animStyle: 'sweep'  },
+};
+const toolTexLoader = new THREE.TextureLoader();
+let toolPlaneMesh = null;
+let currentToolKey = null;
+function disposeToolPlaneMesh(g) {
+  g.traverse(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) { child.material.map?.dispose(); child.material.dispose(); }
+  });
+}
+function buildToolPlaneMesh(toolKey) {
+  return new Promise(resolve => {
+    const def = TOOL_SPRITE_DEFS[toolKey];
+    if (!def) { resolve(null); return; }
+    toolTexLoader.load(def.sprite, tex => {
+      tex.magFilter = tex.minFilter = THREE.NearestFilter;
+      const imgW = tex.image.width || 1, imgH = tex.image.height || 1;
+      const planeW = TOOL_MODEL_WIDTH;
+      const planeH = planeW * (imgH / imgW);
+      const geo = new THREE.PlaneGeometry(planeW, planeH);
+      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
+      const plane = new THREE.Mesh(geo, mat);
+      plane.rotation.x = -Math.PI / 2;
+      if (def.animStyle === 'sweep') plane.rotation.z = -Math.PI / 2;
+      const g = new THREE.Group();
+      g.add(plane);
+      resolve(g);
+    }, undefined, err => { logDebug(`Tool sprite load failed (${toolKey}): ${err?.message || err}`); resolve(null); });
+  });
+}
+async function setToolSprite(toolKey) {
+  const g = await buildToolPlaneMesh(toolKey);
+  if (toolPlaneMesh) { toolHolder.remove(toolPlaneMesh); disposeToolPlaneMesh(toolPlaneMesh); }
+  toolPlaneMesh = g;
+  currentToolKey = toolKey;
+  if (g) { toolHolder.add(g); logDebug(`Weapon sprite set: ${toolKey}`); }
+}
+$('toolSpriteSelect').innerHTML = Object.entries(TOOL_SPRITE_DEFS).map(([k, d]) => `<option value="${k}">${d.label}</option>`).join('');
+$('toolSpriteSelect').addEventListener('change', () => {
+  setToolSprite($('toolSpriteSelect').value).catch(e => logDebug('Tool sprite swap failed: ' + e.message));
+});
+setToolSprite($('toolSpriteSelect').value).catch(e => logDebug('Tool sprite swap failed: ' + e.message));
 
 // ── Animation data model ─────────────────────────────────────────────────
-// pose = { x, y, z, pitch, yaw } — local offset/rotation of the weapon relative
-// to the shoulder anchor. Neutral (rest) is always the implicit zero pose;
-// only windup and strike are authored. Mirroring across the character's
-// midline negates x (side) and yaw (left/right swing) and leaves y, z, pitch
-// untouched (they're symmetric about the midline).
-function defaultPose(x, y, z, pitch, yaw) { return { x, y, z, pitch, yaw }; }
-const NEUTRAL_POSE = defaultPose(0, 0, 0, 0, 0);
+// pose = { x, y, z, pitch, yaw, bodyYaw } — x/y/z/pitch/yaw are the weapon's own
+// local offset/rotation relative to toolBase (which already sits at the prism's
+// base offset — see rebuildAvatar above); bodyYaw is separate and rotates the
+// whole character (rig.rotation.y), matching game.js's sweep-style mechanic where
+// the body turns and the tool stays rigid in hand. Neutral (rest) is always the
+// implicit zero pose; only windup and strike are authored. Mirroring across the
+// character's midline negates x, yaw, and bodyYaw (all left/right-handed) and
+// leaves y, z, pitch untouched (symmetric about the midline).
+function defaultPose(x, y, z, pitch, yaw, bodyYaw = 0) { return { x, y, z, pitch, yaw, bodyYaw }; }
+const NEUTRAL_POSE = defaultPose(0, 0, 0, 0, 0, 0);
 
 let anim = {
   name: 'New Attack',
@@ -344,8 +409,8 @@ let anim = {
   strikeFrac: 0.55,
   durationS: 0.5,
   poses: {
-    windup: defaultPose(0.05, 0.05, -0.25, -25, -70),
-    strike: defaultPose(-0.05, 0.0, 0.15, 10, 65),
+    windup: defaultPose(0.05, 0.05, -0.15, -15, 0, -60),
+    strike: defaultPose(-0.05, 0.0, 0.20, 10, 0, 55),
   },
 };
 
@@ -354,7 +419,8 @@ const FIELD_DEFS = [
   { key: 'y', label: 'Y (height)', min: -1, max: 1, step: 0.01, angle: false },
   { key: 'z', label: 'Z (forward)', min: -1, max: 1, step: 0.01, angle: false },
   { key: 'pitch', label: 'Pitch°', min: -180, max: 180, step: 1, angle: true },
-  { key: 'yaw', label: 'Yaw°', min: -180, max: 180, step: 1, angle: true },
+  { key: 'yaw', label: 'Tool Yaw°', min: -180, max: 180, step: 1, angle: true },
+  { key: 'bodyYaw', label: 'Body Yaw° (character turn)', min: -180, max: 180, step: 1, angle: true },
 ];
 
 function buildPosePanel(phase) {
@@ -390,15 +456,6 @@ function syncPosePanelFromState(phase) {
 syncPosePanelFromState('windup');
 syncPosePanelFromState('strike');
 
-$('tabWindup').onclick = () => switchPoseTab('windup');
-$('tabStrike').onclick = () => switchPoseTab('strike');
-function switchPoseTab(phase) {
-  $('tabWindup').classList.toggle('active', phase === 'windup');
-  $('tabStrike').classList.toggle('active', phase === 'strike');
-  $('panelWindup').classList.toggle('active', phase === 'windup');
-  $('panelStrike').classList.toggle('active', phase === 'strike');
-}
-
 $('animName').addEventListener('input', () => { anim.name = $('animName').value; refreshJsonView(); });
 $('animStyle').addEventListener('change', () => { anim.style = $('animStyle').value; refreshJsonView(); });
 
@@ -411,6 +468,7 @@ $('windupFrac').addEventListener('input', () => {
   $('strikeFrac').value = anim.strikeFrac;
   $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  updateTimelineSegments();
   refreshJsonView();
 });
 $('strikeFrac').addEventListener('input', () => {
@@ -419,6 +477,7 @@ $('strikeFrac').addEventListener('input', () => {
   $('windupFrac').value = anim.windupFrac;
   $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  updateTimelineSegments();
   refreshJsonView();
 });
 $('durationS').addEventListener('input', () => {
@@ -428,7 +487,7 @@ $('durationS').addEventListener('input', () => {
 });
 
 // ── Mirroring across the character midline ───────────────────────────────
-function flipPose(p) { return defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw); }
+function flipPose(p) { return defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw); }
 $('flipBtn').onclick = () => {
   anim.poses.windup = flipPose(anim.poses.windup);
   anim.poses.strike = flipPose(anim.poses.strike);
@@ -438,8 +497,8 @@ $('flipBtn').onclick = () => {
   logDebug('Flipped animation across character midline');
 };
 $('resetPosesBtn').onclick = () => {
-  anim.poses.windup = defaultPose(0.05, 0.05, -0.25, -25, -70);
-  anim.poses.strike = defaultPose(-0.05, 0.0, 0.15, 10, 65);
+  anim.poses.windup = defaultPose(0.05, 0.05, -0.15, -15, 0, -60);
+  anim.poses.strike = defaultPose(-0.05, 0.0, 0.20, 10, 0, 55);
   syncPosePanelFromState('windup');
   syncPosePanelFromState('strike');
   refreshJsonView();
@@ -447,47 +506,48 @@ $('resetPosesBtn').onclick = () => {
 };
 
 // ── Tool stance presets ───────────────────────────────────────────────────
-// Hold poses are read off each tool's animStyle in game.js's updateToolMesh at
-// progress=0 (its actual in-game idle hold); swing poses are read off that same
-// style's windup/strike extremes. Rotation axes line up directly with this editor's
-// pitch (chop/thrust tilt about the player's right axis) and yaw (sweep's body-turn
-// about the up axis) fields, so those angles are ported in degrees. Position deltas
-// don't translate 1:1 (game.js's sweep sweeps the whole body, this editor only swings
-// the tool around a fixed shoulder pivot), so those are stylized approximations.
+// Now that toolBase sits at the exact same prism-derived base offset game.js's
+// updateToolMesh uses (playerToolBaseX/Y), these are EXACT ports of each style's
+// math, not approximations: x/y/z are the local right/forward/height deltas
+// updateToolMesh adds on top of that base (constant for sweep/thrust's qAnim tilt
+// is folded into pitch), and bodyYaw is sweep's playerMesh.rotation.y arc — both
+// read directly off updateToolMesh's radian constants, converted to degrees.
+// Hold (idle) poses are each style's progress=0 values; windup/strike are each
+// style's WF/SF (0.16/0.28) keyframe extremes.
 const TOOL_PRESETS = [
-  { id: 'hatchet_idle', label: 'Hatchet — Idle (still)', style: 'sweep', still: true,
-    windup: defaultPose(0.18, -0.02, 0.10, 6, -8), strike: defaultPose(0.18, -0.02, 0.10, 6, -8),
+  { id: 'hatchet_idle', label: 'Hatchet — Idle (still)', style: 'sweep', toolKey: 'hatchet', still: true,
+    windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
-  { id: 'hatchet_swing', label: 'Hatchet — Swing (sweep)', style: 'sweep', still: false,
-    windup: defaultPose(0.10, 0, -0.20, 0, -126), strike: defaultPose(-0.08, 0, 0.14, 0, 121),
-    windupFrac: 0.16, strikeFrac: 0.28 },
-
-  { id: 'pickshovel_idle', label: 'Pick-Shovel — Idle (still)', style: 'thrust', still: true,
-    windup: defaultPose(0.22, 0, -0.05, 10, 0), strike: defaultPose(0.22, 0, -0.05, 10, 0),
-    windupFrac: 0.16, strikeFrac: 0.28 },
-  { id: 'pickshovel_swing', label: 'Pick-Shovel — Swing (thrust)', style: 'thrust', still: false,
-    windup: defaultPose(0.22, 0, -0.22, 10, 0), strike: defaultPose(0.22, 0, 0.32, 10, 0),
+  { id: 'hatchet_swing', label: 'Hatchet — Swing (sweep)', style: 'sweep', toolKey: 'hatchet', still: false,
+    windup: defaultPose(0, 0, 0.16, 0, 0, -126.05), strike: defaultPose(0, 0, 0.16, 0, 0, 121.49),
     windupFrac: 0.16, strikeFrac: 0.28 },
 
-  { id: 'bronzehoe_idle', label: 'Bronze Hoe — Idle (still)', style: 'chop', still: true,
-    windup: defaultPose(0, 0, 0, 47, 0), strike: defaultPose(0, 0, 0, 47, 0),
+  { id: 'pickshovel_idle', label: 'Pick-Shovel — Idle (still)', style: 'thrust', toolKey: 'pickshovel', still: true,
+    windup: defaultPose(0, 0, 0, 10.31, 0, 0), strike: defaultPose(0, 0, 0, 10.31, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
-  { id: 'bronzehoe_swing', label: 'Bronze Hoe — Swing (chop)', style: 'chop', still: false,
-    windup: defaultPose(0, 0, 0, 56, 0), strike: defaultPose(0, 0, 0, -133, 0),
-    windupFrac: 0.16, strikeFrac: 0.28 },
-
-  { id: 'fishingspear_idle', label: 'Fishing Spear — Idle (still)', style: 'sweep', still: true,
-    windup: defaultPose(0.18, -0.02, 0.10, 6, -8), strike: defaultPose(0.18, -0.02, 0.10, 6, -8),
-    windupFrac: 0.16, strikeFrac: 0.28 },
-  { id: 'fishingspear_swing', label: 'Fishing Spear — Swing (sweep)', style: 'sweep', still: false,
-    windup: defaultPose(0.10, 0, -0.20, 0, -126), strike: defaultPose(-0.08, 0, 0.14, 0, 121),
+  { id: 'pickshovel_swing', label: 'Pick-Shovel — Swing (thrust)', style: 'thrust', toolKey: 'pickshovel', still: false,
+    windup: defaultPose(0, 0, -0.22, 10.31, 0, 0), strike: defaultPose(0, 0, 0.32, 10.31, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
 
-  { id: 'fishingmace_idle', label: 'Fishing Mace — Idle (still)', style: 'sweep', still: true,
-    windup: defaultPose(0.18, -0.02, 0.10, 6, -8), strike: defaultPose(0.18, -0.02, 0.10, 6, -8),
+  { id: 'bronzehoe_idle', label: 'Bronze Hoe — Idle (still)', style: 'chop', toolKey: 'bronzehoe', still: true,
+    windup: defaultPose(0, 0, 0, 46.98, 0, 0), strike: defaultPose(0, 0, 0, 46.98, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
-  { id: 'fishingmace_swing', label: 'Fishing Mace — Swing (sweep, spins in-game)', style: 'sweep', still: false,
-    windup: defaultPose(0.10, 0, -0.20, 0, -126), strike: defaultPose(-0.08, 0, 0.14, 0, 121),
+  { id: 'bronzehoe_swing', label: 'Bronze Hoe — Swing (chop)', style: 'chop', toolKey: 'bronzehoe', still: false,
+    windup: defaultPose(0, 0, 0, 103.13, 0, 0), strike: defaultPose(0, 0, 0, -85.94, 0, 0),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+
+  { id: 'fishingspear_idle', label: 'Fishing Spear — Idle (still)', style: 'sweep', toolKey: 'fishingspear', still: true,
+    windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+  { id: 'fishingspear_swing', label: 'Fishing Spear — Swing (sweep)', style: 'sweep', toolKey: 'fishingspear', still: false,
+    windup: defaultPose(0, 0, 0.16, 0, 0, -126.05), strike: defaultPose(0, 0, 0.16, 0, 0, 121.49),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+
+  { id: 'fishingmace_idle', label: 'Fishing Mace — Idle (still)', style: 'sweep', toolKey: 'fishingmace', still: true,
+    windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+  { id: 'fishingmace_swing', label: 'Fishing Mace — Swing (sweep, spins in-game)', style: 'sweep', toolKey: 'fishingmace', still: false,
+    windup: defaultPose(0, 0, 0.16, 0, 0, -126.05), strike: defaultPose(0, 0, 0.16, 0, 0, 121.49),
     windupFrac: 0.16, strikeFrac: 0.28 },
 ];
 $('presetSelect').innerHTML = TOOL_PRESETS.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
@@ -503,13 +563,19 @@ function applyPreset(preset) {
   $('strikeFrac').value = anim.strikeFrac;
   $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  updateTimelineSegments();
   syncPosePanelFromState('windup');
   syncPosePanelFromState('strike');
+  if (preset.toolKey) {
+    $('toolSpriteSelect').value = preset.toolKey;
+    setToolSprite(preset.toolKey).catch(e => logDebug('Tool sprite swap failed: ' + e.message));
+  }
   if (preset.still) {
     playing = false;
     previewT = (anim.windupFrac + anim.strikeFrac) / 2;
     $('scrub').value = previewT;
     $('playPauseBtn').textContent = '▶ Play';
+    updateTimelineMarker(previewT);
   } else {
     playing = true;
     $('playPauseBtn').textContent = '⏸ Pause';
@@ -529,7 +595,8 @@ function lerpPose(a, b, k) {
     a.y + (b.y - a.y) * k,
     a.z + (b.z - a.z) * k,
     a.pitch + (b.pitch - a.pitch) * k,
-    a.yaw + (b.yaw - a.yaw) * k
+    a.yaw + (b.yaw - a.yaw) * k,
+    a.bodyYaw + (b.bodyYaw - a.bodyYaw) * k
   );
 }
 function poseAt(t) {
@@ -546,11 +613,27 @@ function poseAt(t) {
   }
 }
 function applyPoseToRig(pose) {
+  // Body rotation (rig) is applied first/separately from the tool's own local pose —
+  // toolBase/toolHolder are children of rig, so this automatically carries the tool
+  // along with the body, same as game.js's playerMesh.rotation.y for sweep swings.
+  rig.rotation.y = THREE.MathUtils.degToRad(pose.bodyYaw || 0);
   toolHolder.position.set(pose.x, pose.y, pose.z);
   const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(pose.pitch));
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(pose.yaw));
   toolHolder.quaternion.copy(qYaw).multiply(qPitch);
 }
+
+// ── Timeline visualization (windup/strike/return phase structure) ────────
+function updateTimelineSegments() {
+  const wf = anim.windupFrac, sf = anim.strikeFrac;
+  $('segWindup').style.width = `${wf * 100}%`;
+  $('segStrike').style.width = `${(sf - wf) * 100}%`;
+  $('segReturn').style.width = `${(1 - sf) * 100}%`;
+}
+function updateTimelineMarker(t) {
+  $('timelineMarker').style.left = `${Math.max(0, Math.min(1, t)) * 100}%`;
+}
+updateTimelineSegments();
 
 let previewT = 0;
 let playing = true;
@@ -563,6 +646,7 @@ $('scrub').addEventListener('input', () => {
   previewT = Number($('scrub').value);
   playing = false;
   $('playPauseBtn').textContent = '▶ Play';
+  updateTimelineMarker(previewT);
 });
 
 // ── Import / export ──────────────────────────────────────────────────────
@@ -616,8 +700,8 @@ function loadAnimObject(data) {
   anim.durationS = safeNum(data.durationS, anim.durationS);
   clampFracs();
   const w = data.poses?.windup || {}, s = data.poses?.strike || {};
-  anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0));
-  anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0));
+  anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0));
+  anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0));
   $('animName').value = anim.name;
   $('animStyle').value = anim.style;
   $('windupFrac').value = anim.windupFrac;
@@ -627,6 +711,7 @@ function loadAnimObject(data) {
   $('durationS').value = anim.durationS;
   syncPosePanelFromState('windup');
   syncPosePanelFromState('strike');
+  updateTimelineSegments();
   refreshJsonView();
 }
 
@@ -654,6 +739,7 @@ function animate() {
   const { pose, phase } = poseAt(previewT);
   applyPoseToRig(pose);
   $('phasePill').textContent = `phase: ${phase} (${Math.round(previewT * 100)}%)`;
+  updateTimelineMarker(previewT);
   controls.update();
   renderer.render(scene, camera);
 }
