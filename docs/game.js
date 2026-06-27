@@ -8674,11 +8674,6 @@
         }
 
         const _anim = activeAnimStyle();
-        // Plain tool sweeps (e.g. a hatchet chop) alternate forehand/backhand
-        // each swing too, same as the weapon combo's first two steps — a
-        // combat trigger overrides this explicitly via triggerWeaponSwingVisual's
-        // dirSign, so this only matters when nothing else has set it for this swing.
-        if (_anim === 'sweep') combatSwingSign = -combatSwingSign;
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
         // Dig speed only scales shovel/pick dig & fill swings (e.g. the single-tap
         // trench redig below) — everything else swings at its normal pace.
@@ -12538,11 +12533,14 @@
 
         } else {
           // SWEEP — body rotates through windup-strike-return arc; axe locked in hand.
-          // Forehand/backhand swings alternate direction via combatSwingSign —
-          // toggled per-swing for plain tool use, or set explicitly per combo
-          // step via triggerWeaponSwingVisual's dirSign — so a plain hatchet
-          // chop has the same telegraphed shape as the weapon combo's swing.
-          const WINDUP_ANGLE = -2.20 * 1.25 * combatSwingSign, STRIKE_ANGLE = 2.12 * combatSwingSign;
+          // -2.20/2.12 rad are exactly the attack-animation-editor's "Hatchet —
+          // Swing (sweep)" preset (-126.05deg/121.49deg) — combo steps must match
+          // that preset 1:1, so no extra scaling beyond dirSign/power applies here.
+          // Combat swings alternate direction (forehand/backhand) via
+          // combatSwingSign; power (Cleave) scales the whole arc for a heavier finisher.
+          const sweepSign = combatSwingAnim ? combatSwingSign : 1;
+          const sweepPower = combatSwingAnim ? combatSwingPower : 1;
+          const WINDUP_ANGLE = -2.20 * sweepPower * sweepSign, STRIKE_ANGLE = 2.12 * sweepPower * sweepSign;
           let sweepOff;
           if (progress <= WF) {
             sweepOff = WINDUP_ANGLE * (progress / WF);
@@ -12557,10 +12555,14 @@
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
           _qFac.setFromAxisAngle(_tUp, vθ);
           toolHolder.quaternion.copy(_qFac);
+          // Backhand mirrors the hand attach point too (matching the editor's
+          // "Flip Across Midline": toolBase.x negates along with bodyYaw and the
+          // sprite scale) — a true mirror, not just the body spinning the other way.
+          const handX = playerToolBaseX * sweepSign;
           toolHolder.position.set(
-            playerMesh.position.x + vRX * playerToolBaseX + vFX * 0.16,
+            playerMesh.position.x + vRX * handX + vFX * 0.16,
             playerMesh.position.y + playerToolBaseY,
-            playerMesh.position.z + vRZ * playerToolBaseX + vFZ * 0.16
+            playerMesh.position.z + vRZ * handX + vFZ * 0.16
           );
         }
 
@@ -12586,8 +12588,8 @@
               ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
               : baseRotZ;
           }
-          // Backhand sweeps mirror the weapon sprite itself, not just the swing arc.
-          spinPlane.scale.x = (anim === 'sweep') ? combatSwingSign : 1;
+          // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc.
+          spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
         }
 
         if (pendingAction && !strikeFired && progress >= SF) {

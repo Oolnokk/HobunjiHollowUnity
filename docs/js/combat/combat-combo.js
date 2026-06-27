@@ -17,14 +17,15 @@
   // combo advances to its next step; wait longer and it resets to step 1.
   const COMBO_RESET_S = 0.9;
 
-  // anim/dirSign pick the cosmetic swing shape per the demo's tool references:
-  // horizontal swings mirror the hatchet's sweep (forehand/backhand alternate
-  // sides), the combo's heavy finisher mirrors the hoe's overhead chop, and
-  // pokes mirror the shovel's straight thrust.
+  // anim/dirSign pick the cosmetic swing shape per the attack-animation-editor's
+  // "Hatchet — Swing (sweep)" preset: Forehand Swing is that preset as-is,
+  // Backhand Swing is the same preset flipped across the midline (dirSign:-1),
+  // and Cleave reuses the Forehand pose with more power instead of a separate
+  // overhead-chop animation.
   const SWING_STEPS = [
     { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 10, windupS: 0.16, strikeS: 0.10, anim: 'sweep', dirSign: 1 },
     { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 12, windupS: 0.19, strikeS: 0.10, anim: 'sweep', dirSign: -1 },
-    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 1.6,  staminaCost: 18, windupS: 0.30, strikeS: 0.13, returnS: 0.35, anim: 'chop', dirSign: 1 },
+    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 1.6,  staminaCost: 18, windupS: 0.30, strikeS: 0.13, returnS: 0.35, anim: 'sweep', dirSign: 1, power: 1.3 },
   ];
 
   // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
