@@ -167,6 +167,58 @@
     return defaultRatio;
   }
 
+  // Finds the topmost and bottommost opaque pixel rows actually present in the
+  // canvas. Used instead of the configured portraitVerticalPlacementRatio (which
+  // encodes per-species/gender padding and scale quirks tuned for a different
+  // purpose — grounding the plane in world space) so the hand-height row below is
+  // measured straight from the real rendered art, not inferred from that config.
+  // Returns null if the canvas has no opaque pixels (or is unreadable, e.g.
+  // tainted by a cross-origin image).
+  function scanOpaqueVerticalBounds(canvas, alphaThreshold) {
+    const w = canvas?.width, h = canvas?.height;
+    if (!canvas || !w || !h) return null;
+    const threshold = alphaThreshold ?? 8;
+    try {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const data = ctx.getImageData(0, 0, w, h).data;
+      let top = -1, bottom = -1;
+      for (let y = 0; y < h; y++) {
+        const rowOffset = y * w * 4;
+        for (let x = 0; x < w; x++) {
+          if (data[rowOffset + x * 4 + 3] > threshold) {
+            if (top === -1) top = y;
+            bottom = y;
+            break;
+          }
+        }
+      }
+      return top === -1 ? null : { top, bottom };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Scans a single canvas row from the left edge rightward for the first
+  // non-transparent pixel — the right-arm sprite's outer edge at that height.
+  // Returns the column index, or null if the row has no opaque pixels (or the
+  // canvas is unreadable).
+  function scanRowFirstOpaqueColumn(canvas, row, alphaThreshold) {
+    const w = canvas?.width, h = canvas?.height;
+    if (!canvas || !w || !h) return null;
+    const clampedRow = Math.min(h - 1, Math.max(0, row));
+    try {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const data = ctx.getImageData(0, clampedRow, w, 1).data;
+      const threshold = alphaThreshold ?? 8;
+      for (let x = 0; x < w; x++) {
+        if (data[x * 4 + 3] > threshold) return x;
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
   function createSinglePlaneAssembly(THREE, config) {
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_single_plane_assembly';
@@ -284,6 +336,30 @@
     root.userData.portraitScaleMultiplier = scaleMultiplier;
     root.userData.portraitModelWidth = modelWidth;
     root.userData.portraitModelHeight = modelHeight;
+    // Hand/tool attach point: find the actual vertical midpoint of the rendered
+    // avatar's opaque pixels (not a row inferred from portraitVerticalPlacementRatio,
+    // which encodes per-species/gender padding tuned for plane-grounding, not hand
+    // height), then scan that row from the left edge for the first opaque pixel —
+    // the right-arm sprite's outer edge. Gives a per-species/gender-accurate X
+    // instead of the coarse -modelWidth/2 guess.
+    const handAlphaThreshold = cfg().handAttachAlphaThreshold;
+    const vBounds = scanOpaqueVerticalBounds(sourceCanvas, handAlphaThreshold);
+    const handRow = vBounds ? Math.round((vBounds.top + vBounds.bottom) / 2) : Math.round(placementRatio * pxH);
+    const handAttachCol = scanRowFirstOpaqueColumn(sourceCanvas, handRow, handAlphaThreshold);
+    root.userData.handAttachX = handAttachCol != null
+      ? -modelWidth / 2 + (handAttachCol / pxW) * modelWidth
+      : -modelWidth / 2;
+    // Hand height was previously never computed here, so every caller fell back
+    // to a hardcoded guess (e.g. the editor/game use half the prism height),
+    // which lands at the avatar's vertical midpoint — shoulder height — for
+    // every species. Use the portrait's own lowest opaque pixel (vBounds.bottom)
+    // instead, converted through the same scale/offset already applied to the
+    // assembly above: avatarGroup/rig sits at modelHeight/2, the plane assembly
+    // inside it is offset by (placementRatio-0.5)*modelHeight, and within the
+    // plane itself row r maps to modelHeight/2 - (r/pxH)*modelHeight — summing
+    // those three terms gives modelHeight*(0.5 + placementRatio - r/pxH).
+    const handAttachRowY = vBounds ? vBounds.bottom : Math.round(placementRatio * pxH);
+    root.userData.handAttachY = modelHeight * (0.5 + placementRatio - handAttachRowY / pxH);
     root.add(assembly);
     root.userData.sourceCanvas = sourceCanvas;
     root.userData.backCanvas = options.backCanvas || options.backImage || null;

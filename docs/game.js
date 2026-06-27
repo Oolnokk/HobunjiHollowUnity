@@ -10,6 +10,7 @@
       const joystickZone = document.getElementById('joystickZone');
       const joystickKnob = document.getElementById('joystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
+      const btnSwapTarget = document.getElementById('btnSwapTarget');
 
       // Status pill
       const spTime    = document.getElementById('spTime');
@@ -2179,6 +2180,10 @@
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S) {
         if (performance.now() < player.invulnUntil) return;
+        // Lets a held defensive ability (Counter Shield) absorb the hit and
+        // riposte instead of applying damage normally — only one hold
+        // ability can be active at a time, so this is a single settable slot.
+        if (window.Combat?.tryInterceptPlayerDamage?.(amount, fromX, fromY)) return;
         player.health = Math.max(0, player.health - amount);
         if (fromX !== undefined && player.health > 0) applyKnockback(player, fromX, fromY, knockbackPxS);
         if (player.health <= 0) respawnPlayer();
@@ -2221,15 +2226,54 @@
         return { hits, message: hits > 1 ? `${verb} ${hits} creatures!` : `${verb} the ${lastName}!` };
       }
 
-      // Nearest live hostile in the player's current area within lock-on range, or null.
+      // Player-chosen override from swapAutoTarget(), preferred over the
+      // nearest-hostile default until it dies, leaves range/area, or the
+      // player swaps again. Cleared automatically once invalid.
+      let manualAutoTarget = null;
+
+      // Nearest live hostile in the player's current area within lock-on range, or
+      // the player's manually-swapped target if still valid, or null.
       function findAutoTarget() {
-        let best = null, bestDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        if (manualAutoTarget) {
+          if (manualAutoTarget.health > 0 && manualAutoTarget.areaId === currentArea &&
+              Math.hypot(manualAutoTarget.x - player.x, manualAutoTarget.y - player.y) <= maxDist) {
+            return manualAutoTarget;
+          }
+          manualAutoTarget = null;
+        }
+        let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
           if (dist <= bestDist) { best = c; bestDist = dist; }
         }
         return best;
+      }
+
+      // Swap the auto-target to the nearest hostile roughly in `aimAngle`'s
+      // direction (within range, within a 90° cone either side), excluding
+      // whatever is currently targeted. Used by the desktop swap-target input
+      // (mouse/right-stick direction) and the mobile swap-target stick button.
+      function swapAutoTarget(aimAngle) {
+        if (activeTool !== 'weapon') return false;
+        const current = findAutoTarget();
+        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        let best = null, bestScore = -Infinity;
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea || c === current) continue;
+          const dx = c.x - player.x, dy = c.y - player.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > maxDist || dist < 0.001) continue;
+          const angleToC = Math.atan2(dy, dx);
+          const diff = Math.abs(angleDiff(angleToC, aimAngle));
+          if (diff > Math.PI / 2) continue;
+          const score = Math.cos(diff) - (dist / maxDist) * 0.25;
+          if (score > bestScore) { bestScore = score; best = c; }
+        }
+        if (!best) return false;
+        manualAutoTarget = best;
+        return true;
       }
 
       // Shared by hostiles, companions, and wandering creatures — covers every
@@ -2289,11 +2333,19 @@
         else c.groupRot += angleDiff(effectiveTarget, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
 
-        if (c.hitFlashT > 0) {
-          c.hitFlashT = Math.max(0, c.hitFlashT - dt);
-          const flashColor = c.hitFlashT > 0 ? 0xff5050 : (c.def.tint || 0xffffff);
+        if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
+        // Telegraph tell (combat-enemy-telegraph.js) takes a back seat to the
+        // hit flash so "you damaged it" feedback still reads clearly even if
+        // a strike lands mid-windup. Resolved every frame (not just on
+        // change) so the tint always reverts cleanly once both clear.
+        const desiredTint = c.hitFlashT > 0 ? 0xff5050
+          : c.telegraphState === 'strike' ? 0xffffff
+          : c.telegraphState === 'windup' ? 0xffc23d
+          : (c.def.tint || 0xffffff);
+        if (c._tintHex !== desiredTint) {
+          c._tintHex = desiredTint;
           for (const child of grp.children) {
-            if (child.material) child.material.color.setHex(flashColor);
+            if (child.material) child.material.color.setHex(desiredTint);
           }
         }
       }
@@ -2321,6 +2373,13 @@
       const JUMP_BACK_DUR_S = 0.4;
       const JUMP_BACK_SPEED = 260;
 
+      // Bite-attack telegraph timing, ported from the sandbox's dummy AI
+      // attack (its only enemy-side attack: windup 0.54s, strike 0.20s) —
+      // reused for both hostiles and companions since they share this same
+      // chase-then-bite shape.
+      const BITE_TELEGRAPH_WINDUP_S = 0.54;
+      const BITE_TELEGRAPH_STRIKE_S = 0.20;
+
       function updateHostiles(dt) {
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
@@ -2336,6 +2395,9 @@
           if (c.state !== 'chase' && distToPlayer <= def.aggroRangePx) c.state = 'chase';
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
+          // Leaving chase mid-windup (player broke the leash) abandons the
+          // telegraphed bite rather than landing it from way out of range.
+          if (c.state !== 'chase' && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
 
           let moving = false, aimAngle = c.facing || 0;
           if (c.knockbackT > 0) {
@@ -2350,13 +2412,26 @@
               c.retreatT = Math.max(0, c.retreatT - dt);
               const awayAng = Math.atan2(-dyp, -dxp);
               moving = moveCreatureToward(c, c.x + Math.cos(awayAng) * TILE, c.y + Math.sin(awayAng) * TILE, JUMP_BACK_SPEED, dt);
+            } else if (window.Combat?.telegraph?.isBusy(c)) {
+              // Stand and wind up — the tell (game.js's tint) is the
+              // player's cue to step out of attackRangePx before the strike
+              // frame's range check below fires.
+              window.Combat.telegraph.update(c, dt);
             } else {
               moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
               if (distToPlayer <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
                 c.stamina -= def.attackStaminaCost;
                 c.attackCooldownT = def.attackCooldownS;
-                damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
-                c.retreatT = JUMP_BACK_DUR_S;
+                window.Combat.telegraph.start(c, {
+                  windupS: BITE_TELEGRAPH_WINDUP_S,
+                  strikeS: BITE_TELEGRAPH_STRIKE_S,
+                  onStrike: () => {
+                    if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
+                      damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
+                    }
+                    c.retreatT = JUMP_BACK_DUR_S;
+                  },
+                });
               }
             }
           } else if (c.state === 'return') {
@@ -2398,15 +2473,29 @@
             if (Math.hypot(h.x - player.x, h.y - player.y) <= ALERT_RANGE_PX) { target = h; break; }
           }
 
+          if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
+
           let moving = false, aimAngle = c.facing || 0;
           if (target) {
             const dist = Math.hypot(target.x - c.x, target.y - c.y);
-            if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
-            if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
-              c.stamina -= def.attackStaminaCost;
-              c.attackCooldownT = def.attackCooldownS;
-              damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
+            if (window.Combat?.telegraph?.isBusy(c)) {
+              window.Combat.telegraph.update(c, dt);
+            } else {
+              if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
+              if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+                c.stamina -= def.attackStaminaCost;
+                c.attackCooldownT = def.attackCooldownS;
+                window.Combat.telegraph.start(c, {
+                  windupS: BITE_TELEGRAPH_WINDUP_S,
+                  strikeS: BITE_TELEGRAPH_STRIKE_S,
+                  onStrike: () => {
+                    if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
+                      damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
+                    }
+                  },
+                });
+              }
             }
           } else if (distToPlayer > FOLLOW_FAR_PX) {
             moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
@@ -2534,6 +2623,13 @@
       let _npcDialogueTypeIndex = 0;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
+      // The base attach point updateToolMesh hangs tools/weapons from. X is the avatar's
+      // actual scanned right-arm sprite edge; Y is the avatar's actual scanned bottom-edge
+      // pixel row (these are cropped bust-style portraits, so the bottom-most opaque pixel
+      // is hand height, not avatarHeight/2 — see handAttachY in png-plane-avatar.js). Both
+      // vary by species and are recomputed in refreshPlayerAvatar() once the per-species
+      // sprite/scale is known.
+      let playerToolBaseX = -0.45, playerToolBaseY = 0.45;
 
       // ── Dialogue tree runtime state ──────────────────────────────────
       let _dlgTree      = null;  // active tree object
@@ -7258,7 +7354,14 @@
         );
         avatarGroup.name = 'player_avatar';
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
+        const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
+        // Tools/weapons hang from the avatar's actual scanned right-arm sprite edge
+        // and bottom-edge pixel row (see handAttachX/handAttachY in
+        // png-plane-avatar.js) — recompute here since this is the only place the
+        // per-species scale/sprite is known.
+        playerToolBaseX = avatarGroup.userData?.handAttachX ?? (-avatarWidth / 2);
+        playerToolBaseY = avatarGroup.userData?.handAttachY ?? (avatarHeight / 2);
         _markPngPlane(avatarGroup);
         if (refreshGeneration !== playerAvatarRefreshGeneration) {
           disposeAvatarGroup(avatarGroup);
@@ -7950,6 +8053,12 @@
           if (inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
         }
 
+        // Raw per-frame move intent, read by hold abilities (Blink Dodge)
+        // that need to know which way the player is trying to go.
+        player.inputX = ix;
+        player.inputY = iy;
+        player.inputStrength = inputStrength;
+
         // ── Cardinal bias ────────────────────────────────────
         // Slightly guide near-cardinal movement without crushing diagonals.
         if (inputStrength > 0.001) {
@@ -7971,7 +8080,10 @@
 
         // ── Acceleration / deceleration ──────────────────────
         const analogEase = usingKeyboard ? 1 : (0.28 + 0.72 * inputStrength);
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase;
+        // Lets a held movement ability (Blink Dodge) slow normal walking
+        // while it's converting movement into zips; 1 (no change) otherwise.
+        const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul;
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
@@ -8014,8 +8126,10 @@
         // ── Facing ────────────────────────────────────────────
         // Computed once per frame: also drives the touch dodge button, which
         // only matters in combat (same condition as the facing lock below).
-        const autoTarget = findAutoTarget();
+        // Auto-targeting only engages while the weapon tool is equipped.
+        const autoTarget = activeTool === 'weapon' ? findAutoTarget() : null;
         dodgeBtn?.classList.toggle('combat-active', !!autoTarget);
+        btnSwapTarget?.classList.toggle('abt-hidden', activeTool !== 'weapon');
 
         if (controllerLookActive) {
           const diff = angleDiff(controllerLookAngle, facingAngle);
@@ -8479,7 +8593,7 @@
         }
 
         if (tool === 'weapon') {
-          const hitResult = resolveWeaponHit(action);
+          const hitResult = window.Combat ? window.Combat.resolveWeaponHit(action, resolveWeaponHit) : resolveWeaponHit(action);
           if (hitResult.hits > 0) return { ok: true, message: hitResult.message };
           const vegResult = clearVegetationAt(col, row, action);
           if (vegResult.cleared > 0) {
@@ -11981,6 +12095,25 @@
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
       let chargeAnimOverride = null;
 
+      // Combat ability swing overrides (set by triggerWeaponSwingVisual's
+      // opts, called from combat-*.js modules), kept separate from
+      // chargeAnimOverride so farm tool charge-actions never collide with
+      // them. anim picks which of updateToolMesh's existing per-style arcs
+      // (thrust/sweep/chop) plays, regardless of the equipped weapon's own
+      // default style — e.g. a quick jab always plays the thrust arc even
+      // while wielding the hatchet. dirSign flips a sweep's rotation (and
+      // mirrors the weapon sprite) for alternating forehand/backhand combo
+      // steps. windupFrac/strikeFrac let each ability's own windupS/strikeS
+      // ratio drive how much of the cosmetic swing is spent winding up vs
+      // striking, instead of one fixed split for every attack. power scales
+      // a thrust's reach/turn for an extra-telegraphed finishing hit. Cleared
+      // automatically once the swing's toolSwingT runs out.
+      let combatSwingAnim = null;
+      let combatSwingSign = 1;
+      let combatSwingWindupFrac = 0.16;
+      let combatSwingStrikeFrac = 0.28;
+      let combatSwingPower = 1;
+
       function getDigSpeedMultiplier() {
         return Math.max(0.01, player.digSpeed || 1);
       }
@@ -12031,6 +12164,27 @@
         strikeFired  = false;
         pendingAction = null;
         chargeAnimOverride = stageDef.anim || null;
+      }
+
+      // Plays the weapon's existing arm-swing mesh animation for durationS without
+      // queuing a pendingAction — used by Combat ability modules that resolve their
+      // own hit logic and just want the legacy swing's visual flourish to match.
+      // opts: { anim: 'thrust'|'sweep'|'chop', dirSign: 1|-1, windupFrac, strikeFrac, power }
+      // lets a combat ability pick the attack-shape its animation should use
+      // (independent of the equipped weapon's own default style), how its own
+      // windupS/strikeS split maps onto the cosmetic swing arc, and (thrust
+      // only) a reach/turn multiplier for an extra-telegraphed finisher.
+      function triggerWeaponSwingVisual(durationS, opts = {}) {
+        if (activeTool !== 'weapon') return;
+        toolSwingDur = Math.max(0.05, durationS);
+        toolSwingT = toolSwingDur;
+        strikeFired = false;
+        pendingAction = null;
+        combatSwingAnim = opts.anim || null;
+        combatSwingSign = opts.dirSign || 1;
+        combatSwingWindupFrac = opts.windupFrac ?? 0.16;
+        combatSwingStrikeFrac = opts.strikeFrac ?? 0.28;
+        combatSwingPower = opts.power ?? 1;
       }
 
       function cancelChargeAction() {
@@ -12162,15 +12316,27 @@
       scene.add(toolHolder);
 
       // Pre-allocated objects to avoid per-frame GC in updateToolMesh
-      const _tUp    = new THREE.Vector3(0, 1, 0);
-      const _qFac   = new THREE.Quaternion();  // facing rotation
-      const _qAnim  = new THREE.Quaternion();  // animation rotation
-      const _swAxis = new THREE.Vector3();     // chop/tilt axis (player right in world)
+      const _tUp      = new THREE.Vector3(0, 1, 0);
+      const _xAxis    = new THREE.Vector3(1, 0, 0); // tool-local pitch axis (thrust)
+      const _qFac     = new THREE.Quaternion();  // facing (+ bodyYaw) rotation
+      const _qAnim    = new THREE.Quaternion();  // animation rotation
+      const _qToolYaw = new THREE.Quaternion();  // tool's own local yaw twist (thrust)
+      const _swAxis   = new THREE.Vector3();     // chop/tilt axis (player right in world)
 
       // Resolve anim style for the active tool from equipped item or fallback
       function activeAnimStyle() {
         const itemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
         return TOOL_ITEM_DEFS[itemKey]?.animStyle || 'thrust';
+      }
+
+      // Three-phase neutral→windup→strike→neutral interpolation, shared by every
+      // thrust-pose channel (lateral/forward offsets, pitch/yaw/bodyYaw angles) —
+      // mirrors the attack-animation editor's poseAt()/lerpPose() so game.js and
+      // the editor's authored pose JSON describe the exact same motion.
+      function threePhaseLerp(progress, wf, sf, windupV, strikeV, neutralV = 0) {
+        if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / wf);
+        if (progress <= sf) return windupV + (strikeV - windupV) * ((progress - wf) / (sf - wf));
+        return strikeV + (neutralV - strikeV) * ((progress - sf) / (1.0 - sf));
       }
 
       function updateToolMesh(dt) {
@@ -12193,42 +12359,65 @@
         _qFac.setFromAxisAngle(_tUp, θ);
         _swAxis.set(rightX, 0, rightZ);
 
-        const anim = fishThrowActive ? 'chop' : (chargeAnimOverride || activeAnimStyle());
-        const WF = 0.16, SF = 0.28;  // windup 16%, strike 12%, return 72% — strike faster than windup
+        const anim = fishThrowActive ? 'chop' : (chargeAnimOverride || combatSwingAnim || activeAnimStyle());
+        // Tool actions keep their original fixed 16%/28% split; combat
+        // triggers use each ability's own windupS/strikeS ratio (set via
+        // triggerWeaponSwingVisual's opts) so a heavily-telegraphed swing
+        // (e.g. Cleave) visibly winds up longer than a snap jab.
+        const WF = combatSwingAnim ? combatSwingWindupFrac : 0.16;
+        const SF = combatSwingAnim ? combatSwingStrikeFrac : 0.28;
 
         if (anim === 'thrust') {
-          // THRUST — windup (pull back) → jab forward → return
-          let jabOff;
-          if (progress <= WF) {
-            jabOff = -0.22 * (progress / WF);
-          } else if (progress <= SF) {
-            jabOff = -0.22 + 0.54 * ((progress - WF) / (SF - WF));  // −0.22 → +0.32
-          } else {
-            jabOff = 0.32 * (1.0 - (progress - SF) / (1.0 - SF));
-          }
-          _qAnim.setFromAxisAngle(_swAxis, 0.18);
-          toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
+          // THRUST — non-overextending jab authored as a full pose (lateral
+          // offset, forward jab, pitch, tool yaw, and a whole-body bodyYaw
+          // wind-up/follow-through), matching the attack-animation editor's
+          // pose schema exactly: x/z/pitch/yaw are hand-relative (relative to
+          // toolBase), bodyYaw alone rotates the whole character. Combat jabs
+          // pull back farther than a normal tool jab (-0.40 vs -0.22) so the
+          // windup itself reads as a clear "about to stab" tell; the strike
+          // still arrives at the same +0.32 extension either way.
+          // power scales reach/turn for an extra-telegraphed finisher (e.g. a
+          // combo's final lunge) without needing its own bespoke anim branch.
+          const power       = combatSwingAnim ? combatSwingPower : 1;
+          const windupBack  = (combatSwingAnim ? -0.40 : -0.22) * power;
+          const jabOff      = threePhaseLerp(progress, WF, SF, windupBack, 0.32 * power);
+          const lateral     = threePhaseLerp(progress, WF, SF, 0, -0.23 * power);
+          const pitchRad    = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1));
+          const yawRad      = threePhaseLerp(progress, WF, SF, 0, THREE.MathUtils.degToRad(-45) * power);
+          const bodyYawRad  = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power);
+
+          const vθ  = θ + bodyYawRad;
+          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
+
+          playerMesh.rotation.y = vθ;
+          _qFac.setFromAxisAngle(_tUp, vθ);
+          _qToolYaw.setFromAxisAngle(_tUp, yawRad);
+          _qAnim.setFromAxisAngle(_xAxis, pitchRad);
+          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * 0.28 + fwdX * jabOff,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + rightZ * 0.28 + fwdZ * jabOff
+            playerMesh.position.x + vRX * (playerToolBaseX + lateral) + vFX * jabOff,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + vRZ * (playerToolBaseX + lateral) + vFZ * jabOff
           );
 
         } else if (anim === 'chop') {
-          // CHOP — windup (raise high) → slam down → return
+          // CHOP — windup (raise high) → slam down → return. Combat overheads
+          // raise farther back (2.05 vs 1.80) for a clearer "about to slam" tell.
+          const chopRaise = combatSwingAnim ? 2.05 : 1.80;
           let chopAngle;
           if (progress <= WF) {
-            chopAngle = 0.82 + 0.98 * (progress / WF);               // raise: 0.82 → 1.80
+            chopAngle = 0.82 + (chopRaise - 0.82) * (progress / WF);               // raise: 0.82 → chopRaise
           } else if (progress <= SF) {
-            chopAngle = 1.80 - 3.30 * ((progress - WF) / (SF - WF)); // slam:  1.80 → −1.50
+            chopAngle = chopRaise - (chopRaise + 1.50) * ((progress - WF) / (SF - WF)); // slam:  chopRaise → −1.50
           } else {
             chopAngle = -1.50 + 2.32 * ((progress - SF) / (1.0 - SF));// return: −1.50 → 0.82
           }
           _qAnim.setFromAxisAngle(_swAxis, chopAngle);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
-          const handX = playerMesh.position.x + rightX * 0.28;
-          const handY = playerMesh.position.y + 0.18;
-          const handZ = playerMesh.position.z + rightZ * 0.28;
+          const handX = playerMesh.position.x + rightX * playerToolBaseX;
+          const handY = playerMesh.position.y + playerToolBaseY;
+          const handZ = playerMesh.position.z + rightZ * playerToolBaseX;
           if (fishThrowActive && fishingMinigame?.anchorWorld) {
             // Out during the slam (WF→SF), back during the return (SF→1).
             let travel;
@@ -12259,9 +12448,9 @@
           _qAnim.setFromAxisAngle(_swAxis, tossAngle);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * 0.28,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + rightZ * 0.28
+            playerMesh.position.x + rightX * playerToolBaseX,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + rightZ * playerToolBaseX
           );
 
         } else if (anim === 'refillTurnOut') {
@@ -12283,9 +12472,9 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + vRX * 0.28 + vFX * jabOff,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + vRZ * 0.28 + vFZ * jabOff
+            playerMesh.position.x + vRX * playerToolBaseX + vFX * jabOff,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + vRZ * playerToolBaseX + vFZ * jabOff
           );
 
         } else if (anim === 'refillStrikeBack') {
@@ -12311,9 +12500,9 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + vRX * 0.28 + vFX * jabOff,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + vRZ * 0.28 + vFZ * jabOff
+            playerMesh.position.x + vRX * playerToolBaseX + vFX * jabOff,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + vRZ * playerToolBaseX + vFZ * jabOff
           );
 
         } else if (anim === 'refillTwistOut' || anim === 'refillTwistBack') {
@@ -12324,9 +12513,9 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * 0.28 + fwdX * 0.32,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + rightZ * 0.28 + fwdZ * 0.32
+            playerMesh.position.x + rightX * playerToolBaseX + fwdX * 0.32,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * 0.32
           );
 
         } else if (anim === 'refillReset') {
@@ -12337,14 +12526,21 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * 0.28 + fwdX * jabOff,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + rightZ * 0.28 + fwdZ * jabOff
+            playerMesh.position.x + rightX * playerToolBaseX + fwdX * jabOff,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * jabOff
           );
 
         } else {
           // SWEEP — body rotates through windup-strike-return arc; axe locked in hand.
-          const WINDUP_ANGLE = -2.20, STRIKE_ANGLE = 2.12;
+          // -2.20/2.12 rad are exactly the attack-animation-editor's "Hatchet —
+          // Swing (sweep)" preset (-126.05deg/121.49deg) — combo steps must match
+          // that preset 1:1, so no extra scaling beyond dirSign/power applies here.
+          // Combat swings alternate direction (forehand/backhand) via
+          // combatSwingSign; power (Cleave) scales the whole arc for a heavier finisher.
+          const sweepSign = combatSwingAnim ? combatSwingSign : 1;
+          const sweepPower = combatSwingAnim ? combatSwingPower : 1;
+          const WINDUP_ANGLE = -2.20 * sweepPower * sweepSign, STRIKE_ANGLE = 2.12 * sweepPower * sweepSign;
           let sweepOff;
           if (progress <= WF) {
             sweepOff = WINDUP_ANGLE * (progress / WF);
@@ -12359,10 +12555,14 @@
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
           _qFac.setFromAxisAngle(_tUp, vθ);
           toolHolder.quaternion.copy(_qFac);
+          // Backhand mirrors the hand attach point too (matching the editor's
+          // "Flip Across Midline": toolBase.x negates along with bodyYaw and the
+          // sprite scale) — a true mirror, not just the body spinning the other way.
+          const handX = playerToolBaseX * sweepSign;
           toolHolder.position.set(
-            playerMesh.position.x + vRX * 0.20 + vFX * 0.16,
-            playerMesh.position.y + 0.18,
-            playerMesh.position.z + vRZ * 0.20 + vFZ * 0.16
+            playerMesh.position.x + vRX * handX + vFX * 0.16,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + vRZ * handX + vFZ * 0.16
           );
         }
 
@@ -12388,6 +12588,8 @@
               ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
               : baseRotZ;
           }
+          // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc.
+          spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
         }
 
         if (pendingAction && !strikeFired && progress >= SF) {
@@ -12395,6 +12597,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
+        if (combatSwingAnim && toolSwingT <= 0) combatSwingAnim = null;
       }
 
       // Initialize mesh map after toolHolder exists
@@ -12517,13 +12720,18 @@
       const _grassBillFrag = `
         uniform sampler2D uGrassTex;
         uniform vec3 uTint;
+        uniform vec3 uLightColor;
+        uniform float uLightMul;
         varying vec2 vUv;
         void main() {
           vec4 texel = texture2D(uGrassTex, vUv);
           if (texel.a < 0.5) discard;
           // Treat grass_1.png as mint-toned; desaturate and re-tint to grass color
           float lum = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
-          vec3 tinted = uTint * (0.7 + lum * 0.8);
+          // Same day/night ambient color+brightness driving the ground tiles'
+          // Lambert shading, applied only to the tinted blade (not the outline)
+          // so blades dim/tint with the world instead of staying flat-lit.
+          vec3 tinted = uTint * (0.7 + lum * 0.8) * uLightColor * uLightMul;
           // Drawn outline pixels (near-black source) stay pure black; tint the rest
           vec3 col = mix(vec3(0.0), tinted, smoothstep(0.0, 0.15, lum));
           gl_FragColor = vec4(col, texel.a);
@@ -12539,10 +12747,12 @@
         tex.magFilter = THREE.NearestFilter;
         tex.minFilter = THREE.NearestFilter;
         const sharedUniforms = () => ({
-          uGrassTex: { value: tex },
-          uTint:     { value: _grassTint },
-          uTime:     { value: 0 },
-          uStrength: { value: 0.04 },
+          uGrassTex:   { value: tex },
+          uTint:       { value: _grassTint },
+          uTime:       { value: 0 },
+          uStrength:   { value: 0.04 },
+          uLightColor: { value: new THREE.Color(1, 1, 1) },
+          uLightMul:   { value: 1 },
         });
         grassBillboardMat = new THREE.ShaderMaterial({
           uniforms:       sharedUniforms(),
@@ -13345,6 +13555,13 @@
         );
         sunLight.intensity = brightnessMul * 1.2;
         sunLight.color.setRGB(r/255 * 0.5 + 0.5, g/255 * 0.5 + 0.5, b/255 * 0.4 + 0.6);
+        // Grass billboards are an unlit shader, not MeshLambertMaterial — drive their
+        // tint/brightness from the same values as ambientLight so blades match the
+        // ground's day/night response instead of staying a fixed brightness.
+        if (grassBillboardMat) {
+          grassBillboardMat.uniforms.uLightColor.value.setRGB(r/255 * 0.6 + 0.4, g/255 * 0.6 + 0.4, b/255 * 0.6 + 0.4);
+          grassBillboardMat.uniforms.uLightMul.value = 0.3 + brightnessMul * 0.7;
+        }
         // Fog colour matches sky
         scene.background.setRGB(
           Math.max(0, r/255 * 0.15 + 0.04),
@@ -13369,6 +13586,10 @@
         );
         townSunLight.intensity = brightnessMul * 1.2;
         townSunLight.color.setRGB(r/255 * 0.5 + 0.5, g/255 * 0.5 + 0.5, b/255 * 0.4 + 0.6);
+        if (grassBillboardMat) {
+          grassBillboardMat.uniforms.uLightColor.value.setRGB(r/255 * 0.6 + 0.4, g/255 * 0.6 + 0.4, b/255 * 0.6 + 0.4);
+          grassBillboardMat.uniforms.uLightMul.value = 0.3 + brightnessMul * 0.7;
+        }
         townScene.background.setRGB(
           Math.max(0, r/255 * 0.15 + 0.04),
           Math.max(0, g/255 * 0.15 + 0.08),
@@ -13574,6 +13795,7 @@
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
           updateToolMesh(dt);
           updateChargeAction();
+          window.Combat?.update(dt);
           updateReticleMesh();
         }
         if (currentArea === 'farm') {
@@ -14592,7 +14814,13 @@
             let _ptId = null, _cx = 0, _cy = 0, _sockR = 0;
             let _drag = false, _rtimer = null, _socket = null;
             let _chargeFiredOnPress = false;
+            let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
             const DRAG_THRESH = 10;
+            // Legacy behavior: holding+dragging an action button like a stick used to
+            // keep re-firing the action every 120ms for as long as it stayed pushed off
+            // center. Disabled per design (the single immediate fire-on-threshold-cross
+            // below still happens) — kept here, not deleted, in case it's wanted back.
+            const ABT_DRAG_REPEAT_FIRE = false;
             const _stack = document.getElementById('actionStack');
 
             function _abtFire() {
@@ -14602,6 +14830,21 @@
               // Navigation/interaction actions always fire; tool actions respect swing cooldown
               const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_');
               if (isNavAction || toolSwingT <= 0) useActiveAction();
+            }
+
+            // Weapon tool-action buttons (cut/slash) route taps through the
+            // loadout's ability slots instead of firing the swing directly —
+            // every other button keeps using _abtFire() unchanged.
+            function _weaponSlotFor(act) {
+              if (activeTool !== 'weapon' || !window.Combat?.input) return null;
+              if (act === toolActions.weapon[0]) return 1;
+              if (act === toolActions.weapon[1]) return 2;
+              return null;
+            }
+            function _resolveFire() {
+              const slot = _weaponSlotFor(el.dataset.action);
+              if (slot) { window.Combat.input.fireTap(slot); return; }
+              _abtFire();
             }
 
             el.addEventListener('pointerdown', ev => {
@@ -14632,6 +14875,8 @@
                 _abtFire();
               } else {
                 actionHeldDown = true;
+                _pressSlot = _weaponSlotFor(act);
+                if (_pressSlot) window.Combat.input.pressStart(_pressSlot);
               }
             });
 
@@ -14643,6 +14888,11 @@
               const nx = dist > 0.5 ? dx / dist * r : 0;
               const ny = dist > 0.5 ? dy / dist * r : 0;
               el.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
+              // With a weapon equipped, action buttons are tap/hold only — dragging
+              // must never act like a directional stick, otherwise a thumb wobbling
+              // mid-hold reads as an aim-drag, cancels the pending hold ability, and
+              // fires a tap instead. Farm tools still use drag-to-aim as before.
+              if (activeTool === 'weapon') return;
               if (dist > DRAG_THRESH) {
                 const ang = Math.atan2(dy, dx);
                 facingAngle = ang;
@@ -14651,8 +14901,11 @@
                 if (!_drag) {
                   _drag = true;
                   _stack.classList.add('drag-active');
-                  _abtFire();
-                  _rtimer = setInterval(_abtFire, 120);
+                  // Aiming takes over firing from here — disarm the tap/hold
+                  // timer so release doesn't also fire/end an ability.
+                  if (_pressSlot) { window.Combat.input.cancelPress(_pressSlot); _pressSlot = null; }
+                  _resolveFire();
+                  if (ABT_DRAG_REPEAT_FIRE) _rtimer = setInterval(_resolveFire, 120);
                 }
               }
             });
@@ -14667,9 +14920,13 @@
               el.style.transition = 'transform 0.14s ease-out';
               el.style.transform  = 'translate(50%, 50%)';
               setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
-              if (!_drag && !_chargeFiredOnPress) _abtFire();
+              if (!_drag && !_chargeFiredOnPress) {
+                if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
+                else _abtFire();
+              }
               _drag = false;
               _chargeFiredOnPress = false;
+              _pressSlot = null;
             }
 
             el.addEventListener('pointerup', _abtUp);
@@ -15119,6 +15376,59 @@
         performDodge(player.angle);
       });
 
+      // Swap Target button: its own dedicated drag-direction stick (separate
+      // from applyAbt()'s tool/item-action wiring, which had its drag-repeat
+      // behavior disabled). Pushing it toward a hostile swaps auto-targeting
+      // onto it — fires once per drag, no repeat needed since it's a single
+      // selection, not a continuous action.
+      if (btnSwapTarget) {
+        let _stPtId = null, _stCx = 0, _stCy = 0, _stSockR = 0, _stDrag = false, _stSocket = null;
+        const ST_DRAG_THRESH = 10;
+        btnSwapTarget.addEventListener('pointerdown', ev => {
+          if (btnSwapTarget.classList.contains('abt-hidden')) return;
+          ev.preventDefault();
+          btnSwapTarget.setPointerCapture?.(ev.pointerId);
+          _stPtId = ev.pointerId;
+          const rect = btnSwapTarget.getBoundingClientRect();
+          _stCx = rect.left + rect.width / 2;
+          _stCy = rect.top + rect.height / 2;
+          _stSockR = rect.width * 0.55;
+          _stDrag = false;
+          _stSocket = document.createElement('div');
+          _stSocket.className = 'abt-socket';
+          _stSocket.style.left = _stCx + 'px';
+          _stSocket.style.top = _stCy + 'px';
+          _stSocket.style.width = _stSocket.style.height = (rect.width * 2.2) + 'px';
+          document.body.appendChild(_stSocket);
+          btnSwapTarget.style.transition = 'none';
+        });
+        btnSwapTarget.addEventListener('pointermove', ev => {
+          if (ev.pointerId !== _stPtId) return;
+          const dx = ev.clientX - _stCx, dy = ev.clientY - _stCy;
+          const dist = Math.hypot(dx, dy);
+          const r = Math.min(dist, _stSockR);
+          const nx = dist > 0.5 ? dx / dist * r : 0;
+          const ny = dist > 0.5 ? dy / dist * r : 0;
+          btnSwapTarget.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
+          if (!_stDrag && dist > ST_DRAG_THRESH) {
+            _stDrag = true;
+            swapAutoTarget(Math.atan2(dy, dx));
+          }
+        });
+        function _stUp(ev) {
+          if (ev.pointerId !== _stPtId) return;
+          _stPtId = null;
+          if (_stSocket) { _stSocket.remove(); _stSocket = null; }
+          btnSwapTarget.style.transition = 'transform 0.14s ease-out';
+          btnSwapTarget.style.transform = 'translate(50%, 50%)';
+          setTimeout(() => { btnSwapTarget.style.transition = ''; btnSwapTarget.style.transform = ''; }, 150);
+          if (!_stDrag) swapAutoTarget(player.angle);
+          _stDrag = false;
+        }
+        btnSwapTarget.addEventListener('pointerup', _stUp);
+        btnSwapTarget.addEventListener('pointercancel', _stUp);
+      }
+
       const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs) || 350;
       const desktopHoldKeys = {
         q: { down: false, held: false, timer: null, arc: 'item' },
@@ -15240,6 +15550,13 @@
         const actionSlot = /^action(\d+)$/.exec(actionId);
         if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
         if (actionId === 'dodge') { performDodge(player.angle); return; }
+        if (actionId === 'swapTarget') {
+          const aimAngle = controllerLookActive ? controllerLookAngle
+            : (isDesktop && mouseLookActive) ? mouseLookAngle
+            : facingAngle;
+          swapAutoTarget(aimAngle);
+          return;
+        }
         if (actionId === 'cycleToolAction') {
           const actions = toolActions[activeTool];
           const idx = actions.indexOf(activeAction);
@@ -15578,11 +15895,20 @@
       window.addEventListener('pointerup', clearCameraDragPointer);
       window.addEventListener('pointercancel', clearCameraDragPointer);
 
-      // Left click = primary action, right click = secondary action (desktop play)
+      // Left click = tool action 1 (tap/hold), right click = tool action 2
+      // (tap/hold) when wielding the weapon tool — routed through
+      // Combat.input so the loadout's 4 ability slots can claim them.
+      // Every other tool keeps its previous click behavior unchanged: left
+      // click = primary action, right click = secondary action.
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
           if (menuOpen || farmEditMode || e.shiftKey) return;
+          if (activeTool === 'weapon' && window.Combat?.input) {
+            if (e.button === 0) { actionHeldDown = true; window.Combat.input.pressStart(1); }
+            else if (e.button === 2) { window.Combat.input.pressStart(2); }
+            return;
+          }
           if (e.button === 0) {
             actionHeldDown = true;
             useActiveAction();
@@ -15593,7 +15919,15 @@
           }
         });
       }
-      window.addEventListener('pointerup', (e) => { if (e.pointerType === 'mouse' && e.button === 0) actionHeldDown = false; });
+      window.addEventListener('pointerup', (e) => {
+        if (e.pointerType !== 'mouse') return;
+        if (activeTool === 'weapon' && window.Combat?.input) {
+          if (e.button === 0) { actionHeldDown = false; window.Combat.input.pressEnd(1); }
+          else if (e.button === 2) { window.Combat.input.pressEnd(2); }
+          return;
+        }
+        if (e.button === 0) actionHeldDown = false;
+      });
 
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
@@ -15721,6 +16055,34 @@
         _playerData = window.__hobunjiPlayerProfile;
         spawnPlayerAvatar(window.__hobunjiPlayerProfile);
       }
+
+      window.Combat?.init({
+        player,
+        TILE,
+        hostileObjects,
+        companionObjects,
+        getCurrentArea: () => currentArea,
+        inCone,
+        damageCreature,
+        damagePlayer,
+        applyKnockback,
+        weaponAbility,
+        combatConfig,
+        resolveWeaponHit,
+        findAutoTarget,
+        canPlayerOccupy,
+        showToast,
+        triggerWeaponSwingVisual,
+        // Fires the weapon tool's plain cut/slash swing exactly as it
+        // behaved before the loadout system existed — the fallback
+        // combat-input.js uses for a tap slot until an ability module
+        // claims it.
+        fireLegacyWeaponAction: (slotIndex) => {
+          if (activeTool !== 'weapon') return;
+          activeAction = toolActions.weapon[slotIndex - 1];
+          useActiveAction();
+        },
+      });
 
       requestAnimationFrame(gameLoop);
     })();

@@ -33,6 +33,18 @@
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css">
   <script src="onboarding.js"></script>
+  <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
+  <script src="js/combat/combat-core.js"></script>
+  <script src="js/combat/combat-enemy-telegraph.js"></script>
+  <script src="js/combat/combat-loadout.js"></script>
+  <script src="js/combat/combat-input.js"></script>
+  <script src="js/combat/combat-combo.js"></script>
+  <script src="js/combat/combat-quickattacks.js"></script>
+  <script src="js/combat/combat-counter-shield.js"></script>
+  <script src="js/combat/combat-blink-dodge.js"></script>
+  <script src="js/combat/combat-charged-breaker.js"></script>
+  <script src="js/combat/combat-flurry.js"></script>
+  <script src="js/combat/combat-loadout-ui.js"></script>
 </head>
 <body>
   <!-- Game world -->
@@ -156,6 +168,7 @@
         <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
         <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
+        <button class="mp-tab"        data-mpanel="loadout"       role="tab">⚔ Loadout</button>
         <button class="mp-tab"        data-mpanel="settings"      role="tab">⚙ Settings</button>
         <button class="mp-tab"        data-mpanel="debug"         role="tab">🐛 Debug</button>
       </div>
@@ -406,6 +419,11 @@
       <div class="mp-pane" id="mpTasks">        <div class="mp-stub">📋 Tasks — coming soon</div></div>
       <div class="mp-pane" id="mpRelationships"><div class="mp-stub">💬 Relationships — coming soon</div></div>
 
+      <!-- ── Combat loadout pane (filled by combat-loadout-ui.js) ── -->
+      <div class="mp-pane" id="mpLoadout">
+        <div class="settings-pane" id="combatLoadoutPane"></div>
+      </div>
+
       <!-- ── Settings pane ──────────────────────────────── -->
       <div class="mp-pane" id="mpSettings">
         <div class="settings-pane">
@@ -640,6 +658,22 @@
       <button class="abt" id="btnAction3" aria-label="Action 3"></button>
       <button class="abt abt-item" id="btnItemAction1" aria-label="Use item"></button>
       <button class="abt abt-item" id="btnItemAction2" aria-label="Use item 2"></button>
+      <!-- Swap Target: weapon-only. Acts as its own mini-stick — push it toward
+           a hostile to lock auto-targeting onto it. Icon is the universal
+           4-arrow "move/translate" cross used in art-program gizmos. -->
+      <button class="abt abt-swap abt-hidden" id="btnSwapTarget" aria-label="Swap target">
+        <span class="abt-icon">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="5 9 2 12 5 15"></polyline>
+            <polyline points="9 5 12 2 15 5"></polyline>
+            <polyline points="15 19 12 22 9 19"></polyline>
+            <polyline points="19 9 22 12 19 15"></polyline>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <line x1="12" y1="2" x2="12" y2="22"></line>
+          </svg>
+        </span>
+        <span class="abt-label">Swap Target</span>
+      </button>
     </div>
   </div>
 

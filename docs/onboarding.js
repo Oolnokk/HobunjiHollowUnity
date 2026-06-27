@@ -870,6 +870,7 @@
       equippedCosmetics: [...(char.equippedCosmetics || [])],
       appliedDyes:       { ...(char.appliedDyes || {}) },
       gearInventory:     { ...(char.gearInventory  || makeDefaultGear()) },
+      combatLoadout:     { ...(char.combatLoadout  || {}) },
       skillLevels:       { ...(char.skillLevels    || makeDefaultSkills()) },
       npcFavor:          { ...(char.npcFavor       || {}) },
       characterId:       char.id,

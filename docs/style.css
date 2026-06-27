@@ -690,7 +690,14 @@
       bottom: calc(   sin(90deg)*var(--ar));
       width: clamp(44px, var(--col), 60px); height: clamp(44px, var(--col), 60px);
     }
+    #btnSwapTarget {                                                  /* 12:45  67.5° */
+      right:  calc(-1*cos(67.5deg)*var(--ar));
+      bottom: calc(   sin(67.5deg)*var(--ar));
+      width: clamp(44px, var(--col), 60px); height: clamp(44px, var(--col), 60px);
+    }
     .abt-item { border-color:rgba(255,211,125,0.46)!important; background:rgba(255,211,125,0.09)!important; }
+    .abt-swap { border-color:rgba(125,200,255,0.46)!important; background:rgba(125,200,255,0.09)!important; }
+    .abt-swap .abt-icon svg { display: block; }
     .abt-key  { position:absolute; top:2px; right:3px; font-size:7px; color:rgba(255,255,255,0.42); font-family:'DM Mono',monospace; pointer-events:none; }
     .abt-icon { font-size:1.3em; line-height:1; pointer-events:none; }
     .abt-label { display:none; }
