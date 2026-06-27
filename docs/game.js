@@ -2623,9 +2623,10 @@
       let _npcDialogueTypeIndex = 0;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
-      // Half the player avatar's actual scaled prism width/height (varies by species via
-      // portraitScaleBySpecies) — the base attach point updateToolMesh hangs tools/weapons from.
-      // X is negative because the tool hangs off the character's left-side plane (their POV).
+      // The base attach point updateToolMesh hangs tools/weapons from. X is the avatar's
+      // actual scanned right-arm sprite edge (negative — left side of the prism, character's
+      // POV); Y is half the scaled prism height. Both vary by species and are recomputed in
+      // refreshPlayerAvatar() once the per-species sprite/scale is known.
       let playerToolBaseX = -0.45, playerToolBaseY = 0.45;
 
       // ── Dialogue tree runtime state ──────────────────────────────────
@@ -7353,10 +7354,11 @@
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
-        // Tools/weapons hang from half the prism's width (left-side plane, character's POV)
-        // and half its height — recompute here since this is the only place the per-species
-        // scale is known.
-        playerToolBaseX = -avatarWidth / 2;
+        // Tools/weapons hang from the avatar's actual right-arm sprite edge (scanned
+        // pixel-precisely in buildSinglePlaneAvatarModel — see handAttachX) and half
+        // the prism's height — recompute here since this is the only place the
+        // per-species scale/sprite is known.
+        playerToolBaseX = avatarGroup.userData?.handAttachX ?? (-avatarWidth / 2);
         playerToolBaseY = avatarHeight / 2;
         _markPngPlane(avatarGroup);
         if (refreshGeneration !== playerAvatarRefreshGeneration) {

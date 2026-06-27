@@ -167,6 +167,28 @@
     return defaultRatio;
   }
 
+  // Scans a single canvas row (in source-pixel space) from the left edge rightward
+  // for the first non-transparent pixel. Used to find exactly where the rendered
+  // avatar's right-arm sprite starts, so tools/weapons can hang from that precise
+  // per-species point instead of a generic half-bounding-box approximation.
+  // Returns the column index, or null if the row has no opaque pixels (or the
+  // canvas is unreadable, e.g. tainted by a cross-origin image).
+  function scanFirstOpaqueColumn(canvas, rowRatio, alphaThreshold) {
+    const w = canvas?.width, h = canvas?.height;
+    if (!canvas || !w || !h) return null;
+    const row = Math.min(h - 1, Math.max(0, Math.round((rowRatio ?? 0.5) * h)));
+    try {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const data = ctx.getImageData(0, row, w, 1).data;
+      for (let x = 0; x < w; x++) {
+        if (data[x * 4 + 3] > (alphaThreshold ?? 8)) return x;
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
   function createSinglePlaneAssembly(THREE, config) {
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_single_plane_assembly';
@@ -284,6 +306,14 @@
     root.userData.portraitScaleMultiplier = scaleMultiplier;
     root.userData.portraitModelWidth = modelWidth;
     root.userData.portraitModelHeight = modelHeight;
+    // Hand/tool attach point: scan the rendered front canvas at the row that maps to
+    // local y=0 (placementRatio*pxH — the same height tools already hang from) for the
+    // first opaque pixel from the left edge. That pixel is the right-arm sprite's outer
+    // edge, giving a per-species-accurate X instead of the coarse -modelWidth/2 guess.
+    const handAttachCol = scanFirstOpaqueColumn(sourceCanvas, placementRatio, cfg().handAttachAlphaThreshold);
+    root.userData.handAttachX = handAttachCol != null
+      ? -modelWidth / 2 + (handAttachCol / pxW) * modelWidth
+      : -modelWidth / 2;
     root.add(assembly);
     root.userData.sourceCanvas = sourceCanvas;
     root.userData.backCanvas = options.backCanvas || options.backImage || null;
