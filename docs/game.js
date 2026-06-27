@@ -2225,15 +2225,54 @@
         return { hits, message: hits > 1 ? `${verb} ${hits} creatures!` : `${verb} the ${lastName}!` };
       }
 
-      // Nearest live hostile in the player's current area within lock-on range, or null.
+      // Player-chosen override from swapAutoTarget(), preferred over the
+      // nearest-hostile default until it dies, leaves range/area, or the
+      // player swaps again. Cleared automatically once invalid.
+      let manualAutoTarget = null;
+
+      // Nearest live hostile in the player's current area within lock-on range, or
+      // the player's manually-swapped target if still valid, or null.
       function findAutoTarget() {
-        let best = null, bestDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        if (manualAutoTarget) {
+          if (manualAutoTarget.health > 0 && manualAutoTarget.areaId === currentArea &&
+              Math.hypot(manualAutoTarget.x - player.x, manualAutoTarget.y - player.y) <= maxDist) {
+            return manualAutoTarget;
+          }
+          manualAutoTarget = null;
+        }
+        let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
           if (dist <= bestDist) { best = c; bestDist = dist; }
         }
         return best;
+      }
+
+      // Swap the auto-target to the nearest hostile roughly in `aimAngle`'s
+      // direction (within range, within a 90° cone either side), excluding
+      // whatever is currently targeted. Used by the desktop swap-target input
+      // (mouse/right-stick direction) and the mobile swap-target stick button.
+      function swapAutoTarget(aimAngle) {
+        if (activeTool !== 'weapon') return false;
+        const current = findAutoTarget();
+        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        let best = null, bestScore = -Infinity;
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea || c === current) continue;
+          const dx = c.x - player.x, dy = c.y - player.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > maxDist || dist < 0.001) continue;
+          const angleToC = Math.atan2(dy, dx);
+          const diff = Math.abs(angleDiff(angleToC, aimAngle));
+          if (diff > Math.PI / 2) continue;
+          const score = Math.cos(diff) - (dist / maxDist) * 0.25;
+          if (score > bestScore) { bestScore = score; best = c; }
+        }
+        if (!best) return false;
+        manualAutoTarget = best;
+        return true;
       }
 
       // Shared by hostiles, companions, and wandering creatures — covers every
@@ -15384,6 +15423,13 @@
         const actionSlot = /^action(\d+)$/.exec(actionId);
         if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
         if (actionId === 'dodge') { performDodge(player.angle); return; }
+        if (actionId === 'swapTarget') {
+          const aimAngle = controllerLookActive ? controllerLookAngle
+            : (isDesktop && mouseLookActive) ? mouseLookAngle
+            : facingAngle;
+          swapAutoTarget(aimAngle);
+          return;
+        }
         if (actionId === 'cycleToolAction') {
           const actions = toolActions[activeTool];
           const idx = actions.indexOf(activeAction);

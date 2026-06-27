@@ -146,6 +146,7 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "action6", "label": "Tool/Item Action 6", "desktop": "Digit8", "controller": "Button13" },
         { "id": "action7", "label": "Tool/Item Action 7", "desktop": "Digit9", "controller": "Button14" },
         { "id": "action8", "label": "Tool/Item Action 8", "desktop": "Digit0", "controller": "Button15" },
+        { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyV", "controller": "Button5" },
         { "id": "itemPrev", "label": "Previous Item", "desktop": "Comma", "controller": null },
         { "id": "itemNext", "label": "Next Item", "desktop": "Period", "controller": null },
         { "id": "toolPrev", "label": "Previous Tool", "desktop": "BracketLeft", "controller": null },
