@@ -167,21 +167,51 @@
     return defaultRatio;
   }
 
-  // Scans a single canvas row (in source-pixel space) from the left edge rightward
-  // for the first non-transparent pixel. Used to find exactly where the rendered
-  // avatar's right-arm sprite starts, so tools/weapons can hang from that precise
-  // per-species point instead of a generic half-bounding-box approximation.
-  // Returns the column index, or null if the row has no opaque pixels (or the
-  // canvas is unreadable, e.g. tainted by a cross-origin image).
-  function scanFirstOpaqueColumn(canvas, rowRatio, alphaThreshold) {
+  // Finds the topmost and bottommost opaque pixel rows actually present in the
+  // canvas. Used instead of the configured portraitVerticalPlacementRatio (which
+  // encodes per-species/gender padding and scale quirks tuned for a different
+  // purpose — grounding the plane in world space) so the hand-height row below is
+  // measured straight from the real rendered art, not inferred from that config.
+  // Returns null if the canvas has no opaque pixels (or is unreadable, e.g.
+  // tainted by a cross-origin image).
+  function scanOpaqueVerticalBounds(canvas, alphaThreshold) {
     const w = canvas?.width, h = canvas?.height;
     if (!canvas || !w || !h) return null;
-    const row = Math.min(h - 1, Math.max(0, Math.round((rowRatio ?? 0.5) * h)));
+    const threshold = alphaThreshold ?? 8;
     try {
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      const data = ctx.getImageData(0, row, w, 1).data;
+      const data = ctx.getImageData(0, 0, w, h).data;
+      let top = -1, bottom = -1;
+      for (let y = 0; y < h; y++) {
+        const rowOffset = y * w * 4;
+        for (let x = 0; x < w; x++) {
+          if (data[rowOffset + x * 4 + 3] > threshold) {
+            if (top === -1) top = y;
+            bottom = y;
+            break;
+          }
+        }
+      }
+      return top === -1 ? null : { top, bottom };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Scans a single canvas row from the left edge rightward for the first
+  // non-transparent pixel — the right-arm sprite's outer edge at that height.
+  // Returns the column index, or null if the row has no opaque pixels (or the
+  // canvas is unreadable).
+  function scanRowFirstOpaqueColumn(canvas, row, alphaThreshold) {
+    const w = canvas?.width, h = canvas?.height;
+    if (!canvas || !w || !h) return null;
+    const clampedRow = Math.min(h - 1, Math.max(0, row));
+    try {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const data = ctx.getImageData(0, clampedRow, w, 1).data;
+      const threshold = alphaThreshold ?? 8;
       for (let x = 0; x < w; x++) {
-        if (data[x * 4 + 3] > (alphaThreshold ?? 8)) return x;
+        if (data[x * 4 + 3] > threshold) return x;
       }
     } catch (e) {
       return null;
@@ -306,11 +336,16 @@
     root.userData.portraitScaleMultiplier = scaleMultiplier;
     root.userData.portraitModelWidth = modelWidth;
     root.userData.portraitModelHeight = modelHeight;
-    // Hand/tool attach point: scan the rendered front canvas at the row that maps to
-    // local y=0 (placementRatio*pxH — the same height tools already hang from) for the
-    // first opaque pixel from the left edge. That pixel is the right-arm sprite's outer
-    // edge, giving a per-species-accurate X instead of the coarse -modelWidth/2 guess.
-    const handAttachCol = scanFirstOpaqueColumn(sourceCanvas, placementRatio, cfg().handAttachAlphaThreshold);
+    // Hand/tool attach point: find the actual vertical midpoint of the rendered
+    // avatar's opaque pixels (not a row inferred from portraitVerticalPlacementRatio,
+    // which encodes per-species/gender padding tuned for plane-grounding, not hand
+    // height), then scan that row from the left edge for the first opaque pixel —
+    // the right-arm sprite's outer edge. Gives a per-species/gender-accurate X
+    // instead of the coarse -modelWidth/2 guess.
+    const handAlphaThreshold = cfg().handAttachAlphaThreshold;
+    const vBounds = scanOpaqueVerticalBounds(sourceCanvas, handAlphaThreshold);
+    const handRow = vBounds ? Math.round((vBounds.top + vBounds.bottom) / 2) : Math.round(placementRatio * pxH);
+    const handAttachCol = scanRowFirstOpaqueColumn(sourceCanvas, handRow, handAlphaThreshold);
     root.userData.handAttachX = handAttachCol != null
       ? -modelWidth / 2 + (handAttachCol / pxW) * modelWidth
       : -modelWidth / 2;
