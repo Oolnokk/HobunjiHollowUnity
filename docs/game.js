@@ -8072,7 +8072,8 @@
         // ── Facing ────────────────────────────────────────────
         // Computed once per frame: also drives the touch dodge button, which
         // only matters in combat (same condition as the facing lock below).
-        const autoTarget = findAutoTarget();
+        // Auto-targeting only engages while the weapon tool is equipped.
+        const autoTarget = activeTool === 'weapon' ? findAutoTarget() : null;
         dodgeBtn?.classList.toggle('combat-active', !!autoTarget);
 
         if (controllerLookActive) {
