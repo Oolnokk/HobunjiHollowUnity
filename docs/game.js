@@ -8674,6 +8674,11 @@
         }
 
         const _anim = activeAnimStyle();
+        // Plain tool sweeps (e.g. a hatchet chop) alternate forehand/backhand
+        // each swing too, same as the weapon combo's first two steps — a
+        // combat trigger overrides this explicitly via triggerWeaponSwingVisual's
+        // dirSign, so this only matters when nothing else has set it for this swing.
+        if (_anim === 'sweep') combatSwingSign = -combatSwingSign;
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
         // Dig speed only scales shovel/pick dig & fill swings (e.g. the single-tap
         // trench redig below) — everything else swings at its normal pace.
@@ -12105,12 +12110,14 @@
       // mirrors the weapon sprite) for alternating forehand/backhand combo
       // steps. windupFrac/strikeFrac let each ability's own windupS/strikeS
       // ratio drive how much of the cosmetic swing is spent winding up vs
-      // striking, instead of one fixed split for every attack. Cleared
+      // striking, instead of one fixed split for every attack. power scales
+      // a thrust's reach/turn for an extra-telegraphed finishing hit. Cleared
       // automatically once the swing's toolSwingT runs out.
       let combatSwingAnim = null;
       let combatSwingSign = 1;
       let combatSwingWindupFrac = 0.16;
       let combatSwingStrikeFrac = 0.28;
+      let combatSwingPower = 1;
 
       function getDigSpeedMultiplier() {
         return Math.max(0.01, player.digSpeed || 1);
@@ -12167,10 +12174,11 @@
       // Plays the weapon's existing arm-swing mesh animation for durationS without
       // queuing a pendingAction — used by Combat ability modules that resolve their
       // own hit logic and just want the legacy swing's visual flourish to match.
-      // opts: { anim: 'thrust'|'sweep'|'chop', dirSign: 1|-1, windupFrac, strikeFrac }
+      // opts: { anim: 'thrust'|'sweep'|'chop', dirSign: 1|-1, windupFrac, strikeFrac, power }
       // lets a combat ability pick the attack-shape its animation should use
-      // (independent of the equipped weapon's own default style) and how its
-      // own windupS/strikeS split maps onto the cosmetic swing arc.
+      // (independent of the equipped weapon's own default style), how its own
+      // windupS/strikeS split maps onto the cosmetic swing arc, and (thrust
+      // only) a reach/turn multiplier for an extra-telegraphed finisher.
       function triggerWeaponSwingVisual(durationS, opts = {}) {
         if (activeTool !== 'weapon') return;
         toolSwingDur = Math.max(0.05, durationS);
@@ -12181,6 +12189,7 @@
         combatSwingSign = opts.dirSign || 1;
         combatSwingWindupFrac = opts.windupFrac ?? 0.16;
         combatSwingStrikeFrac = opts.strikeFrac ?? 0.28;
+        combatSwingPower = opts.power ?? 1;
       }
 
       function cancelChargeAction() {
@@ -12372,12 +12381,15 @@
           // pull back farther than a normal tool jab (-0.40 vs -0.22) so the
           // windup itself reads as a clear "about to stab" tell; the strike
           // still arrives at the same +0.32 extension either way.
-          const windupBack  = combatSwingAnim ? -0.40 : -0.22;
-          const jabOff      = threePhaseLerp(progress, WF, SF, windupBack, 0.32);
-          const lateral     = threePhaseLerp(progress, WF, SF, 0, -0.23);
+          // power scales reach/turn for an extra-telegraphed finisher (e.g. a
+          // combo's final lunge) without needing its own bespoke anim branch.
+          const power       = combatSwingAnim ? combatSwingPower : 1;
+          const windupBack  = (combatSwingAnim ? -0.40 : -0.22) * power;
+          const jabOff      = threePhaseLerp(progress, WF, SF, windupBack, 0.32 * power);
+          const lateral     = threePhaseLerp(progress, WF, SF, 0, -0.23 * power);
           const pitchRad    = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1));
-          const yawRad      = threePhaseLerp(progress, WF, SF, 0, THREE.MathUtils.degToRad(-45));
-          const bodyYawRad  = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(-45), THREE.MathUtils.degToRad(46));
+          const yawRad      = threePhaseLerp(progress, WF, SF, 0, THREE.MathUtils.degToRad(-45) * power);
+          const bodyYawRad  = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power);
 
           const vθ  = θ + bodyYawRad;
           const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
@@ -12526,11 +12538,11 @@
 
         } else {
           // SWEEP — body rotates through windup-strike-return arc; axe locked in hand.
-          // Combat swings can alternate direction (forehand/backhand) via
-          // combatSwingSign, and wind up farther back than a normal tool swing.
-          const sweepSign = combatSwingAnim ? combatSwingSign : 1;
-          const sweepWindupScale = combatSwingAnim ? 1.25 : 1;
-          const WINDUP_ANGLE = -2.20 * sweepWindupScale * sweepSign, STRIKE_ANGLE = 2.12 * sweepSign;
+          // Forehand/backhand swings alternate direction via combatSwingSign —
+          // toggled per-swing for plain tool use, or set explicitly per combo
+          // step via triggerWeaponSwingVisual's dirSign — so a plain hatchet
+          // chop has the same telegraphed shape as the weapon combo's swing.
+          const WINDUP_ANGLE = -2.20 * 1.25 * combatSwingSign, STRIKE_ANGLE = 2.12 * combatSwingSign;
           let sweepOff;
           if (progress <= WF) {
             sweepOff = WINDUP_ANGLE * (progress / WF);
@@ -12574,8 +12586,8 @@
               ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
               : baseRotZ;
           }
-          // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc.
-          spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
+          // Backhand sweeps mirror the weapon sprite itself, not just the swing arc.
+          spinPlane.scale.x = (anim === 'sweep') ? combatSwingSign : 1;
         }
 
         if (pendingAction && !strikeFired && progress >= SF) {
