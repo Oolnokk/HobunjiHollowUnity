@@ -24,13 +24,16 @@
   const SWING_STEPS = [
     { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 10, windupS: 0.16, strikeS: 0.10, anim: 'sweep', dirSign: 1 },
     { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 12, windupS: 0.19, strikeS: 0.10, anim: 'sweep', dirSign: -1 },
-    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 1.6,  staminaCost: 18, windupS: 0.30, strikeS: 0.13, anim: 'chop', dirSign: 1 },
+    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 1.6,  staminaCost: 18, windupS: 0.30, strikeS: 0.13, returnS: 0.35, anim: 'chop', dirSign: 1 },
   ];
 
+  // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
+  // push the weapon out farther than the first two (plain) pokes, per the
+  // demo's "third one rotates even farther, pushes even farther forward" spec.
   const POKE_STEPS = [
     { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.9, staminaCost: 8,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1 },
     { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 9,  rangeMul: 1.35, knockbackMul: 1.1, staminaCost: 10, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1 },
-    { name: 'Long Lunge',   damageMul: 1.7,  halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 1.9, staminaCost: 16, windupS: 0.27, strikeS: 0.12, anim: 'thrust', dirSign: 1 },
+    { name: 'Long Lunge',   damageMul: 1.7,  halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 1.9, staminaCost: 16, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35 },
   ];
 
   function now() { return performance.now() / 1000; }
@@ -54,11 +57,16 @@
         return;
       }
       deps.player.stamina = Math.max(0, deps.player.stamina - step.staminaCost);
-      deps.triggerWeaponSwingVisual(step.windupS + step.strikeS, {
+      // returnS (set on a combo's final step) stretches the cosmetic swing's
+      // tail so a finisher eases back to neutral instead of snapping — earlier
+      // steps have no returnS, so they keep snapping (masked by the next tap).
+      const totalVisual = step.windupS + step.strikeS + (step.returnS || 0);
+      deps.triggerWeaponSwingVisual(totalVisual, {
         anim: step.anim,
         dirSign: step.dirSign,
-        windupFrac: step.windupS / (step.windupS + step.strikeS),
-        strikeFrac: 1,
+        windupFrac: step.windupS / totalVisual,
+        strikeFrac: (step.windupS + step.strikeS) / totalVisual,
+        power: step.power || 1,
       });
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
