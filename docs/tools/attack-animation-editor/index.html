@@ -252,6 +252,12 @@ scene.add(rig);
 // game.js exactly (playerToolBaseX/playerToolBaseY), recomputed per species below.
 const toolBase = new THREE.Object3D();
 rig.add(toolBase);
+// Canonical (un-mirrored) scanned attach X for the current avatar, and whether
+// Flip Across Midline is currently active. toolBase.position.x is no longer
+// symmetric (it's the real scanned right-arm edge, not -w/2), so a midline flip
+// has to negate it too — see flipBtn.onclick below for why.
+let baseAttachX = 0;
+let toolMirrored = false;
 const anchorDot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: 0x6aa7ff }));
 toolBase.add(anchorDot);
 
@@ -298,11 +304,11 @@ async function rebuildAvatar(speciesId, gender) {
   });
   const h = avatarModel.userData.portraitModelHeight || MODEL_W;
   const w = avatarModel.userData.portraitModelWidth || MODEL_W;
-  const baseX = avatarModel.userData.handAttachX ?? (-w / 2);
+  baseAttachX = avatarModel.userData.handAttachX ?? (-w / 2);
   avatarModel.position.y = h / 2;
   rig.add(avatarModel);
-  toolBase.position.set(baseX, h / 2, 0);
-  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, base at ${baseX.toFixed(2)}/+${(h/2).toFixed(2)})`);
+  toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, h / 2, 0);
+  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, base at ${toolBase.position.x.toFixed(2)}/+${(h/2).toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
 }
 
 const SPECIES_LIST = [
@@ -492,14 +498,24 @@ $('durationS').addEventListener('input', () => {
 });
 
 // ── Mirroring across the character midline ───────────────────────────────
+// Negating just the pose's x/yaw/bodyYaw isn't enough on its own: bodyYaw swings
+// the tool through an arc around the rig's pivot (x=0), and that arc's world
+// position also depends on toolBase's own x offset (the scanned, asymmetric
+// handAttachX — no longer a symmetric -w/2). Leaving toolBase.x fixed while only
+// flipping bodyYaw mirrors across the FORWARD/BACK axis, not the left/right
+// midline, sending the weapon to the wrong place. Negating toolBase.x too
+// makes the combined transform a true x-mirror (verified algebraically: world
+// x flips sign, world z is preserved).
 function flipPose(p) { return defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw); }
 $('flipBtn').onclick = () => {
   anim.poses.windup = flipPose(anim.poses.windup);
   anim.poses.strike = flipPose(anim.poses.strike);
+  toolMirrored = !toolMirrored;
+  toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
   syncPosePanelFromState('windup');
   syncPosePanelFromState('strike');
   refreshJsonView();
-  logDebug('Flipped animation across character midline');
+  logDebug(`Flipped animation across character midline (tool base now ${toolMirrored ? '-' : '+'}${Math.abs(baseAttachX).toFixed(2)})`);
 };
 $('resetPosesBtn').onclick = () => {
   anim.poses.windup = defaultPose(0.05, 0.05, -0.15, -15, 0, -60);
