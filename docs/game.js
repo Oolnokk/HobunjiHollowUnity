@@ -12312,15 +12312,27 @@
       scene.add(toolHolder);
 
       // Pre-allocated objects to avoid per-frame GC in updateToolMesh
-      const _tUp    = new THREE.Vector3(0, 1, 0);
-      const _qFac   = new THREE.Quaternion();  // facing rotation
-      const _qAnim  = new THREE.Quaternion();  // animation rotation
-      const _swAxis = new THREE.Vector3();     // chop/tilt axis (player right in world)
+      const _tUp      = new THREE.Vector3(0, 1, 0);
+      const _xAxis    = new THREE.Vector3(1, 0, 0); // tool-local pitch axis (thrust)
+      const _qFac     = new THREE.Quaternion();  // facing (+ bodyYaw) rotation
+      const _qAnim    = new THREE.Quaternion();  // animation rotation
+      const _qToolYaw = new THREE.Quaternion();  // tool's own local yaw twist (thrust)
+      const _swAxis   = new THREE.Vector3();     // chop/tilt axis (player right in world)
 
       // Resolve anim style for the active tool from equipped item or fallback
       function activeAnimStyle() {
         const itemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
         return TOOL_ITEM_DEFS[itemKey]?.animStyle || 'thrust';
+      }
+
+      // Three-phase neutral→windup→strike→neutral interpolation, shared by every
+      // thrust-pose channel (lateral/forward offsets, pitch/yaw/bodyYaw angles) —
+      // mirrors the attack-animation editor's poseAt()/lerpPose() so game.js and
+      // the editor's authored pose JSON describe the exact same motion.
+      function threePhaseLerp(progress, wf, sf, windupV, strikeV, neutralV = 0) {
+        if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / wf);
+        if (progress <= sf) return windupV + (strikeV - windupV) * ((progress - wf) / (sf - wf));
+        return strikeV + (neutralV - strikeV) * ((progress - sf) / (1.0 - sf));
       }
 
       function updateToolMesh(dt) {
@@ -12352,25 +12364,34 @@
         const SF = combatSwingAnim ? combatSwingStrikeFrac : 0.28;
 
         if (anim === 'thrust') {
-          // THRUST — windup (pull back) → jab forward → return. Combat
-          // jabs pull back farther than a normal tool jab (-0.40 vs -0.22)
-          // so the windup itself reads as a clear "about to stab" tell;
-          // the strike still arrives at the same +0.32 extension either way.
-          const windupBack = combatSwingAnim ? -0.40 : -0.22;
-          let jabOff;
-          if (progress <= WF) {
-            jabOff = windupBack * (progress / WF);
-          } else if (progress <= SF) {
-            jabOff = windupBack + (0.32 - windupBack) * ((progress - WF) / (SF - WF));
-          } else {
-            jabOff = 0.32 * (1.0 - (progress - SF) / (1.0 - SF));
-          }
-          _qAnim.setFromAxisAngle(_swAxis, 0.18);
-          toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
+          // THRUST — non-overextending jab authored as a full pose (lateral
+          // offset, forward jab, pitch, tool yaw, and a whole-body bodyYaw
+          // wind-up/follow-through), matching the attack-animation editor's
+          // pose schema exactly: x/z/pitch/yaw are hand-relative (relative to
+          // toolBase), bodyYaw alone rotates the whole character. Combat jabs
+          // pull back farther than a normal tool jab (-0.40 vs -0.22) so the
+          // windup itself reads as a clear "about to stab" tell; the strike
+          // still arrives at the same +0.32 extension either way.
+          const windupBack  = combatSwingAnim ? -0.40 : -0.22;
+          const jabOff      = threePhaseLerp(progress, WF, SF, windupBack, 0.32);
+          const lateral     = threePhaseLerp(progress, WF, SF, 0, -0.23);
+          const pitchRad    = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1));
+          const yawRad      = threePhaseLerp(progress, WF, SF, 0, THREE.MathUtils.degToRad(-45));
+          const bodyYawRad  = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(-45), THREE.MathUtils.degToRad(46));
+
+          const vθ  = θ + bodyYawRad;
+          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
+
+          playerMesh.rotation.y = vθ;
+          _qFac.setFromAxisAngle(_tUp, vθ);
+          _qToolYaw.setFromAxisAngle(_tUp, yawRad);
+          _qAnim.setFromAxisAngle(_xAxis, pitchRad);
+          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * playerToolBaseX + fwdX * jabOff,
+            playerMesh.position.x + vRX * (playerToolBaseX + lateral) + vFX * jabOff,
             playerMesh.position.y + playerToolBaseY,
-            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * jabOff
+            playerMesh.position.z + vRZ * (playerToolBaseX + lateral) + vFZ * jabOff
           );
 
         } else if (anim === 'chop') {
