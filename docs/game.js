@@ -12584,7 +12584,11 @@
             // Reverse of the twist-out: lerp back from 180° to 0°.
             spinPlane.rotation.z = baseRotZ + Math.PI * (1 - progress);
           } else {
-            spinPlane.rotation.z = TOOL_ITEM_DEFS[spinItemKey]?.spinning
+            // The mace's own fishing-throw twirl is cosmetic to the harpoon cast —
+            // it shouldn't also layer onto combat swings when the same item is
+            // equipped in the weapon slot, or every combo/quick-attack would
+            // spin like a fishing throw instead of following its own anim arc.
+            spinPlane.rotation.z = (TOOL_ITEM_DEFS[spinItemKey]?.spinning && !combatSwingAnim)
               ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
               : baseRotZ;
           }
