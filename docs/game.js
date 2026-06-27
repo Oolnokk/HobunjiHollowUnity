@@ -14708,6 +14708,11 @@
             let _chargeFiredOnPress = false;
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
             const DRAG_THRESH = 10;
+            // Legacy behavior: holding+dragging an action button like a stick used to
+            // keep re-firing the action every 120ms for as long as it stayed pushed off
+            // center. Disabled per design (the single immediate fire-on-threshold-cross
+            // below still happens) — kept here, not deleted, in case it's wanted back.
+            const ABT_DRAG_REPEAT_FIRE = false;
             const _stack = document.getElementById('actionStack');
 
             function _abtFire() {
@@ -14787,7 +14792,7 @@
                   // timer so release doesn't also fire/end an ability.
                   if (_pressSlot) { window.Combat.input.cancelPress(_pressSlot); _pressSlot = null; }
                   _resolveFire();
-                  _rtimer = setInterval(_resolveFire, 120);
+                  if (ABT_DRAG_REPEAT_FIRE) _rtimer = setInterval(_resolveFire, 120);
                 }
               }
             });
