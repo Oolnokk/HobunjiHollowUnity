@@ -14821,6 +14821,11 @@
               const nx = dist > 0.5 ? dx / dist * r : 0;
               const ny = dist > 0.5 ? dy / dist * r : 0;
               el.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
+              // With a weapon equipped, action buttons are tap/hold only — dragging
+              // must never act like a directional stick, otherwise a thumb wobbling
+              // mid-hold reads as an aim-drag, cancels the pending hold ability, and
+              // fires a tap instead. Farm tools still use drag-to-aim as before.
+              if (activeTool === 'weapon') return;
               if (dist > DRAG_THRESH) {
                 const ang = Math.atan2(dy, dx);
                 facingAngle = ang;
