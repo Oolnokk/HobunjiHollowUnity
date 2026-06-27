@@ -8656,13 +8656,16 @@
           startFishingMinigame();
           return;
         }
+        // Weapon attacks route through the loadout's tap-slot abilities
+        // (combo/quick attacks/etc.) instead of firing a plain swing here —
+        // mirrors the mouse/touch action-bar handling further down, so
+        // gamepad/keyboard "primary action" presses get the same combo and
+        // windup/strike behavior instead of falling back to the pre-loadout
+        // swing. Each ability deducts its own stamina cost, so there's no
+        // separate check here.
         if (activeTool === 'weapon') {
-          const abil = weaponAbility(activeAction);
-          if (abil && player.stamina < abil.staminaCost) {
-            showToast('Too winded to swing!', false);
-            return;
-          }
-          if (abil) player.stamina = Math.max(0, player.stamina - abil.staminaCost);
+          const slot = activeAction === toolActions.weapon[0] ? 1 : activeAction === toolActions.weapon[1] ? 2 : null;
+          if (slot && window.Combat?.input) { window.Combat.input.fireTap(slot); return; }
         }
 
         // Digging a brand-new trench or filling an existing one in requires a
