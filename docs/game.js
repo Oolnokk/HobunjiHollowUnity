@@ -2624,9 +2624,11 @@
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
       // The base attach point updateToolMesh hangs tools/weapons from. X is the avatar's
-      // actual scanned right-arm sprite edge (negative — left side of the prism, character's
-      // POV); Y is half the scaled prism height. Both vary by species and are recomputed in
-      // refreshPlayerAvatar() once the per-species sprite/scale is known.
+      // actual scanned right-arm sprite edge; Y is the avatar's actual scanned bottom-edge
+      // pixel row (these are cropped bust-style portraits, so the bottom-most opaque pixel
+      // is hand height, not avatarHeight/2 — see handAttachY in png-plane-avatar.js). Both
+      // vary by species and are recomputed in refreshPlayerAvatar() once the per-species
+      // sprite/scale is known.
       let playerToolBaseX = -0.45, playerToolBaseY = 0.45;
 
       // ── Dialogue tree runtime state ──────────────────────────────────
@@ -7354,12 +7356,12 @@
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
-        // Tools/weapons hang from the avatar's actual right-arm sprite edge (scanned
-        // pixel-precisely in buildSinglePlaneAvatarModel — see handAttachX) and half
-        // the prism's height — recompute here since this is the only place the
+        // Tools/weapons hang from the avatar's actual scanned right-arm sprite edge
+        // and bottom-edge pixel row (see handAttachX/handAttachY in
+        // png-plane-avatar.js) — recompute here since this is the only place the
         // per-species scale/sprite is known.
         playerToolBaseX = avatarGroup.userData?.handAttachX ?? (-avatarWidth / 2);
-        playerToolBaseY = avatarHeight / 2;
+        playerToolBaseY = avatarGroup.userData?.handAttachY ?? (avatarHeight / 2);
         _markPngPlane(avatarGroup);
         if (refreshGeneration !== playerAvatarRefreshGeneration) {
           disposeAvatarGroup(avatarGroup);

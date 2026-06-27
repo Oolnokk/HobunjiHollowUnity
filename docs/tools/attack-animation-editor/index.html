@@ -247,9 +247,10 @@ scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0,
 const rig = new THREE.Group();
 scene.add(rig);
 
-// toolBase sits at the avatar's actual scanned right-arm sprite edge (X) and half
-// its prism height (Y) — this matches refreshPlayerAvatar()/updateToolMesh() in
-// game.js exactly (playerToolBaseX/playerToolBaseY), recomputed per species below.
+// toolBase sits at the avatar's actual scanned right-arm sprite edge (X) and
+// scanned bottom-edge pixel row (Y) — this matches refreshPlayerAvatar()/
+// updateToolMesh() in game.js exactly (playerToolBaseX/playerToolBaseY),
+// recomputed per species below.
 const toolBase = new THREE.Object3D();
 rig.add(toolBase);
 // Canonical (un-mirrored) scanned attach X for the current avatar, and whether
@@ -305,10 +306,11 @@ async function rebuildAvatar(speciesId, gender) {
   const h = avatarModel.userData.portraitModelHeight || MODEL_W;
   const w = avatarModel.userData.portraitModelWidth || MODEL_W;
   baseAttachX = avatarModel.userData.handAttachX ?? (-w / 2);
+  const baseAttachY = avatarModel.userData.handAttachY ?? (h / 2);
   avatarModel.position.y = h / 2;
   rig.add(avatarModel);
-  toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, h / 2, 0);
-  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, base at ${toolBase.position.x.toFixed(2)}/+${(h/2).toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
+  toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
+  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
 }
 
 const SPECIES_LIST = [
