@@ -125,6 +125,13 @@ canvas{display:block;width:100%;height:100%}
     <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: swing left/right (+ = right)</div>
   </div>
 
+  <div class="card section" style="--sec:#22d3ee;--secBg:rgba(34,211,238,.10)">
+    <div class="sectionTitle"><b>Tool stance presets</b><span class="sectionTag">idle &amp; swing</span></div>
+    <div class="field"><label>Preset</label><select id="presetSelect"></select></div>
+    <div class="row"><button id="loadPresetBtn">Load Preset</button></div>
+    <div class="help">"Idle" presets freeze the preview on that tool's resting hold (no swing). "Swing" presets load that tool's in-game windup/strike shape as a starting point — approximated in this editor's pose space, not a literal unit-for-unit port.</div>
+  </div>
+
   <div class="card section" style="--sec:#fb7185;--secBg:rgba(251,113,133,.10)">
     <div class="sectionTitle"><b>Playback</b><span class="sectionTag">auto-lerp preview</span></div>
     <div class="row">
@@ -437,6 +444,82 @@ $('resetPosesBtn').onclick = () => {
   syncPosePanelFromState('strike');
   refreshJsonView();
   logDebug('Reset poses to defaults');
+};
+
+// ── Tool stance presets ───────────────────────────────────────────────────
+// Hold poses are read off each tool's animStyle in game.js's updateToolMesh at
+// progress=0 (its actual in-game idle hold); swing poses are read off that same
+// style's windup/strike extremes. Rotation axes line up directly with this editor's
+// pitch (chop/thrust tilt about the player's right axis) and yaw (sweep's body-turn
+// about the up axis) fields, so those angles are ported in degrees. Position deltas
+// don't translate 1:1 (game.js's sweep sweeps the whole body, this editor only swings
+// the tool around a fixed shoulder pivot), so those are stylized approximations.
+const TOOL_PRESETS = [
+  { id: 'hatchet_idle', label: 'Hatchet — Idle (still)', style: 'sweep', still: true,
+    windup: defaultPose(0.18, -0.02, 0.10, 6, -8), strike: defaultPose(0.18, -0.02, 0.10, 6, -8),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+  { id: 'hatchet_swing', label: 'Hatchet — Swing (sweep)', style: 'sweep', still: false,
+    windup: defaultPose(0.10, 0, -0.20, 0, -126), strike: defaultPose(-0.08, 0, 0.14, 0, 121),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+
+  { id: 'pickshovel_idle', label: 'Pick-Shovel — Idle (still)', style: 'thrust', still: true,
+    windup: defaultPose(0.22, 0, -0.05, 10, 0), strike: defaultPose(0.22, 0, -0.05, 10, 0),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+  { id: 'pickshovel_swing', label: 'Pick-Shovel — Swing (thrust)', style: 'thrust', still: false,
+    windup: defaultPose(0.22, 0, -0.22, 10, 0), strike: defaultPose(0.22, 0, 0.32, 10, 0),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+
+  { id: 'bronzehoe_idle', label: 'Bronze Hoe — Idle (still)', style: 'chop', still: true,
+    windup: defaultPose(0, 0, 0, 47, 0), strike: defaultPose(0, 0, 0, 47, 0),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+  { id: 'bronzehoe_swing', label: 'Bronze Hoe — Swing (chop)', style: 'chop', still: false,
+    windup: defaultPose(0, 0, 0, 56, 0), strike: defaultPose(0, 0, 0, -133, 0),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+
+  { id: 'fishingspear_idle', label: 'Fishing Spear — Idle (still)', style: 'sweep', still: true,
+    windup: defaultPose(0.18, -0.02, 0.10, 6, -8), strike: defaultPose(0.18, -0.02, 0.10, 6, -8),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+  { id: 'fishingspear_swing', label: 'Fishing Spear — Swing (sweep)', style: 'sweep', still: false,
+    windup: defaultPose(0.10, 0, -0.20, 0, -126), strike: defaultPose(-0.08, 0, 0.14, 0, 121),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+
+  { id: 'fishingmace_idle', label: 'Fishing Mace — Idle (still)', style: 'sweep', still: true,
+    windup: defaultPose(0.18, -0.02, 0.10, 6, -8), strike: defaultPose(0.18, -0.02, 0.10, 6, -8),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+  { id: 'fishingmace_swing', label: 'Fishing Mace — Swing (sweep, spins in-game)', style: 'sweep', still: false,
+    windup: defaultPose(0.10, 0, -0.20, 0, -126), strike: defaultPose(-0.08, 0, 0.14, 0, 121),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+];
+$('presetSelect').innerHTML = TOOL_PRESETS.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
+function applyPreset(preset) {
+  anim.poses.windup = { ...preset.windup };
+  anim.poses.strike = { ...preset.strike };
+  anim.windupFrac = preset.windupFrac;
+  anim.strikeFrac = preset.strikeFrac;
+  anim.style = preset.style;
+  clampFracs();
+  $('animStyle').value = anim.style;
+  $('windupFrac').value = anim.windupFrac;
+  $('strikeFrac').value = anim.strikeFrac;
+  $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
+  $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  syncPosePanelFromState('windup');
+  syncPosePanelFromState('strike');
+  if (preset.still) {
+    playing = false;
+    previewT = (anim.windupFrac + anim.strikeFrac) / 2;
+    $('scrub').value = previewT;
+    $('playPauseBtn').textContent = '▶ Play';
+  } else {
+    playing = true;
+    $('playPauseBtn').textContent = '⏸ Pause';
+  }
+  refreshJsonView();
+  logDebug(`Loaded preset: ${preset.label}`);
+}
+$('loadPresetBtn').onclick = () => {
+  const preset = TOOL_PRESETS.find(p => p.id === $('presetSelect').value);
+  if (preset) applyPreset(preset);
 };
 
 // ── Playback / auto-lerp preview ─────────────────────────────────────────
