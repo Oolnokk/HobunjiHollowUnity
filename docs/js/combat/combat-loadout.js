@@ -24,8 +24,8 @@
   const DEFAULT_LOADOUT = {
     tap1: 'swingCombo',
     tap2: 'opportunistJab',
-    hold1: 'counterShield',
-    hold2: 'chargedBreaker',
+    hold1: 'chargedBreaker',
+    hold2: 'counterShield',
   };
 
   const abilities = new Map();
