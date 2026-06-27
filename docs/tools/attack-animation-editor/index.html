@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Hobunji Attack Animation Editor</title>
+<style>
+:root{
+  --bg:#0b0f14; --panel:#121822; --panel2:#0f1520; --text:#e8eef7; --muted:#9fb0c8;
+  --line:#253246; --acc:#6aa7ff; --good:#34d399; --warn:#fbbf24; --bad:#fb7185;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+body{overflow:hidden}
+button,input,select,textarea{font:inherit}
+button{border:1px solid rgba(106,167,255,.38);background:rgba(106,167,255,.16);color:var(--text);
+  border-radius:11px;padding:8px 10px;font-weight:700;cursor:pointer}
+button.secondary{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.06)}
+button.good{border-color:rgba(52,211,153,.42);background:rgba(52,211,153,.14)}
+button.warn{border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.14)}
+button.danger{border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.14)}
+button.active{outline:2px solid var(--acc);outline-offset:1px}
+button:active{transform:translateY(1px)}
+input,select,textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);
+  border-radius:10px;color:var(--text);padding:7px 9px;outline:none;font-size:13px}
+input[type=range]{padding:0;height:28px}
+textarea{min-height:120px;resize:vertical;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.field{margin-bottom:8px}
+.fieldRow{display:flex;align-items:center;gap:8px}
+.fieldRow input[type=range]{flex:1}
+.fieldRow .val{width:54px;flex:0 0 auto;text-align:right;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--acc)}
+.card{border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.035);padding:10px;margin:10px}
+.section{border-left:6px solid var(--sec,var(--acc));
+  background:linear-gradient(180deg,var(--secBg,rgba(106,167,255,.1)),rgba(255,255,255,.02))}
+.sectionTitle{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}
+.sectionTitle b{font-size:13px;text-transform:uppercase;letter-spacing:.3px}
+.sectionTag{font-size:11px;color:var(--muted);border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:3px 8px}
+.help{color:var(--muted);font-size:11px;line-height:1.35}
+.hr{height:1px;background:var(--line);margin:9px 0}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.13);
+  background:rgba(255,255,255,.045);border-radius:999px;padding:4px 8px;color:var(--muted);font-size:12px}
+
+#app{display:flex;height:100vh}
+#sidebar{width:380px;max-width:60vw;min-width:310px;overflow:auto;-webkit-overflow-scrolling:touch;
+  background:linear-gradient(180deg,var(--panel),var(--panel2));border-right:1px solid var(--line)}
+#viewport{flex:1;position:relative;min-width:240px}
+canvas{display:block;width:100%;height:100%}
+
+.poseTabs{display:flex;gap:6px;margin-bottom:8px}
+.poseTab{flex:1;border-radius:9px;padding:7px 8px;text-align:center}
+.posePanel{display:none}
+.posePanel.active{display:block}
+.phasePill{position:absolute;left:10px;top:10px;z-index:5}
+#debug{position:absolute;left:10px;bottom:10px;max-width:min(560px,92vw);white-space:pre-wrap;
+  background:rgba(0,0,0,.48);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:9px;
+  font-size:11px;color:var(--text);pointer-events:none}
+#logPanel{position:absolute;right:10px;top:10px;width:min(380px,92vw);max-height:48vh;
+  background:rgba(11,15,20,.96);border:1px solid rgba(255,255,255,.13);border-radius:12px;
+  overflow:hidden;display:none;z-index:10}
+.visible{display:block!important}
+.logHead{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;
+  border-bottom:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.25)}
+#logBody{max-height:calc(48vh - 42px);overflow:auto;padding:8px;
+  font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#bfdbfe}
+.logLine{padding:2px 4px;border-radius:4px}
+.logToggle{position:absolute;right:10px;top:10px;z-index:9}
+@media(max-width:760px){
+  #sidebar{width:320px;max-width:68vw;min-width:280px}
+}
+</style>
+<!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="app">
+<aside id="sidebar">
+  <div class="card section" style="--sec:#6aa7ff;--secBg:rgba(106,167,255,.10)">
+    <div class="sectionTitle"><b>Attack animation</b><span class="sectionTag">meta</span></div>
+    <div class="field"><label>Name</label><input id="animName" value="New Attack"></div>
+    <div class="field"><label>Swing style (reference only)</label>
+      <select id="animStyle">
+        <option value="thrust">thrust</option>
+        <option value="chop">chop</option>
+        <option value="sweep" selected>sweep</option>
+        <option value="toss">toss</option>
+      </select>
+    </div>
+    <div class="help">Style is just a label saved with the export — it doesn't change how the rig moves here.</div>
+  </div>
+
+  <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
+    <div class="sectionTitle"><b>Timing</b><span class="sectionTag">windup → strike → return</span></div>
+    <div class="field">
+      <label>Windup ends at <span id="windupFracVal">16%</span> of swing</label>
+      <input id="windupFrac" type="range" min="0.02" max="0.9" step="0.01" value="0.16">
+    </div>
+    <div class="field">
+      <label>Strike ends at <span id="strikeFracVal">55%</span> of swing</label>
+      <input id="strikeFrac" type="range" min="0.03" max="0.98" step="0.01" value="0.55">
+    </div>
+    <div class="field"><label>Preview duration (seconds)</label>
+      <input id="durationS" type="number" min="0.05" max="3" step="0.05" value="0.5">
+    </div>
+    <div class="help">0 → windup% lerps Neutral→Windup. windup% → strike% lerps Windup→Strike. strike% → 100% lerps Strike→Neutral (the return).</div>
+  </div>
+
+  <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
+    <div class="sectionTitle"><b>Pose editor</b><span class="sectionTag">windup / strike</span></div>
+    <div class="poseTabs">
+      <button class="poseTab active" id="tabWindup" data-phase="windup">Windup</button>
+      <button class="poseTab secondary" id="tabStrike" data-phase="strike">Strike</button>
+    </div>
+    <div class="posePanel active" id="panelWindup" data-phase="windup"></div>
+    <div class="posePanel" id="panelStrike" data-phase="strike"></div>
+    <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: swing left/right (+ = right)</div>
+  </div>
+
+  <div class="card section" style="--sec:#fb7185;--secBg:rgba(251,113,133,.10)">
+    <div class="sectionTitle"><b>Playback</b><span class="sectionTag">auto-lerp preview</span></div>
+    <div class="row">
+      <button id="playPauseBtn">⏸ Pause</button>
+      <button id="resetPreviewBtn" class="secondary">Restart</button>
+      <span class="pill" id="phasePill">phase: —</span>
+    </div>
+    <div class="field" style="margin-top:8px">
+      <label>Scrub (drag to pause &amp; inspect a frame)</label>
+      <input id="scrub" type="range" min="0" max="1" step="0.001" value="0">
+    </div>
+  </div>
+
+  <div class="card section" style="--sec:#94a3b8;--secBg:rgba(148,163,184,.10)">
+    <div class="sectionTitle"><b>Actions</b><span class="sectionTag">flip / import / export</span></div>
+    <div class="row">
+      <button id="flipBtn" class="warn">⇋ Flip Across Midline</button>
+      <button id="resetPosesBtn" class="secondary">Reset poses</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="exportBtn">⭳ Export JSON</button>
+      <button id="loadBtn" class="secondary">⭱ Load JSON</button>
+      <input id="loadFile" type="file" accept=".json,application/json" hidden>
+    </div>
+    <div class="hr"></div>
+    <label>Current animation JSON</label>
+    <textarea id="jsonView" readonly></textarea>
+    <div class="row" style="margin-top:6px"><button id="copyJsonBtn" class="secondary">Copy JSON</button></div>
+  </div>
+</aside>
+<div id="viewport">
+  <button id="logToggle" class="logToggle secondary" style="font-size:12px;padding:6px 9px">📋 Log</button>
+  <div id="logPanel">
+    <div class="logHead"><b>Debug Log</b><div class="row">
+      <button id="copyLogBtn" class="secondary" style="font-size:11px;padding:5px 8px">Copy</button>
+      <button id="clearLogBtn" class="secondary" style="font-size:11px;padding:5px 8px">Clear</button>
+      <button id="closeLogBtn" class="secondary" style="font-size:11px;padding:5px 8px">Close</button>
+    </div></div>
+    <div id="logBody"></div>
+  </div>
+  <div id="debug"></div>
+</div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const $ = id => document.getElementById(id);
+const logLines = [];
+function logDebug(msg){ const line = `[${new Date().toLocaleTimeString()}] ${msg}`; logLines.unshift(line); if(logLines.length>180)logLines.pop(); $('logBody').innerHTML = logLines.map(l=>`<div class="logLine">${escapeHtml(l)}</div>`).join(''); console.log(line); }
+function setDebug(msg){ $('debug').textContent = msg || ''; }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+window.addEventListener('error', e=>logDebug(`ERROR: ${e.message} @ ${e.filename}:${e.lineno}`));
+window.addEventListener('unhandledrejection', e=>logDebug(`UNHANDLED: ${e.reason?.message||e.reason}`));
+
+$('logToggle').onclick=()=>{ $('logPanel').classList.add('visible'); $('logToggle').style.display='none'; };
+$('closeLogBtn').onclick=()=>{ $('logPanel').classList.remove('visible'); $('logToggle').style.display='block'; };
+$('clearLogBtn').onclick=()=>{ logLines.length=0; $('logBody').innerHTML=''; logDebug('Log cleared'); };
+$('copyLogBtn').onclick=async()=>{ const t=logLines.join('\n'); try{ await navigator.clipboard.writeText(t); logDebug('Copied log'); }catch{ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); logDebug('Copied log fallback'); } };
+
+// ── Scene setup ─────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0f14);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 100);
+camera.position.set(1.7, 1.6, 2.3);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+$('viewport').prepend(renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.9, 0);
+controls.update();
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 2.0));
+const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
+dirLight.position.set(3, 5, 3);
+scene.add(dirLight);
+scene.add(new THREE.GridHelper(4, 8, 0x335070, 0x1d2a3a));
+scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.01, 0), 0.7, 0x6aa7ff, 0.12, 0.08));
+
+// ── Placeholder rig: torso + head, with a shoulder anchor the weapon hangs off ──
+const rig = new THREE.Group();
+scene.add(rig);
+
+const torso = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.17, 0.22, 0.85, 14),
+  new THREE.MeshStandardMaterial({ color: 0x60748e, roughness: 0.85 })
+);
+torso.position.set(0, 0.5, 0);
+rig.add(torso);
+
+const head = new THREE.Mesh(
+  new THREE.SphereGeometry(0.15, 16, 12),
+  new THREE.MeshStandardMaterial({ color: 0x9fb0c8, roughness: 0.85 })
+);
+head.position.set(0, 1.07, 0);
+rig.add(head);
+
+const shoulderAnchor = new THREE.Object3D();
+shoulderAnchor.position.set(0, 0.92, 0.04);
+rig.add(shoulderAnchor);
+const anchorDot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: 0x6aa7ff }));
+shoulderAnchor.add(anchorDot);
+
+// toolHolder is what the authored pose (pos+pitch+yaw) actually drives.
+const toolHolder = new THREE.Object3D();
+shoulderAnchor.add(toolHolder);
+
+const weaponGroup = new THREE.Group();
+const blade = new THREE.Mesh(
+  new THREE.BoxGeometry(0.045, 0.045, 0.85),
+  new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.4, metalness: 0.35 })
+);
+blade.position.set(0, 0, 0.42);
+weaponGroup.add(blade);
+const guard = new THREE.Mesh(
+  new THREE.BoxGeometry(0.18, 0.045, 0.045),
+  new THREE.MeshStandardMaterial({ color: 0x9fb0c8, roughness: 0.6 })
+);
+weaponGroup.add(guard);
+const grip = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.025, 0.025, 0.2, 8),
+  new THREE.MeshStandardMaterial({ color: 0x3a4a5e, roughness: 0.8 })
+);
+grip.rotation.x = Math.PI / 2;
+grip.position.set(0, 0, -0.1);
+weaponGroup.add(grip);
+toolHolder.add(weaponGroup);
+
+// ── Animation data model ─────────────────────────────────────────────────
+// pose = { x, y, z, pitch, yaw } — local offset/rotation of the weapon relative
+// to the shoulder anchor. Neutral (rest) is always the implicit zero pose;
+// only windup and strike are authored. Mirroring across the character's
+// midline negates x (side) and yaw (left/right swing) and leaves y, z, pitch
+// untouched (they're symmetric about the midline).
+function defaultPose(x, y, z, pitch, yaw) { return { x, y, z, pitch, yaw }; }
+const NEUTRAL_POSE = defaultPose(0, 0, 0, 0, 0);
+
+let anim = {
+  name: 'New Attack',
+  style: 'sweep',
+  windupFrac: 0.16,
+  strikeFrac: 0.55,
+  durationS: 0.5,
+  poses: {
+    windup: defaultPose(0.05, 0.05, -0.25, -25, -70),
+    strike: defaultPose(-0.05, 0.0, 0.15, 10, 65),
+  },
+};
+
+const FIELD_DEFS = [
+  { key: 'x', label: 'X (side)', min: -1, max: 1, step: 0.01, angle: false },
+  { key: 'y', label: 'Y (height)', min: -1, max: 1, step: 0.01, angle: false },
+  { key: 'z', label: 'Z (forward)', min: -1, max: 1, step: 0.01, angle: false },
+  { key: 'pitch', label: 'Pitch°', min: -180, max: 180, step: 1, angle: true },
+  { key: 'yaw', label: 'Yaw°', min: -180, max: 180, step: 1, angle: true },
+];
+
+function buildPosePanel(phase) {
+  const panel = $('panel' + phase[0].toUpperCase() + phase.slice(1));
+  panel.innerHTML = FIELD_DEFS.map(f => `
+    <div class="field">
+      <label>${f.label}</label>
+      <div class="fieldRow">
+        <input type="range" id="${phase}_${f.key}" min="${f.min}" max="${f.max}" step="${f.step}">
+        <span class="val" id="${phase}_${f.key}_val"></span>
+      </div>
+    </div>`).join('');
+  for (const f of FIELD_DEFS) {
+    const el = $(`${phase}_${f.key}`);
+    el.addEventListener('input', () => {
+      const v = Number(el.value);
+      anim.poses[phase][f.key] = v;
+      $(`${phase}_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
+      refreshJsonView();
+    });
+  }
+}
+buildPosePanel('windup');
+buildPosePanel('strike');
+
+function syncPosePanelFromState(phase) {
+  for (const f of FIELD_DEFS) {
+    const v = anim.poses[phase][f.key];
+    $(`${phase}_${f.key}`).value = v;
+    $(`${phase}_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
+  }
+}
+syncPosePanelFromState('windup');
+syncPosePanelFromState('strike');
+
+$('tabWindup').onclick = () => switchPoseTab('windup');
+$('tabStrike').onclick = () => switchPoseTab('strike');
+function switchPoseTab(phase) {
+  $('tabWindup').classList.toggle('active', phase === 'windup');
+  $('tabStrike').classList.toggle('active', phase === 'strike');
+  $('panelWindup').classList.toggle('active', phase === 'windup');
+  $('panelStrike').classList.toggle('active', phase === 'strike');
+}
+
+$('animName').addEventListener('input', () => { anim.name = $('animName').value; refreshJsonView(); });
+$('animStyle').addEventListener('change', () => { anim.style = $('animStyle').value; refreshJsonView(); });
+
+function clampFracs() {
+  if (anim.windupFrac >= anim.strikeFrac) anim.strikeFrac = Math.min(0.98, anim.windupFrac + 0.01);
+}
+$('windupFrac').addEventListener('input', () => {
+  anim.windupFrac = Number($('windupFrac').value);
+  clampFracs();
+  $('strikeFrac').value = anim.strikeFrac;
+  $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
+  $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  refreshJsonView();
+});
+$('strikeFrac').addEventListener('input', () => {
+  anim.strikeFrac = Number($('strikeFrac').value);
+  if (anim.strikeFrac <= anim.windupFrac) anim.windupFrac = Math.max(0.02, anim.strikeFrac - 0.01);
+  $('windupFrac').value = anim.windupFrac;
+  $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
+  $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  refreshJsonView();
+});
+$('durationS').addEventListener('input', () => {
+  const v = Number($('durationS').value);
+  if (Number.isFinite(v) && v > 0) anim.durationS = v;
+  refreshJsonView();
+});
+
+// ── Mirroring across the character midline ───────────────────────────────
+function flipPose(p) { return defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw); }
+$('flipBtn').onclick = () => {
+  anim.poses.windup = flipPose(anim.poses.windup);
+  anim.poses.strike = flipPose(anim.poses.strike);
+  syncPosePanelFromState('windup');
+  syncPosePanelFromState('strike');
+  refreshJsonView();
+  logDebug('Flipped animation across character midline');
+};
+$('resetPosesBtn').onclick = () => {
+  anim.poses.windup = defaultPose(0.05, 0.05, -0.25, -25, -70);
+  anim.poses.strike = defaultPose(-0.05, 0.0, 0.15, 10, 65);
+  syncPosePanelFromState('windup');
+  syncPosePanelFromState('strike');
+  refreshJsonView();
+  logDebug('Reset poses to defaults');
+};
+
+// ── Playback / auto-lerp preview ─────────────────────────────────────────
+function lerpPose(a, b, k) {
+  return defaultPose(
+    a.x + (b.x - a.x) * k,
+    a.y + (b.y - a.y) * k,
+    a.z + (b.z - a.z) * k,
+    a.pitch + (b.pitch - a.pitch) * k,
+    a.yaw + (b.yaw - a.yaw) * k
+  );
+}
+function poseAt(t) {
+  const wf = anim.windupFrac, sf = anim.strikeFrac;
+  if (t <= wf) {
+    const k = wf > 0 ? t / wf : 1;
+    return { pose: lerpPose(NEUTRAL_POSE, anim.poses.windup, k), phase: 'windup' };
+  } else if (t <= sf) {
+    const k = (sf - wf) > 0 ? (t - wf) / (sf - wf) : 1;
+    return { pose: lerpPose(anim.poses.windup, anim.poses.strike, k), phase: 'strike' };
+  } else {
+    const k = (1 - sf) > 0 ? (t - sf) / (1 - sf) : 1;
+    return { pose: lerpPose(anim.poses.strike, NEUTRAL_POSE, k), phase: 'return' };
+  }
+}
+function applyPoseToRig(pose) {
+  toolHolder.position.set(pose.x, pose.y, pose.z);
+  const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(pose.pitch));
+  const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(pose.yaw));
+  toolHolder.quaternion.copy(qYaw).multiply(qPitch);
+}
+
+let previewT = 0;
+let playing = true;
+$('playPauseBtn').onclick = () => {
+  playing = !playing;
+  $('playPauseBtn').textContent = playing ? '⏸ Pause' : '▶ Play';
+};
+$('resetPreviewBtn').onclick = () => { previewT = 0; };
+$('scrub').addEventListener('input', () => {
+  previewT = Number($('scrub').value);
+  playing = false;
+  $('playPauseBtn').textContent = '▶ Play';
+});
+
+// ── Import / export ──────────────────────────────────────────────────────
+function refreshJsonView() {
+  $('jsonView').value = JSON.stringify(exportAnimObject(), null, 2);
+}
+function exportAnimObject() {
+  return {
+    version: 1,
+    kind: 'hobunji_attack_animation',
+    name: anim.name,
+    style: anim.style,
+    windupFrac: anim.windupFrac,
+    strikeFrac: anim.strikeFrac,
+    durationS: anim.durationS,
+    poses: { neutral: { ...NEUTRAL_POSE }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
+  };
+}
+$('exportBtn').onclick = () => {
+  const obj = exportAnimObject();
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${(anim.name || 'attack').replace(/[^a-zA-Z0-9_-]+/g, '_')}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  logDebug(`Exported ${a.download}`);
+};
+$('copyJsonBtn').onclick = async () => {
+  try { await navigator.clipboard.writeText($('jsonView').value); logDebug('Copied animation JSON'); }
+  catch { logDebug('Clipboard copy failed'); }
+};
+$('loadBtn').onclick = () => $('loadFile').click();
+$('loadFile').onchange = async () => {
+  const file = $('loadFile').files?.[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    loadAnimObject(data);
+    logDebug(`Loaded ${file.name}`);
+  } catch (e) {
+    logDebug(`Load failed: ${e.message}`);
+  }
+};
+function safeNum(v, fallback) { const n = Number(v); return Number.isFinite(n) ? n : fallback; }
+function loadAnimObject(data) {
+  anim.name = data.name || anim.name;
+  anim.style = data.style || anim.style;
+  anim.windupFrac = safeNum(data.windupFrac, anim.windupFrac);
+  anim.strikeFrac = safeNum(data.strikeFrac, anim.strikeFrac);
+  anim.durationS = safeNum(data.durationS, anim.durationS);
+  clampFracs();
+  const w = data.poses?.windup || {}, s = data.poses?.strike || {};
+  anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0));
+  anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0));
+  $('animName').value = anim.name;
+  $('animStyle').value = anim.style;
+  $('windupFrac').value = anim.windupFrac;
+  $('strikeFrac').value = anim.strikeFrac;
+  $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
+  $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  $('durationS').value = anim.durationS;
+  syncPosePanelFromState('windup');
+  syncPosePanelFromState('strike');
+  refreshJsonView();
+}
+
+// ── Render loop ───────────────────────────────────────────────────────────
+function resize() {
+  const r = $('viewport').getBoundingClientRect();
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width / Math.max(1, r.height);
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+let lastFrameTime = performance.now();
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = (now - lastFrameTime) / 1000;
+  lastFrameTime = now;
+  if (playing) {
+    previewT += dt / Math.max(0.05, anim.durationS);
+    if (previewT > 1) previewT -= Math.floor(previewT);
+    $('scrub').value = previewT;
+  }
+  const { pose, phase } = poseAt(previewT);
+  applyPoseToRig(pose);
+  $('phasePill').textContent = `phase: ${phase} (${Math.round(previewT * 100)}%)`;
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+$('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
+$('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+refreshJsonView();
+setDebug('Hobunji Attack Animation Editor\nWindup and Strike are authored poses; Neutral is always the implicit rest pose.\nPlayback auto-lerps Neutral→Windup→Strike→Neutral on loop.\nDrag the scrub bar to inspect any single frame.');
+logDebug('Attack Animation Editor ready');
+</script>
+</body>
+</html>
