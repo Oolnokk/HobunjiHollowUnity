@@ -1113,6 +1113,7 @@
           moveSpeed: 165, chaseSpeed: 220,
           attackDamage: 10, attackRangePx: TILE * 0.9, attackHalfConeRad: 45 * Math.PI / 180,
           attackStaminaCost: 14, attackCooldownS: 1.1,
+          attacks: ['pounce'],
           modelWidth: 1.9, tint: 0xffffff,
           sprites: {
             idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
@@ -1125,6 +1126,7 @@
           moveSpeed: 130, chaseSpeed: 195,
           attackDamage: 12, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
           attackStaminaCost: 12, attackCooldownS: 1.0,
+          attacks: ['pounce'],
           aggroRangePx: TILE * 6.2, leashRangePx: TILE * 9,
           modelWidth: 2.1, tint: 0xffffff,
           sprites: {
@@ -1138,6 +1140,7 @@
           moveSpeed: 140, chaseSpeed: 205,
           attackDamage: 18, attackRangePx: TILE * 0.95, attackHalfConeRad: 46 * Math.PI / 180,
           attackStaminaCost: 16, attackCooldownS: 1.0,
+          attacks: ['pounce'],
           aggroRangePx: TILE * 7, leashRangePx: TILE * 10,
           modelWidth: 3.1, tint: 0xffb0a0,
           sprites: {
@@ -2159,6 +2162,7 @@
           health: def.maxHealth, maxHealth: def.maxHealth,
           stamina: def.maxStamina, maxStamina: def.maxStamina,
           facing: 0, groupRot: 0, perpState: {},
+          scaleY: 1,
           attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
           knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
           runFrame: 0, runFrameT: 0, currentFrameUrl: def.sprites.idle,
@@ -2334,10 +2338,16 @@
         const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
         const surfY = g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0;
         const grp = c.avatarRef.group;
-        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight;
+        // scaleY (driven by attacks like Pounce, default 1) squashes the
+        // sprite plane vertically around its own bottom edge rather than its
+        // center — the target height keeps the creature's feet grounded at
+        // surfY instead of sinking into the floor as it crouches.
+        const scaleY = c.scaleY ?? 1;
+        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight * scaleY;
         grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
         grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
+        grp.scale.y = scaleY;
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
         const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
@@ -2408,8 +2418,10 @@
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
           // Leaving chase mid-windup (player broke the leash) abandons the
-          // telegraphed bite rather than landing it from way out of range.
+          // telegraphed bite/modular attack rather than landing it from way
+          // out of range.
           if (c.state !== 'chase' && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
+          if (c.state !== 'chase' && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
 
           let moving = false, aimAngle = c.facing || 0;
           if (c.knockbackT > 0) {
@@ -2429,21 +2441,32 @@
               // player's cue to step out of attackRangePx before the strike
               // frame's range check below fires.
               window.Combat.telegraph.update(c, dt);
+            } else if (window.Combat?.animalAttacks?.isBusy(c)) {
+              // Modular named attack (e.g. Pounce) owns position, facing,
+              // scale, and sprite frame for its full duration.
+              window.Combat.animalAttacks.update(c, dt);
+              aimAngle = c.facing;
             } else {
               moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
               if (distToPlayer <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
                 c.stamina -= def.attackStaminaCost;
                 c.attackCooldownT = def.attackCooldownS;
-                window.Combat.telegraph.start(c, {
-                  windupS: BITE_TELEGRAPH_WINDUP_S,
-                  strikeS: BITE_TELEGRAPH_STRIKE_S,
-                  onStrike: () => {
-                    if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
-                      damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
-                    }
-                    c.retreatT = JUMP_BACK_DUR_S;
-                  },
-                });
+                const startedModular = def.attacks?.length && window.Combat?.animalAttacks?.start(
+                  c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
+                );
+                if (startedModular) aimAngle = c.facing;
+                if (!startedModular) {
+                  window.Combat.telegraph.start(c, {
+                    windupS: BITE_TELEGRAPH_WINDUP_S,
+                    strikeS: BITE_TELEGRAPH_STRIKE_S,
+                    onStrike: () => {
+                      if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
+                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
+                      }
+                      c.retreatT = JUMP_BACK_DUR_S;
+                    },
+                  });
+                }
               }
             }
           } else if (c.state === 'return') {
@@ -2460,7 +2483,10 @@
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
           updateCreatureMesh(c, dt, aimAngle);
-          updateCreatureAnimFrame(c, dt, moving);
+          // A modular attack in its leap stage owns the sprite frame (locked
+          // onto a non-idle pose) — don't let the default idle/run cycling
+          // stomp it back every tick.
+          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving);
         }
       }
 
@@ -2486,6 +2512,7 @@
           }
 
           if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
+          if (!target && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
 
           let moving = false, aimAngle = c.facing || 0;
           if (target) {
@@ -2493,20 +2520,29 @@
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
             if (window.Combat?.telegraph?.isBusy(c)) {
               window.Combat.telegraph.update(c, dt);
+            } else if (window.Combat?.animalAttacks?.isBusy(c)) {
+              window.Combat.animalAttacks.update(c, dt);
+              aimAngle = c.facing;
             } else {
               if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
               if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
                 c.stamina -= def.attackStaminaCost;
                 c.attackCooldownT = def.attackCooldownS;
-                window.Combat.telegraph.start(c, {
-                  windupS: BITE_TELEGRAPH_WINDUP_S,
-                  strikeS: BITE_TELEGRAPH_STRIKE_S,
-                  onStrike: () => {
-                    if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
-                      damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
-                    }
-                  },
-                });
+                const startedModular = def.attacks?.length && window.Combat?.animalAttacks?.start(
+                  c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target }
+                );
+                if (startedModular) aimAngle = c.facing;
+                if (!startedModular) {
+                  window.Combat.telegraph.start(c, {
+                    windupS: BITE_TELEGRAPH_WINDUP_S,
+                    strikeS: BITE_TELEGRAPH_STRIKE_S,
+                    onStrike: () => {
+                      if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
+                        damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
+                      }
+                    },
+                  });
+                }
               }
             }
           } else if (distToPlayer > FOLLOW_FAR_PX) {
@@ -2521,7 +2557,7 @@
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
           updateCreatureMesh(c, dt, aimAngle);
-          updateCreatureAnimFrame(c, dt, moving);
+          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving);
         }
       }
 
@@ -8228,14 +8264,21 @@
         tickPlayerFootsteps(_fsPrevX, _fsPrevY);
       }
 
-      function canPlayerOccupy(wx, wy) {
-        const r  = PLAYER_RADIUS * 0.72;
+      // Generalized footprint-occupancy check (a square of side 2*radius is free
+      // of solid terrain / map edges), shared by the player and by creature
+      // attacks that need to know when a forced movement (e.g. a pounce leap)
+      // has run into something.
+      function canOccupyAt(wx, wy, radius) {
         const aC = getActiveCols(), aR = getActiveRows();
-        if (wx - r < 0 || wy - r < 0 || wx + r >= aC * TILE || wy + r >= aR * TILE) return false;
-        return tileSpeedAt(wx - r, wy - r) !== null
-            && tileSpeedAt(wx + r, wy - r) !== null
-            && tileSpeedAt(wx - r, wy + r) !== null
-            && tileSpeedAt(wx + r, wy + r) !== null;
+        if (wx - radius < 0 || wy - radius < 0 || wx + radius >= aC * TILE || wy + radius >= aR * TILE) return false;
+        return tileSpeedAt(wx - radius, wy - radius) !== null
+            && tileSpeedAt(wx + radius, wy - radius) !== null
+            && tileSpeedAt(wx - radius, wy + radius) !== null
+            && tileSpeedAt(wx + radius, wy + radius) !== null;
+      }
+
+      function canPlayerOccupy(wx, wy) {
+        return canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72);
       }
 
       function getKeyboardVector() {
@@ -16376,6 +16419,8 @@
         resolveWeaponHit,
         findAutoTarget,
         canPlayerOccupy,
+        canOccupyAt,
+        setCreatureFrame,
         showToast,
         triggerWeaponSwingVisual,
         triggerWeaponHoldVisual,
