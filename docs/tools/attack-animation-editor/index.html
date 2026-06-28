@@ -145,7 +145,23 @@ canvas{display:block;width:100%;height:100%}
       <div id="panelStrike" data-phase="strike"></div>
       <button id="scrubStrikeBtn" class="secondary">⏵ Scrub to Strike</button>
     </div>
-    <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: tool's own spin • body yaw: turns the whole character (sweep-style swings turn the body, not the tool)</div>
+    <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: tool's own spin • roll: tool's own twist around its forward axis (e.g. rotating an axe/hoe head for a proper chop) • body yaw: turns the whole character (sweep-style swings turn the body, not the tool)</div>
+  </div>
+
+  <div class="card section" style="--sec:#f472b6;--secBg:rgba(244,114,182,.10)">
+    <div class="sectionTitle"><b>3D Gizmo</b><span class="sectionTag">drag the tool in the viewport</span></div>
+    <div class="field"><label>Editing</label>
+      <select id="gizmoPhase">
+        <option value="windup">Windup pose</option>
+        <option value="strike">Strike pose</option>
+      </select>
+    </div>
+    <div class="row">
+      <button id="gizmoOffBtn" class="secondary active">Off</button>
+      <button id="gizmoMoveBtn" class="secondary">⊹ Move</button>
+      <button id="gizmoRotateBtn" class="secondary">↻ Rotate</button>
+    </div>
+    <div class="help">Move/Rotate attach a draggable gizmo to the tool and freeze the preview on the pose you picked above — dragging it writes straight back into that pose's x/y/z/pitch/yaw/roll sliders. Body yaw isn't part of the gizmo since it rotates the whole character, not just the tool.</div>
   </div>
 
   <div class="card section" style="--sec:#22d3ee;--secBg:rgba(34,211,238,.10)">
@@ -206,6 +222,7 @@ canvas{display:block;width:100%;height:100%}
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 const $ = id => document.getElementById(id);
 const logLines = [];
@@ -347,9 +364,62 @@ $('avatarGender').addEventListener('change', () => {
 });
 rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 
-// toolHolder is what the authored pose (pos+pitch+yaw) actually drives.
+// toolHolder is what the authored pose (pos+pitch+yaw+roll) actually drives.
 const toolHolder = new THREE.Object3D();
 toolBase.add(toolHolder);
+
+// ── 3D translate/rotate gizmo ──────────────────────────────────────────────
+// Lets the windup/strike pose be dragged directly in the viewport instead of
+// only via sliders. Attached to toolHolder (never toolBase/rig) since the
+// gizmo only ever edits the tool's own local pose channels (x/y/z/pitch/yaw/
+// roll) — body yaw stays slider-only, since it rotates the whole character.
+// applyPoseToRig() still runs every frame in animate() and re-derives
+// toolHolder's transform from anim.poses[gizmoPhase] each time, so as long as
+// the preview stays frozen exactly on that phase (scrubToPhase below), the
+// gizmo's own live drag and the per-frame pose apply agree rather than fight.
+const transformControls = new TransformControls(camera, renderer.domElement);
+scene.add(transformControls);
+let gizmoMode = 'off'; // 'off' | 'translate' | 'rotate'
+let gizmoPhase = 'windup';
+
+transformControls.addEventListener('dragging-changed', e => { controls.enabled = !e.value; });
+transformControls.addEventListener('objectChange', () => {
+  const p = anim.poses[gizmoPhase];
+  p.x = toolHolder.position.x;
+  p.y = toolHolder.position.y;
+  p.z = toolHolder.position.z;
+  // toolHolder.quaternion is already local (relative to toolBase), so this
+  // decomposes straight back to pitch/yaw/roll with no parent-rotation math —
+  // 'YXZ' is the Euler order equivalent to applyPoseToRig's qYaw*qPitch*qRoll
+  // composition, so the angles round-trip exactly.
+  const e = new THREE.Euler().setFromQuaternion(toolHolder.quaternion, 'YXZ');
+  p.pitch = THREE.MathUtils.radToDeg(e.x);
+  p.yaw = THREE.MathUtils.radToDeg(e.y);
+  p.roll = THREE.MathUtils.radToDeg(e.z);
+  syncPosePanelFromState(gizmoPhase);
+  refreshJsonView();
+});
+
+function setGizmoMode(mode) {
+  gizmoMode = mode;
+  if (mode === 'off') {
+    transformControls.detach();
+  } else {
+    transformControls.attach(toolHolder);
+    transformControls.setMode(mode);
+    scrubToPhase(gizmoPhase);
+  }
+  $('gizmoOffBtn').classList.toggle('active', mode === 'off');
+  $('gizmoMoveBtn').classList.toggle('active', mode === 'translate');
+  $('gizmoRotateBtn').classList.toggle('active', mode === 'rotate');
+}
+$('gizmoOffBtn').onclick = () => setGizmoMode('off');
+$('gizmoMoveBtn').onclick = () => setGizmoMode('translate');
+$('gizmoRotateBtn').onclick = () => setGizmoMode('rotate');
+$('gizmoPhase').addEventListener('change', () => {
+  gizmoPhase = $('gizmoPhase').value;
+  if (gizmoMode !== 'off') scrubToPhase(gizmoPhase);
+});
 
 // ── Weapon mesh: a real PNG sprite plane, same convention as game.js's
 // makeToolPlaneMesh (TOOL_MODEL_WIDTH, flat-in-XZ rotation, sweep tools get an
@@ -410,15 +480,18 @@ $('toolSpriteSelect').addEventListener('change', () => {
 setToolSprite($('toolSpriteSelect').value).catch(e => logDebug('Tool sprite swap failed: ' + e.message));
 
 // ── Animation data model ─────────────────────────────────────────────────
-// pose = { x, y, z, pitch, yaw, bodyYaw } — x/y/z/pitch/yaw are the weapon's own
-// local offset/rotation relative to toolBase (which already sits at the prism's
-// base offset — see rebuildAvatar above); bodyYaw is separate and rotates the
-// whole character (rig.rotation.y), matching game.js's sweep-style mechanic where
-// the body turns and the tool stays rigid in hand. Neutral (rest) is always the
-// implicit zero pose; only windup and strike are authored. Mirroring across the
-// character's midline negates x, yaw, and bodyYaw (all left/right-handed) and
-// leaves y, z, pitch untouched (symmetric about the midline).
-function defaultPose(x, y, z, pitch, yaw, bodyYaw = 0) { return { x, y, z, pitch, yaw, bodyYaw }; }
+// pose = { x, y, z, pitch, yaw, bodyYaw, roll } — x/y/z/pitch/yaw/roll are the
+// weapon's own local offset/rotation relative to toolBase (which already sits
+// at the prism's base offset — see rebuildAvatar above); bodyYaw is separate and
+// rotates the whole character (rig.rotation.y), matching game.js's sweep-style
+// mechanic where the body turns and the tool stays rigid in hand. Roll spins
+// the tool about its own forward (local Z) axis — e.g. rotating an axe/hoe head
+// in the hand for a proper chop, instead of needing a pre-rotated sprite as a
+// workaround. Neutral (rest) is always the implicit zero pose; only windup and
+// strike are authored. Mirroring across the character's midline negates x,
+// yaw, roll, and bodyYaw (all left/right-handed) and leaves y, z, pitch
+// untouched (symmetric about the midline).
+function defaultPose(x, y, z, pitch, yaw, bodyYaw = 0, roll = 0) { return { x, y, z, pitch, yaw, bodyYaw, roll }; }
 // Each style's true in-game rest pose, matching what updateToolMesh() in
 // game.js actually shows when the tool isn't mid-swing — thrust rests
 // pitched up at its windup tilt, sweep carries a constant forward offset,
@@ -449,6 +522,7 @@ const FIELD_DEFS = [
   { key: 'z', label: 'Z (forward)', min: -1, max: 1, step: 0.01, angle: false },
   { key: 'pitch', label: 'Pitch°', min: -180, max: 180, step: 1, angle: true },
   { key: 'yaw', label: 'Tool Yaw°', min: -180, max: 180, step: 1, angle: true },
+  { key: 'roll', label: 'Tool Roll°', min: -180, max: 180, step: 1, angle: true },
   { key: 'bodyYaw', label: 'Body Yaw° (character turn)', min: -180, max: 180, step: 1, angle: true },
 ];
 
@@ -525,7 +599,7 @@ $('durationS').addEventListener('input', () => {
 // midline, sending the weapon to the wrong place. Negating toolBase.x too
 // makes the combined transform a true x-mirror (verified algebraically: world
 // x flips sign, world z is preserved).
-function flipPose(p) { return defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw); }
+function flipPose(p) { return defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw, -(p.roll || 0)); }
 $('flipBtn').onclick = () => {
   anim.poses.windup = flipPose(anim.poses.windup);
   anim.poses.strike = flipPose(anim.poses.strike);
@@ -640,7 +714,8 @@ function lerpPose(a, b, k) {
     a.z + (b.z - a.z) * k,
     a.pitch + (b.pitch - a.pitch) * k,
     a.yaw + (b.yaw - a.yaw) * k,
-    a.bodyYaw + (b.bodyYaw - a.bodyYaw) * k
+    a.bodyYaw + (b.bodyYaw - a.bodyYaw) * k,
+    (a.roll || 0) + ((b.roll || 0) - (a.roll || 0)) * k
   );
 }
 function poseAt(t) {
@@ -663,9 +738,13 @@ function applyPoseToRig(pose) {
   // along with the body, same as game.js's playerMesh.rotation.y for sweep swings.
   rig.rotation.y = THREE.MathUtils.degToRad(pose.bodyYaw || 0);
   toolHolder.position.set(pose.x, pose.y, pose.z);
+  // Composed in the same order as game.js's pose-driven combat branch
+  // (qYaw * qPitch * qRoll — equivalent to a THREE.Euler 'YXZ' triple), so the
+  // editor and the live game always render an authored pose identically.
   const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(pose.pitch));
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(pose.yaw));
-  toolHolder.quaternion.copy(qYaw).multiply(qPitch);
+  const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(pose.roll || 0));
+  toolHolder.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
 }
 
 // ── Timeline visualization (windup/strike/return phase structure) ────────
@@ -759,8 +838,8 @@ function loadAnimObject(data) {
   anim.durationS = safeNum(data.durationS, anim.durationS);
   clampFracs();
   const w = data.poses?.windup || {}, s = data.poses?.strike || {};
-  anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0));
-  anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0));
+  anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0), safeNum(w.roll, 0));
+  anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
   $('animName').value = anim.name;
   $('animStyle').value = anim.style;
   $('windupFrac').value = anim.windupFrac;

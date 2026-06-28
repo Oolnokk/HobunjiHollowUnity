@@ -12362,9 +12362,11 @@
       // Pre-allocated objects to avoid per-frame GC in updateToolMesh
       const _tUp      = new THREE.Vector3(0, 1, 0);
       const _xAxis    = new THREE.Vector3(1, 0, 0); // tool-local pitch axis (thrust)
+      const _zAxis    = new THREE.Vector3(0, 0, 1); // tool-local roll axis (pose-driven only)
       const _qFac     = new THREE.Quaternion();  // facing (+ bodyYaw) rotation
       const _qAnim    = new THREE.Quaternion();  // animation rotation
       const _qToolYaw = new THREE.Quaternion();  // tool's own local yaw twist (thrust)
+      const _qRoll    = new THREE.Quaternion();  // tool's own local roll twist (pose-driven only)
       const _swAxis   = new THREE.Vector3();     // chop/tilt axis (player right in world)
 
       // Resolve anim style for the active tool from equipped item or fallback
@@ -12395,9 +12397,9 @@
       // neutral for the pose-driven combat branch below when a step's own
       // pose.neutral doesn't specify a channel.
       const STYLE_NEUTRAL_POSE = {
-        thrust: { x: 0, y: 0, z: 0,    pitch: 10.31, yaw: 0, bodyYaw: 0 },
-        sweep:  { x: 0, y: 0, z: 0.16, pitch: 0,     yaw: 0, bodyYaw: 0 },
-        chop:   { x: 0, y: 0, z: 0,    pitch: 46.98, yaw: 0, bodyYaw: 0 },
+        thrust: { x: 0, y: 0, z: 0,    pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 },
+        sweep:  { x: 0, y: 0, z: 0.16, pitch: 0,     yaw: 0, roll: 0, bodyYaw: 0 },
+        chop:   { x: 0, y: 0, z: 0,    pitch: 46.98, yaw: 0, roll: 0, bodyYaw: 0 },
       };
 
       function updateToolMesh(dt) {
@@ -12445,13 +12447,13 @@
         const SF = combatSwingAnim ? combatSwingStrikeFrac : 0.28;
 
         if (combatSwingAnim && combatSwingPose) {
-          // POSE-DRIVEN COMBAT SWING — applies a full 6-channel pose authored
+          // POSE-DRIVEN COMBAT SWING — applies a full 7-channel pose authored
           // in the attack-animation editor generically, for any style, the
           // same way thrust's branch below already does by hand: x/z are
-          // hand-relative lateral/forward offsets, y is vertical, pitch/yaw
-          // are the tool's own local tilt/twist, and bodyYaw alone rotates
+          // hand-relative lateral/forward offsets, y is vertical, pitch/yaw/roll
+          // are the tool's own local tilt/twist/roll, and bodyYaw alone rotates
           // the whole character (matching the editor's applyPoseToRig()).
-          // dirSign mirrors x/yaw/bodyYaw — exactly the editor's flipPose()
+          // dirSign mirrors x/yaw/roll/bodyYaw — exactly the editor's flipPose()
           // convention — so a combo step can reuse another step's pose
           // un-mirrored or mirrored. power scales every channel's deviation
           // from its own neutral, for a heavier-telegraphed finisher,
@@ -12474,6 +12476,7 @@
           const z = chan('z');
           const pitchRad   = THREE.MathUtils.degToRad(chan('pitch'));
           const yawRad     = THREE.MathUtils.degToRad(chan('yaw', true));
+          const rollRad    = THREE.MathUtils.degToRad(chan('roll', true));
           const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
 
           const vθ  = θ + bodyYawRad;
@@ -12484,7 +12487,8 @@
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
           _qAnim.setFromAxisAngle(_xAxis, pitchRad);
-          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim);
+          _qRoll.setFromAxisAngle(_zAxis, rollRad);
+          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
           toolHolder.position.set(
             playerMesh.position.x + vRX * (playerToolBaseX + x) + vFX * z,
             playerMesh.position.y + playerToolBaseY + y,
