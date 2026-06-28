@@ -12378,6 +12378,13 @@
         const θ      = playerFacing;
         const rightX = -Math.cos(θ), rightZ =  Math.sin(θ);
         const fwdX   =  Math.sin(θ), fwdZ   =  Math.cos(θ);
+        // True local +X → world transform (the same standard Three.js Y-rotation the
+        // attack-animation editor's rig/toolBase hierarchy applies), used specifically
+        // for placing playerToolBaseX (the hand-attach point) in world space — kept
+        // distinct from rightX/rightZ above, which is rightX's negation and stays as-is
+        // since it also feeds _swAxis (the chop swing's tilt axis); flipping it there
+        // would reverse chop's already-tuned raise/slam direction.
+        const attachRightX =  Math.cos(θ), attachRightZ = -Math.sin(θ);
 
         // Swing progress 0→1 over toolSwingDur
         let progress = 0;
@@ -12431,7 +12438,7 @@
           const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
 
           const vθ  = θ + bodyYawRad;
-          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
 
           playerMesh.rotation.y = vθ;
@@ -12469,7 +12476,7 @@
           const bodyYawRad  = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power);
 
           const vθ  = θ + bodyYawRad;
-          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
 
           playerMesh.rotation.y = vθ;
@@ -12497,9 +12504,9 @@
           }
           _qAnim.setFromAxisAngle(_swAxis, chopAngle);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
-          const handX = playerMesh.position.x + rightX * playerToolBaseX;
+          const handX = playerMesh.position.x + attachRightX * playerToolBaseX;
           const handY = playerMesh.position.y + playerToolBaseY;
-          const handZ = playerMesh.position.z + rightZ * playerToolBaseX;
+          const handZ = playerMesh.position.z + attachRightZ * playerToolBaseX;
           if (fishThrowActive && fishingMinigame?.anchorWorld) {
             // Out during the slam (WF→SF), back during the return (SF→1).
             let travel;
@@ -12530,9 +12537,9 @@
           _qAnim.setFromAxisAngle(_swAxis, tossAngle);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * playerToolBaseX,
+            playerMesh.position.x + attachRightX * playerToolBaseX,
             playerMesh.position.y + playerToolBaseY,
-            playerMesh.position.z + rightZ * playerToolBaseX
+            playerMesh.position.z + attachRightZ * playerToolBaseX
           );
 
         } else if (anim === 'refillTurnOut') {
@@ -12547,7 +12554,7 @@
           else if (progress <= SF) jabOff = -0.22 + 0.54 * ((progress - WF) / (SF - WF));
           else jabOff = 0.32 * (1.0 - (progress - SF) / (1.0 - SF));
           const vθ = θ + rotAngle;
-          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
           playerMesh.rotation.y = vθ;
           _qFac.setFromAxisAngle(_tUp, vθ);
@@ -12575,7 +12582,7 @@
             jabOff   = 0.32;
           }
           const vθ = θ + rotAngle;
-          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
           playerMesh.rotation.y = vθ;
           _qFac.setFromAxisAngle(_tUp, vθ);
@@ -12595,9 +12602,9 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * playerToolBaseX + fwdX * 0.32,
+            playerMesh.position.x + attachRightX * playerToolBaseX + fwdX * 0.32,
             playerMesh.position.y + playerToolBaseY,
-            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * 0.32
+            playerMesh.position.z + attachRightZ * playerToolBaseX + fwdZ * 0.32
           );
 
         } else if (anim === 'refillReset') {
@@ -12608,9 +12615,9 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * playerToolBaseX + fwdX * jabOff,
+            playerMesh.position.x + attachRightX * playerToolBaseX + fwdX * jabOff,
             playerMesh.position.y + playerToolBaseY,
-            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * jabOff
+            playerMesh.position.z + attachRightZ * playerToolBaseX + fwdZ * jabOff
           );
 
         } else {
@@ -12633,7 +12640,7 @@
           }
           const vθ = θ + sweepOff;
           playerMesh.rotation.y = vθ;
-          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
           _qFac.setFromAxisAngle(_tUp, vθ);
           toolHolder.quaternion.copy(_qFac);
