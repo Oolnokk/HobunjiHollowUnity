@@ -2402,6 +2402,22 @@
       const BITE_TELEGRAPH_WINDUP_S = 0.54;
       const BITE_TELEGRAPH_STRIKE_S = 0.20;
 
+      // Hitbox/aim-collider geometry shared between the AI's pounce-trigger
+      // check and the debug hitbox overlay — derived from the avatar's
+      // crossed-plane "prism" base (a square of side modelWidth, in tile
+      // units) rather than an arbitrary radius.
+      function creatureHitboxHalfSizePx(def) {
+        return (def.modelWidth || 2) * TILE / 2;
+      }
+      // The forward aim collider a pounce-capable creature keeps pointed at
+      // its target every chase frame: a rod starting at the head-side edge
+      // of its hitbox and protruding 150% of the hitbox's own length beyond
+      // that edge. A pounce only triggers once the target falls inside it.
+      function creatureAimColliderReachPx(def) {
+        const halfSize = creatureHitboxHalfSizePx(def);
+        return halfSize + halfSize * 2 * 1.5;
+      }
+
       function updateHostiles(dt) {
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
@@ -2448,7 +2464,12 @@
               aimAngle = c.facing;
             } else {
               moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
-              if (distToPlayer <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+              // Pounce-capable creatures commit once the target enters their
+              // forward aim collider (always pointed straight at the target
+              // via aimAngle above) rather than the bite's short flat range.
+              const pounceCapable = def.attacks?.includes('pounce');
+              const triggerRangePx = pounceCapable ? creatureAimColliderReachPx(def) : def.attackRangePx;
+              if (distToPlayer <= triggerRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
                 c.stamina -= def.attackStaminaCost;
                 c.attackCooldownT = def.attackCooldownS;
                 const startedModular = def.attacks?.length && window.Combat?.animalAttacks?.start(
@@ -14320,6 +14341,14 @@
       const DEBUG_ATTACK_COLOR_WINDUP    = '#ffc23d';
       const DEBUG_ATTACK_COLOR_STRIKE    = '#ffffff';
       const DEBUG_ATTACK_COLOR_LEAP      = '#ff3df0';
+      const DEBUG_AIM_COLLIDER_COLOR     = '#c792ff';
+      // Player avatar's crossed-plane "prism" base width (tile units) —
+      // mirrors the worldModelWidth lookup refreshPlayerAvatar() uses to
+      // build the avatar mesh, since the player object stores no width
+      // of its own.
+      function playerModelWidthTiles() {
+        return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
+      }
 
       function _debugGroundY(wx, wy) {
         const tile = getActiveTileAt(Math.floor(wx / TILE), Math.floor(wy / TILE));
@@ -14339,6 +14368,46 @@
         if (dashed) octx.setLineDash([5, 4]);
         octx.beginPath();
         octx.ellipse(center.x, center.y, r, r * 0.5, 0, 0, Math.PI * 2);
+        octx.stroke();
+        octx.restore();
+      }
+
+      function _drawDebugSquare(wx, wy, halfSizePx, color, dashed) {
+        const y = _debugGroundY(wx, wy);
+        const halfTiles = halfSizePx / TILE;
+        const baseX = wx / TILE, baseZ = wy / TILE;
+        const corners = [
+          worldToOverlay(baseX - halfTiles, y, baseZ - halfTiles),
+          worldToOverlay(baseX + halfTiles, y, baseZ - halfTiles),
+          worldToOverlay(baseX + halfTiles, y, baseZ + halfTiles),
+          worldToOverlay(baseX - halfTiles, y, baseZ + halfTiles),
+        ];
+        if (!corners[0].visible) return;
+        octx.save();
+        octx.globalAlpha = 0.8;
+        octx.strokeStyle = color;
+        octx.lineWidth = 1.5;
+        if (dashed) octx.setLineDash([5, 4]);
+        octx.beginPath();
+        octx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < corners.length; i++) octx.lineTo(corners[i].x, corners[i].y);
+        octx.closePath();
+        octx.stroke();
+        octx.restore();
+      }
+
+      function _drawDebugLine(wx1, wy1, wx2, wy2, color, dashed) {
+        const p1 = worldToOverlay(wx1 / TILE, _debugGroundY(wx1, wy1), wy1 / TILE);
+        const p2 = worldToOverlay(wx2 / TILE, _debugGroundY(wx2, wy2), wy2 / TILE);
+        if (!p1.visible && !p2.visible) return;
+        octx.save();
+        octx.globalAlpha = 0.85;
+        octx.strokeStyle = color;
+        octx.lineWidth = 2;
+        if (dashed) octx.setLineDash([4, 4]);
+        octx.beginPath();
+        octx.moveTo(p1.x, p1.y);
+        octx.lineTo(p2.x, p2.y);
         octx.stroke();
         octx.restore();
       }
@@ -14367,8 +14436,16 @@
 
       function _drawCreatureDebug(c, hitboxColor) {
         const def = c.def;
-        const radius = (def.modelWidth || 2) * TILE * 0.16;
-        _drawDebugCircle(c.x, c.y, radius, hitboxColor, false);
+        const halfSize = creatureHitboxHalfSizePx(def);
+        _drawDebugSquare(c.x, c.y, halfSize, hitboxColor, false);
+
+        if (def.attacks?.includes('pounce')) {
+          const ang = c.facing || 0;
+          const reach = creatureAimColliderReachPx(def);
+          const sx = c.x + Math.cos(ang) * halfSize, sy = c.y + Math.sin(ang) * halfSize;
+          const ex = c.x + Math.cos(ang) * reach, ey = c.y + Math.sin(ang) * reach;
+          _drawDebugLine(sx, sy, ex, ey, DEBUG_AIM_COLLIDER_COLOR, true);
+        }
 
         const aa = c._animalAttack;
         if (aa && aa.state.stage === 'leap' && aa.state.rangePx != null) {
@@ -14384,7 +14461,7 @@
 
       function drawDebugHitboxes() {
         if (!s_showHitboxes) return;
-        _drawDebugCircle(player.x, player.y, PLAYER_RADIUS, DEBUG_HITBOX_COLOR_PLAYER, false);
+        _drawDebugSquare(player.x, player.y, playerModelWidthTiles() * TILE / 2, DEBUG_HITBOX_COLOR_PLAYER, false);
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea) continue;
           _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_HOSTILE);
