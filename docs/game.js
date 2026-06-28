@@ -13978,6 +13978,12 @@
       let s_billWind  = true;
       let s_fpsCounter = false;
       let s_resScale   = 1;  // render-resolution scale applied to the 3D renderer's pixel ratio
+      // Debug hitbox overlay — unlike the other visual toggles above, its
+      // state is cached across sessions (it's a dev tool you flip on once
+      // and want to stay on, not a per-session visual preference).
+      const HITBOX_DEBUG_STORAGE_KEY = 'hobunjiDebugHitboxes';
+      let s_showHitboxes = false;
+      try { s_showHitboxes = localStorage.getItem(HITBOX_DEBUG_STORAGE_KEY) === '1'; } catch {}
 
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
@@ -14019,6 +14025,12 @@
       document.getElementById('settingResolution').addEventListener('change', e => {
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
+      });
+      const settingShowHitboxesEl = document.getElementById('settingShowHitboxes');
+      settingShowHitboxesEl.checked = s_showHitboxes;
+      settingShowHitboxesEl.addEventListener('change', e => {
+        s_showHitboxes = e.target.checked;
+        try { localStorage.setItem(HITBOX_DEBUG_STORAGE_KEY, s_showHitboxes ? '1' : '0'); } catch {}
       });
       function setCameraZoomScale(value) {
         const cfg = desktopControlsConfig();
@@ -14295,6 +14307,94 @@
         requestAnimationFrame(gameLoop);
       }
 
+      // ── Debug hitbox overlay (Settings → Dev Tools → Show Hitboxes) ─
+      // Ground-plane circles for the player's and every creature's collision
+      // footprint, plus whatever attack collider (if any) is currently live
+      // on a creature: the Pounce leap's forward cone (the real cone passed
+      // to deps.inCone, not a recomputed approximation) while it's in its
+      // 'leap' stage, or the generic bite's range circle (that attack only
+      // ever does a flat distance check, not a cone) while telegraphed.
+      const DEBUG_HITBOX_COLOR_PLAYER    = '#5cf2ff';
+      const DEBUG_HITBOX_COLOR_HOSTILE   = '#ff6a6a';
+      const DEBUG_HITBOX_COLOR_COMPANION = '#7fe89a';
+      const DEBUG_ATTACK_COLOR_WINDUP    = '#ffc23d';
+      const DEBUG_ATTACK_COLOR_STRIKE    = '#ffffff';
+      const DEBUG_ATTACK_COLOR_LEAP      = '#ff3df0';
+
+      function _debugGroundY(wx, wy) {
+        const tile = getActiveTileAt(Math.floor(wx / TILE), Math.floor(wy / TILE));
+        return (tile ? tileSurfaceY(tile.type) : 0) + 0.05;
+      }
+
+      function _drawDebugCircle(wx, wy, radiusPx, color, dashed) {
+        const y = _debugGroundY(wx, wy);
+        const center = worldToOverlay(wx / TILE, y, wy / TILE);
+        if (!center.visible) return;
+        const edge = worldToOverlay((wx + radiusPx) / TILE, y, wy / TILE);
+        const r = Math.hypot(edge.x - center.x, edge.y - center.y);
+        octx.save();
+        octx.globalAlpha = 0.8;
+        octx.strokeStyle = color;
+        octx.lineWidth = 1.5;
+        if (dashed) octx.setLineDash([5, 4]);
+        octx.beginPath();
+        octx.ellipse(center.x, center.y, r, r * 0.5, 0, 0, Math.PI * 2);
+        octx.stroke();
+        octx.restore();
+      }
+
+      function _drawDebugCone(wx, wy, angle, rangePx, halfConeRad, color) {
+        const y = _debugGroundY(wx, wy);
+        const rangeTiles = rangePx / TILE;
+        const baseX = wx / TILE, baseZ = wy / TILE;
+        const left = angle - halfConeRad, right = angle + halfConeRad;
+        const origin = worldToOverlay(baseX, y, baseZ);
+        if (!origin.visible) return;
+        const leftEnd = worldToOverlay(baseX + Math.cos(left) * rangeTiles, y, baseZ + Math.sin(left) * rangeTiles);
+        const rightEnd = worldToOverlay(baseX + Math.cos(right) * rangeTiles, y, baseZ + Math.sin(right) * rangeTiles);
+        octx.save();
+        octx.globalAlpha = 0.85;
+        octx.strokeStyle = color;
+        octx.lineWidth = 2;
+        octx.beginPath();
+        octx.moveTo(origin.x, origin.y);
+        octx.lineTo(leftEnd.x, leftEnd.y);
+        octx.lineTo(rightEnd.x, rightEnd.y);
+        octx.closePath();
+        octx.stroke();
+        octx.restore();
+      }
+
+      function _drawCreatureDebug(c, hitboxColor) {
+        const def = c.def;
+        const radius = (def.modelWidth || 2) * TILE * 0.16;
+        _drawDebugCircle(c.x, c.y, radius, hitboxColor, false);
+
+        const aa = c._animalAttack;
+        if (aa && aa.state.stage === 'leap' && aa.state.rangePx != null) {
+          const st = aa.state;
+          const headX = c.x + Math.cos(st.angle) * st.headOffsetPx;
+          const headY = c.y + Math.sin(st.angle) * st.headOffsetPx;
+          _drawDebugCone(headX, headY, st.angle, st.rangePx, st.halfConeRad, DEBUG_ATTACK_COLOR_LEAP);
+        } else if (c.telegraphState) {
+          _drawDebugCircle(c.x, c.y, def.attackRangePx,
+            c.telegraphState === 'strike' ? DEBUG_ATTACK_COLOR_STRIKE : DEBUG_ATTACK_COLOR_WINDUP, true);
+        }
+      }
+
+      function drawDebugHitboxes() {
+        if (!s_showHitboxes) return;
+        _drawDebugCircle(player.x, player.y, PLAYER_RADIUS, DEBUG_HITBOX_COLOR_PLAYER, false);
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_HOSTILE);
+        }
+        for (const c of companionObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_COMPANION);
+        }
+      }
+
       // ── 2D overlay draw (rain curtain + ripples on overlay canvas) ─
       function drawOverlays() {
         const rect = _threeRect;
@@ -14344,6 +14444,8 @@
           octx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.35})`;
           octx.fillRect(0, 0, W, H);
         }
+
+        drawDebugHitboxes();
       }
 
       function markTileDirty(col, row) {
