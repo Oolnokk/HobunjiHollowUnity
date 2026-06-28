@@ -100,6 +100,7 @@
             hits++;
             lastName = c.def.label;
           }
+          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           const msg = hits > 0
             ? (hits > 1 ? `${step.name}: hit ${hits} creatures!` : `${step.name}: hit the ${lastName}!`)
             : `${step.name} connects with nothing.`;

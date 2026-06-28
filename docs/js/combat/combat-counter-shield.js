@@ -64,6 +64,7 @@
             hits++;
             lastName = c.def.label;
           }
+          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           if (hits > 0) deps.showToast(`Shield Counter Riposte: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
         },
       });

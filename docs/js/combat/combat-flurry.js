@@ -69,6 +69,7 @@
             hits++;
             lastName = c.def.label;
           }
+          deps.spawnCombatTrailEffect({ rangePx, halfConeRad: halfConeDeg * Math.PI / 180, angle: strikeAngle, ok: hits > 0 });
           if (hits > 0) deps.showToast(`Flurry Strike ${strikeIndex}: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
         },
       });

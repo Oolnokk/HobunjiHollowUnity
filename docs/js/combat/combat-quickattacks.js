@@ -121,6 +121,7 @@
             hits++;
             lastName = c.def.label;
           }
+          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           const msg = hits > 0
             ? `${tech.name}: ${tech.sourceText} — hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
             : `${tech.name}: ${tech.sourceText}, but connects with nothing.`;

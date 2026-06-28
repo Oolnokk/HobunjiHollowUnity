@@ -8418,7 +8418,47 @@
         while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
       }
 
+      // Combat ability hit-cone flash — shows the actual swept area (angle +
+      // range) a combat-*.js ability just resolved its inCone() hit test
+      // against, since each ability/charge/combo-step uses its own rangePx/
+      // halfConeRad rather than one fixed shape. Reuses weaponTrailEffects'
+      // existing age/limit bookkeeping and drawWeaponTrailEffects' renderer
+      // (isCone flag switches slashTrailWorldPoints/drawWeaponTrailEffects
+      // onto the fan-shaped path below instead of the farming trapezoid).
+      const COMBAT_TRAIL_MAX_AGE_S = 0.24; // matches the legacy cut ability's trailMaxAgeSeconds
+      function spawnCombatTrailEffect({ rangePx, halfConeRad, angle = player.angle, ok }) {
+        const tgrid = getActiveGrid();
+        const col = clamp(Math.floor(player.x / TILE), 0, getActiveCols() - 1);
+        const row = clamp(Math.floor(player.y / TILE), 0, getActiveRows() - 1);
+        const surfaceY = tileSurfaceY(tgrid[row]?.[col]?.type || TileType.GRASS);
+        weaponTrailEffects.push({
+          isCone: true,
+          x: player.x / TILE,
+          z: player.y / TILE,
+          y: surfaceY + 0.18,
+          angle,
+          halfConeRad,
+          rangeTiles: rangePx / TILE,
+          age: 0,
+          maxAge: ok ? COMBAT_TRAIL_MAX_AGE_S : Math.max(COMBAT_TRAIL_MAX_AGE_S * 0.72, 0.1),
+          ok,
+        });
+        const limit = Number(combatConfig().weaponTrailLimit) || 5;
+        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
+      }
+
+      function coneTrailWorldPoints(fx) {
+        const segments = 10;
+        const pts = [{ x: fx.x, y: fx.y, z: fx.z }];
+        for (let i = 0; i <= segments; i++) {
+          const a = fx.angle - fx.halfConeRad + (2 * fx.halfConeRad) * (i / segments);
+          pts.push({ x: fx.x + Math.cos(a) * fx.rangeTiles, y: fx.y, z: fx.z + Math.sin(a) * fx.rangeTiles });
+        }
+        return pts;
+      }
+
       function slashTrailWorldPoints(fx) {
+        if (fx.isCone) return coneTrailWorldPoints(fx);
         const cx = fx.x;
         const cz = fx.z;
         const near = 0.02;
@@ -8514,8 +8554,14 @@
           octx.fill();
           octx.globalAlpha = alpha * 0.92;
           octx.beginPath();
-          octx.moveTo(pts[1].x, pts[1].y);
-          octx.quadraticCurveTo(pts[2].x, pts[2].y - 8 * alpha, pts[3].x, pts[3].y);
+          if (fx.isCone) {
+            // Highlight the cone's outer arc — the actual swept edge of the attack.
+            octx.moveTo(pts[1].x, pts[1].y);
+            for (let i = 2; i < pts.length; i++) octx.lineTo(pts[i].x, pts[i].y);
+          } else {
+            octx.moveTo(pts[1].x, pts[1].y);
+            octx.quadraticCurveTo(pts[2].x, pts[2].y - 8 * alpha, pts[3].x, pts[3].y);
+          }
           octx.stroke();
           octx.restore();
         }
@@ -16251,6 +16297,7 @@
         triggerWeaponHoldVisual,
         releaseWeaponSwingHold,
         cancelWeaponSwingHold,
+        spawnCombatTrailEffect,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module

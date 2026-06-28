@@ -79,6 +79,7 @@
             hits++;
             lastName = c.def.label;
           }
+          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           const pct = Math.round(chargeT * 100);
           const msg = hits > 0
             ? `Charged Breaker (${pct}% charge): hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
