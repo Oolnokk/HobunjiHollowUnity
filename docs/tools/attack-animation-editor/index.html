@@ -209,7 +209,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const $ = id => document.getElementById(id);
 const logLines = [];
-function logDebug(msg){ const line = `[${new Date().toLocaleTimeString()}] ${msg}`; logLines.unshift(line); if(logLines.length>180)logLines.pop(); $('logBody').innerHTML = logLines.map(l=>`<div class="logLine">${escapeHtml(l)}</div>`).join(''); console.log(line); }
+function logDebug(msg){ const line = `[${new Date().toLocaleTimeString()}] ${msg}`; logLines.unshift(line); if(logLines.length>180)logLines.pop(); $('logBody').innerHTML = logLines.map(l=>`<div class="logLine">${escapeHtml(l).replace(/fallback/gi, m => `<span style="color:#f87171;font-weight:bold">${m}</span>`)}</div>`).join(''); console.log(line); }
 function setDebug(msg){ $('debug').textContent = msg || ''; }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 window.addEventListener('error', e=>logDebug(`ERROR: ${e.message} @ ${e.filename}:${e.lineno}`));
@@ -305,6 +305,9 @@ async function rebuildAvatar(speciesId, gender) {
   });
   const h = avatarModel.userData.portraitModelHeight || MODEL_W;
   const w = avatarModel.userData.portraitModelWidth || MODEL_W;
+  if (avatarModel.userData.handAttachX == null || avatarModel.userData.handAttachY == null) {
+    logDebug(`Avatar rebuilt: ${speciesId}/${gender}: hand-attach scan failed → fallback to half-width/half-height tool base`);
+  }
   baseAttachX = avatarModel.userData.handAttachX ?? (-w / 2);
   const baseAttachY = avatarModel.userData.handAttachY ?? (h / 2);
   avatarModel.position.y = h / 2;

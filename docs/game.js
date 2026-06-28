@@ -5609,6 +5609,7 @@
               registerFurnitureSfxSource(mapId, bx, bz, resolveFurnitureSfx(def));
             } else {
               // Fallback: no procedural recipe found for this furniture key
+              window.__farmLog?.(`[furniture] ${furnitureKey || '(no key)'}: no procedural recipe → fallback placeholder box`, 'warn');
               const ph = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshLambertMaterial({ color }));
               ph.position.set(bx, by + 0.4, bz);
               ph.rotation.y = rotRad;
@@ -7360,6 +7361,9 @@
         // and bottom-edge pixel row (see handAttachX/handAttachY in
         // png-plane-avatar.js) — recompute here since this is the only place the
         // per-species scale/sprite is known.
+        if (avatarGroup.userData?.handAttachX == null || avatarGroup.userData?.handAttachY == null) {
+          window.__farmLog?.('[avatar] hand-attach scan failed → fallback to half-width/half-height tool base', 'warn');
+        }
         playerToolBaseX = avatarGroup.userData?.handAttachX ?? (-avatarWidth / 2);
         playerToolBaseY = avatarGroup.userData?.handAttachY ?? (avatarHeight / 2);
         _markPngPlane(avatarGroup);
@@ -12334,9 +12338,15 @@
       const _swAxis   = new THREE.Vector3();     // chop/tilt axis (player right in world)
 
       // Resolve anim style for the active tool from equipped item or fallback
+      const _animStyleFallbackLogged = new Set();
       function activeAnimStyle() {
         const itemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
-        return TOOL_ITEM_DEFS[itemKey]?.animStyle || 'thrust';
+        const style = TOOL_ITEM_DEFS[itemKey]?.animStyle;
+        if (!style && !_animStyleFallbackLogged.has(itemKey)) {
+          _animStyleFallbackLogged.add(itemKey);
+          window.__farmLog?.(`[combat] ${itemKey || '(no item)'}: no animStyle defined → fallback to 'thrust'`, 'warn');
+        }
+        return style || 'thrust';
       }
 
       // Three-phase neutral→windup→strike→neutral interpolation, shared by every
