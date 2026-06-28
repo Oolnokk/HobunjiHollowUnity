@@ -12394,13 +12394,12 @@
         });
         const plane = new THREE.Mesh(geo, mat);
         plane.rotation.x = -Math.PI / 2;  // lie flat in XZ for all tools
-        // Sweep tools: rotate image 90° in the flat plane so blade aligns parallel to player body
-        if (TOOL_ITEM_DEFS[itemKey]?.animStyle === 'sweep') plane.rotation.z = -Math.PI / 2;
         g.add(plane);
-        // Keep a handle on the sprite plane and its rest rotation so updateToolMesh can layer a
-        // continuous "spinning" twirl on top for mace-mode harpoon items without disturbing chop/thrust tools.
-        g.userData.toolPlane    = plane;
-        g.userData.basePlaneRotZ = plane.rotation.z;
+        // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
+        // blade-parallel twist and the mace-mode "spinning" twirl on top each frame, derived
+        // from whichever anim is actually playing rather than baked in per-item here — see
+        // updateToolMesh's baseRotZ for why.
+        g.userData.toolPlane = plane;
         return g;
       }
 
@@ -12805,12 +12804,15 @@
         const spinItemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
         const spinPlane    = toolMeshMap[activeTool]?.userData?.toolPlane;
         if (spinPlane) {
-          // The harpoon's plane bakes in a -90° z-twist for its normal "sweep" hold pose,
-          // which the bronzehoe never has. Our throw forces the chop arc (hoe math assumes
-          // a neutral, untwisted plane), so drop that baked offset while throwing — otherwise
-          // the static twist reads as a facing-independent "global" rotation on top of the
-          // facing-relative chop tilt, only happening to cancel out at one specific facing.
-          const baseRotZ = fishThrowActive ? 0 : (toolMeshMap[activeTool].userData.basePlaneRotZ || 0);
+          // The sweep style's blade-parallel z-twist belongs to whichever anim is actually
+          // playing this frame, not whichever style the equipped item defaults to at rest —
+          // combat abilities can force any style onto any weapon (a thrust-style quick
+          // attack played on the sweep-styled hatchet, or a sweep combo step played on the
+          // thrust-styled pick-shovel), so baking the twist per-item at mesh creation got it
+          // backwards in either direction. Deriving it from `anim` here keeps it correct
+          // regardless of what's equipped (and naturally drops to 0 during fishThrowActive,
+          // since that always forces anim to 'chop').
+          const baseRotZ = anim === 'sweep' ? -Math.PI / 2 : 0;
           if (anim === 'refillTwistOut') {
             // Lerp a 180° length-wise spin out, independent of any item's own "spinning" flag.
             spinPlane.rotation.z = baseRotZ + progress * Math.PI;
