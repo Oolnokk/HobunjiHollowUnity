@@ -1044,6 +1044,14 @@
         invulnUntil: 0,
         dodging: false, dodgeT: 0, dodgeDirX: 0, dodgeDirY: 0, dodgeCooldownT: 0,
         knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
+        // Combat lunge — a short forward step/leap layered under an attack's
+        // windup/strike (combo/quick attacks/charged breaker; flurries and
+        // Counter Shield's riposte don't use this). lungeStartX/Y anchor the
+        // eased interpolation so partial collision blocking doesn't drift the
+        // curve; lungeHopUnits/lungeHopCurrent drive an optional cosmetic
+        // vertical arc (world-Y units, not pixels) for the charged breaker's leap.
+        lunging: false, lungeT: 0, lungeDur: 0, lungeStartX: 0, lungeStartY: 0,
+        lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0,
       };
 
       // Combat tuning is config-backed so tool hit cones, stamina costs, trails,
@@ -1082,6 +1090,10 @@
         target.knockbackT = KNOCKBACK_DUR_S;
         target.knockbackVX = Math.cos(ang) * speedPxS;
         target.knockbackVY = Math.sin(ang) * speedPxS;
+        // Getting hit always interrupts an in-progress combat lunge — without
+        // this, resuming the lunge after knockback would interpolate from its
+        // stale pre-knockback lungeStartX/Y and jump the player backward.
+        if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
       }
 
       const PLAYER_STAMINA_REGEN = 14;   // per second
@@ -2593,6 +2605,25 @@
         player.dodgeCooldownT = DODGE_COOLDOWN_S;
         player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
         return true;
+      }
+
+      // Combat-ability movement: a short forward step/leap toward the aim
+      // direction (player.angle), layered under an attack's own windup/
+      // strike timing — distinct from performDodge's evasive zip above.
+      // distancePx is total ground covered over durationS (eased out, so it's
+      // fast at first and settles in); hopUnits is an optional cosmetic
+      // vertical arc peak in world-Y units for a leaping attack.
+      function beginCombatLunge(distancePx, durationS, hopUnits = 0) {
+        if (durationS <= 0 || distancePx <= 0) return;
+        player.lunging = true;
+        player.lungeT = durationS;
+        player.lungeDur = durationS;
+        player.lungeStartX = player.x;
+        player.lungeStartY = player.y;
+        player.lungeDirX = Math.cos(player.angle);
+        player.lungeDirY = Math.sin(player.angle);
+        player.lungeDistancePx = distancePx;
+        player.lungeHopUnits = hopUnits;
       }
 
       const _vbHealthFill  = document.getElementById('vbHealthFill');
@@ -8040,6 +8071,22 @@
           return;
         }
 
+        if (player.lunging) {
+          player.lungeT = Math.max(0, player.lungeT - dt);
+          const t = 1 - player.lungeT / player.lungeDur;
+          const eased = 1 - Math.pow(1 - t, 3); // ease-out: fast off the top, settles into the landing
+          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+          const desiredX = clamp(player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
+          const desiredY = clamp(player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
+          if (canPlayerOccupy(desiredX, player.y)) player.x = desiredX;
+          if (canPlayerOccupy(player.x, desiredY)) player.y = desiredY;
+          player.lungeHopCurrent = player.lungeHopUnits * Math.sin(eased * Math.PI);
+          if (player.lungeT <= 0) { player.lunging = false; player.lungeHopCurrent = 0; }
+          tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+          return;
+        }
+
         const keyboardVector = getKeyboardVector();
         const usingKeyboard = keyboardVector.active;
         let ix = usingKeyboard ? keyboardVector.x : input.x;
@@ -12169,6 +12216,12 @@
       // True while a charge-and-release ability's windup is being held —
       // see triggerWeaponHoldVisual()/releaseWeaponSwingHold() below.
       let combatSwingHeld = false;
+      // Per-ability post-strike pause, in seconds — set via opts.holdS on a
+      // triggerWeaponSwingVisual/triggerWeaponHoldVisual call (a config knob
+      // each ability's own file sets, not a built-in engine default). 0 means
+      // "use the old proportional-to-what's-left hold" — see the HF
+      // calculation in updateToolMesh below.
+      let combatSwingHoldS = 0;
       // Optional full 6-channel pose ({neutral,windup,strike}, each
       // {x,y,z,pitch,yaw,bodyYaw}) authored in the attack-animation editor.
       // When set, updateToolMesh applies it generically instead of going
@@ -12231,11 +12284,12 @@
       // Plays the weapon's existing arm-swing mesh animation for durationS without
       // queuing a pendingAction — used by Combat ability modules that resolve their
       // own hit logic and just want the legacy swing's visual flourish to match.
-      // opts: { anim: 'thrust'|'sweep'|'chop', dirSign: 1|-1, windupFrac, strikeFrac, power }
+      // opts: { anim: 'thrust'|'sweep'|'chop', dirSign: 1|-1, windupFrac, strikeFrac, power, holdS }
       // lets a combat ability pick the attack-shape its animation should use
       // (independent of the equipped weapon's own default style), how its own
-      // windupS/strikeS split maps onto the cosmetic swing arc, and (thrust
-      // only) a reach/turn multiplier for an extra-telegraphed finisher.
+      // windupS/strikeS split maps onto the cosmetic swing arc, a (thrust
+      // only) reach/turn multiplier for an extra-telegraphed finisher, and an
+      // explicit post-strike pause length in seconds (holdS).
       function triggerWeaponSwingVisual(durationS, opts = {}) {
         if (activeTool !== 'weapon') return;
         const windupFrac = opts.windupFrac ?? 0.16;
@@ -12254,7 +12308,13 @@
         // reserved their own returnS (strikeFrac < 1) are left untouched.
         const hasOwnReturn = strikeFrac < 0.999;
         const returnTailS = hasOwnReturn ? 0 : Math.max(0.12, durationS * 0.35);
-        const totalS = durationS + returnTailS;
+        // Reserve an explicit post-strike hold (if this ability's config asked
+        // for one) on top of whatever windup/strike/return it already
+        // budgeted — additive, rather than carving it out of durationS, so
+        // the windup/strike/return real-world timings stay exactly as
+        // authored; the pause is just inserted between strike and return.
+        const holdS = Math.max(0, opts.holdS || 0);
+        const totalS = durationS + returnTailS + holdS;
         toolSwingDur = Math.max(0.05, totalS);
         toolSwingT = toolSwingDur;
         strikeFired = false;
@@ -12265,6 +12325,7 @@
         combatSwingStrikeFrac = strikeFrac * durationS / totalS;
         combatSwingPower = opts.power ?? 1;
         combatSwingPose = opts.pose || null;
+        combatSwingHoldS = holdS;
         combatSwingHeld = false;
       }
 
@@ -12511,14 +12572,17 @@
         // (e.g. Cleave) visibly winds up longer than a snap jab.
         const WF = combatSwingAnim ? combatSwingWindupFrac : 0.16;
         const SF = combatSwingAnim ? combatSwingStrikeFrac : 0.28;
-        // Hold the strike pose briefly before easing back to neutral, instead
-        // of snapping straight into the return lerp — proportional to
-        // whatever's left after the strike, so a short tail gets a short hold
-        // and a fully-eased finisher (e.g. Cleave) gets a longer one. Abilities
-        // that end exactly at the strike (strikeFrac === 1, e.g. Charged
-        // Breaker/Flurry/Quick Attacks) never reach this branch at all — the
-        // strike-phase check above (progress <= SF) is always true when SF is 1.
-        const HF = Math.min(0.99, SF + (1 - SF) * 0.3);
+        // Hold the strike pose before easing back to neutral, instead of
+        // snapping straight into the return lerp. When an ability's config
+        // set an explicit holdS (combatSwingHoldS > 0, baked into toolSwingDur
+        // by triggerWeaponSwingVisual), use that many real seconds so the
+        // pause is consistent regardless of how brief its windup/strike
+        // timing is; otherwise fall back to the old proportional-to-
+        // what's-left formula (dig/fill/refill, and any combat swing that
+        // didn't set holdS).
+        const HF = (combatSwingAnim && combatSwingHoldS > 0)
+          ? Math.min(0.99, SF + combatSwingHoldS / toolSwingDur)
+          : Math.min(0.99, SF + (1 - SF) * 0.3);
 
         if (combatSwingAnim && combatSwingPose) {
           // POSE-DRIVEN COMBAT SWING — applies a full 7-channel pose authored
@@ -12837,7 +12901,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -13670,8 +13734,9 @@
         const tile = getActiveTileAt(col, row);
         const standY = tileSurfaceYInArea(tile, currentArea);
 
-        // Smooth vertical position (bob over water)
-        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0);
+        // Smooth vertical position (bob over water, plus a combat lunge's
+        // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent)
+        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0);
         playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
@@ -16316,6 +16381,7 @@
         triggerWeaponHoldVisual,
         releaseWeaponSwingHold,
         cancelWeaponSwingHold,
+        beginCombatLunge,
         spawnCombatTrailEffect,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback

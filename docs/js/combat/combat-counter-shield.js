@@ -17,11 +17,39 @@
   const COUNTER_HALF_CONE_DEG = 8;
   const COUNTER_KNOCKBACK_MUL = 1.5;
 
+  // Held guard stance — a forward-braced thrust-style hold (z pushes the
+  // weapon out front, like readying a jab) but played with anim:'sweep' so
+  // updateToolMesh's sprite-plane twist renders the blade crosswise instead
+  // of edge-on. This deliberately recreates the look the old sweep-on-thrust
+  // 90-degree rotation bug used to produce by accident — a sweep-style
+  // weapon held out in a thrust pose reads as a raised cross-body block.
+  const BLOCK_POSE = {
+    neutral: { x: 0, y: 0,    z: 0.16, pitch: 0,  yaw: 0, bodyYaw: 0 },
+    windup:  { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, bodyYaw: -20 },
+    strike:  { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, bodyYaw: -20 },
+  };
+  const BLOCK_WINDUP_S = 0.12, BLOCK_STRIKE_S = 0.12;
+
   function now() { return performance.now() / 1000; }
 
   function register() {
     let active = false;
     let lastCounterAt = -99;
+    // Set whenever a riposte fires, to the moment its full cosmetic swing
+    // (windup+strike+post-strike hold+return-tail — mirrors game.js's
+    // triggerWeaponSwingVisual math) will have finished; onHoldUpdate uses
+    // it to bring the guard stance back up afterward without cutting the
+    // riposte's own animation short.
+    let reassertBlockAt = -1;
+
+    function raiseBlockPose(deps) {
+      deps.triggerWeaponHoldVisual(BLOCK_WINDUP_S + BLOCK_STRIKE_S, {
+        anim: 'sweep',
+        pose: BLOCK_POSE,
+        windupFrac: BLOCK_WINDUP_S / (BLOCK_WINDUP_S + BLOCK_STRIKE_S),
+        strikeFrac: 1,
+      });
+    }
 
     function tryAbsorb(amount) {
       if (!active) return false;
@@ -43,13 +71,23 @@
       const rangePx = baseAbil.rangePx * COUNTER_RANGE_MUL;
       const halfConeRad = COUNTER_HALF_CONE_DEG * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * COUNTER_KNOCKBACK_MUL;
-      const COUNTER_WINDUP_S = 0.035, COUNTER_STRIKE_S = 0.16;
-      // Riposte is a snap stab — mirror the shovel's straight thrust.
-      deps.triggerWeaponSwingVisual(COUNTER_WINDUP_S + COUNTER_STRIKE_S, {
+      const COUNTER_WINDUP_S = 0.035, COUNTER_STRIKE_S = 0.16, COUNTER_HOLD_S = 1;
+      // Riposte is a snap stab — mirror the shovel's straight thrust. This
+      // replaces the held block pose for the riposte's own cosmetic
+      // duration; see reassertBlockAt below for bringing the guard back up.
+      const counterDurationS = COUNTER_WINDUP_S + COUNTER_STRIKE_S;
+      deps.triggerWeaponSwingVisual(counterDurationS, {
         anim: 'thrust',
-        windupFrac: COUNTER_WINDUP_S / (COUNTER_WINDUP_S + COUNTER_STRIKE_S),
+        windupFrac: COUNTER_WINDUP_S / counterDurationS,
         strikeFrac: 1,
+        holdS: COUNTER_HOLD_S,
       });
+      // Mirrors triggerWeaponSwingVisual's own auto-return-tail formula
+      // (strikeFrac===1 here, so it always reserves one) so the block pose
+      // doesn't reappear until the riposte's full animation — including its
+      // post-strike hold and eased return — has actually finished playing.
+      const counterReturnTailS = Math.max(0.12, counterDurationS * 0.35);
+      reassertBlockAt = now() + counterDurationS + counterReturnTailS + COUNTER_HOLD_S;
 
       window.Combat.beginStagedAction({
         windupS: COUNTER_WINDUP_S,
@@ -77,8 +115,10 @@
         return;
       }
       active = true;
+      reassertBlockAt = -1;
       window.Combat.setPlayerDamageInterceptor(tryAbsorb);
       deps.showToast('Counter Shield raised: blocks and counters on contact.', true);
+      raiseBlockPose(deps);
     }
 
     function onHoldUpdate(_slot, dt) {
@@ -89,12 +129,19 @@
         active = false;
         window.Combat.setPlayerDamageInterceptor(null);
         deps.showToast('Counter Shield dropped: stamina empty.', false);
+        return;
+      }
+      if (reassertBlockAt > 0 && now() >= reassertBlockAt) {
+        reassertBlockAt = -1;
+        raiseBlockPose(deps);
       }
     }
 
     function onHoldEnd() {
       if (!active) return;
       active = false;
+      reassertBlockAt = -1;
+      window.Combat.deps.cancelWeaponSwingHold();
       window.Combat.setPlayerDamageInterceptor(null);
       window.Combat.deps.showToast('Counter Shield lowered.', false);
     }
