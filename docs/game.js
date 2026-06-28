@@ -12120,6 +12120,9 @@
       let combatSwingWindupFrac = 0.16;
       let combatSwingStrikeFrac = 0.28;
       let combatSwingPower = 1;
+      // True while a charge-and-release ability's windup is being held —
+      // see triggerWeaponHoldVisual()/releaseWeaponSwingHold() below.
+      let combatSwingHeld = false;
       // Optional full 6-channel pose ({neutral,windup,strike}, each
       // {x,y,z,pitch,yaw,bodyYaw}) authored in the attack-animation editor.
       // When set, updateToolMesh applies it generically instead of going
@@ -12199,6 +12202,33 @@
         combatSwingStrikeFrac = opts.strikeFrac ?? 0.28;
         combatSwingPower = opts.power ?? 1;
         combatSwingPose = opts.pose || null;
+        combatSwingHeld = false;
+      }
+
+      // Like triggerWeaponSwingVisual, but once the windup phase finishes
+      // (progress reaches windupFrac) the swing freezes there — held at its
+      // windup extreme — instead of continuing into the strike. Used by
+      // charge-and-release abilities (e.g. Charged Breaker) so the windup
+      // plays out while the button is held down, no matter how long that
+      // ends up being, and call releaseWeaponSwingHold() on release to let
+      // the already-elapsed countdown carry straight on into the strike and
+      // return phases.
+      function triggerWeaponHoldVisual(durationS, opts = {}) {
+        triggerWeaponSwingVisual(durationS, opts);
+        combatSwingHeld = true;
+      }
+
+      function releaseWeaponSwingHold() {
+        combatSwingHeld = false;
+      }
+
+      // Abandons a held windup without playing the strike — e.g. the button
+      // was released before the ability's minimum charge. Snaps the swing
+      // back to its rest pose (progress 0, same as the start of any other
+      // swing's windup) instead of carrying on into the strike.
+      function cancelWeaponSwingHold() {
+        combatSwingHeld = false;
+        toolSwingT = 0;
       }
 
       function cancelChargeAction() {
@@ -12386,10 +12416,19 @@
         // would reverse chop's already-tuned raise/slam direction.
         const attachRightX =  Math.cos(θ), attachRightZ = -Math.sin(θ);
 
-        // Swing progress 0→1 over toolSwingDur
+        // Swing progress 0→1 over toolSwingDur. While combatSwingHeld is set,
+        // decay still runs up through the windup phase, then freezes once it
+        // reaches the windup→strike boundary — holding the windup pose for as
+        // long as the ability stays held — until releaseWeaponSwingHold()
+        // clears the flag and lets the remaining strike/return time play out.
         let progress = 0;
         if (toolSwingT > 0) {
-          toolSwingT = Math.max(0, toolSwingT - dt);
+          if (combatSwingHeld) {
+            const holdFloorT = toolSwingDur * (1 - combatSwingWindupFrac);
+            toolSwingT = Math.max(holdFloorT, toolSwingT - dt);
+          } else {
+            toolSwingT = Math.max(0, toolSwingT - dt);
+          }
           progress   = 1 - toolSwingT / toolSwingDur;
         }
         const swing = Math.sin(progress * Math.PI);
@@ -16166,6 +16205,9 @@
         canPlayerOccupy,
         showToast,
         triggerWeaponSwingVisual,
+        triggerWeaponHoldVisual,
+        releaseWeaponSwingHold,
+        cancelWeaponSwingHold,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module

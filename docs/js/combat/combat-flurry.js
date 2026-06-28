@@ -42,6 +42,9 @@
         dirSign,
         windupFrac: WINDUP_S / (WINDUP_S + STRIKE_S),
         strikeFrac: 1,
+        // Same authored pose as the hatchet's Forehand/Backhand Swing combo
+        // steps, so every sweep-style attack reads as the same swing.
+        pose: window.Combat.poses.SWEEP_POSE,
       });
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };

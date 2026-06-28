@@ -115,4 +115,9 @@
 
   registerCombo('swingCombo', '3-Swing Combo', SWING_STEPS);
   registerCombo('pokeCombo', '3-Poke Combo', POKE_STEPS);
+
+  // Shared with other sweep-style abilities (e.g. combat-flurry.js) so every
+  // sweeping attack uses this same authored pose rather than each falling
+  // back to updateToolMesh's older hardcoded default sweep arc.
+  window.Combat.poses = { SWEEP_POSE };
 })();

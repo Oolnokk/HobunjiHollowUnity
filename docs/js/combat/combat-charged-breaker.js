@@ -27,6 +27,15 @@
     function onHoldStart() {
       startedAt = now();
       window.Combat.deps.showToast('Charged Breaker charging — release to strike.', true);
+      // Power attack — vertical heavy overhead slam, mirrors the hoe's chop.
+      // Plays the raise (windup) immediately and holds there for as long as
+      // the button stays down — releaseWeaponSwingHold() (below, on release)
+      // lets it carry on into the slam, however long the hold turned out to be.
+      window.Combat.deps.triggerWeaponHoldVisual(WINDUP_S + STRIKE_S, {
+        anim: 'chop',
+        windupFrac: WINDUP_S / (WINDUP_S + STRIKE_S),
+        strikeFrac: 1,
+      });
     }
 
     function onHoldEnd() {
@@ -35,22 +44,21 @@
       startedAt = -1;
       const deps = window.Combat.deps;
       if (held < MIN_READY_S) {
+        deps.cancelWeaponSwingHold();
         deps.showToast(`Charged Breaker released too early (${held.toFixed(2)}s, needed ${MIN_READY_S}s).`, false);
         return;
       }
       const chargeT = Math.min(1, Math.max(0, (held - MIN_READY_S) / (MAX_CHARGE_S - MIN_READY_S)));
       const cost = lerp(COST_MIN, COST_MAX, chargeT);
       if (deps.player.stamina < cost) {
+        deps.cancelWeaponSwingHold();
         deps.showToast('Too winded to unleash it!', false);
         return;
       }
       deps.player.stamina = Math.max(0, deps.player.stamina - cost);
-      // Power attack — vertical heavy overhead slam, mirrors the hoe's chop.
-      deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S, {
-        anim: 'chop',
-        windupFrac: 0.5,
-        strikeFrac: 1,
-      });
+      // The windup already played out while held — releasing now just lets
+      // the in-progress swing continue straight into its slam.
+      deps.releaseWeaponSwingHold();
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, chargeT));
@@ -59,7 +67,7 @@
       const knockbackPxS = baseAbil.knockbackPxS * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, chargeT);
 
       window.Combat.beginStagedAction({
-        windupS: WINDUP_S,
+        windupS: 0,
         strikeS: STRIKE_S,
         recoverS: 0,
         onStrike: () => {
