@@ -12397,9 +12397,9 @@
       // neutral for the pose-driven combat branch below when a step's own
       // pose.neutral doesn't specify a channel.
       const STYLE_NEUTRAL_POSE = {
-        thrust: { x: 0, y: 0, z: 0,    pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 },
-        sweep:  { x: 0, y: 0, z: 0.16, pitch: 0,     yaw: 0, roll: 0, bodyYaw: 0 },
-        chop:   { x: 0, y: 0, z: 0,    pitch: 46.98, yaw: 0, roll: 0, bodyYaw: 0 },
+        thrust: { x: 0,    y: 0,    z: 0,    pitch: 10.31, yaw: 0,   roll: 0,   bodyYaw: 0 },
+        sweep:  { x: 0,    y: 0,    z: 0.16, pitch: 0,     yaw: 0,   roll: 0,   bodyYaw: 0 },
+        chop:   { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82, bodyYaw: 2 },
       };
 
       function updateToolMesh(dt) {
@@ -12414,8 +12414,8 @@
         // attack-animation editor's rig/toolBase hierarchy applies), used specifically
         // for placing playerToolBaseX (the hand-attach point) in world space — kept
         // distinct from rightX/rightZ above, which is rightX's negation and stays as-is
-        // since it also feeds _swAxis (the chop swing's tilt axis); flipping it there
-        // would reverse chop's already-tuned raise/slam direction.
+        // since it also feeds _swAxis (the toss/refill swings' tilt axis); flipping it
+        // there would reverse those already-tuned raise/slam directions.
         const attachRightX =  Math.cos(θ), attachRightZ = -Math.sin(θ);
 
         // Swing progress 0→1 over toolSwingDur. While combatSwingHeld is set,
@@ -12534,22 +12534,45 @@
           );
 
         } else if (anim === 'chop') {
-          // CHOP — windup (raise high) → slam down → return. Combat overheads
-          // raise farther back (2.05 vs 1.80) for a clearer "about to slam" tell.
-          const chopRaise = combatSwingAnim ? 2.05 : 1.80;
-          let chopAngle;
-          if (progress <= WF) {
-            chopAngle = 0.82 + (chopRaise - 0.82) * (progress / WF);               // raise: 0.82 → chopRaise
-          } else if (progress <= SF) {
-            chopAngle = chopRaise - (chopRaise + 1.50) * ((progress - WF) / (SF - WF)); // slam:  chopRaise → −1.50
-          } else {
-            chopAngle = -1.50 + 2.32 * ((progress - SF) / (1.0 - SF));// return: −1.50 → 0.82
-          }
-          _qAnim.setFromAxisAngle(_swAxis, chopAngle);
-          toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
-          const handX = playerMesh.position.x + attachRightX * playerToolBaseX;
-          const handY = playerMesh.position.y + playerToolBaseY;
-          const handZ = playerMesh.position.z + attachRightZ * playerToolBaseX;
+          // CHOP — full pose-driven swing (raise → slam → return), authored
+          // in the attack-animation editor and baked in here exactly the way
+          // thrust's branch above does: x/y/z/pitch/yaw/roll are hand-relative
+          // (relative to toolBase), bodyYaw alone rotates the whole character.
+          // Roll is what makes this read as a proper chop (head turned into
+          // the swing plane) instead of the old single-axis raise/slam.
+          // power scales every channel's deviation from its own neutral, just
+          // like thrust, so Charged Breaker's heavier overhead (which also
+          // plays this branch — see combat-charged-breaker.js) doesn't need
+          // its own bespoke formula.
+          const power   = combatSwingAnim ? combatSwingPower : 1;
+          const neutral = { x: 0.03,  y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2,   roll: -82 };
+          const windup  = { x: -0.18, y: 0.41, z: -0.15, pitch: -165, yaw: 13,  bodyYaw: -29, roll: -112 };
+          const strike  = { x: 0,     y: 0,    z: 0.12,  pitch: 13,   yaw: -28, bodyYaw: 29,  roll: -91 };
+          const scale = (ch, v) => neutral[ch] + (v - neutral[ch]) * power;
+          const chanLerp = ch => threePhaseLerp(progress, WF, SF, scale(ch, windup[ch]), scale(ch, strike[ch]), neutral[ch]);
+
+          const x = chanLerp('x');
+          const y = chanLerp('y');
+          const z = chanLerp('z');
+          const pitchRad   = THREE.MathUtils.degToRad(chanLerp('pitch'));
+          const yawRad     = THREE.MathUtils.degToRad(chanLerp('yaw'));
+          const rollRad    = THREE.MathUtils.degToRad(chanLerp('roll'));
+          const bodyYawRad = THREE.MathUtils.degToRad(chanLerp('bodyYaw'));
+
+          const vθ  = θ + bodyYawRad;
+          const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
+          const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
+
+          playerMesh.rotation.y = vθ;
+          _qFac.setFromAxisAngle(_tUp, vθ);
+          _qToolYaw.setFromAxisAngle(_tUp, yawRad);
+          _qAnim.setFromAxisAngle(_xAxis, pitchRad);
+          _qRoll.setFromAxisAngle(_zAxis, rollRad);
+          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+
+          const handX = playerMesh.position.x + vRX * (playerToolBaseX + x) + vFX * z;
+          const handY = playerMesh.position.y + playerToolBaseY + y;
+          const handZ = playerMesh.position.z + vRZ * (playerToolBaseX + x) + vFZ * z;
           if (fishThrowActive && fishingMinigame?.anchorWorld) {
             // Out during the slam (WF→SF), back during the return (SF→1).
             let travel;
