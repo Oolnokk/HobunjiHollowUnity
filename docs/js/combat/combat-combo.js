@@ -17,7 +17,7 @@
   // combo advances to its next step; wait longer and it resets to step 1.
   const COMBO_RESET_S = 0.9;
 
-  // "Forehand Strike" — authored in the attack-animation editor as a full
+  // "Forehand Swing" — authored in the attack-animation editor as a full
   // 6-channel pose (yaw winds the tool back/through, bodyYaw turns the
   // whole torso into the swing). All three sweep combo steps below share
   // this exact pose object: Forehand Swing plays it as-is, Backhand Swing
