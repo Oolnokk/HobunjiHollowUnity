@@ -12381,14 +12381,18 @@
         return style || 'thrust';
       }
 
-      // Three-phase neutral→windup→strike→neutral interpolation, shared by every
-      // thrust-pose channel (lateral/forward offsets, pitch/yaw/bodyYaw angles) —
+      // Four-phase neutral→windup→strike→hold→neutral interpolation, shared by
+      // every pose channel (lateral/forward offsets, pitch/yaw/bodyYaw angles) —
       // mirrors the attack-animation editor's poseAt()/lerpPose() so game.js and
-      // the editor's authored pose JSON describe the exact same motion.
-      function threePhaseLerp(progress, wf, sf, windupV, strikeV, neutralV = 0) {
+      // the editor's authored pose JSON describe the exact same motion. The
+      // hold phase (sf→hf) dwells exactly at the strike value before easing
+      // back to neutral, so an impact reads as a clean hit instead of
+      // snapping straight into its recovery.
+      function fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0) {
         if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / wf);
         if (progress <= sf) return windupV + (strikeV - windupV) * ((progress - wf) / (sf - wf));
-        return strikeV + (neutralV - strikeV) * ((progress - sf) / (1.0 - sf));
+        if (progress <= hf) return strikeV;
+        return strikeV + (neutralV - strikeV) * ((progress - hf) / (1.0 - hf));
       }
 
       // Each tool style's natural at-rest pose (degrees for angle channels) —
@@ -12445,6 +12449,14 @@
         // (e.g. Cleave) visibly winds up longer than a snap jab.
         const WF = combatSwingAnim ? combatSwingWindupFrac : 0.16;
         const SF = combatSwingAnim ? combatSwingStrikeFrac : 0.28;
+        // Hold the strike pose briefly before easing back to neutral, instead
+        // of snapping straight into the return lerp — proportional to
+        // whatever's left after the strike, so a short tail gets a short hold
+        // and a fully-eased finisher (e.g. Cleave) gets a longer one. Abilities
+        // that end exactly at the strike (strikeFrac === 1, e.g. Charged
+        // Breaker/Flurry/Quick Attacks) never reach this branch at all — the
+        // strike-phase check above (progress <= SF) is always true when SF is 1.
+        const HF = Math.min(0.99, SF + (1 - SF) * 0.3);
 
         if (combatSwingAnim && combatSwingPose) {
           // POSE-DRIVEN COMBAT SWING — applies a full 7-channel pose authored
@@ -12468,7 +12480,7 @@
             const w = scale(ch, pose.windup?.[ch]) * (mirror ? sign : 1);
             const s = scale(ch, pose.strike?.[ch]) * (mirror ? sign : 1);
             const n = neutral[ch] * (mirror ? sign : 1);
-            return threePhaseLerp(progress, WF, SF, w, s, n);
+            return fourPhaseLerp(progress, WF, SF, HF, w, s, n);
           };
 
           const x = chan('x', true);
@@ -12508,15 +12520,15 @@
           // combo's final lunge) without needing its own bespoke anim branch.
           const power       = combatSwingAnim ? combatSwingPower : 1;
           const windupBack  = (combatSwingAnim ? -0.40 : -0.22) * power;
-          const jabOff      = threePhaseLerp(progress, WF, SF, windupBack, 0.32 * power);
-          const lateral     = threePhaseLerp(progress, WF, SF, 0, -0.23 * power);
+          const jabOff      = fourPhaseLerp(progress, WF, SF, HF, windupBack, 0.32 * power);
+          const lateral     = fourPhaseLerp(progress, WF, SF, HF, 0, -0.23 * power);
           // Pitch's neutral matches its own windup value (10.31°) rather than
           // the other channels' implicit 0 — a thrust weapon rests at this
           // held-up tilt, drops to a near-flat 1° at the strike, then eases
           // back to the resting tilt instead of snapping flat.
-          const pitchRad    = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1), THREE.MathUtils.degToRad(10.31));
-          const yawRad      = threePhaseLerp(progress, WF, SF, 0, THREE.MathUtils.degToRad(-45) * power);
-          const bodyYawRad  = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power);
+          const pitchRad    = fourPhaseLerp(progress, WF, SF, HF, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1), THREE.MathUtils.degToRad(10.31));
+          const yawRad      = fourPhaseLerp(progress, WF, SF, HF, 0, THREE.MathUtils.degToRad(-45) * power);
+          const bodyYawRad  = fourPhaseLerp(progress, WF, SF, HF, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power);
 
           const vθ  = θ + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
@@ -12549,7 +12561,7 @@
           const windup  = { x: -0.18, y: 0.41, z: -0.15, pitch: -165, yaw: 13,  bodyYaw: -29, roll: -112 };
           const strike  = { x: 0,     y: 0,    z: 0.12,  pitch: 13,   yaw: -28, bodyYaw: 29,  roll: -91 };
           const scale = (ch, v) => neutral[ch] + (v - neutral[ch]) * power;
-          const chanLerp = ch => threePhaseLerp(progress, WF, SF, scale(ch, windup[ch]), scale(ch, strike[ch]), neutral[ch]);
+          const chanLerp = ch => fourPhaseLerp(progress, WF, SF, HF, scale(ch, windup[ch]), scale(ch, strike[ch]), neutral[ch]);
 
           const x = chanLerp('x');
           const y = chanLerp('y');
@@ -12574,11 +12586,13 @@
           const handY = playerMesh.position.y + playerToolBaseY + y;
           const handZ = playerMesh.position.z + vRZ * (playerToolBaseX + x) + vFZ * z;
           if (fishThrowActive && fishingMinigame?.anchorWorld) {
-            // Out during the slam (WF→SF), back during the return (SF→1).
+            // Out during the slam (WF→SF), held at the anchor through the
+            // hold (SF→HF), back during the return (HF→1).
             let travel;
             if (progress <= WF) travel = 0;
             else if (progress <= SF) travel = (progress - WF) / (SF - WF);
-            else travel = 1 - (progress - SF) / (1.0 - SF);
+            else if (progress <= HF) travel = 1;
+            else travel = 1 - (progress - HF) / (1.0 - HF);
             const aw = fishingMinigame.anchorWorld;
             toolHolder.position.set(
               handX + (aw.x - handX) * travel,
@@ -12701,8 +12715,10 @@
             sweepOff = WINDUP_ANGLE * (progress / WF);
           } else if (progress <= SF) {
             sweepOff = WINDUP_ANGLE + (STRIKE_ANGLE - WINDUP_ANGLE) * ((progress - WF) / (SF - WF));
+          } else if (progress <= HF) {
+            sweepOff = STRIKE_ANGLE;
           } else {
-            sweepOff = STRIKE_ANGLE * (1.0 - (progress - SF) / (1.0 - SF));
+            sweepOff = STRIKE_ANGLE * (1.0 - (progress - HF) / (1.0 - HF));
           }
           const vθ = θ + sweepOff;
           playerMesh.rotation.y = vθ;

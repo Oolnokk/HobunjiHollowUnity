@@ -62,6 +62,7 @@ canvas{display:block;width:100%;height:100%}
   font-size:9px;color:rgba(255,255,255,.78);text-transform:uppercase;letter-spacing:.3px;overflow:hidden;white-space:nowrap}
 #segWindup{background:rgba(251,191,36,.38)}
 #segStrike{background:rgba(251,113,133,.42)}
+#segHold{background:rgba(251,113,133,.22)}
 #segReturn{background:rgba(106,167,255,.22)}
 .timelineMarker{position:absolute;top:-2px;bottom:-2px;width:2px;background:#fff;box-shadow:0 0 6px #fff;pointer-events:none}
 .timelineLabels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin:2px 0 10px}
@@ -112,7 +113,7 @@ canvas{display:block;width:100%;height:100%}
   </div>
 
   <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
-    <div class="sectionTitle"><b>Timing</b><span class="sectionTag">windup → strike → return</span></div>
+    <div class="sectionTitle"><b>Timing</b><span class="sectionTag">windup → strike → hold → return</span></div>
     <div class="field">
       <label>Windup ends at <span id="windupFracVal">16%</span> of swing</label>
       <input id="windupFrac" type="range" min="0.02" max="0.9" step="0.01" value="0.16">
@@ -121,10 +122,14 @@ canvas{display:block;width:100%;height:100%}
       <label>Strike ends at <span id="strikeFracVal">55%</span> of swing</label>
       <input id="strikeFrac" type="range" min="0.03" max="0.98" step="0.01" value="0.55">
     </div>
+    <div class="field">
+      <label>Hold ends at <span id="holdFracVal">68%</span> of swing</label>
+      <input id="holdFrac" type="range" min="0.03" max="0.99" step="0.01" value="0.68">
+    </div>
     <div class="field"><label>Preview duration (seconds)</label>
       <input id="durationS" type="number" min="0.05" max="3" step="0.05" value="0.5">
     </div>
-    <div class="help">0 → windup% lerps Neutral→Windup. windup% → strike% lerps Windup→Strike. strike% → 100% lerps Strike→Neutral (the return).</div>
+    <div class="help">0 → windup% lerps Neutral→Windup. windup% → strike% lerps Windup→Strike. strike% → hold% holds at Strike unchanged. hold% → 100% lerps Strike→Neutral (the return).</div>
   </div>
 
   <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
@@ -132,6 +137,7 @@ canvas{display:block;width:100%;height:100%}
     <div class="timeline" id="timeline">
       <div class="timelineSeg" id="segWindup">windup</div>
       <div class="timelineSeg" id="segStrike">strike</div>
+      <div class="timelineSeg" id="segHold">hold</div>
       <div class="timelineSeg" id="segReturn">return</div>
       <div class="timelineMarker" id="timelineMarker"></div>
     </div>
@@ -516,6 +522,7 @@ let anim = {
   style: 'sweep',
   windupFrac: 0.16,
   strikeFrac: 0.55,
+  holdFrac: 0.68,
   durationS: 0.5,
   poses: {
     neutral: { ...neutralPoseFor('sweep') },
@@ -575,22 +582,39 @@ $('animStyle').addEventListener('change', () => { anim.style = $('animStyle').va
 
 function clampFracs() {
   if (anim.windupFrac >= anim.strikeFrac) anim.strikeFrac = Math.min(0.98, anim.windupFrac + 0.01);
+  // holdFrac may equal strikeFrac (a zero-width hold, e.g. backward-compat
+  // fallback for older exports) but never fall below it.
+  if (anim.holdFrac < anim.strikeFrac) anim.holdFrac = Math.min(0.99, anim.strikeFrac);
 }
 $('windupFrac').addEventListener('input', () => {
   anim.windupFrac = Number($('windupFrac').value);
   clampFracs();
   $('strikeFrac').value = anim.strikeFrac;
+  $('holdFrac').value = anim.holdFrac;
   $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
   updateTimelineSegments();
   refreshJsonView();
 });
 $('strikeFrac').addEventListener('input', () => {
   anim.strikeFrac = Number($('strikeFrac').value);
   if (anim.strikeFrac <= anim.windupFrac) anim.windupFrac = Math.max(0.02, anim.strikeFrac - 0.01);
+  if (anim.holdFrac <= anim.strikeFrac) anim.holdFrac = Math.min(0.99, anim.strikeFrac + 0.01);
   $('windupFrac').value = anim.windupFrac;
+  $('holdFrac').value = anim.holdFrac;
   $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
+  updateTimelineSegments();
+  refreshJsonView();
+});
+$('holdFrac').addEventListener('input', () => {
+  anim.holdFrac = Number($('holdFrac').value);
+  if (anim.holdFrac <= anim.strikeFrac) anim.strikeFrac = Math.max(anim.windupFrac + 0.01, anim.holdFrac - 0.01);
+  $('strikeFrac').value = anim.strikeFrac;
+  $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
   updateTimelineSegments();
   refreshJsonView();
 });
@@ -688,13 +712,19 @@ function applyPreset(preset) {
   anim.poses.strike = { ...preset.strike };
   anim.windupFrac = preset.windupFrac;
   anim.strikeFrac = preset.strikeFrac;
+  // Presets predate holdFrac, so derive it the same way game.js's HF auto-
+  // derives from SF when no hold is authored — 30% of whatever's left after
+  // the strike — unless the preset itself specifies one.
+  anim.holdFrac = preset.holdFrac ?? Math.min(0.99, preset.strikeFrac + (1 - preset.strikeFrac) * 0.3);
   anim.style = preset.style;
   clampFracs();
   $('animStyle').value = anim.style;
   $('windupFrac').value = anim.windupFrac;
   $('strikeFrac').value = anim.strikeFrac;
+  $('holdFrac').value = anim.holdFrac;
   $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
   updateTimelineSegments();
   syncPosePanelFromState('neutral');
   syncPosePanelFromState('windup');
@@ -737,7 +767,7 @@ function lerpPose(a, b, k) {
   );
 }
 function poseAt(t) {
-  const wf = anim.windupFrac, sf = anim.strikeFrac;
+  const wf = anim.windupFrac, sf = anim.strikeFrac, hf = anim.holdFrac;
   const neutral = anim.poses.neutral;
   if (t <= wf) {
     const k = wf > 0 ? t / wf : 1;
@@ -745,8 +775,10 @@ function poseAt(t) {
   } else if (t <= sf) {
     const k = (sf - wf) > 0 ? (t - wf) / (sf - wf) : 1;
     return { pose: lerpPose(anim.poses.windup, anim.poses.strike, k), phase: 'strike' };
+  } else if (t <= hf) {
+    return { pose: { ...anim.poses.strike }, phase: 'hold' };
   } else {
-    const k = (1 - sf) > 0 ? (t - sf) / (1 - sf) : 1;
+    const k = (1 - hf) > 0 ? (t - hf) / (1 - hf) : 1;
     return { pose: lerpPose(anim.poses.strike, neutral, k), phase: 'return' };
   }
 }
@@ -765,12 +797,13 @@ function applyPoseToRig(pose) {
   toolHolder.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
 }
 
-// ── Timeline visualization (windup/strike/return phase structure) ────────
+// ── Timeline visualization (windup/strike/hold/return phase structure) ───
 function updateTimelineSegments() {
-  const wf = anim.windupFrac, sf = anim.strikeFrac;
+  const wf = anim.windupFrac, sf = anim.strikeFrac, hf = anim.holdFrac;
   $('segWindup').style.width = `${wf * 100}%`;
   $('segStrike').style.width = `${(sf - wf) * 100}%`;
-  $('segReturn').style.width = `${(1 - sf) * 100}%`;
+  $('segHold').style.width = `${(hf - sf) * 100}%`;
+  $('segReturn').style.width = `${(1 - hf) * 100}%`;
 }
 function updateTimelineMarker(t) {
   $('timelineMarker').style.left = `${Math.max(0, Math.min(1, t)) * 100}%`;
@@ -818,6 +851,7 @@ function exportAnimObject() {
     style: anim.style,
     windupFrac: anim.windupFrac,
     strikeFrac: anim.strikeFrac,
+    holdFrac: anim.holdFrac,
     durationS: anim.durationS,
     poses: { neutral: { ...anim.poses.neutral }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
   };
@@ -854,6 +888,10 @@ function loadAnimObject(data) {
   anim.style = data.style || anim.style;
   anim.windupFrac = safeNum(data.windupFrac, anim.windupFrac);
   anim.strikeFrac = safeNum(data.strikeFrac, anim.strikeFrac);
+  // Older exports predate the hold phase — fall back to holdFrac === strikeFrac
+  // (a zero-width hold), exactly preserving how they used to play back rather
+  // than silently growing a pause into a previously-authored animation.
+  anim.holdFrac = safeNum(data.holdFrac, anim.strikeFrac);
   anim.durationS = safeNum(data.durationS, anim.durationS);
   clampFracs();
   // Older exports predate the neutral pose becoming authorable — fall back to
@@ -867,8 +905,10 @@ function loadAnimObject(data) {
   $('animStyle').value = anim.style;
   $('windupFrac').value = anim.windupFrac;
   $('strikeFrac').value = anim.strikeFrac;
+  $('holdFrac').value = anim.holdFrac;
   $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
   $('durationS').value = anim.durationS;
   syncPosePanelFromState('neutral');
   syncPosePanelFromState('windup');
@@ -909,8 +949,9 @@ animate();
 
 $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
 $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+$('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
 refreshJsonView();
-setDebug('Hobunji Attack Animation Editor\nWindup and Strike are authored poses; Neutral is always the implicit rest pose.\nPlayback auto-lerps Neutral→Windup→Strike→Neutral on loop.\nDrag the scrub bar to inspect any single frame.');
+setDebug('Hobunji Attack Animation Editor\nNeutral, Windup, and Strike are all authored poses.\nPlayback auto-lerps Neutral→Windup→Strike→(hold)→Neutral on loop.\nDrag the scrub bar to inspect any single frame.');
 logDebug('Attack Animation Editor ready');
 </script>
 </body>
