@@ -416,7 +416,17 @@ setToolSprite($('toolSpriteSelect').value).catch(e => logDebug('Tool sprite swap
 // character's midline negates x, yaw, and bodyYaw (all left/right-handed) and
 // leaves y, z, pitch untouched (symmetric about the midline).
 function defaultPose(x, y, z, pitch, yaw, bodyYaw = 0) { return { x, y, z, pitch, yaw, bodyYaw }; }
-const NEUTRAL_POSE = defaultPose(0, 0, 0, 0, 0, 0);
+// Each style's true in-game rest pose, matching what updateToolMesh() in
+// game.js actually shows when the tool isn't mid-swing — thrust rests
+// pitched up at its windup tilt, sweep carries a constant forward offset,
+// chop rests at its raised carry angle. Not a universal zero: only the
+// channels each style's game.js branch leaves untouched are 0 here.
+const STYLE_NEUTRAL_POSE = {
+  thrust: defaultPose(0, 0, 0, 10.31, 0, 0),
+  sweep:  defaultPose(0, 0, 0.16, 0, 0, 0),
+  chop:   defaultPose(0, 0, 0, 46.98, 0, 0),
+};
+function neutralPoseFor(style) { return STYLE_NEUTRAL_POSE[style] || defaultPose(0, 0, 0, 0, 0, 0); }
 
 let anim = {
   name: 'New Attack',
@@ -600,7 +610,10 @@ function applyPreset(preset) {
   }
   if (preset.still) {
     playing = false;
-    previewT = (anim.windupFrac + anim.strikeFrac) / 2;
+    // True idle is t=0 (poseAt's neutral pose), not a frozen mid-swing
+    // frame — freezing mid-strike previously showed the windup/strike
+    // pose instead of the actual at-rest stance.
+    previewT = 0;
     $('scrub').value = previewT;
     $('playPauseBtn').textContent = '▶ Play';
     updateTimelineMarker(previewT);
@@ -629,15 +642,16 @@ function lerpPose(a, b, k) {
 }
 function poseAt(t) {
   const wf = anim.windupFrac, sf = anim.strikeFrac;
+  const neutral = neutralPoseFor(anim.style);
   if (t <= wf) {
     const k = wf > 0 ? t / wf : 1;
-    return { pose: lerpPose(NEUTRAL_POSE, anim.poses.windup, k), phase: 'windup' };
+    return { pose: lerpPose(neutral, anim.poses.windup, k), phase: 'windup' };
   } else if (t <= sf) {
     const k = (sf - wf) > 0 ? (t - wf) / (sf - wf) : 1;
     return { pose: lerpPose(anim.poses.windup, anim.poses.strike, k), phase: 'strike' };
   } else {
     const k = (1 - sf) > 0 ? (t - sf) / (1 - sf) : 1;
-    return { pose: lerpPose(anim.poses.strike, NEUTRAL_POSE, k), phase: 'return' };
+    return { pose: lerpPose(anim.poses.strike, neutral, k), phase: 'return' };
   }
 }
 function applyPoseToRig(pose) {
@@ -704,7 +718,7 @@ function exportAnimObject() {
     windupFrac: anim.windupFrac,
     strikeFrac: anim.strikeFrac,
     durationS: anim.durationS,
-    poses: { neutral: { ...NEUTRAL_POSE }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
+    poses: { neutral: { ...neutralPoseFor(anim.style) }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
   };
 }
 $('exportBtn').onclick = () => {

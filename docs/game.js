@@ -12385,7 +12385,11 @@
           const windupBack  = (combatSwingAnim ? -0.40 : -0.22) * power;
           const jabOff      = threePhaseLerp(progress, WF, SF, windupBack, 0.32 * power);
           const lateral     = threePhaseLerp(progress, WF, SF, 0, -0.23 * power);
-          const pitchRad    = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1));
+          // Pitch's neutral matches its own windup value (10.31°) rather than
+          // the other channels' implicit 0 — a thrust weapon rests at this
+          // held-up tilt, drops to a near-flat 1° at the strike, then eases
+          // back to the resting tilt instead of snapping flat.
+          const pitchRad    = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1), THREE.MathUtils.degToRad(10.31));
           const yawRad      = threePhaseLerp(progress, WF, SF, 0, THREE.MathUtils.degToRad(-45) * power);
           const bodyYawRad  = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power);
 
