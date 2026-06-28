@@ -12116,6 +12116,12 @@
       let combatSwingWindupFrac = 0.16;
       let combatSwingStrikeFrac = 0.28;
       let combatSwingPower = 1;
+      // Optional full 6-channel pose ({neutral,windup,strike}, each
+      // {x,y,z,pitch,yaw,bodyYaw}) authored in the attack-animation editor.
+      // When set, updateToolMesh applies it generically instead of going
+      // through anim's bespoke per-style formula — see the pose-driven
+      // branch at the top of updateToolMesh's style if/else chain.
+      let combatSwingPose = null;
 
       function getDigSpeedMultiplier() {
         return Math.max(0.01, player.digSpeed || 1);
@@ -12188,6 +12194,7 @@
         combatSwingWindupFrac = opts.windupFrac ?? 0.16;
         combatSwingStrikeFrac = opts.strikeFrac ?? 0.28;
         combatSwingPower = opts.power ?? 1;
+        combatSwingPose = opts.pose || null;
       }
 
       function cancelChargeAction() {
@@ -12342,6 +12349,17 @@
         return strikeV + (neutralV - strikeV) * ((progress - sf) / (1.0 - sf));
       }
 
+      // Each tool style's natural at-rest pose (degrees for angle channels) —
+      // must stay in sync with the attack-animation editor's STYLE_NEUTRAL_POSE
+      // (docs/tools/attack-animation-editor/index.html). Used as the fallback
+      // neutral for the pose-driven combat branch below when a step's own
+      // pose.neutral doesn't specify a channel.
+      const STYLE_NEUTRAL_POSE = {
+        thrust: { x: 0, y: 0, z: 0,    pitch: 10.31, yaw: 0, bodyYaw: 0 },
+        sweep:  { x: 0, y: 0, z: 0.16, pitch: 0,     yaw: 0, bodyYaw: 0 },
+        chop:   { x: 0, y: 0, z: 0,    pitch: 46.98, yaw: 0, bodyYaw: 0 },
+      };
+
       function updateToolMesh(dt) {
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
@@ -12370,7 +12388,54 @@
         const WF = combatSwingAnim ? combatSwingWindupFrac : 0.16;
         const SF = combatSwingAnim ? combatSwingStrikeFrac : 0.28;
 
-        if (anim === 'thrust') {
+        if (combatSwingAnim && combatSwingPose) {
+          // POSE-DRIVEN COMBAT SWING — applies a full 6-channel pose authored
+          // in the attack-animation editor generically, for any style, the
+          // same way thrust's branch below already does by hand: x/z are
+          // hand-relative lateral/forward offsets, y is vertical, pitch/yaw
+          // are the tool's own local tilt/twist, and bodyYaw alone rotates
+          // the whole character (matching the editor's applyPoseToRig()).
+          // dirSign mirrors x/yaw/bodyYaw — exactly the editor's flipPose()
+          // convention — so a combo step can reuse another step's pose
+          // un-mirrored or mirrored. power scales every channel's deviation
+          // from its own neutral, for a heavier-telegraphed finisher,
+          // without needing a dedicated bespoke formula per style.
+          const pose = combatSwingPose;
+          const styleNeutral = STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust;
+          const neutral = { ...styleNeutral, ...(pose.neutral || {}) };
+          const sign = combatSwingSign;
+          const power = combatSwingPower;
+          const scale = (ch, v) => neutral[ch] + ((v ?? neutral[ch]) - neutral[ch]) * power;
+          const chan = (ch, mirror = false) => {
+            const w = scale(ch, pose.windup?.[ch]) * (mirror ? sign : 1);
+            const s = scale(ch, pose.strike?.[ch]) * (mirror ? sign : 1);
+            const n = neutral[ch] * (mirror ? sign : 1);
+            return threePhaseLerp(progress, WF, SF, w, s, n);
+          };
+
+          const x = chan('x', true);
+          const y = chan('y');
+          const z = chan('z');
+          const pitchRad   = THREE.MathUtils.degToRad(chan('pitch'));
+          const yawRad     = THREE.MathUtils.degToRad(chan('yaw', true));
+          const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
+
+          const vθ  = θ + bodyYawRad;
+          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
+
+          playerMesh.rotation.y = vθ;
+          _qFac.setFromAxisAngle(_tUp, vθ);
+          _qToolYaw.setFromAxisAngle(_tUp, yawRad);
+          _qAnim.setFromAxisAngle(_xAxis, pitchRad);
+          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim);
+          toolHolder.position.set(
+            playerMesh.position.x + vRX * (playerToolBaseX + x) + vFX * z,
+            playerMesh.position.y + playerToolBaseY + y,
+            playerMesh.position.z + vRZ * (playerToolBaseX + x) + vFZ * z
+          );
+
+        } else if (anim === 'thrust') {
           // THRUST — non-overextending jab authored as a full pose (lateral
           // offset, forward jab, pitch, tool yaw, and a whole-body bodyYaw
           // wind-up/follow-through), matching the attack-animation editor's
@@ -12608,7 +12673,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) combatSwingAnim = null;
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; }
       }
 
       // Initialize mesh map after toolHolder exists
