@@ -12238,14 +12238,31 @@
       // only) a reach/turn multiplier for an extra-telegraphed finisher.
       function triggerWeaponSwingVisual(durationS, opts = {}) {
         if (activeTool !== 'weapon') return;
-        toolSwingDur = Math.max(0.05, durationS);
+        const windupFrac = opts.windupFrac ?? 0.16;
+        const strikeFrac = opts.strikeFrac ?? 0.28;
+        // Abilities that don't budget their own return-to-neutral tail
+        // (strikeFrac === 1 — Charged Breaker, Flurry, Quick Attacks, Counter
+        // Shield's riposte, and every non-finisher combo step) would otherwise
+        // have combatSwingAnim clear (see the toolSwingT <= 0 check below)
+        // the instant the strike lands, snapping playerMesh straight to
+        // updatePlayerMesh's movement-facing default with zero easing — the
+        // in-game equivalent of the editor's smooth eased return never
+        // playing. Reserve a proportional tail here so every swing eases
+        // back regardless of what the caller budgeted, the same way HF is
+        // auto-derived from SF in updateToolMesh, without needing any
+        // per-ability changes in the combat-*.js files. Callers that already
+        // reserved their own returnS (strikeFrac < 1) are left untouched.
+        const hasOwnReturn = strikeFrac < 0.999;
+        const returnTailS = hasOwnReturn ? 0 : Math.max(0.12, durationS * 0.35);
+        const totalS = durationS + returnTailS;
+        toolSwingDur = Math.max(0.05, totalS);
         toolSwingT = toolSwingDur;
         strikeFired = false;
         pendingAction = null;
         combatSwingAnim = opts.anim || null;
         combatSwingSign = opts.dirSign || 1;
-        combatSwingWindupFrac = opts.windupFrac ?? 0.16;
-        combatSwingStrikeFrac = opts.strikeFrac ?? 0.28;
+        combatSwingWindupFrac = windupFrac * durationS / totalS;
+        combatSwingStrikeFrac = strikeFrac * durationS / totalS;
         combatSwingPower = opts.power ?? 1;
         combatSwingPose = opts.pose || null;
         combatSwingHeld = false;
