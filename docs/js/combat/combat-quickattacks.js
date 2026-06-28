@@ -78,6 +78,10 @@
   const STRIKE_S = 0.105;
   const COST_BASE = 7;
   const COST_BONUS = 12;
+  const HOLD_S = 1; // post-strike pause before easing back to neutral
+  // Farther forward step than the 3-hit combo's, layered under the jab —
+  // see game.js's beginCombatLunge. Expressed as a TILE multiple.
+  const LUNGE_TILE_MUL = 0.7;
 
   function registerQuickAttack(id, def) {
     let busyAction = null;
@@ -100,7 +104,9 @@
         anim: 'thrust',
         windupFrac: WINDUP_S / (WINDUP_S + STRIKE_S),
         strikeFrac: 1,
+        holdS: HOLD_S,
       });
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, WINDUP_S + STRIKE_S);
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * tech.damageMul);
@@ -121,6 +127,7 @@
             hits++;
             lastName = c.def.label;
           }
+          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           const msg = hits > 0
             ? `${tech.name}: ${tech.sourceText} — hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
             : `${tech.name}: ${tech.sourceText}, but connects with nothing.`;

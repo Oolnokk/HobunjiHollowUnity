@@ -1044,6 +1044,14 @@
         invulnUntil: 0,
         dodging: false, dodgeT: 0, dodgeDirX: 0, dodgeDirY: 0, dodgeCooldownT: 0,
         knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
+        // Combat lunge — a short forward step/leap layered under an attack's
+        // windup/strike (combo/quick attacks/charged breaker; flurries and
+        // Counter Shield's riposte don't use this). lungeStartX/Y anchor the
+        // eased interpolation so partial collision blocking doesn't drift the
+        // curve; lungeHopUnits/lungeHopCurrent drive an optional cosmetic
+        // vertical arc (world-Y units, not pixels) for the charged breaker's leap.
+        lunging: false, lungeT: 0, lungeDur: 0, lungeStartX: 0, lungeStartY: 0,
+        lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0,
       };
 
       // Combat tuning is config-backed so tool hit cones, stamina costs, trails,
@@ -1082,6 +1090,10 @@
         target.knockbackT = KNOCKBACK_DUR_S;
         target.knockbackVX = Math.cos(ang) * speedPxS;
         target.knockbackVY = Math.sin(ang) * speedPxS;
+        // Getting hit always interrupts an in-progress combat lunge — without
+        // this, resuming the lunge after knockback would interpolate from its
+        // stale pre-knockback lungeStartX/Y and jump the player backward.
+        if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
       }
 
       const PLAYER_STAMINA_REGEN = 14;   // per second
@@ -2593,6 +2605,25 @@
         player.dodgeCooldownT = DODGE_COOLDOWN_S;
         player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
         return true;
+      }
+
+      // Combat-ability movement: a short forward step/leap toward the aim
+      // direction (player.angle), layered under an attack's own windup/
+      // strike timing — distinct from performDodge's evasive zip above.
+      // distancePx is total ground covered over durationS (eased out, so it's
+      // fast at first and settles in); hopUnits is an optional cosmetic
+      // vertical arc peak in world-Y units for a leaping attack.
+      function beginCombatLunge(distancePx, durationS, hopUnits = 0) {
+        if (durationS <= 0 || distancePx <= 0) return;
+        player.lunging = true;
+        player.lungeT = durationS;
+        player.lungeDur = durationS;
+        player.lungeStartX = player.x;
+        player.lungeStartY = player.y;
+        player.lungeDirX = Math.cos(player.angle);
+        player.lungeDirY = Math.sin(player.angle);
+        player.lungeDistancePx = distancePx;
+        player.lungeHopUnits = hopUnits;
       }
 
       const _vbHealthFill  = document.getElementById('vbHealthFill');
@@ -5609,6 +5640,7 @@
               registerFurnitureSfxSource(mapId, bx, bz, resolveFurnitureSfx(def));
             } else {
               // Fallback: no procedural recipe found for this furniture key
+              window.__farmLog?.(`[furniture] ${furnitureKey || '(no key)'}: no procedural recipe → fallback placeholder box`, 'warn');
               const ph = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshLambertMaterial({ color }));
               ph.position.set(bx, by + 0.4, bz);
               ph.rotation.y = rotRad;
@@ -7360,6 +7392,9 @@
         // and bottom-edge pixel row (see handAttachX/handAttachY in
         // png-plane-avatar.js) — recompute here since this is the only place the
         // per-species scale/sprite is known.
+        if (avatarGroup.userData?.handAttachX == null || avatarGroup.userData?.handAttachY == null) {
+          window.__farmLog?.('[avatar] hand-attach scan failed → fallback to half-width/half-height tool base', 'warn');
+        }
         playerToolBaseX = avatarGroup.userData?.handAttachX ?? (-avatarWidth / 2);
         playerToolBaseY = avatarGroup.userData?.handAttachY ?? (avatarHeight / 2);
         _markPngPlane(avatarGroup);
@@ -8036,6 +8071,22 @@
           return;
         }
 
+        if (player.lunging) {
+          player.lungeT = Math.max(0, player.lungeT - dt);
+          const t = 1 - player.lungeT / player.lungeDur;
+          const eased = 1 - Math.pow(1 - t, 3); // ease-out: fast off the top, settles into the landing
+          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+          const desiredX = clamp(player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
+          const desiredY = clamp(player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
+          if (canPlayerOccupy(desiredX, player.y)) player.x = desiredX;
+          if (canPlayerOccupy(player.x, desiredY)) player.y = desiredY;
+          player.lungeHopCurrent = player.lungeHopUnits * Math.sin(eased * Math.PI);
+          if (player.lungeT <= 0) { player.lunging = false; player.lungeHopCurrent = 0; }
+          tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+          return;
+        }
+
         const keyboardVector = getKeyboardVector();
         const usingKeyboard = keyboardVector.active;
         let ix = usingKeyboard ? keyboardVector.x : input.x;
@@ -8414,7 +8465,47 @@
         while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
       }
 
+      // Combat ability hit-cone flash — shows the actual swept area (angle +
+      // range) a combat-*.js ability just resolved its inCone() hit test
+      // against, since each ability/charge/combo-step uses its own rangePx/
+      // halfConeRad rather than one fixed shape. Reuses weaponTrailEffects'
+      // existing age/limit bookkeeping and drawWeaponTrailEffects' renderer
+      // (isCone flag switches slashTrailWorldPoints/drawWeaponTrailEffects
+      // onto the fan-shaped path below instead of the farming trapezoid).
+      const COMBAT_TRAIL_MAX_AGE_S = 0.24; // matches the legacy cut ability's trailMaxAgeSeconds
+      function spawnCombatTrailEffect({ rangePx, halfConeRad, angle = player.angle, ok }) {
+        const tgrid = getActiveGrid();
+        const col = clamp(Math.floor(player.x / TILE), 0, getActiveCols() - 1);
+        const row = clamp(Math.floor(player.y / TILE), 0, getActiveRows() - 1);
+        const surfaceY = tileSurfaceY(tgrid[row]?.[col]?.type || TileType.GRASS);
+        weaponTrailEffects.push({
+          isCone: true,
+          x: player.x / TILE,
+          z: player.y / TILE,
+          y: surfaceY + 0.18,
+          angle,
+          halfConeRad,
+          rangeTiles: rangePx / TILE,
+          age: 0,
+          maxAge: ok ? COMBAT_TRAIL_MAX_AGE_S : Math.max(COMBAT_TRAIL_MAX_AGE_S * 0.72, 0.1),
+          ok,
+        });
+        const limit = Number(combatConfig().weaponTrailLimit) || 5;
+        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
+      }
+
+      function coneTrailWorldPoints(fx) {
+        const segments = 10;
+        const pts = [{ x: fx.x, y: fx.y, z: fx.z }];
+        for (let i = 0; i <= segments; i++) {
+          const a = fx.angle - fx.halfConeRad + (2 * fx.halfConeRad) * (i / segments);
+          pts.push({ x: fx.x + Math.cos(a) * fx.rangeTiles, y: fx.y, z: fx.z + Math.sin(a) * fx.rangeTiles });
+        }
+        return pts;
+      }
+
       function slashTrailWorldPoints(fx) {
+        if (fx.isCone) return coneTrailWorldPoints(fx);
         const cx = fx.x;
         const cz = fx.z;
         const near = 0.02;
@@ -8510,8 +8601,14 @@
           octx.fill();
           octx.globalAlpha = alpha * 0.92;
           octx.beginPath();
-          octx.moveTo(pts[1].x, pts[1].y);
-          octx.quadraticCurveTo(pts[2].x, pts[2].y - 8 * alpha, pts[3].x, pts[3].y);
+          if (fx.isCone) {
+            // Highlight the cone's outer arc — the actual swept edge of the attack.
+            octx.moveTo(pts[1].x, pts[1].y);
+            for (let i = 2; i < pts.length; i++) octx.lineTo(pts[i].x, pts[i].y);
+          } else {
+            octx.moveTo(pts[1].x, pts[1].y);
+            octx.quadraticCurveTo(pts[2].x, pts[2].y - 8 * alpha, pts[3].x, pts[3].y);
+          }
           octx.stroke();
           octx.restore();
         }
@@ -8656,13 +8753,16 @@
           startFishingMinigame();
           return;
         }
+        // Weapon attacks route through the loadout's tap-slot abilities
+        // (combo/quick attacks/etc.) instead of firing a plain swing here —
+        // mirrors the mouse/touch action-bar handling further down, so
+        // gamepad/keyboard "primary action" presses get the same combo and
+        // windup/strike behavior instead of falling back to the pre-loadout
+        // swing. Each ability deducts its own stamina cost, so there's no
+        // separate check here.
         if (activeTool === 'weapon') {
-          const abil = weaponAbility(activeAction);
-          if (abil && player.stamina < abil.staminaCost) {
-            showToast('Too winded to swing!', false);
-            return;
-          }
-          if (abil) player.stamina = Math.max(0, player.stamina - abil.staminaCost);
+          const slot = activeAction === toolActions.weapon[0] ? 1 : activeAction === toolActions.weapon[1] ? 2 : null;
+          if (slot && window.Combat?.input) { window.Combat.input.fireTap(slot); return; }
         }
 
         // Digging a brand-new trench or filling an existing one in requires a
@@ -12113,6 +12213,21 @@
       let combatSwingWindupFrac = 0.16;
       let combatSwingStrikeFrac = 0.28;
       let combatSwingPower = 1;
+      // True while a charge-and-release ability's windup is being held —
+      // see triggerWeaponHoldVisual()/releaseWeaponSwingHold() below.
+      let combatSwingHeld = false;
+      // Per-ability post-strike pause, in seconds — set via opts.holdS on a
+      // triggerWeaponSwingVisual/triggerWeaponHoldVisual call (a config knob
+      // each ability's own file sets, not a built-in engine default). 0 means
+      // "use the old proportional-to-what's-left hold" — see the HF
+      // calculation in updateToolMesh below.
+      let combatSwingHoldS = 0;
+      // Optional full 6-channel pose ({neutral,windup,strike}, each
+      // {x,y,z,pitch,yaw,bodyYaw}) authored in the attack-animation editor.
+      // When set, updateToolMesh applies it generically instead of going
+      // through anim's bespoke per-style formula — see the pose-driven
+      // branch at the top of updateToolMesh's style if/else chain.
+      let combatSwingPose = null;
 
       function getDigSpeedMultiplier() {
         return Math.max(0.01, player.digSpeed || 1);
@@ -12169,22 +12284,75 @@
       // Plays the weapon's existing arm-swing mesh animation for durationS without
       // queuing a pendingAction — used by Combat ability modules that resolve their
       // own hit logic and just want the legacy swing's visual flourish to match.
-      // opts: { anim: 'thrust'|'sweep'|'chop', dirSign: 1|-1, windupFrac, strikeFrac, power }
+      // opts: { anim: 'thrust'|'sweep'|'chop', dirSign: 1|-1, windupFrac, strikeFrac, power, holdS }
       // lets a combat ability pick the attack-shape its animation should use
       // (independent of the equipped weapon's own default style), how its own
-      // windupS/strikeS split maps onto the cosmetic swing arc, and (thrust
-      // only) a reach/turn multiplier for an extra-telegraphed finisher.
+      // windupS/strikeS split maps onto the cosmetic swing arc, a (thrust
+      // only) reach/turn multiplier for an extra-telegraphed finisher, and an
+      // explicit post-strike pause length in seconds (holdS).
       function triggerWeaponSwingVisual(durationS, opts = {}) {
         if (activeTool !== 'weapon') return;
-        toolSwingDur = Math.max(0.05, durationS);
+        const windupFrac = opts.windupFrac ?? 0.16;
+        const strikeFrac = opts.strikeFrac ?? 0.28;
+        // Abilities that don't budget their own return-to-neutral tail
+        // (strikeFrac === 1 — Charged Breaker, Flurry, Quick Attacks, Counter
+        // Shield's riposte, and every non-finisher combo step) would otherwise
+        // have combatSwingAnim clear (see the toolSwingT <= 0 check below)
+        // the instant the strike lands, snapping playerMesh straight to
+        // updatePlayerMesh's movement-facing default with zero easing — the
+        // in-game equivalent of the editor's smooth eased return never
+        // playing. Reserve a proportional tail here so every swing eases
+        // back regardless of what the caller budgeted, the same way HF is
+        // auto-derived from SF in updateToolMesh, without needing any
+        // per-ability changes in the combat-*.js files. Callers that already
+        // reserved their own returnS (strikeFrac < 1) are left untouched.
+        const hasOwnReturn = strikeFrac < 0.999;
+        const returnTailS = hasOwnReturn ? 0 : Math.max(0.12, durationS * 0.35);
+        // Reserve an explicit post-strike hold (if this ability's config asked
+        // for one) on top of whatever windup/strike/return it already
+        // budgeted — additive, rather than carving it out of durationS, so
+        // the windup/strike/return real-world timings stay exactly as
+        // authored; the pause is just inserted between strike and return.
+        const holdS = Math.max(0, opts.holdS || 0);
+        const totalS = durationS + returnTailS + holdS;
+        toolSwingDur = Math.max(0.05, totalS);
         toolSwingT = toolSwingDur;
         strikeFired = false;
         pendingAction = null;
         combatSwingAnim = opts.anim || null;
         combatSwingSign = opts.dirSign || 1;
-        combatSwingWindupFrac = opts.windupFrac ?? 0.16;
-        combatSwingStrikeFrac = opts.strikeFrac ?? 0.28;
+        combatSwingWindupFrac = windupFrac * durationS / totalS;
+        combatSwingStrikeFrac = strikeFrac * durationS / totalS;
         combatSwingPower = opts.power ?? 1;
+        combatSwingPose = opts.pose || null;
+        combatSwingHoldS = holdS;
+        combatSwingHeld = false;
+      }
+
+      // Like triggerWeaponSwingVisual, but once the windup phase finishes
+      // (progress reaches windupFrac) the swing freezes there — held at its
+      // windup extreme — instead of continuing into the strike. Used by
+      // charge-and-release abilities (e.g. Charged Breaker) so the windup
+      // plays out while the button is held down, no matter how long that
+      // ends up being, and call releaseWeaponSwingHold() on release to let
+      // the already-elapsed countdown carry straight on into the strike and
+      // return phases.
+      function triggerWeaponHoldVisual(durationS, opts = {}) {
+        triggerWeaponSwingVisual(durationS, opts);
+        combatSwingHeld = true;
+      }
+
+      function releaseWeaponSwingHold() {
+        combatSwingHeld = false;
+      }
+
+      // Abandons a held windup without playing the strike — e.g. the button
+      // was released before the ability's minimum charge. Snaps the swing
+      // back to its rest pose (progress 0, same as the start of any other
+      // swing's windup) instead of carrying on into the strike.
+      function cancelWeaponSwingHold() {
+        combatSwingHeld = false;
+        toolSwingT = 0;
       }
 
       function cancelChargeAction() {
@@ -12287,13 +12455,12 @@
         });
         const plane = new THREE.Mesh(geo, mat);
         plane.rotation.x = -Math.PI / 2;  // lie flat in XZ for all tools
-        // Sweep tools: rotate image 90° in the flat plane so blade aligns parallel to player body
-        if (TOOL_ITEM_DEFS[itemKey]?.animStyle === 'sweep') plane.rotation.z = -Math.PI / 2;
         g.add(plane);
-        // Keep a handle on the sprite plane and its rest rotation so updateToolMesh can layer a
-        // continuous "spinning" twirl on top for mace-mode harpoon items without disturbing chop/thrust tools.
-        g.userData.toolPlane    = plane;
-        g.userData.basePlaneRotZ = plane.rotation.z;
+        // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
+        // blade-parallel twist and the mace-mode "spinning" twirl on top each frame, derived
+        // from whichever anim is actually playing rather than baked in per-item here — see
+        // updateToolMesh's baseRotZ for why.
+        g.userData.toolPlane = plane;
         return g;
       }
 
@@ -12318,26 +12485,49 @@
       // Pre-allocated objects to avoid per-frame GC in updateToolMesh
       const _tUp      = new THREE.Vector3(0, 1, 0);
       const _xAxis    = new THREE.Vector3(1, 0, 0); // tool-local pitch axis (thrust)
+      const _zAxis    = new THREE.Vector3(0, 0, 1); // tool-local roll axis (pose-driven only)
       const _qFac     = new THREE.Quaternion();  // facing (+ bodyYaw) rotation
       const _qAnim    = new THREE.Quaternion();  // animation rotation
       const _qToolYaw = new THREE.Quaternion();  // tool's own local yaw twist (thrust)
+      const _qRoll    = new THREE.Quaternion();  // tool's own local roll twist (pose-driven only)
       const _swAxis   = new THREE.Vector3();     // chop/tilt axis (player right in world)
 
       // Resolve anim style for the active tool from equipped item or fallback
+      const _animStyleFallbackLogged = new Set();
       function activeAnimStyle() {
         const itemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
-        return TOOL_ITEM_DEFS[itemKey]?.animStyle || 'thrust';
+        const style = TOOL_ITEM_DEFS[itemKey]?.animStyle;
+        if (!style && !_animStyleFallbackLogged.has(itemKey)) {
+          _animStyleFallbackLogged.add(itemKey);
+          window.__farmLog?.(`[combat] ${itemKey || '(no item)'}: no animStyle defined → fallback to 'thrust'`, 'warn');
+        }
+        return style || 'thrust';
       }
 
-      // Three-phase neutral→windup→strike→neutral interpolation, shared by every
-      // thrust-pose channel (lateral/forward offsets, pitch/yaw/bodyYaw angles) —
+      // Four-phase neutral→windup→strike→hold→neutral interpolation, shared by
+      // every pose channel (lateral/forward offsets, pitch/yaw/bodyYaw angles) —
       // mirrors the attack-animation editor's poseAt()/lerpPose() so game.js and
-      // the editor's authored pose JSON describe the exact same motion.
-      function threePhaseLerp(progress, wf, sf, windupV, strikeV, neutralV = 0) {
+      // the editor's authored pose JSON describe the exact same motion. The
+      // hold phase (sf→hf) dwells exactly at the strike value before easing
+      // back to neutral, so an impact reads as a clean hit instead of
+      // snapping straight into its recovery.
+      function fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0) {
         if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / wf);
         if (progress <= sf) return windupV + (strikeV - windupV) * ((progress - wf) / (sf - wf));
-        return strikeV + (neutralV - strikeV) * ((progress - sf) / (1.0 - sf));
+        if (progress <= hf) return strikeV;
+        return strikeV + (neutralV - strikeV) * ((progress - hf) / (1.0 - hf));
       }
+
+      // Each tool style's natural at-rest pose (degrees for angle channels) —
+      // must stay in sync with the attack-animation editor's STYLE_NEUTRAL_POSE
+      // (docs/tools/attack-animation-editor/index.html). Used as the fallback
+      // neutral for the pose-driven combat branch below when a step's own
+      // pose.neutral doesn't specify a channel.
+      const STYLE_NEUTRAL_POSE = {
+        thrust: { x: 0,    y: 0,    z: 0,    pitch: 10.31, yaw: 0,   roll: 0,   bodyYaw: 0 },
+        sweep:  { x: 0,    y: 0,    z: 0.16, pitch: 0,     yaw: 0,   roll: 0,   bodyYaw: 0 },
+        chop:   { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82, bodyYaw: 2 },
+      };
 
       function updateToolMesh(dt) {
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
@@ -12347,11 +12537,27 @@
         const θ      = playerFacing;
         const rightX = -Math.cos(θ), rightZ =  Math.sin(θ);
         const fwdX   =  Math.sin(θ), fwdZ   =  Math.cos(θ);
+        // True local +X → world transform (the same standard Three.js Y-rotation the
+        // attack-animation editor's rig/toolBase hierarchy applies), used specifically
+        // for placing playerToolBaseX (the hand-attach point) in world space — kept
+        // distinct from rightX/rightZ above, which is rightX's negation and stays as-is
+        // since it also feeds _swAxis (the toss/refill swings' tilt axis); flipping it
+        // there would reverse those already-tuned raise/slam directions.
+        const attachRightX =  Math.cos(θ), attachRightZ = -Math.sin(θ);
 
-        // Swing progress 0→1 over toolSwingDur
+        // Swing progress 0→1 over toolSwingDur. While combatSwingHeld is set,
+        // decay still runs up through the windup phase, then freezes once it
+        // reaches the windup→strike boundary — holding the windup pose for as
+        // long as the ability stays held — until releaseWeaponSwingHold()
+        // clears the flag and lets the remaining strike/return time play out.
         let progress = 0;
         if (toolSwingT > 0) {
-          toolSwingT = Math.max(0, toolSwingT - dt);
+          if (combatSwingHeld) {
+            const holdFloorT = toolSwingDur * (1 - combatSwingWindupFrac);
+            toolSwingT = Math.max(holdFloorT, toolSwingT - dt);
+          } else {
+            toolSwingT = Math.max(0, toolSwingT - dt);
+          }
           progress   = 1 - toolSwingT / toolSwingDur;
         }
         const swing = Math.sin(progress * Math.PI);
@@ -12366,8 +12572,68 @@
         // (e.g. Cleave) visibly winds up longer than a snap jab.
         const WF = combatSwingAnim ? combatSwingWindupFrac : 0.16;
         const SF = combatSwingAnim ? combatSwingStrikeFrac : 0.28;
+        // Hold the strike pose before easing back to neutral, instead of
+        // snapping straight into the return lerp. When an ability's config
+        // set an explicit holdS (combatSwingHoldS > 0, baked into toolSwingDur
+        // by triggerWeaponSwingVisual), use that many real seconds so the
+        // pause is consistent regardless of how brief its windup/strike
+        // timing is; otherwise fall back to the old proportional-to-
+        // what's-left formula (dig/fill/refill, and any combat swing that
+        // didn't set holdS).
+        const HF = (combatSwingAnim && combatSwingHoldS > 0)
+          ? Math.min(0.99, SF + combatSwingHoldS / toolSwingDur)
+          : Math.min(0.99, SF + (1 - SF) * 0.3);
 
-        if (anim === 'thrust') {
+        if (combatSwingAnim && combatSwingPose) {
+          // POSE-DRIVEN COMBAT SWING — applies a full 7-channel pose authored
+          // in the attack-animation editor generically, for any style, the
+          // same way thrust's branch below already does by hand: x/z are
+          // hand-relative lateral/forward offsets, y is vertical, pitch/yaw/roll
+          // are the tool's own local tilt/twist/roll, and bodyYaw alone rotates
+          // the whole character (matching the editor's applyPoseToRig()).
+          // dirSign mirrors x/yaw/roll/bodyYaw — exactly the editor's flipPose()
+          // convention — so a combo step can reuse another step's pose
+          // un-mirrored or mirrored. power scales every channel's deviation
+          // from its own neutral, for a heavier-telegraphed finisher,
+          // without needing a dedicated bespoke formula per style.
+          const pose = combatSwingPose;
+          const styleNeutral = STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust;
+          const neutral = { ...styleNeutral, ...(pose.neutral || {}) };
+          const sign = combatSwingSign;
+          const power = combatSwingPower;
+          const scale = (ch, v) => neutral[ch] + ((v ?? neutral[ch]) - neutral[ch]) * power;
+          const chan = (ch, mirror = false) => {
+            const w = scale(ch, pose.windup?.[ch]) * (mirror ? sign : 1);
+            const s = scale(ch, pose.strike?.[ch]) * (mirror ? sign : 1);
+            const n = neutral[ch] * (mirror ? sign : 1);
+            return fourPhaseLerp(progress, WF, SF, HF, w, s, n);
+          };
+
+          const x = chan('x', true);
+          const y = chan('y');
+          const z = chan('z');
+          const pitchRad   = THREE.MathUtils.degToRad(chan('pitch'));
+          const yawRad     = THREE.MathUtils.degToRad(chan('yaw', true));
+          const rollRad    = THREE.MathUtils.degToRad(chan('roll', true));
+          const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
+
+          const vθ  = θ + bodyYawRad;
+          const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
+          const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
+
+          playerMesh.rotation.y = vθ;
+          _qFac.setFromAxisAngle(_tUp, vθ);
+          _qToolYaw.setFromAxisAngle(_tUp, yawRad);
+          _qAnim.setFromAxisAngle(_xAxis, pitchRad);
+          _qRoll.setFromAxisAngle(_zAxis, rollRad);
+          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+          toolHolder.position.set(
+            playerMesh.position.x + vRX * (playerToolBaseX + x) + vFX * z,
+            playerMesh.position.y + playerToolBaseY + y,
+            playerMesh.position.z + vRZ * (playerToolBaseX + x) + vFZ * z
+          );
+
+        } else if (anim === 'thrust') {
           // THRUST — non-overextending jab authored as a full pose (lateral
           // offset, forward jab, pitch, tool yaw, and a whole-body bodyYaw
           // wind-up/follow-through), matching the attack-animation editor's
@@ -12380,14 +12646,18 @@
           // combo's final lunge) without needing its own bespoke anim branch.
           const power       = combatSwingAnim ? combatSwingPower : 1;
           const windupBack  = (combatSwingAnim ? -0.40 : -0.22) * power;
-          const jabOff      = threePhaseLerp(progress, WF, SF, windupBack, 0.32 * power);
-          const lateral     = threePhaseLerp(progress, WF, SF, 0, -0.23 * power);
-          const pitchRad    = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1));
-          const yawRad      = threePhaseLerp(progress, WF, SF, 0, THREE.MathUtils.degToRad(-45) * power);
-          const bodyYawRad  = threePhaseLerp(progress, WF, SF, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power);
+          const jabOff      = fourPhaseLerp(progress, WF, SF, HF, windupBack, 0.32 * power);
+          const lateral     = fourPhaseLerp(progress, WF, SF, HF, 0, -0.23 * power);
+          // Pitch's neutral matches its own windup value (10.31°) rather than
+          // the other channels' implicit 0 — a thrust weapon rests at this
+          // held-up tilt, drops to a near-flat 1° at the strike, then eases
+          // back to the resting tilt instead of snapping flat.
+          const pitchRad    = fourPhaseLerp(progress, WF, SF, HF, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1), THREE.MathUtils.degToRad(10.31));
+          const yawRad      = fourPhaseLerp(progress, WF, SF, HF, 0, THREE.MathUtils.degToRad(-45) * power);
+          const bodyYawRad  = fourPhaseLerp(progress, WF, SF, HF, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power);
 
           const vθ  = θ + bodyYawRad;
-          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
 
           playerMesh.rotation.y = vθ;
@@ -12402,28 +12672,53 @@
           );
 
         } else if (anim === 'chop') {
-          // CHOP — windup (raise high) → slam down → return. Combat overheads
-          // raise farther back (2.05 vs 1.80) for a clearer "about to slam" tell.
-          const chopRaise = combatSwingAnim ? 2.05 : 1.80;
-          let chopAngle;
-          if (progress <= WF) {
-            chopAngle = 0.82 + (chopRaise - 0.82) * (progress / WF);               // raise: 0.82 → chopRaise
-          } else if (progress <= SF) {
-            chopAngle = chopRaise - (chopRaise + 1.50) * ((progress - WF) / (SF - WF)); // slam:  chopRaise → −1.50
-          } else {
-            chopAngle = -1.50 + 2.32 * ((progress - SF) / (1.0 - SF));// return: −1.50 → 0.82
-          }
-          _qAnim.setFromAxisAngle(_swAxis, chopAngle);
-          toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
-          const handX = playerMesh.position.x + rightX * playerToolBaseX;
-          const handY = playerMesh.position.y + playerToolBaseY;
-          const handZ = playerMesh.position.z + rightZ * playerToolBaseX;
+          // CHOP — full pose-driven swing (raise → slam → return), authored
+          // in the attack-animation editor and baked in here exactly the way
+          // thrust's branch above does: x/y/z/pitch/yaw/roll are hand-relative
+          // (relative to toolBase), bodyYaw alone rotates the whole character.
+          // Roll is what makes this read as a proper chop (head turned into
+          // the swing plane) instead of the old single-axis raise/slam.
+          // power scales every channel's deviation from its own neutral, just
+          // like thrust, so Charged Breaker's heavier overhead (which also
+          // plays this branch — see combat-charged-breaker.js) doesn't need
+          // its own bespoke formula.
+          const power   = combatSwingAnim ? combatSwingPower : 1;
+          const neutral = { x: 0.03,  y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2,   roll: -82 };
+          const windup  = { x: -0.18, y: 0.41, z: -0.15, pitch: -165, yaw: 13,  bodyYaw: -29, roll: -112 };
+          const strike  = { x: 0,     y: 0,    z: 0.12,  pitch: 13,   yaw: -28, bodyYaw: 29,  roll: -91 };
+          const scale = (ch, v) => neutral[ch] + (v - neutral[ch]) * power;
+          const chanLerp = ch => fourPhaseLerp(progress, WF, SF, HF, scale(ch, windup[ch]), scale(ch, strike[ch]), neutral[ch]);
+
+          const x = chanLerp('x');
+          const y = chanLerp('y');
+          const z = chanLerp('z');
+          const pitchRad   = THREE.MathUtils.degToRad(chanLerp('pitch'));
+          const yawRad     = THREE.MathUtils.degToRad(chanLerp('yaw'));
+          const rollRad    = THREE.MathUtils.degToRad(chanLerp('roll'));
+          const bodyYawRad = THREE.MathUtils.degToRad(chanLerp('bodyYaw'));
+
+          const vθ  = θ + bodyYawRad;
+          const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
+          const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
+
+          playerMesh.rotation.y = vθ;
+          _qFac.setFromAxisAngle(_tUp, vθ);
+          _qToolYaw.setFromAxisAngle(_tUp, yawRad);
+          _qAnim.setFromAxisAngle(_xAxis, pitchRad);
+          _qRoll.setFromAxisAngle(_zAxis, rollRad);
+          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+
+          const handX = playerMesh.position.x + vRX * (playerToolBaseX + x) + vFX * z;
+          const handY = playerMesh.position.y + playerToolBaseY + y;
+          const handZ = playerMesh.position.z + vRZ * (playerToolBaseX + x) + vFZ * z;
           if (fishThrowActive && fishingMinigame?.anchorWorld) {
-            // Out during the slam (WF→SF), back during the return (SF→1).
+            // Out during the slam (WF→SF), held at the anchor through the
+            // hold (SF→HF), back during the return (HF→1).
             let travel;
             if (progress <= WF) travel = 0;
             else if (progress <= SF) travel = (progress - WF) / (SF - WF);
-            else travel = 1 - (progress - SF) / (1.0 - SF);
+            else if (progress <= HF) travel = 1;
+            else travel = 1 - (progress - HF) / (1.0 - HF);
             const aw = fishingMinigame.anchorWorld;
             toolHolder.position.set(
               handX + (aw.x - handX) * travel,
@@ -12448,9 +12743,9 @@
           _qAnim.setFromAxisAngle(_swAxis, tossAngle);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * playerToolBaseX,
+            playerMesh.position.x + attachRightX * playerToolBaseX,
             playerMesh.position.y + playerToolBaseY,
-            playerMesh.position.z + rightZ * playerToolBaseX
+            playerMesh.position.z + attachRightZ * playerToolBaseX
           );
 
         } else if (anim === 'refillTurnOut') {
@@ -12465,7 +12760,7 @@
           else if (progress <= SF) jabOff = -0.22 + 0.54 * ((progress - WF) / (SF - WF));
           else jabOff = 0.32 * (1.0 - (progress - SF) / (1.0 - SF));
           const vθ = θ + rotAngle;
-          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
           playerMesh.rotation.y = vθ;
           _qFac.setFromAxisAngle(_tUp, vθ);
@@ -12493,7 +12788,7 @@
             jabOff   = 0.32;
           }
           const vθ = θ + rotAngle;
-          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
           playerMesh.rotation.y = vθ;
           _qFac.setFromAxisAngle(_tUp, vθ);
@@ -12513,9 +12808,9 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * playerToolBaseX + fwdX * 0.32,
+            playerMesh.position.x + attachRightX * playerToolBaseX + fwdX * 0.32,
             playerMesh.position.y + playerToolBaseY,
-            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * 0.32
+            playerMesh.position.z + attachRightZ * playerToolBaseX + fwdZ * 0.32
           );
 
         } else if (anim === 'refillReset') {
@@ -12526,9 +12821,9 @@
           _qAnim.setFromAxisAngle(_swAxis, 0.18);
           toolHolder.quaternion.multiplyQuaternions(_qAnim, _qFac);
           toolHolder.position.set(
-            playerMesh.position.x + rightX * playerToolBaseX + fwdX * jabOff,
+            playerMesh.position.x + attachRightX * playerToolBaseX + fwdX * jabOff,
             playerMesh.position.y + playerToolBaseY,
-            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * jabOff
+            playerMesh.position.z + attachRightZ * playerToolBaseX + fwdZ * jabOff
           );
 
         } else {
@@ -12546,12 +12841,14 @@
             sweepOff = WINDUP_ANGLE * (progress / WF);
           } else if (progress <= SF) {
             sweepOff = WINDUP_ANGLE + (STRIKE_ANGLE - WINDUP_ANGLE) * ((progress - WF) / (SF - WF));
+          } else if (progress <= HF) {
+            sweepOff = STRIKE_ANGLE;
           } else {
-            sweepOff = STRIKE_ANGLE * (1.0 - (progress - SF) / (1.0 - SF));
+            sweepOff = STRIKE_ANGLE * (1.0 - (progress - HF) / (1.0 - HF));
           }
           const vθ = θ + sweepOff;
           playerMesh.rotation.y = vθ;
-          const vRX = -Math.cos(vθ), vRZ = Math.sin(vθ);
+          const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
           _qFac.setFromAxisAngle(_tUp, vθ);
           toolHolder.quaternion.copy(_qFac);
@@ -12571,12 +12868,15 @@
         const spinItemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
         const spinPlane    = toolMeshMap[activeTool]?.userData?.toolPlane;
         if (spinPlane) {
-          // The harpoon's plane bakes in a -90° z-twist for its normal "sweep" hold pose,
-          // which the bronzehoe never has. Our throw forces the chop arc (hoe math assumes
-          // a neutral, untwisted plane), so drop that baked offset while throwing — otherwise
-          // the static twist reads as a facing-independent "global" rotation on top of the
-          // facing-relative chop tilt, only happening to cancel out at one specific facing.
-          const baseRotZ = fishThrowActive ? 0 : (toolMeshMap[activeTool].userData.basePlaneRotZ || 0);
+          // The sweep style's blade-parallel z-twist belongs to whichever anim is actually
+          // playing this frame, not whichever style the equipped item defaults to at rest —
+          // combat abilities can force any style onto any weapon (a thrust-style quick
+          // attack played on the sweep-styled hatchet, or a sweep combo step played on the
+          // thrust-styled pick-shovel), so baking the twist per-item at mesh creation got it
+          // backwards in either direction. Deriving it from `anim` here keeps it correct
+          // regardless of what's equipped (and naturally drops to 0 during fishThrowActive,
+          // since that always forces anim to 'chop').
+          const baseRotZ = anim === 'sweep' ? -Math.PI / 2 : 0;
           if (anim === 'refillTwistOut') {
             // Lerp a 180° length-wise spin out, independent of any item's own "spinning" flag.
             spinPlane.rotation.z = baseRotZ + progress * Math.PI;
@@ -12584,7 +12884,11 @@
             // Reverse of the twist-out: lerp back from 180° to 0°.
             spinPlane.rotation.z = baseRotZ + Math.PI * (1 - progress);
           } else {
-            spinPlane.rotation.z = TOOL_ITEM_DEFS[spinItemKey]?.spinning
+            // The mace's own fishing-throw twirl is cosmetic to the harpoon cast —
+            // it shouldn't also layer onto combat swings when the same item is
+            // equipped in the weapon slot, or every combo/quick-attack would
+            // spin like a fishing throw instead of following its own anim arc.
+            spinPlane.rotation.z = (TOOL_ITEM_DEFS[spinItemKey]?.spinning && !combatSwingAnim)
               ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
               : baseRotZ;
           }
@@ -12597,7 +12901,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) combatSwingAnim = null;
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -13430,8 +13734,9 @@
         const tile = getActiveTileAt(col, row);
         const standY = tileSurfaceYInArea(tile, currentArea);
 
-        // Smooth vertical position (bob over water)
-        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0);
+        // Smooth vertical position (bob over water, plus a combat lunge's
+        // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent)
+        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0);
         playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
@@ -16073,6 +16378,11 @@
         canPlayerOccupy,
         showToast,
         triggerWeaponSwingVisual,
+        triggerWeaponHoldVisual,
+        releaseWeaponSwingHold,
+        cancelWeaponSwingHold,
+        beginCombatLunge,
+        spawnCombatTrailEffect,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module

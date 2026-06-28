@@ -19,7 +19,8 @@
       const prevScrollTop = panel.scrollTop;
       panel.innerHTML = window.__farmDebugLog.map(e => {
         const c = COLOR[e.lvl] || COLOR.info;
-        const safe = e.msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const safe = e.msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+          .replace(/fallback/gi, m => `<span style="color:#f87171;font-weight:bold">${m}</span>`);
         return `<span style="color:#6b7280">[${e.t}]</span> <span style="color:${c}">${safe}</span>`;
       }).join('\n');
       panel.scrollTop = stuckToBottom ? panel.scrollHeight : prevScrollTop;

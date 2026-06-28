@@ -53,14 +53,16 @@ canvas{display:block;width:100%;height:100%}
 .poseGroup button{width:100%;margin-top:4px}
 .poseGroupHead{font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:6px}
 .poseGroupHead .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
-#panelWindup .dot{background:var(--warn)}
-#panelStrike .dot{background:var(--bad)}
+.dotNeutral{background:#34d399}
+.dotWindup{background:var(--warn)}
+.dotStrike{background:var(--bad)}
 .timeline{position:relative;height:26px;border-radius:8px;overflow:hidden;display:flex;
   border:1px solid rgba(255,255,255,.16);margin-bottom:4px}
 .timelineSeg{height:100%;display:flex;align-items:center;justify-content:center;
   font-size:9px;color:rgba(255,255,255,.78);text-transform:uppercase;letter-spacing:.3px;overflow:hidden;white-space:nowrap}
 #segWindup{background:rgba(251,191,36,.38)}
 #segStrike{background:rgba(251,113,133,.42)}
+#segHold{background:rgba(251,113,133,.22)}
 #segReturn{background:rgba(106,167,255,.22)}
 .timelineMarker{position:absolute;top:-2px;bottom:-2px;width:2px;background:#fff;box-shadow:0 0 6px #fff;pointer-events:none}
 .timelineLabels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin:2px 0 10px}
@@ -111,7 +113,7 @@ canvas{display:block;width:100%;height:100%}
   </div>
 
   <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
-    <div class="sectionTitle"><b>Timing</b><span class="sectionTag">windup → strike → return</span></div>
+    <div class="sectionTitle"><b>Timing</b><span class="sectionTag">windup → strike → hold → return</span></div>
     <div class="field">
       <label>Windup ends at <span id="windupFracVal">16%</span> of swing</label>
       <input id="windupFrac" type="range" min="0.02" max="0.9" step="0.01" value="0.16">
@@ -120,32 +122,59 @@ canvas{display:block;width:100%;height:100%}
       <label>Strike ends at <span id="strikeFracVal">55%</span> of swing</label>
       <input id="strikeFrac" type="range" min="0.03" max="0.98" step="0.01" value="0.55">
     </div>
+    <div class="field">
+      <label>Hold ends at <span id="holdFracVal">68%</span> of swing</label>
+      <input id="holdFrac" type="range" min="0.03" max="0.99" step="0.01" value="0.68">
+    </div>
     <div class="field"><label>Preview duration (seconds)</label>
       <input id="durationS" type="number" min="0.05" max="3" step="0.05" value="0.5">
     </div>
-    <div class="help">0 → windup% lerps Neutral→Windup. windup% → strike% lerps Windup→Strike. strike% → 100% lerps Strike→Neutral (the return).</div>
+    <div class="help">0 → windup% lerps Neutral→Windup. windup% → strike% lerps Windup→Strike. strike% → hold% holds at Strike unchanged. hold% → 100% lerps Strike→Neutral (the return).</div>
   </div>
 
   <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
-    <div class="sectionTitle"><b>Pose editor</b><span class="sectionTag">windup &amp; strike, both always shown</span></div>
+    <div class="sectionTitle"><b>Pose editor</b><span class="sectionTag">neutral, windup &amp; strike, all always shown</span></div>
     <div class="timeline" id="timeline">
       <div class="timelineSeg" id="segWindup">windup</div>
       <div class="timelineSeg" id="segStrike">strike</div>
+      <div class="timelineSeg" id="segHold">hold</div>
       <div class="timelineSeg" id="segReturn">return</div>
       <div class="timelineMarker" id="timelineMarker"></div>
     </div>
     <div class="timelineLabels"><span>Neutral</span><span>Windup</span><span>Strike</span><span>Neutral</span></div>
     <div class="poseGroup">
-      <div class="poseGroupHead"><span class="dot"></span>Windup pose</div>
+      <div class="poseGroupHead"><span class="dot dotNeutral"></span>Neutral pose (idle / rest)</div>
+      <div id="panelNeutral" data-phase="neutral"></div>
+      <button id="scrubNeutralBtn" class="secondary">⏵ Scrub to Neutral</button>
+    </div>
+    <div class="poseGroup">
+      <div class="poseGroupHead"><span class="dot dotWindup"></span>Windup pose</div>
       <div id="panelWindup" data-phase="windup"></div>
       <button id="scrubWindupBtn" class="secondary">⏵ Scrub to Windup</button>
     </div>
     <div class="poseGroup">
-      <div class="poseGroupHead"><span class="dot"></span>Strike pose</div>
+      <div class="poseGroupHead"><span class="dot dotStrike"></span>Strike pose</div>
       <div id="panelStrike" data-phase="strike"></div>
       <button id="scrubStrikeBtn" class="secondary">⏵ Scrub to Strike</button>
     </div>
-    <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: tool's own spin • body yaw: turns the whole character (sweep-style swings turn the body, not the tool)</div>
+    <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: tool's own spin • roll: tool's own twist around its forward axis (e.g. rotating an axe/hoe head for a proper chop) • body yaw: turns the whole character (sweep-style swings turn the body, not the tool)</div>
+  </div>
+
+  <div class="card section" style="--sec:#f472b6;--secBg:rgba(244,114,182,.10)">
+    <div class="sectionTitle"><b>3D Gizmo</b><span class="sectionTag">drag the tool in the viewport</span></div>
+    <div class="field"><label>Editing</label>
+      <select id="gizmoPhase">
+        <option value="neutral">Neutral pose</option>
+        <option value="windup">Windup pose</option>
+        <option value="strike">Strike pose</option>
+      </select>
+    </div>
+    <div class="row">
+      <button id="gizmoOffBtn" class="secondary active">Off</button>
+      <button id="gizmoMoveBtn" class="secondary">⊹ Move</button>
+      <button id="gizmoRotateBtn" class="secondary">↻ Rotate</button>
+    </div>
+    <div class="help">Move/Rotate attach a draggable gizmo to the tool and freeze the preview on the pose you picked above — dragging it writes straight back into that pose's x/y/z/pitch/yaw/roll sliders. Body yaw isn't part of the gizmo since it rotates the whole character, not just the tool.</div>
   </div>
 
   <div class="card section" style="--sec:#22d3ee;--secBg:rgba(34,211,238,.10)">
@@ -206,10 +235,11 @@ canvas{display:block;width:100%;height:100%}
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 const $ = id => document.getElementById(id);
 const logLines = [];
-function logDebug(msg){ const line = `[${new Date().toLocaleTimeString()}] ${msg}`; logLines.unshift(line); if(logLines.length>180)logLines.pop(); $('logBody').innerHTML = logLines.map(l=>`<div class="logLine">${escapeHtml(l)}</div>`).join(''); console.log(line); }
+function logDebug(msg){ const line = `[${new Date().toLocaleTimeString()}] ${msg}`; logLines.unshift(line); if(logLines.length>180)logLines.pop(); $('logBody').innerHTML = logLines.map(l=>`<div class="logLine">${escapeHtml(l).replace(/fallback/gi, m => `<span style="color:#f87171;font-weight:bold">${m}</span>`)}</div>`).join(''); console.log(line); }
 function setDebug(msg){ $('debug').textContent = msg || ''; }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 window.addEventListener('error', e=>logDebug(`ERROR: ${e.message} @ ${e.filename}:${e.lineno}`));
@@ -305,6 +335,9 @@ async function rebuildAvatar(speciesId, gender) {
   });
   const h = avatarModel.userData.portraitModelHeight || MODEL_W;
   const w = avatarModel.userData.portraitModelWidth || MODEL_W;
+  if (avatarModel.userData.handAttachX == null || avatarModel.userData.handAttachY == null) {
+    logDebug(`Avatar rebuilt: ${speciesId}/${gender}: hand-attach scan failed → fallback to half-width/half-height tool base`);
+  }
   baseAttachX = avatarModel.userData.handAttachX ?? (-w / 2);
   const baseAttachY = avatarModel.userData.handAttachY ?? (h / 2);
   avatarModel.position.y = h / 2;
@@ -344,9 +377,62 @@ $('avatarGender').addEventListener('change', () => {
 });
 rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 
-// toolHolder is what the authored pose (pos+pitch+yaw) actually drives.
+// toolHolder is what the authored pose (pos+pitch+yaw+roll) actually drives.
 const toolHolder = new THREE.Object3D();
 toolBase.add(toolHolder);
+
+// ── 3D translate/rotate gizmo ──────────────────────────────────────────────
+// Lets the windup/strike pose be dragged directly in the viewport instead of
+// only via sliders. Attached to toolHolder (never toolBase/rig) since the
+// gizmo only ever edits the tool's own local pose channels (x/y/z/pitch/yaw/
+// roll) — body yaw stays slider-only, since it rotates the whole character.
+// applyPoseToRig() still runs every frame in animate() and re-derives
+// toolHolder's transform from anim.poses[gizmoPhase] each time, so as long as
+// the preview stays frozen exactly on that phase (scrubToPhase below), the
+// gizmo's own live drag and the per-frame pose apply agree rather than fight.
+const transformControls = new TransformControls(camera, renderer.domElement);
+scene.add(transformControls);
+let gizmoMode = 'off'; // 'off' | 'translate' | 'rotate'
+let gizmoPhase = 'windup';
+
+transformControls.addEventListener('dragging-changed', e => { controls.enabled = !e.value; });
+transformControls.addEventListener('objectChange', () => {
+  const p = anim.poses[gizmoPhase];
+  p.x = toolHolder.position.x;
+  p.y = toolHolder.position.y;
+  p.z = toolHolder.position.z;
+  // toolHolder.quaternion is already local (relative to toolBase), so this
+  // decomposes straight back to pitch/yaw/roll with no parent-rotation math —
+  // 'YXZ' is the Euler order equivalent to applyPoseToRig's qYaw*qPitch*qRoll
+  // composition, so the angles round-trip exactly.
+  const e = new THREE.Euler().setFromQuaternion(toolHolder.quaternion, 'YXZ');
+  p.pitch = THREE.MathUtils.radToDeg(e.x);
+  p.yaw = THREE.MathUtils.radToDeg(e.y);
+  p.roll = THREE.MathUtils.radToDeg(e.z);
+  syncPosePanelFromState(gizmoPhase);
+  refreshJsonView();
+});
+
+function setGizmoMode(mode) {
+  gizmoMode = mode;
+  if (mode === 'off') {
+    transformControls.detach();
+  } else {
+    transformControls.attach(toolHolder);
+    transformControls.setMode(mode);
+    scrubToPhase(gizmoPhase);
+  }
+  $('gizmoOffBtn').classList.toggle('active', mode === 'off');
+  $('gizmoMoveBtn').classList.toggle('active', mode === 'translate');
+  $('gizmoRotateBtn').classList.toggle('active', mode === 'rotate');
+}
+$('gizmoOffBtn').onclick = () => setGizmoMode('off');
+$('gizmoMoveBtn').onclick = () => setGizmoMode('translate');
+$('gizmoRotateBtn').onclick = () => setGizmoMode('rotate');
+$('gizmoPhase').addEventListener('change', () => {
+  gizmoPhase = $('gizmoPhase').value;
+  if (gizmoMode !== 'off') scrubToPhase(gizmoPhase);
+});
 
 // ── Weapon mesh: a real PNG sprite plane, same convention as game.js's
 // makeToolPlaneMesh (TOOL_MODEL_WIDTH, flat-in-XZ rotation, sweep tools get an
@@ -407,24 +493,39 @@ $('toolSpriteSelect').addEventListener('change', () => {
 setToolSprite($('toolSpriteSelect').value).catch(e => logDebug('Tool sprite swap failed: ' + e.message));
 
 // ── Animation data model ─────────────────────────────────────────────────
-// pose = { x, y, z, pitch, yaw, bodyYaw } — x/y/z/pitch/yaw are the weapon's own
-// local offset/rotation relative to toolBase (which already sits at the prism's
-// base offset — see rebuildAvatar above); bodyYaw is separate and rotates the
-// whole character (rig.rotation.y), matching game.js's sweep-style mechanic where
-// the body turns and the tool stays rigid in hand. Neutral (rest) is always the
-// implicit zero pose; only windup and strike are authored. Mirroring across the
-// character's midline negates x, yaw, and bodyYaw (all left/right-handed) and
-// leaves y, z, pitch untouched (symmetric about the midline).
-function defaultPose(x, y, z, pitch, yaw, bodyYaw = 0) { return { x, y, z, pitch, yaw, bodyYaw }; }
-const NEUTRAL_POSE = defaultPose(0, 0, 0, 0, 0, 0);
+// pose = { x, y, z, pitch, yaw, bodyYaw, roll } — x/y/z/pitch/yaw/roll are the
+// weapon's own local offset/rotation relative to toolBase (which already sits
+// at the prism's base offset — see rebuildAvatar above); bodyYaw is separate and
+// rotates the whole character (rig.rotation.y), matching game.js's sweep-style
+// mechanic where the body turns and the tool stays rigid in hand. Roll spins
+// the tool about its own forward (local Z) axis — e.g. rotating an axe/hoe head
+// in the hand for a proper chop, instead of needing a pre-rotated sprite as a
+// workaround. Neutral (rest), windup, and strike are all authored poses —
+// anim.poses.neutral is the idle stance the swing eases out of and back into.
+// Mirroring across the character's midline negates x, yaw, roll, and bodyYaw
+// (all left/right-handed) and leaves y, z, pitch untouched (symmetric about
+// the midline).
+function defaultPose(x, y, z, pitch, yaw, bodyYaw = 0, roll = 0) { return { x, y, z, pitch, yaw, bodyYaw, roll }; }
+// Fallback rest pose per style, used only when an animation doesn't author
+// its own neutral (e.g. a fresh New Attack, or loading an older export that
+// predates neutral being authorable) — matches what updateToolMesh() in
+// game.js shows when the tool isn't mid-swing.
+const STYLE_NEUTRAL_POSE = {
+  thrust: defaultPose(0, 0, 0, 10.31, 0, 0),
+  sweep:  defaultPose(0, 0, 0.16, 0, 0, 0),
+  chop:   defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
+};
+function neutralPoseFor(style) { return STYLE_NEUTRAL_POSE[style] || defaultPose(0, 0, 0, 0, 0, 0); }
 
 let anim = {
   name: 'New Attack',
   style: 'sweep',
   windupFrac: 0.16,
   strikeFrac: 0.55,
+  holdFrac: 0.68,
   durationS: 0.5,
   poses: {
+    neutral: { ...neutralPoseFor('sweep') },
     windup: defaultPose(0.05, 0.05, -0.15, -15, 0, -60),
     strike: defaultPose(-0.05, 0.0, 0.20, 10, 0, 55),
   },
@@ -436,6 +537,7 @@ const FIELD_DEFS = [
   { key: 'z', label: 'Z (forward)', min: -1, max: 1, step: 0.01, angle: false },
   { key: 'pitch', label: 'Pitch°', min: -180, max: 180, step: 1, angle: true },
   { key: 'yaw', label: 'Tool Yaw°', min: -180, max: 180, step: 1, angle: true },
+  { key: 'roll', label: 'Tool Roll°', min: -180, max: 180, step: 1, angle: true },
   { key: 'bodyYaw', label: 'Body Yaw° (character turn)', min: -180, max: 180, step: 1, angle: true },
 ];
 
@@ -460,6 +562,7 @@ function buildPosePanel(phase) {
     });
   }
 }
+buildPosePanel('neutral');
 buildPosePanel('windup');
 buildPosePanel('strike');
 
@@ -470,6 +573,7 @@ function syncPosePanelFromState(phase) {
     $(`${phase}_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
   }
 }
+syncPosePanelFromState('neutral');
 syncPosePanelFromState('windup');
 syncPosePanelFromState('strike');
 
@@ -478,22 +582,39 @@ $('animStyle').addEventListener('change', () => { anim.style = $('animStyle').va
 
 function clampFracs() {
   if (anim.windupFrac >= anim.strikeFrac) anim.strikeFrac = Math.min(0.98, anim.windupFrac + 0.01);
+  // holdFrac may equal strikeFrac (a zero-width hold, e.g. backward-compat
+  // fallback for older exports) but never fall below it.
+  if (anim.holdFrac < anim.strikeFrac) anim.holdFrac = Math.min(0.99, anim.strikeFrac);
 }
 $('windupFrac').addEventListener('input', () => {
   anim.windupFrac = Number($('windupFrac').value);
   clampFracs();
   $('strikeFrac').value = anim.strikeFrac;
+  $('holdFrac').value = anim.holdFrac;
   $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
   updateTimelineSegments();
   refreshJsonView();
 });
 $('strikeFrac').addEventListener('input', () => {
   anim.strikeFrac = Number($('strikeFrac').value);
   if (anim.strikeFrac <= anim.windupFrac) anim.windupFrac = Math.max(0.02, anim.strikeFrac - 0.01);
+  if (anim.holdFrac <= anim.strikeFrac) anim.holdFrac = Math.min(0.99, anim.strikeFrac + 0.01);
   $('windupFrac').value = anim.windupFrac;
+  $('holdFrac').value = anim.holdFrac;
   $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
+  updateTimelineSegments();
+  refreshJsonView();
+});
+$('holdFrac').addEventListener('input', () => {
+  anim.holdFrac = Number($('holdFrac').value);
+  if (anim.holdFrac <= anim.strikeFrac) anim.strikeFrac = Math.max(anim.windupFrac + 0.01, anim.holdFrac - 0.01);
+  $('strikeFrac').value = anim.strikeFrac;
+  $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
   updateTimelineSegments();
   refreshJsonView();
 });
@@ -512,21 +633,25 @@ $('durationS').addEventListener('input', () => {
 // midline, sending the weapon to the wrong place. Negating toolBase.x too
 // makes the combined transform a true x-mirror (verified algebraically: world
 // x flips sign, world z is preserved).
-function flipPose(p) { return defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw); }
+function flipPose(p) { return defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw, -(p.roll || 0)); }
 $('flipBtn').onclick = () => {
+  anim.poses.neutral = flipPose(anim.poses.neutral);
   anim.poses.windup = flipPose(anim.poses.windup);
   anim.poses.strike = flipPose(anim.poses.strike);
   toolMirrored = !toolMirrored;
   toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
   if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
+  syncPosePanelFromState('neutral');
   syncPosePanelFromState('windup');
   syncPosePanelFromState('strike');
   refreshJsonView();
   logDebug(`Flipped animation across character midline (tool base now ${toolMirrored ? '-' : '+'}${Math.abs(baseAttachX).toFixed(2)})`);
 };
 $('resetPosesBtn').onclick = () => {
+  anim.poses.neutral = { ...neutralPoseFor(anim.style) };
   anim.poses.windup = defaultPose(0.05, 0.05, -0.15, -15, 0, -60);
   anim.poses.strike = defaultPose(-0.05, 0.0, 0.20, 10, 0, 55);
+  syncPosePanelFromState('neutral');
   syncPosePanelFromState('windup');
   syncPosePanelFromState('strike');
   refreshJsonView();
@@ -558,10 +683,12 @@ const TOOL_PRESETS = [
     windupFrac: 0.16, strikeFrac: 0.28 },
 
   { id: 'bronzehoe_idle', label: 'Bronze Hoe — Idle (still)', style: 'chop', toolKey: 'bronzehoe', still: true,
-    windup: defaultPose(0, 0, 0, 46.98, 0, 0), strike: defaultPose(0, 0, 0, 46.98, 0, 0),
+    neutral: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
+    windup: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82), strike: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'bronzehoe_swing', label: 'Bronze Hoe — Swing (chop)', style: 'chop', toolKey: 'bronzehoe', still: false,
-    windup: defaultPose(0, 0, 0, 103.13, 0, 0), strike: defaultPose(0, 0, 0, -85.94, 0, 0),
+    neutral: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
+    windup: defaultPose(-0.18, 0.41, -0.15, -165, 13, -29, -112), strike: defaultPose(0, 0, 0.12, 13, -28, 29, -91),
     windupFrac: 0.16, strikeFrac: 0.28 },
 
   { id: 'fishingspear_idle', label: 'Fishing Spear — Idle (still)', style: 'sweep', toolKey: 'fishingspear', still: true,
@@ -580,18 +707,26 @@ const TOOL_PRESETS = [
 ];
 $('presetSelect').innerHTML = TOOL_PRESETS.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
 function applyPreset(preset) {
+  anim.poses.neutral = { ...(preset.neutral || neutralPoseFor(preset.style)) };
   anim.poses.windup = { ...preset.windup };
   anim.poses.strike = { ...preset.strike };
   anim.windupFrac = preset.windupFrac;
   anim.strikeFrac = preset.strikeFrac;
+  // Presets predate holdFrac, so derive it the same way game.js's HF auto-
+  // derives from SF when no hold is authored — 30% of whatever's left after
+  // the strike — unless the preset itself specifies one.
+  anim.holdFrac = preset.holdFrac ?? Math.min(0.99, preset.strikeFrac + (1 - preset.strikeFrac) * 0.3);
   anim.style = preset.style;
   clampFracs();
   $('animStyle').value = anim.style;
   $('windupFrac').value = anim.windupFrac;
   $('strikeFrac').value = anim.strikeFrac;
+  $('holdFrac').value = anim.holdFrac;
   $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
   updateTimelineSegments();
+  syncPosePanelFromState('neutral');
   syncPosePanelFromState('windup');
   syncPosePanelFromState('strike');
   if (preset.toolKey) {
@@ -600,7 +735,10 @@ function applyPreset(preset) {
   }
   if (preset.still) {
     playing = false;
-    previewT = (anim.windupFrac + anim.strikeFrac) / 2;
+    // True idle is t=0 (poseAt's neutral pose), not a frozen mid-swing
+    // frame — freezing mid-strike previously showed the windup/strike
+    // pose instead of the actual at-rest stance.
+    previewT = 0;
     $('scrub').value = previewT;
     $('playPauseBtn').textContent = '▶ Play';
     updateTimelineMarker(previewT);
@@ -624,20 +762,24 @@ function lerpPose(a, b, k) {
     a.z + (b.z - a.z) * k,
     a.pitch + (b.pitch - a.pitch) * k,
     a.yaw + (b.yaw - a.yaw) * k,
-    a.bodyYaw + (b.bodyYaw - a.bodyYaw) * k
+    a.bodyYaw + (b.bodyYaw - a.bodyYaw) * k,
+    (a.roll || 0) + ((b.roll || 0) - (a.roll || 0)) * k
   );
 }
 function poseAt(t) {
-  const wf = anim.windupFrac, sf = anim.strikeFrac;
+  const wf = anim.windupFrac, sf = anim.strikeFrac, hf = anim.holdFrac;
+  const neutral = anim.poses.neutral;
   if (t <= wf) {
     const k = wf > 0 ? t / wf : 1;
-    return { pose: lerpPose(NEUTRAL_POSE, anim.poses.windup, k), phase: 'windup' };
+    return { pose: lerpPose(neutral, anim.poses.windup, k), phase: 'windup' };
   } else if (t <= sf) {
     const k = (sf - wf) > 0 ? (t - wf) / (sf - wf) : 1;
     return { pose: lerpPose(anim.poses.windup, anim.poses.strike, k), phase: 'strike' };
+  } else if (t <= hf) {
+    return { pose: { ...anim.poses.strike }, phase: 'hold' };
   } else {
-    const k = (1 - sf) > 0 ? (t - sf) / (1 - sf) : 1;
-    return { pose: lerpPose(anim.poses.strike, NEUTRAL_POSE, k), phase: 'return' };
+    const k = (1 - hf) > 0 ? (t - hf) / (1 - hf) : 1;
+    return { pose: lerpPose(anim.poses.strike, neutral, k), phase: 'return' };
   }
 }
 function applyPoseToRig(pose) {
@@ -646,17 +788,22 @@ function applyPoseToRig(pose) {
   // along with the body, same as game.js's playerMesh.rotation.y for sweep swings.
   rig.rotation.y = THREE.MathUtils.degToRad(pose.bodyYaw || 0);
   toolHolder.position.set(pose.x, pose.y, pose.z);
+  // Composed in the same order as game.js's pose-driven combat branch
+  // (qYaw * qPitch * qRoll — equivalent to a THREE.Euler 'YXZ' triple), so the
+  // editor and the live game always render an authored pose identically.
   const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(pose.pitch));
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(pose.yaw));
-  toolHolder.quaternion.copy(qYaw).multiply(qPitch);
+  const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(pose.roll || 0));
+  toolHolder.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
 }
 
-// ── Timeline visualization (windup/strike/return phase structure) ────────
+// ── Timeline visualization (windup/strike/hold/return phase structure) ───
 function updateTimelineSegments() {
-  const wf = anim.windupFrac, sf = anim.strikeFrac;
+  const wf = anim.windupFrac, sf = anim.strikeFrac, hf = anim.holdFrac;
   $('segWindup').style.width = `${wf * 100}%`;
   $('segStrike').style.width = `${(sf - wf) * 100}%`;
-  $('segReturn').style.width = `${(1 - sf) * 100}%`;
+  $('segHold').style.width = `${(hf - sf) * 100}%`;
+  $('segReturn').style.width = `${(1 - hf) * 100}%`;
 }
 function updateTimelineMarker(t) {
   $('timelineMarker').style.left = `${Math.max(0, Math.min(1, t)) * 100}%`;
@@ -669,11 +816,12 @@ updateTimelineSegments();
 // precisely on the pose being edited, live, with no interpolation in the way.
 function scrubToPhase(phase) {
   playing = false;
-  previewT = phase === 'windup' ? anim.windupFrac : anim.strikeFrac;
+  previewT = phase === 'neutral' ? 0 : phase === 'windup' ? anim.windupFrac : anim.strikeFrac;
   $('scrub').value = previewT;
   $('playPauseBtn').textContent = '▶ Play';
   updateTimelineMarker(previewT);
 }
+$('scrubNeutralBtn').onclick = () => scrubToPhase('neutral');
 $('scrubWindupBtn').onclick = () => scrubToPhase('windup');
 $('scrubStrikeBtn').onclick = () => scrubToPhase('strike');
 
@@ -703,8 +851,9 @@ function exportAnimObject() {
     style: anim.style,
     windupFrac: anim.windupFrac,
     strikeFrac: anim.strikeFrac,
+    holdFrac: anim.holdFrac,
     durationS: anim.durationS,
-    poses: { neutral: { ...NEUTRAL_POSE }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
+    poses: { neutral: { ...anim.poses.neutral }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
   };
 }
 $('exportBtn').onclick = () => {
@@ -739,18 +888,29 @@ function loadAnimObject(data) {
   anim.style = data.style || anim.style;
   anim.windupFrac = safeNum(data.windupFrac, anim.windupFrac);
   anim.strikeFrac = safeNum(data.strikeFrac, anim.strikeFrac);
+  // Older exports predate the hold phase — fall back to holdFrac === strikeFrac
+  // (a zero-width hold), exactly preserving how they used to play back rather
+  // than silently growing a pause into a previously-authored animation.
+  anim.holdFrac = safeNum(data.holdFrac, anim.strikeFrac);
   anim.durationS = safeNum(data.durationS, anim.durationS);
   clampFracs();
-  const w = data.poses?.windup || {}, s = data.poses?.strike || {};
-  anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0));
-  anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0));
+  // Older exports predate the neutral pose becoming authorable — fall back to
+  // this style's implicit rest pose, per channel, so they still load cleanly.
+  const styleNeutral = neutralPoseFor(anim.style);
+  const n = data.poses?.neutral || {}, w = data.poses?.windup || {}, s = data.poses?.strike || {};
+  anim.poses.neutral = defaultPose(safeNum(n.x, styleNeutral.x), safeNum(n.y, styleNeutral.y), safeNum(n.z, styleNeutral.z), safeNum(n.pitch, styleNeutral.pitch), safeNum(n.yaw, styleNeutral.yaw), safeNum(n.bodyYaw, styleNeutral.bodyYaw), safeNum(n.roll, styleNeutral.roll));
+  anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0), safeNum(w.roll, 0));
+  anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
   $('animName').value = anim.name;
   $('animStyle').value = anim.style;
   $('windupFrac').value = anim.windupFrac;
   $('strikeFrac').value = anim.strikeFrac;
+  $('holdFrac').value = anim.holdFrac;
   $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
   $('durationS').value = anim.durationS;
+  syncPosePanelFromState('neutral');
   syncPosePanelFromState('windup');
   syncPosePanelFromState('strike');
   updateTimelineSegments();
@@ -789,8 +949,9 @@ animate();
 
 $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
 $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+$('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
 refreshJsonView();
-setDebug('Hobunji Attack Animation Editor\nWindup and Strike are authored poses; Neutral is always the implicit rest pose.\nPlayback auto-lerps Neutral→Windup→Strike→Neutral on loop.\nDrag the scrub bar to inspect any single frame.');
+setDebug('Hobunji Attack Animation Editor\nNeutral, Windup, and Strike are all authored poses.\nPlayback auto-lerps Neutral→Windup→Strike→(hold)→Neutral on loop.\nDrag the scrub bar to inspect any single frame.');
 logDebug('Attack Animation Editor ready');
 </script>
 </body>

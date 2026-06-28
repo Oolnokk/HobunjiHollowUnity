@@ -18,6 +18,10 @@
   const SIDE_OFFSET_DEG = 15; // alternates left/right each strike, mirrors the demo's swing-side wobble
   const WINDUP_S = 0.035, STRIKE_S = 0.085;
   const NEXT_STRIKE_MIN_S = 0.10, NEXT_STRIKE_BASE_S = 0.42, NEXT_STRIKE_DECAY_PER_STRIKE = 0.026;
+  // Post-strike pause before easing back to neutral — irrelevant for all but
+  // the flurry's last strike, since every earlier one gets pre-empted by the
+  // next strike's trigger before its hold would ever show.
+  const HOLD_S = 1;
 
   function now() { return performance.now() / 1000; }
 
@@ -42,6 +46,10 @@
         dirSign,
         windupFrac: WINDUP_S / (WINDUP_S + STRIKE_S),
         strikeFrac: 1,
+        // Same authored pose as the hatchet's Forehand/Backhand Swing combo
+        // steps, so every sweep-style attack reads as the same swing.
+        pose: window.Combat.poses.SWEEP_POSE,
+        holdS: HOLD_S,
       });
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
@@ -66,6 +74,7 @@
             hits++;
             lastName = c.def.label;
           }
+          deps.spawnCombatTrailEffect({ rangePx, halfConeRad: halfConeDeg * Math.PI / 180, angle: strikeAngle, ok: hits > 0 });
           if (hits > 0) deps.showToast(`Flurry Strike ${strikeIndex}: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
         },
       });

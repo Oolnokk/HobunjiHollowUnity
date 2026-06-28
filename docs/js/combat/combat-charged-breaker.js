@@ -16,7 +16,18 @@
   const KNOCKBACK_MUL_MIN = 0.85, KNOCKBACK_MUL_MAX = 1.6;
   const RANGE_MUL_MIN = 1.4, RANGE_MUL_MAX = 1.9;
   const HALF_CONE_DEG = 55; // wide burst, doesn't scale with charge
-  const WINDUP_S = 0.18, STRIKE_S = 0.18;
+  // Sweep-style heavy finisher — a farther-back windup than any combo step
+  // and a strike with noticeably more follow-through (power above Cleave's
+  // 1.3), so the breaker reads as the biggest swing in the kit rather than
+  // a generic overhead chop.
+  const WINDUP_S = 0.52, STRIKE_S = 0.30;
+  const POWER = 1.7;
+  const HOLD_S = 1; // post-strike pause before easing back to neutral
+  // Big anime-style forward leap on release, far beyond the combo/quick-
+  // attack steps — see game.js's beginCombatLunge. LUNGE_HOP_UNITS is a
+  // cosmetic vertical arc peak in world-Y units (not pixels).
+  const LUNGE_TILE_MUL = 2.4;
+  const LUNGE_HOP_UNITS = 0.45;
 
   function now() { return performance.now() / 1000; }
   function lerp(a, b, t) { return a + (b - a) * t; }
@@ -27,6 +38,21 @@
     function onHoldStart() {
       startedAt = now();
       window.Combat.deps.showToast('Charged Breaker charging — release to strike.', true);
+      // Power attack — reuses the shared sweep pose (same one combo's
+      // Cleave/Backhand steps use) instead of the vertical chop, but wound
+      // back farther and scaled up via power so the finisher still reads as
+      // distinct from a regular swing. Plays the raise (windup) immediately
+      // and holds there for as long as the button stays down —
+      // releaseWeaponSwingHold() (below, on release) lets it carry on into
+      // the slam, however long the hold turned out to be.
+      window.Combat.deps.triggerWeaponHoldVisual(WINDUP_S + STRIKE_S, {
+        anim: 'sweep',
+        pose: window.Combat.poses.SWEEP_POSE,
+        windupFrac: WINDUP_S / (WINDUP_S + STRIKE_S),
+        strikeFrac: 1,
+        power: POWER,
+        holdS: HOLD_S,
+      });
     }
 
     function onHoldEnd() {
@@ -35,22 +61,23 @@
       startedAt = -1;
       const deps = window.Combat.deps;
       if (held < MIN_READY_S) {
+        deps.cancelWeaponSwingHold();
         deps.showToast(`Charged Breaker released too early (${held.toFixed(2)}s, needed ${MIN_READY_S}s).`, false);
         return;
       }
       const chargeT = Math.min(1, Math.max(0, (held - MIN_READY_S) / (MAX_CHARGE_S - MIN_READY_S)));
       const cost = lerp(COST_MIN, COST_MAX, chargeT);
       if (deps.player.stamina < cost) {
+        deps.cancelWeaponSwingHold();
         deps.showToast('Too winded to unleash it!', false);
         return;
       }
       deps.player.stamina = Math.max(0, deps.player.stamina - cost);
-      // Power attack — vertical heavy overhead slam, mirrors the hoe's chop.
-      deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S, {
-        anim: 'chop',
-        windupFrac: 0.5,
-        strikeFrac: 1,
-      });
+      // The windup already played out while held — releasing now just lets
+      // the in-progress swing continue straight into its slam.
+      deps.releaseWeaponSwingHold();
+      // Leap forward into the slam itself, timed to the strike phase.
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, STRIKE_S, LUNGE_HOP_UNITS);
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, chargeT));
@@ -59,7 +86,7 @@
       const knockbackPxS = baseAbil.knockbackPxS * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, chargeT);
 
       window.Combat.beginStagedAction({
-        windupS: WINDUP_S,
+        windupS: 0,
         strikeS: STRIKE_S,
         recoverS: 0,
         onStrike: () => {
@@ -71,6 +98,7 @@
             hits++;
             lastName = c.def.label;
           }
+          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           const pct = Math.round(chargeT * 100);
           const msg = hits > 0
             ? `Charged Breaker (${pct}% charge): hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`

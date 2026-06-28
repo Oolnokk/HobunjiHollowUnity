@@ -17,24 +17,41 @@
   // combo advances to its next step; wait longer and it resets to step 1.
   const COMBO_RESET_S = 0.9;
 
-  // anim/dirSign pick the cosmetic swing shape per the attack-animation-editor's
-  // "Hatchet — Swing (sweep)" preset: Forehand Swing is that preset as-is,
-  // Backhand Swing is the same preset flipped across the midline (dirSign:-1),
-  // and Cleave reuses the Forehand pose with more power instead of a separate
-  // overhead-chop animation.
+  // Short forward step layered under each combo swing's windup/strike —
+  // see game.js's beginCombatLunge. Expressed as a TILE multiple so it scales
+  // with the game's tile size rather than a raw pixel constant.
+  const LUNGE_TILE_MUL = 0.4;
+
+  // "Forehand Swing" — authored in the attack-animation editor as a full
+  // 6-channel pose (yaw winds the tool back/through, bodyYaw turns the
+  // whole torso into the swing). All three sweep combo steps below share
+  // this exact pose object: Forehand Swing plays it as-is, Backhand Swing
+  // mirrors it (dirSign:-1 negates x/yaw/bodyYaw — same convention as the
+  // editor's flipPose()), and Cleave reuses it unmirrored but scaled up
+  // (power:1.3) and slowed down for a heavier finisher, instead of any of
+  // them needing a separate bespoke animation. game.js's pose-driven swing
+  // branch (updateToolMesh) applies this generically.
+  const SWEEP_POSE = {
+    neutral: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0,   bodyYaw: 0 },
+    windup:  { x: 0, y: 0, z: 0, pitch: 0, yaw: -42, bodyYaw: -90 },
+    strike:  { x: 0, y: 0, z: 0, pitch: 0, yaw: 20,  bodyYaw: 120 },
+  };
+
+  // holdS: how long (seconds) the swing dwells at its strike pose before
+  // easing back to neutral — a per-step config knob, not an engine default.
   const SWING_STEPS = [
-    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 10, windupS: 0.16, strikeS: 0.10, anim: 'sweep', dirSign: 1 },
-    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 12, windupS: 0.19, strikeS: 0.10, anim: 'sweep', dirSign: -1 },
-    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 1.6,  staminaCost: 18, windupS: 0.30, strikeS: 0.13, returnS: 0.35, anim: 'sweep', dirSign: 1, power: 1.3 },
+    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 10, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1 },
+    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 12, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1 },
+    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 1.6,  staminaCost: 18, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1 },
   ];
 
   // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
   // push the weapon out farther than the first two (plain) pokes, per the
   // demo's "third one rotates even farther, pushes even farther forward" spec.
   const POKE_STEPS = [
-    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.9, staminaCost: 8,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1 },
-    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 9,  rangeMul: 1.35, knockbackMul: 1.1, staminaCost: 10, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1 },
-    { name: 'Long Lunge',   damageMul: 1.7,  halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 1.9, staminaCost: 16, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35 },
+    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.9, staminaCost: 8,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1 },
+    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 9,  rangeMul: 1.35, knockbackMul: 1.1, staminaCost: 10, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1 },
+    { name: 'Long Lunge',   damageMul: 1.7,  halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 1.9, staminaCost: 16, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1 },
   ];
 
   function now() { return performance.now() / 1000; }
@@ -68,7 +85,12 @@
         windupFrac: step.windupS / totalVisual,
         strikeFrac: (step.windupS + step.strikeS) / totalVisual,
         power: step.power || 1,
+        pose: step.pose,
+        holdS: step.holdS || 0,
       });
+      // Short step forward, timed to land alongside the swing's own
+      // windup+strike rather than the cosmetic hold/return tail.
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, step.windupS + step.strikeS);
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * step.damageMul);
@@ -89,6 +111,7 @@
             hits++;
             lastName = c.def.label;
           }
+          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           const msg = hits > 0
             ? (hits > 1 ? `${step.name}: hit ${hits} creatures!` : `${step.name}: hit the ${lastName}!`)
             : `${step.name} connects with nothing.`;
@@ -104,4 +127,9 @@
 
   registerCombo('swingCombo', '3-Swing Combo', SWING_STEPS);
   registerCombo('pokeCombo', '3-Poke Combo', POKE_STEPS);
+
+  // Shared with other sweep-style abilities (e.g. combat-flurry.js) so every
+  // sweeping attack uses this same authored pose rather than each falling
+  // back to updateToolMesh's older hardcoded default sweep arc.
+  window.Combat.poses = { SWEEP_POSE };
 })();
