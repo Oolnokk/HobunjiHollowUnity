@@ -350,18 +350,15 @@
       ? -modelWidth / 2 + (handAttachCol / pxW) * modelWidth
       : -modelWidth / 2;
     // Hand height was previously never computed here, so every caller fell back
-    // to a hardcoded guess (e.g. the editor/game use half the prism height).
-    // Use handRow — the same row the X-edge scan above just sampled — so X and Y
-    // describe the same point on the body. (An earlier version of this used
-    // vBounds.bottom, the lowest opaque pixel in the whole sprite — for an
-    // upright creature that's its feet, not its hand, which sent the tool all
-    // the way down to ground level regardless of the actual arm position.)
-    // Converted through the same scale/offset already applied to the assembly
-    // above: avatarGroup/rig sits at modelHeight/2, the plane assembly inside it
-    // is offset by (placementRatio-0.5)*modelHeight, and within the plane itself
-    // row r maps to modelHeight/2 - (r/pxH)*modelHeight — summing those three
-    // terms gives modelHeight*(0.5 + placementRatio - r/pxH).
-    const handAttachRowY = vBounds ? handRow : Math.round(placementRatio * pxH);
+    // to a hardcoded guess (e.g. the editor/game use half the prism height),
+    // which lands at the avatar's vertical midpoint — shoulder height — for
+    // every species. Use the portrait's own lowest opaque pixel (vBounds.bottom)
+    // instead, converted through the same scale/offset already applied to the
+    // assembly above: avatarGroup/rig sits at modelHeight/2, the plane assembly
+    // inside it is offset by (placementRatio-0.5)*modelHeight, and within the
+    // plane itself row r maps to modelHeight/2 - (r/pxH)*modelHeight — summing
+    // those three terms gives modelHeight*(0.5 + placementRatio - r/pxH).
+    const handAttachRowY = vBounds ? vBounds.bottom : Math.round(placementRatio * pxH);
     root.userData.handAttachY = modelHeight * (0.5 + placementRatio - handAttachRowY / pxH);
     root.add(assembly);
     root.userData.sourceCanvas = sourceCanvas;
