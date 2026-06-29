@@ -536,6 +536,39 @@ recomputeAllElevations();
 // — including unsaved edits — when its "Open Game" button is clicked, rather than
 // only whatever was last written to localStorage.
 window._mapEditorBridge = { getWorkspace: () => ws };
+
+function normalizeWorkspaceTileRecord(t) {
+  if (!t || typeof t !== 'object') return null;
+  const out = { ...t };
+  delete out.c; delete out.r;
+  out.type = out.type || 'grass';
+  out.crop = out.crop || '';
+  if (!out.plateau) delete out.plateau;
+  if (out.type !== 'ramp') delete out.rampElevation;
+  else out.rampElevation = Number.isFinite(out.rampElevation) ? out.rampElevation : 0;
+  return out;
+}
+
+function normalizeWorkspaceTiles(tiles) {
+  if (Array.isArray(tiles)) {
+    const out = {};
+    tiles.forEach(t => {
+      if (!t || !Number.isFinite(t.c) || !Number.isFinite(t.r)) return;
+      const rec = normalizeWorkspaceTileRecord(t);
+      if (rec) out[`${t.c},${t.r}`] = rec;
+    });
+    return out;
+  }
+  if (tiles && typeof tiles === 'object') {
+    const out = {};
+    Object.entries(tiles).forEach(([key, t]) => {
+      const rec = normalizeWorkspaceTileRecord(t);
+      if (rec) out[key] = rec;
+    });
+    return out;
+  }
+  return {};
+}
 function loadWorkspace() {
   try {
     const raw = localStorage.getItem(WS_KEY);
@@ -543,6 +576,7 @@ function loadWorkspace() {
       const w = JSON.parse(raw);
       if (Array.isArray(w.maps) && w.maps.length) {
         w.maps.forEach(m => {
+          m.tiles = normalizeWorkspaceTiles(m.tiles);
           m.routes = Array.isArray(m.routes) ? m.routes : (Array.isArray(m.npcPaths) ? m.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
           m.rivers = Array.isArray(m.rivers) ? m.rivers : [];
           m.npcPaths = Array.isArray(m.npcPaths) ? m.npcPaths : [];
@@ -3355,9 +3389,7 @@ function importAny(obj) {
       const m = makeMap(src.name || 'Imported', src.category === 'building_interior' ? 'building_interior' : (src.category === 'interior' ? 'interior' : 'exterior'),
         clamp(Math.round(src.cols||36),2,400), clamp(Math.round(src.rows||26),2,400));
       m.id = src.id || m.id;  // keep authored IDs so transitions link correctly
-      if (Array.isArray(src.tiles))
-        src.tiles.forEach(t => { if (t && Number.isFinite(t.c) && Number.isFinite(t.r)) m.tiles[`${t.c},${t.r}`] = { type: t.type||'grass', crop: t.crop||'' }; });
-      else if (src.tiles && typeof src.tiles === 'object') m.tiles = src.tiles;
+      m.tiles = normalizeWorkspaceTiles(src.tiles);
       m.objects = src.objects || {}; m.furniture = src.furniture || []; m.decor = src.decor || [];
       m.routes = Array.isArray(src.routes) ? src.routes : (Array.isArray(src.npcPaths) ? src.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(src.npcPaths) ? src.npcPaths : [];

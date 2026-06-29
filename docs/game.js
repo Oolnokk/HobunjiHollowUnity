@@ -3878,10 +3878,10 @@
         const kindOf = (a, b) => (a?.type === TileType.RAMP || b?.type === TileType.RAMP) ? ((a?.incline || b?.incline) ? 'ramp_plateau_seam' : 'ramp_side') : ((a?.incline || b?.incline) ? 'plateau_cliff' : 'tier_seam');
         for (let r = 0; r < zrows; r++) for (let c = 0; c < zcols; c++) {
           const t = zGrid?.[r]?.[c]; if (!t) continue;
-          const [y00, y10, y01, y11] = cellCornerHeights(c, r);
+          const [, y10, y01, y11] = cellCornerHeights(c, r);
           for (const [dc, dr, side] of [[1,0,'E'],[0,1,'S']]) {
             const nt = zGrid?.[r + dr]?.[c + dc];
-            const [ny00, ny10, ny01, ny11] = cellCornerHeights(c + dc, r + dr);
+            const [ny00, ny10, ny01] = cellCornerHeights(c + dc, r + dr);
             const a = side === 'E' ? [y10, y11] : [y01, y11];
             const b = side === 'E' ? [ny00, ny01] : [ny00, ny10];
             const top0 = Math.max(a[0], b[0]), top1 = Math.max(a[1], b[1]);

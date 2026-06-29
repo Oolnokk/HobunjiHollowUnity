@@ -547,6 +547,10 @@
 
   function buildRockSourceSpans(merged, zGrid, cols, rows) {
     const spans = [];
+    const plateauMaskKeys = new Set();
+    for (const mesa of (merged?.mesas || [])) {
+      for (const key of (mesa.maskWorldKeys || [])) plateauMaskKeys.add(key);
+    }
     const addSpan = (edgeKey, axis, x0, z0, x1, z1, top0, top1, bottom0, bottom1, kind, c, r) => {
       const top = Math.max(top0, top1), bottom = Math.min(bottom0, bottom1);
       if (!(top - bottom > 0.04)) return;
@@ -564,10 +568,10 @@
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const t = zGrid?.[r]?.[c];
       if (!t) continue;
-      const [y00, y10, y01, y11] = rockCellCornerHeights(zGrid, c, r);
+      const [, y10, y01, y11] = rockCellCornerHeights(zGrid, c, r);
       for (const [dc, dr, side] of [[1, 0, 'E'], [0, 1, 'S']]) {
         const nt = zGrid?.[r + dr]?.[c + dc];
-        const [ny00, ny10, ny01, ny11] = rockCellCornerHeights(zGrid, c + dc, r + dr);
+        const [ny00, ny10, ny01] = rockCellCornerHeights(zGrid, c + dc, r + dr);
         const thisEdge = side === 'E' ? [y10, y11] : [y01, y11];
         const otherEdge = side === 'E' ? [ny00, ny01] : [ny00, ny10];
         const top0 = Math.max(thisEdge[0], otherEdge[0]);
@@ -576,7 +580,8 @@
         const bottom1 = Math.min(thisEdge[1], otherEdge[1]);
         const tierStep = Math.max(top0, top1) - Math.min(bottom0, bottom1);
         const rampSeam = (t.type === TileType.RAMP || nt?.type === TileType.RAMP) && tierStep > 0.04;
-        const cliffStep = tierStep > 0.04 && (t.incline || nt?.incline || (t.elevTier || 0) !== (nt?.elevTier || 0));
+        const touchesPlateauMask = plateauMaskKeys.has(`${c},${r}`) || plateauMaskKeys.has(`${c + dc},${r + dr}`);
+        const cliffStep = tierStep > 0.04 && (t.incline || nt?.incline || touchesPlateauMask || (t.elevTier || 0) !== (nt?.elevTier || 0));
         if (!rampSeam && !cliffStep) continue;
         if (side === 'E') addSpan(edgeKeyFor('x', c + 1, r), 'x', c + 1, r, c + 1, r + 1, top0, top1, bottom0, bottom1, sourceKind(t, nt), c, r);
         else addSpan(edgeKeyFor('z', r + 1, c), 'z', c, r + 1, c + 1, r + 1, top0, top1, bottom0, bottom1, sourceKind(t, nt), c, r);
