@@ -3013,7 +3013,6 @@ function rebuild3D() {
     try { geo = TerrainPreview.buildPlateauMesaGeometry(mesa, elevOffset, mesa.fromTier * TerrainPreview.PLATEAU_UNIT, zGrid); }
     catch (e) { continue; }
     if (geo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.pos, geo.idx), mesaMat));
-    if (geo.skinIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.skinPos, geo.skinIdx), skinMat));
   }
 
   // Ramp surfaces + their skirt curtains.
@@ -3024,8 +3023,15 @@ function rebuild3D() {
     if (rampGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(rampGeo.pos, rampGeo.idx), rampMat));
     const curtainGeo = TerrainPreview.buildRampCurtainGeometry(zGrid, merged.cols, merged.rows);
     if (curtainGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.pos, curtainGeo.idx), curtainMat));
-    if (curtainGeo.skinIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.skinPos, curtainGeo.skinIdx), skinMat));
   } catch (e) { /* ramp geometry is best-effort for the preview */ }
+
+  // Unified solved non-walkable rock layer: plateau cliff faces, ramp side
+  // curtains, and ramp/plateau seams are unioned before rendering so overlaps
+  // become one chunky watertight-looking formation instead of separate skins.
+  try {
+    const rockGeo = TerrainPreview.buildRockFormationGeometry(merged, zGrid, merged.cols, merged.rows);
+    if (rockGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(rockGeo.pos, rockGeo.idx), skinMat));
+  } catch (e) { /* rock formation is best-effort for the preview */ }
 
   // Waterwall curtains: vertical translucent water sheets where a river
   // crosses a plateau edge (TileType.WATERFALL — see

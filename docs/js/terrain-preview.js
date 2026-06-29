@@ -514,6 +514,143 @@
     return { pos, idx, skinPos, skinIdx };
   }
 
+
+  // ── Unified non-walkable rock formation solver ─────────────────────────────
+  // Plateau tops, ramp floors, ordinary floors, and water beds remain authored
+  // separately. This solver only gathers the vertical/supporting rock spans that
+  // come from plateau cliff rings, ramp sides/seams, and tier steps, unions any
+  // coincident spans by tile edge, and emits one deterministic faceted rock skin.
+  function rampCornerYFor(zGrid, ci, cj, fallback = null) {
+    let sum = 0, n = 0;
+    for (const [dc, dr] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) {
+      const t = zGrid?.[cj + dr]?.[ci + dc];
+      if (t && t.type === TileType.RAMP) { sum += NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT; n++; }
+    }
+    return n ? sum / n : fallback;
+  }
+
+  function rockCellCornerHeights(zGrid, c, r) {
+    const t = zGrid?.[r]?.[c];
+    if (!t) return [NORMAL_TOP, NORMAL_TOP, NORMAL_TOP, NORMAL_TOP];
+    if (t.type === TileType.RAMP) {
+      const fallback = NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT;
+      return [
+        rampCornerYFor(zGrid, c, r, fallback),
+        rampCornerYFor(zGrid, c + 1, r, fallback),
+        rampCornerYFor(zGrid, c, r + 1, fallback),
+        rampCornerYFor(zGrid, c + 1, r + 1, fallback),
+      ];
+    }
+    const y = NORMAL_TOP + (t.elevTier || 0) * PLATEAU_UNIT;
+    return [y, y, y, y];
+  }
+
+  function buildRockSourceSpans(merged, zGrid, cols, rows) {
+    const spans = [];
+    const addSpan = (edgeKey, axis, x0, z0, x1, z1, top0, top1, bottom0, bottom1, kind, c, r) => {
+      const top = Math.max(top0, top1), bottom = Math.min(bottom0, bottom1);
+      if (!(top - bottom > 0.04)) return;
+      spans.push({ edgeKey, axis, x0, z0, x1, z1, top0, top1, bottom0, bottom1, kind, c, r });
+    };
+    const edgeKeyFor = (axis, line, along) => `${axis}:${line}:${along}`;
+    const sourceKind = (a, b) => {
+      if (a?.type === TileType.RAMP || b?.type === TileType.RAMP) {
+        if (a?.incline || b?.incline) return 'ramp_plateau_seam';
+        return 'ramp_side';
+      }
+      if (a?.incline || b?.incline) return 'plateau_cliff';
+      return 'tier_seam';
+    };
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const t = zGrid?.[r]?.[c];
+      if (!t) continue;
+      const [y00, y10, y01, y11] = rockCellCornerHeights(zGrid, c, r);
+      for (const [dc, dr, side] of [[1, 0, 'E'], [0, 1, 'S']]) {
+        const nt = zGrid?.[r + dr]?.[c + dc];
+        const [ny00, ny10, ny01, ny11] = rockCellCornerHeights(zGrid, c + dc, r + dr);
+        const thisEdge = side === 'E' ? [y10, y11] : [y01, y11];
+        const otherEdge = side === 'E' ? [ny00, ny01] : [ny00, ny10];
+        const top0 = Math.max(thisEdge[0], otherEdge[0]);
+        const top1 = Math.max(thisEdge[1], otherEdge[1]);
+        const bottom0 = Math.min(thisEdge[0], otherEdge[0]);
+        const bottom1 = Math.min(thisEdge[1], otherEdge[1]);
+        const tierStep = Math.max(top0, top1) - Math.min(bottom0, bottom1);
+        const rampSeam = (t.type === TileType.RAMP || nt?.type === TileType.RAMP) && tierStep > 0.04;
+        const cliffStep = tierStep > 0.04 && (t.incline || nt?.incline || (t.elevTier || 0) !== (nt?.elevTier || 0));
+        if (!rampSeam && !cliffStep) continue;
+        if (side === 'E') addSpan(edgeKeyFor('x', c + 1, r), 'x', c + 1, r, c + 1, r + 1, top0, top1, bottom0, bottom1, sourceKind(t, nt), c, r);
+        else addSpan(edgeKeyFor('z', r + 1, c), 'z', c, r + 1, c + 1, r + 1, top0, top1, bottom0, bottom1, sourceKind(t, nt), c, r);
+      }
+    }
+    return spans;
+  }
+
+  function buildRockFormationGeometry(merged, zGrid, cols, rows) {
+    const sources = buildRockSourceSpans(merged, zGrid, cols, rows);
+    const byEdge = new Map();
+    for (const s of sources) {
+      const prev = byEdge.get(s.edgeKey);
+      if (!prev) { byEdge.set(s.edgeKey, { ...s, kinds: new Set([s.kind]) }); continue; }
+      prev.top0 = Math.max(prev.top0, s.top0); prev.top1 = Math.max(prev.top1, s.top1);
+      prev.bottom0 = Math.min(prev.bottom0, s.bottom0); prev.bottom1 = Math.min(prev.bottom1, s.bottom1);
+      prev.kinds.add(s.kind);
+    }
+    const spans = [...byEdge.values()].filter(s => Math.max(s.top0, s.top1) - Math.min(s.bottom0, s.bottom1) > 0.04);
+    const pos = [], idx = [], meta = [];
+    let vi = 0;
+    const hash01 = (x, z, salt) => {
+      let h = (2166136261 ^ Math.imul(Math.round(x * 8) + salt, 374761393) ^ Math.imul(Math.round(z * 8) - salt, 668265263)) >>> 0;
+      h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+      return h / 4294967296;
+    };
+    const pushV = (x, y, z, nx, nz, alongT, verticalT) => {
+      // Keep all perimeter vertices exactly on their solved tile edge. Only the
+      // mid-column vertices get deterministic normal offsets, so adjacent spans
+      // share endpoints without cracks while the faces still read as chunky ribs.
+      const rib = (verticalT > 0.001 && verticalT < 0.999 && alongT > 0.001 && alongT < 0.999)
+        ? (hash01(x, z, Math.round(y * 10)) - 0.5) * 0.16 : 0;
+      const ledge = (verticalT > 0.15 && verticalT < 0.9 && Math.abs((verticalT * 5) % 1 - 0.5) < 0.14) ? 0.035 : 0;
+      pos.push(x + nx * (rib + ledge), y, z + nz * (rib + ledge));
+    };
+    for (const s of spans) {
+      const nx = s.axis === 'x' ? (hash01(s.x0, s.z0, 7) > 0.5 ? 1 : -1) : 0;
+      const nz = s.axis === 'z' ? (hash01(s.x0, s.z0, 11) > 0.5 ? 1 : -1) : 0;
+      const segs = 2;
+      const base = vi;
+      for (let j = 0; j <= segs; j++) {
+        const vt = j / segs;
+        for (let i = 0; i <= segs; i++) {
+          const at = i / segs;
+          const x = s.x0 + (s.x1 - s.x0) * at, z = s.z0 + (s.z1 - s.z0) * at;
+          const top = s.top0 + (s.top1 - s.top0) * at, bot = s.bottom0 + (s.bottom1 - s.bottom0) * at;
+          const y = bot + (top - bot) * (1 - vt);
+          pushV(x, y, z, nx, nz, at, vt);
+        }
+      }
+      for (let j = 0; j < segs; j++) for (let i = 0; i < segs; i++) {
+        const a = base + j * (segs + 1) + i, b = a + 1, c0 = a + (segs + 1), d = c0 + 1;
+        idx.push(a, c0, d, a, d, b);
+      }
+      vi += (segs + 1) * (segs + 1);
+      meta.push({ edgeKey: s.edgeKey, kind: [...s.kinds].join('+') });
+    }
+    return { pos, idx, sources, spans, meta };
+  }
+
+  function validateRockFormationGeometry(rockGeo) {
+    const issues = [];
+    const edgeCounts = new Map();
+    for (const s of rockGeo.spans || []) edgeCounts.set(s.edgeKey, (edgeCounts.get(s.edgeKey) || 0) + 1);
+    for (const [edgeKey, count] of edgeCounts) {
+      if (count > 1) issues.push({ severity: 'error', code: 'DUPLICATE_ROCK_EDGE', message: `Rock solver emitted ${count} solved spans for tile edge ${edgeKey}.` });
+    }
+    for (const s of rockGeo.spans || []) {
+      if (![s.top0, s.top1, s.bottom0, s.bottom1].every(Number.isFinite)) issues.push({ severity: 'error', code: 'NON_FINITE_ROCK_SPAN', message: `Rock span ${s.edgeKey} has a non-finite height.` });
+      if (Math.max(s.top0, s.top1) - Math.min(s.bottom0, s.bottom1) <= 0.04) issues.push({ severity: 'warning', code: 'DEGENERATE_ROCK_SPAN', message: `Rock span ${s.edgeKey} has almost no vertical support.` });
+    }
+    return issues;
+  }
+
   // ── Waterwalls: vertical water curtains where a river crosses a plateau edge ─
   // A WATERFALL cell sits on a plateau sub-map right at its own outer edge (see
   // game.js/index.html's mirrorRiverAcrossPlateau) — its merged-grid neighbor one
@@ -674,6 +811,16 @@
       }
     }
 
+    try {
+      const rockGrid = buildZGrid(merged.cols, merged.rows, merged.tiles);
+      applyRampCurtainFlags(rockGrid, merged.cols, merged.rows);
+      const rockGeo = buildRockFormationGeometry(merged, rockGrid, merged.cols, merged.rows);
+      issues.push(...validateRockFormationGeometry(rockGeo));
+      if ([...rockGeo.pos].some(v => !Number.isFinite(v))) issues.push({ severity: 'error', code: 'NON_FINITE_ROCK_GEOMETRY', message: 'Solved rock formation mesh contains a non-finite coordinate.' });
+    } catch (e) {
+      issues.push({ severity: 'error', code: 'ROCK_SOLVER_THROW', message: `Rock formation solver threw: ${e.message}` });
+    }
+
     return issues;
   }
 
@@ -681,6 +828,7 @@
     PLATEAU_UNIT, NORMAL_TOP, TileType,
     buildMergedZoneGrid, buildZGrid, applyRampCurtainFlags,
     buildPlateauMesaGeometry, buildRampMeshGeometry, buildRampCurtainGeometry,
+    buildRockSourceSpans, buildRockFormationGeometry, validateRockFormationGeometry,
     buildWaterfallWallGeometry, buildTerrainTileGeo, validateTerrain,
   };
 });
