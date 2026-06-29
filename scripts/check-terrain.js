@@ -64,9 +64,16 @@ for (const mapId of rootIds) {
   try {
     const rampGeo = TP.buildRampMeshGeometry(zGrid, merged.cols, merged.rows);
     const curtainGeo = TP.buildRampCurtainGeometry(zGrid, merged.cols, merged.rows);
-    for (const arr of [rampGeo.pos, curtainGeo.pos]) {
-      if ([...arr].some(v => !Number.isFinite(v))) { console.error(`✗ non-finite ramp/curtain vertex`); hadError = true; }
+    const rockGeo = TP.buildRockFormationGeometry(merged, zGrid, merged.cols, merged.rows);
+    for (const arr of [rampGeo.pos, curtainGeo.pos, rockGeo.pos]) {
+      if ([...arr].some(v => !Number.isFinite(v))) { console.error(`✗ non-finite ramp/curtain/rock vertex`); hadError = true; }
     }
+    for (const issue of TP.validateRockFormationGeometry(rockGeo)) {
+      const marker = issue.severity === 'error' ? '✗' : issue.severity === 'warning' ? '⚠' : 'ℹ';
+      console.log(`${marker} [${issue.severity}] ${issue.code}: ${issue.message}`);
+      if (issue.severity === 'error') hadError = true;
+    }
+    console.log(`rock formation: ${rockGeo.sources.length} source span(s) → ${rockGeo.spans.length} solved edge span(s)`);
   } catch (e) {
     console.error(`✗ ramp geometry threw: ${e.message}`);
     hadError = true;

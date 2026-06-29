@@ -3503,6 +3503,7 @@
 
         buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
+        buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         _zoneWaterMeshes.set(mapId, buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId));
 
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
@@ -3734,36 +3735,8 @@
         mesh.receiveShadow = true;
         zScene.add(mesh);
 
-        // Stone cliff skin on steep faces only (same 0.194 normal-slope threshold as
-        // buildZoneBorderTerrain's elevStoneSkin) — flat interior/top stays grass,
-        // the rising margin band reads as bare rock where it's steep enough.
-        const cliffMat = new THREE.MeshLambertMaterial({
-          color: 0x6a6460, side: THREE.DoubleSide,
-          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
-        });
-        const skinPos = [], skinIdx = [];
-        let vi = 0;
-        for (let gj = 0; gj < GH - 1; gj++) {
-          for (let gi = 0; gi < GW - 1; gi++) {
-            if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
-            const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
-            const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
-            const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
-            const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
-            if (cnx * cnx + cnz * cnz <= 0.194) continue; // near-horizontal → grass
-            const x0 = bb.minC + gi * 0.5, x1 = x0 + 0.5;
-            const z0 = bb.minR + gj * 0.5, z1 = z0 + 0.5;
-            skinPos.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
-            skinIdx.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi += 4;
-          }
-        }
-        if (skinPos.length) {
-          const g = new THREE.BufferGeometry();
-          g.setAttribute('position', new THREE.Float32BufferAttribute(skinPos, 3));
-          g.setIndex(new THREE.BufferAttribute(skinIdx.length > 65535 ? new Uint32Array(skinIdx) : new Uint16Array(skinIdx), 1));
-          g.computeVertexNormals();
-          zScene.add(new THREE.Mesh(g, cliffMat));
-        }
+        // Steep plateau rock is now emitted by buildRockFormationMeshes, which
+        // unions plateau cliffs with ramp side rock before rendering.
 
         console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(BASE+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s)`, 'color:#22c55e;font-weight:bold');
       }
@@ -3839,8 +3812,7 @@
         };
 
         const pos = [], idx = [];
-        const skinPos = [], skinIdx = [];
-        let vi = 0, svi = 0;
+        let vi = 0;
         for (const [c, r] of cells) {
           const ground = NORMAL_TOP + (zGrid[r][c].elevTier || 0) * PLATEAU_UNIT;
           const y00 = cornerY(c, r, ground);
@@ -3849,17 +3821,6 @@
           const y11 = cornerY(c + 1, r + 1, ground);
           pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
           idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
-
-          // Same steep-face test buildPlateauMesa/buildZoneBorderTerrain use: only
-          // skin the skirt with stone where it's actually sloped enough to read as
-          // a cliff face — a skirt that happens to be flat (e.g. abutting ground at
-          // the same height as the ramp) stays grass like the floor around it.
-          const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
-          const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
-          if (cnx * cnx + cnz * cnz > 0.194) {
-            skinPos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
-            skinIdx.push(svi, svi + 2, svi + 3, svi, svi + 3, svi + 1); svi += 4;
-          }
         }
 
         const geo = new THREE.BufferGeometry();
@@ -3871,19 +3832,99 @@
         zScene.add(mesh);
         _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.GRASS));
 
-        if (skinPos.length) {
-          const cliffMat = new THREE.MeshLambertMaterial({
-            color: 0x6a6460, side: THREE.DoubleSide,
-            polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
-          });
-          const sg = new THREE.BufferGeometry();
-          sg.setAttribute('position', new THREE.Float32BufferAttribute(skinPos, 3));
-          sg.setIndex(new THREE.BufferAttribute(skinIdx.length > 65535 ? new Uint32Array(skinIdx) : new Uint16Array(skinIdx), 1));
-          sg.computeVertexNormals();
-          zScene.add(new THREE.Mesh(sg, cliffMat));
-        }
+        // Steep ramp-curtain skin is now emitted by buildRockFormationMeshes,
+        // after unioning ramp side spans with neighboring plateau cliff spans.
 
         console.log(`%c[zone:${mapId}] ramp curtain skirt built: ${cells.length} tile(s)`, 'color:#22c55e;font-weight:bold');
+      }
+
+
+      // Unified solved non-walkable rock layer. This mirrors
+      // docs/js/terrain-preview.js buildRockFormationGeometry: semantic plateau
+      // cliff spans, ramp side spans, and ramp/plateau seam spans are unioned by
+      // tile edge before rendering, so overlapping authored features become one
+      // continuous rocky formation while walkable tops/ramp floors stay separate.
+      function buildRockFormationMeshes(zScene, zGrid, zcols, zrows, mapId) {
+        const rampCornerYFor = (ci, cj, fallback = null) => {
+          let sum = 0, n = 0;
+          for (const [dc, dr] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
+            const t = zGrid?.[cj + dr]?.[ci + dc];
+            if (t && t.type === TileType.RAMP) { sum += NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT; n++; }
+          }
+          return n ? sum / n : fallback;
+        };
+        const cellCornerHeights = (c, r) => {
+          const t = zGrid?.[r]?.[c];
+          if (!t) return [NORMAL_TOP, NORMAL_TOP, NORMAL_TOP, NORMAL_TOP];
+          if (t.type === TileType.RAMP) {
+            const fallback = NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT;
+            return [rampCornerYFor(c, r, fallback), rampCornerYFor(c + 1, r, fallback), rampCornerYFor(c, r + 1, fallback), rampCornerYFor(c + 1, r + 1, fallback)];
+          }
+          const y = NORMAL_TOP + (t.elevTier || 0) * PLATEAU_UNIT;
+          return [y, y, y, y];
+        };
+        const hash01 = (x, z, salt) => {
+          let h = (2166136261 ^ Math.imul(Math.round(x * 8) + salt, 374761393) ^ Math.imul(Math.round(z * 8) - salt, 668265263)) >>> 0;
+          h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+          return h / 4294967296;
+        };
+        const spans = new Map();
+        const add = (key, axis, x0, z0, x1, z1, top0, top1, bottom0, bottom1, kind) => {
+          if (Math.max(top0, top1) - Math.min(bottom0, bottom1) <= 0.04) return;
+          const prev = spans.get(key);
+          if (!prev) spans.set(key, { key, axis, x0, z0, x1, z1, top0, top1, bottom0, bottom1, kinds: new Set([kind]) });
+          else { prev.top0 = Math.max(prev.top0, top0); prev.top1 = Math.max(prev.top1, top1); prev.bottom0 = Math.min(prev.bottom0, bottom0); prev.bottom1 = Math.min(prev.bottom1, bottom1); prev.kinds.add(kind); }
+        };
+        const kindOf = (a, b) => (a?.type === TileType.RAMP || b?.type === TileType.RAMP) ? ((a?.incline || b?.incline) ? 'ramp_plateau_seam' : 'ramp_side') : ((a?.incline || b?.incline) ? 'plateau_cliff' : 'tier_seam');
+        for (let r = 0; r < zrows; r++) for (let c = 0; c < zcols; c++) {
+          const t = zGrid?.[r]?.[c]; if (!t) continue;
+          const [, y10, y01, y11] = cellCornerHeights(c, r);
+          for (const [dc, dr, side] of [[1,0,'E'],[0,1,'S']]) {
+            const nt = zGrid?.[r + dr]?.[c + dc];
+            const [ny00, ny10, ny01] = cellCornerHeights(c + dc, r + dr);
+            const a = side === 'E' ? [y10, y11] : [y01, y11];
+            const b = side === 'E' ? [ny00, ny01] : [ny00, ny10];
+            const top0 = Math.max(a[0], b[0]), top1 = Math.max(a[1], b[1]);
+            const bottom0 = Math.min(a[0], b[0]), bottom1 = Math.min(a[1], b[1]);
+            const step = Math.max(top0, top1) - Math.min(bottom0, bottom1);
+            if (!(((t.type === TileType.RAMP || nt?.type === TileType.RAMP) && step > 0.04) || (step > 0.04 && (t.incline || nt?.incline || (t.elevTier || 0) !== (nt?.elevTier || 0))))) continue;
+            if (side === 'E') add(`x:${c + 1}:${r}`, 'x', c + 1, r, c + 1, r + 1, top0, top1, bottom0, bottom1, kindOf(t, nt));
+            else add(`z:${r + 1}:${c}`, 'z', c, r + 1, c + 1, r + 1, top0, top1, bottom0, bottom1, kindOf(t, nt));
+          }
+        }
+        const pos = [], idx = []; let vi = 0;
+        const pushV = (x, y, z, nx, nz, at, vt) => {
+          const rib = (vt > 0.001 && vt < 0.999 && at > 0.001 && at < 0.999) ? (hash01(x, z, Math.round(y * 10)) - 0.5) * 0.16 : 0;
+          const ledge = (vt > 0.15 && vt < 0.9 && Math.abs((vt * 5) % 1 - 0.5) < 0.14) ? 0.035 : 0;
+          pos.push(x + nx * (rib + ledge), y, z + nz * (rib + ledge));
+        };
+        for (const s of spans.values()) {
+          const nx = s.axis === 'x' ? (hash01(s.x0, s.z0, 7) > 0.5 ? 1 : -1) : 0;
+          const nz = s.axis === 'z' ? (hash01(s.x0, s.z0, 11) > 0.5 ? 1 : -1) : 0;
+          const segs = 2, base = vi;
+          for (let j = 0; j <= segs; j++) for (let i = 0; i <= segs; i++) {
+            const at = i / segs, vt = j / segs;
+            const x = s.x0 + (s.x1 - s.x0) * at, z = s.z0 + (s.z1 - s.z0) * at;
+            const top = s.top0 + (s.top1 - s.top0) * at, bot = s.bottom0 + (s.bottom1 - s.bottom0) * at;
+            pushV(x, bot + (top - bot) * (1 - vt), z, nx, nz, at, vt);
+          }
+          for (let j = 0; j < segs; j++) for (let i = 0; i < segs; i++) {
+            const a = base + j * (segs + 1) + i, b = a + 1, c0 = a + (segs + 1), d = c0 + 1;
+            idx.push(a, c0, d, a, d, b);
+          }
+          vi += (segs + 1) * (segs + 1);
+        }
+        if (!idx.length) return;
+        const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.receiveShadow = true;
+        zScene.add(mesh);
+        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.ROCK));
+        console.log(`%c[zone:${mapId}] solved rock formation built: ${spans.size} edge span(s)`, 'color:#22c55e;font-weight:bold');
       }
 
       // Waterwall curtains: an animated vertical water sheet wherever a river
