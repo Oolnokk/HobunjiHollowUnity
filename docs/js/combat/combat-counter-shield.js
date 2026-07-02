@@ -59,6 +59,7 @@
       const staminaCost = Math.max(MIN_STAMINA_TO_RAISE, amount * 0.35);
       deps.player.stamina = Math.max(0, deps.player.stamina - staminaCost);
       deps.showToast(`Blocked! (-${Math.round(staminaCost)} stamina)`, true);
+      deps.spawnBurstEffect({ color: '#40ccff', rangePx: deps.TILE * 1.8 });
       triggerCounter();
       return true;
     }

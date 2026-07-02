@@ -8734,6 +8734,29 @@
         while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
       }
 
+      // Full-circle burst at the player's position with an explicit color —
+      // used for non-attack feedback like shield blocks. halfConeRad = π gives
+      // a full 360° fan in weaponTrailParticleSeeds.
+      function spawnBurstEffect({ color, rangePx }) {
+        const fx = {
+          isCone: true,
+          x: player.x / TILE,
+          z: player.y / TILE,
+          y: weaponTrailCenterY(),
+          angle: 0,
+          halfConeRad: Math.PI,
+          rangeTiles: rangePx / TILE,
+          age: 0,
+          maxAge: COMBAT_TRAIL_MAX_AGE_S * 1.4,
+          ok: true,
+          color,
+        };
+        fx.particles = weaponTrailParticleSeeds(fx);
+        weaponTrailEffects.push(fx);
+        const limit = Number(combatConfig().weaponTrailLimit) || 5;
+        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
+      }
+
       function updateActionParticles(dt) {
         for (let i = actionParticles.length - 1; i >= 0; i--) {
           const p = actionParticles[i];
@@ -8800,7 +8823,7 @@
         for (const fx of weaponTrailEffects) {
           const t = fx.age / fx.maxAge;
           const alpha = Math.max(0, 1 - t);
-          const color = fx.ok ? '#9ff0b8' : '#ff8060';
+          const color = fx.color ?? (fx.ok ? '#ffdc60' : '#4488ff');
           octx.save();
           octx.fillStyle = color;
           for (const p of fx.particles) {
@@ -16840,6 +16863,7 @@
         cancelWeaponSwingHold,
         beginCombatLunge,
         spawnCombatTrailEffect,
+        spawnBurstEffect,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module
