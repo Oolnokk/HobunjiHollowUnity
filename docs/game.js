@@ -1081,9 +1081,9 @@
       // Knockback shared by all combat attacks: a short impulse that overrides
       // normal movement/AI while it decays, applied away from the attacker.
       const KNOCKBACK_DUR_S = 0.18;
-      const PLAYER_KNOCKBACK_PX_S = 300;
-      const COMPANION_BITE_KNOCKBACK_PX_S = 280;
-      const HOSTILE_BITE_KNOCKBACK_PX_S = 240;
+      const PLAYER_KNOCKBACK_PX_S = 600;
+      const COMPANION_BITE_KNOCKBACK_PX_S = 560;
+      const HOSTILE_BITE_KNOCKBACK_PX_S = 480;
 
       function applyKnockback(target, fromX, fromY, speedPxS) {
         const ang = Math.atan2(target.y - fromY, target.x - fromX);
@@ -1113,6 +1113,7 @@
           moveSpeed: 165, chaseSpeed: 220,
           attackDamage: 10, attackRangePx: TILE * 0.9, attackHalfConeRad: 45 * Math.PI / 180,
           attackStaminaCost: 14, attackCooldownS: 1.1,
+          attacks: ['pounce'],
           modelWidth: 1.9, tint: 0xffffff,
           sprites: {
             idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
@@ -1125,6 +1126,12 @@
           moveSpeed: 130, chaseSpeed: 195,
           attackDamage: 12, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
           attackStaminaCost: 12, attackCooldownS: 1.0,
+          attacks: ['pounce'],
+          // Slottable AI behavior-stage cycle (see updateCreatureBehaviorStage):
+          // try a Pounce for up to 7s (ends the moment one's attempted), then
+          // (after the global ~2s backing-up stage) spend up to 11s circling
+          // the target at range before cycling back to another Pounce attempt.
+          behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6.2, leashRangePx: TILE * 9,
           modelWidth: 2.1, tint: 0xffffff,
           sprites: {
@@ -1138,6 +1145,8 @@
           moveSpeed: 140, chaseSpeed: 205,
           attackDamage: 18, attackRangePx: TILE * 0.95, attackHalfConeRad: 46 * Math.PI / 180,
           attackStaminaCost: 16, attackCooldownS: 1.0,
+          attacks: ['pounce'],
+          behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 7, leashRangePx: TILE * 10,
           modelWidth: 3.1, tint: 0xffb0a0,
           sprites: {
@@ -2139,6 +2148,8 @@
           modelWidth, modelHeight,
           name: creatureKey + '_' + idUniq,
         });
+        avatarRef.frontPlane = avatarRef.group.children[0] || null;
+        avatarRef.backPlane  = avatarRef.group.children[1] || null;
         if (def.tint && def.tint !== 0xffffff) {
           for (const child of avatarRef.group.children) {
             if (child.material) child.material.color.setHex(def.tint);
@@ -2158,7 +2169,8 @@
           halfHeight: halfH,
           health: def.maxHealth, maxHealth: def.maxHealth,
           stamina: def.maxStamina, maxStamina: def.maxStamina,
-          facing: 0, groupRot: 0, perpState: {},
+          facing: 0, groupRot: 0, pngRot: 0, perpState: {},
+          scaleY: 1,
           attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
           knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
           runFrame: 0, runFrameT: 0, currentFrameUrl: def.sprites.idle,
@@ -2334,16 +2346,33 @@
         const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
         const surfY = g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0;
         const grp = c.avatarRef.group;
-        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight;
+        // scaleY (driven by attacks like Pounce, default 1) squashes the
+        // sprite plane vertically around its own bottom edge rather than its
+        // center — the target height keeps the creature's feet grounded at
+        // surfY instead of sinking into the floor as it crouches.
+        const scaleY = c.scaleY ?? 1;
+        const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + c.halfHeight * scaleY;
         grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
         grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
+        grp.scale.y = scaleY;
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
-        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
-        if (snapTo !== null) c.groupRot = effectiveTarget;
-        else c.groupRot += angleDiff(effectiveTarget, c.groupRot) * Math.min(1, dt * 10);
+
+        // Prism (group) tracks the raw aim angle freely — deadzone only governs
+        // the interior PNG plane, not the prism's spatial orientation or the
+        // movement/targeting logic that drives aimAngle.
+        c.groupRot += angleDiff(rawTargetRotY, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
+
+        // PNG planes get a separate deadzone that lerps through the perp range
+        // instead of locking at the edge (see pngDeadzoneTarget).
+        c.pngRot ??= c.groupRot;
+        const pngTarget = pngDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
+        c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
+        const planeDelta = c.pngRot - c.groupRot;
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
+        if (c.avatarRef.backPlane)  c.avatarRef.backPlane.rotation.y  = planeDelta - Math.PI / 2;
 
         if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
         // Telegraph tell (combat-enemy-telegraph.js) takes a back seat to the
@@ -2392,6 +2421,108 @@
       const BITE_TELEGRAPH_WINDUP_S = 0.54;
       const BITE_TELEGRAPH_STRIKE_S = 0.20;
 
+      // Hitbox/aim-collider geometry shared between the AI's pounce-trigger
+      // check and the debug hitbox overlay — derived from the avatar's
+      // crossed-plane "prism" base (a square of side modelWidth, in tile
+      // units) rather than an arbitrary radius.
+      function creatureHitboxHalfSizePx(def) {
+        return (def.modelWidth || 2) * TILE / 2;
+      }
+      // The forward aim collider a pounce-capable creature keeps pointed at
+      // its target every chase frame: a rod starting at the head-side edge
+      // of its hitbox and protruding 150% of the hitbox's own length beyond
+      // that edge. A pounce only triggers once the target falls inside it.
+      function creatureAimColliderReachPx(def) {
+        const halfSize = creatureHitboxHalfSizePx(def);
+        return halfSize + halfSize * 2 * 1.5;
+      }
+
+      // ── Slottable AI behavior-stage system ──────────────────────────
+      //
+      // A creature whose def lists behaviorStages (e.g. gar-wolf's
+      // ['pounceAttempt', 'evasiveOrbit']) cycles through those named stages
+      // in order, looping back to the first once the last finishes. Every
+      // stage has either a fixed time limit (def below) or an "end early"
+      // condition (pounceAttempt ends the instant it commits to a pounce,
+      // not when the leap finishes resolving) — whichever comes first ends
+      // the stage. After ANY stage ends, every creature using this system
+      // (hostile or companion) spends a fixed ~2s backing directly away from
+      // its target before the next stage starts, so a hit-and-run beat
+      // separates every modular stage instead of one flowing straight into
+      // the next.
+      const STAGE_BACKUP_S = 2;
+      const STAGE_MAX_DURATION_S = { pounceAttempt: 7, evasiveOrbit: 11 };
+      const EVASIVE_ORBIT_RADIUS_MUL = 1.7; // x attackRangePx — stays just outside biting/pounce range
+
+      function ensureCreatureStage(c, stages) {
+        if (!c._stage || c._stage.stages !== stages) {
+          c._stage = { stages, idx: 0, mode: 'active', t: 0, orbitSign: Math.random() < 0.5 ? -1 : 1 };
+        }
+        return c._stage;
+      }
+
+      function clearCreatureStage(c) { c._stage = null; }
+
+      function beginCreatureBackup(st) {
+        st.mode = 'backingUp';
+        st.t = 0;
+      }
+
+      function advanceCreatureStage(st) {
+        st.idx = (st.idx + 1) % st.stages.length;
+        st.mode = 'active';
+        st.t = 0;
+        st.orbitSign = Math.random() < 0.5 ? -1 : 1;
+      }
+
+      // Drives one creature's behavior-stage cycle for one frame. target is
+      // whatever it's currently oriented on (the player for a hostile, its
+      // chosen hostile target for a companion). attemptAttackFn(dist) is
+      // called only during the 'pounceAttempt' stage and should return true
+      // the instant it commits to an attack (so the stage can end early).
+      // Returns { aimAngle, moving }.
+      function updateCreatureBehaviorStage(c, dt, target, def, attemptAttackFn) {
+        const st = ensureCreatureStage(c, def.behaviorStages);
+        st.t += dt;
+        const dx = target.x - c.x, dy = target.y - c.y;
+        const dist = Math.hypot(dx, dy);
+        const towardAngle = Math.atan2(dy, dx);
+
+        if (st.mode === 'backingUp') {
+          const awayAngle = towardAngle + Math.PI;
+          const moving = moveCreatureToward(c, c.x + Math.cos(awayAngle) * TILE, c.y + Math.sin(awayAngle) * TILE, def.moveSpeed, dt);
+          if (st.t >= STAGE_BACKUP_S) advanceCreatureStage(st);
+          return { aimAngle: towardAngle, moving };
+        }
+
+        const stageName = st.stages[st.idx];
+
+        if (stageName === 'pounceAttempt') {
+          const moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
+          let aimAngle = towardAngle;
+          const attempted = attemptAttackFn(dist);
+          if (attempted) aimAngle = c.facing;
+          if (attempted || st.t >= STAGE_MAX_DURATION_S.pounceAttempt) beginCreatureBackup(st);
+          return { aimAngle, moving };
+        }
+
+        if (stageName === 'evasiveOrbit') {
+          const orbitRadiusPx = def.attackRangePx * EVASIVE_ORBIT_RADIUS_MUL;
+          const radialSign = dist > orbitRadiusPx ? 1 : -1; // 1: close the gap, -1: back off
+          const tangentAngle = towardAngle + st.orbitSign * Math.PI / 2;
+          const blendAngle = Math.atan2(
+            Math.sin(tangentAngle) * 0.8 + Math.sin(towardAngle) * radialSign * 0.2,
+            Math.cos(tangentAngle) * 0.8 + Math.cos(towardAngle) * radialSign * 0.2,
+          );
+          const moveX = c.x + Math.cos(blendAngle) * TILE, moveY = c.y + Math.sin(blendAngle) * TILE;
+          const moving = moveCreatureToward(c, moveX, moveY, def.chaseSpeed * 0.85, dt);
+          if (st.t >= STAGE_MAX_DURATION_S.evasiveOrbit) beginCreatureBackup(st);
+          return { aimAngle: towardAngle, moving };
+        }
+
+        return { aimAngle: towardAngle, moving: false };
+      }
+
       function updateHostiles(dt) {
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
@@ -2408,8 +2539,11 @@
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
           // Leaving chase mid-windup (player broke the leash) abandons the
-          // telegraphed bite rather than landing it from way out of range.
+          // telegraphed bite/modular attack rather than landing it from way
+          // out of range.
           if (c.state !== 'chase' && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
+          if (c.state !== 'chase' && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
+          if (c.state !== 'chase') clearCreatureStage(c);
 
           let moving = false, aimAngle = c.facing || 0;
           if (c.knockbackT > 0) {
@@ -2429,21 +2563,52 @@
               // player's cue to step out of attackRangePx before the strike
               // frame's range check below fires.
               window.Combat.telegraph.update(c, dt);
-            } else {
-              moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
-              if (distToPlayer <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+            } else if (window.Combat?.animalAttacks?.isBusy(c)) {
+              // Modular named attack (e.g. Pounce) owns position, facing,
+              // scale, and sprite frame for its full duration.
+              window.Combat.animalAttacks.update(c, dt);
+              aimAngle = c.facing;
+            } else if (def.behaviorStages) {
+              // Slottable behavior-stage cycle (Pounce attempt <-> evasive
+              // orbit, separated by a backing-up beat) replaces the plain
+              // chase-and-trigger logic below for any creature that lists one.
+              const result = updateCreatureBehaviorStage(c, dt, player, def, (dist) => {
+                const triggerRangePx = creatureAimColliderReachPx(def);
+                if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost) return false;
                 c.stamina -= def.attackStaminaCost;
                 c.attackCooldownT = def.attackCooldownS;
-                window.Combat.telegraph.start(c, {
-                  windupS: BITE_TELEGRAPH_WINDUP_S,
-                  strikeS: BITE_TELEGRAPH_STRIKE_S,
-                  onStrike: () => {
-                    if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
-                      damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
-                    }
-                    c.retreatT = JUMP_BACK_DUR_S;
-                  },
-                });
+                return !!(def.attacks?.length && window.Combat?.animalAttacks?.start(
+                  c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
+                ));
+              });
+              aimAngle = result.aimAngle;
+              moving = result.moving;
+            } else {
+              moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
+              // Pounce-capable creatures commit once the target enters their
+              // forward aim collider (always pointed straight at the target
+              // via aimAngle above) rather than the bite's short flat range.
+              const pounceCapable = def.attacks?.includes('pounce');
+              const triggerRangePx = pounceCapable ? creatureAimColliderReachPx(def) : def.attackRangePx;
+              if (distToPlayer <= triggerRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+                c.stamina -= def.attackStaminaCost;
+                c.attackCooldownT = def.attackCooldownS;
+                const startedModular = def.attacks?.length && window.Combat?.animalAttacks?.start(
+                  c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
+                );
+                if (startedModular) aimAngle = c.facing;
+                if (!startedModular) {
+                  window.Combat.telegraph.start(c, {
+                    windupS: BITE_TELEGRAPH_WINDUP_S,
+                    strikeS: BITE_TELEGRAPH_STRIKE_S,
+                    onStrike: () => {
+                      if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
+                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
+                      }
+                      c.retreatT = JUMP_BACK_DUR_S;
+                    },
+                  });
+                }
               }
             }
           } else if (c.state === 'return') {
@@ -2460,7 +2625,10 @@
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
           updateCreatureMesh(c, dt, aimAngle);
-          updateCreatureAnimFrame(c, dt, moving);
+          // A modular attack in its leap stage owns the sprite frame (locked
+          // onto a non-idle pose) — don't let the default idle/run cycling
+          // stomp it back every tick.
+          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving);
         }
       }
 
@@ -2486,6 +2654,8 @@
           }
 
           if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
+          if (!target && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
+          if (!target) c._stage = null;
 
           let moving = false, aimAngle = c.facing || 0;
           if (target) {
@@ -2493,20 +2663,48 @@
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
             if (window.Combat?.telegraph?.isBusy(c)) {
               window.Combat.telegraph.update(c, dt);
+            } else if (window.Combat?.animalAttacks?.isBusy(c)) {
+              window.Combat.animalAttacks.update(c, dt);
+              aimAngle = c.facing;
             } else {
-              if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
-              if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
-                c.stamina -= def.attackStaminaCost;
-                c.attackCooldownT = def.attackCooldownS;
-                window.Combat.telegraph.start(c, {
-                  windupS: BITE_TELEGRAPH_WINDUP_S,
-                  strikeS: BITE_TELEGRAPH_STRIKE_S,
-                  onStrike: () => {
-                    if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
-                      damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
-                    }
-                  },
-                });
+              // Tamed companions cycle plain active-vs-backing-up (no
+              // evasive-orbit stage — that's wild-creature-only, see
+              // updateCreatureBehaviorStage) so every attack/charge is still
+              // separated from the next by the same global ~2s backup beat.
+              const st = c._stage || (c._stage = { mode: 'active', t: 0 });
+              st.t += dt;
+              if (st.mode === 'backingUp') {
+                const awayAngle = aimAngle + Math.PI;
+                moving = moveCreatureToward(c, c.x + Math.cos(awayAngle) * TILE, c.y + Math.sin(awayAngle) * TILE, def.moveSpeed, dt);
+                if (st.t >= STAGE_BACKUP_S) { st.mode = 'active'; st.t = 0; }
+              } else {
+                if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
+                if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+                  c.stamina -= def.attackStaminaCost;
+                  c.attackCooldownT = def.attackCooldownS;
+                  // Tamed behavior: the real species attack set (e.g. Pounce)
+                  // fires only once every 4 behavior actions; the other 3 use
+                  // the short 0-damage/high-knockback guard charge instead.
+                  c._behaviorActionCount = (c._behaviorActionCount || 0) + 1;
+                  const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % 4 === 0);
+                  const attackId = useRealAttack ? def.attacks[Math.floor(Math.random() * def.attacks.length)] : 'guardCharge';
+                  const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
+                  if (startedModular) {
+                    aimAngle = c.facing;
+                  } else {
+                    window.Combat.telegraph.start(c, {
+                      windupS: BITE_TELEGRAPH_WINDUP_S,
+                      strikeS: BITE_TELEGRAPH_STRIKE_S,
+                      onStrike: () => {
+                        if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
+                          damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
+                        }
+                      },
+                    });
+                  }
+                  st.mode = 'backingUp';
+                  st.t = 0;
+                }
               }
             }
           } else if (distToPlayer > FOLLOW_FAR_PX) {
@@ -2521,7 +2719,7 @@
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
           updateCreatureMesh(c, dt, aimAngle);
-          updateCreatureAnimFrame(c, dt, moving);
+          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving);
         }
       }
 
@@ -8269,14 +8467,21 @@
         tickPlayerFootsteps(_fsPrevX, _fsPrevY);
       }
 
-      function canPlayerOccupy(wx, wy) {
-        const r  = PLAYER_RADIUS * 0.72;
+      // Generalized footprint-occupancy check (a square of side 2*radius is free
+      // of solid terrain / map edges), shared by the player and by creature
+      // attacks that need to know when a forced movement (e.g. a pounce leap)
+      // has run into something.
+      function canOccupyAt(wx, wy, radius) {
         const aC = getActiveCols(), aR = getActiveRows();
-        if (wx - r < 0 || wy - r < 0 || wx + r >= aC * TILE || wy + r >= aR * TILE) return false;
-        return tileSpeedAt(wx - r, wy - r) !== null
-            && tileSpeedAt(wx + r, wy - r) !== null
-            && tileSpeedAt(wx - r, wy + r) !== null
-            && tileSpeedAt(wx + r, wy + r) !== null;
+        if (wx - radius < 0 || wy - radius < 0 || wx + radius >= aC * TILE || wy + radius >= aR * TILE) return false;
+        return tileSpeedAt(wx - radius, wy - radius) !== null
+            && tileSpeedAt(wx + radius, wy - radius) !== null
+            && tileSpeedAt(wx - radius, wy + radius) !== null
+            && tileSpeedAt(wx + radius, wy + radius) !== null;
+      }
+
+      function canPlayerOccupy(wx, wy) {
+        return canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72);
       }
 
       function getKeyboardVector() {
@@ -8479,6 +8684,46 @@
       }
 
 
+      // Half the player avatar's own prism height above the ground it's
+      // standing on — playerMesh.position.y already tracks that ground
+      // level (see the lerp toward targetY below), and the avatar plane
+      // itself is bottom-edge anchored there, so its world-space vertical
+      // center is exactly ground + height/2.
+      function playerPrismHeightTiles() {
+        let h = null;
+        playerMesh?.traverse?.(child => {
+          if (h == null && Number.isFinite(child.userData?.portraitModelHeight)) h = child.userData.portraitModelHeight;
+        });
+        return h ?? (window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9);
+      }
+      function weaponTrailCenterY() {
+        return playerMesh.position.y + playerPrismHeightTiles() / 2;
+      }
+
+      // Random seed points scattered across the swing's actual swept shape
+      // (trapezoid or cone), each driving one particle in the burst rather
+      // than one flat filled polygon — see drawWeaponTrailEffects().
+      const WEAPON_TRAIL_PARTICLE_COUNT = 9;
+      function weaponTrailParticleSeeds(fx) {
+        const seeds = [];
+        for (let i = 0; i < WEAPON_TRAIL_PARTICLE_COUNT; i++) {
+          let dx, dz, outAngle;
+          if (fx.isCone) {
+            const a = fx.angle - fx.halfConeRad + (2 * fx.halfConeRad) * Math.random();
+            const r = fx.rangeTiles * (0.25 + Math.random() * 0.75);
+            dx = Math.cos(a) * r; dz = Math.sin(a) * r; outAngle = a;
+          } else {
+            const along = 0.15 + Math.random() * fx.far;
+            const across = (Math.random() * 2 - 1) * fx.halfWidth;
+            dx = fx.dir.x * along + fx.side.x * across;
+            dz = fx.dir.y * along + fx.side.y * across;
+            outAngle = Math.atan2(fx.dir.y, fx.dir.x);
+          }
+          seeds.push({ dx, dz, outAngle, jitterY: (Math.random() - 0.5) * 0.16, drift: 0.15 + Math.random() * 0.25, size: 5 + Math.random() * 5 });
+        }
+        return seeds;
+      }
+
       function spawnWeaponTrailEffect(action, ok, col = null, row = null) {
         const abil = weaponAbility(action) || weaponAbility('slash');
         const tileAnchored = col !== null && row !== null;
@@ -8486,12 +8731,7 @@
         const side = tileAnchored
           ? (dir.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 })
           : { x: -dir.y, y: dir.x };
-        const tgrid = getActiveGrid();
-        const sampleCol = clamp(Math.floor(player.x / TILE), 0, getActiveCols() - 1);
-        const sampleRow = clamp(Math.floor(player.y / TILE), 0, getActiveRows() - 1);
-        const targets = tileAnchored ? getMacheteTargets(col, row, 'slash') : [{ col: sampleCol, row: sampleRow }];
-        const surfaceY = targets.reduce((sum, t) => sum + tileSurfaceY(tgrid[t.row]?.[t.col]?.type || TileType.GRASS), 0) / Math.max(1, targets.length);
-        weaponTrailEffects.push({
+        const fx = {
           x: col === null ? player.x / TILE : col + 0.5,
           z: row === null ? player.y / TILE : row + 0.5,
           dir, side, action,
@@ -8500,8 +8740,10 @@
           age: 0,
           maxAge: ok ? abil.trailMaxAgeSeconds : Math.max(abil.trailMaxAgeSeconds * 0.72, 0.1),
           ok,
-          y: surfaceY + 0.18,
-        });
+          y: weaponTrailCenterY(),
+        };
+        fx.particles = weaponTrailParticleSeeds(fx);
+        weaponTrailEffects.push(fx);
         const limit = Number(combatConfig().weaponTrailLimit) || 5;
         while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
       }
@@ -8510,55 +8752,50 @@
       // range) a combat-*.js ability just resolved its inCone() hit test
       // against, since each ability/charge/combo-step uses its own rangePx/
       // halfConeRad rather than one fixed shape. Reuses weaponTrailEffects'
-      // existing age/limit bookkeeping and drawWeaponTrailEffects' renderer
-      // (isCone flag switches slashTrailWorldPoints/drawWeaponTrailEffects
-      // onto the fan-shaped path below instead of the farming trapezoid).
+      // existing age/limit bookkeeping and drawWeaponTrailEffects' particle
+      // renderer (isCone flag switches weaponTrailParticleSeeds onto the
+      // fan-shaped sampling below instead of the farming trapezoid).
       const COMBAT_TRAIL_MAX_AGE_S = 0.24; // matches the legacy cut ability's trailMaxAgeSeconds
       function spawnCombatTrailEffect({ rangePx, halfConeRad, angle = player.angle, ok }) {
-        const tgrid = getActiveGrid();
-        const col = clamp(Math.floor(player.x / TILE), 0, getActiveCols() - 1);
-        const row = clamp(Math.floor(player.y / TILE), 0, getActiveRows() - 1);
-        const surfaceY = tileSurfaceY(tgrid[row]?.[col]?.type || TileType.GRASS);
-        weaponTrailEffects.push({
+        const fx = {
           isCone: true,
           x: player.x / TILE,
           z: player.y / TILE,
-          y: surfaceY + 0.18,
+          y: weaponTrailCenterY(),
           angle,
           halfConeRad,
           rangeTiles: rangePx / TILE,
           age: 0,
           maxAge: ok ? COMBAT_TRAIL_MAX_AGE_S : Math.max(COMBAT_TRAIL_MAX_AGE_S * 0.72, 0.1),
           ok,
-        });
+        };
+        fx.particles = weaponTrailParticleSeeds(fx);
+        weaponTrailEffects.push(fx);
         const limit = Number(combatConfig().weaponTrailLimit) || 5;
         while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
       }
 
-      function coneTrailWorldPoints(fx) {
-        const segments = 10;
-        const pts = [{ x: fx.x, y: fx.y, z: fx.z }];
-        for (let i = 0; i <= segments; i++) {
-          const a = fx.angle - fx.halfConeRad + (2 * fx.halfConeRad) * (i / segments);
-          pts.push({ x: fx.x + Math.cos(a) * fx.rangeTiles, y: fx.y, z: fx.z + Math.sin(a) * fx.rangeTiles });
-        }
-        return pts;
-      }
-
-      function slashTrailWorldPoints(fx) {
-        if (fx.isCone) return coneTrailWorldPoints(fx);
-        const cx = fx.x;
-        const cz = fx.z;
-        const near = 0.02;
-        const far = fx.far;
-        const halfWidth = fx.halfWidth;
-        return [
-          { x: cx + fx.dir.x * near - fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * near - fx.side.y * halfWidth },
-          { x: cx + fx.dir.x * far  - fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * far  - fx.side.y * halfWidth },
-          { x: cx + fx.dir.x * (far + 0.16), y: fx.y + 0.03, z: cz + fx.dir.y * (far + 0.16) },
-          { x: cx + fx.dir.x * far  + fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * far  + fx.side.y * halfWidth },
-          { x: cx + fx.dir.x * near + fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * near + fx.side.y * halfWidth },
-        ];
+      // Full-circle burst at the player's position with an explicit color —
+      // used for non-attack feedback like shield blocks. halfConeRad = π gives
+      // a full 360° fan in weaponTrailParticleSeeds.
+      function spawnBurstEffect({ color, rangePx }) {
+        const fx = {
+          isCone: true,
+          x: player.x / TILE,
+          z: player.y / TILE,
+          y: weaponTrailCenterY(),
+          angle: 0,
+          halfConeRad: Math.PI,
+          rangeTiles: rangePx / TILE,
+          age: 0,
+          maxAge: COMBAT_TRAIL_MAX_AGE_S * 1.4,
+          ok: true,
+          color,
+        };
+        fx.particles = weaponTrailParticleSeeds(fx);
+        weaponTrailEffects.push(fx);
+        const limit = Number(combatConfig().weaponTrailLimit) || 5;
+        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
       }
 
       function updateActionParticles(dt) {
@@ -8626,31 +8863,25 @@
       function drawWeaponTrailEffects() {
         for (const fx of weaponTrailEffects) {
           const t = fx.age / fx.maxAge;
-          const pts = slashTrailWorldPoints(fx).map(p => worldToOverlay(p.x, p.y, p.z));
-          if (pts.some(p => !p.visible)) continue;
           const alpha = Math.max(0, 1 - t);
+          const color = fx.color ?? (fx.ok ? '#ffdc60' : '#4488ff');
           octx.save();
-          octx.globalAlpha = alpha * (fx.ok ? 0.44 : 0.34);
-          octx.fillStyle = fx.ok ? 'rgba(127,232,154,0.34)' : 'rgba(255,128,96,0.30)';
-          octx.strokeStyle = fx.ok ? '#d9ffe0' : '#ff8060';
-          octx.lineWidth = fx.ok ? 4 : 3;
-          octx.lineJoin = 'round';
-          octx.beginPath();
-          octx.moveTo(pts[0].x, pts[0].y);
-          for (let i = 1; i < pts.length; i++) octx.lineTo(pts[i].x, pts[i].y);
-          octx.closePath();
-          octx.fill();
-          octx.globalAlpha = alpha * 0.92;
-          octx.beginPath();
-          if (fx.isCone) {
-            // Highlight the cone's outer arc — the actual swept edge of the attack.
-            octx.moveTo(pts[1].x, pts[1].y);
-            for (let i = 2; i < pts.length; i++) octx.lineTo(pts[i].x, pts[i].y);
-          } else {
-            octx.moveTo(pts[1].x, pts[1].y);
-            octx.quadraticCurveTo(pts[2].x, pts[2].y - 8 * alpha, pts[3].x, pts[3].y);
+          octx.fillStyle = color;
+          for (const p of fx.particles) {
+            // Particles drift outward along their seed angle and bob in y
+            // as they age, instead of sitting still like a flat decal.
+            const spread = 1 + t * p.drift;
+            const wx = fx.x + p.dx * spread;
+            const wz = fx.z + p.dz * spread;
+            const wy = fx.y + p.jitterY + t * 0.22;
+            const pos = worldToOverlay(wx, wy, wz);
+            if (!pos.visible) continue;
+            const r = Math.max(1.5, p.size * (1 - t * 0.5));
+            octx.globalAlpha = alpha * (fx.ok ? 0.85 : 0.7);
+            octx.beginPath();
+            octx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+            octx.fill();
           }
-          octx.stroke();
           octx.restore();
         }
       }
@@ -9828,6 +10059,36 @@
         }
         state.locked[nearestI] = isLocked;
         return { effectiveTarget, snapTo };
+      }
+
+      // For creature PNG planes: like perpClamp but linearly maps through the
+      // dead zone (entry-edge → exit-edge) so the sprite never freezes at the
+      // perpendicular — it sweeps across the camera-perpendicular range instead.
+      function pngDeadzoneTarget(state, rawTarget, perps, deadRad) {
+        if (!state.perpSides) state.perpSides = perps.map(() => null);
+        if (!state.locked)    state.locked    = perps.map(() => false);
+        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
+        for (let i = 0; i < perps.length; i++) {
+          const dT = angleDiff(rawTarget, perps[i]);
+          const a = Math.abs(dT);
+          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
+        }
+        const P = perps[nearestI];
+        const wasLocked = state.locked[nearestI];
+        const isLocked = wasLocked ? nearestAbs < deadRad + PERP_DEAD_HYSTERESIS_RAD : nearestAbs < deadRad;
+        state.locked[nearestI] = isLocked;
+        if (!isLocked) {
+          state.perpSides[nearestI] = nearestDT > 0 ? 1 : -1;
+          return rawTarget;
+        }
+        if (state.perpSides[nearestI] === null) state.perpSides[nearestI] = nearestDT >= 0 ? 1 : -1;
+        const entrySign = state.perpSides[nearestI];
+        // Target the EXIT edge so pngRot lerps across the deadzone rather
+        // than stalling at the entry edge. The lerp in updateCreatureMesh
+        // drives the smooth sweep over time.
+        // (Note: returning a linear rawTarget mapping is a mathematical
+        // identity that produces no visible effect — must target exit edge.)
+        return P - entrySign * deadRad;
       }
 
       function nearestCardinalAngle(angle) {
@@ -13976,6 +14237,12 @@
       let s_billWind  = true;
       let s_fpsCounter = false;
       let s_resScale   = 1;  // render-resolution scale applied to the 3D renderer's pixel ratio
+      // Debug hitbox overlay — unlike the other visual toggles above, its
+      // state is cached across sessions (it's a dev tool you flip on once
+      // and want to stay on, not a per-session visual preference).
+      const HITBOX_DEBUG_STORAGE_KEY = 'hobunjiDebugHitboxes';
+      let s_showHitboxes = false;
+      try { s_showHitboxes = localStorage.getItem(HITBOX_DEBUG_STORAGE_KEY) === '1'; } catch {}
 
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
@@ -14017,6 +14284,12 @@
       document.getElementById('settingResolution').addEventListener('change', e => {
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
+      });
+      const settingShowHitboxesEl = document.getElementById('settingShowHitboxes');
+      settingShowHitboxesEl.checked = s_showHitboxes;
+      settingShowHitboxesEl.addEventListener('change', e => {
+        s_showHitboxes = e.target.checked;
+        try { localStorage.setItem(HITBOX_DEBUG_STORAGE_KEY, s_showHitboxes ? '1' : '0'); } catch {}
       });
       function setCameraZoomScale(value) {
         const cfg = desktopControlsConfig();
@@ -14293,6 +14566,209 @@
         requestAnimationFrame(gameLoop);
       }
 
+      // ── Debug hitbox overlay (Settings → Dev Tools → Show Hitboxes) ─
+      // Ground-plane circles for the player's and every creature's collision
+      // footprint, plus whatever attack collider (if any) is currently live
+      // on a creature: the Pounce leap's forward cone (the real cone passed
+      // to deps.inCone, not a recomputed approximation) while it's in its
+      // 'leap' stage, or the generic bite's range circle (that attack only
+      // ever does a flat distance check, not a cone) while telegraphed.
+      const DEBUG_HITBOX_COLOR_PLAYER    = '#5cf2ff';
+      const DEBUG_HITBOX_COLOR_HOSTILE   = '#ff6a6a';
+      const DEBUG_HITBOX_COLOR_COMPANION = '#7fe89a';
+      const DEBUG_ATTACK_COLOR_WINDUP    = '#ffc23d';
+      const DEBUG_ATTACK_COLOR_STRIKE    = '#ffffff';
+      const DEBUG_ATTACK_COLOR_LEAP      = '#ff3df0';
+      const DEBUG_AIM_COLLIDER_COLOR     = '#c792ff';
+      // Deadzone arcs drawn per-creature when hitboxes are visible: the two
+      // camera-relative dead zones where pngDeadzoneTarget lerps through rather
+      // than tracking freely. The pngRot line shows where the PNG plane is
+      // actually pointed right now (may differ from group rotation).
+      const DEBUG_DEADZONE_FILL_COLOR    = '#cc2020';
+      const DEBUG_DEADZONE_EDGE_COLOR    = '#ff5050';
+      const DEBUG_PNG_ROT_COLOR          = '#ff80ff';
+      // Player avatar's crossed-plane "prism" base width (tile units) —
+      // mirrors the worldModelWidth lookup refreshPlayerAvatar() uses to
+      // build the avatar mesh, since the player object stores no width
+      // of its own.
+      function playerModelWidthTiles() {
+        return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
+      }
+
+      function _debugGroundY(wx, wy) {
+        const tile = getActiveTileAt(Math.floor(wx / TILE), Math.floor(wy / TILE));
+        return (tile ? tileSurfaceY(tile.type) : 0) + 0.05;
+      }
+
+      function _drawDebugCircle(wx, wy, radiusPx, color, dashed) {
+        const y = _debugGroundY(wx, wy);
+        const center = worldToOverlay(wx / TILE, y, wy / TILE);
+        if (!center.visible) return;
+        const edge = worldToOverlay((wx + radiusPx) / TILE, y, wy / TILE);
+        const r = Math.hypot(edge.x - center.x, edge.y - center.y);
+        octx.save();
+        octx.globalAlpha = 0.8;
+        octx.strokeStyle = color;
+        octx.lineWidth = 1.5;
+        if (dashed) octx.setLineDash([5, 4]);
+        octx.beginPath();
+        octx.ellipse(center.x, center.y, r, r * 0.5, 0, 0, Math.PI * 2);
+        octx.stroke();
+        octx.restore();
+      }
+
+      function _drawDebugSquare(wx, wy, halfSizePx, color, dashed) {
+        const y = _debugGroundY(wx, wy);
+        const halfTiles = halfSizePx / TILE;
+        const baseX = wx / TILE, baseZ = wy / TILE;
+        const corners = [
+          worldToOverlay(baseX - halfTiles, y, baseZ - halfTiles),
+          worldToOverlay(baseX + halfTiles, y, baseZ - halfTiles),
+          worldToOverlay(baseX + halfTiles, y, baseZ + halfTiles),
+          worldToOverlay(baseX - halfTiles, y, baseZ + halfTiles),
+        ];
+        if (!corners[0].visible) return;
+        octx.save();
+        octx.globalAlpha = 0.8;
+        octx.strokeStyle = color;
+        octx.lineWidth = 1.5;
+        if (dashed) octx.setLineDash([5, 4]);
+        octx.beginPath();
+        octx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < corners.length; i++) octx.lineTo(corners[i].x, corners[i].y);
+        octx.closePath();
+        octx.stroke();
+        octx.restore();
+      }
+
+      function _drawDebugLine(wx1, wy1, wx2, wy2, color, dashed) {
+        const p1 = worldToOverlay(wx1 / TILE, _debugGroundY(wx1, wy1), wy1 / TILE);
+        const p2 = worldToOverlay(wx2 / TILE, _debugGroundY(wx2, wy2), wy2 / TILE);
+        if (!p1.visible && !p2.visible) return;
+        octx.save();
+        octx.globalAlpha = 0.85;
+        octx.strokeStyle = color;
+        octx.lineWidth = 2;
+        if (dashed) octx.setLineDash([4, 4]);
+        octx.beginPath();
+        octx.moveTo(p1.x, p1.y);
+        octx.lineTo(p2.x, p2.y);
+        octx.stroke();
+        octx.restore();
+      }
+
+      function _drawDebugCone(wx, wy, angle, rangePx, halfConeRad, color) {
+        const y = _debugGroundY(wx, wy);
+        const rangeTiles = rangePx / TILE;
+        const baseX = wx / TILE, baseZ = wy / TILE;
+        const left = angle - halfConeRad, right = angle + halfConeRad;
+        const origin = worldToOverlay(baseX, y, baseZ);
+        if (!origin.visible) return;
+        const leftEnd = worldToOverlay(baseX + Math.cos(left) * rangeTiles, y, baseZ + Math.sin(left) * rangeTiles);
+        const rightEnd = worldToOverlay(baseX + Math.cos(right) * rangeTiles, y, baseZ + Math.sin(right) * rangeTiles);
+        octx.save();
+        octx.globalAlpha = 0.85;
+        octx.strokeStyle = color;
+        octx.lineWidth = 2;
+        octx.beginPath();
+        octx.moveTo(origin.x, origin.y);
+        octx.lineTo(leftEnd.x, leftEnd.y);
+        octx.lineTo(rightEnd.x, rightEnd.y);
+        octx.closePath();
+        octx.stroke();
+        octx.restore();
+      }
+
+      // Ground-plane arc sector (for deadzone fans). fromAngle/toAngle are
+      // world-space angles (same convention as c.facing / atan2 game coords).
+      // radiusPx is the visual reach of the fan in game pixels.
+      function _drawDebugArcSector(wx, wy, fromAngle, toAngle, radiusPx, edgeColor, fillColor) {
+        const N = 20;
+        const y = _debugGroundY(wx, wy);
+        const bx = wx / TILE, bz = wy / TILE, rT = radiusPx / TILE;
+        const origin = worldToOverlay(bx, y, bz);
+        if (!origin.visible) return;
+        const pts = [];
+        for (let i = 0; i <= N; i++) {
+          const a = fromAngle + (toAngle - fromAngle) * (i / N);
+          pts.push(worldToOverlay(bx + Math.cos(a) * rT, y, bz + Math.sin(a) * rT));
+        }
+        octx.save();
+        octx.beginPath();
+        octx.moveTo(origin.x, origin.y);
+        octx.lineTo(pts[0].x, pts[0].y);
+        for (let i = 1; i <= N; i++) octx.lineTo(pts[i].x, pts[i].y);
+        octx.closePath();
+        octx.globalAlpha = 0.18;
+        octx.fillStyle = fillColor;
+        octx.fill();
+        octx.globalAlpha = 0.75;
+        octx.strokeStyle = edgeColor;
+        octx.lineWidth = 1.5;
+        octx.setLineDash([3, 3]);
+        octx.stroke();
+        octx.restore();
+      }
+
+      function _drawCreatureDebug(c, hitboxColor) {
+        const def = c.def;
+        const halfSize = creatureHitboxHalfSizePx(def);
+        _drawDebugSquare(c.x, c.y, halfSize, hitboxColor, false);
+
+        if (def.attacks?.includes('pounce')) {
+          const ang = c.facing || 0;
+          const reach = creatureAimColliderReachPx(def);
+          const sx = c.x + Math.cos(ang) * halfSize, sy = c.y + Math.sin(ang) * halfSize;
+          const ex = c.x + Math.cos(ang) * reach, ey = c.y + Math.sin(ang) * reach;
+          _drawDebugLine(sx, sy, ex, ey, DEBUG_AIM_COLLIDER_COLOR, true);
+        }
+
+        const aa = c._animalAttack;
+        if (aa && aa.state.stage === 'leap' && aa.state.rangePx != null) {
+          const st = aa.state;
+          const headX = c.x + Math.cos(st.angle) * st.headOffsetPx;
+          const headY = c.y + Math.sin(st.angle) * st.headOffsetPx;
+          _drawDebugCone(headX, headY, st.angle, st.rangePx, st.halfConeRad, DEBUG_ATTACK_COLOR_LEAP);
+        } else if (c.telegraphState) {
+          _drawDebugCircle(c.x, c.y, def.attackRangePx,
+            c.telegraphState === 'strike' ? DEBUG_ATTACK_COLOR_STRIKE : DEBUG_ATTACK_COLOR_WINDUP, true);
+        }
+
+        // Deadzone fans — the two camera-relative angle bands where the PNG
+        // plane lerps through rather than tracking freely. Each perp is stored
+        // in Three.js rotation.y space; convert to world-space angle via
+        //   worldAngle = π/2 − rotY
+        // so the sector maps back into the same atan2 space as c.facing.
+        const dzR = TILE * 0.65;
+        for (const P_rotY of cameraRelativeCreaturePerps()) {
+          const wc = Math.PI / 2 - P_rotY;
+          _drawDebugArcSector(c.x, c.y, wc - CREATURE_PERP_DEAD_RAD, wc + CREATURE_PERP_DEAD_RAD,
+            dzR, DEBUG_DEADZONE_EDGE_COLOR, DEBUG_DEADZONE_FILL_COLOR);
+        }
+        // Current PNG plane direction — where the sprite is visually facing
+        // right now (may lag or differ from the prism/group rotation).
+        if (c.pngRot !== undefined) {
+          const pngWorldAngle = Math.PI / 2 - c.pngRot;
+          _drawDebugLine(c.x, c.y,
+            c.x + Math.cos(pngWorldAngle) * dzR,
+            c.y + Math.sin(pngWorldAngle) * dzR,
+            DEBUG_PNG_ROT_COLOR, false);
+        }
+      }
+
+      function drawDebugHitboxes() {
+        if (!s_showHitboxes) return;
+        _drawDebugSquare(player.x, player.y, playerModelWidthTiles() * TILE / 2, DEBUG_HITBOX_COLOR_PLAYER, false);
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_HOSTILE);
+        }
+        for (const c of companionObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_COMPANION);
+        }
+      }
+
       // ── 2D overlay draw (rain curtain + ripples on overlay canvas) ─
       function drawOverlays() {
         const rect = _threeRect;
@@ -14342,6 +14818,8 @@
           octx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.35})`;
           octx.fillRect(0, 0, W, H);
         }
+
+        drawDebugHitboxes();
       }
 
       function markTileDirty(col, row) {
@@ -16417,6 +16895,8 @@
         resolveWeaponHit,
         findAutoTarget,
         canPlayerOccupy,
+        canOccupyAt,
+        setCreatureFrame,
         showToast,
         triggerWeaponSwingVisual,
         triggerWeaponHoldVisual,
@@ -16424,6 +16904,7 @@
         cancelWeaponSwingHold,
         beginCombatLunge,
         spawnCombatTrailEffect,
+        spawnBurstEffect,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module

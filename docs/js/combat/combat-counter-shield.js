@@ -15,7 +15,9 @@
   const COUNTER_DAMAGE_MUL = 4.4; // ~62 vs the demo's 14-damage baseline
   const COUNTER_RANGE_MUL = 1.7;
   const COUNTER_HALF_CONE_DEG = 8;
-  const COUNTER_KNOCKBACK_MUL = 1.5;
+  // x1.5 on top of the global knockback-base doubling — the riposte is one
+  // of the four attacks called out for an extra "even more" bump.
+  const COUNTER_KNOCKBACK_MUL = 2.25;
 
   // Held guard stance — a forward-braced thrust-style hold (z pushes the
   // weapon out front, like readying a jab) but played with anim:'sweep' so
@@ -57,6 +59,7 @@
       const staminaCost = Math.max(MIN_STAMINA_TO_RAISE, amount * 0.35);
       deps.player.stamina = Math.max(0, deps.player.stamina - staminaCost);
       deps.showToast(`Blocked! (-${Math.round(staminaCost)} stamina)`, true);
+      deps.spawnBurstEffect({ color: '#40ccff', rangePx: deps.TILE * 1.8 });
       triggerCounter();
       return true;
     }

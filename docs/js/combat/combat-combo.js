@@ -20,7 +20,7 @@
   // Short forward step layered under each combo swing's windup/strike —
   // see game.js's beginCombatLunge. Expressed as a TILE multiple so it scales
   // with the game's tile size rather than a raw pixel constant.
-  const LUNGE_TILE_MUL = 0.4;
+  const LUNGE_TILE_MUL = 0.8;
 
   // "Forehand Swing" — authored in the attack-animation editor as a full
   // 6-channel pose (yaw winds the tool back/through, bodyYaw turns the
@@ -42,7 +42,10 @@
   const SWING_STEPS = [
     { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 10, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1 },
     { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 12, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1 },
-    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 1.6,  staminaCost: 18, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1 },
+    // Cleave is the combo's 3rd step — gets an extra x1.5 knockback bump
+    // (2.4) on top of the global knockback-base doubling, same as charged
+    // breaker/riposte/flurry; the first two steps stay at their plain mul.
+    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 18, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1 },
   ];
 
   // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
@@ -51,7 +54,8 @@
   const POKE_STEPS = [
     { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.9, staminaCost: 8,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1 },
     { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 9,  rangeMul: 1.35, knockbackMul: 1.1, staminaCost: 10, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1 },
-    { name: 'Long Lunge',   damageMul: 1.7,  halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 1.9, staminaCost: 16, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1 },
+    // Long Lunge is the poke combo's 3rd step — same extra x1.5 bump as Cleave.
+    { name: 'Long Lunge',   damageMul: 1.7,  halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 16, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1 },
   ];
 
   function now() { return performance.now() / 1000; }
