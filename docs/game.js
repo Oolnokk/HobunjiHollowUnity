@@ -14514,6 +14514,13 @@
       const DEBUG_ATTACK_COLOR_STRIKE    = '#ffffff';
       const DEBUG_ATTACK_COLOR_LEAP      = '#ff3df0';
       const DEBUG_AIM_COLLIDER_COLOR     = '#c792ff';
+      // Deadzone arcs drawn per-creature when hitboxes are visible: the two
+      // camera-relative dead zones where pngDeadzoneTarget lerps through rather
+      // than tracking freely. The pngRot line shows where the PNG plane is
+      // actually pointed right now (may differ from group rotation).
+      const DEBUG_DEADZONE_FILL_COLOR    = '#9040cc';
+      const DEBUG_DEADZONE_EDGE_COLOR    = '#d090ff';
+      const DEBUG_PNG_ROT_COLOR          = '#ff80ff';
       // Player avatar's crossed-plane "prism" base width (tile units) —
       // mirrors the worldModelWidth lookup refreshPlayerAvatar() uses to
       // build the avatar mesh, since the player object stores no width
@@ -14606,6 +14613,37 @@
         octx.restore();
       }
 
+      // Ground-plane arc sector (for deadzone fans). fromAngle/toAngle are
+      // world-space angles (same convention as c.facing / atan2 game coords).
+      // radiusPx is the visual reach of the fan in game pixels.
+      function _drawDebugArcSector(wx, wy, fromAngle, toAngle, radiusPx, edgeColor, fillColor) {
+        const N = 20;
+        const y = _debugGroundY(wx, wy);
+        const bx = wx / TILE, bz = wy / TILE, rT = radiusPx / TILE;
+        const origin = worldToOverlay(bx, y, bz);
+        if (!origin.visible) return;
+        const pts = [];
+        for (let i = 0; i <= N; i++) {
+          const a = fromAngle + (toAngle - fromAngle) * (i / N);
+          pts.push(worldToOverlay(bx + Math.cos(a) * rT, y, bz + Math.sin(a) * rT));
+        }
+        octx.save();
+        octx.beginPath();
+        octx.moveTo(origin.x, origin.y);
+        octx.lineTo(pts[0].x, pts[0].y);
+        for (let i = 1; i <= N; i++) octx.lineTo(pts[i].x, pts[i].y);
+        octx.closePath();
+        octx.globalAlpha = 0.18;
+        octx.fillStyle = fillColor;
+        octx.fill();
+        octx.globalAlpha = 0.75;
+        octx.strokeStyle = edgeColor;
+        octx.lineWidth = 1.5;
+        octx.setLineDash([3, 3]);
+        octx.stroke();
+        octx.restore();
+      }
+
       function _drawCreatureDebug(c, hitboxColor) {
         const def = c.def;
         const halfSize = creatureHitboxHalfSizePx(def);
@@ -14628,6 +14666,27 @@
         } else if (c.telegraphState) {
           _drawDebugCircle(c.x, c.y, def.attackRangePx,
             c.telegraphState === 'strike' ? DEBUG_ATTACK_COLOR_STRIKE : DEBUG_ATTACK_COLOR_WINDUP, true);
+        }
+
+        // Deadzone fans — the two camera-relative angle bands where the PNG
+        // plane lerps through rather than tracking freely. Each perp is stored
+        // in Three.js rotation.y space; convert to world-space angle via
+        //   worldAngle = π/2 − rotY
+        // so the sector maps back into the same atan2 space as c.facing.
+        const dzR = TILE * 0.65;
+        for (const P_rotY of cameraRelativeCreaturePerps()) {
+          const wc = Math.PI / 2 - P_rotY;
+          _drawDebugArcSector(c.x, c.y, wc - CREATURE_PERP_DEAD_RAD, wc + CREATURE_PERP_DEAD_RAD,
+            dzR, DEBUG_DEADZONE_EDGE_COLOR, DEBUG_DEADZONE_FILL_COLOR);
+        }
+        // Current PNG plane direction — where the sprite is visually facing
+        // right now (may lag or differ from the prism/group rotation).
+        if (c.pngRot !== undefined) {
+          const pngWorldAngle = Math.PI / 2 - c.pngRot;
+          _drawDebugLine(c.x, c.y,
+            c.x + Math.cos(pngWorldAngle) * dzR,
+            c.y + Math.sin(pngWorldAngle) * dzR,
+            DEBUG_PNG_ROT_COLOR, false);
         }
       }
 
