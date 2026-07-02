@@ -10019,10 +10019,12 @@
         }
         if (state.perpSides[nearestI] === null) state.perpSides[nearestI] = nearestDT >= 0 ? 1 : -1;
         const entrySign = state.perpSides[nearestI];
-        // t: 0 at entry edge, 1 at exit edge — maps rawTarget's position
-        // through the dead zone rather than stalling at the entry edge.
-        const t = Math.max(0, Math.min(1, (entrySign * deadRad - nearestDT) / (2 * deadRad)));
-        return P + entrySign * deadRad + angleDiff(P - entrySign * deadRad, P + entrySign * deadRad) * t;
+        // Target the EXIT edge so pngRot lerps across the deadzone rather
+        // than stalling at the entry edge. The lerp in updateCreatureMesh
+        // drives the smooth sweep over time.
+        // (Note: returning a linear rawTarget mapping is a mathematical
+        // identity that produces no visible effect — must target exit edge.)
+        return P - entrySign * deadRad;
       }
 
       function nearestCardinalAngle(angle) {
