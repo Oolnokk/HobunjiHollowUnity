@@ -14518,8 +14518,8 @@
       // camera-relative dead zones where pngDeadzoneTarget lerps through rather
       // than tracking freely. The pngRot line shows where the PNG plane is
       // actually pointed right now (may differ from group rotation).
-      const DEBUG_DEADZONE_FILL_COLOR    = '#9040cc';
-      const DEBUG_DEADZONE_EDGE_COLOR    = '#d090ff';
+      const DEBUG_DEADZONE_FILL_COLOR    = '#cc2020';
+      const DEBUG_DEADZONE_EDGE_COLOR    = '#ff5050';
       const DEBUG_PNG_ROT_COLOR          = '#ff80ff';
       // Player avatar's crossed-plane "prism" base width (tile units) —
       // mirrors the worldModelWidth lookup refreshPlayerAvatar() uses to
