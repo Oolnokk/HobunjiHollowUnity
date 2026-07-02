@@ -28,7 +28,7 @@
   // Big anime-style forward leap on release, far beyond the combo/quick-
   // attack steps — see game.js's beginCombatLunge. LUNGE_HOP_UNITS is a
   // cosmetic vertical arc peak in world-Y units (not pixels).
-  const LUNGE_TILE_MUL = 9.6; // 4x — charged breaker gets four times the forward lunge
+  const LUNGE_TILE_MUL = 7.2; // 3x — 75% of prior 9.6 (four times the base forward lunge)
   const LUNGE_HOP_UNITS = 0.45;
 
   function now() { return performance.now() / 1000; }

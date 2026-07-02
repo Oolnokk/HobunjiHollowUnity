@@ -2148,6 +2148,8 @@
           modelWidth, modelHeight,
           name: creatureKey + '_' + idUniq,
         });
+        avatarRef.frontPlane = avatarRef.group.children[0] || null;
+        avatarRef.backPlane  = avatarRef.group.children[1] || null;
         if (def.tint && def.tint !== 0xffffff) {
           for (const child of avatarRef.group.children) {
             if (child.material) child.material.color.setHex(def.tint);
@@ -2167,7 +2169,7 @@
           halfHeight: halfH,
           health: def.maxHealth, maxHealth: def.maxHealth,
           stamina: def.maxStamina, maxStamina: def.maxStamina,
-          facing: 0, groupRot: 0, perpState: {},
+          facing: 0, groupRot: 0, pngRot: 0, perpState: {},
           scaleY: 1,
           attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
           knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
@@ -2356,10 +2358,21 @@
         grp.scale.y = scaleY;
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
-        const { effectiveTarget, snapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
-        if (snapTo !== null) c.groupRot = effectiveTarget;
-        else c.groupRot += angleDiff(effectiveTarget, c.groupRot) * Math.min(1, dt * 10);
+
+        // Prism (group) tracks the raw aim angle freely — deadzone only governs
+        // the interior PNG plane, not the prism's spatial orientation or the
+        // movement/targeting logic that drives aimAngle.
+        c.groupRot += angleDiff(rawTargetRotY, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
+
+        // PNG planes get a separate deadzone that lerps through the perp range
+        // instead of locking at the edge (see pngDeadzoneTarget).
+        c.pngRot ??= c.groupRot;
+        const pngTarget = pngDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
+        c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
+        const planeDelta = c.pngRot - c.groupRot;
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
+        if (c.avatarRef.backPlane)  c.avatarRef.backPlane.rotation.y  = planeDelta - Math.PI / 2;
 
         if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
         // Telegraph tell (combat-enemy-telegraph.js) takes a back seat to the
@@ -9982,6 +9995,34 @@
         }
         state.locked[nearestI] = isLocked;
         return { effectiveTarget, snapTo };
+      }
+
+      // For creature PNG planes: like perpClamp but linearly maps through the
+      // dead zone (entry-edge → exit-edge) so the sprite never freezes at the
+      // perpendicular — it sweeps across the camera-perpendicular range instead.
+      function pngDeadzoneTarget(state, rawTarget, perps, deadRad) {
+        if (!state.perpSides) state.perpSides = perps.map(() => null);
+        if (!state.locked)    state.locked    = perps.map(() => false);
+        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
+        for (let i = 0; i < perps.length; i++) {
+          const dT = angleDiff(rawTarget, perps[i]);
+          const a = Math.abs(dT);
+          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
+        }
+        const P = perps[nearestI];
+        const wasLocked = state.locked[nearestI];
+        const isLocked = wasLocked ? nearestAbs < deadRad + PERP_DEAD_HYSTERESIS_RAD : nearestAbs < deadRad;
+        state.locked[nearestI] = isLocked;
+        if (!isLocked) {
+          state.perpSides[nearestI] = nearestDT > 0 ? 1 : -1;
+          return rawTarget;
+        }
+        if (state.perpSides[nearestI] === null) state.perpSides[nearestI] = nearestDT >= 0 ? 1 : -1;
+        const entrySign = state.perpSides[nearestI];
+        // t: 0 at entry edge, 1 at exit edge — maps rawTarget's position
+        // through the dead zone rather than stalling at the entry edge.
+        const t = Math.max(0, Math.min(1, (entrySign * deadRad - nearestDT) / (2 * deadRad)));
+        return P + entrySign * deadRad + angleDiff(P - entrySign * deadRad, P + entrySign * deadRad) * t;
       }
 
       function nearestCardinalAngle(angle) {
