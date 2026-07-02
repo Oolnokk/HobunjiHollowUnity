@@ -167,8 +167,8 @@ window.SCRATCHBONES_CONFIG = {
     "combat": {
       "autoTargetRangeTiles": 5.5,
       "weaponAbilities": {
-        "cut": { "damage": 14, "halfConeDeg": 18, "rangeTiles": 1.05, "staminaCost": 12, "knockbackPxS": 360, "trailHalfWidthTiles": 0.38, "trailFarTiles": 1.05, "trailMaxAgeSeconds": 0.24 },
-        "slash": { "damage": 24, "halfConeDeg": 62, "rangeTiles": 1.35, "staminaCost": 20, "knockbackPxS": 520, "trailHalfWidthTiles": 1.35, "trailFarTiles": 1.02, "trailMaxAgeSeconds": 0.34 }
+        "cut": { "damage": 14, "halfConeDeg": 18, "rangeTiles": 1.05, "staminaCost": 12, "knockbackPxS": 720, "trailHalfWidthTiles": 0.38, "trailFarTiles": 1.05, "trailMaxAgeSeconds": 0.24 },
+        "slash": { "damage": 24, "halfConeDeg": 62, "rangeTiles": 1.35, "staminaCost": 20, "knockbackPxS": 1040, "trailHalfWidthTiles": 1.35, "trailFarTiles": 1.02, "trailMaxAgeSeconds": 0.34 }
       },
       "weaponTrailLimit": 5,
       "combatConeReticle": {

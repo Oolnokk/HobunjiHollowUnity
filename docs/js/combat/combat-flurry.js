@@ -12,12 +12,19 @@
   const FIRST_STRIKE_DELAY_S = 0.38;
   const COST_BASE = 5, COST_PER_STRIKE = 1.4;
   const DAMAGE_MUL_BASE = 0.43, DAMAGE_MUL_PER_STRIKE = 0.17; // ~6/14 base, +2.4/14 per strike
-  const KNOCKBACK_MUL_BASE = 0.17, KNOCKBACK_MUL_PER_STRIKE = 0.036; // ~60/360 base, +13/360 per strike
+  // x1.5 on top of the global knockback-base doubling — flurry is one of the
+  // four attacks called out for an extra "even more" bump, and this curve is
+  // also how its knockback keeps growing alongside its own attack speed.
+  const KNOCKBACK_MUL_BASE = 0.255, KNOCKBACK_MUL_PER_STRIKE = 0.054;
   const HALF_CONE_DEG_BASE = 29, HALF_CONE_DEG_MAX_GROWTH = 22;
   const HALF_CONE_DEG_GROWTH_PER_STRIKE = 1.4;
   const SIDE_OFFSET_DEG = 15; // alternates left/right each strike, mirrors the demo's swing-side wobble
   const WINDUP_S = 0.035, STRIKE_S = 0.085;
   const NEXT_STRIKE_MIN_S = 0.10, NEXT_STRIKE_BASE_S = 0.42, NEXT_STRIKE_DECAY_PER_STRIKE = 0.026;
+  // Flurry has no automatic forward lunge (unlike every other attack) — in
+  // its place, holding it grants a movement-speed bonus that ramps up with
+  // the same strike count that drives its attack-speed/knockback curves.
+  const MOVE_SPEED_MUL_BASE = 1.15, MOVE_SPEED_MUL_PER_STRIKE = 0.05, MOVE_SPEED_MUL_MAX = 1.9;
   // Post-strike pause before easing back to neutral — irrelevant for all but
   // the flurry's last strike, since every earlier one gets pre-empted by the
   // next strike's trigger before its hold would ever show.
@@ -29,6 +36,10 @@
     let active = false;
     let count = 0;
     let nextStrikeAt = -99;
+
+    function speedMul() {
+      return active ? Math.min(MOVE_SPEED_MUL_MAX, MOVE_SPEED_MUL_BASE + count * MOVE_SPEED_MUL_PER_STRIKE) : 1;
+    }
 
     function fireStrike(deps) {
       const cost = COST_BASE + count * COST_PER_STRIKE;
@@ -87,6 +98,7 @@
       active = true;
       count = 0;
       nextStrikeAt = now() + FIRST_STRIKE_DELAY_S;
+      window.Combat.setMovementSpeedMul(speedMul);
       window.Combat.deps.showToast('Accelerating Flurry started.', true);
     }
 
@@ -99,6 +111,7 @@
     function onHoldEnd() {
       if (!active) return;
       active = false;
+      window.Combat.setMovementSpeedMul(null);
       const n = count;
       window.Combat.deps.showToast(`Accelerating Flurry ended after ${n} strike${n === 1 ? '' : 's'}.`, false);
       count = 0;

@@ -81,7 +81,7 @@
   const HOLD_S = 1; // post-strike pause before easing back to neutral
   // Farther forward step than the 3-hit combo's, layered under the jab —
   // see game.js's beginCombatLunge. Expressed as a TILE multiple.
-  const LUNGE_TILE_MUL = 0.7;
+  const LUNGE_TILE_MUL = 1.4;
 
   function registerQuickAttack(id, def) {
     let busyAction = null;

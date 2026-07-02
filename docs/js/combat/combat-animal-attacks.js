@@ -70,7 +70,7 @@
   const POUNCE_UNCROUCH_S = 0.1;
   const POUNCE_CROUCH_SCALE_Y = 0.55;
   const POUNCE_LEAP_SPEED_PX_S = 480;
-  const POUNCE_KNOCKBACK_PX_S = 320;
+  const POUNCE_KNOCKBACK_PX_S = 640;
 
   function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
 
@@ -163,4 +163,70 @@
   }
 
   register('pounce', { start: pounceStart, update: pounceUpdate, cancel: pounceCancel });
+
+  // ── Guard Charge ────────────────────────────────────────────────────
+  //
+  // Companions' common (3-of-4) attack action: an instant, zero-damage
+  // shove rather than a real bite. Travels only ~1/3rd of pounce's reach
+  // and lands in a blink (no windup/uncrouch stages to read), but carries
+  // high knockback — it's a positioning tool, not a damage source. Aimed
+  // off a blend of "straight at the target" and "away from the
+  // companion's own master" so the shove also tends to put daylight
+  // between the companion and the player it's guarding, rather than
+  // charging in along the same line the player might be standing on.
+  const GUARD_CHARGE_DURATION_S = 0.12;
+  const GUARD_CHARGE_KNOCKBACK_PX_S = 900;
+  const GUARD_CHARGE_TARGET_ANGLE_WEIGHT = 0.55;
+  const GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT = 0.45;
+
+  function guardChargeStart(c, state, ctx, deps) {
+    state.t = 0;
+    const directAngle = Math.atan2(ctx.target.y - c.y, ctx.target.x - c.x);
+    const awayFromMasterAngle = Math.atan2(c.y - deps.player.y, c.x - deps.player.x);
+    state.angle = Math.atan2(
+      Math.sin(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.sin(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
+      Math.cos(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.cos(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
+    );
+    // Same aim-collider-reach formula as the AI's pounce-range check
+    // (game.js's creatureAimColliderReachPx) — duplicated here since that
+    // helper isn't exposed via deps — divided down to a third of pounce's
+    // own travel distance.
+    const halfSize = (c.def.modelWidth || 2) * deps.TILE / 2;
+    const pounceReachPx = halfSize + halfSize * 2 * 1.5;
+    state.distancePx = pounceReachPx / 3;
+    state.traveledPx = 0;
+    state.speedPxS = state.distancePx / GUARD_CHARGE_DURATION_S;
+    state.rangePx = c.def.attackRangePx;
+    state.halfConeRad = c.def.attackHalfConeRad;
+    state.headOffsetPx = deps.TILE * 0.3;
+    state.collideRadiusPx = deps.TILE * 0.32;
+    state.targets = gatherTargets(c, deps);
+    c.facing = state.angle;
+  }
+
+  function guardChargeUpdate(c, state, dt, deps) {
+    state.t += dt;
+    const dirX = Math.cos(state.angle), dirY = Math.sin(state.angle);
+    const stepPx = Math.min(state.speedPxS * dt, state.distancePx - state.traveledPx);
+    if (stepPx > 0) {
+      const nx = c.x + dirX * stepPx, ny = c.y + dirY * stepPx;
+      if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) return false; // collided; stop in place
+      c.x = nx;
+      c.y = ny;
+      state.traveledPx += stepPx;
+    }
+
+    const headX = c.x + dirX * state.headOffsetPx, headY = c.y + dirY * state.headOffsetPx;
+    for (const target of state.targets) {
+      const ref = target.ref;
+      if (ref.health <= 0) continue;
+      if (!deps.inCone(headX, headY, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad)) continue;
+      if (target.isPlayer) deps.damagePlayer(0, headX, headY, GUARD_CHARGE_KNOCKBACK_PX_S);
+      else deps.damageCreature(ref, 0, headX, headY, GUARD_CHARGE_KNOCKBACK_PX_S);
+      return false; // hit landed; stop in place
+    }
+    return state.traveledPx < state.distancePx;
+  }
+
+  register('guardCharge', { start: guardChargeStart, update: guardChargeUpdate });
 })();

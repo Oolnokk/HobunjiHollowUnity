@@ -1081,9 +1081,9 @@
       // Knockback shared by all combat attacks: a short impulse that overrides
       // normal movement/AI while it decays, applied away from the attacker.
       const KNOCKBACK_DUR_S = 0.18;
-      const PLAYER_KNOCKBACK_PX_S = 300;
-      const COMPANION_BITE_KNOCKBACK_PX_S = 280;
-      const HOSTILE_BITE_KNOCKBACK_PX_S = 240;
+      const PLAYER_KNOCKBACK_PX_S = 600;
+      const COMPANION_BITE_KNOCKBACK_PX_S = 560;
+      const HOSTILE_BITE_KNOCKBACK_PX_S = 480;
 
       function applyKnockback(target, fromX, fromY, speedPxS) {
         const ang = Math.atan2(target.y - fromY, target.x - fromX);
@@ -1127,6 +1127,11 @@
           attackDamage: 12, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
           attackStaminaCost: 12, attackCooldownS: 1.0,
           attacks: ['pounce'],
+          // Slottable AI behavior-stage cycle (see updateCreatureBehaviorStage):
+          // try a Pounce for up to 7s (ends the moment one's attempted), then
+          // (after the global ~2s backing-up stage) spend up to 11s circling
+          // the target at range before cycling back to another Pounce attempt.
+          behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6.2, leashRangePx: TILE * 9,
           modelWidth: 2.1, tint: 0xffffff,
           sprites: {
@@ -1141,6 +1146,7 @@
           attackDamage: 18, attackRangePx: TILE * 0.95, attackHalfConeRad: 46 * Math.PI / 180,
           attackStaminaCost: 16, attackCooldownS: 1.0,
           attacks: ['pounce'],
+          behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 7, leashRangePx: TILE * 10,
           modelWidth: 3.1, tint: 0xffb0a0,
           sprites: {
@@ -2418,6 +2424,92 @@
         return halfSize + halfSize * 2 * 1.5;
       }
 
+      // ── Slottable AI behavior-stage system ──────────────────────────
+      //
+      // A creature whose def lists behaviorStages (e.g. gar-wolf's
+      // ['pounceAttempt', 'evasiveOrbit']) cycles through those named stages
+      // in order, looping back to the first once the last finishes. Every
+      // stage has either a fixed time limit (def below) or an "end early"
+      // condition (pounceAttempt ends the instant it commits to a pounce,
+      // not when the leap finishes resolving) — whichever comes first ends
+      // the stage. After ANY stage ends, every creature using this system
+      // (hostile or companion) spends a fixed ~2s backing directly away from
+      // its target before the next stage starts, so a hit-and-run beat
+      // separates every modular stage instead of one flowing straight into
+      // the next.
+      const STAGE_BACKUP_S = 2;
+      const STAGE_MAX_DURATION_S = { pounceAttempt: 7, evasiveOrbit: 11 };
+      const EVASIVE_ORBIT_RADIUS_MUL = 1.7; // x attackRangePx — stays just outside biting/pounce range
+
+      function ensureCreatureStage(c, stages) {
+        if (!c._stage || c._stage.stages !== stages) {
+          c._stage = { stages, idx: 0, mode: 'active', t: 0, orbitSign: Math.random() < 0.5 ? -1 : 1 };
+        }
+        return c._stage;
+      }
+
+      function clearCreatureStage(c) { c._stage = null; }
+
+      function beginCreatureBackup(st) {
+        st.mode = 'backingUp';
+        st.t = 0;
+      }
+
+      function advanceCreatureStage(st) {
+        st.idx = (st.idx + 1) % st.stages.length;
+        st.mode = 'active';
+        st.t = 0;
+        st.orbitSign = Math.random() < 0.5 ? -1 : 1;
+      }
+
+      // Drives one creature's behavior-stage cycle for one frame. target is
+      // whatever it's currently oriented on (the player for a hostile, its
+      // chosen hostile target for a companion). attemptAttackFn(dist) is
+      // called only during the 'pounceAttempt' stage and should return true
+      // the instant it commits to an attack (so the stage can end early).
+      // Returns { aimAngle, moving }.
+      function updateCreatureBehaviorStage(c, dt, target, def, attemptAttackFn) {
+        const st = ensureCreatureStage(c, def.behaviorStages);
+        st.t += dt;
+        const dx = target.x - c.x, dy = target.y - c.y;
+        const dist = Math.hypot(dx, dy);
+        const towardAngle = Math.atan2(dy, dx);
+
+        if (st.mode === 'backingUp') {
+          const awayAngle = towardAngle + Math.PI;
+          const moving = moveCreatureToward(c, c.x + Math.cos(awayAngle) * TILE, c.y + Math.sin(awayAngle) * TILE, def.moveSpeed, dt);
+          if (st.t >= STAGE_BACKUP_S) advanceCreatureStage(st);
+          return { aimAngle: towardAngle, moving };
+        }
+
+        const stageName = st.stages[st.idx];
+
+        if (stageName === 'pounceAttempt') {
+          const moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
+          let aimAngle = towardAngle;
+          const attempted = attemptAttackFn(dist);
+          if (attempted) aimAngle = c.facing;
+          if (attempted || st.t >= STAGE_MAX_DURATION_S.pounceAttempt) beginCreatureBackup(st);
+          return { aimAngle, moving };
+        }
+
+        if (stageName === 'evasiveOrbit') {
+          const orbitRadiusPx = def.attackRangePx * EVASIVE_ORBIT_RADIUS_MUL;
+          const radialSign = dist > orbitRadiusPx ? 1 : -1; // 1: close the gap, -1: back off
+          const tangentAngle = towardAngle + st.orbitSign * Math.PI / 2;
+          const blendAngle = Math.atan2(
+            Math.sin(tangentAngle) * 0.8 + Math.sin(towardAngle) * radialSign * 0.2,
+            Math.cos(tangentAngle) * 0.8 + Math.cos(towardAngle) * radialSign * 0.2,
+          );
+          const moveX = c.x + Math.cos(blendAngle) * TILE, moveY = c.y + Math.sin(blendAngle) * TILE;
+          const moving = moveCreatureToward(c, moveX, moveY, def.chaseSpeed * 0.85, dt);
+          if (st.t >= STAGE_MAX_DURATION_S.evasiveOrbit) beginCreatureBackup(st);
+          return { aimAngle: towardAngle, moving };
+        }
+
+        return { aimAngle: towardAngle, moving: false };
+      }
+
       function updateHostiles(dt) {
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
@@ -2438,6 +2530,7 @@
           // out of range.
           if (c.state !== 'chase' && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           if (c.state !== 'chase' && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
+          if (c.state !== 'chase') clearCreatureStage(c);
 
           let moving = false, aimAngle = c.facing || 0;
           if (c.knockbackT > 0) {
@@ -2462,6 +2555,21 @@
               // scale, and sprite frame for its full duration.
               window.Combat.animalAttacks.update(c, dt);
               aimAngle = c.facing;
+            } else if (def.behaviorStages) {
+              // Slottable behavior-stage cycle (Pounce attempt <-> evasive
+              // orbit, separated by a backing-up beat) replaces the plain
+              // chase-and-trigger logic below for any creature that lists one.
+              const result = updateCreatureBehaviorStage(c, dt, player, def, (dist) => {
+                const triggerRangePx = creatureAimColliderReachPx(def);
+                if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost) return false;
+                c.stamina -= def.attackStaminaCost;
+                c.attackCooldownT = def.attackCooldownS;
+                return !!(def.attacks?.length && window.Combat?.animalAttacks?.start(
+                  c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
+                ));
+              });
+              aimAngle = result.aimAngle;
+              moving = result.moving;
             } else {
               moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
               // Pounce-capable creatures commit once the target enters their
@@ -2534,6 +2642,7 @@
 
           if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           if (!target && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
+          if (!target) c._stage = null;
 
           let moving = false, aimAngle = c.facing || 0;
           if (target) {
@@ -2545,24 +2654,43 @@
               window.Combat.animalAttacks.update(c, dt);
               aimAngle = c.facing;
             } else {
-              if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
-              if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
-                c.stamina -= def.attackStaminaCost;
-                c.attackCooldownT = def.attackCooldownS;
-                const startedModular = def.attacks?.length && window.Combat?.animalAttacks?.start(
-                  c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target }
-                );
-                if (startedModular) aimAngle = c.facing;
-                if (!startedModular) {
-                  window.Combat.telegraph.start(c, {
-                    windupS: BITE_TELEGRAPH_WINDUP_S,
-                    strikeS: BITE_TELEGRAPH_STRIKE_S,
-                    onStrike: () => {
-                      if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
-                        damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
-                      }
-                    },
-                  });
+              // Tamed companions cycle plain active-vs-backing-up (no
+              // evasive-orbit stage — that's wild-creature-only, see
+              // updateCreatureBehaviorStage) so every attack/charge is still
+              // separated from the next by the same global ~2s backup beat.
+              const st = c._stage || (c._stage = { mode: 'active', t: 0 });
+              st.t += dt;
+              if (st.mode === 'backingUp') {
+                const awayAngle = aimAngle + Math.PI;
+                moving = moveCreatureToward(c, c.x + Math.cos(awayAngle) * TILE, c.y + Math.sin(awayAngle) * TILE, def.moveSpeed, dt);
+                if (st.t >= STAGE_BACKUP_S) { st.mode = 'active'; st.t = 0; }
+              } else {
+                if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
+                if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+                  c.stamina -= def.attackStaminaCost;
+                  c.attackCooldownT = def.attackCooldownS;
+                  // Tamed behavior: the real species attack set (e.g. Pounce)
+                  // fires only once every 4 behavior actions; the other 3 use
+                  // the short 0-damage/high-knockback guard charge instead.
+                  c._behaviorActionCount = (c._behaviorActionCount || 0) + 1;
+                  const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % 4 === 0);
+                  const attackId = useRealAttack ? def.attacks[Math.floor(Math.random() * def.attacks.length)] : 'guardCharge';
+                  const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
+                  if (startedModular) {
+                    aimAngle = c.facing;
+                  } else {
+                    window.Combat.telegraph.start(c, {
+                      windupS: BITE_TELEGRAPH_WINDUP_S,
+                      strikeS: BITE_TELEGRAPH_STRIKE_S,
+                      onStrike: () => {
+                        if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
+                          damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
+                        }
+                      },
+                    });
+                  }
+                  st.mode = 'backingUp';
+                  st.t = 0;
                 }
               }
             }
@@ -8502,6 +8630,46 @@
       }
 
 
+      // Half the player avatar's own prism height above the ground it's
+      // standing on — playerMesh.position.y already tracks that ground
+      // level (see the lerp toward targetY below), and the avatar plane
+      // itself is bottom-edge anchored there, so its world-space vertical
+      // center is exactly ground + height/2.
+      function playerPrismHeightTiles() {
+        let h = null;
+        playerMesh?.traverse?.(child => {
+          if (h == null && Number.isFinite(child.userData?.portraitModelHeight)) h = child.userData.portraitModelHeight;
+        });
+        return h ?? (window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9);
+      }
+      function weaponTrailCenterY() {
+        return playerMesh.position.y + playerPrismHeightTiles() / 2;
+      }
+
+      // Random seed points scattered across the swing's actual swept shape
+      // (trapezoid or cone), each driving one particle in the burst rather
+      // than one flat filled polygon — see drawWeaponTrailEffects().
+      const WEAPON_TRAIL_PARTICLE_COUNT = 9;
+      function weaponTrailParticleSeeds(fx) {
+        const seeds = [];
+        for (let i = 0; i < WEAPON_TRAIL_PARTICLE_COUNT; i++) {
+          let dx, dz, outAngle;
+          if (fx.isCone) {
+            const a = fx.angle - fx.halfConeRad + (2 * fx.halfConeRad) * Math.random();
+            const r = fx.rangeTiles * (0.25 + Math.random() * 0.75);
+            dx = Math.cos(a) * r; dz = Math.sin(a) * r; outAngle = a;
+          } else {
+            const along = 0.15 + Math.random() * fx.far;
+            const across = (Math.random() * 2 - 1) * fx.halfWidth;
+            dx = fx.dir.x * along + fx.side.x * across;
+            dz = fx.dir.y * along + fx.side.y * across;
+            outAngle = Math.atan2(fx.dir.y, fx.dir.x);
+          }
+          seeds.push({ dx, dz, outAngle, jitterY: (Math.random() - 0.5) * 0.16, drift: 0.15 + Math.random() * 0.25, size: 5 + Math.random() * 5 });
+        }
+        return seeds;
+      }
+
       function spawnWeaponTrailEffect(action, ok, col = null, row = null) {
         const abil = weaponAbility(action) || weaponAbility('slash');
         const tileAnchored = col !== null && row !== null;
@@ -8509,12 +8677,7 @@
         const side = tileAnchored
           ? (dir.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 })
           : { x: -dir.y, y: dir.x };
-        const tgrid = getActiveGrid();
-        const sampleCol = clamp(Math.floor(player.x / TILE), 0, getActiveCols() - 1);
-        const sampleRow = clamp(Math.floor(player.y / TILE), 0, getActiveRows() - 1);
-        const targets = tileAnchored ? getMacheteTargets(col, row, 'slash') : [{ col: sampleCol, row: sampleRow }];
-        const surfaceY = targets.reduce((sum, t) => sum + tileSurfaceY(tgrid[t.row]?.[t.col]?.type || TileType.GRASS), 0) / Math.max(1, targets.length);
-        weaponTrailEffects.push({
+        const fx = {
           x: col === null ? player.x / TILE : col + 0.5,
           z: row === null ? player.y / TILE : row + 0.5,
           dir, side, action,
@@ -8523,8 +8686,10 @@
           age: 0,
           maxAge: ok ? abil.trailMaxAgeSeconds : Math.max(abil.trailMaxAgeSeconds * 0.72, 0.1),
           ok,
-          y: surfaceY + 0.18,
-        });
+          y: weaponTrailCenterY(),
+        };
+        fx.particles = weaponTrailParticleSeeds(fx);
+        weaponTrailEffects.push(fx);
         const limit = Number(combatConfig().weaponTrailLimit) || 5;
         while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
       }
@@ -8533,55 +8698,27 @@
       // range) a combat-*.js ability just resolved its inCone() hit test
       // against, since each ability/charge/combo-step uses its own rangePx/
       // halfConeRad rather than one fixed shape. Reuses weaponTrailEffects'
-      // existing age/limit bookkeeping and drawWeaponTrailEffects' renderer
-      // (isCone flag switches slashTrailWorldPoints/drawWeaponTrailEffects
-      // onto the fan-shaped path below instead of the farming trapezoid).
+      // existing age/limit bookkeeping and drawWeaponTrailEffects' particle
+      // renderer (isCone flag switches weaponTrailParticleSeeds onto the
+      // fan-shaped sampling below instead of the farming trapezoid).
       const COMBAT_TRAIL_MAX_AGE_S = 0.24; // matches the legacy cut ability's trailMaxAgeSeconds
       function spawnCombatTrailEffect({ rangePx, halfConeRad, angle = player.angle, ok }) {
-        const tgrid = getActiveGrid();
-        const col = clamp(Math.floor(player.x / TILE), 0, getActiveCols() - 1);
-        const row = clamp(Math.floor(player.y / TILE), 0, getActiveRows() - 1);
-        const surfaceY = tileSurfaceY(tgrid[row]?.[col]?.type || TileType.GRASS);
-        weaponTrailEffects.push({
+        const fx = {
           isCone: true,
           x: player.x / TILE,
           z: player.y / TILE,
-          y: surfaceY + 0.18,
+          y: weaponTrailCenterY(),
           angle,
           halfConeRad,
           rangeTiles: rangePx / TILE,
           age: 0,
           maxAge: ok ? COMBAT_TRAIL_MAX_AGE_S : Math.max(COMBAT_TRAIL_MAX_AGE_S * 0.72, 0.1),
           ok,
-        });
+        };
+        fx.particles = weaponTrailParticleSeeds(fx);
+        weaponTrailEffects.push(fx);
         const limit = Number(combatConfig().weaponTrailLimit) || 5;
         while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
-      }
-
-      function coneTrailWorldPoints(fx) {
-        const segments = 10;
-        const pts = [{ x: fx.x, y: fx.y, z: fx.z }];
-        for (let i = 0; i <= segments; i++) {
-          const a = fx.angle - fx.halfConeRad + (2 * fx.halfConeRad) * (i / segments);
-          pts.push({ x: fx.x + Math.cos(a) * fx.rangeTiles, y: fx.y, z: fx.z + Math.sin(a) * fx.rangeTiles });
-        }
-        return pts;
-      }
-
-      function slashTrailWorldPoints(fx) {
-        if (fx.isCone) return coneTrailWorldPoints(fx);
-        const cx = fx.x;
-        const cz = fx.z;
-        const near = 0.02;
-        const far = fx.far;
-        const halfWidth = fx.halfWidth;
-        return [
-          { x: cx + fx.dir.x * near - fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * near - fx.side.y * halfWidth },
-          { x: cx + fx.dir.x * far  - fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * far  - fx.side.y * halfWidth },
-          { x: cx + fx.dir.x * (far + 0.16), y: fx.y + 0.03, z: cz + fx.dir.y * (far + 0.16) },
-          { x: cx + fx.dir.x * far  + fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * far  + fx.side.y * halfWidth },
-          { x: cx + fx.dir.x * near + fx.side.x * halfWidth, y: fx.y, z: cz + fx.dir.y * near + fx.side.y * halfWidth },
-        ];
       }
 
       function updateActionParticles(dt) {
@@ -8649,31 +8786,25 @@
       function drawWeaponTrailEffects() {
         for (const fx of weaponTrailEffects) {
           const t = fx.age / fx.maxAge;
-          const pts = slashTrailWorldPoints(fx).map(p => worldToOverlay(p.x, p.y, p.z));
-          if (pts.some(p => !p.visible)) continue;
           const alpha = Math.max(0, 1 - t);
+          const color = fx.ok ? '#9ff0b8' : '#ff8060';
           octx.save();
-          octx.globalAlpha = alpha * (fx.ok ? 0.44 : 0.34);
-          octx.fillStyle = fx.ok ? 'rgba(127,232,154,0.34)' : 'rgba(255,128,96,0.30)';
-          octx.strokeStyle = fx.ok ? '#d9ffe0' : '#ff8060';
-          octx.lineWidth = fx.ok ? 4 : 3;
-          octx.lineJoin = 'round';
-          octx.beginPath();
-          octx.moveTo(pts[0].x, pts[0].y);
-          for (let i = 1; i < pts.length; i++) octx.lineTo(pts[i].x, pts[i].y);
-          octx.closePath();
-          octx.fill();
-          octx.globalAlpha = alpha * 0.92;
-          octx.beginPath();
-          if (fx.isCone) {
-            // Highlight the cone's outer arc — the actual swept edge of the attack.
-            octx.moveTo(pts[1].x, pts[1].y);
-            for (let i = 2; i < pts.length; i++) octx.lineTo(pts[i].x, pts[i].y);
-          } else {
-            octx.moveTo(pts[1].x, pts[1].y);
-            octx.quadraticCurveTo(pts[2].x, pts[2].y - 8 * alpha, pts[3].x, pts[3].y);
+          octx.fillStyle = color;
+          for (const p of fx.particles) {
+            // Particles drift outward along their seed angle and bob in y
+            // as they age, instead of sitting still like a flat decal.
+            const spread = 1 + t * p.drift;
+            const wx = fx.x + p.dx * spread;
+            const wz = fx.z + p.dz * spread;
+            const wy = fx.y + p.jitterY + t * 0.22;
+            const pos = worldToOverlay(wx, wy, wz);
+            if (!pos.visible) continue;
+            const r = Math.max(1.5, p.size * (1 - t * 0.5));
+            octx.globalAlpha = alpha * (fx.ok ? 0.85 : 0.7);
+            octx.beginPath();
+            octx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+            octx.fill();
           }
-          octx.stroke();
           octx.restore();
         }
       }
