@@ -5774,9 +5774,12 @@
 
   function fuseRampInclines() {
     // 1. Gap fill: a non-ramp cell with 2+ cardinal ramp neighbors is wedged
-    //    between lanes — absorb it so the lanes become one surface.
+    //    between lanes — absorb it so the lanes become one surface. Filling
+    //    a cell can wedge its own neighbors, so iterate to convergence (a
+    //    fixed 2 passes left holes that rendered as stone squares punched
+    //    through the incline's grass).
     let filled = 0;
-    for (let pass = 0; pass < 2; pass++) {
+    for (let pass = 0; pass < 12; pass++) {
       let passFilled = 0;
       for (const tile of allTiles()) {
         if (!_rampGapCellFillable(tile)) continue;
@@ -5816,7 +5819,7 @@
       }
       if (n) anchors.set(tile, sum / n);
     }
-    for (let iter = 0; iter < 120; iter++) {
+    for (let iter = 0; iter < 200; iter++) {
       let maxDelta = 0;
       for (const tile of rampTiles) {
         let sum = 0, n = 0;

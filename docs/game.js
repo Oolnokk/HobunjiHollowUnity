@@ -3617,6 +3617,20 @@
         const plateauMesas = zoneData?.mesas || [];
         console.log(`%c[zone:${mapId}] ${plateauMesas.length} plateau tier transition(s)`, 'color:#22c55e;font-weight:bold');
 
+        _buildZoneTerrainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId, plateauMesas);
+        buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId);
+        return _finishZoneScene(mapId, zdef, zoneData, zScene, zGrid, ZCOLS, ZROWS);
+      }
+
+      // All zone terrain meshes that depend on the live tile grid — merged
+      // floor buckets, plateau mesas, incline surfaces + curtains, rock
+      // formations, waterfalls, shrub foliage, grass billboards. Kept in one
+      // function (with the spawned meshes tracked per zone) so a runtime
+      // terrain edit (digging a trench, raising ground) can tear down and
+      // rebuild exactly this set — see refreshZoneTerrain.
+      const _zoneTerrainMeshes = new Map(); // mapId → [THREE.Object3D, ...]
+      function _buildZoneTerrainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId, plateauMesas) {
+        const _beforeChildren = new Set(zScene.children);
         // Ground: same per-vertex seam-safe heightfield pipeline as the town/farm
         // (makeFloorGeo / buildTerrainTileGeo / buildPathNetworkGeo), merged into one
         // mesh per material. Rock tiles get the farm's real stone-mound geometry
@@ -3641,7 +3655,10 @@
           const cx = c + 0.5, cz = r + 0.5;
           const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
 
-          if (tile.skipFloor) continue; // covered by a plateau tier's mesa mesh below
+          // Covered by a plateau tier's mesa mesh below — UNLESS the player
+          // carved it at runtime (dig/raise): the mesa lid skips carved cells
+          // (quadIsCarved), so the tile must render its own bed geometry.
+          if (tile.skipFloor && !CARVED_TILE_TYPES.has(tile.type)) continue;
           if (tile.type === TileType.RAMP) continue; // covered by the ramp slope mesh below
 
           if (tile.type === TileType.ROCK) {
@@ -3703,10 +3720,31 @@
         buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         _zoneWaterMeshes.set(mapId, buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId));
-
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
-        buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId);
 
+        _zoneTerrainMeshes.set(mapId, zScene.children.filter(child => !_beforeChildren.has(child)));
+      }
+
+      // Rebuilds a zone's grid-derived terrain after a runtime tile edit
+      // (shovel/pick dig, fill, raise, hoe till) so the hole/mound actually
+      // shows and the walk height matches the visible surface.
+      function refreshZoneTerrain(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return;
+        for (const mesh of _zoneTerrainMeshes.get(mapId) || []) {
+          zi.scene.remove(mesh);
+          mesh.traverse(o => { if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose(); });
+        }
+        _zoneTerrainMeshes.delete(mapId);
+        for (const water of _zoneWaterMeshes.get(mapId) || []) zi.scene.remove(water);
+        _zoneWaterMeshes.delete(mapId);
+        _buildZoneTerrainMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId, _zoneLayouts.get(mapId)?.mesas || []);
+      }
+
+      // Transition rings, scene registration, and prop spawning — the tail of
+      // buildZoneScene, split out so the terrain builder above can be re-run
+      // by refreshZoneTerrain without touching any of this.
+      function _finishZoneScene(mapId, zdef, zoneData, zScene, zGrid, ZCOLS, ZROWS) {
         const toTownExit = zoneData?.toTownExit;
         const backToTown = (toTownExit || zdef) ? [{
           id: mapId + '_exit', label: toTownExit?.label || 'Back to Town',
@@ -3917,39 +3955,72 @@
         // builds that cell's own carved-bed mesh, and without this check the mesa's
         // solid lid simply painted over it, hiding the channel under flat ground.
         const quadIsCarved = (gi, gj) => CARVED_TILE_TYPES.has(zGrid?.[bb.minR + Math.floor(gj/2)]?.[bb.minC + Math.floor(gi/2)]?.type);
-        // Cliffs are stone, surfaces are grass: split quads by slope. A quad
-        // steeper than any climbable incline (rise/run > MESA_STONE_SLOPE
-        // over its 0.5-tile span) is cliff face → stone material; flat tops,
-        // rims, and gentle blends stay grass.
-        const MESA_STONE_SLOPE = 1.4;
-        const idx = [], idxStone = [];
+        const idx = [];
         for (let gj = 0; gj < GH - 1; gj++) {
           for (let gi = 0; gi < GW - 1; gi++) {
             if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
             const v00 = gj*GW+gi, v10 = gj*GW+gi+1, v01 = (gj+1)*GW+gi, v11 = (gj+1)*GW+gi+1;
-            const ys = [Y[v00], Y[v10], Y[v01], Y[v11]];
-            const slope = (Math.max(...ys) - Math.min(...ys)) / 0.5;
-            (slope > MESA_STONE_SLOPE ? idxStone : idx).push(v00, v01, v11, v00, v11, v10);
+            idx.push(v00, v01, v11, v00, v11, v10);
           }
         }
 
-        const posAttr = new THREE.BufferAttribute(pos, 3);
-        for (const [indices, mat, category] of [[idx, tileMats.grass, TileType.GRASS], [idxStone, tileMats.rock, TileType.ROCK]]) {
-          if (!indices.length) continue;
-          const geo = new THREE.BufferGeometry();
-          geo.setAttribute('position', posAttr);
-          geo.setIndex(new THREE.BufferAttribute(indices.length > 65535 ? new Uint32Array(indices) : new Uint16Array(indices), 1));
-          geo.computeVertexNormals();
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.receiveShadow = true;
-          zScene.add(mesh);
-          _markTerrainEdgeId(mesh, _terrainCategoryFor(category));
-        }
+        // Cliffs are stone, surfaces are grass — as ONE mesh with per-vertex
+        // colors blending by local slope. Splitting into separate grass/stone
+        // meshes made every nearly-coplanar overlap (mesa lid over interior
+        // floor tiles, rock sheets crossing the margin) z-fight and draw
+        // hatched outline seams; a single mesh keeps one outline ID and the
+        // grass→stone transition becomes a smooth gradient on the face.
+        const colors = _paintSlopeVertexColors(pos, Y, GW, GH, 0.5);
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, _slopeTerrainMat());
+        mesh.receiveShadow = true;
+        zScene.add(mesh);
+        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.GRASS));
 
         // Steep plateau rock is now emitted by buildRockFormationMeshes, which
         // unions plateau cliffs with ramp side rock before rendering.
 
         console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(BASE+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s)`, 'color:#22c55e;font-weight:bold');
+      }
+
+      // Shared material + vertex-color painter for slope-blended terrain
+      // (mesa faces, ramp curtains): grass on walkable-gentle surfaces,
+      // stone where the face is steeper than any climbable incline.
+      let _slopeTerrainMatCache = null;
+      function _slopeTerrainMat() {
+        if (!_slopeTerrainMatCache) _slopeTerrainMatCache = new THREE.MeshLambertMaterial({ vertexColors: true });
+        return _slopeTerrainMatCache;
+      }
+      const _SLOPE_STONE_START = 1.0;  // rise/run where grass starts blending to stone
+      const _SLOPE_STONE_FULL  = 1.8;  // rise/run of unambiguous cliff face
+      function _slopeColorInto(out, k3, slope) {
+        const t = Math.min(1, Math.max(0, (slope - _SLOPE_STONE_START) / (_SLOPE_STONE_FULL - _SLOPE_STONE_START)));
+        const g = tileMats.grass.color, s = tileMats.rock.color;
+        out[k3]     = g.r + (s.r - g.r) * t;
+        out[k3 + 1] = g.g + (s.g - g.g) * t;
+        out[k3 + 2] = g.b + (s.b - g.b) * t;
+      }
+      // Per-vertex colors for a GW×GH lattice heightfield with `spacing`
+      // between adjacent vertices: slope at a vertex = steepest step to a
+      // lattice neighbor.
+      function _paintSlopeVertexColors(pos, Y, GW, GH, spacing) {
+        const colors = new Float32Array(GW * GH * 3);
+        for (let gj = 0; gj < GH; gj++) {
+          for (let gi = 0; gi < GW; gi++) {
+            const k = gj * GW + gi;
+            let maxDy = 0;
+            if (gi > 0)      maxDy = Math.max(maxDy, Math.abs(Y[k] - Y[k - 1]));
+            if (gi < GW - 1) maxDy = Math.max(maxDy, Math.abs(Y[k] - Y[k + 1]));
+            if (gj > 0)      maxDy = Math.max(maxDy, Math.abs(Y[k] - Y[k - GW]));
+            if (gj < GH - 1) maxDy = Math.max(maxDy, Math.abs(Y[k] - Y[k + GW]));
+            _slopeColorInto(colors, k * 3, maxDy / spacing);
+          }
+        }
+        return colors;
       }
 
       // Smooth ramp slope mesh: one quad per authored RAMP tile, with each tile's 4
@@ -4025,11 +4096,13 @@
           return n ? sum / n : fallback;
         };
 
-        // Cliffs are stone, surfaces are grass: a curtain cell falling
-        // steeper than any climbable incline is a cut bank → stone; a gentle
-        // taper stays grass.
-        const CURTAIN_STONE_SLOPE = 1.0;
-        const buckets = { grass: { pos: [], idx: [], vi: 0 }, stone: { pos: [], idx: [], vi: 0 } };
+        // Cliffs are stone, surfaces are grass — one mesh, per-vertex colors
+        // blending by each cell's slope (same painter the mesa uses), so a
+        // curtain reads as a stone cut bank where it truly drops and stays
+        // grass where it tapers, with no split-mesh z-fighting or outline
+        // seams between neighboring curtain cells.
+        const pos = [], idx = [], colors = [];
+        let vi = 0;
         for (const [c, r] of cells) {
           const ground = NORMAL_TOP + (zGrid[r][c].elevTier || 0) * PLATEAU_UNIT;
           const y00 = cornerY(c, r, ground);
@@ -4037,22 +4110,20 @@
           const y01 = cornerY(c, r + 1, ground);
           const y11 = cornerY(c + 1, r + 1, ground);
           const slope = Math.max(y00, y10, y01, y11) - Math.min(y00, y10, y01, y11);
-          const b = buckets[slope > CURTAIN_STONE_SLOPE ? 'stone' : 'grass'];
-          b.pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
-          b.idx.push(b.vi, b.vi + 2, b.vi + 3, b.vi, b.vi + 3, b.vi + 1); b.vi += 4;
+          pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
+          for (let k = 0; k < 4; k++) { _slopeColorInto(colors, colors.length, slope); }
+          idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
         }
 
-        for (const [name, b] of Object.entries(buckets)) {
-          if (!b.idx.length) continue;
-          const geo = new THREE.BufferGeometry();
-          geo.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
-          geo.setIndex(new THREE.BufferAttribute(b.idx.length > 65535 ? new Uint32Array(b.idx) : new Uint16Array(b.idx), 1));
-          geo.computeVertexNormals();
-          const mesh = new THREE.Mesh(geo, name === 'stone' ? tileMats.rock : tileMats.grass);
-          mesh.receiveShadow = true;
-          zScene.add(mesh);
-          _markTerrainEdgeId(mesh, _terrainCategoryFor(name === 'stone' ? TileType.ROCK : TileType.GRASS));
-        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, _slopeTerrainMat());
+        mesh.receiveShadow = true;
+        zScene.add(mesh);
+        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.GRASS));
 
         // Steep ramp-curtain skin is now emitted by buildRockFormationMeshes,
         // after unioning ramp side spans with neighboring plateau cliff spans.
@@ -4137,7 +4208,13 @@
           vi += (segs + 1) * (segs + 1);
         }
         if (!idx.length) return;
-        const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+        // Same stone color as rock tiles / slope-blended cliff faces, so the
+        // vertical sheets read as part of one rock formation instead of a
+        // paler second material intersecting it.
+        if (!buildRockFormationMeshes._mat) {
+          buildRockFormationMeshes._mat = new THREE.MeshLambertMaterial({ color: tileMats.rock.color, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+        }
+        const mat = buildRockFormationMeshes._mat;
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
@@ -5604,6 +5681,7 @@
         _zoneBuildingGroups.delete(mapId);
         _zoneDecorFurnitureGroups.delete(mapId);
         _zoneWaterMeshes.delete(mapId);
+        _zoneTerrainMeshes.delete(mapId);
         for (const c of [...hostileObjects]) {
           if (c.areaId === mapId) { despawnCreature(c); hostileObjects.delete(c); }
         }
@@ -9461,6 +9539,11 @@
         if (currentArea === 'farm') {
           recomputeWater(false);
           if (result.ok !== false) markTileDirty(col, row);
+        } else if (_isZoneArea(currentArea) && result.ok !== false) {
+          // Zone terrain is merged static meshes — rebuild it so a dug
+          // trench/raised mound actually opens instead of the player sinking
+          // through an unchanged surface.
+          refreshZoneTerrain(currentArea);
         }
         refreshActionBar();
       }
@@ -13026,6 +13109,9 @@
         if (currentArea === 'farm') {
           recomputeWater(false);
           if (result.ok !== false) markTileDirty(col, row);
+        } else if (_isZoneArea(currentArea) && result.ok !== false) {
+          // Same zone terrain rebuild as useActiveAction — charged digs land here.
+          refreshZoneTerrain(currentArea);
         }
         refreshActionBar();
       }
