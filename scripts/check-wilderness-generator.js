@@ -226,19 +226,21 @@ function validate(label, result, maxAngleDeg) {
 }
 
 function main() {
-  // Zone-shaped cases mirror the in-game settings (maxTier 3 — see
-  // regenerateWildernessZone); the default case keeps the generator's own
-  // defaults so the full config space stays covered.
+  // Zone-shaped cases mirror the in-game settings (maxTier 3, generation at
+  // half resolution with gameplayScale 2 — see regenerateWildernessZone);
+  // the default case keeps the generator's own defaults so the full config
+  // space stays covered.
+  const zoneOpts = { maxTier: 3, gameplayScale: 2 };
   const cases = [
-    { label: 'northern_cliffs-ish 60x50', options: { seed: 'nc_epoch_0', width: 60, height: 50, entrySide: 'south', maxTier: 3 } },
-    { label: 'cloud_forest-ish 50x40', options: { seed: 'scf_epoch_3', width: 50, height: 40, entrySide: 'north', maxTier: 3 } },
-    { label: 'mire-ish 50x40 east', options: { seed: 'mire_epoch_7', width: 50, height: 40, entrySide: 'west', maxTier: 3 } },
+    { label: 'northern_cliffs-ish 30x25→60x50', options: { seed: 'nc_epoch_0', width: 30, height: 25, entrySide: 'south', ...zoneOpts } },
+    { label: 'cloud_forest-ish 25x20→50x40', options: { seed: 'scf_epoch_3', width: 25, height: 20, entrySide: 'north', ...zoneOpts } },
+    { label: 'mire-ish 25x20→50x40 west', options: { seed: 'mire_epoch_7', width: 25, height: 20, entrySide: 'west', ...zoneOpts } },
     { label: 'default 100x100', options: { seed: 'wild' } },
-    { label: 'small 30x24', options: { seed: 'tiny_epoch_12', width: 30, height: 24, maxTier: 3 } },
+    { label: 'small 20x16→40x32', options: { seed: 'tiny_epoch_12', width: 20, height: 16, ...zoneOpts } },
   ];
   const extraSeeds = ['alpha', 'bravo', 'charlie', 'delta', 'echo'];
   for (const seed of extraSeeds) {
-    cases.push({ label: `sweep ${seed} 60x50`, options: { seed: `${seed}_sweep`, width: 60, height: 50, entrySide: 'south', maxTier: 3 } });
+    cases.push({ label: `sweep ${seed} 30x25→60x50`, options: { seed: `${seed}_sweep`, width: 30, height: 25, entrySide: 'south', ...zoneOpts } });
   }
 
   let failures = [];

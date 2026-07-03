@@ -5636,6 +5636,12 @@
         if (typeof window.WildernessGenerator === 'undefined') return false;
         const authored = (_workspaceMaps || []).find(m => m.id === zoneMapId && !m.isSubmap);
         const cols = authored?.cols || 50, rows = authored?.rows || 40;
+        // The generator designs at half resolution: every generator tile
+        // ships as a 2×2 block of gameplay tiles, so corridors, inclines,
+        // and plateaus all come out chunky enough to fight and walk on.
+        const GAMEPLAY_SCALE = 2;
+        const genCols = Math.max(20, Math.round(cols / GAMEPLAY_SCALE));
+        const genRows = Math.max(16, Math.round(rows / GAMEPLAY_SCALE));
         const authoredTransitions = authored?.transitions || [];
         const toTown = authoredTransitions.find(t => t.targetMapId === 'map_hobunji_town');
         let entrySide = 'south';
@@ -5651,7 +5657,10 @@
         try {
           // maxTier 3: one tier is PLATEAU_UNIT (2.5) world units tall, so the
           // generator's default of 6 renders as ~15-unit skyscraper mesas.
-          result = window.WildernessGenerator.generate({ seed, width: cols, height: rows, entrySide, maxTier: 3 });
+          result = window.WildernessGenerator.generate({
+            seed, width: genCols, height: genRows, entrySide,
+            maxTier: 3, gameplayScale: GAMEPLAY_SCALE,
+          });
         } catch (e) {
           debugLog(`Wilderness regen failed for ${zoneMapId}: ${e.message}`, 'warn');
           return false;

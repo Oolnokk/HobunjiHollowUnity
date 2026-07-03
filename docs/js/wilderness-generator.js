@@ -40,6 +40,11 @@
     seed: 'wild',
     width: 100,
     height: 100,
+    // Every generator tile becomes a gameplayScale × gameplayScale block of
+    // gameplay tiles (the model upscales after placement, before the
+    // reachability passes — so all guarantees hold at gameplay resolution).
+    // The exported map is (width·scale) × (height·scale).
+    gameplayScale: 1,
     entrySide: 'south',
     plateaus: 76,
     maxTier: 6,
@@ -82,7 +87,7 @@
   ];
 
   const SETTING_LIMITS = {
-    width: [20, 120], height: [16, 100], plateaus: [0, 180], maxTier: [1, 9],
+    width: [20, 120], height: [16, 100], gameplayScale: [1, 4], plateaus: [0, 180], maxTier: [1, 9],
     ramps: [0, 260], rampMinDiff: [1, 8], rampMaxAngle: [15, 60],
     ponds: [0, 24], plateauPonds: [0, 32], plateauStreams: [0, 40], rivers: [0, 8],
     pathAnchors: [0, 24], animalDens: [0, 18], prey: [0, 40], packPredators: [0, 40],
@@ -104,7 +109,11 @@
       if (!Number.isFinite(out[key])) out[key] = DEFAULT_SETTINGS[key];
       out[key] = clamp(Math.round(out[key]), min, max);
     }
-    // Scale density-style counts by map area unless the caller pinned them.
+    // Scale density-style counts by the GENERATION area unless the caller
+    // pinned them. Placement happens at generation resolution, and after a
+    // gameplay upscale every object's footprint inflates by scale² — so
+    // generation-area counts keep the same fraction of the shipped map
+    // covered as the prototype's tuned 100x100 defaults.
     const areaScale = (out.width * out.height) / (DEFAULT_SETTINGS.width * DEFAULT_SETTINGS.height);
     if (areaScale < 0.999 || areaScale > 1.001) {
       for (const key of AREA_SCALED_SETTINGS) {
@@ -5675,6 +5684,69 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════
+  //  Gameplay upscale — 1 generator tile → scale×scale gameplay tiles
+  //
+  //  The generator designs at a coarse resolution, then the whole tile
+  //  model inflates so every coarse cell becomes a scale×scale block of
+  //  gameplay tiles: corridors, inclines, plateaus, and rivers all get
+  //  proportionally wider, and a ramp's climb spreads over scale× the run
+  //  (fuseRampInclines smooths the duplicated staircase heights right
+  //  after). Runs BEFORE sanitation/reachability so every guarantee is
+  //  enforced at the resolution the game actually plays.
+  // ═══════════════════════════════════════════════════════════════════════
+  function upscaleModelForGameplay(scale) {
+    if (!Number.isFinite(scale) || scale <= 1) return;
+    const coarseW = settings.width, coarseH = settings.height;
+    const fineW = coarseW * scale, fineH = coarseH * scale;
+    const coarseTiles = map.tiles;
+
+    settings.width = fineW;
+    settings.height = fineH;
+    map.width = fineW;
+    map.height = fineH;
+    map.tiles = [];
+    map.flatTiles = [];
+    for (let y = 0; y < fineH; y++) {
+      const row = [];
+      for (let x = 0; x < fineW; x++) {
+        const src = coarseTiles[Math.floor(y / scale)][Math.floor(x / scale)];
+        const tile = { ...src, x, y };
+        row.push(tile);
+        map.flatTiles.push(tile);
+      }
+      map.tiles.push(row);
+    }
+
+    const half = Math.floor(scale / 2);
+    const scalePoint = (p) => ({ ...p, x: p.x * scale + half, y: p.y * scale + half });
+    if (map.entry) map.entry = scalePoint(map.entry);
+    for (const object of map.objects) {
+      object.x = (object.x || 0) * scale;
+      object.y = (object.y || 0) * scale;
+      object.w = (object.w || 1) * scale;
+      object.h = (object.h || 1) * scale;
+      if (object.escapeAnchor) object.escapeAnchor = scalePoint(object.escapeAnchor);
+    }
+    rebuildObjectCache();
+    for (const path of [...(map.paths || []), ...(map.invisiblePaths || [])]) {
+      if (Array.isArray(path.points)) path.points = path.points.map(scalePoint);
+    }
+    for (const river of map.rivers || []) {
+      if (Array.isArray(river.points)) river.points = river.points.map(scalePoint);
+      if (Number.isFinite(river.widthTiles)) river.widthTiles *= scale;
+      if (Number.isFinite(river.widthTilesAverage)) river.widthTilesAverage *= scale;
+      if (Array.isArray(river.widthSamples)) {
+        river.widthSamples = river.widthSamples.map(s =>
+          Number.isFinite(s) ? s * scale : (Number.isFinite(s?.width) ? { ...s, width: s.width * scale } : s));
+      }
+    }
+    for (const ramp of map.ramps || []) {
+      if (Array.isArray(ramp.tiles)) ramp.tiles = ramp.tiles.map(t => ({ x: t.x * scale + half, y: t.y * scale + half }));
+    }
+    logDebug(`gameplay upscale: ${coarseW}x${coarseH} generator tiles → ${fineW}x${fineH} gameplay tiles (1 → ${scale}x${scale})`);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
   //  Ramp fusion — "ramps" become "inclines"
   //
   //  Individually authored ramps that run near each other (parallel lanes,
@@ -6058,6 +6130,12 @@
     placePillarsAndStatues();
     placeFloraAndResources();
     placeAnimalFoodSources();
+    // Inflate to gameplay resolution (1 generator tile → scale×scale
+    // gameplay tiles), then re-fuse so the duplicated staircase ramp
+    // heights relax into smooth inclines at the new resolution.
+    upscaleModelForGameplay(settings.gameplayScale);
+    fuseRampInclines();
+    clearRampMouths();
     // Clean the causeway-texture masks into game-renderable mesa shapes
     // BEFORE any reachability work, so every pass below sees final terrain.
     sanitizeMasksForGameExport();
