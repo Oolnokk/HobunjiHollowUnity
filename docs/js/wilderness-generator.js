@@ -116,10 +116,16 @@
     // covered as the prototype's tuned 100x100 defaults.
     const areaScale = (out.width * out.height) / (DEFAULT_SETTINGS.width * DEFAULT_SETTINGS.height);
     if (areaScale < 0.999 || areaScale > 1.001) {
+      // Structural features keep a floor: linear area scaling starved small
+      // zone maps down to 1 designed ramp and a handful of plateau blobs, so
+      // almost all connectivity came from straight repair carves and the
+      // terrain read as one big incline instead of plateaus with climbs.
+      const STRUCTURAL_FLOORS = { plateaus: 16, ramps: 8, animalDens: 2, caves: 2, pathAnchors: 2 };
       for (const key of AREA_SCALED_SETTINGS) {
         if (options[key] !== undefined && options[key] !== null) continue;
         const [min, max] = SETTING_LIMITS[key];
-        out[key] = clamp(Math.round(DEFAULT_SETTINGS[key] * areaScale), min, max);
+        const floor = areaScale < 1 ? (STRUCTURAL_FLOORS[key] || 0) : 0;
+        out[key] = clamp(Math.max(floor, Math.round(DEFAULT_SETTINGS[key] * areaScale)), min, max);
       }
     }
     return out;
@@ -144,6 +150,11 @@
   let settings = { ...DEFAULT_SETTINGS };
   let sightBlockerKeyCache = null;
   let lastMapEditorExportReport = '';
+  // How many gameplay tiles one CURRENT-model tile will ship as: equals
+  // settings.gameplayScale during coarse design, then 1 once
+  // upscaleModelForGameplay has inflated the model — slope math and river
+  // widths consult this so "run" and "width" always mean gameplay tiles.
+  let _gameplayTilesPerModelTile = 1;
 
   function safeFilename(name) {
     return String(name || 'wild').replace(/[^a-z0-9-_]+/gi, '_').toLowerCase();
@@ -1393,11 +1404,14 @@
   // angle by 2.5x — ramps the prototype called 27° were 51° cliffs in-game.
   function minRampRunForAngle(diff) {
     const angleRadians = rampMaxAngleDegrees() * Math.PI / 180;
-    return Math.max(1, Math.ceil((Math.abs(diff) * GAME_TIER_RISE) / Math.tan(angleRadians)));
+    // One model tile of run is _gameplayTilesPerModelTile gameplay tiles
+    // (each 1 world unit), so a coarse-designed ramp needs proportionally
+    // fewer model tiles for the same real slope.
+    return Math.max(1, Math.ceil((Math.abs(diff) * GAME_TIER_RISE) / (Math.tan(angleRadians) * _gameplayTilesPerModelTile)));
   }
 
   function rampAngleDegrees(diff, run) {
-    return Math.atan((Math.abs(diff) * GAME_TIER_RISE) / Math.max(1, run)) * 180 / Math.PI;
+    return Math.atan((Math.abs(diff) * GAME_TIER_RISE) / Math.max(1, run * _gameplayTilesPerModelTile)) * 180 / Math.PI;
   }
 
   function chooseShelfTier(index) {
@@ -1671,12 +1685,18 @@
           ].filter(t => t.x !== 0 || t.y !== 0);
 
           for (const tangent of tangents) {
-            const wrapLimit = Math.max(34, minimumRampRun + 30);
+            // Run/hug gates are authored in GAMEPLAY tiles — during coarse
+            // design one model tile ships as _designScale() gameplay tiles,
+            // so the required cliff-ledge lengths shrink accordingly (a
+            // 30x25 coarse map simply has no 14-model-tile cliff runs, which
+            // silently zeroed out every designed ramp).
+            const ds = _designScale();
+            const wrapLimit = Math.max(Math.ceil(34 / ds), minimumRampRun + Math.ceil(30 / ds));
             const wrapRun = measureCurvedWrapRampRun(low.x, low.y, tangent.x, tangent.y, low.elevation, high.elevation, high.plateauGroupId, normal, wrapLimit);
             const highRun = measureHighRampLandingRun(high.x, high.y, -normal.x, -normal.y, high.elevation, high.plateauGroupId, 4);
             if (highRun < 2) continue;
-            if (wrapRun.run < Math.max(14, minimumRampRun + 6)) continue;
-            if (wrapRun.hug < Math.max(13, Math.ceil(wrapRun.run * 0.95))) continue;
+            if (wrapRun.run < Math.max(Math.ceil(14 / ds), minimumRampRun + Math.ceil(6 / ds))) continue;
+            if (wrapRun.hug < Math.max(Math.ceil(13 / ds), Math.ceil(wrapRun.run * 0.95))) continue;
             const lineLength = highRun + wrapRun.run;
             const angle = rampAngleDegrees(diff, Math.max(1, lineLength - 1));
             if (angle > rampMaxAngleDegrees()) continue;
@@ -1706,7 +1726,12 @@
             });
           }
 
-          const allowStraightFallback = false; // curved wrap ramps are preferred; emergency connectivity can still repair traversal later.
+          // Curved wrap ramps are preferred, but on coarse zone-scale maps
+          // their landing/exit requirements rarely fit — allow the simple
+          // straight fallback so zones still get DESIGNED climbs (they fuse
+          // and cliff-tint like everything else) instead of relying almost
+          // entirely on repair carves.
+          const allowStraightFallback = _designScale() > 1;
           if (allowStraightFallback) {
             const directRunLimit = Math.max(12, minimumRampRun + 7);
             const highRun = measureSameTierRun(high.x, high.y, -normal.x, -normal.y, high.elevation, directRunLimit);
@@ -1897,7 +1922,9 @@
       currentNormal = chosen.normal;
     }
 
-    const minLen = Math.max(7, Math.min(desiredLength, minRampRunForAngle(candidate.diff)));
+    // Authored in gameplay tiles — shrink by the design scale (a coarse
+    // model tile ships as _designScale() gameplay tiles).
+    const minLen = Math.max(Math.ceil(7 / _designScale()), Math.min(desiredLength, minRampRunForAngle(candidate.diff)));
     if (path.length < minLen) return null;
     path.normalChanges = normalChanges;
     path.tightness = tightness / Math.max(1, path.length);
@@ -2107,7 +2134,7 @@
     const minimumRun = minRampRunForAngle(candidate.diff);
     const upperPath = buildUpperPlateauLandingPath(candidate);
     if (!upperPath || upperPath.length < 2) return null;
-    const lowerLength = Math.max(minimumRun + 10, candidate.lowRun || minimumRun);
+    const lowerLength = Math.max(minimumRun + Math.ceil(10 / _designScale()), candidate.lowRun || minimumRun);
     const lowerPath = buildCurvedWrapLowPath(candidate, lowerLength);
     if (!lowerPath) return null;
     const lowerExit = buildLowerExitLandingPath(lowerPath[lowerPath.length - 1], candidate);
@@ -2580,17 +2607,29 @@
     return pick(['north', 'east', 'south', 'west'].filter(s => s !== side));
   }
 
+  // River widths are authored in GAMEPLAY tiles (broad 4-8 tile canyons);
+  // during coarse design each generator tile ships as gameplayScale tiles,
+  // so the carved width must shrink accordingly — otherwise a "7-wide"
+  // canyon on a 30-tile-wide coarse map is really 14 gameplay tiles and two
+  // of them flatten a third of the zone, shredding every plateau.
+  function _designScale() {
+    return Math.max(1, Math.round(_gameplayTilesPerModelTile));
+  }
+
   function chooseRiverBaseWidth() {
     // new variable: baseWidth is intentionally canyon-scale; rivers are broad cuts through plateau fields, not tiny streams.
-    return weightedPick([{ value: 6, weight: 28 }, { value: 7, weight: 46 }, { value: 8, weight: 26 }]);
+    const gameplayWidth = weightedPick([{ value: 6, weight: 28 }, { value: 7, weight: 46 }, { value: 8, weight: 26 }]);
+    return Math.max(2, Math.round(gameplayWidth / _designScale()));
   }
 
   function riverWidthForStep(baseWidth, step, changeEvery, salt) {
     const segment = Math.floor(step / changeEvery);
+    const minW = Math.max(2, Math.round(4 / _designScale()));
+    const maxW = Math.max(minW + 1, Math.round(8 / _designScale()));
     // new variable: widthPhase gives canyons wide/narrow reaches while staying broadly carved.
     const widthPhase = (segment + salt) % 7;
-    if (widthPhase === 0) return Math.max(4, baseWidth - 1);
-    if (widthPhase === 3 || widthPhase === 5) return Math.min(8, baseWidth + 1);
+    if (widthPhase === 0) return Math.max(minW, baseWidth - 1);
+    if (widthPhase === 3 || widthPhase === 5) return Math.min(maxW, baseWidth + 1);
     return baseWidth;
   }
 
@@ -5771,6 +5810,8 @@
     for (const ramp of map.ramps || []) {
       if (Array.isArray(ramp.tiles)) ramp.tiles = ramp.tiles.map(t => ({ x: t.x * scale + half, y: t.y * scale + half }));
     }
+    // From here on the model IS at gameplay resolution.
+    _gameplayTilesPerModelTile = 1;
     logDebug(`gameplay upscale: ${coarseW}x${coarseH} generator tiles → ${fineW}x${fineH} gameplay tiles (1 → ${scale}x${scale})`);
   }
 
@@ -5801,18 +5842,25 @@
   }
 
   function fuseRampInclines() {
-    // 1. Gap fill: a non-ramp cell with 2+ cardinal ramp neighbors is wedged
-    //    between lanes — absorb it so the lanes become one surface. Filling
-    //    a cell can wedge its own neighbors, so iterate to convergence (a
-    //    fixed 2 passes left holes that rendered as stone squares punched
-    //    through the incline's grass).
+    // 1. Gap fill: a non-ramp cell wedged BETWEEN lanes — ramp neighbors on
+    //    opposite sides (left+right or up+down) — gets absorbed so the lanes
+    //    become one surface. Iterates to convergence (a fixed 2 passes left
+    //    holes that rendered as stone squares punched through the incline's
+    //    grass), but requiring an opposite pair keeps concave corners from
+    //    flood-filling whole pockets into one giant incline.
     let filled = 0;
     for (let pass = 0; pass < 12; pass++) {
       let passFilled = 0;
       for (const tile of allTiles()) {
         if (!_rampGapCellFillable(tile)) continue;
+        const left = tileAt(tile.x - 1, tile.y), right = tileAt(tile.x + 1, tile.y);
+        const up = tileAt(tile.x, tile.y - 1), down = tileAt(tile.x, tile.y + 1);
+        // Only true between-lanes wedges (opposite-side ramp pairs) are
+        // absorbed — corner/elbow rules cascade into flood-filling whole
+        // pockets (57% of a zone became one giant incline). Leftover bend
+        // notches render as curtained stone nooks or flush grass pockets.
+        if (!((left?.ramp && right?.ramp) || (up?.ramp && down?.ramp))) continue;
         const rampNeighbors = cardinalNeighbors(tile.x, tile.y).filter(n => n && n.ramp);
-        if (rampNeighbors.length < 2) continue;
         clearBlockingObjectsOnPath([{ x: tile.x, y: tile.y }]);
         tile.ramp = true;
         tile.rampId = 'fused_incline';
@@ -6137,6 +6185,7 @@
     rng = makeRng(settings.seed);
     sightBlockerKeyCache = null;
     lastMapEditorExportReport = '';
+    _gameplayTilesPerModelTile = Math.max(1, Math.round(settings.gameplayScale || 1));
 
     initMap();
     generatePlateaus();

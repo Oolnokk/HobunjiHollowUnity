@@ -4062,20 +4062,32 @@
           out.push(g.r + (s.r - g.r) * blend, g.g + (s.g - g.g) * blend, g.b + (s.b - g.b) * blend);
         };
 
+        // Shared-vertex lattice: ONE vertex per lattice corner, referenced by
+        // every incline quad touching it. With duplicated per-quad vertices,
+        // computeVertexNormals gave each tile its own flat normal, and the
+        // outline pass drew that normal break as a black grid line along
+        // every tile edge — "tiles rendered as separate squares". Shared
+        // vertices average the normals, so the incline shades as one
+        // continuous surface.
+        const cornerIndex = new Map();
         const pos = [], idx = [], colors = [];
-        let vi = 0;
+        const vertexFor = (ci, cj, fallback) => {
+          const key = ci + ',' + cj;
+          const existing = cornerIndex.get(key);
+          if (existing !== undefined) return existing;
+          const vi = pos.length / 3;
+          cornerIndex.set(key, vi);
+          pos.push(ci, cornerY(ci, cj) ?? fallback, cj);
+          pushCliffTint(colors, cornerCliffBlend(ci, cj));
+          return vi;
+        };
         for (const [c, r] of rampCells) {
           const fallback = NORMAL_TOP + (zGrid[r][c].rampElevation || 0) * PLATEAU_UNIT;
-          const y00 = cornerY(c, r)     ?? fallback;
-          const y10 = cornerY(c+1, r)   ?? fallback;
-          const y01 = cornerY(c, r+1)   ?? fallback;
-          const y11 = cornerY(c+1, r+1) ?? fallback;
-          pos.push(c,y00,r,  c+1,y10,r,  c,y01,r+1,  c+1,y11,r+1);
-          pushCliffTint(colors, cornerCliffBlend(c, r));
-          pushCliffTint(colors, cornerCliffBlend(c + 1, r));
-          pushCliffTint(colors, cornerCliffBlend(c, r + 1));
-          pushCliffTint(colors, cornerCliffBlend(c + 1, r + 1));
-          idx.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi += 4;
+          const v00 = vertexFor(c, r, fallback);
+          const v10 = vertexFor(c + 1, r, fallback);
+          const v01 = vertexFor(c, r + 1, fallback);
+          const v11 = vertexFor(c + 1, r + 1, fallback);
+          idx.push(v00, v01, v11, v00, v11, v10);
         }
 
         const geo = new THREE.BufferGeometry();
@@ -4118,22 +4130,53 @@
         };
 
         // Cliffs are stone, surfaces are grass — one mesh, per-vertex colors
-        // blending by each cell's slope (same painter the mesa uses), so a
-        // curtain reads as a stone cut bank where it truly drops and stays
-        // grass where it tapers, with no split-mesh z-fighting or outline
-        // seams between neighboring curtain cells.
-        const pos = [], idx = [], colors = [];
-        let vi = 0;
+        // blending by slope, built on a SHARED-vertex lattice (one vertex per
+        // corner) so adjacent curtain cells can't crack apart or shade as
+        // separate facets: a corner not touching any ramp falls back to the
+        // average natural ground of every cell around it instead of each
+        // cell's own (possibly different) ground.
+        const groundCornerY = (ci, cj) => {
+          let sum = 0, n = 0;
+          for (const [dc, dr] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
+            const t = zGrid[cj + dr]?.[ci + dc];
+            if (t) { sum += NORMAL_TOP + (t.elevTier || 0) * PLATEAU_UNIT; n++; }
+          }
+          return n ? sum / n : NORMAL_TOP;
+        };
+        // Per-cell drop first, then each corner adopts the steepest touching
+        // curtain cell's drop for its color blend.
+        const cellSlope = new Map();
         for (const [c, r] of cells) {
           const ground = NORMAL_TOP + (zGrid[r][c].elevTier || 0) * PLATEAU_UNIT;
-          const y00 = cornerY(c, r, ground);
-          const y10 = cornerY(c + 1, r, ground);
-          const y01 = cornerY(c, r + 1, ground);
-          const y11 = cornerY(c + 1, r + 1, ground);
-          const slope = Math.max(y00, y10, y01, y11) - Math.min(y00, y10, y01, y11);
-          pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
-          for (let k = 0; k < 4; k++) { _slopeColorInto(colors, colors.length, slope); }
-          idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
+          const ys = [cornerY(c, r, ground), cornerY(c + 1, r, ground), cornerY(c, r + 1, ground), cornerY(c + 1, r + 1, ground)];
+          cellSlope.set(`${c},${r}`, Math.max(...ys) - Math.min(...ys));
+        }
+        const cornerSlope = (ci, cj) => {
+          let s = 0;
+          for (const [dc, dr] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
+            const v = cellSlope.get(`${ci + dc},${cj + dr}`);
+            if (v !== undefined) s = Math.max(s, v);
+          }
+          return s;
+        };
+        const cornerIndex = new Map();
+        const pos = [], idx = [], colors = [];
+        const vertexFor = (ci, cj) => {
+          const key = ci + ',' + cj;
+          const existing = cornerIndex.get(key);
+          if (existing !== undefined) return existing;
+          const vi = pos.length / 3;
+          cornerIndex.set(key, vi);
+          pos.push(ci, cornerY(ci, cj, groundCornerY(ci, cj)), cj);
+          _slopeColorInto(colors, colors.length, cornerSlope(ci, cj));
+          return vi;
+        };
+        for (const [c, r] of cells) {
+          const v00 = vertexFor(c, r);
+          const v10 = vertexFor(c + 1, r);
+          const v01 = vertexFor(c, r + 1);
+          const v11 = vertexFor(c + 1, r + 1);
+          idx.push(v00, v01, v11, v00, v11, v10);
         }
 
         const geo = new THREE.BufferGeometry();
