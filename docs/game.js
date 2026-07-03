@@ -3730,6 +3730,7 @@
         _zoneScenes.set(mapId, info);
         _spawnZoneBuildings(mapId);
         _spawnZoneDecorFurniture(mapId);
+        _spawnZoneGeneratedPlaceholders(mapId);
         return info;
       }
 
@@ -4516,6 +4517,9 @@
         _snapCameraTarget();
         _transitionLatch = travelAreaKey();
         if (t.target !== 'building' && t.target !== 'exit_building') logMapSwap('travel', currentArea, { target: t.target || 'farm' });
+        // Leaving an area may unblock a wilderness zone whose regeneration
+        // was deferred while the player stood inside it.
+        scheduleWildernessRefresh('travel');
       }
 
 
@@ -5296,73 +5300,24 @@
 
       // ── Town zone ──────────────────────────────────────────────────
       // Loads the town layout from the workspace JSON file.
-      // Mirrors the map editor's buildTownLayout() conversion.
-      async function _loadTownFromWorkspace() {
-        try {
-          // One-shot override: docs/tools/index.html's "Open Game" button stashes the
-          // map editor's live (possibly unsaved) workspace here so testing in-progress
-          // edits doesn't require exporting to the on-disk JSON first. Consumed once —
-          // cleared immediately so a plain reload goes back to the real saved file.
-          const GAME_WS_OVERRIDE_KEY = 'hobunji_game_workspace_override_v1';
-          let ws;
-          const overrideRaw = localStorage.getItem(GAME_WS_OVERRIDE_KEY);
-          if (overrideRaw) {
-            localStorage.removeItem(GAME_WS_OVERRIDE_KEY);
-            try {
-              ws = JSON.parse(overrideRaw);
-              console.log('%c[workspace] using live unsaved map-editor data from "Open Game"', 'color:#22c55e;font-weight:bold');
-            } catch (_) { ws = null; }
-          }
-          if (!ws) {
-            const resp = await fetch('config/town-workspace-v1.json');
-            if (!resp.ok) return;
-            ws = await resp.json();
-          }
-          // Load map index so individual map files take priority over workspace inline data
-          let mapFileIndex = {};
-          try {
-            const idxResp = await fetch('config/maps/index.json');
-            if (idxResp.ok) {
-              const idx = await idxResp.json();
-              for (const e of (idx.maps || [])) if (e.id && e.file) mapFileIndex[e.id] = e.file;
-            }
-          } catch(_) {}
-          // Resolve each map: fetch from file if listed in index, fall back to workspace inline data
-          const resolvedMaps = await Promise.all((ws.maps || []).map(async m => {
-            const file = mapFileIndex[m.id];
-            if (!file) return m;
-            try {
-              const r = await fetch(file);
-              if (!r.ok) return m;
-              const data = await r.json();
-              // If the file is an Interior Editor layout and the workspace entry is Map Editor
-              // format, keep the workspace version (source of truth for game logic) and attach
-              // the file as visual base so loadBuildingScene can still render the room.
-              if (data?.schema === 'hobunji_building_interior.v1' && m?.schema !== 'hobunji_building_interior.v1') {
-                return { ...m, buildingInteriorBase: data };
-              }
-              // Normalise tiles: array [{c,r,type,crop}] → dict {"c,r":{type,crop}}
-              if (Array.isArray(data.tiles)) {
-                const d = {};
-                for (const t of data.tiles) d[`${t.c},${t.r}`] = { type: t.type, crop: t.crop || '' };
-                data.tiles = d;
-              }
-              return data;
-            } catch(_) { return m; }
-          }));
-          _workspaceMaps = resolvedMaps;
-
+      // Folds one exterior zone map (plus its plateau-tier submaps) from a
+      // workspace `maps` array into a single _zoneLayouts-shaped record:
+      // { cols, rows, tiles, transitions, toTownExit, mesas, buildings, decor,
+      // furniture } — extracted from _loadTownFromWorkspace so procedurally
+      // generated wilderness workspaces (see refreshWildernessZones) run
+      // through the exact same merge pipeline as authored maps.
+      function buildZoneLayoutFromWorkspaceMaps(maps, plateauGroups, zoneMapId, zoneIdSet) {
           // Plateau sub-maps are purely an authoring convenience in the Map Editor —
           // in-game every tier of a plateau stack is merged into its root zone's
           // single grid (see tileSurfaceYInArea / buildZoneScene), so only root
           // (non-submap) exterior maps get their own zone entry below.
           const childByParentGroup = new Map();
-          for (const m of resolvedMaps) {
+          for (const m of maps) {
             if (m.isSubmap && m.parentMapId && m.plateauGroupId) {
               childByParentGroup.set(`${m.parentMapId}__${m.plateauGroupId}`, m);
             }
           }
-          const plateauElevById = new Map((ws.plateauGroups || []).map(g => [g.id, g.elevation || 0]));
+          const plateauElevById = new Map((plateauGroups || []).map(g => [g.id, g.elevation || 0]));
 
           // Recursively folds map `m` (placed at world offset `offsetC`/`offsetR`,
           // floor elevation tier `baseTier`) into `outTiles` (world-keyed "c,r"
@@ -5512,7 +5467,9 @@
               // them across the walkable ground — turn the un-tagged ones back to
               // grass so the real plateau cliff-face (plateau-tagged rock) reads as
               // the only solid rock terrain, and the zone is actually walkable.
-              if (!t.plateau && type === 'rock') type = 'grass';
+              // Generated wilderness maps set `keepRockTiles`: their rock tiles are
+              // real cliff-skirt walls/reachability seals and must stay solid.
+              if (!t.plateau && type === 'rock' && !m.keepRockTiles) type = 'grass';
               outTiles.set(key, {
                 c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
                 rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
@@ -5534,18 +5491,8 @@
             }
           }
 
-          // Resolve real authored tile/transition data for every top-level exterior
-          // zone (Northern Cliffs, Southern Cloud Forest) so buildZoneScene can
-          // render actual cliff/terrain content instead of EXTERIOR_ZONES' tiny flat
-          // placeholder grid.
-          const allZoneMapIds = new Set(Object.keys(EXTERIOR_ZONES));
-          for (const m of resolvedMaps) {
-            if (m.category === 'exterior' && m.id !== 'map_hobunji_town' && !m.isSubmap) allZoneMapIds.add(m.id);
-          }
-
-          for (const zoneMapId of allZoneMapIds) {
-            const zm = resolvedMaps.find(m => m.id === zoneMapId);
-            if (!zm) continue;
+            const zm = maps.find(m => m.id === zoneMapId);
+            if (!zm) return null;
             const outTiles = new Map(), mesas = [], outBuildings = [], outDecor = [], outFurniture = [];
             mergeZoneTiles(zm, 0, 0, 0, outTiles, mesas, outBuildings, outDecor, outFurniture);
             const zTiles = [...outTiles.values()];
@@ -5576,13 +5523,372 @@
                 if (!toTownExit) toTownExit = t;
               } else if (_isBuildingArea(t.targetMapId)) {
                 zTransitions.push({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId });
-              } else if (allZoneMapIds.has(t.targetMapId)) {
+              } else if (zoneIdSet.has(t.targetMapId)) {
                 zTransitions.push({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
               }
             });
-            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture });
             console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, decor=${outDecor.length}, furniture=${outFurniture.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
+            return { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture };
+      }
+
+      // ── Procedural wilderness regeneration ─────────────────────────────
+      // Every WILDERNESS_REGEN_SEASONS in-game seasons, the wild exterior
+      // zones (Northern Cliffs, Southern Cloud Forest, Eastern Mire, Western
+      // Slope) completely regenerate from js/wilderness-generator.js: fresh
+      // plateaus, slope-checked ramps, rivers, and placeholder flora/caves.
+      // The generated workspace runs through the exact same
+      // buildZoneLayoutFromWorkspaceMaps merge as authored maps, and the
+      // generator itself guarantees (and scripts/check-wilderness-generator.js
+      // re-verifies) that every walkable merged tile is reachable from the
+      // entry via ramps no steeper than its max climb angle.
+      const WILDERNESS_REGEN_SEASONS = 2; // "every few months": 2 seasons = 16 in-game days
+      const WILDERNESS_REGEN_DAYS = SEASON_LENGTH_DAYS * WILDERNESS_REGEN_SEASONS;
+      const WILDERNESS_REGEN_STORAGE_KEY = 'hobunji_wilderness_regen_v1';
+      const _wildernessZoneEpochs = new Map(); // zoneMapId → epoch its current layout was generated for
+
+      function wildernessEpoch() {
+        return Math.floor(Math.max(0, (calendar.day || 1) - 1) / WILDERNESS_REGEN_DAYS);
+      }
+
+      // Stable per-save world seed so a reload within the same epoch grows
+      // the same wilderness; combined with the epoch + zone id per generation.
+      function _wildernessWorldSeed() {
+        try {
+          const stored = JSON.parse(localStorage.getItem(WILDERNESS_REGEN_STORAGE_KEY) || 'null');
+          if (stored?.worldSeed) return stored.worldSeed;
+        } catch (_) {}
+        const worldSeed = 'wild_' + Math.floor(Math.random() * 0xffffffff).toString(36);
+        try { localStorage.setItem(WILDERNESS_REGEN_STORAGE_KEY, JSON.stringify({ worldSeed })); } catch (_) {}
+        return worldSeed;
+      }
+
+      function _wildernessZoneIds() {
+        const ids = new Set(Object.keys(EXTERIOR_ZONES));
+        for (const m of (_workspaceMaps || [])) {
+          if (m.category === 'exterior' && m.id !== 'map_hobunji_town' && !m.isSubmap) ids.add(m.id);
+        }
+        return [...ids];
+      }
+
+      // Drops a zone's cached scene (and everything spawned into it) so the
+      // next enterZone rebuilds from the current _zoneLayouts entry.
+      function disposeZoneScene(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        if (zi?.scene) {
+          zi.scene.traverse(o => { if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose(); });
+        }
+        _zoneScenes.delete(mapId);
+        _zoneBuildingGroups.delete(mapId);
+        _zoneDecorFurnitureGroups.delete(mapId);
+        _zoneWaterMeshes.delete(mapId);
+        for (const c of [...hostileObjects]) {
+          if (c.areaId === mapId) { despawnCreature(c); hostileObjects.delete(c); }
+        }
+      }
+
+      function _zoneLayoutTileWalkable(t) {
+        if (!t || t.incline) return false;
+        return !(t.type === TileType.ROCK || t.type === TileType.SHRUB ||
+                 t.type === TileType.RIVER || t.type === TileType.STREAM || t.type === TileType.WATERFALL);
+      }
+
+      function _nearestWalkableZoneTile(layout, col, row) {
+        let best = null, bestDist = Infinity;
+        for (const t of layout.tiles) {
+          if (!_zoneLayoutTileWalkable(t)) continue;
+          const d = Math.abs(t.c - col) + Math.abs(t.r - row);
+          if (d < bestDist) { bestDist = d; best = { col: t.c, row: t.r }; }
+          if (d === 0) break;
+        }
+        return best || { col, row };
+      }
+
+      // Regenerates one wilderness zone for `epoch`. Zone dimensions and the
+      // entry side come from the authored map (so the town connection stays
+      // on the correct edge), authored transitions/buildings (e.g. the
+      // Researcher's Tent) are re-anchored onto the nearest walkable
+      // generated ground, and everything else — terrain, ramps, water,
+      // placeholder flora/caves/dens — is brand new.
+      function regenerateWildernessZone(zoneMapId, epoch) {
+        if (typeof window.WildernessGenerator === 'undefined') return false;
+        const authored = (_workspaceMaps || []).find(m => m.id === zoneMapId && !m.isSubmap);
+        const cols = authored?.cols || 50, rows = authored?.rows || 40;
+        const authoredTransitions = authored?.transitions || [];
+        const toTown = authoredTransitions.find(t => t.targetMapId === 'map_hobunji_town');
+        let entrySide = 'south';
+        if (toTown && Number.isFinite(toTown.col) && Number.isFinite(toTown.row)) {
+          const edges = [['west', toTown.col], ['east', cols - 1 - toTown.col], ['north', toTown.row], ['south', rows - 1 - toTown.row]];
+          edges.sort((a, b) => a[1] - b[1]);
+          entrySide = edges[0][0];
+        } else if (EXTERIOR_ZONES[zoneMapId]) {
+          entrySide = (EXTERIOR_ZONES[zoneMapId].entryRow || 0) > rows / 2 ? 'south' : 'north';
+        }
+        const seed = `${_wildernessWorldSeed()}_${zoneMapId}_epoch_${epoch}`;
+        let result;
+        try {
+          result = window.WildernessGenerator.generate({ seed, width: cols, height: rows, entrySide });
+        } catch (e) {
+          debugLog(`Wilderness regen failed for ${zoneMapId}: ${e.message}`, 'warn');
+          return false;
+        }
+        const zoneIdSet = new Set(_wildernessZoneIds());
+        const rootId = result.workspace.maps[0].id;
+        const layout = buildZoneLayoutFromWorkspaceMaps(result.workspace.maps, result.workspace.plateauGroups, rootId, zoneIdSet);
+        if (!layout) return false;
+
+        const entry = result.entry || { x: Math.floor(cols / 2), y: rows - 1 };
+        layout.toTownExit = {
+          id: zoneMapId + '_generated_exit',
+          label: toTown?.label || 'Back to Town',
+          col: entry.x, row: entry.y,
+        };
+        layout.entrySpawn = _nearestWalkableZoneTile(layout, entry.x, entry.y);
+        // Authored transitions into buildings / other zones survive the
+        // regeneration — re-anchored onto the nearest walkable new ground.
+        layout.transitions = authoredTransitions
+          .filter(t => t.targetMapId && t.targetMapId !== 'map_hobunji_town' &&
+                       (_isBuildingArea(t.targetMapId) || zoneIdSet.has(t.targetMapId)))
+          .map(t => {
+            const spot = _nearestWalkableZoneTile(layout, t.col || 0, t.row || 0);
+            return {
+              id: t.id, label: t.label, col: spot.col, row: spot.row,
+              target: _isBuildingArea(t.targetMapId) ? 'building' : 'zone',
+              targetMapId: t.targetMapId,
+            };
+          });
+        layout.buildings = (authored?.buildings || []).map(b => {
+          const spot = _nearestWalkableZoneTile(layout, b.gridX || 0, b.gridZ || 0);
+          const t = layout.tiles.find(x => x.c === spot.col && x.r === spot.row);
+          return { ...b, gridX: spot.col, gridZ: spot.row, elevTier: t?.elevTier || 0 };
+        });
+        layout.genObjects = result.objects || [];
+        layout.generatedSeed = seed;
+        _zoneLayouts.set(zoneMapId, layout);
+        _wildernessZoneEpochs.set(zoneMapId, epoch);
+        disposeZoneScene(zoneMapId);
+        const gc = result.gameConnectivity || {};
+        console.log(`%c[wilderness:${zoneMapId}] regenerated for epoch ${epoch} (seed ${seed}): ${cols}x${rows}, walkable=${gc.walkableTiles}, unreachable=${gc.unreachableTiles}, repairRamps=${gc.carvedRepairRamps}, sealed=${gc.sealedTiles}, objects=${layout.genObjects.length}`, 'color:#22c55e;font-weight:bold');
+        return true;
+      }
+
+      // Regenerates every stale zone, one per timeout tick so a 4-zone epoch
+      // rollover doesn't freeze a frame. A zone the player is standing in is
+      // deferred — enterZone and performTravel re-run this check, so it
+      // regenerates as soon as they leave.
+      let _wildernessRefreshQueued = false;
+      function scheduleWildernessRefresh(reason = 'check') {
+        if (_wildernessRefreshQueued || typeof window.WildernessGenerator === 'undefined') return;
+        _wildernessRefreshQueued = true;
+        const step = () => {
+          _wildernessRefreshQueued = false;
+          const epoch = wildernessEpoch();
+          const pending = _wildernessZoneIds().filter(id => _wildernessZoneEpochs.get(id) !== epoch && currentArea !== id);
+          if (!pending.length) return;
+          regenerateWildernessZone(pending[0], epoch);
+          if (pending.length > 1) {
+            _wildernessRefreshQueued = true;
+            setTimeout(step, 60);
           }
+        };
+        setTimeout(step, 0);
+      }
+
+      // ── Generated-object placeholder props ─────────────────────────────
+      // The generator describes plants, caves, dens, statues, ore, etc. as
+      // abstract objects; until each gets real art they render as simple
+      // primitive stand-ins lifted to their tile's elevation.
+      const _genPlaceholderMats = new Map();
+      function _genMat(color) {
+        let mat = _genPlaceholderMats.get(color);
+        if (!mat) { mat = new THREE.MeshLambertMaterial({ color }); _genPlaceholderMats.set(color, mat); }
+        return mat;
+      }
+      const _genGeos = new Map();
+      function _genGeo(key, make) {
+        let geo = _genGeos.get(key);
+        if (!geo) { geo = make(); geo.userData.shared = true; _genGeos.set(key, geo); }
+        return geo;
+      }
+      const _ORE_PLACEHOLDER_COLORS = {
+        stone: 0x8a8a8a, copper: 0xb87333, tin: 0x9a9a9a, iron: 0x6f6f74,
+        silver: 0xc0c0c0, gold: 0xd4af37, crystal: 0x9be2ff,
+      };
+
+      function buildGeneratedPlaceholderMesh(obj) {
+        const g = new THREE.Group();
+        const add = (geo, color, x = 0, y = 0, z = 0, s = 1) => {
+          const mesh = new THREE.Mesh(geo, _genMat(color));
+          mesh.position.set(x, y, z);
+          mesh.scale.setScalar(s);
+          g.add(mesh);
+          return mesh;
+        };
+        switch (obj.type) {
+          case 'copse': // stands for "trees spawn densely here" — one placeholder tree per copse tile
+            add(_genGeo('gen_trunk', () => new THREE.CylinderGeometry(0.09, 0.14, 0.9, 6)), 0x6b4423, 0, 0.45, 0);
+            add(_genGeo('gen_canopy', () => new THREE.ConeGeometry(0.42, 1.05, 7)), 0x2d6a34, 0, 1.35, 0);
+            break;
+          case 'fallenLog': {
+            const log = add(_genGeo('gen_log', () => new THREE.CylinderGeometry(0.16, 0.19, 1.5, 7)), 0x8a5725, 0, 0.17, 0);
+            log.rotation.z = Math.PI / 2;
+            if ((obj.h || 1) > (obj.w || 1)) log.rotation.y = Math.PI / 2;
+            break;
+          }
+          case 'stump':
+            add(_genGeo('gen_stump', () => new THREE.CylinderGeometry(0.17, 0.2, 0.3, 7)), 0x7a471f, 0, 0.15, 0);
+            break;
+          case 'foragePlant':
+          case 'rareHerb':
+            add(_genGeo('gen_stem', () => new THREE.CylinderGeometry(0.025, 0.035, 0.3, 5)), 0x3d7a3d, 0, 0.15, 0);
+            add(_genGeo('gen_bloom', () => new THREE.SphereGeometry(0.12, 8, 6)), new THREE.Color(obj.color || (obj.type === 'rareHerb' ? '#8af56b' : '#ff6fcf')).getHex(), 0, 0.36, 0);
+            break;
+          case 'fruitBush': // atop the shrub-foliage tile it exports as
+            add(_genGeo('gen_berry', () => new THREE.SphereGeometry(0.1, 8, 6)), 0xd6452e, 0.12, 0.55, 0.05);
+            add(_genGeo('gen_berry', () => new THREE.SphereGeometry(0.1, 8, 6)), 0xd6452e, -0.1, 0.6, -0.08);
+            break;
+          case 'mushroomPatch':
+            add(_genGeo('gen_mushroom', () => new THREE.ConeGeometry(0.14, 0.22, 7)), 0xf4f0d8, 0.12, 0.11, 0.1);
+            add(_genGeo('gen_mushroom', () => new THREE.ConeGeometry(0.14, 0.22, 7)), 0xe8d8b0, -0.14, 0.11, -0.06);
+            break;
+          case 'beehive':
+            add(_genGeo('gen_hive', () => new THREE.CylinderGeometry(0.16, 0.2, 0.3, 8)), 0xd69a26, 0, 0.75, 0);
+            break;
+          case 'treasureDigspot':
+            add(_genGeo('gen_digspot', () => { const geo = new THREE.CircleGeometry(0.3, 12); geo.rotateX(-Math.PI / 2); return geo; }), 0xffd328, 0, 0.03, 0);
+            break;
+          case 'diggableRockOre':
+            add(_genGeo('gen_ore', () => new THREE.IcosahedronGeometry(0.28, 0)), _ORE_PLACEHOLDER_COLORS[obj.oreKind] || 0x8a8a8a, 0, 0.24, 0);
+            break;
+          case 'undiggableBoulder':
+            add(_genGeo('gen_boulder', () => new THREE.DodecahedronGeometry(0.42, 0)), 0x46484d, 0, 0.34, 0, Math.max(1, ((obj.w || 1) + (obj.h || 1)) / 2));
+            break;
+          case 'submergedPillar':
+            add(_genGeo('gen_pillar', () => new THREE.CylinderGeometry(0.2, 0.24, 1.2, 8)), 0x3e4146, 0, 0.4, 0);
+            break;
+          case 'statue':
+            add(_genGeo('gen_statue_base', () => new THREE.BoxGeometry(0.5, 0.25, 0.5)), 0x303237, 0, 0.13, 0);
+            add(_genGeo('gen_statue_shaft', () => new THREE.BoxGeometry(0.22, 1.1, 0.22)), 0x3a3c42, 0, 0.8, 0);
+            add(_genGeo('gen_statue_top', () => new THREE.ConeGeometry(0.2, 0.3, 4)), 0x303237, 0, 1.5, 0);
+            break;
+          case 'structure': {
+            const w = Math.max(1, obj.w || 1), d = Math.max(1, obj.h || 1);
+            const body = add(_genGeo('gen_structure_body', () => new THREE.BoxGeometry(1, 0.8, 1)), 0x8a5b2b, 0, 0.4, 0);
+            body.scale.set(w * 0.8, 1, d * 0.8);
+            const roof = add(_genGeo('gen_structure_roof', () => new THREE.ConeGeometry(0.75, 0.55, 4)), 0x5c3522, 0, 1.05, 0);
+            roof.scale.set(w, 1, d);
+            roof.rotation.y = Math.PI / 4;
+            break;
+          }
+          case 'caveOpening':
+          case 'secretCaveOpening': {
+            const mouth = add(_genGeo('gen_cave', () => new THREE.CylinderGeometry(0.42, 0.46, 0.5, 10, 1, false, 0, Math.PI)), obj.type === 'secretCaveOpening' ? 0x0c0f14 : 0x171717, 0, 0.25, 0);
+            mouth.rotation.y = Math.PI;
+            break;
+          }
+          case 'animalDen':
+            add(_genGeo('gen_den', () => new THREE.SphereGeometry(0.45, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2)), 0x4b2d18, 0, 0, 0);
+            break;
+          default:
+            return null; // ambush points, prey trails, fishing spots, map entry: invisible markers
+        }
+        return g;
+      }
+
+      function _spawnZoneGeneratedPlaceholders(mapId) {
+        const zoneData = _zoneLayouts.get(mapId);
+        const objects = zoneData?.genObjects || [];
+        if (!objects.length) return;
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return;
+        let built = 0;
+        for (const obj of objects) {
+          const mesh = buildGeneratedPlaceholderMesh(obj);
+          if (!mesh) continue;
+          const cx = (obj.x || 0) + (obj.w || 1) / 2;
+          const cz = (obj.y || 0) + (obj.h || 1) / 2;
+          const tile = zi.grid[Math.floor(cz)]?.[Math.floor(cx)];
+          mesh.position.set(cx, tile ? tileSurfaceYInArea(tile, mapId) : 0, cz);
+          _markOutline(mesh);
+          zi.scene.add(mesh);
+          built++;
+        }
+        debugLog(`_spawnZoneGeneratedPlaceholders(${mapId}): ${built} placeholder props`);
+      }
+
+      // Mirrors the map editor's buildTownLayout() conversion.
+      async function _loadTownFromWorkspace() {
+        try {
+          // One-shot override: docs/tools/index.html's "Open Game" button stashes the
+          // map editor's live (possibly unsaved) workspace here so testing in-progress
+          // edits doesn't require exporting to the on-disk JSON first. Consumed once —
+          // cleared immediately so a plain reload goes back to the real saved file.
+          const GAME_WS_OVERRIDE_KEY = 'hobunji_game_workspace_override_v1';
+          let ws;
+          const overrideRaw = localStorage.getItem(GAME_WS_OVERRIDE_KEY);
+          if (overrideRaw) {
+            localStorage.removeItem(GAME_WS_OVERRIDE_KEY);
+            try {
+              ws = JSON.parse(overrideRaw);
+              console.log('%c[workspace] using live unsaved map-editor data from "Open Game"', 'color:#22c55e;font-weight:bold');
+            } catch (_) { ws = null; }
+          }
+          if (!ws) {
+            const resp = await fetch('config/town-workspace-v1.json');
+            if (!resp.ok) return;
+            ws = await resp.json();
+          }
+          // Load map index so individual map files take priority over workspace inline data
+          let mapFileIndex = {};
+          try {
+            const idxResp = await fetch('config/maps/index.json');
+            if (idxResp.ok) {
+              const idx = await idxResp.json();
+              for (const e of (idx.maps || [])) if (e.id && e.file) mapFileIndex[e.id] = e.file;
+            }
+          } catch(_) {}
+          // Resolve each map: fetch from file if listed in index, fall back to workspace inline data
+          const resolvedMaps = await Promise.all((ws.maps || []).map(async m => {
+            const file = mapFileIndex[m.id];
+            if (!file) return m;
+            try {
+              const r = await fetch(file);
+              if (!r.ok) return m;
+              const data = await r.json();
+              // If the file is an Interior Editor layout and the workspace entry is Map Editor
+              // format, keep the workspace version (source of truth for game logic) and attach
+              // the file as visual base so loadBuildingScene can still render the room.
+              if (data?.schema === 'hobunji_building_interior.v1' && m?.schema !== 'hobunji_building_interior.v1') {
+                return { ...m, buildingInteriorBase: data };
+              }
+              // Normalise tiles: array [{c,r,type,crop}] → dict {"c,r":{type,crop}}
+              if (Array.isArray(data.tiles)) {
+                const d = {};
+                for (const t of data.tiles) d[`${t.c},${t.r}`] = { type: t.type, crop: t.crop || '' };
+                data.tiles = d;
+              }
+              return data;
+            } catch(_) { return m; }
+          }));
+          _workspaceMaps = resolvedMaps;
+
+          // Resolve real authored tile/transition data for every top-level exterior
+          // zone (Northern Cliffs, Southern Cloud Forest, etc.) so buildZoneScene
+          // can render actual cliff/terrain content instead of EXTERIOR_ZONES' tiny
+          // flat placeholder grid. The merge itself lives in
+          // buildZoneLayoutFromWorkspaceMaps so generated wilderness workspaces
+          // reuse it (see refreshWildernessZones).
+          const allZoneMapIds = new Set(Object.keys(EXTERIOR_ZONES));
+          for (const m of resolvedMaps) {
+            if (m.category === 'exterior' && m.id !== 'map_hobunji_town' && !m.isSubmap) allZoneMapIds.add(m.id);
+          }
+          for (const zoneMapId of allZoneMapIds) {
+            const zoneLayout = buildZoneLayoutFromWorkspaceMaps(resolvedMaps, ws.plateauGroups, zoneMapId, allZoneMapIds);
+            if (zoneLayout) _zoneLayouts.set(zoneMapId, zoneLayout);
+          }
+          // Replace the authored wilderness layouts with this epoch's
+          // procedural generation (staggered; authored data stays as the
+          // fallback if the generator script failed to load).
+          scheduleWildernessRefresh('startup');
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
           const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [] };
@@ -6084,13 +6390,23 @@
       function enterZone(mapId, defaultCol, defaultRow) {
         const zdef = EXTERIOR_ZONES[mapId];
         if (!zdef && !_zoneLayouts.has(mapId)) return;
+        // A wilderness zone whose layout belongs to an older epoch rebuilds
+        // right now — this is the deferred path for a zone the player was
+        // standing inside at rollover, or one that raced the staggered
+        // startup refresh.
+        if (typeof window.WildernessGenerator !== 'undefined' &&
+            _wildernessZoneEpochs.get(mapId) !== wildernessEpoch() &&
+            _wildernessZoneIds().includes(mapId)) {
+          regenerateWildernessZone(mapId, wildernessEpoch());
+        }
         const zi = buildZoneScene(mapId);
         if (!zi) return;
         const fromScene = getActiveScene();
         _currentBuildingMapId = null;
         currentArea = mapId;
-        const col = Number.isFinite(defaultCol) ? defaultCol : (zdef?.entryCol ?? 0);
-        const row = Number.isFinite(defaultRow) ? defaultRow : (zdef?.entryRow ?? 0);
+        const entrySpawn = _zoneLayouts.get(mapId)?.entrySpawn;
+        const col = Number.isFinite(defaultCol) ? defaultCol : (entrySpawn?.col ?? zdef?.entryCol ?? 0);
+        const row = Number.isFinite(defaultRow) ? defaultRow : (entrySpawn?.row ?? zdef?.entryRow ?? 0);
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         facingAngle = -Math.PI / 2; player.angle = facingAngle;
@@ -14850,10 +15166,18 @@
       }
 
       function advanceDay() {
+        const previousWildEpoch = wildernessEpoch();
         calendar.day += 1;
         chooseWeatherForDay();
         tickCropDay();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
+        // Every WILDERNESS_REGEN_DAYS the wild zones tear down and grow a
+        // completely new procedural layout (deferred for a zone the player
+        // is currently standing in — it rebuilds when they leave).
+        if (wildernessEpoch() !== previousWildEpoch) {
+          showToast('🌿 The wilds beyond town have shifted — new cliffs, paths, and dens await.', true);
+          scheduleWildernessRefresh('epoch');
+        }
       }
 
       function chooseWeatherForDay() {

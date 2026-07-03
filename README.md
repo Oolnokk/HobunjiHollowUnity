@@ -21,6 +21,10 @@ The game is `docs/index.html` (+ `docs/game.js`, `docs/onboarding.js`). All tool
 - `docs/tools/house-piece-author/` and `docs/tools/wall-builder/` — asset-pipeline tools producing modular house pieces and FBSE6 wall GLBs/recipes consumed via `docs/js/WallBuilder.js`.
 - `docs/tools/index.html` — hub that embeds the tools with an NPC database sidebar.
 
+## Procedural wilderness regeneration
+
+Every 2 in-game seasons (16 days) the wild exterior zones (Northern Cliffs, Southern Cloud Forest, Eastern Mire, Western Slope) completely regenerate from `docs/js/wilderness-generator.js` — a headless port of the WildernessMapGeneratorV32 prototype. The generator emits a `hobunji_map_editor_workspace.v1` workspace that runs through the same `buildZoneLayoutFromWorkspaceMaps` merge as authored maps. It guarantees that every walkable merged tile is reachable from the zone entry via ramps no steeper than the max climb angle (default 40°, using the game's real 2.5-world-units-per-tier scale), carving slope-compliant repair ramps or sealing stray pockets as rock when needed. Generated plants/caves/dens/statues/ore render as simple primitive placeholder props for now. Authored transitions and buildings (e.g. the Researcher's Tent) are re-anchored onto the new terrain each regeneration; the per-save world seed lives in localStorage (`hobunji_wilderness_regen_v1`). Validate headlessly with `node scripts/check-wilderness-generator.js`.
+
 ## Runtime NPC avatar demo pipeline
 
 - `docs/js/npc-avatar-preview-utils.js` turns an NPC export or profile into a portrait profile and renders it to an in-memory transparent canvas through `renderPortraitProfile()`.
