@@ -113,6 +113,9 @@ function surfaceY(tile) {
 function walkable(tile) {
   if (!tile || tile.incline) return false;
   if (tile.rampCurtain) return false;
+  // Staked plateau-edge cover is solid in-game (tileSpeedAt's skipFloor
+  // rule) — collision tiles, so outside the reachability guarantee.
+  if (tile.staked) return false;
   if (SOLID_TYPES.has(tile.type)) return false;
   if (BLOCKED_WATER.has(tile.type)) return false;
   return true;
@@ -173,10 +176,6 @@ function validate(label, result, maxAngleDeg) {
   const unreachableSamples = [];
   for (const tile of tiles.values()) {
     if (!walkable(tile)) continue;
-    // Staked (mesa-covered, unstamped) plateau-edge cells are cosmetic
-    // cover: BFS may pass through them, but they carry no floor/objects and
-    // are exempt from the must-be-reachable guarantee.
-    if (tile.staked) continue;
     walkableCount++;
     if (!seen.has(`${tile.c},${tile.r}`)) {
       unreachable++;

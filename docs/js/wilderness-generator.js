@@ -5511,16 +5511,15 @@
       for (let x = 0; x < width; x++) {
         const t = merged.get(`${x},${y}`) || { type: 'grass', elevTier: 0, rampElevation: 0, incline: false };
         const isRamp = t.type === 'ramp';
-        const blocked = !!t.incline || GAME_SOLID_TYPES.has(t.type);
         view[y * width + x] = {
-          blocked,
+          // Staked plateau-edge cover (no stamped floor — the mesa's cliff
+          // blend is all that renders there) is SOLID in-game (see
+          // tileSpeedAt's skipFloor rule), so it is blocked here too; every
+          // non-colliding tile stays under the full reachability guarantee.
+          blocked: !!t.incline || !!t.staked || GAME_SOLID_TYPES.has(t.type),
           tier: isRamp ? (t.rampElevation || 0) : (t.elevTier || 0),
           ramp: isRamp,
-          // Staked plateau-edge cover: BFS may walk through it, but it is
-          // exempt from must-be-reachable checks and never sealed (it has no
-          // floor of its own — the mesa covers it — so sealing/stamping it
-          // is what produced segmented plateau edges).
-          staked: !blocked && !!t.staked,
+          staked: !!t.staked,
         };
       }
     }
@@ -5685,7 +5684,7 @@
           if (!v) break;
           if (!v.blocked) {
             const tIdx = ty * width + tx;
-            if (!reached.has(tIdx) && !v.staked) found = { x: tx, y: ty, tier: v.tier };
+            if (!reached.has(tIdx)) found = { x: tx, y: ty, tier: v.tier };
             break;
           }
           if (!carvable(tx, ty)) break;
@@ -6075,7 +6074,7 @@
       while (carves < maxCarves) {
         let anyUnreachable = false;
         for (let i = 0; i < view.length; i++) {
-          if (!view[i].blocked && !view[i].staked && !reached.has(i)) { anyUnreachable = true; break; }
+          if (!view[i].blocked && !reached.has(i)) { anyUnreachable = true; break; }
         }
         if (!anyUnreachable) return;
         const candidates = findGameRepairCarves(view, reached);
@@ -6112,7 +6111,7 @@
     const sealUnreachable = () => {
       let roundSealed = 0;
       for (let i = 0; i < view.length; i++) {
-        if (view[i].blocked || view[i].staked || reached.has(i)) continue;
+        if (view[i].blocked || reached.has(i)) continue;
         const x = i % settings.width, y = Math.floor(i / settings.width);
         const tile = tileAt(x, y);
         if (!tile) continue;
@@ -6146,7 +6145,7 @@
     }
     let walkable = 0, unreachable = 0;
     for (let i = 0; i < view.length; i++) {
-      if (view[i].blocked || view[i].staked) continue;
+      if (view[i].blocked) continue;
       walkable++;
       if (!reached.has(i)) unreachable++;
     }

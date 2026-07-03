@@ -11004,6 +11004,11 @@
         // Auto-reserved plateau cliff-face ring — impassable except where a
         // ramp tile explicitly cuts through it (which never sets `incline`).
         if (tile.incline) return null;
+        // Staked plateau-edge cover in exterior zones (skipFloor: written by
+        // footprint staking, nothing stamped a real floor there — the mesa's
+        // cliff blend is all that renders) is solid cliff geometry. Runtime
+        // digs are the exception: a carved bed is real walkable ground.
+        if (tile.skipFloor && _isZoneArea(currentArea) && !CARVED_TILE_TYPES.has(type)) return null;
         // Rivers/streams are a real crossing obstacle — block like a solid tile.
         if (type === TileType.RIVER || type === TileType.STREAM) return null;
         // Block structural building tiles on exterior maps (player must use doors/transitions).
