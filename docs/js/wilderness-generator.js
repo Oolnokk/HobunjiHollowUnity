@@ -5567,7 +5567,9 @@
     cells.forEach((cell, index) => {
       const tile = tileAt(cell.x, cell.y);
       if (!tile) return;
-      const t = run > 1 ? index / (run - 1) : 1;
+      // Widened carves carry per-cell progress; fall back to index order for
+      // plain single-lane lines.
+      const t = Number.isFinite(cell.t) ? cell.t : (run > 1 ? index / (run - 1) : 1);
       tile.ramp = true;
       tile.rampId = rampId;
       tile.rampProgress = Number(t.toFixed(3));
@@ -5672,6 +5674,32 @@
         }
         if (cells.length - 1 < runNeeded) continue;
         if (cells.some(cell => !carvable(cell.x, cell.y))) continue;
+
+        // Each cell carries its own progress along the climb so widened
+        // lanes (below) inherit the same lerp as their primary-lane cell.
+        const runLen = Math.max(1, cells.length - 1);
+        cells = cells.map((cell, i) => ({ ...cell, t: i / runLen }));
+        // Carves run at gameplay resolution, AFTER the upscale — widen the
+        // line to gameplayScale lanes so repair inclines match the "1
+        // generator tile = scale×scale gameplay tiles" chunkiness instead of
+        // shipping as 1-tile-wide strips. Each extra lane is added only
+        // where every one of its cells is carvable.
+        const laneCount = Math.max(1, Math.round(settings.gameplayScale || 1));
+        if (laneCount > 1) {
+          const primary = cells.slice();
+          for (const side of [[dy, dx], [-dy, -dx]]) {
+            if (cells.length >= primary.length * laneCount) break;
+            for (let k = 1; k < laneCount; k++) {
+              const lane = primary.map(cell => ({ x: cell.x + side[0] * k, y: cell.y + side[1] * k, t: cell.t }));
+              const laneOk = lane.every(cell => {
+                const v = viewAt(cell.x, cell.y);
+                return v && carvable(cell.x, cell.y);
+              });
+              if (!laneOk) break;
+              cells = cells.concat(lane);
+            }
+          }
+        }
 
         // Prefer short walls, small climbs, and reconnections near the entry.
         const score = gap * 2 + diff * 3 + cells.length * 0.25

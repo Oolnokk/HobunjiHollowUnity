@@ -3739,6 +3739,7 @@
         for (const water of _zoneWaterMeshes.get(mapId) || []) zi.scene.remove(water);
         _zoneWaterMeshes.delete(mapId);
         _buildZoneTerrainMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId, _zoneLayouts.get(mapId)?.mesas || []);
+        debugLog(`refreshZoneTerrain(${mapId}): rebuilt after terrain edit`);
       }
 
       // Transition rings, scene registration, and prop spawning — the tail of
@@ -4045,7 +4046,23 @@
           return n ? sum / n : null;
         };
 
-        const pos = [], idx = [];
+        // A corner of the incline that touches a cliff cell (auto-incline
+        // ring or ramp curtain) tints toward stone, so the incline blends
+        // into the rock face it climbs instead of reading as a crisp green
+        // strip slotted between two prisms.
+        const cornerCliffBlend = (ci, cj) => {
+          for (const [dc, dr] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
+            const t = zGrid[cj + dr]?.[ci + dc];
+            if (t && t.type !== TileType.RAMP && (t.incline || t.rampCurtain)) return 0.55;
+          }
+          return 0;
+        };
+        const pushCliffTint = (out, blend) => {
+          const g = tileMats.grass.color, s = tileMats.rock.color;
+          out.push(g.r + (s.r - g.r) * blend, g.g + (s.g - g.g) * blend, g.b + (s.b - g.b) * blend);
+        };
+
+        const pos = [], idx = [], colors = [];
         let vi = 0;
         for (const [c, r] of rampCells) {
           const fallback = NORMAL_TOP + (zGrid[r][c].rampElevation || 0) * PLATEAU_UNIT;
@@ -4054,17 +4071,21 @@
           const y01 = cornerY(c, r+1)   ?? fallback;
           const y11 = cornerY(c+1, r+1) ?? fallback;
           pos.push(c,y00,r,  c+1,y10,r,  c,y01,r+1,  c+1,y11,r+1);
+          pushCliffTint(colors, cornerCliffBlend(c, r));
+          pushCliffTint(colors, cornerCliffBlend(c + 1, r));
+          pushCliffTint(colors, cornerCliffBlend(c, r + 1));
+          pushCliffTint(colors, cornerCliffBlend(c + 1, r + 1));
           idx.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi += 4;
         }
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
         geo.computeVertexNormals();
-        // Inclines are ordinary sloped ground now, so they wear the surface
-        // material (grass), not a path strip — slope shading via the vertex
-        // normals is what reads as "incline".
-        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        // Inclines are ordinary sloped ground: grass surface, edges fading
+        // into the stone of whatever cliff they climb.
+        const mesh = new THREE.Mesh(geo, _slopeTerrainMat());
         mesh.receiveShadow = true;
         zScene.add(mesh);
         _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.GRASS));
