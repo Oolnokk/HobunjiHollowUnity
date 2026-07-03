@@ -5470,19 +5470,23 @@
       }
     }
     // Ramp curtains (docs/game.js buildZoneScene): any non-ramp tile beside a
-    // ramp tile whose surface differs by ≥ RAMP_FLUSH_EPS (0.5 world-Y = 0.2
-    // tier) is folded into the ramp's cliff skirt and becomes fully solid.
-    const CURTAIN_EPS_TIERS = 0.5 / GAME_TIER_RISE;
+    // ramp tile whose surface differs by ≥ RAMP_FLUSH_EPS (0.5 world-Y) is
+    // folded into the ramp's cliff skirt and becomes fully solid. The
+    // comparison is done in WORLD units with the exact same arithmetic as
+    // the game — comparing in tier units flips borderline cases through
+    // float rounding (0.19999…·2.5 = 0.50000…4).
+    const RAMP_FLUSH_EPS_WORLD = 0.5;
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const here = view[y * width + x];
         if (!here.ramp) continue;
+        const rampY = here.tier * GAME_TIER_RISE;
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           const nx = x + dx, ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
           const n = view[ny * width + nx];
           if (n.ramp || n.blocked) continue;
-          if (Math.abs(here.tier - n.tier) >= CURTAIN_EPS_TIERS) n.blocked = true;
+          if (Math.abs(rampY - n.tier * GAME_TIER_RISE) >= RAMP_FLUSH_EPS_WORLD) n.blocked = true;
         }
       }
     }
@@ -5562,7 +5566,8 @@
       tile.rampToTier = toTier;
       tile.rampDirection = null;
       tile.rampKind = 'gameRepair';
-      tile.height = Number((fromTier + (toTier - fromTier) * t).toFixed(3));
+      // 2 decimals: matches the export's rampElevation precision exactly.
+      tile.height = Number((fromTier + (toTier - fromTier) * t).toFixed(2));
       tile.water = false;
       tile.waterfall = false;
       tile.bridge = false;
@@ -5670,6 +5675,130 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════
+  //  Ramp fusion — "ramps" become "inclines"
+  //
+  //  Individually authored ramps that run near each other (parallel lanes,
+  //  switchbacks, a repair carve stamped beside an authored ramp) read as
+  //  separate strips with hard height mismatches at their shared edges.
+  //  This pass fuses them: any cell wedged between ramp tiles becomes ramp
+  //  too, then every connected ramp cluster relaxes into one smooth incline
+  //  surface (a harmonic blend), with tiles that sit flush against walkable
+  //  ground pinned there so the incline still lands exactly on the terrain
+  //  it connects.
+  // ═══════════════════════════════════════════════════════════════════════
+  const RAMP_FLUSH_TIERS = 0.5 / GAME_TIER_RISE; // the game's RAMP_FLUSH_EPS (0.5 world-Y) in tier units
+
+  function _rampGapCellFillable(tile) {
+    if (!tile || tile.ramp) return false;
+    if (tile.cliffSkirtKind === 'sealedUnreachable') return false; // a seal is absolute — never fuse it back open
+    if ((tile.water || tile.waterfall) && !tile.bridge && !tile.navBridge) return false;
+    if (tile.occupiedBy) {
+      const object = getObjectById(tile.occupiedBy);
+      if (object && object.blocksMovement !== false &&
+          (object.type === 'structure' || object.type === 'caveOpening' || object.type === 'animalDen')) return false;
+    }
+    return true;
+  }
+
+  function fuseRampInclines() {
+    // 1. Gap fill: a non-ramp cell with 2+ cardinal ramp neighbors is wedged
+    //    between lanes — absorb it so the lanes become one surface.
+    let filled = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      let passFilled = 0;
+      for (const tile of allTiles()) {
+        if (!_rampGapCellFillable(tile)) continue;
+        const rampNeighbors = cardinalNeighbors(tile.x, tile.y).filter(n => n && n.ramp);
+        if (rampNeighbors.length < 2) continue;
+        clearBlockingObjectsOnPath([{ x: tile.x, y: tile.y }]);
+        tile.ramp = true;
+        tile.rampId = 'fused_incline';
+        tile.rampKind = 'fused';
+        tile.height = rampNeighbors.reduce((sum, n) => sum + tileHeight(n), 0) / rampNeighbors.length;
+        tile.water = false;
+        tile.waterfall = false;
+        tile.cliffSkirt = false;
+        tile.cliffSkirtKind = null;
+        tile.rampSkirt = false;
+        tile.path = false;
+        passFilled++;
+      }
+      filled += passFilled;
+      if (!passFilled) break;
+    }
+
+    // 2. Relaxation: per 4-connected cluster, each tile's height becomes the
+    //    mean of its ramp neighbors, with flush ground contacts (within the
+    //    game's flush epsilon at the start of the pass) pinned as anchors.
+    const rampTiles = allTiles().filter(t => t.ramp);
+    if (!rampTiles.length) return;
+    const anchors = new Map(); // tile -> anchored ground height
+    for (const tile of rampTiles) {
+      let sum = 0, n = 0;
+      for (const nb of cardinalNeighbors(tile.x, tile.y)) {
+        if (!nb || nb.ramp) continue;
+        if ((nb.water || nb.waterfall) && !nb.bridge && !nb.navBridge) continue;
+        if (nb.cliffSkirt) continue;
+        const groundH = nb.elevation || 0;
+        if (Math.abs(tileHeight(tile) - groundH) <= RAMP_FLUSH_TIERS + 0.05) { sum += groundH; n++; }
+      }
+      if (n) anchors.set(tile, sum / n);
+    }
+    for (let iter = 0; iter < 120; iter++) {
+      let maxDelta = 0;
+      for (const tile of rampTiles) {
+        let sum = 0, n = 0;
+        for (const nb of cardinalNeighbors(tile.x, tile.y)) {
+          if (nb && nb.ramp) { sum += tileHeight(nb); n++; }
+        }
+        const anchor = anchors.get(tile);
+        if (anchor !== undefined) { sum += anchor * 2; n += 2; }
+        if (!n) continue;
+        const next = sum / n;
+        maxDelta = Math.max(maxDelta, Math.abs(next - tileHeight(tile)));
+        tile.height = next;
+      }
+      if (maxDelta < 0.002) break;
+    }
+    // Quantize to the EXPORT's precision (rampElevation is written at 2
+    // decimals) so every flush/curtain comparison the model makes matches
+    // what the game will compute from the exported value exactly.
+    for (const tile of rampTiles) tile.height = Number(tileHeight(tile).toFixed(2));
+    if (filled) logDebug(`ramp fusion: absorbed ${filled} wedged cells into inclines (${rampTiles.length + filled} incline tiles total)`);
+  }
+
+  // Nothing may sit on an incline's mouth: wherever a ramp tile meets ground
+  // flush (the walk-on/walk-off cells), clear water (bridged into a path
+  // crossing), orphaned skirt rock, and blocking objects so the incline's
+  // beginning/end is always open.
+  function clearRampMouths() {
+    let clearedWater = 0, clearedSkirts = 0, clearedObjects = 0;
+    for (const tile of allTiles()) {
+      if (!tile.ramp) continue;
+      for (const nb of cardinalNeighbors(tile.x, tile.y)) {
+        if (!nb || nb.ramp) continue;
+        const groundH = nb.elevation || 0;
+        if (Math.abs(tileHeight(tile) - groundH) > RAMP_FLUSH_TIERS) continue; // side wall — curtained by the game, not a mouth
+        if ((nb.water || nb.waterfall) && !nb.bridge && !nb.navBridge) {
+          nb.bridge = true; // exports as a walkable path crossing
+          nb.waterfall = false;
+          clearedWater++;
+        }
+        if (nb.cliffSkirt && nb.cliffSkirtKind !== 'sealedUnreachable') {
+          nb.cliffSkirt = false;
+          nb.cliffSkirtKind = null;
+          nb.rampSkirt = false;
+          clearedSkirts++;
+        }
+        if (nb.occupiedBy) clearedObjects += clearBlockingObjectsOnPath([{ x: nb.x, y: nb.y }]);
+      }
+    }
+    if (clearedWater || clearedSkirts || clearedObjects) {
+      logDebug(`incline mouths: bridged ${clearedWater} water cells, cleared ${clearedSkirts} skirt tiles + ${clearedObjects} blocking objects at flush ramp ends`);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
   //  Export-shape sanitation
   //
   //  The prototype paints Giant's-Causeway-style plateau fields: ragged
@@ -5765,19 +5894,24 @@
     const maxCarvesPerPass = 8;
     let carves = 0;
     let sealed = 0;
-    let view = buildGameMergedView();
-    let start = gameStartTile(view);
-    if (!start) {
-      warn('game-rule reachability: no walkable tile in merged view');
-      return;
-    }
-    let reached = gameReachableSet(view, start);
+    let view, start, reached;
 
+    // Every re-verify first re-fuses ramp clusters (repair carves stamped
+    // last pass join their neighbors' incline surface) and re-opens incline
+    // mouths, THEN replays the export+merge — so what the BFS sees is what
+    // the game will render.
     const refresh = () => {
+      fuseRampInclines();
+      clearRampMouths();
       view = buildGameMergedView();
       start = gameStartTile(view);
       reached = gameReachableSet(view, start);
     };
+    refresh();
+    if (!start) {
+      warn('game-rule reachability: no walkable tile in merged view');
+      return;
+    }
 
     const carveUntilStuck = () => {
       while (carves < maxCarves) {
@@ -5911,6 +6045,8 @@
     syncTileHeights();
     generateRamps();
     generateCliffSkirts();
+    fuseRampInclines();
+    clearRampMouths();
     chooseEntry();
     placeStructures();
     placeCaves();

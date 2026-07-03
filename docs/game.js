@@ -3917,22 +3917,34 @@
         // builds that cell's own carved-bed mesh, and without this check the mesa's
         // solid lid simply painted over it, hiding the channel under flat ground.
         const quadIsCarved = (gi, gj) => CARVED_TILE_TYPES.has(zGrid?.[bb.minR + Math.floor(gj/2)]?.[bb.minC + Math.floor(gi/2)]?.type);
-        const idx = [];
+        // Cliffs are stone, surfaces are grass: split quads by slope. A quad
+        // steeper than any climbable incline (rise/run > MESA_STONE_SLOPE
+        // over its 0.5-tile span) is cliff face → stone material; flat tops,
+        // rims, and gentle blends stay grass.
+        const MESA_STONE_SLOPE = 1.4;
+        const idx = [], idxStone = [];
         for (let gj = 0; gj < GH - 1; gj++) {
           for (let gi = 0; gi < GW - 1; gi++) {
             if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
             const v00 = gj*GW+gi, v10 = gj*GW+gi+1, v01 = (gj+1)*GW+gi, v11 = (gj+1)*GW+gi+1;
-            idx.push(v00, v01, v11, v00, v11, v10);
+            const ys = [Y[v00], Y[v10], Y[v01], Y[v11]];
+            const slope = (Math.max(...ys) - Math.min(...ys)) / 0.5;
+            (slope > MESA_STONE_SLOPE ? idxStone : idx).push(v00, v01, v11, v00, v11, v10);
           }
         }
 
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-        geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, tileMats.grass);
-        mesh.receiveShadow = true;
-        zScene.add(mesh);
+        const posAttr = new THREE.BufferAttribute(pos, 3);
+        for (const [indices, mat, category] of [[idx, tileMats.grass, TileType.GRASS], [idxStone, tileMats.rock, TileType.ROCK]]) {
+          if (!indices.length) continue;
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', posAttr);
+          geo.setIndex(new THREE.BufferAttribute(indices.length > 65535 ? new Uint32Array(indices) : new Uint16Array(indices), 1));
+          geo.computeVertexNormals();
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.receiveShadow = true;
+          zScene.add(mesh);
+          _markTerrainEdgeId(mesh, _terrainCategoryFor(category));
+        }
 
         // Steep plateau rock is now emitted by buildRockFormationMeshes, which
         // unions plateau cliffs with ramp side rock before rendering.
@@ -3978,12 +3990,15 @@
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
         geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, tileMats.path || tileMats.grass);
+        // Inclines are ordinary sloped ground now, so they wear the surface
+        // material (grass), not a path strip — slope shading via the vertex
+        // normals is what reads as "incline".
+        const mesh = new THREE.Mesh(geo, tileMats.grass);
         mesh.receiveShadow = true;
         zScene.add(mesh);
-        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.PATH));
+        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.GRASS));
 
-        console.log(`%c[zone:${mapId}] ramp mesh built: ${rampCells.length} tile(s)`, 'color:#22c55e;font-weight:bold');
+        console.log(`%c[zone:${mapId}] incline mesh built: ${rampCells.length} tile(s)`, 'color:#22c55e;font-weight:bold');
       }
 
       // Ramp side curtains: a 1-tile sloped skirt on every cell flagged `rampCurtain`
@@ -4010,26 +4025,34 @@
           return n ? sum / n : fallback;
         };
 
-        const pos = [], idx = [];
-        let vi = 0;
+        // Cliffs are stone, surfaces are grass: a curtain cell falling
+        // steeper than any climbable incline is a cut bank → stone; a gentle
+        // taper stays grass.
+        const CURTAIN_STONE_SLOPE = 1.0;
+        const buckets = { grass: { pos: [], idx: [], vi: 0 }, stone: { pos: [], idx: [], vi: 0 } };
         for (const [c, r] of cells) {
           const ground = NORMAL_TOP + (zGrid[r][c].elevTier || 0) * PLATEAU_UNIT;
           const y00 = cornerY(c, r, ground);
           const y10 = cornerY(c + 1, r, ground);
           const y01 = cornerY(c, r + 1, ground);
           const y11 = cornerY(c + 1, r + 1, ground);
-          pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
-          idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
+          const slope = Math.max(y00, y10, y01, y11) - Math.min(y00, y10, y01, y11);
+          const b = buckets[slope > CURTAIN_STONE_SLOPE ? 'stone' : 'grass'];
+          b.pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
+          b.idx.push(b.vi, b.vi + 2, b.vi + 3, b.vi, b.vi + 3, b.vi + 1); b.vi += 4;
         }
 
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-        geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, tileMats.grass);
-        mesh.receiveShadow = true;
-        zScene.add(mesh);
-        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.GRASS));
+        for (const [name, b] of Object.entries(buckets)) {
+          if (!b.idx.length) continue;
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
+          geo.setIndex(new THREE.BufferAttribute(b.idx.length > 65535 ? new Uint32Array(b.idx) : new Uint16Array(b.idx), 1));
+          geo.computeVertexNormals();
+          const mesh = new THREE.Mesh(geo, name === 'stone' ? tileMats.rock : tileMats.grass);
+          mesh.receiveShadow = true;
+          zScene.add(mesh);
+          _markTerrainEdgeId(mesh, _terrainCategoryFor(name === 'stone' ? TileType.ROCK : TileType.GRASS));
+        }
 
         // Steep ramp-curtain skin is now emitted by buildRockFormationMeshes,
         // after unioning ramp side spans with neighboring plateau cliff spans.
