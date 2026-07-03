@@ -209,23 +209,36 @@ function validate(label, result, maxAngleDeg) {
     console.log(`  ${label}: note — ${steepEdges} steep ramp↔ramp side edges (optional hops, not required climbs); e.g. ${steepSamples.join(' ')}`);
   }
 
+  // Solid-rock coverage: cliff skirts + seals render as stone mounds; if
+  // they carpet the map something upstream regressed (see
+  // sanitizeMasksForGameExport).
+  let rockCount = 0;
+  for (const tile of tiles.values()) if (tile.type === 'rock') rockCount++;
+  const rockPct = (rockCount / tiles.size) * 100;
+  if (rockPct > 30) {
+    failures.push(`${label}: rock tiles carpet ${rockPct.toFixed(1)}% of the merged map (limit 30%)`);
+  }
+
   const gc = result.gameConnectivity || {};
   console.log(`  ${label}: ${walkableCount} walkable, unreachable=${unreachable}, steepRampEdges=${steepEdges}, ` +
-    `carvedRepairRamps=${gc.carvedRepairRamps}, sealedTiles=${gc.sealedTiles}, warnings=${result.warnings.length}`);
+    `rock=${rockPct.toFixed(1)}%, carvedRepairRamps=${gc.carvedRepairRamps}, sealedTiles=${gc.sealedTiles}, warnings=${result.warnings.length}`);
   return failures;
 }
 
 function main() {
+  // Zone-shaped cases mirror the in-game settings (maxTier 3 — see
+  // regenerateWildernessZone); the default case keeps the generator's own
+  // defaults so the full config space stays covered.
   const cases = [
-    { label: 'northern_cliffs-ish 60x50', options: { seed: 'nc_epoch_0', width: 60, height: 50, entrySide: 'south' } },
-    { label: 'cloud_forest-ish 50x40', options: { seed: 'scf_epoch_3', width: 50, height: 40, entrySide: 'north' } },
-    { label: 'mire-ish 50x40 east', options: { seed: 'mire_epoch_7', width: 50, height: 40, entrySide: 'west' } },
+    { label: 'northern_cliffs-ish 60x50', options: { seed: 'nc_epoch_0', width: 60, height: 50, entrySide: 'south', maxTier: 3 } },
+    { label: 'cloud_forest-ish 50x40', options: { seed: 'scf_epoch_3', width: 50, height: 40, entrySide: 'north', maxTier: 3 } },
+    { label: 'mire-ish 50x40 east', options: { seed: 'mire_epoch_7', width: 50, height: 40, entrySide: 'west', maxTier: 3 } },
     { label: 'default 100x100', options: { seed: 'wild' } },
-    { label: 'small 30x24', options: { seed: 'tiny_epoch_12', width: 30, height: 24 } },
+    { label: 'small 30x24', options: { seed: 'tiny_epoch_12', width: 30, height: 24, maxTier: 3 } },
   ];
   const extraSeeds = ['alpha', 'bravo', 'charlie', 'delta', 'echo'];
   for (const seed of extraSeeds) {
-    cases.push({ label: `sweep ${seed} 60x50`, options: { seed: `${seed}_sweep`, width: 60, height: 50, entrySide: 'south' } });
+    cases.push({ label: `sweep ${seed} 60x50`, options: { seed: `${seed}_sweep`, width: 60, height: 50, entrySide: 'south', maxTier: 3 } });
   }
 
   let failures = [];

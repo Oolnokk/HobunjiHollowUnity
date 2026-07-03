@@ -5669,6 +5669,94 @@
     return candidates;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Export-shape sanitation
+  //
+  //  The prototype paints Giant's-Causeway-style plateau fields: ragged
+  //  edges, scattered fragment cells, 1-2 tile fingers. Its flat 2D renderer
+  //  reads those as texture, but the game's mesa renderer gives every masked
+  //  cell a full-height cliff face — a lone fragment or 1-wide finger at
+  //  tier 5 becomes a ~12-world-unit topless green blade, and every fragment
+  //  grows a rock cliff-skirt ring, carpeting the ground in stone mounds.
+  //  Before export: morphologically open (erode then dilate) each plateau
+  //  mask so only bodies at least ~3 tiles wide survive, drop groups left
+  //  without a real walkable top, and keep only the rock skirts that still
+  //  hug a surviving cliff base.
+  // ═══════════════════════════════════════════════════════════════════════
+  function sanitizeMasksForGameExport() {
+    const groups = map.plateauPaintGroups || [];
+    const stripTile = (tile) => {
+      tile.plateauGroupId = null;
+      tile.plateauRing = false;
+      tile.plateauInterior = false;
+      tile.elevation = 0;
+      if (!tile.ramp) tile.height = 0;
+      if (tile.terrain === 'plateau') tile.terrain = 'grass';
+      if (tile.cliffSkirt) { tile.cliffSkirt = false; tile.cliffSkirtKind = null; }
+    };
+    let strippedCells = 0, droppedGroups = 0, clearedSkirts = 0;
+    for (const group of groups) {
+      const cells = allTiles().filter(t => t.plateauGroupId === group.id && !t.ramp);
+      if (!cells.length) continue;
+      const mask = new Set(cells.map(t => `${t.x},${t.y}`));
+      const fullyMasked3x3 = (x, y) => {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!mask.has(`${x + dx},${y + dy}`)) return false;
+          }
+        }
+        return true;
+      };
+      const eroded = new Set();
+      for (const t of cells) if (fullyMasked3x3(t.x, t.y)) eroded.add(`${t.x},${t.y}`);
+      // Dilate the eroded core back out by one cell, but only into cells the
+      // original mask painted — blades and fragments never rejoin.
+      const opened = new Set(eroded);
+      if (eroded.size) {
+        for (const t of cells) {
+          const key = `${t.x},${t.y}`;
+          if (opened.has(key)) continue;
+          let touchesCore = false;
+          for (let dy = -1; dy <= 1 && !touchesCore; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (eroded.has(`${t.x + dx},${t.y + dy}`)) { touchesCore = true; break; }
+            }
+          }
+          if (touchesCore) opened.add(key);
+        }
+      }
+      // A surviving group needs a real top: cells whose 4 cardinal neighbors
+      // are all still masked (the game merge's interior rule).
+      let interiorCount = 0;
+      for (const key of opened) {
+        const [x, y] = key.split(',').map(Number);
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dy]) => opened.has(`${x + dx},${y + dy}`))) interiorCount++;
+      }
+      const keep = interiorCount >= 4 ? opened : new Set();
+      if (!keep.size) droppedGroups++;
+      for (const t of cells) {
+        if (keep.has(`${t.x},${t.y}`)) continue;
+        stripTile(t);
+        strippedCells++;
+      }
+    }
+    // Rock skirts only survive where they still hug a surviving cliff base.
+    for (const tile of allTiles()) {
+      if (!tile.cliffSkirt) continue;
+      const nearCliff = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+        const n = tileAt(tile.x + dx, tile.y + dy);
+        return !!(n && n.plateauGroupId && !n.ramp);
+      });
+      if (!nearCliff) {
+        tile.cliffSkirt = false;
+        tile.cliffSkirtKind = null;
+        tile.rampSkirt = false;
+        clearedSkirts++;
+      }
+    }
+    logDebug(`export sanitation: stripped ${strippedCells} blade/fragment plateau cells, dropped ${droppedGroups} topless groups, cleared ${clearedSkirts} orphaned cliff-skirt tiles`);
+  }
+
   function enforceGameReachability() {
     // Budget scales with map area; carves are batched (disjoint straight
     // lines per re-merge) so the expensive export+merge replay runs a
@@ -5834,6 +5922,9 @@
     placePillarsAndStatues();
     placeFloraAndResources();
     placeAnimalFoodSources();
+    // Clean the causeway-texture masks into game-renderable mesa shapes
+    // BEFORE any reachability work, so every pass below sees final terrain.
+    sanitizeMasksForGameExport();
     validateAndRepairReachability();
     placeDifficultyRewards();
     buildAnimalActivity();

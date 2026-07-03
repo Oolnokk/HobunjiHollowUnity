@@ -5626,7 +5626,9 @@
         const seed = `${_wildernessWorldSeed()}_${zoneMapId}_epoch_${epoch}`;
         let result;
         try {
-          result = window.WildernessGenerator.generate({ seed, width: cols, height: rows, entrySide });
+          // maxTier 3: one tier is PLATEAU_UNIT (2.5) world units tall, so the
+          // generator's default of 6 renders as ~15-unit skyscraper mesas.
+          result = window.WildernessGenerator.generate({ seed, width: cols, height: rows, entrySide, maxTier: 3 });
         } catch (e) {
           debugLog(`Wilderness regen failed for ${zoneMapId}: ${e.message}`, 'warn');
           return false;
