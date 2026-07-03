@@ -5753,6 +5753,10 @@
 
       function _zoneLayoutTileWalkable(t) {
         if (!t || t.incline) return false;
+        // skipFloor = staked mesa-covered plateau-edge cover — technically
+        // walkable but has no floor of its own, so never anchor spawns,
+        // transitions, or buildings there.
+        if (t.skipFloor) return false;
         return !(t.type === TileType.ROCK || t.type === TileType.SHRUB ||
                  t.type === TileType.RIVER || t.type === TileType.STREAM || t.type === TileType.WATERFALL);
       }

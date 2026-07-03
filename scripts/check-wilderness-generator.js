@@ -78,7 +78,7 @@ function mergeWorkspaceZone(workspace) {
           if (supportTier < toTier) ringTier = ringTier === null ? supportTier : Math.min(ringTier, supportTier);
         }
         const onRing = ringTier !== null;
-        outTiles.set(`${c},${r}`, { c, r, type: 'grass', elevTier: onRing ? ringTier : toTier, rampElevation: 0, incline: onRing });
+        outTiles.set(`${c},${r}`, { c, r, type: 'grass', elevTier: onRing ? ringTier : toTier, rampElevation: 0, incline: onRing, staked: true });
       }
       children.push({ child, childOffsetC: offsetC + minC + 1, childOffsetR: offsetR + minR + 1, toTier });
     }
@@ -173,6 +173,10 @@ function validate(label, result, maxAngleDeg) {
   const unreachableSamples = [];
   for (const tile of tiles.values()) {
     if (!walkable(tile)) continue;
+    // Staked (mesa-covered, unstamped) plateau-edge cells are cosmetic
+    // cover: BFS may pass through them, but they carry no floor/objects and
+    // are exempt from the must-be-reachable guarantee.
+    if (tile.staked) continue;
     walkableCount++;
     if (!seen.has(`${tile.c},${tile.r}`)) {
       unreachable++;

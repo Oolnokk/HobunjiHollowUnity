@@ -5011,18 +5011,25 @@
       { isSubmap: true, parentMapId: rootId, plateauGroupId: group.id, elevation: toTier, anchorC, anchorR }
     );
 
-    // Support tier the merged map effectively has under a non-mask neighbor:
-    // another exported group's elevation, a flush ramp landing (within the
-    // game's RAMP_FLUSH_EPS ≈ 0.2 tier), or bare ground at 0.
-    const supportTierAt = (x, y) => {
-      const t = tileAt(x, y);
-      if (!t) return 0;
-      if (t.ramp) return tileHeight(t) >= toTier - 0.21 ? toTier : Math.floor(tileHeight(t));
-      if (t.cliffSkirtKind === 'sealedUnreachable') return 0; // exports untagged, merge sees bare ground
-      const g = t.plateauGroupId ? plateauByGroupId.get(t.plateauGroupId) : null;
-      return g ? (g.elevation || 0) : 0;
+    // A flush ramp mouth: a cardinal neighbor that is a ramp tile whose lerp
+    // has (almost) reached this tier — the landing cell beside it must be
+    // stamped walkable or the game's auto-incline ring walls the ramp off.
+    const flushRampMouth = (x, y) => {
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const n = tileAt(x + dx, y + dy);
+        if (n && n.ramp && tileHeight(n) >= toTier - 0.21) return true;
+      }
+      return false;
     };
 
+    // Stamp only the prototype's own interior (8-neighbor ring excluded) —
+    // this matches the standalone generator's manual map-editor export, so
+    // the mesa's smooth blend band renders every edge alone. Stamping the
+    // wider merge-rule interior put flat floor tiles inside the sloped blend
+    // band, which read as segmented/topless plateau edge tiles. Edge cells
+    // the game stakes walkable but nothing stamps stay mesa-covered and are
+    // reachability-EXEMPT (see enforceGameReachability). Flush ramp mouths
+    // are the one exception — they must stamp open or the ramp is walled.
     let paintedTiles = 0;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -5030,16 +5037,7 @@
         if (!mask.has(`${x},${y}`)) continue;
         const sourceTile = tileAt(x, y);
         if (!sourceTile) continue;
-        // The game's auto-incline ring must stay authoritative wherever the
-        // footprint genuinely drops off; only stamp cells whose every
-        // outside neighbor supports this tier (siblings, flush ramp mouths).
-        let onRing = false;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const nx = x + dx, ny = y + dy;
-          if (mask.has(`${nx},${ny}`)) continue;
-          if (supportTierAt(nx, ny) < toTier) { onRing = true; break; }
-        }
-        if (onRing) continue;
+        if (sourceTile.plateauRing && !flushRampMouth(x, y)) continue;
         hobunjiSetTile(submap, c, r, hobunjiSubmapTileRecord(sourceTile, overlayByTile));
         paintedTiles++;
       }
@@ -5469,7 +5467,10 @@
             if (supportTier < toTier) ringTier = ringTier === null ? supportTier : Math.min(ringTier, supportTier);
           }
           const onRing = ringTier !== null;
-          outTiles.set(`${c},${r}`, { type: 'grass', elevTier: onRing ? ringTier : toTier, rampElevation: 0, incline: onRing });
+          // `staked: true` = written by footprint staking, nothing stamped it
+          // — the game renders it via the mesa (skipFloor), it's cosmetic
+          // plateau-edge cover, and reachability treats it as exempt.
+          outTiles.set(`${c},${r}`, { type: 'grass', elevTier: onRing ? ringTier : toTier, rampElevation: 0, incline: onRing, staked: true });
         }
         children.push({ child, childOffsetC: offsetC + minC + 1, childOffsetR: offsetR + minR + 1, toTier });
       }
@@ -5510,10 +5511,16 @@
       for (let x = 0; x < width; x++) {
         const t = merged.get(`${x},${y}`) || { type: 'grass', elevTier: 0, rampElevation: 0, incline: false };
         const isRamp = t.type === 'ramp';
+        const blocked = !!t.incline || GAME_SOLID_TYPES.has(t.type);
         view[y * width + x] = {
-          blocked: !!t.incline || GAME_SOLID_TYPES.has(t.type),
+          blocked,
           tier: isRamp ? (t.rampElevation || 0) : (t.elevTier || 0),
           ramp: isRamp,
+          // Staked plateau-edge cover: BFS may walk through it, but it is
+          // exempt from must-be-reachable checks and never sealed (it has no
+          // floor of its own — the mesa covers it — so sealing/stamping it
+          // is what produced segmented plateau edges).
+          staked: !blocked && !!t.staked,
         };
       }
     }
@@ -5678,7 +5685,7 @@
           if (!v) break;
           if (!v.blocked) {
             const tIdx = ty * width + tx;
-            if (!reached.has(tIdx)) found = { x: tx, y: ty, tier: v.tier };
+            if (!reached.has(tIdx) && !v.staked) found = { x: tx, y: ty, tier: v.tier };
             break;
           }
           if (!carvable(tx, ty)) break;
@@ -6068,7 +6075,7 @@
       while (carves < maxCarves) {
         let anyUnreachable = false;
         for (let i = 0; i < view.length; i++) {
-          if (!view[i].blocked && !reached.has(i)) { anyUnreachable = true; break; }
+          if (!view[i].blocked && !view[i].staked && !reached.has(i)) { anyUnreachable = true; break; }
         }
         if (!anyUnreachable) return;
         const candidates = findGameRepairCarves(view, reached);
@@ -6105,7 +6112,7 @@
     const sealUnreachable = () => {
       let roundSealed = 0;
       for (let i = 0; i < view.length; i++) {
-        if (view[i].blocked || reached.has(i)) continue;
+        if (view[i].blocked || view[i].staked || reached.has(i)) continue;
         const x = i % settings.width, y = Math.floor(i / settings.width);
         const tile = tileAt(x, y);
         if (!tile) continue;
@@ -6139,7 +6146,7 @@
     }
     let walkable = 0, unreachable = 0;
     for (let i = 0; i < view.length; i++) {
-      if (view[i].blocked) continue;
+      if (view[i].blocked || view[i].staked) continue;
       walkable++;
       if (!reached.has(i)) unreachable++;
     }
