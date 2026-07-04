@@ -80,9 +80,6 @@
       width: 100,
       height: 100,
       tileSize: 22,
-      // Matches docs/game.js's camera follow distance (modeCfg.distanceTiles,
-      // default 14) — see buildIrregularPlateauBlob's north-south depth cap.
-      cameraFollowDistanceTiles: 14,
       entrySide: 'random',
       plateaus: 76,
       maxTier: 6,
@@ -664,24 +661,11 @@
   function buildIrregularPlateauBlob(cx, cy, targetArea, field = null) {
     const cells = new Set();
     const frontier = [];
-    // The camera sits a fixed distance south of wherever the player currently
-    // is, looking north (see docs/game.js updateCameraPosition) — so a
-    // single elevated mass that runs deeper than that follow distance in the
-    // north-south direction can end up entirely between the camera and a
-    // player standing in its own northern lee, with nowhere the camera's
-    // fixed offset could see past it. Capping how far any one blob is
-    // allowed to span north-to-south (independent of its total area, which
-    // is free to spread east-west instead once this caps out) keeps that
-    // geometrically impossible regardless of the exact camera distance.
-    const maxDepthRows = Math.max(6, Math.round((settings.cameraFollowDistanceTiles || 14) * 0.75));
-    let minY = cy, maxY = cy;
     const addCell = (x, y) => {
       const key = tileKey(x, y);
       if (cells.has(key)) return false;
       cells.add(key);
       frontier.push({ x, y });
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
       return true;
     };
     addCell(cx, cy);
@@ -699,7 +683,6 @@
         const nx = base.x + dir.x;
         const ny = base.y + dir.y;
         if (!inBounds(nx, ny) || nx < 2 || ny < 2 || nx >= settings.width - 2 || ny >= settings.height - 2) continue;
-        if (Math.max(maxY, ny) - Math.min(minY, ny) > maxDepthRows) continue;
         const key = tileKey(nx, ny);
         if (cells.has(key)) continue;
         const tile = tileAt(nx, ny);
@@ -4929,11 +4912,8 @@
   function hobunjiMapTileType(tile) {
     if (tile.ramp) return 'ramp';
     if (tile.waterfall) return 'waterfall';
-    // Bridges win over the water beneath them (the HTML tool checked water
-    // first, which flattened every river crossing into plain river tiles and
-    // left the imported map partitioned by its own rivers).
-    if (tile.path || tile.bridge || tile.navBridge) return 'path';
     if (tile.water) return tile.terrain === 'river' ? 'river' : 'stream';
+    if (tile.path || tile.bridge || tile.navBridge) return 'path';
     if (tile.borderEscarpment && !tile.ramp) return 'rock';
     if (tile.cliffSkirt && !tile.ramp) return 'rock';
     return 'grass';
@@ -5026,8 +5006,6 @@
       output.navRamp = true;
       if (tile.navRampId) output.navRampId = tile.navRampId;
       if (tile.navRampProgress != null) output.navRampProgress = tile.navRampProgress;
-      // Surface height so the game can walk hidden reachability stitches.
-      output.navRampElevation = Number(tileHeight(tile).toFixed(2));
     }
     if (tile.ramp) {
       output.rampElevation = Number(tileHeight(tile).toFixed(2));
@@ -5037,14 +5015,6 @@
       if (tile.rampSharesPlateau) output.rampSharesPlateau = true;
       if (tile.rampSharedPlateauGroupId) output.rampSharedPlateauGroupId = tile.rampSharedPlateauGroupId;
     }
-    // Not part of the stock tool export — marks genuine cliff-base terrain
-    // rock (see hobunjiMapTileType) so the game's fold (mergeZoneTiles) can
-    // tell it apart from an untagged decorative rock overlay (ore/boulder/
-    // statue markers), which it otherwise reclaims as walkable grass. Without
-    // this, every cliffSkirt tile the generator draws around a height
-    // transition gets swept into that same grass reclaim, showing as grass
-    // patches right up against — visually "growing on" — the cliff face.
-    if (tile.cliffSkirt && !tile.ramp) output.cliffSkirt = true;
     if (overlay) {
       output.generatedObjectId = overlay.objectId;
       output.generatedObjectType = overlay.objectType;
@@ -5064,12 +5034,6 @@
       if (tile.rampSharesPlateau) output.rampSharesPlateau = true;
       if (tile.rampSharedPlateauGroupId) output.rampSharedPlateauGroupId = tile.rampSharedPlateauGroupId;
     }
-    if (tile.cliffSkirt && !tile.ramp) output.cliffSkirt = true;
-    // The stock tool only ever exports navRamp on the root map; mirrored here
-    // too so a hidden stitch landing on a nested plateau tier's own submap
-    // (a within-stack connectivity patch, not a root-to-tier climb) survives
-    // the export instead of silently vanishing.
-    if (tile.navRamp && !tile.ramp) output.navRamp = true;
     if (overlay) {
       output.generatedObjectId = overlay.objectId;
       output.generatedObjectType = overlay.objectType;
@@ -5500,50 +5464,18 @@
     return String(name).toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'wild_map';
   }
 
-  // Per-zone generation presets for the game's four wilderness maps. Counts
-  // are the tool's 100x100 defaults scaled to each zone's authored size, then
-  // flavored per zone: the cliffs run tall and rocky, the cloud forest low
-  // and overgrown, the slope mid-tiered, the mire flat and waterlogged. The
-  // entry side always faces Hobunji Hollow (the cliffs sit north of town, so
-  // their entry gate opens on their south border, and so on).
-  const ZONE_PRESETS = {
-    map_northern_cliffs: {
-      // Fewer, larger plateaus connect far more reliably than many small ones:
-      // the tool's own ramp placement needs a long straight "hugging" run
-      // along a footprint's edge (14+ tiles), which small blobs rarely have
-      // room for — the authored reference map ships with just 4 groups.
-      width: 60, height: 50, entrySide: 'south',
-      maxTier: 5, plateaus: 12, ramps: 14, rivers: 1, ponds: 2, plateauPonds: 3, plateauStreams: 5,
-      pathAnchors: 2, animalDens: 2, prey: 3, packPredators: 2, ambushPredators: 1, omnivores: 1,
-      structures: 2, caves: 2, statues: 3, pillars: 6, trees: 28, logs: 9, bushes: 18, forage: 16,
-      fruitBushes: 4, mushrooms: 5, beehives: 2, treasure: 8, ore: 22, boulders: 10
-    },
-    map_southern_cloud_forest: {
-      width: 50, height: 40, entrySide: 'north',
-      maxTier: 2, plateaus: 7, ramps: 8, rivers: 1, ponds: 3, plateauPonds: 1, plateauStreams: 2,
-      pathAnchors: 2, animalDens: 2, prey: 3, packPredators: 2, ambushPredators: 1, omnivores: 1,
-      structures: 1, caves: 1, statues: 2, pillars: 3, trees: 55, logs: 12, bushes: 40, forage: 20,
-      fruitBushes: 6, mushrooms: 8, beehives: 3, treasure: 6, ore: 6, boulders: 5
-    },
-    map_western_slope: {
-      width: 50, height: 40, entrySide: 'east',
-      maxTier: 3, plateaus: 7, ramps: 12, rivers: 1, ponds: 2, plateauPonds: 2, plateauStreams: 3,
-      pathAnchors: 2, animalDens: 1, prey: 2, packPredators: 1, ambushPredators: 1, omnivores: 1,
-      structures: 1, caves: 1, statues: 2, pillars: 4, trees: 22, logs: 7, bushes: 15, forage: 12,
-      fruitBushes: 3, mushrooms: 4, beehives: 1, treasure: 6, ore: 14, boulders: 7
-    },
-    map_eastern_mire: {
-      width: 50, height: 40, entrySide: 'west',
-      maxTier: 1, plateaus: 3, ramps: 4, rivers: 2, ponds: 7, plateauPonds: 0, plateauStreams: 0,
-      pathAnchors: 2, animalDens: 2, prey: 3, packPredators: 1, ambushPredators: 2, omnivores: 1,
-      structures: 1, caves: 1, statues: 2, pillars: 3, trees: 18, logs: 8, bushes: 26, forage: 18,
-      fruitBushes: 4, mushrooms: 7, beehives: 2, treasure: 7, ore: 5, boulders: 4
-    }
+  // The only thing customized per zone: which border the entry gate opens
+  // on, so it always faces Hobunji Hollow (the cliffs sit north of town, so
+  // their entry opens south, and so on) — matching each zone's authored
+  // orientation. Every other setting is the tool's own default (see
+  // defaultSettings), same as a human generating a map with entrySide as the
+  // only field they touched.
+  const ZONE_ENTRY_SIDES = {
+    map_northern_cliffs: 'south',
+    map_southern_cloud_forest: 'north',
+    map_western_slope: 'east',
+    map_eastern_mire: 'west',
   };
-
-  function zonePreset(zoneMapId) {
-    return ZONE_PRESETS[zoneMapId] ? { ...ZONE_PRESETS[zoneMapId] } : null;
-  }
 
   // Headless equivalent of the HTML tool's generate() → Export flow: run the
   // full pipeline (minus canvas rendering / animal route animation) and
@@ -5583,185 +5515,20 @@
     return workspace;
   }
 
-  // Strips plateau/ramp/navRamp tags from every tile in an axis-aligned box
-  // centered on (col,row) and forces them back to plain flat ground. Used
-  // both for the entry gate (below) and by callers that need to guarantee a
-  // fixed world point — a building entrance carried over from an authored
-  // map, say — stays walkable no matter what terrain the generator drew
-  // there, since the game's fold stakes ANY plateau-tagged cell into its
-  // plateau's own rectangular mesa regardless of the cell's authored type,
-  // and a lone ramp tile only reads as walkable-adjacent within a tight
-  // flush tolerance (see applyRampCurtainFlags in terrain-preview.js).
-  function clearFootprintAt(workspace, col, row, halfWidth, halfDepth) {
-    const root = workspace.maps[0];
-    for (let dr = -halfDepth; dr <= halfDepth; dr++) {
-      for (let dc = -halfWidth; dc <= halfWidth; dc++) {
-        const record = root.tiles[`${col + dc},${row + dr}`];
-        if (!record || (!record.plateau && record.type !== 'ramp' && !record.navRamp)) continue;
-        delete record.plateau;
-        delete record.navRamp; delete record.navRampId; delete record.navRampProgress; delete record.navRampElevation;
-        if (record.type === 'ramp') { record.type = 'grass'; delete record.rampElevation; }
-      }
-    }
-  }
-
-  // hobunjiPlateauGroupsByPaintedFootprint()'s own tiny-group filter (>=4
-  // interior, >=10 total footprint) exists to drop stray brush-stamp
-  // fragments, not to guarantee every surviving group *reads* as a real
-  // plateau — a lot of groups clear that bar at 10-20 tiles, which is a
-  // small rock outcrop, not a tier a player would recognize as "a plateau."
-  // Folded together with several of these per map, the one genuinely large
-  // group ends up looking like the only tier that exists, with the rest
-  // reading as clutter. Drop anything under minTiles here (well above the
-  // tool's own bar) and revert its cells to plain ground, including any
-  // ramp that was built specifically to climb to it.
-  function filterSmallPlateauGroups(workspace, minTiles) {
-    const root = workspace.maps[0];
-    const groupTileCounts = new Map();
-    for (const record of Object.values(root.tiles)) {
-      if (record.plateau) groupTileCounts.set(record.plateau, (groupTileCounts.get(record.plateau) || 0) + 1);
-    }
-    const droppedGroupIds = new Set(
-      workspace.plateauGroups.filter(g => (groupTileCounts.get(g.id) || 0) < minTiles).map(g => g.id)
-    );
-    if (!droppedGroupIds.size) return;
-    workspace.plateauGroups = workspace.plateauGroups.filter(g => !droppedGroupIds.has(g.id));
-    workspace.maps = workspace.maps.filter(m => !(m.isSubmap && droppedGroupIds.has(m.plateauGroupId)));
-    workspace.ramps = workspace.ramps.filter(r => !droppedGroupIds.has(r.sharedPlateauGroupId));
-    for (const record of Object.values(root.tiles)) {
-      if (record.plateau && droppedGroupIds.has(record.plateau)) delete record.plateau;
-      if (record.type === 'ramp' && droppedGroupIds.has(record.rampSharedPlateauGroupId)) {
-        record.type = 'grass';
-        delete record.rampElevation; delete record.rampSharesPlateau; delete record.rampSharedPlateauGroupId;
-        delete record.rampLandingContact; delete record.rampLane; delete record.rampWidthMode;
-      }
-    }
-  }
-
-  // generateCliffSkirts() marks a skirt wherever ANY neighboring tiles differ
-  // by >=0.75 height — not just at a real plateau's edge, but at every
-  // border-escarpment/natural-terrain gradient step too, since the tool's own
-  // continuous heightfield has plenty of those on ordinary ground. The game's
-  // fold (mergeZoneTiles) keeps every cliffSkirt tile as solid rock (see the
-  // matching comment there), so left unfiltered this reads as rock smeared
-  // across a large fraction of the map instead of a thin band right at
-  // actual cliff bases. Only keep the tag within `radius` tiles of a
-  // surviving plateau's own footprint — exactly the "grass growing on the
-  // cliff" case this was added to fix — and let the fold's existing
-  // untagged-rock reclaim turn everything else back to grass as it always did.
-  function restrictCliffSkirtToPlateauEdges(workspace, radius) {
-    const root = workspace.maps[0];
-    const plateauCells = new Set();
-    for (const [key, record] of Object.entries(root.tiles)) {
-      if (record.plateau) plateauCells.add(key);
-    }
-    for (const [key, record] of Object.entries(root.tiles)) {
-      if (!record.cliffSkirt) continue;
-      if (!plateauCells.size) { delete record.cliffSkirt; continue; }
-      const [c, r] = key.split(',').map(Number);
-      let near = false;
-      for (let dr = -radius; dr <= radius && !near; dr++) {
-        for (let dc = -radius; dc <= radius; dc++) {
-          if (plateauCells.has(`${c + dc},${r + dr}`)) { near = true; break; }
-        }
-      }
-      if (!near) delete record.cliffSkirt;
-    }
-  }
-
-  // One-call flow for the game's Tothal Shift: generate a zone's map with its
-  // preset and leave the tool's own export untouched — including its hidden
-  // reachability stitches (navRamp tiles), which stay exactly what the tool
-  // itself exports them as (ordinary terrain, invisible metadata) rather
-  // than being promoted into fake visible ramp tiles. An earlier version of
-  // this function did promote them, reasoning that leaving plateau interiors
-  // sealed behind the fold's auto-incline ring was worse — but a promoted
-  // navRamp tile is a single teleport-style stitch tagged with its own raw
-  // absolute height, not a graded multi-tile run, and the fold's ramp mesh
-  // only reads as a slope when neighboring ramp tiles blend toward it. Measured
-  // against actual generated maps, ~76% of the resulting "ramp" quads came out
-  // either perfectly flat (a floating pedestal, no slope) or near-vertical
-  // (multiple plateau tiers of rise across one tile) — visibly broken in both
-  // the Map Editor's live preview and the game, since both read this same
-  // ramp mesh. generateHealthyZoneWorkspace()'s reroll loop is what actually
-  // carries the weight now: it keeps trying seeds until one gets a good
-  // reachability ratio from the tool's own genuine ramp placement alone.
-  function generateZoneWorkspace(zoneMapId, seedText, options = {}) {
-    const preset = zonePreset(zoneMapId) || {};
-    const workspace = generateWorkspace(seedText, preset);
-    const root = workspace.maps[0];
-    filterSmallPlateauGroups(workspace, options.minPlateauTiles ?? 35);
-    restrictCliffSkirtToPlateauEdges(workspace, options.cliffSkirtRadius ?? 2);
-    // The entry gate's own footprint (matching openBorderEntryGate()'s own
-    // clear depth, plus one tile of margin) must always fold as plain
-    // ground — see clearFootprintAt.
-    if (workspace.entry) {
-      const inward = { north: [0, 1], south: [0, -1], west: [1, 0], east: [-1, 0] }[workspace.entry.side] || [0, 0];
-      const tangent = inward[0] === 0 ? [1, 0] : [0, 1];
-      for (let t = -1; t <= 1; t++) {
-        for (let d = 0; d <= 3; d++) {
-          clearFootprintAt(workspace, workspace.entry.col + tangent[0] * t + inward[0] * d, workspace.entry.row + tangent[1] * t + inward[1] * d, 0, 0);
-        }
-      }
-    }
-    // Fixed points the caller needs preserved (a building entrance carried
-    // over from the authored map, say) — cleared with generous margin since
-    // there's no guarantee the generator put an open gate here.
-    for (const point of (options.preservePoints || [])) {
-      clearFootprintAt(workspace, point.col, point.row, 2, 2);
-    }
-    return workspace;
-  }
-
-  // Looks up TerrainPreview without a hard module dependency: a plain
-  // `require` in Node, the global the browser build attaches in-browser.
-  function findTerrainPreview() {
-    if (typeof module === 'object' && module.exports) {
-      try { return require('./terrain-preview.js'); } catch (_) { return null; }
-    }
-    return (typeof self !== 'undefined' && self.TerrainPreview) || (typeof window !== 'undefined' && window.TerrainPreview) || null;
-  }
-
-  // generateZoneWorkspace() fixes the specific ways a generated map can fold
-  // into broken game geometry that its own author (chooseEntry, the hidden
-  // reachability sweep) never had to worry about, since the standalone tool
-  // isn't limited to the game's rectangular-mesa plateau system. But a
-  // generator this randomized can still occasionally produce a seed whose
-  // entry opens into a mostly-sealed pocket for other reasons (a plateau
-  // footprint pinches off most of the map, ramps failed to place at all —
-  // see the "ramps: placed 1/12" warnings). Rather than chase every such
-  // case in the fold math, reroll: retry with a salted variant of the same
-  // seed until TerrainPreview.assessZoneReachability calls the result
-  // healthy, or attempts run out (falls back to the last attempt so a
-  // Tothal Shift always produces *some* map instead of failing outright).
-  function generateHealthyZoneWorkspace(zoneMapId, seedText, options = {}) {
-    const maxAttempts = options.maxAttempts || 12;
-    const TP = options.terrainPreview || findTerrainPreview();
-    let workspace = generateZoneWorkspace(zoneMapId, String(seedText), options);
-    if (!TP) return workspace; // no fold math available to assess — best effort, first attempt stands
-    let best = workspace;
-    let bestAssessment = null;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const attemptSeed = attempt === 0 ? String(seedText) : `${seedText}_reroll${attempt}`;
-      workspace = attempt === 0 ? workspace : generateZoneWorkspace(zoneMapId, attemptSeed, options);
-      const assessment = TP.assessZoneReachability(workspace, workspace.maps[0].id, workspace.entry);
-      workspace.reachabilityAssessment = { ok: assessment.ok, reason: assessment.reason, reachable: assessment.reachable, walkableCount: assessment.walkableCount, ratio: Number(assessment.ratio.toFixed(3)), attempt };
-      if (!bestAssessment || assessment.ratio > bestAssessment.ratio) { best = workspace; bestAssessment = assessment; }
-      if (assessment.ok) return workspace;
-    }
-    // Nothing hit the healthy bar within budget — use whichever attempt had
-    // the best reachability ratio instead of just whatever the last reroll
-    // happened to produce.
-    return best;
+  // The Tothal Shift's whole generation step: a random seed and the zone's
+  // own entry side, otherwise the tool's stock defaults — no post-processing.
+  // Whatever buildHobunjiMapExport() produces is handed to the game's fold
+  // exactly as if it had been exported from the standalone tool and imported
+  // into the Map Editor by hand.
+  function generateZoneWorkspace(zoneMapId, seedText) {
+    return generateWorkspace(seedText, { entrySide: ZONE_ENTRY_SIDES[zoneMapId] || 'random' });
   }
 
   return {
     generateWorkspace,
     generateZoneWorkspace,
-    generateHealthyZoneWorkspace,
     defaultSettings,
-    zonePreset,
-    zoneMapIds: () => Object.keys(ZONE_PRESETS),
+    zoneMapIds: () => Object.keys(ZONE_ENTRY_SIDES),
     hashSeed,
     makeRng,
     lastReport: () => lastMapEditorExportReport

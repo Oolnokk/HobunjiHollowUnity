@@ -1,9 +1,14 @@
 #!/usr/bin/env node
 // Headless check for Tothal Shift wilderness generation — generates each of
 // the four wilderness zone maps from a seed (exactly what docs/game.js does
-// at a Tothal Shift, including the reroll-until-healthy retry), then
-// validates the folded result: mesa geometry is watertight and the entry
-// gate reaches a healthy share of the map.
+// at a Tothal Shift: a random seed and the zone's own entry side, otherwise
+// the standalone tool's stock defaults, no post-processing), then folds the
+// resulting Map Editor workspace through the same plateau merge math the
+// game uses (docs/js/terrain-preview.js) and checks that the mesa/rock
+// geometry it produces is watertight — the same class of check
+// scripts/check-terrain.js runs for the authored maps. This does NOT assert
+// anything about reachability: a generated map is treated exactly like an
+// authored one, warts and all.
 //
 // Usage:
 //   node scripts/check-tothal-maps.js [seedBase]
@@ -22,16 +27,17 @@ const fail = msg => { console.error(`  ✗ ${msg}`); hadError = true; };
 for (const zoneId of G.zoneMapIds()) {
   const seed = `${seedBase}_${zoneId}`;
   const started = Date.now();
-  const ws = G.generateHealthyZoneWorkspace(zoneId, seed, { terrainPreview: TP });
+  const ws = G.generateZoneWorkspace(zoneId, seed);
   const elapsed = Date.now() - started;
   const root = ws.maps[0];
   console.log(`\n=== ${zoneId} (${root.cols}x${root.rows}, ${elapsed} ms, ${ws.maps.length - 1} submaps, ${ws.ramps.length} ramps) ===`);
 
   if (ws.schema !== 'hobunji_map_editor_workspace.v1') fail(`unexpected schema ${ws.schema}`);
   if (!ws.entry) fail('no entry gate chosen');
+  else console.log(`  entry: ${ws.entry.side} at (${ws.entry.col},${ws.entry.row})`);
 
   // Determinism: the same seed must rebuild the identical map on reload.
-  const ws2 = G.generateHealthyZoneWorkspace(zoneId, seed, { terrainPreview: TP });
+  const ws2 = G.generateZoneWorkspace(zoneId, seed);
   const strip = w => JSON.stringify({ ...w, generatedAt: null });
   if (strip(ws) !== strip(ws2)) fail('generation is not deterministic for identical seeds');
 
@@ -55,14 +61,6 @@ for (const zoneId of G.zoneMapIds()) {
     } catch (e) {
       fail(`mesa ${mesa.groupId} geometry threw: ${e.message}`);
     }
-  }
-
-  const assessment = ws.reachabilityAssessment;
-  if (assessment) {
-    console.log(`  entry (${ws.entry.col},${ws.entry.row}) side=${ws.entry.side}; reachable ${assessment.reachable}/${assessment.walkableCount} walkable tiles (${Math.round(assessment.ratio * 100)}%), attempt ${assessment.attempt + 1}`);
-    if (!assessment.ok) fail(`unhealthy after retries: ${assessment.reason || 'low reachability'} (${Math.round(assessment.ratio * 100)}%)`);
-  } else {
-    fail('no reachability assessment produced (TerrainPreview unavailable?)');
   }
 
   const typeCounts = {};

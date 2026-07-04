@@ -2786,13 +2786,19 @@
       // Cliffs, Southern Cloud Forest, Western Slope, Eastern Mire) — in lore
       // terms, the wilderness itself reshapes at the turn of the year. This
       // reproduces exactly what the Wilderness Map Generator tool's "Export"
-      // → Map Editor's "Import" round-trip would do to a zone map, using the
-      // generator's headless core (docs/js/wilderness-map-generator.js) and
-      // the same plateau/ramp fold math the Map Editor's live preview and
-      // scripts/check-terrain.js already share (docs/js/terrain-preview.js).
-      // A handful of authored building entrances (Researcher's Tent, Little
-      // Swamp House) don't exist in the wilderness tool's own vocabulary, so
-      // they're re-attached at their original coordinates after every shift.
+      // → Map Editor's "Import" round-trip would do to a zone map: a random
+      // seed and the zone's own entry side (so the gate still faces Hobunji
+      // Hollow) are the only inputs, everything else is the standalone tool's
+      // stock defaults, with zero post-processing — the generator's headless
+      // core (docs/js/wilderness-map-generator.js) hands its export straight
+      // to the same plateau/ramp fold math the Map Editor's live preview
+      // already uses (docs/js/terrain-preview.js), and the game renders it
+      // exactly as it would an authored map. A handful of authored building
+      // entrances (Researcher's Tent, Little Swamp House) don't exist in the
+      // wilderness tool's own vocabulary, so they're re-attached at their
+      // original coordinates after every shift — whatever terrain the
+      // generator happened to draw there stays as-is, same as any other
+      // generated tile.
       const TOTHAL_PRESERVED_TRANSITIONS = {
         map_northern_cliffs: [{ id: 'sp_ncl_tent', label: "Researcher's Tent", col: 35, row: 29, targetMapId: 'map_i_researchers_tent', targetSpotId: 'sp_tent_entry' }],
         map_eastern_mire: [{ id: 'sp_emi_swamp', label: 'Little Swamp House', col: 34, row: 29, targetMapId: 'map_i_swamp_house', targetSpotId: 'sp_swp_entry' }],
@@ -2858,10 +2864,11 @@
             const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
             let workspace;
             try {
-              workspace = WildernessMapGenerator.generateHealthyZoneWorkspace(zoneId, seed, {
-                terrainPreview,
-                preservePoints: preserved.map(t => ({ col: t.col, row: t.row })),
-              });
+              // Random seed, entry side set per zone — otherwise the tool's own
+              // defaults, no post-processing. This is meant to be exactly what
+              // a human would get generating a map with the standalone tool and
+              // importing it into the Map Editor by hand.
+              workspace = WildernessMapGenerator.generateZoneWorkspace(zoneId, seed);
             } catch (e) {
               debugLog(`Tothal Shift: generation failed for ${zoneId}: ${e.message}`, 'warn');
               continue;
@@ -2884,15 +2891,14 @@
             });
             // Entering from town has no authored spawn coordinate of its own
             // (see EXTERIOR_ZONES' comment) — it always falls back to
-            // zdef.entryCol/Row, so keep that pinned to this shift's own
-            // (guaranteed-walkable) entry gate.
+            // zdef.entryCol/Row, so keep that pinned to this shift's own entry gate.
             if (EXTERIOR_ZONES[zoneId] && workspace.entry) {
               EXTERIOR_ZONES[zoneId].entryCol = workspace.entry.col;
               EXTERIOR_ZONES[zoneId].entryRow = workspace.entry.row;
             }
             if (currentArea === zoneId) _dirtyZoneScenes.add(zoneId);
             else _disposeZoneScene(zoneId);
-            debugLog(`Tothal Shift: ${zoneId} reshaped (attempt ${(workspace.reachabilityAssessment?.attempt ?? 0) + 1}, reachability ${Math.round((workspace.reachabilityAssessment?.ratio ?? 1) * 100)}%)`);
+            debugLog(`Tothal Shift: ${zoneId} reshaped (entry ${workspace.entry?.side ?? '?'} at ${workspace.entry?.col ?? '?'},${workspace.entry?.row ?? '?'})`);
             await new Promise(resolve => setTimeout(resolve, 0)); // yield between zones
           }
           clearHostileObjects();
@@ -3763,19 +3769,12 @@
         // elevTier (rendered below as continuous heightfield mesas, one per tier
         // transition, in the same visual style as the distant boundary terrain beyond
         // the playable area) and, for ramp tiles, its own slope-following rampElevation.
-        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, navRamp, cliffSkirt } of (zoneData?.tiles || [])) {
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline } of (zoneData?.tiles || [])) {
           if (!zGrid[r]?.[c]) continue;
           zGrid[r][c].type = type || TileType.GRASS;
           zGrid[r][c].elevTier = elevTier || 0;
           zGrid[r][c].skipFloor = !!skipFloor;
           zGrid[r][c].incline = !!incline;
-          // Hidden reachability stitch from the wilderness generator: keeps
-          // the tile's natural look (usually a cliff-base rock marker) but
-          // marks it crossable — see tileSpeedAt's navRamp check below.
-          zGrid[r][c].navRamp = !!navRamp;
-          // Real cliff-base terrain (vs. a decorative ore/boulder/statue rock
-          // marker) — see the ROCK tile branch below.
-          zGrid[r][c].cliffSkirt = !!cliffSkirt;
           if (type === TileType.RAMP) zGrid[r][c].rampElevation = rampElevation || 0;
         }
         // Ramp curtains: a non-ramp cell beside a ramp cell gets folded into the
@@ -3831,18 +3830,6 @@
           if (tile.type === TileType.RAMP) continue; // covered by the ramp slope mesh below
 
           if (tile.type === TileType.ROCK) {
-            if (tile.cliffSkirt) {
-              // Real cliff-base terrain (see mergeZoneTiles) — a solid rock
-              // floor, not the small decorative mound-on-grass below (which
-              // is right for a scattered ore/boulder/statue marker but reads
-              // as grass with a rock poking through when used for an actual
-              // cliff base). Flush with the surrounding ground height so it
-              // reads as rocky terrain, not a raised block.
-              _addToBucket(TileType.ROCK, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
-              const { stoneGeo } = buildRockTileGeo(c, r);
-              _addToBucket(TileType.ROCK, stoneGeo, cx, NORMAL_TOP + tierY, cz);
-              continue;
-            }
             _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
             _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + tierY, cz);
@@ -5694,7 +5681,6 @@
                 outTiles.set(`${c},${r}`, {
                   c, r, type: 'grass', elevTier: onRing ? ringTier : toTier,
                   skipFloor: true, rampElevation: 0, incline: onRing,
-                  navRamp: !!m.tiles?.[k]?.navRamp,
                 });
               }
               children.push({ child, childOffsetC: worldMinC + 1, childOffsetR: worldMinR + 1, toTier });
@@ -5724,20 +5710,10 @@
               // them across the walkable ground — turn the un-tagged ones back to
               // grass so the real plateau cliff-face (plateau-tagged rock) reads as
               // the only solid rock terrain, and the zone is actually walkable.
-              // A generator-marked cliffSkirt tile is real cliff-base terrain (not
-              // a decorative ore/boulder/statue overlay marker) and is kept as rock
-              // — otherwise every cliff the wilderness generator draws would show
-              // grass right up against its base instead of a rocky skirt.
-              if (!t.plateau && !t.cliffSkirt && type === 'rock') type = 'grass';
+              if (!t.plateau && type === 'rock') type = 'grass';
               outTiles.set(key, {
                 c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
                 rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
-                navRamp: !!t.navRamp,
-                // Distinguishes real cliff-base terrain (render as a solid rock
-                // floor) from a decorative ore/boulder/statue rock marker
-                // (render as buildRockTileGeo's small mound-on-grass) — see
-                // buildZoneScene's ROCK tile branch.
-                cliffSkirt: type === 'rock' && !!t.cliffSkirt,
               });
             }
 
@@ -10748,18 +10724,10 @@
         const row  = Math.floor(wy / TILE);
         const tile = getActiveGrid()[row][col];
         const type = tile.type;
-        // A hidden reachability stitch (see mergeZoneTiles/buildZoneScene) is
-        // a wilderness-generator tile explicitly marked crossable despite
-        // however it renders — a cliff-base rock marker, or a plateau ring
-        // cell too narrow for a real ramp — so it skips both blocking checks
-        // below instead of only ever being reachable by punching real ramp
-        // geometry through it.
-        if (!tile.navRamp) {
-          if (isSolid(type)) return null;
-          // Auto-reserved plateau cliff-face ring — impassable except where a
-          // ramp tile explicitly cuts through it (which never sets `incline`).
-          if (tile.incline) return null;
-        }
+        if (isSolid(type)) return null;
+        // Auto-reserved plateau cliff-face ring — impassable except where a
+        // ramp tile explicitly cuts through it (which never sets `incline`).
+        if (tile.incline) return null;
         // Rivers/streams are a real crossing obstacle — block like a solid tile.
         if (type === TileType.RIVER || type === TileType.STREAM) return null;
         // Block structural building tiles on exterior maps (player must use doors/transitions).
