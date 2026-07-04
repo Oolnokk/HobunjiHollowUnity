@@ -829,11 +829,66 @@
     return issues;
   }
 
+  // Tile types that read as solid regardless of the incline flag — mirrors
+  // the game's isSolid() treatment of un-tagged rock/water/vegetation on a
+  // zone floor (see docs/game.js mergeZoneTiles' rock-decoration note).
+  const SOLID_FOLDED_TYPES = new Set(['rock', 'shrub', 'river', 'stream', 'waterfall']);
+  function isFoldedTileWalkable(tile) {
+    return !!tile && !tile.incline && !SOLID_FOLDED_TYPES.has(tile.type);
+  }
+
+  // Coarse in-game reachability estimate for a generated/imported zone: folds
+  // the workspace exactly as buildZoneScene() would, then flood-fills from
+  // the entry gate allowing same-tier steps plus any step onto/off a ramp
+  // tile (ramps are the only cross-tier connector once the fold's auto
+  // incline ring is in place). This is deliberately coarser than the game's
+  // real per-corner tileSurfaceYInArea checks — it exists to catch a
+  // generator seed whose entry opens into a sealed pocket (e.g. a plateau's
+  // footprint swallowed the border gate, or a hidden reachability stitch got
+  // promoted into an isolated ramp with no flush low end) before the game
+  // commits to that seed, not to certify exact playability.
+  function assessZoneReachability(ws, rootMapId, entry) {
+    const merged = buildMergedZoneGrid(ws, rootMapId);
+    const zGrid = buildZGrid(merged.cols, merged.rows, merged.tiles);
+    applyRampCurtainFlags(zGrid, merged.cols, merged.rows);
+
+    let walkableCount = 0;
+    for (let r = 0; r < merged.rows; r++) for (let c = 0; c < merged.cols; c++) {
+      if (isFoldedTileWalkable(zGrid[r][c])) walkableCount++;
+    }
+
+    const entryTile = entry ? zGrid[entry.row]?.[entry.col] : null;
+    if (!entry || !isFoldedTileWalkable(entryTile)) {
+      return { ok: false, reason: 'entry_blocked', reachable: 0, walkableCount, ratio: 0, merged, zGrid };
+    }
+
+    const tierOf = t => t.type === 'ramp' ? null : (t.elevTier || 0);
+    const seen = new Set([`${entry.col},${entry.row}`]);
+    const queue = [[entry.col, entry.row]];
+    while (queue.length) {
+      const [c, r] = queue.pop();
+      const here = zGrid[r][c];
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nc = c + dc, nr = r + dr, key = `${nc},${nr}`;
+        if (seen.has(key)) continue;
+        const next = zGrid[nr]?.[nc];
+        if (!isFoldedTileWalkable(next)) continue;
+        const a = tierOf(here), b = tierOf(next);
+        if (a !== null && b !== null && a !== b) continue;
+        seen.add(key);
+        queue.push([nc, nr]);
+      }
+    }
+    const ratio = seen.size / Math.max(1, walkableCount);
+    return { ok: seen.size >= 50 && ratio >= 0.5, reason: null, reachable: seen.size, walkableCount, ratio, merged, zGrid };
+  }
+
   return {
     PLATEAU_UNIT, NORMAL_TOP, TileType,
     buildMergedZoneGrid, buildZGrid, applyRampCurtainFlags,
     buildPlateauMesaGeometry, buildRampMeshGeometry, buildRampCurtainGeometry,
     buildRockSourceSpans, buildRockFormationGeometry, validateRockFormationGeometry,
     buildWaterfallWallGeometry, buildTerrainTileGeo, validateTerrain,
+    isFoldedTileWalkable, assessZoneReachability,
   };
 });

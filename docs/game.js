@@ -1180,6 +1180,32 @@
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
         },
+        // Western Slope/Eastern Mire have always had real authored layouts in
+        // town-workspace-v1.json (unlike the two placeholder zones above), but
+        // never got an EXTERIOR_ZONES entry of their own — so their "back to
+        // town" ring (which reads zdef.townReturnCol/Row, not zoneData) sent
+        // the player to clamp(undefined, ...) === NaN. townReturnCol/Row below
+        // are one tile inside town from that zone's own town-side transition
+        // spot (spot_2vsub at col 0, row 25 / spot_d33e9 at col 59, row 25 in
+        // hobunji_hollow_town.map.json). entryCol/Row/exitCol/Row match the
+        // authored zone's own "To Hobunji Hollow" spot (sp_wslope_e / sp_emi_west)
+        // — one gate tile serving both directions, same as the two zones above.
+        map_western_slope: {
+          label: 'Western Slope',
+          cols: 50, rows: 40,
+          groundColor: 0x6b6a52, fogColor: 0x35342a,
+          entryCol: 48, entryRow: 20,
+          exitCol: 48, exitRow: 20,
+          townReturnCol: 1, townReturnRow: 25,
+        },
+        map_eastern_mire: {
+          label: 'Eastern Mire',
+          cols: 50, rows: 40,
+          groundColor: 0x3a4a3a, fogColor: 0x22301f,
+          entryCol: 1, entryRow: 20,
+          exitCol: 1, exitRow: 20,
+          townReturnCol: 58, townReturnRow: 25,
+        },
       };
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
 
@@ -2755,6 +2781,131 @@
         hostileObjects.clear();
       }
 
+      // ── Tothal Shift ────────────────────────────────────────────────
+      // A yearly reroll of the seed behind all four wilderness maps (Northern
+      // Cliffs, Southern Cloud Forest, Western Slope, Eastern Mire) — in lore
+      // terms, the wilderness itself reshapes at the turn of the year. This
+      // reproduces exactly what the Wilderness Map Generator tool's "Export"
+      // → Map Editor's "Import" round-trip would do to a zone map, using the
+      // generator's headless core (docs/js/wilderness-map-generator.js) and
+      // the same plateau/ramp fold math the Map Editor's live preview and
+      // scripts/check-terrain.js already share (docs/js/terrain-preview.js).
+      // A handful of authored building entrances (Researcher's Tent, Little
+      // Swamp House) don't exist in the wilderness tool's own vocabulary, so
+      // they're re-attached at their original coordinates after every shift.
+      const TOTHAL_PRESERVED_TRANSITIONS = {
+        map_northern_cliffs: [{ id: 'sp_ncl_tent', label: "Researcher's Tent", col: 35, row: 29, targetMapId: 'map_i_researchers_tent', targetSpotId: 'sp_tent_entry' }],
+        map_eastern_mire: [{ id: 'sp_emi_swamp', label: 'Little Swamp House', col: 34, row: 29, targetMapId: 'map_i_swamp_house', targetSpotId: 'sp_swp_entry' }],
+      };
+
+      function currentTothalYear() {
+        return Math.floor((calendar.day - 1) / (SEASON_LENGTH_DAYS * seasons.length)) + 1;
+      }
+
+      function _tothalWorldId() {
+        return (window.__hobunjiPlayerProfile || _playerData)?.worldId || null;
+      }
+
+      // Reads/writes the Tothal year directly on the world's hobunjiSaveMeta
+      // entry — mirrors saveGearInventory()'s pattern of touching localStorage
+      // straight from game.js rather than round-tripping through onboarding.js.
+      function _loadTothalYear() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return null;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.lastTothalYear ?? null;
+        } catch { return null; }
+      }
+
+      function _saveTothalYear(year) {
+        const worldId = _tothalWorldId();
+        if (!worldId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.lastTothalYear = year;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
+      let _tothalShiftInFlight = false;
+
+      // Regenerates all four wilderness zones for the given Tothal year and
+      // saves that year to the world file so a reload doesn't reroll again.
+      // Seeded from the world id + year + zone, so the same world reliably
+      // regrows the same wilderness for that year on every load.
+      async function performTothalShift(year) {
+        if (typeof WildernessMapGenerator === 'undefined') {
+          debugLog('Tothal Shift skipped: wilderness-map-generator.js not loaded', 'warn');
+          return;
+        }
+        if (_tothalShiftInFlight) return;
+        _tothalShiftInFlight = true;
+        const worldId = _tothalWorldId() || 'default';
+        const terrainPreview = (typeof TerrainPreview !== 'undefined') ? TerrainPreview : null;
+        debugLog(`Tothal Shift: rerolling wilderness for year ${year} (world ${worldId})`);
+        try {
+          for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
+            const seed = `${worldId}_tothal_y${year}_${zoneId}`;
+            const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
+            let workspace;
+            try {
+              workspace = WildernessMapGenerator.generateHealthyZoneWorkspace(zoneId, seed, {
+                terrainPreview,
+                preservePoints: preserved.map(t => ({ col: t.col, row: t.row })),
+              });
+            } catch (e) {
+              debugLog(`Tothal Shift: generation failed for ${zoneId}: ${e.message}`, 'warn');
+              continue;
+            }
+            const root = workspace.maps[0];
+            let merged;
+            try {
+              merged = terrainPreview ? terrainPreview.buildMergedZoneGrid(workspace, root.id) : null;
+            } catch (e) {
+              debugLog(`Tothal Shift: fold failed for ${zoneId}: ${e.message}`, 'warn');
+              continue;
+            }
+            if (!merged) { debugLog(`Tothal Shift: no fold math available for ${zoneId}, skipping`, 'warn'); continue; }
+
+            const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
+            _zoneLayouts.set(zoneId, {
+              cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
+              transitions: preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
+              toTownExit, mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
+            });
+            // Entering from town has no authored spawn coordinate of its own
+            // (see EXTERIOR_ZONES' comment) — it always falls back to
+            // zdef.entryCol/Row, so keep that pinned to this shift's own
+            // (guaranteed-walkable) entry gate.
+            if (EXTERIOR_ZONES[zoneId] && workspace.entry) {
+              EXTERIOR_ZONES[zoneId].entryCol = workspace.entry.col;
+              EXTERIOR_ZONES[zoneId].entryRow = workspace.entry.row;
+            }
+            if (currentArea === zoneId) _dirtyZoneScenes.add(zoneId);
+            else _disposeZoneScene(zoneId);
+            debugLog(`Tothal Shift: ${zoneId} reshaped (attempt ${(workspace.reachabilityAssessment?.attempt ?? 0) + 1}, reachability ${Math.round((workspace.reachabilityAssessment?.ratio ?? 1) * 100)}%)`);
+            await new Promise(resolve => setTimeout(resolve, 0)); // yield between zones
+          }
+          clearHostileObjects();
+          _saveTothalYear(year);
+          if (gameStarted) showToast('The Tothal Shift has reshaped the wilderness...', true);
+          debugLog(`Tothal Shift complete for year ${year}`);
+        } finally {
+          _tothalShiftInFlight = false;
+        }
+      }
+
+      // Called at world start and on every day advance — a no-op unless the
+      // Tothal year has actually changed since this world last shifted.
+      function checkTothalShift() {
+        const year = currentTothalYear();
+        if (_loadTothalYear() === year) return;
+        performTothalShift(year).catch(e => debugLog('Tothal Shift error: ' + e.message, 'warn'));
+      }
+
       // Ambient hostile spawning — lives entirely inside the exterior zones now
       // (southern cloud forest → Gar-wolf, northern cliffs → Gar-wolf Alpha).
       const HOSTILE_CAP_PER_ZONE = 4;
@@ -2960,6 +3111,13 @@
       // _townRiverWaterMeshes but per zone map, since a zone's water tiles never
       // share the town's flat single-tier grid.
       const _zoneWaterMeshes = new Map();
+      // mapIds whose _zoneLayouts entry was replaced by a Tothal Shift (see
+      // performTothalShift) while the player was standing inside that same
+      // zone — rebuilding the live THREE.Scene out from under them mid-visit
+      // would drop them through changed terrain, so the stale cached scene is
+      // left alone and only torn down (via _disposeZoneScene, in
+      // buildZoneScene) the next time that map is entered fresh.
+      const _dirtyZoneScenes = new Set();
       // Surface Y for a tile actually standing inside an exterior zone. Plateau
       // sub-maps are purely an authoring convenience in the Map Editor — in-game
       // every tier of a plateau stack is merged into its root zone's single grid,
@@ -3557,6 +3715,7 @@
       }
 
       function buildZoneScene(mapId) {
+        if (_dirtyZoneScenes.has(mapId)) { _disposeZoneScene(mapId); _dirtyZoneScenes.delete(mapId); }
         if (_zoneScenes.has(mapId)) return _zoneScenes.get(mapId);
         const zdef = EXTERIOR_ZONES[mapId];
         const zoneData = _zoneLayouts.get(mapId);
@@ -6402,6 +6561,26 @@
           registerFurnitureSfxSource(mapId, f.col + 0.5, f.row + 0.5, resolveFurnitureSfx(def));
         }
         debugLog(`_spawnZoneDecorFurniture(${mapId}): built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
+      }
+
+      // Tears down a previously built zone scene so buildZoneScene(mapId)'s
+      // cache check falls through and rebuilds it from whatever's now in
+      // _zoneLayouts — used by a Tothal Shift to apply newly generated
+      // wilderness terrain. Only disposes geometries; tileMats/houseWallBuilder
+      // materials are shared across every map and must outlive this.
+      function _disposeZoneScene(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        if (zi?.scene) zi.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+        _zoneScenes.delete(mapId);
+        _zoneWaterMeshes.delete(mapId);
+        const buildingGroups = _zoneBuildingGroups.get(mapId);
+        if (buildingGroups) for (const { group } of buildingGroups) group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+        _zoneBuildingGroups.delete(mapId);
+        const decorFurniture = _zoneDecorFurnitureGroups.get(mapId);
+        if (decorFurniture) for (const obj of decorFurniture) obj.traverse?.(o => { if (o.geometry) o.geometry.dispose(); });
+        _zoneDecorFurnitureGroups.delete(mapId);
+        _zoneBuildingsGlbUpgradePending.delete(mapId);
+        for (const source of _furnitureSfxSources.filter(s => s.area === mapId)) unregisterFurnitureSfxSource(source);
       }
 
       function buildTownScene() {
@@ -14854,6 +15033,7 @@
         chooseWeatherForDay();
         tickCropDay();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
+        checkTothalShift();
       }
 
       function chooseWeatherForDay() {
@@ -16835,6 +17015,11 @@
       let gameStarted = false;
 
       async function spawnPlayerAvatar(playerData) {
+        // Fire-and-forget: the Tothal Shift at world start (or on any missed
+        // year since last played) can take a few seconds across all four
+        // zones, but nothing here needs to block on it — a zone only needs
+        // to be reshaped by the time the player actually walks into it.
+        checkTothalShift();
         gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
           ? playerData.gearInventory
           : makeDefaultGear();
