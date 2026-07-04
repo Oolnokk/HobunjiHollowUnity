@@ -2349,8 +2349,11 @@
     for (const river of riverTiles) {
       const sourceTier = river.canyonOriginalElevation ?? river.elevation;
       const riverBedTier = river.elevation || 0;
-      const shoulderRadius = 5.4;
-      const flatRadius = 3.4;
+      // Radii are authored in GAMEPLAY tiles; at coarse design scale the
+      // same numbers flattened half the map and shredded the terraces.
+      const dsC = _designScale();
+      const shoulderRadius = 5.4 / dsC;
+      const flatRadius = 3.4 / dsC;
       for (let yy = Math.max(0, Math.floor(river.y - shoulderRadius)); yy <= Math.min(settings.height - 1, Math.ceil(river.y + shoulderRadius)); yy++) {
         for (let xx = Math.max(0, Math.floor(river.x - shoulderRadius)); xx <= Math.min(settings.width - 1, Math.ceil(river.x + shoulderRadius)); xx++) {
           const tile = tileAt(xx, yy);
@@ -2360,7 +2363,7 @@
 
           // Inner canyon banks are intentionally FLAT walkable land, not noisy broken cliff fragments.
           if (dist <= flatRadius) {
-            const flatTier = dist <= 2.35 ? riverBedTier : Math.min(riverBedTier + 1, Math.max(1, sourceTier - 1));
+            const flatTier = dist <= 2.35 / dsC ? riverBedTier : Math.min(riverBedTier + 1, Math.max(1, sourceTier - 1));
             const key = tileKey(xx, yy);
             const prev = stagedFlatBanks.get(key);
             stagedFlatBanks.set(key, prev === undefined ? flatTier : Math.min(prev, flatTier));
@@ -2368,7 +2371,7 @@
           }
 
           let targetMax = tile.elevation;
-          if (dist <= 4.4) targetMax = Math.min(targetMax, Math.max(0, Math.floor(sourceTier * 0.58)));
+          if (dist <= 4.4 / dsC) targetMax = Math.min(targetMax, Math.max(0, Math.floor(sourceTier * 0.58)));
           else targetMax = Math.min(targetMax, Math.max(0, Math.floor(sourceTier * 0.78)));
           const key = tileKey(xx, yy);
           if (targetMax < tile.elevation) {
@@ -2658,8 +2661,10 @@
         const ny = dy / dist;
         const px = -ny;
         const py = nx;
-        wobble += randFloat(-0.26, 0.26);
-        wobble *= 0.88;
+        // Stronger jitter + a slow sinusoidal meander so canyons snake
+        // instead of shooting straight across the map.
+        wobble += randFloat(-0.42, 0.42) + Math.sin(step * 0.22 + widthSalt) * 0.16;
+        wobble *= 0.93;
         x += nx * randFloat(0.42, 0.82) + px * wobble;
         y += ny * randFloat(0.42, 0.82) + py * wobble;
         const tx = Math.round(x);
@@ -3269,7 +3274,10 @@
         const existingPathBias = nextTile.path ? -0.55 : 0;
         const invisibleBias = preferInvisible && nextTile.invisiblePath ? -0.75 : 0;
         const rampBias = usesRamp ? -0.35 : 0;
-        const randomBias = noise2(next.x, next.y, 1225) * 0.25;
+        // Terrain-grain noise makes visible paths wander organically around
+        // imaginary bumps instead of ruler-straight A* lines.
+        const randomBias = noise2(next.x, next.y, 1225) * 1.35 +
+                           noise2(Math.floor(next.x / 4), Math.floor(next.y / 4), 5519) * 1.9;
         const g = current.g + 1 + occupiedCost + waterCost + tierCost + cliffCost + existingPathBias + invisibleBias + rampBias + randomBias;
         const k = tileIdXY(next.x, next.y);
         if (best.has(k) && best.get(k) <= g) continue;
@@ -6187,6 +6195,71 @@
   // ═══════════════════════════════════════════════════════════════════════
 
   // ═══════════════════════════════════════════════════════════════════════
+  //  Stairway terraces
+  //
+  //  The zone's backbone: ragged full-width terrace bands climbing from
+  //  tier 0 at the south edge to maxTier at the north — a stairway of
+  //  spacious levels. Each tier boundary is a smooth-noise line (ragged but
+  //  coherent), clamped so every level keeps a minimum depth in every
+  //  column. Causeway blobs generated before this survive wherever they
+  //  poke ABOVE the stairway, adding local bumps and extra raggedness; the
+  //  bleachers pass afterwards keeps the whole field monotonic.
+  // ═══════════════════════════════════════════════════════════════════════
+  function generateStairwayTerraces() {
+    if (settings.maxTier <= 0) return;
+    const W = settings.width, H = settings.height;
+    const levels = settings.maxTier + 1;
+    const bandDepth = H / levels;
+    const amp = Math.max(1.5, bandDepth * 0.45);
+    const minBand = Math.max(2, Math.round(bandDepth * 0.45));
+
+    // Smooth 1-D value noise so boundaries wander organically instead of
+    // stepping every N columns.
+    const vnoise = (x, scale, salt) => {
+      const xf = x / scale;
+      const x0 = Math.floor(xf);
+      const f = xf - x0;
+      const a = noise2(x0, salt, 7717);
+      const b = noise2(x0 + 1, salt, 7717);
+      const t = f * f * (3 - 2 * f);
+      return a + (b - a) * t;
+    };
+
+    const boundaryYs = [];
+    for (let t = 1; t <= settings.maxTier; t++) {
+      const row = new Array(W);
+      for (let x = 0; x < W; x++) {
+        const n = vnoise(x, 7, t * 131) * 0.6 + vnoise(x, 3, t * 131 + 7) * 0.4;
+        row[x] = H - bandDepth * t - 1 + (n - 0.5) * 2 * amp;
+      }
+      boundaryYs.push(row);
+    }
+    for (let x = 0; x < W; x++) {
+      // Keep an open tier-0 apron along the south edge, then guarantee each
+      // higher level at least minBand rows of depth in this column.
+      boundaryYs[0][x] = Math.min(boundaryYs[0][x], H - 1 - Math.max(3, minBand));
+      for (let t = 1; t < settings.maxTier; t++) {
+        boundaryYs[t][x] = Math.min(boundaryYs[t][x], boundaryYs[t - 1][x] - minBand);
+      }
+    }
+
+    let raised = 0;
+    for (let x = 0; x < W; x++) {
+      for (let y = 0; y < H; y++) {
+        let tier = 0;
+        for (let t = 1; t <= settings.maxTier; t++) if (y <= boundaryYs[t - 1][x]) tier = t;
+        const tile = tileAt(x, y);
+        if (tile && tier > (tile.elevation || 0)) {
+          tile.elevation = tier;
+          if (tile.terrain === 'grass') tile.terrain = 'plateau';
+          raised++;
+        }
+      }
+    }
+    logDebug(`stairway terraces: ${levels} levels, band depth ~${bandDepth.toFixed(1)} rows (min ${minBand}), raised ${raised} tiles`);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
   //  "Bleachers" rule
   //
   //  Plateaus only ever get TALLER walking away from the map's bottom edge:
@@ -6228,6 +6301,24 @@
     logDebug(`bleachers rule: lifted ${lifted} tiles so tiers never drop toward the north`);
   }
 
+  // Rivers descending the stairway terraces drop a tier between adjacent
+  // water tiles — mark both rim tiles as waterfalls so the game renders its
+  // animated curtain (and the reachability model blocks them like water).
+  function markRiverWaterfalls() {
+    let marked = 0;
+    for (const tile of allTiles()) {
+      if (!tile.water || tile.waterfall) continue;
+      for (const n of cardinalNeighbors(tile.x, tile.y)) {
+        if (n && n.water && Math.abs((n.elevation || 0) - (tile.elevation || 0)) >= 1) {
+          tile.waterfall = true;
+          marked++;
+          break;
+        }
+      }
+    }
+    logDebug(`river waterfalls: marked ${marked} water tiles at tier drops`);
+  }
+
   function generate(options = {}) {
     settings = normalizeSettings(options);
     rng = makeRng(settings.seed);
@@ -6237,11 +6328,13 @@
 
     initMap();
     generatePlateaus();
+    generateStairwayTerraces();
     enforceBleachersRule();
     applyManualPlateauPaintingRules();
     generatePonds();
     generateRivers();
     generatePlateauHydrology();
+    markRiverWaterfalls();
     applyManualPlateauPaintingRules();
     syncTileHeights();
     generateRamps();

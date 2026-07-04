@@ -285,7 +285,7 @@ function main() {
   // half resolution with gameplayScale 2 — see regenerateWildernessZone);
   // the default case keeps the generator's own defaults so the full config
   // space stays covered.
-  const zoneOpts = { maxTier: 3, gameplayScale: 2 };
+  const zoneOpts = { maxTier: 4, gameplayScale: 2 };
   const cases = [
     { label: 'northern_cliffs-ish 30x25→60x50', options: { seed: 'nc_epoch_0', width: 30, height: 25, entrySide: 'south', ...zoneOpts } },
     { label: 'cloud_forest-ish 25x20→50x40', options: { seed: 'scf_epoch_3', width: 25, height: 20, entrySide: 'north', ...zoneOpts } },

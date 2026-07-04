@@ -5863,11 +5863,12 @@
         const seed = `${_wildernessWorldSeed()}_${zoneMapId}_epoch_${epoch}`;
         let result;
         try {
-          // maxTier 3: one tier is PLATEAU_UNIT (2.5) world units tall, so the
-          // generator's default of 6 renders as ~15-unit skyscraper mesas.
+          // maxTier 4: with the stairway-terrace backbone the climb spreads
+          // across the whole map (one 2.5-unit cliff per level), so more
+          // levels means more distinct spacious terraces, not skyscrapers.
           result = window.WildernessGenerator.generate({
             seed, width: genCols, height: genRows, entrySide,
-            maxTier: 3, gameplayScale: GAMEPLAY_SCALE,
+            maxTier: 4, gameplayScale: GAMEPLAY_SCALE,
           });
         } catch (e) {
           debugLog(`Wilderness regen failed for ${zoneMapId}: ${e.message}`, 'warn');
