@@ -3045,6 +3045,9 @@
       // not a free-orbit camera.
       let cameraAzimuthOffsetDeg = 0;
       let cameraAngleOffsetDeg   = 0;
+      // Reused every frame by occlusionSafeCameraPosition — a fresh
+      // THREE.Raycaster per call would just be needless per-frame garbage.
+      const _cameraOcclusionRaycaster = new THREE.Raycaster();
       // Camera azimuth (radians, rotated from due-south toward east) for the active
       // mode. Everything except "fishing" stays at 0 (camera due south, as before).
       function activeCameraAzimuthRad() {
@@ -3921,7 +3924,14 @@
           zScene.add(ring);
         }
 
-        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions };
+        // Meshes tall enough to get between the fixed follow camera and the
+        // player (plateau mesas, cliff-face rock skins — see their own
+        // `.userData.cameraObstacle` tags) — collected once here rather than
+        // walking the whole scene graph every frame in updateCameraPosition.
+        const occlusionMeshes = [];
+        zScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+
+        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes };
         _zoneScenes.set(mapId, info);
         _spawnZoneBuildings(mapId);
         _spawnZoneDecorFurniture(mapId);
@@ -4127,6 +4137,11 @@
         const mesh = new THREE.Mesh(geo, tileMats.grass);
         mesh.receiveShadow = true;
         zScene.add(mesh);
+        // A plateau's own lid+skin is the primary way the fixed follow camera
+        // (see updateCameraPosition) can end up with something tall between
+        // itself and the player — flagged so buildZoneScene can collect it
+        // for the occlusion raycast.
+        mesh.userData.cameraObstacle = true;
 
         // Steep plateau rock is now emitted by buildRockFormationMeshes, which
         // unions plateau cliffs with ramp side rock before rendering.
@@ -4317,6 +4332,7 @@
         mesh.receiveShadow = true;
         zScene.add(mesh);
         _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.ROCK));
+        mesh.userData.cameraObstacle = true; // vertical cliff-face skin — see buildPlateauMesa's own tag
         console.log(`%c[zone:${mapId}] solved rock formation built: ${spans.size} edge span(s)`, 'color:#22c55e;font-weight:bold');
       }
 
@@ -11239,6 +11255,36 @@
         };
       }
 
+      // Pulls the camera in along the target→camera line if a plateau mesa or
+      // cliff-face rock skin (see their `.userData.cameraObstacle` tags,
+      // collected once per zone as buildZoneScene's `occlusionMeshes`) sits
+      // between them — the fixed south-of-player follow camera has no other
+      // way to keep the player visible once something tall is in that gap,
+      // since generation alone can bias terrain but can't guarantee a clear
+      // line at this camera's shallow angle (see conversation history: even
+      // a single-tier rise close to the player already eats most of the
+      // vertical slack a ~14-tile, ~33°-elevation sightline allows). Scoped
+      // to wilderness zones for now — town/farm have no elevation system to
+      // occlude with.
+      function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
+        if (!_isZoneArea(currentArea)) return { x: idealX, y: idealY, z: idealZ };
+        const obstacles = _zoneScenes.get(currentArea)?.occlusionMeshes;
+        if (!obstacles || !obstacles.length) return { x: idealX, y: idealY, z: idealZ };
+        const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
+        const dist = Math.hypot(dx, dy, dz);
+        if (dist < 0.5) return { x: idealX, y: idealY, z: idealZ };
+        const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+        _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
+        _cameraOcclusionRaycaster.near = 0.3; // skip the player's own standing point
+        _cameraOcclusionRaycaster.far = dist;
+        const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, false);
+        if (!hits.length) return { x: idealX, y: idealY, z: idealZ };
+        // Stop a little short of the actual hit (not flush against it) so the
+        // camera doesn't clip into the cliff face it just pulled in behind.
+        const safeDist = Math.max(1.5, hits[0].distance - 0.6);
+        return { x: lookAtX + dir.x * safeDist, y: lookAtY + dir.y * safeDist, z: lookAtZ + dir.z * safeDist };
+      }
+
       function updateCameraPosition() {
         const modeCfg = cameraModeConfig(activeCameraMode);
         const baseDistance = (modeCfg.distanceTiles ?? 14) / s_zoomScale;
@@ -11253,12 +11299,12 @@
         // Camera sits at `azimuth` east of due-south from the target, elevated,
         // looking back at it. azimuth=0 (every mode but "fishing") reduces to the
         // original due-south-looking-north framing.
-        camera.position.set(
-          (portraitAim?.targetX ?? tx) + Math.sin(azimuth) * groundDistance,
-          cameraY,
-          (portraitAim?.targetZ ?? tz) + Math.cos(azimuth) * groundDistance  // +Z = south
-        );
-        camera.lookAt(portraitAim?.targetX ?? tx, lookY, portraitAim?.targetZ ?? tz);
+        const lookAtX = portraitAim?.targetX ?? tx, lookAtZ = portraitAim?.targetZ ?? tz;
+        const idealX = lookAtX + Math.sin(azimuth) * groundDistance;
+        const idealZ = lookAtZ + Math.cos(azimuth) * groundDistance; // +Z = south
+        const safe = occlusionSafeCameraPosition(lookAtX, lookY, lookAtZ, idealX, cameraY, idealZ);
+        camera.position.set(safe.x, safe.y, safe.z);
+        camera.lookAt(lookAtX, lookY, lookAtZ);
         camera.fov = modeCfg.fovDeg ?? 42;
         camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
         camera.updateProjectionMatrix();
