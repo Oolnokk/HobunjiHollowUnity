@@ -84,6 +84,12 @@
   function fireStagedStrike(action) {
     if (action.strikeFired) return;
     action.strikeFired = true;
+    // Every staged action in this pipeline is a player weapon-tool attack
+    // (combo/quick attacks/charged breaker/flurry/counter-shield riposte),
+    // so this single choke point covers "every weapon strike" without each
+    // ability module needing its own SFX call — future abilities registered
+    // through beginStagedAction get the slash sound for free.
+    deps?.playWeaponSlashSfx?.();
     if (action.onStrike) action.onStrike(action);
   }
 

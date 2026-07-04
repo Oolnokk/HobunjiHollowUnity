@@ -1014,6 +1014,53 @@
         }
       }
 
+      function combatSfxConfig() { return gameAudioConfig().combatSfx || {}; }
+
+      // One-shot combat SFX player (weapon slash / creature bark / claw hit) —
+      // simpler than playFootstepSfx since these always have a real audio
+      // file staged (no procedural WebAudio fallback needed).
+      function playOneShotSfx(cfgEntry, volumeScale = 1, pitch = 1) {
+        const audioCfg = gameAudioConfig();
+        if (audioCfg.enabled === false || !cfgEntry?.url) return;
+        if (combatSfxConfig().enabled === false) return;
+        const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
+          * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
+        if (volume <= 0.002) return;
+        const snd = new Audio(cfgEntry.url);
+        snd.volume = Math.min(1, volume);
+        const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
+        snd.playbackRate = Math.max(0.3, pitch * (1 + (Math.random() * 2 - 1) * pitchVariance));
+        snd.play().catch(() => {});
+      }
+
+      // Distance falloff for a creature-originated combat sound (bark/claw
+      // hit), mirroring tickCreatureFootsteps — inaudible past earshot.
+      function playCreatureSfxAt(c, cfgEntry, pitch) {
+        if (!cfgEntry || c.areaId !== currentArea) return;
+        const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
+        if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
+        const falloff = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+        playOneShotSfx(cfgEntry, falloff, pitch);
+      }
+
+      // Species-keyed pitch lets every creature reuse the same bark asset
+      // (only one exists today) while still sounding distinct — alpha
+      // gar-wolf pitched down, dabinggi-hound pitched up, relative to the
+      // plain gar-wolf's neutral pitch. Future creatures/attacks can add
+      // their own url+species entry without touching this function.
+      function playCreatureBark(c) {
+        const cfg = combatSfxConfig().creatureBark;
+        playCreatureSfxAt(c, cfg, Number(cfg?.species?.[c.creatureKey]?.pitch) || 1);
+      }
+
+      function playCreatureClawHit(c) {
+        playCreatureSfxAt(c, combatSfxConfig().creatureClawHit, 1);
+      }
+
+      function playWeaponSlashSfx() {
+        playOneShotSfx(combatSfxConfig().weaponSlash, 1, 1);
+      }
+
       // Helper: floor Z for a tile type. Trenches shallow out toward 0 as they silt up.
       function floorZ(type, depth = 1) {
         if (type === TileType.RAISED) return  1;
@@ -1130,6 +1177,10 @@
             idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
             run: ['assets/creaturesprites/dabinggi-hound_run1.png', 'assets/creaturesprites/dabinggi-hound_run2.png'],
           },
+          loot: [
+            { key: 'dabinggiHoundMeat', min: 1, max: 3 },
+            { key: 'dabinggiHoundHide', min: 1, max: 1 },
+          ],
         },
         'gar-wolf': {
           label: 'Gar-wolf', hostile: true,
@@ -1150,6 +1201,10 @@
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
           },
+          loot: [
+            { key: 'garWolfMeat', min: 2, max: 4 },
+            { key: 'garWolfHide', min: 1, max: 1 },
+          ],
         },
         'gar-wolf-alpha': {
           label: 'Gar-wolf Alpha', hostile: true,
@@ -1166,6 +1221,10 @@
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
           },
+          loot: [
+            { key: 'alphaGarWolfMeat', min: 4, max: 7 },
+            { key: 'alphaGarWolfHide', min: 1, max: 2 },
+          ],
         },
       };
 
@@ -1509,6 +1568,7 @@
       const animalObjects = new Set(); // Tracks all live animal world objects for update loop and reset.
       const companionObjects = new Set(); // Whistle-summoned companion creatures (0 or 1 active at a time).
       const hostileObjects = new Set();   // Ambient-spawned hostile creatures (Gar-wolf / Gar-wolf Alpha).
+      const corpseObjects = new Set();    // Creatures mid-death-lerp ('dying') or settled and lootable ('corpse').
 
       // Preload uumkao'ii sprite; animals check this before spawning.
       let uumkaoiiSpriteImage = null;
@@ -2229,13 +2289,153 @@
         c.avatarRef.dispose();
       }
 
+      // ── Death ragdoll → lootable corpse ─────────────────────────────
+      //
+      // A lethally-hit creature no longer just vanishes: it tumbles from
+      // where it died to a nearby tile roughly away from the killing blow,
+      // settles lying flat on that tile, and stays there as a lootable
+      // corpse (see getCorpseObjectAt) until the player butchers it —
+      // that's the only thing that actually despawns the sprite.
+      const DEATH_LERP_DURATION_S = 1.05;
+      const DEATH_TUMBLE_TILES_MIN = 1.1;
+      const DEATH_TUMBLE_TILES_MAX = 2.6;
+      const DEATH_AIM_CONE_RAD = 50 * Math.PI / 180;
+      const DEATH_HOP_HEIGHT_PX = TILE * 0.9;
+
+      // Walks outward from the creature's own tile within a cone around
+      // awayAngle (the direction the killing blow traveled), looking for a
+      // tile the corpse can actually rest on — falls back to its own tile
+      // if nothing nearby is valid (map edge, water, cliff face, ...).
+      function findDeathRestTile(c, awayAngle) {
+        const startCol = Math.floor(c.x / TILE), startRow = Math.floor(c.y / TILE);
+        for (let attempt = 0; attempt < 12; attempt++) {
+          const ang = awayAngle + (Math.random() * 2 - 1) * DEATH_AIM_CONE_RAD;
+          const distTiles = DEATH_TUMBLE_TILES_MIN + Math.random() * (DEATH_TUMBLE_TILES_MAX - DEATH_TUMBLE_TILES_MIN);
+          const col = clamp(Math.round(startCol + Math.cos(ang) * distTiles), 0, (c.areaCols || COLS) - 1);
+          const row = clamp(Math.round(startRow + Math.sin(ang) * distTiles), 0, (c.areaRows || ROWS) - 1);
+          const cx = (col + 0.5) * TILE, cy = (row + 0.5) * TILE;
+          if (canOccupyAt(cx, cy, TILE * 0.3)) return { x: cx, y: cy, col, row };
+        }
+        return { x: (startCol + 0.5) * TILE, y: (startRow + 0.5) * TILE, col: startCol, row: startRow };
+      }
+
+      function beginCreatureDeath(c, fromX, fromY) {
+        const awayAngle = fromX !== undefined ? Math.atan2(c.y - fromY, c.x - fromX) : (c.facing || 0);
+        const rest = findDeathRestTile(c, awayAngle);
+        c.state = 'dying';
+        c.deathT = 0;
+        c.deathDurationS = DEATH_LERP_DURATION_S;
+        c.deathStartX = c.x; c.deathStartY = c.y;
+        c.deathTargetX = rest.x; c.deathTargetY = rest.y;
+        c.corpseCol = rest.col; c.corpseRow = rest.row;
+        c.deathHopHeightPx = DEATH_HOP_HEIGHT_PX * (0.7 + Math.random() * 0.6);
+        // Randomized per death so no two creatures flop the same way —
+        // magnitudes are extra full turns layered on top of the final
+        // resting tilt (see updateCorpses).
+        c.deathSpinX = (Math.random() < 0.5 ? -1 : 1) * (1.5 + Math.random() * 1.5);
+        c.deathSpinZ = (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.8);
+        c.deathSpinY = (Math.random() < 0.5 ? -1 : 1) * Math.random();
+        c.deathRestRotX = (Math.random() < 0.5 ? -1 : 1) * (Math.PI / 2 + (Math.random() * 0.2 - 0.1));
+        c.deathRestRotZ = (Math.random() * 2 - 1) * 0.35;
+        c.deathRestRotY = Math.random() * Math.PI * 2;
+        c.scaleY = 1;
+        c.avatarRef.group.scale.y = 1;
+        corpseObjects.add(c);
+      }
+
+      // Drives every 'dying' corpse's flight from where it died to its
+      // resting tile: position eases (fast launch, soft landing) along a
+      // vertical hop arc, while rotation.x/y/z each spin through a random
+      // number of extra full turns on top of the final lying-flat pose so
+      // the tumble decelerates smoothly into it instead of just snapping.
+      function updateCorpses(dt) {
+        for (const c of corpseObjects) {
+          if (c.state !== 'dying' || c.areaId !== currentArea) continue;
+          c.deathT = Math.min(c.deathDurationS, c.deathT + dt);
+          const t = c.deathT / c.deathDurationS;
+          const ease = 1 - Math.pow(1 - t, 3);
+          c.x = c.deathStartX + (c.deathTargetX - c.deathStartX) * ease;
+          c.y = c.deathStartY + (c.deathTargetY - c.deathStartY) * ease;
+          const hop = Math.sin(Math.PI * t) * c.deathHopHeightPx;
+
+          const grp = c.avatarRef.group;
+          const g = c.areaGrid || grid;
+          const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
+          const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
+          const surfY = g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0;
+          const restHeight = c.halfHeight * 0.12;
+
+          grp.position.x = c.x / TILE;
+          grp.position.z = c.y / TILE;
+          grp.position.y = surfY + restHeight + (c.halfHeight - restHeight) * (1 - ease) + hop;
+
+          grp.rotation.x = (c.deathRestRotX + c.deathSpinX * Math.PI * 2) * ease;
+          grp.rotation.z = (c.deathRestRotZ + c.deathSpinZ * Math.PI * 2) * ease;
+          grp.rotation.y = c.groupRot + (c.deathRestRotY + c.deathSpinY * Math.PI * 2 - c.groupRot) * ease;
+
+          if (t >= 1) {
+            c.state = 'corpse';
+            grp.position.set(c.deathTargetX / TILE, surfY + restHeight, c.deathTargetY / TILE);
+            grp.rotation.set(c.deathRestRotX, c.deathRestRotY, c.deathRestRotZ);
+          }
+        }
+      }
+
+      function rollLootFromTable(lootTable) {
+        const gained = {};
+        for (const entry of lootTable || []) {
+          const qty = entry.min + Math.floor(Math.random() * (entry.max - entry.min + 1));
+          if (qty > 0) gained[entry.key] = (gained[entry.key] || 0) + qty;
+        }
+        return gained;
+      }
+
+      // Settled corpses expose the same getButtons()/onAction() shape as
+      // farm world objects (see makeSellCrate) so the existing action-bar
+      // wiring (getWorldObjectAt → getButtons/onAction) can loot them with
+      // no special-casing. Looting is what actually despawns the sprite.
+      function makeCorpseWorldObject(c) {
+        return {
+          id: 'corpse_' + c.id,
+          type: 'creature_corpse',
+          getButtons() {
+            return [{ icon: '🍖', label: 'Butcher ' + c.def.label, action: 'obj_loot_corpse', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
+            const gained = rollLootFromTable(c.def.loot);
+            const parts = [];
+            Object.entries(gained).forEach(([key, qty]) => {
+              inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
+              parts.push(itemIconForKey(key) + '×' + qty);
+            });
+            corpseObjects.delete(c);
+            despawnCreature(c);
+            return {
+              ok: true,
+              message: parts.length ? `Butchered the ${c.def.label}: ${parts.join(' ')}` : `Nothing usable left on the ${c.def.label}.`,
+            };
+          },
+        };
+      }
+
+      // Zone-aware corpse lookup — getWorldObjectAt only otherwise covers
+      // farm/interior, but corpses can settle in any area a creature dies in.
+      function getCorpseObjectAt(col, row) {
+        for (const c of corpseObjects) {
+          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          if (c.corpseCol === col && c.corpseRow === row) return makeCorpseWorldObject(c);
+        }
+        return null;
+      }
+
       function damageCreature(c, amount, fromX, fromY, knockbackPxS) {
         c.health = Math.max(0, c.health - amount);
         c.hitFlashT = 0.25;
         if (c.health <= 0) {
-          despawnCreature(c);
           hostileObjects.delete(c);
           companionObjects.delete(c);
+          beginCreatureDeath(c, fromX, fromY);
           return;
         }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
@@ -2274,6 +2474,7 @@
       function resolveWeaponHit(action) {
         const abil = weaponAbility(action);
         if (!abil) return { hits: 0, message: '' };
+        playWeaponSlashSfx();
         let hits = 0;
         let lastName = '';
         for (const c of hostileObjects) {
@@ -2662,6 +2863,7 @@
                     onStrike: () => {
                       if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
                         damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
+                        playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
                     },
@@ -2775,6 +2977,7 @@
                       onStrike: () => {
                         if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
                           damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
+                          playCreatureClawHit(c);
                         }
                       },
                     });
@@ -7176,6 +7379,8 @@
       }
 
       function getWorldObjectAt(col, row) {
+        const corpse = getCorpseObjectAt(col, row);
+        if (corpse) return corpse;
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
         if (currentArea !== 'farm') return null;
         return worldObjects.get(col + ',' + row) || null;
@@ -7407,6 +7612,12 @@
         { key: 'blackMustard',       icon: '⚫', label: 'BLACK MUSTARD',     max: 99 },
         { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSTARD',     max: 99 },
         { key: 'mulch',              icon: '🍂', label: 'MULCH',            max: 99 },
+        { key: 'garWolfMeat',        icon: '🥩', label: 'GAR-WOLF MEAT',    max: 99 },
+        { key: 'garWolfHide',        icon: '🟫', label: 'GAR-WOLF HIDE',    max: 99 },
+        { key: 'alphaGarWolfMeat',   icon: '🥩', label: 'ALPHA GAR-WOLF MEAT', max: 99 },
+        { key: 'alphaGarWolfHide',   icon: '🟫', label: 'ALPHA GAR-WOLF HIDE', max: 99 },
+        { key: 'dabinggiHoundMeat',  icon: '🥩', label: 'DABINGGI-HOUND MEAT', max: 99 },
+        { key: 'dabinggiHoundHide',  icon: '🟫', label: 'DABINGGI-HOUND HIDE', max: 99 },
         { key: 'uumkaoiiCrate',      icon: '🦆', label: 'UUMKAO\'II CRATE',  max: 9  },
         { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
         { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
@@ -7440,6 +7651,12 @@
         blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: 10, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
         greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: 9, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
+        garWolfMeat: { icon: '🥩', label: 'Gar-wolf Meat', cat: 'material', sellPrice: 9, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a slain gar-wolf. Good for cooking or smoking.' },
+        garWolfHide: { icon: '🟫', label: 'Gar-wolf Hide', cat: 'material', sellPrice: 14, tags: ['Material', 'Hide'], desc: 'A tough hide stripped from a slain gar-wolf.' },
+        alphaGarWolfMeat: { icon: '🥩', label: 'Alpha Gar-wolf Meat', cat: 'material', sellPrice: 16, tags: ['Material', 'Meat'], desc: 'Prime meat butchered from a slain alpha gar-wolf.' },
+        alphaGarWolfHide: { icon: '🟫', label: 'Alpha Gar-wolf Hide', cat: 'material', sellPrice: 26, tags: ['Material', 'Hide'], desc: 'A thick, battle-scarred hide stripped from a slain alpha gar-wolf.' },
+        dabinggiHoundMeat: { icon: '🥩', label: 'Dabinggi-hound Meat', cat: 'material', sellPrice: 8, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a fallen dabinggi-hound.' },
+        dabinggiHoundHide: { icon: '🟫', label: 'Dabinggi-hound Hide', cat: 'material', sellPrice: 12, tags: ['Material', 'Hide'], desc: 'A soft hide stripped from a fallen dabinggi-hound.' },
         uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
         bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
         hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
@@ -14853,6 +15070,7 @@
             updateCompanions(dt);
             updateHostileSpawning(dt);
             updateHostiles(dt);
+            updateCorpses(dt);
           }
 
           // Interior exit detection: player walks south through exit door
@@ -16112,7 +16330,10 @@
         const reticle = getReticleTile();
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 
-        const obj = currentArea === 'farm' ? getWorldObjectAt(reticle.col, reticle.row) : null;
+        // Was farm-only (world objects didn't exist elsewhere) — now
+        // unconditional so a lootable corpse's identity in any area (zones
+        // included) still invalidates the cache and rebuilds its button.
+        const obj = getWorldObjectAt(reticle.col, reticle.row);
         const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
         const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
         const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction() : 'none';
@@ -17423,6 +17644,9 @@
         beginCombatLunge,
         spawnCombatTrailEffect,
         spawnBurstEffect,
+        playCreatureBark,
+        playCreatureClawHit,
+        playWeaponSlashSfx,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module

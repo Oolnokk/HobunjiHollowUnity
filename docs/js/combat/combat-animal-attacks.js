@@ -25,6 +25,7 @@
     const state = {};
     def.start(c, state, ctx, window.Combat.deps);
     c._animalAttack = { def, state };
+    window.Combat.deps?.playCreatureBark?.(c);
     return true;
   }
 
@@ -153,6 +154,7 @@
       if (!deps.inCone(headX, headY, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad)) continue;
       if (target.isPlayer) deps.damagePlayer(state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S);
       else deps.damageCreature(ref, state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S);
+      deps.playCreatureClawHit?.(c);
       return false; // hit landed; stop in place
     }
     return true;
@@ -223,6 +225,7 @@
       if (!deps.inCone(headX, headY, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad)) continue;
       if (target.isPlayer) deps.damagePlayer(0, headX, headY, GUARD_CHARGE_KNOCKBACK_PX_S);
       else deps.damageCreature(ref, 0, headX, headY, GUARD_CHARGE_KNOCKBACK_PX_S);
+      deps.playCreatureClawHit?.(c);
       return false; // hit landed; stop in place
     }
     return state.traveledPx < state.distancePx;
