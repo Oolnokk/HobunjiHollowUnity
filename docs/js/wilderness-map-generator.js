@@ -5588,6 +5588,70 @@
     }
   }
 
+  // hobunjiPlateauGroupsByPaintedFootprint()'s own tiny-group filter (>=4
+  // interior, >=10 total footprint) exists to drop stray brush-stamp
+  // fragments, not to guarantee every surviving group *reads* as a real
+  // plateau — a lot of groups clear that bar at 10-20 tiles, which is a
+  // small rock outcrop, not a tier a player would recognize as "a plateau."
+  // Folded together with several of these per map, the one genuinely large
+  // group ends up looking like the only tier that exists, with the rest
+  // reading as clutter. Drop anything under minTiles here (well above the
+  // tool's own bar) and revert its cells to plain ground, including any
+  // ramp that was built specifically to climb to it.
+  function filterSmallPlateauGroups(workspace, minTiles) {
+    const root = workspace.maps[0];
+    const groupTileCounts = new Map();
+    for (const record of Object.values(root.tiles)) {
+      if (record.plateau) groupTileCounts.set(record.plateau, (groupTileCounts.get(record.plateau) || 0) + 1);
+    }
+    const droppedGroupIds = new Set(
+      workspace.plateauGroups.filter(g => (groupTileCounts.get(g.id) || 0) < minTiles).map(g => g.id)
+    );
+    if (!droppedGroupIds.size) return;
+    workspace.plateauGroups = workspace.plateauGroups.filter(g => !droppedGroupIds.has(g.id));
+    workspace.maps = workspace.maps.filter(m => !(m.isSubmap && droppedGroupIds.has(m.plateauGroupId)));
+    workspace.ramps = workspace.ramps.filter(r => !droppedGroupIds.has(r.sharedPlateauGroupId));
+    for (const record of Object.values(root.tiles)) {
+      if (record.plateau && droppedGroupIds.has(record.plateau)) delete record.plateau;
+      if (record.type === 'ramp' && droppedGroupIds.has(record.rampSharedPlateauGroupId)) {
+        record.type = 'grass';
+        delete record.rampElevation; delete record.rampSharesPlateau; delete record.rampSharedPlateauGroupId;
+        delete record.rampLandingContact; delete record.rampLane; delete record.rampWidthMode;
+      }
+    }
+  }
+
+  // generateCliffSkirts() marks a skirt wherever ANY neighboring tiles differ
+  // by >=0.75 height — not just at a real plateau's edge, but at every
+  // border-escarpment/natural-terrain gradient step too, since the tool's own
+  // continuous heightfield has plenty of those on ordinary ground. The game's
+  // fold (mergeZoneTiles) keeps every cliffSkirt tile as solid rock (see the
+  // matching comment there), so left unfiltered this reads as rock smeared
+  // across a large fraction of the map instead of a thin band right at
+  // actual cliff bases. Only keep the tag within `radius` tiles of a
+  // surviving plateau's own footprint — exactly the "grass growing on the
+  // cliff" case this was added to fix — and let the fold's existing
+  // untagged-rock reclaim turn everything else back to grass as it always did.
+  function restrictCliffSkirtToPlateauEdges(workspace, radius) {
+    const root = workspace.maps[0];
+    const plateauCells = new Set();
+    for (const [key, record] of Object.entries(root.tiles)) {
+      if (record.plateau) plateauCells.add(key);
+    }
+    for (const [key, record] of Object.entries(root.tiles)) {
+      if (!record.cliffSkirt) continue;
+      if (!plateauCells.size) { delete record.cliffSkirt; continue; }
+      const [c, r] = key.split(',').map(Number);
+      let near = false;
+      for (let dr = -radius; dr <= radius && !near; dr++) {
+        for (let dc = -radius; dc <= radius; dc++) {
+          if (plateauCells.has(`${c + dc},${r + dr}`)) { near = true; break; }
+        }
+      }
+      if (!near) delete record.cliffSkirt;
+    }
+  }
+
   // One-call flow for the game's Tothal Shift: generate a zone's map with its
   // preset and leave the tool's own export untouched — including its hidden
   // reachability stitches (navRamp tiles), which stay exactly what the tool
@@ -5609,6 +5673,8 @@
     const preset = zonePreset(zoneMapId) || {};
     const workspace = generateWorkspace(seedText, preset);
     const root = workspace.maps[0];
+    filterSmallPlateauGroups(workspace, options.minPlateauTiles ?? 35);
+    restrictCliffSkirtToPlateauEdges(workspace, options.cliffSkirtRadius ?? 2);
     // The entry gate's own footprint (matching openBorderEntryGate()'s own
     // clear depth, plus one tile of margin) must always fold as plain
     // ground — see clearFootprintAt.
