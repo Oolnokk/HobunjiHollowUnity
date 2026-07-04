@@ -2296,11 +2296,11 @@
       // settles lying flat on that tile, and stays there as a lootable
       // corpse (see getCorpseObjectAt) until the player butchers it —
       // that's the only thing that actually despawns the sprite.
-      const DEATH_LERP_DURATION_S = 1.05;
+      const DEATH_LERP_DURATION_S = 2.2;
       const DEATH_TUMBLE_TILES_MIN = 1.1;
       const DEATH_TUMBLE_TILES_MAX = 2.6;
       const DEATH_AIM_CONE_RAD = 50 * Math.PI / 180;
-      const DEATH_HOP_HEIGHT_PX = TILE * 0.9;
+      const DEATH_HOP_HEIGHT_PX = TILE * 1.1;
 
       // Walks outward from the creature's own tile within a cone around
       // awayAngle (the direction the killing blow traveled), looking for a
@@ -2329,25 +2329,43 @@
         c.deathTargetX = rest.x; c.deathTargetY = rest.y;
         c.corpseCol = rest.col; c.corpseRow = rest.row;
         c.deathHopHeightPx = DEATH_HOP_HEIGHT_PX * (0.7 + Math.random() * 0.6);
-        // Randomized per death so no two creatures flop the same way —
-        // magnitudes are extra full turns layered on top of the final
-        // resting tilt (see updateCorpses).
-        c.deathSpinX = (Math.random() < 0.5 ? -1 : 1) * (1.5 + Math.random() * 1.5);
-        c.deathSpinZ = (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.8);
-        c.deathSpinY = (Math.random() < 0.5 ? -1 : 1) * Math.random();
-        c.deathRestRotX = (Math.random() < 0.5 ? -1 : 1) * (Math.PI / 2 + (Math.random() * 0.2 - 0.1));
-        c.deathRestRotZ = (Math.random() * 2 - 1) * 0.35;
+        // The avatar's flat cutout plane has its face-normal along the
+        // group's own local X axis at rest (see buildAnimalPlaneAvatarModel:
+        // frontPlane.rotation.y = +PI/2, backPlane.rotation.y = -PI/2 — a
+        // standing side-view cutout, not a volumetric cross). Rotating the
+        // GROUP about its local Z axis by exactly +PI/2 is what tips that
+        // face-normal from horizontal up to vertical (+Y) — i.e. actually
+        // lying flat, face-up, not just spinning in place — so Z carries the
+        // one rotation that MUST land on a fixed value; the extra "flip"
+        // turns layered on top (deathFlipTurns) are whole multiples of 2π so
+        // they never land the plane face-down. Y (yaw/compass heading) and X
+        // (a small final roll) can be anything — neither affects flatness —
+        // so they're free to carry their own cosmetic spin for a fuller
+        // ragdoll tumble without risking the landing.
+        c.deathRestRotZ = Math.PI / 2;
+        c.deathRestRotX = (Math.random() * 2 - 1) * 0.22;
         c.deathRestRotY = Math.random() * Math.PI * 2;
+        c.deathFlipTurns   = (Math.random() < 0.5 ? -1 : 1) * (1 + Math.floor(Math.random() * 2)); // whole turns only
+        c.deathWobbleTurns = (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 0.7);
+        c.deathYawTurns    = (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 0.9);
         c.scaleY = 1;
         c.avatarRef.group.scale.y = 1;
+        // Snap the cutout's two planes back to the exact pose they were
+        // built with, undoing any camera-relative deadzone drift
+        // (updateCreatureMesh's pngRot/perpState smoothing) frozen in at the
+        // moment of death — otherwise the corpse lands a few degrees off
+        // "flat" instead of showing its clean flat face.
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = Math.PI / 2;
+        if (c.avatarRef.backPlane)  c.avatarRef.backPlane.rotation.y  = -Math.PI / 2;
         corpseObjects.add(c);
       }
 
       // Drives every 'dying' corpse's flight from where it died to its
       // resting tile: position eases (fast launch, soft landing) along a
-      // vertical hop arc, while rotation.x/y/z each spin through a random
-      // number of extra full turns on top of the final lying-flat pose so
-      // the tumble decelerates smoothly into it instead of just snapping.
+      // vertical hop arc, while rotation.x/y/z ease toward their final pose
+      // (Z fixed at lying-flat, X/Y free) with extra whole/partial turns
+      // layered on top for a dramatic multi-axis tumble that still lands
+      // exactly on the flat pose every time.
       function updateCorpses(dt) {
         for (const c of corpseObjects) {
           if (c.state !== 'dying' || c.areaId !== currentArea) continue;
@@ -2369,9 +2387,12 @@
           grp.position.z = c.y / TILE;
           grp.position.y = surfY + restHeight + (c.halfHeight - restHeight) * (1 - ease) + hop;
 
-          grp.rotation.x = (c.deathRestRotX + c.deathSpinX * Math.PI * 2) * ease;
-          grp.rotation.z = (c.deathRestRotZ + c.deathSpinZ * Math.PI * 2) * ease;
-          grp.rotation.y = c.groupRot + (c.deathRestRotY + c.deathSpinY * Math.PI * 2 - c.groupRot) * ease;
+          // Z is the axis that actually tips the cutout's flat face from
+          // vertical to lying-flat-face-up (see beginCreatureDeath) — X/Y
+          // are free cosmetic spin that never affects whether it lands flat.
+          grp.rotation.z = (c.deathRestRotZ + c.deathFlipTurns * Math.PI * 2) * ease;
+          grp.rotation.x = (c.deathRestRotX + c.deathWobbleTurns * Math.PI * 2) * ease;
+          grp.rotation.y = c.groupRot + (c.deathRestRotY + c.deathYawTurns * Math.PI * 2 - c.groupRot) * ease;
 
           if (t >= 1) {
             c.state = 'corpse';
