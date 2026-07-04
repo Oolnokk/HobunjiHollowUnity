@@ -1052,6 +1052,13 @@
         // vertical arc (world-Y units, not pixels) for the charged breaker's leap.
         lunging: false, lungeT: 0, lungeDur: 0, lungeStartX: 0, lungeStartY: 0,
         lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0,
+        // Cliff climbing — see startClimb()/updateMovement. A scripted crossing
+        // (no stamina cost, no terrain collision) rendered as a chain of
+        // staggered hops rather than a continuous slide; climbSurfaceY/
+        // climbHopBounce are consumed by updatePlayerMesh for the vertical rise.
+        climbing: false, climbElapsed: 0, climbHopCount: 0,
+        climbStartX: 0, climbStartY: 0, climbEndX: 0, climbEndY: 0,
+        climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
       };
 
       // Combat tuning is config-backed so tool hit cones, stamina costs, trails,
@@ -1106,6 +1113,9 @@
 
       // Global creature database — companions (whistle-bound) and hostiles
       // (ambient-spawned) are both built from this table.
+      // canClimb/canSwim: default false — a creature without the tag can't
+      // enter an incline (cliff wall) or river/stream tile at all, in either
+      // direction (up, down, or straight across). See moveCreatureToward.
       const CREATURE_DB = {
         'dabinggi-hound': {
           label: 'Dabinggi-hound', hostile: false,
@@ -1114,6 +1124,7 @@
           attackDamage: 10, attackRangePx: TILE * 0.9, attackHalfConeRad: 45 * Math.PI / 180,
           attackStaminaCost: 14, attackCooldownS: 1.1,
           attacks: ['pounce'],
+          canClimb: false, canSwim: false,
           modelWidth: 1.9, tint: 0xffffff,
           sprites: {
             idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
@@ -1133,6 +1144,7 @@
           // the target at range before cycling back to another Pounce attempt.
           behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6.2, leashRangePx: TILE * 9,
+          canClimb: false, canSwim: false,
           modelWidth: 2.1, tint: 0xffffff,
           sprites: {
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
@@ -1148,6 +1160,7 @@
           attacks: ['pounce'],
           behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 7, leashRangePx: TILE * 10,
+          canClimb: false, canSwim: false,
           modelWidth: 3.1, tint: 0xffb0a0,
           sprites: {
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
@@ -1179,6 +1192,32 @@
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
+        },
+        // Western Slope/Eastern Mire have always had real authored layouts in
+        // town-workspace-v1.json (unlike the two placeholder zones above), but
+        // never got an EXTERIOR_ZONES entry of their own — so their "back to
+        // town" ring (which reads zdef.townReturnCol/Row, not zoneData) sent
+        // the player to clamp(undefined, ...) === NaN. townReturnCol/Row below
+        // are one tile inside town from that zone's own town-side transition
+        // spot (spot_2vsub at col 0, row 25 / spot_d33e9 at col 59, row 25 in
+        // hobunji_hollow_town.map.json). entryCol/Row/exitCol/Row match the
+        // authored zone's own "To Hobunji Hollow" spot (sp_wslope_e / sp_emi_west)
+        // — one gate tile serving both directions, same as the two zones above.
+        map_western_slope: {
+          label: 'Western Slope',
+          cols: 50, rows: 40,
+          groundColor: 0x6b6a52, fogColor: 0x35342a,
+          entryCol: 48, entryRow: 20,
+          exitCol: 48, exitRow: 20,
+          townReturnCol: 1, townReturnRow: 25,
+        },
+        map_eastern_mire: {
+          label: 'Eastern Mire',
+          cols: 50, rows: 40,
+          groundColor: 0x3a4a3a, fogColor: 0x22301f,
+          entryCol: 1, entryRow: 20,
+          exitCol: 1, exitRow: 20,
+          townReturnCol: 58, townReturnRow: 25,
         },
       };
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
@@ -2316,17 +2355,36 @@
         playFootstepSfx(c.areaId, type, falloff, pan);
       }
 
+      // Narrow terrain gate for creature movement — unlike tileSpeedAt (used by
+      // the player), this only cares about cliff faces and water crossings, so
+      // untagged creatures keep wandering over rock/shrub exactly as before.
+      // canClimb/canSwim on the creature's CREATURE_DB entry opt out per type.
+      function creatureCanEnterTile(def, wx, wy) {
+        const aC = getActiveCols(), aR = getActiveRows();
+        if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
+        const tile = getActiveGrid()[Math.floor(wy / TILE)][Math.floor(wx / TILE)];
+        if (tile.incline && !def?.canClimb) return false;
+        if ((tile.type === TileType.RIVER || tile.type === TileType.STREAM) && !def?.canSwim) return false;
+        return true;
+      }
+
       function moveCreatureToward(c, tx, ty, speed, dt) {
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
         const nx = dx / dist, ny = dy / dist;
         const step = Math.min(dist, speed * dt);
-        c.x += nx * step;
-        c.y += ny * step;
+        // Axis-separated so a creature turned back by a cliff face or river
+        // slides along it instead of freezing outright (mirrors the player's
+        // collision in updateMovement).
+        const prevX = c.x, prevY = c.y;
+        const desiredX = c.x + nx * step, desiredY = c.y + ny * step;
+        if (creatureCanEnterTile(c.def, desiredX, c.y)) c.x = desiredX;
+        if (creatureCanEnterTile(c.def, c.x, desiredY)) c.y = desiredY;
+        const moved = Math.hypot(c.x - prevX, c.y - prevY);
         c.vx = nx * speed; c.vy = ny * speed;
-        tickCreatureFootsteps(c, step);
-        return true;
+        if (moved > 0) tickCreatureFootsteps(c, moved);
+        return moved > 0;
       }
 
       function wanderTick(c, dt, anchorX, anchorY, radiusPx) {
@@ -2640,6 +2698,25 @@
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+
+          if (player.climbing) {
+            // Teleport-and-stick: an untagged companion can't path through an
+            // incline tile on its own (see CREATURE_DB canClimb / moveCreatureToward),
+            // so for the duration of the climb it just clings to the player's
+            // back instead of trying to follow normally.
+            const backAngle = player.angle + Math.PI;
+            c.x = player.x + Math.cos(backAngle) * TILE * 0.35;
+            c.y = player.y + Math.sin(backAngle) * TILE * 0.35;
+            c.facing = player.angle;
+            c.vx = 0; c.vy = 0;
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, false);
+            // Pin to the player's actual climb-blended height rather than the
+            // incline tile's raw (unblended) surface — see updatePlayerMesh.
+            c.avatarRef.group.position.y = playerMesh.position.y + c.halfHeight * 0.5;
+            continue;
+          }
+
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
           c.stamina = Math.min(c.maxStamina, c.stamina + c.maxStamina * 0.25 * dt);
@@ -2754,6 +2831,179 @@
         hostileObjects.forEach(c => despawnCreature(c));
         hostileObjects.clear();
       }
+
+      // ── Tothal Shift ────────────────────────────────────────────────
+      // A yearly reroll of the seed behind all four wilderness maps (Northern
+      // Cliffs, Southern Cloud Forest, Western Slope, Eastern Mire) — in lore
+      // terms, the wilderness itself reshapes at the turn of the year. This
+      // reproduces exactly what the Wilderness Map Generator tool's "Export"
+      // → Map Editor's "Import" round-trip would do to a zone map: a random
+      // seed and the zone's own entry side (so the gate still faces Hobunji
+      // Hollow) are the only inputs, everything else is the standalone tool's
+      // stock defaults, with zero post-processing — the generator's headless
+      // core (docs/js/wilderness-map-generator.js) hands its export straight
+      // to the same plateau/ramp fold math the Map Editor's live preview
+      // already uses (docs/js/terrain-preview.js), and the game renders it
+      // exactly as it would an authored map. A handful of authored building
+      // entrances (Researcher's Tent, Little Swamp House) don't exist in the
+      // wilderness tool's own vocabulary, so they're re-attached at their
+      // original coordinates after every shift — whatever terrain the
+      // generator happened to draw there stays as-is, same as any other
+      // generated tile.
+      const TOTHAL_PRESERVED_TRANSITIONS = {
+        map_northern_cliffs: [{ id: 'sp_ncl_tent', label: "Researcher's Tent", col: 35, row: 29, targetMapId: 'map_i_researchers_tent', targetSpotId: 'sp_tent_entry' }],
+        map_eastern_mire: [{ id: 'sp_emi_swamp', label: 'Little Swamp House', col: 34, row: 29, targetMapId: 'map_i_swamp_house', targetSpotId: 'sp_swp_entry' }],
+      };
+
+      function currentTothalYear() {
+        return Math.floor((calendar.day - 1) / (SEASON_LENGTH_DAYS * seasons.length)) + 1;
+      }
+
+      function _tothalWorldId() {
+        return (window.__hobunjiPlayerProfile || _playerData)?.worldId || null;
+      }
+
+      // Reads/writes the Tothal year directly on the world's hobunjiSaveMeta
+      // entry — mirrors saveGearInventory()'s pattern of touching localStorage
+      // straight from game.js rather than round-tripping through onboarding.js.
+      function _loadTothalYear() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return null;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.lastTothalYear ?? null;
+        } catch { return null; }
+      }
+
+      function _saveTothalYear(year) {
+        const worldId = _tothalWorldId();
+        if (!worldId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.lastTothalYear = year;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
+      let _tothalShiftInFlight = false;
+      // Set while a shift is running so enterZone() can wait for it instead
+      // of building a zone scene from the about-to-be-replaced authored/prior
+      // layout — without this, a player who reaches a wilderness zone within
+      // the first few seconds of a shift (most likely right at world start)
+      // would see last year's map for that visit.
+      let _tothalShiftPromise = null;
+
+      // Regenerates all four wilderness zones for the given Tothal year and
+      // saves that year to the world file so a reload doesn't reroll again.
+      // Seeded from the world id + year + zone, so the same world reliably
+      // regrows the same wilderness for that year on every load.
+      async function performTothalShift(year) {
+        if (typeof WildernessMapGenerator === 'undefined') {
+          debugLog('Tothal Shift skipped: wilderness-map-generator.js not loaded', 'warn');
+          return;
+        }
+        if (_tothalShiftInFlight) return;
+        _tothalShiftInFlight = true;
+        const worldId = _tothalWorldId() || 'default';
+        const terrainPreview = (typeof TerrainPreview !== 'undefined') ? TerrainPreview : null;
+        debugLog(`Tothal Shift: rerolling wilderness for year ${year} (world ${worldId})`);
+        try {
+          for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
+            const seed = `${worldId}_tothal_y${year}_${zoneId}`;
+            const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
+            let workspace;
+            try {
+              // Random seed, entry side set per zone — otherwise the tool's own
+              // defaults, no post-processing. This is meant to be exactly what
+              // a human would get generating a map with the standalone tool and
+              // importing it into the Map Editor by hand.
+              workspace = WildernessMapGenerator.generateZoneWorkspace(zoneId, seed);
+            } catch (e) {
+              debugLog(`Tothal Shift: generation failed for ${zoneId}: ${e.message}`, 'warn');
+              continue;
+            }
+            const root = workspace.maps[0];
+            let merged;
+            try {
+              merged = terrainPreview ? terrainPreview.buildMergedZoneGrid(workspace, root.id) : null;
+            } catch (e) {
+              debugLog(`Tothal Shift: fold failed for ${zoneId}: ${e.message}`, 'warn');
+              continue;
+            }
+            if (!merged) { debugLog(`Tothal Shift: no fold math available for ${zoneId}, skipping`, 'warn'); continue; }
+
+            const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
+            _zoneLayouts.set(zoneId, {
+              cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
+              transitions: preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
+              toTownExit, mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
+            });
+            // Entering from town has no authored spawn coordinate of its own
+            // (see EXTERIOR_ZONES' comment) — it always falls back to
+            // zdef.entryCol/Row, so keep that pinned to this shift's own entry gate.
+            if (EXTERIOR_ZONES[zoneId] && workspace.entry) {
+              EXTERIOR_ZONES[zoneId].entryCol = workspace.entry.col;
+              EXTERIOR_ZONES[zoneId].entryRow = workspace.entry.row;
+            }
+            if (currentArea === zoneId) _dirtyZoneScenes.add(zoneId);
+            else _disposeZoneScene(zoneId);
+            debugLog(`Tothal Shift: ${zoneId} reshaped (entry ${workspace.entry?.side ?? '?'} at ${workspace.entry?.col ?? '?'},${workspace.entry?.row ?? '?'})`);
+            await new Promise(resolve => setTimeout(resolve, 0)); // yield between zones
+          }
+          clearHostileObjects();
+          _saveTothalYear(year);
+          // showToast is a plain DOM update (no dependency on avatar/gameStarted
+          // state), and this can legitimately finish before spawnPlayerAvatar's
+          // own async avatar setup does — always show it rather than gating on
+          // gameStarted and risking the toast silently getting swallowed by that race.
+          showToast('The Tothal Shift has reshaped the wilderness...', true);
+          debugLog(`Tothal Shift complete for year ${year}`);
+        } finally {
+          _tothalShiftInFlight = false;
+        }
+      }
+
+      // Called at world start and on every day advance — a no-op unless the
+      // Tothal year has actually changed since this world last shifted, or
+      // ?tothal=force is in the URL (or window.forceTothalShift() was called
+      // from devtools) — useful for testing, since a world that already
+      // shifted this year otherwise stays untouched on every reload.
+      function checkTothalShift(force = false) {
+        const year = currentTothalYear();
+        const forceQuery = new URLSearchParams(location.search).get('tothal') === 'force';
+        if (!force && !forceQuery && _loadTothalYear() === year) return;
+        _tothalShiftPromise = performTothalShift(year)
+          .catch(e => debugLog('Tothal Shift error: ' + e.message, 'warn'))
+          .finally(() => { _tothalShiftPromise = null; });
+      }
+      window.forceTothalShift = () => checkTothalShift(true);
+
+      // Devtools/QA hook for the cliff-climbing feature — mirrors
+      // window.forceTothalShift's role of poking otherwise-input-driven
+      // state from a console/automated test.
+      window.__climbDebug = {
+        getPlayer: () => player,
+        getClimbTarget,
+        startClimb,
+        getActiveGrid,
+        getCurrentArea: () => currentArea,
+        enterZone,
+        companionObjects,
+        hostileObjects,
+        creatureCanEnterTile,
+        CREATURE_DB,
+        TileType,
+        getCameraDebug: () => ({
+          camPos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+          camTarget: { x: camTargetX, y: camTargetY, z: camTargetZ },
+          occlusionMeshCount: _zoneScenes.get(currentArea)?.occlusionMeshes?.length ?? null,
+        }),
+        occlusionSafeCameraPosition,
+        updateCameraPosition,
+        snapCameraTarget: _snapCameraTarget,
+      };
 
       // Ambient hostile spawning — lives entirely inside the exterior zones now
       // (southern cloud forest → Gar-wolf, northern cliffs → Gar-wolf Alpha).
@@ -2877,6 +3127,9 @@
       // not a free-orbit camera.
       let cameraAzimuthOffsetDeg = 0;
       let cameraAngleOffsetDeg   = 0;
+      // Reused every frame by occlusionSafeCameraPosition — a fresh
+      // THREE.Raycaster per call would just be needless per-frame garbage.
+      const _cameraOcclusionRaycaster = new THREE.Raycaster();
       // Camera azimuth (radians, rotated from due-south toward east) for the active
       // mode. Everything except "fishing" stays at 0 (camera due south, as before).
       function activeCameraAzimuthRad() {
@@ -2960,6 +3213,13 @@
       // _townRiverWaterMeshes but per zone map, since a zone's water tiles never
       // share the town's flat single-tier grid.
       const _zoneWaterMeshes = new Map();
+      // mapIds whose _zoneLayouts entry was replaced by a Tothal Shift (see
+      // performTothalShift) while the player was standing inside that same
+      // zone — rebuilding the live THREE.Scene out from under them mid-visit
+      // would drop them through changed terrain, so the stale cached scene is
+      // left alone and only torn down (via _disposeZoneScene, in
+      // buildZoneScene) the next time that map is entered fresh.
+      const _dirtyZoneScenes = new Set();
       // Surface Y for a tile actually standing inside an exterior zone. Plateau
       // sub-maps are purely an authoring convenience in the Map Editor — in-game
       // every tier of a plateau stack is merged into its root zone's single grid,
@@ -3557,6 +3817,7 @@
       }
 
       function buildZoneScene(mapId) {
+        if (_dirtyZoneScenes.has(mapId)) { _disposeZoneScene(mapId); _dirtyZoneScenes.delete(mapId); }
         if (_zoneScenes.has(mapId)) return _zoneScenes.get(mapId);
         const zdef = EXTERIOR_ZONES[mapId];
         const zoneData = _zoneLayouts.get(mapId);
@@ -3702,7 +3963,10 @@
         buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
-        _zoneWaterMeshes.set(mapId, buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId));
+        _zoneWaterMeshes.set(mapId, [
+          ...buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
+          ...buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
+        ]);
 
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
         buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId);
@@ -3726,7 +3990,14 @@
           zScene.add(ring);
         }
 
-        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions };
+        // Meshes tall enough to get between the fixed follow camera and the
+        // player (plateau mesas, cliff-face rock skins — see their own
+        // `.userData.cameraObstacle` tags) — collected once here rather than
+        // walking the whole scene graph every frame in updateCameraPosition.
+        const occlusionMeshes = [];
+        zScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+
+        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes };
         _zoneScenes.set(mapId, info);
         _spawnZoneBuildings(mapId);
         _spawnZoneDecorFurniture(mapId);
@@ -3932,6 +4203,11 @@
         const mesh = new THREE.Mesh(geo, tileMats.grass);
         mesh.receiveShadow = true;
         zScene.add(mesh);
+        // A plateau's own lid+skin is the primary way the fixed follow camera
+        // (see updateCameraPosition) can end up with something tall between
+        // itself and the player — flagged so buildZoneScene can collect it
+        // for the occlusion raycast.
+        mesh.userData.cameraObstacle = true;
 
         // Steep plateau rock is now emitted by buildRockFormationMeshes, which
         // unions plateau cliffs with ramp side rock before rendering.
@@ -4122,6 +4398,7 @@
         mesh.receiveShadow = true;
         zScene.add(mesh);
         _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.ROCK));
+        mesh.userData.cameraObstacle = true; // vertical cliff-face skin — see buildPlateauMesa's own tag
         console.log(`%c[zone:${mapId}] solved rock formation built: ${spans.size} edge span(s)`, 'color:#22c55e;font-weight:bold');
       }
 
@@ -4193,6 +4470,63 @@
 
         console.log(`%c[zone:${mapId}] waterfall wall built: ${cells.length} cell(s)`, 'color:#22c55e;font-weight:bold');
         return [mesh];
+      }
+
+      // River/stream/waterfall water surface — an animated translucent plane
+      // sitting above the sunken bed built in buildZoneScene's tile loop, so a
+      // zone's waterways read as real water instead of just their bare bed
+      // color. Mirrors _townRiverWaterMeshes (built in buildTownScene), but
+      // each plane also carries its own tile's elevTier — a zone's water can
+      // sit on any plateau tier, unlike town's single flat grid — and a
+      // WATERFALL cell gets one too (the pool at the top/bottom of its
+      // curtain from buildWaterfallCurtainMeshes above), not just plain
+      // river/stream cells.
+      function buildZoneRiverWaterMeshes(zScene, zGrid, zcols, zrows, mapId) {
+        const isWaterTile = (cc, rr) => {
+          const t = zGrid[rr]?.[cc]?.type;
+          return t === TileType.RIVER || t === TileType.STREAM || t === TileType.WATERFALL;
+        };
+        const meshes = [];
+        for (let r = 0; r < zrows; r++) for (let c = 0; c < zcols; c++) {
+          const tile = zGrid[r][c];
+          if (!isWaterTile(c, r)) continue;
+          let fx = (isWaterTile(c + 1, r) ? 1 : 0) - (isWaterTile(c - 1, r) ? 1 : 0);
+          let fz = (isWaterTile(c, r + 1) ? 1 : 0) - (isWaterTile(c, r - 1) ? 1 : 0);
+          const flen = Math.hypot(fx, fz);
+          if (flen > 0.001) { fx /= flen; fz /= flen; } else { fx = 0; fz = 0; }
+          const deep = tile.type !== TileType.STREAM;
+          const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+          const mat = new THREE.ShaderMaterial({
+            uniforms: {
+              uTime:  { value: 0 },
+              uPhase: { value: (c * 2.7 + r * 4.1) % 6.28 },
+              uDepth: { value: deep ? 0.8 : 0.45 },
+              uFlow:  { value: new THREE.Vector2(fx, fz) },
+              uColor: { value: new THREE.Color(deep ? 0x1f6f9c : 0x4fb8d9) },
+            },
+            vertexShader:   waterVertShader,
+            fragmentShader: waterFragShader,
+            transparent:    true,
+            depthWrite:     false,
+            side:           THREE.FrontSide,
+          });
+          // A dedicated PlaneGeometry per mesh (not the shared module-level
+          // waterGeo used by farm/town) — _disposeZoneScene disposes every
+          // mesh's geometry when a zone is torn down (e.g. on a Tothal
+          // Shift), and that would take the shared geometry down with it,
+          // breaking every other scene still using it. rotateX matches
+          // waterGeo's own baked-in orientation so the plane lies flat.
+          const geo = new THREE.PlaneGeometry(1.0, 1.0);
+          geo.rotateX(-Math.PI / 2);
+          const wm = new THREE.Mesh(geo, mat);
+          wm.receiveShadow = false;
+          wm.position.set(c + 0.5, NORMAL_TOP + tierY - (deep ? 0.10 : 0.05), r + 0.5);
+          zScene.add(wm);
+          _markTerrainEdgeId(wm, 'water');
+          meshes.push(wm);
+        }
+        if (meshes.length) console.log(`%c[zone:${mapId}] river/stream/waterfall water surface built: ${meshes.length} tile(s)`, 'color:#22c55e;font-weight:bold');
+        return meshes;
       }
 
       // Grass billboard tufts for a zone — mirrors _buildTownGrassBillboards but
@@ -6081,7 +6415,14 @@
       }
 
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
-      function enterZone(mapId, defaultCol, defaultRow) {
+      async function enterZone(mapId, defaultCol, defaultRow) {
+        // A Tothal Shift in progress is about to replace this zone's layout —
+        // wait for it so the player lands on the freshly reshaped map instead
+        // of whatever was cached (or authored) a moment before the shift.
+        if (_tothalShiftPromise) {
+          showToast('The wilds are still settling into shape…', true);
+          await _tothalShiftPromise;
+        }
         const zdef = EXTERIOR_ZONES[mapId];
         if (!zdef && !_zoneLayouts.has(mapId)) return;
         const zi = buildZoneScene(mapId);
@@ -6402,6 +6743,26 @@
           registerFurnitureSfxSource(mapId, f.col + 0.5, f.row + 0.5, resolveFurnitureSfx(def));
         }
         debugLog(`_spawnZoneDecorFurniture(${mapId}): built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
+      }
+
+      // Tears down a previously built zone scene so buildZoneScene(mapId)'s
+      // cache check falls through and rebuilds it from whatever's now in
+      // _zoneLayouts — used by a Tothal Shift to apply newly generated
+      // wilderness terrain. Only disposes geometries; tileMats/houseWallBuilder
+      // materials are shared across every map and must outlive this.
+      function _disposeZoneScene(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        if (zi?.scene) zi.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+        _zoneScenes.delete(mapId);
+        _zoneWaterMeshes.delete(mapId);
+        const buildingGroups = _zoneBuildingGroups.get(mapId);
+        if (buildingGroups) for (const { group } of buildingGroups) group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+        _zoneBuildingGroups.delete(mapId);
+        const decorFurniture = _zoneDecorFurnitureGroups.get(mapId);
+        if (decorFurniture) for (const obj of decorFurniture) obj.traverse?.(o => { if (o.geometry) o.geometry.dispose(); });
+        _zoneDecorFurnitureGroups.delete(mapId);
+        _zoneBuildingsGlbUpgradePending.delete(mapId);
+        for (const source of _furnitureSfxSources.filter(s => s.area === mapId)) unregisterFurnitureSfxSource(source);
       }
 
       function buildTownScene() {
@@ -8277,6 +8638,11 @@
 
         const _fsPrevX = player.x, _fsPrevY = player.y;
 
+        if (player.climbing) {
+          updateClimb(dt);
+          return;
+        }
+
         if (player.dodging) {
           player.dodgeT -= dt;
           const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
@@ -9001,6 +9367,12 @@
 
       function useActiveAction() {
         if (dialogueOpen) { advanceNpcDialogue(); return; }
+        if (activeAction === 'climb') {
+          if (player.climbing) return;
+          const climb = getClimbTarget();
+          if (climb) startClimb(climb); else showToast('Nothing to climb here.', false);
+          return;
+        }
         if (activeTool === 'shovel' || activeTool === 'pick') {
           activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
         }
@@ -9142,6 +9514,94 @@
         const y = Math.sin(angle);
         if (Math.abs(x) > Math.abs(y)) return { x: Math.sign(x), y: 0, name: x > 0 ? 'east' : 'west' };
         return { x: 0, y: Math.sign(y), name: y > 0 ? 'south' : 'north' };
+      }
+
+      // Cliff climbing: the player must be facing straight into a plateau's
+      // auto-reserved incline wall (see mergeZoneTiles) from solid ground,
+      // with an actual walkable tile at a different elevation tier on the far
+      // side — otherwise there's nothing to climb. Works either direction
+      // (climbing up onto a plateau or back down off one uses the same check).
+      const CLIMB_MAX_WALL_TILES = 4;
+      function getClimbTarget() {
+        if (!_isZoneArea(currentArea)) return null;
+        const dir = facingCardinal(player.angle);
+        const grid = getActiveGrid();
+        const aC = getActiveCols(), aR = getActiveRows();
+        const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
+        const startTile = grid[startRow]?.[startCol];
+        if (!startTile || startTile.incline) return null;
+        const startElevTier = startTile.elevTier || 0;
+        let col = startCol, row = startRow, wallTiles = 0;
+        for (let steps = 0; steps < CLIMB_MAX_WALL_TILES; steps++) {
+          col += dir.x; row += dir.y;
+          if (col < 0 || row < 0 || col >= aC || row >= aR) return null;
+          const t = grid[row][col];
+          if (!t) return null;
+          if (!t.incline) {
+            if (wallTiles === 0) return null; // nothing but open ground ahead
+            if (isSolid(t.type)) return null;
+            if ((t.elevTier || 0) === startElevTier) return null;
+            return { dir, landCol: col, landRow: row, startElevTier, landElevTier: t.elevTier || 0, wallTiles };
+          }
+          wallTiles++;
+        }
+        return null;
+      }
+
+      // Scripted cliff crossing — bypasses tileSpeedAt/canPlayerOccupy entirely
+      // (it deliberately walks through incline tiles that are otherwise
+      // impassable) and drains no stamina. See updateClimb for the per-frame
+      // staggered-hop motion.
+      const CLIMB_HOP_ACTIVE_S = 0.32;
+      const CLIMB_HOP_PAUSE_S  = 0.26;
+      const CLIMB_HOP_BOUNCE_UNITS = 0.4;
+      function startClimb(climb) {
+        const grid = getActiveGrid();
+        const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
+        const startTile = grid[startRow][startCol];
+        const landTile = grid[climb.landRow][climb.landCol];
+        player.climbing = true;
+        player.climbElapsed = 0;
+        player.climbHopCount = Math.max(3, climb.wallTiles + 1);
+        player.climbStartX = player.x;
+        player.climbStartY = player.y;
+        player.climbEndX = (climb.landCol + 0.5) * TILE;
+        player.climbEndY = (climb.landRow + 0.5) * TILE;
+        player.climbSurfaceStartY = tileSurfaceYInArea(startTile, currentArea);
+        player.climbSurfaceEndY = tileSurfaceYInArea(landTile, currentArea);
+        player.climbSurfaceY = player.climbSurfaceStartY;
+        player.climbHopBounce = 0;
+        player.vx = 0; player.vy = 0;
+        player.angle = Math.atan2(climb.dir.y, climb.dir.x);
+        facingAngle = player.angle;
+        targetAimAngle = player.angle;
+        lastMoveAngle = player.angle;
+      }
+
+      function updateClimb(dt) {
+        const cycle = CLIMB_HOP_ACTIVE_S + CLIMB_HOP_PAUSE_S;
+        const totalDur = player.climbHopCount * cycle;
+        player.climbElapsed = Math.min(player.climbElapsed + dt, totalDur);
+        const hopIndex = Math.min(player.climbHopCount - 1, Math.floor(player.climbElapsed / cycle));
+        const withinCycle = player.climbElapsed - hopIndex * cycle;
+        const hopActive = withinCycle < CLIMB_HOP_ACTIVE_S;
+        const hopLocalT = hopActive ? clamp(withinCycle / CLIMB_HOP_ACTIVE_S, 0, 1) : 1;
+        const eased = 1 - Math.pow(1 - hopLocalT, 2); // quick lift-off, settles into each landing
+        const overall = clamp((hopIndex + eased) / player.climbHopCount, 0, 1);
+
+        player.x = player.climbStartX + (player.climbEndX - player.climbStartX) * overall;
+        player.y = player.climbStartY + (player.climbEndY - player.climbStartY) * overall;
+        player.climbSurfaceY = player.climbSurfaceStartY + (player.climbSurfaceEndY - player.climbSurfaceStartY) * overall;
+        player.climbHopBounce = hopActive ? Math.sin(hopLocalT * Math.PI) * CLIMB_HOP_BOUNCE_UNITS : 0;
+        player.vx = 0; player.vy = 0;
+
+        if (player.climbElapsed >= totalDur) {
+          player.x = player.climbEndX;
+          player.y = player.climbEndY;
+          player.climbSurfaceY = player.climbSurfaceEndY;
+          player.climbHopBounce = 0;
+          player.climbing = false;
+        }
       }
 
       function angleDiff(target, current) {
@@ -10998,6 +11458,46 @@
         };
       }
 
+      // Pulls the camera in along the target→camera line if a plateau mesa or
+      // cliff-face rock skin (see their `.userData.cameraObstacle` tags,
+      // collected once per zone as buildZoneScene's `occlusionMeshes`) sits
+      // between them — the fixed south-of-player follow camera has no other
+      // way to keep the player visible once something tall is in that gap,
+      // since generation alone can bias terrain but can't guarantee a clear
+      // line at this camera's shallow angle (see conversation history: even
+      // a single-tier rise close to the player already eats most of the
+      // vertical slack a ~14-tile, ~33°-elevation sightline allows). Scoped
+      // to wilderness zones for now — town/farm have no elevation system to
+      // occlude with.
+      function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
+        if (!_isZoneArea(currentArea)) return { x: idealX, y: idealY, z: idealZ };
+        const obstacles = _zoneScenes.get(currentArea)?.occlusionMeshes;
+        if (!obstacles || !obstacles.length) return { x: idealX, y: idealY, z: idealZ };
+        const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
+        const dist = Math.hypot(dx, dy, dz);
+        if (dist < 0.5) return { x: idealX, y: idealY, z: idealZ };
+        const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+        _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
+        _cameraOcclusionRaycaster.near = 0.3; // skip the player's own standing point
+        _cameraOcclusionRaycaster.far = dist;
+        const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, false);
+        if (!hits.length) return { x: idealX, y: idealY, z: idealZ };
+        // Stop a little short of the actual hit (not flush against it) so the
+        // camera doesn't clip into the cliff face it just pulled in behind.
+        const safeDist = Math.max(3, hits[0].distance - 0.6);
+        // Wilderness plateaus can tower many tiers higher than anything an
+        // authored map ever had, so a cliff can sit close enough to the
+        // player that safeDist collapses near its floor — sliding straight
+        // back along the same shallow ideal-camera ray then just jams the
+        // camera face-first into that wall (a screen-filling close-up).
+        // Lift the camera as it's pulled in, trading "close" for "more
+        // overhead," so a tall nearby cliff still leaves the player and
+        // their surroundings in view instead of one flat wall.
+        const shrink = clamp(1 - safeDist / dist, 0, 1);
+        const lift = shrink * dist * 0.5;
+        return { x: lookAtX + dir.x * safeDist, y: lookAtY + dir.y * safeDist + lift, z: lookAtZ + dir.z * safeDist };
+      }
+
       function updateCameraPosition() {
         const modeCfg = cameraModeConfig(activeCameraMode);
         const baseDistance = (modeCfg.distanceTiles ?? 14) / s_zoomScale;
@@ -11012,12 +11512,12 @@
         // Camera sits at `azimuth` east of due-south from the target, elevated,
         // looking back at it. azimuth=0 (every mode but "fishing") reduces to the
         // original due-south-looking-north framing.
-        camera.position.set(
-          (portraitAim?.targetX ?? tx) + Math.sin(azimuth) * groundDistance,
-          cameraY,
-          (portraitAim?.targetZ ?? tz) + Math.cos(azimuth) * groundDistance  // +Z = south
-        );
-        camera.lookAt(portraitAim?.targetX ?? tx, lookY, portraitAim?.targetZ ?? tz);
+        const lookAtX = portraitAim?.targetX ?? tx, lookAtZ = portraitAim?.targetZ ?? tz;
+        const idealX = lookAtX + Math.sin(azimuth) * groundDistance;
+        const idealZ = lookAtZ + Math.cos(azimuth) * groundDistance; // +Z = south
+        const safe = occlusionSafeCameraPosition(lookAtX, lookY, lookAtZ, idealX, cameraY, idealZ);
+        camera.position.set(safe.x, safe.y, safe.z);
+        camera.lookAt(lookAtX, lookY, lookAtZ);
         camera.fov = modeCfg.fovDeg ?? 42;
         camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
         camera.updateProjectionMatrix();
@@ -14034,11 +14534,17 @@
         const col = clamp(Math.floor(wx), 0, getActiveCols()-1);
         const row = clamp(Math.floor(wz), 0, getActiveRows()-1);
         const tile = getActiveTileAt(col, row);
-        const standY = tileSurfaceYInArea(tile, currentArea);
+        // While climbing, the player is mid-crossing through impassable
+        // incline tiles — use the scripted start->landing blend from
+        // updateClimb instead of a raw tile lookup, which would pop between
+        // the cliff base and plateau top the instant the crossing tile
+        // flips (see startClimb/updateClimb).
+        const standY = player.climbing ? player.climbSurfaceY : tileSurfaceYInArea(tile, currentArea);
 
         // Smooth vertical position (bob over water, plus a combat lunge's
-        // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent)
-        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0);
+        // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent —
+        // or a climbing hop's bounce, see player.climbHopBounce)
+        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0);
         playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
@@ -14854,6 +15360,7 @@
         chooseWeatherForDay();
         tickCropDay();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
+        checkTothalShift();
       }
 
       function chooseWeatherForDay() {
@@ -15502,6 +16009,12 @@
           if (obj2) obj2.getButtons(reticle).forEach(b => btnsSpot.push(b));
           return btnsSpot;
         }
+
+        // Zone: a climbable cliff face straight ahead takes priority over tool use.
+        if (_isZoneArea(currentArea) && !player.climbing && getClimbTarget()) {
+          return [{ icon: '🧗', label: 'Climb', action: 'climb', style: 'primary', allowed: true }];
+        }
+
         const tile    = getActiveGrid()[reticle.row][reticle.col];
         const btns    = [];
 
@@ -16835,6 +17348,11 @@
       let gameStarted = false;
 
       async function spawnPlayerAvatar(playerData) {
+        // Fire-and-forget: the Tothal Shift at world start (or on any missed
+        // year since last played) can take a few seconds across all four
+        // zones, but nothing here needs to block on it — a zone only needs
+        // to be reshaped by the time the player actually walks into it.
+        checkTothalShift();
         gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
           ? playerData.gearInventory
           : makeDefaultGear();
