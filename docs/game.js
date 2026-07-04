@@ -3676,9 +3676,13 @@
             _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
             continue;
           }
-          if (tile.type === TileType.PATH ||
-              (pathNet && pathNet.inBounds(c, r) && !pathNet.isExcludedTile(c, r) && tile.type === TileType.GRASS)) {
-            continue; // covered by the path network mesh above
+          // Covered by the path network mesh above — but ONLY if the network
+          // actually claims this cell: it excludes elevated/staked/ramp
+          // tiles, and an unclaimed PATH tile must render its own flat floor
+          // at its tier or the cell is a hole ("topless" plateau-edge tiles).
+          if (pathNet && pathNet.inBounds(c, r) && !pathNet.isExcludedTile(c, r) &&
+              (tile.type === TileType.PATH || tile.type === TileType.GRASS)) {
+            continue;
           }
           if (tile.type === TileType.SHRUB) {
             _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
@@ -3719,7 +3723,48 @@
         buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
-        _zoneWaterMeshes.set(mapId, buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId));
+        const zoneWater = buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
+        // River/stream water SURFACES — the town builds these per water tile
+        // (see buildTownScene's _townRiverWaterMeshes); zones only ever got
+        // waterfall curtains, so every zone river rendered as a dry carved
+        // basin. Same shader water, lifted to each tile's elevation tier.
+        waterGeo.userData.shared = true; // never dispose the town's shared plane on zone rebuilds
+        const isZoneWaterTile = (cc, rr) => {
+          const t = zGrid[rr]?.[cc]?.type;
+          return t === TileType.RIVER || t === TileType.STREAM || t === TileType.WATERFALL;
+        };
+        for (let r = 0; r < ZROWS; r++) {
+          for (let c = 0; c < ZCOLS; c++) {
+            const tp = zGrid[r][c].type;
+            if (tp !== TileType.RIVER && tp !== TileType.STREAM) continue;
+            let fx = (isZoneWaterTile(c + 1, r) ? 1 : 0) - (isZoneWaterTile(c - 1, r) ? 1 : 0);
+            let fz = (isZoneWaterTile(c, r + 1) ? 1 : 0) - (isZoneWaterTile(c, r - 1) ? 1 : 0);
+            const flen = Math.hypot(fx, fz);
+            if (flen > 0.001) { fx /= flen; fz /= flen; } else { fx = 0; fz = 0; }
+            const deep = tp === TileType.RIVER;
+            const mat = new THREE.ShaderMaterial({
+              uniforms: {
+                uTime:  { value: 0 },
+                uPhase: { value: (c * 2.7 + r * 4.1) % 6.28 },
+                uDepth: { value: deep ? 0.8 : 0.45 },
+                uFlow:  { value: new THREE.Vector2(fx, fz) },
+                uColor: { value: new THREE.Color(deep ? 0x1f6f9c : 0x4fb8d9) },
+              },
+              vertexShader:   waterVertShader,
+              fragmentShader: waterFragShader,
+              transparent:    true,
+              depthWrite:     false,
+              side:           THREE.FrontSide,
+            });
+            const wm = new THREE.Mesh(waterGeo, mat);
+            wm.receiveShadow = false;
+            wm.position.set(c + 0.5, NORMAL_TOP + (zGrid[r][c].elevTier || 0) * PLATEAU_UNIT - (deep ? 0.10 : 0.05), r + 0.5);
+            zScene.add(wm);
+            _markTerrainEdgeId(wm, 'water');
+            zoneWater.push(wm);
+          }
+        }
+        _zoneWaterMeshes.set(mapId, zoneWater);
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
 
         _zoneTerrainMeshes.set(mapId, zScene.children.filter(child => !_beforeChildren.has(child)));
@@ -3956,10 +4001,21 @@
         // builds that cell's own carved-bed mesh, and without this check the mesa's
         // solid lid simply painted over it, hiding the channel under flat ground.
         const quadIsCarved = (gi, gj) => CARVED_TILE_TYPES.has(zGrid?.[bb.minR + Math.floor(gj/2)]?.[bb.minC + Math.floor(gi/2)]?.type);
+        // A stamped cell (real floor of its own, skipFloor false) at full
+        // blend renders its own flat tile — the lid would just be a coplanar
+        // duplicate (z-fighting, and grass painting over elevated path
+        // floors). The lid still covers staked cells and every blending edge.
+        const _blendAt = (k) => Math.min(1, (vertHops[k] * 0.5) / MARGIN_TILES);
+        const quadIsStampedFlat = (gi, gj) => {
+          const t = zGrid?.[bb.minR + Math.floor(gj / 2)]?.[bb.minC + Math.floor(gi / 2)];
+          if (!t || t.skipFloor || t.incline) return false;
+          const ks = [gj * GW + gi, gj * GW + gi + 1, (gj + 1) * GW + gi, (gj + 1) * GW + gi + 1];
+          return ks.every(k => _blendAt(k) >= 1);
+        };
         const idx = [];
         for (let gj = 0; gj < GH - 1; gj++) {
           for (let gi = 0; gi < GW - 1; gi++) {
-            if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
+            if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || quadIsStampedFlat(gi, gj) || !quadInOwnMask(gi, gj)) continue;
             const v00 = gj*GW+gi, v10 = gj*GW+gi+1, v01 = (gj+1)*GW+gi, v11 = (gj+1)*GW+gi+1;
             idx.push(v00, v01, v11, v00, v11, v10);
           }
@@ -6660,6 +6716,37 @@
           if (!zi || !zi.scene.children[index]) return false;
           zi.scene.children[index].visible = !!visible;
           return true;
+        },
+        // Raycast census: for every walkable cell, compare the rendered top
+        // surface against the walk height — reports rendered-surface holes
+        // ("topless" tiles) and which mesh tops each cell.
+        surfaceProbe: (mapId) => {
+          const zi = _zoneScenes.get(mapId || currentArea);
+          if (!zi) return null;
+          const ray = new THREE.Raycaster();
+          const down = new THREE.Vector3(0, -1, 0);
+          const out = [];
+          for (let r = 0; r < zi.rows; r++) {
+            for (let c = 0; c < zi.cols; c++) {
+              const tile = zi.grid[r][c];
+              const speed = (() => {
+                if (isSolid(tile.type) || tile.incline) return null;
+                if (tile.skipFloor && !CARVED_TILE_TYPES.has(tile.type)) return null;
+                if (tile.type === TileType.RIVER || tile.type === TileType.STREAM) return null;
+                return 1;
+              })();
+              if (speed === null) continue;
+              const walkY = tileSurfaceYInArea(tile, mapId || currentArea);
+              ray.set(new THREE.Vector3(c + 0.5, walkY + 30, r + 0.5), down);
+              const hits = ray.intersectObjects(zi.scene.children, true);
+              const hit = hits.find(h => h.object.visible && h.object.type === 'Mesh');
+              const topY = hit ? hit.point.y : null;
+              if (topY === null || walkY - topY > 0.6) {
+                out.push({ c, r, type: tile.type, elevTier: tile.elevTier || 0, walkY: Number(walkY.toFixed(2)), topY: topY === null ? null : Number(topY.toFixed(2)) });
+              }
+            }
+          }
+          return out;
         },
       };
 
