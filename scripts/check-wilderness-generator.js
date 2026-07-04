@@ -18,6 +18,11 @@
 
 const path = require('path');
 const generator = require(path.join(__dirname, '..', 'docs', 'js', 'wilderness-generator.js'));
+// The map editor's terrain debug engine — renderer-exact merge, mesa/ramp/
+// rock geometry builders, and the severity-coded issue validator. Running it
+// against every generated workspace gives the same hole detection the editor
+// preview has.
+const TP = require(path.join(__dirname, '..', 'docs', 'js', 'terrain-preview.js'));
 
 const PLATEAU_UNIT = 2.5;
 const SOLID_TYPES = new Set(['rock', 'shrub']);
@@ -228,6 +233,53 @@ function validate(label, result, maxAngleDeg) {
   return failures;
 }
 
+// Renderer-exact audit via terrain-preview (the map editor's hole debug):
+// build the merged grid + every terrain geometry the preview builds, and run
+// its issue validator. Error-severity findings fail the check.
+function terrainPreviewAudit(label, workspace) {
+  const failures = [];
+  const rootId = workspace.maps[0].id;
+  let merged;
+  try {
+    merged = TP.buildMergedZoneGrid(workspace, rootId);
+  } catch (e) {
+    return [`${label}: terrain-preview merge threw: ${e.message}`];
+  }
+  const zGrid = TP.buildZGrid(merged.cols, merged.rows, merged.tiles);
+  TP.applyRampCurtainFlags(zGrid, merged.cols, merged.rows);
+  for (const mesa of merged.mesas) {
+    const elevOffset = (mesa.toTier - mesa.fromTier) * TP.PLATEAU_UNIT;
+    if (elevOffset <= 0) continue;
+    try {
+      const geo = TP.buildPlateauMesaGeometry(mesa, elevOffset, mesa.fromTier * TP.PLATEAU_UNIT, zGrid);
+      if ([...geo.pos].some(v => !Number.isFinite(v))) failures.push(`${label}: mesa ${mesa.groupId} has a non-finite vertex`);
+      if (geo.idx.length === 0) failures.push(`${label}: mesa ${mesa.groupId} produced zero quads`);
+    } catch (e) {
+      failures.push(`${label}: mesa ${mesa.groupId} geometry threw: ${e.message}`);
+    }
+  }
+  try {
+    const rampGeo = TP.buildRampMeshGeometry(zGrid, merged.cols, merged.rows);
+    const curtainGeo = TP.buildRampCurtainGeometry(zGrid, merged.cols, merged.rows);
+    const rockGeo = TP.buildRockFormationGeometry(merged, zGrid, merged.cols, merged.rows);
+    for (const [name, arr] of [['ramp', rampGeo.pos], ['curtain', curtainGeo.pos], ['rock', rockGeo.pos]]) {
+      if ([...arr].some(v => !Number.isFinite(v))) failures.push(`${label}: non-finite ${name} vertex`);
+    }
+    for (const issue of TP.validateRockFormationGeometry(rockGeo)) {
+      if (issue.severity === 'error') failures.push(`${label}: [rock] ${issue.code}: ${issue.message}`);
+    }
+  } catch (e) {
+    failures.push(`${label}: ramp/curtain/rock geometry threw: ${e.message}`);
+  }
+  let nonError = 0;
+  for (const issue of TP.validateTerrain(workspace, rootId)) {
+    if (issue.severity === 'error') failures.push(`${label}: [terrain] ${issue.code}: ${issue.message}`);
+    else nonError++;
+  }
+  if (nonError) console.log(`  ${label}: terrain-preview audit: ${nonError} non-error issue(s)`);
+  return failures;
+}
+
 function main() {
   // Zone-shaped cases mirror the in-game settings (maxTier 3, generation at
   // half resolution with gameplayScale 2 — see regenerateWildernessZone);
@@ -258,6 +310,7 @@ function main() {
     }
     const maxAngle = testCase.options.rampMaxAngle || generator.DEFAULT_SETTINGS.rampMaxAngle;
     failures = failures.concat(validate(testCase.label, result, maxAngle));
+    failures = failures.concat(terrainPreviewAudit(testCase.label, result.workspace));
     console.log(`  ${testCase.label}: generated in ${Date.now() - started} ms`);
   }
 

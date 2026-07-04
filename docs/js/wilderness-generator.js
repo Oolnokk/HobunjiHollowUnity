@@ -6186,6 +6186,48 @@
   //  Public API
   // ═══════════════════════════════════════════════════════════════════════
 
+  // ═══════════════════════════════════════════════════════════════════════
+  //  "Bleachers" rule
+  //
+  //  Plateaus only ever get TALLER walking away from the map's bottom edge:
+  //  per column, the ground tier is non-decreasing from south to north, so
+  //  the zone reads as stadium bleachers facing the fixed camera — you never
+  //  look over a tall southern shelf down onto lower ground behind it. The
+  //  lift field is eroded ±1 column so a lone single-column spike doesn't
+  //  smear into a 1-tile-wide full-height streak running to the north edge.
+  //  (Rivers carve later and are allowed to cut canyons down through the
+  //  bleachers — that reads as a gorge, not a rule violation.)
+  // ═══════════════════════════════════════════════════════════════════════
+  function enforceBleachersRule() {
+    const W = settings.width, H = settings.height;
+    const runningMax = Array.from({ length: W }, () => new Array(H).fill(0));
+    for (let x = 0; x < W; x++) {
+      let m = 0;
+      for (let y = H - 1; y >= 0; y--) {
+        const t = tileAt(x, y);
+        m = Math.max(m, t ? (t.elevation || 0) : 0);
+        runningMax[x][y] = m;
+      }
+    }
+    let lifted = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const support = Math.min(
+          runningMax[Math.max(0, x - 1)][y],
+          runningMax[x][y],
+          runningMax[Math.min(W - 1, x + 1)][y]
+        );
+        const tile = tileAt(x, y);
+        if (tile && (tile.elevation || 0) < support) {
+          tile.elevation = support;
+          if (support > 0 && tile.terrain === 'grass') tile.terrain = 'plateau';
+          lifted++;
+        }
+      }
+    }
+    logDebug(`bleachers rule: lifted ${lifted} tiles so tiers never drop toward the north`);
+  }
+
   function generate(options = {}) {
     settings = normalizeSettings(options);
     rng = makeRng(settings.seed);
@@ -6195,6 +6237,7 @@
 
     initMap();
     generatePlateaus();
+    enforceBleachersRule();
     applyManualPlateauPaintingRules();
     generatePonds();
     generateRivers();

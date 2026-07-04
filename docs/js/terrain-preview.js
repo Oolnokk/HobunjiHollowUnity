@@ -125,7 +125,9 @@
         continue;
       }
       let type = t.type || 'grass';
-      if (!t.plateau && type === 'rock') type = 'grass';
+      // Mirrors docs/game.js: generated wilderness maps set keepRockTiles —
+      // their rock tiles are real cliff-skirt walls/seals, never demoted.
+      if (!t.plateau && type === 'rock' && !m.keepRockTiles) type = 'grass';
       outTiles.set(key, {
         c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
         rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
@@ -579,9 +581,13 @@
         const bottom0 = Math.min(thisEdge[0], otherEdge[0]);
         const bottom1 = Math.min(thisEdge[1], otherEdge[1]);
         const tierStep = Math.max(top0, top1) - Math.min(bottom0, bottom1);
-        const rampSeam = (t.type === TileType.RAMP || nt?.type === TileType.RAMP) && tierStep > 0.04;
+        // Mirrors docs/game.js buildRockFormationMeshes: a ramp-adjacent edge
+        // is a flush walk-on contact unless it drops at least ~the curtain
+        // epsilon; tiny corner-averaging residues must not grow rock slivers.
+        const rampSeam = (t.type === TileType.RAMP || nt?.type === TileType.RAMP) && tierStep > 0.45;
         const touchesPlateauMask = plateauMaskKeys.has(`${c},${r}`) || plateauMaskKeys.has(`${c + dc},${r + dr}`);
-        const cliffStep = tierStep > 0.04 && (t.incline || nt?.incline || touchesPlateauMask || (t.elevTier || 0) !== (nt?.elevTier || 0));
+        const rampInvolved = t.type === TileType.RAMP || nt?.type === TileType.RAMP;
+        const cliffStep = !rampInvolved && tierStep > 0.04 && (t.incline || nt?.incline || touchesPlateauMask || (t.elevTier || 0) !== (nt?.elevTier || 0));
         if (!rampSeam && !cliffStep) continue;
         if (side === 'E') addSpan(edgeKeyFor('x', c + 1, r), 'x', c + 1, r, c + 1, r + 1, top0, top1, bottom0, bottom1, sourceKind(t, nt), c, r);
         else addSpan(edgeKeyFor('z', r + 1, c), 'z', c, r + 1, c + 1, r + 1, top0, top1, bottom0, bottom1, sourceKind(t, nt), c, r);
