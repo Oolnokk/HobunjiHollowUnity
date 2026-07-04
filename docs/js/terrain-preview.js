@@ -112,6 +112,7 @@
         outTiles.set(`${c},${r}`, {
           c, r, type: 'grass', elevTier: onRing ? ringTier : toTier,
           skipFloor: true, rampElevation: 0, incline: onRing,
+          navRamp: !!m.tiles?.[k]?.navRamp,
         });
       }
       children.push({ child, childOffsetC: worldMinC + 1, childOffsetR: worldMinR + 1, toTier });
@@ -125,10 +126,14 @@
         continue;
       }
       let type = t.type || 'grass';
-      if (!t.plateau && type === 'rock') type = 'grass';
+      // Mirrors docs/game.js mergeZoneTiles: a generator-marked cliffSkirt
+      // tile is real cliff-base terrain, not a decorative object-overlay
+      // marker, so it's kept as rock instead of being reclaimed as grass.
+      if (!t.plateau && !t.cliffSkirt && type === 'rock') type = 'grass';
       outTiles.set(key, {
         c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
         rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
+        navRamp: !!t.navRamp,
       });
     }
 
@@ -182,6 +187,7 @@
       zGrid[t.r][t.c].elevTier = t.elevTier || 0;
       zGrid[t.r][t.c].skipFloor = !!t.skipFloor;
       zGrid[t.r][t.c].incline = !!t.incline;
+      zGrid[t.r][t.c].navRamp = !!t.navRamp;
       if (t.type === TileType.RAMP) zGrid[t.r][t.c].rampElevation = t.rampElevation || 0;
     }
     return zGrid;
@@ -833,8 +839,19 @@
   // the game's isSolid() treatment of un-tagged rock/water/vegetation on a
   // zone floor (see docs/game.js mergeZoneTiles' rock-decoration note).
   const SOLID_FOLDED_TYPES = new Set(['rock', 'shrub', 'river', 'stream', 'waterfall']);
+  // Water types a navRamp tile still can't override — moot in practice since
+  // the generator never tags a water tile navRamp (see markHiddenNavRampTile's
+  // own guard), kept here so the override can't accidentally read as "walk on
+  // water" if that ever changed.
+  const WATERLIKE_FOLDED_TYPES = new Set(['river', 'stream', 'waterfall']);
   function isFoldedTileWalkable(tile) {
-    return !!tile && !tile.incline && !SOLID_FOLDED_TYPES.has(tile.type);
+    if (!tile) return false;
+    // A hidden reachability stitch (see mergeZoneTilesInto) is explicitly
+    // marked crossable despite however it renders — mirrors tileSpeedAt's
+    // navRamp check in docs/game.js, which bypasses isSolid()/incline but
+    // not a genuine water crossing.
+    if (tile.navRamp) return !WATERLIKE_FOLDED_TYPES.has(tile.type);
+    return !tile.incline && !SOLID_FOLDED_TYPES.has(tile.type);
   }
 
   // Coarse in-game reachability estimate for a generated/imported zone: folds

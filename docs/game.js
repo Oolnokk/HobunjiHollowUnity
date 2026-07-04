@@ -2831,6 +2831,12 @@
       }
 
       let _tothalShiftInFlight = false;
+      // Set while a shift is running so enterZone() can wait for it instead
+      // of building a zone scene from the about-to-be-replaced authored/prior
+      // layout — without this, a player who reaches a wilderness zone within
+      // the first few seconds of a shift (most likely right at world start)
+      // would see last year's map for that visit.
+      let _tothalShiftPromise = null;
 
       // Regenerates all four wilderness zones for the given Tothal year and
       // saves that year to the world file so a reload doesn't reroll again.
@@ -2903,7 +2909,9 @@
       function checkTothalShift() {
         const year = currentTothalYear();
         if (_loadTothalYear() === year) return;
-        performTothalShift(year).catch(e => debugLog('Tothal Shift error: ' + e.message, 'warn'));
+        _tothalShiftPromise = performTothalShift(year)
+          .catch(e => debugLog('Tothal Shift error: ' + e.message, 'warn'))
+          .finally(() => { _tothalShiftPromise = null; });
       }
 
       // Ambient hostile spawning — lives entirely inside the exterior zones now
@@ -3743,12 +3751,16 @@
         // elevTier (rendered below as continuous heightfield mesas, one per tier
         // transition, in the same visual style as the distant boundary terrain beyond
         // the playable area) and, for ramp tiles, its own slope-following rampElevation.
-        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline } of (zoneData?.tiles || [])) {
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, navRamp } of (zoneData?.tiles || [])) {
           if (!zGrid[r]?.[c]) continue;
           zGrid[r][c].type = type || TileType.GRASS;
           zGrid[r][c].elevTier = elevTier || 0;
           zGrid[r][c].skipFloor = !!skipFloor;
           zGrid[r][c].incline = !!incline;
+          // Hidden reachability stitch from the wilderness generator: keeps
+          // the tile's natural look (usually a cliff-base rock marker) but
+          // marks it crossable — see tileSpeedAt's navRamp check below.
+          zGrid[r][c].navRamp = !!navRamp;
           if (type === TileType.RAMP) zGrid[r][c].rampElevation = rampElevation || 0;
         }
         // Ramp curtains: a non-ramp cell beside a ramp cell gets folded into the
@@ -5642,6 +5654,7 @@
                 outTiles.set(`${c},${r}`, {
                   c, r, type: 'grass', elevTier: onRing ? ringTier : toTier,
                   skipFloor: true, rampElevation: 0, incline: onRing,
+                  navRamp: !!m.tiles?.[k]?.navRamp,
                 });
               }
               children.push({ child, childOffsetC: worldMinC + 1, childOffsetR: worldMinR + 1, toTier });
@@ -5671,10 +5684,15 @@
               // them across the walkable ground — turn the un-tagged ones back to
               // grass so the real plateau cliff-face (plateau-tagged rock) reads as
               // the only solid rock terrain, and the zone is actually walkable.
-              if (!t.plateau && type === 'rock') type = 'grass';
+              // A generator-marked cliffSkirt tile is real cliff-base terrain (not
+              // a decorative ore/boulder/statue overlay marker) and is kept as rock
+              // — otherwise every cliff the wilderness generator draws would show
+              // grass right up against its base instead of a rocky skirt.
+              if (!t.plateau && !t.cliffSkirt && type === 'rock') type = 'grass';
               outTiles.set(key, {
                 c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
                 rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
+                navRamp: !!t.navRamp,
               });
             }
 
@@ -6240,7 +6258,14 @@
       }
 
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
-      function enterZone(mapId, defaultCol, defaultRow) {
+      async function enterZone(mapId, defaultCol, defaultRow) {
+        // A Tothal Shift in progress is about to replace this zone's layout —
+        // wait for it so the player lands on the freshly reshaped map instead
+        // of whatever was cached (or authored) a moment before the shift.
+        if (_tothalShiftPromise) {
+          showToast('The wilds are still settling into shape…', true);
+          await _tothalShiftPromise;
+        }
         const zdef = EXTERIOR_ZONES[mapId];
         if (!zdef && !_zoneLayouts.has(mapId)) return;
         const zi = buildZoneScene(mapId);
@@ -10678,10 +10703,18 @@
         const row  = Math.floor(wy / TILE);
         const tile = getActiveGrid()[row][col];
         const type = tile.type;
-        if (isSolid(type)) return null;
-        // Auto-reserved plateau cliff-face ring — impassable except where a
-        // ramp tile explicitly cuts through it (which never sets `incline`).
-        if (tile.incline) return null;
+        // A hidden reachability stitch (see mergeZoneTiles/buildZoneScene) is
+        // a wilderness-generator tile explicitly marked crossable despite
+        // however it renders — a cliff-base rock marker, or a plateau ring
+        // cell too narrow for a real ramp — so it skips both blocking checks
+        // below instead of only ever being reachable by punching real ramp
+        // geometry through it.
+        if (!tile.navRamp) {
+          if (isSolid(type)) return null;
+          // Auto-reserved plateau cliff-face ring — impassable except where a
+          // ramp tile explicitly cuts through it (which never sets `incline`).
+          if (tile.incline) return null;
+        }
         // Rivers/streams are a real crossing obstacle — block like a solid tile.
         if (type === TileType.RIVER || type === TileType.STREAM) return null;
         // Block structural building tiles on exterior maps (player must use doors/transitions).

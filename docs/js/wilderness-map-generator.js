@@ -5020,6 +5020,14 @@
       if (tile.rampSharesPlateau) output.rampSharesPlateau = true;
       if (tile.rampSharedPlateauGroupId) output.rampSharedPlateauGroupId = tile.rampSharedPlateauGroupId;
     }
+    // Not part of the stock tool export — marks genuine cliff-base terrain
+    // rock (see hobunjiMapTileType) so the game's fold (mergeZoneTiles) can
+    // tell it apart from an untagged decorative rock overlay (ore/boulder/
+    // statue markers), which it otherwise reclaims as walkable grass. Without
+    // this, every cliffSkirt tile the generator draws around a height
+    // transition gets swept into that same grass reclaim, showing as grass
+    // patches right up against — visually "growing on" — the cliff face.
+    if (tile.cliffSkirt && !tile.ramp) output.cliffSkirt = true;
     if (overlay) {
       output.generatedObjectId = overlay.objectId;
       output.generatedObjectType = overlay.objectType;
@@ -5039,6 +5047,12 @@
       if (tile.rampSharesPlateau) output.rampSharesPlateau = true;
       if (tile.rampSharedPlateauGroupId) output.rampSharedPlateauGroupId = tile.rampSharedPlateauGroupId;
     }
+    if (tile.cliffSkirt && !tile.ramp) output.cliffSkirt = true;
+    // The stock tool only ever exports navRamp on the root map; mirrored here
+    // too so a hidden stitch landing on a nested plateau tier's own submap
+    // (a within-stack connectivity patch, not a root-to-tier climb) survives
+    // the export instead of silently vanishing.
+    if (tile.navRamp && !tile.ramp) output.navRamp = true;
     if (overlay) {
       output.generatedObjectId = overlay.objectId;
       output.generatedObjectType = overlay.objectType;
@@ -5496,7 +5510,7 @@
     },
     map_western_slope: {
       width: 50, height: 40, entrySide: 'east',
-      maxTier: 4, plateaus: 16, ramps: 10, rivers: 1, ponds: 2, plateauPonds: 2, plateauStreams: 3,
+      maxTier: 3, plateaus: 7, ramps: 12, rivers: 1, ponds: 2, plateauPonds: 2, plateauStreams: 3,
       pathAnchors: 2, animalDens: 1, prey: 2, packPredators: 1, ambushPredators: 1, omnivores: 1,
       structures: 1, caves: 1, statues: 2, pillars: 4, trees: 22, logs: 7, bushes: 15, forage: 12,
       fruitBushes: 3, mushrooms: 4, beehives: 1, treasure: 6, ore: 14, boulders: 7
