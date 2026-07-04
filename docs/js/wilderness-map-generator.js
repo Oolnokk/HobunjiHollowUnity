@@ -5477,8 +5477,12 @@
   // their entry gate opens on their south border, and so on).
   const ZONE_PRESETS = {
     map_northern_cliffs: {
+      // Fewer, larger plateaus connect far more reliably than many small ones:
+      // the tool's own ramp placement needs a long straight "hugging" run
+      // along a footprint's edge (14+ tiles), which small blobs rarely have
+      // room for — the authored reference map ships with just 4 groups.
       width: 60, height: 50, entrySide: 'south',
-      maxTier: 6, plateaus: 26, ramps: 12, rivers: 1, ponds: 2, plateauPonds: 3, plateauStreams: 5,
+      maxTier: 5, plateaus: 12, ramps: 14, rivers: 1, ponds: 2, plateauPonds: 3, plateauStreams: 5,
       pathAnchors: 2, animalDens: 2, prey: 3, packPredators: 2, ambushPredators: 1, omnivores: 1,
       structures: 2, caves: 2, statues: 3, pillars: 6, trees: 28, logs: 9, bushes: 18, forage: 16,
       fruitBushes: 4, mushrooms: 5, beehives: 2, treasure: 8, ore: 22, boulders: 10
@@ -5571,24 +5575,26 @@
   }
 
   // One-call flow for the game's Tothal Shift: generate a zone's map with its
-  // preset, then surface the tool's hidden reachability stitches (navRamp
-  // tiles) as real ramp tiles. The tool keeps those stitches invisible and
-  // repairs reachability through a hidden movement layer the game doesn't
-  // have — without this pass, plateau tops and cliff pockets that the tool
-  // considers reachable would fold into sealed terrain in-game.
+  // preset and leave the tool's own export untouched — including its hidden
+  // reachability stitches (navRamp tiles), which stay exactly what the tool
+  // itself exports them as (ordinary terrain, invisible metadata) rather
+  // than being promoted into fake visible ramp tiles. An earlier version of
+  // this function did promote them, reasoning that leaving plateau interiors
+  // sealed behind the fold's auto-incline ring was worse — but a promoted
+  // navRamp tile is a single teleport-style stitch tagged with its own raw
+  // absolute height, not a graded multi-tile run, and the fold's ramp mesh
+  // only reads as a slope when neighboring ramp tiles blend toward it. Measured
+  // against actual generated maps, ~76% of the resulting "ramp" quads came out
+  // either perfectly flat (a floating pedestal, no slope) or near-vertical
+  // (multiple plateau tiers of rise across one tile) — visibly broken in both
+  // the Map Editor's live preview and the game, since both read this same
+  // ramp mesh. generateHealthyZoneWorkspace()'s reroll loop is what actually
+  // carries the weight now: it keeps trying seeds until one gets a good
+  // reachability ratio from the tool's own genuine ramp placement alone.
   function generateZoneWorkspace(zoneMapId, seedText, options = {}) {
     const preset = zonePreset(zoneMapId) || {};
     const workspace = generateWorkspace(seedText, preset);
     const root = workspace.maps[0];
-    for (const record of Object.values(root.tiles)) {
-      if (!record.navRamp || record.type === 'ramp') continue;
-      record.type = 'ramp';
-      record.rampElevation = record.navRampElevation != null ? record.navRampElevation : 0;
-      // A tile cannot be both plateau footprint and ramp geometry — stripping
-      // the tag is exactly how the tool's own visible ramps cut through a
-      // plateau's auto-incline ring.
-      delete record.plateau;
-    }
     // The entry gate's own footprint (matching openBorderEntryGate()'s own
     // clear depth, plus one tile of margin) must always fold as plain
     // ground — see clearFootprintAt.
@@ -5632,18 +5638,24 @@
   // healthy, or attempts run out (falls back to the last attempt so a
   // Tothal Shift always produces *some* map instead of failing outright).
   function generateHealthyZoneWorkspace(zoneMapId, seedText, options = {}) {
-    const maxAttempts = options.maxAttempts || 6;
+    const maxAttempts = options.maxAttempts || 12;
     const TP = options.terrainPreview || findTerrainPreview();
-    let workspace = null;
+    let workspace = generateZoneWorkspace(zoneMapId, String(seedText), options);
+    if (!TP) return workspace; // no fold math available to assess — best effort, first attempt stands
+    let best = workspace;
+    let bestAssessment = null;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const attemptSeed = attempt === 0 ? String(seedText) : `${seedText}_reroll${attempt}`;
-      workspace = generateZoneWorkspace(zoneMapId, attemptSeed, options);
-      if (!TP) break; // no fold math available to assess — best effort, first attempt stands
+      workspace = attempt === 0 ? workspace : generateZoneWorkspace(zoneMapId, attemptSeed, options);
       const assessment = TP.assessZoneReachability(workspace, workspace.maps[0].id, workspace.entry);
       workspace.reachabilityAssessment = { ok: assessment.ok, reason: assessment.reason, reachable: assessment.reachable, walkableCount: assessment.walkableCount, ratio: Number(assessment.ratio.toFixed(3)), attempt };
-      if (assessment.ok) break;
+      if (!bestAssessment || assessment.ratio > bestAssessment.ratio) { best = workspace; bestAssessment = assessment; }
+      if (assessment.ok) return workspace;
     }
-    return workspace;
+    // Nothing hit the healthy bar within budget — use whichever attempt had
+    // the best reachability ratio instead of just whatever the last reroll
+    // happened to produce.
+    return best;
   }
 
   return {

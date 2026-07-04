@@ -880,7 +880,7 @@
       }
     }
     const ratio = seen.size / Math.max(1, walkableCount);
-    return { ok: seen.size >= 50 && ratio >= 0.5, reason: null, reachable: seen.size, walkableCount, ratio, merged, zGrid };
+    return { ok: seen.size >= 50 && ratio >= 0.55, reason: null, reachable: seen.size, walkableCount, ratio, merged, zGrid };
   }
 
   return {
