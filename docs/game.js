@@ -3760,7 +3760,7 @@
         // elevTier (rendered below as continuous heightfield mesas, one per tier
         // transition, in the same visual style as the distant boundary terrain beyond
         // the playable area) and, for ramp tiles, its own slope-following rampElevation.
-        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, navRamp } of (zoneData?.tiles || [])) {
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, navRamp, cliffSkirt } of (zoneData?.tiles || [])) {
           if (!zGrid[r]?.[c]) continue;
           zGrid[r][c].type = type || TileType.GRASS;
           zGrid[r][c].elevTier = elevTier || 0;
@@ -3770,6 +3770,9 @@
           // the tile's natural look (usually a cliff-base rock marker) but
           // marks it crossable — see tileSpeedAt's navRamp check below.
           zGrid[r][c].navRamp = !!navRamp;
+          // Real cliff-base terrain (vs. a decorative ore/boulder/statue rock
+          // marker) — see the ROCK tile branch below.
+          zGrid[r][c].cliffSkirt = !!cliffSkirt;
           if (type === TileType.RAMP) zGrid[r][c].rampElevation = rampElevation || 0;
         }
         // Ramp curtains: a non-ramp cell beside a ramp cell gets folded into the
@@ -3825,6 +3828,18 @@
           if (tile.type === TileType.RAMP) continue; // covered by the ramp slope mesh below
 
           if (tile.type === TileType.ROCK) {
+            if (tile.cliffSkirt) {
+              // Real cliff-base terrain (see mergeZoneTiles) — a solid rock
+              // floor, not the small decorative mound-on-grass below (which
+              // is right for a scattered ore/boulder/statue marker but reads
+              // as grass with a rock poking through when used for an actual
+              // cliff base). Flush with the surrounding ground height so it
+              // reads as rocky terrain, not a raised block.
+              _addToBucket(TileType.ROCK, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
+              const { stoneGeo } = buildRockTileGeo(c, r);
+              _addToBucket(TileType.ROCK, stoneGeo, cx, NORMAL_TOP + tierY, cz);
+              continue;
+            }
             _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
             _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + tierY, cz);
@@ -5702,6 +5717,11 @@
                 c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
                 rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
                 navRamp: !!t.navRamp,
+                // Distinguishes real cliff-base terrain (render as a solid rock
+                // floor) from a decorative ore/boulder/statue rock marker
+                // (render as buildRockTileGeo's small mound-on-grass) — see
+                // buildZoneScene's ROCK tile branch.
+                cliffSkirt: type === 'rock' && !!t.cliffSkirt,
               });
             }
 

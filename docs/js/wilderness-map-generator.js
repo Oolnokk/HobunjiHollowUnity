@@ -80,6 +80,9 @@
       width: 100,
       height: 100,
       tileSize: 22,
+      // Matches docs/game.js's camera follow distance (modeCfg.distanceTiles,
+      // default 14) — see buildIrregularPlateauBlob's north-south depth cap.
+      cameraFollowDistanceTiles: 14,
       entrySide: 'random',
       plateaus: 76,
       maxTier: 6,
@@ -661,11 +664,24 @@
   function buildIrregularPlateauBlob(cx, cy, targetArea, field = null) {
     const cells = new Set();
     const frontier = [];
+    // The camera sits a fixed distance south of wherever the player currently
+    // is, looking north (see docs/game.js updateCameraPosition) — so a
+    // single elevated mass that runs deeper than that follow distance in the
+    // north-south direction can end up entirely between the camera and a
+    // player standing in its own northern lee, with nowhere the camera's
+    // fixed offset could see past it. Capping how far any one blob is
+    // allowed to span north-to-south (independent of its total area, which
+    // is free to spread east-west instead once this caps out) keeps that
+    // geometrically impossible regardless of the exact camera distance.
+    const maxDepthRows = Math.max(6, Math.round((settings.cameraFollowDistanceTiles || 14) * 0.75));
+    let minY = cy, maxY = cy;
     const addCell = (x, y) => {
       const key = tileKey(x, y);
       if (cells.has(key)) return false;
       cells.add(key);
       frontier.push({ x, y });
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
       return true;
     };
     addCell(cx, cy);
@@ -683,6 +699,7 @@
         const nx = base.x + dir.x;
         const ny = base.y + dir.y;
         if (!inBounds(nx, ny) || nx < 2 || ny < 2 || nx >= settings.width - 2 || ny >= settings.height - 2) continue;
+        if (Math.max(maxY, ny) - Math.min(minY, ny) > maxDepthRows) continue;
         const key = tileKey(nx, ny);
         if (cells.has(key)) continue;
         const tile = tileAt(nx, ny);
