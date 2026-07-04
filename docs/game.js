@@ -2897,7 +2897,11 @@
           }
           clearHostileObjects();
           _saveTothalYear(year);
-          if (gameStarted) showToast('The Tothal Shift has reshaped the wilderness...', true);
+          // showToast is a plain DOM update (no dependency on avatar/gameStarted
+          // state), and this can legitimately finish before spawnPlayerAvatar's
+          // own async avatar setup does — always show it rather than gating on
+          // gameStarted and risking the toast silently getting swallowed by that race.
+          showToast('The Tothal Shift has reshaped the wilderness...', true);
           debugLog(`Tothal Shift complete for year ${year}`);
         } finally {
           _tothalShiftInFlight = false;
@@ -2905,14 +2909,19 @@
       }
 
       // Called at world start and on every day advance — a no-op unless the
-      // Tothal year has actually changed since this world last shifted.
-      function checkTothalShift() {
+      // Tothal year has actually changed since this world last shifted, or
+      // ?tothal=force is in the URL (or window.forceTothalShift() was called
+      // from devtools) — useful for testing, since a world that already
+      // shifted this year otherwise stays untouched on every reload.
+      function checkTothalShift(force = false) {
         const year = currentTothalYear();
-        if (_loadTothalYear() === year) return;
+        const forceQuery = new URLSearchParams(location.search).get('tothal') === 'force';
+        if (!force && !forceQuery && _loadTothalYear() === year) return;
         _tothalShiftPromise = performTothalShift(year)
           .catch(e => debugLog('Tothal Shift error: ' + e.message, 'warn'))
           .finally(() => { _tothalShiftPromise = null; });
       }
+      window.forceTothalShift = () => checkTothalShift(true);
 
       // Ambient hostile spawning — lives entirely inside the exterior zones now
       // (southern cloud forest → Gar-wolf, northern cliffs → Gar-wolf Alpha).
