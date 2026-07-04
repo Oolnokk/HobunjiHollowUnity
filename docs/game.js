@@ -2995,6 +2995,14 @@
         creatureCanEnterTile,
         CREATURE_DB,
         TileType,
+        getCameraDebug: () => ({
+          camPos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+          camTarget: { x: camTargetX, y: camTargetY, z: camTargetZ },
+          occlusionMeshCount: _zoneScenes.get(currentArea)?.occlusionMeshes?.length ?? null,
+        }),
+        occlusionSafeCameraPosition,
+        updateCameraPosition,
+        snapCameraTarget: _snapCameraTarget,
       };
 
       // Ambient hostile spawning — lives entirely inside the exterior zones now
@@ -3955,7 +3963,10 @@
         buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
-        _zoneWaterMeshes.set(mapId, buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId));
+        _zoneWaterMeshes.set(mapId, [
+          ...buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
+          ...buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
+        ]);
 
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
         buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId);
@@ -4459,6 +4470,63 @@
 
         console.log(`%c[zone:${mapId}] waterfall wall built: ${cells.length} cell(s)`, 'color:#22c55e;font-weight:bold');
         return [mesh];
+      }
+
+      // River/stream/waterfall water surface — an animated translucent plane
+      // sitting above the sunken bed built in buildZoneScene's tile loop, so a
+      // zone's waterways read as real water instead of just their bare bed
+      // color. Mirrors _townRiverWaterMeshes (built in buildTownScene), but
+      // each plane also carries its own tile's elevTier — a zone's water can
+      // sit on any plateau tier, unlike town's single flat grid — and a
+      // WATERFALL cell gets one too (the pool at the top/bottom of its
+      // curtain from buildWaterfallCurtainMeshes above), not just plain
+      // river/stream cells.
+      function buildZoneRiverWaterMeshes(zScene, zGrid, zcols, zrows, mapId) {
+        const isWaterTile = (cc, rr) => {
+          const t = zGrid[rr]?.[cc]?.type;
+          return t === TileType.RIVER || t === TileType.STREAM || t === TileType.WATERFALL;
+        };
+        const meshes = [];
+        for (let r = 0; r < zrows; r++) for (let c = 0; c < zcols; c++) {
+          const tile = zGrid[r][c];
+          if (!isWaterTile(c, r)) continue;
+          let fx = (isWaterTile(c + 1, r) ? 1 : 0) - (isWaterTile(c - 1, r) ? 1 : 0);
+          let fz = (isWaterTile(c, r + 1) ? 1 : 0) - (isWaterTile(c, r - 1) ? 1 : 0);
+          const flen = Math.hypot(fx, fz);
+          if (flen > 0.001) { fx /= flen; fz /= flen; } else { fx = 0; fz = 0; }
+          const deep = tile.type !== TileType.STREAM;
+          const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+          const mat = new THREE.ShaderMaterial({
+            uniforms: {
+              uTime:  { value: 0 },
+              uPhase: { value: (c * 2.7 + r * 4.1) % 6.28 },
+              uDepth: { value: deep ? 0.8 : 0.45 },
+              uFlow:  { value: new THREE.Vector2(fx, fz) },
+              uColor: { value: new THREE.Color(deep ? 0x1f6f9c : 0x4fb8d9) },
+            },
+            vertexShader:   waterVertShader,
+            fragmentShader: waterFragShader,
+            transparent:    true,
+            depthWrite:     false,
+            side:           THREE.FrontSide,
+          });
+          // A dedicated PlaneGeometry per mesh (not the shared module-level
+          // waterGeo used by farm/town) — _disposeZoneScene disposes every
+          // mesh's geometry when a zone is torn down (e.g. on a Tothal
+          // Shift), and that would take the shared geometry down with it,
+          // breaking every other scene still using it. rotateX matches
+          // waterGeo's own baked-in orientation so the plane lies flat.
+          const geo = new THREE.PlaneGeometry(1.0, 1.0);
+          geo.rotateX(-Math.PI / 2);
+          const wm = new THREE.Mesh(geo, mat);
+          wm.receiveShadow = false;
+          wm.position.set(c + 0.5, NORMAL_TOP + tierY - (deep ? 0.10 : 0.05), r + 0.5);
+          zScene.add(wm);
+          _markTerrainEdgeId(wm, 'water');
+          meshes.push(wm);
+        }
+        if (meshes.length) console.log(`%c[zone:${mapId}] river/stream/waterfall water surface built: ${meshes.length} tile(s)`, 'color:#22c55e;font-weight:bold');
+        return meshes;
       }
 
       // Grass billboard tufts for a zone — mirrors _buildTownGrassBillboards but
@@ -11416,8 +11484,18 @@
         if (!hits.length) return { x: idealX, y: idealY, z: idealZ };
         // Stop a little short of the actual hit (not flush against it) so the
         // camera doesn't clip into the cliff face it just pulled in behind.
-        const safeDist = Math.max(1.5, hits[0].distance - 0.6);
-        return { x: lookAtX + dir.x * safeDist, y: lookAtY + dir.y * safeDist, z: lookAtZ + dir.z * safeDist };
+        const safeDist = Math.max(3, hits[0].distance - 0.6);
+        // Wilderness plateaus can tower many tiers higher than anything an
+        // authored map ever had, so a cliff can sit close enough to the
+        // player that safeDist collapses near its floor — sliding straight
+        // back along the same shallow ideal-camera ray then just jams the
+        // camera face-first into that wall (a screen-filling close-up).
+        // Lift the camera as it's pulled in, trading "close" for "more
+        // overhead," so a tall nearby cliff still leaves the player and
+        // their surroundings in view instead of one flat wall.
+        const shrink = clamp(1 - safeDist / dist, 0, 1);
+        const lift = shrink * dist * 0.5;
+        return { x: lookAtX + dir.x * safeDist, y: lookAtY + dir.y * safeDist + lift, z: lookAtZ + dir.z * safeDist };
       }
 
       function updateCameraPosition() {
