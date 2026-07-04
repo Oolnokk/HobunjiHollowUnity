@@ -6220,6 +6220,13 @@
     // gameplay tiles), then re-fuse so the duplicated staircase ramp
     // heights relax into smooth inclines at the new resolution.
     upscaleModelForGameplay(settings.gameplayScale);
+    // Re-derive plateau paint groups and ring/interior flags AT GAMEPLAY
+    // RESOLUTION: the coarse-era 8-neighbor ring covers most of a small
+    // coarse blob, and copying those flags through the upscale left ~70% of
+    // every plateau flagged as ring — the submap then stamped almost none of
+    // the top, and the whole plateau became solid staked cover (the
+    // "invisible walls"). At fine scale the ring is a thin 1-tile band again.
+    applyManualPlateauPaintingRules();
     fuseRampInclines();
     clearRampMouths();
     // Clean the causeway-texture masks into game-renderable mesa shapes

@@ -4244,7 +4244,13 @@
             const top0 = Math.max(a[0], b[0]), top1 = Math.max(a[1], b[1]);
             const bottom0 = Math.min(a[0], b[0]), bottom1 = Math.min(a[1], b[1]);
             const step = Math.max(top0, top1) - Math.min(bottom0, bottom1);
-            if (!(((t.type === TileType.RAMP || nt?.type === TileType.RAMP) && step > 0.04) || (step > 0.04 && (t.incline || nt?.incline || (t.elevTier || 0) !== (nt?.elevTier || 0))))) continue;
+            // A ramp-adjacent edge is a FLUSH walk-on contact unless it drops
+            // at least the curtain epsilon — corner averaging leaves ~0.1-0.4
+            // unit residues along every incline border, and at a 0.04
+            // threshold each one grew a sliver of outlined rock wall,
+            // shredding inclines into "segmented tiles".
+            const rampEdge = t.type === TileType.RAMP || nt?.type === TileType.RAMP;
+            if (!((rampEdge && step > 0.45) || (!rampEdge && step > 0.04 && (t.incline || nt?.incline || (t.elevTier || 0) !== (nt?.elevTier || 0))))) continue;
             if (side === 'E') add(`x:${c + 1}:${r}`, 'x', c + 1, r, c + 1, r + 1, top0, top1, bottom0, bottom1, kindOf(t, nt));
             else add(`z:${r + 1}:${c}`, 'z', c, r + 1, c + 1, r + 1, top0, top1, bottom0, bottom1, kindOf(t, nt));
           }
@@ -6604,6 +6610,58 @@
         refreshActionBar();
         logMapSwap('enterZone', currentArea);
       }
+
+      // Dev/debug hook — lets automated tests (and the browser console) drive
+      // zone entry and audit the LIVE collision grid without UI navigation.
+      window.__hobunjiDebug = {
+        enterZone: (mapId, col, row) => enterZone(mapId, col, row),
+        zoneInfo: (mapId) => {
+          const zi = _zoneScenes.get(mapId);
+          const layout = _zoneLayouts.get(mapId);
+          if (!zi) return null;
+          return { cols: zi.cols, rows: zi.rows, entrySpawn: layout?.entrySpawn || null, seed: layout?.generatedSeed || null };
+        },
+        // Real collision truth: walkable per tileSpeedAt + surface Y per
+        // tileSurfaceYInArea, for the CURRENT area.
+        collisionAudit: () => {
+          const aC = getActiveCols(), aR = getActiveRows();
+          const g = getActiveGrid();
+          const rows = [];
+          for (let r = 0; r < aR; r++) {
+            let line = '';
+            for (let c = 0; c < aC; c++) {
+              const speed = tileSpeedAt((c + 0.5) * TILE, (r + 0.5) * TILE);
+              const t = g[r]?.[c];
+              line += speed === null ? (t?.incline ? 'I' : t?.skipFloor ? 'S' : '#') : (t?.type === 'ramp' ? 'r' : '.');
+            }
+            rows.push(line);
+          }
+          return rows;
+        },
+        surfaceYAt: (c, r) => {
+          const t = getActiveGrid()?.[r]?.[c];
+          return t ? tileSurfaceYInArea(t, currentArea) : null;
+        },
+        currentArea: () => currentArea,
+        regenState: () => ({ epochs: [..._wildernessZoneEpochs.entries()], generatorLoaded: typeof window.WildernessGenerator !== 'undefined' }),
+        // Scene mesh inventory + visibility toggles for isolating render bugs.
+        sceneChildren: (mapId) => {
+          const zi = _zoneScenes.get(mapId || currentArea);
+          if (!zi) return null;
+          return zi.scene.children.map((o, i) => ({
+            i, type: o.type, name: o.name || '',
+            mat: o.material ? (o.material.type + (o.material.vertexColors ? '+vc' : '') + (o.material.color ? ' #' + o.material.color.getHexString() : '')) : '',
+            verts: o.geometry?.attributes?.position?.count || 0,
+            visible: o.visible,
+          }));
+        },
+        setMeshVisible: (index, visible, mapId) => {
+          const zi = _zoneScenes.get(mapId || currentArea);
+          if (!zi || !zi.scene.children[index]) return false;
+          zi.scene.children[index].visible = !!visible;
+          return true;
+        },
+      };
 
       // ── Town building detection ──────────────────────────────────────
       // Reads explicit building entries from the town layout (placed by map editor).
@@ -12030,9 +12088,25 @@
         const GW = bw * CELLS + 1, GH = bh * CELLS + 1;
 
         const EXCLUDED = new Set([TileType.TRENCH, TileType.RAISED, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RIVER, TileType.STREAM]);
-        const cellType    = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]?.type;
-        const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
-        const isExcluded  = (ci, cj) => EXCLUDED.has(cellType(ci, cj));
+        // The path network is a FLAT heightfield at base ground level. On
+        // zone grids (which carry per-tile elevation) it must never claim
+        // ramps, staked mesa cover, or elevated tiles: rendering there
+        // z-fights up through inclines as a cracked patchwork, and because
+        // claimed tiles skip their own floor geometry it also left "topless"
+        // holes at plateau edges. Town/farm grids have none of these fields,
+        // so their behavior is unchanged.
+        const cellAt      = (ci, cj) => srcGrid[minR + cj]?.[minC + ci];
+        const cellType    = (ci, cj) => cellAt(ci, cj)?.type;
+        const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH && !((cellAt(ci, cj)?.elevTier || 0) > 0);
+        const isExcluded  = (ci, cj) => {
+          const t = cellAt(ci, cj);
+          if (!t) return false;
+          if (EXCLUDED.has(t.type)) return true;
+          if (t.type === TileType.RAMP || t.type === TileType.WATERFALL) return true;
+          if (t.skipFloor || t.incline) return true;
+          if ((t.elevTier || 0) > 0) return true;
+          return false;
+        };
 
         // Vertices on a tile boundary touch 2 (edge) or 4 (corner) cells —
         // average their path-membership so the mask starts as a clean 0 /
@@ -12135,7 +12209,9 @@
           pathGeo: makeGeo(pathIdx),
           grassGeo: makeGeo(grassIdx),
           inBounds: (c, r) => c >= minC && c <= maxC && r >= minR && r <= maxR,
-          isExcludedTile: (c, r) => EXCLUDED.has(srcGrid[r]?.[c]?.type),
+          // Must mirror isExcluded above exactly: a tile the network does not
+          // claim must render its own floor, or it has no floor at all.
+          isExcludedTile: (c, r) => isExcluded(c - minC, r - minR),
         };
       }
 
