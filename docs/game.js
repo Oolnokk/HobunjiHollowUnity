@@ -1052,6 +1052,13 @@
         // vertical arc (world-Y units, not pixels) for the charged breaker's leap.
         lunging: false, lungeT: 0, lungeDur: 0, lungeStartX: 0, lungeStartY: 0,
         lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0,
+        // Cliff climbing — see startClimb()/updateMovement. A scripted crossing
+        // (no stamina cost, no terrain collision) rendered as a chain of
+        // staggered hops rather than a continuous slide; climbSurfaceY/
+        // climbHopBounce are consumed by updatePlayerMesh for the vertical rise.
+        climbing: false, climbElapsed: 0, climbHopCount: 0,
+        climbStartX: 0, climbStartY: 0, climbEndX: 0, climbEndY: 0,
+        climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
       };
 
       // Combat tuning is config-backed so tool hit cones, stamina costs, trails,
@@ -1106,6 +1113,9 @@
 
       // Global creature database — companions (whistle-bound) and hostiles
       // (ambient-spawned) are both built from this table.
+      // canClimb/canSwim: default false — a creature without the tag can't
+      // enter an incline (cliff wall) or river/stream tile at all, in either
+      // direction (up, down, or straight across). See moveCreatureToward.
       const CREATURE_DB = {
         'dabinggi-hound': {
           label: 'Dabinggi-hound', hostile: false,
@@ -1114,6 +1124,7 @@
           attackDamage: 10, attackRangePx: TILE * 0.9, attackHalfConeRad: 45 * Math.PI / 180,
           attackStaminaCost: 14, attackCooldownS: 1.1,
           attacks: ['pounce'],
+          canClimb: false, canSwim: false,
           modelWidth: 1.9, tint: 0xffffff,
           sprites: {
             idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
@@ -1133,6 +1144,7 @@
           // the target at range before cycling back to another Pounce attempt.
           behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6.2, leashRangePx: TILE * 9,
+          canClimb: false, canSwim: false,
           modelWidth: 2.1, tint: 0xffffff,
           sprites: {
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
@@ -1148,6 +1160,7 @@
           attacks: ['pounce'],
           behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 7, leashRangePx: TILE * 10,
+          canClimb: false, canSwim: false,
           modelWidth: 3.1, tint: 0xffb0a0,
           sprites: {
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
@@ -2342,17 +2355,36 @@
         playFootstepSfx(c.areaId, type, falloff, pan);
       }
 
+      // Narrow terrain gate for creature movement — unlike tileSpeedAt (used by
+      // the player), this only cares about cliff faces and water crossings, so
+      // untagged creatures keep wandering over rock/shrub exactly as before.
+      // canClimb/canSwim on the creature's CREATURE_DB entry opt out per type.
+      function creatureCanEnterTile(def, wx, wy) {
+        const aC = getActiveCols(), aR = getActiveRows();
+        if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
+        const tile = getActiveGrid()[Math.floor(wy / TILE)][Math.floor(wx / TILE)];
+        if (tile.incline && !def?.canClimb) return false;
+        if ((tile.type === TileType.RIVER || tile.type === TileType.STREAM) && !def?.canSwim) return false;
+        return true;
+      }
+
       function moveCreatureToward(c, tx, ty, speed, dt) {
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
         const nx = dx / dist, ny = dy / dist;
         const step = Math.min(dist, speed * dt);
-        c.x += nx * step;
-        c.y += ny * step;
+        // Axis-separated so a creature turned back by a cliff face or river
+        // slides along it instead of freezing outright (mirrors the player's
+        // collision in updateMovement).
+        const prevX = c.x, prevY = c.y;
+        const desiredX = c.x + nx * step, desiredY = c.y + ny * step;
+        if (creatureCanEnterTile(c.def, desiredX, c.y)) c.x = desiredX;
+        if (creatureCanEnterTile(c.def, c.x, desiredY)) c.y = desiredY;
+        const moved = Math.hypot(c.x - prevX, c.y - prevY);
         c.vx = nx * speed; c.vy = ny * speed;
-        tickCreatureFootsteps(c, step);
-        return true;
+        if (moved > 0) tickCreatureFootsteps(c, moved);
+        return moved > 0;
       }
 
       function wanderTick(c, dt, anchorX, anchorY, radiusPx) {
@@ -2666,6 +2698,25 @@
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+
+          if (player.climbing) {
+            // Teleport-and-stick: an untagged companion can't path through an
+            // incline tile on its own (see CREATURE_DB canClimb / moveCreatureToward),
+            // so for the duration of the climb it just clings to the player's
+            // back instead of trying to follow normally.
+            const backAngle = player.angle + Math.PI;
+            c.x = player.x + Math.cos(backAngle) * TILE * 0.35;
+            c.y = player.y + Math.sin(backAngle) * TILE * 0.35;
+            c.facing = player.angle;
+            c.vx = 0; c.vy = 0;
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, false);
+            // Pin to the player's actual climb-blended height rather than the
+            // incline tile's raw (unblended) surface — see updatePlayerMesh.
+            c.avatarRef.group.position.y = playerMesh.position.y + c.halfHeight * 0.5;
+            continue;
+          }
+
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
           c.stamina = Math.min(c.maxStamina, c.stamina + c.maxStamina * 0.25 * dt);
@@ -2928,6 +2979,23 @@
           .finally(() => { _tothalShiftPromise = null; });
       }
       window.forceTothalShift = () => checkTothalShift(true);
+
+      // Devtools/QA hook for the cliff-climbing feature — mirrors
+      // window.forceTothalShift's role of poking otherwise-input-driven
+      // state from a console/automated test.
+      window.__climbDebug = {
+        getPlayer: () => player,
+        getClimbTarget,
+        startClimb,
+        getActiveGrid,
+        getCurrentArea: () => currentArea,
+        enterZone,
+        companionObjects,
+        hostileObjects,
+        creatureCanEnterTile,
+        CREATURE_DB,
+        TileType,
+      };
 
       // Ambient hostile spawning — lives entirely inside the exterior zones now
       // (southern cloud forest → Gar-wolf, northern cliffs → Gar-wolf Alpha).
@@ -8502,6 +8570,11 @@
 
         const _fsPrevX = player.x, _fsPrevY = player.y;
 
+        if (player.climbing) {
+          updateClimb(dt);
+          return;
+        }
+
         if (player.dodging) {
           player.dodgeT -= dt;
           const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
@@ -9226,6 +9299,12 @@
 
       function useActiveAction() {
         if (dialogueOpen) { advanceNpcDialogue(); return; }
+        if (activeAction === 'climb') {
+          if (player.climbing) return;
+          const climb = getClimbTarget();
+          if (climb) startClimb(climb); else showToast('Nothing to climb here.', false);
+          return;
+        }
         if (activeTool === 'shovel' || activeTool === 'pick') {
           activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
         }
@@ -9367,6 +9446,94 @@
         const y = Math.sin(angle);
         if (Math.abs(x) > Math.abs(y)) return { x: Math.sign(x), y: 0, name: x > 0 ? 'east' : 'west' };
         return { x: 0, y: Math.sign(y), name: y > 0 ? 'south' : 'north' };
+      }
+
+      // Cliff climbing: the player must be facing straight into a plateau's
+      // auto-reserved incline wall (see mergeZoneTiles) from solid ground,
+      // with an actual walkable tile at a different elevation tier on the far
+      // side — otherwise there's nothing to climb. Works either direction
+      // (climbing up onto a plateau or back down off one uses the same check).
+      const CLIMB_MAX_WALL_TILES = 4;
+      function getClimbTarget() {
+        if (!_isZoneArea(currentArea)) return null;
+        const dir = facingCardinal(player.angle);
+        const grid = getActiveGrid();
+        const aC = getActiveCols(), aR = getActiveRows();
+        const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
+        const startTile = grid[startRow]?.[startCol];
+        if (!startTile || startTile.incline) return null;
+        const startElevTier = startTile.elevTier || 0;
+        let col = startCol, row = startRow, wallTiles = 0;
+        for (let steps = 0; steps < CLIMB_MAX_WALL_TILES; steps++) {
+          col += dir.x; row += dir.y;
+          if (col < 0 || row < 0 || col >= aC || row >= aR) return null;
+          const t = grid[row][col];
+          if (!t) return null;
+          if (!t.incline) {
+            if (wallTiles === 0) return null; // nothing but open ground ahead
+            if (isSolid(t.type)) return null;
+            if ((t.elevTier || 0) === startElevTier) return null;
+            return { dir, landCol: col, landRow: row, startElevTier, landElevTier: t.elevTier || 0, wallTiles };
+          }
+          wallTiles++;
+        }
+        return null;
+      }
+
+      // Scripted cliff crossing — bypasses tileSpeedAt/canPlayerOccupy entirely
+      // (it deliberately walks through incline tiles that are otherwise
+      // impassable) and drains no stamina. See updateClimb for the per-frame
+      // staggered-hop motion.
+      const CLIMB_HOP_ACTIVE_S = 0.32;
+      const CLIMB_HOP_PAUSE_S  = 0.26;
+      const CLIMB_HOP_BOUNCE_UNITS = 0.4;
+      function startClimb(climb) {
+        const grid = getActiveGrid();
+        const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
+        const startTile = grid[startRow][startCol];
+        const landTile = grid[climb.landRow][climb.landCol];
+        player.climbing = true;
+        player.climbElapsed = 0;
+        player.climbHopCount = Math.max(3, climb.wallTiles + 1);
+        player.climbStartX = player.x;
+        player.climbStartY = player.y;
+        player.climbEndX = (climb.landCol + 0.5) * TILE;
+        player.climbEndY = (climb.landRow + 0.5) * TILE;
+        player.climbSurfaceStartY = tileSurfaceYInArea(startTile, currentArea);
+        player.climbSurfaceEndY = tileSurfaceYInArea(landTile, currentArea);
+        player.climbSurfaceY = player.climbSurfaceStartY;
+        player.climbHopBounce = 0;
+        player.vx = 0; player.vy = 0;
+        player.angle = Math.atan2(climb.dir.y, climb.dir.x);
+        facingAngle = player.angle;
+        targetAimAngle = player.angle;
+        lastMoveAngle = player.angle;
+      }
+
+      function updateClimb(dt) {
+        const cycle = CLIMB_HOP_ACTIVE_S + CLIMB_HOP_PAUSE_S;
+        const totalDur = player.climbHopCount * cycle;
+        player.climbElapsed = Math.min(player.climbElapsed + dt, totalDur);
+        const hopIndex = Math.min(player.climbHopCount - 1, Math.floor(player.climbElapsed / cycle));
+        const withinCycle = player.climbElapsed - hopIndex * cycle;
+        const hopActive = withinCycle < CLIMB_HOP_ACTIVE_S;
+        const hopLocalT = hopActive ? clamp(withinCycle / CLIMB_HOP_ACTIVE_S, 0, 1) : 1;
+        const eased = 1 - Math.pow(1 - hopLocalT, 2); // quick lift-off, settles into each landing
+        const overall = clamp((hopIndex + eased) / player.climbHopCount, 0, 1);
+
+        player.x = player.climbStartX + (player.climbEndX - player.climbStartX) * overall;
+        player.y = player.climbStartY + (player.climbEndY - player.climbStartY) * overall;
+        player.climbSurfaceY = player.climbSurfaceStartY + (player.climbSurfaceEndY - player.climbSurfaceStartY) * overall;
+        player.climbHopBounce = hopActive ? Math.sin(hopLocalT * Math.PI) * CLIMB_HOP_BOUNCE_UNITS : 0;
+        player.vx = 0; player.vy = 0;
+
+        if (player.climbElapsed >= totalDur) {
+          player.x = player.climbEndX;
+          player.y = player.climbEndY;
+          player.climbSurfaceY = player.climbSurfaceEndY;
+          player.climbHopBounce = 0;
+          player.climbing = false;
+        }
       }
 
       function angleDiff(target, current) {
@@ -14289,11 +14456,17 @@
         const col = clamp(Math.floor(wx), 0, getActiveCols()-1);
         const row = clamp(Math.floor(wz), 0, getActiveRows()-1);
         const tile = getActiveTileAt(col, row);
-        const standY = tileSurfaceYInArea(tile, currentArea);
+        // While climbing, the player is mid-crossing through impassable
+        // incline tiles — use the scripted start->landing blend from
+        // updateClimb instead of a raw tile lookup, which would pop between
+        // the cliff base and plateau top the instant the crossing tile
+        // flips (see startClimb/updateClimb).
+        const standY = player.climbing ? player.climbSurfaceY : tileSurfaceYInArea(tile, currentArea);
 
         // Smooth vertical position (bob over water, plus a combat lunge's
-        // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent)
-        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0);
+        // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent —
+        // or a climbing hop's bounce, see player.climbHopBounce)
+        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0);
         playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
@@ -15758,6 +15931,12 @@
           if (obj2) obj2.getButtons(reticle).forEach(b => btnsSpot.push(b));
           return btnsSpot;
         }
+
+        // Zone: a climbable cliff face straight ahead takes priority over tool use.
+        if (_isZoneArea(currentArea) && !player.climbing && getClimbTarget()) {
+          return [{ icon: '🧗', label: 'Climb', action: 'climb', style: 'primary', allowed: true }];
+        }
+
         const tile    = getActiveGrid()[reticle.row][reticle.col];
         const btns    = [];
 
