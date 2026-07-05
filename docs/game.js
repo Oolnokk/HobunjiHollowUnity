@@ -2864,9 +2864,14 @@
           let moving = false, aimAngle = c.facing || 0;
           if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
+            // Per-axis canOccupyAt check (same primitive/radius convention as
+            // the player's own knockback/dodge/lunge and the pounce/guard-
+            // charge leaps below) so a hard shove can't punch a creature
+            // through a cliff face, water, or the map edge.
             c.knockbackT = Math.max(0, c.knockbackT - dt);
-            c.x += c.knockbackVX * dt;
-            c.y += c.knockbackVY * dt;
+            const nkx = c.x + c.knockbackVX * dt, nky = c.y + c.knockbackVY * dt;
+            if (canOccupyAt(nkx, c.y, TILE * 0.32)) c.x = nkx; else c.knockbackVX = 0;
+            if (canOccupyAt(c.x, nky, TILE * 0.32)) c.y = nky; else c.knockbackVY = 0;
           } else if (c.state === 'chase') {
             aimAngle = Math.atan2(dyp, dxp);
             if (c.retreatT > 0) {
