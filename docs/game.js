@@ -2232,7 +2232,7 @@
       }
 
       // spriteUrl -> resolved bottom-opacity ratio (0..1, see
-      // creatureGroundAnchorFromRatio), or a Set of pending callbacks while
+      // creaturePlaneGroundOffset), or a Set of pending callbacks while
       // the very first scan of that species' idle sprite is still loading.
       const _creatureGroundAnchorCache = new Map();
 
@@ -2261,13 +2261,19 @@
         img.src = spriteUrl;
       }
 
-      // bottomRatio=1 means the art reaches the sprite's bottom edge (no
-      // padding) — this reduces to the original halfH-only anchor exactly.
-      // Anything less shifts the anchor down by the padding's share of
-      // modelHeight, so the actual art (not the empty canvas margin below
-      // it) is what touches surfY once placed at surfY + this value.
-      function creatureGroundAnchorFromRatio(halfH, modelHeight, bottomRatio) {
-        return halfH - modelHeight * (1 - bottomRatio);
+      // The prism (avatarRef.group — see updateCreatureMesh's "Prism (group)
+      // tracks the raw aim angle..." comment) keeps its true, unpadded size:
+      // its floor is local Y = -halfH exactly as CREATURE_DB's modelWidth/
+      // modelHeight define it, which is what places it correctly at surfY
+      // and is what any future hitbox/collision use of that size would
+      // expect. The correction belongs on the PLANE meshes themselves
+      // (children of the prism), not on the prism's own placement: shifting
+      // them down by the padding's share of modelHeight moves the art's
+      // real opaque bottom onto the prism's actual floor without changing
+      // the prism's own footprint at all. bottomRatio=1 (no padding) gives
+      // an offset of 0 — the plane stays exactly where it started.
+      function creaturePlaneGroundOffset(modelHeight, bottomRatio) {
+        return -modelHeight * (1 - bottomRatio);
       }
 
       function makeCreatureEntity(creatureKey, x, y, opts = {}) {
@@ -2330,13 +2336,16 @@
           scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
           ...restOpts,
         };
-        // Corrects halfHeight (used for every ground-anchoring calculation —
-        // updateCreatureMesh, the death-fall height in updateCorpses, the
-        // companion climb-stick offset) in place once the idle sprite's
-        // real opaque bottom edge is known. Fires synchronously if this
-        // species' sprite was already scanned by an earlier creature.
+        // Shifts the plane meshes (not the prism/group itself — see
+        // creaturePlaneGroundOffset) down once the idle sprite's real
+        // opaque bottom edge is known, so the art's actual feet sit on the
+        // prism's floor instead of on the raw sprite rectangle's edge.
+        // Fires synchronously if this species' sprite was already scanned
+        // by an earlier creature.
         resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => {
-          creature.halfHeight = creatureGroundAnchorFromRatio(halfH, modelHeight, bottomRatio);
+          const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio);
+          if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
+          if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
         });
         return creature;
       }
