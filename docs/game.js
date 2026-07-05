@@ -291,8 +291,58 @@
       }
 
       function _getNpcDlgState(npcId) {
-        if (!_npcDlgState.has(npcId)) _npcDlgState.set(npcId, { visitedSeqSlots: {}, localNickname: null });
+        if (!_npcDlgState.has(npcId)) _npcDlgState.set(npcId, { visitedSeqSlots: {}, localNickname: null, favor: 0, memory: [] });
         return _npcDlgState.get(npcId);
+      }
+
+      // NPC relationships/memory are world-scoped per character — they stay
+      // behind in this world's member record rather than following the
+      // character to another world. Loaded into the same _npcDlgState map
+      // that already tracked visited dialogue nodes/local nicknames for the
+      // current session, so NPCs remember what's been said across sessions too.
+      function loadNpcRelationships(playerData) {
+        _npcDlgState.clear();
+        const rels = playerData?.npcRelationships || {};
+        for (const [npcId, rel] of Object.entries(rels)) {
+          _npcDlgState.set(npcId, {
+            visitedSeqSlots: { ...(rel.visitedSeqSlots || {}) },
+            localNickname:   rel.localNickname || null,
+            favor:           rel.favor || 0,
+            memory:          [...(rel.memory || [])],
+          });
+        }
+      }
+
+      function npcRelationshipsSnapshot() {
+        const out = {};
+        for (const [npcId, st] of _npcDlgState.entries()) {
+          out[npcId] = {
+            visitedSeqSlots: st.visitedSeqSlots,
+            localNickname:   st.localNickname,
+            favor:           st.favor || 0,
+            memory:          st.memory || [],
+          };
+        }
+        return out;
+      }
+
+      // Appends a small memory entry an NPC "remembers" about this character —
+      // ready for gift/dialogue-choice hooks to call into once those systems
+      // record specific events, not just that a conversation happened.
+      function recordNpcMemory(npcId, event) {
+        if (!npcId) return;
+        const st = _getNpcDlgState(npcId);
+        st.memory.push({ event, day: calendar.day, ts: Date.now() });
+        if (st.memory.length > 50) st.memory.shift();
+      }
+
+      // No gift/relationship-building system exists yet to call this from —
+      // exposed as the entry point that one will use once built.
+      function adjustNpcFavor(npcId, amount, reason) {
+        if (!npcId) return;
+        const st = _getNpcDlgState(npcId);
+        st.favor = (st.favor || 0) + amount;
+        recordNpcMemory(npcId, reason || (amount >= 0 ? 'favor_up' : 'favor_down'));
       }
 
       function _resolveTokens(text, npcRec) {
@@ -322,7 +372,11 @@
       }
 
       function _pickDialogueTree(rec) {
-        const trees = (rec?.dialogueTrees || []).filter(t => (t.trigger || 'interact') === 'interact');
+        // A tree can tag itself visibility: 'owner' or 'farmhand' to restrict
+        // it to the world's protagonist or to non-owner members respectively;
+        // omitted/'any' (the default) is visible to everyone.
+        const trees = (rec?.dialogueTrees || [])
+          .filter(t => (t.trigger || 'interact') === 'interact' && canAccessContent(t.visibility));
         return trees.sort((a, b) => (b.priority || 0) - (a.priority || 0))[0] || null;
       }
 
@@ -605,6 +659,7 @@
 
       async function openNpcDialogue(walker) {
         const rec  = walker.rec;
+        recordNpcMemory(rec?.id, 'talked');
 
         dialogueOpen    = true;
         _dialogueWalker = walker;
@@ -678,6 +733,7 @@
         _arcContainerEl?.classList.remove('arc-hidden');
         _npcDialogueEl.classList.remove('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'true');
+        saveMemberWorldData(); // persist visited-node/memory state mutated during the conversation
       }
 
       function renderRelationshipHearts(rec) {
@@ -1657,6 +1713,10 @@
             return moved;
           },
           withdrawItem(key, qty) {
+            // Self-guarded (not just at the transferShippingAmount() UI call site)
+            // so any future caller of this object's API can't bypass the farm's
+            // storage-withdraw permission.
+            if (!hasFarmPermission('storage')) return 0;
             const moved = Math.max(0, Math.min(qty, bin[key] || 0));
             if (moved < 1) return 0;
             bin[key] -= moved;
@@ -1682,6 +1742,7 @@
               if (deliveryLog.length > 12) deliveryLog.pop();
               showToast('🟧 Sold! +' + earned + 'g', true);
               if (menuOpen) { buildInventoryGrid(); buildShippingTransferUI(); }
+              saveMemberWorldData();
             }
             // Animate lid
             const h = tileSurfaceY(TileType.GRASS) + 0.56 + (totalItems() > 0 ? 0.06 : 0);
@@ -1908,6 +1969,13 @@
       let _editorPainting = false;
 
       function toggleFarmEditMode() {
+        // The farm editor freely repaints tiles/crops and drops/removes
+        // furniture with no per-brush permission checks, so it's gated at
+        // this single entry point instead — only the farm's owner can open it.
+        if (!farmEditMode && !isFarmOwner()) {
+          showToast("Only the farm's owner can use the farm editor.", false);
+          return;
+        }
         farmEditMode = !farmEditMode;
         const panel = document.getElementById('farmEditorPanel');
         const btn   = document.getElementById('farmEditBtn');
@@ -1999,7 +2067,18 @@
       }
 
       // ── Farm layout persistence ───────────────────────────────────
+      // Namespaced per world so separate worlds never bleed into each other's
+      // farm. worldId isn't known until onboarding's hobunjiPlayerReady event
+      // fires (after this module's synchronous init already ran once), so
+      // early calls fall back to the legacy unnamespaced key — spawnPlayerAvatar
+      // re-reads and re-applies the correctly-namespaced layout once the real
+      // worldId is known (see the resync block there).
       const FARM_LAYOUT_KEY = 'hobunji_farm_layout_v3';
+
+      function farmLayoutKey() {
+        const worldId = (window.__hobunjiPlayerProfile || _playerData)?.worldId;
+        return worldId ? (FARM_LAYOUT_KEY + ':' + worldId) : FARM_LAYOUT_KEY;
+      }
 
       function saveFarmLayout() {
         try {
@@ -2025,13 +2104,13 @@
           if (worldRoutes.length)      layout.routes      = worldRoutes;
           if (worldNpcPaths.length)    layout.npcPaths    = worldNpcPaths; // legacy compatibility
           if (worldTransitions.length) layout.transitions = worldTransitions;
-          localStorage.setItem(FARM_LAYOUT_KEY, JSON.stringify(layout));
+          localStorage.setItem(farmLayoutKey(), JSON.stringify(layout));
         } catch {}
       }
 
       function loadFarmLayout() {
         try {
-          const raw = localStorage.getItem(FARM_LAYOUT_KEY);
+          const raw = localStorage.getItem(farmLayoutKey());
           return raw ? JSON.parse(raw) : null;
         } catch { return null; }
       }
@@ -2091,7 +2170,7 @@
         return true;
       }
 
-      function makeUumkaoiiAnimal(col, row) {
+      function makeUumkaoiiAnimal(col, row, livestockId) {
         const ANIMAL_W = 1.275;
         const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
         const halfH = ANIMAL_H / 2;
@@ -2110,6 +2189,7 @@
         let tickCounter = 0;
         const animal = {
           id: 'uumkaoii_' + col + '_' + row + '_' + (performance.now() | 0),
+          livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
           type: 'animal', animalKey: 'uumkaoii',
           col, row, targetCol: col, targetRow: row,
           wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
@@ -2173,6 +2253,11 @@
         return animal;
       }
 
+      // Livestock kind → factory, so restoring saved livestock on world load
+      // can dispatch by kind without hardcoding uumkao'ii — the array this
+      // reads is meant to grow into other livestock types later.
+      const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal };
+
       function spawnUumkaoii(col, row) {
         if (!canSpawnAnimalAt(col, row)) return { ok: false, message: 'The uumkao\'ii can\'t be released here.' };
         if ((inventory.uumkaoiiCrate || 0) < 1) return { ok: false, message: 'No Uumkao\'ii Crate in bag.' };
@@ -2182,7 +2267,28 @@
         clampInventoryStack('uumkaoiiCrate');
         worldObjects.set(col + ',' + row, animal);
         animalObjects.add(animal);
+        // Livestock belongs to the world, not this character — persisted
+        // separately from saveMemberWorldData() so it stays behind for
+        // anyone who plays this world, not just whoever released it.
+        const livestock = _loadWorldLivestock();
+        livestock.push({ id: animal.livestockId, kind: 'uumkaoii', col, row, releasedAt: Date.now() });
+        _saveWorldLivestock(livestock);
         return { ok: true, message: "🦆 Uumkao'ii released!" };
+      }
+
+      // Recreates every animal this world's owner (or any farmhand) has ever
+      // released, from the world's own saved livestock list — called once
+      // per world load, after furniture placement so canSpawnAnimalAt's
+      // occupancy check sees the final tile state.
+      function respawnWorldLivestock() {
+        for (const entry of _loadWorldLivestock()) {
+          const factory = LIVESTOCK_FACTORIES[entry.kind];
+          if (!factory || !canSpawnAnimalAt(entry.col, entry.row)) continue;
+          const animal = factory(entry.col, entry.row, entry.id);
+          if (!animal) continue;
+          worldObjects.set(entry.col + ',' + entry.row, animal);
+          animalObjects.add(animal);
+        }
       }
 
       function clearAnimalObjects() {
@@ -3241,6 +3347,172 @@
           world.lastTothalYear = year;
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
+      }
+
+      // ── Livestock (belongs to the world itself, not any character) ─────
+      // [{ id, kind, col, row, releasedAt }] — released animals stay on the
+      // farm for whoever plays this world, unlike gear/inventory which is
+      // scoped to whichever character released them.
+      function _loadWorldLivestock() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return [];
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.livestock ?? [];
+        } catch { return []; }
+      }
+
+      function _saveWorldLivestock(list) {
+        const worldId = _tothalWorldId();
+        if (!worldId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.livestock = list;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
+      // ── Farm ownership / farmhand permissions ─────────────────────────
+      // World data (non-gear inventory, NPC relationships, quest progress)
+      // stays behind in the world's per-character member record rather than
+      // following the character between worlds — the opposite of gear,
+      // skills, and stats, which live on the character record and always
+      // travel with them. isWorldOwner/farmhandPermissions are decided once
+      // at save-select time (onboarding.js) and carried on _playerData for
+      // the session; a real farmhand's grants only change between sessions
+      // until networking exists to push a live update.
+      // Single source of truth for the permission-key set within this file
+      // (onboarding.js keeps its own copy — the two closures share no module).
+      function defaultFarmhandPermissions() {
+        return { storage: false, plant: false, harvest: false, placeFurniture: false, alterFarm: false };
+      }
+
+      function defaultWorldMemberState() {
+        return { nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {}, joinedAt: Date.now() };
+      }
+
+      function isFarmOwner() {
+        if (_debugFarmRoleOverride) return _debugFarmRoleOverride.isOwner;
+        return _playerData ? !!_playerData.isWorldOwner : true; // no world context yet — don't lock out solo play
+      }
+
+      function hasFarmPermission(action) {
+        if (isFarmOwner()) return true;
+        const perms = _debugFarmRoleOverride ? _debugFarmRoleOverride.permissions : _playerData?.farmhandPermissions;
+        return !!(perms && perms[action]);
+      }
+
+      // Devtools-only role simulator so farmhand gating can be verified without
+      // real multiplayer: window.__hobunjiSetFarmRole('farmhand', {plant:true})
+      // or window.__hobunjiSetFarmRole('owner') to restore normal behavior.
+      let _debugFarmRoleOverride = null;
+      window.__hobunjiSetFarmRole = function (role, permissions) {
+        if (role === 'owner') { _debugFarmRoleOverride = null; showToast('Debug: acting as farm owner.', true); return; }
+        if (role === 'farmhand') {
+          _debugFarmRoleOverride = {
+            isOwner: false,
+            permissions: { ...defaultFarmhandPermissions(), ...permissions },
+          };
+          showToast('Debug: acting as farmhand ' + JSON.stringify(_debugFarmRoleOverride.permissions), true);
+          return;
+        }
+        console.warn('__hobunjiSetFarmRole: role must be "owner" or "farmhand"');
+      };
+
+      // Adds/updates a farmhand grant on the current world's save-meta record.
+      // Exposed for the (future) invite/matchmaking UI and for devtools testing:
+      // window.__hobunjiAddFarmhand(characterId, { storage: true }).
+      window.__hobunjiAddFarmhand = function (characterId, permissions) {
+        const worldId = _tothalWorldId();
+        if (!worldId || !characterId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          if (world.ownerCharacterId === characterId) return; // owner already has full access
+          if (!world.farmhands) world.farmhands = [];
+          let entry = world.farmhands.find(f => f.characterId === characterId);
+          if (!entry) {
+            entry = { characterId, permissions: defaultFarmhandPermissions() };
+            world.farmhands.push(entry);
+          }
+          if (permissions) Object.assign(entry.permissions, permissions);
+          if (!world.members) world.members = {};
+          if (!world.members[characterId]) {
+            world.members[characterId] = defaultWorldMemberState();
+          }
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      };
+
+      window.__hobunjiRemoveFarmhand = function (characterId) {
+        const worldId = _tothalWorldId();
+        if (!worldId || !characterId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.farmhands = (world.farmhands || []).filter(f => f.characterId !== characterId);
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      };
+
+      // ── Per-world-per-character data (non-gear inventory, pack, NPC/quest) ──
+      // Mirrors saveGearInventory()'s pattern of touching hobunjiSaveMeta
+      // directly, but under world.members[characterId] instead of the
+      // character record — this is the data that stays behind in the world
+      // when a character leaves, rather than following them.
+      function saveMemberWorldData() {
+        const worldId  = _tothalWorldId();
+        const charId   = (window.__hobunjiPlayerProfile || _playerData)?.characterId;
+        if (!worldId || !charId) return;
+        try {
+          const meta  = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          if (!world.members) world.members = {};
+          const member = world.members[charId] || (world.members[charId] = defaultWorldMemberState());
+          member.nonGearInventory = { ...inventory };
+          member.packClothing    = [...packClothing];
+          member.npcRelationships = npcRelationshipsSnapshot();
+          member.questProgress    = { ...questProgress };
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
+      // ── Owner/farmhand content visibility ─────────────────────────────
+      // Generic gate dialogue trees and (future) quests can tag themselves
+      // with: 'owner' (world-owner/protagonist only), 'farmhand' (non-owner
+      // members only), or 'any'/omitted (everyone, the default).
+      function canAccessContent(visibility) {
+        if (!visibility || visibility === 'any') return true;
+        if (visibility === 'owner')    return isFarmOwner();
+        if (visibility === 'farmhand') return !isFarmOwner();
+        return true;
+      }
+
+      // ── Quest progress (per world, per character) ─────────────────────
+      // No quest content is authored yet — this is the tracking scaffold
+      // future quest-giving dialogue/hooks can call into. { [questId]:
+      // { status: 'not_started'|'in_progress'|'completed', progress, completedAt } }
+      let questProgress = {};
+
+      function getQuestState(questId) {
+        return questProgress[questId] || { status: 'not_started', progress: {}, completedAt: null };
+      }
+
+      function canAccessQuest(quest) {
+        return canAccessContent(quest?.visibility);
+      }
+
+      function setQuestStatus(questId, status, progressPatch) {
+        const st = questProgress[questId] || (questProgress[questId] = { status: 'not_started', progress: {}, completedAt: null });
+        st.status = status;
+        if (progressPatch) Object.assign(st.progress, progressPatch);
+        if (status === 'completed' && !st.completedAt) st.completedAt = Date.now();
+        saveMemberWorldData();
       }
 
       let _tothalShiftInFlight = false;
@@ -7645,6 +7917,7 @@
             showToast(result.message, result.ok !== false);
             renderSupplyPage();
             buildInventoryGrid();
+            if (result.ok !== false) saveMemberWorldData();
           });
           list.appendChild(row);
         });
@@ -7692,6 +7965,7 @@
         showToast('Bought ' + item.name + '!', true);
         renderGeneralStorePage();
         buildInventoryGrid();
+        saveMemberWorldData();
       }
 
       function renderGeneralStoreGoods(list) {
@@ -7736,6 +8010,7 @@
             packClothing.push({ ...item });
             showToast('Bought ' + item.label + '!', true);
             renderGeneralStorePage(); buildInventoryGrid(); buildPackClothingSection();
+            saveMemberWorldData();
           });
           list.appendChild(row);
         });
@@ -8040,6 +8315,12 @@
           moved = shippingBoxObject.depositItem(key, qty);
           if (moved > 0) showToast(`📦 Shipped ${moved}× ${ITEM_DEFS[key].label}`, true);
         } else {
+          // Taking items back OUT of storage is owner/granted-farmhand only —
+          // depositing into it is always allowed.
+          if (!hasFarmPermission('storage')) {
+            showToast("Only the farm's owner (or a granted farmhand) can take from storage.", false);
+            return;
+          }
           moved = shippingBoxObject.withdrawItem(key, qty);
           if (moved > 0) showToast(`↩ Took back ${moved}× ${ITEM_DEFS[key].label}`, true);
         }
@@ -8051,6 +8332,7 @@
         buildInventoryGrid();
         buildShippingTransferUI();
         refreshItemScroll();
+        saveMemberWorldData();
       }
 
       function renderShippingGrid(side) {
@@ -8218,6 +8500,7 @@
               showToast(`Sold all ${def.label} for ${earned}g`, true);
               if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
               buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+              saveMemberWorldData();
             });
             mkBtn(`Sell 1  (${def.sellPrice}g)`, 'sell', () => {
               if ((inventory[key] || 0) < 1) return;
@@ -8226,6 +8509,7 @@
               showToast(`Sold 1 ${def.label} for ${def.sellPrice}g`, true);
               if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
               buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+              saveMemberWorldData();
             });
           }
           // Tool items in pack: offer Transfer to Gear (can't equip directly from pack)
@@ -8445,6 +8729,7 @@
         gearInventory.clothing[item.slot] = item;
         packClothing.splice(idx, 1);
         saveGearInventory();
+        saveMemberWorldData(); // packClothing (world-scoped) lost the item saveGearInventory just persisted to gear
         refreshPlayerAvatar();
         showToast(item.label + ' moved to gear and equipped!', true);
         buildPackClothingSection(); buildEquipmentSlots(); clearInventoryDetail();
@@ -8509,6 +8794,7 @@
               inventory.gold = (inventory.gold || 0) + item.sellPrice;
               showToast('Sold ' + item.label + ' for ' + item.sellPrice + 'g', true);
               buildPackClothingSection(); buildInventoryGrid(); clearInventoryDetail();
+              saveMemberWorldData();
             });
           }
         }
@@ -9863,6 +10149,15 @@
         // sustained hold through multiple ramping/timed swings rather than a single
         // tap — hand off to the charge state machine instead of a normal swing.
         if (wouldStartCharge(activeTool, activeAction)) {
+          // Check permission before the multi-second hold starts, not after —
+          // completeChargeAction() re-checks too in case a grant changes mid-charge.
+          const _preChargePermCategory = farmActionPermissionCategory(activeTool, activeAction);
+          if (_preChargePermCategory && !hasFarmPermission(_preChargePermCategory)) {
+            const msg = "Only the farm's owner (or a granted farmhand) can do that here.";
+            lastActionMessage = msg;
+            showToast(msg, false);
+            return;
+          }
           startChargeAction(getReticleTile(), activeAction === 'fill' ? FILL_TRENCH_STAGES : DIG_NEW_TRENCH_STAGES);
           return;
         }
@@ -9897,6 +10192,7 @@
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
           showToast(_res.message, _res.ok !== false);
+          if (_res.ok !== false) saveMemberWorldData();
           return;
         }
 
@@ -9905,10 +10201,38 @@
         pendingAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool };
       }
 
+      // Only the farm (and, for furniture, the house interior) is
+      // ownership-gated — wilderness/town resource gathering, combat, and
+      // navigation are always open to any farmhand. Returns null when the
+      // action isn't farm-alteration at all (weapon swings, obj_
+      // interactions, spawn_uumkaoii debug spawns, etc.).
+      function farmActionPermissionCategory(tool, action) {
+        if (action.startsWith('place_')) {
+          // placeDecorativeFurniture() also accepts area:'interior' pieces
+          // placed inside the house — gate those too, not just the open farm.
+          return (currentArea === 'farm' || currentArea === 'interior') ? 'placeFurniture' : null;
+        }
+        if (currentArea !== 'farm') return null;
+        if (action.startsWith('plant_')) return 'plant';
+        if (action === 'harvest') return 'harvest';
+        if (tool === 'shovel' || tool === 'hoe' || tool === 'pick' || tool === 'machete' || tool === 'axe') return 'alterFarm';
+        return null;
+      }
+
       function firePendingAction() {
         if (!pendingAction) return;
         const { col, row, action, tool } = pendingAction;
         pendingAction = null;
+
+        const permCategory = farmActionPermissionCategory(tool, action);
+        if (permCategory && !hasFarmPermission(permCategory)) {
+          const msg = "Only the farm's owner (or a granted farmhand) can do that here.";
+          lastActionMessage = msg;
+          showToast(msg, false);
+          refreshActionBar();
+          return;
+        }
+
         const tile = getActiveGrid()[row][col];
         let result;
         if (action.startsWith('place_decor_')) {
@@ -9934,6 +10258,7 @@
           recomputeWater(false);
           if (result.ok !== false) markTileDirty(col, row);
         }
+        if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
       }
 
@@ -13618,6 +13943,16 @@
         const { col, row, action, tool } = chargeAction;
         chargeAction = null;
         chargeAnimOverride = null;
+        // Re-check permission at completion too (not just at charge-start) in
+        // case a farmhand grant changes mid-charge.
+        const _chargePermCategory = farmActionPermissionCategory(tool, action);
+        if (_chargePermCategory && !hasFarmPermission(_chargePermCategory)) {
+          const msg = "Only the farm's owner (or a granted farmhand) can do that here.";
+          lastActionMessage = msg;
+          showToast(msg, false);
+          refreshActionBar();
+          return;
+        }
         const result = applyAction(tool, action, col, row);
         lastActionMessage = result.message;
         showToast(result.message, result.ok !== false);
@@ -13627,6 +13962,7 @@
           recomputeWater(false);
           if (result.ok !== false) markTileDirty(col, row);
         }
+        if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
       }
 
@@ -17078,6 +17414,13 @@
       }
 
       function doReset() {
+        // Wipes the whole shared farm (day/weather/furniture/animals) and this
+        // character's own inventory back to day one — owner-only, same as the
+        // farm editor, so a farmhand can't nuke the owner's ongoing work.
+        if (!isFarmOwner()) {
+          showToast("Only the farm's owner can reset the farm.", false);
+          return;
+        }
         calendar.day = 17;
         calendar.time01 = 0.30;
         calendar.weather = 'rain';
@@ -17089,6 +17432,7 @@
         clearPlacedProcessingFurniture();
         clearInteriorFurniture();
         clearAnimalObjects();
+        _saveWorldLivestock([]); // full farm reset also clears released animals from the world file
         clearHostileObjects();
         despawnCompanions();
         worldObjects.forEach(o => o.reset && o.reset());
@@ -17773,12 +18117,15 @@
         setBrush: farmEditorSetBrush,
         save: saveFarmLayout,
         clearLayout: () => {
-          try { localStorage.removeItem(FARM_LAYOUT_KEY); } catch {}
+          try { localStorage.removeItem(farmLayoutKey()); } catch {}
           showToast('Saved layout cleared. Reset the farm to apply.', true);
         },
       };
 
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
+      // Safety net for any inventory/pack change not already covered by an
+      // explicit saveMemberWorldData() call above.
+      window.addEventListener('beforeunload', () => { try { saveMemberWorldData(); } catch {} });
       fitToAspect();
       resizeCanvas();
       refreshActionBar();
@@ -17807,6 +18154,58 @@
         // zones, but nothing here needs to block on it — a zone only needs
         // to be reshaped by the time the player actually walks into it.
         checkTothalShift();
+
+        // The module-level init above loaded the farm layout (tiles/crops and
+        // furniture/crate positions) under the legacy unnamespaced key, since
+        // worldId wasn't known yet at that point. Now that playerData.worldId
+        // is known, redo just that part against the correctly-namespaced
+        // per-world key so separate worlds never bleed into each other's farm
+        // (mirrors doReset()'s regenerate-then-apply pattern below). Transitions/
+        // routes/NPC schedules are shared authored map content, not per-world
+        // state, so initWorldTravel() is deliberately NOT redone here — it
+        // already ran once at module init, and spawnScheduledNpcs() isn't
+        // idempotent (it appends to npcWalkers with no clear step), so calling
+        // it again would spawn every scheduled NPC a second time.
+        clearPlacedProcessingFurniture();
+        clearInteriorFurniture();
+        worldObjects.forEach(o => o.reset && o.reset());
+        grid = createInitialGrid();
+        // Module init already may have moved the shipping/supply crates per the
+        // legacy-key layout — put them back to their hard defaults before
+        // applying (or not finding) this world's own saved positions, so a
+        // brand-new world can't inherit another world's crate placement.
+        const DEFAULT_SELL_CRATE_COL = 2, DEFAULT_SELL_CRATE_ROW = ROWS - 3;
+        const DEFAULT_SUPPLY_BOX_COL = 4, DEFAULT_SUPPLY_BOX_ROW = ROWS - 3;
+        if (shippingBoxObject && (shippingBoxObject.col !== DEFAULT_SELL_CRATE_COL || shippingBoxObject.row !== DEFAULT_SELL_CRATE_ROW)) {
+          worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
+          const nc = makeSellCrate(DEFAULT_SELL_CRATE_COL, DEFAULT_SELL_CRATE_ROW);
+          shippingBoxObject = nc; worldObjects.set(nc.col + ',' + nc.row, nc);
+        }
+        if (supplyBoxObject && (supplyBoxObject.col !== DEFAULT_SUPPLY_BOX_COL || supplyBoxObject.row !== DEFAULT_SUPPLY_BOX_ROW)) {
+          worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
+          const nb = makeSupplyBox(DEFAULT_SUPPLY_BOX_COL, DEFAULT_SUPPLY_BOX_ROW);
+          supplyBoxObject = nb; worldObjects.set(nb.col + ',' + nb.row, nb);
+        }
+        const _worldLayout = loadFarmLayout();
+        if (_worldLayout) applyFarmLayoutToGrid(_worldLayout);
+        applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
+        respawnWorldLivestock(); // after furniture, so occupancy checks see final tile state
+        recomputeWater(false);
+
+        // Non-gear inventory (resources) and pack clothing are world-scoped
+        // per character — they stay behind in this world's member record
+        // rather than following the character to another world.
+        Object.keys(inventory).forEach(key => { delete inventory[key]; });
+        Object.assign(inventory, Object.keys(playerData.nonGearInventory || {}).length
+          ? { ...playerData.nonGearInventory }
+          : { ...STARTING_INVENTORY });
+        packClothing = [...(playerData.packClothing || [])];
+
+        // NPC relationships/memory and quest progress are likewise world-scoped
+        // per character.
+        loadNpcRelationships(playerData);
+        questProgress = { ...(playerData.questProgress || {}) };
+
         gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
           ? playerData.gearInventory
           : makeDefaultGear();
