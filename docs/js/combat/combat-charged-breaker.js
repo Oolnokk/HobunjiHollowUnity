@@ -1,17 +1,27 @@
 // Combat charged breaker — the weapon tool's hold-slot heavy release,
 // ported from the sandbox's beginPowerHold()/endPowerHold() chargedBreaker
-// branch. Holding charges up (no effect while held beyond the visual cue);
-// releasing before the minimum charge wastes the press, releasing later
-// scales damage/range/knockback/stamina-cost up to a cap. Registers under
-// the 'hold' slot family alongside combat-flurry.js so either can occupy
-// hold1 or hold2.
+// branch. Holding continuously drains stamina (see CHARGE_DRAIN_PER_S) as
+// well as charging up; releasing before the minimum charge wastes the
+// press, releasing later scales damage/range/knockback up to a cap — and
+// running out of stamina mid-charge forces an early release at whatever
+// charge had been reached, so the player's stamina pool caps how strong a
+// held breaker can get just as much as how long they hold the button.
+// Registers under the 'hold' slot family alongside combat-flurry.js so
+// either can occupy hold1 or hold2.
 (() => {
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-charged-breaker.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
   const MIN_READY_S = 0.62;
   const MAX_CHARGE_S = 1.75;
-  const COST_MIN = 28, COST_MAX = 50;
+  // Drained continuously every frame the button is held, on top of the
+  // release cost below — running dry mid-charge forces an early release at
+  // whatever charge level had been reached so far (see onHoldUpdate/
+  // releaseNow), so how much stamina the player actually has to spend
+  // directly caps how strong a held breaker can get, not just how long
+  // they're willing to hold the button.
+  const CHARGE_DRAIN_PER_S = 18;
+  const COST_MIN = 16, COST_MAX = 28;
   const DAMAGE_MUL_MIN = 3.3, DAMAGE_MUL_MAX = 6.6; // ~46-92 vs the demo's 14-damage baseline
   // x1.5 on top of the global knockback-base doubling — charged breaker is
   // one of the four attacks called out for an extra "even more" bump.
@@ -57,24 +67,31 @@
       });
     }
 
-    function onHoldEnd() {
-      if (startedAt < 0) return;
-      const held = now() - startedAt;
+    // held: actual seconds the button was down for when this fires.
+    // forced: true if it fired because stamina ran dry mid-charge rather
+    // than the player releasing normally — the continuous hold-drain
+    // already spent everything, so there's no separate release cost to
+    // collect (and nothing left to collect it from).
+    function releaseNow(held, forced) {
       startedAt = -1;
       const deps = window.Combat.deps;
       if (held < MIN_READY_S) {
         deps.cancelWeaponSwingHold();
-        deps.showToast(`Charged Breaker released too early (${held.toFixed(2)}s, needed ${MIN_READY_S}s).`, false);
+        deps.showToast(forced
+          ? 'Charged Breaker fizzled: stamina ran out before it was ready.'
+          : `Charged Breaker released too early (${held.toFixed(2)}s, needed ${MIN_READY_S}s).`, false);
         return;
       }
       const chargeT = Math.min(1, Math.max(0, (held - MIN_READY_S) / (MAX_CHARGE_S - MIN_READY_S)));
-      const cost = lerp(COST_MIN, COST_MAX, chargeT);
-      if (deps.player.stamina < cost) {
-        deps.cancelWeaponSwingHold();
-        deps.showToast('Too winded to unleash it!', false);
-        return;
+      if (!forced) {
+        const cost = lerp(COST_MIN, COST_MAX, chargeT);
+        if (deps.player.stamina < cost) {
+          deps.cancelWeaponSwingHold();
+          deps.showToast('Too winded to unleash it!', false);
+          return;
+        }
+        deps.player.stamina = Math.max(0, deps.player.stamina - cost);
       }
-      deps.player.stamina = Math.max(0, deps.player.stamina - cost);
       // The windup already played out while held — releasing now just lets
       // the in-progress swing continue straight into its slam.
       deps.releaseWeaponSwingHold();
@@ -110,7 +127,20 @@
       });
     }
 
-    window.Combat.abilities.register('chargedBreaker', { label: 'Charged Breaker', slotFamily: 'hold', onHoldStart, onHoldEnd });
+    function onHoldUpdate(_slot, dt) {
+      if (startedAt < 0) return;
+      const deps = window.Combat.deps;
+      const drain = Math.min(deps.player.stamina, CHARGE_DRAIN_PER_S * dt);
+      deps.player.stamina -= drain;
+      if (deps.player.stamina <= 0) releaseNow(now() - startedAt, true);
+    }
+
+    function onHoldEnd() {
+      if (startedAt < 0) return; // already force-released by onHoldUpdate when stamina ran out
+      releaseNow(now() - startedAt, false);
+    }
+
+    window.Combat.abilities.register('chargedBreaker', { label: 'Charged Breaker', slotFamily: 'hold', onHoldStart, onHoldUpdate, onHoldEnd });
   }
 
   register();

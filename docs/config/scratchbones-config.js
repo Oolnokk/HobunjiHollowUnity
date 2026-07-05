@@ -167,8 +167,8 @@ window.SCRATCHBONES_CONFIG = {
     "combat": {
       "autoTargetRangeTiles": 5.5,
       "weaponAbilities": {
-        "cut": { "damage": 14, "halfConeDeg": 18, "rangeTiles": 1.05, "staminaCost": 12, "knockbackPxS": 720, "trailHalfWidthTiles": 0.38, "trailFarTiles": 1.05, "trailMaxAgeSeconds": 0.24 },
-        "slash": { "damage": 24, "halfConeDeg": 62, "rangeTiles": 1.35, "staminaCost": 20, "knockbackPxS": 1040, "trailHalfWidthTiles": 1.35, "trailFarTiles": 1.02, "trailMaxAgeSeconds": 0.34 }
+        "cut": { "damage": 14, "halfConeDeg": 18, "rangeTiles": 2.0, "staminaCost": 12, "knockbackPxS": 720, "trailHalfWidthTiles": 0.38, "trailFarTiles": 2.0, "trailMaxAgeSeconds": 0.24 },
+        "slash": { "damage": 24, "halfConeDeg": 62, "rangeTiles": 2.4, "staminaCost": 20, "knockbackPxS": 1040, "trailHalfWidthTiles": 1.35, "trailFarTiles": 2.4, "trailMaxAgeSeconds": 0.34 }
       },
       "weaponTrailLimit": 5,
       "combatConeReticle": {
@@ -3214,6 +3214,21 @@ window.SCRATCHBONES_CONFIG = {
         },
         "furnitureSfx": {
           "fireplace": { "url": "assets/audio/sfx/bgs/bgs_fire1.wav", "rangeTiles": 6, "volume": 0.65 }
+        },
+        "combatSfx": {
+          "enabled": true,
+          "weaponSlash": { "url": "assets/audio/sfx/sfx_slash-basic.wav", "volume": 0.85, "pitchVarianceMul": 0.06 },
+          "creatureClawHit": { "url": "assets/audio/sfx/sfx_claw-basic.m4a", "volume": 0.9, "pitchVarianceMul": 0.06 },
+          "creatureBark": {
+            "url": "assets/audio/sfx/sfx_gar-wolf_bark.wav",
+            "volume": 0.85,
+            "pitchVarianceMul": 0.04,
+            "species": {
+              "gar-wolf": { "pitch": 1.0 },
+              "gar-wolf-alpha": { "pitch": 0.78 },
+              "dabinggi-hound": { "pitch": 1.32 }
+            }
+          }
         },
         "movement": {
           "handToTable": { "url": "./docs/assets/audio/sfx/tablesounds/boneclack1.m4a", "pitch": 1.0, "tempo": 1.0, "volume": 0.95 },

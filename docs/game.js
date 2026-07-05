@@ -1014,6 +1014,53 @@
         }
       }
 
+      function combatSfxConfig() { return gameAudioConfig().combatSfx || {}; }
+
+      // One-shot combat SFX player (weapon slash / creature bark / claw hit) —
+      // simpler than playFootstepSfx since these always have a real audio
+      // file staged (no procedural WebAudio fallback needed).
+      function playOneShotSfx(cfgEntry, volumeScale = 1, pitch = 1) {
+        const audioCfg = gameAudioConfig();
+        if (audioCfg.enabled === false || !cfgEntry?.url) return;
+        if (combatSfxConfig().enabled === false) return;
+        const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
+          * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
+        if (volume <= 0.002) return;
+        const snd = new Audio(cfgEntry.url);
+        snd.volume = Math.min(1, volume);
+        const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
+        snd.playbackRate = Math.max(0.3, pitch * (1 + (Math.random() * 2 - 1) * pitchVariance));
+        snd.play().catch(() => {});
+      }
+
+      // Distance falloff for a creature-originated combat sound (bark/claw
+      // hit), mirroring tickCreatureFootsteps — inaudible past earshot.
+      function playCreatureSfxAt(c, cfgEntry, pitch) {
+        if (!cfgEntry || c.areaId !== currentArea) return;
+        const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
+        if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
+        const falloff = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+        playOneShotSfx(cfgEntry, falloff, pitch);
+      }
+
+      // Species-keyed pitch lets every creature reuse the same bark asset
+      // (only one exists today) while still sounding distinct — alpha
+      // gar-wolf pitched down, dabinggi-hound pitched up, relative to the
+      // plain gar-wolf's neutral pitch. Future creatures/attacks can add
+      // their own url+species entry without touching this function.
+      function playCreatureBark(c) {
+        const cfg = combatSfxConfig().creatureBark;
+        playCreatureSfxAt(c, cfg, Number(cfg?.species?.[c.creatureKey]?.pitch) || 1);
+      }
+
+      function playCreatureClawHit(c) {
+        playCreatureSfxAt(c, combatSfxConfig().creatureClawHit, 1);
+      }
+
+      function playWeaponSlashSfx() {
+        playOneShotSfx(combatSfxConfig().weaponSlash, 1, 1);
+      }
+
       // Helper: floor Z for a tile type. Trenches shallow out toward 0 as they silt up.
       function floorZ(type, depth = 1) {
         if (type === TileType.RAISED) return  1;
@@ -1130,6 +1177,10 @@
             idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
             run: ['assets/creaturesprites/dabinggi-hound_run1.png', 'assets/creaturesprites/dabinggi-hound_run2.png'],
           },
+          loot: [
+            { key: 'dabinggiHoundMeat', min: 1, max: 3 },
+            { key: 'dabinggiHoundHide', min: 1, max: 1 },
+          ],
         },
         'gar-wolf': {
           label: 'Gar-wolf', hostile: true,
@@ -1150,6 +1201,10 @@
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
           },
+          loot: [
+            { key: 'garWolfMeat', min: 2, max: 4 },
+            { key: 'garWolfHide', min: 1, max: 1 },
+          ],
         },
         'gar-wolf-alpha': {
           label: 'Gar-wolf Alpha', hostile: true,
@@ -1166,6 +1221,10 @@
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
           },
+          loot: [
+            { key: 'alphaGarWolfMeat', min: 4, max: 7 },
+            { key: 'alphaGarWolfHide', min: 1, max: 2 },
+          ],
         },
       };
 
@@ -1509,6 +1568,7 @@
       const animalObjects = new Set(); // Tracks all live animal world objects for update loop and reset.
       const companionObjects = new Set(); // Whistle-summoned companion creatures (0 or 1 active at a time).
       const hostileObjects = new Set();   // Ambient-spawned hostile creatures (Gar-wolf / Gar-wolf Alpha).
+      const corpseObjects = new Set();    // Creatures mid-death-lerp ('dying') or settled and lootable ('corpse').
 
       // Preload uumkao'ii sprite; animals check this before spawning.
       let uumkaoiiSpriteImage = null;
@@ -2171,6 +2231,51 @@
         }
       }
 
+      // spriteUrl -> resolved bottom-opacity ratio (0..1, see
+      // creaturePlaneGroundOffset), or a Set of pending callbacks while
+      // the very first scan of that species' idle sprite is still loading.
+      const _creatureGroundAnchorCache = new Map();
+
+      // Scans a species' idle sprite (cached per URL, so only the first
+      // creature of each species actually pays for it) for how far down its
+      // real opaque pixels extend. All these sprites are nominally
+      // 1375×600, but if the art itself doesn't reach the canvas's bottom
+      // edge (transparent padding), anchoring on the raw rectangle leaves
+      // the visible creature hovering above the ground/its own shadow.
+      function resolveCreatureGroundAnchorRatio(spriteUrl, onReady) {
+        const cached = _creatureGroundAnchorCache.get(spriteUrl);
+        if (typeof cached === 'number') { onReady(cached); return; }
+        if (cached instanceof Set) { cached.add(onReady); return; }
+        const waiters = new Set([onReady]);
+        _creatureGroundAnchorCache.set(spriteUrl, waiters);
+        const finish = (ratio) => {
+          _creatureGroundAnchorCache.set(spriteUrl, ratio);
+          waiters.forEach(fn => fn(ratio));
+        };
+        const img = new Image();
+        img.onload = () => {
+          const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img);
+          finish(bounds ? (bounds.bottom + 1) / img.naturalHeight : 1);
+        };
+        img.onerror = () => finish(1);
+        img.src = spriteUrl;
+      }
+
+      // The prism (avatarRef.group — see updateCreatureMesh's "Prism (group)
+      // tracks the raw aim angle..." comment) keeps its true, unpadded size:
+      // its floor is local Y = -halfH exactly as CREATURE_DB's modelWidth/
+      // modelHeight define it, which is what places it correctly at surfY
+      // and is what any future hitbox/collision use of that size would
+      // expect. The correction belongs on the PLANE meshes themselves
+      // (children of the prism), not on the prism's own placement: shifting
+      // them down by the padding's share of modelHeight moves the art's
+      // real opaque bottom onto the prism's actual floor without changing
+      // the prism's own footprint at all. bottomRatio=1 (no padding) gives
+      // an offset of 0 — the plane stays exactly where it started.
+      function creaturePlaneGroundOffset(modelHeight, bottomRatio) {
+        return -modelHeight * (1 - bottomRatio);
+      }
+
       function makeCreatureEntity(creatureKey, x, y, opts = {}) {
         const def = CREATURE_DB[creatureKey];
         if (!def) return null;
@@ -2201,9 +2306,19 @@
         _markPngPlane(avatarRef.group);
         targetScene.add(avatarRef.group);
 
+        // Separate top-level object (not parented under avatarRef.group) so
+        // it stays flat on the ground and unaffected by the body's own
+        // squash (pounce crouch) or the death ragdoll's flip rotation —
+        // same reasoning as the player's own playerGroundShadow.
+        const groundShadow = makeCharacterGroundShadow(creatureKey + '_ground_shadow');
+        const shadowRadii = creatureGroundShadowRadii(def);
+        groundShadow.scale.set(shadowRadii.radiusX, 1, shadowRadii.radiusZ);
+        groundShadow.position.set(x / TILE, surfY + characterGroundShadowSurfaceOffset(), y / TILE);
+        targetScene.add(groundShadow);
+
         const creature = {
           id: creatureKey + '_' + idUniq,
-          creatureKey, def, avatarRef,
+          creatureKey, def, avatarRef, groundShadow,
           x, y, vx: 0, vy: 0,
           halfHeight: halfH,
           health: def.maxHealth, maxHealth: def.maxHealth,
@@ -2221,21 +2336,238 @@
           scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
           ...restOpts,
         };
+        // Shifts the plane meshes (not the prism/group itself — see
+        // creaturePlaneGroundOffset) down once the idle sprite's real
+        // opaque bottom edge is known, so the art's actual feet sit on the
+        // prism's floor instead of on the raw sprite rectangle's edge.
+        // Fires synchronously if this species' sprite was already scanned
+        // by an earlier creature.
+        resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => {
+          const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio);
+          if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
+          if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
+        });
         return creature;
       }
 
       function despawnCreature(c) {
         (c.scene || scene).remove(c.avatarRef.group);
         c.avatarRef.dispose();
+        if (c.groundShadow) {
+          (c.scene || scene).remove(c.groundShadow);
+          c.groundShadow.geometry.dispose();
+          c.groundShadow.material.dispose();
+        }
+      }
+
+      // ── Death ragdoll → lootable corpse ─────────────────────────────
+      //
+      // A lethally-hit creature no longer just vanishes: it tumbles from
+      // where it died to a nearby tile roughly away from the killing blow,
+      // settles lying flat on that tile, and stays there as a lootable
+      // corpse (see getCorpseObjectAt) until the player butchers it —
+      // that's the only thing that actually despawns the sprite.
+      const DEATH_LERP_DURATION_S = 2.2;
+      const DEATH_TUMBLE_TILES_MIN = 1.1;
+      const DEATH_TUMBLE_TILES_MAX = 2.6;
+      const DEATH_AIM_CONE_RAD = 50 * Math.PI / 180;
+      const DEATH_HOP_HEIGHT_PX = TILE * 1.1 / 3;
+      const DEATH_FLIP_SEGMENTS = 5;
+      const DEATH_FLIP_AXES = ['x', 'y', 'z'];
+
+      // Ease-in-out (slow at each end, fast through the middle) applied
+      // within a single flip segment — gives every flip a "slo-mo" hang at
+      // its start/end instead of spinning at a constant rate.
+      function deathFlipSegmentEase(x) { return x * x * (3 - 2 * x); }
+
+      // Walks outward from the creature's own tile within a cone around
+      // awayAngle (the direction the killing blow traveled), looking for a
+      // tile the corpse can actually rest on — falls back to its own tile
+      // if nothing nearby is valid (map edge, water, cliff face, ...).
+      function findDeathRestTile(c, awayAngle) {
+        const startCol = Math.floor(c.x / TILE), startRow = Math.floor(c.y / TILE);
+        for (let attempt = 0; attempt < 12; attempt++) {
+          const ang = awayAngle + (Math.random() * 2 - 1) * DEATH_AIM_CONE_RAD;
+          const distTiles = DEATH_TUMBLE_TILES_MIN + Math.random() * (DEATH_TUMBLE_TILES_MAX - DEATH_TUMBLE_TILES_MIN);
+          const col = clamp(Math.round(startCol + Math.cos(ang) * distTiles), 0, (c.areaCols || COLS) - 1);
+          const row = clamp(Math.round(startRow + Math.sin(ang) * distTiles), 0, (c.areaRows || ROWS) - 1);
+          const cx = (col + 0.5) * TILE, cy = (row + 0.5) * TILE;
+          if (canOccupyAt(cx, cy, TILE * 0.3)) return { x: cx, y: cy, col, row };
+        }
+        return { x: (startCol + 0.5) * TILE, y: (startRow + 0.5) * TILE, col: startCol, row: startRow };
+      }
+
+      function beginCreatureDeath(c, fromX, fromY) {
+        const awayAngle = fromX !== undefined ? Math.atan2(c.y - fromY, c.x - fromX) : (c.facing || 0);
+        const rest = findDeathRestTile(c, awayAngle);
+        c.state = 'dying';
+        c.deathT = 0;
+        c.deathDurationS = DEATH_LERP_DURATION_S;
+        c.deathStartX = c.x; c.deathStartY = c.y;
+        c.deathTargetX = rest.x; c.deathTargetY = rest.y;
+        c.corpseCol = rest.col; c.corpseRow = rest.row;
+        c.deathHopHeightPx = DEATH_HOP_HEIGHT_PX * (0.7 + Math.random() * 0.6);
+        // The avatar's flat cutout plane has its face-normal along the
+        // group's own local X axis at rest (see buildAnimalPlaneAvatarModel:
+        // frontPlane.rotation.y = +PI/2, backPlane.rotation.y = -PI/2 — a
+        // standing side-view cutout, not a volumetric cross). Rotating the
+        // GROUP about its local Z axis by exactly +PI/2 is what tips that
+        // face-normal from horizontal up to vertical (+Y) — i.e. actually
+        // lying flat, face-up, not just spinning in place. Y (yaw/compass
+        // heading) and X (a small final roll) can be anything — neither
+        // affects flatness.
+        c.deathRestRotZ = Math.PI / 2;
+        c.deathRestRotX = (Math.random() * 2 - 1) * 0.22;
+        c.deathRestRotY = Math.random() * Math.PI * 2;
+        // A dramatic mid-air ragdoll: DEATH_FLIP_SEGMENTS separate flips,
+        // each one full turn (so it can never leave a residual tilt behind)
+        // about a randomly picked axis in a randomly picked direction — a
+        // forward somersault, then maybe a cartwheel, then a twist, etc.
+        // Because every segment is exactly ±1 full turn, the axis that
+        // governs flatness (z) always ends up an integer number of full
+        // turns past its target regardless of how the 5 picks landed, so it
+        // still always settles into the same clean flat pose.
+        c.deathFlipSegAxis = Array.from({ length: DEATH_FLIP_SEGMENTS }, () => DEATH_FLIP_AXES[Math.floor(Math.random() * DEATH_FLIP_AXES.length)]);
+        c.deathFlipSegDir  = Array.from({ length: DEATH_FLIP_SEGMENTS }, () => (Math.random() < 0.5 ? -1 : 1));
+        c.deathFlipPrefix = { x: [0], y: [0], z: [0] };
+        for (let i = 0; i < DEATH_FLIP_SEGMENTS; i++) {
+          for (const axis of DEATH_FLIP_AXES) {
+            const add = c.deathFlipSegAxis[i] === axis ? c.deathFlipSegDir[i] : 0;
+            c.deathFlipPrefix[axis].push(c.deathFlipPrefix[axis][i] + add);
+          }
+        }
+        c.scaleY = 1;
+        c.avatarRef.group.scale.y = 1;
+        // Snap the cutout's two planes back to the exact pose they were
+        // built with, undoing any camera-relative deadzone drift
+        // (updateCreatureMesh's pngRot/perpState smoothing) frozen in at the
+        // moment of death — otherwise the corpse lands a few degrees off
+        // "flat" instead of showing its clean flat face.
+        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = Math.PI / 2;
+        if (c.avatarRef.backPlane)  c.avatarRef.backPlane.rotation.y  = -Math.PI / 2;
+        corpseObjects.add(c);
+      }
+
+      // Turns accumulated for one axis by time-progress t: whole turns from
+      // every completed segment assigned to that axis, plus the current
+      // segment's own partial turn (eased) if it happens to be the one
+      // actively spinning that axis right now.
+      function deathSpinTurnsForAxis(c, seg, segEase, axis) {
+        let turns = c.deathFlipPrefix[axis][seg];
+        if (c.deathFlipSegAxis[seg] === axis) turns += c.deathFlipSegDir[seg] * segEase;
+        return turns;
+      }
+
+      // Drives every 'dying' corpse's flight from where it died to its
+      // resting tile: position eases (fast launch, soft landing) along a
+      // shallow hop arc, while rotation.x/y/z ease toward their final pose
+      // (Z fixed at lying-flat, X/Y free) with DEATH_FLIP_SEGMENTS full
+      // mid-air flips — each on its own randomly-picked axis — layered on
+      // top so the tumble shifts axes as it goes but still always lands
+      // exactly on the flat pose.
+      function updateCorpses(dt) {
+        for (const c of corpseObjects) {
+          if (c.state !== 'dying' || c.areaId !== currentArea) continue;
+          c.deathT = Math.min(c.deathDurationS, c.deathT + dt);
+          const t = c.deathT / c.deathDurationS;
+          const ease = 1 - Math.pow(1 - t, 3);
+          c.x = c.deathStartX + (c.deathTargetX - c.deathStartX) * ease;
+          c.y = c.deathStartY + (c.deathTargetY - c.deathStartY) * ease;
+          const hop = Math.sin(Math.PI * t) * c.deathHopHeightPx;
+
+          const grp = c.avatarRef.group;
+          const g = c.areaGrid || grid;
+          const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
+          const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
+          const surfY = g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0;
+          const restHeight = c.halfHeight * 0.12;
+
+          grp.position.x = c.x / TILE;
+          grp.position.z = c.y / TILE;
+          grp.position.y = surfY + restHeight + (c.halfHeight - restHeight) * (1 - ease) + hop;
+          // Stays flat on the ground under the tumble instead of following
+          // the body's hop arc — same as a real jump shadow.
+          if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
+
+          let seg = Math.floor(t * DEATH_FLIP_SEGMENTS);
+          let segT = t * DEATH_FLIP_SEGMENTS - seg;
+          if (seg >= DEATH_FLIP_SEGMENTS) { seg = DEATH_FLIP_SEGMENTS - 1; segT = 1; }
+          const segEase = deathFlipSegmentEase(segT);
+          const turnsX = deathSpinTurnsForAxis(c, seg, segEase, 'x');
+          const turnsY = deathSpinTurnsForAxis(c, seg, segEase, 'y');
+          const turnsZ = deathSpinTurnsForAxis(c, seg, segEase, 'z');
+
+          // Z is the axis that actually tips the cutout's flat face from
+          // vertical to lying-flat-face-up (see beginCreatureDeath) — X/Y
+          // are free cosmetic spin that never affects whether it lands flat.
+          grp.rotation.z = c.deathRestRotZ * ease + turnsZ * Math.PI * 2;
+          grp.rotation.x = c.deathRestRotX * ease + turnsX * Math.PI * 2;
+          grp.rotation.y = c.groupRot + (c.deathRestRotY - c.groupRot) * ease + turnsY * Math.PI * 2;
+
+          if (t >= 1) {
+            c.state = 'corpse';
+            grp.position.set(c.deathTargetX / TILE, surfY + restHeight, c.deathTargetY / TILE);
+            grp.rotation.set(c.deathRestRotX, c.deathRestRotY, c.deathRestRotZ);
+          }
+        }
+      }
+
+      function rollLootFromTable(lootTable) {
+        const gained = {};
+        for (const entry of lootTable || []) {
+          const qty = entry.min + Math.floor(Math.random() * (entry.max - entry.min + 1));
+          if (qty > 0) gained[entry.key] = (gained[entry.key] || 0) + qty;
+        }
+        return gained;
+      }
+
+      // Settled corpses expose the same getButtons()/onAction() shape as
+      // farm world objects (see makeSellCrate) so the existing action-bar
+      // wiring (getWorldObjectAt → getButtons/onAction) can loot them with
+      // no special-casing. Looting is what actually despawns the sprite.
+      function makeCorpseWorldObject(c) {
+        return {
+          id: 'corpse_' + c.id,
+          type: 'creature_corpse',
+          getButtons() {
+            return [{ icon: '🍖', label: 'Butcher ' + c.def.label, action: 'obj_loot_corpse', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
+            const gained = rollLootFromTable(c.def.loot);
+            const parts = [];
+            Object.entries(gained).forEach(([key, qty]) => {
+              inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
+              parts.push(itemIconForKey(key) + '×' + qty);
+            });
+            corpseObjects.delete(c);
+            despawnCreature(c);
+            return {
+              ok: true,
+              message: parts.length ? `Butchered the ${c.def.label}: ${parts.join(' ')}` : `Nothing usable left on the ${c.def.label}.`,
+            };
+          },
+        };
+      }
+
+      // Zone-aware corpse lookup — getWorldObjectAt only otherwise covers
+      // farm/interior, but corpses can settle in any area a creature dies in.
+      function getCorpseObjectAt(col, row) {
+        for (const c of corpseObjects) {
+          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          if (c.corpseCol === col && c.corpseRow === row) return makeCorpseWorldObject(c);
+        }
+        return null;
       }
 
       function damageCreature(c, amount, fromX, fromY, knockbackPxS) {
         c.health = Math.max(0, c.health - amount);
         c.hitFlashT = 0.25;
+        spawnCreatureHitSpark(c);
         if (c.health <= 0) {
-          despawnCreature(c);
           hostileObjects.delete(c);
           companionObjects.delete(c);
+          beginCreatureDeath(c, fromX, fromY);
           return;
         }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
@@ -2274,6 +2606,7 @@
       function resolveWeaponHit(action) {
         const abil = weaponAbility(action);
         if (!abil) return { hits: 0, message: '' };
+        playWeaponSlashSfx();
         let hits = 0;
         let lastName = '';
         for (const c of hostileObjects) {
@@ -2414,6 +2747,10 @@
         grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
         grp.scale.y = scaleY;
+        // Tracks the body's own smoothed XZ (not the raw target, and not
+        // its squash/height) so the shadow doesn't lead a fast-moving
+        // creature or float with it during a pounce crouch.
+        if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
 
@@ -2606,9 +2943,16 @@
           let moving = false, aimAngle = c.facing || 0;
           if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
+            // Per-axis canOccupyAt check (same primitive/radius convention as
+            // the player's own knockback/dodge/lunge and the pounce/guard-
+            // charge leaps below) so a hard shove can't punch a creature
+            // through a cliff face, water, or the map edge.
             c.knockbackT = Math.max(0, c.knockbackT - dt);
-            c.x += c.knockbackVX * dt;
-            c.y += c.knockbackVY * dt;
+            const nkx = c.x + c.knockbackVX * dt, nky = c.y + c.knockbackVY * dt;
+            const ckSwept = sweptMove(c.x, c.y, nkx, nky, (x, y) => canOccupyAt(x, y, TILE * 0.32));
+            c.x = ckSwept.x; c.y = ckSwept.y;
+            if (ckSwept.blockedX) c.knockbackVX = 0;
+            if (ckSwept.blockedY) c.knockbackVY = 0;
           } else if (c.state === 'chase') {
             aimAngle = Math.atan2(dyp, dxp);
             if (c.retreatT > 0) {
@@ -2662,6 +3006,7 @@
                     onStrike: () => {
                       if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
                         damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
+                        playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
                     },
@@ -2735,7 +3080,17 @@
           if (!target) c._stage = null;
 
           let moving = false, aimAngle = c.facing || 0;
-          if (target) {
+          if (c.knockbackT > 0) {
+            // Mirrors updateHostiles' knockback branch — per-axis canOccupyAt
+            // check so a companion caught by a stray hit can't get shoved
+            // through solid terrain either.
+            c.knockbackT = Math.max(0, c.knockbackT - dt);
+            const nkx = c.x + c.knockbackVX * dt, nky = c.y + c.knockbackVY * dt;
+            const ckSwept = sweptMove(c.x, c.y, nkx, nky, (x, y) => canOccupyAt(x, y, TILE * 0.32));
+            c.x = ckSwept.x; c.y = ckSwept.y;
+            if (ckSwept.blockedX) c.knockbackVX = 0;
+            if (ckSwept.blockedY) c.knockbackVY = 0;
+          } else if (target) {
             const dist = Math.hypot(target.x - c.x, target.y - c.y);
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
             if (window.Combat?.telegraph?.isBusy(c)) {
@@ -2775,6 +3130,7 @@
                       onStrike: () => {
                         if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
                           damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
+                          playCreatureClawHit(c);
                         }
                       },
                     });
@@ -4876,6 +5232,20 @@
 
       function characterGroundShadowSurfaceOffset() {
         return pngAvatarGroundShadowConfig().surfaceOffsetY ?? 0.018;
+      }
+
+      // Ties a creature's shadow footprint to the same modelWidth used for
+      // its own hit cone/collision radius (see creatureHitboxHalfSizePx)
+      // instead of the player/NPC's fixed humanoid size, so e.g. a gar-wolf
+      // alpha visibly casts a bigger shadow than a dabinggi-hound. Keeps the
+      // configured player shadow's X:Z squash ratio rather than introducing
+      // a separate tunable.
+      function creatureGroundShadowRadii(def) {
+        const cfg = pngAvatarGroundShadowConfig();
+        const baseRadiusX = cfg.radiusX ?? 0.34;
+        const baseRadiusZ = cfg.radiusZ ?? 0.22;
+        const radiusX = (def.modelWidth || 2) * 0.3;
+        return { radiusX, radiusZ: radiusX * (baseRadiusZ / baseRadiusX) };
       }
 
       // ── Schedule-driven NPCs: beeline first, shared routes as fallback ─
@@ -7176,6 +7546,8 @@
       }
 
       function getWorldObjectAt(col, row) {
+        const corpse = getCorpseObjectAt(col, row);
+        if (corpse) return corpse;
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
         if (currentArea !== 'farm') return null;
         return worldObjects.get(col + ',' + row) || null;
@@ -7407,6 +7779,12 @@
         { key: 'blackMustard',       icon: '⚫', label: 'BLACK MUSTARD',     max: 99 },
         { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSTARD',     max: 99 },
         { key: 'mulch',              icon: '🍂', label: 'MULCH',            max: 99 },
+        { key: 'garWolfMeat',        icon: '🥩', label: 'GAR-WOLF MEAT',    max: 99 },
+        { key: 'garWolfHide',        icon: '🟫', label: 'GAR-WOLF HIDE',    max: 99 },
+        { key: 'alphaGarWolfMeat',   icon: '🥩', label: 'ALPHA GAR-WOLF MEAT', max: 99 },
+        { key: 'alphaGarWolfHide',   icon: '🟫', label: 'ALPHA GAR-WOLF HIDE', max: 99 },
+        { key: 'dabinggiHoundMeat',  icon: '🥩', label: 'DABINGGI-HOUND MEAT', max: 99 },
+        { key: 'dabinggiHoundHide',  icon: '🟫', label: 'DABINGGI-HOUND HIDE', max: 99 },
         { key: 'uumkaoiiCrate',      icon: '🦆', label: 'UUMKAO\'II CRATE',  max: 9  },
         { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
         { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
@@ -7440,6 +7818,12 @@
         blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: 10, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
         greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: 9, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
+        garWolfMeat: { icon: '🥩', label: 'Gar-wolf Meat', cat: 'material', sellPrice: 9, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a slain gar-wolf. Good for cooking or smoking.' },
+        garWolfHide: { icon: '🟫', label: 'Gar-wolf Hide', cat: 'material', sellPrice: 14, tags: ['Material', 'Hide'], desc: 'A tough hide stripped from a slain gar-wolf.' },
+        alphaGarWolfMeat: { icon: '🥩', label: 'Alpha Gar-wolf Meat', cat: 'material', sellPrice: 16, tags: ['Material', 'Meat'], desc: 'Prime meat butchered from a slain alpha gar-wolf.' },
+        alphaGarWolfHide: { icon: '🟫', label: 'Alpha Gar-wolf Hide', cat: 'material', sellPrice: 26, tags: ['Material', 'Hide'], desc: 'A thick, battle-scarred hide stripped from a slain alpha gar-wolf.' },
+        dabinggiHoundMeat: { icon: '🥩', label: 'Dabinggi-hound Meat', cat: 'material', sellPrice: 8, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a fallen dabinggi-hound.' },
+        dabinggiHoundHide: { icon: '🟫', label: 'Dabinggi-hound Hide', cat: 'material', sellPrice: 12, tags: ['Material', 'Hide'], desc: 'A soft hide stripped from a fallen dabinggi-hound.' },
         uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
         bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
         hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
@@ -8649,8 +9033,8 @@
           const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
           const desiredX = clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
           const desiredY = clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
-          if (canPlayerOccupy(desiredX, player.y)) player.x = desiredX;
-          if (canPlayerOccupy(player.x, desiredY)) player.y = desiredY;
+          const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          player.x = dodgeSwept.x; player.y = dodgeSwept.y;
           player.vx = player.dodgeDirX * DODGE_SPEED_PX;
           player.vy = player.dodgeDirY * DODGE_SPEED_PX;
           if (player.dodgeT <= 0) {
@@ -8667,8 +9051,10 @@
           const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
           const desiredX = clamp(player.x + player.knockbackVX * dt, minX, maxX);
           const desiredY = clamp(player.y + player.knockbackVY * dt, minY, maxY);
-          if (canPlayerOccupy(desiredX, player.y)) player.x = desiredX; else player.knockbackVX = 0;
-          if (canPlayerOccupy(player.x, desiredY)) player.y = desiredY; else player.knockbackVY = 0;
+          const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          player.x = kbSwept.x; player.y = kbSwept.y;
+          if (kbSwept.blockedX) player.knockbackVX = 0;
+          if (kbSwept.blockedY) player.knockbackVY = 0;
           player.vx = player.knockbackVX;
           player.vy = player.knockbackVY;
           if (player.knockbackT <= 0) { player.vx = 0; player.vy = 0; }
@@ -8684,8 +9070,14 @@
           const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
           const desiredX = clamp(player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
           const desiredY = clamp(player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
-          if (canPlayerOccupy(desiredX, player.y)) player.x = desiredX;
-          if (canPlayerOccupy(player.x, desiredY)) player.y = desiredY;
+          // Swept, not a single endpoint check — this recomputes an absolute
+          // target from total elapsed progress every frame (ease-out is
+          // fastest right at the start), so a big lunge like Charged
+          // Breaker's ~7 tiles can cover more than a tile in one frame and
+          // would otherwise tunnel clean through a one-tile-thick plateau
+          // wall instead of stopping at it.
+          const lungeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          player.x = lungeSwept.x; player.y = lungeSwept.y;
           player.lungeHopCurrent = player.lungeHopUnits * Math.sin(eased * Math.PI);
           if (player.lungeT <= 0) { player.lunging = false; player.lungeHopCurrent = 0; }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
@@ -8848,6 +9240,36 @@
 
       function canPlayerOccupy(wx, wy) {
         return canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72);
+      }
+
+      // A fast forced move (combat lunge, knockback, dodge) recomputes its
+      // target position from total elapsed progress every frame rather than
+      // stepping a small fixed distance, so a single frame's jump can easily
+      // exceed one tile — e.g. Charged Breaker's ~7-tile lunge covers most of
+      // its distance in its very first frames (ease-out is fastest at t=0).
+      // Testing occupancy only at that frame's endpoint lets it tunnel clean
+      // through a one-tile-thick solid wall (a plateau's incline face)
+      // instead of stopping at it. Subdividing the straight line from the
+      // current position to the desired one into small steps and testing
+      // each one — same per-axis sliding behavior as a single check, just
+      // repeated — closes that gap for any of these forced moves.
+      // blockedX/blockedY report whether that axis was ever rejected during
+      // the sweep, so a caller (e.g. knockback) can zero out that axis's
+      // velocity exactly like the old single-check version did.
+      const COLLISION_SWEEP_STEP_PX = TILE * 0.25;
+      function sweptMove(curX, curY, desiredX, desiredY, canOccupyFn) {
+        const dx = desiredX - curX, dy = desiredY - curY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 0.001) return { x: curX, y: curY, blockedX: false, blockedY: false };
+        const steps = Math.max(1, Math.ceil(dist / COLLISION_SWEEP_STEP_PX));
+        const stepX = dx / steps, stepY = dy / steps;
+        let x = curX, y = curY, blockedX = false, blockedY = false;
+        for (let i = 0; i < steps; i++) {
+          const nx = x + stepX, ny = y + stepY;
+          if (canOccupyFn(nx, y)) x = nx; else blockedX = true;
+          if (canOccupyFn(x, ny)) y = ny; else blockedY = true;
+        }
+        return { x, y, blockedX, blockedY };
       }
 
       function getKeyboardVector() {
@@ -9157,6 +9579,34 @@
           maxAge: COMBAT_TRAIL_MAX_AGE_S * 1.4,
           ok: true,
           color,
+        };
+        fx.particles = weaponTrailParticleSeeds(fx);
+        weaponTrailEffects.push(fx);
+        const limit = Number(combatConfig().weaponTrailLimit) || 5;
+        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
+      }
+
+      // Small radial spark anchored on the creature itself (not the player,
+      // unlike spawnBurstEffect/spawnCombatTrailEffect) so a hit reads
+      // clearly regardless of who/what landed it — companion-on-hostile
+      // damage gets the same feedback as the player's own attacks. Reuses
+      // the same isCone/particle-seed rendering as every other combat
+      // effect; a bright spark color keeps it visually distinct from the
+      // creature's own red hitFlashT tint and the shield's blue block burst.
+      const CREATURE_HIT_SPARK_COLOR = '#fff35c';
+      function spawnCreatureHitSpark(c) {
+        const fx = {
+          isCone: true,
+          x: c.x / TILE,
+          z: c.y / TILE,
+          y: c.avatarRef?.group?.position?.y ?? weaponTrailCenterY(),
+          angle: 0,
+          halfConeRad: Math.PI,
+          rangeTiles: Math.max(0.35, (c.def?.modelWidth || 2) * 0.3),
+          age: 0,
+          maxAge: COMBAT_TRAIL_MAX_AGE_S * 1.1,
+          ok: true,
+          color: CREATURE_HIT_SPARK_COLOR,
         };
         fx.particles = weaponTrailParticleSeeds(fx);
         weaponTrailEffects.push(fx);
@@ -14853,6 +15303,7 @@
             updateCompanions(dt);
             updateHostileSpawning(dt);
             updateHostiles(dt);
+            updateCorpses(dt);
           }
 
           // Interior exit detection: player walks south through exit door
@@ -16112,7 +16563,10 @@
         const reticle = getReticleTile();
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 
-        const obj = currentArea === 'farm' ? getWorldObjectAt(reticle.col, reticle.row) : null;
+        // Was farm-only (world objects didn't exist elsewhere) — now
+        // unconditional so a lootable corpse's identity in any area (zones
+        // included) still invalidates the cache and rebuilds its button.
+        const obj = getWorldObjectAt(reticle.col, reticle.row);
         const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
         const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
         const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction() : 'none';
@@ -17423,6 +17877,9 @@
         beginCombatLunge,
         spawnCombatTrailEffect,
         spawnBurstEffect,
+        playCreatureBark,
+        playCreatureClawHit,
+        playWeaponSlashSfx,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module

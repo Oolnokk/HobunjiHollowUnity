@@ -76,8 +76,8 @@
 
   const WINDUP_S = 0.075;
   const STRIKE_S = 0.105;
-  const COST_BASE = 7;
-  const COST_BONUS = 12;
+  const COST_BASE = 11;
+  const COST_BONUS = 18;
   const HOLD_S = 1; // post-strike pause before easing back to neutral
   // Farther forward step than the 3-hit combo's, layered under the jab —
   // see game.js's beginCombatLunge. Expressed as a TILE multiple.
