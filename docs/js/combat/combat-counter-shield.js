@@ -9,8 +9,8 @@
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-counter-shield.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
-  const DRAIN_PER_S = 13;
-  const MIN_STAMINA_TO_RAISE = 4;
+  const DRAIN_PER_S = 20;
+  const MIN_STAMINA_TO_RAISE = 6;
   const COUNTER_COOLDOWN_S = 0.62;
   const COUNTER_DAMAGE_MUL = 4.4; // ~62 vs the demo's 14-damage baseline
   const COUNTER_RANGE_MUL = 1.7;
@@ -56,7 +56,7 @@
     function tryAbsorb(amount) {
       if (!active) return false;
       const deps = window.Combat.deps;
-      const staminaCost = Math.max(MIN_STAMINA_TO_RAISE, amount * 0.35);
+      const staminaCost = Math.max(MIN_STAMINA_TO_RAISE, amount * 0.5);
       deps.player.stamina = Math.max(0, deps.player.stamina - staminaCost);
       deps.showToast(`Blocked! (-${Math.round(staminaCost)} stamina)`, true);
       deps.spawnBurstEffect({ color: '#40ccff', rangePx: deps.TILE * 1.8 });

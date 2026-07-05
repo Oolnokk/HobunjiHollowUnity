@@ -8,8 +8,8 @@
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-blink-dodge.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
-  const IDLE_DRAIN_PER_S = 1.4;
-  const ZIP_COST = 14;
+  const IDLE_DRAIN_PER_S = 2.2;
+  const ZIP_COST = 20;
   const ZIP_DISTANCE_PX = 82;
   const ZIP_INVULN_S = 0.16;
   const ZIP_COOLDOWN_S = 0.18;

@@ -2999,7 +2999,15 @@
           if (!target) c._stage = null;
 
           let moving = false, aimAngle = c.facing || 0;
-          if (target) {
+          if (c.knockbackT > 0) {
+            // Mirrors updateHostiles' knockback branch — per-axis canOccupyAt
+            // check so a companion caught by a stray hit can't get shoved
+            // through solid terrain either.
+            c.knockbackT = Math.max(0, c.knockbackT - dt);
+            const nkx = c.x + c.knockbackVX * dt, nky = c.y + c.knockbackVY * dt;
+            if (canOccupyAt(nkx, c.y, TILE * 0.32)) c.x = nkx; else c.knockbackVX = 0;
+            if (canOccupyAt(c.x, nky, TILE * 0.32)) c.y = nky; else c.knockbackVY = 0;
+          } else if (target) {
             const dist = Math.hypot(target.x - c.x, target.y - c.y);
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
             if (window.Combat?.telegraph?.isBusy(c)) {
