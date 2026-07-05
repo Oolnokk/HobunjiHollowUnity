@@ -2870,8 +2870,10 @@
             // through a cliff face, water, or the map edge.
             c.knockbackT = Math.max(0, c.knockbackT - dt);
             const nkx = c.x + c.knockbackVX * dt, nky = c.y + c.knockbackVY * dt;
-            if (canOccupyAt(nkx, c.y, TILE * 0.32)) c.x = nkx; else c.knockbackVX = 0;
-            if (canOccupyAt(c.x, nky, TILE * 0.32)) c.y = nky; else c.knockbackVY = 0;
+            const ckSwept = sweptMove(c.x, c.y, nkx, nky, (x, y) => canOccupyAt(x, y, TILE * 0.32));
+            c.x = ckSwept.x; c.y = ckSwept.y;
+            if (ckSwept.blockedX) c.knockbackVX = 0;
+            if (ckSwept.blockedY) c.knockbackVY = 0;
           } else if (c.state === 'chase') {
             aimAngle = Math.atan2(dyp, dxp);
             if (c.retreatT > 0) {
@@ -3005,8 +3007,10 @@
             // through solid terrain either.
             c.knockbackT = Math.max(0, c.knockbackT - dt);
             const nkx = c.x + c.knockbackVX * dt, nky = c.y + c.knockbackVY * dt;
-            if (canOccupyAt(nkx, c.y, TILE * 0.32)) c.x = nkx; else c.knockbackVX = 0;
-            if (canOccupyAt(c.x, nky, TILE * 0.32)) c.y = nky; else c.knockbackVY = 0;
+            const ckSwept = sweptMove(c.x, c.y, nkx, nky, (x, y) => canOccupyAt(x, y, TILE * 0.32));
+            c.x = ckSwept.x; c.y = ckSwept.y;
+            if (ckSwept.blockedX) c.knockbackVX = 0;
+            if (ckSwept.blockedY) c.knockbackVY = 0;
           } else if (target) {
             const dist = Math.hypot(target.x - c.x, target.y - c.y);
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
@@ -8936,8 +8940,8 @@
           const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
           const desiredX = clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
           const desiredY = clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
-          if (canPlayerOccupy(desiredX, player.y)) player.x = desiredX;
-          if (canPlayerOccupy(player.x, desiredY)) player.y = desiredY;
+          const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          player.x = dodgeSwept.x; player.y = dodgeSwept.y;
           player.vx = player.dodgeDirX * DODGE_SPEED_PX;
           player.vy = player.dodgeDirY * DODGE_SPEED_PX;
           if (player.dodgeT <= 0) {
@@ -8954,8 +8958,10 @@
           const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
           const desiredX = clamp(player.x + player.knockbackVX * dt, minX, maxX);
           const desiredY = clamp(player.y + player.knockbackVY * dt, minY, maxY);
-          if (canPlayerOccupy(desiredX, player.y)) player.x = desiredX; else player.knockbackVX = 0;
-          if (canPlayerOccupy(player.x, desiredY)) player.y = desiredY; else player.knockbackVY = 0;
+          const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          player.x = kbSwept.x; player.y = kbSwept.y;
+          if (kbSwept.blockedX) player.knockbackVX = 0;
+          if (kbSwept.blockedY) player.knockbackVY = 0;
           player.vx = player.knockbackVX;
           player.vy = player.knockbackVY;
           if (player.knockbackT <= 0) { player.vx = 0; player.vy = 0; }
@@ -8971,8 +8977,14 @@
           const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
           const desiredX = clamp(player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
           const desiredY = clamp(player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
-          if (canPlayerOccupy(desiredX, player.y)) player.x = desiredX;
-          if (canPlayerOccupy(player.x, desiredY)) player.y = desiredY;
+          // Swept, not a single endpoint check — this recomputes an absolute
+          // target from total elapsed progress every frame (ease-out is
+          // fastest right at the start), so a big lunge like Charged
+          // Breaker's ~7 tiles can cover more than a tile in one frame and
+          // would otherwise tunnel clean through a one-tile-thick plateau
+          // wall instead of stopping at it.
+          const lungeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          player.x = lungeSwept.x; player.y = lungeSwept.y;
           player.lungeHopCurrent = player.lungeHopUnits * Math.sin(eased * Math.PI);
           if (player.lungeT <= 0) { player.lunging = false; player.lungeHopCurrent = 0; }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
@@ -9135,6 +9147,36 @@
 
       function canPlayerOccupy(wx, wy) {
         return canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72);
+      }
+
+      // A fast forced move (combat lunge, knockback, dodge) recomputes its
+      // target position from total elapsed progress every frame rather than
+      // stepping a small fixed distance, so a single frame's jump can easily
+      // exceed one tile — e.g. Charged Breaker's ~7-tile lunge covers most of
+      // its distance in its very first frames (ease-out is fastest at t=0).
+      // Testing occupancy only at that frame's endpoint lets it tunnel clean
+      // through a one-tile-thick solid wall (a plateau's incline face)
+      // instead of stopping at it. Subdividing the straight line from the
+      // current position to the desired one into small steps and testing
+      // each one — same per-axis sliding behavior as a single check, just
+      // repeated — closes that gap for any of these forced moves.
+      // blockedX/blockedY report whether that axis was ever rejected during
+      // the sweep, so a caller (e.g. knockback) can zero out that axis's
+      // velocity exactly like the old single-check version did.
+      const COLLISION_SWEEP_STEP_PX = TILE * 0.25;
+      function sweptMove(curX, curY, desiredX, desiredY, canOccupyFn) {
+        const dx = desiredX - curX, dy = desiredY - curY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 0.001) return { x: curX, y: curY, blockedX: false, blockedY: false };
+        const steps = Math.max(1, Math.ceil(dist / COLLISION_SWEEP_STEP_PX));
+        const stepX = dx / steps, stepY = dy / steps;
+        let x = curX, y = curY, blockedX = false, blockedY = false;
+        for (let i = 0; i < steps; i++) {
+          const nx = x + stepX, ny = y + stepY;
+          if (canOccupyFn(nx, y)) x = nx; else blockedX = true;
+          if (canOccupyFn(x, ny)) y = ny; else blockedY = true;
+        }
+        return { x, y, blockedX, blockedY };
       }
 
       function getKeyboardVector() {
