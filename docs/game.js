@@ -1969,6 +1969,13 @@
       let _editorPainting = false;
 
       function toggleFarmEditMode() {
+        // The farm editor freely repaints tiles/crops and drops/removes
+        // furniture with no per-brush permission checks, so it's gated at
+        // this single entry point instead — only the farm's owner can open it.
+        if (!farmEditMode && !isFarmOwner()) {
+          showToast("Only the farm's owner can use the farm editor.", false);
+          return;
+        }
         farmEditMode = !farmEditMode;
         const panel = document.getElementById('farmEditorPanel');
         const btn   = document.getElementById('farmEditBtn');
@@ -3324,6 +3331,16 @@
       // at save-select time (onboarding.js) and carried on _playerData for
       // the session; a real farmhand's grants only change between sessions
       // until networking exists to push a live update.
+      // Single source of truth for the permission-key set within this file
+      // (onboarding.js keeps its own copy — the two closures share no module).
+      function defaultFarmhandPermissions() {
+        return { storage: false, plant: false, harvest: false, placeFurniture: false, alterFarm: false };
+      }
+
+      function defaultWorldMemberState() {
+        return { nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {}, joinedAt: Date.now() };
+      }
+
       function isFarmOwner() {
         if (_debugFarmRoleOverride) return _debugFarmRoleOverride.isOwner;
         return _playerData ? !!_playerData.isWorldOwner : true; // no world context yet — don't lock out solo play
@@ -3344,7 +3361,7 @@
         if (role === 'farmhand') {
           _debugFarmRoleOverride = {
             isOwner: false,
-            permissions: { storage: false, plant: false, harvest: false, placeFurniture: false, alterFarm: false, ...permissions },
+            permissions: { ...defaultFarmhandPermissions(), ...permissions },
           };
           showToast('Debug: acting as farmhand ' + JSON.stringify(_debugFarmRoleOverride.permissions), true);
           return;
@@ -3366,13 +3383,13 @@
           if (!world.farmhands) world.farmhands = [];
           let entry = world.farmhands.find(f => f.characterId === characterId);
           if (!entry) {
-            entry = { characterId, permissions: { storage: false, plant: false, harvest: false, placeFurniture: false, alterFarm: false } };
+            entry = { characterId, permissions: defaultFarmhandPermissions() };
             world.farmhands.push(entry);
           }
           if (permissions) Object.assign(entry.permissions, permissions);
           if (!world.members) world.members = {};
           if (!world.members[characterId]) {
-            world.members[characterId] = { nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {}, joinedAt: Date.now() };
+            world.members[characterId] = defaultWorldMemberState();
           }
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
@@ -3404,9 +3421,7 @@
           const world = (meta?.worlds || []).find(w => w.id === worldId);
           if (!world) return;
           if (!world.members) world.members = {};
-          const member = world.members[charId] || (world.members[charId] = {
-            nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {}, joinedAt: Date.now(),
-          });
+          const member = world.members[charId] || (world.members[charId] = defaultWorldMemberState());
           member.nonGearInventory = { ...inventory };
           member.packClothing    = [...packClothing];
           member.npcRelationships = npcRelationshipsSnapshot();
@@ -7898,6 +7913,7 @@
         showToast('Bought ' + item.name + '!', true);
         renderGeneralStorePage();
         buildInventoryGrid();
+        saveMemberWorldData();
       }
 
       function renderGeneralStoreGoods(list) {
@@ -7942,6 +7958,7 @@
             packClothing.push({ ...item });
             showToast('Bought ' + item.label + '!', true);
             renderGeneralStorePage(); buildInventoryGrid(); buildPackClothingSection();
+            saveMemberWorldData();
           });
           list.appendChild(row);
         });
@@ -8431,6 +8448,7 @@
               showToast(`Sold all ${def.label} for ${earned}g`, true);
               if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
               buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+              saveMemberWorldData();
             });
             mkBtn(`Sell 1  (${def.sellPrice}g)`, 'sell', () => {
               if ((inventory[key] || 0) < 1) return;
@@ -8439,6 +8457,7 @@
               showToast(`Sold 1 ${def.label} for ${def.sellPrice}g`, true);
               if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
               buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+              saveMemberWorldData();
             });
           }
           // Tool items in pack: offer Transfer to Gear (can't equip directly from pack)
@@ -8658,6 +8677,7 @@
         gearInventory.clothing[item.slot] = item;
         packClothing.splice(idx, 1);
         saveGearInventory();
+        saveMemberWorldData(); // packClothing (world-scoped) lost the item saveGearInventory just persisted to gear
         refreshPlayerAvatar();
         showToast(item.label + ' moved to gear and equipped!', true);
         buildPackClothingSection(); buildEquipmentSlots(); clearInventoryDetail();
@@ -8722,6 +8742,7 @@
               inventory.gold = (inventory.gold || 0) + item.sellPrice;
               showToast('Sold ' + item.label + ' for ' + item.sellPrice + 'g', true);
               buildPackClothingSection(); buildInventoryGrid(); clearInventoryDetail();
+              saveMemberWorldData();
             });
           }
         }
@@ -10128,13 +10149,18 @@
         pendingAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool };
       }
 
-      // Only the farm itself is ownership-gated — wilderness/town resource
-      // gathering, combat, and navigation are always open to any farmhand.
-      // Returns null when the action isn't farm-alteration at all (weapon
-      // swings, obj_ interactions, spawn_uumkaoii debug spawns, etc.).
+      // Only the farm (and, for furniture, the house interior) is
+      // ownership-gated — wilderness/town resource gathering, combat, and
+      // navigation are always open to any farmhand. Returns null when the
+      // action isn't farm-alteration at all (weapon swings, obj_
+      // interactions, spawn_uumkaoii debug spawns, etc.).
       function farmActionPermissionCategory(tool, action) {
+        if (action.startsWith('place_')) {
+          // placeDecorativeFurniture() also accepts area:'interior' pieces
+          // placed inside the house — gate those too, not just the open farm.
+          return (currentArea === 'farm' || currentArea === 'interior') ? 'placeFurniture' : null;
+        }
         if (currentArea !== 'farm') return null;
-        if (action.startsWith('place_')) return 'placeFurniture'; // covers 'place_decor_' too
         if (action.startsWith('plant_')) return 'plant';
         if (action === 'harvest') return 'harvest';
         if (tool === 'shovel' || tool === 'hoe' || tool === 'pick' || tool === 'machete' || tool === 'axe') return 'alterFarm';
@@ -17336,6 +17362,13 @@
       }
 
       function doReset() {
+        // Wipes the whole shared farm (day/weather/furniture/animals) and this
+        // character's own inventory back to day one — owner-only, same as the
+        // farm editor, so a farmhand can't nuke the owner's ongoing work.
+        if (!isFarmOwner()) {
+          showToast("Only the farm's owner can reset the farm.", false);
+          return;
+        }
         calendar.day = 17;
         calendar.time01 = 0.30;
         calendar.weather = 'rain';
@@ -18084,9 +18117,25 @@
         clearInteriorFurniture();
         worldObjects.forEach(o => o.reset && o.reset());
         grid = createInitialGrid();
+        // Module init already may have moved the shipping/supply crates per the
+        // legacy-key layout — put them back to their hard defaults before
+        // applying (or not finding) this world's own saved positions, so a
+        // brand-new world can't inherit another world's crate placement.
+        const DEFAULT_SELL_CRATE_COL = 2, DEFAULT_SELL_CRATE_ROW = ROWS - 3;
+        const DEFAULT_SUPPLY_BOX_COL = 4, DEFAULT_SUPPLY_BOX_ROW = ROWS - 3;
+        if (shippingBoxObject && (shippingBoxObject.col !== DEFAULT_SELL_CRATE_COL || shippingBoxObject.row !== DEFAULT_SELL_CRATE_ROW)) {
+          worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
+          const nc = makeSellCrate(DEFAULT_SELL_CRATE_COL, DEFAULT_SELL_CRATE_ROW);
+          shippingBoxObject = nc; worldObjects.set(nc.col + ',' + nc.row, nc);
+        }
+        if (supplyBoxObject && (supplyBoxObject.col !== DEFAULT_SUPPLY_BOX_COL || supplyBoxObject.row !== DEFAULT_SUPPLY_BOX_ROW)) {
+          worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
+          const nb = makeSupplyBox(DEFAULT_SUPPLY_BOX_COL, DEFAULT_SUPPLY_BOX_ROW);
+          supplyBoxObject = nb; worldObjects.set(nb.col + ',' + nb.row, nb);
+        }
         const _worldLayout = loadFarmLayout();
         if (_worldLayout) applyFarmLayoutToGrid(_worldLayout);
-        applyFarmLayoutObjects(_worldLayout);
+        applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
         recomputeWater(false);
 
         // Non-gear inventory (resources) and pack clothing are world-scoped
