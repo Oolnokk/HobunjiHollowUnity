@@ -542,6 +542,7 @@
       ownerCharacterId:  characterId,
       farmhands:         [],   // [{ characterId, permissions }] — non-owner members with farm access grants
       members:           {},   // { [characterId]: memberState } — world-scoped data per character who has joined
+      livestock:         [],   // [{ id, kind, col, row, releasedAt }] — belongs to the world itself, not any character
       keyItems:          [],
       lastDay:           1,
       lastSeason:        'First Rains',
@@ -1324,6 +1325,7 @@
       delete w.packInventory; // dead stub field, superseded by per-member nonGearInventory
       if (!w.farmhands) w.farmhands = [];
       if (!w.members)   w.members   = {};
+      if (!w.livestock) w.livestock = [];
       if (w.ownerCharacterId) ensureWorldMember(w, w.ownerCharacterId);
     });
     return meta;

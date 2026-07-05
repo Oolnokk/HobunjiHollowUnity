@@ -2170,7 +2170,7 @@
         return true;
       }
 
-      function makeUumkaoiiAnimal(col, row) {
+      function makeUumkaoiiAnimal(col, row, livestockId) {
         const ANIMAL_W = 1.275;
         const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
         const halfH = ANIMAL_H / 2;
@@ -2189,6 +2189,7 @@
         let tickCounter = 0;
         const animal = {
           id: 'uumkaoii_' + col + '_' + row + '_' + (performance.now() | 0),
+          livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
           type: 'animal', animalKey: 'uumkaoii',
           col, row, targetCol: col, targetRow: row,
           wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
@@ -2252,6 +2253,11 @@
         return animal;
       }
 
+      // Livestock kind → factory, so restoring saved livestock on world load
+      // can dispatch by kind without hardcoding uumkao'ii — the array this
+      // reads is meant to grow into other livestock types later.
+      const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal };
+
       function spawnUumkaoii(col, row) {
         if (!canSpawnAnimalAt(col, row)) return { ok: false, message: 'The uumkao\'ii can\'t be released here.' };
         if ((inventory.uumkaoiiCrate || 0) < 1) return { ok: false, message: 'No Uumkao\'ii Crate in bag.' };
@@ -2261,7 +2267,28 @@
         clampInventoryStack('uumkaoiiCrate');
         worldObjects.set(col + ',' + row, animal);
         animalObjects.add(animal);
+        // Livestock belongs to the world, not this character — persisted
+        // separately from saveMemberWorldData() so it stays behind for
+        // anyone who plays this world, not just whoever released it.
+        const livestock = _loadWorldLivestock();
+        livestock.push({ id: animal.livestockId, kind: 'uumkaoii', col, row, releasedAt: Date.now() });
+        _saveWorldLivestock(livestock);
         return { ok: true, message: "🦆 Uumkao'ii released!" };
+      }
+
+      // Recreates every animal this world's owner (or any farmhand) has ever
+      // released, from the world's own saved livestock list — called once
+      // per world load, after furniture placement so canSpawnAnimalAt's
+      // occupancy check sees the final tile state.
+      function respawnWorldLivestock() {
+        for (const entry of _loadWorldLivestock()) {
+          const factory = LIVESTOCK_FACTORIES[entry.kind];
+          if (!factory || !canSpawnAnimalAt(entry.col, entry.row)) continue;
+          const animal = factory(entry.col, entry.row, entry.id);
+          if (!animal) continue;
+          worldObjects.set(entry.col + ',' + entry.row, animal);
+          animalObjects.add(animal);
+        }
       }
 
       function clearAnimalObjects() {
@@ -3318,6 +3345,31 @@
           const world = (meta?.worlds || []).find(w => w.id === worldId);
           if (!world) return;
           world.lastTothalYear = year;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
+      // ── Livestock (belongs to the world itself, not any character) ─────
+      // [{ id, kind, col, row, releasedAt }] — released animals stay on the
+      // farm for whoever plays this world, unlike gear/inventory which is
+      // scoped to whichever character released them.
+      function _loadWorldLivestock() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return [];
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.livestock ?? [];
+        } catch { return []; }
+      }
+
+      function _saveWorldLivestock(list) {
+        const worldId = _tothalWorldId();
+        if (!worldId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.livestock = list;
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
       }
@@ -17380,6 +17432,7 @@
         clearPlacedProcessingFurniture();
         clearInteriorFurniture();
         clearAnimalObjects();
+        _saveWorldLivestock([]); // full farm reset also clears released animals from the world file
         clearHostileObjects();
         despawnCompanions();
         worldObjects.forEach(o => o.reset && o.reset());
@@ -18136,6 +18189,7 @@
         const _worldLayout = loadFarmLayout();
         if (_worldLayout) applyFarmLayoutToGrid(_worldLayout);
         applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
+        respawnWorldLivestock(); // after furniture, so occupancy checks see final tile state
         recomputeWater(false);
 
         // Non-gear inventory (resources) and pack clothing are world-scoped
