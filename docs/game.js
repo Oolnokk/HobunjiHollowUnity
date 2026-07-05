@@ -11,6 +11,8 @@
       const joystickKnob = document.getElementById('joystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
       const btnSwapTarget = document.getElementById('btnSwapTarget');
+      const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
+      const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
 
       // Status pill
       const spTime    = document.getElementById('spTime');
@@ -9215,6 +9217,11 @@
       let activeTool = 'shovel';
       let activeAction = 'dig';
       let heldMode = 'tool'; // 'tool' | 'item'
+      // Snapshot of { heldMode, tool, itemIndex } taken when the weapon
+      // quick-switch engages; null when not engaged. 'weapon' is no longer
+      // one of the regular tool-select options (see WHEEL_SLOTS below) —
+      // this snapshot/restore toggle is the only way in and out of it.
+      let weaponQuickSwitchSaved = null;
       let lastTime = performance.now();
       let simAccumulator = 0;
       let waterFlowPhase = 0;
@@ -9495,48 +9502,60 @@
         // ── Facing ────────────────────────────────────────────
         // Computed once per frame: also drives the touch dodge button, which
         // only matters in combat (same condition as the facing lock below).
-        // Auto-targeting only engages while the weapon tool is equipped.
-        const autoTarget = activeTool === 'weapon' ? findAutoTarget() : null;
+        // Auto-targeting only engages while an actual weapon item is
+        // equipped in the weapon slot (not just the slot being active).
+        const weaponEngaged = activeTool === 'weapon' && !!equipmentSlots.weapon;
+        const autoTarget = weaponEngaged ? findAutoTarget() : null;
         dodgeBtn?.classList.toggle('combat-active', !!autoTarget);
-        btnSwapTarget?.classList.toggle('abt-hidden', activeTool !== 'weapon');
+        btnSwapTarget?.classList.toggle('abt-hidden', !weaponEngaged);
+        btnWeaponSwitch?.classList.toggle('active', activeTool === 'weapon');
 
-        if (controllerLookActive) {
-          const diff = angleDiff(controllerLookAngle, facingAngle);
-          facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
-          player.angle = facingAngle;
+        // Auto-aim lock takes absolute priority over mouse-look/right-stick
+        // look while it's engaged, so neither can interrupt or steal facing
+        // away from the locked target — the only things that release it are
+        // an attack swing in progress (toolSwingT > 0; the swing pose drives
+        // its own body rotation) or the weapon being switched away from /
+        // unequipped (weaponEngaged false, so autoTarget is already null).
+        const autoAiming = !!autoTarget && toolSwingT <= 0;
+
+        if (autoAiming) {
+          const targetAngle = Math.atan2(autoTarget.y - player.y, autoTarget.x - player.x);
+          const diff = angleDiff(targetAngle, facingAngle);
+          facingAngle += diff * Math.min(1, FACING_LERP * 2 * dt);
           if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
-        } else if (isDesktop && mouseLookActive) {
-          if (performance.now() - lastMouseMoveTime > MOUSE_IDLE_MS) {
-            mouseLookActive = false;
-          } else {
-            const diff = angleDiff(mouseLookAngle, facingAngle);
+          cardinalHoldTimer = CARDINAL_HOLD;
+          player.angle = facingAngle;
+        } else {
+          if (controllerLookActive) {
+            const diff = angleDiff(controllerLookAngle, facingAngle);
             facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
             player.angle = facingAngle;
             if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
+          } else if (isDesktop && mouseLookActive) {
+            if (performance.now() - lastMouseMoveTime > MOUSE_IDLE_MS) {
+              mouseLookActive = false;
+            } else {
+              const diff = angleDiff(mouseLookAngle, facingAngle);
+              facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
+              player.angle = facingAngle;
+              if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
+            }
           }
-        }
 
-        if (!controllerLookActive && (!mouseLookActive || !isDesktop)) {
-          if (autoTarget) {
-            // Combat: lock facing onto the nearest nearby hostile instead of
-            // movement direction, akin to Z-targeting.
-            const targetAngle = Math.atan2(autoTarget.y - player.y, autoTarget.x - player.x);
-            const diff = angleDiff(targetAngle, facingAngle);
-            facingAngle += diff * Math.min(1, FACING_LERP * 2 * dt);
-            if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
-            cardinalHoldTimer = CARDINAL_HOLD;
-          } else if (inputStrength > 0.001) {
-            lastMoveAngle = Math.atan2(iy, ix);
-            cardinalHoldTimer = CARDINAL_HOLD;
-            const diff = angleDiff(lastMoveAngle, facingAngle);
-            facingAngle += diff * Math.min(1, FACING_LERP * dt);
-          } else if (cardinalHoldTimer > 0) {
-            cardinalHoldTimer -= dt;
-            const card = nearestCardinalAngle(lastMoveAngle);
-            const diff = angleDiff(card, facingAngle);
-            facingAngle += diff * Math.min(1, FACING_LERP * 2 * dt);
+          if (!controllerLookActive && (!mouseLookActive || !isDesktop)) {
+            if (inputStrength > 0.001) {
+              lastMoveAngle = Math.atan2(iy, ix);
+              cardinalHoldTimer = CARDINAL_HOLD;
+              const diff = angleDiff(lastMoveAngle, facingAngle);
+              facingAngle += diff * Math.min(1, FACING_LERP * dt);
+            } else if (cardinalHoldTimer > 0) {
+              cardinalHoldTimer -= dt;
+              const card = nearestCardinalAngle(lastMoveAngle);
+              const diff = angleDiff(card, facingAngle);
+              facingAngle += diff * Math.min(1, FACING_LERP * 2 * dt);
+            }
+            player.angle = facingAngle;
           }
-          player.angle = facingAngle;
         }
 
         // ── Boundary clamp ────────────────────────────────────
@@ -16393,6 +16412,10 @@
 
       function setActiveTool(tool) {
         if (!toolActions[tool]) return;
+        // Picking a tool through any of the normal paths (arc, digit keys,
+        // scroll) while the weapon quick-switch is engaged cancels its
+        // "return to X" memory — there's nothing sensible left to return to.
+        if (tool !== 'weapon') weaponQuickSwitchSaved = null;
         activeTool = tool;
         const actions = toolActions[tool];
         if (!actions.includes(activeAction)) activeAction = actions[0];
@@ -16408,9 +16431,46 @@
         if (toolMeshMap[tool]) toolHolder.add(toolMeshMap[tool]);
         closeToolPicker();
         refreshActionBar();
+        refreshWeaponSwitchBtn();
         const msg = `${label} selected.`;
         lastActionMessage = msg;
         showToast(msg, true);
+      }
+
+      // Weapon quick-switch icon always shows whatever's actually equipped in
+      // the weapon slot (not necessarily the active tool) — its .active class
+      // (toggled every frame in updateMovement) is what shows the current
+      // in/out state.
+      function refreshWeaponSwitchBtn() {
+        if (!btnWeaponSwitchIcon) return;
+        const def = TOOL_ITEM_DEFS[equipmentSlots.weapon];
+        btnWeaponSwitchIcon.innerHTML = toolSelectIconHTML(def, '🗡️', '0.85em');
+      }
+
+      // Press once: snapshot whatever tool/item is currently active and jump
+      // straight to the weapon slot. Press again: restore that snapshot.
+      // This is the only path that sets activeTool to 'weapon' now — it's
+      // been removed from WHEEL_SLOTS (the regular tool-select cycle).
+      function toggleQuickWeaponSwitch() {
+        if (weaponQuickSwitchSaved) {
+          const saved = weaponQuickSwitchSaved;
+          weaponQuickSwitchSaved = null;
+          // Restore the underlying tool slot first (icon/mesh/actions), then
+          // re-enter item mode on top of it if that's what was active.
+          setActiveTool(saved.tool);
+          if (saved.heldMode === 'item') {
+            heldMode = 'item';
+            activeItemIndex = saved.itemIndex;
+            refreshItemScroll();
+            refreshActionBar();
+          } else {
+            heldMode = 'tool';
+          }
+        } else {
+          weaponQuickSwitchSaved = { heldMode, tool: activeTool, itemIndex: activeItemIndex };
+          heldMode = 'tool';
+          setActiveTool('weapon');
+        }
       }
 
       function setActiveAction(action) {
@@ -16422,7 +16482,10 @@
       // ── Tool wheel (radial picker) ─────────────────────────
       const toolWheelOverlay = document.getElementById('toolWheelOverlay');
       const toolWheelEl      = document.getElementById('toolWheel');
-      const WHEEL_SLOTS  = ['shovel', 'hoe', 'weapon', 'axe', 'pick', 'harpoon'];
+      // 'weapon' deliberately excluded — it's reachable only via the
+      // dedicated weapon quick-switch (toggleQuickWeaponSwitch), not the
+      // regular tool-select cycle.
+      const WHEEL_SLOTS  = ['shovel', 'hoe', 'axe', 'pick', 'harpoon'];
       const WHEEL_RADIUS = 72; // px — distance from center to each spoke button
 
       let toolPickerOpen = false;
@@ -17494,6 +17557,7 @@
         if (gearInventory?.tools?.hatchet)    equipmentSlots.weapon = 'hatchet';
         if (gearInventory?.whistles?.length)  equipmentSlots.whistle = gearInventory.whistles[0].id;
         rebuildToolMeshes();
+        refreshWeaponSwitchBtn();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
         // Re-apply saved processing furniture from layout (crates keep their current position)
@@ -17546,6 +17610,15 @@
       dodgeBtn?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
         performDodge(player.angle);
+      });
+
+      // Weapon quick-switch button: a plain tap toggles in/out of the
+      // weapon tool slot (see toggleQuickWeaponSwitch). Always visible,
+      // unlike dodgeBtn — this isn't combat-only, it's how you get *into*
+      // combat stance to begin with.
+      btnWeaponSwitch?.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        toggleQuickWeaponSwitch();
       });
 
       // Swap Target button: its own dedicated drag-direction stick (separate
@@ -17741,7 +17814,8 @@
           refreshItemScroll(); refreshActionBar(); return;
         }
         if (actionId === 'toolPrev' || actionId === 'toolNext') { cycleActiveTool(actionId === 'toolPrev' ? -1 : 1); return; }
-        const tool = { tool1: 'shovel', tool2: 'hoe', tool3: 'weapon', tool4: 'axe', tool5: 'pick', tool6: 'harpoon' }[actionId];
+        if (actionId === 'weaponSwitch') { toggleQuickWeaponSwitch(); return; }
+        const tool = { tool1: 'shovel', tool2: 'hoe', tool4: 'axe', tool5: 'pick', tool6: 'harpoon' }[actionId];
         if (tool) setActiveTool(tool);
       }
       function getActionForButton(device, button, heldShift = null) {
@@ -18259,6 +18333,7 @@
         if (gearInventory.tools.hatchet)    equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
         if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
         rebuildToolMeshes();
+        refreshWeaponSwitchBtn();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
         buildEquipmentSlots();

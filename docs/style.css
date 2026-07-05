@@ -612,6 +612,30 @@
       box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
     #itemBtn:active { transform: translate(50%,50%) scale(0.92); }
+    /* ── Weapon quick-switch: same outer ring as tool/item dials, one step
+       further out (165°) so it doesn't disturb their existing angles. Tap
+       once to jump to the weapon tool slot; tap again (button turns
+       .active while weapon is engaged) to restore whatever was active
+       before. Always visible — desktop keyboard/gamepad share the same
+       toggleQuickWeaponSwitch() via the "weaponSwitch" input action. ── */
+    #btnWeaponSwitch {
+      position: absolute;
+      right:  calc(-1*cos(165deg)*var(--ar2));
+      bottom: calc(   sin(165deg)*var(--ar2));
+      transform: translate(50%, 50%);
+      width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
+      border-radius: 50%;
+      background: rgba(255,120,120,0.09); border: 1.5px solid rgba(255,120,120,0.46);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: var(--text);
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; font-family: inherit; cursor: pointer;
+      transition: transform 0.08s; overflow: hidden;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+    }
+    #btnWeaponSwitch:active { transform: translate(50%,50%) scale(0.92); }
+    #btnWeaponSwitch .abt-icon { font-size: 0.85em; }
+    #btnWeaponSwitch.active { background: rgba(255,120,120,0.32); border-color: rgba(255,120,120,0.85); }
     /* ── Arc dial overlay elements ───────────────────────── */
     .arc-backdrop {
       position: fixed; inset: 0;
