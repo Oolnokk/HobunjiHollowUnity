@@ -12,9 +12,10 @@
 (() => {
   "use strict";
 
-  const bboxCache = new Map();   // spritePath -> { img, x, y, w, h }
-  const iconCache = new Map();   // "spritePath|style|size" -> data URL
-  const pending   = new Set();   // spritePath currently loading/trimming
+  const bboxCache   = new Map(); // spritePath -> { img, x, y, w, h }
+  const iconCache   = new Map(); // "spritePath|style" -> data URL
+  const pending     = new Set(); // spritePath currently loading/trimming
+  const failedIcons = new Set(); // "spritePath|style" whose canvas export failed — stop retrying, always fall back
 
   function trimBBox(img) {
     const w = img.naturalWidth, h = img.naturalHeight;
@@ -50,6 +51,14 @@
     if (bboxCache.has(spritePath) || pending.has(spritePath)) return;
     pending.add(spritePath);
     const img = new Image();
+    // Request CORS mode so a same-path-but-different-effective-origin host
+    // (e.g. a static-file CDN mirror that redirects behind the scenes)
+    // doesn't taint the canvas we draw this into — same-origin loads (the
+    // normal "serve docs/ as static files" deployment) are unaffected either
+    // way. If the actual host doesn't send CORS headers, trimBBox/
+    // renderDataURL below still catch the resulting SecurityError and fall
+    // back to the emoji instead of throwing.
+    img.crossOrigin = 'anonymous';
     img.onload = () => {
       const bbox = trimBBox(img);
       bboxCache.set(spritePath, { img, ...bbox });
@@ -159,7 +168,14 @@
       drawEffect(ctx, style, SS, tipX, tipY, dirX, dirY);
     }
 
-    return c.toDataURL('image/png');
+    try {
+      return c.toDataURL('image/png');
+    } catch {
+      // Tainted canvas (cross-origin sprite load with no usable CORS
+      // headers) — give up on a real icon for this sprite/style rather than
+      // throwing, so the caller's emoji fallback keeps working.
+      return null;
+    }
   }
 
   // Returns an <img> HTML string, or null if the sprite hasn't finished
@@ -168,13 +184,15 @@
   // '1.3em') so the icon scales the same way the emoji it replaces did.
   function getIconHTML(spritePath, style, cssSize, altText) {
     if (!spritePath) return null;
-    const size = cssSize || '1.3em';
     const key = spritePath + '|' + style;
+    if (failedIcons.has(key)) return null;
+    const size = cssSize || '1.3em';
     let dataURL = iconCache.get(key);
     if (!dataURL) {
       const entry = bboxCache.get(spritePath);
       if (!entry) { ensureLoaded(spritePath); return null; }
       dataURL = renderDataURL(entry, style);
+      if (!dataURL) { failedIcons.add(key); return null; }
       iconCache.set(key, dataURL);
     }
     return `<img src="${dataURL}" class="tool-sprite-icon" alt="${altText || ''}" style="width:${size};height:${size};display:inline-block;vertical-align:middle;object-fit:contain;">`;
