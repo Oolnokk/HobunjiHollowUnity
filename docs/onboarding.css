@@ -30,12 +30,12 @@
   flex-direction: column;
   gap: 14px;
   box-shadow: 0 16px 64px rgba(0, 0, 0, 0.7);
-  font-family: 'DM Mono', ui-monospace, monospace;
+  font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace;
   color: #f0ffe6;
 }
 
 .ob-title {
-  font-family: 'Pixelify Sans', monospace;
+  font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
   font-size: 22px;
   color: #f9e28a;
   text-align: center;
@@ -248,7 +248,7 @@
   background: rgba(127, 232, 154, 0.10);
   color: #7fe89a;
   font-size: 13px;
-  font-family: 'Pixelify Sans', inherit;
+  font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', inherit;
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.15s, box-shadow 0.15s;

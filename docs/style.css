@@ -1,5 +1,19 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    @font-face {
+      font-family: 'KhymeryyanRomanLetters+Numbers';
+      src: url('assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+      /* This font's cap-height/x-height run small relative to its em box
+         compared to the DM Mono/Pixelify Sans fallbacks it replaced, so it
+         reads noticeably smaller at the same font-size — size-adjust scales
+         its rendered glyphs up to compensate, in one place, instead of
+         touching every font-size declared across the HUD. */
+      size-adjust: 115%;
+    }
+
     :root {
       --bg: #17251e;
       --glass: rgba(8, 18, 13, 0.82);
@@ -29,7 +43,8 @@
       height: 100%; overflow: hidden;
       background: var(--bg);
       color: var(--text);
-      font-family: 'DM Mono', ui-monospace, monospace;
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace;
+      letter-spacing: 0.02em;
       -webkit-font-smoothing: antialiased;
     }
     button { font: inherit; cursor: pointer; border: none; background: none; }
@@ -91,7 +106,7 @@
       overflow: hidden; white-space: nowrap;
       box-shadow: 0 4px 18px rgba(0,0,0,0.32);
     }
-    .sb-time { font-family: 'Pixelify Sans', monospace; font-size: 13px; color: var(--accent); letter-spacing: 0.03em; flex-shrink: 0; }
+    .sb-time { font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace; font-size: 13px; color: var(--accent); letter-spacing: 0.03em; flex-shrink: 0; }
     .sb-div  { width: 1px; height: 12px; background: var(--border-bright); flex-shrink: 0; }
     .sb-info { font-size: 11px; color: var(--muted); flex-shrink: 0; }
     .sb-accent { font-size: 11px; color: var(--accent); text-transform: capitalize; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
@@ -389,7 +404,7 @@
     .wallet-icon  { font-size: 28px; }
     .wallet-label { flex: 1; font-size: 11px; color: var(--muted); }
     .wallet-amount {
-      font-family: 'Pixelify Sans', monospace;
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
       font-size: 24px;
       color: #f0d040;
       letter-spacing: 0.02em;
@@ -420,7 +435,7 @@
       border: 1px solid rgba(240,200,60,0.35);
       color: #f0d040;
       font-size: 11px;
-      font-family: 'DM Mono', monospace;
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace;
       cursor: pointer;
       transition: background 0.1s;
     }
@@ -484,7 +499,7 @@
       position: absolute;
       top: 4px; right: 5px;
       font-size: 8px;
-      font-family: 'DM Mono', monospace;
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace;
       color: rgba(255,255,255,0.6);
       background: rgba(0,0,0,0.4);
       padding: 1px 4px;
@@ -604,6 +619,30 @@
       box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
     #itemBtn:active { transform: translate(50%,50%) scale(0.92); }
+    /* ── Weapon quick-switch: same outer ring as tool/item dials, one step
+       further out (165°) so it doesn't disturb their existing angles. Tap
+       once to jump to the weapon tool slot; tap again (button turns
+       .active while weapon is engaged) to restore whatever was active
+       before. Always visible — desktop keyboard/gamepad share the same
+       toggleQuickWeaponSwitch() via the "weaponSwitch" input action. ── */
+    #btnWeaponSwitch {
+      position: absolute;
+      right:  calc(-1*cos(165deg)*var(--ar2));
+      bottom: calc(   sin(165deg)*var(--ar2));
+      transform: translate(50%, 50%);
+      width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
+      border-radius: 50%;
+      background: rgba(255,120,120,0.09); border: 1.5px solid rgba(255,120,120,0.46);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: var(--text);
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; font-family: inherit; cursor: pointer;
+      transition: transform 0.08s; overflow: hidden;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+    }
+    #btnWeaponSwitch:active { transform: translate(50%,50%) scale(0.92); }
+    #btnWeaponSwitch .abt-icon { font-size: 0.85em; }
+    #btnWeaponSwitch.active { background: rgba(255,120,120,0.32); border-color: rgba(255,120,120,0.85); }
     /* ── Arc dial overlay elements ───────────────────────── */
     .arc-backdrop {
       position: fixed; inset: 0;
@@ -698,7 +737,7 @@
     .abt-item { border-color:rgba(255,211,125,0.46)!important; background:rgba(255,211,125,0.09)!important; }
     .abt-swap { border-color:rgba(125,200,255,0.46)!important; background:rgba(125,200,255,0.09)!important; }
     .abt-swap .abt-icon svg { display: block; }
-    .abt-key  { position:absolute; top:2px; right:3px; font-size:7px; color:rgba(255,255,255,0.42); font-family:'DM Mono',monospace; pointer-events:none; }
+    .abt-key  { position:absolute; top:2px; right:3px; font-size:7px; color:rgba(255,255,255,0.42); font-family:'KhymeryyanRomanLetters+Numbers','DM Mono',monospace; pointer-events:none; }
     .abt-icon { font-size:1.3em; line-height:1; pointer-events:none; }
     .abt-label { display:none; }
     #btnAction1 .abt-icon { font-size:1.5em; }
@@ -875,7 +914,7 @@
     }
     .id-icon  { font-size: 22px; }
     .id-name  { font-size: 8px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
-    .id-count { font-size: 12px; color: var(--accent); font-family: 'Pixelify Sans', monospace; }
+    .id-count { font-size: 12px; color: var(--accent); font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace; }
     .id-count.empty { color: var(--danger); }
 
     /* ── Toast notification ──────────────────────────────────── */
@@ -915,7 +954,7 @@
     /* ── Debug panel ─────────────────────────────────────────── */
     #menuDebugPanel {
       font-size: 10px; line-height: 1.6;
-      color: var(--muted); font-family: 'DM Mono', ui-monospace, monospace;
+      color: var(--muted); font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace;
       background: rgba(0,0,0,0.25); border-radius: 8px;
       padding: 10px 12px; overflow-y: auto; max-height: 340px;
     }
@@ -936,7 +975,7 @@
     kbd {
       background: rgba(255,255,255,0.10); border: 1px solid var(--border-bright);
       border-radius: 4px; padding: 2px 7px; font-size: 10px;
-      font-family: 'DM Mono', monospace; white-space: nowrap;
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace; white-space: nowrap;
     }
     .inv-row {
       display: flex; align-items: center; gap: 8px; padding: 5px 0;
@@ -1293,7 +1332,7 @@
       max-width: 420px;
     }
     .settings-section-title {
-      font-family: 'Pixelify Sans', monospace;
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
       color: var(--accent); font-size: 10px;
       letter-spacing: 0.07em; text-transform: uppercase;
       border-bottom: 1px solid var(--border);
@@ -1509,10 +1548,10 @@
     .iib-count {
       position: absolute; bottom: 2px; right: 3px;
       font-size: var(--inv-font-xs); color: var(--muted);
-      font-family: 'DM Mono', monospace; pointer-events: none;
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace; pointer-events: none;
     }
     .iib-count.zero { color: var(--danger); opacity: 0.45; }
-    .iib-equip-badge { position:absolute; top:2px; left:2px; font-size:7px; line-height:1.3; background:rgba(249,226,138,0.82); color:#1a1a2e; border-radius:2px; padding:0 2px; pointer-events:none; font-family:'DM Mono',monospace; }
+    .iib-equip-badge { position:absolute; top:2px; left:2px; font-size:7px; line-height:1.3; background:rgba(249,226,138,0.82); color:#1a1a2e; border-radius:2px; padding:0 2px; pointer-events:none; font-family:'KhymeryyanRomanLetters+Numbers','DM Mono',monospace; }
 
     /* Page scroller: sub x:34/54 y:13/28 w:2 h:14 */
     .inv-pgscroll {
@@ -1934,7 +1973,7 @@
       border-bottom: 1px solid var(--border); padding-bottom: 4px;
     }
     .progress-section-title {
-      font-family: 'Pixelify Sans', monospace;
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
       color: var(--accent); font-size: 10px;
       letter-spacing: 0.07em; text-transform: uppercase;
     }
@@ -2011,7 +2050,7 @@
       backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
       pointer-events: auto;
     }
-    .fish-title { font-family: 'Pixelify Sans', monospace; font-size: 9px; color: var(--accent); letter-spacing: 0.03em; }
+    .fish-title { font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace; font-size: 9px; color: var(--accent); letter-spacing: 0.03em; }
     .fish-hint { font-size: 7px; color: var(--muted); text-align: center; max-width: 95px; }
     /* Fish render is a pure-black silhouette PNG (see fish_silhouette-body.png); without a
        light halo it nearly disappears against the dark backdrop, so give it the same white
@@ -2027,7 +2066,7 @@
     .fish-fire-btn {
       width: 100%; padding: 4px 0; border-radius: 6px;
       background: rgba(249,226,138,0.16); border: 1px solid rgba(249,226,138,0.5);
-      color: var(--accent); font-family: 'Pixelify Sans', monospace; font-size: 8px;
+      color: var(--accent); font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace; font-size: 8px;
       letter-spacing: 0.03em; cursor: pointer;
     }
     .fish-fire-btn:active { background: rgba(249,226,138,0.3); }

@@ -631,6 +631,13 @@
         <span class="abt-icon">💨</span>
         <span class="abt-label">Dodge</span>
       </button>
+      <!-- Weapon quick-switch: tap once to drop everything and go straight to
+           the weapon; tap again to return to whatever tool/item was active
+           before. This is the only way into the weapon tool slot now — it's
+           no longer one of the regular tool-select options. -->
+      <button id="btnWeaponSwitch" class="abt" aria-label="Quick-switch to weapon">
+        <span class="abt-icon" id="btnWeaponSwitchIcon">🗡️</span>
+      </button>
       <div id="toolPicker" role="menu" aria-label="Select tool">
         <div class="tool-pick-row">
           <span class="tool-pick-chip">Shovel</span>
@@ -639,10 +646,6 @@
         <div class="tool-pick-row">
           <span class="tool-pick-chip">Hoe</span>
           <button class="tool-pick-btn" data-tool="hoe" role="menuitem"><b>🪓</b></button>
-        </div>
-        <div class="tool-pick-row">
-          <span class="tool-pick-chip">Weapon</span>
-          <button class="tool-pick-btn" data-tool="weapon" role="menuitem"><b>🗡️</b></button>
         </div>
         <div class="tool-pick-row">
           <span class="tool-pick-chip">Axe</span>
@@ -713,6 +716,7 @@
   <!-- Spearfishing minigame overlay (built dynamically in game.js) -->
   <div id="fishingOverlay"></div>
 
+  <script src="js/tool-icon-render.js"></script>
   <script src="game.js"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
