@@ -1380,9 +1380,44 @@
         // "mace mode" since fishing hatchets or other harpoon variants may reuse the same flag),
         // while spear-mode items stay rigidly oriented like the hatchet sweep.
         fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true  },
-        fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: false },
+        fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'thrust', spinning: false },
         pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust' },
       };
+
+      window.ToolIconRender?.warm(Object.values(TOOL_ITEM_DEFS).map(d => d.sprite));
+
+      // Resolved icon for a tool-select badge (the equipped item's own
+      // sprite, upright and trimmed) — falls back to `fallbackEmoji` until
+      // the sprite has finished loading, or if the slot holds nothing.
+      function toolSelectIconHTML(def, fallbackEmoji, cssSize) {
+        if (def?.sprite) {
+          const html = window.ToolIconRender?.getIconHTML(def.sprite, 'plain', cssSize, def.label);
+          if (html) return html;
+        }
+        return def?.icon || fallbackEmoji;
+      }
+
+      // Resolved icon for a weapon/axe action button — the equipped item's
+      // sprite rotated into a jab/sweep/chop pose with a motion-effect
+      // overlay, matching that item's own animStyle (or a fixed 'chop' for
+      // axe-slot actions, which always read as a chop regardless of the
+      // hatchet's own weapon-mode animStyle). Falls back to the generic
+      // per-action emoji until the sprite has loaded, or for tools/actions
+      // this doesn't apply to (dig/till/etc.).
+      function attackActionIconHTML(tool, action, fallbackEmoji) {
+        const def = TOOL_ITEM_DEFS[equipmentSlots[tool]];
+        if (!def?.sprite) return fallbackEmoji;
+        let style = null;
+        if (tool === 'axe' && (action === 'chop' || action === 'hack')) style = 'chop';
+        else if (tool === 'weapon' && (action === 'cut' || action === 'slash')) {
+          style = def.animStyle === 'thrust' ? 'jab' : def.animStyle === 'chop' ? 'chop' : 'sweep';
+        } else if (tool === 'harpoon' && action === 'fish') {
+          style = 'plain';
+        }
+        if (!style) return fallbackEmoji;
+        const html = window.ToolIconRender?.getIconHTML(def.sprite, style, '1.3em', def.label + ' ' + action);
+        return html || fallbackEmoji;
+      }
 
       // Current item equipped in each tool slot (null = empty)
       const equipmentSlots = {
@@ -16363,9 +16398,9 @@
         if (!actions.includes(activeAction)) activeAction = actions[0];
         const equipped = equipmentSlots[tool];
         const def = TOOL_ITEM_DEFS[equipped];
-        const icon  = def?.icon  || { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', machete:'🗡️' }[tool] || '🔧';
+        const fallbackIcon = { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', machete:'🗡️' }[tool] || '🔧';
         const label = def?.label || { shovel:'Shovel', hoe:'Hoe', axe:'Axe', pick:'Pick', harpoon:'Harpoon', weapon:'Weapon', machete:'Weapon' }[tool] || tool;
-        toolBtnIcon.textContent  = icon;
+        toolBtnIcon.innerHTML  = toolSelectIconHTML(def, fallbackIcon, '0.85em');
         toolBtnLabel.textContent = label;
         toolPickBtns.forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
         // Swap visible tool mesh
@@ -16524,7 +16559,8 @@
           WHEEL_SLOTS.forEach((slot, i) => {
             const deg = ARC_S - i * step;
             const eq = equipmentSlots[slot], def = eq ? TOOL_ITEM_DEFS[eq] : null;
-            const icon  = def?.icon  || {shovel:'⛏️',hoe:'🪓',weapon:'🗡️',axe:'🪓',pick:'⛏️',harpoon:'🎣'}[slot] || '🔧';
+            const fallbackIcon = {shovel:'⛏️',hoe:'🪓',weapon:'🗡️',axe:'🪓',pick:'⛏️',harpoon:'🎣'}[slot] || '🔧';
+            const icon  = toolSelectIconHTML(def, fallbackIcon, '1.4em');
             const label = {shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'}[slot] || slot;
             const el = _mkSlot(deg, icon, label, activeTool === slot ? 'arc-active' : '');
             _arcSlots.push({ angle: deg, el, data: slot });
@@ -16816,7 +16852,8 @@
         if (heldMode === 'tool') {
           const actions = toolActions[activeTool] || [];
           actions.forEach((action, i) => {
-            const [icon] = actionLabels[action];
+            const [fallbackIcon] = actionLabels[action];
+            const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
             const allowed = canUseAction(activeTool, action, reticle.col, reticle.row);
             btns.push({
               icon, label: contextualActionLabel(action, tile),
@@ -17091,8 +17128,8 @@
         // Tool
         const _eqItem = equipmentSlots[activeTool];
         const _eqDef  = _eqItem ? TOOL_ITEM_DEFS[_eqItem] : null;
-        const toolInfo = _eqDef ? [_eqDef.icon, _eqDef.label]
-          : ({ shovel:['⛏️','Shovel'], hoe:['🪓','Hoe'], axe:['🪓','Axe'], pick:['⛏️','Pick'], harpoon:['🎣','Harpoon'], weapon:['🗡️','Weapon'], machete:['🗡️','Weapon'] }[activeTool] || ['🔧', activeTool]);
+        const _khFallback = ({ shovel:['⛏️','Shovel'], hoe:['🪓','Hoe'], axe:['🪓','Axe'], pick:['⛏️','Pick'], harpoon:['🎣','Harpoon'], weapon:['🗡️','Weapon'], machete:['🗡️','Weapon'] }[activeTool] || ['🔧', activeTool]);
+        const toolInfo = [toolSelectIconHTML(_eqDef, _khFallback[0], '13px'), _eqDef?.label || _khFallback[1]];
         parts.push(`<div class="kh-group"><span class="kh-key">1/2/3</span><span class="kh-tool">${toolInfo[0]} ${toolInfo[1]}</span></div>`);
         parts.push('<div class="kh-div"></div>');
 
