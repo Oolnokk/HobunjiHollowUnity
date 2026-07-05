@@ -465,6 +465,15 @@
     return pfx + '_' + Math.random().toString(36).slice(2, 10);
   }
 
+  // Hidden multiplayer-ready player identity — generated once at character
+  // creation and never shown in any UI. Distinct from the character's local
+  // save-slot id so a real network identity can be layered in later without
+  // touching save-slot bookkeeping.
+  function genPlayerId() {
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+    return 'player_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  }
+
   function specLabel(sid) {
     return SPECIES_DATA[sid]?.label ?? (sid ? String(sid) : 'Unknown');
   }
@@ -502,18 +511,97 @@
     return { combat: 0, farming: 0, fishing: 0, foraging: 0, alchemy: 0, cooking: 0 };
   }
 
-  function makeDefaultWorld(characterId) {
+  // Character stats — plain persisted values with no gameplay effect yet.
+  function makeDefaultStats() {
+    return { deadliness: 0, control: 0, agility: 0, stamina: 0, intelligence: 0, resistance: 0 };
+  }
+
+  // Default per-character-in-this-world data. This is world-scoped: it stays
+  // behind when a character leaves the world, unlike gear/skills/stats which
+  // travel with the character between worlds.
+  function makeDefaultMemberState() {
     return {
-      id:           uid('world'),
-      label:        'Hobunji Hollow',
-      characterId,
-      packInventory: {},
-      keyItems:     [],
-      lastDay:      1,
-      lastSeason:   'First Rains',
-      createdAt:    Date.now(),
-      lastPlayed:   Date.now(),
+      nonGearInventory: {},           // general resource inventory (seeds/crops/gold/etc.)
+      packClothing:     [],           // unequipped clothing sitting in this world's pack
+      npcRelationships: {},           // { [npcId]: { favor, memory: [{event, day, ts}] } }
+      questProgress:    {},           // { [questId]: { status, progress, completedAt } }
+      joinedAt:         Date.now(),
     };
+  }
+
+  // Default farmhand permission flags. The world owner always has full
+  // permissions implicitly and is never represented in the farmhands list.
+  function makeDefaultFarmhandPermissions() {
+    return { storage: false, plant: false, harvest: false, placeFurniture: false, alterFarm: false };
+  }
+
+  function makeDefaultWorld(characterId) {
+    const world = {
+      id:                uid('world'),
+      label:             'Hobunji Hollow',
+      ownerCharacterId:  characterId,
+      farmhands:         [],   // [{ characterId, permissions }] — non-owner members with farm access grants
+      members:           {},   // { [characterId]: memberState } — world-scoped data per character who has joined
+      keyItems:          [],
+      lastDay:           1,
+      lastSeason:        'First Rains',
+      createdAt:         Date.now(),
+      lastPlayed:        Date.now(),
+    };
+    world.members[characterId] = makeDefaultMemberState();
+    return world;
+  }
+
+  // ── World ownership / membership helpers ────────────────────────────────
+  function isWorldOwner(world, characterId) {
+    return !!world && world.ownerCharacterId === characterId;
+  }
+
+  function getFarmhandEntry(world, characterId) {
+    return (world?.farmhands || []).find(f => f.characterId === characterId) || null;
+  }
+
+  // Owner gets implicit full permissions; farmhands get whatever's been granted.
+  function getFarmhandPermissions(world, characterId) {
+    if (isWorldOwner(world, characterId)) {
+      return { storage: true, plant: true, harvest: true, placeFurniture: true, alterFarm: true };
+    }
+    return getFarmhandEntry(world, characterId)?.permissions || makeDefaultFarmhandPermissions();
+  }
+
+  function ensureWorldMember(world, characterId) {
+    if (!world.members) world.members = {};
+    if (!world.members[characterId]) world.members[characterId] = makeDefaultMemberState();
+    return world.members[characterId];
+  }
+
+  function addFarmhand(world, characterId, permissions) {
+    if (!world.farmhands) world.farmhands = [];
+    if (isWorldOwner(world, characterId)) return;
+    let entry = getFarmhandEntry(world, characterId);
+    if (!entry) {
+      entry = { characterId, permissions: makeDefaultFarmhandPermissions() };
+      world.farmhands.push(entry);
+    }
+    if (permissions) Object.assign(entry.permissions, permissions);
+    ensureWorldMember(world, characterId);
+  }
+
+  function removeFarmhand(world, characterId) {
+    world.farmhands = (world.farmhands || []).filter(f => f.characterId !== characterId);
+  }
+
+  function setFarmhandPermission(world, characterId, permission, value) {
+    const entry = getFarmhandEntry(world, characterId);
+    if (entry) entry.permissions[permission] = !!value;
+  }
+
+  // Worlds a character can currently open — worlds they own plus worlds
+  // they've joined as a farmhand.
+  function worldsForCharacter(meta, characterId) {
+    return (meta.worlds || []).filter(w =>
+      w.ownerCharacterId === characterId || (w.farmhands || []).some(f => f.characterId === characterId)
+    );
   }
 
   // ── Default state ─────────────────────────────────────────────────────
@@ -699,7 +787,7 @@
     const meta     = _saveMeta || makeSaveMeta();
     const chars    = meta.characters || [];
     const selChar  = chars.find(c => c.id === _selCharId) || null;
-    const worlds   = selChar ? (meta.worlds || []).filter(w => w.characterId === selChar.id) : [];
+    const worlds   = selChar ? worldsForCharacter(meta, selChar.id) : [];
     const selWorld = (_selWorldId && _selWorldId !== 'new') ? worlds.find(w => w.id === _selWorldId) : null;
 
     const charCardsHtml = chars.map(c => `
@@ -723,7 +811,7 @@
         <button class="sl-world-card${w.id === _selWorldId ? ' sl-selected' : ''}" data-sl-world="${esc(w.id)}" type="button">
           <div class="sl-world-icon">🌿</div>
           <div class="sl-world-info">
-            <div class="sl-world-name">${esc(w.label || 'Hobunji Hollow')}</div>
+            <div class="sl-world-name">${esc(w.label || 'Hobunji Hollow')}${isWorldOwner(w, selChar.id) ? '' : ' <span class="sl-world-role">(Farmhand)</span>'}</div>
             <div class="sl-world-meta">Day ${w.lastDay ?? 1} · ${esc(w.lastSeason ?? '—')}</div>
             <div class="sl-world-date">${relDate(w.lastPlayed)}</div>
           </div>
@@ -809,9 +897,15 @@
     const deleteBtn = _el.querySelector('#slDeleteChar');
     if (deleteBtn) deleteBtn.addEventListener('click', () => {
       if (!_selCharId || !_saveMeta) return;
-      if (!confirm('Delete this character and all their worlds? This cannot be undone.')) return;
+      if (!confirm('Delete this character and all worlds they own? This cannot be undone.')) return;
       _saveMeta.characters = (_saveMeta.characters || []).filter(c => c.id !== _selCharId);
-      _saveMeta.worlds     = (_saveMeta.worlds     || []).filter(w => w.characterId !== _selCharId);
+      // Worlds this character owns are deleted outright; worlds where they were
+      // only a farmhand keep going for the owner, minus this character's membership.
+      _saveMeta.worlds     = (_saveMeta.worlds || []).filter(w => w.ownerCharacterId !== _selCharId);
+      _saveMeta.worlds.forEach(w => {
+        removeFarmhand(w, _selCharId);
+        if (w.members) delete w.members[_selCharId];
+      });
       saveSaveMeta(_saveMeta);
       _selCharId  = _saveMeta.characters[0]?.id ?? null;
       _selWorldId = null;
@@ -850,17 +944,22 @@
     if (!_selCharId || !_saveMeta) return;
     const char = (_saveMeta.characters || []).find(c => c.id === _selCharId);
     if (!char) return;
+    if (!char.playerId) char.playerId = genPlayerId();     // migrate pre-existing characters
+    if (!char.stats)    char.stats    = makeDefaultStats();
 
-    const worlds = (_saveMeta.worlds || []).filter(w => w.characterId === char.id);
-    let world;
+    const worlds = worldsForCharacter(_saveMeta, char.id);
+    let world, isNewWorld;
     if (_selWorldId === 'new' || (!_selWorldId && worlds.length === 0)) {
       world = makeDefaultWorld(char.id);
       _saveMeta.worlds.push(world);
+      isNewWorld = true;
     } else {
       world = worlds.find(w => w.id === _selWorldId);
       if (!world) return;
       world.lastPlayed = Date.now();
+      isNewWorld = false;
     }
+    const memberState = ensureWorldMember(world, char.id);
     char.lastPlayed = Date.now();
     saveSaveMeta(_saveMeta);
 
@@ -872,11 +971,19 @@
       gearInventory:     { ...(char.gearInventory  || makeDefaultGear()) },
       combatLoadout:     { ...(char.combatLoadout  || {}) },
       skillLevels:       { ...(char.skillLevels    || makeDefaultSkills()) },
-      npcFavor:          { ...(char.npcFavor       || {}) },
+      stats:             { ...char.stats },
+      playerId:          char.playerId,
       characterId:       char.id,
       worldId:           world.id,
       worldLabel:        world.label,
-      isNewWorld:        _selWorldId === 'new' || (!_selWorldId && worlds.length === 0),
+      worldOwnerCharacterId: world.ownerCharacterId,
+      isWorldOwner:      isWorldOwner(world, char.id),
+      farmhandPermissions: getFarmhandPermissions(world, char.id),
+      nonGearInventory:  { ...(memberState.nonGearInventory || {}) },
+      packClothing:      [...(memberState.packClothing || [])],
+      npcRelationships:  { ...(memberState.npcRelationships || {}) },
+      questProgress:     { ...(memberState.questProgress || {}) },
+      isNewWorld,
     };
     saveProfile(playerData);
     window.__hobunjiPlayerProfile = playerData;
@@ -1144,9 +1251,9 @@
     // Register new character + world in save meta
     if (_saveMeta) {
       const charId = uid('char');
-      const worldId = uid('world');
       const newChar = {
         id:               charId,
+        playerId:         genPlayerId(),
         nickname:         playerData.nickname,
         appearance:       playerData.appearance,
         equippedCosmetics: playerData.equippedCosmetics,
@@ -1165,20 +1272,29 @@
           return gear;
         })(),
         skillLevels:      makeDefaultSkills(),
-        npcFavor:         {},
+        stats:            makeDefaultStats(),
         createdAt:        Date.now(),
         lastPlayed:       Date.now(),
       };
       const newWorld = makeDefaultWorld(charId);
+      const memberState = newWorld.members[charId];
       _saveMeta.characters.push(newChar);
       _saveMeta.worlds.push(newWorld);
       saveSaveMeta(_saveMeta);
       playerData.characterId    = charId;
+      playerData.playerId       = newChar.playerId;
       playerData.worldId        = newWorld.id;
       playerData.worldLabel     = newWorld.label;
+      playerData.worldOwnerCharacterId = newWorld.ownerCharacterId;
+      playerData.isWorldOwner   = true;
+      playerData.farmhandPermissions = getFarmhandPermissions(newWorld, charId);
       playerData.gearInventory  = newChar.gearInventory;
       playerData.skillLevels    = newChar.skillLevels;
-      playerData.npcFavor       = newChar.npcFavor;
+      playerData.stats          = newChar.stats;
+      playerData.nonGearInventory = { ...memberState.nonGearInventory };
+      playerData.packClothing   = [...memberState.packClothing];
+      playerData.npcRelationships = { ...memberState.npcRelationships };
+      playerData.questProgress  = { ...memberState.questProgress };
       playerData.isNewWorld     = true;
     }
 
@@ -1193,20 +1309,40 @@
     document.dispatchEvent(new CustomEvent('hobunjiPlayerReady', { detail: playerData }));
   }
 
+  // Brings save data created before the character/world data split up to the
+  // current schema: hidden player ids + stats on characters, and
+  // ownerCharacterId/farmhands/members on worlds.
+  function migrateSaveMeta(meta) {
+    (meta.characters || []).forEach(c => {
+      if (!c.playerId) c.playerId = genPlayerId();
+      if (!c.stats)    c.stats    = makeDefaultStats();
+      delete c.npcFavor; // moved to world.members[charId].npcRelationships
+    });
+    (meta.worlds || []).forEach(w => {
+      if (!w.ownerCharacterId && w.characterId) w.ownerCharacterId = w.characterId;
+      delete w.characterId;
+      delete w.packInventory; // dead stub field, superseded by per-member nonGearInventory
+      if (!w.farmhands) w.farmhands = [];
+      if (!w.members)   w.members   = {};
+      if (w.ownerCharacterId) ensureWorldMember(w, w.ownerCharacterId);
+    });
+    return meta;
+  }
+
   // ── Public API ────────────────────────────────────────────────────────
   function init(options) {
     if (!options?.resetProfile) {
       // New multi-save system: show save select if any characters exist
       const meta = loadSaveMeta();
       if (meta && (meta.characters || []).length > 0) {
+        migrateSaveMeta(meta);
         _saveMeta   = meta;
         // Auto-select: most recently played character + their most recent world
         const sortedChars = [...(meta.characters || [])].sort((a, b) => (b.lastPlayed ?? 0) - (a.lastPlayed ?? 0));
         _selCharId  = sortedChars[0]?.id ?? null;
         _selWorldId = null;
         if (_selCharId) {
-          const charWorlds = (meta.worlds || [])
-            .filter(w => w.characterId === _selCharId)
+          const charWorlds = worldsForCharacter(meta, _selCharId)
             .sort((a, b) => (b.lastPlayed ?? 0) - (a.lastPlayed ?? 0));
           if (charWorlds.length) _selWorldId = charWorlds[0].id;
         }
@@ -1224,13 +1360,14 @@
         const charId = uid('char');
         _saveMeta.characters.push({
           id:               charId,
+          playerId:         genPlayerId(),
           nickname:         saved.nickname || 'Farmer',
           appearance:       saved.appearance || {},
           equippedCosmetics: saved.equippedCosmetics || [],
           appliedDyes:      saved.appliedDyes || {},
           gearInventory:    makeDefaultGear(),
           skillLevels:      makeDefaultSkills(),
-          npcFavor:         {},
+          stats:            makeDefaultStats(),
           createdAt:        Date.now(),
           lastPlayed:       Date.now(),
         });
