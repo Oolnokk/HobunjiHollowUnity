@@ -363,7 +363,14 @@
     for (let gj = 0; gj < GH; gj++) {
       for (let gi = 0; gi < GW; gi++) {
         const k = gj * GW + gi;
-        const blend = Math.min(1, (vertHops[k] * 0.5) / MARGIN_TILES);
+        const blendLinear = Math.min(1, (vertHops[k] * 0.5) / MARGIN_TILES);
+        // Cubic ease-in — mirrors docs/game.js buildPlateauMesa's own comment:
+        // the rock-formation solver draws its cliff wall as a sheer vertical
+        // span at the ring band's inner edge (hop===CAP), so a linear blend
+        // (already halfway to TOP at the band's midpoint) visibly pokes grass
+        // through that wall. Easing the climb keeps the skin near the ring's
+        // flat seed height until right against the wall.
+        const blend = blendLinear * blendLinear * blendLinear;
         const kx = bb.minC * 2 + gi, kz = bb.minR * 2 + gj;
         const seedY = vertSeedY[k];
         Y[k] = seedY + blend * (TOP - seedY) + hashDisp(kx, kz);

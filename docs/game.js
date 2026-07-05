@@ -4470,7 +4470,18 @@
         for (let gj = 0; gj < GH; gj++) {
           for (let gi = 0; gi < GW; gi++) {
             const k = gj*GW+gi;
-            const blend = Math.min(1, (vertHops[k] * 0.5) / MARGIN_TILES);
+            const blendLinear = Math.min(1, (vertHops[k] * 0.5) / MARGIN_TILES);
+            // Cubic ease-in, not linear: buildRockFormationMeshes draws its cliff
+            // wall as a sheer vertical span sitting at the ring band's INNER edge
+            // (hop===CAP), sized from the ring's own flat elevation up to this
+            // mesa's flat TOP. A linear blend instead climbs at a constant rate
+            // across the whole ring band, so by the band's midpoint this skin is
+            // already halfway up TOP — well above the wall's actual base — and
+            // the grass visibly pokes through the stone there. Easing the climb
+            // so most of it happens in the band's last stretch (right against
+            // the wall) keeps the skin close to the ring's flat seed height
+            // through most of the band's width, matching what the wall assumes.
+            const blend = blendLinear * blendLinear * blendLinear;
             const kx = bb.minC * 2 + gi, kz = bb.minR * 2 + gj; // absolute seam-hash key, matches adjacent makeFloorGeo tiles
             const seedY = vertSeedY[k];
             Y[k] = seedY + blend * (TOP - seedY) + hashDisp(kx, kz);
