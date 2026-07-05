@@ -2261,9 +2261,19 @@
         _markPngPlane(avatarRef.group);
         targetScene.add(avatarRef.group);
 
+        // Separate top-level object (not parented under avatarRef.group) so
+        // it stays flat on the ground and unaffected by the body's own
+        // squash (pounce crouch) or the death ragdoll's flip rotation —
+        // same reasoning as the player's own playerGroundShadow.
+        const groundShadow = makeCharacterGroundShadow(creatureKey + '_ground_shadow');
+        const shadowRadii = creatureGroundShadowRadii(def);
+        groundShadow.scale.set(shadowRadii.radiusX, 1, shadowRadii.radiusZ);
+        groundShadow.position.set(x / TILE, surfY + characterGroundShadowSurfaceOffset(), y / TILE);
+        targetScene.add(groundShadow);
+
         const creature = {
           id: creatureKey + '_' + idUniq,
-          creatureKey, def, avatarRef,
+          creatureKey, def, avatarRef, groundShadow,
           x, y, vx: 0, vy: 0,
           halfHeight: halfH,
           health: def.maxHealth, maxHealth: def.maxHealth,
@@ -2287,6 +2297,11 @@
       function despawnCreature(c) {
         (c.scene || scene).remove(c.avatarRef.group);
         c.avatarRef.dispose();
+        if (c.groundShadow) {
+          (c.scene || scene).remove(c.groundShadow);
+          c.groundShadow.geometry.dispose();
+          c.groundShadow.material.dispose();
+        }
       }
 
       // ── Death ragdoll → lootable corpse ─────────────────────────────
@@ -2414,6 +2429,9 @@
           grp.position.x = c.x / TILE;
           grp.position.z = c.y / TILE;
           grp.position.y = surfY + restHeight + (c.halfHeight - restHeight) * (1 - ease) + hop;
+          // Stays flat on the ground under the tumble instead of following
+          // the body's hop arc — same as a real jump shadow.
+          if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
 
           let seg = Math.floor(t * DEATH_FLIP_SEGMENTS);
           let segT = t * DEATH_FLIP_SEGMENTS - seg;
@@ -2673,6 +2691,10 @@
         grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
         grp.scale.y = scaleY;
+        // Tracks the body's own smoothed XZ (not the raw target, and not
+        // its squash/height) so the shadow doesn't lead a fast-moving
+        // creature or float with it during a pounce crouch.
+        if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
 
@@ -5154,6 +5176,20 @@
 
       function characterGroundShadowSurfaceOffset() {
         return pngAvatarGroundShadowConfig().surfaceOffsetY ?? 0.018;
+      }
+
+      // Ties a creature's shadow footprint to the same modelWidth used for
+      // its own hit cone/collision radius (see creatureHitboxHalfSizePx)
+      // instead of the player/NPC's fixed humanoid size, so e.g. a gar-wolf
+      // alpha visibly casts a bigger shadow than a dabinggi-hound. Keeps the
+      // configured player shadow's X:Z squash ratio rather than introducing
+      // a separate tunable.
+      function creatureGroundShadowRadii(def) {
+        const cfg = pngAvatarGroundShadowConfig();
+        const baseRadiusX = cfg.radiusX ?? 0.34;
+        const baseRadiusZ = cfg.radiusZ ?? 0.22;
+        const radiusX = (def.modelWidth || 2) * 0.3;
+        return { radiusX, radiusZ: radiusX * (baseRadiusZ / baseRadiusX) };
       }
 
       // ── Schedule-driven NPCs: beeline first, shared routes as fallback ─
