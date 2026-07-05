@@ -219,6 +219,18 @@
     return null;
   }
 
+  // Public entry point for scanning a loaded (or already-decoded) image
+  // directly, for callers that only have a raw <img> — e.g. animal/creature
+  // avatars (buildAnimalPlaneAvatarModel), which unlike the NPC/character
+  // portrait pipeline never draw their sprite to a canvas first. Draws it to
+  // a scratch canvas and reuses scanOpaqueVerticalBounds above, so a sprite
+  // with transparent padding around the art still reports where the actual
+  // opaque pixels are instead of the raw image's full pixel bounds.
+  function scanOpaqueVerticalBoundsOfImage(image, alphaThreshold) {
+    if (!image || !(image.naturalWidth || image.width)) return null;
+    return scanOpaqueVerticalBounds(makeVariantCanvas(image), alphaThreshold);
+  }
+
   function createSinglePlaneAssembly(THREE, config) {
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_single_plane_assembly';
@@ -424,5 +436,6 @@
     isChildAvatar,
     disposeAvatarModel,
     loadThreeModules,
+    scanOpaqueVerticalBoundsOfImage,
   };
 })();

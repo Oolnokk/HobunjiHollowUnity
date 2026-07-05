@@ -2231,6 +2231,45 @@
         }
       }
 
+      // spriteUrl -> resolved bottom-opacity ratio (0..1, see
+      // creatureGroundAnchorFromRatio), or a Set of pending callbacks while
+      // the very first scan of that species' idle sprite is still loading.
+      const _creatureGroundAnchorCache = new Map();
+
+      // Scans a species' idle sprite (cached per URL, so only the first
+      // creature of each species actually pays for it) for how far down its
+      // real opaque pixels extend. All these sprites are nominally
+      // 1375×600, but if the art itself doesn't reach the canvas's bottom
+      // edge (transparent padding), anchoring on the raw rectangle leaves
+      // the visible creature hovering above the ground/its own shadow.
+      function resolveCreatureGroundAnchorRatio(spriteUrl, onReady) {
+        const cached = _creatureGroundAnchorCache.get(spriteUrl);
+        if (typeof cached === 'number') { onReady(cached); return; }
+        if (cached instanceof Set) { cached.add(onReady); return; }
+        const waiters = new Set([onReady]);
+        _creatureGroundAnchorCache.set(spriteUrl, waiters);
+        const finish = (ratio) => {
+          _creatureGroundAnchorCache.set(spriteUrl, ratio);
+          waiters.forEach(fn => fn(ratio));
+        };
+        const img = new Image();
+        img.onload = () => {
+          const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img);
+          finish(bounds ? (bounds.bottom + 1) / img.naturalHeight : 1);
+        };
+        img.onerror = () => finish(1);
+        img.src = spriteUrl;
+      }
+
+      // bottomRatio=1 means the art reaches the sprite's bottom edge (no
+      // padding) — this reduces to the original halfH-only anchor exactly.
+      // Anything less shifts the anchor down by the padding's share of
+      // modelHeight, so the actual art (not the empty canvas margin below
+      // it) is what touches surfY once placed at surfY + this value.
+      function creatureGroundAnchorFromRatio(halfH, modelHeight, bottomRatio) {
+        return halfH - modelHeight * (1 - bottomRatio);
+      }
+
       function makeCreatureEntity(creatureKey, x, y, opts = {}) {
         const def = CREATURE_DB[creatureKey];
         if (!def) return null;
@@ -2291,6 +2330,14 @@
           scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
           ...restOpts,
         };
+        // Corrects halfHeight (used for every ground-anchoring calculation —
+        // updateCreatureMesh, the death-fall height in updateCorpses, the
+        // companion climb-stick offset) in place once the idle sprite's
+        // real opaque bottom edge is known. Fires synchronously if this
+        // species' sprite was already scanned by an earlier creature.
+        resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => {
+          creature.halfHeight = creatureGroundAnchorFromRatio(halfH, modelHeight, bottomRatio);
+        });
         return creature;
       }
 
