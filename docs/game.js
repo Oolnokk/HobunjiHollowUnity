@@ -2489,6 +2489,7 @@
       function damageCreature(c, amount, fromX, fromY, knockbackPxS) {
         c.health = Math.max(0, c.health - amount);
         c.hitFlashT = 0.25;
+        spawnCreatureHitSpark(c);
         if (c.health <= 0) {
           hostileObjects.delete(c);
           companionObjects.delete(c);
@@ -9486,6 +9487,34 @@
           maxAge: COMBAT_TRAIL_MAX_AGE_S * 1.4,
           ok: true,
           color,
+        };
+        fx.particles = weaponTrailParticleSeeds(fx);
+        weaponTrailEffects.push(fx);
+        const limit = Number(combatConfig().weaponTrailLimit) || 5;
+        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
+      }
+
+      // Small radial spark anchored on the creature itself (not the player,
+      // unlike spawnBurstEffect/spawnCombatTrailEffect) so a hit reads
+      // clearly regardless of who/what landed it — companion-on-hostile
+      // damage gets the same feedback as the player's own attacks. Reuses
+      // the same isCone/particle-seed rendering as every other combat
+      // effect; a bright spark color keeps it visually distinct from the
+      // creature's own red hitFlashT tint and the shield's blue block burst.
+      const CREATURE_HIT_SPARK_COLOR = '#fff35c';
+      function spawnCreatureHitSpark(c) {
+        const fx = {
+          isCone: true,
+          x: c.x / TILE,
+          z: c.y / TILE,
+          y: c.avatarRef?.group?.position?.y ?? weaponTrailCenterY(),
+          angle: 0,
+          halfConeRad: Math.PI,
+          rangeTiles: Math.max(0.35, (c.def?.modelWidth || 2) * 0.3),
+          age: 0,
+          maxAge: COMBAT_TRAIL_MAX_AGE_S * 1.1,
+          ok: true,
+          color: CREATURE_HIT_SPARK_COLOR,
         };
         fx.particles = weaponTrailParticleSeeds(fx);
         weaponTrailEffects.push(fx);

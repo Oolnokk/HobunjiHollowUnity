@@ -10,7 +10,7 @@
   if (!window.Combat?.abilities) { console.error('combat-flurry.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
   const FIRST_STRIKE_DELAY_S = 0.38;
-  const COST_BASE = 8, COST_PER_STRIKE = 2.2;
+  const COST_BASE = 5, COST_PER_STRIKE = 1.5;
   const DAMAGE_MUL_BASE = 0.43, DAMAGE_MUL_PER_STRIKE = 0.17; // ~6/14 base, +2.4/14 per strike
   // x1.5 on top of the global knockback-base doubling — flurry is one of the
   // four attacks called out for an extra "even more" bump, and this curve is
