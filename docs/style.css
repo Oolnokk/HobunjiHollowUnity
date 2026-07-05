@@ -6,6 +6,12 @@
       font-weight: normal;
       font-style: normal;
       font-display: swap;
+      /* This font's cap-height/x-height run small relative to its em box
+         compared to the DM Mono/Pixelify Sans fallbacks it replaced, so it
+         reads noticeably smaller at the same font-size — size-adjust scales
+         its rendered glyphs up to compensate, in one place, instead of
+         touching every font-size declared across the HUD. */
+      size-adjust: 115%;
     }
 
     :root {
@@ -38,6 +44,7 @@
       background: var(--bg);
       color: var(--text);
       font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace;
+      letter-spacing: 0.02em;
       -webkit-font-smoothing: antialiased;
     }
     button { font: inherit; cursor: pointer; border: none; background: none; }
