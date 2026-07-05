@@ -2300,7 +2300,14 @@
       const DEATH_TUMBLE_TILES_MIN = 1.1;
       const DEATH_TUMBLE_TILES_MAX = 2.6;
       const DEATH_AIM_CONE_RAD = 50 * Math.PI / 180;
-      const DEATH_HOP_HEIGHT_PX = TILE * 1.1;
+      const DEATH_HOP_HEIGHT_PX = TILE * 1.1 / 3;
+      const DEATH_FLIP_SEGMENTS = 5;
+      const DEATH_FLIP_AXES = ['x', 'y', 'z'];
+
+      // Ease-in-out (slow at each end, fast through the middle) applied
+      // within a single flip segment — gives every flip a "slo-mo" hang at
+      // its start/end instead of spinning at a constant rate.
+      function deathFlipSegmentEase(x) { return x * x * (3 - 2 * x); }
 
       // Walks outward from the creature's own tile within a cone around
       // awayAngle (the direction the killing blow traveled), looking for a
@@ -2335,19 +2342,29 @@
         // standing side-view cutout, not a volumetric cross). Rotating the
         // GROUP about its local Z axis by exactly +PI/2 is what tips that
         // face-normal from horizontal up to vertical (+Y) — i.e. actually
-        // lying flat, face-up, not just spinning in place — so Z carries the
-        // one rotation that MUST land on a fixed value; the extra "flip"
-        // turns layered on top (deathFlipTurns) are whole multiples of 2π so
-        // they never land the plane face-down. Y (yaw/compass heading) and X
-        // (a small final roll) can be anything — neither affects flatness —
-        // so they're free to carry their own cosmetic spin for a fuller
-        // ragdoll tumble without risking the landing.
+        // lying flat, face-up, not just spinning in place. Y (yaw/compass
+        // heading) and X (a small final roll) can be anything — neither
+        // affects flatness.
         c.deathRestRotZ = Math.PI / 2;
         c.deathRestRotX = (Math.random() * 2 - 1) * 0.22;
         c.deathRestRotY = Math.random() * Math.PI * 2;
-        c.deathFlipTurns   = (Math.random() < 0.5 ? -1 : 1) * (1 + Math.floor(Math.random() * 2)); // whole turns only
-        c.deathWobbleTurns = (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 0.7);
-        c.deathYawTurns    = (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 0.9);
+        // A dramatic mid-air ragdoll: DEATH_FLIP_SEGMENTS separate flips,
+        // each one full turn (so it can never leave a residual tilt behind)
+        // about a randomly picked axis in a randomly picked direction — a
+        // forward somersault, then maybe a cartwheel, then a twist, etc.
+        // Because every segment is exactly ±1 full turn, the axis that
+        // governs flatness (z) always ends up an integer number of full
+        // turns past its target regardless of how the 5 picks landed, so it
+        // still always settles into the same clean flat pose.
+        c.deathFlipSegAxis = Array.from({ length: DEATH_FLIP_SEGMENTS }, () => DEATH_FLIP_AXES[Math.floor(Math.random() * DEATH_FLIP_AXES.length)]);
+        c.deathFlipSegDir  = Array.from({ length: DEATH_FLIP_SEGMENTS }, () => (Math.random() < 0.5 ? -1 : 1));
+        c.deathFlipPrefix = { x: [0], y: [0], z: [0] };
+        for (let i = 0; i < DEATH_FLIP_SEGMENTS; i++) {
+          for (const axis of DEATH_FLIP_AXES) {
+            const add = c.deathFlipSegAxis[i] === axis ? c.deathFlipSegDir[i] : 0;
+            c.deathFlipPrefix[axis].push(c.deathFlipPrefix[axis][i] + add);
+          }
+        }
         c.scaleY = 1;
         c.avatarRef.group.scale.y = 1;
         // Snap the cutout's two planes back to the exact pose they were
@@ -2360,12 +2377,23 @@
         corpseObjects.add(c);
       }
 
+      // Turns accumulated for one axis by time-progress t: whole turns from
+      // every completed segment assigned to that axis, plus the current
+      // segment's own partial turn (eased) if it happens to be the one
+      // actively spinning that axis right now.
+      function deathSpinTurnsForAxis(c, seg, segEase, axis) {
+        let turns = c.deathFlipPrefix[axis][seg];
+        if (c.deathFlipSegAxis[seg] === axis) turns += c.deathFlipSegDir[seg] * segEase;
+        return turns;
+      }
+
       // Drives every 'dying' corpse's flight from where it died to its
       // resting tile: position eases (fast launch, soft landing) along a
-      // vertical hop arc, while rotation.x/y/z ease toward their final pose
-      // (Z fixed at lying-flat, X/Y free) with extra whole/partial turns
-      // layered on top for a dramatic multi-axis tumble that still lands
-      // exactly on the flat pose every time.
+      // shallow hop arc, while rotation.x/y/z ease toward their final pose
+      // (Z fixed at lying-flat, X/Y free) with DEATH_FLIP_SEGMENTS full
+      // mid-air flips — each on its own randomly-picked axis — layered on
+      // top so the tumble shifts axes as it goes but still always lands
+      // exactly on the flat pose.
       function updateCorpses(dt) {
         for (const c of corpseObjects) {
           if (c.state !== 'dying' || c.areaId !== currentArea) continue;
@@ -2387,12 +2415,20 @@
           grp.position.z = c.y / TILE;
           grp.position.y = surfY + restHeight + (c.halfHeight - restHeight) * (1 - ease) + hop;
 
+          let seg = Math.floor(t * DEATH_FLIP_SEGMENTS);
+          let segT = t * DEATH_FLIP_SEGMENTS - seg;
+          if (seg >= DEATH_FLIP_SEGMENTS) { seg = DEATH_FLIP_SEGMENTS - 1; segT = 1; }
+          const segEase = deathFlipSegmentEase(segT);
+          const turnsX = deathSpinTurnsForAxis(c, seg, segEase, 'x');
+          const turnsY = deathSpinTurnsForAxis(c, seg, segEase, 'y');
+          const turnsZ = deathSpinTurnsForAxis(c, seg, segEase, 'z');
+
           // Z is the axis that actually tips the cutout's flat face from
           // vertical to lying-flat-face-up (see beginCreatureDeath) — X/Y
           // are free cosmetic spin that never affects whether it lands flat.
-          grp.rotation.z = (c.deathRestRotZ + c.deathFlipTurns * Math.PI * 2) * ease;
-          grp.rotation.x = (c.deathRestRotX + c.deathWobbleTurns * Math.PI * 2) * ease;
-          grp.rotation.y = c.groupRot + (c.deathRestRotY + c.deathYawTurns * Math.PI * 2 - c.groupRot) * ease;
+          grp.rotation.z = c.deathRestRotZ * ease + turnsZ * Math.PI * 2;
+          grp.rotation.x = c.deathRestRotX * ease + turnsX * Math.PI * 2;
+          grp.rotation.y = c.groupRot + (c.deathRestRotY - c.groupRot) * ease + turnsY * Math.PI * 2;
 
           if (t >= 1) {
             c.state = 'corpse';
