@@ -4634,7 +4634,7 @@
         ]);
 
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
-        buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId);
+        buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
 
         const toTownExit = zoneData?.toTownExit;
         const backToTown = (toTownExit || zdef) ? [{
@@ -5224,7 +5224,7 @@
       // rugged-plain + distant-cliffs passes as buildTownBorderTerrain, parameterized
       // by the zone's real size and a per-zone seed so each zone's border is distinct
       // but stable across visits.
-      function buildZoneBorderTerrain(zScene, zcols, zrows, mapId, zoneBaseElev = 0) {
+      function buildZoneBorderTerrain(zScene, zcols, zrows, mapId, zoneBaseElev = 0, zGrid = null) {
         const BASE        = NORMAL_TOP + zoneBaseElev;
         const BORDER_W    = 18;
         const SEED        = (mapId.split('').reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 0)) || 1;
@@ -5259,10 +5259,33 @@
 
         const isPlayable = (ci, cj) => ci>=BV && ci<BV+PVW && cj>=BV && cj<BV+PVH;
 
+        // Seed height at each border vertex used to sit at one flat BASE
+        // everywhere, so the border only ever read as a flat plain/skybox
+        // wall with no relation to the actual zone it surrounds — obvious
+        // wherever a zone's playable edge itself has cliffs or plateaus.
+        // Weld the seam to the real playable-edge elevation instead (same
+        // elevTier lookup buildPlateauMesa's seedHeightAt uses), fading back
+        // to the flat BASE over SEAM_WELD_STEPS so only the near backdrop
+        // reads as a continuation of the zone and the far horizon still
+        // reads as generic distant terrain.
+        const SEAM_WELD_STEPS = 16; // 8 tiles
+        const nearestEdgeElevTier = (gi, gj) => {
+          if (!zGrid) return null;
+          const col = clamp(Math.floor((gi - BV) / 2), 0, zcols - 1);
+          const row = clamp(Math.floor((gj - BV) / 2), 0, zrows - 1);
+          const t = zGrid[row]?.[col];
+          return (t && typeof t.elevTier === 'number') ? t.elevTier : null;
+        };
         const Y = new Float32Array(GW * GH);
         for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++)
-            Y[gj*GW+gi] = BASE + hashDisp(gi-BV, gj-BV);
+          for (let gi = 0; gi < GW; gi++) {
+            const jitter = hashDisp(gi-BV, gj-BV);
+            const edgeTier = nearestEdgeElevTier(gi, gj);
+            if (edgeTier === null) { Y[gj*GW+gi] = BASE + jitter; continue; }
+            const edgeY = NORMAL_TOP + edgeTier * PLATEAU_UNIT;
+            const weld = 1 - clamp(vSteps(gi, gj) / SEAM_WELD_STEPS, 0, 1);
+            Y[gj*GW+gi] = BASE + jitter + weld * (edgeY - BASE);
+          }
 
         const cv4 = (ci, cj) => [cj*GW+ci, cj*GW+ci+1, (cj+1)*GW+ci, (cj+1)*GW+ci+1];
 
