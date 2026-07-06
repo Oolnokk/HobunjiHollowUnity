@@ -18,9 +18,14 @@
 // landscape filling the other sides) with a cliff height boost. Each zone in
 // ZONE_CONFIG below opts into one preset/mode/boost combination; anything
 // that does not opt in keeps the original custom/legacyFullRing behavior.
-// The V4412 tile-density-doubling pass (every generated tile becoming a 2x2
-// block) is intentionally NOT ported — zones keep generating at their
-// original resolution.
+// V4412's post-layout tile-density pass (every generated tile becoming a
+// GENERATION_TILE_SCALE x GENERATION_TILE_SCALE block) runs unconditionally,
+// matching the standalone tool exactly — every zone now exports at 2x the
+// width/height it generates at internally (e.g. a 100x100 zone exports as
+// 200x200). This matters beyond resolution: the Map Editor submap export
+// filter drops plateau groups below an absolute tile-count threshold, so
+// skipping this pass (as an earlier version of this file did) silently lost
+// more small plateaus' elevation than the standalone tool does.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.WildernessMapGenerator = factory();
@@ -79,6 +84,15 @@
   // ZONE_CONFIG below) -- anything that does not set preset/boundaryMode keeps
   // the original custom/legacyFullRing behavior.
   const MAX_VERTICAL_TIER = 32;
+  // Ported from WildernessMapGeneratorV4412's post-layout density pass: every
+  // generated tile becomes a GENERATION_TILE_SCALE x GENERATION_TILE_SCALE
+  // block of identical tiles (a lossless upscale — verified byte-for-byte
+  // identical proportions/tile-type ratios against the standalone tool for a
+  // fixed seed). This isn't just cosmetic: the Map Editor submap export filter
+  // (hobunjiPlateauGroupsByPaintedFootprint) drops plateau groups below an
+  // absolute tile-count threshold, so skipping this pass silently drops more
+  // small plateaus (and their elevation) than the standalone tool does.
+  const GENERATION_TILE_SCALE = 2;
   const GREAT_BASIN_SPOON_BOWL_Y_RATIO = 0.80;
   const GREAT_BASIN_SPOON_BOWL_X_RATIO = 0.50;
   const GREAT_BASIN_SPOON_BOWL_RADIUS_RATIO = 0.34;
@@ -5752,6 +5766,264 @@
   };
 
   // ---------------------------------------------------------------------
+  // Ported from WildernessMapGeneratorV4412: the post-layout tile-density
+  // pass. Runs unconditionally (matching the standalone tool), turning every
+  // generated tile into a GENERATION_TILE_SCALE x GENERATION_TILE_SCALE block
+  // of identical tiles and rescaling every coordinate-bearing piece of
+  // generated data (objects, rivers, ramps, paths, plateau groups, reward/
+  // design analysis, connectivity stats) to match.
+  // ---------------------------------------------------------------------
+  function clonePlain(value) {
+    if (value == null || typeof value !== 'object') return value;
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function scaleScalar(value, scale, digits = 3) {
+    if (!Number.isFinite(value)) return value;
+    const scaled = value * scale;
+    return Number.isInteger(value) && Number.isInteger(scale) ? scaled : Number(scaled.toFixed(digits));
+  }
+
+  function scaleTileKey(key, scale) {
+    const [x, y] = String(key).split(',').map(Number);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return [];
+    const scaled = [];
+    for (let dy = 0; dy < scale; dy++) {
+      for (let dx = 0; dx < scale; dx++) scaled.push(tileKey(x * scale + dx, y * scale + dy));
+    }
+    return scaled;
+  }
+
+  function scalePointCoordinate(value, scale, offset = 0) {
+    return Number.isFinite(value) ? Math.round(value * scale + offset) : value;
+  }
+
+  function scaleMapPoint(point, scale, offsets = {}) {
+    if (!point || typeof point !== 'object') return point;
+    const output = clonePlain(point);
+    if (Number.isFinite(point.x)) output.x = scalePointCoordinate(point.x, scale, offsets.x || 0);
+    if (Number.isFinite(point.y)) output.y = scalePointCoordinate(point.y, scale, offsets.y || 0);
+    if (Number.isFinite(point.col)) output.col = scalePointCoordinate(point.col, scale, offsets.x || 0);
+    if (Number.isFinite(point.row)) output.row = scalePointCoordinate(point.row, scale, offsets.y || 0);
+    if (Number.isFinite(point.widthTiles)) output.widthTiles = scaleScalar(point.widthTiles, scale, 2);
+    if (Number.isFinite(point.widthTilesAverage)) output.widthTilesAverage = scaleScalar(point.widthTilesAverage, scale, 2);
+    if (Number.isFinite(point.minimumWidthTiles)) output.minimumWidthTiles = scaleScalar(point.minimumWidthTiles, scale, 2);
+    if (Number.isFinite(point.maximumWidthTiles)) output.maximumWidthTiles = scaleScalar(point.maximumWidthTiles, scale, 2);
+    return output;
+  }
+
+  function scaledBlockPointsFromPoint(point, scale) {
+    const points = [];
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return points;
+    for (let dy = 0; dy < scale; dy++) {
+      for (let dx = 0; dx < scale; dx++) {
+        points.push(scaleMapPoint(point, scale, { x: dx, y: dy }));
+      }
+    }
+    return points;
+  }
+
+  function scalePolylinePoints(points, scale) {
+    return (points || []).map(point => scaleMapPoint(point, scale));
+  }
+
+  function scaleBBox(bbox, scale) {
+    if (!bbox) return bbox;
+    return {
+      minC: scalePointCoordinate(bbox.minC, scale),
+      minR: scalePointCoordinate(bbox.minR, scale),
+      maxC: scalePointCoordinate(bbox.maxC, scale, scale - 1),
+      maxR: scalePointCoordinate(bbox.maxR, scale, scale - 1)
+    };
+  }
+
+  function scaleEntryPoint(entry, scale, originalWidth, originalHeight) {
+    if (!entry) return entry;
+    const offsets = { x: 0, y: 0 };
+    if (entry.side === 'east') offsets.x = scale - 1;
+    if (entry.side === 'south') offsets.y = scale - 1;
+    const output = scaleMapPoint(entry, scale, offsets);
+    output.sourceX = entry.x;
+    output.sourceY = entry.y;
+    output.sourceWidth = originalWidth;
+    output.sourceHeight = originalHeight;
+    return output;
+  }
+
+  function scaleGeneratedObject(object, scale) {
+    const output = clonePlain(object);
+    output.x = scalePointCoordinate(object.x, scale);
+    output.y = scalePointCoordinate(object.y, scale);
+    output.w = Math.max(1, scaleScalar(object.w || 1, scale, 0));
+    output.h = Math.max(1, scaleScalar(object.h || 1, scale, 0));
+    if (object.pathAnchor) output.pathAnchor = scaleMapPoint(object.pathAnchor, scale);
+    if (object.escapeAnchor) output.escapeAnchor = scaleMapPoint(object.escapeAnchor, scale);
+    if (object.anchor) output.anchor = scaleMapPoint(object.anchor, scale);
+    return output;
+  }
+
+  function scaleGeneratedRivers(scale) {
+    map.rivers = (map.rivers || []).map(river => ({
+      ...clonePlain(river),
+      widthTiles: scaleScalar(river.widthTiles, scale, 2),
+      widthTilesAverage: scaleScalar(river.widthTilesAverage, scale, 2),
+      minimumWidthTiles: scaleScalar(river.minimumWidthTiles, scale, 2),
+      maximumWidthTiles: scaleScalar(river.maximumWidthTiles, scale, 2),
+      widthSamples: (river.widthSamples || []).map(width => scaleScalar(width, scale, 2)),
+      points: scalePolylinePoints(river.points || [], scale)
+    }));
+  }
+
+  function scaleGeneratedRamps(scale) {
+    map.ramps = (map.ramps || []).map(ramp => {
+      const scaledTiles = [];
+      for (const tile of ramp.tiles || []) scaledTiles.push(...scaledBlockPointsFromPoint(tile, scale));
+      return {
+        ...clonePlain(ramp),
+        widthTiles: scaleScalar(ramp.widthTiles || (ramp.kind === 'wrap' ? 2 : 1), scale, 0),
+        start: scaleMapPoint(ramp.start, scale),
+        end: scaleMapPoint(ramp.end, scale),
+        tiles: scaledTiles,
+        sharedPlateauTiles: scaleScalar(ramp.sharedPlateauTiles || 0, scale * scale, 0)
+      };
+    });
+  }
+
+  function scaleGeneratedPaths(scale) {
+    map.paths = (map.paths || []).map(path => ({
+      ...clonePlain(path),
+      from: scaleMapPoint(path.from, scale),
+      to: scaleMapPoint(path.to, scale),
+      points: scalePolylinePoints(path.points || [], scale)
+    }));
+    map.invisiblePaths = (map.invisiblePaths || []).map(path => ({
+      ...clonePlain(path),
+      points: scalePolylinePoints(path.points || [], scale),
+      bridgeTiles: scaleScalar(path.bridgeTiles || 0, scale * scale, 0)
+    }));
+  }
+
+  function scaleGeneratedPlateauGroups(scale) {
+    map.plateauPaintGroups = (map.plateauPaintGroups || []).map(group => ({
+      ...clonePlain(group),
+      tileKeys: (group.tileKeys || []).flatMap(key => scaleTileKey(key, scale)),
+      ringKeys: (group.ringKeys || []).flatMap(key => scaleTileKey(key, scale)),
+      interiorKeys: (group.interiorKeys || []).flatMap(key => scaleTileKey(key, scale)),
+      bbox: scaleBBox(group.bbox, scale)
+    }));
+  }
+
+  function scaleGeneratedRewardAnalysis(scale) {
+    if (!map.rewardAnalysis) return;
+    map.rewardAnalysis = {
+      ...clonePlain(map.rewardAnalysis),
+      start: scaleMapPoint(map.rewardAnalysis.start, scale),
+      maxDistance: scaleScalar(map.rewardAnalysis.maxDistance || 0, scale, 0),
+      placements: (map.rewardAnalysis.placements || []).map(placement => scaleMapPoint(placement, scale))
+    };
+  }
+
+  function scaleGeneratedDesignAnalysis(scale) {
+    if (!map.designAnalysis) return;
+    const output = clonePlain(map.designAnalysis);
+    if (Array.isArray(output.landmarks)) output.landmarks = output.landmarks.map(item => scaleMapPoint(item, scale));
+    if (Array.isArray(output.loops)) output.loops = output.loops.map(loop => ({ ...loop, points: scalePolylinePoints(loop.points || [], scale) }));
+    map.designAnalysis = output;
+  }
+
+  function scaleHiddenNavRampStats(scale) {
+    map.hiddenNavRamps = (map.hiddenNavRamps || []).map(item => ({
+      ...clonePlain(item),
+      length: scaleScalar(item.length || 0, scale, 0),
+      minimumRunTiles: scaleScalar(item.minimumRunTiles || 0, scale, 0),
+      generatedRunTiles: scaleScalar(item.generatedRunTiles || 0, scale, 0)
+    }));
+  }
+
+  function refreshConnectivityAfterTileScale(previousConnectivity, originalWalkableTiles, scale) {
+    const start = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y);
+    const reached = reachableFrom(start);
+    const walkable = allWalkableTiles();
+    const unreachable = walkable.filter(tile => !reached.has(keyXY(tile.x, tile.y)));
+    map.connectivity = {
+      ...(previousConnectivity || {}),
+      start,
+      walkableTiles: walkable.length,
+      reachableTiles: reached.size,
+      unreachableTiles: unreachable.length,
+      unreachableSamples: unreachable.slice(0, 16).map(tile => ({ x: tile.x, y: tile.y, elevation: tile.elevation, water: tile.water, cliffSkirt: tile.cliffSkirt, occupiedBy: tile.occupiedBy })),
+      originalWalkableTilesBeforeDensityScale: originalWalkableTiles,
+      expectedWalkableTilesAfterDensityScale: originalWalkableTiles * scale * scale,
+      actualWalkableTilesAfterDensityScale: walkable.length,
+      walkableTileScaleRatio: originalWalkableTiles ? Number((walkable.length / originalWalkableTiles).toFixed(3)) : null,
+      generationScale: scale,
+      rule: `${previousConnectivity && previousConnectivity.rule ? previousConnectivity.rule + ' ' : ''}duplicates every generated source tile into a ${scale}x${scale} block, so walkable/non-walkable footprints preserve the original route graph while quadrupling walkable tile count at scale 2.`
+    };
+  }
+
+  function scaleGeneratedTileDensity(scale = GENERATION_TILE_SCALE) {
+    if (!Number.isFinite(scale) || scale <= 1 || !map || map.generationScale === scale) return;
+    const originalWidth = settings.width;
+    const originalHeight = settings.height;
+    const originalWalkableTiles = allWalkableTiles().length;
+    const previousConnectivity = clonePlain(map.connectivity);
+    const newWidth = originalWidth * scale;
+    const newHeight = originalHeight * scale;
+    const scaledRows = [];
+    const scaledFlatTiles = [];
+
+    for (let y = 0; y < newHeight; y++) scaledRows.push([]);
+    for (let y = 0; y < originalHeight; y++) {
+      for (let x = 0; x < originalWidth; x++) {
+        const sourceTile = tileAt(x, y);
+        for (let dy = 0; dy < scale; dy++) {
+          for (let dx = 0; dx < scale; dx++) {
+            const clone = clonePlain(sourceTile);
+            clone.x = x * scale + dx;
+            clone.y = y * scale + dy;
+            clone.occupiedBy = null;
+            scaledRows[clone.y][clone.x] = clone;
+            scaledFlatTiles.push(clone);
+          }
+        }
+      }
+    }
+
+    map.tiles = scaledRows;
+    map.flatTiles = scaledFlatTiles;
+    map.width = newWidth;
+    map.height = newHeight;
+    map.sourceWidth = originalWidth;
+    map.sourceHeight = originalHeight;
+    map.generationScale = scale;
+    map.scaledFrom = { width: originalWidth, height: originalHeight, walkableTiles: originalWalkableTiles };
+    settings.width = newWidth;
+    settings.height = newHeight;
+    settings.sourceWidth = originalWidth;
+    settings.sourceHeight = originalHeight;
+
+    map.entry = scaleEntryPoint(map.entry, scale, originalWidth, originalHeight);
+    map.objects = (map.objects || []).map(object => scaleGeneratedObject(object, scale));
+    rebuildObjectCache();
+    for (const tile of allTiles()) tile.occupiedBy = null;
+    for (const object of map.objects) if (object.occupies !== false) markOccupied(object);
+
+    scaleGeneratedRivers(scale);
+    scaleGeneratedRamps(scale);
+    scaleGeneratedPaths(scale);
+    scaleGeneratedPlateauGroups(scale);
+    if (map.greatBasinEntry && map.greatBasinEntry.target) map.greatBasinEntry.target = scaleMapPoint(map.greatBasinEntry.target, scale);
+    scaleGeneratedRewardAnalysis(scale);
+    scaleGeneratedDesignAnalysis(scale);
+    scaleHiddenNavRampStats(scale);
+    refreshConnectivityAfterTileScale(previousConnectivity, originalWalkableTiles, scale);
+
+    const scaledWalkableTiles = map.connectivity ? map.connectivity.walkableTiles : allWalkableTiles().length;
+    logDebug(`tile density scale ${scale}x: ${originalWidth}x${originalHeight} -> ${newWidth}x${newHeight}; walkable ${originalWalkableTiles} -> ${scaledWalkableTiles} (target ${originalWalkableTiles * scale * scale})`);
+    if (scaledWalkableTiles !== originalWalkableTiles * scale * scale) warn(`tile density scale expected ${originalWalkableTiles * scale * scale} walkable tiles, got ${scaledWalkableTiles}; scaled blockers/water may have changed occupancy.`);
+  }
+
+  // ---------------------------------------------------------------------
   // Ported from WildernessMapGeneratorV4412: terrain-preset system (dramatic
   // packed-bleacher plateaus, Great Basin spoon/horseshoe basin, step curves),
   // the boundary-cliff-mode system (follow-map-height / entry-side-cliffs +
@@ -6493,14 +6765,31 @@
     return water + invalid * 2;
   }
 
+  // WildernessMapGeneratorV4412 samples a single straight-ahead tile here, so
+  // the whole gate corridor (openBorderEntryGate flattens every tile in it to
+  // this one value) can land on top of a random dramatic-preset spike a few
+  // tiles past the gate — the entry becomes a flat shelf perched on a
+  // plateau instead of stepping onto low ground. Sample across the gate's
+  // full width over the same depth band and take a low-percentile height
+  // instead of one straight-ahead point, so a single stray spike can't
+  // dictate the whole entrance while still tracking genuinely low interior
+  // terrain (not necessarily the literal minimum, which could be a canyon or
+  // pond edge).
   function findEntryGateInteriorHeight(entry, inward, gateDepth) {
+    const tangent = inward.dir.x === 0 ? { x: 1, y: 0 } : { x: 0, y: 1 };
+    const halfWidth = Math.max(2, Math.round(borderEscarpmentMaxDepth() * 0.75));
+    const samples = [];
     for (let d = gateDepth + 1; d <= gateDepth + 10; d++) {
-      const x = clamp(entry.x + inward.dir.x * d, 0, settings.width - 1);
-      const y = clamp(entry.y + inward.dir.y * d, 0, settings.height - 1);
-      const tile = tileAt(x, y);
-      if (tile && !tile.water && !tile.borderEscarpment) return tileHeight(tile);
+      for (let t = -halfWidth; t <= halfWidth; t++) {
+        const x = clamp(entry.x + inward.dir.x * d + tangent.x * t, 0, settings.width - 1);
+        const y = clamp(entry.y + inward.dir.y * d + tangent.y * t, 0, settings.height - 1);
+        const tile = tileAt(x, y);
+        if (tile && !tile.water && !tile.borderEscarpment) samples.push(tileHeight(tile));
+      }
     }
-    return 0;
+    if (!samples.length) return 0;
+    samples.sort((a, b) => a - b);
+    return samples[Math.floor(samples.length * 0.15)];
   }
 
   function generateLatePaintedRivers() {
@@ -7168,7 +7457,8 @@
       boundaryModeLabel: boundaryModeConfig.label,
       stepCurve: stepCurveConfig.id,
       stepCurveLabel: stepCurveConfig.label,
-      maxTier: resolvedMaxTier
+      maxTier: resolvedMaxTier,
+      generationScale: GENERATION_TILE_SCALE
     };
     rng = makeRng(settings.seed);
     sightBlockerKeyCache = null;
@@ -7212,6 +7502,7 @@
     validateAndRepairReachability();
     placeDifficultyRewards();
     markNorthwardScannerWaterfalls(); // marks late-painted river waterfalls
+    scaleGeneratedTileDensity(settings.generationScale);
     buildAnimalActivity();
     const workspace = buildHobunjiMapExport();
     workspace.entry = map.entry ? { col: map.entry.x, row: map.entry.y, side: map.entry.side } : null;
