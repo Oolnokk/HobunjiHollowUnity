@@ -1430,6 +1430,7 @@
       let minR = Infinity;
       let maxC = -Infinity;
       let maxR = -Infinity;
+      let hasBorderEscarpment = false;
 
       for (const tile of cells) {
         const key = tileKey(tile.x, tile.y);
@@ -1437,6 +1438,10 @@
         tile.plateauGroupId = id;
         tile.plateauRing = isRing;
         tile.plateauInterior = !isRing;
+        // distantBoundaryLandscape tiles are the other boundary-cliff-mode
+        // terrain whose height varies tile-by-tile in the same way (see
+        // paintDistantBoundaryLandscapeTile) and hits the same fragmentation.
+        if (tile.borderEscarpment || tile.distantBoundaryLandscape) hasBorderEscarpment = true;
         if (isRing) {
           ringKeys.push(key);
           ringTiles++;
@@ -1459,7 +1464,14 @@
         tileKeys: cells.map(tile => tileKey(tile.x, tile.y)),
         ringKeys,
         interiorKeys,
-        bbox: { minC, minR, maxC, maxR }
+        bbox: { minC, minR, maxC, maxR },
+        // A boundary-cliff-mode escarpment's height varies tile-by-tile (see
+        // targetBoundaryHeight's per-tile jaggedBonus/profileStep/ridgeBonus),
+        // which naturally fragments a continuous cliff ring into many
+        // same-tier patches far smaller than a typical interior plateau blob.
+        // Flagged so the export filter never drops one as "tiny" — see
+        // hobunjiPlateauGroupsByPaintedFootprint.
+        hasBorderEscarpment
       });
     }
 
@@ -5170,14 +5182,24 @@
     }));
     const minimumInterior = 4;
     const minimumFootprint = 10;
-    let exportable = scored.filter(item => item.interiorCount >= minimumInterior && item.interiorCount + item.ringCount >= minimumFootprint);
+    // Border-escarpment groups always export regardless of size: dropping one
+    // as "tiny" doesn't just omit a small decorative plateau, it flattens a
+    // piece of the boundary cliff ring to grass (mergeZoneTilesInto downgrades
+    // an unassigned 'rock' tile to 'grass' — see its own comment), which is a
+    // visible hole/gap in what's supposed to be a continuous cliff wall.
+    let exportable = scored.filter(item => item.group.hasBorderEscarpment
+      || (item.interiorCount >= minimumInterior && item.interiorCount + item.ringCount >= minimumFootprint));
     const droppedTiny = scored.length - exportable.length;
     const maxSubmaps = 96;
-    if (exportable.length > maxSubmaps) {
-      exportable = exportable
+    const trimmable = exportable.filter(item => !item.group.hasBorderEscarpment);
+    if (trimmable.length > maxSubmaps) {
+      const keepIndices = new Set(exportable.filter(item => item.group.hasBorderEscarpment).map(item => item.index));
+      for (const item of trimmable
         .sort((a, b) => (b.interiorCount + b.ringCount) - (a.interiorCount + a.ringCount))
-        .slice(0, maxSubmaps)
-        .sort((a, b) => a.index - b.index);
+        .slice(0, maxSubmaps)) {
+        keepIndices.add(item.index);
+      }
+      exportable = exportable.filter(item => keepIndices.has(item.index)).sort((a, b) => a.index - b.index);
     }
     const groups = exportable.map((item, outputIndex) => {
       const group = item.group;
@@ -5314,11 +5336,23 @@
       { isSubmap: true, parentMapId: rootId, plateauGroupId: group.id, elevation: group.elevation, anchorC, anchorR }
     );
 
+    // A border-escarpment group's height varies tile-by-tile (see
+    // targetBoundaryHeight), so it's frequently thin enough to be ALL ring /
+    // zero interior by this system's ring-vs-interior split (isManualPlateau-
+    // RingTile) — excluding ring tiles here would then paint nothing and this
+    // whole group's submap comes back null, which orphans its mask in
+    // mergeZoneTilesInto (the group has no matching submap, so its cells fall
+    // through to plain ungraded grass instead of the raised cliff they should
+    // be). A thin cliff strip has no meaningful margin-vs-top distinction
+    // anyway — buildPlateauMesa computes its own outer blend band from the
+    // mask regardless of this ring flag — so paint every cell for these.
+    const paintRingToo = !!sourceGroup.hasBorderEscarpment;
     let paintedTiles = 0;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const sourceTile = tileAt(anchorC + c, anchorR + r);
-        if (!sourceTile || sourceTile.plateauGroupId !== group.id || sourceTile.plateauRing) continue;
+        if (!sourceTile || sourceTile.plateauGroupId !== group.id) continue;
+        if (sourceTile.plateauRing && !paintRingToo) continue;
         hobunjiSetTile(submap, c, r, hobunjiSubmapTileRecord(sourceTile, overlayByTile));
         paintedTiles++;
       }
