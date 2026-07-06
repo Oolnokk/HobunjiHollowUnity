@@ -5231,7 +5231,17 @@
     };
     const group = plateauByGroupId.get(tile.plateauGroupId);
     // A tile cannot be both editor plateau geometry and editor ramp geometry; keep plateau contact as ramp metadata only.
-    if (group && !tile.ramp) output.plateau = group.id;
+    // The border-entry gate corridor (openBorderEntryGate) is a deliberately
+    // flattened, walkable cut through the boundary cliff ring, the same role
+    // a ramp plays — it must stay out of the plateau mask for the same
+    // reason ramps do: mergeZoneTilesInto's ring classification (see its own
+    // comment) marks any masked tile bordering lower terrain `incline`, and
+    // the game's movement collision (tileSpeedAt: `if (tile.incline) return
+    // null`) treats an incline tile as solid rock. Without this exemption the
+    // gate's outermost row — right at the map edge, always bordering
+    // "outside the mask" — gets swept into whatever tall cliff group the
+    // gate cuts through and the entrance itself becomes impassable.
+    if (group && !tile.ramp && tile.designRole !== 'borderEntryGate') output.plateau = group.id;
     if (tile.borderEscarpment) {
       output.borderEscarpment = true;
       output.generatedBorderEscarpment = true;
