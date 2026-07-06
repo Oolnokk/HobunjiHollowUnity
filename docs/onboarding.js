@@ -389,6 +389,7 @@
   let _saveMeta    = null;   // loaded hobunjiSaveMeta object
   let _selCharId   = null;   // selected character id in save-select
   let _selWorldId  = null;   // selected world id, or 'new' for new world
+  let _newWorldName = '';    // in-progress name typed for a not-yet-created world
   let _flowStep    = null;   // 'save-select' | 'char-create'
 
   // ── Utilities ─────────────────────────────────────────────────────────
@@ -808,25 +809,38 @@
 
     let worldSectionHtml = '';
     if (selChar) {
-      const worldCardsHtml = worlds.map(w => `
-        <button class="sl-world-card${w.id === _selWorldId ? ' sl-selected' : ''}" data-sl-world="${esc(w.id)}" type="button">
-          <div class="sl-world-icon">🌿</div>
-          <div class="sl-world-info">
-            <div class="sl-world-name">${esc(w.label || 'Hobunji Hollow')}${isWorldOwner(w, selChar.id) ? '' : ' <span class="sl-world-role">(Farmhand)</span>'}</div>
-            <div class="sl-world-meta">Day ${w.lastDay ?? 1} · ${esc(w.lastSeason ?? '—')}</div>
-            <div class="sl-world-date">${relDate(w.lastPlayed)}</div>
-          </div>
-        </button>`
-      ).join('');
+      const worldCardsHtml = worlds.map(w => {
+        const owner = isWorldOwner(w, selChar.id);
+        const actionBtn = owner
+          ? `<button class="sl-world-action sl-world-delete" data-sl-world-delete="${esc(w.id)}" type="button" title="Delete world">🗑</button>`
+          : `<button class="sl-world-action sl-world-leave" data-sl-world-leave="${esc(w.id)}" type="button" title="Leave world">↩</button>`;
+        return `
+        <div class="sl-world-card-wrap">
+          <button class="sl-world-card${w.id === _selWorldId ? ' sl-selected' : ''}" data-sl-world="${esc(w.id)}" type="button">
+            <div class="sl-world-icon">🌿</div>
+            <div class="sl-world-info">
+              <div class="sl-world-name">${esc(w.label || 'Hobunji Hollow')}${owner ? '' : ' <span class="sl-world-role">(Farmhand)</span>'}</div>
+              <div class="sl-world-meta">Day ${w.lastDay ?? 1} · ${esc(w.lastSeason ?? '—')}</div>
+              <div class="sl-world-date">${relDate(w.lastPlayed)}</div>
+            </div>
+          </button>
+          ${actionBtn}
+        </div>`;
+      }).join('');
 
       const newWorldSelected = _selWorldId === 'new';
-      const newWorldHtml = `<button class="sl-world-card${newWorldSelected ? ' sl-selected' : ''}" id="slNewWorld" type="button">
-        <div class="sl-world-icon">＋</div>
-        <div class="sl-world-info">
-          <div class="sl-world-name">New World</div>
-          <div class="sl-world-meta">Fresh start</div>
-        </div>
-      </button>`;
+      const newWorldHtml = `
+        <div class="sl-world-card-wrap">
+          <div class="sl-world-card${newWorldSelected ? ' sl-selected' : ''}" id="slNewWorld" role="button" tabindex="0">
+            <div class="sl-world-icon">＋</div>
+            <div class="sl-world-info">
+              <div class="sl-world-name">New World</div>
+              ${newWorldSelected
+                ? `<input type="text" id="slNewWorldName" class="sl-world-name-input" placeholder="Hobunji Hollow" value="${esc(_newWorldName)}" maxlength="40" />`
+                : `<div class="sl-world-meta">Fresh start</div>`}
+            </div>
+          </div>
+        </div>`;
 
       worldSectionHtml = `
         <div class="sl-section">
@@ -869,20 +883,65 @@
 
     _el.querySelectorAll('[data-sl-char]').forEach(btn => btn.addEventListener('click', () => {
       const newId = btn.dataset.slChar;
-      if (_selCharId !== newId) { _selCharId = newId; _selWorldId = null; }
+      if (_selCharId !== newId) { _selCharId = newId; _selWorldId = null; _newWorldName = ''; }
       rerenderSaveSelect();
     }));
 
     _el.querySelectorAll('[data-sl-world]').forEach(btn => btn.addEventListener('click', () => {
       _selWorldId = btn.dataset.slWorld;
+      _newWorldName = '';
+      rerenderSaveSelect();
+    }));
+
+    _el.querySelectorAll('[data-sl-world-delete]').forEach(btn => btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!_saveMeta) return;
+      const worldId = btn.dataset.slWorldDelete;
+      const world = (_saveMeta.worlds || []).find(w => w.id === worldId);
+      if (!world) return;
+      if (!confirm(`Delete "${world.label || 'Hobunji Hollow'}"? This cannot be undone.`)) return;
+      _saveMeta.worlds = (_saveMeta.worlds || []).filter(w => w.id !== worldId);
+      saveSaveMeta(_saveMeta);
+      if (_selWorldId === worldId) _selWorldId = null;
+      rerenderSaveSelect();
+    }));
+
+    // Farmhands can't delete a world they don't own — they leave it instead,
+    // which drops their membership/farmhand grant but leaves the world (and
+    // the owner's data) untouched.
+    _el.querySelectorAll('[data-sl-world-leave]').forEach(btn => btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!_saveMeta || !_selCharId) return;
+      const worldId = btn.dataset.slWorldLeave;
+      const world = (_saveMeta.worlds || []).find(w => w.id === worldId);
+      if (!world) return;
+      if (!confirm(`Leave "${world.label || 'Hobunji Hollow'}"? You'll need a new invite to rejoin.`)) return;
+      removeFarmhand(world, _selCharId);
+      if (world.members) delete world.members[_selCharId];
+      saveSaveMeta(_saveMeta);
+      if (_selWorldId === worldId) _selWorldId = null;
       rerenderSaveSelect();
     }));
 
     const newWorldBtn = _el.querySelector('#slNewWorld');
-    if (newWorldBtn) newWorldBtn.addEventListener('click', () => {
-      _selWorldId = 'new';
-      rerenderSaveSelect();
-    });
+    if (newWorldBtn) {
+      const selectNewWorld = () => { _selWorldId = 'new'; rerenderSaveSelect(); };
+      newWorldBtn.addEventListener('click', selectNewWorld);
+      newWorldBtn.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectNewWorld(); }
+      });
+    }
+
+    const newWorldNameInput = _el.querySelector('#slNewWorldName');
+    if (newWorldNameInput) {
+      newWorldNameInput.addEventListener('input', () => { _newWorldName = newWorldNameInput.value; });
+      newWorldNameInput.addEventListener('click', (e) => e.stopPropagation());
+      newWorldNameInput.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); _playSaveSelect(); }
+      });
+      newWorldNameInput.focus();
+    }
 
     const newCharBtn = _el.querySelector('#slNewChar');
     if (newCharBtn) newCharBtn.addEventListener('click', () => {
@@ -952,6 +1011,8 @@
     let world, isNewWorld;
     if (_selWorldId === 'new' || (!_selWorldId && worlds.length === 0)) {
       world = makeDefaultWorld(char.id);
+      world.label = _newWorldName.trim() || 'Hobunji Hollow';
+      _newWorldName = '';
       _saveMeta.worlds.push(world);
       isNewWorld = true;
     } else {

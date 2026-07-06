@@ -421,6 +421,71 @@
   color: #8aad8f;
   opacity: 0.5;
 }
+.sl-world-name-input {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: bold;
+  color: #f0ffe6;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 5px;
+  padding: 3px 6px;
+  width: 100%;
+  min-width: 0;
+}
+.sl-world-name-input:focus {
+  outline: none;
+  border-color: rgba(249, 226, 138, 0.55);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* World card wrapper — hosts the card button plus a corner delete/leave action */
+.sl-world-card-wrap {
+  position: relative;
+  min-width: 180px;
+  max-width: 240px;
+  flex: 1 0 180px;
+}
+.sl-world-card-wrap .sl-world-card {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+.sl-world-action {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(20, 22, 20, 0.65);
+  color: #d7e8d9;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, border-color 0.12s;
+}
+.sl-world-card-wrap:hover .sl-world-action,
+.sl-world-action:focus {
+  opacity: 1;
+}
+.sl-world-delete {
+  border-color: rgba(255, 100, 100, 0.3);
+  color: rgba(255, 150, 150, 0.9);
+}
+.sl-world-delete:hover {
+  background: rgba(255, 60, 60, 0.22);
+  border-color: rgba(255, 100, 100, 0.6);
+}
+.sl-world-leave:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.4);
+}
 
 /* Footer */
 .sl-footer {
@@ -460,5 +525,5 @@
   .sl-char-card { width: 94px; min-height: 140px; }
   .sl-char-portrait-wrap { width: 64px; height: 64px; }
   .sl-portrait-canvas { width: 64px; height: 64px; }
-  .sl-world-card { min-width: 150px; }
+  .sl-world-card-wrap { min-width: 150px; }
 }
