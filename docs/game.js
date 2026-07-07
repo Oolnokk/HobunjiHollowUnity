@@ -3559,12 +3559,25 @@
       // the first few seconds of a shift (most likely right at world start)
       // would see last year's map for that visit.
       let _tothalShiftPromise = null;
+      // Whether performTothalShift has populated _zoneLayouts at least once
+      // THIS PAGE LOAD. _loadTothalYear() surviving in localStorage told
+      // checkTothalShift "already shifted this year, nothing to do" even on a
+      // brand new session where _zoneLayouts (a plain in-memory Map) is empty
+      // — every wilderness zone silently fell back to its tiny authored
+      // placeholder map until the year next changed. Gate the skip on this
+      // flag too, so the first check each session always (re)builds the
+      // zones — deterministic seeding (world id + year + zone) reproduces the
+      // exact same map, not a fresh reroll.
+      let _tothalShiftedThisSession = false;
 
       // Regenerates all four wilderness zones for the given Tothal year and
-      // saves that year to the world file so a reload doesn't reroll again.
-      // Seeded from the world id + year + zone, so the same world reliably
-      // regrows the same wilderness for that year on every load.
-      async function performTothalShift(year) {
+      // saves that year to the world file so future checks this session skip
+      // redundant rebuilds. Seeded from the world id + year + zone, so the
+      // same world reliably regrows the same wilderness for that year on
+      // every load. `silent` suppresses the "reshaped" toast for a same-year
+      // session catch-up rebuild (nothing actually changed, just restoring
+      // this session's in-memory cache) rather than a genuine new-year shift.
+      async function performTothalShift(year, { silent = false } = {}) {
         if (typeof WildernessMapGenerator === 'undefined') {
           debugLog('Tothal Shift skipped: wilderness-map-generator.js not loaded', 'warn');
           return;
@@ -3619,27 +3632,36 @@
           }
           clearHostileObjects();
           _saveTothalYear(year);
-          // showToast is a plain DOM update (no dependency on avatar/gameStarted
-          // state), and this can legitimately finish before spawnPlayerAvatar's
-          // own async avatar setup does — always show it rather than gating on
-          // gameStarted and risking the toast silently getting swallowed by that race.
-          showToast('The Tothal Shift has reshaped the wilderness...', true);
-          debugLog(`Tothal Shift complete for year ${year}`);
+          _tothalShiftedThisSession = true;
+          if (!silent) {
+            // showToast is a plain DOM update (no dependency on avatar/gameStarted
+            // state), and this can legitimately finish before spawnPlayerAvatar's
+            // own async avatar setup does — always show it rather than gating on
+            // gameStarted and risking the toast silently getting swallowed by that race.
+            showToast('The Tothal Shift has reshaped the wilderness...', true);
+          }
+          debugLog(`Tothal Shift complete for year ${year}${silent ? ' (silent session catch-up)' : ''}`);
         } finally {
           _tothalShiftInFlight = false;
         }
       }
 
       // Called at world start and on every day advance — a no-op unless the
-      // Tothal year has actually changed since this world last shifted, or
+      // Tothal year has actually changed since this world last shifted, this
+      // is the first check this session (see _tothalShiftedThisSession), or
       // ?tothal=force is in the URL (or window.forceTothalShift() was called
       // from devtools) — useful for testing, since a world that already
-      // shifted this year otherwise stays untouched on every reload.
+      // shifted this year otherwise stays untouched for the rest of it.
       function checkTothalShift(force = false) {
         const year = currentTothalYear();
         const forceQuery = new URLSearchParams(location.search).get('tothal') === 'force';
-        if (!force && !forceQuery && _loadTothalYear() === year) return;
-        _tothalShiftPromise = performTothalShift(year)
+        const alreadyCurrent = _loadTothalYear() === year;
+        if (!force && !forceQuery && _tothalShiftedThisSession && alreadyCurrent) return;
+        // Same year as last save but nothing built yet this session (a fresh
+        // page load) — silently rebuild the same deterministic map instead of
+        // announcing a "shift" that, from the player's perspective, never happened.
+        const silent = !force && !forceQuery && alreadyCurrent;
+        _tothalShiftPromise = performTothalShift(year, { silent })
           .catch(e => debugLog('Tothal Shift error: ' + e.message, 'warn'))
           .finally(() => { _tothalShiftPromise = null; });
       }
@@ -4634,7 +4656,7 @@
         ]);
 
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
-        buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId);
+        buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
 
         const toTownExit = zoneData?.toTownExit;
         const backToTown = (toTownExit || zdef) ? [{
@@ -4852,20 +4874,37 @@
         // builds that cell's own carved-bed mesh, and without this check the mesa's
         // solid lid simply painted over it, hiding the channel under flat ground.
         const quadIsCarved = (gi, gj) => CARVED_TILE_TYPES.has(zGrid?.[bb.minR + Math.floor(gj/2)]?.[bb.minC + Math.floor(gi/2)]?.type);
-        const idx = [];
+        // A quad's own corners already carry this mesa's real BFS-blended slope
+        // (Y above) — steep quads (the cliff-face margin band) are exactly where
+        // the old separate buildRockFormationMeshes wall used to get overlaid in
+        // front of this same grass surface via polygonOffset, producing both a
+        // visibly straight-edged stone plane AND the actual sloped/cliff-shaped
+        // grass geometry showing through/around it. Splitting this single mesh's
+        // faces into two material groups by the same steep-face rule the old
+        // border-terrain stone skin used (faces steeper than ~41 degrees from
+        // horizontal) puts the stone color directly on the real cliff geometry
+        // instead, with no separate mesh needed.
+        const grassIdx = [], stoneIdx = [];
         for (let gj = 0; gj < GH - 1; gj++) {
           for (let gi = 0; gi < GW - 1; gi++) {
             if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
             const v00 = gj*GW+gi, v10 = gj*GW+gi+1, v01 = (gj+1)*GW+gi, v11 = (gj+1)*GW+gi+1;
-            idx.push(v00, v01, v11, v00, v11, v10);
+            const y00 = Y[v00], y10 = Y[v10], y01 = Y[v01], y11 = Y[v11];
+            const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+            const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
+            const steep = cnx * cnx + cnz * cnz > 0.194;
+            (steep ? stoneIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
           }
         }
+        const idx = grassIdx.concat(stoneIdx);
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        if (grassIdx.length) geo.addGroup(0, grassIdx.length, 0);
+        if (stoneIdx.length) geo.addGroup(grassIdx.length, stoneIdx.length, 1);
         geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        const mesh = new THREE.Mesh(geo, [tileMats.grass, tileMats.rock]);
         mesh.receiveShadow = true;
         zScene.add(mesh);
         // A plateau's own lid+skin is the primary way the fixed follow camera
@@ -4874,10 +4913,7 @@
         // for the occlusion raycast.
         mesh.userData.cameraObstacle = true;
 
-        // Steep plateau rock is now emitted by buildRockFormationMeshes, which
-        // unions plateau cliffs with ramp side rock before rendering.
-
-        console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(BASE+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s)`, 'color:#22c55e;font-weight:bold');
+        console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(BASE+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s), stone faces=${stoneIdx.length / 6}`, 'color:#22c55e;font-weight:bold');
       }
 
       // Smooth ramp slope mesh: one quad per authored RAMP tile, with each tile's 4
@@ -4979,10 +5015,14 @@
 
 
       // Unified solved non-walkable rock layer. This mirrors
-      // docs/js/terrain-preview.js buildRockFormationGeometry: semantic plateau
-      // cliff spans, ramp side spans, and ramp/plateau seam spans are unioned by
-      // tile edge before rendering, so overlapping authored features become one
-      // continuous rocky formation while walkable tops/ramp floors stay separate.
+      // docs/js/terrain-preview.js buildRockFormationGeometry: semantic ramp
+      // side spans and ramp/plateau seam spans (plus bare tier steps not
+      // touching any plateau mesa) are unioned by tile edge before rendering,
+      // so overlapping authored features become one continuous rocky
+      // formation while walkable tops/ramp floors stay separate. Plain
+      // plateau-cliff spans are excluded — buildPlateauMesa's own mesh
+      // renders those directly with a stone material group now, so solving
+      // them again here would just double them up.
       function buildRockFormationMeshes(zScene, zGrid, zcols, zrows, mapId) {
         const rampCornerYFor = (ci, cj, fallback = null) => {
           let sum = 0, n = 0;
@@ -5027,8 +5067,17 @@
             const bottom0 = Math.min(a[0], b[0]), bottom1 = Math.min(a[1], b[1]);
             const step = Math.max(top0, top1) - Math.min(bottom0, bottom1);
             if (!(((t.type === TileType.RAMP || nt?.type === TileType.RAMP) && step > 0.04) || (step > 0.04 && (t.incline || nt?.incline || (t.elevTier || 0) !== (nt?.elevTier || 0))))) continue;
-            if (side === 'E') add(`x:${c + 1}:${r}`, 'x', c + 1, r, c + 1, r + 1, top0, top1, bottom0, bottom1, kindOf(t, nt));
-            else add(`z:${r + 1}:${c}`, 'z', c, r + 1, c + 1, r + 1, top0, top1, bottom0, bottom1, kindOf(t, nt));
+            const kind = kindOf(t, nt);
+            // A plain plateau_cliff span is exactly the cliff-face margin band
+            // buildPlateauMesa's own mesh already renders (now stone-textured
+            // directly on that geometry — see its own comment) — solving it a
+            // second time here just overlays a second, perfectly flat plane in
+            // front of that real sloped surface. Ramp seams/sides and bare tier
+            // steps aren't rendered by any other mesh, so those still need this
+            // solver.
+            if (kind === 'plateau_cliff') continue;
+            if (side === 'E') add(`x:${c + 1}:${r}`, 'x', c + 1, r, c + 1, r + 1, top0, top1, bottom0, bottom1, kind);
+            else add(`z:${r + 1}:${c}`, 'z', c, r + 1, c + 1, r + 1, top0, top1, bottom0, bottom1, kind);
           }
         }
         const pos = [], idx = []; let vi = 0;
@@ -5211,8 +5260,10 @@
         let idx = 0;
         for (let row = 0; row < zrows; row++) {
           for (let col = 0; col < zcols; col++) {
-            if (zGrid[row]?.[col]?.type !== TileType.GRASS) continue;
-            idx = _fillBillboardInstances(mesh, dummy, idx, col, row, 1.0, zoneBaseElev);
+            const tile = zGrid[row]?.[col];
+            if (tile?.type !== TileType.GRASS) continue;
+            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+            idx = _fillBillboardInstances(mesh, dummy, idx, col, row, 1.0, zoneBaseElev + tierY);
           }
         }
         mesh.count = idx;
@@ -5224,7 +5275,7 @@
       // rugged-plain + distant-cliffs passes as buildTownBorderTerrain, parameterized
       // by the zone's real size and a per-zone seed so each zone's border is distinct
       // but stable across visits.
-      function buildZoneBorderTerrain(zScene, zcols, zrows, mapId, zoneBaseElev = 0) {
+      function buildZoneBorderTerrain(zScene, zcols, zrows, mapId, zoneBaseElev = 0, zGrid = null) {
         const BASE        = NORMAL_TOP + zoneBaseElev;
         const BORDER_W    = 18;
         const SEED        = (mapId.split('').reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 0)) || 1;
@@ -5259,10 +5310,33 @@
 
         const isPlayable = (ci, cj) => ci>=BV && ci<BV+PVW && cj>=BV && cj<BV+PVH;
 
+        // Seed height at each border vertex used to sit at one flat BASE
+        // everywhere, so the border only ever read as a flat plain/skybox
+        // wall with no relation to the actual zone it surrounds — obvious
+        // wherever a zone's playable edge itself has cliffs or plateaus.
+        // Weld the seam to the real playable-edge elevation instead (same
+        // elevTier lookup buildPlateauMesa's seedHeightAt uses), fading back
+        // to the flat BASE over SEAM_WELD_STEPS so only the near backdrop
+        // reads as a continuation of the zone and the far horizon still
+        // reads as generic distant terrain.
+        const SEAM_WELD_STEPS = 16; // 8 tiles
+        const nearestEdgeElevTier = (gi, gj) => {
+          if (!zGrid) return null;
+          const col = clamp(Math.floor((gi - BV) / 2), 0, zcols - 1);
+          const row = clamp(Math.floor((gj - BV) / 2), 0, zrows - 1);
+          const t = zGrid[row]?.[col];
+          return (t && typeof t.elevTier === 'number') ? t.elevTier : null;
+        };
         const Y = new Float32Array(GW * GH);
         for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++)
-            Y[gj*GW+gi] = BASE + hashDisp(gi-BV, gj-BV);
+          for (let gi = 0; gi < GW; gi++) {
+            const jitter = hashDisp(gi-BV, gj-BV);
+            const edgeTier = nearestEdgeElevTier(gi, gj);
+            if (edgeTier === null) { Y[gj*GW+gi] = BASE + jitter; continue; }
+            const edgeY = NORMAL_TOP + edgeTier * PLATEAU_UNIT;
+            const weld = 1 - clamp(vSteps(gi, gj) / SEAM_WELD_STEPS, 0, 1);
+            Y[gj*GW+gi] = BASE + jitter + weld * (edgeY - BASE);
+          }
 
         const cv4 = (ci, cj) => [cj*GW+ci, cj*GW+ci+1, (cj+1)*GW+ci, (cj+1)*GW+ci+1];
 
@@ -6486,6 +6560,20 @@
               for (const k of mask) {
                 const [lc, lr] = k.split(',').map(Number);
                 const c = lc + offsetC, r = lr + offsetR;
+                // A generated wilderness zone's entry gate corridor (see
+                // openBorderEntryGate in wilderness-map-generator.js) is a
+                // deliberately flattened, walkable cut through the boundary
+                // cliff ring — it's always at the outer edge of its plateau's
+                // mask (right at the map border), which is exactly what the
+                // ring check below treats as a sloped/impassable cliff face.
+                // Force it to the group's real (interior, non-incline) tier
+                // instead of computing ring-ness for it, or the entrance
+                // itself becomes solid to the game's own movement collision
+                // (see tileSpeedAt's `if (tile.incline) return null`).
+                if (m.tiles?.[k]?.borderEntryGate) {
+                  outTiles.set(`${c},${r}`, { c, r, type: 'grass', elevTier: toTier, skipFloor: true, rampElevation: 0, incline: false });
+                  continue;
+                }
                 let ringTier = null; // null => fully interior, no slope needed here
                 for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
                   if (mask.has(`${lc+dc},${lr+dr}`)) continue;
@@ -9249,6 +9337,12 @@
       let lastMouseMoveTime = 0;
       const _raycaster     = isDesktop ? new THREE.Raycaster() : null;
       const _mouseNDC      = isDesktop ? new THREE.Vector2()   : null;
+      // Constant is reset to the player's own ground height right before each
+      // raycast (see the mousemove handler below) — a fixed Y=0 plane made
+      // aiming distort badly on an exterior zone's raised plateaus, since a
+      // ray from the (also elevated, but differently offset) camera hits a
+      // Y=0 plane at a very different XZ position than it hits the actual
+      // ground the player is standing on.
       const _groundPlane   = isDesktop ? new THREE.Plane(new THREE.Vector3(0,1,0), 0) : null;
       const _mouseWorld    = isDesktop ? new THREE.Vector3()   : null;
       // Editor-specific raycaster (always available, used by farm editor on both desktop and touch)
@@ -10765,10 +10859,16 @@
         // modal position (see updateFishingRingScreenPosition/worldToOverlay).
         const reticle = getReticleTile();
         const reticleTile = getActiveTileAt(reticle.col, reticle.row);
+        // tileSurfaceY(type) alone ignores the tile's own elevTier — fine on
+        // town/farm's flat single-tier grid, but an exterior zone's water can
+        // sit on any plateau tier (see tileSurfaceYInArea's own comment).
+        // Anchoring on the bare ground-level Y here dragged the fishing
+        // camera (see below) down to ground level for the whole minigame
+        // whenever the fished water was actually up on a plateau.
         const anchorWorld = {
           x: reticle.col + 0.5,
           z: reticle.row + 0.5,
-          y: tileSurfaceY(reticleTile.type) + 0.35,
+          y: tileSurfaceYInArea(reticleTile, currentArea) + 0.35,
         };
         fishingMinigame = {
           active: true,
@@ -14805,11 +14905,12 @@
         let gi = 0, wi = 0;
         for (let row = 0; row < ROWS; row++) {
           for (let col = 0; col < COLS; col++) {
-            const tp = grid[row][col].type;
-            if (tp === TileType.GRASS) {
-              gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0);
-            } else if (tp === TileType.WEEDS && !s_weed3D) {
-              wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0);
+            const tile = grid[row][col];
+            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+            if (tile.type === TileType.GRASS) {
+              gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0, tierY);
+            } else if (tile.type === TileType.WEEDS && !s_weed3D) {
+              wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY);
             }
           }
         }
@@ -14838,8 +14939,10 @@
         let idx = 0;
         for (let row = 0; row < trows; row++) {
           for (let col = 0; col < tcols; col++) {
-            if (townGrid[row]?.[col]?.type !== TileType.GRASS) continue;
-            idx = _fillBillboardInstances(townGrassBillMesh, dummy, idx, col, row, 1.0);
+            const tile = townGrid[row]?.[col];
+            if (tile?.type !== TileType.GRASS) continue;
+            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+            idx = _fillBillboardInstances(townGrassBillMesh, dummy, idx, col, row, 1.0, tierY);
           }
         }
         townGrassBillMesh.count = idx;
@@ -18193,6 +18296,11 @@
           _mouseNDC.x =  ((e.clientX - rect.left)  / rect.width)  * 2 - 1;
           _mouseNDC.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;
           _raycaster.setFromCamera(_mouseNDC, camera);
+          // THREE.Plane's constant is -distance-from-origin along its normal —
+          // for the (0,1,0) normal here that's simply -groundY, so the plane
+          // passes through the player's actual current height (elevTier-aware
+          // via _playerGroundY) instead of always sitting at world Y=0.
+          _groundPlane.constant = -_playerGroundY();
           if (_raycaster.ray.intersectPlane(_groundPlane, _mouseWorld)) {
             const dx = _mouseWorld.x - player.x / TILE;
             const dz = _mouseWorld.z - player.y / TILE;

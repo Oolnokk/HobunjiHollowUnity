@@ -102,6 +102,19 @@
       for (const k of mask) {
         const [lc, lr] = k.split(',').map(Number);
         const c = lc + offsetC, r = lr + offsetR;
+        // A generated wilderness zone's entry gate corridor (see
+        // openBorderEntryGate in wilderness-map-generator.js) is a deliberately
+        // flattened, walkable cut through the boundary cliff ring — it's
+        // always at the outer edge of its plateau's mask (right at the map
+        // border), which is exactly what the ring check below treats as a
+        // sloped/impassable cliff face. Force it to the group's real
+        // (interior, non-incline) tier instead of computing ring-ness for it,
+        // or the entrance itself becomes solid to the game's movement
+        // collision (see tileSpeedAt's `if (tile.incline) return null`).
+        if (m.tiles?.[k]?.borderEntryGate) {
+          outTiles.set(`${c},${r}`, { c, r, type: 'grass', elevTier: toTier, skipFloor: true, rampElevation: 0, incline: false });
+          continue;
+        }
         let ringTier = null; // null => fully interior, no slope needed here
         for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           if (mask.has(`${lc + dc},${lr + dr}`)) continue;
@@ -414,33 +427,26 @@
     // builds that cell's own carved-bed mesh, and without this check the mesa's
     // solid lid simply painted over it, hiding the channel under flat ground.
     const quadIsCarved = (gi, gj) => CARVED_TILE_TYPES.has(zGrid?.[bb.minR + Math.floor(gj / 2)]?.[bb.minC + Math.floor(gi / 2)]?.type);
-    const idx = [];
+    // Mirrors docs/game.js buildPlateauMesa: quads steeper than ~41 degrees
+    // from horizontal (the cliff-face margin band) go in their own index group
+    // (materialIndex 1, stone) on this SAME position buffer instead of a
+    // separate displaced "skin" mesh — one real heightfield surface, textured
+    // per-face, rather than a second flat overlay plane in front of it.
+    const grassIdx = [], stoneIdx = [];
     for (let gj = 0; gj < GH - 1; gj++) {
       for (let gi = 0; gi < GW - 1; gi++) {
         if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
         const v00 = gj * GW + gi, v10 = gj * GW + gi + 1, v01 = (gj + 1) * GW + gi, v11 = (gj + 1) * GW + gi + 1;
-        idx.push(v00, v01, v11, v00, v11, v10);
-      }
-    }
-
-    const skinPos = [], skinIdx = [];
-    let vi = 0;
-    for (let gj = 0; gj < GH - 1; gj++) {
-      for (let gi = 0; gi < GW - 1; gi++) {
-        if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
-        const y00 = Y[gj * GW + gi], y10 = Y[gj * GW + gi + 1];
-        const y01 = Y[(gj + 1) * GW + gi], y11 = Y[(gj + 1) * GW + gi + 1];
+        const y00 = Y[v00], y10 = Y[v10], y01 = Y[v01], y11 = Y[v11];
         const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
         const cnz = 0.5 * ((y10 - y01) - (y11 - y00));
-        if (cnx * cnx + cnz * cnz <= 0.194) continue;
-        const x0 = bb.minC + gi * 0.5, x1 = x0 + 0.5;
-        const z0 = bb.minR + gj * 0.5, z1 = z0 + 0.5;
-        skinPos.push(x0, y00, z0, x1, y10, z0, x0, y01, z1, x1, y11, z1);
-        skinIdx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
+        const steep = cnx * cnx + cnz * cnz > 0.194;
+        (steep ? stoneIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
       }
     }
+    const idx = grassIdx.concat(stoneIdx);
 
-    return { pos, idx, skinPos, skinIdx, top: TOP, W, D, GW, GH };
+    return { pos, idx, grassCount: grassIdx.length, stoneCount: stoneIdx.length, top: TOP, W, D, GW, GH };
   }
 
   // ── Ramp surface + curtain geometry (pure data) ─────────────────────────────
@@ -583,8 +589,14 @@
         const touchesPlateauMask = plateauMaskKeys.has(`${c},${r}`) || plateauMaskKeys.has(`${c + dc},${r + dr}`);
         const cliffStep = tierStep > 0.04 && (t.incline || nt?.incline || touchesPlateauMask || (t.elevTier || 0) !== (nt?.elevTier || 0));
         if (!rampSeam && !cliffStep) continue;
-        if (side === 'E') addSpan(edgeKeyFor('x', c + 1, r), 'x', c + 1, r, c + 1, r + 1, top0, top1, bottom0, bottom1, sourceKind(t, nt), c, r);
-        else addSpan(edgeKeyFor('z', r + 1, c), 'z', c, r + 1, c + 1, r + 1, top0, top1, bottom0, bottom1, sourceKind(t, nt), c, r);
+        const kind = sourceKind(t, nt);
+        // Plain plateau-cliff spans are exactly the cliff-face margin band
+        // buildPlateauMesaGeometry's own quads already cover (stone-textured
+        // directly on that geometry now — see its own comment); solving them
+        // again here would double them up as a separate flat plane.
+        if (kind === 'plateau_cliff') continue;
+        if (side === 'E') addSpan(edgeKeyFor('x', c + 1, r), 'x', c + 1, r, c + 1, r + 1, top0, top1, bottom0, bottom1, kind, c, r);
+        else addSpan(edgeKeyFor('z', r + 1, c), 'z', c, r + 1, c + 1, r + 1, top0, top1, bottom0, bottom1, kind, c, r);
       }
     }
     return spans;

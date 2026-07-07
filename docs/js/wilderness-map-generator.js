@@ -1,15 +1,31 @@
-// Wilderness Map Generator — headless core of WildernessMapGeneratorV33.html.
+// Wilderness Map Generator — headless core of WildernessMapGeneratorV4412.html.
 //
 // This is the generation pipeline of the standalone Wilderness Map Generator
-// tool (V33), extracted verbatim minus its canvas renderer and DOM controls,
-// wrapped as a UMD module so it runs in the game (browser) and in Node for
-// headless checks. Given a seed string it deterministically builds a full
-// wilderness map (plateaus, rivers, ramps, escarpments, flora, fauna, caves,
-// reachability repair) and flattens it through the tool's own Map Editor
-// export path (buildHobunjiMapExport), returning the exact
+// tool (V4412), extracted verbatim minus its canvas renderer, 3D preview, and
+// DOM controls, wrapped as a UMD module so it runs in the game (browser) and
+// in Node for headless checks. Given a seed string it deterministically
+// builds a full wilderness map (plateaus, rivers, ramps, escarpments, flora,
+// fauna, caves, reachability repair) and flattens it through the tool's own
+// Map Editor export path (buildHobunjiMapExport), returning the exact
 // `hobunji_map_editor_workspace.v1` JSON the tool's "Export" button produces.
 // The game's Tothal Shift consumes that workspace as if it had been exported
 // from the tool and imported over a wilderness zone map.
+//
+// V4412 added a named terrain-preset system (TERRAIN_PRESETS: dramatic
+// packed-bleacher plateaus, a Great Basin spoon/horseshoe basin) and a
+// boundary-cliff-mode system (BOUNDARY_PLATEAU_MODES: cliffs that follow the
+// scanned playable map height, or entry-side-only cliffs with a distant
+// landscape filling the other sides) with a cliff height boost. Each zone in
+// ZONE_CONFIG below opts into one preset/mode/boost combination; anything
+// that does not opt in keeps the original custom/legacyFullRing behavior.
+// V4412's post-layout tile-density pass (every generated tile becoming a
+// GENERATION_TILE_SCALE x GENERATION_TILE_SCALE block) runs unconditionally,
+// matching the standalone tool exactly — every zone now exports at 2x the
+// width/height it generates at internally (e.g. a 100x100 zone exports as
+// 200x200). This matters beyond resolution: the Map Editor submap export
+// filter drops plateau groups below an absolute tile-count threshold, so
+// skipping this pass (as an earlier version of this file did) silently lost
+// more small plateaus' elevation than the standalone tool does.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.WildernessMapGenerator = factory();
@@ -63,6 +79,52 @@
   };
   const oreKinds = ['stone', 'copper', 'tin', 'iron', 'silver', 'gold', 'crystal'];
 
+  // Ported from WildernessMapGeneratorV4412: named terrain presets and boundary
+  // cliff modes. Only used when a caller explicitly opts in via overrides (see
+  // ZONE_CONFIG below) -- anything that does not set preset/boundaryMode keeps
+  // the original custom/legacyFullRing behavior.
+  const MAX_VERTICAL_TIER = 32;
+  // Ported from WildernessMapGeneratorV4412's post-layout density pass: every
+  // generated tile becomes a GENERATION_TILE_SCALE x GENERATION_TILE_SCALE
+  // block of identical tiles (a lossless upscale — verified byte-for-byte
+  // identical proportions/tile-type ratios against the standalone tool for a
+  // fixed seed). This isn't just cosmetic: the Map Editor submap export filter
+  // (hobunjiPlateauGroupsByPaintedFootprint) drops plateau groups below an
+  // absolute tile-count threshold, so skipping this pass silently drops more
+  // small plateaus (and their elevation) than the standalone tool does.
+  const GENERATION_TILE_SCALE = 2;
+  const GREAT_BASIN_SPOON_BOWL_Y_RATIO = 0.80;
+  const GREAT_BASIN_SPOON_BOWL_X_RATIO = 0.50;
+  const GREAT_BASIN_SPOON_BOWL_RADIUS_RATIO = 0.34;
+  const GREAT_BASIN_SPOON_BOWL_CORE_RATIO = 0.72;
+  const GREAT_BASIN_SPOON_DROP_SPREAD = 2.35;
+  const GREAT_BASIN_SPOON_WALL_START = 1.08;
+  const GREAT_BASIN_SPOON_RIM_DISTANCE = 2.15;
+  const GREAT_BASIN_SPOON_RIM_WIDTH = 1.55;
+  const GREAT_BASIN_SPOON_VERTICAL_STRETCH = 1.72;
+  const GREAT_BASIN_SPOON_ARC_TERRACE_WIDTH = 0.34;
+  const GREAT_BASIN_SPOON_ARC_TERRACE_PULL = 0.78;
+  const GREAT_BASIN_SIDE_EXTENSION_WIDTH_RATIO = 0.23;
+  const GREAT_BASIN_SIDE_EXTENSION_MAX_BOOST_RATIO = 0.38;
+  const GREAT_BASIN_SIDE_EXTENSION_BOWL_Y_SPREAD = 0.46;
+  const GREAT_BASIN_TIER_OUTLINE_VARIATION_TILES = 9.5;
+  const GREAT_BASIN_TIER_OUTLINE_FINE_VARIATION_TILES = 3.25;
+  const GREAT_BASIN_TIER_OUTLINE_BAND_SALT = 100731;
+  const TERRAIN_PRESETS = Object.freeze({
+    custom: { id: 'custom', label: 'Custom controls', forcedEntrySide: null, dramaticPlateaus: false, highEntryCauseway: false },
+    cliffs: { id: 'cliffs', label: 'A. Cliffs', forcedEntrySide: 'south', dramaticPlateaus: true, highEntryCauseway: false },
+    greatBasin: { id: 'greatBasin', label: 'B. Great Basin', forcedEntrySide: 'north', dramaticPlateaus: true, highEntryCauseway: true }
+  });
+  const BOUNDARY_PLATEAU_MODES = Object.freeze({
+    legacyFullRing: { id: 'legacyFullRing', label: 'Legacy full boundary cliff ring', entryOnly: false, followsMapHeight: false, distantNonEntryLandscape: false },
+    followMapHeight: { id: 'followMapHeight', label: 'A. Follows map height', entryOnly: false, followsMapHeight: true, distantNonEntryLandscape: false },
+    entrySideDistantLandscape: { id: 'entrySideDistantLandscape', label: 'B. Entry-side cliffs + distant non-entry landscape', entryOnly: true, followsMapHeight: true, distantNonEntryLandscape: true }
+  });
+  const STEP_CURVE_MODES = Object.freeze({
+    northernCliffs: { id: 'northernCliffs', label: 'Northern Cliffs', exponent: 0.62, bleacherStyle: 'stepped' },
+    greatIncline: { id: 'greatIncline', label: 'Great Incline', exponent: 3.45, bleacherStyle: 'smoothSteepNorth' }
+  });
+
   let map = null;
   let rng = Math.random;
   // Cached active settings for the current generation run.
@@ -81,6 +143,16 @@
       height: 100,
       tileSize: 22,
       entrySide: 'random',
+      // Ported from WildernessMapGeneratorV4412. 'custom'/'legacyFullRing' keep
+      // the original pre-port behavior (no dramatic terrain, one unbroken
+      // border cliff ring) for any caller that does not opt into a preset.
+      preset: 'custom',
+      presetLabel: 'Custom controls',
+      boundaryMode: 'legacyFullRing',
+      boundaryModeLabel: 'Legacy full boundary cliff ring',
+      boundaryCliffBoost: 0,
+      stepCurve: 'northernCliffs',
+      stepCurveLabel: 'Northern Cliffs',
       plateaus: 76,
       maxTier: 6,
       ramps: 14,
@@ -227,10 +299,43 @@
   function initMap() {
     map = {
       schema: 'tileWildernessMap',
-      version: '1.33.0',
+      version: '1.44.12',
       seed: settings.seed,
+      preset: settings.preset,
+      presetLabel: settings.presetLabel,
+      boundaryMode: settings.boundaryMode,
+      boundaryModeLabel: settings.boundaryModeLabel,
+      boundaryCliffBoost: settings.boundaryCliffBoost,
+      stepCurve: settings.stepCurve,
+      stepCurveLabel: settings.stepCurveLabel,
+      greatBasinHorseshoe: false,
+      greatBasinSpoon: usesGreatBasinPreset(),
+      greatBasinSpoonBowlXRatio: GREAT_BASIN_SPOON_BOWL_X_RATIO,
+      greatBasinSpoonBowlYRatio: GREAT_BASIN_SPOON_BOWL_Y_RATIO,
+      greatBasinSpoonBowlRadiusRatio: GREAT_BASIN_SPOON_BOWL_RADIUS_RATIO,
+      greatBasinSpoonBowlCoreRatio: GREAT_BASIN_SPOON_BOWL_CORE_RATIO,
+      greatBasinSpoonDropSpread: GREAT_BASIN_SPOON_DROP_SPREAD,
+      greatBasinSpoonWallStart: GREAT_BASIN_SPOON_WALL_START,
+      greatBasinSpoonRimDistance: GREAT_BASIN_SPOON_RIM_DISTANCE,
+      greatBasinSpoonRimWidth: GREAT_BASIN_SPOON_RIM_WIDTH,
+      greatBasinSpoonVerticalStretch: GREAT_BASIN_SPOON_VERTICAL_STRETCH,
+      greatBasinSpoonArcTerraceWidth: GREAT_BASIN_SPOON_ARC_TERRACE_WIDTH,
+      greatBasinSpoonArcTerracePull: GREAT_BASIN_SPOON_ARC_TERRACE_PULL,
+      greatBasinLinearHeightLerp: usesGreatBasinPreset(),
+      greatBasinLateBoundarySideExtensions: usesGreatBasinPreset(),
+      greatBasinSideExtensionWidthRatio: GREAT_BASIN_SIDE_EXTENSION_WIDTH_RATIO,
+      greatBasinSideExtensionMaxBoostRatio: GREAT_BASIN_SIDE_EXTENSION_MAX_BOOST_RATIO,
+      greatBasinTierOutlineVariationTiles: GREAT_BASIN_TIER_OUTLINE_VARIATION_TILES,
+      greatBasinTierOutlineFineVariationTiles: GREAT_BASIN_TIER_OUTLINE_FINE_VARIATION_TILES,
+      preselectedEntrySide: null,
+      boundaryHeightScan: null,
+      distantBoundaryLandscapes: [],
       width: settings.width,
       height: settings.height,
+      sourceWidth: settings.width,
+      sourceHeight: settings.height,
+      generationScale: 1,
+      scaledFrom: null,
       tileSize: settings.tileSize,
       entry: null,
       tiles: [],
@@ -298,11 +403,23 @@
           borderEscarpmentSide: null,
           borderEscarpmentBaseHeight: null,
           borderEscarpmentHeightBonus: null,
+          distantBoundaryLandscape: false,
+          distantBoundaryLandscapeSide: null,
+          distantBoundaryLandscapeDepth: null,
+          distantBoundarySourceHeight: null,
+          distantBoundaryDisplayHeight: null,
+          distantBoundaryRenderBand: null,
           designReserve: false,
           designRole: null,
           designLandmarkInfluence: 0,
           visualDeadEnd: false,
           breadcrumb: false,
+          greatBasinLinearProfile: false,
+          greatBasinLinearTier: null,
+          greatBasinLateSideExtension: false,
+          greatBasinLateSideInfluence: null,
+          greatBasinLateSideBaseTier: null,
+          greatBasinLateSideTargetTier: null,
           occupiedBy: null
         };
         row.push(tile);
@@ -361,6 +478,7 @@
         if (!allowInvisiblePath && tile.invisiblePath) return false;
         if (!allowCliffSkirt && tile.cliffSkirt && !tile.ramp && !tile.waterfall) return false;
         if (!allowBorderEscarpment && tile.borderEscarpment && !tile.ramp && !tile.navRamp) return false;
+        if (!allowBorderEscarpment && tile.distantBoundaryLandscape) return false;
         if (!allowPlateauRing && tile.plateauRing && !tile.ramp) return false;
         if (!allowDesignReserve && tile.designReserve) return false;
         if (!allowOccupied && tile.occupiedBy) return false;
@@ -431,7 +549,11 @@
     const mapArea = settings.width * settings.height;
     const areaScale = clamp(mapArea / 10000, 0.35, 1.35);
     // Target near whole-map coverage so many larger plateaus can cluster without turning into isolated crumbs.
-    const targetCoverage = clamp(0.74 + blobCount * 0.0024, 0.80, 0.93);
+    // Dramatic presets are now packed like irregular bleachers: the seed blobs are dense, and a later
+    // shelf-fill pass closes most remaining gaps while preserving jagged tier transitions and shared aprons.
+    const targetCoverage = usesDramaticPlateauPreset()
+      ? clamp(0.88 + blobCount * 0.0012, 0.90, 0.97)
+      : clamp(0.74 + blobCount * 0.0024, 0.80, 0.93);
     const targetPlateauTiles = Math.round(mapArea * targetCoverage);
     // new variable: causewayFields are used by plateau center picking so blobs cluster into messy packed districts instead of scattering.
     const causewayFields = buildCausewayPlateauFields(blobCount);
@@ -468,11 +590,12 @@
     const rounding = roundGeneratedPlateauOutlines(causewayFields);
     const raggification = postRaggifyPlateauEdges();
     const cleanup = removeTinyGeneratedPlateauComponents();
+    const packedBleachers = applyPackedDramaticBleacherTerraces();
     const gradient = enforceSouthToNorthElevationRule();
     const cleanupAfterGradient = removeTinyGeneratedPlateauComponents();
     const sharedEdgesAfterCleanup = countPlateauSharedEdges();
     changed = Math.max(0, changed + raggification.added - raggification.removed - cleanup.removedTiles - cleanupAfterGradient.removedTiles);
-    logDebug(`broad causeway plateau fields: ${acceptedBlobs.length}/${blobCount} masses in ${causewayFields.length} fields, plateau tiles ${changed}/${targetPlateauTiles} target, shared edges ${sharedEdgesAfterCleanup} (${sharedEdgesBeforeCleanup} before smoothing), smoothing filled ${smoothing.filled}/removed ${smoothing.removed}, outline rounding +${rounding.added}/-${rounding.removed} (${rounding.longRunsBefore}->${rounding.longRunsAfter} long straight runs, ${rounding.squareCornersBefore}->${rounding.squareCornersAfter} large square corners), post-raggification +${raggification.added}/-${raggification.removed} edge tiles (${raggification.longRunsBefore}->${raggification.longRunsAfter} long straight runs, ${raggification.squareCornersBefore}->${raggification.squareCornersAfter} large square corners), north-gradient clamped ${gradient.clamped}/lifted ${gradient.raisedNorthShoulders}, tiny crumbs removed ${cleanup.removedComponents + cleanupAfterGradient.removedComponents}/${cleanup.removedTiles + cleanupAfterGradient.removedTiles}`);
+    logDebug(`broad causeway plateau fields: ${acceptedBlobs.length}/${blobCount} masses in ${causewayFields.length} fields, plateau tiles ${changed}/${targetPlateauTiles} target, shared edges ${sharedEdgesAfterCleanup} (${sharedEdgesBeforeCleanup} before smoothing), packed bleachers filled ${packedBleachers.filled}/retiered ${packedBleachers.retiered}/transition edges ${packedBleachers.transitionEdges}, smoothing filled ${smoothing.filled}/removed ${smoothing.removed}, outline rounding +${rounding.added}/-${rounding.removed} (${rounding.longRunsBefore}->${rounding.longRunsAfter} long straight runs, ${rounding.squareCornersBefore}->${rounding.squareCornersAfter} large square corners), post-raggification +${raggification.added}/-${raggification.removed} edge tiles (${raggification.longRunsBefore}->${raggification.longRunsAfter} long straight runs, ${raggification.squareCornersBefore}->${raggification.squareCornersAfter} large square corners), north-gradient clamped ${gradient.clamped}/lifted ${gradient.raisedNorthShoulders}, tiny crumbs removed ${cleanup.removedComponents + cleanupAfterGradient.removedComponents}/${cleanup.removedTiles + cleanupAfterGradient.removedTiles}`);
     if (acceptedBlobs.length < blobCount && changed < targetPlateauTiles * 0.90) warn(`plateaus: placed ${acceptedBlobs.length}/${blobCount}; remaining blobs could not find clustered causeway footprints`);
   }
 
@@ -527,13 +650,16 @@
   function northwardTierFloatAtY(y) {
     const maxTier = Math.max(1, settings.maxTier);
     if (maxTier <= 1) return 1;
-    const northness = clamp(1 - (y / Math.max(1, settings.height - 1)), 0, 1);
-    // new variable: northRiseCurve makes elevation reliably climb as the player moves north, while keeping low southern shelves playable.
-    const northRiseCurve = Math.pow(northness, 0.86);
+    // new variable: northRiseCurve makes elevation reliably climb as the player moves north, using the selected step curve for dramatic presets.
+    const northRiseCurve = northwardRiseProgressAtY(y);
     return 1 + (maxTier - 1) * northRiseCurve;
   }
 
   function northwardMaxTierAtY(y) {
+    if (usesDramaticPlateauPreset()) {
+      // Dramatic presets allow strong east/west spikes, but the cap still rises as the map goes north.
+      return clamp(Math.ceil(northwardTierFloatAtY(y) + 3), 1, Math.max(1, settings.maxTier));
+    }
     return clamp(Math.round(northwardTierFloatAtY(y)), 1, Math.max(1, settings.maxTier));
   }
 
@@ -542,9 +668,13 @@
     if (maxTier <= 1) return 1;
     const rowFloat = northwardTierFloatAtY(y);
     const rowCap = northwardMaxTierAtY(y);
-    const blockNoise = (noise2(Math.floor(x / 9), Math.floor(y / 9), 62437) - 0.5) * 1.15;
+    const blockNoise = (noise2(Math.floor(x / 9), Math.floor(y / 9), 62437) - 0.5) * (usesDramaticPlateauPreset() ? 2.3 : 1.15);
     const fieldNudge = field && Number.isFinite(field.baseTier) ? clamp(field.baseTier - rowFloat, -0.75, 0.75) : 0;
-    return clamp(Math.round(rowFloat + blockNoise + fieldNudge), 1, rowCap);
+    const dramaticOffset = dramaticEastWestTierOffset(x, y);
+    const rawTier = rowFloat + blockNoise + fieldNudge + dramaticOffset;
+    return usesDramaticPlateauPreset()
+      ? clampDramaticTierAboveSouthernTerrain(rawTier, x, y)
+      : clamp(Math.round(rawTier), 1, rowCap);
   }
 
   function enforceSouthToNorthElevationRule() {
@@ -569,7 +699,7 @@
         const south = tileAt(x, y + 1);
         if (!tile || !south || tile.elevation <= 0 || south.elevation <= 0) continue;
         const cap = northwardMaxTierAtY(y);
-        const desired = Math.min(cap, south.elevation + (y < south.y ? 1 : 0));
+        const desired = Math.min(cap, south.elevation + (usesDramaticPlateauPreset() ? 1 : (y < south.y ? 1 : 0)));
         if (tile.elevation < south.elevation && desired > tile.elevation) {
           tile.elevation = desired;
           tile.height = Math.max(tile.height || desired, desired);
@@ -579,7 +709,13 @@
       }
     }
 
-    logDebug(`south-to-north elevation rule: clamped ${clamped} over-high southern tiles, lifted ${raisedNorthShoulders} northward shoulders`);
+    if (usesDramaticPlateauPreset()) {
+      const presetLift = enforceDramaticPresetColumnClimb();
+      raisedNorthShoulders += presetLift.raised;
+      clamped += presetLift.lowered;
+    }
+
+    logDebug(`south-to-north elevation rule: clamped ${clamped} over-high southern tiles, lifted ${raisedNorthShoulders} northward shoulders${usesDramaticPlateauPreset() ? ` with ${settings.stepCurveLabel || 'Northern Cliffs'} parent-shelf apron shaping${usesGreatBasinPreset() ? ' and Great Basin linear lerp + late side shelves' : ''}` : ''}`);
     return { clamped, raisedNorthShoulders };
   }
 
@@ -627,7 +763,8 @@
     const hasAnyPlateau = acceptedBlobs.length > 0;
     for (let i = 0; i < 360; i++) {
       const field = pick(causewayFields);
-      const wantsEdgeShare = hasAnyPlateau && chance(0.78);
+      // Dramatic presets should feel tightly packed: seed blobs prefer edge-sharing, then the bleacher pass turns remaining gaps into shared parent shelves.
+      const wantsEdgeShare = hasAnyPlateau && chance(usesDramaticPlateauPreset() ? 0.86 : 0.78);
       const point = wantsEdgeShare ? chooseSharedEdgePlateauSeed(field) : randomPointInCausewayField(field, randFloat(0.18, 1.18));
       if (!point) continue;
       const x = clamp(point.x, margin, settings.width - margin - 1);
@@ -809,7 +946,7 @@
     };
     let added = 0;
     let removed = 0;
-    for (let pass = 0; pass < 3; pass++) {
+    for (let pass = 0; pass < 4; pass++) {
       const stagedAdds = new Map();
       const stagedRemoves = new Map();
       for (const tile of allTiles()) {
@@ -1173,14 +1310,23 @@
     if (maxTier <= 1) return 1;
     const rowCap = northwardMaxTierAtY(y);
     const rowPreferred = northwardPreferredPlateauTier(x, y, field);
-    const jitter = weightedPick([
-      { value: -1, weight: 18 },
-      { value: 0, weight: 50 },
-      { value: 1, weight: 24 },
-      { value: 2, weight: 8 }
-    ]);
+    const jitter = usesDramaticPlateauPreset()
+      ? weightedPick([
+        { value: -2, weight: 18 },
+        { value: -1, weight: 20 },
+        { value: 0, weight: 28 },
+        { value: 1, weight: 20 },
+        { value: 2, weight: 10 },
+        { value: 3, weight: 4 }
+      ])
+      : weightedPick([
+        { value: -1, weight: 18 },
+        { value: 0, weight: 50 },
+        { value: 1, weight: 24 },
+        { value: 2, weight: 8 }
+      ]);
     // new variable: northLockedTier preserves local causeway variation while preventing southern blobs from spawning as northern-height shelves.
-    const northLockedTier = rowPreferred + jitter + (index % 13 === 0 && y < settings.height * 0.42 && chance(0.30) ? 1 : 0);
+    const northLockedTier = rowPreferred + jitter + (index % 13 === 0 && y < settings.height * 0.42 && chance(usesDramaticPlateauPreset() ? 0.52 : 0.30) ? 1 : 0);
     return clamp(northLockedTier, 1, rowCap);
   }
 
@@ -1284,6 +1430,7 @@
       let minR = Infinity;
       let maxC = -Infinity;
       let maxR = -Infinity;
+      let hasBorderEscarpment = false;
 
       for (const tile of cells) {
         const key = tileKey(tile.x, tile.y);
@@ -1291,6 +1438,10 @@
         tile.plateauGroupId = id;
         tile.plateauRing = isRing;
         tile.plateauInterior = !isRing;
+        // distantBoundaryLandscape tiles are the other boundary-cliff-mode
+        // terrain whose height varies tile-by-tile in the same way (see
+        // paintDistantBoundaryLandscapeTile) and hits the same fragmentation.
+        if (tile.borderEscarpment || tile.distantBoundaryLandscape) hasBorderEscarpment = true;
         if (isRing) {
           ringKeys.push(key);
           ringTiles++;
@@ -1313,7 +1464,14 @@
         tileKeys: cells.map(tile => tileKey(tile.x, tile.y)),
         ringKeys,
         interiorKeys,
-        bbox: { minC, minR, maxC, maxR }
+        bbox: { minC, minR, maxC, maxR },
+        // A boundary-cliff-mode escarpment's height varies tile-by-tile (see
+        // targetBoundaryHeight's per-tile jaggedBonus/profileStep/ridgeBonus),
+        // which naturally fragments a continuous cliff ring into many
+        // same-tier patches far smaller than a typical interior plateau blob.
+        // Flagged so the export filter never drops one as "tiny" — see
+        // hobunjiPlateauGroupsByPaintedFootprint.
+        hasBorderEscarpment
       });
     }
 
@@ -1410,11 +1568,14 @@
     return [tileAt(x + 1, y), tileAt(x - 1, y), tileAt(x, y + 1), tileAt(x, y - 1)];
   }
 
-  function markWater(x, y, terrain = 'water', width = 1) {
+  function markWater(x, y, terrain = 'water', width = 1, options = {}) {
     // new variable: brushRadius converts desired river width into a softer tile brush; used so a width of 3 reads near 3 tiles, not 5.
     const brushRadius = terrain === 'river' ? 0.15 + width * 0.46 : Math.max(0.5, width / 2);
     const salt = terrain === 'river' ? 5129 : 2273;
+    // new variable: carveRiverBed is used by the late-painted dramatic river pass; false paints water on top of the finished tier instead of eroding it down.
+    const carveRiverBed = terrain === 'river' && options.carveRiverBed !== false;
     const isPlateauHydrology = terrain === 'stream' || terrain === 'pond';
+    let changedWaterTiles = 0;
     for (let yy = Math.floor(y - brushRadius - 1); yy <= Math.ceil(y + brushRadius + 1); yy++) {
       for (let xx = Math.floor(x - brushRadius - 1); xx <= Math.ceil(x + brushRadius + 1); xx++) {
         if (!inBounds(xx, yy)) continue;
@@ -1422,14 +1583,19 @@
         const bankNoise = terrain === 'river' ? (noise2(xx, yy, salt + Math.round(width * 41)) - 0.5) * 0.22 : 0;
         if (dist > brushRadius + bankNoise) continue;
         const tile = tileAt(xx, yy);
+        const wasSameWater = tile.water && tile.terrain === terrain;
         tile.water = true;
         tile.terrain = terrain;
+        if (!wasSameWater) changedWaterTiles++;
         if (terrain === 'river') {
           tile.canyonRiver = true;
           tile.canyonOriginalElevation = tile.canyonOriginalElevation ?? tile.elevation;
-          // new variable: riverBedTier aggressively drops broad canyon rivers so the adjacent ground can read as a real canyon floor.
-          const riverBedTier = Math.max(0, Math.min(tile.elevation, Math.floor(tile.elevation * 0.12)));
-          tile.elevation = riverBedTier;
+          tile.latePaintedRiver = options.carveRiverBed === false;
+          if (carveRiverBed) {
+            // new variable: riverBedTier aggressively drops broad canyon rivers so the adjacent ground can read as a real canyon floor.
+            const riverBedTier = Math.max(0, Math.min(tile.elevation, Math.floor(tile.elevation * 0.12)));
+            tile.elevation = riverBedTier;
+          }
         }
         tile.plateauHydrology = isPlateauHydrology ? (tile.canyonRiver ? tile.plateauHydrology : true) : tile.plateauHydrology;
         tile.plateauPond = terrain === 'pond' ? true : tile.plateauPond;
@@ -1448,6 +1614,7 @@
         tile.rampSharedPlateauGroupId = null;
       }
     }
+    return changedWaterTiles;
   }
 
   function syncTileHeights() {
@@ -1525,20 +1692,28 @@
 
   function borderEscarpmentWidthAt(x, y) {
     const edgeDist = Math.min(x, y, settings.width - 1 - x, settings.height - 1 - y);
-    if (edgeDist === 0) return true;
-    if (edgeDist > 1) return false;
-    // new variable: shoulderNoise gives the border wall a broken, hand-authored outline without invading the generated plateau fields.
-    const shoulderNoise = noise2(x, y, 73511);
-    const cornerBoost = (x <= 2 || y <= 2 || x >= settings.width - 3 || y >= settings.height - 3) ? 0.12 : 0;
-    return shoulderNoise + cornerBoost > 0.58;
+    const localWidth = borderEscarpmentLocalWidthAt(x, y);
+    if (edgeDist < localWidth) return true;
+    if (edgeDist > localWidth) return false;
+    const inward = inwardDirectionForBorderTile(x, y);
+    const sideIndex = borderSideIndex(inward.side);
+    const tangent = inward.dir.x === 0 ? x : y;
+    // new variable: shoulderNoise gives the widened border wall broken protrusions so it reads as staggered natural cliffs, not a rectangle.
+    const shoulderNoise = noise2(tangent, edgeDist + sideIndex * 17, 73547);
+    return shoulderNoise > 0.72;
   }
 
   function generateBorderEscarpments() {
+    const modeConfig = activeBoundaryModeConfig();
+    const scan = buildBoundaryHeightScan();
     let tiles = 0;
+    let distantTiles = 0;
     let waterCuts = 0;
     let raised = 0;
     let maxHeight = 0;
-    const margin = 2;
+    const entrySide = (map && map.preselectedEntrySide) || resolveGenerationEntrySide();
+    if (map) map.preselectedEntrySide = entrySide;
+
     for (let y = 0; y < settings.height; y++) {
       for (let x = 0; x < settings.width; x++) {
         if (!borderEscarpmentWidthAt(x, y)) continue;
@@ -1546,28 +1721,31 @@
         if (!tile || tile.ramp || tile.navRamp) continue;
         const edgeDist = Math.min(x, y, settings.width - 1 - x, settings.height - 1 - y);
         const inward = inwardDirectionForBorderTile(x, y);
-        const sampleX = clamp(x + inward.dir.x * Math.max(1, margin - edgeDist), 0, settings.width - 1);
-        const sampleY = clamp(y + inward.dir.y * Math.max(1, margin - edgeDist), 0, settings.height - 1);
-        const sample = tileAt(sampleX, sampleY) || tile;
+        const localWidth = borderEscarpmentLocalWidthAt(x, y);
+        resetBoundaryLandscapeFlags(tile);
+        const isEntrySide = inward.side === entrySide;
+        if (modeConfig.entryOnly && !isEntrySide) {
+          const displayHeight = paintDistantBoundaryLandscapeTile(tile, inward.side, edgeDist, scan);
+          maxHeight = Math.max(maxHeight, displayHeight);
+          distantTiles++;
+          continue;
+        }
         const oldHeight = tileHeight(tile);
-        const baseHeight = Math.max(oldHeight || 0, tileHeight(sample) || 0, northwardMaxTierAtY(y));
-        const northness = clamp(1 - y / Math.max(1, settings.height - 1), 0, 1);
-        const edgeBonus = edgeDist === 0 ? 2 : 1;
-        const noiseBonus = Math.round(noise2(x, y, 73517) * 2);
-        const northBonus = Math.round(northness * 2);
-        const targetHeight = Math.max(
-          oldHeight + 1,
-          baseHeight + edgeBonus + noiseBonus,
-          northwardMaxTierAtY(y) + edgeBonus + northBonus
-        );
-        const cappedHeight = clamp(targetHeight, 1, settings.maxTier + 3);
+        const targetHeight = targetBoundaryHeight(tile, inward, edgeDist, localWidth, scan, modeConfig);
+        const sideStat = scan && scan.sides ? scan.sides[inward.side] : null;
+        const localBaseHeight = modeConfig.followsMapHeight
+          ? Math.max(scan ? scan.averagePlayableHeight : 0, sideStat ? sideStat.average : 0, localBoundaryPlayableAverage(x, y, inward, scan))
+          : Math.max(oldHeight || 0, northwardMaxTierAtY(y));
+        // new variable: boundaryHeightCap is tied to the scanned local target instead of global maxTier+boost, preventing a uniform max-height wall around the whole map.
+        const boundaryHeightCap = Math.max(1, localBaseHeight + settings.boundaryCliffBoost + (usesDramaticPlateauPreset() ? 5 : 3));
+        const cappedHeight = clamp(targetHeight, 1, boundaryHeightCap);
         tile.borderEscarpment = true;
         tile.borderEscarpmentDepth = edgeDist;
         tile.borderEscarpmentSide = inward.side;
-        tile.borderEscarpmentBaseHeight = Number(baseHeight.toFixed ? baseHeight.toFixed(2) : baseHeight);
-        tile.borderEscarpmentHeightBonus = Number((cappedHeight - baseHeight).toFixed(2));
+        tile.borderEscarpmentBaseHeight = Number(localBaseHeight.toFixed(2));
+        tile.borderEscarpmentHeightBonus = Number((cappedHeight - tile.borderEscarpmentBaseHeight).toFixed(2));
         tile.height = cappedHeight;
-        tile.elevation = Math.max(tile.elevation || 0, Math.round(cappedHeight));
+        tile.elevation = settings.boundaryCliffBoost < 0 ? Math.round(cappedHeight) : Math.max(tile.elevation || 0, Math.round(cappedHeight));
         tile.terrain = 'plateau';
         tile.generatedPlateauBlobId = tile.generatedPlateauBlobId || 'border_escarpment';
         tile.plateauGroupId = null;
@@ -1581,7 +1759,9 @@
         tiles++;
       }
     }
-    logDebug(`border escarpments: ${tiles} inaccessible raised border tiles (${raised} raised, ${waterCuts} river/water cuts preserved), max height ${maxHeight}`);
+    const sideSummary = Object.values(scan.sides || {}).map(stat => `${stat.side}:${stat.average}/${stat.highAverage}`).join(', ');
+    map.distantBoundaryLandscapes = Object.values(scan.sides || {}).filter(stat => modeConfig.entryOnly && stat.side !== entrySide).map(stat => ({ ...stat, source: 'non-entry side far-edge sample' }));
+    logDebug(`boundary plateaus: mode ${settings.boundaryModeLabel}, entry side ${entrySide}, cliffs ${tiles}, distant landscape ${distantTiles}, raised ${raised}, water cuts ${waterCuts}, max depth ${borderEscarpmentMaxDepth()}, max height ${maxHeight.toFixed ? maxHeight.toFixed(2) : maxHeight}, playable height scan avg ${scan.averagePlayableHeight} (${sideSummary}), cliff boost ${settings.boundaryCliffBoost}`);
   }
 
   function generateRamps() {    if (settings.ramps <= 0) {
@@ -2310,10 +2490,10 @@
     ];
 
     for (const tile of allTiles()) {
-      if (!tile || tile.ramp) continue;
+      if (!tile || tile.ramp || tile.distantBoundaryLandscape) continue;
       for (const dir of dirs) {
         const neighbor = tileAt(tile.x + dir.x, tile.y + dir.y);
-        if (!neighbor || neighbor.ramp) continue;
+        if (!neighbor || neighbor.ramp || neighbor.distantBoundaryLandscape) continue;
         const diff = tileHeight(neighbor) - tileHeight(tile);
         if (diff < 0.75) continue;
         const before = tile.cliffSkirt;
@@ -2332,7 +2512,7 @@
         : [{ x: 0, y: 1 }, { x: 0, y: -1 }];
       for (const side of sideDirs) {
         const skirt = tileAt(tile.x + side.x, tile.y + side.y);
-        if (!skirt || skirt.ramp || skirt.water) continue;
+        if (!skirt || skirt.ramp || skirt.water || skirt.distantBoundaryLandscape) continue;
         const before = skirt.cliffSkirt;
         markCliffSkirtTile(skirt, 'ramp', tile, Math.abs(tileHeight(tile) - tileHeight(skirt)));
         skirt.rampSkirt = true;
@@ -2639,6 +2819,10 @@
   }
 
   function generateRivers() {
+    if (usesDramaticPlateauPreset()) {
+      logDebug('river canyon generation deferred: dramatic presets paint rivers late over finished plateau tiers without erosion carving');
+      return;
+    }
     for (let i = 0; i < settings.rivers; i++) {
       const start = borderPoint('random', 1);
       const end = borderPoint(oppositeOrDifferentSide(start.side), 1);
@@ -2706,6 +2890,12 @@
     tile.borderEscarpmentSide = null;
     tile.borderEscarpmentBaseHeight = null;
     tile.borderEscarpmentHeightBonus = null;
+    tile.distantBoundaryLandscape = false;
+    tile.distantBoundaryLandscapeSide = null;
+    tile.distantBoundaryLandscapeDepth = null;
+    tile.distantBoundarySourceHeight = null;
+    tile.distantBoundaryDisplayHeight = null;
+    tile.distantBoundaryRenderBand = null;
     tile.cliffSkirt = false;
     tile.cliffSkirtKind = null;
     tile.cliffFromTier = null;
@@ -2724,52 +2914,83 @@
     return wasBorder;
   }
 
-  function openBorderEntryGate(entry) {
+  function openBorderEntryGate(entry, forcedReplacementHeight = null) {
     if (!entry) return 0;
     const inward = inwardDirectionForBorderTile(entry.x, entry.y);
     const sideAxisHorizontal = inward.dir.x === 0;
     const sideTangent = sideAxisHorizontal ? { x: 1, y: 0 } : { x: 0, y: 1 };
-    const sample = tileAt(
-      clamp(entry.x + inward.dir.x * 3, 0, settings.width - 1),
-      clamp(entry.y + inward.dir.y * 3, 0, settings.height - 1)
-    );
-    const replacementHeight = sample && !sample.water ? tileHeight(sample) : 0;
+    const maxDepth = borderEscarpmentMaxDepth();
+    const gateDepth = maxDepth + 5;
+    const gateHalfWidth = Math.max(2, Math.round(maxDepth * 0.75));
+    const replacementHeight = Number.isFinite(forcedReplacementHeight) ? forcedReplacementHeight : findEntryGateInteriorHeight(entry, inward, gateDepth);
     let cleared = 0;
-    for (let t = -1; t <= 1; t++) {
-      for (let d = 0; d <= 2; d++) {
+    let roadTiles = 0;
+    for (let d = 0; d <= gateDepth; d++) {
+      const flare = d <= 1 ? 1 : 0;
+      const halfWidth = gateHalfWidth + flare;
+      for (let t = -halfWidth; t <= halfWidth; t++) {
+        const edgeSoftener = Math.abs(t) === halfWidth && d > 2 && noise2(entry.x + t, entry.y + d, 74221) < 0.34;
+        if (edgeSoftener) continue;
         const x = clamp(entry.x + sideTangent.x * t + inward.dir.x * d, 0, settings.width - 1);
         const y = clamp(entry.y + sideTangent.y * t + inward.dir.y * d, 0, settings.height - 1);
         const tile = tileAt(x, y);
         if (!tile) continue;
         if (clearBorderEscarpmentTile(tile, replacementHeight, 'borderEntryGate')) cleared++;
+        tile.water = false;
+        tile.terrain = replacementHeight > 0 ? 'plateau' : 'grass';
+        tile.elevation = Math.round(replacementHeight);
+        tile.height = replacementHeight;
         tile.path = true;
+        tile.bridge = false;
+        tile.ramp = false;
+        tile.rampId = null;
+        tile.navRamp = false;
+        tile.navRampId = null;
+        tile.designReserve = true;
+        tile.designRole = 'borderEntryGate';
+        roadTiles++;
       }
     }
-    logDebug(`border entry gate: cleared ${cleared} border escarpment tiles near ${entry.side} entry`);
+    logDebug(`border entry gate: carved ${roadTiles} road-mouth tiles, cleared ${cleared} widened border escarpment tiles near ${entry.side} entry, depth ${gateDepth}, half-width ${gateHalfWidth}`);
     return cleared;
   }
 
   function chooseEntry() {
-    const requested = settings.entrySide === 'random' ? pick(['north', 'east', 'south', 'west']) : settings.entrySide;
+    const forcedSide = activePresetConfig().forcedEntrySide;
+    const requested = (map && map.preselectedEntrySide) || forcedSide || (settings.entrySide === 'random' ? pick(['north', 'east', 'south', 'west']) : settings.entrySide);
     const candidates = [];
     if (requested === 'north' || requested === 'south') {
       const y = requested === 'north' ? 0 : settings.height - 1;
-      for (let x = 1; x < settings.width - 1; x++) candidates.push({ x, y, side: requested });
+      const guard = borderEscarpmentMaxDepth() + 2;
+      for (let x = guard; x < settings.width - guard; x++) candidates.push({ x, y, side: requested });
     } else {
       const x = requested === 'west' ? 0 : settings.width - 1;
-      for (let y = 1; y < settings.height - 1; y++) candidates.push({ x, y, side: requested });
+      const guard = borderEscarpmentMaxDepth() + 2;
+      for (let y = guard; y < settings.height - guard; y++) candidates.push({ x, y, side: requested });
     }
-    const shuffled = shuffle(candidates);
-    let chosen = shuffled.find(p => {
-      const tile = tileAt(p.x, p.y);
-      const inward = tile ? inwardDirectionForBorderTile(p.x, p.y) : null;
-      const inner = inward ? tileAt(clamp(p.x + inward.dir.x * 2, 0, settings.width - 1), clamp(p.y + inward.dir.y * 2, 0, settings.height - 1)) : null;
-      return tile && !tile.water && inner && !inner.water;
-    }) || shuffled.find(p => !tileAt(p.x, p.y).water) || shuffled[0];
+    const gateDepth = borderEscarpmentMaxDepth() + 5;
+    const gateHalfWidth = Math.max(2, Math.round(borderEscarpmentMaxDepth() * 0.75));
+    const center = requested === 'north' || requested === 'south' ? settings.width / 2 : settings.height / 2;
+    const scored = candidates.map(candidate => {
+      const axis = requested === 'north' || requested === 'south' ? candidate.x : candidate.y;
+      const centerPenalty = Math.abs(axis - center) / Math.max(1, center);
+      const waterPenalty = entryGateWaterCount(candidate, gateHalfWidth, gateDepth);
+      const inward = inwardDirectionForBorderTile(candidate.x, candidate.y);
+      const inner = tileAt(
+        clamp(candidate.x + inward.dir.x * (gateDepth + 2), 0, settings.width - 1),
+        clamp(candidate.y + inward.dir.y * (gateDepth + 2), 0, settings.height - 1)
+      );
+      const heightPenalty = inner ? Math.max(0, tileHeight(inner) - 2) * 0.08 : 1;
+      return { candidate, score: -waterPenalty * 9 - centerPenalty * 4 - heightPenalty + noise2(candidate.x, candidate.y, 74231) * 0.25 };
+    }).sort((a, b) => b.score - a.score);
+    let chosen = scored.length ? scored[0].candidate : null;
     if (!chosen) chosen = { x: 0, y: Math.floor(settings.height / 2), side: 'west' };
     map.entry = { x: chosen.x, y: chosen.y, side: chosen.side, type: 'mapEntry' };
-    openBorderEntryGate(map.entry);
-    logDebug(`entry: ${map.entry.side} border at ${map.entry.x},${map.entry.y}`);
+    const greatBasinTarget = usesGreatBasinPreset() ? highestWalkablePlateauCandidate(map.entry) : null;
+    const forcedGateHeight = greatBasinTarget ? greatBasinTarget.height : null;
+    openBorderEntryGate(map.entry, forcedGateHeight);
+    if (greatBasinTarget) connectGreatBasinEntryToHighestPlateau(map.entry, greatBasinTarget);
+    logDebug(`entry: ${map.entry.side} border at ${map.entry.x},${map.entry.y} with protected road opening${greatBasinTarget ? ` at high basin height ${greatBasinTarget.height}` : ''}`);
   }
 
   function placeStructures() {
@@ -2879,6 +3100,7 @@
     if (!tile) return true;
     if (tile.water && !tile.bridge && !tile.navBridge) return true;
     if (tile.borderEscarpment && !tile.ramp && !tile.navRamp) return true;
+    if (tile.distantBoundaryLandscape) return true;
     if (tile.cliffSkirt && !tile.ramp && !tile.navRamp) return true;
     const object = tile.occupiedBy ? getObjectById(tile.occupiedBy) : null;
     return !!(object && object.blocksMovement !== false);
@@ -3957,20 +4179,22 @@
 
   function validateAndRepairReachability() {
     const start = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y);
-    const componentRepair = repairReachabilityByComponents(start);
+    // new variable: dramaticRepairBudget caps the last-resort hidden repair passes that became too expensive when Cliffs introduced extreme height fragmentation.
+    const dramaticRepairBudget = usesDramaticPlateauPreset();
+    const componentRepair = repairReachabilityByComponents(start, dramaticRepairBudget ? 10 : 18);
     let clearedObjects = componentRepair.clearedObjects || 0;
 
     let finalReachable = reachableFrom(start);
     let finalWalkable = allWalkableTiles();
     let finalUnreachable = finalWalkable.filter(tile => !finalReachable.has(keyXY(tile.x, tile.y)));
-    const hiddenStitch = finalUnreachable.length ? stitchReachabilityWithHiddenLedges(start) : { stitchedEdges: 0, hiddenTiles: 0, passes: 0 };
+    const hiddenStitch = finalUnreachable.length ? stitchReachabilityWithHiddenLedges(start, dramaticRepairBudget ? 140 : 420) : { stitchedEdges: 0, hiddenTiles: 0, passes: 0 };
     if (hiddenStitch.stitchedEdges) {
       finalReachable = reachableFrom(start);
       finalWalkable = allWalkableTiles();
       finalUnreachable = finalWalkable.filter(tile => !finalReachable.has(keyXY(tile.x, tile.y)));
       logDebug(`hidden ledge reachability stitch: ${hiddenStitch.stitchedEdges} connector edges, ${hiddenStitch.hiddenTiles} hidden nav-ramp tiles, remaining unreachable ${finalUnreachable.length}`);
     }
-    const hiddenSweep = finalUnreachable.length ? forceHiddenReachabilitySweep(start, 220) : { connected: 0, hiddenTiles: 0, bridgeTiles: 0, attempts: 0, cleared: 0 };
+    const hiddenSweep = finalUnreachable.length ? forceHiddenReachabilitySweep(start, dramaticRepairBudget ? 80 : 220) : { connected: 0, hiddenTiles: 0, bridgeTiles: 0, attempts: 0, cleared: 0 };
     if (hiddenSweep.connected || hiddenSweep.hiddenTiles || hiddenSweep.bridgeTiles) {
       clearedObjects += hiddenSweep.cleared || 0;
       finalReachable = reachableFrom(start);
@@ -3978,7 +4202,7 @@
       finalUnreachable = finalWalkable.filter(tile => !finalReachable.has(keyXY(tile.x, tile.y)));
       logDebug(`hidden reachability sweep: ${hiddenSweep.connected} forced connector paths, ${hiddenSweep.hiddenTiles} hidden nav-ramp tiles, ${hiddenSweep.bridgeTiles} hidden bridge tiles, remaining unreachable ${finalUnreachable.length}`);
     }
-    const sealedResidual = finalUnreachable.length ? sealResidualUnreachableTiles(finalUnreachable, 128) : { sealed: 0, skipped: 0 };
+    const sealedResidual = finalUnreachable.length ? sealResidualUnreachableTiles(finalUnreachable, dramaticRepairBudget ? 256 : 128) : { sealed: 0, skipped: 0 };
     if (sealedResidual.sealed) {
       finalReachable = reachableFrom(start);
       finalWalkable = allWalkableTiles();
@@ -4221,9 +4445,11 @@
     natural.sort((a, b) => b.score - a.score);
     cave.sort((a, b) => b.score - a.score);
 
-    const naturalLosBudget = Math.min(natural.length, Math.max(70, settings.treasure * 2 + settings.forage));
-    const caveLosBudget = Math.min(cave.length, Math.max(45, settings.caves * 10));
-    const losMaxSamples = settings.width * settings.height >= 9000 ? 96 : 160;
+    // new variable: losBudgetScale keeps dramatic cliff presets responsive on mobile by scoring fewer hidden-reward sightlines while preserving candidate ordering.
+    const losBudgetScale = usesDramaticPlateauPreset() ? 0.45 : 1;
+    const naturalLosBudget = Math.min(natural.length, Math.max(28, Math.round((settings.treasure * 2 + settings.forage) * losBudgetScale)));
+    const caveLosBudget = Math.min(cave.length, Math.max(18, Math.round(settings.caves * 10 * losBudgetScale)));
+    const losMaxSamples = usesDramaticPlateauPreset() ? 48 : (settings.width * settings.height >= 9000 ? 96 : 160);
     for (let i = 0; i < naturalLosBudget; i++) {
       const candidate = natural[i];
       const los = estimateVisibleObserverCount(candidate, distanceField, { radius: 12, maxSamples: losMaxSamples });
@@ -4915,6 +5141,7 @@
     if (tile.water) return tile.terrain === 'river' ? 'river' : 'stream';
     if (tile.path || tile.bridge || tile.navBridge) return 'path';
     if (tile.borderEscarpment && !tile.ramp) return 'rock';
+    if (tile.distantBoundaryLandscape) return 'rock';
     if (tile.cliffSkirt && !tile.ramp) return 'rock';
     return 'grass';
   }
@@ -4955,14 +5182,24 @@
     }));
     const minimumInterior = 4;
     const minimumFootprint = 10;
-    let exportable = scored.filter(item => item.interiorCount >= minimumInterior && item.interiorCount + item.ringCount >= minimumFootprint);
+    // Border-escarpment groups always export regardless of size: dropping one
+    // as "tiny" doesn't just omit a small decorative plateau, it flattens a
+    // piece of the boundary cliff ring to grass (mergeZoneTilesInto downgrades
+    // an unassigned 'rock' tile to 'grass' — see its own comment), which is a
+    // visible hole/gap in what's supposed to be a continuous cliff wall.
+    let exportable = scored.filter(item => item.group.hasBorderEscarpment
+      || (item.interiorCount >= minimumInterior && item.interiorCount + item.ringCount >= minimumFootprint));
     const droppedTiny = scored.length - exportable.length;
     const maxSubmaps = 96;
-    if (exportable.length > maxSubmaps) {
-      exportable = exportable
+    const trimmable = exportable.filter(item => !item.group.hasBorderEscarpment);
+    if (trimmable.length > maxSubmaps) {
+      const keepIndices = new Set(exportable.filter(item => item.group.hasBorderEscarpment).map(item => item.index));
+      for (const item of trimmable
         .sort((a, b) => (b.interiorCount + b.ringCount) - (a.interiorCount + a.ringCount))
-        .slice(0, maxSubmaps)
-        .sort((a, b) => a.index - b.index);
+        .slice(0, maxSubmaps)) {
+        keepIndices.add(item.index);
+      }
+      exportable = exportable.filter(item => keepIndices.has(item.index)).sort((a, b) => a.index - b.index);
     }
     const groups = exportable.map((item, outputIndex) => {
       const group = item.group;
@@ -4995,12 +5232,31 @@
     const group = plateauByGroupId.get(tile.plateauGroupId);
     // A tile cannot be both editor plateau geometry and editor ramp geometry; keep plateau contact as ramp metadata only.
     if (group && !tile.ramp) output.plateau = group.id;
+    // The border-entry gate corridor (openBorderEntryGate) is a deliberately
+    // flattened, walkable cut through the boundary cliff ring — it needs to
+    // stay IN its plateau's mask (dropping it out entirely leaves it at
+    // baseTier/ground level even when it's meant to connect at the
+    // surrounding terrain's real height, stranding the entry in a sunken
+    // pocket below the plateau it opens onto). What it must NOT get is
+    // mergeZoneTilesInto's ring classification: that marks any masked tile
+    // bordering lower/unmasked terrain `incline`, and the gate's outermost
+    // row is always exactly that (right at the map edge). An incline tile
+    // is solid to the game's movement collision (tileSpeedAt: `if
+    // (tile.incline) return null`), which would make the entrance itself
+    // impassable. Flag it so the merge can force it to the group's real
+    // (interior, non-incline) tier instead of computing ring-ness for it.
+    if (tile.designRole === 'borderEntryGate') output.borderEntryGate = true;
     if (tile.borderEscarpment) {
       output.borderEscarpment = true;
       output.generatedBorderEscarpment = true;
       if (tile.borderEscarpmentDepth != null) output.borderEscarpmentDepth = tile.borderEscarpmentDepth;
       if (tile.borderEscarpmentSide) output.borderEscarpmentSide = tile.borderEscarpmentSide;
       if (tile.borderEscarpmentHeightBonus != null) output.borderEscarpmentHeightBonus = tile.borderEscarpmentHeightBonus;
+    }
+    if (tile.distantBoundaryLandscape) {
+      output.distantBoundaryLandscape = true;
+      if (tile.distantBoundaryLandscapeSide) output.distantBoundaryLandscapeSide = tile.distantBoundaryLandscapeSide;
+      if (tile.distantBoundarySourceHeight != null) output.distantBoundarySourceHeight = tile.distantBoundarySourceHeight;
     }
     if (tile.navRamp && !tile.ramp) {
       output.navRamp = true;
@@ -5094,11 +5350,23 @@
       { isSubmap: true, parentMapId: rootId, plateauGroupId: group.id, elevation: group.elevation, anchorC, anchorR }
     );
 
+    // A border-escarpment group's height varies tile-by-tile (see
+    // targetBoundaryHeight), so it's frequently thin enough to be ALL ring /
+    // zero interior by this system's ring-vs-interior split (isManualPlateau-
+    // RingTile) — excluding ring tiles here would then paint nothing and this
+    // whole group's submap comes back null, which orphans its mask in
+    // mergeZoneTilesInto (the group has no matching submap, so its cells fall
+    // through to plain ungraded grass instead of the raised cliff they should
+    // be). A thin cliff strip has no meaningful margin-vs-top distinction
+    // anyway — buildPlateauMesa computes its own outer blend band from the
+    // mask regardless of this ring flag — so paint every cell for these.
+    const paintRingToo = !!sourceGroup.hasBorderEscarpment;
     let paintedTiles = 0;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const sourceTile = tileAt(anchorC + c, anchorR + r);
-        if (!sourceTile || sourceTile.plateauGroupId !== group.id || sourceTile.plateauRing) continue;
+        if (!sourceTile || sourceTile.plateauGroupId !== group.id) continue;
+        if (sourceTile.plateauRing && !paintRingToo) continue;
         hobunjiSetTile(submap, c, r, hobunjiSubmapTileRecord(sourceTile, overlayByTile));
         paintedTiles++;
       }
@@ -5172,7 +5440,7 @@
         fromMapId: hobunjiMapIdForRampEnd(ramp.fromTier, ramp.fromGroupId),
         toMapId: hobunjiMapIdForRampEnd(ramp.toTier, ramp.toGroupId),
         nodes,
-        width: ramp.kind === 'wrap' ? 2 : 1,
+        width: Math.max(1, Math.round(ramp.widthTiles || (ramp.kind === 'wrap' ? 2 : 1))),
         paintTiles: false,
         generatedKind: ramp.kind || 'direct',
         sharedPlateauGroupId: ramp.sharedPlateauGroupId || null,
@@ -5243,7 +5511,23 @@
       schema: map.schema,
       version: map.version,
       seed: map.seed,
-      note: 'Flattened from WildernessMapGeneratorV33. Unsupported generated object types are encoded as supported editor tile types plus generatedObject metadata. Tiny canyon-cut plateau fragments may be root-only to keep Map Editor imports lightweight.'
+      preset: map.preset || settings.preset,
+      presetLabel: map.presetLabel || settings.presetLabel,
+      boundaryMode: map.boundaryMode || settings.boundaryMode,
+      boundaryModeLabel: map.boundaryModeLabel || settings.boundaryModeLabel,
+      boundaryCliffBoost: Number.isFinite(map.boundaryCliffBoost) ? map.boundaryCliffBoost : settings.boundaryCliffBoost,
+      stepCurve: map.stepCurve || settings.stepCurve,
+      stepCurveLabel: map.stepCurveLabel || settings.stepCurveLabel,
+      greatBasinHorseshoe: !!map.greatBasinHorseshoe,
+      greatBasinSpoon: !!(map.greatBasinSpoon || usesGreatBasinPreset()),
+      greatBasinSpoonBowlXRatio: map.greatBasinSpoonBowlXRatio || GREAT_BASIN_SPOON_BOWL_X_RATIO,
+      greatBasinSpoonBowlYRatio: map.greatBasinSpoonBowlYRatio || GREAT_BASIN_SPOON_BOWL_Y_RATIO,
+      greatBasinSpoonBowlRadiusRatio: map.greatBasinSpoonBowlRadiusRatio || GREAT_BASIN_SPOON_BOWL_RADIUS_RATIO,
+      greatBasinSpoonBowl: map.greatBasinSpoonBowl || null,
+      boundaryHeightScan: map.boundaryHeightScan || null,
+      distantBoundaryLandscapes: map.distantBoundaryLandscapes || [],
+      greatBasinEntry: map.greatBasinEntry || null,
+      note: `Flattened from WildernessMapGeneratorV44 after ${map.generationScale || 1}x tile-density expansion. Unsupported generated object types are encoded as supported editor tile types plus generatedObject metadata. Tiny canyon-cut plateau fragments may be root-only to keep Map Editor imports lightweight.`
     };
 
     const submaps = [];
@@ -5254,7 +5538,7 @@
 
     const workspace = {
       schema: 'hobunji_map_editor_workspace.v1',
-      generator: 'WildernessMapGeneratorV33',
+      generator: 'WildernessMapGeneratorV44',
       generatedAt: new Date().toISOString(),
       maps: [root, ...submaps],
       activeId: root.id,
@@ -5263,6 +5547,10 @@
         interiorId: '',
         townId: ''
       },
+      generatorPreset: { id: map.preset || settings.preset, label: map.presetLabel || settings.presetLabel, stepCurve: map.stepCurve || settings.stepCurve, stepCurveLabel: map.stepCurveLabel || settings.stepCurveLabel, greatBasinHorseshoe: !!map.greatBasinHorseshoe, greatBasinSpoon: !!(map.greatBasinSpoon || usesGreatBasinPreset()), greatBasinSpoonBowlXRatio: map.greatBasinSpoonBowlXRatio || GREAT_BASIN_SPOON_BOWL_X_RATIO,
+      greatBasinSpoonBowlYRatio: map.greatBasinSpoonBowlYRatio || GREAT_BASIN_SPOON_BOWL_Y_RATIO,
+      greatBasinSpoonBowlRadiusRatio: map.greatBasinSpoonBowlRadiusRatio || GREAT_BASIN_SPOON_BOWL_RADIUS_RATIO,
+      greatBasinSpoonBowl: map.greatBasinSpoonBowl || null, greatBasinLinearHeightLerp: !!(map.greatBasinSpoon || usesGreatBasinPreset()), greatBasinLateBoundarySideExtensions: !!(map.greatBasinSpoon || usesGreatBasinPreset()), greatBasinEntry: map.greatBasinEntry || null },
       plateauGroups,
       ramps: hobunjiBuildWorkspaceRamps(),
       importInstructions: 'Open docs/tools/map-editor/index.html, click Import, and select this JSON. The editor recognizes the workspace shape because it contains a maps array.'
@@ -5293,11 +5581,14 @@
       `  import preflight: ${Array.isArray(workspace.maps) && workspace.maps.length ? 'recognized workspace shape' : 'BROKEN - maps array missing'}`,
       `  maps: ${workspace.maps.length} (${workspace.maps.filter(m => m.isSubmap).length} plateau submaps)`,
       `  root: ${root.cols}x${root.rows}, zero-based first key: ${firstKey}`,
+      `  source: ${map.sourceWidth || map.width}x${map.sourceHeight || map.height}, tile-density scale: ${map.generationScale || 1}x`,
+      map.connectivity && map.connectivity.originalWalkableTilesBeforeDensityScale ? `  walkable source/export: ${map.connectivity.originalWalkableTilesBeforeDensityScale} -> ${map.connectivity.actualWalkableTilesAfterDensityScale}` : '  walkable source/export: not measured',
       `  tiles: ${tileCount}`,
       `  plateau groups: ${workspace.plateauGroups.length}${map.exportPlateauTinyGroupsSkipped ? ` (${map.exportPlateauTinyGroupsSkipped} tiny/root-only groups skipped)` : ''}`,
       `  manual plateau ring tiles: ${map.plateauPaintGroups.reduce((sum, group) => sum + (group.ringKeys ? group.ringKeys.length : 0), 0)}`,
       `  manual plateau interior tiles: ${map.plateauPaintGroups.reduce((sum, group) => sum + (group.interiorKeys ? group.interiorKeys.length : 0), 0)}`,
       `  border escarpment tiles: ${allTiles().filter(tile => tile.borderEscarpment).length}`,
+      `  distant boundary landscape tiles: ${allTiles().filter(tile => tile.distantBoundaryLandscape).length}`,
       `  ramps: ${workspace.ramps.length} (${workspace.ramps.filter(r => r.generatedKind === 'wrap').length} wraparound, ${workspace.ramps.reduce((sum, r) => sum + (r.sharedPlateauTiles || 0), 0)} shared plateau tiles)`,
       `  routes: ${(root.routes || []).length}`,
       `  rivers: ${(root.rivers || []).length}`,
@@ -5349,6 +5640,26 @@
       borderEscarpmentSide: tile.borderEscarpmentSide,
       borderEscarpmentBaseHeight: tile.borderEscarpmentBaseHeight,
       borderEscarpmentHeightBonus: tile.borderEscarpmentHeightBonus,
+      distantBoundaryLandscape: !!tile.distantBoundaryLandscape,
+      distantBoundaryLandscapeSide: tile.distantBoundaryLandscapeSide || null,
+      distantBoundaryLandscapeDepth: tile.distantBoundaryLandscapeDepth,
+      distantBoundarySourceHeight: tile.distantBoundarySourceHeight,
+      distantBoundaryDisplayHeight: tile.distantBoundaryDisplayHeight,
+      distantBoundaryRenderBand: tile.distantBoundaryRenderBand || null,
+      greatBasinHorseshoeProfile: !!tile.greatBasinHorseshoeProfile,
+      greatBasinSpoonProfile: !!tile.greatBasinSpoonProfile,
+      greatBasinSpoonBowlDistance: tile.greatBasinSpoonBowlDistance,
+      greatBasinSpoonRadialDistance: tile.greatBasinSpoonRadialDistance,
+      greatBasinSpoonArcDistance: tile.greatBasinSpoonArcDistance,
+      greatBasinSpoonCircularDistance: tile.greatBasinSpoonCircularDistance,
+      greatBasinSpoonArcTerraceTier: tile.greatBasinSpoonArcTerraceTier,
+      greatBasinLinearProfile: !!tile.greatBasinLinearProfile,
+      greatBasinLinearTier: tile.greatBasinLinearTier,
+      greatBasinLateSideExtension: !!tile.greatBasinLateSideExtension,
+      greatBasinLateSideInfluence: tile.greatBasinLateSideInfluence,
+      greatBasinLateSideBaseTier: tile.greatBasinLateSideBaseTier,
+      greatBasinLateSideTargetTier: tile.greatBasinLateSideTargetTier,
+      greatBasinCenterDistance: tile.greatBasinCenterDistance,
       rampSkirt: tile.rampSkirt,
       waterfall: tile.waterfall,
       occupiedBy: tile.occupiedBy
@@ -5358,14 +5669,35 @@
       schema: map.schema,
       version: map.version,
       seed: map.seed,
+      preset: map.preset || settings.preset,
+      presetLabel: map.presetLabel || settings.presetLabel,
+      boundaryMode: map.boundaryMode || settings.boundaryMode,
+      boundaryModeLabel: map.boundaryModeLabel || settings.boundaryModeLabel,
+      boundaryCliffBoost: Number.isFinite(map.boundaryCliffBoost) ? map.boundaryCliffBoost : settings.boundaryCliffBoost,
+      stepCurve: map.stepCurve || settings.stepCurve,
+      stepCurveLabel: map.stepCurveLabel || settings.stepCurveLabel,
+      greatBasinHorseshoe: !!map.greatBasinHorseshoe,
+      greatBasinSpoon: !!(map.greatBasinSpoon || usesGreatBasinPreset()),
+      greatBasinSpoonBowlXRatio: map.greatBasinSpoonBowlXRatio || GREAT_BASIN_SPOON_BOWL_X_RATIO,
+      greatBasinSpoonBowlYRatio: map.greatBasinSpoonBowlYRatio || GREAT_BASIN_SPOON_BOWL_Y_RATIO,
+      greatBasinSpoonBowlRadiusRatio: map.greatBasinSpoonBowlRadiusRatio || GREAT_BASIN_SPOON_BOWL_RADIUS_RATIO,
+      greatBasinSpoonBowl: map.greatBasinSpoonBowl || null,
+      boundaryHeightScan: map.boundaryHeightScan || null,
+      distantBoundaryLandscapes: map.distantBoundaryLandscapes || [],
+      greatBasinEntry: map.greatBasinEntry || null,
       width: map.width,
       height: map.height,
+      sourceWidth: map.sourceWidth || map.width,
+      sourceHeight: map.sourceHeight || map.height,
+      generationScale: map.generationScale || 1,
       entry: map.entry,
-      routeStyle: 'Stardew/Pokemon-like wilderness: sparse visible roads, clustered messy Giant\'s-Causeway-like plateau fields, manual-style reserved cliff rings, wraparound ramps with shared plateau contact tiles, thin inaccessible border escarpments generated before ramp/reachability solving, cave mouths in cliff faces, wild animal dens, and invisible navigation corridors for full walkable-tile reachability',
+      routeStyle: 'Stardew/Pokemon-like wilderness: sparse visible roads, clustered messy Giant\'s-Causeway-like plateau fields, manual-style reserved cliff rings, wraparound ramps with shared plateau contact tiles, boundary plateau modes generated after playable terrain height scanning, cave mouths in cliff faces, wild animal dens, and invisible navigation corridors for full walkable-tile reachability',
       cameraLocked: true,
       visibilityRule: 'plateaus are generated as clustered manual-paint-style causeway cells rather than global shelves; each footprint owns its reserved outer ring and inset submap top',
-      riverWidthRule: 'big canyon rivers vary along their length; each sampled width is usually 4-8 tiles and carves river beds down through raised plateau fields',
+      riverWidthRule: usesDramaticPlateauPreset() ? 'dramatic preset rivers are late-painted over finished terrain with no erosion carving; height breaks become waterfall tiles' : 'big canyon rivers vary along their length; each sampled width is usually 4-8 tiles and carves river beds down through raised plateau fields',
       pathingRule: 'visible paths are sparse. invisiblePaths reserve natural walkable corridors for players, NPCs, and animal escape routing without drawing extra beaten roads.',
+      tileDensityRule: `Generated at source size ${map.sourceWidth || map.width}x${map.sourceHeight || map.height}, then expanded by ${map.generationScale || 1}x so every source tile becomes ${(map.generationScale || 1) * (map.generationScale || 1)} exported tiles. At scale 2, every originally walkable source tile becomes four walkable exported tiles.`,
+      presetRule: `${map.presetLabel || settings.presetLabel || 'Custom'} preset. Cliffs forces a south entry and dramatic packed-bleacher plateau tiers using the ${(map.stepCurveLabel || settings.stepCurveLabel || 'Northern Cliffs')} step curve. Nearby plateaus share parent aprons, and jagged east-west variation may dip or spike without dropping below southern support terrain. A plateau-component scanner detects low child plateau bodies and raises whole components instead of row tiles; boundary mode ${(map.boundaryModeLabel || settings.boundaryModeLabel)} uses a post-playable height scan before generating the world edge. Great Basin forces a north entry, uses a linear south-to-north height lerp as the base basin floor, then late in terrain generation extends higher-tier spoon sides along the east/west boundaries before raising the post-boundary road to the highest walkable plateau it directly connects to.`,
       hiddenRewardRule: 'After reachability is finalized, difficult-to-reach areas are scored by real travel distance, seclusion, route visibility, and nearby line-of-sight observer counts, then used for extra treasure digspots, rare herbs, and secret caves.',
       animalActivityRule: 'Live animal symbols use den-based cyclic routes. Prey graze or inspect resources for 15 simulated minutes, pack predators hunt prey route stops, ambush predators wait alone near cover, and bear-like omnivores fish, forage, inspect hives, and visit prey conflict points.',
       legend: {
@@ -5373,7 +5705,7 @@
         height: 'render/traversal height. Normal tiles equal elevation; ramp tiles are fractional lerps.',
         ramp: 'designated slope tiles connecting significant tier jumps. rampProgress 0..1 lerps from rampFromTier to rampToTier.',
         pond: 'irregular water blob',
-        river: 'border-crossing canyon water with widthSamples; widths usually vary between 4 and 8 tiles and carve broad channels through plateau fields',
+        river: usesDramaticPlateauPreset() ? 'late-painted border-crossing water with widthSamples; preserves plateau elevations and relies on waterfall tiles at tier breaks' : 'border-crossing canyon water with widthSamples; widths usually vary between 4 and 8 tiles and carve broad channels through plateau fields',
         cliffSkirt: 'reserved tile outline at the base/sides of plateaus and ramps. Normal objects cannot be placed here.',
         caveOpening: 'black cave mouth embedded into a cliff-skirt tile with rarity superscript',
         secretCaveOpening: 'hidden cave opening embedded into a remote cliff-skirt tile with rarity superscript',
@@ -5438,6 +5770,7 @@
     let plateauInteriorTiles = 0;
     let waterfalls = 0;
     let borderEscarpments = 0;
+    let distantBoundaryLandscapes = 0;
     for (const tile of allTiles()) {
       terrainCounts[tile.terrain] = (terrainCounts[tile.terrain] || 0) + 1;
       highestTier = Math.max(highestTier, tile.elevation);
@@ -5454,34 +5787,1727 @@
       if (tile.plateauInterior) plateauInteriorTiles++;
       if (tile.waterfall) waterfalls++;
       if (tile.borderEscarpment) borderEscarpments++;
+      if (tile.distantBoundaryLandscape) distantBoundaryLandscapes++;
     }
     const objectCounts = {};
     for (const object of map.objects) objectCounts[object.type] = (objectCounts[object.type] || 0) + 1;
-    return { terrainCounts, objectCounts, highestTier, waterTiles: water, pathTiles: path, invisiblePathTiles: invisiblePaths, denRouteTiles, bridgeTiles: bridges, navBridgeTiles: navBridges, hiddenNavRamps: map.hiddenNavRamps ? map.hiddenNavRamps.length : 0, rampTiles: ramps, rampConnections: map.ramps.length, sharedRampPlateauTiles, cliffSkirtTiles: cliffSkirts, plateauRingTiles, plateauInteriorTiles, plateauPaintGroups: map.plateauPaintGroups.length, waterfallTiles: waterfalls, borderEscarpmentTiles: borderEscarpments, animalDens: countObjects('animalDen'), animalSymbols: map.animalActivity ? map.animalActivity.agents.length : 0, animalFoodSources: map.animalActivity ? map.animalActivity.resources.length : 0, unreachableTiles: map.connectivity ? map.connectivity.unreachableTiles : null, tierAreas: tierAreaCounts() };
+    return { terrainCounts, objectCounts, highestTier, waterTiles: water, pathTiles: path, invisiblePathTiles: invisiblePaths, denRouteTiles, bridgeTiles: bridges, navBridgeTiles: navBridges, hiddenNavRamps: map.hiddenNavRamps ? map.hiddenNavRamps.length : 0, rampTiles: ramps, rampConnections: map.ramps.length, sharedRampPlateauTiles, cliffSkirtTiles: cliffSkirts, plateauRingTiles, plateauInteriorTiles, plateauPaintGroups: map.plateauPaintGroups.length, waterfallTiles: waterfalls, borderEscarpmentTiles: borderEscarpments, distantBoundaryLandscapeTiles: distantBoundaryLandscapes, animalDens: countObjects('animalDen'), animalSymbols: map.animalActivity ? map.animalActivity.agents.length : 0, animalFoodSources: map.animalActivity ? map.animalActivity.resources.length : 0, unreachableTiles: map.connectivity ? map.connectivity.unreachableTiles : null, tierAreas: tierAreaCounts() };
   }
 
   function safeFilename(name) {
     return String(name).toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'wild_map';
   }
 
-  // The only thing customized per zone: which border the entry gate opens
-  // on, so it always faces Hobunji Hollow (the cliffs sit north of town, so
-  // their entry opens south, and so on) — matching each zone's authored
-  // orientation. Every other setting is the tool's own default (see
-  // defaultSettings), same as a human generating a map with entrySide as the
-  // only field they touched.
-  const ZONE_ENTRY_SIDES = {
-    map_northern_cliffs: 'south',
-    map_southern_cloud_forest: 'north',
-    map_western_slope: 'east',
-    map_eastern_mire: 'west',
+  // Per-zone generation overrides. entrySide always matches Hobunji Hollow's
+  // side of that zone (the cliffs sit north of town, so their entry opens
+  // south, and so on) — that authored orientation is never affected by the
+  // preset choice (see the entrySide-precedence comment on
+  // resolveGenerationEntrySide). preset/boundaryMode/boundaryCliffBoost pick
+  // the WildernessMapGeneratorV4412 terrain-preset + boundary-cliff-mode
+  // combination each zone renders with; everything else is the tool's own
+  // default (see defaultSettings).
+  const ZONE_CONFIG = {
+    map_northern_cliffs: { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5 },
+    map_southern_cloud_forest: { entrySide: 'north', preset: 'greatBasin', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
+    map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
+    map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
   };
 
-  // Headless equivalent of the HTML tool's generate() → Export flow: run the
-  // full pipeline (minus canvas rendering / animal route animation) and
-  // return the Map Editor workspace JSON buildHobunjiMapExport() produces.
+  // ---------------------------------------------------------------------
+  // Ported from WildernessMapGeneratorV4412: the post-layout tile-density
+  // pass. Runs unconditionally (matching the standalone tool), turning every
+  // generated tile into a GENERATION_TILE_SCALE x GENERATION_TILE_SCALE block
+  // of identical tiles and rescaling every coordinate-bearing piece of
+  // generated data (objects, rivers, ramps, paths, plateau groups, reward/
+  // design analysis, connectivity stats) to match.
+  // ---------------------------------------------------------------------
+  function clonePlain(value) {
+    if (value == null || typeof value !== 'object') return value;
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function scaleScalar(value, scale, digits = 3) {
+    if (!Number.isFinite(value)) return value;
+    const scaled = value * scale;
+    return Number.isInteger(value) && Number.isInteger(scale) ? scaled : Number(scaled.toFixed(digits));
+  }
+
+  function scaleTileKey(key, scale) {
+    const [x, y] = String(key).split(',').map(Number);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return [];
+    const scaled = [];
+    for (let dy = 0; dy < scale; dy++) {
+      for (let dx = 0; dx < scale; dx++) scaled.push(tileKey(x * scale + dx, y * scale + dy));
+    }
+    return scaled;
+  }
+
+  function scalePointCoordinate(value, scale, offset = 0) {
+    return Number.isFinite(value) ? Math.round(value * scale + offset) : value;
+  }
+
+  function scaleMapPoint(point, scale, offsets = {}) {
+    if (!point || typeof point !== 'object') return point;
+    const output = clonePlain(point);
+    if (Number.isFinite(point.x)) output.x = scalePointCoordinate(point.x, scale, offsets.x || 0);
+    if (Number.isFinite(point.y)) output.y = scalePointCoordinate(point.y, scale, offsets.y || 0);
+    if (Number.isFinite(point.col)) output.col = scalePointCoordinate(point.col, scale, offsets.x || 0);
+    if (Number.isFinite(point.row)) output.row = scalePointCoordinate(point.row, scale, offsets.y || 0);
+    if (Number.isFinite(point.widthTiles)) output.widthTiles = scaleScalar(point.widthTiles, scale, 2);
+    if (Number.isFinite(point.widthTilesAverage)) output.widthTilesAverage = scaleScalar(point.widthTilesAverage, scale, 2);
+    if (Number.isFinite(point.minimumWidthTiles)) output.minimumWidthTiles = scaleScalar(point.minimumWidthTiles, scale, 2);
+    if (Number.isFinite(point.maximumWidthTiles)) output.maximumWidthTiles = scaleScalar(point.maximumWidthTiles, scale, 2);
+    return output;
+  }
+
+  function scaledBlockPointsFromPoint(point, scale) {
+    const points = [];
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return points;
+    for (let dy = 0; dy < scale; dy++) {
+      for (let dx = 0; dx < scale; dx++) {
+        points.push(scaleMapPoint(point, scale, { x: dx, y: dy }));
+      }
+    }
+    return points;
+  }
+
+  function scalePolylinePoints(points, scale) {
+    return (points || []).map(point => scaleMapPoint(point, scale));
+  }
+
+  function scaleBBox(bbox, scale) {
+    if (!bbox) return bbox;
+    return {
+      minC: scalePointCoordinate(bbox.minC, scale),
+      minR: scalePointCoordinate(bbox.minR, scale),
+      maxC: scalePointCoordinate(bbox.maxC, scale, scale - 1),
+      maxR: scalePointCoordinate(bbox.maxR, scale, scale - 1)
+    };
+  }
+
+  function scaleEntryPoint(entry, scale, originalWidth, originalHeight) {
+    if (!entry) return entry;
+    const offsets = { x: 0, y: 0 };
+    if (entry.side === 'east') offsets.x = scale - 1;
+    if (entry.side === 'south') offsets.y = scale - 1;
+    const output = scaleMapPoint(entry, scale, offsets);
+    output.sourceX = entry.x;
+    output.sourceY = entry.y;
+    output.sourceWidth = originalWidth;
+    output.sourceHeight = originalHeight;
+    return output;
+  }
+
+  function scaleGeneratedObject(object, scale) {
+    const output = clonePlain(object);
+    output.x = scalePointCoordinate(object.x, scale);
+    output.y = scalePointCoordinate(object.y, scale);
+    output.w = Math.max(1, scaleScalar(object.w || 1, scale, 0));
+    output.h = Math.max(1, scaleScalar(object.h || 1, scale, 0));
+    if (object.pathAnchor) output.pathAnchor = scaleMapPoint(object.pathAnchor, scale);
+    if (object.escapeAnchor) output.escapeAnchor = scaleMapPoint(object.escapeAnchor, scale);
+    if (object.anchor) output.anchor = scaleMapPoint(object.anchor, scale);
+    return output;
+  }
+
+  function scaleGeneratedRivers(scale) {
+    map.rivers = (map.rivers || []).map(river => ({
+      ...clonePlain(river),
+      widthTiles: scaleScalar(river.widthTiles, scale, 2),
+      widthTilesAverage: scaleScalar(river.widthTilesAverage, scale, 2),
+      minimumWidthTiles: scaleScalar(river.minimumWidthTiles, scale, 2),
+      maximumWidthTiles: scaleScalar(river.maximumWidthTiles, scale, 2),
+      widthSamples: (river.widthSamples || []).map(width => scaleScalar(width, scale, 2)),
+      points: scalePolylinePoints(river.points || [], scale)
+    }));
+  }
+
+  function scaleGeneratedRamps(scale) {
+    map.ramps = (map.ramps || []).map(ramp => {
+      const scaledTiles = [];
+      for (const tile of ramp.tiles || []) scaledTiles.push(...scaledBlockPointsFromPoint(tile, scale));
+      return {
+        ...clonePlain(ramp),
+        widthTiles: scaleScalar(ramp.widthTiles || (ramp.kind === 'wrap' ? 2 : 1), scale, 0),
+        start: scaleMapPoint(ramp.start, scale),
+        end: scaleMapPoint(ramp.end, scale),
+        tiles: scaledTiles,
+        sharedPlateauTiles: scaleScalar(ramp.sharedPlateauTiles || 0, scale * scale, 0)
+      };
+    });
+  }
+
+  function scaleGeneratedPaths(scale) {
+    map.paths = (map.paths || []).map(path => ({
+      ...clonePlain(path),
+      from: scaleMapPoint(path.from, scale),
+      to: scaleMapPoint(path.to, scale),
+      points: scalePolylinePoints(path.points || [], scale)
+    }));
+    map.invisiblePaths = (map.invisiblePaths || []).map(path => ({
+      ...clonePlain(path),
+      points: scalePolylinePoints(path.points || [], scale),
+      bridgeTiles: scaleScalar(path.bridgeTiles || 0, scale * scale, 0)
+    }));
+  }
+
+  function scaleGeneratedPlateauGroups(scale) {
+    map.plateauPaintGroups = (map.plateauPaintGroups || []).map(group => ({
+      ...clonePlain(group),
+      tileKeys: (group.tileKeys || []).flatMap(key => scaleTileKey(key, scale)),
+      ringKeys: (group.ringKeys || []).flatMap(key => scaleTileKey(key, scale)),
+      interiorKeys: (group.interiorKeys || []).flatMap(key => scaleTileKey(key, scale)),
+      bbox: scaleBBox(group.bbox, scale)
+    }));
+  }
+
+  function scaleGeneratedRewardAnalysis(scale) {
+    if (!map.rewardAnalysis) return;
+    map.rewardAnalysis = {
+      ...clonePlain(map.rewardAnalysis),
+      start: scaleMapPoint(map.rewardAnalysis.start, scale),
+      maxDistance: scaleScalar(map.rewardAnalysis.maxDistance || 0, scale, 0),
+      placements: (map.rewardAnalysis.placements || []).map(placement => scaleMapPoint(placement, scale))
+    };
+  }
+
+  function scaleGeneratedDesignAnalysis(scale) {
+    if (!map.designAnalysis) return;
+    const output = clonePlain(map.designAnalysis);
+    if (Array.isArray(output.landmarks)) output.landmarks = output.landmarks.map(item => scaleMapPoint(item, scale));
+    if (Array.isArray(output.loops)) output.loops = output.loops.map(loop => ({ ...loop, points: scalePolylinePoints(loop.points || [], scale) }));
+    map.designAnalysis = output;
+  }
+
+  function scaleHiddenNavRampStats(scale) {
+    map.hiddenNavRamps = (map.hiddenNavRamps || []).map(item => ({
+      ...clonePlain(item),
+      length: scaleScalar(item.length || 0, scale, 0),
+      minimumRunTiles: scaleScalar(item.minimumRunTiles || 0, scale, 0),
+      generatedRunTiles: scaleScalar(item.generatedRunTiles || 0, scale, 0)
+    }));
+  }
+
+  function refreshConnectivityAfterTileScale(previousConnectivity, originalWalkableTiles, scale) {
+    const start = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y);
+    const reached = reachableFrom(start);
+    const walkable = allWalkableTiles();
+    const unreachable = walkable.filter(tile => !reached.has(keyXY(tile.x, tile.y)));
+    map.connectivity = {
+      ...(previousConnectivity || {}),
+      start,
+      walkableTiles: walkable.length,
+      reachableTiles: reached.size,
+      unreachableTiles: unreachable.length,
+      unreachableSamples: unreachable.slice(0, 16).map(tile => ({ x: tile.x, y: tile.y, elevation: tile.elevation, water: tile.water, cliffSkirt: tile.cliffSkirt, occupiedBy: tile.occupiedBy })),
+      originalWalkableTilesBeforeDensityScale: originalWalkableTiles,
+      expectedWalkableTilesAfterDensityScale: originalWalkableTiles * scale * scale,
+      actualWalkableTilesAfterDensityScale: walkable.length,
+      walkableTileScaleRatio: originalWalkableTiles ? Number((walkable.length / originalWalkableTiles).toFixed(3)) : null,
+      generationScale: scale,
+      rule: `${previousConnectivity && previousConnectivity.rule ? previousConnectivity.rule + ' ' : ''}duplicates every generated source tile into a ${scale}x${scale} block, so walkable/non-walkable footprints preserve the original route graph while quadrupling walkable tile count at scale 2.`
+    };
+  }
+
+  function scaleGeneratedTileDensity(scale = GENERATION_TILE_SCALE) {
+    if (!Number.isFinite(scale) || scale <= 1 || !map || map.generationScale === scale) return;
+    const originalWidth = settings.width;
+    const originalHeight = settings.height;
+    const originalWalkableTiles = allWalkableTiles().length;
+    const previousConnectivity = clonePlain(map.connectivity);
+    const newWidth = originalWidth * scale;
+    const newHeight = originalHeight * scale;
+    const scaledRows = [];
+    const scaledFlatTiles = [];
+
+    for (let y = 0; y < newHeight; y++) scaledRows.push([]);
+    for (let y = 0; y < originalHeight; y++) {
+      for (let x = 0; x < originalWidth; x++) {
+        const sourceTile = tileAt(x, y);
+        for (let dy = 0; dy < scale; dy++) {
+          for (let dx = 0; dx < scale; dx++) {
+            const clone = clonePlain(sourceTile);
+            clone.x = x * scale + dx;
+            clone.y = y * scale + dy;
+            clone.occupiedBy = null;
+            scaledRows[clone.y][clone.x] = clone;
+            scaledFlatTiles.push(clone);
+          }
+        }
+      }
+    }
+
+    map.tiles = scaledRows;
+    map.flatTiles = scaledFlatTiles;
+    map.width = newWidth;
+    map.height = newHeight;
+    map.sourceWidth = originalWidth;
+    map.sourceHeight = originalHeight;
+    map.generationScale = scale;
+    map.scaledFrom = { width: originalWidth, height: originalHeight, walkableTiles: originalWalkableTiles };
+    settings.width = newWidth;
+    settings.height = newHeight;
+    settings.sourceWidth = originalWidth;
+    settings.sourceHeight = originalHeight;
+
+    map.entry = scaleEntryPoint(map.entry, scale, originalWidth, originalHeight);
+    map.objects = (map.objects || []).map(object => scaleGeneratedObject(object, scale));
+    rebuildObjectCache();
+    for (const tile of allTiles()) tile.occupiedBy = null;
+    for (const object of map.objects) if (object.occupies !== false) markOccupied(object);
+
+    scaleGeneratedRivers(scale);
+    scaleGeneratedRamps(scale);
+    scaleGeneratedPaths(scale);
+    scaleGeneratedPlateauGroups(scale);
+    if (map.greatBasinEntry && map.greatBasinEntry.target) map.greatBasinEntry.target = scaleMapPoint(map.greatBasinEntry.target, scale);
+    scaleGeneratedRewardAnalysis(scale);
+    scaleGeneratedDesignAnalysis(scale);
+    scaleHiddenNavRampStats(scale);
+    refreshConnectivityAfterTileScale(previousConnectivity, originalWalkableTiles, scale);
+
+    const scaledWalkableTiles = map.connectivity ? map.connectivity.walkableTiles : allWalkableTiles().length;
+    logDebug(`tile density scale ${scale}x: ${originalWidth}x${originalHeight} -> ${newWidth}x${newHeight}; walkable ${originalWalkableTiles} -> ${scaledWalkableTiles} (target ${originalWalkableTiles * scale * scale})`);
+    if (scaledWalkableTiles !== originalWalkableTiles * scale * scale) warn(`tile density scale expected ${originalWalkableTiles * scale * scale} walkable tiles, got ${scaledWalkableTiles}; scaled blockers/water may have changed occupancy.`);
+  }
+
+  // ---------------------------------------------------------------------
+  // Ported from WildernessMapGeneratorV4412: terrain-preset system (dramatic
+  // packed-bleacher plateaus, Great Basin spoon/horseshoe basin, step curves),
+  // the boundary-cliff-mode system (follow-map-height / entry-side-cliffs +
+  // distant landscape), and the northward plateau-component scanner + late-
+  // painted dramatic rivers those presets rely on. Inert unless a callers
+  // settings.preset/boundaryMode opt in (see ZONE_CONFIG below).
+  // ---------------------------------------------------------------------
+  function activeBoundaryModeConfig() {
+    return BOUNDARY_PLATEAU_MODES[(settings && settings.boundaryMode) || 'entrySideDistantLandscape'] || BOUNDARY_PLATEAU_MODES.entrySideDistantLandscape;
+  }
+
+  function activePresetConfig() {
+    return TERRAIN_PRESETS[(settings && settings.preset) || 'custom'] || TERRAIN_PRESETS.custom;
+  }
+
+  function activeStepCurveConfig() {
+    return STEP_CURVE_MODES[(settings && settings.stepCurve) || 'northernCliffs'] || STEP_CURVE_MODES.northernCliffs;
+  }
+
+  function applyGreatBasinBoundarySideExtensions() {
+    if (!usesGreatBasinPreset()) return { raised: 0, sideTiles: 0, maxSideTier: 0 };
+    let raised = 0;
+    let sideTiles = 0;
+    let maxSideTier = 0;
+    let skipped = 0;
+    for (let y = 1; y < settings.height - 1; y++) {
+      for (let x = 1; x < settings.width - 1; x++) {
+        const tile = tileAt(x, y);
+        if (!tile || !usesGreatBasinPreset()) continue;
+        if (tile.distantBoundaryLandscape || tile.borderEscarpment || tile.ramp || tile.navRamp || tile.bridge || tile.navBridge || tile.water || tile.waterfall || tile.occupiedBy) {
+          skipped++;
+          continue;
+        }
+        const metrics = greatBasinBoundarySideMetrics(x, y);
+        if (metrics.sideInfluence <= 0.02) continue;
+        const oldTier = tile.elevation || 0;
+        const targetTier = greatBasinBoundarySideTargetTier(tile);
+        if (targetTier <= oldTier) continue;
+        tile.terrain = 'plateau';
+        tile.water = false;
+        tile.elevation = targetTier;
+        tile.height = targetTier;
+        tile.generatedPlateauBlobId = `great_basin_late_boundary_side_tier_${targetTier}`;
+        tile.greatBasinLateSideExtension = true;
+        tile.greatBasinLateSideInfluence = Number(metrics.sideInfluence.toFixed(3));
+        tile.greatBasinLateSideBaseTier = greatBasinLinearTierAtTile(x, y);
+        tile.greatBasinLateSideTargetTier = targetTier;
+        raised++;
+        sideTiles++;
+        maxSideTier = Math.max(maxSideTier, targetTier);
+      }
+    }
+    if (map.greatBasinSpoonBowl) {
+      map.greatBasinSpoonBowl.sideExtensions = {
+        raised,
+        sideTiles,
+        maxSideTier,
+        widthRatio: GREAT_BASIN_SIDE_EXTENSION_WIDTH_RATIO,
+        maxBoostRatio: GREAT_BASIN_SIDE_EXTENSION_MAX_BOOST_RATIO,
+        bowlYSpread: GREAT_BASIN_SIDE_EXTENSION_BOWL_Y_SPREAD
+      };
+    }
+    logDebug(`Great Basin late spoon-side boundary extensions: raised ${raised} tiles, max side tier ${maxSideTier}, width ${(Math.min(settings.width, settings.height) * GREAT_BASIN_SIDE_EXTENSION_WIDTH_RATIO).toFixed(1)} tiles, skipped protected ${skipped}`);
+    return { raised, sideTiles, maxSideTier };
+  }
+
+  function applyGreatBasinHorseshoeProfile() {
+    if (!usesGreatBasinPreset()) return { raised: 0, lowered: 0, filled: 0, linearRows: 0 };
+    let raised = 0;
+    let lowered = 0;
+    let filled = 0;
+    let linearRows = 0;
+    let variedTiles = 0;
+    let largestOffset = 0;
+    const tierCoverage = new Map();
+    for (let y = 2; y < settings.height - 2; y++) {
+      const rowTier = greatBasinLinearBaseTierAtY(y);
+      linearRows++;
+      for (let x = 2; x < settings.width - 2; x++) {
+        const tile = tileAt(x, y);
+        if (!canRewriteGreatBasinHorseshoeTile(tile)) continue;
+        const oldTier = tile.elevation || 0;
+        const tierOutlineOffset = greatBasinTierOutlineRowOffset(x, y);
+        const targetTier = greatBasinLinearTierAtTile(x, y);
+        largestOffset = Math.max(largestOffset, Math.abs(tierOutlineOffset));
+        if (targetTier !== rowTier) variedTiles++;
+        tierCoverage.set(targetTier, (tierCoverage.get(targetTier) || 0) + 1);
+        if (!targetTier || oldTier === targetTier) continue;
+        if (oldTier <= 0) filled++;
+        else if (targetTier > oldTier) raised++;
+        else lowered++;
+        const bowlMetrics = greatBasinSpoonBowlMetrics(x, y);
+        tile.water = false;
+        tile.terrain = 'plateau';
+        tile.elevation = targetTier;
+        tile.height = targetTier;
+        tile.generatedPlateauBlobId = `great_basin_linear_lerp_tier_${targetTier}`;
+        tile.dramaticBleacherShelf = true;
+        tile.dramaticBleacherTier = targetTier;
+        tile.greatBasinHorseshoeProfile = false;
+        tile.greatBasinSpoonProfile = false;
+        tile.greatBasinLinearProfile = true;
+        tile.greatBasinLinearTier = targetTier;
+        tile.greatBasinLinearRowTier = rowTier;
+        tile.greatBasinTierOutlineOffset = Number(tierOutlineOffset.toFixed(2));
+        tile.greatBasinSpoonBowlDistance = Number(bowlMetrics.bowlBandDistance.toFixed(3));
+        tile.greatBasinSpoonRadialDistance = Number(bowlMetrics.radialDistance.toFixed(3));
+        tile.greatBasinSpoonArcDistance = Number(bowlMetrics.arcDistance.toFixed(3));
+        tile.greatBasinSpoonCircularDistance = Number(bowlMetrics.circularDistance.toFixed(3));
+        tile.greatBasinSpoonArcTerraceTier = null;
+        tile.greatBasinCenterDistance = Number(clamp(Math.abs((tile.x / Math.max(1, settings.width - 1)) - GREAT_BASIN_SPOON_BOWL_X_RATIO) * 2, 0, 1).toFixed(3));
+      }
+    }
+    const bowlX = greatBasinSpoonBowlCenterX();
+    const bowlY = greatBasinSpoonBowlCenterY();
+    const bowlRadius = greatBasinSpoonBowlRadius();
+    map.greatBasinSpoonBowl = {
+      center: { x: Number(bowlX.toFixed(2)), y: Number(bowlY.toFixed(2)) },
+      radiusTiles: Number(bowlRadius.toFixed(2)),
+      coreRadiusTiles: Number((bowlRadius * GREAT_BASIN_SPOON_BOWL_CORE_RATIO).toFixed(2)),
+      xRatio: GREAT_BASIN_SPOON_BOWL_X_RATIO,
+      yRatio: GREAT_BASIN_SPOON_BOWL_Y_RATIO,
+      radiusRatio: GREAT_BASIN_SPOON_BOWL_RADIUS_RATIO,
+      linearHeightLerp: true,
+      sideExtensionsAppliedLate: true,
+      sideExtensionWidthTiles: Number((Math.min(settings.width, settings.height) * GREAT_BASIN_SIDE_EXTENSION_WIDTH_RATIO).toFixed(2)),
+      sideExtensionMaxBoost: Number((settings.maxTier * GREAT_BASIN_SIDE_EXTENSION_MAX_BOOST_RATIO).toFixed(2)),
+      tierOutlineVariationTiles: GREAT_BASIN_TIER_OUTLINE_VARIATION_TILES,
+      tierOutlineFineVariationTiles: GREAT_BASIN_TIER_OUTLINE_FINE_VARIATION_TILES,
+      variedLinearTierTiles: variedTiles,
+      largestTierOutlineOffset: Number(largestOffset.toFixed(2)),
+      tierCoverage: Object.fromEntries(Array.from(tierCoverage.entries()).sort((a, b) => a[0] - b[0]))
+    };
+    logDebug(`Great Basin linear height lerp: filled ${filled}, raised ${raised}, lowered ${lowered}, rows ${linearRows}, varied tier-outline tiles ${variedTiles}, largest boundary offset ${largestOffset.toFixed(1)} rows, south tier ${greatBasinLinearBaseTierAtY(settings.height - 1)}, north tier ${greatBasinLinearBaseTierAtY(0)}, spoon-side shelves deferred to late boundary extension pass`);
+    return { raised, lowered, filled, linearRows, variedTiles, largestOffset: Number(largestOffset.toFixed(2)) };
+  }
+
+  function applyGreatInclineMountainsideProfile() {
+    if (!usesDramaticPlateauPreset() || !usesGreatInclineStepCurve() || usesGreatBasinPreset()) return { filled: 0, raised: 0, lowered: 0, peakTier: 0 };
+    let filled = 0;
+    let raised = 0;
+    let lowered = 0;
+    let peakTier = 0;
+    for (let y = 2; y < settings.height - 2; y++) {
+      for (let x = 2; x < settings.width - 2; x++) {
+        const tile = tileAt(x, y);
+        if (!canRewriteGreatInclineMountainsideTile(tile)) continue;
+        const oldTier = tile.elevation || 0;
+        const targetTier = greatInclineMountainsideTargetTier(x, y);
+        peakTier = Math.max(peakTier, targetTier);
+        if (oldTier === targetTier && tile.terrain === 'plateau') continue;
+        if (oldTier <= 0) filled++;
+        else if (targetTier > oldTier) raised++;
+        else lowered++;
+        tile.water = false;
+        tile.terrain = 'plateau';
+        tile.elevation = targetTier;
+        tile.height = targetTier;
+        tile.generatedPlateauBlobId = `great_incline_mountainside_tier_${targetTier}`;
+        tile.dramaticBleacherShelf = false;
+        tile.greatInclineMountainsideProfile = true;
+      }
+    }
+    logDebug(`Great Incline mountainside profile: filled ${filled}, raised ${raised}, lowered ${lowered}, peak tier ${peakTier}/${settings.maxTier}, curve uses full max-tier range`);
+    return { filled, raised, lowered, peakTier };
+  }
+
+  function applyPackedDramaticBleacherTerraces() {
+    if (!usesDramaticPlateauPreset()) return { filled: 0, retiered: 0, transitionEdges: 0, shelves: 0, shelfDepth: 0 };
+    let filled = 0;
+    let retiered = 0;
+    const shelfDepth = dramaticBleacherShelfDepth();
+
+    // South-to-north assignment means every generated shelf can compare against the already-solved parent terrain below it.
+    for (let y = settings.height - 3; y >= 2; y--) {
+      for (let x = 2; x < settings.width - 2; x++) {
+        const tile = tileAt(x, y);
+        if (!canPackDramaticBleacherTile(tile)) continue;
+        let targetTier = dramaticBleacherTargetTier(x, y);
+        // new variable: southernSupportTier keeps the bleacher climb local: this tile may equal or rise above nearby southern terrain, but never dip below it.
+        let southernSupportTier = 0;
+        for (let dx = -1; dx <= 1; dx++) {
+          const south = tileAt(x + dx, y + 1);
+          if (!south || south.borderEscarpment || south.ramp || south.navRamp) continue;
+          southernSupportTier = Math.max(southernSupportTier, south.elevation || 0);
+        }
+        if (usesGreatInclineStepCurve()) {
+          // new variable: limitedSouthernSupport prevents one accidental high southern cliff from dragging the entire Great Incline northward into gentle same-height shelves.
+          const limitedSouthernSupport = Math.min(southernSupportTier, targetTier + 1);
+          targetTier = clamp(Math.max(targetTier, limitedSouthernSupport), 1, settings.maxTier);
+        } else {
+          targetTier = clamp(Math.max(targetTier, southernSupportTier), 1, settings.maxTier);
+        }
+        const oldTier = tile.elevation || 0;
+        const wasPlateau = tile.terrain === 'plateau' && oldTier > 0;
+        if (!wasPlateau) filled++;
+        else if (oldTier !== targetTier) retiered++;
+        tile.water = false;
+        tile.terrain = 'plateau';
+        tile.elevation = targetTier;
+        tile.height = targetTier;
+        tile.generatedPlateauBlobId = tile.generatedPlateauBlobId || `dramatic_bleacher_shelf_${targetTier}`;
+        tile.dramaticBleacherShelf = true;
+        tile.dramaticBleacherTier = targetTier;
+      }
+    }
+
+    const shelfTiers = new Set();
+    let transitionEdges = 0;
+    for (const tile of allTiles()) {
+      if (!tile || tile.elevation <= 0 || tile.borderEscarpment) continue;
+      shelfTiers.add(tile.elevation);
+      const east = tileAt(tile.x + 1, tile.y);
+      const south = tileAt(tile.x, tile.y + 1);
+      if (east && east.elevation > 0 && east.elevation !== tile.elevation) transitionEdges++;
+      if (south && south.elevation > 0 && south.elevation !== tile.elevation) transitionEdges++;
+    }
+    logDebug(`packed dramatic bleachers: filled ${filled} gaps, retiered ${retiered} existing tiles, step curve ${settings.stepCurveLabel || 'Northern Cliffs'},${usesGreatBasinPreset() ? ' Great Basin linear lerp + late side shelves active,' : ''} shelf depth ${shelfDepth}, active tiers ${shelfTiers.size}, irregular transition edges ${transitionEdges}`);
+    return { filled, retiered, transitionEdges, shelves: shelfTiers.size, shelfDepth };
+  }
+
+  function borderEscarpmentLocalWidthAt(x, y) {
+    const inward = inwardDirectionForBorderTile(x, y);
+    const sideIndex = borderSideIndex(inward.side);
+    const tangent = inward.dir.x === 0 ? x : y;
+    const maxDepth = borderEscarpmentMaxDepth();
+    const slowShelfNoise = noise2(Math.floor(tangent / 12), sideIndex, 73511);
+    const midShelfNoise = noise2(Math.floor(tangent / 5), sideIndex, 73529);
+    const cornerSpan = maxDepth * 3;
+    const nearCorner = x < cornerSpan || y < cornerSpan || x > settings.width - 1 - cornerSpan || y > settings.height - 1 - cornerSpan;
+    let localWidth = maxDepth;
+    if (slowShelfNoise > 0.55) localWidth += 1;
+    if (slowShelfNoise > 0.82) localWidth += 1;
+    if (midShelfNoise < 0.16) localWidth -= 1;
+    if (usesDramaticPlateauPreset() && slowShelfNoise > 0.34) localWidth += 1;
+    if (usesDramaticPlateauPreset() && midShelfNoise > 0.72) localWidth += 1;
+    if (nearCorner) localWidth += 1;
+    return clamp(localWidth, usesDramaticPlateauPreset() ? 4 : 2, maxDepth + (usesDramaticPlateauPreset() ? 4 : 2));
+  }
+
+  function borderEscarpmentMaxDepth() {
+    // new variable: maxDepth scales the border wall footprint; used by the boundary plateau pass and the entry gate cutter.
+    const factor = usesDramaticPlateauPreset() ? 0.072 : 0.045;
+    const maxDepth = Math.round(Math.min(settings.width, settings.height) * factor);
+    return usesDramaticPlateauPreset() ? clamp(maxDepth, 5, 9) : clamp(maxDepth, 3, 6);
+  }
+
+  function borderSideIndex(side) {
+    return { north: 0, east: 1, south: 2, west: 3 }[side] || 0;
+  }
+
+  function boundarySideSampleStart(side, depth) {
+    if (side === 'north') return { x0: depth, x1: settings.width - 1 - depth, y0: depth, y1: depth, tangentAxis: 'x' };
+    if (side === 'south') return { x0: depth, x1: settings.width - 1 - depth, y0: settings.height - 1 - depth, y1: settings.height - 1 - depth, tangentAxis: 'x' };
+    if (side === 'west') return { x0: depth, x1: depth, y0: depth, y1: settings.height - 1 - depth, tangentAxis: 'y' };
+    return { x0: settings.width - 1 - depth, x1: settings.width - 1 - depth, y0: depth, y1: settings.height - 1 - depth, tangentAxis: 'y' };
+  }
+
+  function breakWideDramaticBleacherRows() {
+    if (!usesDramaticPlateauPreset()) return { lowered: 0, rows: 0 };
+    let lowered = 0;
+    let rows = 0;
+    const threshold = usesGreatBasinPreset() ? 0.58 : 0.56;
+    for (let pass = 0; pass < 4; pass++) {
+      let passLowered = 0;
+      for (let y = 3; y < settings.height - 3; y++) {
+        const counts = new Map();
+        let eligible = 0;
+        for (let x = 2; x < settings.width - 2; x++) {
+          const tile = tileAt(x, y);
+          if (!tile || tile.elevation <= 1 || tile.borderEscarpment || tile.water || tile.ramp || tile.navRamp) continue;
+          eligible++;
+          counts.set(tile.elevation, (counts.get(tile.elevation) || 0) + 1);
+        }
+        let dominantTier = 0;
+        let dominantCount = 0;
+        for (const [tier, count] of counts) if (count > dominantCount) { dominantTier = tier; dominantCount = count; }
+        if (!dominantTier || dominantCount / Math.max(1, eligible || settings.width) < threshold) continue;
+        rows++;
+        const lowerTier = dominantTier - 1;
+        const spacing = clamp(Math.round(settings.width / 10), 7, 13);
+        const offset = Math.floor(noise2(y, dominantTier, 94103 + pass) * spacing);
+        for (let x = 2 + offset; x < settings.width - 2; x += spacing) {
+          const biteHalf = 2 + Math.floor(noise2(x, y, 94129 + pass) * 3);
+          const biteDepth = 4 + Math.floor(noise2(x, y, 94153 + pass) * 6);
+          for (let yy = y; yy < Math.min(settings.height - 2, y + biteDepth); yy++) {
+            for (let xx = x - biteHalf; xx <= x + biteHalf; xx++) {
+              const tile = tileAt(xx, yy);
+              if (!tile || tile.elevation !== dominantTier) continue;
+              if (!canLowerDramaticBleacherBreak(tile, lowerTier)) continue;
+              tile.elevation = lowerTier;
+              tile.height = lowerTier;
+              tile.terrain = 'plateau';
+              tile.generatedPlateauBlobId = tile.generatedPlateauBlobId || `dramatic_bleacher_break_${lowerTier}`;
+              tile.dramaticBleacherBreak = true;
+              tile.dramaticShelfApron = true;
+              tile.dramaticShelfParentTier = lowerTier;
+              tile.dramaticShelfChildTier = dominantTier;
+              lowered++;
+              passLowered++;
+            }
+          }
+        }
+      }
+      if (!passLowered) break;
+    }
+    if (lowered) logDebug(`packed bleacher row breaks: lowered ${lowered} tiles across ${rows} wide shelf rows without dropping below southern support`);
+    return { lowered, rows };
+  }
+
+  function buildBoundaryHeightScan() {
+    const maxDepth = borderEscarpmentMaxDepth();
+    const scanDepth = maxDepth + 7;
+    const sideStats = {};
+    for (const side of ['north', 'east', 'south', 'west']) {
+      const samples = [];
+      const start = boundarySideSampleStart(side, scanDepth);
+      if (side === 'north' || side === 'south') {
+        for (let x = start.x0; x <= start.x1; x++) {
+          for (let off = -2; off <= 2; off++) {
+            const tile = tileAt(clamp(x + off, 0, settings.width - 1), start.y0);
+            if (canSamplePlayableHeight(tile)) samples.push(tileHeight(tile));
+          }
+        }
+      } else {
+        for (let y = start.y0; y <= start.y1; y++) {
+          for (let off = -2; off <= 2; off++) {
+            const tile = tileAt(start.x0, clamp(y + off, 0, settings.height - 1));
+            if (canSamplePlayableHeight(tile)) samples.push(tileHeight(tile));
+          }
+        }
+      }
+      const average = samples.length ? samples.reduce((sum, value) => sum + value, 0) / samples.length : 0;
+      const sorted = samples.slice().sort((a, b) => a - b);
+      const highIndex = sorted.length ? Math.min(sorted.length - 1, Math.floor(sorted.length * 0.86)) : 0;
+      sideStats[side] = {
+        side,
+        samples: samples.length,
+        average: Number(average.toFixed(2)),
+        highAverage: Number((sorted[highIndex] || average || 0).toFixed(2)),
+        maximum: Number((sorted[sorted.length - 1] || average || 0).toFixed(2)),
+        scanDepth
+      };
+    }
+    const totalSamples = Object.values(sideStats).reduce((sum, stat) => sum + stat.samples, 0);
+    const weightedAverage = totalSamples
+      ? Object.values(sideStats).reduce((sum, stat) => sum + stat.average * stat.samples, 0) / totalSamples
+      : 0;
+    const result = {
+      mode: settings.boundaryMode,
+      modeLabel: settings.boundaryModeLabel,
+      cliffBoost: settings.boundaryCliffBoost,
+      scanDepth,
+      totalSamples,
+      averagePlayableHeight: Number(weightedAverage.toFixed(2)),
+      sides: sideStats
+    };
+    map.boundaryHeightScan = result;
+    return result;
+  }
+
+  function canLowerDramaticBleacherBreak(tile, lowerTier) {
+    if (!tile || !usesDramaticPlateauPreset()) return false;
+    if (!canRewriteDramaticShelfApron(tile)) return false;
+    if (tile.water || tile.path || tile.invisiblePath || tile.denRoute || tile.occupiedBy) return false;
+    if (tile.elevation <= lowerTier || lowerTier < 1) return false;
+    let southernSupportTier = 0;
+    for (let dx = -1; dx <= 1; dx++) {
+      const south = tileAt(tile.x + dx, tile.y + 1);
+      if (!south || south.borderEscarpment || south.water || south.ramp || south.navRamp) continue;
+      southernSupportTier = Math.max(southernSupportTier, south.elevation || 0);
+    }
+    return southernSupportTier <= lowerTier;
+  }
+
+  function canPackDramaticBleacherTile(tile) {
+    if (!tile || !usesDramaticPlateauPreset()) return false;
+    // Leave the map border to the dedicated boundary escarpment pass, and do not rewrite protected/generated routes if this pass is reused later.
+    const margin = 2;
+    if (tile.x < margin || tile.y < margin || tile.x >= settings.width - margin || tile.y >= settings.height - margin) return false;
+    if (tile.designReserve || tile.borderEscarpment || tile.distantBoundaryLandscape || tile.ramp || tile.navRamp || tile.bridge || tile.navBridge || tile.occupiedBy) return false;
+    return true;
+  }
+
+  function canRewriteDramaticShelfApron(tile) {
+    if (!tile) return false;
+    // Keep later protected corridors, manual-looking boundaries, ramps, and waterways intact.
+    if (tile.designReserve || tile.borderEscarpment || tile.distantBoundaryLandscape || tile.ramp || tile.navRamp || tile.bridge || tile.navBridge || tile.waterfall) return false;
+    return true;
+  }
+
+  function canRewriteGreatBasinHorseshoeTile(tile) {
+    if (!tile || !usesGreatBasinPreset()) return false;
+    if (!canPackDramaticBleacherTile(tile)) return false;
+    if (tile.water || tile.plateauPond || tile.plateauStream || tile.waterfall) return false;
+    if (tile.path || tile.invisiblePath || tile.denRoute || tile.occupiedBy) return false;
+    return true;
+  }
+
+  function canRewriteGreatInclineMountainsideTile(tile) {
+    if (!tile || !usesDramaticPlateauPreset() || !usesGreatInclineStepCurve() || usesGreatBasinPreset()) return false;
+    if (!canPackDramaticBleacherTile(tile)) return false;
+    if (tile.water || tile.plateauPond || tile.plateauStream || tile.waterfall) return false;
+    if (tile.path || tile.invisiblePath || tile.denRoute || tile.occupiedBy) return false;
+    return true;
+  }
+
+  function canSamplePlayableHeight(tile) {
+    if (!tile || tile.water || tile.borderEscarpment || tile.distantBoundaryLandscape || tile.cliffSkirt) return false;
+    if (tile.ramp || tile.navRamp) return false;
+    return true;
+  }
+
+  function choosePaintedRiverBaseWidth() {
+    // new variable: paintedWidth keeps dramatic rivers readable without carving huge canyon trenches into the terrain.
+    return weightedPick([{ value: 4, weight: 36 }, { value: 5, weight: 46 }, { value: 6, weight: 18 }]);
+  }
+
+  function clampDramaticTierAboveSouthernTerrain(rawTier, x, y) {
+    if (!usesDramaticPlateauPreset()) return rawTier;
+    const southernFloor = dramaticSouthernTerrainFloorTier(x, y);
+    const localCap = clamp(Math.max(northwardMaxTierAtY(y), southernFloor + 1), 1, settings.maxTier);
+    return clamp(Math.max(Math.round(rawTier), southernFloor + 1), 1, localCap);
+  }
+
+  function collectScannerPlateauBody(start) {
+    const tiles = [];
+    const keys = new Set();
+    const stack = [start];
+    while (stack.length) {
+      const tile = stack.pop();
+      if (!sameScannerPlateauBody(start, tile)) continue;
+      const key = tileKey(tile.x, tile.y);
+      if (keys.has(key)) continue;
+      keys.add(key);
+      tiles.push(tile);
+      for (const neighbor of cardinalNeighbors(tile.x, tile.y)) {
+        if (neighbor && sameScannerPlateauBody(start, neighbor) && !keys.has(tileKey(neighbor.x, neighbor.y))) stack.push(neighbor);
+      }
+    }
+    return { tiles, keys, startTier: start.elevation, startGroupId: start.plateauGroupId || null };
+  }
+
+  function connectGreatBasinEntryToHighestPlateau(entry, targetInfo) {
+    if (!entry || !targetInfo || !targetInfo.tile) return { painted: 0, height: 0, target: null };
+    const inward = inwardDirectionForBorderTile(entry.x, entry.y);
+    const gateDepth = borderEscarpmentMaxDepth() + 6;
+    const start = {
+      x: clamp(entry.x + inward.dir.x * gateDepth, 0, settings.width - 1),
+      y: clamp(entry.y + inward.dir.y * gateDepth, 0, settings.height - 1)
+    };
+    const target = { x: targetInfo.tile.x, y: targetInfo.tile.y };
+    const height = targetInfo.height;
+    const radius = Math.max(2, Math.round(borderEscarpmentMaxDepth() * 0.38));
+    let painted = 0;
+    let x = start.x;
+    let y = start.y;
+    painted += paintHighEntryRoadTile(x, y, height, radius, 'greatBasinHighEntryRoad');
+
+    // new variable: verticalFirst keeps the north-entry road visibly continuing inward before it bends toward the high basin plateau.
+    const verticalFirst = inward.dir.x === 0;
+    const stepToward = (axis) => {
+      if (axis === 'x' && x !== target.x) x += Math.sign(target.x - x);
+      if (axis === 'y' && y !== target.y) y += Math.sign(target.y - y);
+      painted += paintHighEntryRoadTile(x, y, height, radius, 'greatBasinHighEntryRoad');
+    };
+    let safety = settings.width + settings.height + 60;
+    while (safety-- > 0 && (x !== target.x || y !== target.y)) {
+      const dx = Math.abs(target.x - x);
+      const dy = Math.abs(target.y - y);
+      if (verticalFirst && y !== target.y && (dy > 4 || dx < 6)) stepToward('y');
+      else if (!verticalFirst && x !== target.x && (dx > 4 || dy < 6)) stepToward('x');
+      else if (dx >= dy && x !== target.x) stepToward('x');
+      else if (y !== target.y) stepToward('y');
+      else if (x !== target.x) stepToward('x');
+    }
+
+    for (let yy = target.y - radius - 1; yy <= target.y + radius + 1; yy++) {
+      for (let xx = target.x - radius - 1; xx <= target.x + radius + 1; xx++) {
+        if (inBounds(xx, yy)) painted += paintHighEntryRoadTile(xx, yy, height, Math.max(1, radius - 1), 'greatBasinHighPlateauJoin');
+      }
+    }
+    map.greatBasinEntry = { target: { x: target.x, y: target.y }, height, paintedTiles: painted };
+    logDebug(`Great Basin preset: north entry road raised to highest walkable plateau height ${height}, connected to ${target.x},${target.y}, painted ${painted} high-road tiles`);
+    return { painted, height, target };
+  }
+
+  function considerScannerSupport(best, candidate, reason) {
+    if (candidate === null || candidate === undefined) return best;
+    if (!best || candidate.height > best.height) return { height: candidate.height, reason };
+    return best;
+  }
+
+  function dramaticBleacherShelfDepth() {
+    // new variable: dramaticBleacherShelfDepth controls the north/south runway depth of each shared parent shelf.
+    const mapMin = Math.min(settings.width, settings.height);
+    return clamp(Math.round(mapMin / Math.max(7, settings.maxTier + 1)), 6, 11);
+  }
+
+  function dramaticBleacherTargetTier(x, y) {
+    let baseTier;
+    if (usesGreatInclineStepCurve()) {
+      // new variable: inclineWave keeps Great Incline from becoming a perfectly straight contour map while preserving the smooth south-to-north steepening.
+      const inclineWave = dramaticBleacherWaveOffset(x, y) / Math.max(16, settings.height * 0.95);
+      baseTier = Math.round(1 + (settings.maxTier - 1) * clamp(northwardRiseProgressAtY(y) + inclineWave * 0.35, 0, 1));
+    } else {
+      // new variable: southToNorthRank is where this tile sits in the bleacher climb, with larger values farther north.
+      const southToNorthRank = (settings.height - 1 - y) + dramaticBleacherWaveOffset(x, y);
+      const shelfDepth = dramaticBleacherShelfDepth();
+      baseTier = 1 + Math.floor(southToNorthRank / Math.max(1, shelfDepth));
+    }
+    // new variable: sideVariation gives east/west shelves dramatic local spikes and troughs, including the Great Basin linear lerp + late side shelves sides, while the later support clamp prevents dips below southern support terrain.
+    const sideVariationScale = usesGreatInclineStepCurve() ? 0.42 : 0.52;
+    const sideVariation = Math.round(dramaticEastWestTierOffset(x, y) * sideVariationScale);
+    return clamp(baseTier + sideVariation, 1, settings.maxTier);
+  }
+
+  function dramaticBleacherWaveOffset(x, y) {
+    // new variable: dramaticBleacherWaveOffset staggers bleacher step lines so they climb clearly northward without becoming straight cake bands.
+    const nx = x / Math.max(1, settings.width - 1);
+    const broad = Math.sin(nx * Math.PI * 6.6 + noise2(Math.floor(y / 13), 0, 93101) * Math.PI * 2) * 8.0;
+    const regional = (noise2(Math.floor(x / 10), Math.floor(y / 9), 93133) - 0.5) * 10.0;
+    const local = (noise2(Math.floor(x / 4), Math.floor(y / 5), 93169) - 0.5) * 3.0;
+    return broad + regional + local;
+  }
+
+  function dramaticEastWestTierOffset(x, y) {
+    if (!usesDramaticPlateauPreset()) return 0;
+    const w = Math.max(1, settings.width - 1);
+    const h = Math.max(1, settings.height - 1);
+    const nx = x / w;
+    const ny = y / h;
+    // new variable: ridgeWave creates broad east/west height ridges and troughs; used by dramatic presets before the southern-floor clamp keeps troughs above the approach shelf.
+    const ridgeWave = usesGreatBasinPreset() ? 0 : Math.sin(nx * Math.PI * 4.35 + noise2(Math.floor(y / 11), 0, 87131) * Math.PI * 2) * 1.45;
+    const regionalScale = usesGreatBasinPreset() ? 1.25 : 4.25;
+    const localScale = usesGreatBasinPreset() ? 0.75 : 1.35;
+    const diagonalScale = usesGreatBasinPreset() ? 0.32 : 0.85;
+    const regional = (noise2(Math.floor(x / 14), Math.floor(y / 11), 87151) - 0.5) * regionalScale;
+    const local = (noise2(Math.floor(x / 5), Math.floor(y / 5), 87179) - 0.5) * localScale;
+    const diagonal = Math.sin((nx * 2.1 - ny * 1.35) * Math.PI * 2.0) * diagonalScale;
+    // Great Basin now applies its spoon-side shelves in a later boundary-side pass, so the early east/west jitter stays decorative only.
+    return ridgeWave + regional + local + diagonal;
+  }
+
+  function dramaticShelfApronLength() {
+    // new variable: dramaticShelfApronLength is used by Cliffs/Great Basin to reserve lower walkable shelf space south of each child plateau face.
+    const mapMin = Math.min(settings.width, settings.height);
+    return clamp(Math.round(mapMin * 0.075), 6, 12);
+  }
+
+  function dramaticSouthernTerrainFloorTier(x, y) {
+    if (!usesDramaticPlateauPreset()) return 0;
+    // new variable: floorSampleY represents the parent terrain south of this potential child plateau; used so east-west troughs remain above the approach shelf instead of sinking into it.
+    const floorSampleY = clamp(Math.round(y + dramaticShelfApronLength()), 0, settings.height - 1);
+    const rowFloor = Math.floor(northwardTierFloatAtY(floorSampleY));
+    // new variable: southernBandDip lets the parent floor inherit a little broad east-west valley/ridge character without ever outranking the child plateau minimum.
+    const southernBandDip = Math.floor(Math.min(0, dramaticEastWestTierOffset(x, floorSampleY)) * 0.28);
+    return clamp(rowFloor + southernBandDip, 0, Math.max(0, settings.maxTier - 1));
+  }
+
+  function enforceDramaticPlateauTroughFloors() {
+    if (!usesDramaticPlateauPreset()) return { raised: 0, checked: 0 };
+    let raised = 0;
+    let checked = 0;
+    for (const tile of allTiles()) {
+      if (!tile || tile.elevation <= 0 || tile.dramaticShelfApron) continue;
+      if (!canRewriteDramaticShelfApron(tile)) continue;
+      const minimumTier = clampDramaticTierAboveSouthernTerrain(tile.elevation, tile.x, tile.y);
+      checked++;
+      if (minimumTier > tile.elevation) {
+        tile.elevation = minimumTier;
+        tile.height = Math.max(tile.height || minimumTier, minimumTier);
+        tile.terrain = 'plateau';
+        tile.dramaticSouthernFloorClamp = true;
+        raised++;
+      }
+    }
+    if (raised) logDebug(`dramatic east-west trough clamp: raised ${raised}/${checked} non-apron plateau tiles above their southern parent terrain floor`);
+    return { raised, checked };
+  }
+
+  function enforceDramaticPresetColumnClimb() {
+    // This used to raise whole north/south columns, which made Cliffs/Great Basin look like giant slices of cake.
+    // V42 keeps only the broad northward climb, then carves/paints lower parent-shelf aprons south of higher child plateaus; the final scanner is local/segmented so it cannot erase those shelves into cake bands.
+    let raised = 0;
+    let lowered = 0;
+    let childEdges = 0;
+    let apronTiles = 0;
+    let openedCakeRows = 0;
+    const apronLength = dramaticShelfApronLength();
+
+    for (const tile of allTiles()) {
+      if (!tile || tile.elevation <= 0) continue;
+      const cap = northwardMaxTierAtY(tile.y);
+      if (tile.elevation > cap) {
+        tile.elevation = cap;
+        tile.height = Math.min(tile.height || cap, cap);
+        tile.terrain = tile.elevation > 0 ? 'plateau' : 'grass';
+        lowered++;
+      }
+    }
+
+    const southFacingChildEdges = [];
+    for (const tile of allTiles()) {
+      if (!tile || tile.elevation < 2) continue;
+      const south = tileAt(tile.x, tile.y + 1);
+      if (!south || south.elevation >= tile.elevation) continue;
+      southFacingChildEdges.push(tile);
+    }
+
+    // South-to-north order makes the first approach shelf win before higher/northern children add their own shelves.
+    southFacingChildEdges.sort((a, b) => b.y - a.y || a.x - b.x);
+    for (const edge of southFacingChildEdges) {
+      const childTier = edge.elevation;
+      const parentTier = Math.max(1, childTier - 1);
+      const baseRadius = 2 + Math.floor(noise2(edge.x, edge.y, 91307) * 3);
+      childEdges++;
+      for (let dy = 1; dy <= apronLength; dy++) {
+        const yy = edge.y + dy;
+        if (!inBounds(edge.x, yy)) break;
+        const taper = dy > apronLength * 0.66 ? 1 : 0;
+        const radius = Math.max(1, baseRadius - taper);
+        for (let xx = edge.x - radius; xx <= edge.x + radius; xx++) {
+          if (!inBounds(xx, yy)) continue;
+          const lateral = Math.abs(xx - edge.x);
+          if (lateral > radius) continue;
+          const raggedKeep = lateral === radius && noise2(xx, yy, 91331 + childTier) < 0.36;
+          if (raggedKeep) continue;
+          const target = tileAt(xx, yy);
+          if (!target) continue;
+          // Higher tiers south of this child are exactly the cake-slice problem; lower them into the parent shelf.
+          // Empty or too-low cells are lifted so the shelf is actually walkable room, not a moat/gap.
+          if (target.elevation >= childTier || target.elevation < parentTier || target.terrain !== 'plateau') {
+            if (paintDramaticShelfApronTile(target, parentTier, childTier)) {
+              apronTiles++;
+              if ((target.elevation || 0) > (target.dramaticShelfParentTier || parentTier)) raised++;
+            }
+          }
+        }
+      }
+    }
+
+    // Last light touch: if one dramatic tier spans almost the whole row, lower a few ragged vertical bites
+    // back to its parent tier so the map reads as nested mesas with side valleys instead of a full-width cake layer.
+    const minTierForBites = 3;
+    const rowThreshold = usesGreatBasinPreset() ? 0.76 : 0.70;
+    for (let y = 2; y < settings.height - 2; y++) {
+      const counts = new Map();
+      for (let x = 0; x < settings.width; x++) {
+        const t = tileAt(x, y);
+        if (t && t.elevation >= minTierForBites && !t.borderEscarpment) counts.set(t.elevation, (counts.get(t.elevation) || 0) + 1);
+      }
+      for (const [tier, count] of counts) {
+        if (count / Math.max(1, settings.width) < rowThreshold) continue;
+        const spacing = clamp(Math.round(settings.width / 7), 10, 18);
+        for (let x = Math.floor(noise2(y, tier, 91421) * spacing); x < settings.width; x += spacing) {
+          const biteHalf = 1 + Math.floor(noise2(x, y, 91439) * 2);
+          const biteDepth = 2 + Math.floor(noise2(x, y, 91457) * 4);
+          for (let yy = y; yy < Math.min(settings.height - 1, y + biteDepth); yy++) {
+            for (let xx = x - biteHalf; xx <= x + biteHalf; xx++) {
+              const t = tileAt(xx, yy);
+              if (!t || t.elevation !== tier || !canRewriteDramaticShelfApron(t)) continue;
+              if (paintDramaticShelfApronTile(t, tier - 1, tier)) { apronTiles++; openedCakeRows++; }
+            }
+          }
+        }
+      }
+    }
+
+    const troughFloorClamp = enforceDramaticPlateauTroughFloors();
+    raised += troughFloorClamp.raised;
+    logDebug(`dramatic parent-shelf aprons: ${apronTiles} tiles painted from ${childEdges} child south edges, apron length ${apronLength}, cake-row bites ${openedCakeRows}, east-west trough floor raises ${troughFloorClamp.raised}`);
+    return { raised, lowered, apronTiles, childEdges, openedCakeRows, troughFloorRaises: troughFloorClamp.raised };
+  }
+
+  function enforceNorthwardRowScanner() {
+    if (!usesDramaticPlateauPreset()) {
+      logDebug('northward plateau-component scanner: skipped for custom preset');
+      return { raisedTiles: 0, raisedComponents: 0, violationsDetected: 0, waterfallCandidates: 0, skippedBoundarySources: 0, protectedAprons: 0, worstSameTierRowShare: 0 };
+    }
+
+    let raisedTiles = 0;
+    let raisedComponents = 0;
+    let violationsDetected = 0;
+    let skippedBoundarySources = 0;
+    let cappedTargets = 0;
+    const beforeCake = measureMaxSameTierRowShare();
+    const maxPasses = Math.max(4, Math.min(14, settings.maxTier + 3));
+
+    for (let pass = 0; pass < maxPasses; pass++) {
+      let passRaisedComponents = 0;
+      const seen = new Set();
+      for (let y = settings.height - 2; y >= 0; y--) {
+        for (let x = 0; x < settings.width; x++) {
+          const tile = tileAt(x, y);
+          if (!tile) continue;
+          if (tile.borderEscarpment && !tile.water) { skippedBoundarySources++; continue; }
+          if (!scannerTileCanBePlateauCandidate(tile)) continue;
+          const key = tileKey(tile.x, tile.y);
+          if (seen.has(key)) continue;
+          const body = collectScannerPlateauBody(tile);
+          for (const bodyKey of body.keys) seen.add(bodyKey);
+          const supportHeight = scannerSouthernSupportForBody(body);
+          if (supportHeight === null || body.startTier >= supportHeight) continue;
+          violationsDetected++;
+          const targetHeight = Math.min(settings.maxTier, supportHeight);
+          if (targetHeight < supportHeight) cappedTargets++;
+          const bodyRaisedTiles = raiseScannerPlateauBody(body, targetHeight);
+          if (bodyRaisedTiles > 0) {
+            raisedTiles += bodyRaisedTiles;
+            raisedComponents++;
+            passRaisedComponents++;
+          }
+        }
+      }
+      if (!passRaisedComponents) break;
+    }
+
+    const rowBreaks = breakWideDramaticBleacherRows();
+    const afterCake = measureMaxSameTierRowShare();
+    logDebug(`northward plateau-component scanner: detected ${violationsDetected} low child-plateau bodies, raised ${raisedComponents} whole plateau bodies / ${raisedTiles} tiles, capped ${cappedTargets} targets at max tier, ignored ${skippedBoundarySources} boundary-wall sources, row-break lowered ${rowBreaks.lowered} tiles, worst same-tier row ${Math.round(beforeCake.worstShare * 100)}% -> ${Math.round(afterCake.worstShare * 100)}%`);
+    return { raisedTiles, raisedComponents, violationsDetected, waterfallCandidates: 0, skippedBoundarySources, protectedAprons: rowBreaks.lowered, worstSameTierRowShare: afterCake.worstShare };
+  }
+
+  function entryGateWaterCount(candidate, halfWidth, gateDepth) {
+    const inward = inwardDirectionForBorderTile(candidate.x, candidate.y);
+    const sideTangent = inward.dir.x === 0 ? { x: 1, y: 0 } : { x: 0, y: 1 };
+    let water = 0;
+    let invalid = 0;
+    for (let t = -halfWidth; t <= halfWidth; t++) {
+      for (let d = 0; d <= gateDepth; d++) {
+        const x = candidate.x + sideTangent.x * t + inward.dir.x * d;
+        const y = candidate.y + sideTangent.y * t + inward.dir.y * d;
+        if (!inBounds(x, y)) { invalid++; continue; }
+        const tile = tileAt(x, y);
+        if (!tile || tile.water) water++;
+      }
+    }
+    return water + invalid * 2;
+  }
+
+  // WildernessMapGeneratorV4412 samples a single straight-ahead tile here, so
+  // the whole gate corridor (openBorderEntryGate flattens every tile in it to
+  // this one value) can land on top of a random dramatic-preset spike a few
+  // tiles past the gate — the entry becomes a flat shelf perched on a
+  // plateau instead of stepping onto low ground. Sample across the gate's
+  // full width over the same depth band and take a low-percentile height
+  // instead of one straight-ahead point, so a single stray spike can't
+  // dictate the whole entrance while still tracking genuinely low interior
+  // terrain (not necessarily the literal minimum, which could be a canyon or
+  // pond edge).
+  function findEntryGateInteriorHeight(entry, inward, gateDepth) {
+    const tangent = inward.dir.x === 0 ? { x: 1, y: 0 } : { x: 0, y: 1 };
+    const halfWidth = Math.max(2, Math.round(borderEscarpmentMaxDepth() * 0.75));
+    const samples = [];
+    for (let d = gateDepth + 1; d <= gateDepth + 10; d++) {
+      for (let t = -halfWidth; t <= halfWidth; t++) {
+        const x = clamp(entry.x + inward.dir.x * d + tangent.x * t, 0, settings.width - 1);
+        const y = clamp(entry.y + inward.dir.y * d + tangent.y * t, 0, settings.height - 1);
+        const tile = tileAt(x, y);
+        if (tile && !tile.water && !tile.borderEscarpment) samples.push(tileHeight(tile));
+      }
+    }
+    if (!samples.length) return 0;
+    samples.sort((a, b) => a - b);
+    return samples[Math.floor(samples.length * 0.15)];
+  }
+
+  function generateLatePaintedRivers() {
+    if (!usesDramaticPlateauPreset()) {
+      logDebug('late painted rivers: skipped for custom preset; canyon rivers already generated');
+      return { rivers: 0, tiles: 0 };
+    }
+    if (settings.rivers <= 0) {
+      logDebug('late painted rivers: skipped because river count is 0');
+      return { rivers: 0, tiles: 0 };
+    }
+
+    let paintedTiles = 0;
+    for (let i = 0; i < settings.rivers; i++) {
+      const start = borderPoint('random', 1);
+      const end = borderPoint(oppositeOrDifferentSide(start.side), 1);
+      const baseWidth = choosePaintedRiverBaseWidth();
+      const changeEvery = randInt(8, 15);
+      const widthSalt = randInt(1, 999999);
+      const points = [];
+      const widthSamples = [];
+      let x = start.x;
+      let y = start.y;
+      const maxSteps = (settings.width + settings.height) * 5;
+      let wobble = randFloat(-0.85, 0.85);
+
+      for (let step = 0; step < maxSteps; step++) {
+        const currentWidth = riverWidthForStep(baseWidth, step, changeEvery, widthSalt);
+        points.push({ x: Number(x.toFixed(2)), y: Number(y.toFixed(2)), widthTiles: currentWidth });
+        widthSamples.push(currentWidth);
+        const dx = end.x - x;
+        const dy = end.y - y;
+        const dist = Math.max(0.001, Math.hypot(dx, dy));
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const px = -ny;
+        const py = nx;
+        wobble += randFloat(-0.18, 0.18);
+        wobble *= 0.90;
+        x += nx * randFloat(0.54, 0.92) + px * wobble;
+        y += ny * randFloat(0.54, 0.92) + py * wobble;
+        const tx = Math.round(x);
+        const ty = Math.round(y);
+        if (inBounds(tx, ty)) {
+          paintedTiles += markWater(tx, ty, 'river', currentWidth, { carveRiverBed: false }) || 0;
+        }
+        if (dist < 1.35 && !inBounds(tx, ty)) break;
+        if (step > 8 && !inBounds(tx, ty)) {
+          const leftNorth = tx < -2 || ty < -2;
+          const leftSouthEast = tx > settings.width + 1 || ty > settings.height + 1;
+          if (leftNorth || leftSouthEast) break;
+        }
+      }
+      points.push({ ...end, widthTiles: widthSamples[widthSamples.length - 1] || baseWidth });
+      const widthMin = Math.min(...widthSamples);
+      const widthMax = Math.max(...widthSamples);
+      const widthAverage = widthSamples.reduce((sum, value) => sum + value, 0) / Math.max(1, widthSamples.length);
+      map.rivers.push({
+        id: `river_${i + 1}`,
+        fromBorder: start.side,
+        toBorder: end.side,
+        widthTiles: Number(widthAverage.toFixed(2)),
+        widthTilesAverage: Number(widthAverage.toFixed(2)),
+        minimumWidthTiles: widthMin,
+        maximumWidthTiles: widthMax,
+        widthSamples,
+        points,
+        paintedLate: true,
+        carving: false
+      });
+      logDebug(`late painted river ${i + 1}: ${start.side} border to ${end.side} border, widths ${widthMin}-${widthMax}, avg ${widthAverage.toFixed(2)}, no erosion carving`);
+    }
+    logDebug(`late painted rivers: ${settings.rivers} rivers painted over finished tiers, ${paintedTiles} new river tiles; waterfalls are assigned by cliff-skirt height breaks`);
+    return { rivers: settings.rivers, tiles: paintedTiles };
+  }
+
+  function greatBasinBoundarySideMetrics(x, y) {
+    const widthTiles = Math.max(3, Math.min(settings.width, settings.height) * GREAT_BASIN_SIDE_EXTENSION_WIDTH_RATIO);
+    // new variable: sideDistance is the closest east/west boundary distance; used by the late spoon-side extension pass.
+    const sideDistance = Math.min(x, Math.max(0, settings.width - 1 - x));
+    // new variable: sideInfluence is strongest along the east/west boundaries and eases toward the basin center.
+    const sideInfluence = Math.pow(clamp(1 - sideDistance / widthTiles, 0, 1), 1.18);
+    const bowlY = greatBasinSpoonBowlCenterY();
+    const ySpread = Math.max(4, settings.height * GREAT_BASIN_SIDE_EXTENSION_BOWL_Y_SPREAD);
+    // new variable: bowlLatitudeInfluence keeps the side shelves most obvious around the southern spoon bowl, then lets them fade into the northward incline.
+    const bowlLatitudeInfluence = Math.pow(clamp(1 - Math.abs(y - bowlY) / ySpread, 0, 1), 0.72);
+    const northness = normalizedNorthnessAtY(y);
+    // new variable: northFade prevents already-high northern rows from being crushed into one max-height wall by the side-extension boost.
+    const northFade = clamp(1 - northness * 0.48, 0.42, 1);
+    // new variable: southLipInfluence adds a small cup-lip rise close to the south edge without forming a full surrounding wall.
+    const southLipInfluence = Math.pow(clamp(1 - y / Math.max(1, settings.height * 0.28), 0, 1), 1.8) * 0.24;
+    return { widthTiles, sideDistance, sideInfluence, bowlLatitudeInfluence, northFade, southLipInfluence };
+  }
+
+  function greatBasinBoundarySideTargetTier(tile) {
+    if (!tile || !usesGreatBasinPreset()) return 0;
+    const baseTier = greatBasinLinearTierAtTile(tile.x, tile.y);
+    const metrics = greatBasinBoundarySideMetrics(tile.x, tile.y);
+    const maxBoost = Math.max(1, settings.maxTier * GREAT_BASIN_SIDE_EXTENSION_MAX_BOOST_RATIO);
+    // new variable: sideBoost raises the late spoon sides from the already-solved linear basin terrain.
+    const sideBoost = Math.round(maxBoost * metrics.sideInfluence * (0.34 + metrics.bowlLatitudeInfluence * 0.66) * metrics.northFade + maxBoost * metrics.southLipInfluence * metrics.sideInfluence);
+    const noisyEdge = Math.round((noise2(Math.floor(tile.x / 7), Math.floor(tile.y / 11), 99631) - 0.5) * metrics.sideInfluence * 1.2);
+    return clamp(baseTier + sideBoost + noisyEdge, 1, settings.maxTier);
+  }
+
+  function greatBasinHorseshoeTierOffset(x, y) {
+    return greatBasinSpoonTierOffset(x, y);
+  }
+
+  function greatBasinLinearBaseTierAtY(y) {
+    if (!usesGreatBasinPreset()) return 0;
+    // new variable: linearProgress is the Great Basin's direct south-to-north height lerp, independent of the dramatic Step Curve selector.
+    const linearProgress = normalizedNorthnessAtY(y);
+    return clamp(Math.round(1 + (settings.maxTier - 1) * linearProgress), 1, settings.maxTier);
+  }
+
+  function greatBasinLinearTierAtTile(x, y) {
+    if (!usesGreatBasinPreset()) return 0;
+    // new variable: shiftedSampleY preserves the linear south-to-north height range while changing where each tier boundary crosses this local area.
+    const shiftedSampleY = clamp(y + greatBasinTierOutlineRowOffset(x, y), 0, settings.height - 1);
+    return greatBasinLinearBaseTierAtY(shiftedSampleY);
+  }
+
+  function greatBasinSpoonBowlCenterX() {
+    return (settings.width - 1) * GREAT_BASIN_SPOON_BOWL_X_RATIO;
+  }
+
+  function greatBasinSpoonBowlCenterY() {
+    return (settings.height - 1) * GREAT_BASIN_SPOON_BOWL_Y_RATIO;
+  }
+
+  function greatBasinSpoonBowlMetrics(x, y) {
+    // new variable: bowlCenterX is used by Great Basin radial bowl shaping and tile/debug metadata.
+    const bowlCenterX = greatBasinSpoonBowlCenterX();
+    // new variable: bowlCenterY is used by Great Basin radial bowl shaping and tile/debug metadata.
+    const bowlCenterY = greatBasinSpoonBowlCenterY();
+    // new variable: bowlRadiusTiles is used to normalize circular distance from the spoon bowl center.
+    const bowlRadiusTiles = greatBasinSpoonBowlRadius();
+    // new variable: bowlDx measures horizontal tile distance from the circular bowl center for the radial spoon profile.
+    const bowlDx = (x - bowlCenterX) / bowlRadiusTiles;
+    // new variable: bowlDy measures vertical tile distance from the circular bowl center for the radial spoon profile.
+    const bowlDy = (y - bowlCenterY) / bowlRadiusTiles;
+    // new variable: circularDistance preserves true round distance for debug comparison after the spoon drop is stretched.
+    const circularDistance = Math.sqrt(bowlDx * bowlDx + bowlDy * bowlDy);
+    // new variable: stretchedBowlDy compresses north/south distance so the Great Basin drop becomes long spoon arcs rather than a tight round pit.
+    const stretchedBowlDy = bowlDy / GREAT_BASIN_SPOON_VERTICAL_STRETCH;
+    // new variable: arcDistance is the wide-terrace distance used by Great Basin height shaping; equal-height bands become long elliptical arcs of land.
+    const arcDistance = Math.sqrt(bowlDx * bowlDx + stretchedBowlDy * stretchedBowlDy);
+    // new variable: radialDistance is kept as the shaping/debug distance expected by older exports, now mapped to the stretched arc distance.
+    const radialDistance = arcDistance;
+    // new variable: normalizedY is used by Great Basin to fade the circular bowl influence north/south.
+    const normalizedY = y / Math.max(1, settings.height - 1);
+    // new variable: bowlBandDistance measures how far this tile is from the bowl's north/south latitude.
+    const bowlBandDistance = Math.abs(normalizedY - GREAT_BASIN_SPOON_BOWL_Y_RATIO);
+    // new variable: bowlBandInfluence keeps the circular cup strongest near its southern bowl latitude, now with a wider north/south spread so the spoon drop is not over-centralized.
+    const bowlBandInfluence = Math.pow(clamp(1 - bowlBandDistance / 0.56, 0, 1), 0.82);
+    return { bowlCenterX, bowlCenterY, bowlRadiusTiles, bowlDx, bowlDy, circularDistance, stretchedBowlDy, arcDistance, radialDistance, normalizedY, bowlBandDistance, bowlBandInfluence };
+  }
+
+  function greatBasinSpoonBowlRadius() {
+    // new variable: bowlRadiusTiles converts the configured radius ratio into actual source-map tiles for the circular Great Basin bowl.
+    const bowlRadiusTiles = Math.max(4, Math.min(settings.width, settings.height) * GREAT_BASIN_SPOON_BOWL_RADIUS_RATIO);
+    return bowlRadiusTiles;
+  }
+
+  function greatBasinSpoonTierOffset(x, y) {
+    if (!usesGreatBasinPreset()) return 0;
+    const metrics = greatBasinSpoonBowlMetrics(x, y);
+    const ny = metrics.normalizedY;
+    // new variable: southBowlInfluence keeps the circular rim sharp near the southern bowl and gradually calmer to the north.
+    const southBowlInfluence = smoothstep(clamp((ny - 0.18) / 0.62, 0, 1));
+    // new variable: northHandleFade weakens radial side-rise as the spoon stretches north into a subtler handle.
+    const northHandleFade = clamp((ny - 0.18) / Math.max(0.01, GREAT_BASIN_SPOON_BOWL_Y_RATIO - 0.18), 0, 1);
+    // new variable: tierScale makes the spoon walls and circular bowl depression stay visible when max vertical tier is raised for Great Incline.
+    const tierScale = clamp(settings.maxTier / 9, 1, 3.2);
+    // new variable: circularCoreDip creates a wider flattish low circle so the spoon has a basin floor, not a pinpoint pit.
+    const circularCoreDip = Math.pow(clamp(1 - metrics.radialDistance / GREAT_BASIN_SPOON_BOWL_CORE_RATIO, 0, 1), 0.78);
+    // new variable: circularCupDip stretches the depression far beyond the core so the drop is gradual across the spoon cup.
+    const circularCupDip = Math.pow(clamp(1 - metrics.radialDistance / GREAT_BASIN_SPOON_DROP_SPREAD, 0, 1), 1.05);
+    // new variable: stretchedCupShoulderDip adds a shallow middle shelf between the basin floor and outer rim.
+    const stretchedCupShoulderDip = Math.pow(clamp(1 - metrics.radialDistance / (GREAT_BASIN_SPOON_DROP_SPREAD * 1.28), 0, 1), 1.85);
+    // new variable: radialWallRise raises terrain by circular distance from the bowl center, delayed so the widened low basin can stretch before climbing.
+    const radialWallRise = Math.pow(smoothstep(clamp((metrics.radialDistance - GREAT_BASIN_SPOON_WALL_START) / 1.36, 0, 1)), 0.95);
+    // new variable: circularRimRise emphasizes a broad outer lip instead of a tight bullseye ring around the low cup.
+    const circularRimRise = Math.pow(clamp(1 - Math.abs(metrics.radialDistance - GREAT_BASIN_SPOON_RIM_DISTANCE) / GREAT_BASIN_SPOON_RIM_WIDTH, 0, 1), 0.92);
+    // new variable: sideRiseStrength controls how strongly radial distance raises the basin walls near the circular bowl.
+    const sideRiseStrength = tierScale * (0.35 + 2.55 * metrics.bowlBandInfluence) * (0.42 + 0.78 * northHandleFade);
+    // new variable: sideRise raises terrain in every direction away from the circular bowl center, but starts later to keep the drop stretched.
+    const sideRise = radialWallRise * sideRiseStrength;
+    // new variable: rimRise adds a rounded cup lip around the widened depression.
+    const rimRise = circularRimRise * metrics.bowlBandInfluence * tierScale * (0.75 + 0.45 * southBowlInfluence);
+    // new variable: bowlDip lowers the round spoon bottom across a broad area instead of concentrating the full drop near the exact center.
+    const bowlDip = (circularCoreDip * 0.66 + circularCupDip * 1.28 + stretchedCupShoulderDip * 0.74) * metrics.bowlBandInfluence * tierScale * 1.72;
+    // new variable: southLipRise lifts the southern rim behind the bowl gently, so the cup edge does not become a steep central wall.
+    const southLipRise = Math.pow(clamp((y - metrics.bowlCenterY) / Math.max(1, settings.height - 1 - metrics.bowlCenterY), 0, 1), 1.35) * (1 - clamp(metrics.radialDistance * 0.22, 0, 0.66)) * tierScale * 0.88;
+    // new variable: asymmetricRaggedness prevents the circular spoon bowl from becoming a mathematically perfect bullseye.
+    const asymmetricRaggedness = (noise2(Math.floor(x / 10), Math.floor(y / 10), 97241) - 0.5) * 0.22 * (0.35 + metrics.bowlBandInfluence);
+    return sideRise + rimRise + southLipRise - bowlDip + asymmetricRaggedness;
+  }
+
+  function greatBasinTierOutlineRowOffset(x, y) {
+    if (!usesGreatBasinPreset()) return 0;
+    const width = Math.max(1, settings.width - 1);
+    const height = Math.max(1, settings.height - 1);
+    const nx = x / width;
+    const ny = y / height;
+    // new variable: broadShelfWobble is used by Great Basin's gentle slope to push whole tier boundaries north/south in wide arcs without changing the total south-to-north height range.
+    const broadShelfWobble = (noise2(Math.floor(x / 12), Math.floor(y / 16), GREAT_BASIN_TIER_OUTLINE_BAND_SALT) - 0.5) * 2;
+    // new variable: regionalBite adds medium-sized missing/fat areas to each tier's footprint; used only as a row-sample offset, not as direct height noise.
+    const regionalBite = (noise2(Math.floor(x / 6), Math.floor(y / 9), GREAT_BASIN_TIER_OUTLINE_BAND_SALT + 37) - 0.5) * 2;
+    // new variable: sideArcSweep makes tier coverage bulge into long spoon-like arcs from the side boundaries toward the basin center.
+    const sideArcSweep = Math.sin(nx * Math.PI * 2.0 + noise2(Math.floor(y / 14), 0, GREAT_BASIN_TIER_OUTLINE_BAND_SALT + 71) * Math.PI * 2) * 0.62;
+    // new variable: latitudeMask keeps the footprint variation visible through the gentle south/mid slope while calming the very north so the high rim still reads cleanly.
+    const latitudeMask = 0.62 + 0.38 * (1 - smoothstep(clamp((ny - 0.08) / 0.78, 0, 1)));
+    const broadOffset = (broadShelfWobble * 0.82 + sideArcSweep * 0.74) * GREAT_BASIN_TIER_OUTLINE_VARIATION_TILES;
+    const fineOffset = regionalBite * GREAT_BASIN_TIER_OUTLINE_FINE_VARIATION_TILES;
+    return (broadOffset + fineOffset) * latitudeMask;
+  }
+
+  function greatInclineMountainsideTargetTier(x, y) {
+    // new variable: baseInclineTier is the direct south-to-north Great Incline profile before slight contour wobble.
+    const baseInclineTier = 1 + (settings.maxTier - 1) * northwardRiseProgressAtY(y);
+    // new variable: contourWobble keeps the mountainside organic without stealing the max-tier range from the north edge.
+    const contourWobble = (noise2(Math.floor(x / 9), Math.floor(y / 7), 98617) - 0.5) * Math.max(0.55, settings.maxTier * 0.035);
+    return clamp(Math.round(baseInclineTier + contourWobble), 1, settings.maxTier);
+  }
+
+  function greatInclineRiseProgressFromNorthness(northness) {
+    // new variable: earlyRamp gives the southern map a small readable grade before the northern curve starts climbing hard.
+    const earlyRamp = northness * 0.06;
+    // new variable: normalizedNorthWall lets the highest playable rows reach the requested max tier even when boundary landscape consumes the literal map edge.
+    const normalizedNorthWall = clamp(northness / 0.92, 0, 1);
+    // new variable: northernSurge is the main mountainside curve; it stays low through the south/mid-map and spends most of the tier range in the north.
+    const northernSurge = Math.pow(normalizedNorthWall, 3.1) * 0.60;
+    // new variable: finalWallBoost spends the last part of the tier range near the north edge so high max-tier values become visibly huge before the inaccessible border starts.
+    const finalWallBoost = smoothstep(clamp((northness - 0.55) / 0.37, 0, 1)) * 0.34;
+    return clamp(earlyRamp + northernSurge + finalWallBoost, 0, 1);
+  }
+
+  function highestWalkablePlateauCandidate(entry = null) {
+    let best = null;
+    for (const tile of allTiles()) {
+      if (!tile || tile.water || tile.borderEscarpment || tile.distantBoundaryLandscape || tile.ramp || tile.navRamp || tile.cliffSkirt || tile.occupiedBy) continue;
+      if (tile.designRole && String(tile.designRole).includes('distant')) continue;
+      if ((tile.elevation || 0) <= 0) continue;
+      const h = tileHeight(tile);
+      const entryDist = entry ? Math.hypot(tile.x - entry.x, tile.y - entry.y) : 0;
+      const northBias = usesGreatBasinPreset() ? (settings.height - tile.y) * 0.35 : 0;
+      const score = h * 100000 + northBias - entryDist;
+      if (!best || score > best.score) best = { tile, height: h, score };
+    }
+    return best;
+  }
+
+  function localBoundaryPlayableAverage(x, y, inward, scan) {
+    const sideStat = scan && scan.sides ? scan.sides[inward.side] : null;
+    const fallback = sideStat ? sideStat.average : 0;
+    const samples = [];
+    const tangent = inward.dir.x === 0 ? { x: 1, y: 0 } : { x: 0, y: 1 };
+    const startDepth = borderEscarpmentMaxDepth() + 2;
+    const endDepth = borderEscarpmentMaxDepth() + 9;
+    for (let d = startDepth; d <= endDepth; d++) {
+      for (let t = -3; t <= 3; t++) {
+        const sx = clamp(x + inward.dir.x * d + tangent.x * t, 0, settings.width - 1);
+        const sy = clamp(y + inward.dir.y * d + tangent.y * t, 0, settings.height - 1);
+        const sample = tileAt(sx, sy);
+        if (canSamplePlayableHeight(sample)) samples.push(tileHeight(sample));
+      }
+    }
+    if (!samples.length) return fallback;
+    return samples.reduce((sum, value) => sum + value, 0) / samples.length;
+  }
+
+  function localNorthwardScannerSupport(tile) {
+    if (!tileCanReceiveLocalNorthwardRaise(tile)) return null;
+    let best = null;
+
+    // A 1-row scanner still reads the row immediately south, but only through nearby support,
+    // not through a whole-column "highest so far" memory. This keeps the northward climb readable
+    // without turning every column into a wall from the first high tile it ever saw.
+    for (let dx = -1; dx <= 1; dx++) {
+      const south = tileAt(tile.x + dx, tile.y + 1);
+      const southHeight = northwardRowScannerSourceHeight(south);
+      if (southHeight === null) continue;
+      if (tile.water) {
+        // Water follows its own course first, then may borrow adjacent terrain height at crossings.
+        if (south.water || south.plateauStream || south.waterfall || tileIsRaisedScannerTerrain(south)) {
+          best = considerScannerSupport(best, { height: southHeight }, south.water ? 'south-water' : 'south-terrain-crossing');
+        }
+      } else if (tileIsRaisedScannerTerrain(tile) || tile.path || tile.invisiblePath || tile.denRoute) {
+        // Raised terrain only inherits from raised terrain or route support, never from a visual boundary wall.
+        if (tileIsRaisedScannerTerrain(south) || south.path || south.invisiblePath || south.denRoute) {
+          best = considerScannerSupport(best, { height: southHeight }, 'south-local-terrain');
+        }
+      }
+    }
+
+    if (tile.water) {
+      // Let rivers/streams climb when they physically cross a plateau face. This is intentionally local:
+      // a nearby plateau can raise a water tile into a waterfall, but it cannot lift the whole row.
+      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const neighbor = tileAt(tile.x + dx, tile.y + dy);
+        if (!neighbor || neighbor.water || neighbor.borderEscarpment || neighbor.ramp || neighbor.navRamp) continue;
+        if (!tileIsRaisedScannerTerrain(neighbor) && !neighbor.path && !neighbor.invisiblePath) continue;
+        const neighborHeight = northwardRowScannerSourceHeight(neighbor);
+        if (neighborHeight === null) continue;
+        best = considerScannerSupport(best, { height: neighborHeight }, 'local-waterfall-crossing');
+      }
+    }
+
+    return best;
+  }
+
+  function markNorthwardScannerWaterfalls() {
+    let waterfallCandidates = 0;
+    const dirs = [
+      { x: 0, y: -1 }, { x: 0, y: 1 },
+      { x: 1, y: 0 }, { x: -1, y: 0 }
+    ];
+    for (const tile of allTiles()) {
+      tile.northwardScannerWaterfallCandidate = false;
+      if (!tile.water) continue;
+      for (const dir of dirs) {
+        const neighbor = tileAt(tile.x + dir.x, tile.y + dir.y);
+        if (!neighbor || neighbor.borderEscarpment) continue;
+        const diff = Math.abs(tileHeight(neighbor) - tileHeight(tile));
+        if (diff >= Math.max(1, settings.rampMinDiff || 1)) {
+          tile.waterfall = true;
+          tile.northwardScannerWaterfallCandidate = true;
+          waterfallCandidates++;
+          break;
+        }
+      }
+    }
+    return waterfallCandidates;
+  }
+
+  function measureMaxSameTierRowShare() {
+    let worstShare = 0;
+    let worstTier = 0;
+    let worstRow = -1;
+    for (let y = 0; y < settings.height; y++) {
+      const counts = new Map();
+      let eligible = 0;
+      for (let x = 0; x < settings.width; x++) {
+        const tile = tileAt(x, y);
+        if (!tile || tile.borderEscarpment || tile.ramp || tile.navRamp || tile.bridge || tile.navBridge) continue;
+        if (tile.elevation <= 0) continue;
+        eligible++;
+        counts.set(tile.elevation, (counts.get(tile.elevation) || 0) + 1);
+      }
+      for (const [tier, count] of counts) {
+        const share = count / Math.max(1, settings.width);
+        if (share > worstShare) { worstShare = share; worstTier = tier; worstRow = y; }
+      }
+    }
+    return { worstShare, worstTier, worstRow };
+  }
+
+  function normalizedNorthnessAtY(y) {
+    return clamp(1 - (y / Math.max(1, settings.height - 1)), 0, 1);
+  }
+
+  function northwardRiseProgressAtY(y) {
+    const northness = normalizedNorthnessAtY(y);
+    const curve = activeStepCurveConfig();
+    if (usesDramaticPlateauPreset() && curve.id === 'greatIncline') return greatInclineRiseProgressFromNorthness(northness);
+    // new variable: curveExponent is used by northwardRiseProgressAtY to preserve the old northern-cliff profile when Great Incline is not selected.
+    const curveExponent = usesDramaticPlateauPreset() ? curve.exponent : 0.86;
+    return Math.pow(northness, curveExponent);
+  }
+
+  function northwardRowScannerSourceHeight(tile) {
+    if (!northwardRowScannerTouchesTile(tile)) return null;
+    // Cliff skirts are side faces. Water is allowed through because rivers/streams need to climb locally instead of route around plateaus.
+    if (tile.cliffSkirt && !tile.water) return null;
+    return tileHeight(tile);
+  }
+
+  function northwardRowScannerTouchesTile(tile) {
+    if (!tile) return false;
+    // Boundary escarpments are visual/world-edge walls, not the walkable terrain floor that should propagate north.
+    if (tile.borderEscarpment && !tile.water) return false;
+    if (tile.ramp || tile.navRamp || tile.bridge || tile.navBridge) return false;
+    // Intentional parent shelves are the anti-cake feature; never let the scanner raise them back into full-width bands.
+    if (tile.dramaticShelfApron && !tile.water) return false;
+    return true;
+  }
+
+  function paintDistantBoundaryLandscapeTile(tile, side, edgeDist, scan) {
+    // WildernessMapGeneratorV4412 anchors every distant-landscape tile on one
+    // flat scalar per side (the side's whole-scan average/highAverage), so
+    // the backdrop reads as a single flat shelf no matter where the real
+    // playable edge is taller or shorter at that point. Anchor on this tile's
+    // own nearby playable height instead (the same local sample
+    // generateBorderEscarpments' cliff mode already uses), then layer the
+    // farm/town border landscape's rolling-hill variation (buildBorderTerrain
+    // in game.js grows random plateau blobs over a flat base) as a
+    // low-frequency noise bump on top, so the backdrop blends into whatever
+    // height the adjoining tiles actually are instead of a flat plane.
+    const inward = inwardDirectionForBorderTile(tile.x, tile.y);
+    const localHeight = localBoundaryPlayableAverage(tile.x, tile.y, inward, scan);
+    const sideStat = scan && scan.sides ? scan.sides[side] : null;
+    const fallbackHeight = sideStat ? Math.max(sideStat.average, sideStat.highAverage) : 0;
+    const sourceHeight = Number.isFinite(localHeight) ? localHeight : fallbackHeight;
+    const localWidth = borderEscarpmentLocalWidthAt(tile.x, tile.y);
+    const depthRatio = clamp(1 - edgeDist / Math.max(1, localWidth), 0, 1);
+    const regionalNoise = noise2(Math.floor(tile.x / 7), Math.floor(tile.y / 7), 78241 + borderSideIndex(side));
+    const rollingHillBump = Math.max(0, regionalNoise - 0.42) * 4.2;
+    const ridgeNoise = noise2(tile.x, tile.y, 78241 + borderSideIndex(side));
+    const displayHeight = Math.max(0, sourceHeight + depthRatio * 1.6 + rollingHillBump + (ridgeNoise > 0.72 ? 1 : 0));
+    tile.borderEscarpment = false;
+    tile.borderEscarpmentDepth = null;
+    tile.borderEscarpmentSide = null;
+    tile.borderEscarpmentBaseHeight = null;
+    tile.borderEscarpmentHeightBonus = null;
+    tile.distantBoundaryLandscape = true;
+    tile.distantBoundaryLandscapeSide = side;
+    tile.distantBoundaryLandscapeDepth = edgeDist;
+    tile.distantBoundarySourceHeight = Number(sourceHeight.toFixed(2));
+    tile.distantBoundaryDisplayHeight = Number(displayHeight.toFixed(2));
+    tile.distantBoundaryRenderBand = ridgeNoise > 0.68 ? 'ridge' : 'farField';
+    tile.height = displayHeight;
+    tile.elevation = Math.round(displayHeight);
+    tile.water = false;
+    tile.bridge = false;
+    tile.navBridge = false;
+    tile.ramp = false;
+    tile.rampId = null;
+    tile.navRamp = false;
+    tile.navRampId = null;
+    tile.terrain = 'distantLandscape';
+    tile.generatedPlateauBlobId = tile.generatedPlateauBlobId || 'distant_boundary_landscape';
+    tile.plateauGroupId = null;
+    tile.plateauRing = false;
+    tile.plateauInterior = false;
+    tile.cliffSkirt = false;
+    tile.cliffSkirtKind = null;
+    tile.designReserve = true;
+    tile.designRole = 'distantBoundaryLandscape';
+    return displayHeight;
+  }
+
+  function paintDramaticShelfApronTile(tile, tier, sourceTier) {
+    if (!canRewriteDramaticShelfApron(tile)) return false;
+    const cappedTier = clamp(Math.round(Math.min(tier, northwardMaxTierAtY(tile.y))), 1, settings.maxTier);
+    const oldTier = tile.elevation || 0;
+    if (oldTier === cappedTier && tile.terrain === 'plateau') return false;
+    tile.water = false;
+    tile.terrain = 'plateau';
+    tile.elevation = cappedTier;
+    tile.height = cappedTier;
+    tile.generatedPlateauBlobId = tile.generatedPlateauBlobId || 'dramatic_parent_shelf_apron';
+    tile.dramaticShelfApron = true;
+    tile.dramaticShelfParentTier = cappedTier;
+    tile.dramaticShelfChildTier = sourceTier;
+    return true;
+  }
+
+  function paintHighEntryRoadTile(x, y, height, radius, role = 'greatBasinHighEntryRoad') {
+    let painted = 0;
+    for (let yy = y - radius; yy <= y + radius; yy++) {
+      for (let xx = x - radius; xx <= x + radius; xx++) {
+        if (!inBounds(xx, yy)) continue;
+        if (Math.hypot(xx - x, yy - y) > radius + 0.36) continue;
+        const tile = tileAt(xx, yy);
+        if (!tile) continue;
+        clearBorderEscarpmentTile(tile, height, role);
+        tile.water = false;
+        tile.terrain = height > 0 ? 'plateau' : 'grass';
+        tile.elevation = Math.round(height);
+        tile.height = height;
+        tile.path = true;
+        tile.bridge = false;
+        tile.ramp = false;
+        tile.rampId = null;
+        tile.navRamp = false;
+        tile.navRampId = null;
+        tile.cliffSkirt = false;
+        tile.cliffSkirtKind = null;
+        tile.waterfall = false;
+        tile.designReserve = true;
+        tile.designRole = role;
+        painted++;
+      }
+    }
+    return painted;
+  }
+
+  function raiseScannerPlateauBody(body, targetHeight) {
+    let raisedTiles = 0;
+    const cappedTarget = clamp(Math.round(targetHeight), 1, settings.maxTier);
+    for (const tile of body.tiles) {
+      if (!scannerTileCanBePlateauCandidate(tile)) continue;
+      if (tile.elevation >= cappedTarget) continue;
+      tile.northwardScannerRaised = true;
+      tile.northwardScannerPreviousHeight = tile.elevation;
+      tile.northwardScannerRaisedAsComponent = true;
+      tile.elevation = cappedTarget;
+      tile.height = cappedTarget;
+      tile.terrain = 'plateau';
+      tile.generatedPlateauBlobId = tile.generatedPlateauBlobId || 'northward_component_scanner_raise';
+      raisedTiles++;
+    }
+    return raisedTiles;
+  }
+
+  function resetBoundaryLandscapeFlags(tile) {
+    if (!tile) return;
+    tile.distantBoundaryLandscape = false;
+    tile.distantBoundaryLandscapeSide = null;
+    tile.distantBoundaryLandscapeDepth = null;
+    tile.distantBoundarySourceHeight = null;
+    tile.distantBoundaryDisplayHeight = null;
+    tile.distantBoundaryRenderBand = null;
+  }
+
+  function resolveGenerationEntrySide() {
+    // An explicit entrySide (anything but 'random') always wins over a
+    // preset's forcedEntrySide: the standalone tool's presets assume a human
+    // is choosing the entry side to match their orientation, but zones here
+    // (see ZONE_CONFIG) always specify the side that faces Hobunji Hollow, and
+    // that authored orientation must not be silently overridden by picking a
+    // preset for its terrain shape (dramaticPlateaus/highEntryCauseway).
+    if (settings.entrySide !== 'random') return settings.entrySide;
+    const forcedSide = activePresetConfig().forcedEntrySide;
+    return forcedSide || pick(['north', 'east', 'south', 'west']);
+  }
+
+  function sameScannerPlateauBody(start, candidate) {
+    if (!start || !candidate || !scannerTileCanBePlateauCandidate(candidate)) return false;
+    if (usesDramaticPlateauPreset()) {
+      // new variable: scannerChunkSize splits synthetic bleacher shelves into authored-looking bodies, so a support correction raises the local plateau it belongs to rather than an entire world-width shelf row.
+      const scannerChunkSize = clamp(Math.round(Math.min(settings.width, settings.height) * 0.12), 8, 16);
+      const startId = start.generatedPlateauBlobId || '';
+      const candidateId = candidate.generatedPlateauBlobId || '';
+      const startSynthetic = start.dramaticBleacherShelf || startId.startsWith('dramatic_bleacher_shelf');
+      const candidateSynthetic = candidate.dramaticBleacherShelf || candidateId.startsWith('dramatic_bleacher_shelf');
+      if (startId && candidateId && startId === candidateId && !startSynthetic && !candidateSynthetic) return candidate.elevation === start.elevation;
+      const sameChunk = Math.floor(candidate.x / scannerChunkSize) === Math.floor(start.x / scannerChunkSize)
+        && Math.floor(candidate.y / scannerChunkSize) === Math.floor(start.y / scannerChunkSize);
+      return candidate.elevation === start.elevation && sameChunk;
+    }
+    if (start.plateauGroupId) return candidate.plateauGroupId === start.plateauGroupId;
+    return candidate.elevation === start.elevation;
+  }
+
+  function scannerSouthernSupportForBody(body) {
+    let supportHeight = -Infinity;
+    let supportTiles = 0;
+    for (const tile of body.tiles) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const south = tileAt(tile.x + dx, tile.y + 1);
+        if (!south || body.keys.has(tileKey(south.x, south.y))) continue;
+        if (!scannerTileCanSupportPlateau(south)) continue;
+        const southHeight = tileHeight(south);
+        if (southHeight > supportHeight) supportHeight = southHeight;
+        supportTiles++;
+      }
+    }
+    return supportTiles ? supportHeight : null;
+  }
+
+  function scannerTileCanBePlateauCandidate(tile) {
+    if (!tile || tile.water || tile.borderEscarpment || tile.ramp || tile.navRamp || tile.bridge || tile.navBridge) return false;
+    // Intentional parent-shelf aprons are the southern room around child plateaus; they can support a child, but should not be raised as the child.
+    if (tile.dramaticShelfApron) return false;
+    if (tile.cliffSkirt && !tile.plateauGroupId && !tile.plateauInterior && !tile.plateauRing) return false;
+    return tile.elevation > 0 && (tile.terrain === 'plateau' || tile.plateauGroupId || tile.plateauInterior || tile.plateauRing || tile.generatedPlateauBlobId);
+  }
+
+  function scannerTileCanSupportPlateau(tile) {
+    if (!tile || tile.water || tile.borderEscarpment || tile.ramp || tile.navRamp || tile.bridge || tile.navBridge) return false;
+    if (tile.cliffSkirt && !tile.plateauGroupId && !tile.plateauInterior && !tile.plateauRing) return false;
+    return tile.elevation > 0;
+  }
+
+  function smoothNumberList(values, passes = 1) {
+    let smoothed = values.slice();
+    for (let pass = 0; pass < passes; pass++) {
+      const next = smoothed.slice();
+      for (let i = 0; i < smoothed.length; i++) {
+        const prev = smoothed[Math.max(0, i - 1)];
+        const here = smoothed[i];
+        const nextValue = smoothed[Math.min(smoothed.length - 1, i + 1)];
+        next[i] = prev * 0.25 + here * 0.5 + nextValue * 0.25;
+      }
+      smoothed = next;
+    }
+    return smoothed;
+  }
+
+  function smoothstep(t) {
+    return t * t * (3 - 2 * t);
+  }
+
+  function targetBoundaryHeight(tile, inward, edgeDist, localWidth, scan, modeConfig) {
+    const oldHeight = tileHeight(tile);
+    const sideStat = scan && scan.sides ? scan.sides[inward.side] : null;
+    const localAverage = localBoundaryPlayableAverage(tile.x, tile.y, inward, scan);
+    // new variable: basePlayableHeight is the post-playable-map feedback height that the boundary cliff sits above.
+    const basePlayableHeight = modeConfig.followsMapHeight
+      ? Math.max(
+        scan ? scan.averagePlayableHeight : 0,
+        sideStat ? sideStat.average : 0,
+        localAverage
+      )
+      : Math.max(oldHeight || 0, northwardMaxTierAtY(tile.y));
+    const depthRatio = clamp(1 - edgeDist / Math.max(1, localWidth), 0, 1);
+    // new variable: cliffBoost is the user-facing boundary lift; the profile below keeps it from stacking with too many other bonuses and becoming a max-height wall.
+    const cliffBoost = settings.boundaryCliffBoost;
+    const sideIndex = borderSideIndex(inward.side);
+    // new variable: profileStep makes the outer edge slightly taller than the inner shoulder without turning the whole border into an identical sheer curtain.
+    const profileStep = Math.round(depthRatio * (usesDramaticPlateauPreset() ? 2.5 : 1.8));
+    // new variable: jaggedBonus breaks the skyline in small chunks; it is intentionally small because the cliff boost already supplies the dramatic height.
+    const jaggedBonus = Math.round(noise2(Math.floor(tile.x / 3), Math.floor(tile.y / 3), 73613 + sideIndex) * (usesDramaticPlateauPreset() ? 2 : 1));
+    const ridgeBonus = usesDramaticPlateauPreset() && noise2(tile.x, tile.y, 73517) > 0.82 ? 1 : 0;
+    const target = basePlayableHeight + cliffBoost + profileStep + jaggedBonus + ridgeBonus;
+    // Negative boundary boosts are deliberate: let them lower/soften the boundary instead of forcing every border tile above its old generated height.
+    return cliffBoost >= 0 ? Math.max(oldHeight + 1, target) : target;
+  }
+
+  function tileCanReceiveLocalNorthwardRaise(tile) {
+    if (!northwardRowScannerTouchesTile(tile)) return false;
+    if (tile.cliffSkirt && !tile.water) return false;
+    if (tile.dramaticShelfApron && !tile.water) return false;
+    // Do not convert whole lowland rows into plateaus. Only existing raised terrain, explicit routes, and water can climb.
+    return tile.water || tileIsRaisedScannerTerrain(tile) || tile.path || tile.invisiblePath || tile.denRoute;
+  }
+
+  function tileIsRaisedScannerTerrain(tile) {
+    return !!tile && (tile.elevation > 0 || tile.terrain === 'plateau' || tile.plateauGroupId || tile.plateauInterior || tile.plateauRing);
+  }
+
+  function usesDramaticPlateauPreset() {
+    return !!activePresetConfig().dramaticPlateaus;
+  }
+
+  function usesGreatBasinPreset() {
+    return !!activePresetConfig().highEntryCauseway;
+  }
+
+  function usesGreatInclineStepCurve() {
+    return activeStepCurveConfig().id === 'greatIncline';
+  }
+
+  // Headless equivalent of WildernessMapGeneratorV4412's generate() → Export
+  // flow: run the full pipeline (minus canvas rendering, the 3D preview, and
+  // the tile-density-doubling pass those need) and return the Map Editor
+  // workspace JSON buildHobunjiMapExport() produces.
   function generateWorkspace(seedText, overrides = {}) {
-    settings = { ...defaultSettings(), ...overrides, seed: String(seedText ?? 'wild') || 'wild' };
+    const merged = { ...defaultSettings(), ...overrides, seed: String(seedText ?? 'wild') || 'wild' };
+    const preset = TERRAIN_PRESETS[merged.preset] || TERRAIN_PRESETS.custom;
+    const boundaryModeConfig = BOUNDARY_PLATEAU_MODES[merged.boundaryMode] || BOUNDARY_PLATEAU_MODES.legacyFullRing;
+    const stepCurveConfig = STEP_CURVE_MODES[merged.stepCurve] || STEP_CURVE_MODES.northernCliffs;
+    // Dramatic presets need a tall enough maxTier to read as dramatic — same
+    // floor the standalone tool applies the moment a preset is selected.
+    const dramaticMinimumTier = stepCurveConfig.id === 'greatIncline' ? 16 : 9;
+    const resolvedMaxTier = preset.dramaticPlateaus ? Math.max(merged.maxTier, dramaticMinimumTier) : merged.maxTier;
+    settings = {
+      ...merged,
+      preset: preset.id,
+      presetLabel: preset.label,
+      boundaryMode: boundaryModeConfig.id,
+      boundaryModeLabel: boundaryModeConfig.label,
+      stepCurve: stepCurveConfig.id,
+      stepCurveLabel: stepCurveConfig.label,
+      maxTier: resolvedMaxTier,
+      generationScale: GENERATION_TILE_SCALE
+    };
     rng = makeRng(settings.seed);
     sightBlockerKeyCache = null;
     initMap();
@@ -5491,11 +7517,26 @@
     generateRivers();
     generatePlateauHydrology();
     applyManualPlateauPaintingRules(); // refresh painting after canyon cuts
-    generateBorderEscarpments();
     syncTileHeights();
+    enforceNorthwardRowScanner(); // post-playable plateau height scanner
+    applyManualPlateauPaintingRules(); // refresh painting after playable scanner
+    syncTileHeights();
+    enforceNorthwardRowScanner(); // boundary-feedback plateau height scanner
+    syncTileHeights();
+    applyGreatInclineMountainsideProfile();
+    applyGreatBasinHorseshoeProfile(); // Great Basin linear height lerp
+    syncTileHeights();
+    map.preselectedEntrySide = resolveGenerationEntrySide();
+    generateBorderEscarpments();
     generateRamps();
+    applyGreatBasinBoundarySideExtensions(); // late boundary side shelves
+    syncTileHeights();
     generateCliffSkirts();
     chooseEntry();
+    if (usesGreatBasinPreset()) generateCliffSkirts(); // refresh after Great Basin entry road
+    generateLatePaintedRivers();
+    generateCliffSkirts(); // refresh after late-painted rivers
+    applyManualPlateauPaintingRules(); // refresh after late-painted rivers
     placeStructures();
     placeCaves();
     placeAnimalDens();
@@ -5508,6 +7549,8 @@
     placeAnimalFoodSources();
     validateAndRepairReachability();
     placeDifficultyRewards();
+    markNorthwardScannerWaterfalls(); // marks late-painted river waterfalls
+    scaleGeneratedTileDensity(settings.generationScale);
     buildAnimalActivity();
     const workspace = buildHobunjiMapExport();
     workspace.entry = map.entry ? { col: map.entry.x, row: map.entry.y, side: map.entry.side } : null;
@@ -5516,19 +7559,21 @@
   }
 
   // The Tothal Shift's whole generation step: a random seed and the zone's
-  // own entry side, otherwise the tool's stock defaults — no post-processing.
-  // Whatever buildHobunjiMapExport() produces is handed to the game's fold
-  // exactly as if it had been exported from the standalone tool and imported
-  // into the Map Editor by hand.
+  // own ZONE_CONFIG (entry side, terrain preset, boundary cliff mode/boost),
+  // otherwise the tool's stock defaults — no post-processing. Whatever
+  // buildHobunjiMapExport() produces is handed to the game's fold exactly as
+  // if it had been exported from the standalone tool and imported into the
+  // Map Editor by hand.
   function generateZoneWorkspace(zoneMapId, seedText) {
-    return generateWorkspace(seedText, { entrySide: ZONE_ENTRY_SIDES[zoneMapId] || 'random' });
+    const zone = ZONE_CONFIG[zoneMapId];
+    return generateWorkspace(seedText, zone ? { ...zone } : { entrySide: 'random' });
   }
 
   return {
     generateWorkspace,
     generateZoneWorkspace,
     defaultSettings,
-    zoneMapIds: () => Object.keys(ZONE_ENTRY_SIDES),
+    zoneMapIds: () => Object.keys(ZONE_CONFIG),
     hashSeed,
     makeRng,
     lastReport: () => lastMapEditorExportReport
