@@ -3559,12 +3559,25 @@
       // the first few seconds of a shift (most likely right at world start)
       // would see last year's map for that visit.
       let _tothalShiftPromise = null;
+      // Whether performTothalShift has populated _zoneLayouts at least once
+      // THIS PAGE LOAD. _loadTothalYear() surviving in localStorage told
+      // checkTothalShift "already shifted this year, nothing to do" even on a
+      // brand new session where _zoneLayouts (a plain in-memory Map) is empty
+      // — every wilderness zone silently fell back to its tiny authored
+      // placeholder map until the year next changed. Gate the skip on this
+      // flag too, so the first check each session always (re)builds the
+      // zones — deterministic seeding (world id + year + zone) reproduces the
+      // exact same map, not a fresh reroll.
+      let _tothalShiftedThisSession = false;
 
       // Regenerates all four wilderness zones for the given Tothal year and
-      // saves that year to the world file so a reload doesn't reroll again.
-      // Seeded from the world id + year + zone, so the same world reliably
-      // regrows the same wilderness for that year on every load.
-      async function performTothalShift(year) {
+      // saves that year to the world file so future checks this session skip
+      // redundant rebuilds. Seeded from the world id + year + zone, so the
+      // same world reliably regrows the same wilderness for that year on
+      // every load. `silent` suppresses the "reshaped" toast for a same-year
+      // session catch-up rebuild (nothing actually changed, just restoring
+      // this session's in-memory cache) rather than a genuine new-year shift.
+      async function performTothalShift(year, { silent = false } = {}) {
         if (typeof WildernessMapGenerator === 'undefined') {
           debugLog('Tothal Shift skipped: wilderness-map-generator.js not loaded', 'warn');
           return;
@@ -3619,27 +3632,36 @@
           }
           clearHostileObjects();
           _saveTothalYear(year);
-          // showToast is a plain DOM update (no dependency on avatar/gameStarted
-          // state), and this can legitimately finish before spawnPlayerAvatar's
-          // own async avatar setup does — always show it rather than gating on
-          // gameStarted and risking the toast silently getting swallowed by that race.
-          showToast('The Tothal Shift has reshaped the wilderness...', true);
-          debugLog(`Tothal Shift complete for year ${year}`);
+          _tothalShiftedThisSession = true;
+          if (!silent) {
+            // showToast is a plain DOM update (no dependency on avatar/gameStarted
+            // state), and this can legitimately finish before spawnPlayerAvatar's
+            // own async avatar setup does — always show it rather than gating on
+            // gameStarted and risking the toast silently getting swallowed by that race.
+            showToast('The Tothal Shift has reshaped the wilderness...', true);
+          }
+          debugLog(`Tothal Shift complete for year ${year}${silent ? ' (silent session catch-up)' : ''}`);
         } finally {
           _tothalShiftInFlight = false;
         }
       }
 
       // Called at world start and on every day advance — a no-op unless the
-      // Tothal year has actually changed since this world last shifted, or
+      // Tothal year has actually changed since this world last shifted, this
+      // is the first check this session (see _tothalShiftedThisSession), or
       // ?tothal=force is in the URL (or window.forceTothalShift() was called
       // from devtools) — useful for testing, since a world that already
-      // shifted this year otherwise stays untouched on every reload.
+      // shifted this year otherwise stays untouched for the rest of it.
       function checkTothalShift(force = false) {
         const year = currentTothalYear();
         const forceQuery = new URLSearchParams(location.search).get('tothal') === 'force';
-        if (!force && !forceQuery && _loadTothalYear() === year) return;
-        _tothalShiftPromise = performTothalShift(year)
+        const alreadyCurrent = _loadTothalYear() === year;
+        if (!force && !forceQuery && _tothalShiftedThisSession && alreadyCurrent) return;
+        // Same year as last save but nothing built yet this session (a fresh
+        // page load) — silently rebuild the same deterministic map instead of
+        // announcing a "shift" that, from the player's perspective, never happened.
+        const silent = !force && !forceQuery && alreadyCurrent;
+        _tothalShiftPromise = performTothalShift(year, { silent })
           .catch(e => debugLog('Tothal Shift error: ' + e.message, 'warn'))
           .finally(() => { _tothalShiftPromise = null; });
       }
@@ -10831,10 +10853,16 @@
         // modal position (see updateFishingRingScreenPosition/worldToOverlay).
         const reticle = getReticleTile();
         const reticleTile = getActiveTileAt(reticle.col, reticle.row);
+        // tileSurfaceY(type) alone ignores the tile's own elevTier — fine on
+        // town/farm's flat single-tier grid, but an exterior zone's water can
+        // sit on any plateau tier (see tileSurfaceYInArea's own comment).
+        // Anchoring on the bare ground-level Y here dragged the fishing
+        // camera (see below) down to ground level for the whole minigame
+        // whenever the fished water was actually up on a plateau.
         const anchorWorld = {
           x: reticle.col + 0.5,
           z: reticle.row + 0.5,
-          y: tileSurfaceY(reticleTile.type) + 0.35,
+          y: tileSurfaceYInArea(reticleTile, currentArea) + 0.35,
         };
         fishingMinigame = {
           active: true,
