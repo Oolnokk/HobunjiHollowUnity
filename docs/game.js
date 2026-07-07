@@ -4852,20 +4852,37 @@
         // builds that cell's own carved-bed mesh, and without this check the mesa's
         // solid lid simply painted over it, hiding the channel under flat ground.
         const quadIsCarved = (gi, gj) => CARVED_TILE_TYPES.has(zGrid?.[bb.minR + Math.floor(gj/2)]?.[bb.minC + Math.floor(gi/2)]?.type);
-        const idx = [];
+        // A quad's own corners already carry this mesa's real BFS-blended slope
+        // (Y above) — steep quads (the cliff-face margin band) are exactly where
+        // the old separate buildRockFormationMeshes wall used to get overlaid in
+        // front of this same grass surface via polygonOffset, producing both a
+        // visibly straight-edged stone plane AND the actual sloped/cliff-shaped
+        // grass geometry showing through/around it. Splitting this single mesh's
+        // faces into two material groups by the same steep-face rule the old
+        // border-terrain stone skin used (faces steeper than ~41 degrees from
+        // horizontal) puts the stone color directly on the real cliff geometry
+        // instead, with no separate mesh needed.
+        const grassIdx = [], stoneIdx = [];
         for (let gj = 0; gj < GH - 1; gj++) {
           for (let gi = 0; gi < GW - 1; gi++) {
             if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
             const v00 = gj*GW+gi, v10 = gj*GW+gi+1, v01 = (gj+1)*GW+gi, v11 = (gj+1)*GW+gi+1;
-            idx.push(v00, v01, v11, v00, v11, v10);
+            const y00 = Y[v00], y10 = Y[v10], y01 = Y[v01], y11 = Y[v11];
+            const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
+            const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
+            const steep = cnx * cnx + cnz * cnz > 0.194;
+            (steep ? stoneIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
           }
         }
+        const idx = grassIdx.concat(stoneIdx);
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        if (grassIdx.length) geo.addGroup(0, grassIdx.length, 0);
+        if (stoneIdx.length) geo.addGroup(grassIdx.length, stoneIdx.length, 1);
         geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        const mesh = new THREE.Mesh(geo, [tileMats.grass, tileMats.rock]);
         mesh.receiveShadow = true;
         zScene.add(mesh);
         // A plateau's own lid+skin is the primary way the fixed follow camera
@@ -4874,10 +4891,7 @@
         // for the occlusion raycast.
         mesh.userData.cameraObstacle = true;
 
-        // Steep plateau rock is now emitted by buildRockFormationMeshes, which
-        // unions plateau cliffs with ramp side rock before rendering.
-
-        console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(BASE+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s)`, 'color:#22c55e;font-weight:bold');
+        console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(BASE+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s), stone faces=${stoneIdx.length / 6}`, 'color:#22c55e;font-weight:bold');
       }
 
       // Smooth ramp slope mesh: one quad per authored RAMP tile, with each tile's 4
@@ -4979,10 +4993,14 @@
 
 
       // Unified solved non-walkable rock layer. This mirrors
-      // docs/js/terrain-preview.js buildRockFormationGeometry: semantic plateau
-      // cliff spans, ramp side spans, and ramp/plateau seam spans are unioned by
-      // tile edge before rendering, so overlapping authored features become one
-      // continuous rocky formation while walkable tops/ramp floors stay separate.
+      // docs/js/terrain-preview.js buildRockFormationGeometry: semantic ramp
+      // side spans and ramp/plateau seam spans (plus bare tier steps not
+      // touching any plateau mesa) are unioned by tile edge before rendering,
+      // so overlapping authored features become one continuous rocky
+      // formation while walkable tops/ramp floors stay separate. Plain
+      // plateau-cliff spans are excluded — buildPlateauMesa's own mesh
+      // renders those directly with a stone material group now, so solving
+      // them again here would just double them up.
       function buildRockFormationMeshes(zScene, zGrid, zcols, zrows, mapId) {
         const rampCornerYFor = (ci, cj, fallback = null) => {
           let sum = 0, n = 0;
@@ -5027,8 +5045,17 @@
             const bottom0 = Math.min(a[0], b[0]), bottom1 = Math.min(a[1], b[1]);
             const step = Math.max(top0, top1) - Math.min(bottom0, bottom1);
             if (!(((t.type === TileType.RAMP || nt?.type === TileType.RAMP) && step > 0.04) || (step > 0.04 && (t.incline || nt?.incline || (t.elevTier || 0) !== (nt?.elevTier || 0))))) continue;
-            if (side === 'E') add(`x:${c + 1}:${r}`, 'x', c + 1, r, c + 1, r + 1, top0, top1, bottom0, bottom1, kindOf(t, nt));
-            else add(`z:${r + 1}:${c}`, 'z', c, r + 1, c + 1, r + 1, top0, top1, bottom0, bottom1, kindOf(t, nt));
+            const kind = kindOf(t, nt);
+            // A plain plateau_cliff span is exactly the cliff-face margin band
+            // buildPlateauMesa's own mesh already renders (now stone-textured
+            // directly on that geometry — see its own comment) — solving it a
+            // second time here just overlays a second, perfectly flat plane in
+            // front of that real sloped surface. Ramp seams/sides and bare tier
+            // steps aren't rendered by any other mesh, so those still need this
+            // solver.
+            if (kind === 'plateau_cliff') continue;
+            if (side === 'E') add(`x:${c + 1}:${r}`, 'x', c + 1, r, c + 1, r + 1, top0, top1, bottom0, bottom1, kind);
+            else add(`z:${r + 1}:${c}`, 'z', c, r + 1, c + 1, r + 1, top0, top1, bottom0, bottom1, kind);
           }
         }
         const pos = [], idx = []; let vi = 0;

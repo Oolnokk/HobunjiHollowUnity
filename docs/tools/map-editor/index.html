@@ -3054,6 +3054,10 @@ function rebuild3D() {
   }
 
   // Plateau mesa heightfields (top sheet + cliff skin) per tier transition.
+  // buildPlateauMesaGeometry's idx is [...grass quads, ...stone quads] on one
+  // shared position buffer (steep cliff-face quads get the stone material
+  // directly instead of a separate overlay skin) — same split-by-material
+  // pattern as the carved-tile dirt/grass meshes just above.
   const mesaMat = new THREE.MeshLambertMaterial({ color: 0xa8835a, side: THREE.DoubleSide });
   const skinMat = new THREE.MeshLambertMaterial({ color: 0x6b5638, side: THREE.DoubleSide });
   for (const mesa of merged.mesas) {
@@ -3062,7 +3066,10 @@ function rebuild3D() {
     let geo;
     try { geo = TerrainPreview.buildPlateauMesaGeometry(mesa, elevOffset, mesa.fromTier * TerrainPreview.PLATEAU_UNIT, zGrid); }
     catch (e) { continue; }
-    if (geo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.pos, geo.idx), mesaMat));
+    const grassIdx = geo.idx.slice(0, geo.grassCount);
+    const stoneIdx = geo.idx.slice(geo.grassCount);
+    if (grassIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.pos, grassIdx), mesaMat));
+    if (stoneIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.pos, stoneIdx), skinMat));
   }
 
   // Ramp surfaces + their skirt curtains.
