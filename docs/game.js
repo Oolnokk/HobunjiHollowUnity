@@ -9337,6 +9337,12 @@
       let lastMouseMoveTime = 0;
       const _raycaster     = isDesktop ? new THREE.Raycaster() : null;
       const _mouseNDC      = isDesktop ? new THREE.Vector2()   : null;
+      // Constant is reset to the player's own ground height right before each
+      // raycast (see the mousemove handler below) — a fixed Y=0 plane made
+      // aiming distort badly on an exterior zone's raised plateaus, since a
+      // ray from the (also elevated, but differently offset) camera hits a
+      // Y=0 plane at a very different XZ position than it hits the actual
+      // ground the player is standing on.
       const _groundPlane   = isDesktop ? new THREE.Plane(new THREE.Vector3(0,1,0), 0) : null;
       const _mouseWorld    = isDesktop ? new THREE.Vector3()   : null;
       // Editor-specific raycaster (always available, used by farm editor on both desktop and touch)
@@ -18290,6 +18296,11 @@
           _mouseNDC.x =  ((e.clientX - rect.left)  / rect.width)  * 2 - 1;
           _mouseNDC.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;
           _raycaster.setFromCamera(_mouseNDC, camera);
+          // THREE.Plane's constant is -distance-from-origin along its normal —
+          // for the (0,1,0) normal here that's simply -groundY, so the plane
+          // passes through the player's actual current height (elevTier-aware
+          // via _playerGroundY) instead of always sitting at world Y=0.
+          _groundPlane.constant = -_playerGroundY();
           if (_raycaster.ray.intersectPlane(_groundPlane, _mouseWorld)) {
             const dx = _mouseWorld.x - player.x / TILE;
             const dz = _mouseWorld.z - player.y / TILE;
