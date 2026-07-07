@@ -5211,8 +5211,10 @@
         let idx = 0;
         for (let row = 0; row < zrows; row++) {
           for (let col = 0; col < zcols; col++) {
-            if (zGrid[row]?.[col]?.type !== TileType.GRASS) continue;
-            idx = _fillBillboardInstances(mesh, dummy, idx, col, row, 1.0, zoneBaseElev);
+            const tile = zGrid[row]?.[col];
+            if (tile?.type !== TileType.GRASS) continue;
+            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+            idx = _fillBillboardInstances(mesh, dummy, idx, col, row, 1.0, zoneBaseElev + tierY);
           }
         }
         mesh.count = idx;
@@ -14842,11 +14844,12 @@
         let gi = 0, wi = 0;
         for (let row = 0; row < ROWS; row++) {
           for (let col = 0; col < COLS; col++) {
-            const tp = grid[row][col].type;
-            if (tp === TileType.GRASS) {
-              gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0);
-            } else if (tp === TileType.WEEDS && !s_weed3D) {
-              wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0);
+            const tile = grid[row][col];
+            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+            if (tile.type === TileType.GRASS) {
+              gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0, tierY);
+            } else if (tile.type === TileType.WEEDS && !s_weed3D) {
+              wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY);
             }
           }
         }
@@ -14875,8 +14878,10 @@
         let idx = 0;
         for (let row = 0; row < trows; row++) {
           for (let col = 0; col < tcols; col++) {
-            if (townGrid[row]?.[col]?.type !== TileType.GRASS) continue;
-            idx = _fillBillboardInstances(townGrassBillMesh, dummy, idx, col, row, 1.0);
+            const tile = townGrid[row]?.[col];
+            if (tile?.type !== TileType.GRASS) continue;
+            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+            idx = _fillBillboardInstances(townGrassBillMesh, dummy, idx, col, row, 1.0, tierY);
           }
         }
         townGrassBillMesh.count = idx;
