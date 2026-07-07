@@ -5231,17 +5231,21 @@
     };
     const group = plateauByGroupId.get(tile.plateauGroupId);
     // A tile cannot be both editor plateau geometry and editor ramp geometry; keep plateau contact as ramp metadata only.
+    if (group && !tile.ramp) output.plateau = group.id;
     // The border-entry gate corridor (openBorderEntryGate) is a deliberately
-    // flattened, walkable cut through the boundary cliff ring, the same role
-    // a ramp plays — it must stay out of the plateau mask for the same
-    // reason ramps do: mergeZoneTilesInto's ring classification (see its own
-    // comment) marks any masked tile bordering lower terrain `incline`, and
-    // the game's movement collision (tileSpeedAt: `if (tile.incline) return
-    // null`) treats an incline tile as solid rock. Without this exemption the
-    // gate's outermost row — right at the map edge, always bordering
-    // "outside the mask" — gets swept into whatever tall cliff group the
-    // gate cuts through and the entrance itself becomes impassable.
-    if (group && !tile.ramp && tile.designRole !== 'borderEntryGate') output.plateau = group.id;
+    // flattened, walkable cut through the boundary cliff ring — it needs to
+    // stay IN its plateau's mask (dropping it out entirely leaves it at
+    // baseTier/ground level even when it's meant to connect at the
+    // surrounding terrain's real height, stranding the entry in a sunken
+    // pocket below the plateau it opens onto). What it must NOT get is
+    // mergeZoneTilesInto's ring classification: that marks any masked tile
+    // bordering lower/unmasked terrain `incline`, and the gate's outermost
+    // row is always exactly that (right at the map edge). An incline tile
+    // is solid to the game's movement collision (tileSpeedAt: `if
+    // (tile.incline) return null`), which would make the entrance itself
+    // impassable. Flag it so the merge can force it to the group's real
+    // (interior, non-incline) tier instead of computing ring-ness for it.
+    if (tile.designRole === 'borderEntryGate') output.borderEntryGate = true;
     if (tile.borderEscarpment) {
       output.borderEscarpment = true;
       output.generatedBorderEscarpment = true;

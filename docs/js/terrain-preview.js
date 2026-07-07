@@ -102,6 +102,19 @@
       for (const k of mask) {
         const [lc, lr] = k.split(',').map(Number);
         const c = lc + offsetC, r = lr + offsetR;
+        // A generated wilderness zone's entry gate corridor (see
+        // openBorderEntryGate in wilderness-map-generator.js) is a deliberately
+        // flattened, walkable cut through the boundary cliff ring — it's
+        // always at the outer edge of its plateau's mask (right at the map
+        // border), which is exactly what the ring check below treats as a
+        // sloped/impassable cliff face. Force it to the group's real
+        // (interior, non-incline) tier instead of computing ring-ness for it,
+        // or the entrance itself becomes solid to the game's movement
+        // collision (see tileSpeedAt's `if (tile.incline) return null`).
+        if (m.tiles?.[k]?.borderEntryGate) {
+          outTiles.set(`${c},${r}`, { c, r, type: 'grass', elevTier: toTier, skipFloor: true, rampElevation: 0, incline: false });
+          continue;
+        }
         let ringTier = null; // null => fully interior, no slope needed here
         for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           if (mask.has(`${lc + dc},${lr + dr}`)) continue;
