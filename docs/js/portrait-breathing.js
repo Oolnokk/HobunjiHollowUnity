@@ -589,10 +589,13 @@ window.BreathingComposer = BreathingComposer;
   // Derive config base from the portrait-utils or breathing script src,
   // falling back to common paths used in the project.
   function _resolveConfigBase() {
-    const candidates = ['./docs/config/', './config/'];
+    const candidates = [];
     // Try to mirror whatever loadPortraitCosmetics was last called with.
     const cfgBase = window.SCRATCHBONES_CONFIG?.game?.assets?.portrait?.configBase;
     if (cfgBase) candidates.unshift(cfgBase);
+    const scriptSrc = document.currentScript?.src || [...document.scripts].find(script => /\/portrait-breathing\.js(?:[?#].*)?$/.test(script.src))?.src;
+    if (scriptSrc) candidates.unshift(new URL('../config/', scriptSrc).toString());
+    candidates.push('./docs/config/', './config/');
     return candidates[0];
   }
 

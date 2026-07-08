@@ -520,7 +520,7 @@ const BASE_SPECIES_DATA = {
     },
   },
   'tletingan': {
-    label: 'Tletingan', genders: ['male'], swatchBase: '#7dc89a',
+    label: 'Tletingan', genders: ['male', 'female'], swatchBase: '#7dc89a',
     male: {
       slots: [
         { slot: 'hairFront', label: 'Front Hair', options: [
@@ -662,7 +662,26 @@ function withConfiguredSpeciesAvailability(speciesData) {
   }
   return result;
 }
-const SPECIES_DATA = withConfiguredSpeciesAvailability({ ...BASE_SPECIES_DATA, ...CONFIG_SPECIES_DATA });
+const SPECIES_DATA = withConfiguredSpeciesAvailability(Object.fromEntries(
+  Object.entries({ ...BASE_SPECIES_DATA, ...CONFIG_SPECIES_DATA }).map(([key, value]) => [
+    key,
+    { ...(BASE_SPECIES_DATA[key] || {}), ...(CONFIG_SPECIES_DATA[key] || value || {}) },
+  ])
+));
+function synthesizeFemaleSpeciesDefaults(speciesId, options = {}) {
+  const species = SPECIES_DATA[speciesId];
+  if (!species || species.female || !species.male) return;
+  species.female = clone(species.male);
+  if (options.omitFacialHair) {
+    species.female.slots = (species.female.slots || []).filter(slot => slot.slot !== 'facialHair');
+  }
+}
+// Female Tletingan uses shared front/back hair plus female-specific side-hair
+// variants from the cosmetics config; omit beard until a female beard exists.
+synthesizeFemaleSpeciesDefaults('tletingan', { omitFacialHair: true });
+// Female Mashtzarr has uploaded head/body sprites but no female beard or mouth
+// expression set yet, so keep the Mao-ao hair overlays and omit facial hair.
+synthesizeFemaleSpeciesDefaults('mashtzarr', { omitFacialHair: true });
 
 const DEFAULT_BODY_COLORS = { A: { h: 0, s: -0.70, v: -0.30 }, B: { h: 0, s: -0.70, v: -0.50 }, C: { h: 0, s: -0.65, v: -0.12 } };
 

@@ -573,6 +573,58 @@
           }
         }
       }
+    },
+    "tletingan_female": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "trim": {
+              "layerRole": "trim",
+              "image": {
+                "url": "./assets/cosmetics/clothes/overwear/portrait/poncho1_trim_tl_f.png",
+                "colors": [
+                  "B"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "poncho": {
+              "layerRole": "poncho",
+              "image": {
+                "url": "./assets/cosmetics/clothes/overwear/portrait/poncho1_tl_f.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

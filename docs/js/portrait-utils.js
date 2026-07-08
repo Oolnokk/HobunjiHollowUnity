@@ -691,8 +691,10 @@ function _getMouthSpriteUrl(expression, speciesId, gender) {
   const mapping = _MOUTH_SPECIES_MAP[sid] || _MOUTH_SPECIES_MAP[String(speciesId || '').toLowerCase()];
   if (!mapping) return null;
   const expr = String(expression || 'neutral');
+  const normalizedGender = String(gender || '').toLowerCase();
+  const mouthGender = sid === 'mashtzarr' && normalizedGender === 'female' ? 'm' : (normalizedGender === 'female' ? 'f' : 'm');
   const suffix = mapping.gendered
-    ? '_' + (String(gender || '').toLowerCase() === 'female' ? 'f' : 'm')
+    ? '_' + mouthGender
     : '';
   return `portraitsprites/expressions/mouth/${expr}_${mapping.sprite}${suffix}.png`;
 }
