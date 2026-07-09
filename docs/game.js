@@ -1449,7 +1449,7 @@
           const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
           if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
           const ch = (meta.characters || []).find(c => c.id === window.__hobunjiPlayerProfile.characterId);
-          if (ch) { ch.gearInventory = gearInventory; localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta)); }
+          if (ch) { ch.gearInventory = gearInventory; ch.equipmentSlots = { ...equipmentSlots }; localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta)); }
         } catch {}
       }
 
@@ -8657,6 +8657,7 @@
         if (!toolDef || !toolDef.slots.includes(slot)) { showToast('Cannot assign that item to that slot.', false); return; }
         if (!gearInventory?.tools?.[itemKey]) { showToast((TOOL_ITEM_DEFS[itemKey]?.label || itemKey) + ' is not in your gear. Transfer it first.', false); return; }
         equipmentSlots[slot] = itemKey;
+        saveGearInventory();
         rebuildToolMeshes();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
@@ -8669,6 +8670,7 @@
         const itemKey = equipmentSlots[slot];
         if (!itemKey) return;
         equipmentSlots[slot] = null;
+        saveGearInventory();
         rebuildToolMeshes();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
@@ -18435,7 +18437,23 @@
           gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];
         }
         ensureGearClothingCollection();
-        // Set default equipment slot assignments
+        // Restore this character's saved slot assignments, validating each
+        // against the gear actually in inventory (gear can be lost/transferred
+        // between sessions), then fall back to sane defaults for empty slots.
+        Object.keys(equipmentSlots).forEach(k => { equipmentSlots[k] = null; });
+        const savedSlots = (playerData.equipmentSlots && typeof playerData.equipmentSlots === 'object') ? playerData.equipmentSlots : null;
+        if (savedSlots) {
+          for (const slot of Object.keys(equipmentSlots)) {
+            const itemKey = savedSlots[slot];
+            if (!itemKey) continue;
+            if (slot === 'whistle') {
+              if ((gearInventory.whistles || []).some(w => w.id === itemKey)) equipmentSlots.whistle = itemKey;
+            } else if (gearInventory?.tools?.[itemKey] && TOOL_ITEM_DEFS[itemKey]?.slots.includes(slot)) {
+              equipmentSlots[slot] = itemKey;
+            }
+          }
+        }
+        // Fill any still-empty slots with defaults
         if (gearInventory.tools.bronzehoe)  equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
         if (gearInventory.tools.pickshovel) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
         if (gearInventory.tools.hatchet)    equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
