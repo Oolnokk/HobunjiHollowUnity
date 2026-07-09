@@ -48,7 +48,7 @@
         deps.showToast('Flurry stopped: stamina ran out.', false);
         return;
       }
-      deps.player.stamina = Math.max(0, deps.player.stamina - cost);
+      window.ResourceSystem?.spendStamina(deps.player, cost, 'Accelerating Flurry');
       // Alternates side every strike — mirror the hatchet's sweep, flipping
       // direction in sync with the existing left/right hit-cone wobble.
       const dirSign = count % 2 === 0 ? -1 : 1;
@@ -81,7 +81,7 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, strikeAngle, c.x, c.y, rangePx, halfConeDeg * Math.PI / 180)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS);
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'blunt' });
             hits++;
             lastName = c.def.label;
           }

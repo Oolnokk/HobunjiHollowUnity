@@ -1166,6 +1166,12 @@
         climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
       };
 
+      // Health/Stamina afflictions + Exhausted/black-stamina debt — see
+      // docs/js/combat/resource-system.js. Adds player.afflictions/
+      // exhaustion/lastAttack*At without disturbing the flat health/
+      // maxHealth/stamina/maxStamina fields everything else already reads.
+      window.ResourceSystem?.initEntity(player);
+
       // Combat tuning is config-backed so tool hit cones, stamina costs, trails,
       // and combat reticles can be tuned without changing code.
       function combatConfig() {
@@ -2490,6 +2496,7 @@
           if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
           if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
         });
+        window.ResourceSystem?.initEntity(creature);
         return creature;
       }
 
@@ -2501,6 +2508,7 @@
           c.groundShadow.geometry.dispose();
           c.groundShadow.material.dispose();
         }
+        window.ResourceRings?.disposeRingHud(c);
       }
 
       // ── Death ragdoll → lootable corpse ─────────────────────────────
@@ -2541,6 +2549,10 @@
       }
 
       function beginCreatureDeath(c, fromX, fromY) {
+        // A corpse doesn't get further updateCreatureMesh() calls to keep
+        // its resource ring synced/rebuilt, so drop it now rather than
+        // leaving a stale 0-health ring hovering over the corpse forever.
+        window.ResourceRings?.disposeRingHud(c);
         const awayAngle = fromX !== undefined ? Math.atan2(c.y - fromY, c.x - fromX) : (c.facing || 0);
         const rest = findDeathRestTile(c, awayAngle);
         c.state = 'dying';
@@ -2703,8 +2715,13 @@
         return null;
       }
 
-      function damageCreature(c, amount, fromX, fromY, knockbackPxS) {
-        c.health = Math.max(0, c.health - amount);
+      // dmgOpts: { tag: 'sharp'|'blunt'|'poison', heavy: boolean } — routes
+      // through the resource-afflictions system (bleeding/bruising/wounded
+      // stamina/etc, plus the heavy-consumes-Bruised-Health bonus) instead
+      // of a plain health subtraction. See docs/js/combat/resource-system.js.
+      function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
+        if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, amount, dmgOpts || {});
+        else c.health = Math.max(0, c.health - amount);
         c.hitFlashT = 0.25;
         spawnCreatureHitSpark(c);
         if (c.health <= 0) {
@@ -2716,13 +2733,14 @@
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
       }
 
-      function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S) {
+      function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
         if (performance.now() < player.invulnUntil) return;
         // Lets a held defensive ability (Counter Shield) absorb the hit and
         // riposte instead of applying damage normally — only one hold
         // ability can be active at a time, so this is a single settable slot.
         if (window.Combat?.tryInterceptPlayerDamage?.(amount, fromX, fromY)) return;
-        player.health = Math.max(0, player.health - amount);
+        if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, amount, dmgOpts || {});
+        else player.health = Math.max(0, player.health - amount);
         if (fromX !== undefined && player.health > 0) applyKnockback(player, fromX, fromY, knockbackPxS);
         if (player.health <= 0) respawnPlayer();
       }
@@ -2746,17 +2764,23 @@
         return Math.abs(angleDiff(angTo, facingAngle)) <= halfConeRad;
       }
 
+      // 'cut' is the narrow precise poke (tags as a Sharp hit — bleeding +
+      // wounded stamina); 'slash' is the wide heavy sweep (tags as Blunt —
+      // bruising + winded stamina, and consumes the target's own Bruised
+      // Health for bonus damage). See docs/js/combat/resource-system.js.
       function resolveWeaponHit(action) {
         const abil = weaponAbility(action);
         if (!abil) return { hits: 0, message: '' };
+        window.ResourceSystem?.spendStamina(player, abil.staminaCost, abil.name || action);
         playWeaponSlashSfx();
         let hits = 0;
         let lastName = '';
+        const dmgOpts = action === 'slash' ? { tag: 'blunt', heavy: true } : { tag: 'sharp' };
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
           if (!inCone(player.x, player.y, player.angle, c.x, c.y, abil.rangePx, abil.halfConeRad)) continue;
-          damageCreature(c, abil.damage, player.x, player.y, abil.knockbackPxS);
+          damageCreature(c, abil.damage, player.x, player.y, abil.knockbackPxS, dmgOpts);
           hits++;
           lastName = c.def.label;
         }
@@ -2894,6 +2918,12 @@
         // its squash/height) so the shadow doesn't lead a fast-moving
         // creature or float with it during a pounce crouch.
         if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
+        if (window.ResourceRings) {
+          const ringRadius = clamp((c.def.modelWidth || 2) * .34, .46, 1.3);
+          const ringScene = c.scene || scene;
+          const ringHud = window.ResourceRings.updateRingHud(c, ringScene, ringRadius);
+          ringHud.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
+        }
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
 
@@ -3067,7 +3097,7 @@
           if (c.areaId !== currentArea) continue;
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
-          c.stamina = Math.min(c.maxStamina, c.stamina + c.maxStamina * 0.25 * dt);
+          window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
 
           const dxp = player.x - c.x, dyp = player.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
@@ -3120,7 +3150,7 @@
               const result = updateCreatureBehaviorStage(c, dt, player, def, (dist) => {
                 const triggerRangePx = creatureAimColliderReachPx(def);
                 if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost) return false;
-                c.stamina -= def.attackStaminaCost;
+                window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
                 return !!(def.attacks?.length && window.Combat?.animalAttacks?.start(
                   c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
@@ -3136,7 +3166,7 @@
               const pounceCapable = def.attacks?.includes('pounce');
               const triggerRangePx = pounceCapable ? creatureAimColliderReachPx(def) : def.attackRangePx;
               if (distToPlayer <= triggerRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
-                c.stamina -= def.attackStaminaCost;
+                window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
                 const startedModular = def.attacks?.length && window.Combat?.animalAttacks?.start(
                   c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
@@ -3148,7 +3178,7 @@
                     strikeS: BITE_TELEGRAPH_STRIKE_S,
                     onStrike: () => {
                       if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
-                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
+                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: 'sharp' });
                         playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
@@ -3207,7 +3237,7 @@
 
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
-          c.stamina = Math.min(c.maxStamina, c.stamina + c.maxStamina * 0.25 * dt);
+          window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
 
           const dxp = player.x - c.x, dyp = player.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
@@ -3255,7 +3285,7 @@
               } else {
                 if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
                 if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
-                  c.stamina -= def.attackStaminaCost;
+                  window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                   c.attackCooldownT = def.attackCooldownS;
                   // Tamed behavior: the real species attack set (e.g. Pounce)
                   // fires only once every 4 behavior actions; the other 3 use
@@ -3272,7 +3302,7 @@
                       strikeS: BITE_TELEGRAPH_STRIKE_S,
                       onStrike: () => {
                         if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
-                          damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
+                          damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, { tag: 'sharp' });
                           playCreatureClawHit(c);
                         }
                       },
@@ -3720,19 +3750,28 @@
       }
 
       function updatePlayerVitals(dt) {
-        player.stamina = Math.min(player.maxStamina, player.stamina + PLAYER_STAMINA_REGEN * dt);
-        if (player.health > 0) player.health = Math.min(player.maxHealth, player.health + PLAYER_HEALTH_REGEN * dt);
+        // Health/Stamina regen, Exhausted/black-stamina recovery, and every
+        // affliction's own tick (bleed/poison/congealed/recovery/puke) —
+        // see docs/js/combat/resource-system.js. Passing the existing
+        // per-second constants keeps un-afflicted regen feeling the same
+        // as before this system existed; quiet rest now doubles it.
+        const tickResult = window.ResourceSystem?.tick(player, dt, {
+          staminaRegenPerSec: PLAYER_STAMINA_REGEN,
+          healthRegenPerSec: PLAYER_HEALTH_REGEN,
+        });
+        if (tickResult?.puked) showToast('You feel queasy...', false);
         if (player.dodgeCooldownT > 0) player.dodgeCooldownT = Math.max(0, player.dodgeCooldownT - dt);
         refreshVitalsHud();
       }
 
+      // Dodging never refuses for lack of Stamina — overspending pushes the
+      // player into Exhausted (black-stamina debt) instead, mirroring the
+      // demo's "a dodge reaction can overdraw into Exhausted" rule. See
+      // docs/js/combat/resource-system.js's spendStamina.
       function performDodge(angle) {
         if (player.dodging || player.dodgeCooldownT > 0) return false;
-        if (player.stamina < DODGE_STAMINA_COST) {
-          showToast('Too winded to dodge!', false);
-          return false;
-        }
-        player.stamina -= DODGE_STAMINA_COST;
+        if (window.ResourceSystem) window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge');
+        else player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
         player.dodging = true;
         player.dodgeT = DODGE_DUR_S;
         player.dodgeDirX = Math.cos(angle);
@@ -15492,6 +15531,13 @@
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
         playerGroundShadow.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
+        // Ground-projected Health/Stamina ring HUD — replaces the flat
+        // vitals bar (see #vitalsBar in style.css). Sits just above the
+        // ground shadow, tracking the same smoothed XZ.
+        if (window.ResourceRings) {
+          const ringHud = window.ResourceRings.updateRingHud(player, scene, .62);
+          ringHud.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
+        }
 
         // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
         if (!player.perpState) player.perpState = {};

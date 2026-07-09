@@ -90,7 +90,7 @@
           deps.showToast('Too winded to unleash it!', false);
           return;
         }
-        deps.player.stamina = Math.max(0, deps.player.stamina - cost);
+        window.ResourceSystem?.spendStamina(deps.player, cost, 'Charged Breaker');
       }
       // The windup already played out while held — releasing now just lets
       // the in-progress swing continue straight into its slam.
@@ -113,7 +113,7 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS);
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'blunt', heavy: true });
             hits++;
             lastName = c.def.label;
           }
@@ -131,7 +131,7 @@
       if (startedAt < 0) return;
       const deps = window.Combat.deps;
       const drain = Math.min(deps.player.stamina, CHARGE_DRAIN_PER_S * dt);
-      deps.player.stamina -= drain;
+      window.ResourceSystem?.spendStamina(deps.player, drain, 'Charged Breaker (charging)');
       if (deps.player.stamina <= 0) releaseNow(now() - startedAt, true);
     }
 

@@ -114,12 +114,17 @@
     .sb-gold   { font-size: 11px; color: #f0d040; flex-shrink: 0; }
 
     /* ── Vitals bar: health + stamina, anchored top-left ─────── */
+    /* Superseded by the ground-projected resource rings rendered under the
+       player in the 3D scene (see docs/js/combat/resource-rings.js); kept
+       in the DOM/JS but hidden so a fallback exists if that ever fails to
+       render (canvas context lost, three.js missing, etc). */
     #vitalsBar {
+      display: none;
       position: fixed;
       left: var(--play-left); top: var(--oy);
       width: calc(8 * var(--col)); height: calc(2 * var(--row));
       z-index: 20;
-      display: flex; flex-direction: column; justify-content: center;
+      flex-direction: column; justify-content: center;
       gap: 4px; padding: 6px 10px;
       background: var(--glass);
       border: 1px solid var(--border-bright);

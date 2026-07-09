@@ -32,7 +32,10 @@
     const behindDot = forwardX * (toPlayerX / dist) + forwardY * (toPlayerY / dist);
     return {
       enemyStriking: target.telegraphState === 'strike',
-      exhausted: target.stamina <= target.maxStamina * 0.20,
+      // True Exhausted (see resource-system.js's spendStamina) always
+      // counts, even if a Winded-Stamina-reduced effective max makes the
+      // plain 20%-of-max fallback threshold look full.
+      exhausted: !!target.exhaustion?.active || target.stamina <= target.maxStamina * 0.20,
       behind: behindDot < -0.35,
       lowHealth: target.health > 0 && target.health <= target.maxHealth * 0.30,
     };
@@ -98,7 +101,7 @@
         deps.showToast('Too winded to swing!', false);
         return;
       }
-      deps.player.stamina = Math.max(0, deps.player.stamina - cost);
+      window.ResourceSystem?.spendStamina(deps.player, cost, tech.name);
       // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
       deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S, {
         anim: 'thrust',
@@ -123,7 +126,7 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS);
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'sharp' });
             hits++;
             lastName = c.def.label;
           }

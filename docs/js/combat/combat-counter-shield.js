@@ -57,7 +57,10 @@
       if (!active) return false;
       const deps = window.Combat.deps;
       const staminaCost = Math.max(MIN_STAMINA_TO_RAISE, amount * 0.5);
-      deps.player.stamina = Math.max(0, deps.player.stamina - staminaCost);
+      // Never refuses — like the source demo's dodge reaction, blocking a
+      // big hit can overdraw straight into Exhausted (see resource-
+      // system.js's spendStamina) instead of failing to absorb the hit.
+      window.ResourceSystem?.spendStamina(deps.player, staminaCost, 'Counter Shield block');
       deps.showToast(`Blocked! (-${Math.round(staminaCost)} stamina)`, true);
       deps.spawnBurstEffect({ color: '#40ccff', rangePx: deps.TILE * 1.8 });
       triggerCounter();
@@ -101,7 +104,7 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS);
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'sharp' });
             hits++;
             lastName = c.def.label;
           }
@@ -127,7 +130,7 @@
     function onHoldUpdate(_slot, dt) {
       if (!active) return;
       const deps = window.Combat.deps;
-      deps.player.stamina = Math.max(0, deps.player.stamina - DRAIN_PER_S * dt);
+      window.ResourceSystem?.spendStamina(deps.player, Math.min(deps.player.stamina, DRAIN_PER_S * dt), 'Counter Shield (holding)');
       if (deps.player.stamina <= 0) {
         active = false;
         window.Combat.setPlayerDamageInterceptor(null);

@@ -39,23 +39,28 @@
 
   // holdS: how long (seconds) the swing dwells at its strike pose before
   // easing back to neutral — a per-step config knob, not an engine default.
+  // dmgTag/heavy feed the resource-afflictions system (docs/js/combat/
+  // resource-system.js): sweeping steps tag as Blunt (bruise + winded
+  // stamina), thrusting steps as Sharp (bleed + wounded stamina); each
+  // combo's 3rd/finisher step also consumes the target's Bruised Health
+  // for bonus damage, same as the demo's Heavy Attack rule.
   const SWING_STEPS = [
-    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 16, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1 },
-    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 19, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1 },
+    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 16, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt' },
+    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 19, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt' },
     // Cleave is the combo's 3rd step — gets an extra x1.5 knockback bump
     // (2.4) on top of the global knockback-base doubling, same as charged
     // breaker/riposte/flurry; the first two steps stay at their plain mul.
-    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1 },
+    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', heavy: true },
   ];
 
   // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
   // push the weapon out farther than the first two (plain) pokes, per the
   // demo's "third one rotates even farther, pushes even farther forward" spec.
   const POKE_STEPS = [
-    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.9, staminaCost: 13,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1 },
-    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 9,  rangeMul: 1.35, knockbackMul: 1.1, staminaCost: 16, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1 },
+    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.9, staminaCost: 13,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp' },
+    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 9,  rangeMul: 1.35, knockbackMul: 1.1, staminaCost: 16, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp' },
     // Long Lunge is the poke combo's 3rd step — same extra x1.5 bump as Cleave.
-    { name: 'Long Lunge',   damageMul: 1.7,  halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1 },
+    { name: 'Long Lunge',   damageMul: 1.7,  halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1, dmgTag: 'sharp', heavy: true },
   ];
 
   function now() { return performance.now() / 1000; }
@@ -78,7 +83,7 @@
         deps.showToast('Too winded to swing!', false);
         return;
       }
-      deps.player.stamina = Math.max(0, deps.player.stamina - step.staminaCost);
+      window.ResourceSystem?.spendStamina(deps.player, step.staminaCost, step.name);
       // returnS (set on a combo's final step) stretches the cosmetic swing's
       // tail so a finisher eases back to neutral instead of snapping — earlier
       // steps have no returnS, so they keep snapping (masked by the next tap).
@@ -111,7 +116,7 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS);
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: step.dmgTag, heavy: step.heavy });
             hits++;
             lastName = c.def.label;
           }

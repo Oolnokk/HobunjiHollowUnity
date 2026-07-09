@@ -152,8 +152,8 @@
       const ref = target.ref;
       if (ref.health <= 0) continue;
       if (!deps.inCone(headX, headY, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad)) continue;
-      if (target.isPlayer) deps.damagePlayer(state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S);
-      else deps.damageCreature(ref, state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S);
+      if (target.isPlayer) deps.damagePlayer(state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S, { tag: 'sharp' });
+      else deps.damageCreature(ref, state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S, { tag: 'sharp' });
       deps.playCreatureClawHit?.(c);
       return false; // hit landed; stop in place
     }
