@@ -170,11 +170,26 @@
 
   function buildGroundRingForFighter(entity, radius) {
     const group = new THREE.Group();
+    // Matches the source demo's ringGroup.rotation.y = Math.PI/2 — the
+    // HEALTH_ARC/STAMINA_ARC angles above are authored against that same
+    // fixed offset, so the group needs it too or the whole ring reads 90deg
+    // off from its intended facing.
+    group.rotation.y = Math.PI / 2;
     const healthSpec = { resourceKey: "health", ...HEALTH_ARC, color: HEALTH_COLOR, innerMul: .74, outerMul: .92, y: .018 };
     const staminaSpec = { resourceKey: "stamina", ...STAMINA_ARC, color: entity.exhaustion.active ? EXHAUSTED_COLOR : STAMINA_COLOR, innerMul: .74, outerMul: .92, y: .02 };
     group.add(buildGroundResourceArc(entity, healthSpec, radius));
     group.add(buildGroundResourceArc(entity, staminaSpec, radius));
     return group;
+  }
+
+  // Homeostasis = full Health, full Stamina, not Exhausted, and no active
+  // affliction — the ring should be invisible at rest and only appear once
+  // something is actually missing or afflicted.
+  function isHomeostatic(entity) {
+    if (entity.exhaustion.active) return false;
+    if (entity.health < entity.maxHealth) return false;
+    if (entity.stamina < entity.maxStamina) return false;
+    return Object.values(entity.afflictions).every(v => !(v > 0));
   }
 
   function clearGroup(group) {
@@ -197,6 +212,8 @@
     return `${entity.health}|${entity.maxHealth}|${entity.stamina}|${entity.maxStamina}|${entity.exhaustion.active}|${entity.exhaustion.blackStamina}|${Object.values(entity.afflictions).join(",")}`;
   }
 
+  const HOMEOSTASIS_KEY = "homeostasis";
+
   // Creates (once) and updates the ring group parented directly on `scene`
   // — call every frame from the entity's own mesh-sync function, then
   // position the returned group at the entity's ground point yourself
@@ -214,6 +231,16 @@
       scene.add(entity._ringHud);
     }
 
+    if (isHomeostatic(entity)) {
+      entity._ringHud.visible = false;
+      if (entity._ringHudKey !== HOMEOSTASIS_KEY) {
+        entity._ringHudKey = HOMEOSTASIS_KEY;
+        clearGroup(entity._ringHud);
+      }
+      return entity._ringHud;
+    }
+
+    entity._ringHud.visible = true;
     const key = makeHudKey(entity) + "|" + radius;
     if (key !== entity._ringHudKey) {
       entity._ringHudKey = key;

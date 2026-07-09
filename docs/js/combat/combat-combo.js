@@ -97,15 +97,18 @@
         pose: step.pose,
         holdS: step.holdS || 0,
       });
-      // Short step forward, timed to land alongside the swing's own
-      // windup+strike rather than the cosmetic hold/return tail.
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, step.windupS + step.strikeS);
-
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * step.damageMul);
       const rangePx = baseAbil.rangePx * step.rangeMul;
       const halfConeRad = step.halfConeDeg * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * step.knockbackMul;
+
+      // Short step forward, timed to land alongside the swing's own
+      // windup+strike rather than the cosmetic hold/return tail — stops
+      // early the moment a hostile is inside this step's own hit cone
+      // instead of always covering the full lunge distance (see
+      // game.js's beginCombatLunge/updateMovement).
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, step.windupS + step.strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS: step.windupS,

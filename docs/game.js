@@ -1156,7 +1156,7 @@
         // curve; lungeHopUnits/lungeHopCurrent drive an optional cosmetic
         // vertical arc (world-Y units, not pixels) for the charged breaker's leap.
         lunging: false, lungeT: 0, lungeDur: 0, lungeStartX: 0, lungeStartY: 0,
-        lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0,
+        lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0, lungeHitTest: null,
         // Cliff climbing — see startClimb()/updateMovement. A scripted crossing
         // (no stamina cost, no terrain collision) rendered as a chain of
         // staggered hops rather than a continuous slide; climbSurfaceY/
@@ -3786,8 +3786,13 @@
       // strike timing — distinct from performDodge's evasive zip above.
       // distancePx is total ground covered over durationS (eased out, so it's
       // fast at first and settles in); hopUnits is an optional cosmetic
-      // vertical arc peak in world-Y units for a leaping attack.
-      function beginCombatLunge(distancePx, durationS, hopUnits = 0) {
+      // vertical arc peak in world-Y units for a leaping attack. hitTest
+      // ({rangePx, halfConeRad}), when given, is the attack's own hit cone —
+      // updateMovement's lunge branch stops the lunge in place (instead of
+      // covering the full distancePx) the instant a live hostile is inside
+      // that cone, so the target is guaranteed to still be within the
+      // collider at the point the lunge stops, never overshot past it.
+      function beginCombatLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
         if (durationS <= 0 || distancePx <= 0) return;
         player.lunging = true;
         player.lungeT = durationS;
@@ -3798,6 +3803,19 @@
         player.lungeDirY = Math.sin(player.angle);
         player.lungeDistancePx = distancePx;
         player.lungeHopUnits = hopUnits;
+        player.lungeHitTest = hitTest;
+      }
+
+      // True if any live hostile in the current area is already inside the
+      // given hit cone from the player's current position/facing — used to
+      // cut a combat lunge short (see beginCombatLunge/updateMovement).
+      function isHostileInLungeCone(hitTest) {
+        if (!hitTest) return false;
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          if (inCone(player.x, player.y, player.angle, c.x, c.y, hitTest.rangePx, hitTest.halfConeRad)) return true;
+        }
+        return false;
       }
 
       const _vbHealthFill  = document.getElementById('vbHealthFill');
@@ -9524,6 +9542,16 @@
         }
 
         if (player.lunging) {
+          // Stop in place the instant a hostile is already inside this
+          // lunge's own attack — checked before this frame's movement, so
+          // the target is guaranteed to still be within the collider right
+          // where the lunge halts instead of the player sliding past it.
+          if (isHostileInLungeCone(player.lungeHitTest)) {
+            player.lunging = false;
+            player.lungeHopCurrent = 0;
+            tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+            return;
+          }
           player.lungeT = Math.max(0, player.lungeT - dt);
           const t = 1 - player.lungeT / player.lungeDur;
           const eased = 1 - Math.pow(1 - t, 3); // ease-out: fast off the top, settles into the landing
@@ -15533,9 +15561,15 @@
         playerGroundShadow.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
         // Ground-projected Health/Stamina ring HUD — replaces the flat
         // vitals bar (see #vitalsBar in style.css). Sits just above the
-        // ground shadow, tracking the same smoothed XZ.
+        // ground shadow, tracking the same smoothed XZ. Uses the actually
+        // active scene (farm/town/interior/zone/building), not the base
+        // farm `scene` — the player mesh itself gets reparented between
+        // those as the player travels (see e.g. the transition-spot code
+        // around fromScene.remove(playerMesh)/toScene.add(playerMesh)), so
+        // hardcoding `scene` here left the ring parented into a scene that
+        // wasn't the one actually being rendered.
         if (window.ResourceRings) {
-          const ringHud = window.ResourceRings.updateRingHud(player, scene, .62);
+          const ringHud = window.ResourceRings.updateRingHud(player, getActiveScene(), .62);
           ringHud.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
         }
 

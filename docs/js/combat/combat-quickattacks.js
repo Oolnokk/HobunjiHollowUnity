@@ -83,8 +83,11 @@
   const COST_BONUS = 18;
   const HOLD_S = 1; // post-strike pause before easing back to neutral
   // Farther forward step than the 3-hit combo's, layered under the jab —
-  // see game.js's beginCombatLunge. Expressed as a TILE multiple.
-  const LUNGE_TILE_MUL = 1.4;
+  // see game.js's beginCombatLunge. Expressed as a TILE multiple. Stops
+  // early once a hostile enters this jab's own hit cone (see the
+  // beginCombatLunge call below), so a longer reach here just means less
+  // whiffed closing distance rather than overshooting past the target.
+  const LUNGE_TILE_MUL = 2.2;
 
   function registerQuickAttack(id, def) {
     let busyAction = null;
@@ -109,13 +112,12 @@
         strikeFrac: 1,
         holdS: HOLD_S,
       });
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, WINDUP_S + STRIKE_S);
-
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * tech.damageMul);
       const rangePx = baseAbil.rangePx * tech.rangeMul;
       const halfConeRad = tech.halfConeDeg * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * tech.knockbackMul;
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, WINDUP_S + STRIKE_S, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS: WINDUP_S,

@@ -95,14 +95,16 @@
       // The windup already played out while held — releasing now just lets
       // the in-progress swing continue straight into its slam.
       deps.releaseWeaponSwingHold();
-      // Leap forward into the slam itself, timed to the strike phase.
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, STRIKE_S, LUNGE_HOP_UNITS);
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, chargeT));
       const rangePx = baseAbil.rangePx * lerp(RANGE_MUL_MIN, RANGE_MUL_MAX, chargeT);
       const halfConeRad = HALF_CONE_DEG * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, chargeT);
+      // Leap forward into the slam itself, timed to the strike phase —
+      // stops early the instant a hostile is inside the slam's own hit
+      // cone instead of always covering the full ~7-tile lunge distance.
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, STRIKE_S, LUNGE_HOP_UNITS, { rangePx, halfConeRad });
 
       window.Combat.beginStagedAction({
         windupS: 0,
