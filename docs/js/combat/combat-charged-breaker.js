@@ -83,13 +83,13 @@
         return;
       }
       const chargeT = Math.min(1, Math.max(0, (held - MIN_READY_S) / (MAX_CHARGE_S - MIN_READY_S)));
+      // Never refuses for lack of stamina once it's ready to release —
+      // overspending pushes into Exhausted instead of fizzling the slam
+      // (see resource-system.js's spendStamina). Exhausted's reduced speed
+      // then slows the slam itself down, same as the source demo's
+      // cooldown-slowing rule.
       if (!forced) {
         const cost = lerp(COST_MIN, COST_MAX, chargeT);
-        if (deps.player.stamina < cost) {
-          deps.cancelWeaponSwingHold();
-          deps.showToast('Too winded to unleash it!', false);
-          return;
-        }
         window.ResourceSystem?.spendStamina(deps.player, cost, 'Charged Breaker');
       }
       // The windup already played out while held — releasing now just lets
@@ -101,14 +101,16 @@
       const rangePx = baseAbil.rangePx * lerp(RANGE_MUL_MIN, RANGE_MUL_MAX, chargeT);
       const halfConeRad = HALF_CONE_DEG * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, chargeT);
+      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const strikeS = STRIKE_S * timeScale;
       // Leap forward into the slam itself, timed to the strike phase —
       // stops early the instant a hostile is inside the slam's own hit
       // cone instead of always covering the full ~7-tile lunge distance.
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, STRIKE_S, LUNGE_HOP_UNITS, { rangePx, halfConeRad });
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, strikeS, LUNGE_HOP_UNITS, { rangePx, halfConeRad });
 
       window.Combat.beginStagedAction({
         windupS: 0,
-        strikeS: STRIKE_S,
+        strikeS,
         recoverS: 0,
         onStrike: () => {
           let hits = 0, lastName = '';

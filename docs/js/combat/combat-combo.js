@@ -79,20 +79,27 @@
       const step = steps[comboIndex % steps.length];
       comboIndex = (comboIndex + 1) % steps.length;
 
-      if (deps.player.stamina < step.staminaCost) {
-        deps.showToast('Too winded to swing!', false);
-        return;
-      }
+      // Never refuses for lack of stamina — overspending pushes into
+      // Exhausted (see resource-system.js's spendStamina) instead of
+      // blocking the swing. Exhausted's reduced speed (getExhaustionSpeed)
+      // then slows this swing's own windup/strike/return down instead,
+      // same as the source demo's "the same multiplier slows attack
+      // cooldown" rule.
       window.ResourceSystem?.spendStamina(deps.player, step.staminaCost, step.name);
+      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const windupS = step.windupS * timeScale;
+      const strikeS = step.strikeS * timeScale;
+      const returnS = (step.returnS || 0) * timeScale;
+
       // returnS (set on a combo's final step) stretches the cosmetic swing's
       // tail so a finisher eases back to neutral instead of snapping — earlier
       // steps have no returnS, so they keep snapping (masked by the next tap).
-      const totalVisual = step.windupS + step.strikeS + (step.returnS || 0);
+      const totalVisual = windupS + strikeS + returnS;
       deps.triggerWeaponSwingVisual(totalVisual, {
         anim: step.anim,
         dirSign: step.dirSign,
-        windupFrac: step.windupS / totalVisual,
-        strikeFrac: (step.windupS + step.strikeS) / totalVisual,
+        windupFrac: windupS / totalVisual,
+        strikeFrac: (windupS + strikeS) / totalVisual,
         power: step.power || 1,
         pose: step.pose,
         holdS: step.holdS || 0,
@@ -108,11 +115,11 @@
       // early the moment a hostile is inside this step's own hit cone
       // instead of always covering the full lunge distance (see
       // game.js's beginCombatLunge/updateMovement).
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, step.windupS + step.strikeS, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
-        windupS: step.windupS,
-        strikeS: step.strikeS,
+        windupS,
+        strikeS,
         recoverS: 0,
         onStrike: () => {
           let hits = 0, lastName = '';

@@ -43,19 +43,23 @@
 
     function fireStrike(deps) {
       const cost = COST_BASE + count * COST_PER_STRIKE;
-      if (deps.player.stamina < cost) {
-        active = false;
-        deps.showToast('Flurry stopped: stamina ran out.', false);
-        return;
-      }
+      // Never refuses for lack of stamina — overspending pushes into
+      // Exhausted instead of hard-stopping the flurry (see resource-
+      // system.js's spendStamina). Exhausted's reduced speed slows this
+      // strike's own windup/strike *and* the delay before the next one
+      // (see onHoldUpdate/nextStrikeAt below), so a flurry pushed deep into
+      // debt grinds down toward a crawl instead of looping forever for free.
       window.ResourceSystem?.spendStamina(deps.player, cost, 'Accelerating Flurry');
+      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const windupS = WINDUP_S * timeScale;
+      const strikeS = STRIKE_S * timeScale;
       // Alternates side every strike — mirror the hatchet's sweep, flipping
       // direction in sync with the existing left/right hit-cone wobble.
       const dirSign = count % 2 === 0 ? -1 : 1;
-      deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S, {
+      deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'sweep',
         dirSign,
-        windupFrac: WINDUP_S / (WINDUP_S + STRIKE_S),
+        windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
         // Same authored pose as the hatchet's Forehand/Backhand Swing combo
         // steps, so every sweep-style attack reads as the same swing.
@@ -73,8 +77,8 @@
       const strikeIndex = count + 1;
 
       window.Combat.beginStagedAction({
-        windupS: WINDUP_S,
-        strikeS: STRIKE_S,
+        windupS,
+        strikeS,
         recoverS: 0,
         onStrike: () => {
           let hits = 0, lastName = '';
@@ -91,7 +95,7 @@
       });
 
       count += 1;
-      nextStrikeAt = now() + Math.max(NEXT_STRIKE_MIN_S, NEXT_STRIKE_BASE_S - count * NEXT_STRIKE_DECAY_PER_STRIKE);
+      nextStrikeAt = now() + Math.max(NEXT_STRIKE_MIN_S, NEXT_STRIKE_BASE_S - count * NEXT_STRIKE_DECAY_PER_STRIKE) * timeScale;
     }
 
     function onHoldStart() {

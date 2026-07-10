@@ -100,15 +100,18 @@
       const tech = def.build(deps, target, cond);
       const cost = tech.sourceText === 'no condition bonus' ? COST_BASE : COST_BONUS;
 
-      if (deps.player.stamina < cost) {
-        deps.showToast('Too winded to swing!', false);
-        return;
-      }
+      // Never refuses for lack of stamina — overspending pushes into
+      // Exhausted instead of blocking the jab (see resource-system.js's
+      // spendStamina); Exhausted's reduced speed then slows this jab's own
+      // windup/strike down, same as the source demo's cooldown-slowing rule.
       window.ResourceSystem?.spendStamina(deps.player, cost, tech.name);
+      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const windupS = WINDUP_S * timeScale;
+      const strikeS = STRIKE_S * timeScale;
       // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
-      deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S, {
+      deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'thrust',
-        windupFrac: WINDUP_S / (WINDUP_S + STRIKE_S),
+        windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
         holdS: HOLD_S,
       });
@@ -117,11 +120,11 @@
       const rangePx = baseAbil.rangePx * tech.rangeMul;
       const halfConeRad = tech.halfConeDeg * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * tech.knockbackMul;
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, WINDUP_S + STRIKE_S, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
-        windupS: WINDUP_S,
-        strikeS: STRIKE_S,
+        windupS,
+        strikeS,
         recoverS: 0,
         onStrike: () => {
           let hits = 0, lastName = '';
