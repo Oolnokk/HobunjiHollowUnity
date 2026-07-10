@@ -1352,7 +1352,11 @@
 
     /* Body + panes */
     .mp-body { flex: 1; position: relative; overflow: hidden; min-height: 0; }
-    .mp-pane { position: absolute; inset: 0; display: none; }
+    /* Panes scroll their own content instead of relying on .mp-body's
+       overflow:hidden, which would otherwise just clip anything taller than
+       the menu (e.g. the loadout pane's 4 slot cards + their 5-level
+       pickers) with no way to reach the rest. */
+    .mp-pane { position: absolute; inset: 0; display: none; overflow-y: auto; overflow-x: hidden; }
     .mp-pane.active { display: block; }
     .mp-stub {
       position: absolute; top: 50%; left: 50%;

@@ -3875,6 +3875,7 @@
         currentWeaponDamageType,
         currentWeaponKey,
         equipmentSlots,
+        equipItem,
         TILE,
       };
 
@@ -9042,6 +9043,13 @@
         if (!toolDef || !toolDef.slots.includes(slot)) { showToast('Cannot assign that item to that slot.', false); return; }
         if (!gearInventory?.tools?.[itemKey]) { showToast((TOOL_ITEM_DEFS[itemKey]?.label || itemKey) + ' is not in your gear. Transfer it first.', false); return; }
         equipmentSlots[slot] = itemKey;
+        // Any item that can also serve as the weapon-tool combat slot
+        // becomes the active weapon the instant it's equipped to any of its
+        // other slots too — not just via a separate, easy-to-miss "assign
+        // as weapon" step. Whichever melee/fishing tool you're actually
+        // holding is the one your weapon-tool abilities (combo type,
+        // sharp/blunt affliction flavor) read as your weapon.
+        if (slot !== 'weapon' && toolDef.slots.includes('weapon')) equipmentSlots.weapon = itemKey;
         rebuildToolMeshes();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
