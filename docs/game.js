@@ -1391,7 +1391,8 @@
         weather: 'rain',
         isRaining: true,
         rainStrength: 2,
-        nextRainWindows: [{ start: 8, end: 14, strength: 2 }]
+        nextRainWindows: [{ start: 8, end: 14, strength: 2 }],
+        lastRainDay: 17     // last day a rain/storm window was scheduled — drives the drought pity timer below
       };
 
       // Used by inventoryHud and planting/harvesting actions.
@@ -13021,8 +13022,19 @@
             float dU = linearDepth(texture2D(tDepth, vUv + vec2(0.0, uTexel.y)).r);
             float dD = linearDepth(texture2D(tDepth, vUv - vec2(0.0, uTexel.y)).r);
             float depthDelta  = max(max(abs(d0 - dL), abs(d0 - dR)), max(abs(d0 - dU), abs(d0 - dD)));
-            float depthThresh = mix(0.015, 0.6, clamp(d0 / uCameraFar, 0.0, 1.0)) * uDepthThreshScale;
-            float depthEdge   = step(depthThresh, depthDelta) * uDepthOutlinesOn;
+            // Compare the depth gap *relative to* the pixel's own depth rather than
+            // an absolute world-space gap. Under perspective, the true depth gap
+            // between neighbouring pixels on a continuous receding surface (e.g.
+            // flat ground running toward the horizon) grows with distance even
+            // where there's no real silhouette edge — an absolute threshold (even
+            // one scaled up at range) gets outpaced by that growth and the far
+            // ground lights up with false edges. Dividing by d0 cancels the
+            // perspective-driven growth out, so a real edge (a genuine jump in
+            // depth) still triggers at any distance while a smooth receding
+            // surface does not.
+            float relDepthDelta = depthDelta / max(d0, uCameraNear);
+            float depthThresh   = 0.010 * uDepthThreshScale;
+            float depthEdge     = step(depthThresh, relDepthDelta) * uDepthOutlinesOn;
 
             vec4 id0 = texture2D(tEdgeId, vUv);
             vec4 idL = texture2D(tEdgeId, vUv - vec2(uTexel.x, 0.0));
@@ -17094,12 +17106,21 @@
         pendingDenRespawn.clear();
       }
 
+      // Dry seasons (Early Dry / Late Dry) roll as low as a 4-8% rain chance per
+      // day and run 8 days back-to-back, so two of them in a row can leave a
+      // ~16-day stretch with no rain at all — long enough in real time to read
+      // as "it never rains anymore." This pity timer guarantees a rain day
+      // whenever the drought runs past RAIN_PITY_DAYS, without touching the
+      // per-season odds the rest of the time.
+      const RAIN_PITY_DAYS = 5;
+
       function chooseWeatherForDay() {
         const season = currentSeason();
         const seed = seededRandom(calendar.day * 991 + season.name.length * 37);
         const stormRoll = seededRandom(calendar.day * 373 + 11);
         const hasStorm = stormRoll < season.stormChance;
-        const hasRain = hasStorm || seed < season.rainChance;
+        const droughtDays = calendar.day - calendar.lastRainDay;
+        const hasRain = hasStorm || seed < season.rainChance || droughtDays >= RAIN_PITY_DAYS;
         calendar.weather = hasStorm ? 'storm' : hasRain ? 'rain' : 'clear';
         calendar.nextRainWindows = [];
 
@@ -17110,6 +17131,7 @@
           const start = 8 + Math.floor(seededRandom(calendar.day * 157) * 6);
           calendar.nextRainWindows.push({ start, end: start + 5, strength: 2 });
         }
+        if (hasRain) calendar.lastRainDay = calendar.day;
         updateRainState();
       }
 
@@ -18417,6 +18439,7 @@
         calendar.isRaining = true;
         calendar.rainStrength = 2;
         calendar.nextRainWindows = [{ start: 8, end: 14, strength: 2 }];
+        calendar.lastRainDay = 17;
         Object.keys(inventory).forEach(key => { delete inventory[key]; });
         Object.assign(inventory, { ...STARTING_INVENTORY });
         clearPlacedProcessingFurniture();

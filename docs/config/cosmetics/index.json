@@ -175,6 +175,26 @@
       "path": "./appearance/tletingan/wildbeard.json"
     },
     {
+      "id": "appearance::Tletingan_F::tl_forwardtuft_long",
+      "path": "./appearance/tletingan/forwardtuft_long.json"
+    },
+    {
+      "id": "appearance::Tletingan_F::tl_forwardtuft_short",
+      "path": "./appearance/tletingan/forwardtuft_short.json"
+    },
+    {
+      "id": "appearance::Tletingan_F::tl_longponytail",
+      "path": "./appearance/tletingan/longponytail.json"
+    },
+    {
+      "id": "appearance::Tletingan_F::tl_splayedknot",
+      "path": "./appearance/tletingan/splayedknot.json"
+    },
+    {
+      "id": "appearance::Tletingan_F::tl_shoulder_drape",
+      "path": "./appearance/tletingan/shoulder_drape_f.json"
+    },
+    {
       "id": "appearance::Kenkari_M::kenk_eyedisks",
       "path": "./appearance/kenkari/eyedisks.json"
     },
@@ -269,6 +289,18 @@
     {
       "id": "appearance::Tletingan_M::tl_braidcluster-R",
       "path": "./appearance/tletingan/braidcluster-R.json"
+    },
+    {
+      "id": "appearance::Tletingan_F::tl_braid-L",
+      "path": "./appearance/tletingan/braid-L_f.json"
+    },
+    {
+      "id": "appearance::Tletingan_F::tl_braid-R",
+      "path": "./appearance/tletingan/braid-R_f.json"
+    },
+    {
+      "id": "appearance::Tletingan_F::tl_braidcluster-R",
+      "path": "./appearance/tletingan/braidcluster-R_f.json"
     },
     {
       "id": "appearance::Kenkari_M::kenk_braid-L_m",

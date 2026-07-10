@@ -268,8 +268,8 @@ window.SCRATCHBONES_CONFIG = {
     "appearanceEditor": {
       "availability": {
         "tletingan": {
-          "genders": ["male"],
-          "randomizableGenders": ["male"]
+          "genders": ["male", "female"],
+          "randomizableGenders": ["male", "female"]
         }
       },
       "species": {
