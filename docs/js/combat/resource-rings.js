@@ -32,15 +32,21 @@
   const HEALTH_COLOR = 0x55d76f;
   const STAMINA_COLOR = 0x67b7ff;
   const EXHAUSTED_COLOR = 0x050608;
+  const OUTLINE_COLOR = 0x000000;
+  // Fill only — each affliction now entirely replaces the bar's color over
+  // the points it claims (see buildGroundResourceArc's precedence-clipped
+  // segments) rather than tinting an overlay on top of it, so there's no
+  // separate outline-per-affliction color anymore; every segment boundary
+  // gets the same black outline (see addSegmentOutlines).
   const AFFLICTION_COLORS = {
-    woundedStamina: { fill: 0xff9b2f, outline: 0xffdf9e },
-    bleedingHealth: { fill: 0xcf1e2e, outline: 0x66ff83 },
-    congealedHealth: { fill: 0xc98d41, outline: 0xffeec4 },
-    infectedStamina: { fill: 0x284f2a, outline: 0xb7ff39 },
-    windedStamina: { fill: 0x90949c, outline: 0xffffff },
-    bruisedHealth: { fill: 0x4c42a9, outline: 0xc6beff },
-    shatteredStamina: { fill: 0x8c4ad9, outline: 0xf0d2ff },
-    poisonedHealth: { fill: 0x37651c, outline: 0xd3ff59 },
+    woundedStamina: 0xff9b2f,
+    bleedingHealth: 0xcf1e2e,
+    congealedHealth: 0xc98d41,
+    infectedStamina: 0x284f2a,
+    windedStamina: 0x90949c,
+    bruisedHealth: 0x4c42a9,
+    shatteredStamina: 0x8c4ad9,
+    poisonedHealth: 0x37651c,
   };
 
   function makeFlatArcGeometry(innerRadius, outerRadius, startDeg, endDeg, segments) {
@@ -78,9 +84,14 @@
     geometry.translate(0, yOffset, 0);
     const material = new THREE.MeshBasicMaterial({
       color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false,
+      // X-ray through grass billboards/foliage/anything else in front —
+      // this HUD should always read, not get lost behind ground clutter.
+      // renderOrder (below) still controls draw order among the ring's own
+      // stacked layers and against other depthTest:false objects.
+      depthTest: false,
     });
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.renderOrder = Math.round(yOffset * 10000);
+    mesh.renderOrder = Math.round(yOffset * 100000);
     return mesh;
   }
 
@@ -96,61 +107,119 @@
     return group;
   }
 
+  // Subtracts every range in `claimed` from every range in `ranges`,
+  // splitting a range into two pieces if a claim falls in its middle.
+  // Ranges are plain {start,end} point values (not fractions/angles).
+  function subtractRanges(ranges, claimed) {
+    let result = ranges;
+    for (const c of claimed) {
+      const next = [];
+      for (const r of result) {
+        if (c.end <= r.start || c.start >= r.end) { next.push(r); continue; }
+        if (c.start > r.start) next.push({ start: r.start, end: Math.min(c.start, r.end) });
+        if (c.end < r.end) next.push({ start: Math.max(c.end, r.start), end: r.end });
+      }
+      result = next.filter(p => p.end - p.start > 0.001);
+    }
+    return result;
+  }
+
   function buildGroundResourceArc(entity, spec, radius) {
     const RS = window.ResourceSystem;
     const group = new THREE.Group();
     const max = spec.resourceKey === "health" ? entity.maxHealth : entity.maxStamina;
+    const current = spec.resourceKey === "health" ? entity.health : entity.stamina;
     const displayFraction = RS.getRingFillFraction(entity, spec.resourceKey);
     const effectiveMax = RS.getEffectiveMax(entity, spec.resourceKey);
     const capFraction = max ? clamp(effectiveMax / max, 0, 1) : 0;
-
     const inner = radius * spec.innerMul, outer = radius * spec.outerMul;
+    const isExhaustedStamina = spec.resourceKey === "stamina" && entity.exhaustion.active;
 
+    // Background track spans the full arc regardless of fill — the black
+    // rim/cut outlines added at the end read against this even where the
+    // resource is empty.
     group.add(makeArcMesh(inner, outer, spec.start, spec.end, 0xffffff, .11, spec.y, 36));
 
-    if (displayFraction > 0) {
-      group.add(makeArcMesh(inner + radius * .02, outer - radius * .02, spec.start, spec.start + (spec.end - spec.start) * displayFraction, spec.color, .95, spec.y + .004, 34));
-    }
+    const boundaryPoints = new Set([0, max]);
 
-    const isExhaustedStamina = spec.resourceKey === "stamina" && entity.exhaustion.active;
     if (isExhaustedStamina) {
+      if (displayFraction > 0) {
+        const fillEnd = spec.start + (spec.end - spec.start) * displayFraction;
+        group.add(makeArcMesh(inner + radius * .02, outer - radius * .02, spec.start, fillEnd, spec.color, .95, spec.y + .004, 34));
+        boundaryPoints.add(displayFraction * max);
+      }
       group.add(makeDashedArc(inner + radius * .04, outer - radius * .04, spec.start, spec.end, 0xffffff, .34, spec.y + .009));
     } else {
-      addAfflictionArcMeshes(group, entity, spec, radius);
+      // Precedence-clipped affliction segments: the most dire (highest
+      // priority) affliction claims its full point range first; any less
+      // dire affliction that would otherwise share those same points has
+      // them cut away from its own range instead (see subtractRanges) —
+      // this only actually changes anything once two afflictions' ranges
+      // overlap (e.g. Health fully claimed by non-fatal effects with more
+      // piled on top), which is exactly when precedence needs to apply.
+      // Each surviving segment is its own solid color, not a tint over the
+      // base fill.
+      const claimed = [];
+      const afflictionSegments = [];
+      const activeIds = Object.entries(RS.AFFLICTIONS)
+        .filter(([id, def]) => def.resource === spec.resourceKey && RS.getAffliction(entity, id) > 0)
+        .sort((a, b) => b[1].priority - a[1].priority);
+
+      for (const [id] of activeIds) {
+        const box = RS.getSegmentBox(entity, spec.resourceKey, id);
+        if (box.widthPoints <= 0 || !max) continue;
+        const raw = { start: clamp(box.leftPoints, 0, max), end: clamp(box.leftPoints + box.widthPoints, 0, max) };
+        if (raw.end <= raw.start) continue;
+        for (const piece of subtractRanges([raw], claimed)) {
+          afflictionSegments.push({ ...piece, id });
+          claimed.push(piece);
+        }
+      }
+
+      // Normal-color fill: whatever of [0, current] isn't claimed above.
+      const normalPieces = max ? subtractRanges([{ start: 0, end: clamp(current, 0, max) }], claimed) : [];
+      for (const p of normalPieces) {
+        const sf = p.start / max, ef = p.end / max;
+        group.add(makeArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, spec.color, .95, spec.y + .004, 34));
+        boundaryPoints.add(p.start); boundaryPoints.add(p.end);
+      }
+
+      for (const seg of afflictionSegments) {
+        const def = RS.AFFLICTIONS[seg.id];
+        const color = AFFLICTION_COLORS[seg.id] ?? 0xffffff;
+        const sf = seg.start / max, ef = seg.end / max;
+        group.add(makeArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, color, .95, spec.y + .006 + def.priority * .00001, 24));
+        boundaryPoints.add(seg.start); boundaryPoints.add(seg.end);
+      }
+
       if (effectiveMax < max) {
         const capAngle = spec.start + (spec.end - spec.start) * capFraction;
         group.add(makeArcMesh(inner - radius * .025, outer + radius * .025, capAngle - 1.7, capAngle + 1.7, 0xffffff, .9, spec.y + .014, 6));
       }
     }
 
+    addSegmentOutlines(group, spec, radius, max, boundaryPoints);
+
     if (spec.resourceKey === "health") addHealthRiskGroundArc(group, entity, spec, radius);
     return group;
   }
 
-  function addAfflictionArcMeshes(group, entity, spec, radius) {
-    const RS = window.ResourceSystem;
+  // Black outline around the whole ring's rim (inner+outer edge, spanning
+  // the full arc even across empty/unfilled space) plus a thin radial line
+  // at every boundary between two differently-colored segments, so the
+  // whole bar reads as cleanly divided pieces rather than blended color.
+  function addSegmentOutlines(group, spec, radius, max, boundaryPoints) {
     const inner = radius * spec.innerMul, outer = radius * spec.outerMul;
-    const max = spec.resourceKey === "health" ? entity.maxHealth : entity.maxStamina;
-    if (!max) return;
+    const rim = radius * .02;
+    const outlineY = spec.y + .05;
+    group.add(makeArcMesh(inner - rim, inner, spec.start, spec.end, OUTLINE_COLOR, .95, outlineY, 36));
+    group.add(makeArcMesh(outer, outer + rim, spec.start, spec.end, OUTLINE_COLOR, .95, outlineY, 36));
 
-    const activeIds = Object.entries(RS.AFFLICTIONS)
-      .filter(([id, def]) => def.resource === spec.resourceKey && RS.getAffliction(entity, id) > 0)
-      .sort((a, b) => a[1].priority - b[1].priority)
-      .map(([id]) => id);
-
-    for (const id of activeIds) {
-      const box = RS.getSegmentBox(entity, spec.resourceKey, id);
-      if (box.widthPoints <= 0) continue;
-      const startFraction = clamp(box.leftPoints / max, 0, 1);
-      const endFraction = clamp((box.leftPoints + box.widthPoints) / max, 0, 1);
-      if (endFraction <= startFraction) continue;
-
-      const startAngle = spec.start + (spec.end - spec.start) * startFraction;
-      const endAngle = spec.start + (spec.end - spec.start) * endFraction;
-      const colors = AFFLICTION_COLORS[id] || { fill: 0xffffff, outline: 0xffffff };
-      const def = RS.AFFLICTIONS[id];
-      group.add(makeArcMesh(inner + radius * .04, outer - radius * .04, startAngle, endAngle, colors.fill, .88, spec.y + .018 + def.priority * .00004, 20));
-      group.add(makeArcMesh(inner + radius * .005, inner + radius * .025, startAngle, endAngle, colors.outline, .78, spec.y + .022 + def.priority * .00004, 20));
+    const halfWidthDeg = 1.1;
+    for (const pt of boundaryPoints) {
+      const frac = max ? clamp(pt / max, 0, 1) : 0;
+      const angle = spec.start + (spec.end - spec.start) * frac;
+      group.add(makeArcMesh(inner - rim, outer + rim, angle - halfWidthDeg, angle + halfWidthDeg, OUTLINE_COLOR, .95, outlineY + .002, 4));
     }
   }
 

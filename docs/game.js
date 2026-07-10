@@ -1235,6 +1235,12 @@
           attackDamage: 10, attackRangePx: TILE * 0.9, attackHalfConeRad: 45 * Math.PI / 180,
           attackStaminaCost: 14, attackCooldownS: 1.1,
           attacks: ['pounce'],
+          // Every named/generic attack this species has access to (Pounce,
+          // the plain bite telegraph, guardCharge) is tagged through this one
+          // field — see resource-system.js's applyDamage — so a tamed
+          // dabinggi-hound's bite/pounce afflicts Poisoned Health instead of
+          // the wolves' Bleeding/Wounded.
+          attackTag: 'poison',
           canClimb: false, canSwim: false,
           modelWidth: 1.9, tint: 0xffffff,
           sprites: {
@@ -1253,6 +1259,9 @@
           attackDamage: 12, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
           attackStaminaCost: 12, attackCooldownS: 1.0,
           attacks: ['pounce'],
+          // See dabinggi-hound's attackTag comment — gar-wolves bite/pounce
+          // sharp, afflicting Bleeding Health + Wounded Stamina.
+          attackTag: 'sharp',
           // Slottable AI behavior-stage cycle (see updateCreatureBehaviorStage):
           // try a Pounce for up to 7s (ends the moment one's attempted), then
           // (after the global ~2s backing-up stage) spend up to 11s circling
@@ -1277,6 +1286,7 @@
           attackDamage: 18, attackRangePx: TILE * 0.95, attackHalfConeRad: 46 * Math.PI / 180,
           attackStaminaCost: 16, attackCooldownS: 1.0,
           attacks: ['pounce'],
+          attackTag: 'sharp',
           behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 7, leashRangePx: TILE * 10,
           canClimb: false, canSwim: false,
@@ -3184,7 +3194,7 @@
                     strikeS: BITE_TELEGRAPH_STRIKE_S,
                     onStrike: () => {
                       if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
-                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: 'sharp' });
+                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp' });
                         playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
@@ -3325,7 +3335,7 @@
                       strikeS: BITE_TELEGRAPH_STRIKE_S,
                       onStrike: () => {
                         if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
-                          damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, { tag: 'sharp' });
+                          damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp' });
                           playCreatureClawHit(c);
                         }
                       },
