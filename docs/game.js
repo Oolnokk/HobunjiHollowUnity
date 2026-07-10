@@ -861,6 +861,17 @@
         { name: 'First Rains', emoji: '🌦️', rainChance: 0.42, stormChance: 0.06 },
         { name: 'Wet Peak',    emoji: '⛈️', rainChance: 0.66, stormChance: 0.18 },
       ];
+      // Dry seasons (Early Dry / Late Dry) roll as low as a 4-8% rain chance per
+      // day and run 8 days back-to-back, so two of them in a row can leave a
+      // ~16-day stretch with no rain at all — long enough in real time to read
+      // as "it never rains anymore." chooseWeatherForDay()'s pity timer
+      // guarantees a rain day whenever the drought runs past this many days,
+      // without touching the per-season odds the rest of the time. Declared
+      // here (rather than next to chooseWeatherForDay() itself, much further
+      // down) because createInitialGrid() calls chooseWeatherForDay() during
+      // startup, well before that later point in the file — a `const` placed
+      // after that call site would be in its temporal dead zone and throw.
+      const RAIN_PITY_DAYS = 5;
 
       const cropData = {
         needlegrain:   { emoji: '🌾', seedKey: 'needlegrainSeeds',   cropKey: 'needlegrain',   growDays: 3, idealMin: 0.20, idealMax: 0.50, label: 'needlegrain',   tags: ['Grain', 'Dry-default crop'] },
@@ -17105,14 +17116,6 @@
         // (lazy, current-zone-only) spawning once this fires.
         pendingDenRespawn.clear();
       }
-
-      // Dry seasons (Early Dry / Late Dry) roll as low as a 4-8% rain chance per
-      // day and run 8 days back-to-back, so two of them in a row can leave a
-      // ~16-day stretch with no rain at all — long enough in real time to read
-      // as "it never rains anymore." This pity timer guarantees a rain day
-      // whenever the drought runs past RAIN_PITY_DAYS, without touching the
-      // per-season odds the rest of the time.
-      const RAIN_PITY_DAYS = 5;
 
       function chooseWeatherForDay() {
         const season = currentSeason();
