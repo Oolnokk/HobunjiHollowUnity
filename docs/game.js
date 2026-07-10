@@ -17128,8 +17128,16 @@
           calendar.nextRainWindows.push({ start: 11, end: 17, strength: 3 });
           calendar.nextRainWindows.push({ start: 19, end: 21, strength: 2 });
         } else if (hasRain) {
+          // A fixed 5-hour window meant even a 'rain' day in the wettest
+          // season (Wet Peak, 66% daily chance) only actually had it raining
+          // ~5/24 = 21% of the time — the season label reads "wet" but the
+          // moment-to-moment odds of catching rain stayed low. Scale the
+          // window length with how rainy the season is so Wet Peak/First
+          // Rains days visibly rain for a large chunk of the day, while a
+          // dry-season pity-timer shower stays a brief, isolated event.
+          const windowHours = Math.round(4 + season.rainChance * 8);
           const start = 8 + Math.floor(seededRandom(calendar.day * 157) * 6);
-          calendar.nextRainWindows.push({ start, end: start + 5, strength: 2 });
+          calendar.nextRainWindows.push({ start, end: start + windowHours, strength: 2 });
         }
         if (hasRain) calendar.lastRainDay = calendar.day;
         updateRainState();
