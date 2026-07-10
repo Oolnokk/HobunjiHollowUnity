@@ -1301,7 +1301,11 @@
           label: 'Northern Cliffs',
           cols: 22, rows: 16,
           groundColor: 0x6b7280, fogColor: 0x3a4148,
-          hostileKey: 'gar-wolf-alpha',
+          // Species pool a den's next pack is randomly drawn from (see
+          // spawnPackAtDen) — no longer a single fixed hostileKey, since a
+          // wiped-out den's replacement pack isn't necessarily the same
+          // species as the one it replaces.
+          packSpecies: ['gar-wolf', 'gar-wolf-alpha'],
           entryCol: 11, entryRow: 14,
           exitCol: 11, exitRow: 15,
           townReturnCol: 30, townReturnRow: 2,
@@ -1311,7 +1315,7 @@
           label: 'Southern Cloud Forest',
           cols: 22, rows: 16,
           groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
-          hostileKey: 'gar-wolf',
+          packSpecies: ['gar-wolf', 'gar-wolf-alpha'],
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
@@ -3647,7 +3651,12 @@
               cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
               transitions: preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
               toTownExit, mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
+              dens: workspace.animalDens || [],
             });
+            // A reshaped zone's dens are all new — forget any leftover pack/
+            // respawn bookkeeping from the previous layout's den ids (see
+            // ensureZoneDenPacks/spawnPackAtDen).
+            forgetZoneDenState(zoneId);
             // Entering from town has no authored spawn coordinate of its own
             // (see EXTERIOR_ZONES' comment) — it always falls back to
             // zdef.entryCol/Row, so keep that pinned to this shift's own entry gate.
@@ -3722,31 +3731,119 @@
         snapCameraTarget: _snapCameraTarget,
       };
 
-      // Ambient hostile spawning — lives entirely inside the exterior zones now
-      // (southern cloud forest → Gar-wolf, northern cliffs → Gar-wolf Alpha).
-      const HOSTILE_CAP_PER_ZONE = 4;
-      const HOSTILE_SPAWN_INTERVAL_S = 14;
-      let hostileSpawnTimer = HOSTILE_SPAWN_INTERVAL_S;
+      // Ambient hostile spawning — wild animal dens (see WildernessMapGenerator's
+      // placeAnimalDens/workspace.animalDens, threaded into _zoneLayouts as
+      // `dens` by performTothalShift) each hold one pack. A den's pack stays
+      // put — no ambient scatter-spawning — until every member of it is
+      // dead; the den then sits empty until the next in-game day, when a
+      // fresh pack (species re-rolled from the zone's packSpecies pool, not
+      // necessarily the one that died) moves in. See advanceDay().
+      const DEN_PACK_SIZE_MIN = 2;
+      const DEN_PACK_SIZE_MAX = 4;
+      const DEN_CHECK_INTERVAL_S = 2;
+      let denCheckTimer = 0;
+
+      // denKey → true once that den has ever had a pack spawned (so a fresh
+      // zone's dens seed immediately, while a den that's merely between
+      // packs waits for pendingDenRespawn to clear on the next day instead).
+      const denEverSpawned = new Set();
+      // denKey → alive/dead as of the last check — lets ensureCurrentZoneDenPacks
+      // tell "just now wiped" (alive → dead transition: start waiting for the
+      // next day) apart from "already known empty and the day has since
+      // turned over" (spawn a fresh pack right now).
+      const denLastKnownAlive = new Map();
+      // denKey → true while a den is empty and deliberately waiting for the
+      // next day (advanceDay() clears these) rather than instantly refilling.
+      const pendingDenRespawn = new Set();
+
+      function denKeyFor(zoneId, den) { return `${zoneId}:${den.id}`; }
+
+      // Forgets all pack/respawn bookkeeping for a zone whose terrain (and
+      // therefore den ids) just got regenerated (see performTothalShift) —
+      // otherwise stale keys from the previous layout's dens would linger
+      // forever and any of this zone's dens that happen to reuse an id
+      // could resume mid-"waiting for next day" instead of seeding fresh.
+      function forgetZoneDenState(zoneId) {
+        const prefix = `${zoneId}:`;
+        for (const key of denEverSpawned) if (key.startsWith(prefix)) denEverSpawned.delete(key);
+        for (const key of pendingDenRespawn) if (key.startsWith(prefix)) pendingDenRespawn.delete(key);
+        for (const key of [...denLastKnownAlive.keys()]) if (key.startsWith(prefix)) denLastKnownAlive.delete(key);
+      }
+
+      function isDenPackAlive(denKey) {
+        for (const c of hostileObjects) if (c.denKey === denKey && c.health > 0) return true;
+        return false;
+      }
+
+      function spawnPackAtDen(zoneId, den, denKey) {
+        const zdef = EXTERIOR_ZONES[zoneId];
+        const pool = zdef?.packSpecies;
+        if (!pool || !pool.length) return;
+        const speciesKey = pool[Math.floor(Math.random() * pool.length)];
+        const homeX = den.x * TILE + TILE * 0.5, homeY = den.y * TILE + TILE * 0.5;
+        const count = DEN_PACK_SIZE_MIN + Math.floor(Math.random() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
+        let spawned = 0;
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = TILE * (0.8 + Math.random() * 1.6);
+          const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
+          const creature = makeCreatureEntity(speciesKey, x, y, { homeX, homeY, state: 'idle', denKey });
+          if (creature) { hostileObjects.add(creature); spawned++; }
+        }
+        if (spawned > 0 && zoneId === currentArea) {
+          showToast(`${CREATURE_DB[speciesKey]?.label || speciesKey} pack moved into a den nearby.`, false);
+        }
+      }
+
+      // Spawning only positions/heights correctly for the currently active
+      // area (makeCreatureEntity resolves ground height against `currentArea`
+      // regardless of which scene it's told to target), so dens in a zone
+      // the player isn't currently in just wait — a wipe there still marks
+      // pendingDenRespawn immediately, and the very next visit (or the rest
+      // of this visit, once the day turns over) lazily seeds it correctly.
+      function ensureCurrentZoneDenPacks() {
+        const layout = _zoneLayouts.get(currentArea);
+        const dens = layout?.dens;
+        if (!dens || !dens.length) return;
+        for (const den of dens) {
+          const key = denKeyFor(currentArea, den);
+          const alive = isDenPackAlive(key);
+
+          if (alive) { denLastKnownAlive.set(key, true); continue; }
+
+          if (!denEverSpawned.has(key)) {
+            // Never populated (fresh zone/den) — seed immediately, no wait.
+            denEverSpawned.add(key);
+            denLastKnownAlive.set(key, false);
+            spawnPackAtDen(currentArea, den, key);
+            continue;
+          }
+
+          if (denLastKnownAlive.get(key) !== false) {
+            // Alive as of the last check (or never checked while alive) and
+            // empty now — just got wiped. Start waiting for the next day
+            // instead of refilling on the spot.
+            denLastKnownAlive.set(key, false);
+            pendingDenRespawn.add(key);
+            continue;
+          }
+
+          if (pendingDenRespawn.has(key)) continue; // still waiting for the next day
+
+          // Already known empty, and no longer pending — the day turned
+          // over since this den was wiped (see advanceDay()). Move in a
+          // fresh pack now, species re-rolled from the zone's pool.
+          spawnPackAtDen(currentArea, den, key);
+        }
+      }
 
       function updateHostileSpawning(dt) {
         if (!_isZoneArea(currentArea)) return;
-        hostileSpawnTimer -= dt;
-        if (hostileSpawnTimer > 0) return;
-        hostileSpawnTimer = HOSTILE_SPAWN_INTERVAL_S;
-        const inZone = [...hostileObjects].filter(c => c.areaId === currentArea).length;
-        if (inZone >= HOSTILE_CAP_PER_ZONE) return;
-        const zdef = EXTERIOR_ZONES[currentArea];
-        const zi = buildZoneScene(currentArea);
-        if (!zdef || !zi) return;
-        for (let attempt = 0; attempt < 8; attempt++) {
-          const col = Math.floor(Math.random() * zi.cols);
-          const row = Math.floor(Math.random() * zi.rows);
-          const x = col * TILE + TILE * 0.5, y = row * TILE + TILE * 0.5;
-          if (Math.hypot(x - player.x, y - player.y) < TILE * 5) continue;
-          const creature = makeCreatureEntity(zdef.hostileKey, x, y, { homeX: x, homeY: y, state: 'idle' });
-          if (creature) hostileObjects.add(creature);
-          return;
-        }
+        denCheckTimer -= dt;
+        if (denCheckTimer > 0) return;
+        denCheckTimer = DEN_CHECK_INTERVAL_S;
+        if (!buildZoneScene(currentArea)) return;
+        ensureCurrentZoneDenPacks();
       }
 
       function updatePlayerVitals(dt) {
@@ -6738,7 +6835,11 @@
                 zTransitions.push({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
               }
             });
-            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture });
+            // Hand-authored zones (Western Slope/Eastern Mire) don't carry
+            // procedurally-placed animalDen anchors — only the Tothal Shift
+            // path (WildernessMapGenerator) produces those (see
+            // performTothalShift), so wild packs simply don't spawn here yet.
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, dens: [] });
             console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, decor=${outDecor.length}, furniture=${outFurniture.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
@@ -16385,6 +16486,10 @@
         tickCropDay();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
         checkTothalShift();
+        // Any den wiped out since it started waiting can now be moved back
+        // into — see ensureCurrentZoneDenPacks, which does the actual
+        // (lazy, current-zone-only) spawning once this fires.
+        pendingDenRespawn.clear();
       }
 
       function chooseWeatherForDay() {
