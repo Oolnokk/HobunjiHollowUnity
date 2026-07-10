@@ -10773,12 +10773,32 @@
           return;
         }
         const progress = 1 - toolSwingT / toolSwingDur;
-        // Fade in over the swing's first ~18%, hold, fade out over the
-        // last ~28% — a simple appear/fade envelope rather than tying to
-        // any particular ability's own windup/strike split.
-        const fadeIn = Math.min(1, progress / 0.18);
-        const fadeOut = 1 - Math.max(0, (progress - 0.72) / 0.28);
-        const alpha = Math.max(0, Math.min(fadeIn, fadeOut));
+        const WF = combatSwingWindupFrac, SF = combatSwingStrikeFrac;
+        // The actual hit (damage + SFX, see combat-core.js's
+        // fireStagedStrike, fired at real-seconds windupS) lands exactly at
+        // cosmetic progress===WF, not at SF — SF is just where the cosmetic
+        // swing's own follow-through finishes extending. So the arc's
+        // sweep only spans WF→SF: it starts the instant the hit/SFX
+        // actually happens and finishes when the strike pose is fully
+        // extended, rather than crawling across the whole windup too.
+        if (progress < WF) {
+          for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
+          return;
+        }
+        const strikeT = Math.min(1, (progress - WF) / Math.max(1e-6, SF - WF));
+        // Same post-strike-hold math updateToolMesh uses for HF (the
+        // fraction where the strike pose's pause ends and the return-to-
+        // neutral lerp begins) — the sweep itself is done by SF, but the
+        // arc should still persist through that pause rather than
+        // vanishing early, fading its overall opacity to 0 exactly by the
+        // pause's end instead of bleeding into the return phase.
+        const HF = combatSwingHoldS > 0
+          ? Math.min(0.99, SF + combatSwingHoldS / toolSwingDur)
+          : Math.min(0.99, SF + (1 - SF) * 0.3);
+        let alpha;
+        if (progress <= SF) alpha = 1;
+        else if (progress < HF) alpha = 1 - (progress - SF) / Math.max(1e-6, HF - SF);
+        else alpha = 0;
         if (alpha <= 0.01) {
           for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
           return;
@@ -10794,7 +10814,7 @@
         // Which tip (u=0 or u=1) the bright spike starts from — mirrors
         // combatSwingSign so the highlight travels the same way the actual
         // swing does (forehand vs backhand read as sweeping opposite ways).
-        const spikeU = combatSwingSign >= 0 ? progress : 1 - progress;
+        const spikeU = combatSwingSign >= 0 ? strikeT : 1 - strikeT;
 
         for (let lane = 0; lane < COMBAT_CONE_TRAIL_MAX_LANES; lane++) {
           const mesh = ensureConeTrailLaneMesh(lane);
