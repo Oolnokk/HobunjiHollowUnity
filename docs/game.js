@@ -1229,11 +1229,21 @@
       const DODGE_COOLDOWN_S = 0.6;
       const DODGE_STAMINA_COST = 18;
 
+      // Multiplier applied to both the player's and a non-swimming
+      // creature's movement speed while standing in a river/stream tile —
+      // see tileSpeedAt (player) and moveCreatureToward (creatures). A
+      // creature/player tagged canSwim ignores this and moves at full
+      // speed in water. Attacking is disallowed while swimming regardless
+      // of species — see isPlayerSwimming/isCreatureSwimming.
+      const SWIM_SPEED_MUL = 0.5;
+
       // Global creature database — companions (whistle-bound) and hostiles
       // (ambient-spawned) are both built from this table.
-      // canClimb/canSwim: default false — a creature without the tag can't
-      // enter an incline (cliff wall) or river/stream tile at all, in either
-      // direction (up, down, or straight across). See moveCreatureToward.
+      // canClimb: default false — a creature without the tag can't enter an
+      // incline (cliff wall) tile at all. canSwim: default false — a
+      // creature without the tag can still enter a river/stream tile (it's
+      // no longer a hard block), just at SWIM_SPEED_MUL speed and unable to
+      // attack while in it. See moveCreatureToward/isCreatureSwimming.
       const CREATURE_DB = {
         'dabinggi-hound': {
           label: 'Dabinggi-hound', hostile: false,
@@ -2898,8 +2908,31 @@
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
         const tile = getActiveGrid()[Math.floor(wy / TILE)][Math.floor(wx / TILE)];
         if (tile.incline && !def?.canClimb) return false;
-        if ((tile.type === TileType.RIVER || tile.type === TileType.STREAM) && !def?.canSwim) return false;
+        // River/stream is no longer a hard block for non-swimmers — see
+        // moveCreatureToward's SWIM_SPEED_MUL slowdown and
+        // isCreatureSwimming's attack lockout.
         return true;
+      }
+
+      // True while `x,y` sits in a river/stream tile and `canSwim` is
+      // falsy — shared by the player (isPlayerSwimming) and creatures
+      // (isCreatureSwimming) to drive both the movement slowdown and the
+      // attack lockout.
+      function isSwimmingAt(x, y, canSwim, grid) {
+        if (canSwim) return false;
+        const g = grid || getActiveGrid();
+        const col = Math.floor(x / TILE), row = Math.floor(y / TILE);
+        const type = g[row]?.[col]?.type;
+        return type === TileType.RIVER || type === TileType.STREAM;
+      }
+
+      // The player has no canSwim tag of their own today.
+      function isPlayerSwimming() {
+        return isSwimmingAt(player.x, player.y, false, getActiveGrid());
+      }
+
+      function isCreatureSwimming(c) {
+        return isSwimmingAt(c.x, c.y, c.def?.canSwim, c.areaGrid);
       }
 
       function moveCreatureToward(c, tx, ty, speed, dt) {
@@ -2907,7 +2940,8 @@
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
         const nx = dx / dist, ny = dy / dist;
-        const step = Math.min(dist, speed * dt);
+        const effectiveSpeed = isCreatureSwimming(c) ? speed * SWIM_SPEED_MUL : speed;
+        const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
         // slides along it instead of freezing outright (mirrors the player's
         // collision in updateMovement).
@@ -2916,7 +2950,7 @@
         if (creatureCanEnterTile(c.def, desiredX, c.y)) c.x = desiredX;
         if (creatureCanEnterTile(c.def, c.x, desiredY)) c.y = desiredY;
         const moved = Math.hypot(c.x - prevX, c.y - prevY);
-        c.vx = nx * speed; c.vy = ny * speed;
+        c.vx = nx * effectiveSpeed; c.vy = ny * effectiveSpeed;
         if (moved > 0) tickCreatureFootsteps(c, moved);
         return moved > 0;
       }
@@ -3187,7 +3221,7 @@
               // chase-and-trigger logic below for any creature that lists one.
               const result = updateCreatureBehaviorStage(c, dt, player, def, (dist) => {
                 const triggerRangePx = creatureAimColliderReachPx(def);
-                if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost) return false;
+                if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c)) return false;
                 window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
                 return !!(def.attacks?.length && window.Combat?.animalAttacks?.start(
@@ -3203,7 +3237,7 @@
               // via aimAngle above) rather than the bite's short flat range.
               const pounceCapable = def.attacks?.includes('pounce');
               const triggerRangePx = pounceCapable ? creatureAimColliderReachPx(def) : def.attackRangePx;
-              if (distToPlayer <= triggerRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+              if (distToPlayer <= triggerRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && !isCreatureSwimming(c)) {
                 window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
                 const hadNamedAttack = !!def.attacks?.length;
@@ -3340,7 +3374,7 @@
                 if (st.t >= STAGE_BACKUP_S) { st.mode = 'active'; st.t = 0; }
               } else {
                 if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
-                if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
+                if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && !isCreatureSwimming(c)) {
                   window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                   c.attackCooldownT = def.attackCooldownS;
                   // Tamed behavior: the real species attack set (e.g. Pounce)
@@ -3782,6 +3816,11 @@
         occlusionSafeCameraPosition,
         updateCameraPosition,
         snapCameraTarget: _snapCameraTarget,
+        isPlayerSwimming,
+        isCreatureSwimming,
+        tileSpeedAt,
+        performContextAction,
+        TILE,
       };
 
       // Ambient hostile spawning — wild animal dens (see WildernessMapGenerator's
@@ -3957,6 +3996,23 @@
         player.dodgeCooldownT = DODGE_COOLDOWN_S;
         player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
         return true;
+      }
+
+      // Single dedicated "context action" button — climbs a cliff-face wall
+      // when facing one, otherwise dodges evasively. getClimbTarget() has
+      // always been direction-agnostic (it lands on whatever elevation is
+      // on the far side of the wall, higher or lower — see its own comment),
+      // so "jump off a ledge" falls out of the exact same crossing for free
+      // once it's reachable from here rather than only the primary action
+      // bar's climb prompt. Walking/dodging straight into a river or stream
+      // to start swimming needs no separate trigger of its own now that
+      // water is a real (slow, non-swimmer) crossing instead of a hard
+      // block — see tileSpeedAt.
+      function performContextAction() {
+        if (player.climbing || player.dodging) return;
+        const climb = getClimbTarget();
+        if (climb) { startClimb(climb); return; }
+        performDodge(player.angle);
       }
 
       // Combat-ability movement: a short forward step/leap toward the aim
@@ -12155,8 +12211,11 @@
         // Auto-reserved plateau cliff-face ring — impassable except where a
         // ramp tile explicitly cuts through it (which never sets `incline`).
         if (tile.incline) return null;
-        // Rivers/streams are a real crossing obstacle — block like a solid tile.
-        if (type === TileType.RIVER || type === TileType.STREAM) return null;
+        // Rivers/streams are swimmable, not blocked — the player has no
+        // canSwim tag of their own (see CREATURE_DB's comment on the flag),
+        // so this is always the slow "non-swimmer" pace; see isPlayerSwimming
+        // for the matching attack-lockout.
+        if (type === TileType.RIVER || type === TileType.STREAM) return SWIM_SPEED_MUL;
         // Block structural building tiles on exterior maps (player must use doors/transitions).
         if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
         if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
@@ -17992,7 +18051,7 @@
       // hostile is within auto-target range, since dodging is moot outside combat.
       dodgeBtn?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
-        performDodge(player.angle);
+        performContextAction();
       });
 
       // Weapon quick-switch button: a plain tap toggles in/out of the
@@ -18177,7 +18236,7 @@
         if (actionId === 'interact') { runInteractAction(); return; }
         const actionSlot = /^action(\d+)$/.exec(actionId);
         if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
-        if (actionId === 'dodge') { performDodge(player.angle); return; }
+        if (actionId === 'dodge') { performContextAction(); return; }
         if (actionId === 'swapTarget') {
           const aimAngle = controllerLookActive ? controllerLookAngle
             : (isDesktop && mouseLookActive) ? mouseLookAngle
@@ -18386,10 +18445,11 @@
           refreshItemScroll(); refreshActionBar();
         }
 
-        // X: dodge in the current facing direction, with i-frames
+        // X: context action — climbs/cliff-dives a wall in the current
+        // facing direction if one's there, otherwise dodges with i-frames
         if (key === 'x') {
           event.preventDefault();
-          performDodge(player.angle);
+          performContextAction();
           return;
         }
 
@@ -18784,6 +18844,9 @@
         // — without this, that ground covered during the leap never ticked
         // a footstep (see combat-animal-attacks.js's pounceUpdate).
         tickCreatureFootsteps,
+        // Gates every weapon tap/hold ability (see combat-input.js) — no
+        // attacking while swimming in a river/stream, player or creature.
+        isPlayerSwimming,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module
