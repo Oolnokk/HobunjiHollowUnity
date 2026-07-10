@@ -12,7 +12,11 @@
     function _renderDebugPanel() {
       const panel = document.getElementById('debugLog');
       if (!panel) return;
-      const COLOR = { error: '#f87171', warn: '#fb923c', promise: '#c084fc', info: '#d1d5db', fish: '#60a5fa', audio: '#ff66cc', bgm: '#4ade80', cue: '#4ade80', bgs: '#fada5e' };
+      // 'wildlife' is its own previously-unused color — wild-animal spawn/
+      // AI-direction failures and fallbacks (see game.js's den/pack system
+      // and updateHostiles/updateCompanions) log at this level specifically
+      // so they stand out from every other debug category at a glance.
+      const COLOR = { error: '#f87171', warn: '#fb923c', promise: '#c084fc', info: '#d1d5db', fish: '#60a5fa', audio: '#ff66cc', bgm: '#4ade80', cue: '#4ade80', bgs: '#fada5e', wildlife: '#22d3ee' };
       // Only follow new entries to the bottom if the user hasn't scrolled up
       // to read older ones — otherwise re-rendering would yank them back down.
       const stuckToBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 16;

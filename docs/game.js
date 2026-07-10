@@ -3172,11 +3172,13 @@
               if (distToPlayer <= triggerRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
                 window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
-                const startedModular = def.attacks?.length && window.Combat?.animalAttacks?.start(
+                const hadNamedAttack = !!def.attacks?.length;
+                const startedModular = hadNamedAttack && window.Combat?.animalAttacks?.start(
                   c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
                 );
                 if (startedModular) aimAngle = c.facing;
                 if (!startedModular) {
+                  if (hadNamedAttack) window.__farmLog?.(`[wildlife] ${c.creatureKey} (${c.id}): named attack failed to start against player (fallback: plain bite telegraph).`, 'wildlife');
                   window.Combat.telegraph.start(c, {
                     windupS: BITE_TELEGRAPH_WINDUP_S,
                     strikeS: BITE_TELEGRAPH_STRIKE_S,
@@ -3194,8 +3196,24 @@
           } else if (c.state === 'return') {
             moving = moveCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
+          } else if (c.denKey && isNightTime()) {
+            // Denned pack, off the clock — head back to the den and settle
+            // there instead of continuing to wander (see spawnPackAtDen for
+            // homeX/homeY = the den's own anchor point).
+            const distFromDen = Math.hypot(c.x - c.homeX, c.y - c.homeY);
+            if (distFromDen > DEN_SETTLE_RADIUS_PX) {
+              moving = moveCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
+              if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
+            } else {
+              aimAngle = idleCreatureAimAngle(c.groupRot);
+            }
           } else {
-            moving = wanderTick(c, dt, c.homeX, c.homeY, TILE * 2.2);
+            // Active hours (or a non-denned creature, e.g. legacy/authored
+            // zones without den data): pack creatures roam a wider territory
+            // around their den by day than the tight loiter radius everything
+            // else uses.
+            const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
+            moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
             // Wandering has an explicit heading; paused between legs, there's no
             // specific direction to look, so settle broadside to the camera.
             aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
@@ -3301,6 +3319,7 @@
                   if (startedModular) {
                     aimAngle = c.facing;
                   } else {
+                    window.__farmLog?.(`[wildlife] companion ${c.creatureKey} (${c.id}): "${attackId}" failed to start against target (fallback: plain bite telegraph).`, 'wildlife');
                     window.Combat.telegraph.start(c, {
                       windupS: BITE_TELEGRAPH_WINDUP_S,
                       strikeS: BITE_TELEGRAPH_STRIKE_S,
@@ -3741,6 +3760,15 @@
       const DEN_PACK_SIZE_MIN = 2;
       const DEN_PACK_SIZE_MAX = 4;
       const DEN_CHECK_INTERVAL_S = 2;
+      // Idle-state wander range while denned packs are active (isNightTime()
+      // false, see updateHostiles) — well beyond the tight loiter radius
+      // everything else uses, so packs actually roam by day instead of
+      // pacing right next to the den.
+      const DEN_PACK_WANDER_RADIUS_PX = TILE * 6;
+      // How close a denned creature has to get to homeX/homeY before it's
+      // considered "back" and stops closing the rest of the way in — same
+      // idea as the 'return' state's TILE*0.6 threshold.
+      const DEN_SETTLE_RADIUS_PX = TILE * 0.6;
       let denCheckTimer = 0;
 
       // denKey → true once that den has ever had a pack spawned (so a fresh
@@ -3778,7 +3806,10 @@
       function spawnPackAtDen(zoneId, den, denKey) {
         const zdef = EXTERIOR_ZONES[zoneId];
         const pool = zdef?.packSpecies;
-        if (!pool || !pool.length) return;
+        if (!pool || !pool.length) {
+          window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
+          return;
+        }
         const speciesKey = pool[Math.floor(Math.random() * pool.length)];
         const homeX = den.x * TILE + TILE * 0.5, homeY = den.y * TILE + TILE * 0.5;
         const count = DEN_PACK_SIZE_MIN + Math.floor(Math.random() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
@@ -3789,9 +3820,12 @@
           const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
           const creature = makeCreatureEntity(speciesKey, x, y, { homeX, homeY, state: 'idle', denKey });
           if (creature) { hostileObjects.add(creature); spawned++; }
+          else window.__farmLog?.(`[wildlife] ${denKey}: makeCreatureEntity("${speciesKey}") returned null (attempt ${i + 1}/${count}) — bad/missing CREATURE_DB entry?`, 'wildlife');
         }
         if (spawned > 0 && zoneId === currentArea) {
           showToast(`${CREATURE_DB[speciesKey]?.label || speciesKey} pack moved into a den nearby.`, false);
+        } else if (spawned === 0) {
+          window.__farmLog?.(`[wildlife] ${denKey}: pack spawn for "${speciesKey}" placed 0/${count} creatures (fallback: den left empty).`, 'wildlife');
         }
       }
 
@@ -3801,10 +3835,23 @@
       // the player isn't currently in just wait — a wipe there still marks
       // pendingDenRespawn immediately, and the very next visit (or the rest
       // of this visit, once the day turns over) lazily seeds it correctly.
+      const _loggedMissingDenZones = new Set();
       function ensureCurrentZoneDenPacks() {
         const layout = _zoneLayouts.get(currentArea);
         const dens = layout?.dens;
-        if (!dens || !dens.length) return;
+        if (!dens || !dens.length) {
+          // A zone configured with a packSpecies pool is expected to have
+          // den data (see performTothalShift's `dens: workspace.animalDens`)
+          // — if it doesn't, something upstream (generation, or a stale/
+          // authored-only layout — see the other _zoneLayouts.set call site)
+          // silently produced none. Only log once per zone per session so
+          // this doesn't spam every DEN_CHECK_INTERVAL_S.
+          if (EXTERIOR_ZONES[currentArea]?.packSpecies?.length && !_loggedMissingDenZones.has(currentArea)) {
+            _loggedMissingDenZones.add(currentArea);
+            window.__farmLog?.(`[wildlife] zone "${currentArea}" has a packSpecies pool but no den anchors in _zoneLayouts (fallback: no wild packs will spawn here this session).`, 'wildlife');
+          }
+          return;
+        }
         for (const den of dens) {
           const key = denKeyFor(currentArea, den);
           const alive = isDenPackAlive(key);
@@ -18684,6 +18731,11 @@
         playCreatureBark,
         playCreatureClawHit,
         playWeaponSlashSfx,
+        // Named animal attacks (e.g. Pounce) own the creature's position
+        // directly for their leap instead of going through moveCreatureToward
+        // — without this, that ground covered during the leap never ticked
+        // a footstep (see combat-animal-attacks.js's pounceUpdate).
+        tickCreatureFootsteps,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module

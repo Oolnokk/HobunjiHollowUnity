@@ -146,6 +146,10 @@
 
     c.x = nx;
     c.y = ny;
+    // The leap covers real ground at a real speed (POUNCE_LEAP_SPEED_PX_S) —
+    // same footstep hook as ordinary movement, so a pouncing creature is
+    // still audible instead of silently gliding in for the hit.
+    deps.tickCreatureFootsteps?.(c, stepPx);
 
     const headX = c.x + dirX * state.headOffsetPx, headY = c.y + dirY * state.headOffsetPx;
     for (const target of state.targets) {
