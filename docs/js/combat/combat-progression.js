@@ -12,11 +12,14 @@
 // Every ability except Blink Dodge (which deals no damage of its own) is
 // "weapon-typed": which set of options it offers at a given level depends
 // on the currently equipped weapon's dmgType (see game.js's
-// currentWeaponDamageType() — 'sharp' or 'blunt', TOOL_ITEM_DEFS). That's
-// the ability's option POOL, not its identity — a chosen level's actual
-// effect is locked to whichever specific option was picked at choose()
-// time (see meta's {type, index} below), so switching to a different-type
-// weapon later can't retroactively reinterpret an already-made choice.
+// currentWeaponDamageType() — 'sharp' or 'blunt', TOOL_ITEM_DEFS). Only the
+// chosen SLOT (level -> option index) is stored — not which type was
+// active when it was picked — so the whole build always resolves through
+// whichever weapon type is equipped right now: swap weapon types and every
+// already-chosen level's effect reinterprets to that type's option at the
+// same slot, rather than staying stuck on whatever type happened to be
+// equipped when each individual level was picked (which would let a single
+// ability accumulate a mix of both sharp and blunt effects at once).
 // Progression levels themselves are entirely global — shared across every
 // weapon (see combat-loadout.js for what IS per-weapon: which ability
 // occupies each loadout slot) — and persist as character save data.
@@ -201,10 +204,17 @@
     return t[weaponType] || t.sharp;
   }
 
-  // meta[abilityId] = { 1: { type: 'sharp'|'blunt'|null, index }, ... } —
-  // only sequentially-chosen levels are present; level 1 is always
-  // choosable. `type` is fixed at choose() time so a later weapon swap
-  // can't reinterpret an already-made choice — see the file header.
+  // meta[abilityId] = { 1: optionIndex, 2: optionIndex, ... } — only
+  // sequentially-chosen levels are present; level 1 is always choosable.
+  // Only the INDEX is stored, not which weapon type was active when it was
+  // picked — every level's actual effect always resolves through whichever
+  // weapon type is equipped right now (see getChosenOption/getEffects
+  // below), so the whole build stays internally consistent with a single
+  // damage type at all times. Swapping weapon type reinterprets every
+  // already-chosen level's effect to that type's option at the same slot,
+  // rather than letting different levels permanently lock to whatever type
+  // happened to be equipped when each one was picked (which let a build
+  // accumulate a mix of both sharp and blunt effects on the same ability).
   let meta = {};
 
   function getUnlockedLevel(abilityId) {
@@ -220,24 +230,27 @@
     return level <= getUnlockedLevel(abilityId) + 1;
   }
 
+  function currentWeaponType() {
+    return window.Combat.deps?.currentWeaponDamageType?.() || 'sharp';
+  }
+
   // Returns the actual chosen option object ({label, desc, afflictions?,
-  // stat?}), resolved via whichever weapon type was active when the choice
-  // was made — not the current one. null if nothing's been chosen yet.
+  // stat?}) for the CURRENTLY equipped weapon's type. null if nothing's
+  // been chosen at that level yet.
   function getChosenOption(abilityId, level) {
-    const entry = meta[abilityId]?.[level];
-    if (!entry) return null;
-    return getTree(abilityId, entry.type)?.[level - 1]?.[entry.index] || null;
+    const idx = meta[abilityId]?.[level];
+    if (idx === undefined) return null;
+    const weaponType = isWeaponTyped(abilityId) ? currentWeaponType() : null;
+    return getTree(abilityId, weaponType)?.[level - 1]?.[idx] || null;
   }
 
   function choose(abilityId, level, optionIndex) {
     if (!TREES[abilityId] || !isLevelAvailable(abilityId, level)) return false;
-    const weaponType = isWeaponTyped(abilityId)
-      ? (window.Combat.deps?.currentWeaponDamageType?.() || 'sharp')
-      : null;
+    const weaponType = isWeaponTyped(abilityId) ? currentWeaponType() : null;
     const options = getTree(abilityId, weaponType)?.[level - 1];
     if (!options || optionIndex < 0 || optionIndex >= options.length) return false;
     if (!meta[abilityId]) meta[abilityId] = {};
-    meta[abilityId][level] = { type: weaponType, index: optionIndex };
+    meta[abilityId][level] = optionIndex;
     persist();
     return true;
   }
@@ -273,19 +286,18 @@
     for (const abilityId of Object.keys(TREES)) {
       const savedLevels = saved[abilityId];
       if (!savedLevels || typeof savedLevels !== 'object') continue;
-      const weaponTyped = isWeaponTyped(abilityId);
       const clean = {};
       // Re-validate sequentially rather than trusting the save blindly, so
       // a hand-edited or corrupted save can't skip straight to level 5.
+      // Every weapon-type variant of a given ability's tree has the same
+      // option count per level (see the tree factories above), so bounds-
+      // checking against either variant is equivalent here.
       let lvl = 1;
       while (lvl <= 5 && savedLevels[lvl] !== undefined) {
-        const entry = savedLevels[lvl];
-        const type = weaponTyped ? entry?.type : null;
-        if (weaponTyped && type !== 'sharp' && type !== 'blunt') break;
-        const idx = Number(entry?.index);
-        const options = getTree(abilityId, type)?.[lvl - 1];
+        const idx = Number(savedLevels[lvl]);
+        const options = getTree(abilityId, 'sharp')?.[lvl - 1];
         if (!Number.isInteger(idx) || idx < 0 || !options || idx >= options.length) break;
-        clean[lvl] = { type, index: idx };
+        clean[lvl] = idx;
         lvl++;
       }
       if (Object.keys(clean).length) meta[abilityId] = clean;
