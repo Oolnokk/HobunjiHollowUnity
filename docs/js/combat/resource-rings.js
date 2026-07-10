@@ -251,6 +251,22 @@
     return group;
   }
 
+  // Auto-target lock indicator (see game.js's findAutoTarget/swapAutoTarget)
+  // — two full red rings sitting just outside the resource ring's own
+  // footprint (outerMul .92): a slightly larger one, and a smaller one a
+  // bit inside it, both beneath (a lower y than) the resource rings so they
+  // read as a halo the resource ring sits on top of. Rotationally
+  // symmetric, so the group.rotation.y = Math.PI/2 on the resource ring
+  // above doesn't matter for these.
+  const TARGET_RING_COLOR = 0xff2020;
+  function buildTargetIndicatorRings(radius) {
+    const group = new THREE.Group();
+    const y = .008;
+    group.add(makeArcMesh(radius * 1.04, radius * 1.10, 0, 360, TARGET_RING_COLOR, .9, y, 48));
+    group.add(makeArcMesh(radius * .96, radius * 1.00, 0, 360, TARGET_RING_COLOR, .9, y + .002, 48));
+    return group;
+  }
+
   // Homeostasis = full Health, full Stamina, not Exhausted, and no active
   // affliction — the ring should be invisible at rest and only appear once
   // something is actually missing or afflicted.
@@ -287,7 +303,13 @@
   // — call every frame from the entity's own mesh-sync function, then
   // position the returned group at the entity's ground point yourself
   // (same as this game's existing groundShadow.position.set(...) calls).
-  function updateRingHud(entity, scene, radius = .6) {
+  // opts.isTarget: true while this entity is the player's current weapon
+  // auto-target (see game.js's findAutoTarget) — draws the red target-lock
+  // rings and forces the resource ring visible even at full Health/Stamina,
+  // so targeting a healthy creature doesn't leave you with no ring at all
+  // until it first takes damage.
+  function updateRingHud(entity, scene, radius = .6, opts = {}) {
+    const isTarget = !!opts.isTarget;
     if (!entity._ringHud) {
       entity._ringHud = new THREE.Group();
       entity._ringHud.name = "resource_ring_hud";
@@ -300,7 +322,7 @@
       scene.add(entity._ringHud);
     }
 
-    if (isHomeostatic(entity)) {
+    if (isHomeostatic(entity) && !isTarget) {
       entity._ringHud.visible = false;
       if (entity._ringHudKey !== HOMEOSTASIS_KEY) {
         entity._ringHudKey = HOMEOSTASIS_KEY;
@@ -310,11 +332,12 @@
     }
 
     entity._ringHud.visible = true;
-    const key = makeHudKey(entity) + "|" + radius;
+    const key = makeHudKey(entity) + "|" + radius + "|" + isTarget;
     if (key !== entity._ringHudKey) {
       entity._ringHudKey = key;
       clearGroup(entity._ringHud);
       entity._ringHud.add(buildGroundRingForFighter(entity, radius));
+      if (isTarget) entity._ringHud.add(buildTargetIndicatorRings(radius));
     }
     return entity._ringHud;
   }

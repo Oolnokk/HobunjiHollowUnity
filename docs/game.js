@@ -2817,7 +2817,15 @@
 
       // Nearest live hostile in the player's current area within lock-on range, or
       // the player's manually-swapped target if still valid, or null.
+      // Hardened at the source (not left to every caller to remember): auto
+      // target is only ever active while the weapon tool slot is both
+      // selected AND actually has a weapon equipped in it — every caller
+      // gets this for free instead of some checking activeTool alone.
       function findAutoTarget() {
+        if (activeTool !== 'weapon' || !equipmentSlots.weapon) {
+          manualAutoTarget = null;
+          return null;
+        }
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         if (manualAutoTarget) {
           if (manualAutoTarget.health > 0 && manualAutoTarget.areaId === currentArea &&
@@ -2835,25 +2843,28 @@
         return best;
       }
 
-      // Swap the auto-target to the nearest hostile roughly in `aimAngle`'s
-      // direction (within range, within a 90° cone either side), excluding
-      // whatever is currently targeted. Used by the desktop swap-target input
-      // (mouse/right-stick direction) and the mobile swap-target stick button.
+      // Swap the auto-target to the CLOSEST hostile within a cone around
+      // `aimAngle` (excluding whatever is currently targeted) — the desktop
+      // swap-target input (mouse/right-stick direction) and the mobile
+      // swap-target stick button both drive this. If nothing qualifies in
+      // that direction, the target simply stays the same (returns false;
+      // manualAutoTarget is left untouched). Hardened the same way as
+      // findAutoTarget — a weapon has to actually be equipped, not just the
+      // weapon tool slot selected.
+      const SWAP_TARGET_HALF_CONE_RAD = Math.PI / 2;
       function swapAutoTarget(aimAngle) {
-        if (activeTool !== 'weapon') return false;
+        if (activeTool !== 'weapon' || !equipmentSlots.weapon) return false;
         const current = findAutoTarget();
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
-        let best = null, bestScore = -Infinity;
+        let best = null, bestDist = Infinity;
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea || c === current) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const dist = Math.hypot(dx, dy);
-          if (dist > maxDist || dist < 0.001) continue;
+          if (dist > maxDist || dist < 0.001 || dist >= bestDist) continue;
           const angleToC = Math.atan2(dy, dx);
-          const diff = Math.abs(angleDiff(angleToC, aimAngle));
-          if (diff > Math.PI / 2) continue;
-          const score = Math.cos(diff) - (dist / maxDist) * 0.25;
-          if (score > bestScore) { bestScore = score; best = c; }
+          if (Math.abs(angleDiff(angleToC, aimAngle)) > SWAP_TARGET_HALF_CONE_RAD) continue;
+          bestDist = dist; best = c;
         }
         if (!best) return false;
         manualAutoTarget = best;
@@ -2944,7 +2955,11 @@
         if (window.ResourceRings) {
           const ringRadius = clamp((c.def.modelWidth || 2) * .34, .46, 1.3);
           const ringScene = c.scene || scene;
-          const ringHud = window.ResourceRings.updateRingHud(c, ringScene, ringRadius);
+          // Only hostiles are ever a weapon auto-target (see findAutoTarget) —
+          // a red target-lock ring renders around a hostile's resource rings
+          // while it's the current target (see resource-rings.js).
+          const isTarget = !c.isCompanion && c === findAutoTarget();
+          const ringHud = window.ResourceRings.updateRingHud(c, ringScene, ringRadius, { isTarget });
           ringHud.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
         }
 
