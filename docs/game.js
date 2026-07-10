@@ -3997,7 +3997,8 @@
         toolMeshMap: () => toolMeshMap,
         toolHolder: () => toolHolder,
         updateToolMesh,
-        drawCombatConeTrail,
+        updateCombatConeTrail,
+        coneTrailLaneMeshes: () => coneTrailLaneMeshes,
         triggerWeaponSwingVisual,
         setActiveTool,
         TILE,
@@ -10699,23 +10700,78 @@
         }
       }
 
-      // Combat swing trail — a handful of parallel crescent arcs traced
-      // along the outer edge of the attack's own hit cone (rangePx/
-      // halfConeRad/angle, captured in combatSwingCone by
-      // triggerWeaponSwingVisual/setCombatSwingCone), fading in then out
-      // over the swing's own progress. One lane per affliction the attack
-      // can inflict (min one, plain white with none), offset slightly
-      // inward from each other so multiple afflictions read as distinct
-      // side-by-side arcs instead of one overlapping smear. Simple 2D-
-      // canvas-overlay geometry (same worldToOverlay projection as
-      // drawCombatConeReticle/drawWeaponTrailEffects above) rather than 3D
-      // meshes — no pooling, no per-frame allocation beyond the sampled
-      // point arrays.
-      const COMBAT_CONE_TRAIL_SAMPLES = 14;
-      const COMBAT_CONE_TRAIL_LANE_INSET = 0.08; // fraction of range per lane, stepping inward
-      const COMBAT_CONE_TRAIL_LINE_WIDTH = 3;
-      function drawCombatConeTrail() {
-        if (!combatSwingAnim || !combatSwingCone || toolSwingT <= 0 || toolSwingDur <= 0) return;
+      // Combat swing trail — real 3D ribbon meshes (not a flat canvas
+      // overlay decal) tracing the outer edge of the attack's own hit cone
+      // (rangePx/halfConeRad/angle, captured in combatSwingCone by
+      // triggerWeaponSwingVisual/setCombatSwingCone), so they sit properly
+      // in the scene — occluded by terrain/creatures like anything else —
+      // rather than always drawing on top. One ribbon lane per affliction
+      // the attack can inflict (min one, plain white with none), each
+      // stepped slightly inward in radius so multiple afflictions read as
+      // distinct side-by-side swipes instead of one overlapping smear.
+      // Each lane tapers to a point at both ends (like a blade arc, not a
+      // uniform-width ring segment) and arches upward through its middle —
+      // the "swipe" actually lifts off the ground plane instead of being a
+      // flat decal — peaking at the same mid-swing instant its width does.
+      const COMBAT_CONE_TRAIL_SAMPLES = 16;
+      const COMBAT_CONE_TRAIL_MAX_LANES = 4;
+      const COMBAT_CONE_TRAIL_LANE_INSET = 0.08; // fraction of range stepped inward per lane
+      const COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES = 0.06;
+      const COMBAT_CONE_TRAIL_ARCH_UNITS = 0.22; // how far (world units) the ribbon's middle lifts above weaponTrailCenterY
+      // Directional brightness spike: rather than one flat opacity across
+      // the whole arc (which reads as a static bracket with no sense of
+      // motion), the arc sits at a dim baseline everywhere except a bright
+      // band that lerps from one tip to the other over the swing's own
+      // progress — a moving highlight that sells "the blade is sweeping
+      // through here right now" and, mirrored by combatSwingSign, actually
+      // points the same way the swing itself is going (forehand vs
+      // backhand). Achieved via per-vertex color brightness (not per-vertex
+      // alpha — MeshBasicMaterial's vertex colors are RGB-only) which reads
+      // correctly under AdditiveBlending: a dim vertex just adds little.
+      const COMBAT_CONE_TRAIL_BASELINE_INTENSITY = 0.22;
+      const COMBAT_CONE_TRAIL_SPIKE_WIDTH_U = 0.24;
+      const coneTrailLaneMeshes = [];
+      function ensureConeTrailLaneMesh(i) {
+        let mesh = coneTrailLaneMeshes[i];
+        if (mesh) return mesh;
+        const geo = new THREE.BufferGeometry();
+        const vertCount = (COMBAT_CONE_TRAIL_SAMPLES + 1) * 2;
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
+        geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
+        const indices = [];
+        for (let s = 0; s < COMBAT_CONE_TRAIL_SAMPLES; s++) {
+          const a = s * 2, b = a + 1, c = a + 2, d = a + 3;
+          indices.push(a, b, c, b, d, c);
+        }
+        geo.setIndex(indices);
+        const mat = new THREE.MeshBasicMaterial({
+          transparent: true,
+          depthWrite: false,
+          vertexColors: true,
+          // Additive so the tint reads as a clear glowing swipe regardless
+          // of what's behind it, same reasoning as the old ghost trail's
+          // material (see git history).
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        });
+        mesh = new THREE.Mesh(geo, mat);
+        mesh.visible = false;
+        // Geometry is rebuilt fresh every visible frame — skip the
+        // per-frame bounding-sphere recompute frustum culling would need.
+        mesh.frustumCulled = false;
+        coneTrailLaneMeshes[i] = mesh;
+        return mesh;
+      }
+
+      // Called every frame alongside updateToolMesh (not from the 2D octx
+      // draw pass) since it owns real scene-graph meshes, not canvas pixels.
+      function updateCombatConeTrail() {
+        const parent = toolHolder.parent;
+        const active = combatSwingAnim && combatSwingCone && toolSwingT > 0 && toolSwingDur > 0 && parent;
+        if (!active) {
+          for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
+          return;
+        }
         const progress = 1 - toolSwingT / toolSwingDur;
         // Fade in over the swing's first ~18%, hold, fade out over the
         // last ~28% — a simple appear/fade envelope rather than tying to
@@ -10723,7 +10779,10 @@
         const fadeIn = Math.min(1, progress / 0.18);
         const fadeOut = 1 - Math.max(0, (progress - 0.72) / 0.28);
         const alpha = Math.max(0, Math.min(fadeIn, fadeOut));
-        if (alpha <= 0.01) return;
+        if (alpha <= 0.01) {
+          for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
+          return;
+        }
 
         const { rangePx, halfConeRad, angle } = combatSwingCone;
         const rangeTiles = rangePx / TILE;
@@ -10731,31 +10790,46 @@
         const baseZ = player.y / TILE;
         const y = weaponTrailCenterY();
         const ids = combatSwingAfflictionIds;
-        const laneCount = Math.max(1, ids.length);
+        const laneCount = Math.min(COMBAT_CONE_TRAIL_MAX_LANES, Math.max(1, ids.length));
+        // Which tip (u=0 or u=1) the bright spike starts from — mirrors
+        // combatSwingSign so the highlight travels the same way the actual
+        // swing does (forehand vs backhand read as sweeping opposite ways).
+        const spikeU = combatSwingSign >= 0 ? progress : 1 - progress;
 
-        octx.save();
-        octx.lineCap = 'round';
-        octx.lineJoin = 'round';
-        octx.lineWidth = COMBAT_CONE_TRAIL_LINE_WIDTH;
-        octx.globalAlpha = alpha * 0.85;
-        for (let lane = 0; lane < laneCount; lane++) {
+        for (let lane = 0; lane < COMBAT_CONE_TRAIL_MAX_LANES; lane++) {
+          const mesh = ensureConeTrailLaneMesh(lane);
+          if (lane >= laneCount) { mesh.visible = false; continue; }
           const colorNum = ids.length
             ? (window.ResourceRings?.AFFLICTION_COLORS?.[ids[lane]] ?? 0xffffff)
             : 0xffffff;
-          octx.strokeStyle = '#' + colorNum.toString(16).padStart(6, '0');
+          const cr = ((colorNum >> 16) & 0xff) / 255;
+          const cg = ((colorNum >> 8) & 0xff) / 255;
+          const cb = (colorNum & 0xff) / 255;
           const laneRadius = rangeTiles * (1 - lane * COMBAT_CONE_TRAIL_LANE_INSET);
-          octx.beginPath();
-          let started = false;
-          for (let i = 0; i <= COMBAT_CONE_TRAIL_SAMPLES; i++) {
-            const a = angle - halfConeRad + (2 * halfConeRad) * (i / COMBAT_CONE_TRAIL_SAMPLES);
-            const pos = worldToOverlay(baseX + Math.cos(a) * laneRadius, y, baseZ + Math.sin(a) * laneRadius);
-            if (!pos.visible) continue;
-            if (!started) { octx.moveTo(pos.x, pos.y); started = true; }
-            else octx.lineTo(pos.x, pos.y);
+          const posAttr = mesh.geometry.attributes.position;
+          const colorAttr = mesh.geometry.attributes.color;
+          for (let s = 0; s <= COMBAT_CONE_TRAIL_SAMPLES; s++) {
+            const u = s / COMBAT_CONE_TRAIL_SAMPLES;
+            const a = angle - halfConeRad + (2 * halfConeRad) * u;
+            const cosA = Math.cos(a), sinA = Math.sin(a);
+            const taper = Math.sin(u * Math.PI); // 0 at both tips, 1 at the middle
+            const half = COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES * (0.25 + 0.75 * taper);
+            const arch = COMBAT_CONE_TRAIL_ARCH_UNITS * taper;
+            const innerR = laneRadius - half, outerR = laneRadius + half;
+            const vi = s * 2;
+            posAttr.setXYZ(vi,     baseX + cosA * innerR, y + arch, baseZ + sinA * innerR);
+            posAttr.setXYZ(vi + 1, baseX + cosA * outerR, y + arch, baseZ + sinA * outerR);
+            const spike = Math.max(0, 1 - Math.abs(u - spikeU) / COMBAT_CONE_TRAIL_SPIKE_WIDTH_U);
+            const intensity = COMBAT_CONE_TRAIL_BASELINE_INTENSITY + (1 - COMBAT_CONE_TRAIL_BASELINE_INTENSITY) * spike;
+            colorAttr.setXYZ(vi,     cr * intensity, cg * intensity, cb * intensity);
+            colorAttr.setXYZ(vi + 1, cr * intensity, cg * intensity, cb * intensity);
           }
-          octx.stroke();
+          posAttr.needsUpdate = true;
+          colorAttr.needsUpdate = true;
+          mesh.material.opacity = alpha * 0.85;
+          mesh.visible = true;
+          if (mesh.parent !== parent) parent.add(mesh);
         }
-        octx.restore();
       }
 
       function drawActionTileEffects() {
@@ -14595,7 +14669,7 @@
       // ability can actually inflict — set via opts.afflictionIds on
       // triggerWeaponSwingVisual/triggerWeaponHoldVisual, computed by each
       // ability module from its own chosen upgrades. Drives the combat cone
-      // trail's coloring (see drawCombatConeTrail); empty means a plain
+      // trail's coloring (see updateCombatConeTrail); empty means a plain
       // white trail.
       let combatSwingAfflictionIds = [];
       // The attack's own hit cone (world-space range/half-angle/facing),
@@ -14603,7 +14677,7 @@
       // triggerWeaponSwingVisual, or later via setCombatSwingCone for
       // abilities (Charged Breaker) whose final range isn't known until
       // release. null means this swing has no cone to trail (e.g. a plain
-      // farming tool action) — drawCombatConeTrail then draws nothing.
+      // farming tool action) — updateCombatConeTrail then hides every lane.
       let combatSwingCone = null;
 
       function getDigSpeedMultiplier() {
@@ -16551,6 +16625,7 @@
         // exclude toolHolder/reticle meshes from their scene graph instead.
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
           updateToolMesh(dt);
+          updateCombatConeTrail();
           updateChargeAction();
           window.Combat?.update(dt);
           updateReticleMesh();
@@ -16949,7 +17024,6 @@
 
         drawCombatConeReticle();
         drawWeaponTrailEffects();
-        drawCombatConeTrail();
         drawActionTileEffects();
         drawActionParticles();
 
