@@ -58,6 +58,10 @@
     function onHoldStart() {
       startedAt = now();
       window.Combat.deps.showToast('Charged Breaker charging — release to strike.', true);
+      // Which afflictions the eventual slam can inflict doesn't depend on
+      // how long it's charged for — safe to read here at raise time rather
+      // than waiting for release.
+      const effects = window.CombatProgression?.getEffects(window.Combat.deps.currentWeaponKey(), 'chargedBreaker') || { afflictions: {}, stats: {} };
       // Power attack — reuses the shared sweep pose (same one combo's
       // Cleave/Backhand steps use) instead of the vertical chop, but wound
       // back farther and scaled up via power so the finisher still reads as
@@ -72,6 +76,7 @@
         strikeFrac: 1,
         power: POWER,
         holdS: HOLD_S,
+        afflictionIds: Object.keys(effects.afflictions),
       });
     }
 

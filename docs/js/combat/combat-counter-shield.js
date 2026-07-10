@@ -89,6 +89,7 @@
         windupFrac: COUNTER_WINDUP_S / counterDurationS,
         strikeFrac: 1,
         holdS: COUNTER_HOLD_S,
+        afflictionIds: Object.keys(effects.afflictions),
       });
       // Mirrors triggerWeaponSwingVisual's own auto-return-tail formula
       // (strikeFrac===1 here, so it always reserves one) so the block pose

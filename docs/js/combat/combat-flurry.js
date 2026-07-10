@@ -70,6 +70,7 @@
         // steps, so every sweep-style attack reads as the same swing.
         pose: window.Combat.poses.SWEEP_POSE,
         holdS: HOLD_S,
+        afflictionIds: Object.keys(effects.afflictions),
       });
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };

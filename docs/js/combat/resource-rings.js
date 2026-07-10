@@ -354,5 +354,9 @@
     updateRingHud,
     disposeRingHud,
     parseCssColor,
+    // Exposed so other visual systems (game.js's weapon ghost-trail) can
+    // reuse the exact same per-affliction color the resource bars themselves
+    // use, instead of keeping a second copy of this mapping in sync by hand.
+    AFFLICTION_COLORS,
   };
 })();

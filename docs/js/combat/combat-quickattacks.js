@@ -121,6 +121,7 @@
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
         holdS: HOLD_S,
+        afflictionIds: Object.keys(effects.afflictions),
       });
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * tech.damageMul * (1 + (effects.stats.damageMul || 0)));

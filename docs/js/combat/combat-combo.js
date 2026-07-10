@@ -125,6 +125,7 @@
         power: step.power || 1,
         pose: step.pose,
         holdS: step.holdS || 0,
+        afflictionIds: Object.keys(effects.afflictions),
       });
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       // Only the combo's heavy finisher (Cleave/Long Lunge) reads the streak

@@ -3978,6 +3978,13 @@
         awardMotesOfProwess,
         spendMotesOfProwess,
         gearInventory: () => gearInventory,
+        weaponGhostTrails: () => weaponGhostTrails,
+        combatSwingAfflictionIds: () => combatSwingAfflictionIds,
+        toolMeshMap: () => toolMeshMap,
+        toolHolder: () => toolHolder,
+        spawnWeaponGhost: () => spawnWeaponGhost(),
+        updateWeaponGhostTrails,
+        setActiveTool,
         TILE,
       };
 
@@ -14517,6 +14524,13 @@
       // through anim's bespoke per-style formula — see the pose-driven
       // branch at the top of updateToolMesh's style if/else chain.
       let combatSwingPose = null;
+      // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
+      // ability can actually inflict — set via opts.afflictionIds on
+      // triggerWeaponSwingVisual/triggerWeaponHoldVisual, computed by each
+      // ability module from its own chosen upgrades. Drives the weapon
+      // ghost-trail's color cycle (see spawnWeaponGhost below); empty means
+      // a plain white trail.
+      let combatSwingAfflictionIds = [];
 
       function getDigSpeedMultiplier() {
         return Math.max(0.01, player.digSpeed || 1);
@@ -14616,6 +14630,7 @@
         combatSwingPose = opts.pose || null;
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
+        combatSwingAfflictionIds = opts.afflictionIds || [];
       }
 
       // Like triggerWeaponSwingVisual, but once the windup phase finishes
@@ -15201,7 +15216,92 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingAfflictionIds = []; }
+      }
+
+      // ── Weapon ghost trail ────────────────────────────────────────────
+      // Genuine afterimages of the actual weapon mesh tracing its real
+      // swing path, not a fixed swept-area flash (see spawnCombatTrailEffect
+      // above) — sampled periodically from toolHolder's live transform while
+      // a combat swing (never a plain farming tool action) is playing.
+      // Colored by whichever afflictions the attack can inflict (see
+      // combatSwingAfflictionIds, set via triggerWeaponSwingVisual's
+      // opts.afflictionIds): no afflictions reads as plain white, one
+      // affliction tints every ghost that same color, and 2+ cycle through
+      // them in order — consecutive ghosts alternate/repeat across the
+      // trail rather than blending into one color.
+      const GHOST_SPAWN_INTERVAL_S = 0.026;
+      const GHOST_LIFETIME_S = 0.22;
+      const GHOST_TRAIL_LIMIT = 28;
+      const GHOST_BASE_OPACITY = 0.5;
+      let ghostSpawnTimer = 0;
+      let ghostColorCycleIndex = 0;
+      const weaponGhostTrails = [];
+
+      function spawnWeaponGhost() {
+        const liveGroup = toolMeshMap[activeTool];
+        const parent = toolHolder.parent;
+        if (!liveGroup || !parent || !toolHolder.visible) return;
+        const ids = combatSwingAfflictionIds;
+        const colorNum = ids.length
+          ? (window.ResourceRings?.AFFLICTION_COLORS?.[ids[ghostColorCycleIndex % ids.length]] ?? 0xffffff)
+          : 0xffffff;
+        ghostColorCycleIndex++;
+
+        const ghost = liveGroup.clone(true);
+        ghost.position.copy(toolHolder.position);
+        ghost.quaternion.copy(toolHolder.quaternion);
+        ghost.scale.copy(toolHolder.scale);
+        ghost.traverse(node => {
+          if (!node.isMesh) return;
+          // Materials (unlike transforms) are shared by reference on
+          // .clone() — must clone before mutating, or this would recolor
+          // the real equipped weapon out from under the player.
+          node.material = node.material.clone();
+          node.material.transparent = true;
+          node.material.depthWrite = false;
+          node.material.opacity = GHOST_BASE_OPACITY;
+          node.material.color.setHex(colorNum);
+        });
+        parent.add(ghost);
+        weaponGhostTrails.push({ mesh: ghost, age: 0 });
+
+        while (weaponGhostTrails.length > GHOST_TRAIL_LIMIT) {
+          const oldest = weaponGhostTrails.shift();
+          disposeWeaponGhost(oldest);
+        }
+      }
+
+      function disposeWeaponGhost(ghost) {
+        ghost.mesh.parent?.remove(ghost.mesh);
+        ghost.mesh.traverse(node => { if (node.isMesh) node.material?.dispose(); });
+      }
+
+      function updateWeaponGhostTrails(dt) {
+        // Only trails a real combat swing — plain farming tool actions
+        // (chop/dig/till/etc, which never set combatSwingAnim) stay as they
+        // were, with just their existing swept-area flash.
+        if (combatSwingAnim && toolSwingT > 0) {
+          ghostSpawnTimer -= dt;
+          if (ghostSpawnTimer <= 0) {
+            ghostSpawnTimer = GHOST_SPAWN_INTERVAL_S;
+            spawnWeaponGhost();
+          }
+        } else {
+          ghostSpawnTimer = 0;
+        }
+
+        for (let i = weaponGhostTrails.length - 1; i >= 0; i--) {
+          const ghost = weaponGhostTrails[i];
+          ghost.age += dt;
+          const t = Math.min(1, ghost.age / GHOST_LIFETIME_S);
+          const fade = GHOST_BASE_OPACITY * (1 - t);
+          ghost.mesh.traverse(node => { if (node.isMesh) node.material.opacity = fade; });
+          if (ghost.age >= GHOST_LIFETIME_S) {
+            disposeWeaponGhost(ghost);
+            weaponGhostTrails.splice(i, 1);
+          }
+        }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -16434,6 +16534,7 @@
         // exclude toolHolder/reticle meshes from their scene graph instead.
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
           updateToolMesh(dt);
+          updateWeaponGhostTrails(dt);
           updateChargeAction();
           window.Combat?.update(dt);
           updateReticleMesh();
