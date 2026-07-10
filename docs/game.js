@@ -4838,8 +4838,8 @@
 
       function scheduleNextCueDelay() {
         const audioCfg = gameAudioConfig();
-        const minSec = Number(audioCfg.ambientCueMinDelaySec) || 300;
-        const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 600);
+        const minSec = Number(audioCfg.ambientCueMinDelaySec) || 20;
+        const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 45);
         _ambientCueState.nextAt = performance.now() + (minSec + Math.random() * (maxSec - minSec)) * 1000;
       }
 

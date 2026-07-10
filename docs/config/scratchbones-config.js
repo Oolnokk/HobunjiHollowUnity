@@ -3199,8 +3199,8 @@ window.SCRATCHBONES_CONFIG = {
         "musicFadeMs": 280,
         "songFadeInMs": 2200,
         "songFadeOutMs": 2600,
-        "ambientCueMinDelaySec": 300,
-        "ambientCueMaxDelaySec": 600,
+        "ambientCueMinDelaySec": 20,
+        "ambientCueMaxDelaySec": 45,
         "areaBgm": {
           "farm": [
             { "url": "assets/audio/music/bgm/bgm_farm1.m4a" },
