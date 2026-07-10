@@ -1497,6 +1497,20 @@
         saveGearInventory();
       }
 
+      // Dev-mode-only test shortcut (see the "+1 Mastery" button in
+      // selectGearTool/selectEquipSlot, gated by s_devMode) — jumps straight
+      // to the XP threshold for the next level instead of adding an
+      // arbitrary XP amount that might not actually cross it.
+      function devBumpToolMasteryLevel(itemKey) {
+        if (!itemKey || !TOOL_ITEM_DEFS[itemKey] || !gearInventory) return;
+        const level = toolMasteryLevel(itemKey);
+        if (level >= MASTERY_XP_THRESHOLDS.length) return; // already maxed
+        const targetXp = MASTERY_XP_THRESHOLDS[level];
+        if (!gearInventory.toolMastery[itemKey]) gearInventory.toolMastery[itemKey] = { xp: 0 };
+        gearInventory.toolMastery[itemKey].xp = Math.max(gearInventory.toolMastery[itemKey].xp, targetXp);
+        saveGearInventory();
+      }
+
       // Called from every weapon-tool ability's onStrike once it's actually
       // landed a hit (see combat-*.js) — grows whichever tool is currently
       // equipped as the weapon.
@@ -9383,6 +9397,12 @@
               buildEquipmentSlots(); selectGearTool(key);
             });
           }
+          if (s_devMode && toolMasteryLevel(key) < 5) {
+            mkBtn('[Dev] +1 Mastery', '', () => {
+              devBumpToolMasteryLevel(key);
+              selectGearTool(key);
+            });
+          }
         }
       }
 
@@ -9429,6 +9449,16 @@
             buildEquipmentSlots(); selectEquipSlot(slot);
           };
           actEl.appendChild(b);
+          if (s_devMode && toolMasteryLevel(key) < 5) {
+            const devBtn = document.createElement('button');
+            devBtn.className = 'ii-btn';
+            devBtn.textContent = `[Dev] +1 Mastery (${def.label})`;
+            devBtn.onclick = () => {
+              devBumpToolMasteryLevel(key);
+              selectEquipSlot(slot);
+            };
+            actEl.appendChild(devBtn);
+          }
         }
       }
 
@@ -15230,51 +15260,106 @@
       // affliction tints every ghost that same color, and 2+ cycle through
       // them in order — consecutive ghosts alternate/repeat across the
       // trail rather than blending into one color.
-      const GHOST_SPAWN_INTERVAL_S = 0.026;
+      // Sparse and additive rather than dense and alpha-blended: a handful
+      // of bold, clearly-colored ghosts read better than many faint ones,
+      // and cost far fewer extra transparent draw calls per frame — the
+      // pool below reuses the same few Mesh/Material objects instead of
+      // allocating a fresh clone on every spawn, so a held rapid-fire
+      // ability (e.g. Flurry) doesn't keep churning new objects/GC either.
+      const GHOST_SPAWN_INTERVAL_S = 0.05;
       const GHOST_LIFETIME_S = 0.22;
-      const GHOST_TRAIL_LIMIT = 28;
-      const GHOST_BASE_OPACITY = 0.5;
+      const GHOST_POOL_SIZE = 8;
+      const GHOST_BASE_OPACITY = 0.95;
       let ghostSpawnTimer = 0;
       let ghostColorCycleIndex = 0;
+      // Ring buffer of pre-built {mesh, material} pairs, reused round-robin
+      // instead of clone()'d fresh each spawn. `mesh`'s geometry/material.map
+      // get swapped in place when the active tool differs from what this
+      // pool slot was last built for, rather than rebuilding the object.
+      const ghostPool = [];
+      let ghostPoolCursor = 0;
       const weaponGhostTrails = [];
+      // Pre-allocated scratch objects (avoid per-spawn GC, same pattern as
+      // updateToolMesh's own _qFac/_qAnim/etc above) — a ghost is a single
+      // flat Mesh, not a Group+child like the live tool, so its plane-twist
+      // local rotation (baked flat, plus the sweep style's blade-parallel
+      // spin) has to be explicitly composed onto toolHolder's world
+      // quaternion rather than living on a separate child transform.
+      const _ghostLocalEuler = new THREE.Euler();
+      const _ghostLocalQuat = new THREE.Quaternion();
+
+      function ensureGhostPoolSlot(i, itemKey) {
+        let slot = ghostPool[i];
+        if (!slot) {
+          const geo = new THREE.PlaneGeometry(1, 1);
+          const mat = new THREE.MeshBasicMaterial({
+            transparent: true,
+            depthWrite: false,
+            // Additive so the tint reads as a clear glowing color regardless
+            // of what's behind it or the tool icon's own texture colors,
+            // instead of a faint, easy-to-miss alpha-blended overlay.
+            blending: THREE.AdditiveBlending,
+            side: THREE.DoubleSide,
+          });
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.visible = false;
+          slot = { mesh, itemKey: null };
+          ghostPool[i] = slot;
+        }
+        if (slot.itemKey !== itemKey) {
+          const def = TOOL_ITEM_DEFS[itemKey];
+          const imgW = def?._imgW || 1, imgH = def?._imgH || 1;
+          const planeW = TOOL_MODEL_WIDTH;
+          const planeH = planeW * (imgH / imgW);
+          slot.mesh.geometry.dispose();
+          slot.mesh.geometry = new THREE.PlaneGeometry(planeW, planeH);
+          slot.mesh.material.map = toolTextures[itemKey] || null;
+          slot.itemKey = itemKey;
+        }
+        return slot;
+      }
 
       function spawnWeaponGhost() {
-        const liveGroup = toolMeshMap[activeTool];
+        const itemKey = equipmentSlots[activeTool];
         const parent = toolHolder.parent;
-        if (!liveGroup || !parent || !toolHolder.visible) return;
+        if (!itemKey || !toolTextures[itemKey] || !parent || !toolHolder.visible) return;
         const ids = combatSwingAfflictionIds;
         const colorNum = ids.length
           ? (window.ResourceRings?.AFFLICTION_COLORS?.[ids[ghostColorCycleIndex % ids.length]] ?? 0xffffff)
           : 0xffffff;
         ghostColorCycleIndex++;
 
-        const ghost = liveGroup.clone(true);
-        ghost.position.copy(toolHolder.position);
-        ghost.quaternion.copy(toolHolder.quaternion);
-        ghost.scale.copy(toolHolder.scale);
-        ghost.traverse(node => {
-          if (!node.isMesh) return;
-          // Materials (unlike transforms) are shared by reference on
-          // .clone() — must clone before mutating, or this would recolor
-          // the real equipped weapon out from under the player.
-          node.material = node.material.clone();
-          node.material.transparent = true;
-          node.material.depthWrite = false;
-          node.material.opacity = GHOST_BASE_OPACITY;
-          node.material.color.setHex(colorNum);
-        });
-        parent.add(ghost);
-        weaponGhostTrails.push({ mesh: ghost, age: 0 });
+        const slot = ensureGhostPoolSlot(ghostPoolCursor, itemKey);
+        ghostPoolCursor = (ghostPoolCursor + 1) % GHOST_POOL_SIZE;
+        const { mesh } = slot;
+        // A ghost is one flat Mesh standing in for the live tool's
+        // Group(toolHolder) > Group(toolMeshMap) > Mesh(toolPlane) chain, so
+        // its local "lie flat" (-90° on x, same as makeToolPlaneMesh's own
+        // plane) plus the sweep style's blade-parallel twist (same
+        // spinPlane.rotation.z updateToolMesh itself sets) has to be
+        // explicitly composed onto toolHolder's world quaternion here,
+        // rather than living on a separate child transform the way the real
+        // tool mesh's does.
+        const spinPlane = toolMeshMap[activeTool]?.userData?.toolPlane;
+        _ghostLocalEuler.set(-Math.PI / 2, 0, spinPlane ? spinPlane.rotation.z : 0);
+        _ghostLocalQuat.setFromEuler(_ghostLocalEuler);
+        mesh.position.copy(toolHolder.position);
+        mesh.quaternion.copy(toolHolder.quaternion).multiply(_ghostLocalQuat);
+        mesh.scale.copy(toolHolder.scale);
+        // Backhand combat sweeps mirror the weapon sprite itself (see
+        // updateToolMesh's own spinPlane.scale.x) — carry that over too, or
+        // a backhand ghost would silently render un-mirrored.
+        if (spinPlane) mesh.scale.x *= spinPlane.scale.x;
+        mesh.material.opacity = GHOST_BASE_OPACITY;
+        mesh.material.color.setHex(colorNum);
+        mesh.visible = true;
+        if (mesh.parent !== parent) parent.add(mesh);
 
-        while (weaponGhostTrails.length > GHOST_TRAIL_LIMIT) {
-          const oldest = weaponGhostTrails.shift();
-          disposeWeaponGhost(oldest);
-        }
-      }
-
-      function disposeWeaponGhost(ghost) {
-        ghost.mesh.parent?.remove(ghost.mesh);
-        ghost.mesh.traverse(node => { if (node.isMesh) node.material?.dispose(); });
+        // If this pool slot was already mid-fade from an earlier spawn,
+        // drop its old trail-list entry so it isn't double-managed.
+        const existingIdx = weaponGhostTrails.findIndex(g => g.mesh === mesh);
+        if (existingIdx >= 0) weaponGhostTrails.splice(existingIdx, 1);
+        weaponGhostTrails.push({ mesh, age: 0 });
       }
 
       function updateWeaponGhostTrails(dt) {
@@ -15295,10 +15380,13 @@
           const ghost = weaponGhostTrails[i];
           ghost.age += dt;
           const t = Math.min(1, ghost.age / GHOST_LIFETIME_S);
-          const fade = GHOST_BASE_OPACITY * (1 - t);
-          ghost.mesh.traverse(node => { if (node.isMesh) node.material.opacity = fade; });
+          ghost.mesh.material.opacity = GHOST_BASE_OPACITY * (1 - t);
           if (ghost.age >= GHOST_LIFETIME_S) {
-            disposeWeaponGhost(ghost);
+            // Pooled — just hide it and drop the trail-list entry; the mesh
+            // itself stays parented and ready for its next spawn (see
+            // spawnWeaponGhost/ensureGhostPoolSlot) instead of being
+            // disposed and recreated.
+            ghost.mesh.visible = false;
             weaponGhostTrails.splice(i, 1);
           }
         }
@@ -16363,6 +16451,13 @@
       const HITBOX_DEBUG_STORAGE_KEY = 'hobunjiDebugHitboxes';
       let s_showHitboxes = false;
       try { s_showHitboxes = localStorage.getItem(HITBOX_DEBUG_STORAGE_KEY) === '1'; } catch {}
+      // Global dev-mode flag — same "flip on once, stays on" persistence as
+      // s_showHitboxes above. Currently only gates the +1 Mastery button in
+      // each tool's item-info panel (see selectGearTool/selectEquipSlot),
+      // but is a natural home for future dev-only shortcuts too.
+      const DEV_MODE_STORAGE_KEY = 'hobunjiDevMode';
+      let s_devMode = false;
+      try { s_devMode = localStorage.getItem(DEV_MODE_STORAGE_KEY) === '1'; } catch {}
 
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
@@ -16410,6 +16505,16 @@
       settingShowHitboxesEl.addEventListener('change', e => {
         s_showHitboxes = e.target.checked;
         try { localStorage.setItem(HITBOX_DEBUG_STORAGE_KEY, s_showHitboxes ? '1' : '0'); } catch {}
+      });
+      const settingDevModeEl = document.getElementById('settingDevMode');
+      settingDevModeEl.checked = s_devMode;
+      settingDevModeEl.addEventListener('change', e => {
+        s_devMode = e.target.checked;
+        try { localStorage.setItem(DEV_MODE_STORAGE_KEY, s_devMode ? '1' : '0'); } catch {}
+        // Takes effect the next time a tool's item-info panel is opened
+        // (selectGearTool/selectEquipSlot both read s_devMode fresh) rather
+        // than needing to track/re-render whichever panel might currently
+        // be open.
       });
       function setCameraZoomScale(value) {
         const cfg = desktopControlsConfig();
