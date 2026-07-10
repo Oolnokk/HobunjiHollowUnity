@@ -4913,11 +4913,16 @@
         };
         snd.addEventListener('ended', finishBgm, { once: true });
         snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0, 'bgm'); markAudioUrlFailed(bgmUrl, 'media error'); releaseMusicGain(snd); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
-        snd._watchForStall(6000, () => {
+        snd._watchForStall(10000, () => {
           if (_ambientCueState.currentBgm !== snd) return;
           // Not marked failed (unlike the 'error' case above) — a stall can
           // be a transient slow-load/decode hiccup rather than a permanently
           // broken file, and blacklisting would wrongly exclude it forever.
+          // (10s rather than the cue watcher's 6s: a live session showed a
+          // bgm track's canplaythrough only landing ~4s after a 6s watchdog
+          // had already given up and paused it, which used to look like a
+          // real failure via the AbortError that pausing an in-flight
+          // play() triggers — see the play().catch() below.)
           audioDebug('bgm stalled (no playback progress) ' + snd.src, 'bgm-stall-' + currentArea + '-' + bgmUrl, 0, 'bgm');
           releaseMusicGain(snd);
           _ambientCueState.currentBgm = null;
@@ -4934,7 +4939,14 @@
           }
         }).catch(err => {
           audioDebug('bgm play blocked/failed area=' + currentArea + ': ' + (err?.name || err), 'bgm-fail-' + currentArea, 0, 'bgm');
-          if ((err?.name || '') !== 'NotAllowedError') markAudioUrlFailed(bgmUrl, err?.name || err || 'play failed');
+          // NotAllowedError = autoplay policy block, AbortError = play()
+          // interrupted by a pause() call elsewhere (e.g. the stall watchdog
+          // below pausing a track that was just slow to buffer, not actually
+          // broken) — neither means the file itself is bad, so don't
+          // permanently blacklist the URL over them the way a real decode/
+          // network error warrants.
+          const errName = err?.name || '';
+          if (errName !== 'NotAllowedError' && errName !== 'AbortError') markAudioUrlFailed(bgmUrl, err?.name || err || 'play failed');
           releaseMusicGain(snd);
           if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
           _ambientCueState.mode = 'bgm';
