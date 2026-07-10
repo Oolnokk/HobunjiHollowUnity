@@ -17,6 +17,16 @@
   // combo advances to its next step; wait longer and it resets to step 1.
   const COMBO_RESET_S = 0.9;
 
+  // The combo's hit cone (scaled off the shared 'cut' ability's rangePx —
+  // see baseAbil below) read as oversized in practice; shrink it here
+  // rather than touching 'cut' itself, since flurry/charged breaker/
+  // counter-shield all scale off that same shared base and weren't
+  // reported as too big. Lunge distance is compensated the other way
+  // (bigger, not smaller) so closing the gap still feels aggressive even
+  // with the tighter hit cone.
+  const RANGE_SCALE = 0.6;
+  const LUNGE_SCALE = 1.5;
+
   // Short forward step layered under each combo swing's windup/strike — see
   // game.js's beginCombatLunge. Expressed as a TILE multiple (per-step
   // `lungeMul` below) so it scales with the game's tile size rather than a
@@ -120,7 +130,7 @@
       // combat-combo-streak.js).
       const streakMul = step.heavy ? (window.Combat.comboStreak?.multiplier() ?? 1) : 1;
       const damage = Math.round(baseAbil.damage * step.damageMul * streakMul * (1 + (effects.stats.damageMul || 0)));
-      const rangePx = baseAbil.rangePx * step.rangeMul * (1 + (effects.stats.rangeMul || 0));
+      const rangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
       const halfConeRad = step.halfConeDeg * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * step.knockbackMul * (1 + (effects.stats.knockbackMul || 0));
 
@@ -147,7 +157,7 @@
       // early the moment a hostile is inside this step's own hit cone
       // instead of always covering the full lunge distance (see
       // game.js's beginCombatLunge/updateMovement).
-      deps.beginCombatLunge(deps.TILE * step.lungeMul * streakMul * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(deps.TILE * step.lungeMul * LUNGE_SCALE * streakMul * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS,

@@ -82,6 +82,12 @@
   const COST_BASE = 11;
   const COST_BONUS = 18;
   const HOLD_S = 1; // post-strike pause before easing back to neutral
+  // The jab's hit cone (scaled off the shared 'cut' ability's rangePx —
+  // see baseAbil below) read as oversized in practice; shrink it here
+  // rather than touching 'cut' itself, since flurry/charged breaker/
+  // counter-shield all scale off that same shared base and weren't
+  // reported as too big.
+  const RANGE_SCALE = 0.6;
   // Farther forward step than the 3-hit combo's, layered under the jab —
   // see game.js's beginCombatLunge. Expressed as a TILE multiple. Stops
   // early once a hostile enters this jab's own hit cone (see the
@@ -117,7 +123,7 @@
       const strikeS = STRIKE_S * timeScale;
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * tech.damageMul * (1 + (effects.stats.damageMul || 0)));
-      const rangePx = baseAbil.rangePx * tech.rangeMul * (1 + (effects.stats.rangeMul || 0));
+      const rangePx = baseAbil.rangePx * tech.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
       const halfConeRad = tech.halfConeDeg * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * tech.knockbackMul;
 
