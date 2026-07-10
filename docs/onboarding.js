@@ -494,9 +494,10 @@
       clothing: { hat: null, hood: null, torso: null, overwear: null },
       charms: [], whistles: [],
       // Mirrors game.js's own makeDefaultGear() — see combat-progression.js
-      // for how these drive per-tool ability upgrades.
+      // for how these drive per-tool ability upgrades. No starting stipend
+      // — earned through play (or the loadout page's dev-mode +1 button).
       toolMastery: {},
-      motesOfProwess: 20,
+      motesOfProwess: 0,
     };
   }
 

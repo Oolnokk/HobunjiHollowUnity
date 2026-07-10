@@ -1614,9 +1614,9 @@
           // Spent on ability-upgrade choices (level N choice costs N motes —
           // see combat-progression.js); earned from combat (creature kills)
           // and other future sources. Character save data, not world data.
-          // Starting stipend so a fresh character can make a few choices
-          // without having to grind kills first.
-          motesOfProwess: 20,
+          // No starting stipend — a fresh character earns these through
+          // play (see MOTES_PER_KILL in damageCreature's death branch).
+          motesOfProwess: 0,
         };
       }
 
@@ -19297,6 +19297,11 @@
         awardWeaponMasteryXp,
         getMotesOfProwess,
         spendMotesOfProwess,
+        awardMotesOfProwess,
+        // Gates the loadout page's dev-only "+1 Mote" test button (see
+        // combat-loadout-ui.js) — mirrors the same s_devMode toggle the
+        // gear-tool item panel's "+1 Mastery" button uses.
+        isDevMode: () => s_devMode,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module

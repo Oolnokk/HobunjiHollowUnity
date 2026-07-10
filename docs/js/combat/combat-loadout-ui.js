@@ -126,6 +126,24 @@
     weaponNote.textContent = `${weaponLabel} — Mastery ${mastery}/5 · ${motes}◆ Motes of Prowess`;
     pane.appendChild(weaponNote);
 
+    // Motes are otherwise earned only through play (see MOTES_PER_KILL in
+    // game.js's damageCreature) — no starting stipend — so testing anything
+    // past level-1 upgrade choices needs a way to mint some. Mirrors the
+    // gear-tool item panel's own "[Dev] +1 Mastery" button: hidden unless
+    // the global dev-mode toggle (Settings pane) is on.
+    if (window.Combat.deps?.isDevMode?.()) {
+      const devBtn = document.createElement('button');
+      devBtn.type = 'button';
+      devBtn.className = 'ii-btn';
+      devBtn.style.marginBottom = '10px';
+      devBtn.textContent = '[Dev] +1 Mote of Prowess';
+      devBtn.addEventListener('click', () => {
+        window.Combat.deps?.awardMotesOfProwess?.(1);
+        render();
+      });
+      pane.appendChild(devBtn);
+    }
+
     for (const slot of SLOTS) {
       const card = document.createElement('div');
       card.className = 'loadout-slot';
