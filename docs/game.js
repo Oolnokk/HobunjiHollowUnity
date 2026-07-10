@@ -16634,6 +16634,26 @@
         updateFurnitureSfxSources();
         updateAmbientCues();
         audioDebug('audio tick active area=' + currentArea + ' paused=' + paused + ' gameStarted=' + gameStarted, 'audio-tick-' + currentArea, 5000);
+        // Diagnostic for "bgm/cue reports playing but is silent": the actual
+        // audible level lives in this GainNode graph, not on the <audio>
+        // element's own .volume, so a healthy-looking playback state (no
+        // errors, paused=false) can still be inaudible if the context is
+        // stuck suspended or the gain never reached its ramped target.
+        {
+          const activeSnd = _ambientCueState.currentBgm || _ambientCueState.currentCue;
+          const gainNode = activeSnd ? _musicGainNodes.get(activeSnd) : null;
+          audioDebug(
+            'music gain ctxState=' + (_musicAudioCtx?.state || 'none') +
+            ' hasActiveTrack=' + !!activeSnd +
+            ' liveGain=' + (gainNode ? gainNode.gain.gain.value.toFixed(3) : 'n/a') +
+            ' targetGain=' + (gainNode ? gainNode.target.toFixed(3) : 'n/a') +
+            ' sndVolume=' + (activeSnd ? activeSnd.volume.toFixed(3) : 'n/a') +
+            ' sndMuted=' + (activeSnd ? activeSnd.muted : 'n/a'),
+            'music-gain-diag',
+            5000,
+            'bgm'
+          );
+        }
 
         if (!paused) {
           updateCalendar(dt);
