@@ -3992,13 +3992,12 @@
         awardMotesOfProwess,
         spendMotesOfProwess,
         gearInventory: () => gearInventory,
-        weaponGhostTrails: () => weaponGhostTrails,
         combatSwingAfflictionIds: () => combatSwingAfflictionIds,
+        combatSwingCone: () => combatSwingCone,
         toolMeshMap: () => toolMeshMap,
         toolHolder: () => toolHolder,
-        spawnWeaponGhost: () => spawnWeaponGhost(),
-        updateWeaponGhostTrails,
         updateToolMesh,
+        drawCombatConeTrail,
         triggerWeaponSwingVisual,
         setActiveTool,
         TILE,
@@ -10557,32 +10556,9 @@
         while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
       }
 
-      // Combat ability hit-cone flash — shows the actual swept area (angle +
-      // range) a combat-*.js ability just resolved its inCone() hit test
-      // against, since each ability/charge/combo-step uses its own rangePx/
-      // halfConeRad rather than one fixed shape. Reuses weaponTrailEffects'
-      // existing age/limit bookkeeping and drawWeaponTrailEffects' particle
-      // renderer (isCone flag switches weaponTrailParticleSeeds onto the
-      // fan-shaped sampling below instead of the farming trapezoid).
-      const COMBAT_TRAIL_MAX_AGE_S = 0.24; // matches the legacy cut ability's trailMaxAgeSeconds
-      function spawnCombatTrailEffect({ rangePx, halfConeRad, angle = player.angle, ok }) {
-        const fx = {
-          isCone: true,
-          x: player.x / TILE,
-          z: player.y / TILE,
-          y: weaponTrailCenterY(),
-          angle,
-          halfConeRad,
-          rangeTiles: rangePx / TILE,
-          age: 0,
-          maxAge: ok ? COMBAT_TRAIL_MAX_AGE_S : Math.max(COMBAT_TRAIL_MAX_AGE_S * 0.72, 0.1),
-          ok,
-        };
-        fx.particles = weaponTrailParticleSeeds(fx);
-        weaponTrailEffects.push(fx);
-        const limit = Number(combatConfig().weaponTrailLimit) || 5;
-        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
-      }
+      // matches the legacy cut ability's trailMaxAgeSeconds; still used by
+      // spawnBurstEffect/spawnCreatureHitSpark below.
+      const COMBAT_TRAIL_MAX_AGE_S = 0.24;
 
       // Full-circle burst at the player's position with an explicit color —
       // used for non-attack feedback like shield blocks. halfConeRad = π gives
@@ -10608,8 +10584,8 @@
       }
 
       // Small radial spark anchored on the creature itself (not the player,
-      // unlike spawnBurstEffect/spawnCombatTrailEffect) so a hit reads
-      // clearly regardless of who/what landed it — companion-on-hostile
+      // unlike spawnBurstEffect) so a hit reads clearly regardless of
+      // who/what landed it — companion-on-hostile
       // damage gets the same feedback as the player's own attacks. Reuses
       // the same isCone/particle-seed rendering as every other combat
       // effect; a bright spark color keeps it visually distinct from the
@@ -10721,6 +10697,65 @@
           }
           octx.restore();
         }
+      }
+
+      // Combat swing trail — a handful of parallel crescent arcs traced
+      // along the outer edge of the attack's own hit cone (rangePx/
+      // halfConeRad/angle, captured in combatSwingCone by
+      // triggerWeaponSwingVisual/setCombatSwingCone), fading in then out
+      // over the swing's own progress. One lane per affliction the attack
+      // can inflict (min one, plain white with none), offset slightly
+      // inward from each other so multiple afflictions read as distinct
+      // side-by-side arcs instead of one overlapping smear. Simple 2D-
+      // canvas-overlay geometry (same worldToOverlay projection as
+      // drawCombatConeReticle/drawWeaponTrailEffects above) rather than 3D
+      // meshes — no pooling, no per-frame allocation beyond the sampled
+      // point arrays.
+      const COMBAT_CONE_TRAIL_SAMPLES = 14;
+      const COMBAT_CONE_TRAIL_LANE_INSET = 0.08; // fraction of range per lane, stepping inward
+      const COMBAT_CONE_TRAIL_LINE_WIDTH = 3;
+      function drawCombatConeTrail() {
+        if (!combatSwingAnim || !combatSwingCone || toolSwingT <= 0 || toolSwingDur <= 0) return;
+        const progress = 1 - toolSwingT / toolSwingDur;
+        // Fade in over the swing's first ~18%, hold, fade out over the
+        // last ~28% — a simple appear/fade envelope rather than tying to
+        // any particular ability's own windup/strike split.
+        const fadeIn = Math.min(1, progress / 0.18);
+        const fadeOut = 1 - Math.max(0, (progress - 0.72) / 0.28);
+        const alpha = Math.max(0, Math.min(fadeIn, fadeOut));
+        if (alpha <= 0.01) return;
+
+        const { rangePx, halfConeRad, angle } = combatSwingCone;
+        const rangeTiles = rangePx / TILE;
+        const baseX = player.x / TILE;
+        const baseZ = player.y / TILE;
+        const y = weaponTrailCenterY();
+        const ids = combatSwingAfflictionIds;
+        const laneCount = Math.max(1, ids.length);
+
+        octx.save();
+        octx.lineCap = 'round';
+        octx.lineJoin = 'round';
+        octx.lineWidth = COMBAT_CONE_TRAIL_LINE_WIDTH;
+        octx.globalAlpha = alpha * 0.85;
+        for (let lane = 0; lane < laneCount; lane++) {
+          const colorNum = ids.length
+            ? (window.ResourceRings?.AFFLICTION_COLORS?.[ids[lane]] ?? 0xffffff)
+            : 0xffffff;
+          octx.strokeStyle = '#' + colorNum.toString(16).padStart(6, '0');
+          const laneRadius = rangeTiles * (1 - lane * COMBAT_CONE_TRAIL_LANE_INSET);
+          octx.beginPath();
+          let started = false;
+          for (let i = 0; i <= COMBAT_CONE_TRAIL_SAMPLES; i++) {
+            const a = angle - halfConeRad + (2 * halfConeRad) * (i / COMBAT_CONE_TRAIL_SAMPLES);
+            const pos = worldToOverlay(baseX + Math.cos(a) * laneRadius, y, baseZ + Math.sin(a) * laneRadius);
+            if (!pos.visible) continue;
+            if (!started) { octx.moveTo(pos.x, pos.y); started = true; }
+            else octx.lineTo(pos.x, pos.y);
+          }
+          octx.stroke();
+        }
+        octx.restore();
       }
 
       function drawActionTileEffects() {
@@ -14559,10 +14594,17 @@
       // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
       // ability can actually inflict — set via opts.afflictionIds on
       // triggerWeaponSwingVisual/triggerWeaponHoldVisual, computed by each
-      // ability module from its own chosen upgrades. Drives the weapon
-      // ghost-trail's color cycle (see spawnWeaponGhost below); empty means
-      // a plain white trail.
+      // ability module from its own chosen upgrades. Drives the combat cone
+      // trail's coloring (see drawCombatConeTrail); empty means a plain
+      // white trail.
       let combatSwingAfflictionIds = [];
+      // The attack's own hit cone (world-space range/half-angle/facing),
+      // set via opts.coneRangePx/coneHalfConeRad/coneAngle on
+      // triggerWeaponSwingVisual, or later via setCombatSwingCone for
+      // abilities (Charged Breaker) whose final range isn't known until
+      // release. null means this swing has no cone to trail (e.g. a plain
+      // farming tool action) — drawCombatConeTrail then draws nothing.
+      let combatSwingCone = null;
 
       function getDigSpeedMultiplier() {
         return Math.max(0.01, player.digSpeed || 1);
@@ -14663,6 +14705,18 @@
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
         combatSwingAfflictionIds = opts.afflictionIds || [];
+        setCombatSwingCone(opts.coneRangePx, opts.coneHalfConeRad, opts.coneAngle);
+      }
+
+      // Abilities whose final range/angle isn't known at trigger time
+      // (Charged Breaker's charge-scaled slam, decided at release rather
+      // than at the hold-start windup) call this directly once those
+      // numbers are settled instead of going through triggerWeaponSwingVisual's
+      // opts. Pass rangePx == null to clear the cone (no trail to draw).
+      function setCombatSwingCone(rangePx, halfConeRad, angle) {
+        combatSwingCone = (rangePx != null)
+          ? { rangePx, halfConeRad: halfConeRad ?? 0, angle: angle ?? player.angle }
+          : null;
       }
 
       // Like triggerWeaponSwingVisual, but once the windup phase finishes
@@ -14765,11 +14819,6 @@
       // matching the pattern used by buildAnimalPlaneAvatarModel (modelWidth × h/w).
       const TOOL_MODEL_WIDTH = 0.5;
 
-      // How far (world units) a swinging tool's sprite top edge (blade/head
-      // end) stretches outward at peak swing motion — see updateToolMesh's
-      // motion-stretch block, right after spinPlane's own twist/mirror.
-      const WEAPON_STRETCH_MAX_UNITS = 0.16;
-
       // Preload tool sprite textures; capture pixel dimensions on load and rebuild meshes
       const _toolTexLoader = new THREE.TextureLoader();
       const toolTextures = {};
@@ -14813,19 +14862,6 @@
         // from whichever anim is actually playing rather than baked in per-item here — see
         // updateToolMesh's baseRotZ for why.
         g.userData.toolPlane = plane;
-        // Cache which vertices form the sprite's top edge (the blade/head
-        // end, farthest from the hand grip) and their neutral Y, so
-        // updateToolMesh's motion-stretch effect can push just that edge
-        // outward each frame without re-deriving it every time or guessing
-        // at PlaneGeometry's internal vertex order.
-        const posAttr = geo.attributes.position;
-        const topIndices = [];
-        const topBaseY = [];
-        for (let i = 0; i < posAttr.count; i++) {
-          if (posAttr.getY(i) > 0) { topIndices.push(i); topBaseY.push(posAttr.getY(i)); }
-        }
-        plane.userData.topEdgeIndices = topIndices;
-        plane.userData.topEdgeBaseY = topBaseY;
         return g;
       }
 
@@ -14925,7 +14961,6 @@
           }
           progress   = 1 - toolSwingT / toolSwingDur;
         }
-        const swing = Math.sin(progress * Math.PI);
 
         _qFac.setFromAxisAngle(_tUp, θ);
         _swAxis.set(rightX, 0, rightZ);
@@ -15259,25 +15294,6 @@
           }
           // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc.
           spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
-
-          // Motion-stretch: push the sprite's top edge (the blade/head end,
-          // cached in makeToolPlaneMesh — see topEdgeIndices/topEdgeBaseY)
-          // outward as the swing moves, simulating an anime-style motion
-          // smear. `swing` (Math.sin(progress*PI), computed above) is
-          // already exactly the 0→1→0 envelope this wants — 0 at rest and
-          // at both ends of the swing, peaking mid-motion — so no separate
-          // timer/state is needed; this applies to every tool swing (plain
-          // farming actions included), not just combat ones.
-          const topIndices = spinPlane.userData.topEdgeIndices;
-          if (topIndices?.length) {
-            const posAttr = spinPlane.geometry.attributes.position;
-            const topBaseY = spinPlane.userData.topEdgeBaseY;
-            const stretch = WEAPON_STRETCH_MAX_UNITS * swing;
-            for (let k = 0; k < topIndices.length; k++) {
-              posAttr.setY(topIndices[k], topBaseY[k] + stretch);
-            }
-            posAttr.needsUpdate = true;
-          }
         }
 
         if (pendingAction && !strikeFired && progress >= SF) {
@@ -15285,175 +15301,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingAfflictionIds = []; }
-      }
-
-      // ── Weapon ghost trail ────────────────────────────────────────────
-      // Genuine afterimages of the actual weapon mesh tracing its real
-      // swing path, not a fixed swept-area flash (see spawnCombatTrailEffect
-      // above) — sampled periodically from toolHolder's live transform while
-      // a combat swing (never a plain farming tool action) is playing.
-      // Colored by whichever afflictions the attack can inflict (see
-      // combatSwingAfflictionIds, set via triggerWeaponSwingVisual's
-      // opts.afflictionIds): no afflictions reads as plain white, one
-      // affliction tints every ghost that same color, and 2+ cycle through
-      // them in order — consecutive ghosts alternate/repeat across the
-      // trail rather than blending into one color.
-      // Sparse and additive rather than dense and alpha-blended: a handful
-      // of bold, clearly-colored ghosts read better than many faint ones,
-      // and cost far fewer extra transparent draw calls per frame — the
-      // pool below reuses the same few Mesh/Material objects instead of
-      // allocating a fresh clone on every spawn, so a held rapid-fire
-      // ability (e.g. Flurry) doesn't keep churning new objects/GC either.
-      // A swing's angular speed is far from uniform — most of a windup/
-      // return's real-world time is spent easing slowly, with almost all
-      // of the actual rotation packed into a brief, fast strike. Gating
-      // spawns on a flat time interval sampled overwhelmingly from the slow
-      // parts, leaving barely any ghosts to capture the fast sweep — the
-      // trail read as a pile of near-identical duplicates instead of a
-      // spread-out arc. Gating on toolHolder's rotation *since the last
-      // ghost* (GHOST_MIN_ANGLE_RAD) instead guarantees every ghost is
-      // visibly distinct regardless of where the swing's speed is
-      // concentrated; GHOST_MAX_INTERVAL_S is just a fallback so a
-      // barely-moving hold (e.g. Charged Breaker's windup) still trails
-      // something rather than going silent.
-      const GHOST_MIN_ANGLE_RAD = 9 * Math.PI / 180;
-      const GHOST_MAX_INTERVAL_S = 0.09;
-      const GHOST_LIFETIME_S = 0.22;
-      const GHOST_POOL_SIZE = 8;
-      const GHOST_BASE_OPACITY = 0.95;
-      let ghostSpawnTimer = 0;
-      let ghostColorCycleIndex = 0;
-      // Set the instant a new swing starts (see updateWeaponGhostTrails)
-      // so that swing's very first ghost always spawns immediately instead
-      // of waiting for GHOST_MIN_ANGLE_RAD of rotation from a stale
-      // leftover quaternion from whatever the *previous* swing last did.
-      let hasLastGhostQuat = false;
-      const _lastGhostQuat = new THREE.Quaternion();
-      // Ring buffer of pre-built {mesh, material} pairs, reused round-robin
-      // instead of clone()'d fresh each spawn. `mesh`'s geometry/material.map
-      // get swapped in place when the active tool differs from what this
-      // pool slot was last built for, rather than rebuilding the object.
-      const ghostPool = [];
-      let ghostPoolCursor = 0;
-      const weaponGhostTrails = [];
-      // Pre-allocated scratch objects (avoid per-spawn GC, same pattern as
-      // updateToolMesh's own _qFac/_qAnim/etc above) — a ghost is a single
-      // flat Mesh, not a Group+child like the live tool, so its plane-twist
-      // local rotation (baked flat, plus the sweep style's blade-parallel
-      // spin) has to be explicitly composed onto toolHolder's world
-      // quaternion rather than living on a separate child transform.
-      const _ghostLocalEuler = new THREE.Euler();
-      const _ghostLocalQuat = new THREE.Quaternion();
-
-      function ensureGhostPoolSlot(i, itemKey) {
-        let slot = ghostPool[i];
-        if (!slot) {
-          const geo = new THREE.PlaneGeometry(1, 1);
-          const mat = new THREE.MeshBasicMaterial({
-            transparent: true,
-            depthWrite: false,
-            // Additive so the tint reads as a clear glowing color regardless
-            // of what's behind it or the tool icon's own texture colors,
-            // instead of a faint, easy-to-miss alpha-blended overlay.
-            blending: THREE.AdditiveBlending,
-            side: THREE.DoubleSide,
-          });
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.visible = false;
-          slot = { mesh, itemKey: null };
-          ghostPool[i] = slot;
-        }
-        if (slot.itemKey !== itemKey) {
-          const def = TOOL_ITEM_DEFS[itemKey];
-          const imgW = def?._imgW || 1, imgH = def?._imgH || 1;
-          const planeW = TOOL_MODEL_WIDTH;
-          const planeH = planeW * (imgH / imgW);
-          slot.mesh.geometry.dispose();
-          slot.mesh.geometry = new THREE.PlaneGeometry(planeW, planeH);
-          slot.mesh.material.map = toolTextures[itemKey] || null;
-          slot.itemKey = itemKey;
-        }
-        return slot;
-      }
-
-      function spawnWeaponGhost() {
-        const itemKey = equipmentSlots[activeTool];
-        const parent = toolHolder.parent;
-        if (!itemKey || !toolTextures[itemKey] || !parent || !toolHolder.visible) return false;
-        const ids = combatSwingAfflictionIds;
-        const colorNum = ids.length
-          ? (window.ResourceRings?.AFFLICTION_COLORS?.[ids[ghostColorCycleIndex % ids.length]] ?? 0xffffff)
-          : 0xffffff;
-        ghostColorCycleIndex++;
-
-        const slot = ensureGhostPoolSlot(ghostPoolCursor, itemKey);
-        ghostPoolCursor = (ghostPoolCursor + 1) % GHOST_POOL_SIZE;
-        const { mesh } = slot;
-        // A ghost is one flat Mesh standing in for the live tool's
-        // Group(toolHolder) > Group(toolMeshMap) > Mesh(toolPlane) chain, so
-        // its local "lie flat" (-90° on x, same as makeToolPlaneMesh's own
-        // plane) plus the sweep style's blade-parallel twist (same
-        // spinPlane.rotation.z updateToolMesh itself sets) has to be
-        // explicitly composed onto toolHolder's world quaternion here,
-        // rather than living on a separate child transform the way the real
-        // tool mesh's does.
-        const spinPlane = toolMeshMap[activeTool]?.userData?.toolPlane;
-        _ghostLocalEuler.set(-Math.PI / 2, 0, spinPlane ? spinPlane.rotation.z : 0);
-        _ghostLocalQuat.setFromEuler(_ghostLocalEuler);
-        mesh.position.copy(toolHolder.position);
-        mesh.quaternion.copy(toolHolder.quaternion).multiply(_ghostLocalQuat);
-        mesh.scale.copy(toolHolder.scale);
-        // Backhand combat sweeps mirror the weapon sprite itself (see
-        // updateToolMesh's own spinPlane.scale.x) — carry that over too, or
-        // a backhand ghost would silently render un-mirrored.
-        if (spinPlane) mesh.scale.x *= spinPlane.scale.x;
-        mesh.material.opacity = GHOST_BASE_OPACITY;
-        mesh.material.color.setHex(colorNum);
-        mesh.visible = true;
-        if (mesh.parent !== parent) parent.add(mesh);
-
-        // If this pool slot was already mid-fade from an earlier spawn,
-        // drop its old trail-list entry so it isn't double-managed.
-        const existingIdx = weaponGhostTrails.findIndex(g => g.mesh === mesh);
-        if (existingIdx >= 0) weaponGhostTrails.splice(existingIdx, 1);
-        weaponGhostTrails.push({ mesh, age: 0 });
-        return true;
-      }
-
-      function updateWeaponGhostTrails(dt) {
-        // Only trails a real combat swing — plain farming tool actions
-        // (chop/dig/till/etc, which never set combatSwingAnim) stay as they
-        // were, with just their existing swept-area flash.
-        if (combatSwingAnim && toolSwingT > 0) {
-          ghostSpawnTimer -= dt;
-          const angleSinceLast = hasLastGhostQuat ? toolHolder.quaternion.angleTo(_lastGhostQuat) : Infinity;
-          if (angleSinceLast >= GHOST_MIN_ANGLE_RAD || ghostSpawnTimer <= 0) {
-            ghostSpawnTimer = GHOST_MAX_INTERVAL_S;
-            if (spawnWeaponGhost()) {
-              _lastGhostQuat.copy(toolHolder.quaternion);
-              hasLastGhostQuat = true;
-            }
-          }
-        } else {
-          ghostSpawnTimer = 0;
-          hasLastGhostQuat = false;
-        }
-
-        for (let i = weaponGhostTrails.length - 1; i >= 0; i--) {
-          const ghost = weaponGhostTrails[i];
-          ghost.age += dt;
-          const t = Math.min(1, ghost.age / GHOST_LIFETIME_S);
-          ghost.mesh.material.opacity = GHOST_BASE_OPACITY * (1 - t);
-          if (ghost.age >= GHOST_LIFETIME_S) {
-            // Pooled — just hide it and drop the trail-list entry; the mesh
-            // itself stays parented and ready for its next spawn (see
-            // spawnWeaponGhost/ensureGhostPoolSlot) instead of being
-            // disposed and recreated.
-            ghost.mesh.visible = false;
-            weaponGhostTrails.splice(i, 1);
-          }
-        }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingAfflictionIds = []; combatSwingCone = null; }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -16703,7 +16551,6 @@
         // exclude toolHolder/reticle meshes from their scene graph instead.
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
           updateToolMesh(dt);
-          updateWeaponGhostTrails(dt);
           updateChargeAction();
           window.Combat?.update(dt);
           updateReticleMesh();
@@ -17102,6 +16949,7 @@
 
         drawCombatConeReticle();
         drawWeaponTrailEffects();
+        drawCombatConeTrail();
         drawActionTileEffects();
         drawActionParticles();
 
@@ -19342,7 +19190,7 @@
         releaseWeaponSwingHold,
         cancelWeaponSwingHold,
         beginCombatLunge,
-        spawnCombatTrailEffect,
+        setCombatSwingCone,
         spawnBurstEffect,
         playCreatureBark,
         playCreatureClawHit,

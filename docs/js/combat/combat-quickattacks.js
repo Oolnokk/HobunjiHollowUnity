@@ -115,6 +115,12 @@
       const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
       const windupS = WINDUP_S * timeScale;
       const strikeS = STRIKE_S * timeScale;
+      const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
+      const damage = Math.round(baseAbil.damage * tech.damageMul * (1 + (effects.stats.damageMul || 0)));
+      const rangePx = baseAbil.rangePx * tech.rangeMul * (1 + (effects.stats.rangeMul || 0));
+      const halfConeRad = tech.halfConeDeg * Math.PI / 180;
+      const knockbackPxS = baseAbil.knockbackPxS * tech.knockbackMul;
+
       // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'thrust',
@@ -122,12 +128,10 @@
         strikeFrac: 1,
         holdS: HOLD_S,
         afflictionIds: Object.keys(effects.afflictions),
+        coneRangePx: rangePx,
+        coneHalfConeRad: halfConeRad,
+        coneAngle: deps.player.angle,
       });
-      const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * tech.damageMul * (1 + (effects.stats.damageMul || 0)));
-      const rangePx = baseAbil.rangePx * tech.rangeMul * (1 + (effects.stats.rangeMul || 0));
-      const halfConeRad = tech.halfConeDeg * Math.PI / 180;
-      const knockbackPxS = baseAbil.knockbackPxS * tech.knockbackMul;
       deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
@@ -143,7 +147,6 @@
             hits++;
             lastName = c.def.label;
           }
-          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           const msg = hits > 0
             ? `${tech.name}: ${tech.sourceText} — hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
             : `${tech.name}: ${tech.sourceText}, but connects with nothing.`;

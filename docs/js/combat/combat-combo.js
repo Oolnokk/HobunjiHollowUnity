@@ -113,6 +113,17 @@
       const strikeS = step.strikeS * timeScale;
       const returnS = (step.returnS || 0) * timeScale;
 
+      const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
+      // Only the combo's heavy finisher (Cleave/Long Lunge) reads the streak
+      // multiplier — steps 1-2 stay at their plain damageMul regardless of
+      // streak, since they're what build the streak in the first place (see
+      // combat-combo-streak.js).
+      const streakMul = step.heavy ? (window.Combat.comboStreak?.multiplier() ?? 1) : 1;
+      const damage = Math.round(baseAbil.damage * step.damageMul * streakMul * (1 + (effects.stats.damageMul || 0)));
+      const rangePx = baseAbil.rangePx * step.rangeMul * (1 + (effects.stats.rangeMul || 0));
+      const halfConeRad = step.halfConeDeg * Math.PI / 180;
+      const knockbackPxS = baseAbil.knockbackPxS * step.knockbackMul * (1 + (effects.stats.knockbackMul || 0));
+
       // returnS (set on a combo's final step) stretches the cosmetic swing's
       // tail so a finisher eases back to neutral instead of snapping — earlier
       // steps have no returnS, so they keep snapping (masked by the next tap).
@@ -126,17 +137,10 @@
         pose: step.pose,
         holdS: step.holdS || 0,
         afflictionIds: Object.keys(effects.afflictions),
+        coneRangePx: rangePx,
+        coneHalfConeRad: halfConeRad,
+        coneAngle: deps.player.angle,
       });
-      const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      // Only the combo's heavy finisher (Cleave/Long Lunge) reads the streak
-      // multiplier — steps 1-2 stay at their plain damageMul regardless of
-      // streak, since they're what build the streak in the first place (see
-      // combat-combo-streak.js).
-      const streakMul = step.heavy ? (window.Combat.comboStreak?.multiplier() ?? 1) : 1;
-      const damage = Math.round(baseAbil.damage * step.damageMul * streakMul * (1 + (effects.stats.damageMul || 0)));
-      const rangePx = baseAbil.rangePx * step.rangeMul * (1 + (effects.stats.rangeMul || 0));
-      const halfConeRad = step.halfConeDeg * Math.PI / 180;
-      const knockbackPxS = baseAbil.knockbackPxS * step.knockbackMul * (1 + (effects.stats.knockbackMul || 0));
 
       // Short step forward, timed to land alongside the swing's own
       // windup+strike rather than the cosmetic hold/return tail — stops
@@ -158,7 +162,6 @@
             hits++;
             lastName = c.def.label;
           }
-          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           const msg = hits > 0
             ? (hits > 1 ? `${step.name}: hit ${hits} creatures!` : `${step.name}: hit the ${lastName}!`)
             : `${step.name} connects with nothing.`;

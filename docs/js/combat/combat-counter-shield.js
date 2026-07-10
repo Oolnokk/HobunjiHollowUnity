@@ -90,6 +90,9 @@
         strikeFrac: 1,
         holdS: COUNTER_HOLD_S,
         afflictionIds: Object.keys(effects.afflictions),
+        coneRangePx: rangePx,
+        coneHalfConeRad: halfConeRad,
+        coneAngle: deps.player.angle,
       });
       // Mirrors triggerWeaponSwingVisual's own auto-return-tail formula
       // (strikeFrac===1 here, so it always reserves one) so the block pose
@@ -111,7 +114,6 @@
             hits++;
             lastName = c.def.label;
           }
-          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           if (hits > 0) {
             deps.showToast(`Shield Counter Riposte: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
             deps.awardWeaponMasteryXp();

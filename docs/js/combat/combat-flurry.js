@@ -61,6 +61,17 @@
       // Alternates side every strike — mirror the hatchet's sweep, flipping
       // direction in sync with the existing left/right hit-cone wobble.
       const dirSign = count % 2 === 0 ? -1 : 1;
+
+      const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
+      const damage = Math.round(baseAbil.damage * (DAMAGE_MUL_BASE + count * DAMAGE_MUL_PER_STRIKE) * (1 + (effects.stats.damageMul || 0)));
+      const rangePx = baseAbil.rangePx * (1 + (effects.stats.rangeMul || 0));
+      const halfConeDeg = HALF_CONE_DEG_BASE + Math.min(HALF_CONE_DEG_MAX_GROWTH, count * HALF_CONE_DEG_GROWTH_PER_STRIKE);
+      const halfConeRad = halfConeDeg * Math.PI / 180;
+      const knockbackPxS = baseAbil.knockbackPxS * (KNOCKBACK_MUL_BASE + count * KNOCKBACK_MUL_PER_STRIKE) * (1 + (effects.stats.knockbackMul || 0));
+      const sideDeg = dirSign * SIDE_OFFSET_DEG;
+      const strikeAngle = deps.player.angle + sideDeg * Math.PI / 180;
+      const strikeIndex = count + 1;
+
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'sweep',
         dirSign,
@@ -71,16 +82,10 @@
         pose: window.Combat.poses.SWEEP_POSE,
         holdS: HOLD_S,
         afflictionIds: Object.keys(effects.afflictions),
+        coneRangePx: rangePx,
+        coneHalfConeRad: halfConeRad,
+        coneAngle: strikeAngle,
       });
-
-      const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * (DAMAGE_MUL_BASE + count * DAMAGE_MUL_PER_STRIKE) * (1 + (effects.stats.damageMul || 0)));
-      const rangePx = baseAbil.rangePx * (1 + (effects.stats.rangeMul || 0));
-      const halfConeDeg = HALF_CONE_DEG_BASE + Math.min(HALF_CONE_DEG_MAX_GROWTH, count * HALF_CONE_DEG_GROWTH_PER_STRIKE);
-      const knockbackPxS = baseAbil.knockbackPxS * (KNOCKBACK_MUL_BASE + count * KNOCKBACK_MUL_PER_STRIKE) * (1 + (effects.stats.knockbackMul || 0));
-      const sideDeg = dirSign * SIDE_OFFSET_DEG;
-      const strikeAngle = deps.player.angle + sideDeg * Math.PI / 180;
-      const strikeIndex = count + 1;
 
       window.Combat.beginStagedAction({
         windupS,
@@ -90,12 +95,11 @@
           let hits = 0, lastName = '';
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
-            if (!deps.inCone(deps.player.x, deps.player.y, strikeAngle, c.x, c.y, rangePx, halfConeDeg * Math.PI / 180)) continue;
+            if (!deps.inCone(deps.player.x, deps.player.y, strikeAngle, c.x, c.y, rangePx, halfConeRad)) continue;
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'blunt', afflictionBonuses: effects.afflictions });
             hits++;
             lastName = c.def.label;
           }
-          deps.spawnCombatTrailEffect({ rangePx, halfConeRad: halfConeDeg * Math.PI / 180, angle: strikeAngle, ok: hits > 0 });
           if (hits > 0) {
             deps.showToast(`Flurry Strike ${strikeIndex}: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
             deps.awardWeaponMasteryXp();

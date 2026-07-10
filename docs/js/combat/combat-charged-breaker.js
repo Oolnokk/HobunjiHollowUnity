@@ -126,6 +126,10 @@
       const knockbackPxS = baseAbil.knockbackPxS * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, chargeT) * (1 + (effects.stats.knockbackMul || 0));
       const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
       const strikeS = STRIKE_S * timeScale;
+      // The windup's own trigger call (onHoldStart, above) fired before the
+      // charge-scaled range was known — set the swing's cone trail now that
+      // it is, so the slam's own trail actually matches its real reach.
+      deps.setCombatSwingCone(rangePx, halfConeRad, deps.player.angle);
       // Leap forward into the slam itself, timed to the strike phase —
       // stops early the instant a hostile is inside the slam's own hit
       // cone instead of always covering the full lunge distance.
@@ -144,7 +148,6 @@
             hits++;
             lastName = c.def.label;
           }
-          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           const pct = Math.round(chargeT * 100);
           const msg = hits > 0
             ? `Charged Breaker (${pct}% charge): hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
