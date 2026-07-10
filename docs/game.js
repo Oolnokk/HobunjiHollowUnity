@@ -2140,6 +2140,28 @@
         return !interiorFurnitureObjects.find(o => o.col === col && o.row === row);
       }
 
+      // Which placed decorative-furniture keys the player can interact with
+      // (as opposed to purely-decorative pieces like a bookshelf or chest
+      // prop). Derived from the piece's key at lookup time rather than
+      // baked onto each placed instance, so it applies uniformly to every
+      // creation path (placing one fresh, loading a saved layout, restoring
+      // on reset) with no extra bookkeeping at any of those call sites.
+      function getInteriorInteractableAt(col, row) {
+        const o = interiorFurnitureObjects.find(f => f.area === 'interior' && f.col === col && f.row === row);
+        if (!o) return null;
+        if (o.key === 'basicBed' || o.key === 'doubleBed' || o.key === 'bedroll') {
+          return {
+            interactIcon: '😴',
+            interactLabel: 'Sleep',
+            onAction(action) {
+              if (action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
+              return sleepInBed();
+            },
+          };
+        }
+        return null;
+      }
+
       function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
@@ -11181,7 +11203,10 @@
         }
         if (activeAction.startsWith('obj_')) {
           const _r = getReticleTile();
-          const _o = getWorldObjectAt(_r.col, _r.row);
+          // worldObjects is farm-scene-only (see its declaration) — interior
+          // interactables (e.g. a bed) live in interiorFurnitureObjects
+          // instead, via getInteriorInteractableAt.
+          const _o = currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row) : getWorldObjectAt(_r.col, _r.row);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
           showToast(_res.message, _res.ok !== false);
@@ -17259,6 +17284,26 @@
         pendingDenRespawn.clear();
       }
 
+      // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
+      // the next morning rather than waiting for calendar.time01 to wrap
+      // naturally — same day-rollover work as advanceDay() (weather reroll,
+      // crop growth, Tothal Shift check, den respawns), plus resetting the
+      // clock itself and restoring the player, which advanceDay() doesn't
+      // need to do since it only ever fires from a real elapsed-time wrap.
+      function sleepInBed() {
+        calendar.day += 1;
+        calendar.time01 = 0; // wake at MORNING_HOUR
+        chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
+        tickCropDay();
+        checkTothalShift();
+        pendingDenRespawn.clear();
+        player.health  = player.maxHealth;
+        player.stamina = player.maxStamina;
+        const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
+        lastActionMessage = msg;
+        return { ok: true, message: msg };
+      }
+
       function chooseWeatherForDay() {
         const season = currentSeason();
         const seed = seededRandom(calendar.day * 991 + season.name.length * 37);
@@ -17922,8 +17967,12 @@
           const nearExit = reticle.row >= INTERIOR_EXIT_ROW && reticle.col >= INTERIOR_EXIT_COL && reticle.col < INTERIOR_EXIT_COL + 2;
           const btns     = [];
           if (nearExit) btns.push({ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true });
-          const iObj = getWorldObjectAt(reticle.col, reticle.row);
-          if (iObj) btns.push({ icon: '🔔', label: 'Interact', action: 'obj_interact', style: 'primary', allowed: true });
+          // getInteriorInteractableAt, not getWorldObjectAt — worldObjects is
+          // the farm scene's own coordinate space (see its declaration), so
+          // reticle coords while standing in the interior were being checked
+          // against farm-placed objects at those same numeric coordinates.
+          const iObj = getInteriorInteractableAt(reticle.col, reticle.row);
+          if (iObj) btns.push({ icon: iObj.interactIcon || '🔔', label: iObj.interactLabel || 'Interact', action: 'obj_interact', style: 'primary', allowed: true });
           return btns;
         }
 
@@ -19372,6 +19421,25 @@
         const _worldLayout = loadFarmLayout();
         if (_worldLayout) applyFarmLayoutToGrid(_worldLayout);
         applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
+        // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
+        // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
+        // player has no bed item in inventory yet to buy+place one themselves.
+        // Gated on this world having no saved layout at all, so it never
+        // re-appears for a returning player, including one who moved or
+        // removed their starter bed (farmLayoutKey() is per-world, so this
+        // check has to happen here — after playerData.worldId is known —
+        // rather than at module init, where it would save under the wrong,
+        // not-yet-namespaced key and then get cleared right back out by this
+        // same per-world reload).
+        if (!_worldLayout) {
+          try {
+            const starterBed = makeDecorativeFurnitureMesh(1, 1, 'basicBed', interiorScene, 'interior');
+            if (starterBed) {
+              interiorFurnitureObjects.push({ key: 'basicBed', col: 1, row: 1, mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior' });
+              saveFarmLayout();
+            }
+          } catch (e) { console.error('starter bed seed:', e); }
+        }
         respawnWorldLivestock(); // after furniture, so occupancy checks see final tile state
         recomputeWater(false);
 
