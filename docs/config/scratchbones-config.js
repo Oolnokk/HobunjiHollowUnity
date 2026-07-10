@@ -3196,6 +3196,10 @@ window.SCRATCHBONES_CONFIG = {
       "audio": {
         "enabled": true,
         "sfxVolume": 0.92,
+        "footsteps": {
+          "enabled": true,
+          "volume": 0.85
+        },
         "bgmVolume": 0.48,
         "musicFadeMs": 280,
         "songFadeInMs": 2200,

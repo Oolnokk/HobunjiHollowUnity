@@ -87,7 +87,10 @@
   // early once a hostile enters this jab's own hit cone (see the
   // beginCombatLunge call below), so a longer reach here just means less
   // whiffed closing distance rather than overshooting past the target.
-  const LUNGE_TILE_MUL = 2.2;
+  // x5'd from its original 2.2 — Opportunist Jab in particular has the
+  // single shortest actual hit range of any lunging attack, so these need
+  // the biggest closing-distance assist.
+  const LUNGE_TILE_MUL = 11.0;
 
   function registerQuickAttack(id, def) {
     let busyAction = null;

@@ -925,8 +925,11 @@
       // one of our synth attempts that reads as a footstep rather than a
       // sound effect) — they're differentiated purely by post effects
       // (filter shape/cutoff/Q, pitch, decay length), not a different recipe.
+      // volume raised from its original 0.26 — at that gain, stacked with
+      // the other multipliers below (baseVolume/sfxVolume/falloff), footsteps
+      // were only barely audible even standing right next to their source.
       const FOOTSTEP_BASE = Object.freeze({
-        waveform: 'triangle', freq: 55, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.26,
+        waveform: 'triangle', freq: 55, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.6,
       });
 
       // Swap in real recordings later by setting `url` on a surface's post-fx
@@ -955,10 +958,12 @@
       // NPC/enemy footsteps pan hard left/right within this distance — keeps
       // them clearly directional without needing real spatial audio.
       const FOOTSTEP_PAN_RANGE_PX = TILE * 5;
-      // The player and whistled companion animals tread much more quietly
+      // The player and whistled companion animals tread a bit more quietly
       // than NPCs/hostiles, and aren't panned (the player is the listener;
-      // a companion is always close at hand).
-      const FOOTSTEP_QUIET_SCALE = 0.35;
+      // a companion is always close at hand). Raised from its original 0.35
+      // — that plus distance falloff made a companion's own footsteps nearly
+      // silent even standing right next to the player.
+      const FOOTSTEP_QUIET_SCALE = 0.7;
 
       function footstepSurfaceKey(area, type) {
         if (area === 'interior' || _isBuildingArea(area)) return 'wood';
@@ -1097,7 +1102,9 @@
         if (!cfgEntry || c.areaId !== currentArea) return;
         const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
         if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-        const falloff = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+        // Linear, not squared — squared falloff made anything past ~30% of
+        // earshot drop to near-silence, which was most of the usable range.
+        const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
         playOneShotSfx(cfgEntry, falloff, pitch);
       }
 
@@ -2860,7 +2867,9 @@
         if (!_footstepAdvance(c, distPx)) return;
         const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
         if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-        const falloff = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+        // Linear, not squared — squared falloff made anything past ~30% of
+        // earshot drop to near-silence, which was most of the usable range.
+        const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
         const type = footstepTileTypeAt(c.areaId, c.x, c.y, c.areaGrid);
         // Whistled companions stay quiet (like the player) and unpanned —
         // hostiles/wild creatures get the full directional treatment.
@@ -6399,7 +6408,9 @@
             const wx = root.position.x * TILE, wy = root.position.z * TILE;
             const distToPlayer = Math.hypot(wx - player.x, wy - player.y);
             if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-            const falloff = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+            // Linear, not squared — squared falloff made anything past ~30% of
+        // earshot drop to near-silence, which was most of the usable range.
+        const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
             const pan = Math.max(-1, Math.min(1, (wx - player.x) / FOOTSTEP_PAN_RANGE_PX));
             const type = footstepTileTypeAt(this.area, wx, wy, npcGridForArea(this.area));
             playFootstepSfx(this.area, type, falloff, pan);

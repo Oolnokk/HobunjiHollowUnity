@@ -19,8 +19,14 @@
 
   // Short forward step layered under each combo swing's windup/strike —
   // see game.js's beginCombatLunge. Expressed as a TILE multiple so it scales
-  // with the game's tile size rather than a raw pixel constant.
-  const LUNGE_TILE_MUL = 0.8;
+  // with the game's tile size rather than a raw pixel constant. x5'd from
+  // its original 0.8 — combo's hit range is the shortest of the three
+  // lunge-enabled attacks (built off the base 'cut' range, same as Quick
+  // Attacks), so it needs the most help closing distance. Safe to lunge
+  // this far now that lunges stop early the instant a hostile enters the
+  // step's own hit cone instead of always covering the full distance (see
+  // game.js's beginCombatLunge/updateMovement).
+  const LUNGE_TILE_MUL = 4.0;
 
   // "Forehand Swing" — authored in the attack-animation editor as a full
   // 6-channel pose (yaw winds the tool back/through, bodyYaw turns the
