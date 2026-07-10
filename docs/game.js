@@ -3029,6 +3029,19 @@
         return best;
       }
 
+      // Used by updateAmbientCues() to duck exploration/dawn music during a
+      // fight — true whenever any live hostile in the player's current area
+      // is actively chasing/attacking (state === 'chase'), regardless of
+      // whether the player currently has a weapon out (unlike
+      // findAutoTarget, which is gated on that — a wolf mid-charge should
+      // still cut the music even if the player hasn't drawn a weapon yet).
+      function isPlayerInCombat() {
+        for (const c of hostileObjects) {
+          if (c.health > 0 && c.areaId === currentArea && c.state === 'chase') return true;
+        }
+        return false;
+      }
+
       // Swap the auto-target to the CLOSEST hostile within a cone around
       // `aimAngle` (excluding whatever is currently targeted) — the desktop
       // swap-target input (mouse/right-stick direction) and the mobile
@@ -4447,7 +4460,7 @@
 
       const _audioCueIndexes = new Map();
       const _mapAudioIndexes = new Map();
-      let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null };
+      let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null, inCombat: false, currentCombatBgm: null };
       const _furnitureSfxSources = [];
       const _loopingBgs = new Map();
       const _audioDebugLast = new Map();
@@ -4847,6 +4860,63 @@
         const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) { audioTrace('ambient disabled by config', 'ambient-disabled', 3000); return; }
         if (_ambientCueState.area !== currentArea) { stopAmbientCue(); resetAmbientCueTimer(currentArea); }
+
+        const inCombat = isPlayerInCombat();
+        if (inCombat !== _ambientCueState.inCombat) {
+          _ambientCueState.inCombat = inCombat;
+          const fade = musicFadeConfig();
+          if (inCombat) {
+            // Duck exploration/dawn music for the fight. combatBgm (see
+            // scratchbones-config.js — empty until real tracks exist) takes
+            // over below; until then this just goes quiet rather than
+            // clashing with the fight.
+            for (const key of ['currentCue', 'currentBgm']) {
+              const snd = _ambientCueState[key];
+              _ambientCueState[key] = null;
+              if (!snd) continue;
+              if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
+              else snd.pause();
+            }
+            audioDebug('combat started — ducking ambient music', 'combat-duck-' + currentArea, 0, 'bgm');
+          } else {
+            if (_ambientCueState.currentCombatBgm) {
+              const snd = _ambientCueState.currentCombatBgm;
+              _ambientCueState.currentCombatBgm = null;
+              if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
+              else snd.pause();
+            }
+            // Try exploration music fresh rather than resuming whatever was
+            // cut off — time of day (or area) may have moved on mid-fight.
+            _ambientCueState.mode = 'bgm';
+            _ambientCueState.nextAt = performance.now();
+            audioDebug('combat ended — resuming ambient music', 'combat-unduck-' + currentArea, 0, 'bgm');
+          }
+        }
+
+        if (inCombat) {
+          const combatTracks = (audioCfg.combatBgm || []).filter(t => t?.url && !audioUrlFailed(t.url));
+          if (!_ambientCueState.currentCombatBgm && combatTracks.length) {
+            const track = combatTracks[Math.floor(Math.random() * combatTracks.length)];
+            const fade = musicFadeConfig();
+            const vol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
+            const snd = playMusicTrack(track.url, vol, fade.songFadeInMs, fade.songFadeOutMs);
+            const finishCombatBgm = () => {
+              if (_ambientCueState.currentCombatBgm === snd) _ambientCueState.currentCombatBgm = null;
+              releaseMusicGain(snd);
+            };
+            snd.addEventListener('ended', finishCombatBgm, { once: true });
+            snd.addEventListener('error', () => { markAudioUrlFailed(track.url, 'media error'); finishCombatBgm(); }, { once: true });
+            _ambientCueState.currentCombatBgm = snd;
+            snd.play().catch(err => {
+              const errName = err?.name || '';
+              if (errName !== 'NotAllowedError' && errName !== 'AbortError') markAudioUrlFailed(track.url, errName || 'play failed');
+              finishCombatBgm();
+            });
+          }
+          audioTrace('ambient suppressed (in combat) area=' + currentArea + ' combatTracks=' + combatTracks.length, 'ambient-combat-' + currentArea, 5000);
+          return;
+        }
+
         const idx = _audioCueIndexes.get(_ambientCueState.indexId);
         const cues = idx?.ambient_cues || [];
         audioTrace('ambient state area=' + currentArea + ' mode=' + _ambientCueState.mode + ' index=' + (_ambientCueState.indexId || 'none') + ' cues=' + cues.length + ' bgmActive=' + !!_ambientCueState.currentBgm + ' cueActive=' + !!_ambientCueState.currentCue + ' nextInMs=' + Math.max(0, Math.round((_ambientCueState.nextAt || 0) - performance.now())), 'ambient-state-' + currentArea, 5000);

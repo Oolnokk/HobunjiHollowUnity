@@ -3196,6 +3196,13 @@ window.SCRATCHBONES_CONFIG = {
           "volume": 0.85
         },
         "bgmVolume": 0.48,
+        // Played instead of the area's normal bgm/ambient cues whenever
+        // isPlayerInCombat() is true (see updateAmbientCues in game.js).
+        // Empty for now — no combat-specific tracks exist yet in
+        // assets/audio/music/bgm/. Same track-object shape as areaBgm
+        // entries ({ url, ... }); global rather than per-area since combat
+        // doesn't have its own zone-flavored themes the way exploration does.
+        "combatBgm": [],
         "musicFadeMs": 280,
         "songFadeInMs": 2200,
         "songFadeOutMs": 2600,
