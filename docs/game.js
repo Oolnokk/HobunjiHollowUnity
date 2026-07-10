@@ -5773,6 +5773,7 @@
         const mesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
         mesh.frustumCulled = false;
         mesh.visible = s_grass;
+        mesh.userData.isBillboard = true;
         const dummy = new THREE.Object3D();
         let idx = 0;
         for (let row = 0; row < zrows; row++) {
@@ -10000,7 +10001,17 @@
           nextGrid[row][col].crop = CropType.NONE;
         });
 
-        chooseWeatherForDay();
+        // NOTE: deliberately does not call chooseWeatherForDay() here — this
+        // function runs at startup, on doReset(), and on per-world grid
+        // rebuilds, and every one of those call sites already has a valid
+        // calendar.weather/nextRainWindows for the current calendar.day
+        // (the hardcoded day-17 init, or doReset()'s explicit reset just
+        // above its own createInitialGrid() call). Re-rolling here silently
+        // overwrote that — and since the roll is seeded purely by
+        // calendar.day, day 17's roll is the same for every player on every
+        // load (0.4719 vs First Rains' 0.42 threshold — just barely
+        // 'clear'), which is why the game appeared to always start clear
+        // regardless of the intended "raining on day one" state.
         recomputeWater(false, nextGrid);
         return nextGrid;
       }
@@ -14245,6 +14256,7 @@
         townBorderGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, pts.length * BLADES * 2);
         townBorderGrassBillMesh.frustumCulled = false;
         townBorderGrassBillMesh.visible = s_grass;
+        townBorderGrassBillMesh.userData.isBillboard = true;
         const dummy = new THREE.Object3D();
         let idx = 0;
         for (const { px, pz, py, seed } of pts) {
@@ -15660,16 +15672,19 @@
         farmGrassBillMesh.frustumCulled = false;
         farmGrassBillMesh.count = 0;
         farmGrassBillMesh.visible = s_grass;
+        farmGrassBillMesh.userData.isBillboard = true;
         scene.add(farmGrassBillMesh);
 
         farmWeedBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, cap);
         farmWeedBillMesh.frustumCulled = false;
         farmWeedBillMesh.count = 0;
+        farmWeedBillMesh.userData.isBillboard = true;
         scene.add(farmWeedBillMesh);
 
         cuttableBillboardGlowMesh = new THREE.InstancedMesh(_grassBladeGeo, cuttableBillboardGlowMat || grassBillboardMat, 28);
         cuttableBillboardGlowMesh.frustumCulled = false;
         cuttableBillboardGlowMesh.count = 0;
+        cuttableBillboardGlowMesh.userData.isBillboard = true;
         scene.add(cuttableBillboardGlowMesh);
       }
 
@@ -15710,6 +15725,7 @@
         townGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
         townGrassBillMesh.frustumCulled = false;
         townGrassBillMesh.visible = s_grass;
+        townGrassBillMesh.userData.isBillboard = true;
         const dummy = new THREE.Object3D();
         let idx = 0;
         for (let row = 0; row < trows; row++) {
@@ -16768,19 +16784,25 @@
           camera.layers.enableAll();
 
           // Depth-only source for the depth-edge detector, PNG-plane avatars
-          // hidden for this pass only (see _markPngPlane) so sprite cutout
-          // silhouettes never feed the detector. Opt-in/off by default since
-          // it's an extra full scene pass on top of everything above.
+          // (see _markPngPlane) and grass billboards (userData.isBillboard,
+          // set at creation on every InstancedMesh built from _grassBladeGeo)
+          // hidden for this pass only so their sprite cutout silhouettes and
+          // near-edge-on quad angles never feed the detector as false edges.
+          // Opt-in/off by default since it's an extra full scene pass on top
+          // of everything above.
           if (s_depthOutlines) {
-            const _hiddenPngPlanes = [];
+            const _hiddenForDepthPass = [];
             activeScene.traverse(o => {
-              if (o.userData.isPngPlane && o.visible) { o.visible = false; _hiddenPngPlanes.push(o); }
+              if ((o.userData.isPngPlane || o.userData.isBillboard) && o.visible) {
+                o.visible = false;
+                _hiddenForDepthPass.push(o);
+              }
             });
             renderer.setRenderTarget(_depthOnlyRT);
             activeScene.overrideMaterial = _depthOnlyMat;
             renderer.render(activeScene, camera);
             activeScene.overrideMaterial = null;
-            _hiddenPngPlanes.forEach(o => { o.visible = true; });
+            _hiddenForDepthPass.forEach(o => { o.visible = true; });
           }
 
           // Composite: blend depth-discontinuity + furniture material-seam
