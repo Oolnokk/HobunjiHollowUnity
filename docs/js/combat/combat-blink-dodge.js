@@ -13,7 +13,6 @@
   const ZIP_DISTANCE_PX = 82;
   const ZIP_INVULN_S = 0.16;
   const ZIP_COOLDOWN_S = 0.18;
-  const ZIP_FAIL_COOLDOWN_S = 0.28;
   const WALK_SPEED_MUL = 0.66; // mirrors the demo's 118/178 ratio while active
 
   function now() { return performance.now() / 1000; }
@@ -22,7 +21,20 @@
     let active = false;
     let nextZipAt = -99;
 
-    function speedMul() { return active ? WALK_SPEED_MUL : 1; }
+    // Blink Dodge deals no damage of its own, so its whole upgrade tree
+    // (see combat-progression.js) is movement/stamina stat bonuses rather
+    // than afflictions — read once per relevant call instead of cached,
+    // same as every other ability, so a level chosen mid-hold takes effect
+    // on the very next zip.
+    function effects() {
+      const toolKey = window.Combat.deps?.currentWeaponKey?.() || 'none';
+      return window.CombatProgression?.getEffects(toolKey, 'blinkDodge') || { afflictions: {}, stats: {} };
+    }
+
+    function speedMul() {
+      if (!active) return 1;
+      return WALK_SPEED_MUL * (1 + (effects().stats.walkSpeedMul || 0));
+    }
 
     function tryZip(deps) {
       const t = now();
@@ -30,20 +42,21 @@
       const moving = (deps.player.inputStrength || 0) > 0.001;
       if (!moving) return;
 
-      if (deps.player.stamina < ZIP_COST) {
-        nextZipAt = t + ZIP_FAIL_COOLDOWN_S;
-        return;
-      }
-
+      const stats = effects().stats;
+      const zipDistancePx = ZIP_DISTANCE_PX * (1 + (stats.zipDistanceMul || 0));
       const dirX = deps.player.inputX, dirY = deps.player.inputY;
-      const desiredX = deps.player.x + dirX * ZIP_DISTANCE_PX;
-      const desiredY = deps.player.y + dirY * ZIP_DISTANCE_PX;
+      const desiredX = deps.player.x + dirX * zipDistancePx;
+      const desiredY = deps.player.y + dirY * zipDistancePx;
       if (deps.canPlayerOccupy(desiredX, deps.player.y)) deps.player.x = desiredX;
       if (deps.canPlayerOccupy(deps.player.x, desiredY)) deps.player.y = desiredY;
 
-      deps.player.stamina = Math.max(0, deps.player.stamina - ZIP_COST);
-      deps.player.invulnUntil = Math.max(deps.player.invulnUntil || 0, performance.now() + ZIP_INVULN_S * 1000);
-      nextZipAt = t + ZIP_COOLDOWN_S;
+      // Never refuses for lack of stamina — overspending pushes into
+      // Exhausted instead (see resource-system.js's spendStamina), same as
+      // this game's base dodge (game.js's performDodge).
+      window.ResourceSystem?.spendStamina(deps.player, ZIP_COST * (1 + (stats.zipCostMul || 0)), 'Blink Dodge zip');
+      const invulnMs = ZIP_INVULN_S * (1 + (stats.invulnMul || 0)) * 1000;
+      deps.player.invulnUntil = Math.max(deps.player.invulnUntil || 0, performance.now() + invulnMs);
+      nextZipAt = t + ZIP_COOLDOWN_S * (1 + (stats.zipCooldownMul || 0));
     }
 
     function onHoldStart() {
@@ -56,7 +69,8 @@
     function onHoldUpdate(_slot, dt) {
       if (!active) return;
       const deps = window.Combat.deps;
-      deps.player.stamina = Math.max(0, deps.player.stamina - IDLE_DRAIN_PER_S * dt);
+      const idleDrainMul = 1 + (effects().stats.idleDrainMul || 0);
+      window.ResourceSystem?.spendStamina(deps.player, Math.min(deps.player.stamina, IDLE_DRAIN_PER_S * idleDrainMul * dt), 'Blink Dodge (idle)');
       if (deps.player.stamina <= 0) {
         active = false;
         window.Combat.setMovementSpeedMul(null);
@@ -73,7 +87,7 @@
       window.Combat.deps.showToast('Blink Dodge ended.', false);
     }
 
-    window.Combat.abilities.register('blinkDodge', { label: 'Blink Dodge', slotFamily: 'hold', onHoldStart, onHoldUpdate, onHoldEnd });
+    window.Combat.abilities.register('blinkDodge', { label: 'Blink Dodge', slotFamily: 'hold', category: 'defensiveHold', onHoldStart, onHoldUpdate, onHoldEnd });
   }
 
   register();

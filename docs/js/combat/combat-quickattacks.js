@@ -32,7 +32,10 @@
     const behindDot = forwardX * (toPlayerX / dist) + forwardY * (toPlayerY / dist);
     return {
       enemyStriking: target.telegraphState === 'strike',
-      exhausted: target.stamina <= target.maxStamina * 0.20,
+      // True Exhausted (see resource-system.js's spendStamina) always
+      // counts, even if a Winded-Stamina-reduced effective max makes the
+      // plain 20%-of-max fallback threshold look full.
+      exhausted: !!target.exhaustion?.active || target.stamina <= target.maxStamina * 0.20,
       behind: behindDot < -0.35,
       lowHealth: target.health > 0 && target.health <= target.maxHealth * 0.30,
     };
@@ -79,9 +82,19 @@
   const COST_BASE = 11;
   const COST_BONUS = 18;
   const HOLD_S = 1; // post-strike pause before easing back to neutral
+  // The jab's hit cone (scaled off the shared 'cut' ability's rangePx —
+  // see baseAbil below) read as oversized in practice; shrink it here
+  // rather than touching 'cut' itself, since flurry/charged breaker/
+  // counter-shield all scale off that same shared base and weren't
+  // reported as too big.
+  const RANGE_SCALE = 0.6;
   // Farther forward step than the 3-hit combo's, layered under the jab —
-  // see game.js's beginCombatLunge. Expressed as a TILE multiple.
-  const LUNGE_TILE_MUL = 1.4;
+  // see game.js's beginCombatLunge. Expressed as a TILE multiple. Stops
+  // early once a hostile enters this jab's own hit cone (see the
+  // beginCombatLunge call below), so a longer reach here just means less
+  // whiffed closing distance rather than overshooting past the target.
+  // Originally 2.2; a 5x pass (11.0) proved too far, halved down to 5.5.
+  const LUNGE_TILE_MUL = 5.5;
 
   function registerQuickAttack(id, def) {
     let busyAction = null;
@@ -94,51 +107,64 @@
       const tech = def.build(deps, target, cond);
       const cost = tech.sourceText === 'no condition bonus' ? COST_BASE : COST_BONUS;
 
-      if (deps.player.stamina < cost) {
-        deps.showToast('Too winded to swing!', false);
-        return;
-      }
-      deps.player.stamina = Math.max(0, deps.player.stamina - cost);
-      // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
-      deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S, {
-        anim: 'thrust',
-        windupFrac: WINDUP_S / (WINDUP_S + STRIKE_S),
-        strikeFrac: 1,
-        holdS: HOLD_S,
-      });
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, WINDUP_S + STRIKE_S);
+      // Every affliction this jab can inflict, and every stat bonus on top
+      // of the base numbers below, comes from the player's own chosen
+      // upgrades (see combat-progression.js) — a fresh, unleveled jab deals
+      // plain damage with no afflictions at all.
+      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
 
+      // Never refuses for lack of stamina — overspending pushes into
+      // Exhausted instead of blocking the jab (see resource-system.js's
+      // spendStamina); Exhausted's reduced speed then slows this jab's own
+      // windup/strike down, same as the source demo's cooldown-slowing rule.
+      window.ResourceSystem?.spendStamina(deps.player, cost * (1 + (effects.stats.staminaCostMul || 0)), tech.name);
+      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const windupS = WINDUP_S * timeScale;
+      const strikeS = STRIKE_S * timeScale;
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * tech.damageMul);
-      const rangePx = baseAbil.rangePx * tech.rangeMul;
+      const damage = Math.round(baseAbil.damage * tech.damageMul * (1 + (effects.stats.damageMul || 0)));
+      const rangePx = baseAbil.rangePx * tech.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
       const halfConeRad = tech.halfConeDeg * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * tech.knockbackMul;
 
+      // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
+      deps.triggerWeaponSwingVisual(windupS + strikeS, {
+        anim: 'thrust',
+        windupFrac: windupS / (windupS + strikeS),
+        strikeFrac: 1,
+        holdS: HOLD_S,
+        afflictionIds: Object.keys(effects.afflictions),
+        coneRangePx: rangePx,
+        coneHalfConeRad: halfConeRad,
+        coneAngle: deps.player.angle,
+      });
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
+
       busyAction = window.Combat.beginStagedAction({
-        windupS: WINDUP_S,
-        strikeS: STRIKE_S,
+        windupS,
+        strikeS,
         recoverS: 0,
         onStrike: () => {
           let hits = 0, lastName = '';
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS);
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'sharp', afflictionBonuses: effects.afflictions });
             hits++;
             lastName = c.def.label;
           }
-          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           const msg = hits > 0
             ? `${tech.name}: ${tech.sourceText} — hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
             : `${tech.name}: ${tech.sourceText}, but connects with nothing.`;
           deps.showToast(msg, hits > 0);
+          if (hits > 0) deps.awardWeaponMasteryXp();
         },
         onComplete: () => { busyAction = null; },
         onCancel: () => { busyAction = null; },
       });
     }
 
-    window.Combat.abilities.register(id, { label: def.label, slotFamily: 'tap', onTap });
+    window.Combat.abilities.register(id, { label: def.label, slotFamily: 'tap', category: 'quickAttack', onTap });
   }
 
   for (const id of Object.keys(TECHNIQUES)) registerQuickAttack(id, TECHNIQUES[id]);

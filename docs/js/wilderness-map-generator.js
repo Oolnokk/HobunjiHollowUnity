@@ -7555,6 +7555,21 @@
     const workspace = buildHobunjiMapExport();
     workspace.entry = map.entry ? { col: map.entry.x, row: map.entry.y, side: map.entry.side } : null;
     workspace.warnings = map.warnings.slice();
+    // Raw animal-den anchors (root-map tile coords, already tile-density-
+    // scaled — see scaleGeneratedTileDensity/scaleGeneratedObject above),
+    // exposed separately from buildHobunjiMapExport()'s tile stream because
+    // that export only encodes a den's *presence* as a generic 'rock'-style
+    // overlay on its footprint tiles (see hobunjiObjectOverlayByTile) — real
+    // consumers that need to know *where the dens actually are* (e.g. the
+    // game's own wild-pack spawner) read this instead of trying to recover
+    // positions from the lossy tile overlay.
+    workspace.animalDens = (map.objects || [])
+      .filter(object => object.type === 'animalDen')
+      .map(object => ({
+        id: object.id,
+        x: object.x + Math.floor((object.w || 1) / 2),
+        y: object.y + Math.floor((object.h || 1) / 2),
+      }));
     return workspace;
   }
 

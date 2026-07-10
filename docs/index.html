@@ -38,12 +38,16 @@
   <link rel="stylesheet" href="onboarding.css">
   <script src="onboarding.js"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
+  <script src="js/combat/resource-system.js"></script>
+  <script src="js/combat/resource-rings.js"></script>
   <script src="js/combat/combat-core.js"></script>
   <script src="js/combat/combat-enemy-telegraph.js"></script>
   <script src="js/combat/combat-animal-attacks.js"></script>
   <script src="js/combat/combat-loadout.js"></script>
+  <script src="js/combat/combat-progression.js"></script>
   <script src="js/combat/combat-input.js"></script>
   <script src="js/combat/combat-combo.js"></script>
+  <script src="js/combat/combat-combo-streak.js"></script>
   <script src="js/combat/combat-quickattacks.js"></script>
   <script src="js/combat/combat-counter-shield.js"></script>
   <script src="js/combat/combat-blink-dodge.js"></script>
@@ -549,6 +553,13 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingShowHitboxes"><span class="toggle-slider"></span></span>
           </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Dev Mode</div>
+              <div class="settings-desc">Adds a +1 Mastery button to each tool's item-info panel, for testing</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingDevMode"><span class="toggle-slider"></span></span>
+          </label>
         </div>
       </div><!-- /mpSettings -->
 
@@ -571,6 +582,9 @@
 
   <!-- Toast -->
   <div id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Combo streak readout (see js/combat/combat-combo-streak.js) -->
+  <div id="comboStreakHud" aria-hidden="true"></div>
 
 
 

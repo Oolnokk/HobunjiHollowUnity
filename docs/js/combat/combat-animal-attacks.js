@@ -146,14 +146,23 @@
 
     c.x = nx;
     c.y = ny;
+    // The leap covers real ground at a real speed (POUNCE_LEAP_SPEED_PX_S) —
+    // same footstep hook as ordinary movement, so a pouncing creature is
+    // still audible instead of silently gliding in for the hit.
+    deps.tickCreatureFootsteps?.(c, stepPx);
 
     const headX = c.x + dirX * state.headOffsetPx, headY = c.y + dirY * state.headOffsetPx;
     for (const target of state.targets) {
       const ref = target.ref;
       if (ref.health <= 0) continue;
       if (!deps.inCone(headX, headY, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad)) continue;
-      if (target.isPlayer) deps.damagePlayer(state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S);
-      else deps.damageCreature(ref, state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S);
+      // Species-specific — see CREATURE_DB's attackTag (gar-wolves 'sharp',
+      // dabinggi-hounds 'poison') — so every one of a creature's slottable
+      // attacks (this leap, the plain bite telegraph, guardCharge) afflicts
+      // consistently with its species instead of Pounce hardcoding 'sharp'.
+      const dmgTag = c.def.attackTag || 'sharp';
+      if (target.isPlayer) deps.damagePlayer(state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag });
+      else deps.damageCreature(ref, state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag });
       deps.playCreatureClawHit?.(c);
       return false; // hit landed; stop in place
     }
@@ -223,8 +232,12 @@
       const ref = target.ref;
       if (ref.health <= 0) continue;
       if (!deps.inCone(headX, headY, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad)) continue;
-      if (target.isPlayer) deps.damagePlayer(0, headX, headY, GUARD_CHARGE_KNOCKBACK_PX_S);
-      else deps.damageCreature(ref, 0, headX, headY, GUARD_CHARGE_KNOCKBACK_PX_S);
+      // 0 damage today (a pure knockback tackle), so this tag is currently
+      // inert — kept consistent with Pounce/bite anyway (see CREATURE_DB's
+      // attackTag) in case that ever changes.
+      const dmgTag = c.def.attackTag || 'blunt';
+      if (target.isPlayer) deps.damagePlayer(0, headX, headY, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag });
+      else deps.damageCreature(ref, 0, headX, headY, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag });
       deps.playCreatureClawHit?.(c);
       return false; // hit landed; stop in place
     }

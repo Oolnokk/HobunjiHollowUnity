@@ -22,7 +22,12 @@
   // they're willing to hold the button.
   const CHARGE_DRAIN_PER_S = 18;
   const COST_MIN = 16, COST_MAX = 28;
-  const DAMAGE_MUL_MIN = 3.3, DAMAGE_MUL_MAX = 6.6; // ~46-92 vs the demo's 14-damage baseline
+  // Barely stronger than a combo hit on its own (1.05-1.3x, roughly
+  // Forehand Swing to Cleave's own base) — same "heavy attacks are tuned
+  // down, the combo streak is the real payoff" rule as Cleave/Long Lunge
+  // (see combat-combo.js). Scaled further by comboStreak.multiplier() at
+  // release time, below.
+  const DAMAGE_MUL_MIN = 1.05, DAMAGE_MUL_MAX = 1.3;
   // x1.5 on top of the global knockback-base doubling — charged breaker is
   // one of the four attacks called out for an extra "even more" bump.
   const KNOCKBACK_MUL_MIN = 1.275, KNOCKBACK_MUL_MAX = 2.4;
@@ -35,10 +40,13 @@
   const WINDUP_S = 0.52, STRIKE_S = 0.30;
   const POWER = 1.7;
   const HOLD_S = 1; // post-strike pause before easing back to neutral
-  // Big anime-style forward leap on release, far beyond the combo/quick-
-  // attack steps — see game.js's beginCombatLunge. LUNGE_HOP_UNITS is a
+  // Forward leap on release — see game.js's beginCombatLunge. Matched to the
+  // combo's own longest step lunge (Forehand Swing/Short Thrust's 2.0 tiles)
+  // rather than a bespoke bigger number, per the same "barely stronger than
+  // a combo attack" baseline as the damage multipliers above; scaled further
+  // by comboStreak.multiplier() at release time, below. LUNGE_HOP_UNITS is a
   // cosmetic vertical arc peak in world-Y units (not pixels).
-  const LUNGE_TILE_MUL = 7.2; // 3x — 75% of prior 9.6 (four times the base forward lunge)
+  const LUNGE_TILE_MUL = 2.0;
   const LUNGE_HOP_UNITS = 0.45;
 
   function now() { return performance.now() / 1000; }
@@ -50,6 +58,10 @@
     function onHoldStart() {
       startedAt = now();
       window.Combat.deps.showToast('Charged Breaker charging — release to strike.', true);
+      // Which afflictions the eventual slam can inflict doesn't depend on
+      // how long it's charged for — safe to read here at raise time rather
+      // than waiting for release.
+      const effects = window.CombatProgression?.getEffects(window.Combat.deps.currentWeaponKey(), 'chargedBreaker') || { afflictions: {}, stats: {} };
       // Power attack — reuses the shared sweep pose (same one combo's
       // Cleave/Backhand steps use) instead of the vertical chop, but wound
       // back farther and scaled up via power so the finisher still reads as
@@ -64,6 +76,7 @@
         strikeFrac: 1,
         power: POWER,
         holdS: HOLD_S,
+        afflictionIds: Object.keys(effects.afflictions),
       });
     }
 
@@ -83,46 +96,64 @@
         return;
       }
       const chargeT = Math.min(1, Math.max(0, (held - MIN_READY_S) / (MAX_CHARGE_S - MIN_READY_S)));
+      // Every affliction this slam can inflict, and every stat bonus on top
+      // of the base numbers below, comes from the player's own chosen
+      // upgrades (see combat-progression.js) — a fresh, unleveled breaker
+      // deals plain damage with no afflictions at all.
+      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker') || { afflictions: {}, stats: {} };
+      // Never refuses for lack of stamina once it's ready to release —
+      // overspending pushes into Exhausted instead of fizzling the slam
+      // (see resource-system.js's spendStamina). Exhausted's reduced speed
+      // then slows the slam itself down, same as the source demo's
+      // cooldown-slowing rule.
       if (!forced) {
-        const cost = lerp(COST_MIN, COST_MAX, chargeT);
-        if (deps.player.stamina < cost) {
-          deps.cancelWeaponSwingHold();
-          deps.showToast('Too winded to unleash it!', false);
-          return;
-        }
-        deps.player.stamina = Math.max(0, deps.player.stamina - cost);
+        const cost = lerp(COST_MIN, COST_MAX, chargeT) * (1 + (effects.stats.staminaCostMul || 0));
+        window.ResourceSystem?.spendStamina(deps.player, cost, 'Charged Breaker');
       }
       // The windup already played out while held — releasing now just lets
       // the in-progress swing continue straight into its slam.
       deps.releaseWeaponSwingHold();
-      // Leap forward into the slam itself, timed to the strike phase.
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, STRIKE_S, LUNGE_HOP_UNITS);
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, chargeT));
-      const rangePx = baseAbil.rangePx * lerp(RANGE_MUL_MIN, RANGE_MUL_MAX, chargeT);
+      // Charged Breaker isn't a combo hit itself (see combat-combo-streak.js
+      // — only the tap combos build/reset the streak), but its own damage
+      // and lunge scale with whatever streak is currently banked, same as
+      // Cleave/Long Lunge.
+      const streakMul = window.Combat.comboStreak?.multiplier() ?? 1;
+      const damage = Math.round(baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, chargeT) * streakMul * (1 + (effects.stats.damageMul || 0)));
+      const rangePx = baseAbil.rangePx * lerp(RANGE_MUL_MIN, RANGE_MUL_MAX, chargeT) * (1 + (effects.stats.rangeMul || 0));
       const halfConeRad = HALF_CONE_DEG * Math.PI / 180;
-      const knockbackPxS = baseAbil.knockbackPxS * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, chargeT);
+      const knockbackPxS = baseAbil.knockbackPxS * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, chargeT) * (1 + (effects.stats.knockbackMul || 0));
+      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const strikeS = STRIKE_S * timeScale;
+      // The windup's own trigger call (onHoldStart, above) fired before the
+      // charge-scaled range was known — set the swing's cone trail now that
+      // it is, so the slam's own trail actually matches its real reach.
+      deps.setCombatSwingCone(rangePx, halfConeRad, deps.player.angle);
+      // Leap forward into the slam itself, timed to the strike phase —
+      // stops early the instant a hostile is inside the slam's own hit
+      // cone instead of always covering the full lunge distance.
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL * streakMul * (1 + (effects.stats.lungeMul || 0)), strikeS, LUNGE_HOP_UNITS, { rangePx, halfConeRad });
 
       window.Combat.beginStagedAction({
         windupS: 0,
-        strikeS: STRIKE_S,
+        strikeS,
         recoverS: 0,
         onStrike: () => {
           let hits = 0, lastName = '';
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS);
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'blunt', heavy: true, afflictionBonuses: effects.afflictions });
             hits++;
             lastName = c.def.label;
           }
-          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           const pct = Math.round(chargeT * 100);
           const msg = hits > 0
             ? `Charged Breaker (${pct}% charge): hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
             : `Charged Breaker (${pct}% charge) connects with nothing.`;
           deps.showToast(msg, hits > 0);
+          if (hits > 0) deps.awardWeaponMasteryXp();
         },
       });
     }
@@ -131,7 +162,7 @@
       if (startedAt < 0) return;
       const deps = window.Combat.deps;
       const drain = Math.min(deps.player.stamina, CHARGE_DRAIN_PER_S * dt);
-      deps.player.stamina -= drain;
+      window.ResourceSystem?.spendStamina(deps.player, drain, 'Charged Breaker (charging)');
       if (deps.player.stamina <= 0) releaseNow(now() - startedAt, true);
     }
 
@@ -140,7 +171,7 @@
       releaseNow(now() - startedAt, false);
     }
 
-    window.Combat.abilities.register('chargedBreaker', { label: 'Charged Breaker', slotFamily: 'hold', onHoldStart, onHoldUpdate, onHoldEnd });
+    window.Combat.abilities.register('chargedBreaker', { label: 'Charged Breaker', slotFamily: 'hold', category: 'offensiveHold', onHoldStart, onHoldUpdate, onHoldEnd });
   }
 
   register();

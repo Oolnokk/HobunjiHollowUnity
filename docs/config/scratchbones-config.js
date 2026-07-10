@@ -171,6 +171,16 @@ window.SCRATCHBONES_CONFIG = {
         "slash": { "damage": 24, "halfConeDeg": 62, "rangeTiles": 2.4, "staminaCost": 20, "knockbackPxS": 1040, "trailHalfWidthTiles": 1.35, "trailFarTiles": 2.4, "trailMaxAgeSeconds": 0.34 }
       },
       "weaponTrailLimit": 5,
+      "resourceSystem": {
+        "quietSeconds": 3,
+        "staminaRegenPerSec": 14,
+        "healthRegenPerSec": 1.2,
+        "afflictionRecoveryPerSec": 3.6,
+        "bleedTickPerSec": 5,
+        "poisonTickPerSec": 1.8,
+        "exhaustionRegenPerSec": 24,
+        "pukeChancePerSec": 0.16
+      },
       "combatConeReticle": {
         "enabled": true,
         "color": "#ffffff",
@@ -3181,6 +3191,10 @@ window.SCRATCHBONES_CONFIG = {
       "audio": {
         "enabled": true,
         "sfxVolume": 0.92,
+        "footsteps": {
+          "enabled": true,
+          "volume": 0.85
+        },
         "bgmVolume": 0.48,
         "musicFadeMs": 280,
         "songFadeInMs": 2200,

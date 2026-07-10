@@ -56,21 +56,26 @@
     function tryAbsorb(amount) {
       if (!active) return false;
       const deps = window.Combat.deps;
-      const staminaCost = Math.max(MIN_STAMINA_TO_RAISE, amount * 0.5);
-      deps.player.stamina = Math.max(0, deps.player.stamina - staminaCost);
+      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'counterShield') || { afflictions: {}, stats: {} };
+      const staminaCost = Math.max(MIN_STAMINA_TO_RAISE, amount * 0.5) * (1 + (effects.stats.absorbMul || 0));
+      // Never refuses — like the source demo's dodge reaction, blocking a
+      // big hit can overdraw straight into Exhausted (see resource-
+      // system.js's spendStamina) instead of failing to absorb the hit.
+      window.ResourceSystem?.spendStamina(deps.player, staminaCost, 'Counter Shield block');
       deps.showToast(`Blocked! (-${Math.round(staminaCost)} stamina)`, true);
       deps.spawnBurstEffect({ color: '#40ccff', rangePx: deps.TILE * 1.8 });
-      triggerCounter();
+      triggerCounter(effects);
       return true;
     }
 
-    function triggerCounter() {
+    function triggerCounter(effects) {
       const t = now();
-      if (t - lastCounterAt < COUNTER_COOLDOWN_S) return;
+      const cooldownS = COUNTER_COOLDOWN_S * (1 + (effects.stats.cooldownMul || 0));
+      if (t - lastCounterAt < cooldownS) return;
       lastCounterAt = t;
       const deps = window.Combat.deps;
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * COUNTER_DAMAGE_MUL);
+      const damage = Math.round(baseAbil.damage * COUNTER_DAMAGE_MUL * (1 + (effects.stats.damageMul || 0)));
       const rangePx = baseAbil.rangePx * COUNTER_RANGE_MUL;
       const halfConeRad = COUNTER_HALF_CONE_DEG * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * COUNTER_KNOCKBACK_MUL;
@@ -84,6 +89,10 @@
         windupFrac: COUNTER_WINDUP_S / counterDurationS,
         strikeFrac: 1,
         holdS: COUNTER_HOLD_S,
+        afflictionIds: Object.keys(effects.afflictions),
+        coneRangePx: rangePx,
+        coneHalfConeRad: halfConeRad,
+        coneAngle: deps.player.angle,
       });
       // Mirrors triggerWeaponSwingVisual's own auto-return-tail formula
       // (strikeFrac===1 here, so it always reserves one) so the block pose
@@ -101,12 +110,14 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS);
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'sharp', afflictionBonuses: effects.afflictions });
             hits++;
             lastName = c.def.label;
           }
-          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
-          if (hits > 0) deps.showToast(`Shield Counter Riposte: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
+          if (hits > 0) {
+            deps.showToast(`Shield Counter Riposte: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
+            deps.awardWeaponMasteryXp();
+          }
         },
       });
     }
@@ -127,7 +138,8 @@
     function onHoldUpdate(_slot, dt) {
       if (!active) return;
       const deps = window.Combat.deps;
-      deps.player.stamina = Math.max(0, deps.player.stamina - DRAIN_PER_S * dt);
+      const drainMul = 1 + (window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'counterShield')?.stats.drainMul || 0);
+      window.ResourceSystem?.spendStamina(deps.player, Math.min(deps.player.stamina, DRAIN_PER_S * drainMul * dt), 'Counter Shield (holding)');
       if (deps.player.stamina <= 0) {
         active = false;
         window.Combat.setPlayerDamageInterceptor(null);
@@ -149,7 +161,7 @@
       window.Combat.deps.showToast('Counter Shield lowered.', false);
     }
 
-    window.Combat.abilities.register('counterShield', { label: 'Counter Shield', slotFamily: 'hold', onHoldStart, onHoldUpdate, onHoldEnd });
+    window.Combat.abilities.register('counterShield', { label: 'Counter Shield', slotFamily: 'hold', category: 'defensiveHold', onHoldStart, onHoldUpdate, onHoldEnd });
   }
 
   register();

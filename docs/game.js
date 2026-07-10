@@ -925,8 +925,11 @@
       // one of our synth attempts that reads as a footstep rather than a
       // sound effect) — they're differentiated purely by post effects
       // (filter shape/cutoff/Q, pitch, decay length), not a different recipe.
+      // volume raised from its original 0.26 — at that gain, stacked with
+      // the other multipliers below (baseVolume/sfxVolume/falloff), footsteps
+      // were only barely audible even standing right next to their source.
       const FOOTSTEP_BASE = Object.freeze({
-        waveform: 'triangle', freq: 55, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.26,
+        waveform: 'triangle', freq: 55, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.6,
       });
 
       // Swap in real recordings later by setting `url` on a surface's post-fx
@@ -955,10 +958,12 @@
       // NPC/enemy footsteps pan hard left/right within this distance — keeps
       // them clearly directional without needing real spatial audio.
       const FOOTSTEP_PAN_RANGE_PX = TILE * 5;
-      // The player and whistled companion animals tread much more quietly
+      // The player and whistled companion animals tread a bit more quietly
       // than NPCs/hostiles, and aren't panned (the player is the listener;
-      // a companion is always close at hand).
-      const FOOTSTEP_QUIET_SCALE = 0.35;
+      // a companion is always close at hand). Raised from its original 0.35
+      // — that plus distance falloff made a companion's own footsteps nearly
+      // silent even standing right next to the player.
+      const FOOTSTEP_QUIET_SCALE = 0.7;
 
       function footstepSurfaceKey(area, type) {
         if (area === 'interior' || _isBuildingArea(area)) return 'wood';
@@ -1097,7 +1102,9 @@
         if (!cfgEntry || c.areaId !== currentArea) return;
         const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
         if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-        const falloff = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+        // Linear, not squared — squared falloff made anything past ~30% of
+        // earshot drop to near-silence, which was most of the usable range.
+        const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
         playOneShotSfx(cfgEntry, falloff, pitch);
       }
 
@@ -1156,7 +1163,7 @@
         // curve; lungeHopUnits/lungeHopCurrent drive an optional cosmetic
         // vertical arc (world-Y units, not pixels) for the charged breaker's leap.
         lunging: false, lungeT: 0, lungeDur: 0, lungeStartX: 0, lungeStartY: 0,
-        lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0,
+        lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0, lungeHitTest: null,
         // Cliff climbing — see startClimb()/updateMovement. A scripted crossing
         // (no stamina cost, no terrain collision) rendered as a chain of
         // staggered hops rather than a continuous slide; climbSurfaceY/
@@ -1165,6 +1172,12 @@
         climbStartX: 0, climbStartY: 0, climbEndX: 0, climbEndY: 0,
         climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
       };
+
+      // Health/Stamina afflictions + Exhausted/black-stamina debt — see
+      // docs/js/combat/resource-system.js. Adds player.afflictions/
+      // exhaustion/lastAttack*At without disturbing the flat health/
+      // maxHealth/stamina/maxStamina fields everything else already reads.
+      window.ResourceSystem?.initEntity(player);
 
       // Combat tuning is config-backed so tool hit cones, stamina costs, trails,
       // and combat reticles can be tuned without changing code.
@@ -1216,11 +1229,21 @@
       const DODGE_COOLDOWN_S = 0.6;
       const DODGE_STAMINA_COST = 18;
 
+      // Multiplier applied to both the player's and a non-swimming
+      // creature's movement speed while standing in a river/stream tile —
+      // see tileSpeedAt (player) and moveCreatureToward (creatures). A
+      // creature/player tagged canSwim ignores this and moves at full
+      // speed in water. Attacking is disallowed while swimming regardless
+      // of species — see isPlayerSwimming/isCreatureSwimming.
+      const SWIM_SPEED_MUL = 0.5;
+
       // Global creature database — companions (whistle-bound) and hostiles
       // (ambient-spawned) are both built from this table.
-      // canClimb/canSwim: default false — a creature without the tag can't
-      // enter an incline (cliff wall) or river/stream tile at all, in either
-      // direction (up, down, or straight across). See moveCreatureToward.
+      // canClimb: default false — a creature without the tag can't enter an
+      // incline (cliff wall) tile at all. canSwim: default false — a
+      // creature without the tag can still enter a river/stream tile (it's
+      // no longer a hard block), just at SWIM_SPEED_MUL speed and unable to
+      // attack while in it. See moveCreatureToward/isCreatureSwimming.
       const CREATURE_DB = {
         'dabinggi-hound': {
           label: 'Dabinggi-hound', hostile: false,
@@ -1229,6 +1252,12 @@
           attackDamage: 10, attackRangePx: TILE * 0.9, attackHalfConeRad: 45 * Math.PI / 180,
           attackStaminaCost: 14, attackCooldownS: 1.1,
           attacks: ['pounce'],
+          // Every named/generic attack this species has access to (Pounce,
+          // the plain bite telegraph, guardCharge) is tagged through this one
+          // field — see resource-system.js's applyDamage — so a tamed
+          // dabinggi-hound's bite/pounce afflicts Poisoned Health instead of
+          // the wolves' Bleeding/Wounded.
+          attackTag: 'poison',
           canClimb: false, canSwim: false,
           modelWidth: 1.9, tint: 0xffffff,
           sprites: {
@@ -1247,6 +1276,9 @@
           attackDamage: 12, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
           attackStaminaCost: 12, attackCooldownS: 1.0,
           attacks: ['pounce'],
+          // See dabinggi-hound's attackTag comment — gar-wolves bite/pounce
+          // sharp, afflicting Bleeding Health + Wounded Stamina.
+          attackTag: 'sharp',
           // Slottable AI behavior-stage cycle (see updateCreatureBehaviorStage):
           // try a Pounce for up to 7s (ends the moment one's attempted), then
           // (after the global ~2s backing-up stage) spend up to 11s circling
@@ -1271,6 +1303,7 @@
           attackDamage: 18, attackRangePx: TILE * 0.95, attackHalfConeRad: 46 * Math.PI / 180,
           attackStaminaCost: 16, attackCooldownS: 1.0,
           attacks: ['pounce'],
+          attackTag: 'sharp',
           behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 7, leashRangePx: TILE * 10,
           canClimb: false, canSwim: false,
@@ -1295,7 +1328,11 @@
           label: 'Northern Cliffs',
           cols: 22, rows: 16,
           groundColor: 0x6b7280, fogColor: 0x3a4148,
-          hostileKey: 'gar-wolf-alpha',
+          // Species pool a den's next pack is randomly drawn from (see
+          // spawnPackAtDen) — no longer a single fixed hostileKey, since a
+          // wiped-out den's replacement pack isn't necessarily the same
+          // species as the one it replaces.
+          packSpecies: ['gar-wolf', 'gar-wolf-alpha'],
           entryCol: 11, entryRow: 14,
           exitCol: 11, exitRow: 15,
           townReturnCol: 30, townReturnRow: 2,
@@ -1305,7 +1342,7 @@
           label: 'Southern Cloud Forest',
           cols: 22, rows: 16,
           groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
-          hostileKey: 'gar-wolf',
+          packSpecies: ['gar-wolf', 'gar-wolf-alpha'],
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
@@ -1374,17 +1411,143 @@
       let packClothing  = [];   // Clothing items in world/pack inventory
 
       // Tool item definitions: sprite path, compatible slots, animation style
+      // dmgType ('sharp'|'blunt', weapon-slot items only) picks which flavor
+      // of affliction options the whole weapon-tool ability kit offers (see
+      // combat-progression.js) — an edge cuts (bleed/wound/poison/infect),
+      // a bludgeon crushes (bruise/wind/congeal/shatter). Defaults to
+      // 'sharp' when absent (see currentWeaponDamageType() below), so only
+      // the blunt outliers need to be called out.
       const TOOL_ITEM_DEFS = {
         bronzehoe:    { label: 'Bronze Hoe',    icon: '🪓', sprite: 'assets/toolsprites/hoe_bronzehoe.png',        slots: ['hoe'],                    animStyle: 'chop'   },
-        hatchet:      { label: 'Hatchet',       icon: '🪓', sprite: 'assets/toolsprites/axe_hatchet.png',          slots: ['axe', 'weapon'],           animStyle: 'sweep'  },
+        hatchet:      { label: 'Hatchet',       icon: '🪓', sprite: 'assets/toolsprites/axe_hatchet.png',          slots: ['axe', 'weapon'],           animStyle: 'sweep',  dmgType: 'sharp' },
         // `spinning` distinguishes the harpoon-slot sprite's in-hand behavior: mace-mode items
         // twirl around their own axis through the swing (call it "spinning" rather than
         // "mace mode" since fishing hatchets or other harpoon variants may reuse the same flag),
         // while spear-mode items stay rigidly oriented like the hatchet sweep.
-        fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true  },
-        fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'thrust', spinning: false },
-        pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust' },
+        fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true, dmgType: 'blunt'  },
+        fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'thrust', spinning: false, dmgType: 'sharp' },
+        pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust', dmgType: 'blunt' },
       };
+
+      // Drives the weapon-tool loadout's Combo slot (see combat-loadout.js) —
+      // a sweep-style weapon (hatchet, fishing mace) plays the 3-Swing Combo,
+      // a thrust-style weapon (fishing spear, pick-shovel) plays the 3-Poke
+      // Combo. No weapon equipped falls back to the swing combo, same as the
+      // legacy 'slash' action's own default.
+      function currentComboAbilityId() {
+        const def = TOOL_ITEM_DEFS[equipmentSlots.weapon];
+        return def?.animStyle === 'thrust' ? 'pokeCombo' : 'swingCombo';
+      }
+
+      // Drives which flavor of affliction options every weapon-tool ability
+      // offers (see combat-progression.js) — independent of which combo/
+      // technique is equipped, since it's the physical weapon doing the
+      // wounding either way.
+      function currentWeaponDamageType() {
+        return weaponDamageTypeForTool(equipmentSlots.weapon);
+      }
+
+      // Same as currentWeaponDamageType(), but for any tool key — not just
+      // whichever is currently equipped. combat-progression.js's per-tool
+      // progression resolves a tool's own choices through its own fixed
+      // dmgType even while a *different* weapon is equipped.
+      function weaponDamageTypeForTool(itemKey) {
+        return TOOL_ITEM_DEFS[itemKey]?.dmgType || 'sharp';
+      }
+
+      // Keys the weapon-tool loadout's per-weapon slot assignments (see
+      // combat-loadout.js) — each gear-inventory weapon remembers its own
+      // Quick Attack/Held picks; 'none' is the shared fallback while no
+      // weapon is equipped.
+      function currentWeaponKey() {
+        return equipmentSlots.weapon || 'none';
+      }
+
+      // Display label for the loadout UI's "saved for: <weapon>" note.
+      function currentWeaponLabel() {
+        return TOOL_ITEM_DEFS[equipmentSlots.weapon]?.label || null;
+      }
+
+      // ── Tool mastery ("your trusty axe/shovel/pick/spear") ────────────
+      // Cumulative XP needed to reach levels 1-5 — a tool's own affinity,
+      // built up through both combat and ordinary tool use, entirely
+      // separate from the Motes of Prowess spent on its abilities' upgrade
+      // choices (see combat-progression.js). Placeholder tuning; easy to
+      // rebalance later without touching the mechanism.
+      const MASTERY_XP_THRESHOLDS = [40, 90, 150, 220, 300];
+      const MASTERY_XP_PER_COMBAT_HIT = 2;
+      const MASTERY_XP_PER_TOOL_USE = 1;
+
+      function toolMasteryXp(itemKey) {
+        return gearInventory?.toolMastery?.[itemKey]?.xp || 0;
+      }
+
+      function toolMasteryLevel(itemKey) {
+        if (!itemKey || !TOOL_ITEM_DEFS[itemKey]) return 0;
+        const xp = toolMasteryXp(itemKey);
+        let level = 0;
+        while (level < MASTERY_XP_THRESHOLDS.length && xp >= MASTERY_XP_THRESHOLDS[level]) level++;
+        return level;
+      }
+
+      function awardToolMasteryXp(itemKey, amount) {
+        if (!itemKey || !TOOL_ITEM_DEFS[itemKey] || !(amount > 0) || !gearInventory) return;
+        if (!gearInventory.toolMastery[itemKey]) gearInventory.toolMastery[itemKey] = { xp: 0 };
+        gearInventory.toolMastery[itemKey].xp += amount;
+        saveGearInventory();
+      }
+
+      // Dev-mode-only test shortcut (see the "+1 Mastery" button in
+      // selectGearTool/selectEquipSlot, gated by s_devMode) — jumps straight
+      // to the XP threshold for the next level instead of adding an
+      // arbitrary XP amount that might not actually cross it.
+      function devBumpToolMasteryLevel(itemKey) {
+        if (!itemKey || !TOOL_ITEM_DEFS[itemKey] || !gearInventory) return;
+        const level = toolMasteryLevel(itemKey);
+        if (level >= MASTERY_XP_THRESHOLDS.length) return; // already maxed
+        const targetXp = MASTERY_XP_THRESHOLDS[level];
+        if (!gearInventory.toolMastery[itemKey]) gearInventory.toolMastery[itemKey] = { xp: 0 };
+        gearInventory.toolMastery[itemKey].xp = Math.max(gearInventory.toolMastery[itemKey].xp, targetXp);
+        saveGearInventory();
+      }
+
+      // Called from every weapon-tool ability's onStrike once it's actually
+      // landed a hit (see combat-*.js) — grows whichever tool is currently
+      // equipped as the weapon.
+      function awardWeaponMasteryXp() {
+        awardToolMasteryXp(equipmentSlots.weapon, MASTERY_XP_PER_COMBAT_HIT);
+      }
+
+      // Called from a successful hoe/shovel/axe/pick/harpoon action —
+      // ordinary tool use also builds a tool's affinity, not just combat.
+      function awardToolUseMasteryXp(tool) {
+        awardToolMasteryXp(equipmentSlots[tool], MASTERY_XP_PER_TOOL_USE);
+      }
+
+      // ── Motes of Prowess ────────────────────────────────────────────
+      // Spent on ability-upgrade choices (see combat-progression.js);
+      // earned from combat (creature kills) and other future sources.
+      // Placeholder tuning — combat quests etc. are a later addition.
+      const MOTES_PER_KILL = 1;
+
+      function getMotesOfProwess() {
+        return gearInventory?.motesOfProwess || 0;
+      }
+
+      function awardMotesOfProwess(amount) {
+        if (!(amount > 0) || !gearInventory) return;
+        gearInventory.motesOfProwess = (gearInventory.motesOfProwess || 0) + amount;
+        saveGearInventory();
+      }
+
+      // Returns false without spending anything if the player can't afford it.
+      function spendMotesOfProwess(amount) {
+        if (!(amount > 0) || !gearInventory) return false;
+        if ((gearInventory.motesOfProwess || 0) < amount) return false;
+        gearInventory.motesOfProwess -= amount;
+        saveGearInventory();
+        return true;
+      }
 
       window.ToolIconRender?.warm(Object.values(TOOL_ITEM_DEFS).map(d => d.sprite));
 
@@ -1441,6 +1604,19 @@
           whistles: [
             { id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' },
           ],
+          // toolMastery[itemKey] = { xp } — each literal tool instance's own
+          // affinity, gained through both combat (see awardWeaponMasteryXp)
+          // and ordinary tool use (see awardToolUseMasteryXp). Its level (see
+          // toolMasteryLevel()) gates which of that tool's own equipped
+          // abilities' 5 upgrade levels can be chosen — see
+          // combat-progression.js.
+          toolMastery: {},
+          // Spent on ability-upgrade choices (level N choice costs N motes —
+          // see combat-progression.js); earned from combat (creature kills)
+          // and other future sources. Character save data, not world data.
+          // No starting stipend — a fresh character earns these through
+          // play (see MOTES_PER_KILL in damageCreature's death branch).
+          motesOfProwess: 0,
         };
       }
 
@@ -2490,6 +2666,7 @@
           if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
           if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
         });
+        window.ResourceSystem?.initEntity(creature);
         return creature;
       }
 
@@ -2501,6 +2678,7 @@
           c.groundShadow.geometry.dispose();
           c.groundShadow.material.dispose();
         }
+        window.ResourceRings?.disposeRingHud(c);
       }
 
       // ── Death ragdoll → lootable corpse ─────────────────────────────
@@ -2541,6 +2719,10 @@
       }
 
       function beginCreatureDeath(c, fromX, fromY) {
+        // A corpse doesn't get further updateCreatureMesh() calls to keep
+        // its resource ring synced/rebuilt, so drop it now rather than
+        // leaving a stale 0-health ring hovering over the corpse forever.
+        window.ResourceRings?.disposeRingHud(c);
         const awayAngle = fromX !== undefined ? Math.atan2(c.y - fromY, c.x - fromX) : (c.facing || 0);
         const rest = findDeathRestTile(c, awayAngle);
         c.state = 'dying';
@@ -2703,27 +2885,50 @@
         return null;
       }
 
-      function damageCreature(c, amount, fromX, fromY, knockbackPxS) {
-        c.health = Math.max(0, c.health - amount);
+      // dmgOpts: { tag: 'sharp'|'blunt'|'poison', heavy: boolean } — routes
+      // through the resource-afflictions system (bleeding/bruising/wounded
+      // stamina/etc, plus the heavy-consumes-Bruised-Health bonus) instead
+      // of a plain health subtraction. See docs/js/combat/resource-system.js.
+      function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
+        if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, amount, dmgOpts || {});
+        else c.health = Math.max(0, c.health - amount);
         c.hitFlashT = 0.25;
         spawnCreatureHitSpark(c);
         if (c.health <= 0) {
           hostileObjects.delete(c);
           companionObjects.delete(c);
+          // A killed wild creature is the starting source of Motes of
+          // Prowess — spent on ability-upgrade choices (see combat-
+          // progression.js). Not awarded for a downed companion.
+          if (!c.isCompanion) awardMotesOfProwess(MOTES_PER_KILL);
           beginCreatureDeath(c, fromX, fromY);
           return;
         }
+        // Every attack staggers its target — outright cancels whatever the
+        // creature was mid-attack on (a telegraphed bite, a named attack
+        // like Pounce) rather than just pausing it through the knockback
+        // freeze below and letting it resume where it left off once knockback
+        // decays.
+        window.Combat?.telegraph?.cancel(c);
+        window.Combat?.animalAttacks?.cancel(c);
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
       }
 
-      function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S) {
+      function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
         if (performance.now() < player.invulnUntil) return;
         // Lets a held defensive ability (Counter Shield) absorb the hit and
         // riposte instead of applying damage normally — only one hold
         // ability can be active at a time, so this is a single settable slot.
         if (window.Combat?.tryInterceptPlayerDamage?.(amount, fromX, fromY)) return;
-        player.health = Math.max(0, player.health - amount);
-        if (fromX !== undefined && player.health > 0) applyKnockback(player, fromX, fromY, knockbackPxS);
+        if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, amount, dmgOpts || {});
+        else player.health = Math.max(0, player.health - amount);
+        if (player.health > 0) {
+          // Every attack staggers its target — same interrupt-plus-knockback
+          // rule as damageCreature above, mirrored onto whatever combo/quick-
+          // attack/charged-breaker strike the player was mid-windup on.
+          window.Combat?.cancelAllStaged?.();
+          if (fromX !== undefined) applyKnockback(player, fromX, fromY, knockbackPxS);
+        }
         if (player.health <= 0) respawnPlayer();
       }
 
@@ -2746,17 +2951,23 @@
         return Math.abs(angleDiff(angTo, facingAngle)) <= halfConeRad;
       }
 
+      // 'cut' is the narrow precise poke (tags as a Sharp hit — bleeding +
+      // wounded stamina); 'slash' is the wide heavy sweep (tags as Blunt —
+      // bruising + winded stamina, and consumes the target's own Bruised
+      // Health for bonus damage). See docs/js/combat/resource-system.js.
       function resolveWeaponHit(action) {
         const abil = weaponAbility(action);
         if (!abil) return { hits: 0, message: '' };
+        window.ResourceSystem?.spendStamina(player, abil.staminaCost, abil.name || action);
         playWeaponSlashSfx();
         let hits = 0;
         let lastName = '';
+        const dmgOpts = action === 'slash' ? { tag: 'blunt', heavy: true } : { tag: 'sharp' };
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
           if (!inCone(player.x, player.y, player.angle, c.x, c.y, abil.rangePx, abil.halfConeRad)) continue;
-          damageCreature(c, abil.damage, player.x, player.y, abil.knockbackPxS);
+          damageCreature(c, abil.damage, player.x, player.y, abil.knockbackPxS, dmgOpts);
           hits++;
           lastName = c.def.label;
         }
@@ -2772,7 +2983,15 @@
 
       // Nearest live hostile in the player's current area within lock-on range, or
       // the player's manually-swapped target if still valid, or null.
+      // Hardened at the source (not left to every caller to remember): auto
+      // target is only ever active while the weapon tool slot is both
+      // selected AND actually has a weapon equipped in it — every caller
+      // gets this for free instead of some checking activeTool alone.
       function findAutoTarget() {
+        if (activeTool !== 'weapon' || !equipmentSlots.weapon) {
+          manualAutoTarget = null;
+          return null;
+        }
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         if (manualAutoTarget) {
           if (manualAutoTarget.health > 0 && manualAutoTarget.areaId === currentArea &&
@@ -2790,25 +3009,28 @@
         return best;
       }
 
-      // Swap the auto-target to the nearest hostile roughly in `aimAngle`'s
-      // direction (within range, within a 90° cone either side), excluding
-      // whatever is currently targeted. Used by the desktop swap-target input
-      // (mouse/right-stick direction) and the mobile swap-target stick button.
+      // Swap the auto-target to the CLOSEST hostile within a cone around
+      // `aimAngle` (excluding whatever is currently targeted) — the desktop
+      // swap-target input (mouse/right-stick direction) and the mobile
+      // swap-target stick button both drive this. If nothing qualifies in
+      // that direction, the target simply stays the same (returns false;
+      // manualAutoTarget is left untouched). Hardened the same way as
+      // findAutoTarget — a weapon has to actually be equipped, not just the
+      // weapon tool slot selected.
+      const SWAP_TARGET_HALF_CONE_RAD = Math.PI / 2;
       function swapAutoTarget(aimAngle) {
-        if (activeTool !== 'weapon') return false;
+        if (activeTool !== 'weapon' || !equipmentSlots.weapon) return false;
         const current = findAutoTarget();
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
-        let best = null, bestScore = -Infinity;
+        let best = null, bestDist = Infinity;
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea || c === current) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const dist = Math.hypot(dx, dy);
-          if (dist > maxDist || dist < 0.001) continue;
+          if (dist > maxDist || dist < 0.001 || dist >= bestDist) continue;
           const angleToC = Math.atan2(dy, dx);
-          const diff = Math.abs(angleDiff(angleToC, aimAngle));
-          if (diff > Math.PI / 2) continue;
-          const score = Math.cos(diff) - (dist / maxDist) * 0.25;
-          if (score > bestScore) { bestScore = score; best = c; }
+          if (Math.abs(angleDiff(angleToC, aimAngle)) > SWAP_TARGET_HALF_CONE_RAD) continue;
+          bestDist = dist; best = c;
         }
         if (!best) return false;
         manualAutoTarget = best;
@@ -2822,7 +3044,9 @@
         if (!_footstepAdvance(c, distPx)) return;
         const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
         if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-        const falloff = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+        // Linear, not squared — squared falloff made anything past ~30% of
+        // earshot drop to near-silence, which was most of the usable range.
+        const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
         const type = footstepTileTypeAt(c.areaId, c.x, c.y, c.areaGrid);
         // Whistled companions stay quiet (like the player) and unpanned —
         // hostiles/wild creatures get the full directional treatment.
@@ -2840,8 +3064,31 @@
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
         const tile = getActiveGrid()[Math.floor(wy / TILE)][Math.floor(wx / TILE)];
         if (tile.incline && !def?.canClimb) return false;
-        if ((tile.type === TileType.RIVER || tile.type === TileType.STREAM) && !def?.canSwim) return false;
+        // River/stream is no longer a hard block for non-swimmers — see
+        // moveCreatureToward's SWIM_SPEED_MUL slowdown and
+        // isCreatureSwimming's attack lockout.
         return true;
+      }
+
+      // True while `x,y` sits in a river/stream tile and `canSwim` is
+      // falsy — shared by the player (isPlayerSwimming) and creatures
+      // (isCreatureSwimming) to drive both the movement slowdown and the
+      // attack lockout.
+      function isSwimmingAt(x, y, canSwim, grid) {
+        if (canSwim) return false;
+        const g = grid || getActiveGrid();
+        const col = Math.floor(x / TILE), row = Math.floor(y / TILE);
+        const type = g[row]?.[col]?.type;
+        return type === TileType.RIVER || type === TileType.STREAM;
+      }
+
+      // The player has no canSwim tag of their own today.
+      function isPlayerSwimming() {
+        return isSwimmingAt(player.x, player.y, false, getActiveGrid());
+      }
+
+      function isCreatureSwimming(c) {
+        return isSwimmingAt(c.x, c.y, c.def?.canSwim, c.areaGrid);
       }
 
       function moveCreatureToward(c, tx, ty, speed, dt) {
@@ -2849,7 +3096,8 @@
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
         const nx = dx / dist, ny = dy / dist;
-        const step = Math.min(dist, speed * dt);
+        const effectiveSpeed = isCreatureSwimming(c) ? speed * SWIM_SPEED_MUL : speed;
+        const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
         // slides along it instead of freezing outright (mirrors the player's
         // collision in updateMovement).
@@ -2858,7 +3106,7 @@
         if (creatureCanEnterTile(c.def, desiredX, c.y)) c.x = desiredX;
         if (creatureCanEnterTile(c.def, c.x, desiredY)) c.y = desiredY;
         const moved = Math.hypot(c.x - prevX, c.y - prevY);
-        c.vx = nx * speed; c.vy = ny * speed;
+        c.vx = nx * effectiveSpeed; c.vy = ny * effectiveSpeed;
         if (moved > 0) tickCreatureFootsteps(c, moved);
         return moved > 0;
       }
@@ -2894,6 +3142,16 @@
         // its squash/height) so the shadow doesn't lead a fast-moving
         // creature or float with it during a pounce crouch.
         if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
+        if (window.ResourceRings) {
+          const ringRadius = clamp((c.def.modelWidth || 2) * .34, .46, 1.3);
+          const ringScene = c.scene || scene;
+          // Only hostiles are ever a weapon auto-target (see findAutoTarget) —
+          // a red target-lock ring renders around a hostile's resource rings
+          // while it's the current target (see resource-rings.js).
+          const isTarget = !c.isCompanion && c === findAutoTarget();
+          const ringHud = window.ResourceRings.updateRingHud(c, ringScene, ringRadius, { isTarget });
+          ringHud.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
+        }
 
         const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
 
@@ -3067,7 +3325,7 @@
           if (c.areaId !== currentArea) continue;
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
-          c.stamina = Math.min(c.maxStamina, c.stamina + c.maxStamina * 0.25 * dt);
+          window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
 
           const dxp = player.x - c.x, dyp = player.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
@@ -3119,8 +3377,8 @@
               // chase-and-trigger logic below for any creature that lists one.
               const result = updateCreatureBehaviorStage(c, dt, player, def, (dist) => {
                 const triggerRangePx = creatureAimColliderReachPx(def);
-                if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost) return false;
-                c.stamina -= def.attackStaminaCost;
+                if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c)) return false;
+                window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
                 return !!(def.attacks?.length && window.Combat?.animalAttacks?.start(
                   c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
@@ -3135,20 +3393,22 @@
               // via aimAngle above) rather than the bite's short flat range.
               const pounceCapable = def.attacks?.includes('pounce');
               const triggerRangePx = pounceCapable ? creatureAimColliderReachPx(def) : def.attackRangePx;
-              if (distToPlayer <= triggerRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
-                c.stamina -= def.attackStaminaCost;
+              if (distToPlayer <= triggerRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && !isCreatureSwimming(c)) {
+                window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
-                const startedModular = def.attacks?.length && window.Combat?.animalAttacks?.start(
+                const hadNamedAttack = !!def.attacks?.length;
+                const startedModular = hadNamedAttack && window.Combat?.animalAttacks?.start(
                   c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
                 );
                 if (startedModular) aimAngle = c.facing;
                 if (!startedModular) {
+                  if (hadNamedAttack) window.__farmLog?.(`[wildlife] ${c.creatureKey} (${c.id}): named attack failed to start against player (fallback: plain bite telegraph).`, 'wildlife');
                   window.Combat.telegraph.start(c, {
                     windupS: BITE_TELEGRAPH_WINDUP_S,
                     strikeS: BITE_TELEGRAPH_STRIKE_S,
                     onStrike: () => {
                       if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
-                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S);
+                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp' });
                         playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
@@ -3160,8 +3420,24 @@
           } else if (c.state === 'return') {
             moving = moveCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
+          } else if (c.denKey && isNightTime()) {
+            // Denned pack, off the clock — head back to the den and settle
+            // there instead of continuing to wander (see spawnPackAtDen for
+            // homeX/homeY = the den's own anchor point).
+            const distFromDen = Math.hypot(c.x - c.homeX, c.y - c.homeY);
+            if (distFromDen > DEN_SETTLE_RADIUS_PX) {
+              moving = moveCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
+              if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
+            } else {
+              aimAngle = idleCreatureAimAngle(c.groupRot);
+            }
           } else {
-            moving = wanderTick(c, dt, c.homeX, c.homeY, TILE * 2.2);
+            // Active hours (or a non-denned creature, e.g. legacy/authored
+            // zones without den data): pack creatures roam a wider territory
+            // around their den by day than the tight loiter radius everything
+            // else uses.
+            const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
+            moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
             // Wandering has an explicit heading; paused between legs, there's no
             // specific direction to look, so settle broadside to the camera.
             aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
@@ -3207,7 +3483,7 @@
 
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
-          c.stamina = Math.min(c.maxStamina, c.stamina + c.maxStamina * 0.25 * dt);
+          window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
 
           const dxp = player.x - c.x, dyp = player.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
@@ -3254,8 +3530,8 @@
                 if (st.t >= STAGE_BACKUP_S) { st.mode = 'active'; st.t = 0; }
               } else {
                 if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
-                if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost) {
-                  c.stamina -= def.attackStaminaCost;
+                if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && !isCreatureSwimming(c)) {
+                  window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                   c.attackCooldownT = def.attackCooldownS;
                   // Tamed behavior: the real species attack set (e.g. Pounce)
                   // fires only once every 4 behavior actions; the other 3 use
@@ -3267,12 +3543,13 @@
                   if (startedModular) {
                     aimAngle = c.facing;
                   } else {
+                    window.__farmLog?.(`[wildlife] companion ${c.creatureKey} (${c.id}): "${attackId}" failed to start against target (fallback: plain bite telegraph).`, 'wildlife');
                     window.Combat.telegraph.start(c, {
                       windupS: BITE_TELEGRAPH_WINDUP_S,
                       strikeS: BITE_TELEGRAPH_STRIKE_S,
                       onStrike: () => {
                         if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
-                          damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S);
+                          damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp' });
                           playCreatureClawHit(c);
                         }
                       },
@@ -3617,7 +3894,12 @@
               cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
               transitions: preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
               toTownExit, mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
+              dens: workspace.animalDens || [],
             });
+            // A reshaped zone's dens are all new — forget any leftover pack/
+            // respawn bookkeeping from the previous layout's den ids (see
+            // ensureZoneDenPacks/spawnPackAtDen).
+            forgetZoneDenState(zoneId);
             // Entering from town has no authored spawn coordinate of its own
             // (see EXTERIOR_ZONES' comment) — it always falls back to
             // zdef.entryCol/Row, so keep that pinned to this shift's own entry gate.
@@ -3690,56 +3972,249 @@
         occlusionSafeCameraPosition,
         updateCameraPosition,
         snapCameraTarget: _snapCameraTarget,
+        isPlayerSwimming,
+        isCreatureSwimming,
+        tileSpeedAt,
+        performContextAction,
+        performDodge,
+        currentComboAbilityId,
+        currentWeaponDamageType,
+        weaponDamageTypeForTool,
+        currentWeaponKey,
+        equipmentSlots,
+        equipItem,
+        toolMasteryLevel,
+        toolMasteryXp,
+        awardToolMasteryXp,
+        awardWeaponMasteryXp,
+        awardToolUseMasteryXp,
+        getMotesOfProwess,
+        awardMotesOfProwess,
+        spendMotesOfProwess,
+        gearInventory: () => gearInventory,
+        combatSwingAfflictionIds: () => combatSwingAfflictionIds,
+        combatSwingCone: () => combatSwingCone,
+        toolMeshMap: () => toolMeshMap,
+        toolHolder: () => toolHolder,
+        updateToolMesh,
+        updateCombatConeTrail,
+        coneTrailLaneMeshes: () => coneTrailLaneMeshes,
+        triggerWeaponSwingVisual,
+        setActiveTool,
+        TILE,
       };
 
-      // Ambient hostile spawning — lives entirely inside the exterior zones now
-      // (southern cloud forest → Gar-wolf, northern cliffs → Gar-wolf Alpha).
-      const HOSTILE_CAP_PER_ZONE = 4;
-      const HOSTILE_SPAWN_INTERVAL_S = 14;
-      let hostileSpawnTimer = HOSTILE_SPAWN_INTERVAL_S;
+      // Ambient hostile spawning — wild animal dens (see WildernessMapGenerator's
+      // placeAnimalDens/workspace.animalDens, threaded into _zoneLayouts as
+      // `dens` by performTothalShift) each hold one pack. A den's pack stays
+      // put — no ambient scatter-spawning — until every member of it is
+      // dead; the den then sits empty until the next in-game day, when a
+      // fresh pack (species re-rolled from the zone's packSpecies pool, not
+      // necessarily the one that died) moves in. See advanceDay().
+      const DEN_PACK_SIZE_MIN = 2;
+      const DEN_PACK_SIZE_MAX = 4;
+      const DEN_CHECK_INTERVAL_S = 2;
+      // Idle-state wander range while denned packs are active (isNightTime()
+      // false, see updateHostiles) — well beyond the tight loiter radius
+      // everything else uses, so packs actually roam by day instead of
+      // pacing right next to the den.
+      const DEN_PACK_WANDER_RADIUS_PX = TILE * 6;
+      // How close a denned creature has to get to homeX/homeY before it's
+      // considered "back" and stops closing the rest of the way in — same
+      // idea as the 'return' state's TILE*0.6 threshold.
+      const DEN_SETTLE_RADIUS_PX = TILE * 0.6;
+      let denCheckTimer = 0;
 
-      function updateHostileSpawning(dt) {
-        if (!_isZoneArea(currentArea)) return;
-        hostileSpawnTimer -= dt;
-        if (hostileSpawnTimer > 0) return;
-        hostileSpawnTimer = HOSTILE_SPAWN_INTERVAL_S;
-        const inZone = [...hostileObjects].filter(c => c.areaId === currentArea).length;
-        if (inZone >= HOSTILE_CAP_PER_ZONE) return;
-        const zdef = EXTERIOR_ZONES[currentArea];
-        const zi = buildZoneScene(currentArea);
-        if (!zdef || !zi) return;
-        for (let attempt = 0; attempt < 8; attempt++) {
-          const col = Math.floor(Math.random() * zi.cols);
-          const row = Math.floor(Math.random() * zi.rows);
-          const x = col * TILE + TILE * 0.5, y = row * TILE + TILE * 0.5;
-          if (Math.hypot(x - player.x, y - player.y) < TILE * 5) continue;
-          const creature = makeCreatureEntity(zdef.hostileKey, x, y, { homeX: x, homeY: y, state: 'idle' });
-          if (creature) hostileObjects.add(creature);
+      // denKey → true once that den has ever had a pack spawned (so a fresh
+      // zone's dens seed immediately, while a den that's merely between
+      // packs waits for pendingDenRespawn to clear on the next day instead).
+      const denEverSpawned = new Set();
+      // denKey → alive/dead as of the last check — lets ensureCurrentZoneDenPacks
+      // tell "just now wiped" (alive → dead transition: start waiting for the
+      // next day) apart from "already known empty and the day has since
+      // turned over" (spawn a fresh pack right now).
+      const denLastKnownAlive = new Map();
+      // denKey → true while a den is empty and deliberately waiting for the
+      // next day (advanceDay() clears these) rather than instantly refilling.
+      const pendingDenRespawn = new Set();
+
+      function denKeyFor(zoneId, den) { return `${zoneId}:${den.id}`; }
+
+      // Forgets all pack/respawn bookkeeping for a zone whose terrain (and
+      // therefore den ids) just got regenerated (see performTothalShift) —
+      // otherwise stale keys from the previous layout's dens would linger
+      // forever and any of this zone's dens that happen to reuse an id
+      // could resume mid-"waiting for next day" instead of seeding fresh.
+      function forgetZoneDenState(zoneId) {
+        const prefix = `${zoneId}:`;
+        for (const key of denEverSpawned) if (key.startsWith(prefix)) denEverSpawned.delete(key);
+        for (const key of pendingDenRespawn) if (key.startsWith(prefix)) pendingDenRespawn.delete(key);
+        for (const key of [...denLastKnownAlive.keys()]) if (key.startsWith(prefix)) denLastKnownAlive.delete(key);
+      }
+
+      function isDenPackAlive(denKey) {
+        for (const c of hostileObjects) if (c.denKey === denKey && c.health > 0) return true;
+        return false;
+      }
+
+      function spawnPackAtDen(zoneId, den, denKey) {
+        const zdef = EXTERIOR_ZONES[zoneId];
+        const pool = zdef?.packSpecies;
+        if (!pool || !pool.length) {
+          window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
           return;
+        }
+        const speciesKey = pool[Math.floor(Math.random() * pool.length)];
+        const homeX = den.x * TILE + TILE * 0.5, homeY = den.y * TILE + TILE * 0.5;
+        const count = DEN_PACK_SIZE_MIN + Math.floor(Math.random() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
+        let spawned = 0;
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = TILE * (0.8 + Math.random() * 1.6);
+          const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
+          const creature = makeCreatureEntity(speciesKey, x, y, { homeX, homeY, state: 'idle', denKey });
+          if (creature) { hostileObjects.add(creature); spawned++; }
+          else window.__farmLog?.(`[wildlife] ${denKey}: makeCreatureEntity("${speciesKey}") returned null (attempt ${i + 1}/${count}) — bad/missing CREATURE_DB entry?`, 'wildlife');
+        }
+        if (spawned > 0 && zoneId === currentArea) {
+          showToast(`${CREATURE_DB[speciesKey]?.label || speciesKey} pack moved into a den nearby.`, false);
+        } else if (spawned === 0) {
+          window.__farmLog?.(`[wildlife] ${denKey}: pack spawn for "${speciesKey}" placed 0/${count} creatures (fallback: den left empty).`, 'wildlife');
         }
       }
 
+      // Spawning only positions/heights correctly for the currently active
+      // area (makeCreatureEntity resolves ground height against `currentArea`
+      // regardless of which scene it's told to target), so dens in a zone
+      // the player isn't currently in just wait — a wipe there still marks
+      // pendingDenRespawn immediately, and the very next visit (or the rest
+      // of this visit, once the day turns over) lazily seeds it correctly.
+      const _loggedMissingDenZones = new Set();
+      function ensureCurrentZoneDenPacks() {
+        const layout = _zoneLayouts.get(currentArea);
+        const dens = layout?.dens;
+        if (!dens || !dens.length) {
+          // A zone configured with a packSpecies pool is expected to have
+          // den data (see performTothalShift's `dens: workspace.animalDens`)
+          // — if it doesn't, something upstream (generation, or a stale/
+          // authored-only layout — see the other _zoneLayouts.set call site)
+          // silently produced none. Only log once per zone per session so
+          // this doesn't spam every DEN_CHECK_INTERVAL_S.
+          if (EXTERIOR_ZONES[currentArea]?.packSpecies?.length && !_loggedMissingDenZones.has(currentArea)) {
+            _loggedMissingDenZones.add(currentArea);
+            window.__farmLog?.(`[wildlife] zone "${currentArea}" has a packSpecies pool but no den anchors in _zoneLayouts (fallback: no wild packs will spawn here this session).`, 'wildlife');
+          }
+          return;
+        }
+        for (const den of dens) {
+          const key = denKeyFor(currentArea, den);
+          const alive = isDenPackAlive(key);
+
+          if (alive) { denLastKnownAlive.set(key, true); continue; }
+
+          if (!denEverSpawned.has(key)) {
+            // Never populated (fresh zone/den) — seed immediately, no wait.
+            denEverSpawned.add(key);
+            denLastKnownAlive.set(key, false);
+            spawnPackAtDen(currentArea, den, key);
+            continue;
+          }
+
+          if (denLastKnownAlive.get(key) !== false) {
+            // Alive as of the last check (or never checked while alive) and
+            // empty now — just got wiped. Start waiting for the next day
+            // instead of refilling on the spot.
+            denLastKnownAlive.set(key, false);
+            pendingDenRespawn.add(key);
+            continue;
+          }
+
+          if (pendingDenRespawn.has(key)) continue; // still waiting for the next day
+
+          // Already known empty, and no longer pending — the day turned
+          // over since this den was wiped (see advanceDay()). Move in a
+          // fresh pack now, species re-rolled from the zone's pool.
+          spawnPackAtDen(currentArea, den, key);
+        }
+      }
+
+      function updateHostileSpawning(dt) {
+        if (!_isZoneArea(currentArea)) return;
+        denCheckTimer -= dt;
+        if (denCheckTimer > 0) return;
+        denCheckTimer = DEN_CHECK_INTERVAL_S;
+        if (!buildZoneScene(currentArea)) return;
+        ensureCurrentZoneDenPacks();
+      }
+
       function updatePlayerVitals(dt) {
-        player.stamina = Math.min(player.maxStamina, player.stamina + PLAYER_STAMINA_REGEN * dt);
-        if (player.health > 0) player.health = Math.min(player.maxHealth, player.health + PLAYER_HEALTH_REGEN * dt);
+        // Health/Stamina regen, Exhausted/black-stamina recovery, and every
+        // affliction's own tick (bleed/poison/congealed/recovery/puke) —
+        // see docs/js/combat/resource-system.js. Passing the existing
+        // per-second constants keeps un-afflicted regen feeling the same
+        // as before this system existed; quiet rest now doubles it.
+        const tickResult = window.ResourceSystem?.tick(player, dt, {
+          staminaRegenPerSec: PLAYER_STAMINA_REGEN,
+          healthRegenPerSec: PLAYER_HEALTH_REGEN,
+        });
+        if (tickResult?.puked) showToast('You feel queasy...', false);
         if (player.dodgeCooldownT > 0) player.dodgeCooldownT = Math.max(0, player.dodgeCooldownT - dt);
         refreshVitalsHud();
       }
 
-      function performDodge(angle) {
+      // Dodging never refuses for lack of Stamina — overspending pushes the
+      // player into Exhausted (black-stamina debt) instead, mirroring the
+      // demo's "a dodge reaction can overdraw into Exhausted" rule. See
+      // docs/js/combat/resource-system.js's spendStamina.
+      // Dodges toward whatever direction the player is currently moving in
+      // (player.inputX/Y — this frame's raw move intent, already unit-length,
+      // see updateMovement) rather than the aim direction, since a dodge is
+      // an evasive step, not an attack. With no movement held, there's no
+      // "current direction" to dodge in, so it falls back to backing away
+      // from whatever the player's actually aiming at instead: the locked
+      // auto-target if the weapon's out and one's engaged, otherwise the
+      // player's own facing (player.angle, same aim used by attacks).
+      function performDodge() {
         if (player.dodging || player.dodgeCooldownT > 0) return false;
-        if (player.stamina < DODGE_STAMINA_COST) {
-          showToast('Too winded to dodge!', false);
-          return false;
+        let dirX, dirY;
+        if (player.inputStrength > 0.001) {
+          dirX = player.inputX;
+          dirY = player.inputY;
+        } else {
+          const weaponEngaged = activeTool === 'weapon' && !!equipmentSlots.weapon;
+          const target = weaponEngaged ? findAutoTarget() : null;
+          const aimAngle = target
+            ? Math.atan2(target.y - player.y, target.x - player.x)
+            : player.angle;
+          dirX = -Math.cos(aimAngle);
+          dirY = -Math.sin(aimAngle);
         }
-        player.stamina -= DODGE_STAMINA_COST;
+        if (window.ResourceSystem) window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge');
+        else player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
         player.dodging = true;
         player.dodgeT = DODGE_DUR_S;
-        player.dodgeDirX = Math.cos(angle);
-        player.dodgeDirY = Math.sin(angle);
+        player.dodgeDirX = dirX;
+        player.dodgeDirY = dirY;
         player.dodgeCooldownT = DODGE_COOLDOWN_S;
         player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
         return true;
+      }
+
+      // Single dedicated "context action" button — climbs a cliff-face wall
+      // when facing one, otherwise dodges evasively. getClimbTarget() has
+      // always been direction-agnostic (it lands on whatever elevation is
+      // on the far side of the wall, higher or lower — see its own comment),
+      // so "jump off a ledge" falls out of the exact same crossing for free
+      // once it's reachable from here rather than only the primary action
+      // bar's climb prompt. Walking/dodging straight into a river or stream
+      // to start swimming needs no separate trigger of its own now that
+      // water is a real (slow, non-swimmer) crossing instead of a hard
+      // block — see tileSpeedAt.
+      function performContextAction() {
+        if (player.climbing || player.dodging) return;
+        const climb = getClimbTarget();
+        if (climb) { startClimb(climb); return; }
+        performDodge();
       }
 
       // Combat-ability movement: a short forward step/leap toward the aim
@@ -3747,9 +4222,26 @@
       // strike timing — distinct from performDodge's evasive zip above.
       // distancePx is total ground covered over durationS (eased out, so it's
       // fast at first and settles in); hopUnits is an optional cosmetic
-      // vertical arc peak in world-Y units for a leaping attack.
-      function beginCombatLunge(distancePx, durationS, hopUnits = 0) {
+      // vertical arc peak in world-Y units for a leaping attack. hitTest
+      // ({rangePx, halfConeRad}), when given, is the attack's own hit cone —
+      // updateMovement's lunge branch stops the lunge in place (instead of
+      // covering the full distancePx) the instant a live hostile is inside
+      // that cone, so the target is guaranteed to still be within the
+      // collider at the point the lunge stops, never overshot past it.
+      function beginCombatLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
         if (durationS <= 0 || distancePx <= 0) return;
+        // Each combo/quick-attack/charged-breaker module tracks its own
+        // "busy" gate independently, so tapping a *different* attack slot
+        // while an earlier one's lunge is still in flight isn't blocked by
+        // that earlier module's busyAction — without this guard, the new
+        // call would blow away the in-progress lunge's start point/progress
+        // and restart from wherever the player happened to be that frame,
+        // producing wildly inconsistent travel distance (sometimes almost
+        // none, sometimes stacking into more than any single lunge should
+        // cover). The attack's own damage/hit resolution doesn't depend on
+        // this cosmetic step, so simply not layering a second lunge on top
+        // of the first is enough — the new attack still fires normally.
+        if (player.lunging) return;
         player.lunging = true;
         player.lungeT = durationS;
         player.lungeDur = durationS;
@@ -3759,6 +4251,19 @@
         player.lungeDirY = Math.sin(player.angle);
         player.lungeDistancePx = distancePx;
         player.lungeHopUnits = hopUnits;
+        player.lungeHitTest = hitTest;
+      }
+
+      // True if any live hostile in the current area is already inside the
+      // given hit cone from the player's current position/facing — used to
+      // cut a combat lunge short (see beginCombatLunge/updateMovement).
+      function isHostileInLungeCone(hitTest) {
+        if (!hitTest) return false;
+        for (const c of hostileObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          if (inCone(player.x, player.y, player.angle, c.x, c.y, hitTest.rangePx, hitTest.halfConeRad)) return true;
+        }
+        return false;
       }
 
       const _vbHealthFill  = document.getElementById('vbHealthFill');
@@ -6188,7 +6693,9 @@
             const wx = root.position.x * TILE, wy = root.position.z * TILE;
             const distToPlayer = Math.hypot(wx - player.x, wy - player.y);
             if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-            const falloff = Math.pow(Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX), 2);
+            // Linear, not squared — squared falloff made anything past ~30% of
+        // earshot drop to near-silence, which was most of the usable range.
+        const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
             const pan = Math.max(-1, Math.min(1, (wx - player.x) / FOOTSTEP_PAN_RANGE_PX));
             const type = footstepTileTypeAt(this.area, wx, wy, npcGridForArea(this.area));
             playFootstepSfx(this.area, type, falloff, pan);
@@ -6681,7 +7188,11 @@
                 zTransitions.push({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
               }
             });
-            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture });
+            // Hand-authored zones (Western Slope/Eastern Mire) don't carry
+            // procedurally-placed animalDen anchors — only the Tothal Shift
+            // path (WildernessMapGenerator) produces those (see
+            // performTothalShift), so wild packs simply don't spawn here yet.
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, dens: [] });
             console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, decor=${outDecor.length}, furniture=${outFurniture.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
@@ -8871,7 +9382,7 @@
         if (detailEl) detailEl.style.display  = '';
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
         set('iiIcon',  def.icon);
-        set('iiName',  def.label + ' (Gear)');
+        set('iiName',  def.label + ' (Gear) — Mastery ' + toolMasteryLevel(key) + '/5');
         set('iiPrice', 'Permanent — not sellable');
         set('iiTags',  def.slots.map(t => '<span class="ii-tag">' + t + '</span>').join(''));
         set('iiDesc',  'This tool is in your gear inventory. Assign it to an equipment slot to use it.');
@@ -8887,6 +9398,68 @@
               if (isAssigned) unequipItem(slot); else equipItem(key, slot);
               buildEquipmentSlots(); selectGearTool(key);
             });
+          }
+          if (s_devMode && toolMasteryLevel(key) < 5) {
+            mkBtn('[Dev] +1 Mastery', '', () => {
+              devBumpToolMasteryLevel(key);
+              selectGearTool(key);
+            });
+          }
+        }
+      }
+
+      // Clicking a Tool Slot cell (instead of an Owned Tools item) shows
+      // every gear tool that fits THAT slot as one-click assign buttons —
+      // no need to separately pick a slot afterward, since it's already
+      // known from context. Shows each tool's own Mastery level too.
+      function selectEquipSlot(slot) {
+        invSelectedKey = null;
+        document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
+        const emptyEl  = document.getElementById('iiEmpty');
+        const detailEl = document.getElementById('iiDetail');
+        if (emptyEl)  emptyEl.style.display  = 'none';
+        if (detailEl) detailEl.style.display  = '';
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
+        const currentKey = equipmentSlots[slot];
+        const currentDef = currentKey ? TOOL_ITEM_DEFS[currentKey] : null;
+        const slotLabel = slot.charAt(0).toUpperCase() + slot.slice(1);
+        set('iiIcon', currentDef?.icon || '❔');
+        set('iiName', slotLabel + ' Slot');
+        set('iiPrice', currentDef ? 'Currently: ' + currentDef.label : 'Currently: empty');
+        set('iiTags', '');
+        set('iiDesc', 'Click a tool below to assign it to this slot.');
+        const actEl = document.getElementById('iiActions');
+        if (!actEl) return;
+        actEl.innerHTML = '';
+        const eligible = Object.keys(gearInventory?.tools || {})
+          .filter(k => gearInventory.tools[k] && TOOL_ITEM_DEFS[k]?.slots.includes(slot));
+        if (!eligible.length) {
+          const none = document.createElement('div');
+          none.className = 'ii-tag';
+          none.textContent = 'No tools in gear fit the ' + slotLabel + ' slot.';
+          actEl.appendChild(none);
+          return;
+        }
+        for (const key of eligible) {
+          const def = TOOL_ITEM_DEFS[key];
+          const isAssigned = equipmentSlots[slot] === key;
+          const b = document.createElement('button');
+          b.className = 'ii-btn equip';
+          b.textContent = `${def.label} — Mastery ${toolMasteryLevel(key)}/5` + (isAssigned ? ' (assigned)' : '');
+          b.onclick = () => {
+            if (isAssigned) unequipItem(slot); else equipItem(key, slot);
+            buildEquipmentSlots(); selectEquipSlot(slot);
+          };
+          actEl.appendChild(b);
+          if (s_devMode && toolMasteryLevel(key) < 5) {
+            const devBtn = document.createElement('button');
+            devBtn.className = 'ii-btn';
+            devBtn.textContent = `[Dev] +1 Mastery (${def.label})`;
+            devBtn.onclick = () => {
+              devBumpToolMasteryLevel(key);
+              selectEquipSlot(slot);
+            };
+            actEl.appendChild(devBtn);
           }
         }
       }
@@ -9031,7 +9604,11 @@
           lbl.className = 'ies-label';
           lbl.textContent = slot.charAt(0).toUpperCase() + slot.slice(1);
           cell.appendChild(lbl);
-          cell.addEventListener('click', () => { setActiveTool(slot); buildEquipmentSlots(); });
+          // Clicking the slot itself shows every tool that fits it as
+          // one-click assign buttons in the item-info panel — you don't
+          // need to separately pick an item then a slot for it, the way
+          // clicking an Owned Tools item (selectGearTool) still also works.
+          cell.addEventListener('click', () => { setActiveTool(slot); buildEquipmentSlots(); selectEquipSlot(slot); });
           toolRow.appendChild(cell);
         }
         sec.appendChild(toolRow);
@@ -9050,13 +9627,13 @@
             const def = TOOL_ITEM_DEFS[key];
             const cell = document.createElement('div');
             cell.className = 'inv-equip-slot';
-            cell.setAttribute('title', def.label + ' — click to assign');
+            cell.setAttribute('title', def.label + ' (Mastery ' + toolMasteryLevel(key) + '/5) — click to assign');
             const img = document.createElement('img');
             img.src = def.sprite; img.className = 'ies-sprite'; img.alt = def.label;
             cell.appendChild(img);
             const lbl = document.createElement('span');
             lbl.className = 'ies-label';
-            lbl.textContent = def.label.split(' ')[0];
+            lbl.textContent = def.label.split(' ')[0] + ' Lv' + toolMasteryLevel(key);
             cell.appendChild(lbl);
             cell.addEventListener('click', () => selectGearTool(key));
             gearRow.appendChild(cell);
@@ -9485,6 +10062,16 @@
         }
 
         if (player.lunging) {
+          // Stop in place the instant a hostile is already inside this
+          // lunge's own attack — checked before this frame's movement, so
+          // the target is guaranteed to still be within the collider right
+          // where the lunge halts instead of the player sliding past it.
+          if (isHostileInLungeCone(player.lungeHitTest)) {
+            player.lunging = false;
+            player.lungeHopCurrent = 0;
+            tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+            return;
+          }
           player.lungeT = Math.max(0, player.lungeT - dt);
           const t = 1 - player.lungeT / player.lungeDur;
           const eased = 1 - Math.pow(1 - t, 3); // ease-out: fast off the top, settles into the landing
@@ -9970,32 +10557,9 @@
         while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
       }
 
-      // Combat ability hit-cone flash — shows the actual swept area (angle +
-      // range) a combat-*.js ability just resolved its inCone() hit test
-      // against, since each ability/charge/combo-step uses its own rangePx/
-      // halfConeRad rather than one fixed shape. Reuses weaponTrailEffects'
-      // existing age/limit bookkeeping and drawWeaponTrailEffects' particle
-      // renderer (isCone flag switches weaponTrailParticleSeeds onto the
-      // fan-shaped sampling below instead of the farming trapezoid).
-      const COMBAT_TRAIL_MAX_AGE_S = 0.24; // matches the legacy cut ability's trailMaxAgeSeconds
-      function spawnCombatTrailEffect({ rangePx, halfConeRad, angle = player.angle, ok }) {
-        const fx = {
-          isCone: true,
-          x: player.x / TILE,
-          z: player.y / TILE,
-          y: weaponTrailCenterY(),
-          angle,
-          halfConeRad,
-          rangeTiles: rangePx / TILE,
-          age: 0,
-          maxAge: ok ? COMBAT_TRAIL_MAX_AGE_S : Math.max(COMBAT_TRAIL_MAX_AGE_S * 0.72, 0.1),
-          ok,
-        };
-        fx.particles = weaponTrailParticleSeeds(fx);
-        weaponTrailEffects.push(fx);
-        const limit = Number(combatConfig().weaponTrailLimit) || 5;
-        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
-      }
+      // matches the legacy cut ability's trailMaxAgeSeconds; still used by
+      // spawnBurstEffect/spawnCreatureHitSpark below.
+      const COMBAT_TRAIL_MAX_AGE_S = 0.24;
 
       // Full-circle burst at the player's position with an explicit color —
       // used for non-attack feedback like shield blocks. halfConeRad = π gives
@@ -10021,8 +10585,8 @@
       }
 
       // Small radial spark anchored on the creature itself (not the player,
-      // unlike spawnBurstEffect/spawnCombatTrailEffect) so a hit reads
-      // clearly regardless of who/what landed it — companion-on-hostile
+      // unlike spawnBurstEffect) so a hit reads clearly regardless of
+      // who/what landed it — companion-on-hostile
       // damage gets the same feedback as the player's own attacks. Reuses
       // the same isCone/particle-seed rendering as every other combat
       // effect; a bright spark color keeps it visually distinct from the
@@ -10136,6 +10700,158 @@
         }
       }
 
+      // Combat swing trail — real 3D ribbon meshes (not a flat canvas
+      // overlay decal) tracing the outer edge of the attack's own hit cone
+      // (rangePx/halfConeRad/angle, captured in combatSwingCone by
+      // triggerWeaponSwingVisual/setCombatSwingCone), so they sit properly
+      // in the scene — occluded by terrain/creatures like anything else —
+      // rather than always drawing on top. One ribbon lane per affliction
+      // the attack can inflict (min one, plain white with none), each
+      // stepped slightly inward in radius so multiple afflictions read as
+      // distinct side-by-side swipes instead of one overlapping smear.
+      // Each lane tapers to a point at both ends (like a blade arc, not a
+      // uniform-width ring segment) and arches upward through its middle —
+      // the "swipe" actually lifts off the ground plane instead of being a
+      // flat decal — peaking at the same mid-swing instant its width does.
+      const COMBAT_CONE_TRAIL_SAMPLES = 16;
+      const COMBAT_CONE_TRAIL_MAX_LANES = 4;
+      const COMBAT_CONE_TRAIL_LANE_INSET = 0.08; // fraction of range stepped inward per lane
+      const COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES = 0.06;
+      const COMBAT_CONE_TRAIL_ARCH_UNITS = 0.22; // how far (world units) the ribbon's middle lifts above weaponTrailCenterY
+      // Directional brightness spike: rather than one flat opacity across
+      // the whole arc (which reads as a static bracket with no sense of
+      // motion), the arc sits at a dim baseline everywhere except a bright
+      // band that lerps from one tip to the other over the swing's own
+      // progress — a moving highlight that sells "the blade is sweeping
+      // through here right now" and, mirrored by combatSwingSign, actually
+      // points the same way the swing itself is going (forehand vs
+      // backhand). Achieved via per-vertex color brightness (not per-vertex
+      // alpha — MeshBasicMaterial's vertex colors are RGB-only) which reads
+      // correctly under AdditiveBlending: a dim vertex just adds little.
+      const COMBAT_CONE_TRAIL_BASELINE_INTENSITY = 0.22;
+      const COMBAT_CONE_TRAIL_SPIKE_WIDTH_U = 0.24;
+      const coneTrailLaneMeshes = [];
+      function ensureConeTrailLaneMesh(i) {
+        let mesh = coneTrailLaneMeshes[i];
+        if (mesh) return mesh;
+        const geo = new THREE.BufferGeometry();
+        const vertCount = (COMBAT_CONE_TRAIL_SAMPLES + 1) * 2;
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
+        geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
+        const indices = [];
+        for (let s = 0; s < COMBAT_CONE_TRAIL_SAMPLES; s++) {
+          const a = s * 2, b = a + 1, c = a + 2, d = a + 3;
+          indices.push(a, b, c, b, d, c);
+        }
+        geo.setIndex(indices);
+        const mat = new THREE.MeshBasicMaterial({
+          transparent: true,
+          depthWrite: false,
+          vertexColors: true,
+          // Additive so the tint reads as a clear glowing swipe regardless
+          // of what's behind it, same reasoning as the old ghost trail's
+          // material (see git history).
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        });
+        mesh = new THREE.Mesh(geo, mat);
+        mesh.visible = false;
+        // Geometry is rebuilt fresh every visible frame — skip the
+        // per-frame bounding-sphere recompute frustum culling would need.
+        mesh.frustumCulled = false;
+        coneTrailLaneMeshes[i] = mesh;
+        return mesh;
+      }
+
+      // Called every frame alongside updateToolMesh (not from the 2D octx
+      // draw pass) since it owns real scene-graph meshes, not canvas pixels.
+      function updateCombatConeTrail() {
+        const parent = toolHolder.parent;
+        const active = combatSwingAnim && combatSwingCone && toolSwingT > 0 && toolSwingDur > 0 && parent;
+        if (!active) {
+          for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
+          return;
+        }
+        const progress = 1 - toolSwingT / toolSwingDur;
+        const WF = combatSwingWindupFrac, SF = combatSwingStrikeFrac;
+        // The actual hit (damage + SFX, see combat-core.js's
+        // fireStagedStrike, fired at real-seconds windupS) lands exactly at
+        // cosmetic progress===WF, not at SF — SF is just where the cosmetic
+        // swing's own follow-through finishes extending. So the arc's
+        // sweep only spans WF→SF: it starts the instant the hit/SFX
+        // actually happens and finishes when the strike pose is fully
+        // extended, rather than crawling across the whole windup too.
+        if (progress < WF) {
+          for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
+          return;
+        }
+        const strikeT = Math.min(1, (progress - WF) / Math.max(1e-6, SF - WF));
+        // Same post-strike-hold math updateToolMesh uses for HF (the
+        // fraction where the strike pose's pause ends and the return-to-
+        // neutral lerp begins) — the sweep itself is done by SF, but the
+        // arc should still persist through that pause rather than
+        // vanishing early, fading its overall opacity to 0 exactly by the
+        // pause's end instead of bleeding into the return phase.
+        const HF = combatSwingHoldS > 0
+          ? Math.min(0.99, SF + combatSwingHoldS / toolSwingDur)
+          : Math.min(0.99, SF + (1 - SF) * 0.3);
+        let alpha;
+        if (progress <= SF) alpha = 1;
+        else if (progress < HF) alpha = 1 - (progress - SF) / Math.max(1e-6, HF - SF);
+        else alpha = 0;
+        if (alpha <= 0.01) {
+          for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
+          return;
+        }
+
+        const { rangePx, halfConeRad, angle } = combatSwingCone;
+        const rangeTiles = rangePx / TILE;
+        const baseX = player.x / TILE;
+        const baseZ = player.y / TILE;
+        const y = weaponTrailCenterY();
+        const ids = combatSwingAfflictionIds;
+        const laneCount = Math.min(COMBAT_CONE_TRAIL_MAX_LANES, Math.max(1, ids.length));
+        // Which tip (u=0 or u=1) the bright spike starts from — mirrors
+        // combatSwingSign so the highlight travels the same way the actual
+        // swing does (forehand vs backhand read as sweeping opposite ways).
+        const spikeU = combatSwingSign >= 0 ? strikeT : 1 - strikeT;
+
+        for (let lane = 0; lane < COMBAT_CONE_TRAIL_MAX_LANES; lane++) {
+          const mesh = ensureConeTrailLaneMesh(lane);
+          if (lane >= laneCount) { mesh.visible = false; continue; }
+          const colorNum = ids.length
+            ? (window.ResourceRings?.AFFLICTION_COLORS?.[ids[lane]] ?? 0xffffff)
+            : 0xffffff;
+          const cr = ((colorNum >> 16) & 0xff) / 255;
+          const cg = ((colorNum >> 8) & 0xff) / 255;
+          const cb = (colorNum & 0xff) / 255;
+          const laneRadius = rangeTiles * (1 - lane * COMBAT_CONE_TRAIL_LANE_INSET);
+          const posAttr = mesh.geometry.attributes.position;
+          const colorAttr = mesh.geometry.attributes.color;
+          for (let s = 0; s <= COMBAT_CONE_TRAIL_SAMPLES; s++) {
+            const u = s / COMBAT_CONE_TRAIL_SAMPLES;
+            const a = angle - halfConeRad + (2 * halfConeRad) * u;
+            const cosA = Math.cos(a), sinA = Math.sin(a);
+            const taper = Math.sin(u * Math.PI); // 0 at both tips, 1 at the middle
+            const half = COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES * (0.25 + 0.75 * taper);
+            const arch = COMBAT_CONE_TRAIL_ARCH_UNITS * taper;
+            const innerR = laneRadius - half, outerR = laneRadius + half;
+            const vi = s * 2;
+            posAttr.setXYZ(vi,     baseX + cosA * innerR, y + arch, baseZ + sinA * innerR);
+            posAttr.setXYZ(vi + 1, baseX + cosA * outerR, y + arch, baseZ + sinA * outerR);
+            const spike = Math.max(0, 1 - Math.abs(u - spikeU) / COMBAT_CONE_TRAIL_SPIKE_WIDTH_U);
+            const intensity = COMBAT_CONE_TRAIL_BASELINE_INTENSITY + (1 - COMBAT_CONE_TRAIL_BASELINE_INTENSITY) * spike;
+            colorAttr.setXYZ(vi,     cr * intensity, cg * intensity, cb * intensity);
+            colorAttr.setXYZ(vi + 1, cr * intensity, cg * intensity, cb * intensity);
+          }
+          posAttr.needsUpdate = true;
+          colorAttr.needsUpdate = true;
+          mesh.material.opacity = alpha * 0.85;
+          mesh.visible = true;
+          if (mesh.parent !== parent) parent.add(mesh);
+        }
+      }
+
       function drawActionTileEffects() {
         for (const fx of actionTileEffects) {
           const t = fx.age / fx.maxAge;
@@ -10182,6 +10898,7 @@
         if (tool === 'shovel') {
           if (action === 'dig' && tile.type === TileType.TRENCH) {
             tile.depth = 1;
+            awardToolUseMasteryXp('shovel');
             return { ok: true, message: 'Redug the trench back to full depth.' };
           }
           const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile);
@@ -10190,12 +10907,14 @@
           if (action === 'raise') tile.type = TileType.RAISED;
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           const digMsg = dugVegetation ? 'Dug a trench and cleared the vegetation above it.' : `${tileStyles[tile.type].label} — ${contextualActionLabel(action, tile)}.`;
+          awardToolUseMasteryXp('shovel');
           return { ok: true, message: digMsg };
         }
 
         if (tool === 'hoe') {
           tile.type = action === 'till' ? TileType.TILLED : TileType.GRASS;
           if (action === 'smooth') tile.crop = CropType.NONE;
+          awardToolUseMasteryXp('hoe');
           return { ok: true, message: action === 'till' ? 'Tilled a plantable bed.' : 'Smoothed the tile back into grass.' };
         }
 
@@ -10203,6 +10922,7 @@
           const result = clearVegetationAt(col, row, action);
           const isWide = action === 'slash' || action === 'hack';
           if (result.cleared <= 0) return { ok: false, message: isWide ? 'Found no overgrowth in the swing.' : 'No overgrowth to clear here.' };
+          if (tool === 'axe') awardToolUseMasteryXp('axe'); // machete isn't a gear tool — no mastery of its own
           return {
             ok: true,
             message: isWide
@@ -10229,6 +10949,7 @@
         if (tool === 'pick') {
           if (action === 'dig' && tile.type === TileType.TRENCH) {
             tile.depth = 1;
+            awardToolUseMasteryXp('pick');
             return { ok: true, message: 'Redug the trench back to full depth.' };
           }
           const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile);
@@ -10237,6 +10958,7 @@
           if (action === 'raise') tile.type = TileType.RAISED;
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           const digMsg = dugVegetation ? 'Loosened the earth and cleared the vegetation.' : `${tileStyles[tile.type].label} — ${contextualActionLabel(action, tile)}.`;
+          awardToolUseMasteryXp('pick');
           return { ok: true, message: digMsg };
         }
 
@@ -10987,6 +11709,7 @@
           fm.message = `Caught a ${fm.fishDef.label}! ${fm.fishDef.icon}`;
           fm.messageType = 'good';
           lastActionMessage = fm.message;
+          awardToolUseMasteryXp('harpoon');
           return;
         }
         beginFishEscapeRespawn(fm);
@@ -11892,8 +12615,11 @@
         // Auto-reserved plateau cliff-face ring — impassable except where a
         // ramp tile explicitly cuts through it (which never sets `incline`).
         if (tile.incline) return null;
-        // Rivers/streams are a real crossing obstacle — block like a solid tile.
-        if (type === TileType.RIVER || type === TileType.STREAM) return null;
+        // Rivers/streams are swimmable, not blocked — the player has no
+        // canSwim tag of their own (see CREATURE_DB's comment on the flag),
+        // so this is always the slow "non-swimmer" pace; see isPlayerSwimming
+        // for the matching attack-lockout.
+        if (type === TileType.RIVER || type === TileType.STREAM) return SWIM_SPEED_MUL;
         // Block structural building tiles on exterior maps (player must use doors/transitions).
         if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
         if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
@@ -13959,6 +14685,20 @@
       // through anim's bespoke per-style formula — see the pose-driven
       // branch at the top of updateToolMesh's style if/else chain.
       let combatSwingPose = null;
+      // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
+      // ability can actually inflict — set via opts.afflictionIds on
+      // triggerWeaponSwingVisual/triggerWeaponHoldVisual, computed by each
+      // ability module from its own chosen upgrades. Drives the combat cone
+      // trail's coloring (see updateCombatConeTrail); empty means a plain
+      // white trail.
+      let combatSwingAfflictionIds = [];
+      // The attack's own hit cone (world-space range/half-angle/facing),
+      // set via opts.coneRangePx/coneHalfConeRad/coneAngle on
+      // triggerWeaponSwingVisual, or later via setCombatSwingCone for
+      // abilities (Charged Breaker) whose final range isn't known until
+      // release. null means this swing has no cone to trail (e.g. a plain
+      // farming tool action) — updateCombatConeTrail then hides every lane.
+      let combatSwingCone = null;
 
       function getDigSpeedMultiplier() {
         return Math.max(0.01, player.digSpeed || 1);
@@ -14058,6 +14798,19 @@
         combatSwingPose = opts.pose || null;
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
+        combatSwingAfflictionIds = opts.afflictionIds || [];
+        setCombatSwingCone(opts.coneRangePx, opts.coneHalfConeRad, opts.coneAngle);
+      }
+
+      // Abilities whose final range/angle isn't known at trigger time
+      // (Charged Breaker's charge-scaled slam, decided at release rather
+      // than at the hold-start windup) call this directly once those
+      // numbers are settled instead of going through triggerWeaponSwingVisual's
+      // opts. Pass rangePx == null to clear the cone (no trail to draw).
+      function setCombatSwingCone(rangePx, halfConeRad, angle) {
+        combatSwingCone = (rangePx != null)
+          ? { rangePx, halfConeRad: halfConeRad ?? 0, angle: angle ?? player.angle }
+          : null;
       }
 
       // Like triggerWeaponSwingVisual, but once the windup phase finishes
@@ -14302,7 +15055,6 @@
           }
           progress   = 1 - toolSwingT / toolSwingDur;
         }
-        const swing = Math.sin(progress * Math.PI);
 
         _qFac.setFromAxisAngle(_tUp, θ);
         _swAxis.set(rightX, 0, rightZ);
@@ -14643,7 +15395,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingAfflictionIds = []; combatSwingCone = null; }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -15492,6 +16244,19 @@
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
         playerGroundShadow.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
+        // Ground-projected Health/Stamina ring HUD — replaces the flat
+        // vitals bar (see #vitalsBar in style.css). Sits just above the
+        // ground shadow, tracking the same smoothed XZ. Uses the actually
+        // active scene (farm/town/interior/zone/building), not the base
+        // farm `scene` — the player mesh itself gets reparented between
+        // those as the player travels (see e.g. the transition-spot code
+        // around fromScene.remove(playerMesh)/toScene.add(playerMesh)), so
+        // hardcoding `scene` here left the ring parented into a scene that
+        // wasn't the one actually being rendered.
+        if (window.ResourceRings) {
+          const ringHud = window.ResourceRings.updateRingHud(player, getActiveScene(), .62);
+          ringHud.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
+        }
 
         // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
         if (!player.perpState) player.perpState = {};
@@ -15692,6 +16457,13 @@
       const HITBOX_DEBUG_STORAGE_KEY = 'hobunjiDebugHitboxes';
       let s_showHitboxes = false;
       try { s_showHitboxes = localStorage.getItem(HITBOX_DEBUG_STORAGE_KEY) === '1'; } catch {}
+      // Global dev-mode flag — same "flip on once, stays on" persistence as
+      // s_showHitboxes above. Currently only gates the +1 Mastery button in
+      // each tool's item-info panel (see selectGearTool/selectEquipSlot),
+      // but is a natural home for future dev-only shortcuts too.
+      const DEV_MODE_STORAGE_KEY = 'hobunjiDevMode';
+      let s_devMode = false;
+      try { s_devMode = localStorage.getItem(DEV_MODE_STORAGE_KEY) === '1'; } catch {}
 
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
@@ -15739,6 +16511,16 @@
       settingShowHitboxesEl.addEventListener('change', e => {
         s_showHitboxes = e.target.checked;
         try { localStorage.setItem(HITBOX_DEBUG_STORAGE_KEY, s_showHitboxes ? '1' : '0'); } catch {}
+      });
+      const settingDevModeEl = document.getElementById('settingDevMode');
+      settingDevModeEl.checked = s_devMode;
+      settingDevModeEl.addEventListener('change', e => {
+        s_devMode = e.target.checked;
+        try { localStorage.setItem(DEV_MODE_STORAGE_KEY, s_devMode ? '1' : '0'); } catch {}
+        // Takes effect the next time a tool's item-info panel is opened
+        // (selectGearTool/selectEquipSlot both read s_devMode fresh) rather
+        // than needing to track/re-render whichever panel might currently
+        // be open.
       });
       function setCameraZoomScale(value) {
         const cfg = desktopControlsConfig();
@@ -15863,6 +16645,7 @@
         // exclude toolHolder/reticle meshes from their scene graph instead.
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
           updateToolMesh(dt);
+          updateCombatConeTrail();
           updateChargeAction();
           window.Combat?.update(dt);
           updateReticleMesh();
@@ -16305,6 +17088,10 @@
         tickCropDay();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
         checkTothalShift();
+        // Any den wiped out since it started waiting can now be moved back
+        // into — see ensureCurrentZoneDenPacks, which does the actual
+        // (lazy, current-zone-only) spawning once this fires.
+        pendingDenRespawn.clear();
       }
 
       function chooseWeatherForDay() {
@@ -17712,7 +18499,7 @@
       // hostile is within auto-target range, since dodging is moot outside combat.
       dodgeBtn?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
-        performDodge(player.angle);
+        performContextAction();
       });
 
       // Weapon quick-switch button: a plain tap toggles in/out of the
@@ -17897,7 +18684,7 @@
         if (actionId === 'interact') { runInteractAction(); return; }
         const actionSlot = /^action(\d+)$/.exec(actionId);
         if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
-        if (actionId === 'dodge') { performDodge(player.angle); return; }
+        if (actionId === 'dodge') { performContextAction(); return; }
         if (actionId === 'swapTarget') {
           const aimAngle = controllerLookActive ? controllerLookAngle
             : (isDesktop && mouseLookActive) ? mouseLookAngle
@@ -18106,10 +18893,11 @@
           refreshItemScroll(); refreshActionBar();
         }
 
-        // X: dodge in the current facing direction, with i-frames
+        // X: context action — climbs/cliff-dives a wall in the current
+        // facing direction if one's there, otherwise dodges with i-frames
         if (key === 'x') {
           event.preventDefault();
-          performDodge(player.angle);
+          performContextAction();
           return;
         }
 
@@ -18434,6 +19222,8 @@
         if (!gearInventory.whistles || !gearInventory.whistles.length) {
           gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];
         }
+        if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
+        if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
         ensureGearClothingCollection();
         // Set default equipment slot assignments
         if (gearInventory.tools.bronzehoe)  equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
@@ -18494,11 +19284,44 @@
         releaseWeaponSwingHold,
         cancelWeaponSwingHold,
         beginCombatLunge,
-        spawnCombatTrailEffect,
+        setCombatSwingCone,
         spawnBurstEffect,
         playCreatureBark,
         playCreatureClawHit,
         playWeaponSlashSfx,
+        // Named animal attacks (e.g. Pounce) own the creature's position
+        // directly for their leap instead of going through moveCreatureToward
+        // — without this, that ground covered during the leap never ticked
+        // a footstep (see combat-animal-attacks.js's pounceUpdate).
+        tickCreatureFootsteps,
+        // Gates every weapon tap/hold ability (see combat-input.js) — no
+        // attacking while swimming in a river/stream, player or creature.
+        isPlayerSwimming,
+        // Drives the loadout's Combo slot (tap1) — never player-chosen,
+        // always whichever combo matches the equipped weapon's own swing
+        // style (see combat-loadout.js's comboAbilityId()).
+        currentComboAbilityId,
+        // Picks which affliction-option flavor every weapon-tool ability
+        // offers (see combat-progression.js).
+        currentWeaponDamageType,
+        weaponDamageTypeForTool,
+        // Keys the loadout's per-weapon slot assignments (see
+        // combat-loadout.js).
+        currentWeaponKey,
+        currentWeaponLabel,
+        // Tool mastery ("trusty axe/shovel/pick/spear") gates which of a
+        // tool's own equipped abilities' 5 upgrade levels can be chosen;
+        // Motes of Prowess pay for actually making that choice — both see
+        // combat-progression.js.
+        toolMasteryLevel,
+        awardWeaponMasteryXp,
+        getMotesOfProwess,
+        spendMotesOfProwess,
+        awardMotesOfProwess,
+        // Gates the loadout page's dev-only "+1 Mote" test button (see
+        // combat-loadout-ui.js) — mirrors the same s_devMode toggle the
+        // gear-tool item panel's "+1 Mastery" button uses.
+        isDevMode: () => s_devMode,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module

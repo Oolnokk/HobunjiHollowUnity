@@ -42,56 +42,73 @@
     }
 
     function fireStrike(deps) {
-      const cost = COST_BASE + count * COST_PER_STRIKE;
-      if (deps.player.stamina < cost) {
-        active = false;
-        deps.showToast('Flurry stopped: stamina ran out.', false);
-        return;
-      }
-      deps.player.stamina = Math.max(0, deps.player.stamina - cost);
+      // Every affliction this strike can inflict, and every stat bonus on
+      // top of the base numbers below, comes from the player's own chosen
+      // upgrades (see combat-progression.js) — a fresh, unleveled flurry
+      // deals plain damage with no afflictions at all.
+      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'acceleratingFlurry') || { afflictions: {}, stats: {} };
+      const cost = (COST_BASE + count * COST_PER_STRIKE) * (1 + (effects.stats.staminaCostMul || 0));
+      // Never refuses for lack of stamina — overspending pushes into
+      // Exhausted instead of hard-stopping the flurry (see resource-
+      // system.js's spendStamina). Exhausted's reduced speed slows this
+      // strike's own windup/strike *and* the delay before the next one
+      // (see onHoldUpdate/nextStrikeAt below), so a flurry pushed deep into
+      // debt grinds down toward a crawl instead of looping forever for free.
+      window.ResourceSystem?.spendStamina(deps.player, cost, 'Accelerating Flurry');
+      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const windupS = WINDUP_S * timeScale;
+      const strikeS = STRIKE_S * timeScale;
       // Alternates side every strike — mirror the hatchet's sweep, flipping
       // direction in sync with the existing left/right hit-cone wobble.
       const dirSign = count % 2 === 0 ? -1 : 1;
-      deps.triggerWeaponSwingVisual(WINDUP_S + STRIKE_S, {
+
+      const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
+      const damage = Math.round(baseAbil.damage * (DAMAGE_MUL_BASE + count * DAMAGE_MUL_PER_STRIKE) * (1 + (effects.stats.damageMul || 0)));
+      const rangePx = baseAbil.rangePx * (1 + (effects.stats.rangeMul || 0));
+      const halfConeDeg = HALF_CONE_DEG_BASE + Math.min(HALF_CONE_DEG_MAX_GROWTH, count * HALF_CONE_DEG_GROWTH_PER_STRIKE);
+      const halfConeRad = halfConeDeg * Math.PI / 180;
+      const knockbackPxS = baseAbil.knockbackPxS * (KNOCKBACK_MUL_BASE + count * KNOCKBACK_MUL_PER_STRIKE) * (1 + (effects.stats.knockbackMul || 0));
+      const sideDeg = dirSign * SIDE_OFFSET_DEG;
+      const strikeAngle = deps.player.angle + sideDeg * Math.PI / 180;
+      const strikeIndex = count + 1;
+
+      deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'sweep',
         dirSign,
-        windupFrac: WINDUP_S / (WINDUP_S + STRIKE_S),
+        windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
         // Same authored pose as the hatchet's Forehand/Backhand Swing combo
         // steps, so every sweep-style attack reads as the same swing.
         pose: window.Combat.poses.SWEEP_POSE,
         holdS: HOLD_S,
+        afflictionIds: Object.keys(effects.afflictions),
+        coneRangePx: rangePx,
+        coneHalfConeRad: halfConeRad,
+        coneAngle: strikeAngle,
       });
 
-      const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * (DAMAGE_MUL_BASE + count * DAMAGE_MUL_PER_STRIKE));
-      const rangePx = baseAbil.rangePx;
-      const halfConeDeg = HALF_CONE_DEG_BASE + Math.min(HALF_CONE_DEG_MAX_GROWTH, count * HALF_CONE_DEG_GROWTH_PER_STRIKE);
-      const knockbackPxS = baseAbil.knockbackPxS * (KNOCKBACK_MUL_BASE + count * KNOCKBACK_MUL_PER_STRIKE);
-      const sideDeg = dirSign * SIDE_OFFSET_DEG;
-      const strikeAngle = deps.player.angle + sideDeg * Math.PI / 180;
-      const strikeIndex = count + 1;
-
       window.Combat.beginStagedAction({
-        windupS: WINDUP_S,
-        strikeS: STRIKE_S,
+        windupS,
+        strikeS,
         recoverS: 0,
         onStrike: () => {
           let hits = 0, lastName = '';
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
-            if (!deps.inCone(deps.player.x, deps.player.y, strikeAngle, c.x, c.y, rangePx, halfConeDeg * Math.PI / 180)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS);
+            if (!deps.inCone(deps.player.x, deps.player.y, strikeAngle, c.x, c.y, rangePx, halfConeRad)) continue;
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'blunt', afflictionBonuses: effects.afflictions });
             hits++;
             lastName = c.def.label;
           }
-          deps.spawnCombatTrailEffect({ rangePx, halfConeRad: halfConeDeg * Math.PI / 180, angle: strikeAngle, ok: hits > 0 });
-          if (hits > 0) deps.showToast(`Flurry Strike ${strikeIndex}: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
+          if (hits > 0) {
+            deps.showToast(`Flurry Strike ${strikeIndex}: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
+            deps.awardWeaponMasteryXp();
+          }
         },
       });
 
       count += 1;
-      nextStrikeAt = now() + Math.max(NEXT_STRIKE_MIN_S, NEXT_STRIKE_BASE_S - count * NEXT_STRIKE_DECAY_PER_STRIKE);
+      nextStrikeAt = now() + Math.max(NEXT_STRIKE_MIN_S, NEXT_STRIKE_BASE_S - count * NEXT_STRIKE_DECAY_PER_STRIKE) * timeScale;
     }
 
     function onHoldStart() {
@@ -117,7 +134,7 @@
       count = 0;
     }
 
-    window.Combat.abilities.register('acceleratingFlurry', { label: 'Accelerating Flurry', slotFamily: 'hold', onHoldStart, onHoldUpdate, onHoldEnd });
+    window.Combat.abilities.register('acceleratingFlurry', { label: 'Accelerating Flurry', slotFamily: 'hold', category: 'offensiveHold', onHoldStart, onHoldUpdate, onHoldEnd });
   }
 
   register();

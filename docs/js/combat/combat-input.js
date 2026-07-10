@@ -38,7 +38,18 @@
     return abilityId ? window.Combat.abilities.get(abilityId) : null;
   }
 
+  // No weapon action (tap or hold — attacks and defensive stances alike)
+  // while swimming in a river/stream (see game.js's isPlayerSwimming) —
+  // single choke point for every ability, instead of each one checking it.
+  function blockedBySwimming() {
+    const deps = window.Combat.deps;
+    if (!deps?.isPlayerSwimming?.()) return false;
+    deps.showToast?.("Can't fight while swimming!", false);
+    return true;
+  }
+
   function fireTap(slotIndex) {
+    if (blockedBySwimming()) return;
     const slotId = 'tap' + slotIndex;
     const ability = abilityForSlot(slotId);
     if (ability?.onTap) {
@@ -49,6 +60,7 @@
   }
 
   function startHold(slotIndex) {
+    if (blockedBySwimming()) return;
     const slotId = 'hold' + slotIndex;
     const ability = abilityForSlot(slotId);
     if (ability?.onHoldStart) ability.onHoldStart({ slotIndex, slotId });

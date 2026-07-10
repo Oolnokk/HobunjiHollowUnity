@@ -17,10 +17,27 @@
   // combo advances to its next step; wait longer and it resets to step 1.
   const COMBO_RESET_S = 0.9;
 
-  // Short forward step layered under each combo swing's windup/strike —
-  // see game.js's beginCombatLunge. Expressed as a TILE multiple so it scales
-  // with the game's tile size rather than a raw pixel constant.
-  const LUNGE_TILE_MUL = 0.8;
+  // The combo's hit cone (scaled off the shared 'cut' ability's rangePx —
+  // see baseAbil below) read as oversized in practice; shrink it here
+  // rather than touching 'cut' itself, since flurry/charged breaker/
+  // counter-shield all scale off that same shared base and weren't
+  // reported as too big. Lunge distance is compensated the other way
+  // (bigger, not smaller) so closing the gap still feels aggressive even
+  // with the tighter hit cone.
+  const RANGE_SCALE = 0.6;
+  const LUNGE_SCALE = 1.5;
+
+  // Short forward step layered under each combo swing's windup/strike — see
+  // game.js's beginCombatLunge. Expressed as a TILE multiple (per-step
+  // `lungeMul` below) so it scales with the game's tile size rather than a
+  // raw pixel constant. Originally a flat 0.8 for every step; the 1st step
+  // of each combo now lunges 2.0 tiles (half of an earlier 5x pass) while
+  // the 2nd/3rd (already-longer-ranged, heavier-knockback) steps lunge only
+  // 1.0 tile (a quarter of that same pass) so a combo doesn't keep flinging
+  // the player forward step after step. Safe to lunge this far at all now
+  // that lunges stop early the instant a hostile enters the step's own hit
+  // cone instead of always covering the full distance (see game.js's
+  // beginCombatLunge/updateMovement).
 
   // "Forehand Swing" — authored in the attack-animation editor as a full
   // 6-channel pose (yaw winds the tool back/through, bodyYaw turns the
@@ -39,23 +56,36 @@
 
   // holdS: how long (seconds) the swing dwells at its strike pose before
   // easing back to neutral — a per-step config knob, not an engine default.
+  // dmgTag/heavy feed the resource-afflictions system (docs/js/combat/
+  // resource-system.js): sweeping steps tag as Blunt (bruise + winded
+  // stamina), thrusting steps as Sharp (bleed + wounded stamina); each
+  // combo's 3rd/finisher step also consumes the target's Bruised Health
+  // for bonus damage, same as the demo's Heavy Attack rule.
   const SWING_STEPS = [
-    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 16, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1 },
-    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 19, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1 },
-    // Cleave is the combo's 3rd step — gets an extra x1.5 knockback bump
-    // (2.4) on top of the global knockback-base doubling, same as charged
-    // breaker/riposte/flurry; the first two steps stay at their plain mul.
-    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1 },
+    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 16, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 2.0 },
+    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 19, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 1.0 },
+    // Cleave is the combo's 3rd step and its `heavy` flag — see the `heavy`
+    // handling in onTap below — barely outdamages Backhand Swing on its own
+    // (1.35 vs 1.25); its actual payoff scales with comboStreak.multiplier(),
+    // built by landing steps 1-2 first (see combat-combo-streak.js). Keeps
+    // an extra x1.5 knockback bump (2.4) on top of the global knockback-base
+    // doubling, same as charged breaker/riposte/flurry — knockback isn't
+    // part of the streak scaling, just damage/lunge.
+    { name: 'Cleave',         damageMul: 1.35, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
   ];
 
   // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
   // push the weapon out farther than the first two (plain) pokes, per the
   // demo's "third one rotates even farther, pushes even farther forward" spec.
   const POKE_STEPS = [
-    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.9, staminaCost: 13,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1 },
-    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 9,  rangeMul: 1.35, knockbackMul: 1.1, staminaCost: 16, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1 },
-    // Long Lunge is the poke combo's 3rd step — same extra x1.5 bump as Cleave.
-    { name: 'Long Lunge',   damageMul: 1.7,  halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1 },
+    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.9, staminaCost: 13,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 2.0 },
+    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 9,  rangeMul: 1.35, knockbackMul: 1.1, staminaCost: 16, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 1.0 },
+    // Long Lunge is the poke combo's 3rd step and its `heavy` flag — barely
+    // outdamages Step Thrust on its own (1.25 vs 1.15); its real payoff
+    // scales with comboStreak.multiplier() the same way Cleave's does (see
+    // onTap below). Same extra x1.5 knockback bump as Cleave, also excluded
+    // from the streak scaling.
+    { name: 'Long Lunge',   damageMul: 1.25, halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
   ];
 
   function now() { return performance.now() / 1000; }
@@ -74,59 +104,87 @@
       const step = steps[comboIndex % steps.length];
       comboIndex = (comboIndex + 1) % steps.length;
 
-      if (deps.player.stamina < step.staminaCost) {
-        deps.showToast('Too winded to swing!', false);
-        return;
-      }
-      deps.player.stamina = Math.max(0, deps.player.stamina - step.staminaCost);
+      // Every affliction this combo can inflict, and every stat bonus on top
+      // of the base numbers below, comes from the player's own chosen
+      // upgrades on the equipped weapon's own mastery track (see combat-
+      // progression.js) — a fresh, unleveled combo deals plain damage with
+      // no afflictions at all.
+      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
+
+      // Never refuses for lack of stamina — overspending pushes into
+      // Exhausted (see resource-system.js's spendStamina) instead of
+      // blocking the swing. Exhausted's reduced speed (getExhaustionSpeed)
+      // then slows this swing's own windup/strike/return down instead,
+      // same as the source demo's "the same multiplier slows attack
+      // cooldown" rule.
+      window.ResourceSystem?.spendStamina(deps.player, step.staminaCost * (1 + (effects.stats.staminaCostMul || 0)), step.name);
+      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const windupS = step.windupS * timeScale;
+      const strikeS = step.strikeS * timeScale;
+      const returnS = (step.returnS || 0) * timeScale;
+
+      const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
+      // Only the combo's heavy finisher (Cleave/Long Lunge) reads the streak
+      // multiplier — steps 1-2 stay at their plain damageMul regardless of
+      // streak, since they're what build the streak in the first place (see
+      // combat-combo-streak.js).
+      const streakMul = step.heavy ? (window.Combat.comboStreak?.multiplier() ?? 1) : 1;
+      const damage = Math.round(baseAbil.damage * step.damageMul * streakMul * (1 + (effects.stats.damageMul || 0)));
+      const rangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
+      const halfConeRad = step.halfConeDeg * Math.PI / 180;
+      const knockbackPxS = baseAbil.knockbackPxS * step.knockbackMul * (1 + (effects.stats.knockbackMul || 0));
+
       // returnS (set on a combo's final step) stretches the cosmetic swing's
       // tail so a finisher eases back to neutral instead of snapping — earlier
       // steps have no returnS, so they keep snapping (masked by the next tap).
-      const totalVisual = step.windupS + step.strikeS + (step.returnS || 0);
+      const totalVisual = windupS + strikeS + returnS;
       deps.triggerWeaponSwingVisual(totalVisual, {
         anim: step.anim,
         dirSign: step.dirSign,
-        windupFrac: step.windupS / totalVisual,
-        strikeFrac: (step.windupS + step.strikeS) / totalVisual,
+        windupFrac: windupS / totalVisual,
+        strikeFrac: (windupS + strikeS) / totalVisual,
         power: step.power || 1,
         pose: step.pose,
         holdS: step.holdS || 0,
+        afflictionIds: Object.keys(effects.afflictions),
+        coneRangePx: rangePx,
+        coneHalfConeRad: halfConeRad,
+        coneAngle: deps.player.angle,
       });
-      // Short step forward, timed to land alongside the swing's own
-      // windup+strike rather than the cosmetic hold/return tail.
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, step.windupS + step.strikeS);
 
-      const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * step.damageMul);
-      const rangePx = baseAbil.rangePx * step.rangeMul;
-      const halfConeRad = step.halfConeDeg * Math.PI / 180;
-      const knockbackPxS = baseAbil.knockbackPxS * step.knockbackMul;
+      // Short step forward, timed to land alongside the swing's own
+      // windup+strike rather than the cosmetic hold/return tail — stops
+      // early the moment a hostile is inside this step's own hit cone
+      // instead of always covering the full lunge distance (see
+      // game.js's beginCombatLunge/updateMovement).
+      deps.beginCombatLunge(deps.TILE * step.lungeMul * LUNGE_SCALE * streakMul * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
-        windupS: step.windupS,
-        strikeS: step.strikeS,
+        windupS,
+        strikeS,
         recoverS: 0,
         onStrike: () => {
           let hits = 0, lastName = '';
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS);
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: step.dmgTag, heavy: step.heavy, afflictionBonuses: effects.afflictions });
             hits++;
             lastName = c.def.label;
           }
-          deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
           const msg = hits > 0
             ? (hits > 1 ? `${step.name}: hit ${hits} creatures!` : `${step.name}: hit the ${lastName}!`)
             : `${step.name} connects with nothing.`;
           deps.showToast(msg, hits > 0);
+          window.Combat.comboStreak?.registerHit(hits > 0);
+          if (hits > 0) deps.awardWeaponMasteryXp();
         },
         onComplete: () => { busyAction = null; },
         onCancel: () => { busyAction = null; },
       });
     }
 
-    window.Combat.abilities.register(id, { label, slotFamily: 'tap', onTap });
+    window.Combat.abilities.register(id, { label, slotFamily: 'tap', category: 'combo', onTap });
   }
 
   registerCombo('swingCombo', '3-Swing Combo', SWING_STEPS);
