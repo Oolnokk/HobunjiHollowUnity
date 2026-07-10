@@ -3957,6 +3957,18 @@
       // collider at the point the lunge stops, never overshot past it.
       function beginCombatLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
         if (durationS <= 0 || distancePx <= 0) return;
+        // Each combo/quick-attack/charged-breaker module tracks its own
+        // "busy" gate independently, so tapping a *different* attack slot
+        // while an earlier one's lunge is still in flight isn't blocked by
+        // that earlier module's busyAction — without this guard, the new
+        // call would blow away the in-progress lunge's start point/progress
+        // and restart from wherever the player happened to be that frame,
+        // producing wildly inconsistent travel distance (sometimes almost
+        // none, sometimes stacking into more than any single lunge should
+        // cover). The attack's own damage/hit resolution doesn't depend on
+        // this cosmetic step, so simply not layering a second lunge on top
+        // of the first is enough — the new attack still fires normally.
+        if (player.lunging) return;
         player.lunging = true;
         player.lungeT = durationS;
         player.lungeDur = durationS;

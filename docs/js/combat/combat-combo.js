@@ -17,16 +17,17 @@
   // combo advances to its next step; wait longer and it resets to step 1.
   const COMBO_RESET_S = 0.9;
 
-  // Short forward step layered under each combo swing's windup/strike —
-  // see game.js's beginCombatLunge. Expressed as a TILE multiple so it scales
-  // with the game's tile size rather than a raw pixel constant. x5'd from
-  // its original 0.8 — combo's hit range is the shortest of the three
-  // lunge-enabled attacks (built off the base 'cut' range, same as Quick
-  // Attacks), so it needs the most help closing distance. Safe to lunge
-  // this far now that lunges stop early the instant a hostile enters the
-  // step's own hit cone instead of always covering the full distance (see
-  // game.js's beginCombatLunge/updateMovement).
-  const LUNGE_TILE_MUL = 4.0;
+  // Short forward step layered under each combo swing's windup/strike — see
+  // game.js's beginCombatLunge. Expressed as a TILE multiple (per-step
+  // `lungeMul` below) so it scales with the game's tile size rather than a
+  // raw pixel constant. Originally a flat 0.8 for every step; the 1st step
+  // of each combo now lunges 2.0 tiles (half of an earlier 5x pass) while
+  // the 2nd/3rd (already-longer-ranged, heavier-knockback) steps lunge only
+  // 1.0 tile (a quarter of that same pass) so a combo doesn't keep flinging
+  // the player forward step after step. Safe to lunge this far at all now
+  // that lunges stop early the instant a hostile enters the step's own hit
+  // cone instead of always covering the full distance (see game.js's
+  // beginCombatLunge/updateMovement).
 
   // "Forehand Swing" — authored in the attack-animation editor as a full
   // 6-channel pose (yaw winds the tool back/through, bodyYaw turns the
@@ -51,22 +52,22 @@
   // combo's 3rd/finisher step also consumes the target's Bruised Health
   // for bonus damage, same as the demo's Heavy Attack rule.
   const SWING_STEPS = [
-    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 16, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt' },
-    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 19, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt' },
+    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 16, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 2.0 },
+    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 19, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 1.0 },
     // Cleave is the combo's 3rd step — gets an extra x1.5 knockback bump
     // (2.4) on top of the global knockback-base doubling, same as charged
     // breaker/riposte/flurry; the first two steps stay at their plain mul.
-    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', heavy: true },
+    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
   ];
 
   // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
   // push the weapon out farther than the first two (plain) pokes, per the
   // demo's "third one rotates even farther, pushes even farther forward" spec.
   const POKE_STEPS = [
-    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.9, staminaCost: 13,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp' },
-    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 9,  rangeMul: 1.35, knockbackMul: 1.1, staminaCost: 16, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp' },
+    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.9, staminaCost: 13,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 2.0 },
+    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 9,  rangeMul: 1.35, knockbackMul: 1.1, staminaCost: 16, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 1.0 },
     // Long Lunge is the poke combo's 3rd step — same extra x1.5 bump as Cleave.
-    { name: 'Long Lunge',   damageMul: 1.7,  halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1, dmgTag: 'sharp', heavy: true },
+    { name: 'Long Lunge',   damageMul: 1.7,  halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
   ];
 
   function now() { return performance.now() / 1000; }
@@ -121,7 +122,7 @@
       // early the moment a hostile is inside this step's own hit cone
       // instead of always covering the full lunge distance (see
       // game.js's beginCombatLunge/updateMovement).
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, windupS + strikeS, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(deps.TILE * step.lungeMul, windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS,
