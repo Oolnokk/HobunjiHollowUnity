@@ -4,7 +4,15 @@
 // Combat.abilities.register() to offer themselves for a slot family; the
 // player picks which registered ability occupies each slot via
 // Combat.loadout.setSlot() (UI for that lands in a later combat-loadout-ui
-// module). Persisted per-character, mirroring game.js's own
+// module).
+//
+// tap2/hold1/hold2 are stored per equipped weapon (game.js's
+// currentWeaponKey() — the gear-inventory item key, e.g. 'hatchet') rather
+// than as one global loadout: switching weapons switches which Quick
+// Attack/Held picks are active, and each weapon remembers its own the next
+// time it's re-equipped. This is independent of each ability's own 5-level
+// upgrade progression (combat-progression.js), which stays global across
+// every weapon. Persisted per-character, mirroring game.js's own
 // saveGearInventory()/spawnPlayerAvatar() pattern, but self-contained here
 // since window.__hobunjiPlayerProfile and localStorage are plain globals —
 // this module doesn't need anything from game.js's closure to load or save.
@@ -33,15 +41,20 @@
   // do, combat-input.js's dispatcher falls back to the legacy cut/slash
   // weapon swing for the tap slots, and no-ops for the (currently
   // nonexistent) hold slots. tap1 has no default entry — it's never stored,
-  // see getSlot()/setSlot() below.
-  const DEFAULT_LOADOUT = {
+  // see getSlot()/setSlot() below. Applied to any weapon key that hasn't
+  // been configured yet — see weaponLoadout() below.
+  const DEFAULT_SLOT_LOADOUT = {
     tap2: 'opportunistJab',
     hold1: 'chargedBreaker',
     hold2: 'counterShield',
   };
 
   const abilities = new Map();
-  let loadout = { ...DEFAULT_LOADOUT };
+  // weaponKey -> { tap2, hold1, hold2 } — see weaponKey()/weaponLoadout()
+  // below. Keys are lazily created on first setSlot() for that weapon;
+  // reading an unconfigured weapon's loadout just returns the defaults
+  // above without creating an entry.
+  let loadoutsByWeapon = {};
 
   function registerAbility(id, def) {
     abilities.set(id, { ...def, id, label: def.label || id });
@@ -75,13 +88,25 @@
     return window.Combat.deps?.currentComboAbilityId?.() || 'swingCombo';
   }
 
+  // Keys tap2/hold1/hold2's per-weapon storage — game.js's
+  // currentWeaponKey() (the equipped gear-inventory item key), or 'none'
+  // while nothing's equipped so the loadout UI still has somewhere to work
+  // against.
+  function weaponKey() {
+    return window.Combat.deps?.currentWeaponKey?.() || 'none';
+  }
+
+  function weaponLoadout(key) {
+    return loadoutsByWeapon[key] || DEFAULT_SLOT_LOADOUT;
+  }
+
   function getLoadout() {
-    return { ...loadout, tap1: comboAbilityId() };
+    return { ...weaponLoadout(weaponKey()), tap1: comboAbilityId() };
   }
 
   function getSlot(slotId) {
     if (slotId === 'tap1') return comboAbilityId();
-    return loadout[slotId] ?? null;
+    return weaponLoadout(weaponKey())[slotId] ?? null;
   }
 
   // Returns false (and leaves the loadout unchanged) if slotId is invalid,
@@ -97,24 +122,27 @@
     const def = abilities.get(abilityId);
     if (def && def.slotFamily !== SLOT_FAMILY[slotId]) return false;
     if (def && !SLOT_CATEGORIES[slotId].includes(def.category)) return false;
-    loadout[slotId] = abilityId;
+    const key = weaponKey();
+    if (!loadoutsByWeapon[key]) loadoutsByWeapon[key] = { ...DEFAULT_SLOT_LOADOUT };
+    loadoutsByWeapon[key][slotId] = abilityId;
     persist();
     return true;
   }
 
   function serialize() {
-    // tap1 is derived, never persisted.
-    const { tap1, ...rest } = loadout;
-    return { ...rest };
+    return JSON.parse(JSON.stringify(loadoutsByWeapon));
   }
 
   function load(saved) {
-    loadout = { ...DEFAULT_LOADOUT };
-    if (saved && typeof saved === 'object') {
-      for (const slotId of SLOT_IDS) {
-        if (slotId === 'tap1') continue;
-        if (typeof saved[slotId] === 'string' && saved[slotId]) loadout[slotId] = saved[slotId];
+    loadoutsByWeapon = {};
+    if (!saved || typeof saved !== 'object') return;
+    for (const [key, slots] of Object.entries(saved)) {
+      if (!slots || typeof slots !== 'object') continue;
+      const clean = {};
+      for (const slotId of ['tap2', 'hold1', 'hold2']) {
+        if (typeof slots[slotId] === 'string' && slots[slotId]) clean[slotId] = slots[slotId];
       }
+      if (Object.keys(clean).length) loadoutsByWeapon[key] = clean;
     }
   }
 

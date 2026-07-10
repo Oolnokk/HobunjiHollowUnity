@@ -19,18 +19,23 @@
   ];
 
   // Which slot (if any) currently has its level-options picker expanded —
-  // { slotId, level } or null. Not persisted; purely local UI state.
+  // { abilityId, level } or null. Not persisted; purely local UI state.
   let expandedFor = null;
 
   function levelStateClass(abilityId, level) {
-    const chosenIdx = window.CombatProgression.getChosenIndex(abilityId, level);
-    if (chosenIdx >= 0) return 'chosen';
+    if (window.CombatProgression.getChosenOption(abilityId, level)) return 'chosen';
     return window.CombatProgression.isLevelAvailable(abilityId, level) ? 'available' : 'locked';
   }
 
   function renderLevelPicker(container, abilityId) {
-    const tree = window.CombatProgression.getTree(abilityId);
-    if (!tree) return; // abilities with no defined tree (shouldn't happen) render nothing
+    // The option POOL a not-yet-chosen level offers follows whichever
+    // weapon is equipped right now (see combat-progression.js's file
+    // header) — an already-chosen level's label instead comes from
+    // getChosenOption(), which resolves via the weapon type that was
+    // active when that choice was made, not the current one.
+    const weaponType = window.Combat.deps?.currentWeaponDamageType?.() || 'sharp';
+    const liveTree = window.CombatProgression.getTree(abilityId, weaponType);
+    if (!liveTree) return; // abilities with no defined tree (shouldn't happen) render nothing
 
     const levels = document.createElement('div');
     levels.className = 'loadout-levels';
@@ -45,8 +50,7 @@
       const labelSpan = document.createElement('span');
       labelSpan.className = 'lv-label';
       if (state === 'chosen') {
-        const idx = window.CombatProgression.getChosenIndex(abilityId, level);
-        labelSpan.textContent = tree[level - 1][idx]?.label || '';
+        labelSpan.textContent = window.CombatProgression.getChosenOption(abilityId, level)?.label || '';
       } else if (state === 'available') {
         labelSpan.textContent = 'Choose';
         box.addEventListener('click', () => {
@@ -62,7 +66,7 @@
     container.appendChild(levels);
 
     if (expandedFor && expandedFor.abilityId === abilityId) {
-      const options = tree[expandedFor.level - 1];
+      const options = liveTree[expandedFor.level - 1];
       const panel = document.createElement('div');
       panel.className = 'loadout-options';
       options.forEach((option, idx) => {
@@ -97,6 +101,15 @@
     title.className = 'settings-section-title';
     title.textContent = 'Weapon Tool Loadout';
     pane.appendChild(title);
+
+    // Quick Attack/Held picks below are stored per equipped weapon (see
+    // combat-loadout.js) — a different weapon has its own independent set.
+    const weaponLabel = window.Combat.deps?.currentWeaponLabel?.() || 'No weapon equipped';
+    const weaponNote = document.createElement('div');
+    weaponNote.className = 'loadout-slot-combo-note';
+    weaponNote.style.marginBottom = '6px';
+    weaponNote.textContent = `Quick Attack / Held picks below are saved for: ${weaponLabel}`;
+    pane.appendChild(weaponNote);
 
     for (const slot of SLOTS) {
       const card = document.createElement('div');

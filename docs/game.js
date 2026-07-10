@@ -1411,16 +1411,22 @@
       let packClothing  = [];   // Clothing items in world/pack inventory
 
       // Tool item definitions: sprite path, compatible slots, animation style
+      // dmgType ('sharp'|'blunt', weapon-slot items only) picks which flavor
+      // of affliction options the whole weapon-tool ability kit offers (see
+      // combat-progression.js) — an edge cuts (bleed/wound/poison/infect),
+      // a bludgeon crushes (bruise/wind/congeal/shatter). Defaults to
+      // 'sharp' when absent (see currentWeaponDamageType() below), so only
+      // the blunt outliers need to be called out.
       const TOOL_ITEM_DEFS = {
         bronzehoe:    { label: 'Bronze Hoe',    icon: '🪓', sprite: 'assets/toolsprites/hoe_bronzehoe.png',        slots: ['hoe'],                    animStyle: 'chop'   },
-        hatchet:      { label: 'Hatchet',       icon: '🪓', sprite: 'assets/toolsprites/axe_hatchet.png',          slots: ['axe', 'weapon'],           animStyle: 'sweep'  },
+        hatchet:      { label: 'Hatchet',       icon: '🪓', sprite: 'assets/toolsprites/axe_hatchet.png',          slots: ['axe', 'weapon'],           animStyle: 'sweep',  dmgType: 'sharp' },
         // `spinning` distinguishes the harpoon-slot sprite's in-hand behavior: mace-mode items
         // twirl around their own axis through the swing (call it "spinning" rather than
         // "mace mode" since fishing hatchets or other harpoon variants may reuse the same flag),
         // while spear-mode items stay rigidly oriented like the hatchet sweep.
-        fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true  },
-        fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'thrust', spinning: false },
-        pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust' },
+        fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true, dmgType: 'blunt'  },
+        fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'thrust', spinning: false, dmgType: 'sharp' },
+        pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust', dmgType: 'blunt' },
       };
 
       // Drives the weapon-tool loadout's Combo slot (see combat-loadout.js) —
@@ -1431,6 +1437,27 @@
       function currentComboAbilityId() {
         const def = TOOL_ITEM_DEFS[equipmentSlots.weapon];
         return def?.animStyle === 'thrust' ? 'pokeCombo' : 'swingCombo';
+      }
+
+      // Drives which flavor of affliction options every weapon-tool ability
+      // offers (see combat-progression.js) — independent of which combo/
+      // technique is equipped, since it's the physical weapon doing the
+      // wounding either way.
+      function currentWeaponDamageType() {
+        return TOOL_ITEM_DEFS[equipmentSlots.weapon]?.dmgType || 'sharp';
+      }
+
+      // Keys the weapon-tool loadout's per-weapon slot assignments (see
+      // combat-loadout.js) — each gear-inventory weapon remembers its own
+      // Quick Attack/Held picks; 'none' is the shared fallback while no
+      // weapon is equipped.
+      function currentWeaponKey() {
+        return equipmentSlots.weapon || 'none';
+      }
+
+      // Display label for the loadout UI's "saved for: <weapon>" note.
+      function currentWeaponLabel() {
+        return TOOL_ITEM_DEFS[equipmentSlots.weapon]?.label || null;
       }
 
       window.ToolIconRender?.warm(Object.values(TOOL_ITEM_DEFS).map(d => d.sprite));
@@ -3845,6 +3872,8 @@
         performContextAction,
         performDodge,
         currentComboAbilityId,
+        currentWeaponDamageType,
+        currentWeaponKey,
         equipmentSlots,
         TILE,
       };
@@ -18898,6 +18927,13 @@
         // always whichever combo matches the equipped weapon's own swing
         // style (see combat-loadout.js's comboAbilityId()).
         currentComboAbilityId,
+        // Picks which affliction-option flavor every weapon-tool ability
+        // offers (see combat-progression.js).
+        currentWeaponDamageType,
+        // Keys the loadout's per-weapon slot assignments (see
+        // combat-loadout.js).
+        currentWeaponKey,
+        currentWeaponLabel,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module

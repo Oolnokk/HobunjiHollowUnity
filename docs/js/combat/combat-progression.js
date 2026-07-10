@@ -9,6 +9,18 @@
 // always available) — "the amount of options tends to open up at each
 // level" per the design brief, and a level can't be skipped past.
 //
+// Every ability except Blink Dodge (which deals no damage of its own) is
+// "weapon-typed": which set of options it offers at a given level depends
+// on the currently equipped weapon's dmgType (see game.js's
+// currentWeaponDamageType() — 'sharp' or 'blunt', TOOL_ITEM_DEFS). That's
+// the ability's option POOL, not its identity — a chosen level's actual
+// effect is locked to whichever specific option was picked at choose()
+// time (see meta's {type, index} below), so switching to a different-type
+// weapon later can't retroactively reinterpret an already-made choice.
+// Progression levels themselves are entirely global — shared across every
+// weapon (see combat-loadout.js for what IS per-weapon: which ability
+// occupies each loadout slot) — and persist as character save data.
+//
 // Ability modules read their unlocked bonuses via getEffects(abilityId),
 // which merges every chosen level's afflictions (summed per-affliction-id,
 // each value a multiplier against the hit's own damage — same convention
@@ -28,11 +40,11 @@
   // about as strong as the old always-on system did, but only once earned.
   const BLEED = 0.35, WOUND = 0.42, BRUISE = 0.5, WIND = 0.4, POISON = 0.28, INFECT = 0.38, SHATTER = 0.32, CONGEAL = 0.36;
 
-  // Sweep-style (blunt) melee trees share this shape: bruise/wind flavor
-  // early, branching into the heavier stamina-debt afflictions and a couple
-  // of plain stat picks once there's enough going on to make a stat bonus
-  // worth choosing over another affliction.
-  function bluntMeleeTree() {
+  // Generic blunt (bludgeoning) tree: bruise/wind flavor early, branching
+  // into the heavier stamina-debt afflictions and a couple of plain stat
+  // picks once there's enough going on to make a stat bonus worth choosing
+  // over another affliction. Shared verbatim by most weapon-typed abilities.
+  function bluntTree() {
     return [
       [aff('bruisedHealth', BRUISE, 'Heavy Fists', 'Adds Bruised Health on every landed hit.'),
        aff('windedStamina', WIND, 'Winding Blows', 'Adds Winded Stamina on every landed hit.')],
@@ -50,9 +62,10 @@
     ];
   }
 
-  // Thrust-style (sharp) melee trees: bleed/wound flavor early, branching
-  // into poison/infection and reach/speed stat picks.
-  function sharpMeleeTree() {
+  // Generic sharp (edged) tree: bleed/wound flavor early, branching into
+  // poison/infection and reach/speed stat picks. Shared verbatim by most
+  // weapon-typed abilities.
+  function sharpTree() {
     return [
       [aff('bleedingHealth', BLEED, 'Opened Wound', 'Adds Bleeding Health on every landed hit.'),
        aff('woundedStamina', WOUND, 'Wounding Point', 'Adds Wounded Stamina on every landed hit.')],
@@ -70,15 +83,12 @@
     ];
   }
 
-  const TREES = {
-    swingCombo: bluntMeleeTree(),
-    pokeCombo: sharpMeleeTree(),
-    opportunistJab: sharpMeleeTree(),
-
-    // Exhaust Cutter is themed around a target's spent stamina — leans
-    // harder into the stamina-side afflictions (Infected/Shattered) than
-    // the generic sharp tree.
-    exhaustCutter: [
+  // Exhaust Cutter is themed around a target's spent stamina — its sharp
+  // tree leans harder into the stamina-side afflictions (Infected/
+  // Shattered) than the generic sharp tree; its blunt tree is the generic
+  // one (a bludgeoning Exhaust Cutter has no special theme of its own).
+  function exhaustCutterSharpTree() {
+    return [
       [aff('bleedingHealth', BLEED, 'Opened Wound', 'Adds Bleeding Health on every landed hit.'),
        aff('woundedStamina', WOUND, 'Wounding Point', 'Adds Wounded Stamina on every landed hit.')],
       [aff('infectedStamina', INFECT * 0.8, 'Fevered Cut', 'Adds Infected Stamina on every landed hit.'),
@@ -92,14 +102,15 @@
       [aff('shatteredStamina', SHATTER * 0.7, 'Ruinous Point', 'Even more Shattered Stamina per hit.'),
        aff('bleedingHealth', BLEED * 0.5, 'Arterial Strike', 'More Bleeding Health per hit.'),
        stat('damageMul', 0.15, 'Masterwork Point', '+15% damage.')],
-    ],
+    ];
+  }
 
-    backstabFlick: sharpMeleeTree(),
-
-    // Mercy Spike is a finishing strike against low-health targets — its
-    // higher levels open into Poisoned Health rather than Infected Stamina,
-    // a more lethal (non-recovering) flavor to match "mercy kill".
-    mercySpike: [
+  // Mercy Spike is a finishing strike against low-health targets — its
+  // sharp tree's higher levels open into Poisoned Health rather than
+  // Infected Stamina, a more lethal (non-recovering) flavor to match "mercy
+  // kill"; its blunt tree is the generic one.
+  function mercySpikeSharpTree() {
+    return [
       [aff('bleedingHealth', BLEED, 'Opened Wound', 'Adds Bleeding Health on every landed hit.'),
        aff('woundedStamina', WOUND, 'Wounding Point', 'Adds Wounded Stamina on every landed hit.')],
       [aff('bleedingHealth', BLEED * 0.6, 'Deeper Cut', 'More Bleeding Health per hit.'),
@@ -113,32 +124,53 @@
       [aff('poisonedHealth', POISON * 0.9, 'Coup de Grâce', 'Even more Poisoned Health per hit.'),
        aff('bleedingHealth', BLEED * 0.5, 'Arterial Strike', 'More Bleeding Health per hit.'),
        stat('damageMul', 0.15, 'Masterwork Point', '+15% damage.')],
-    ],
+    ];
+  }
 
-    chargedBreaker: bluntMeleeTree(),
-    acceleratingFlurry: bluntMeleeTree(),
-
-    // Counter Shield deals its riposte as a sharp hit, but its own hold
-    // stance is defensive utility — later levels mix affliction picks on the
-    // riposte with stance-side stat bonuses (drain, absorb, cooldown).
-    counterShield: [
-      [aff('bleedingHealth', BLEED, 'Punishing Riposte', 'The riposte adds Bleeding Health.'),
-       aff('woundedStamina', WOUND, 'Wounding Riposte', 'The riposte adds Wounded Stamina.')],
+  // Counter Shield's riposte swings whatever weapon is equipped, so its
+  // affliction picks are weapon-typed like everything else; its stance-side
+  // utility picks (drain/cooldown/absorb) stay the same in both trees.
+  function counterShieldTree(afflictionA, afflictionB, afflictionC, afflictionD, afflictionE, mulA, mulB, mulC, mulD, mulE, riposteWord) {
+    return [
+      [aff(afflictionA, mulA, `Punishing ${riposteWord}`, `The ${riposteWord.toLowerCase()} adds ${AFFLICTION_LABEL[afflictionA]}.`),
+       aff(afflictionB, mulB, `Wounding ${riposteWord}`, `The ${riposteWord.toLowerCase()} adds ${AFFLICTION_LABEL[afflictionB]}.`)],
       [stat('drainMul', -0.2, 'Braced Stance', '-20% stamina drain while held.'),
-       stat('damageMul', 0.12, 'Harder Riposte', '+12% riposte damage.')],
-      [aff('poisonedHealth', POISON * 0.8, 'Envenomed Riposte', 'The riposte adds Poisoned Health.'),
-       stat('cooldownMul', -0.25, 'Quick Recovery', '-25% riposte cooldown.'),
+       stat('damageMul', 0.12, `Harder ${riposteWord}`, `+12% ${riposteWord.toLowerCase()} damage.`)],
+      [aff(afflictionC, mulC, `Envenomed ${riposteWord}`, `The ${riposteWord.toLowerCase()} adds ${AFFLICTION_LABEL[afflictionC]}.`),
+       stat('cooldownMul', -0.25, 'Quick Recovery', `-25% ${riposteWord.toLowerCase()} cooldown.`),
        stat('absorbMul', -0.15, 'Efficient Guard', '-15% stamina cost to absorb a hit.')],
-      [aff('bleedingHealth', BLEED * 0.6, 'Deeper Riposte', 'More Bleeding Health on the riposte.'),
+      [aff(afflictionA, mulA * 0.6, `Deeper ${riposteWord}`, `More ${AFFLICTION_LABEL[afflictionA]} on the ${riposteWord.toLowerCase()}.`),
        stat('drainMul', -0.2, 'Fortified Stance', '-20% stamina drain while held.'),
-       stat('damageMul', 0.13, 'Piercing Riposte', '+13% riposte damage.')],
-      [aff('woundedStamina', WOUND * 0.6, 'Debilitating Riposte', 'More Wounded Stamina on the riposte.'),
-       aff('poisonedHealth', POISON * 0.6, 'Lethal Riposte', 'More Poisoned Health on the riposte.'),
-       stat('cooldownMul', -0.25, 'Instant Recovery', '-25% riposte cooldown.')],
-    ],
+       stat('damageMul', 0.13, `Piercing ${riposteWord}`, `+13% ${riposteWord.toLowerCase()} damage.`)],
+      [aff(afflictionB, mulB * 0.6, `Debilitating ${riposteWord}`, `More ${AFFLICTION_LABEL[afflictionB]} on the ${riposteWord.toLowerCase()}.`),
+       aff(afflictionD, mulD, `Lethal ${riposteWord}`, `The ${riposteWord.toLowerCase()} adds ${AFFLICTION_LABEL[afflictionD]}.`),
+       stat('cooldownMul', -0.25, 'Instant Recovery', `-25% ${riposteWord.toLowerCase()} cooldown.`)],
+    ];
+  }
+
+  const AFFLICTION_LABEL = {
+    bleedingHealth: 'Bleeding Health', woundedStamina: 'Wounded Stamina', poisonedHealth: 'Poisoned Health', infectedStamina: 'Infected Stamina',
+    bruisedHealth: 'Bruised Health', windedStamina: 'Winded Stamina', congealedHealth: 'Congealed Health', shatteredStamina: 'Shattered Stamina',
+  };
+
+  // Ability id -> { sharp: levels, blunt: levels } for weapon-typed
+  // abilities, or a flat levels array for the one that isn't (Blink Dodge).
+  const TREES = {
+    swingCombo: { sharp: sharpTree(), blunt: bluntTree() },
+    pokeCombo: { sharp: sharpTree(), blunt: bluntTree() },
+    opportunistJab: { sharp: sharpTree(), blunt: bluntTree() },
+    exhaustCutter: { sharp: exhaustCutterSharpTree(), blunt: bluntTree() },
+    backstabFlick: { sharp: sharpTree(), blunt: bluntTree() },
+    mercySpike: { sharp: mercySpikeSharpTree(), blunt: bluntTree() },
+    chargedBreaker: { sharp: sharpTree(), blunt: bluntTree() },
+    acceleratingFlurry: { sharp: sharpTree(), blunt: bluntTree() },
+    counterShield: {
+      sharp: counterShieldTree('bleedingHealth', 'woundedStamina', 'poisonedHealth', 'poisonedHealth', null, BLEED, WOUND, POISON * 0.8, POISON * 0.6, null, 'Riposte'),
+      blunt: counterShieldTree('bruisedHealth', 'windedStamina', 'congealedHealth', 'shatteredStamina', null, BRUISE, WIND, CONGEAL * 0.8, SHATTER * 0.6, null, 'Riposte'),
+    },
 
     // Blink Dodge deals no damage of its own — its whole tree is movement/
-    // stamina utility instead of afflictions.
+    // stamina utility instead of afflictions, so it isn't weapon-typed.
     blinkDodge: [
       [stat('zipDistanceMul', 0.18, 'Longer Zip', '+18% zip distance.'),
        stat('zipCostMul', -0.15, 'Efficient Zip', '-15% stamina cost per zip.')],
@@ -156,11 +188,24 @@
     ],
   };
 
-  // meta[abilityId] = { 1: chosenIndex, 2: chosenIndex, ... } — only
-  // sequentially-chosen levels are present; level 1 is always choosable.
-  let meta = {};
+  function isWeaponTyped(abilityId) {
+    const t = TREES[abilityId];
+    return !!(t && !Array.isArray(t));
+  }
 
-  function getTree(abilityId) { return TREES[abilityId] || null; }
+  // weaponType is ignored for non-weapon-typed abilities (Blink Dodge).
+  function getTree(abilityId, weaponType) {
+    const t = TREES[abilityId];
+    if (!t) return null;
+    if (Array.isArray(t)) return t;
+    return t[weaponType] || t.sharp;
+  }
+
+  // meta[abilityId] = { 1: { type: 'sharp'|'blunt'|null, index }, ... } —
+  // only sequentially-chosen levels are present; level 1 is always
+  // choosable. `type` is fixed at choose() time so a later weapon swap
+  // can't reinterpret an already-made choice — see the file header.
+  let meta = {};
 
   function getUnlockedLevel(abilityId) {
     const m = meta[abilityId];
@@ -175,17 +220,24 @@
     return level <= getUnlockedLevel(abilityId) + 1;
   }
 
-  function getChosenIndex(abilityId, level) {
-    return meta[abilityId]?.[level] ?? -1;
+  // Returns the actual chosen option object ({label, desc, afflictions?,
+  // stat?}), resolved via whichever weapon type was active when the choice
+  // was made — not the current one. null if nothing's been chosen yet.
+  function getChosenOption(abilityId, level) {
+    const entry = meta[abilityId]?.[level];
+    if (!entry) return null;
+    return getTree(abilityId, entry.type)?.[level - 1]?.[entry.index] || null;
   }
 
   function choose(abilityId, level, optionIndex) {
-    const tree = TREES[abilityId];
-    if (!tree || !isLevelAvailable(abilityId, level)) return false;
-    const options = tree[level - 1];
+    if (!TREES[abilityId] || !isLevelAvailable(abilityId, level)) return false;
+    const weaponType = isWeaponTyped(abilityId)
+      ? (window.Combat.deps?.currentWeaponDamageType?.() || 'sharp')
+      : null;
+    const options = getTree(abilityId, weaponType)?.[level - 1];
     if (!options || optionIndex < 0 || optionIndex >= options.length) return false;
     if (!meta[abilityId]) meta[abilityId] = {};
-    meta[abilityId][level] = optionIndex;
+    meta[abilityId][level] = { type: weaponType, index: optionIndex };
     persist();
     return true;
   }
@@ -193,14 +245,11 @@
   // Merges every chosen level's afflictions (summed per id) and stat
   // bonuses (summed per key) for one ability into a single flat object.
   function getEffects(abilityId) {
-    const tree = TREES[abilityId];
     const afflictions = {};
     const stats = {};
-    if (!tree) return { afflictions, stats };
     const m = meta[abilityId] || {};
-    for (const [levelStr, optionIndex] of Object.entries(m)) {
-      const level = Number(levelStr);
-      const option = tree[level - 1]?.[optionIndex];
+    for (const levelStr of Object.keys(m)) {
+      const option = getChosenOption(abilityId, Number(levelStr));
       if (!option) continue;
       if (option.afflictions) {
         for (const [id, mul] of Object.entries(option.afflictions)) {
@@ -224,15 +273,19 @@
     for (const abilityId of Object.keys(TREES)) {
       const savedLevels = saved[abilityId];
       if (!savedLevels || typeof savedLevels !== 'object') continue;
+      const weaponTyped = isWeaponTyped(abilityId);
       const clean = {};
       // Re-validate sequentially rather than trusting the save blindly, so
       // a hand-edited or corrupted save can't skip straight to level 5.
       let lvl = 1;
       while (lvl <= 5 && savedLevels[lvl] !== undefined) {
-        const idx = Number(savedLevels[lvl]);
-        const options = TREES[abilityId][lvl - 1];
+        const entry = savedLevels[lvl];
+        const type = weaponTyped ? entry?.type : null;
+        if (weaponTyped && type !== 'sharp' && type !== 'blunt') break;
+        const idx = Number(entry?.index);
+        const options = getTree(abilityId, type)?.[lvl - 1];
         if (!Number.isInteger(idx) || idx < 0 || !options || idx >= options.length) break;
-        clean[lvl] = idx;
+        clean[lvl] = { type, index: idx };
         lvl++;
       }
       if (Object.keys(clean).length) meta[abilityId] = clean;
@@ -259,10 +312,11 @@
   if (window.__hobunjiPlayerProfile) loadFromProfile(window.__hobunjiPlayerProfile);
 
   window.CombatProgression = {
+    isWeaponTyped,
     getTree,
     getUnlockedLevel,
     isLevelAvailable,
-    getChosenIndex,
+    getChosenOption,
     choose,
     getEffects,
   };
