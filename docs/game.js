@@ -1357,6 +1357,10 @@
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
+          // No zone-specific cue pack recorded yet — 'general' keeps this
+          // zone from being dead silent (no areaBgm track exists for it
+          // either) until one gets authored, same as farm/town's default.
+          audioIndex: 'general',
         },
         // Western Slope/Eastern Mire have always had real authored layouts in
         // town-workspace-v1.json (unlike the two placeholder zones above), but
@@ -1375,6 +1379,8 @@
           entryCol: 48, entryRow: 20,
           exitCol: 48, exitRow: 20,
           townReturnCol: 1, townReturnRow: 25,
+          // See map_southern_cloud_forest above — no zone-specific cue pack yet.
+          audioIndex: 'general',
         },
         map_eastern_mire: {
           label: 'Eastern Mire',
@@ -1383,6 +1389,8 @@
           entryCol: 1, entryRow: 20,
           exitCol: 1, exitRow: 20,
           townReturnCol: 58, townReturnRow: 25,
+          // See map_southern_cloud_forest above — no zone-specific cue pack yet.
+          audioIndex: 'general',
         },
       };
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
@@ -4847,7 +4855,7 @@
 
         if (_ambientCueState.mode === 'cue_wait') {
           if (performance.now() < _ambientCueState.nextAt) return;
-          if (!cues.length) { _ambientCueState.mode = 'bgm'; return; }
+          if (!cues.length) { _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
           const cue = cues[Math.floor(Math.random() * cues.length)];
           if (!cue?.file) { scheduleNextCueDelay(); return; }
           const fade = musicFadeConfig();
@@ -4883,7 +4891,17 @@
         if (performance.now() < _ambientCueState.nextAt) return;
         const bgmTrack = resolveAreaBgm(currentArea);
         const bgmUrl = bgmTrack?.url || '';
-        if (!bgmUrl) { audioDebug('no eligible bgm for area=' + currentArea + '; retrying bgm resolution soon', 'bgm-missing-' + currentArea, 3000, 'bgm'); _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
+        if (!bgmUrl) {
+          // No areaBgm track configured/eligible for this area (e.g. a
+          // wilderness zone with no music of its own) — fall back to the
+          // ambient cue pool instead of parking in 'bgm' mode forever, which
+          // used to retry bgm resolution every 5s indefinitely and never
+          // give the cue system a turn even when it had cues available.
+          audioDebug('no eligible bgm for area=' + currentArea + '; falling back to ambient cues', 'bgm-missing-' + currentArea, 3000, 'bgm');
+          _ambientCueState.mode = 'cue_wait';
+          _ambientCueState.nextAt = performance.now();
+          return;
+        }
         const fade = musicFadeConfig();
         const bgmBaseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
         const snd = playMusicTrack(bgmUrl, bgmBaseVolume, fade.songFadeInMs, fade.songFadeOutMs);
