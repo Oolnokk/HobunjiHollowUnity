@@ -22,7 +22,12 @@
   // they're willing to hold the button.
   const CHARGE_DRAIN_PER_S = 18;
   const COST_MIN = 16, COST_MAX = 28;
-  const DAMAGE_MUL_MIN = 3.3, DAMAGE_MUL_MAX = 6.6; // ~46-92 vs the demo's 14-damage baseline
+  // Barely stronger than a combo hit on its own (1.05-1.3x, roughly
+  // Forehand Swing to Cleave's own base) — same "heavy attacks are tuned
+  // down, the combo streak is the real payoff" rule as Cleave/Long Lunge
+  // (see combat-combo.js). Scaled further by comboStreak.multiplier() at
+  // release time, below.
+  const DAMAGE_MUL_MIN = 1.05, DAMAGE_MUL_MAX = 1.3;
   // x1.5 on top of the global knockback-base doubling — charged breaker is
   // one of the four attacks called out for an extra "even more" bump.
   const KNOCKBACK_MUL_MIN = 1.275, KNOCKBACK_MUL_MAX = 2.4;
@@ -35,10 +40,13 @@
   const WINDUP_S = 0.52, STRIKE_S = 0.30;
   const POWER = 1.7;
   const HOLD_S = 1; // post-strike pause before easing back to neutral
-  // Big anime-style forward leap on release, far beyond the combo/quick-
-  // attack steps — see game.js's beginCombatLunge. LUNGE_HOP_UNITS is a
+  // Forward leap on release — see game.js's beginCombatLunge. Matched to the
+  // combo's own longest step lunge (Forehand Swing/Short Thrust's 2.0 tiles)
+  // rather than a bespoke bigger number, per the same "barely stronger than
+  // a combo attack" baseline as the damage multipliers above; scaled further
+  // by comboStreak.multiplier() at release time, below. LUNGE_HOP_UNITS is a
   // cosmetic vertical arc peak in world-Y units (not pixels).
-  const LUNGE_TILE_MUL = 7.2; // 3x — 75% of prior 9.6 (four times the base forward lunge)
+  const LUNGE_TILE_MUL = 2.0;
   const LUNGE_HOP_UNITS = 0.45;
 
   function now() { return performance.now() / 1000; }
@@ -97,7 +105,12 @@
       deps.releaseWeaponSwingHold();
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, chargeT));
+      // Charged Breaker isn't a combo hit itself (see combat-combo-streak.js
+      // — only the tap combos build/reset the streak), but its own damage
+      // and lunge scale with whatever streak is currently banked, same as
+      // Cleave/Long Lunge.
+      const streakMul = window.Combat.comboStreak?.multiplier() ?? 1;
+      const damage = Math.round(baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, chargeT) * streakMul);
       const rangePx = baseAbil.rangePx * lerp(RANGE_MUL_MIN, RANGE_MUL_MAX, chargeT);
       const halfConeRad = HALF_CONE_DEG * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, chargeT);
@@ -105,8 +118,8 @@
       const strikeS = STRIKE_S * timeScale;
       // Leap forward into the slam itself, timed to the strike phase —
       // stops early the instant a hostile is inside the slam's own hit
-      // cone instead of always covering the full ~7-tile lunge distance.
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, strikeS, LUNGE_HOP_UNITS, { rangePx, halfConeRad });
+      // cone instead of always covering the full lunge distance.
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL * streakMul, strikeS, LUNGE_HOP_UNITS, { rangePx, halfConeRad });
 
       window.Combat.beginStagedAction({
         windupS: 0,

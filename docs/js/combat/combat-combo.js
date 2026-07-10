@@ -54,10 +54,14 @@
   const SWING_STEPS = [
     { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 16, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 2.0 },
     { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 19, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 1.0 },
-    // Cleave is the combo's 3rd step — gets an extra x1.5 knockback bump
-    // (2.4) on top of the global knockback-base doubling, same as charged
-    // breaker/riposte/flurry; the first two steps stay at their plain mul.
-    { name: 'Cleave',         damageMul: 1.8, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
+    // Cleave is the combo's 3rd step and its `heavy` flag — see the `heavy`
+    // handling in onTap below — barely outdamages Backhand Swing on its own
+    // (1.35 vs 1.25); its actual payoff scales with comboStreak.multiplier(),
+    // built by landing steps 1-2 first (see combat-combo-streak.js). Keeps
+    // an extra x1.5 knockback bump (2.4) on top of the global knockback-base
+    // doubling, same as charged breaker/riposte/flurry — knockback isn't
+    // part of the streak scaling, just damage/lunge.
+    { name: 'Cleave',         damageMul: 1.35, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
   ];
 
   // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
@@ -66,8 +70,12 @@
   const POKE_STEPS = [
     { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.9, staminaCost: 13,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 2.0 },
     { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 9,  rangeMul: 1.35, knockbackMul: 1.1, staminaCost: 16, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 1.0 },
-    // Long Lunge is the poke combo's 3rd step — same extra x1.5 bump as Cleave.
-    { name: 'Long Lunge',   damageMul: 1.7,  halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
+    // Long Lunge is the poke combo's 3rd step and its `heavy` flag — barely
+    // outdamages Step Thrust on its own (1.25 vs 1.15); its real payoff
+    // scales with comboStreak.multiplier() the same way Cleave's does (see
+    // onTap below). Same extra x1.5 knockback bump as Cleave, also excluded
+    // from the streak scaling.
+    { name: 'Long Lunge',   damageMul: 1.25, halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
   ];
 
   function now() { return performance.now() / 1000; }
@@ -112,7 +120,12 @@
         holdS: step.holdS || 0,
       });
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * step.damageMul);
+      // Only the combo's heavy finisher (Cleave/Long Lunge) reads the streak
+      // multiplier — steps 1-2 stay at their plain damageMul regardless of
+      // streak, since they're what build the streak in the first place (see
+      // combat-combo-streak.js).
+      const streakMul = step.heavy ? (window.Combat.comboStreak?.multiplier() ?? 1) : 1;
+      const damage = Math.round(baseAbil.damage * step.damageMul * streakMul);
       const rangePx = baseAbil.rangePx * step.rangeMul;
       const halfConeRad = step.halfConeDeg * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * step.knockbackMul;
@@ -122,7 +135,7 @@
       // early the moment a hostile is inside this step's own hit cone
       // instead of always covering the full lunge distance (see
       // game.js's beginCombatLunge/updateMovement).
-      deps.beginCombatLunge(deps.TILE * step.lungeMul, windupS + strikeS, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(deps.TILE * step.lungeMul * streakMul, windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS,
@@ -142,6 +155,7 @@
             ? (hits > 1 ? `${step.name}: hit ${hits} creatures!` : `${step.name}: hit the ${lastName}!`)
             : `${step.name} connects with nothing.`;
           deps.showToast(msg, hits > 0);
+          window.Combat.comboStreak?.registerHit(hits > 0);
         },
         onComplete: () => { busyAction = null; },
         onCancel: () => { busyAction = null; },
