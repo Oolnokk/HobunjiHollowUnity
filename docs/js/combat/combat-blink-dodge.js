@@ -27,7 +27,8 @@
     // same as every other ability, so a level chosen mid-hold takes effect
     // on the very next zip.
     function effects() {
-      return window.CombatProgression?.getEffects('blinkDodge') || { afflictions: {}, stats: {} };
+      const toolKey = window.Combat.deps?.currentWeaponKey?.() || 'none';
+      return window.CombatProgression?.getEffects(toolKey, 'blinkDodge') || { afflictions: {}, stats: {} };
     }
 
     function speedMul() {

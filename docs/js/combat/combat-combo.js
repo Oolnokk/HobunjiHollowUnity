@@ -96,9 +96,10 @@
 
       // Every affliction this combo can inflict, and every stat bonus on top
       // of the base numbers below, comes from the player's own chosen
-      // upgrades (see combat-progression.js) — a fresh, unleveled combo
-      // deals plain damage with no afflictions at all.
-      const effects = window.CombatProgression?.getEffects(id) || { afflictions: {}, stats: {} };
+      // upgrades on the equipped weapon's own mastery track (see combat-
+      // progression.js) — a fresh, unleveled combo deals plain damage with
+      // no afflictions at all.
+      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted (see resource-system.js's spendStamina) instead of
@@ -162,6 +163,7 @@
             : `${step.name} connects with nothing.`;
           deps.showToast(msg, hits > 0);
           window.Combat.comboStreak?.registerHit(hits > 0);
+          if (hits > 0) deps.awardWeaponMasteryXp();
         },
         onComplete: () => { busyAction = null; },
         onCancel: () => { busyAction = null; },

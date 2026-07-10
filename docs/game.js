@@ -1444,7 +1444,15 @@
       // technique is equipped, since it's the physical weapon doing the
       // wounding either way.
       function currentWeaponDamageType() {
-        return TOOL_ITEM_DEFS[equipmentSlots.weapon]?.dmgType || 'sharp';
+        return weaponDamageTypeForTool(equipmentSlots.weapon);
+      }
+
+      // Same as currentWeaponDamageType(), but for any tool key — not just
+      // whichever is currently equipped. combat-progression.js's per-tool
+      // progression resolves a tool's own choices through its own fixed
+      // dmgType even while a *different* weapon is equipped.
+      function weaponDamageTypeForTool(itemKey) {
+        return TOOL_ITEM_DEFS[itemKey]?.dmgType || 'sharp';
       }
 
       // Keys the weapon-tool loadout's per-weapon slot assignments (see
@@ -1458,6 +1466,73 @@
       // Display label for the loadout UI's "saved for: <weapon>" note.
       function currentWeaponLabel() {
         return TOOL_ITEM_DEFS[equipmentSlots.weapon]?.label || null;
+      }
+
+      // ── Tool mastery ("your trusty axe/shovel/pick/spear") ────────────
+      // Cumulative XP needed to reach levels 1-5 — a tool's own affinity,
+      // built up through both combat and ordinary tool use, entirely
+      // separate from the Motes of Prowess spent on its abilities' upgrade
+      // choices (see combat-progression.js). Placeholder tuning; easy to
+      // rebalance later without touching the mechanism.
+      const MASTERY_XP_THRESHOLDS = [40, 90, 150, 220, 300];
+      const MASTERY_XP_PER_COMBAT_HIT = 2;
+      const MASTERY_XP_PER_TOOL_USE = 1;
+
+      function toolMasteryXp(itemKey) {
+        return gearInventory?.toolMastery?.[itemKey]?.xp || 0;
+      }
+
+      function toolMasteryLevel(itemKey) {
+        if (!itemKey || !TOOL_ITEM_DEFS[itemKey]) return 0;
+        const xp = toolMasteryXp(itemKey);
+        let level = 0;
+        while (level < MASTERY_XP_THRESHOLDS.length && xp >= MASTERY_XP_THRESHOLDS[level]) level++;
+        return level;
+      }
+
+      function awardToolMasteryXp(itemKey, amount) {
+        if (!itemKey || !TOOL_ITEM_DEFS[itemKey] || !(amount > 0) || !gearInventory) return;
+        if (!gearInventory.toolMastery[itemKey]) gearInventory.toolMastery[itemKey] = { xp: 0 };
+        gearInventory.toolMastery[itemKey].xp += amount;
+        saveGearInventory();
+      }
+
+      // Called from every weapon-tool ability's onStrike once it's actually
+      // landed a hit (see combat-*.js) — grows whichever tool is currently
+      // equipped as the weapon.
+      function awardWeaponMasteryXp() {
+        awardToolMasteryXp(equipmentSlots.weapon, MASTERY_XP_PER_COMBAT_HIT);
+      }
+
+      // Called from a successful hoe/shovel/axe/pick/harpoon action —
+      // ordinary tool use also builds a tool's affinity, not just combat.
+      function awardToolUseMasteryXp(tool) {
+        awardToolMasteryXp(equipmentSlots[tool], MASTERY_XP_PER_TOOL_USE);
+      }
+
+      // ── Motes of Prowess ────────────────────────────────────────────
+      // Spent on ability-upgrade choices (see combat-progression.js);
+      // earned from combat (creature kills) and other future sources.
+      // Placeholder tuning — combat quests etc. are a later addition.
+      const MOTES_PER_KILL = 1;
+
+      function getMotesOfProwess() {
+        return gearInventory?.motesOfProwess || 0;
+      }
+
+      function awardMotesOfProwess(amount) {
+        if (!(amount > 0) || !gearInventory) return;
+        gearInventory.motesOfProwess = (gearInventory.motesOfProwess || 0) + amount;
+        saveGearInventory();
+      }
+
+      // Returns false without spending anything if the player can't afford it.
+      function spendMotesOfProwess(amount) {
+        if (!(amount > 0) || !gearInventory) return false;
+        if ((gearInventory.motesOfProwess || 0) < amount) return false;
+        gearInventory.motesOfProwess -= amount;
+        saveGearInventory();
+        return true;
       }
 
       window.ToolIconRender?.warm(Object.values(TOOL_ITEM_DEFS).map(d => d.sprite));
@@ -1515,6 +1590,19 @@
           whistles: [
             { id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' },
           ],
+          // toolMastery[itemKey] = { xp } — each literal tool instance's own
+          // affinity, gained through both combat (see awardWeaponMasteryXp)
+          // and ordinary tool use (see awardToolUseMasteryXp). Its level (see
+          // toolMasteryLevel()) gates which of that tool's own equipped
+          // abilities' 5 upgrade levels can be chosen — see
+          // combat-progression.js.
+          toolMastery: {},
+          // Spent on ability-upgrade choices (level N choice costs N motes —
+          // see combat-progression.js); earned from combat (creature kills)
+          // and other future sources. Character save data, not world data.
+          // Starting stipend so a fresh character can make a few choices
+          // without having to grind kills first.
+          motesOfProwess: 20,
         };
       }
 
@@ -2795,6 +2883,10 @@
         if (c.health <= 0) {
           hostileObjects.delete(c);
           companionObjects.delete(c);
+          // A killed wild creature is the starting source of Motes of
+          // Prowess — spent on ability-upgrade choices (see combat-
+          // progression.js). Not awarded for a downed companion.
+          if (!c.isCompanion) awardMotesOfProwess(MOTES_PER_KILL);
           beginCreatureDeath(c, fromX, fromY);
           return;
         }
@@ -3873,9 +3965,19 @@
         performDodge,
         currentComboAbilityId,
         currentWeaponDamageType,
+        weaponDamageTypeForTool,
         currentWeaponKey,
         equipmentSlots,
         equipItem,
+        toolMasteryLevel,
+        toolMasteryXp,
+        awardToolMasteryXp,
+        awardWeaponMasteryXp,
+        awardToolUseMasteryXp,
+        getMotesOfProwess,
+        awardMotesOfProwess,
+        spendMotesOfProwess,
+        gearInventory: () => gearInventory,
         TILE,
       };
 
@@ -9257,7 +9359,7 @@
         if (detailEl) detailEl.style.display  = '';
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
         set('iiIcon',  def.icon);
-        set('iiName',  def.label + ' (Gear)');
+        set('iiName',  def.label + ' (Gear) — Mastery ' + toolMasteryLevel(key) + '/5');
         set('iiPrice', 'Permanent — not sellable');
         set('iiTags',  def.slots.map(t => '<span class="ii-tag">' + t + '</span>').join(''));
         set('iiDesc',  'This tool is in your gear inventory. Assign it to an equipment slot to use it.');
@@ -9274,6 +9376,52 @@
               buildEquipmentSlots(); selectGearTool(key);
             });
           }
+        }
+      }
+
+      // Clicking a Tool Slot cell (instead of an Owned Tools item) shows
+      // every gear tool that fits THAT slot as one-click assign buttons —
+      // no need to separately pick a slot afterward, since it's already
+      // known from context. Shows each tool's own Mastery level too.
+      function selectEquipSlot(slot) {
+        invSelectedKey = null;
+        document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
+        const emptyEl  = document.getElementById('iiEmpty');
+        const detailEl = document.getElementById('iiDetail');
+        if (emptyEl)  emptyEl.style.display  = 'none';
+        if (detailEl) detailEl.style.display  = '';
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
+        const currentKey = equipmentSlots[slot];
+        const currentDef = currentKey ? TOOL_ITEM_DEFS[currentKey] : null;
+        const slotLabel = slot.charAt(0).toUpperCase() + slot.slice(1);
+        set('iiIcon', currentDef?.icon || '❔');
+        set('iiName', slotLabel + ' Slot');
+        set('iiPrice', currentDef ? 'Currently: ' + currentDef.label : 'Currently: empty');
+        set('iiTags', '');
+        set('iiDesc', 'Click a tool below to assign it to this slot.');
+        const actEl = document.getElementById('iiActions');
+        if (!actEl) return;
+        actEl.innerHTML = '';
+        const eligible = Object.keys(gearInventory?.tools || {})
+          .filter(k => gearInventory.tools[k] && TOOL_ITEM_DEFS[k]?.slots.includes(slot));
+        if (!eligible.length) {
+          const none = document.createElement('div');
+          none.className = 'ii-tag';
+          none.textContent = 'No tools in gear fit the ' + slotLabel + ' slot.';
+          actEl.appendChild(none);
+          return;
+        }
+        for (const key of eligible) {
+          const def = TOOL_ITEM_DEFS[key];
+          const isAssigned = equipmentSlots[slot] === key;
+          const b = document.createElement('button');
+          b.className = 'ii-btn equip';
+          b.textContent = `${def.label} — Mastery ${toolMasteryLevel(key)}/5` + (isAssigned ? ' (assigned)' : '');
+          b.onclick = () => {
+            if (isAssigned) unequipItem(slot); else equipItem(key, slot);
+            buildEquipmentSlots(); selectEquipSlot(slot);
+          };
+          actEl.appendChild(b);
         }
       }
 
@@ -9417,7 +9565,11 @@
           lbl.className = 'ies-label';
           lbl.textContent = slot.charAt(0).toUpperCase() + slot.slice(1);
           cell.appendChild(lbl);
-          cell.addEventListener('click', () => { setActiveTool(slot); buildEquipmentSlots(); });
+          // Clicking the slot itself shows every tool that fits it as
+          // one-click assign buttons in the item-info panel — you don't
+          // need to separately pick an item then a slot for it, the way
+          // clicking an Owned Tools item (selectGearTool) still also works.
+          cell.addEventListener('click', () => { setActiveTool(slot); buildEquipmentSlots(); selectEquipSlot(slot); });
           toolRow.appendChild(cell);
         }
         sec.appendChild(toolRow);
@@ -9436,13 +9588,13 @@
             const def = TOOL_ITEM_DEFS[key];
             const cell = document.createElement('div');
             cell.className = 'inv-equip-slot';
-            cell.setAttribute('title', def.label + ' — click to assign');
+            cell.setAttribute('title', def.label + ' (Mastery ' + toolMasteryLevel(key) + '/5) — click to assign');
             const img = document.createElement('img');
             img.src = def.sprite; img.className = 'ies-sprite'; img.alt = def.label;
             cell.appendChild(img);
             const lbl = document.createElement('span');
             lbl.className = 'ies-label';
-            lbl.textContent = def.label.split(' ')[0];
+            lbl.textContent = def.label.split(' ')[0] + ' Lv' + toolMasteryLevel(key);
             cell.appendChild(lbl);
             cell.addEventListener('click', () => selectGearTool(key));
             gearRow.appendChild(cell);
@@ -10578,6 +10730,7 @@
         if (tool === 'shovel') {
           if (action === 'dig' && tile.type === TileType.TRENCH) {
             tile.depth = 1;
+            awardToolUseMasteryXp('shovel');
             return { ok: true, message: 'Redug the trench back to full depth.' };
           }
           const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile);
@@ -10586,12 +10739,14 @@
           if (action === 'raise') tile.type = TileType.RAISED;
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           const digMsg = dugVegetation ? 'Dug a trench and cleared the vegetation above it.' : `${tileStyles[tile.type].label} — ${contextualActionLabel(action, tile)}.`;
+          awardToolUseMasteryXp('shovel');
           return { ok: true, message: digMsg };
         }
 
         if (tool === 'hoe') {
           tile.type = action === 'till' ? TileType.TILLED : TileType.GRASS;
           if (action === 'smooth') tile.crop = CropType.NONE;
+          awardToolUseMasteryXp('hoe');
           return { ok: true, message: action === 'till' ? 'Tilled a plantable bed.' : 'Smoothed the tile back into grass.' };
         }
 
@@ -10599,6 +10754,7 @@
           const result = clearVegetationAt(col, row, action);
           const isWide = action === 'slash' || action === 'hack';
           if (result.cleared <= 0) return { ok: false, message: isWide ? 'Found no overgrowth in the swing.' : 'No overgrowth to clear here.' };
+          if (tool === 'axe') awardToolUseMasteryXp('axe'); // machete isn't a gear tool — no mastery of its own
           return {
             ok: true,
             message: isWide
@@ -10625,6 +10781,7 @@
         if (tool === 'pick') {
           if (action === 'dig' && tile.type === TileType.TRENCH) {
             tile.depth = 1;
+            awardToolUseMasteryXp('pick');
             return { ok: true, message: 'Redug the trench back to full depth.' };
           }
           const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile);
@@ -10633,6 +10790,7 @@
           if (action === 'raise') tile.type = TileType.RAISED;
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           const digMsg = dugVegetation ? 'Loosened the earth and cleared the vegetation.' : `${tileStyles[tile.type].label} — ${contextualActionLabel(action, tile)}.`;
+          awardToolUseMasteryXp('pick');
           return { ok: true, message: digMsg };
         }
 
@@ -11383,6 +11541,7 @@
           fm.message = `Caught a ${fm.fishDef.label}! ${fm.fishDef.icon}`;
           fm.messageType = 'good';
           lastActionMessage = fm.message;
+          awardToolUseMasteryXp('harpoon');
           return;
         }
         beginFishEscapeRespawn(fm);
@@ -18851,6 +19010,8 @@
         if (!gearInventory.whistles || !gearInventory.whistles.length) {
           gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];
         }
+        if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
+        if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
         ensureGearClothingCollection();
         // Set default equipment slot assignments
         if (gearInventory.tools.bronzehoe)  equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
@@ -18931,10 +19092,19 @@
         // Picks which affliction-option flavor every weapon-tool ability
         // offers (see combat-progression.js).
         currentWeaponDamageType,
+        weaponDamageTypeForTool,
         // Keys the loadout's per-weapon slot assignments (see
         // combat-loadout.js).
         currentWeaponKey,
         currentWeaponLabel,
+        // Tool mastery ("trusty axe/shovel/pick/spear") gates which of a
+        // tool's own equipped abilities' 5 upgrade levels can be chosen;
+        // Motes of Prowess pay for actually making that choice — both see
+        // combat-progression.js.
+        toolMasteryLevel,
+        awardWeaponMasteryXp,
+        getMotesOfProwess,
+        spendMotesOfProwess,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module

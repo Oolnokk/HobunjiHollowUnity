@@ -95,7 +95,7 @@
       // of the base numbers below, comes from the player's own chosen
       // upgrades (see combat-progression.js) — a fresh, unleveled breaker
       // deals plain damage with no afflictions at all.
-      const effects = window.CombatProgression?.getEffects('chargedBreaker') || { afflictions: {}, stats: {} };
+      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker') || { afflictions: {}, stats: {} };
       // Never refuses for lack of stamina once it's ready to release —
       // overspending pushes into Exhausted instead of fizzling the slam
       // (see resource-system.js's spendStamina). Exhausted's reduced speed
@@ -145,6 +145,7 @@
             ? `Charged Breaker (${pct}% charge): hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
             : `Charged Breaker (${pct}% charge) connects with nothing.`;
           deps.showToast(msg, hits > 0);
+          if (hits > 0) deps.awardWeaponMasteryXp();
         },
       });
     }

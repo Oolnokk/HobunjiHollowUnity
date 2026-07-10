@@ -105,7 +105,7 @@
       // of the base numbers below, comes from the player's own chosen
       // upgrades (see combat-progression.js) — a fresh, unleveled jab deals
       // plain damage with no afflictions at all.
-      const effects = window.CombatProgression?.getEffects(id) || { afflictions: {}, stats: {} };
+      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead of blocking the jab (see resource-system.js's
@@ -147,6 +147,7 @@
             ? `${tech.name}: ${tech.sourceText} — hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
             : `${tech.name}: ${tech.sourceText}, but connects with nothing.`;
           deps.showToast(msg, hits > 0);
+          if (hits > 0) deps.awardWeaponMasteryXp();
         },
         onComplete: () => { busyAction = null; },
         onCancel: () => { busyAction = null; },

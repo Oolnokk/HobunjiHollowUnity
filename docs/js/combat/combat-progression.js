@@ -1,35 +1,38 @@
 // Combat ability progression — each of the 10 weapon-tool abilities has 5
-// levels; at each one the player picks ONE of 2+ upgrade options, and that
-// choice is permanent (no respec) and additive with every other level's
-// choice on that same ability. No ability applies any affliction damage on
-// its own — every affliction an attack can inflict comes from a level
-// chosen here (see resource-system.js's applyDamage, which now takes an
-// explicit opts.afflictionBonuses map instead of guessing from a damage
-// tag). Level N only opens up once level N-1 has been chosen (level 1 is
-// always available) — "the amount of options tends to open up at each
-// level" per the design brief, and a level can't be skipped past.
+// levels; at each one the player picks ONE of 2+ upgrade options. No
+// ability applies any affliction damage on its own — every affliction an
+// attack can inflict comes from a level chosen here (see resource-
+// system.js's applyDamage, which takes an explicit opts.afflictionBonuses
+// map instead of guessing from a damage tag).
+//
+// Progression is scoped to the literal TOOL INSTANCE an ability is
+// equipped on (game.js's currentWeaponKey() — "your trusty axe"), not
+// shared globally across every weapon: a tool has its own Mastery level
+// (0-5, game.js's toolMasteryLevel() — built up through both combat and
+// ordinary tool use), and that mastery gates how many of ITS OWN equipped
+// abilities' 5 levels can be chosen. Level N only opens up once level N-1
+// has been chosen AND the tool's mastery has reached N (level 1 is always
+// choosable once mastery reaches 1) — "the amount of options tends to open
+// up at each level" per the design brief, and a level can't be skipped
+// past. Actually making (or later changing) a level's choice costs Motes
+// of Prowess — N motes for level N, earned from combat and other sources
+// (game.js's awardMotesOfProwess/spendMotesOfProwess).
 //
 // Every ability except Blink Dodge (which deals no damage of its own) is
 // "weapon-typed": which set of options it offers at a given level depends
-// on the currently equipped weapon's dmgType (see game.js's
-// currentWeaponDamageType() — 'sharp' or 'blunt', TOOL_ITEM_DEFS). Only the
-// chosen SLOT (level -> option index) is stored — not which type was
-// active when it was picked — so the whole build always resolves through
-// whichever weapon type is equipped right now: swap weapon types and every
-// already-chosen level's effect reinterprets to that type's option at the
-// same slot, rather than staying stuck on whatever type happened to be
-// equipped when each individual level was picked (which would let a single
-// ability accumulate a mix of both sharp and blunt effects at once).
-// Progression levels themselves are entirely global — shared across every
-// weapon (see combat-loadout.js for what IS per-weapon: which ability
-// occupies each loadout slot) — and persist as character save data.
+// on ITS OWNING TOOL's fixed dmgType (see game.js's
+// weaponDamageTypeForTool() — 'sharp' or 'blunt', TOOL_ITEM_DEFS). Since a
+// tool's dmgType never changes and its progression is scoped to that one
+// tool instance, a single tool's build can never end up a mix of both
+// sharp and blunt effects — unlike a shared-across-weapons design would.
 //
-// Ability modules read their unlocked bonuses via getEffects(abilityId),
-// which merges every chosen level's afflictions (summed per-affliction-id,
-// each value a multiplier against the hit's own damage — same convention
-// resource-system.js's old tag-based sharpBleedMul/bluntBruiseMul/etc. used)
-// and stat bonuses (summed per stat key; each ability module interprets
-// only the stat keys relevant to it and ignores the rest).
+// Ability modules read their unlocked bonuses via getEffects(toolKey,
+// abilityId), which merges every chosen level's afflictions (summed per-
+// affliction-id, each value a multiplier against the hit's own damage —
+// same convention resource-system.js's old tag-based sharpBleedMul/
+// bluntBruiseMul/etc. used) and stat bonuses (summed per stat key; each
+// ability module interprets only the stat keys relevant to it and ignores
+// the rest).
 (() => {
   "use strict";
   if (!window.Combat) { console.error('combat-progression.js requires combat-core.js to load first'); return; }
@@ -204,65 +207,91 @@
     return t[weaponType] || t.sharp;
   }
 
-  // meta[abilityId] = { 1: optionIndex, 2: optionIndex, ... } — only
-  // sequentially-chosen levels are present; level 1 is always choosable.
-  // Only the INDEX is stored, not which weapon type was active when it was
-  // picked — every level's actual effect always resolves through whichever
-  // weapon type is equipped right now (see getChosenOption/getEffects
-  // below), so the whole build stays internally consistent with a single
-  // damage type at all times. Swapping weapon type reinterprets every
-  // already-chosen level's effect to that type's option at the same slot,
-  // rather than letting different levels permanently lock to whatever type
-  // happened to be equipped when each one was picked (which let a build
-  // accumulate a mix of both sharp and blunt effects on the same ability).
+  // meta[toolKey][abilityId] = { 1: optionIndex, 2: optionIndex, ... } —
+  // progression is scoped to the literal tool instance an ability was
+  // leveled on (game.js's currentWeaponKey()/equipmentSlots.weapon —
+  // "your trusty axe", not just "combos in general"), not shared globally
+  // across every weapon. A tool's own dmgType is fixed for its whole
+  // lifetime (see game.js's weaponDamageTypeForTool()), so a single tool
+  // instance's choices can never end up a mix of sharp and blunt effects —
+  // only sequentially-chosen levels are present; level 1 is always
+  // choosable (gated by that tool's own mastery — see getLevelState below).
   let meta = {};
 
-  function getUnlockedLevel(abilityId) {
-    const m = meta[abilityId];
+  function getUnlockedLevel(toolKey, abilityId) {
+    const m = meta[toolKey]?.[abilityId];
     if (!m) return 0;
     let lvl = 0;
     while (m[lvl + 1] !== undefined) lvl++;
     return lvl;
   }
 
-  function isLevelAvailable(abilityId, level) {
-    if (!TREES[abilityId] || level < 1 || level > 5) return false;
-    return level <= getUnlockedLevel(abilityId) + 1;
+  function masteryLevel(toolKey) {
+    return window.Combat.deps?.toolMasteryLevel?.(toolKey) ?? 0;
   }
 
-  function currentWeaponType() {
-    return window.Combat.deps?.currentWeaponDamageType?.() || 'sharp';
+  function weaponTypeForTool(toolKey) {
+    return window.Combat.deps?.weaponDamageTypeForTool?.(toolKey) || 'sharp';
   }
+
+  // 'chosen': already picked — clicking it again lets the player change it
+  // (same mote cost as picking it fresh). 'available': not picked yet, but
+  // this tool's mastery is high enough and every earlier level is already
+  // chosen, so it can be picked right now. 'mastery-locked': it's next in
+  // line but this tool hasn't reached that mastery level yet. 'locked':
+  // unreachable (a level further out than the very next one).
+  function getLevelState(toolKey, abilityId, level) {
+    if (!TREES[abilityId] || level < 1 || level > 5) return 'locked';
+    const unlocked = getUnlockedLevel(toolKey, abilityId);
+    if (level <= unlocked) return 'chosen';
+    if (level !== unlocked + 1) return 'locked';
+    return level <= masteryLevel(toolKey) ? 'available' : 'mastery-locked';
+  }
+
+  function isLevelAvailable(toolKey, abilityId, level) {
+    return getLevelState(toolKey, abilityId, level) === 'available';
+  }
+
+  // Motes of Prowess cost to pick (or change) a level's choice — level N
+  // costs N motes, whether it's being picked for the first time or changed.
+  function moteCostForLevel(level) { return level; }
 
   // Returns the actual chosen option object ({label, desc, afflictions?,
-  // stat?}) for the CURRENTLY equipped weapon's type. null if nothing's
-  // been chosen at that level yet.
-  function getChosenOption(abilityId, level) {
-    const idx = meta[abilityId]?.[level];
+  // stat?}) for this tool instance. null if nothing's been chosen at that
+  // level yet.
+  function getChosenOption(toolKey, abilityId, level) {
+    const idx = meta[toolKey]?.[abilityId]?.[level];
     if (idx === undefined) return null;
-    const weaponType = isWeaponTyped(abilityId) ? currentWeaponType() : null;
+    const weaponType = isWeaponTyped(abilityId) ? weaponTypeForTool(toolKey) : null;
     return getTree(abilityId, weaponType)?.[level - 1]?.[idx] || null;
   }
 
-  function choose(abilityId, level, optionIndex) {
-    if (!TREES[abilityId] || !isLevelAvailable(abilityId, level)) return false;
-    const weaponType = isWeaponTyped(abilityId) ? currentWeaponType() : null;
+  // Spends moteCostForLevel(level) Motes of Prowess — fails without
+  // spending anything if the level isn't choosable (wrong mastery/sequence)
+  // or the player can't afford it.
+  function choose(toolKey, abilityId, level, optionIndex) {
+    const state = getLevelState(toolKey, abilityId, level);
+    if (state !== 'chosen' && state !== 'available') return false;
+    const weaponType = isWeaponTyped(abilityId) ? weaponTypeForTool(toolKey) : null;
     const options = getTree(abilityId, weaponType)?.[level - 1];
     if (!options || optionIndex < 0 || optionIndex >= options.length) return false;
-    if (!meta[abilityId]) meta[abilityId] = {};
-    meta[abilityId][level] = optionIndex;
+    if (!window.Combat.deps?.spendMotesOfProwess?.(moteCostForLevel(level))) return false;
+    if (!meta[toolKey]) meta[toolKey] = {};
+    if (!meta[toolKey][abilityId]) meta[toolKey][abilityId] = {};
+    meta[toolKey][abilityId][level] = optionIndex;
     persist();
     return true;
   }
 
   // Merges every chosen level's afflictions (summed per id) and stat
-  // bonuses (summed per key) for one ability into a single flat object.
-  function getEffects(abilityId) {
+  // bonuses (summed per key) for one ability *on this tool* into a single
+  // flat object.
+  function getEffects(toolKey, abilityId) {
     const afflictions = {};
     const stats = {};
-    const m = meta[abilityId] || {};
+    const m = meta[toolKey]?.[abilityId] || {};
     for (const levelStr of Object.keys(m)) {
-      const option = getChosenOption(abilityId, Number(levelStr));
+      const option = getChosenOption(toolKey, abilityId, Number(levelStr));
       if (!option) continue;
       if (option.afflictions) {
         for (const [id, mul] of Object.entries(option.afflictions)) {
@@ -283,24 +312,29 @@
   function load(saved) {
     meta = {};
     if (!saved || typeof saved !== 'object') return;
-    for (const abilityId of Object.keys(TREES)) {
-      const savedLevels = saved[abilityId];
-      if (!savedLevels || typeof savedLevels !== 'object') continue;
-      const clean = {};
-      // Re-validate sequentially rather than trusting the save blindly, so
-      // a hand-edited or corrupted save can't skip straight to level 5.
-      // Every weapon-type variant of a given ability's tree has the same
-      // option count per level (see the tree factories above), so bounds-
-      // checking against either variant is equivalent here.
-      let lvl = 1;
-      while (lvl <= 5 && savedLevels[lvl] !== undefined) {
-        const idx = Number(savedLevels[lvl]);
-        const options = getTree(abilityId, 'sharp')?.[lvl - 1];
-        if (!Number.isInteger(idx) || idx < 0 || !options || idx >= options.length) break;
-        clean[lvl] = idx;
-        lvl++;
+    for (const [toolKey, abilityMap] of Object.entries(saved)) {
+      if (!abilityMap || typeof abilityMap !== 'object') continue;
+      const weaponType = weaponTypeForTool(toolKey);
+      for (const abilityId of Object.keys(TREES)) {
+        const savedLevels = abilityMap[abilityId];
+        if (!savedLevels || typeof savedLevels !== 'object') continue;
+        const treeType = isWeaponTyped(abilityId) ? weaponType : null;
+        const clean = {};
+        // Re-validate sequentially rather than trusting the save blindly,
+        // so a hand-edited or corrupted save can't skip straight to level 5.
+        let lvl = 1;
+        while (lvl <= 5 && savedLevels[lvl] !== undefined) {
+          const idx = Number(savedLevels[lvl]);
+          const options = getTree(abilityId, treeType)?.[lvl - 1];
+          if (!Number.isInteger(idx) || idx < 0 || !options || idx >= options.length) break;
+          clean[lvl] = idx;
+          lvl++;
+        }
+        if (Object.keys(clean).length) {
+          if (!meta[toolKey]) meta[toolKey] = {};
+          meta[toolKey][abilityId] = clean;
+        }
       }
-      if (Object.keys(clean).length) meta[abilityId] = clean;
     }
   }
 
@@ -327,7 +361,9 @@
     isWeaponTyped,
     getTree,
     getUnlockedLevel,
+    getLevelState,
     isLevelAvailable,
+    moteCostForLevel,
     getChosenOption,
     choose,
     getEffects,

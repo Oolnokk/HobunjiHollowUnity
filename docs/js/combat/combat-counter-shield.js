@@ -56,7 +56,7 @@
     function tryAbsorb(amount) {
       if (!active) return false;
       const deps = window.Combat.deps;
-      const effects = window.CombatProgression?.getEffects('counterShield') || { afflictions: {}, stats: {} };
+      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'counterShield') || { afflictions: {}, stats: {} };
       const staminaCost = Math.max(MIN_STAMINA_TO_RAISE, amount * 0.5) * (1 + (effects.stats.absorbMul || 0));
       // Never refuses — like the source demo's dodge reaction, blocking a
       // big hit can overdraw straight into Exhausted (see resource-
@@ -111,7 +111,10 @@
             lastName = c.def.label;
           }
           deps.spawnCombatTrailEffect({ rangePx, halfConeRad, angle: deps.player.angle, ok: hits > 0 });
-          if (hits > 0) deps.showToast(`Shield Counter Riposte: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
+          if (hits > 0) {
+            deps.showToast(`Shield Counter Riposte: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
+            deps.awardWeaponMasteryXp();
+          }
         },
       });
     }
@@ -132,7 +135,7 @@
     function onHoldUpdate(_slot, dt) {
       if (!active) return;
       const deps = window.Combat.deps;
-      const drainMul = 1 + (window.CombatProgression?.getEffects('counterShield')?.stats.drainMul || 0);
+      const drainMul = 1 + (window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'counterShield')?.stats.drainMul || 0);
       window.ResourceSystem?.spendStamina(deps.player, Math.min(deps.player.stamina, DRAIN_PER_S * drainMul * dt), 'Counter Shield (holding)');
       if (deps.player.stamina <= 0) {
         active = false;

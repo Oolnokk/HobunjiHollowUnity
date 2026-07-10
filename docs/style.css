@@ -1442,10 +1442,15 @@
     }
     .loadout-level .lv-num { display: block; font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace; font-size: 11px; }
     .loadout-level .lv-label { display: block; font-size: 8px; line-height: 1.2; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .loadout-level.chosen { border-color: var(--accent); background: rgba(249,226,138,0.14); color: var(--accent); }
+    .loadout-level.chosen { border-color: var(--accent); background: rgba(249,226,138,0.14); color: var(--accent); cursor: pointer; }
+    .loadout-level.chosen:hover { background: rgba(249,226,138,0.22); }
     .loadout-level.available { border-color: rgba(127,232,154,0.5); color: #7fe89a; cursor: pointer; }
     .loadout-level.available:hover { background: rgba(127,232,154,0.10); }
     .loadout-level.locked { opacity: 0.4; }
+    /* Available (mastery reached) but not enough Motes of Prowess yet —
+       distinct from .locked (mastery/sequence gate) so the player can tell
+       the two "can't choose yet" reasons apart at a glance. */
+    .loadout-level.insufficient { border-color: rgba(255,180,80,0.4); color: #ffb450; opacity: 0.75; }
     .loadout-options {
       display: flex; flex-direction: column; gap: 5px; margin-top: 8px;
       padding: 8px; border-radius: 8px; background: rgba(0,0,0,0.18); border: 1px solid var(--border);

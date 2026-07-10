@@ -46,7 +46,7 @@
       // top of the base numbers below, comes from the player's own chosen
       // upgrades (see combat-progression.js) — a fresh, unleveled flurry
       // deals plain damage with no afflictions at all.
-      const effects = window.CombatProgression?.getEffects('acceleratingFlurry') || { afflictions: {}, stats: {} };
+      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'acceleratingFlurry') || { afflictions: {}, stats: {} };
       const cost = (COST_BASE + count * COST_PER_STRIKE) * (1 + (effects.stats.staminaCostMul || 0));
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead of hard-stopping the flurry (see resource-
@@ -95,7 +95,10 @@
             lastName = c.def.label;
           }
           deps.spawnCombatTrailEffect({ rangePx, halfConeRad: halfConeDeg * Math.PI / 180, angle: strikeAngle, ok: hits > 0 });
-          if (hits > 0) deps.showToast(`Flurry Strike ${strikeIndex}: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
+          if (hits > 0) {
+            deps.showToast(`Flurry Strike ${strikeIndex}: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`, true);
+            deps.awardWeaponMasteryXp();
+          }
         },
       });
 
