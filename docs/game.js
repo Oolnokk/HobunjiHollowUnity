@@ -4551,22 +4551,23 @@
       // smoothly and boosted past the element's volume<=1 ceiling (needed to
       // normalize quiet tracks up to the target level). Falls back to plain
       // `snd.volume` (capped at 1, no boosting) if Web Audio is unavailable.
+      //
+      // Disabled (always returns null) as of a live debugging session: bgs
+      // tracks (birds/wind/nightbugs — see setLoopingBgs), which use plain
+      // `snd.volume` and never touch this GainNode graph, were reliably
+      // audible; bgm/cues routed through this graph were not, even while
+      // every JS-visible signal reported healthy (ctx.state === 'running',
+      // live gain at its ramped target, unmuted — see the diagnostic in
+      // gameLoop's audio tick). That combination means the graph's actual
+      // connection to ctx.destination isn't reaching real output in this
+      // environment, which nothing on the JS side can detect or recover
+      // from — so route bgm/cues through the same plain-volume path that's
+      // proven to work instead. Left in place (rather than deleted) in case
+      // a future environment's Web Audio destination behaves correctly and
+      // this is worth re-enabling; loudness-boosting quiet tracks above
+      // volume 1.0 is the one feature lost by staying on the plain path.
       function attachMusicGain(snd) {
-        const ctx = getMusicAudioCtx();
-        if (!ctx) return null;
-        if (_musicGainNodes.has(snd)) return _musicGainNodes.get(snd);
-        try {
-          const source = ctx.createMediaElementSource(snd);
-          const gain = ctx.createGain();
-          gain.gain.value = 0;
-          source.connect(gain).connect(ctx.destination);
-          const node = { ctx, gain, target: 0 };
-          _musicGainNodes.set(snd, node);
-          return node;
-        } catch (e) {
-          audioDebug('music gain attach failed ' + snd.src + ': ' + (e?.message || e), 'music-gain-attach-fail', 0);
-          return null;
-        }
+        return null;
       }
 
       function releaseMusicGain(snd) {
