@@ -3998,6 +3998,8 @@
         toolHolder: () => toolHolder,
         spawnWeaponGhost: () => spawnWeaponGhost(),
         updateWeaponGhostTrails,
+        updateToolMesh,
+        triggerWeaponSwingVisual,
         setActiveTool,
         TILE,
       };
@@ -14763,6 +14765,11 @@
       // matching the pattern used by buildAnimalPlaneAvatarModel (modelWidth × h/w).
       const TOOL_MODEL_WIDTH = 0.5;
 
+      // How far (world units) a swinging tool's sprite top edge (blade/head
+      // end) stretches outward at peak swing motion — see updateToolMesh's
+      // motion-stretch block, right after spinPlane's own twist/mirror.
+      const WEAPON_STRETCH_MAX_UNITS = 0.16;
+
       // Preload tool sprite textures; capture pixel dimensions on load and rebuild meshes
       const _toolTexLoader = new THREE.TextureLoader();
       const toolTextures = {};
@@ -14806,6 +14813,19 @@
         // from whichever anim is actually playing rather than baked in per-item here — see
         // updateToolMesh's baseRotZ for why.
         g.userData.toolPlane = plane;
+        // Cache which vertices form the sprite's top edge (the blade/head
+        // end, farthest from the hand grip) and their neutral Y, so
+        // updateToolMesh's motion-stretch effect can push just that edge
+        // outward each frame without re-deriving it every time or guessing
+        // at PlaneGeometry's internal vertex order.
+        const posAttr = geo.attributes.position;
+        const topIndices = [];
+        const topBaseY = [];
+        for (let i = 0; i < posAttr.count; i++) {
+          if (posAttr.getY(i) > 0) { topIndices.push(i); topBaseY.push(posAttr.getY(i)); }
+        }
+        plane.userData.topEdgeIndices = topIndices;
+        plane.userData.topEdgeBaseY = topBaseY;
         return g;
       }
 
@@ -15239,6 +15259,25 @@
           }
           // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc.
           spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
+
+          // Motion-stretch: push the sprite's top edge (the blade/head end,
+          // cached in makeToolPlaneMesh — see topEdgeIndices/topEdgeBaseY)
+          // outward as the swing moves, simulating an anime-style motion
+          // smear. `swing` (Math.sin(progress*PI), computed above) is
+          // already exactly the 0→1→0 envelope this wants — 0 at rest and
+          // at both ends of the swing, peaking mid-motion — so no separate
+          // timer/state is needed; this applies to every tool swing (plain
+          // farming actions included), not just combat ones.
+          const topIndices = spinPlane.userData.topEdgeIndices;
+          if (topIndices?.length) {
+            const posAttr = spinPlane.geometry.attributes.position;
+            const topBaseY = spinPlane.userData.topEdgeBaseY;
+            const stretch = WEAPON_STRETCH_MAX_UNITS * swing;
+            for (let k = 0; k < topIndices.length; k++) {
+              posAttr.setY(topIndices[k], topBaseY[k] + stretch);
+            }
+            posAttr.needsUpdate = true;
+          }
         }
 
         if (pendingAction && !strikeFired && progress >= SF) {
@@ -15266,12 +15305,31 @@
       // pool below reuses the same few Mesh/Material objects instead of
       // allocating a fresh clone on every spawn, so a held rapid-fire
       // ability (e.g. Flurry) doesn't keep churning new objects/GC either.
-      const GHOST_SPAWN_INTERVAL_S = 0.05;
+      // A swing's angular speed is far from uniform — most of a windup/
+      // return's real-world time is spent easing slowly, with almost all
+      // of the actual rotation packed into a brief, fast strike. Gating
+      // spawns on a flat time interval sampled overwhelmingly from the slow
+      // parts, leaving barely any ghosts to capture the fast sweep — the
+      // trail read as a pile of near-identical duplicates instead of a
+      // spread-out arc. Gating on toolHolder's rotation *since the last
+      // ghost* (GHOST_MIN_ANGLE_RAD) instead guarantees every ghost is
+      // visibly distinct regardless of where the swing's speed is
+      // concentrated; GHOST_MAX_INTERVAL_S is just a fallback so a
+      // barely-moving hold (e.g. Charged Breaker's windup) still trails
+      // something rather than going silent.
+      const GHOST_MIN_ANGLE_RAD = 9 * Math.PI / 180;
+      const GHOST_MAX_INTERVAL_S = 0.09;
       const GHOST_LIFETIME_S = 0.22;
       const GHOST_POOL_SIZE = 8;
       const GHOST_BASE_OPACITY = 0.95;
       let ghostSpawnTimer = 0;
       let ghostColorCycleIndex = 0;
+      // Set the instant a new swing starts (see updateWeaponGhostTrails)
+      // so that swing's very first ghost always spawns immediately instead
+      // of waiting for GHOST_MIN_ANGLE_RAD of rotation from a stale
+      // leftover quaternion from whatever the *previous* swing last did.
+      let hasLastGhostQuat = false;
+      const _lastGhostQuat = new THREE.Quaternion();
       // Ring buffer of pre-built {mesh, material} pairs, reused round-robin
       // instead of clone()'d fresh each spawn. `mesh`'s geometry/material.map
       // get swapped in place when the active tool differs from what this
@@ -15322,7 +15380,7 @@
       function spawnWeaponGhost() {
         const itemKey = equipmentSlots[activeTool];
         const parent = toolHolder.parent;
-        if (!itemKey || !toolTextures[itemKey] || !parent || !toolHolder.visible) return;
+        if (!itemKey || !toolTextures[itemKey] || !parent || !toolHolder.visible) return false;
         const ids = combatSwingAfflictionIds;
         const colorNum = ids.length
           ? (window.ResourceRings?.AFFLICTION_COLORS?.[ids[ghostColorCycleIndex % ids.length]] ?? 0xffffff)
@@ -15360,6 +15418,7 @@
         const existingIdx = weaponGhostTrails.findIndex(g => g.mesh === mesh);
         if (existingIdx >= 0) weaponGhostTrails.splice(existingIdx, 1);
         weaponGhostTrails.push({ mesh, age: 0 });
+        return true;
       }
 
       function updateWeaponGhostTrails(dt) {
@@ -15368,12 +15427,17 @@
         // were, with just their existing swept-area flash.
         if (combatSwingAnim && toolSwingT > 0) {
           ghostSpawnTimer -= dt;
-          if (ghostSpawnTimer <= 0) {
-            ghostSpawnTimer = GHOST_SPAWN_INTERVAL_S;
-            spawnWeaponGhost();
+          const angleSinceLast = hasLastGhostQuat ? toolHolder.quaternion.angleTo(_lastGhostQuat) : Infinity;
+          if (angleSinceLast >= GHOST_MIN_ANGLE_RAD || ghostSpawnTimer <= 0) {
+            ghostSpawnTimer = GHOST_MAX_INTERVAL_S;
+            if (spawnWeaponGhost()) {
+              _lastGhostQuat.copy(toolHolder.quaternion);
+              hasLastGhostQuat = true;
+            }
           }
         } else {
           ghostSpawnTimer = 0;
+          hasLastGhostQuat = false;
         }
 
         for (let i = weaponGhostTrails.length - 1; i >= 0; i--) {
