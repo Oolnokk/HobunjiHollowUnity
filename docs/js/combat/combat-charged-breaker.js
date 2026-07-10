@@ -91,13 +91,18 @@
         return;
       }
       const chargeT = Math.min(1, Math.max(0, (held - MIN_READY_S) / (MAX_CHARGE_S - MIN_READY_S)));
+      // Every affliction this slam can inflict, and every stat bonus on top
+      // of the base numbers below, comes from the player's own chosen
+      // upgrades (see combat-progression.js) — a fresh, unleveled breaker
+      // deals plain damage with no afflictions at all.
+      const effects = window.CombatProgression?.getEffects('chargedBreaker') || { afflictions: {}, stats: {} };
       // Never refuses for lack of stamina once it's ready to release —
       // overspending pushes into Exhausted instead of fizzling the slam
       // (see resource-system.js's spendStamina). Exhausted's reduced speed
       // then slows the slam itself down, same as the source demo's
       // cooldown-slowing rule.
       if (!forced) {
-        const cost = lerp(COST_MIN, COST_MAX, chargeT);
+        const cost = lerp(COST_MIN, COST_MAX, chargeT) * (1 + (effects.stats.staminaCostMul || 0));
         window.ResourceSystem?.spendStamina(deps.player, cost, 'Charged Breaker');
       }
       // The windup already played out while held — releasing now just lets
@@ -110,16 +115,16 @@
       // and lunge scale with whatever streak is currently banked, same as
       // Cleave/Long Lunge.
       const streakMul = window.Combat.comboStreak?.multiplier() ?? 1;
-      const damage = Math.round(baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, chargeT) * streakMul);
-      const rangePx = baseAbil.rangePx * lerp(RANGE_MUL_MIN, RANGE_MUL_MAX, chargeT);
+      const damage = Math.round(baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, chargeT) * streakMul * (1 + (effects.stats.damageMul || 0)));
+      const rangePx = baseAbil.rangePx * lerp(RANGE_MUL_MIN, RANGE_MUL_MAX, chargeT) * (1 + (effects.stats.rangeMul || 0));
       const halfConeRad = HALF_CONE_DEG * Math.PI / 180;
-      const knockbackPxS = baseAbil.knockbackPxS * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, chargeT);
+      const knockbackPxS = baseAbil.knockbackPxS * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, chargeT) * (1 + (effects.stats.knockbackMul || 0));
       const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
       const strikeS = STRIKE_S * timeScale;
       // Leap forward into the slam itself, timed to the strike phase —
       // stops early the instant a hostile is inside the slam's own hit
       // cone instead of always covering the full lunge distance.
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL * streakMul, strikeS, LUNGE_HOP_UNITS, { rangePx, halfConeRad });
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL * streakMul * (1 + (effects.stats.lungeMul || 0)), strikeS, LUNGE_HOP_UNITS, { rangePx, halfConeRad });
 
       window.Combat.beginStagedAction({
         windupS: 0,
@@ -130,7 +135,7 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'blunt', heavy: true });
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'blunt', heavy: true, afflictionBonuses: effects.afflictions });
             hits++;
             lastName = c.def.label;
           }
@@ -157,7 +162,7 @@
       releaseNow(now() - startedAt, false);
     }
 
-    window.Combat.abilities.register('chargedBreaker', { label: 'Charged Breaker', slotFamily: 'hold', onHoldStart, onHoldUpdate, onHoldEnd });
+    window.Combat.abilities.register('chargedBreaker', { label: 'Charged Breaker', slotFamily: 'hold', category: 'offensiveHold', onHoldStart, onHoldUpdate, onHoldEnd });
   }
 
   register();

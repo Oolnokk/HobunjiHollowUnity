@@ -94,13 +94,19 @@
       const step = steps[comboIndex % steps.length];
       comboIndex = (comboIndex + 1) % steps.length;
 
+      // Every affliction this combo can inflict, and every stat bonus on top
+      // of the base numbers below, comes from the player's own chosen
+      // upgrades (see combat-progression.js) — a fresh, unleveled combo
+      // deals plain damage with no afflictions at all.
+      const effects = window.CombatProgression?.getEffects(id) || { afflictions: {}, stats: {} };
+
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted (see resource-system.js's spendStamina) instead of
       // blocking the swing. Exhausted's reduced speed (getExhaustionSpeed)
       // then slows this swing's own windup/strike/return down instead,
       // same as the source demo's "the same multiplier slows attack
       // cooldown" rule.
-      window.ResourceSystem?.spendStamina(deps.player, step.staminaCost, step.name);
+      window.ResourceSystem?.spendStamina(deps.player, step.staminaCost * (1 + (effects.stats.staminaCostMul || 0)), step.name);
       const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
       const windupS = step.windupS * timeScale;
       const strikeS = step.strikeS * timeScale;
@@ -125,17 +131,17 @@
       // streak, since they're what build the streak in the first place (see
       // combat-combo-streak.js).
       const streakMul = step.heavy ? (window.Combat.comboStreak?.multiplier() ?? 1) : 1;
-      const damage = Math.round(baseAbil.damage * step.damageMul * streakMul);
-      const rangePx = baseAbil.rangePx * step.rangeMul;
+      const damage = Math.round(baseAbil.damage * step.damageMul * streakMul * (1 + (effects.stats.damageMul || 0)));
+      const rangePx = baseAbil.rangePx * step.rangeMul * (1 + (effects.stats.rangeMul || 0));
       const halfConeRad = step.halfConeDeg * Math.PI / 180;
-      const knockbackPxS = baseAbil.knockbackPxS * step.knockbackMul;
+      const knockbackPxS = baseAbil.knockbackPxS * step.knockbackMul * (1 + (effects.stats.knockbackMul || 0));
 
       // Short step forward, timed to land alongside the swing's own
       // windup+strike rather than the cosmetic hold/return tail — stops
       // early the moment a hostile is inside this step's own hit cone
       // instead of always covering the full lunge distance (see
       // game.js's beginCombatLunge/updateMovement).
-      deps.beginCombatLunge(deps.TILE * step.lungeMul * streakMul, windupS + strikeS, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(deps.TILE * step.lungeMul * streakMul * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS,
@@ -146,7 +152,7 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: step.dmgTag, heavy: step.heavy });
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: step.dmgTag, heavy: step.heavy, afflictionBonuses: effects.afflictions });
             hits++;
             lastName = c.def.label;
           }
@@ -162,7 +168,7 @@
       });
     }
 
-    window.Combat.abilities.register(id, { label, slotFamily: 'tap', onTap });
+    window.Combat.abilities.register(id, { label, slotFamily: 'tap', category: 'combo', onTap });
   }
 
   registerCombo('swingCombo', '3-Swing Combo', SWING_STEPS);

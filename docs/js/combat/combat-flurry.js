@@ -42,7 +42,12 @@
     }
 
     function fireStrike(deps) {
-      const cost = COST_BASE + count * COST_PER_STRIKE;
+      // Every affliction this strike can inflict, and every stat bonus on
+      // top of the base numbers below, comes from the player's own chosen
+      // upgrades (see combat-progression.js) — a fresh, unleveled flurry
+      // deals plain damage with no afflictions at all.
+      const effects = window.CombatProgression?.getEffects('acceleratingFlurry') || { afflictions: {}, stats: {} };
+      const cost = (COST_BASE + count * COST_PER_STRIKE) * (1 + (effects.stats.staminaCostMul || 0));
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead of hard-stopping the flurry (see resource-
       // system.js's spendStamina). Exhausted's reduced speed slows this
@@ -68,10 +73,10 @@
       });
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * (DAMAGE_MUL_BASE + count * DAMAGE_MUL_PER_STRIKE));
-      const rangePx = baseAbil.rangePx;
+      const damage = Math.round(baseAbil.damage * (DAMAGE_MUL_BASE + count * DAMAGE_MUL_PER_STRIKE) * (1 + (effects.stats.damageMul || 0)));
+      const rangePx = baseAbil.rangePx * (1 + (effects.stats.rangeMul || 0));
       const halfConeDeg = HALF_CONE_DEG_BASE + Math.min(HALF_CONE_DEG_MAX_GROWTH, count * HALF_CONE_DEG_GROWTH_PER_STRIKE);
-      const knockbackPxS = baseAbil.knockbackPxS * (KNOCKBACK_MUL_BASE + count * KNOCKBACK_MUL_PER_STRIKE);
+      const knockbackPxS = baseAbil.knockbackPxS * (KNOCKBACK_MUL_BASE + count * KNOCKBACK_MUL_PER_STRIKE) * (1 + (effects.stats.knockbackMul || 0));
       const sideDeg = dirSign * SIDE_OFFSET_DEG;
       const strikeAngle = deps.player.angle + sideDeg * Math.PI / 180;
       const strikeIndex = count + 1;
@@ -85,7 +90,7 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, strikeAngle, c.x, c.y, rangePx, halfConeDeg * Math.PI / 180)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'blunt' });
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'blunt', afflictionBonuses: effects.afflictions });
             hits++;
             lastName = c.def.label;
           }
@@ -121,7 +126,7 @@
       count = 0;
     }
 
-    window.Combat.abilities.register('acceleratingFlurry', { label: 'Accelerating Flurry', slotFamily: 'hold', onHoldStart, onHoldUpdate, onHoldEnd });
+    window.Combat.abilities.register('acceleratingFlurry', { label: 'Accelerating Flurry', slotFamily: 'hold', category: 'offensiveHold', onHoldStart, onHoldUpdate, onHoldEnd });
   }
 
   register();

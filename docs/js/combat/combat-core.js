@@ -116,6 +116,15 @@
     for (const action of Array.from(activeStaged)) updateStagedAction(action, dt);
   }
 
+  // Called from game.js's damagePlayer() so every attack that lands on the
+  // player staggers them — interrupts whatever combo/quick-attack/charged-
+  // breaker strike was mid-windup, the same way a landed player hit cancels
+  // a creature's own telegraphed attack (see combat-enemy-telegraph.js's
+  // cancel(), called alongside this from damageCreature()).
+  function cancelAllStaged() {
+    for (const action of Array.from(activeStaged)) action.cancel();
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
   }
@@ -151,6 +160,7 @@
     unregisterWeaponAction,
     resolveWeaponHit,
     beginStagedAction,
+    cancelAllStaged,
     update,
     setPlayerDamageInterceptor,
     tryInterceptPlayerDamage,

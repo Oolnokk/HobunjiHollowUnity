@@ -1423,6 +1423,16 @@
         pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust' },
       };
 
+      // Drives the weapon-tool loadout's Combo slot (see combat-loadout.js) —
+      // a sweep-style weapon (hatchet, fishing mace) plays the 3-Swing Combo,
+      // a thrust-style weapon (fishing spear, pick-shovel) plays the 3-Poke
+      // Combo. No weapon equipped falls back to the swing combo, same as the
+      // legacy 'slash' action's own default.
+      function currentComboAbilityId() {
+        const def = TOOL_ITEM_DEFS[equipmentSlots.weapon];
+        return def?.animStyle === 'thrust' ? 'pokeCombo' : 'swingCombo';
+      }
+
       window.ToolIconRender?.warm(Object.values(TOOL_ITEM_DEFS).map(d => d.sprite));
 
       // Resolved icon for a tool-select badge (the equipped item's own
@@ -2761,6 +2771,13 @@
           beginCreatureDeath(c, fromX, fromY);
           return;
         }
+        // Every attack staggers its target — outright cancels whatever the
+        // creature was mid-attack on (a telegraphed bite, a named attack
+        // like Pounce) rather than just pausing it through the knockback
+        // freeze below and letting it resume where it left off once knockback
+        // decays.
+        window.Combat?.telegraph?.cancel(c);
+        window.Combat?.animalAttacks?.cancel(c);
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
       }
 
@@ -2772,7 +2789,13 @@
         if (window.Combat?.tryInterceptPlayerDamage?.(amount, fromX, fromY)) return;
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, amount, dmgOpts || {});
         else player.health = Math.max(0, player.health - amount);
-        if (fromX !== undefined && player.health > 0) applyKnockback(player, fromX, fromY, knockbackPxS);
+        if (player.health > 0) {
+          // Every attack staggers its target — same interrupt-plus-knockback
+          // rule as damageCreature above, mirrored onto whatever combo/quick-
+          // attack/charged-breaker strike the player was mid-windup on.
+          window.Combat?.cancelAllStaged?.();
+          if (fromX !== undefined) applyKnockback(player, fromX, fromY, knockbackPxS);
+        }
         if (player.health <= 0) respawnPlayer();
       }
 
@@ -3820,6 +3843,9 @@
         isCreatureSwimming,
         tileSpeedAt,
         performContextAction,
+        performDodge,
+        currentComboAbilityId,
+        equipmentSlots,
         TILE,
       };
 
@@ -3985,14 +4011,35 @@
       // player into Exhausted (black-stamina debt) instead, mirroring the
       // demo's "a dodge reaction can overdraw into Exhausted" rule. See
       // docs/js/combat/resource-system.js's spendStamina.
-      function performDodge(angle) {
+      // Dodges toward whatever direction the player is currently moving in
+      // (player.inputX/Y — this frame's raw move intent, already unit-length,
+      // see updateMovement) rather than the aim direction, since a dodge is
+      // an evasive step, not an attack. With no movement held, there's no
+      // "current direction" to dodge in, so it falls back to backing away
+      // from whatever the player's actually aiming at instead: the locked
+      // auto-target if the weapon's out and one's engaged, otherwise the
+      // player's own facing (player.angle, same aim used by attacks).
+      function performDodge() {
         if (player.dodging || player.dodgeCooldownT > 0) return false;
+        let dirX, dirY;
+        if (player.inputStrength > 0.001) {
+          dirX = player.inputX;
+          dirY = player.inputY;
+        } else {
+          const weaponEngaged = activeTool === 'weapon' && !!equipmentSlots.weapon;
+          const target = weaponEngaged ? findAutoTarget() : null;
+          const aimAngle = target
+            ? Math.atan2(target.y - player.y, target.x - player.x)
+            : player.angle;
+          dirX = -Math.cos(aimAngle);
+          dirY = -Math.sin(aimAngle);
+        }
         if (window.ResourceSystem) window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge');
         else player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
         player.dodging = true;
         player.dodgeT = DODGE_DUR_S;
-        player.dodgeDirX = Math.cos(angle);
-        player.dodgeDirY = Math.sin(angle);
+        player.dodgeDirX = dirX;
+        player.dodgeDirY = dirY;
         player.dodgeCooldownT = DODGE_COOLDOWN_S;
         player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
         return true;
@@ -4012,7 +4059,7 @@
         if (player.climbing || player.dodging) return;
         const climb = getClimbTarget();
         if (climb) { startClimb(climb); return; }
-        performDodge(player.angle);
+        performDodge();
       }
 
       // Combat-ability movement: a short forward step/leap toward the aim
@@ -18847,6 +18894,10 @@
         // Gates every weapon tap/hold ability (see combat-input.js) — no
         // attacking while swimming in a river/stream, player or creature.
         isPlayerSwimming,
+        // Drives the loadout's Combo slot (tap1) — never player-chosen,
+        // always whichever combo matches the equipped weapon's own swing
+        // style (see combat-loadout.js's comboAbilityId()).
+        currentComboAbilityId,
         // Fires the weapon tool's plain cut/slash swing exactly as it
         // behaved before the loadout system existed — the fallback
         // combat-input.js uses for a tap slot until an ability module

@@ -101,11 +101,17 @@
       const tech = def.build(deps, target, cond);
       const cost = tech.sourceText === 'no condition bonus' ? COST_BASE : COST_BONUS;
 
+      // Every affliction this jab can inflict, and every stat bonus on top
+      // of the base numbers below, comes from the player's own chosen
+      // upgrades (see combat-progression.js) — a fresh, unleveled jab deals
+      // plain damage with no afflictions at all.
+      const effects = window.CombatProgression?.getEffects(id) || { afflictions: {}, stats: {} };
+
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead of blocking the jab (see resource-system.js's
       // spendStamina); Exhausted's reduced speed then slows this jab's own
       // windup/strike down, same as the source demo's cooldown-slowing rule.
-      window.ResourceSystem?.spendStamina(deps.player, cost, tech.name);
+      window.ResourceSystem?.spendStamina(deps.player, cost * (1 + (effects.stats.staminaCostMul || 0)), tech.name);
       const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
       const windupS = WINDUP_S * timeScale;
       const strikeS = STRIKE_S * timeScale;
@@ -117,11 +123,11 @@
         holdS: HOLD_S,
       });
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * tech.damageMul);
-      const rangePx = baseAbil.rangePx * tech.rangeMul;
+      const damage = Math.round(baseAbil.damage * tech.damageMul * (1 + (effects.stats.damageMul || 0)));
+      const rangePx = baseAbil.rangePx * tech.rangeMul * (1 + (effects.stats.rangeMul || 0));
       const halfConeRad = tech.halfConeDeg * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * tech.knockbackMul;
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL, windupS + strikeS, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS,
@@ -132,7 +138,7 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'sharp' });
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'sharp', afflictionBonuses: effects.afflictions });
             hits++;
             lastName = c.def.label;
           }
@@ -147,7 +153,7 @@
       });
     }
 
-    window.Combat.abilities.register(id, { label: def.label, slotFamily: 'tap', onTap });
+    window.Combat.abilities.register(id, { label: def.label, slotFamily: 'tap', category: 'quickAttack', onTap });
   }
 
   for (const id of Object.keys(TECHNIQUES)) registerQuickAttack(id, TECHNIQUES[id]);

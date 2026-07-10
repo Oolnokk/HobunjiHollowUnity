@@ -179,12 +179,7 @@ window.SCRATCHBONES_CONFIG = {
         "bleedTickPerSec": 5,
         "poisonTickPerSec": 1.8,
         "exhaustionRegenPerSec": 24,
-        "pukeChancePerSec": 0.16,
-        "sharpBleedMul": 0.35,
-        "sharpWoundMul": 0.45,
-        "bluntBruiseMul": 0.55,
-        "bluntWindMul": 0.45,
-        "poisonInfectMul": 0.5
+        "pukeChancePerSec": 0.16
       },
       "combatConeReticle": {
         "enabled": true,

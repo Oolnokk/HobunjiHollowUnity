@@ -79,11 +79,6 @@
       poisonTickPerSec: Number(cfg.poisonTickPerSec) || 1.8,
       exhaustionRegenPerSec: Number(cfg.exhaustionRegenPerSec) || 24,
       pukeChancePerSec: cfg.pukeChancePerSec ?? 0.16,
-      sharpBleedMul: cfg.sharpBleedMul ?? 0.35,
-      sharpWoundMul: cfg.sharpWoundMul ?? 0.45,
-      bluntBruiseMul: cfg.bluntBruiseMul ?? 0.55,
-      bluntWindMul: cfg.bluntWindMul ?? 0.45,
-      poisonInfectMul: cfg.poisonInfectMul ?? 0.5,
     };
   }
 
@@ -208,14 +203,19 @@
     return round1(Math.max(0, right - left));
   }
 
-  // Replaces a raw `entity.health -= amount`. opts.tag ('sharp'|'blunt'|
-  // 'poison') applies the matching affliction pair to the hit; opts.heavy
-  // consumes any existing Bruised Health for bonus damage first, mirroring
-  // the demo's Heavy Attack rule. Returns the actual Health lost.
+  // Replaces a raw `entity.health -= amount`. opts.heavy consumes any
+  // existing Bruised Health for bonus damage first, mirroring the demo's
+  // Heavy Attack rule. opts.tag ('sharp'|'blunt'|'poison') no longer applies
+  // any affliction on its own — every attack starts affliction-free; what it
+  // actually inflicts comes entirely from opts.afflictionBonuses, a map of
+  // {afflictionId: multiplier} the caller builds from its own chosen
+  // upgrades (see combat-progression.js's getEffects()). tag is kept only
+  // for the heavy-consumption rule above and any caller-side flavor (hit
+  // SFX, UI labels) — it no longer implies any specific affliction. Returns
+  // the actual Health lost.
   function applyDamage(entity, amount, opts = {}) {
     if (!(amount > 0)) return 0;
     entity.lastAttackReceivedAt = nowMs();
-    const cfg = resourceSystemConfig();
 
     let finalDamage = amount;
     if (opts.heavy) {
@@ -230,14 +230,10 @@
     entity.health = round1(clamp(entity.health - finalDamage, 0, getEffectiveMax(entity, "health")));
     const lost = round1(before - entity.health);
 
-    if (opts.tag === "sharp") {
-      addAffliction(entity, "bleedingHealth", finalDamage * cfg.sharpBleedMul);
-      addAffliction(entity, "woundedStamina", finalDamage * cfg.sharpWoundMul);
-    } else if (opts.tag === "blunt") {
-      addAffliction(entity, "bruisedHealth", finalDamage * cfg.bluntBruiseMul);
-      addAffliction(entity, "windedStamina", finalDamage * cfg.bluntWindMul);
-    } else if (opts.tag === "poison") {
-      addAffliction(entity, "infectedStamina", finalDamage * cfg.poisonInfectMul);
+    if (opts.afflictionBonuses) {
+      for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
+        if (AFFLICTIONS[id] && mul > 0) addAffliction(entity, id, finalDamage * mul);
+      }
     }
 
     enforceCaps(entity);
