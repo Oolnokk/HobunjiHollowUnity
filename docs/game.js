@@ -902,15 +902,21 @@
       // ── Game data ──
       // Regional seasons: Northwestern Tanka. The civil calendar above is
       // universal, but lived seasons are regional — this location reads its
-      // weather off week-of-year bands (Storm/Dry/Rain, plus a short Piturak
-      // wind-hinge at the Rain→Storm turn) rather than the calendar month.
+      // weather off week-of-year bands (Stormtide/Deadgrass/Longpour, plus a
+      // short Coldmuck slush-cover/wind-hinge season with occasional pituraq
+      // micro-winter squalls at the Longpour→Stormtide turn) rather than the
+      // calendar month.
+      // grassColor/grassDensity drive the ground tile material and the grass
+      // billboard tufts (see applySeasonalGrassAppearance()) — vibrant/full
+      // for the wet seasons, sparse and off-hue for Deadgrass (dead, dry) and
+      // Coldmuck (slush-covered, dormant).
       const seasons = [
-        { name: 'Storm',   emoji: '⛈️',  rainChance: 0.35, stormChance: 0.30, startWeek: 1,  endWeek: 20 },
-        { name: 'Dry',     emoji: '☀️',  rainChance: 0.06, stormChance: 0.01, startWeek: 21, endWeek: 24 },
-        { name: 'Rain',    emoji: '🌧️', rainChance: 0.70, stormChance: 0.05, startWeek: 25, endWeek: 44 },
-        { name: 'Piturak', emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 45, endWeek: 48 },
+        { name: 'Stormtide', emoji: '⛈️',  rainChance: 0.35, stormChance: 0.30, startWeek: 1,  endWeek: 20, grassColor: new THREE.Color().setHSL(108/360, 0.58, 0.28), grassDensity: 1.00 },
+        { name: 'Deadgrass', emoji: '☀️',  rainChance: 0.06, stormChance: 0.01, startWeek: 21, endWeek: 24, grassColor: new THREE.Color().setHSL(45/360,  0.40, 0.34), grassDensity: 0.40 },
+        { name: 'Longpour',  emoji: '🌧️', rainChance: 0.70, stormChance: 0.05, startWeek: 25, endWeek: 44, grassColor: new THREE.Color().setHSL(122/360, 0.55, 0.22), grassDensity: 1.00 },
+        { name: 'Coldmuck',  emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 45, endWeek: 48, grassColor: new THREE.Color().setHSL(165/360, 0.15, 0.46), grassDensity: 0.45 },
       ];
-      // The Dry season rolls as low as a 6% rain chance per day and runs 4
+      // Deadgrass rolls as low as a 6% rain chance per day and runs 4
       // weeks (28 days) straight, long enough in real time to read as "it
       // never rains anymore." chooseWeatherForDay()'s pity timer guarantees a
       // rain day whenever the drought runs past this many days, without
@@ -1453,7 +1459,7 @@
 
       // Used by calendarHud and water simulation to turn rain into an automatic timed condition.
       const calendar = {
-        day: 1,            // Anan, Waxingheat 1st — week 1 of the Storm season, year 1
+        day: 1,            // Anan, Waxingheat 1st — week 1 of Stormtide, year 1
         time01: 0.30,      // ~10:30 AM — mid-morning, well into a rain window
         weather: 'rain',
         isRaining: true,
@@ -9121,39 +9127,39 @@
         town: [
           { key: 'fish_riverMinnow',     label: 'River Minnow',     icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: 'any',            fishClass: 'smooth',  difficulty: 28 },
           { key: 'fish_speckledCarp',    label: 'Speckled Carp',    icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['day', 'dusk'],   fishClass: 'sinker',  difficulty: 35 },
-          { key: 'fish_bronzefinTrout',  label: 'Bronzefin Trout',  icon: '🐡', rarity: 'uncommon', sellPrice: 22, seasons: ['Dry'],          timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 52 },
-          { key: 'fish_mossbackCatfish', label: 'Mossback Catfish', icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: ['Storm', 'Rain'],        timesOfDay: ['night'],         fishClass: 'floater', difficulty: 48 },
+          { key: 'fish_bronzefinTrout',  label: 'Bronzefin Trout',  icon: '🐡', rarity: 'uncommon', sellPrice: 22, seasons: ['Deadgrass'],          timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 52 },
+          { key: 'fish_mossbackCatfish', label: 'Mossback Catfish', icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: ['Stormtide', 'Longpour'],        timesOfDay: ['night'],         fishClass: 'floater', difficulty: 48 },
           { key: 'fish_goldenKoi',       label: 'Golden Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 60, seasons: 'any', timesOfDay: ['dawn'],          fishClass: 'mixed',   difficulty: 70 },
         ],
         northernCliffs: [
-          { key: 'fish_cliffsideChar',   label: 'Cliffside Char',   icon: '🐟', rarity: 'common',   sellPrice: 10, seasons: ['Dry'],          timesOfDay: 'any',             fishClass: 'dart',    difficulty: 38 },
+          { key: 'fish_cliffsideChar',   label: 'Cliffside Char',   icon: '🐟', rarity: 'common',   sellPrice: 10, seasons: ['Deadgrass'],          timesOfDay: 'any',             fishClass: 'dart',    difficulty: 38 },
           { key: 'fish_stonebellyTrout', label: 'Stonebelly Trout', icon: '🐠', rarity: 'common',   sellPrice: 11, seasons: 'any', timesOfDay: ['day'],           fishClass: 'sinker',  difficulty: 34 },
-          { key: 'fish_frostWhiskerEel', label: 'Frost Whisker Eel',icon: '🐡', rarity: 'uncommon', sellPrice: 26, seasons: ['Storm', 'Rain'],        timesOfDay: ['night'],         fishClass: 'smooth',  difficulty: 50 },
-          { key: 'fish_cliffHawkSalmon', label: 'Cliff Hawk Salmon',icon: '🐠', rarity: 'rare',     sellPrice: 65, seasons: ['Rain'],                       timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 72 },
+          { key: 'fish_frostWhiskerEel', label: 'Frost Whisker Eel',icon: '🐡', rarity: 'uncommon', sellPrice: 26, seasons: ['Stormtide', 'Longpour'],        timesOfDay: ['night'],         fishClass: 'smooth',  difficulty: 50 },
+          { key: 'fish_cliffHawkSalmon', label: 'Cliff Hawk Salmon',icon: '🐠', rarity: 'rare',     sellPrice: 65, seasons: ['Longpour'],                       timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 72 },
           { key: 'fish_ironscalePike',   label: 'Ironscale Pike',   icon: '🐟', rarity: 'rare',     sellPrice: 58, seasons: 'any', timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 68 },
         ],
         cloudForest: [
           { key: 'fish_cloudmistGuppy',  label: 'Cloudmist Guppy',  icon: '🐠', rarity: 'common',   sellPrice: 7,  seasons: 'any', timesOfDay: ['dawn', 'dusk'],  fishClass: 'floater', difficulty: 26 },
-          { key: 'fish_fernshadeLoach',  label: 'Fernshade Loach',  icon: '🐟', rarity: 'common',   sellPrice: 9,  seasons: ['Storm', 'Rain'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
-          { key: 'fish_orchidBetta',     label: 'Orchid Betta',     icon: '🐡', rarity: 'uncommon', sellPrice: 28, seasons: ['Rain'],                       timesOfDay: ['day'],           fishClass: 'mixed',   difficulty: 46 },
+          { key: 'fish_fernshadeLoach',  label: 'Fernshade Loach',  icon: '🐟', rarity: 'common',   sellPrice: 9,  seasons: ['Stormtide', 'Longpour'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
+          { key: 'fish_orchidBetta',     label: 'Orchid Betta',     icon: '🐡', rarity: 'uncommon', sellPrice: 28, seasons: ['Longpour'],                       timesOfDay: ['day'],           fishClass: 'mixed',   difficulty: 46 },
           { key: 'fish_vinehookGar',     label: 'Vinehook Gar',     icon: '🐟', rarity: 'uncommon', sellPrice: 25, seasons: 'any', timesOfDay: ['night'],         fishClass: 'dart',    difficulty: 49 },
-          { key: 'fish_canopyKoi',       label: 'Canopy Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 62, seasons: ['Storm'],                    timesOfDay: ['dawn'],          fishClass: 'floater', difficulty: 71 },
+          { key: 'fish_canopyKoi',       label: 'Canopy Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 62, seasons: ['Stormtide'],                    timesOfDay: ['dawn'],          fishClass: 'floater', difficulty: 71 },
         ],
         westernSlope: [
-          { key: 'fish_glacierSmelt',    label: 'Glacier Smelt',    icon: '🐟', rarity: 'common',   sellPrice: 8,  seasons: ['Dry'],          timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
+          { key: 'fish_glacierSmelt',    label: 'Glacier Smelt',    icon: '🐟', rarity: 'common',   sellPrice: 8,  seasons: ['Deadgrass'],          timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
           { key: 'fish_frostbellyGrayling', label: 'Frostbelly Grayling', icon: '🐠', rarity: 'common', sellPrice: 10, seasons: 'any', timesOfDay: ['day'],     fishClass: 'dart',    difficulty: 37 },
-          { key: 'fish_iceveilWhitefish',label: 'Iceveil Whitefish',icon: '🐡', rarity: 'uncommon', sellPrice: 27, seasons: ['Dry', 'Storm'],        timesOfDay: ['dusk', 'night'], fishClass: 'sinker',  difficulty: 51 },
-          { key: 'fish_snowmeltSalmon',  label: 'Snowmelt Salmon',  icon: '🐠', rarity: 'uncommon', sellPrice: 30, seasons: ['Storm'],                    timesOfDay: ['dawn'],          fishClass: 'dart',    difficulty: 55 },
-          { key: 'fish_glassfinChar',    label: 'Glassfin Char',    icon: '🐟', rarity: 'rare',     sellPrice: 64, seasons: ['Rain'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 73 },
-          { key: 'fish_permafrostEel',   label: 'Permafrost Eel',   icon: '🐡', rarity: 'rare',     sellPrice: 59, seasons: ['Dry'],                      timesOfDay: ['night'],         fishClass: 'floater', difficulty: 69 },
+          { key: 'fish_iceveilWhitefish',label: 'Iceveil Whitefish',icon: '🐡', rarity: 'uncommon', sellPrice: 27, seasons: ['Deadgrass', 'Stormtide'],        timesOfDay: ['dusk', 'night'], fishClass: 'sinker',  difficulty: 51 },
+          { key: 'fish_snowmeltSalmon',  label: 'Snowmelt Salmon',  icon: '🐠', rarity: 'uncommon', sellPrice: 30, seasons: ['Stormtide'],                    timesOfDay: ['dawn'],          fishClass: 'dart',    difficulty: 55 },
+          { key: 'fish_glassfinChar',    label: 'Glassfin Char',    icon: '🐟', rarity: 'rare',     sellPrice: 64, seasons: ['Longpour'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 73 },
+          { key: 'fish_permafrostEel',   label: 'Permafrost Eel',   icon: '🐡', rarity: 'rare',     sellPrice: 59, seasons: ['Deadgrass'],                      timesOfDay: ['night'],         fishClass: 'floater', difficulty: 69 },
         ],
         easternMire: [
           { key: 'fish_mudskipper',      label: 'Mudskipper',       icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: ['day'],           fishClass: 'sinker',  difficulty: 27 },
           { key: 'fish_swampBullhead',   label: 'Swamp Bullhead',   icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['dusk', 'night'], fishClass: 'floater', difficulty: 33 },
-          { key: 'fish_mireleafTetra',   label: 'Mireleaf Tetra',   icon: '🐡', rarity: 'uncommon', sellPrice: 23, seasons: ['Rain', 'Storm'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 45 },
+          { key: 'fish_mireleafTetra',   label: 'Mireleaf Tetra',   icon: '🐡', rarity: 'uncommon', sellPrice: 23, seasons: ['Longpour', 'Stormtide'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 45 },
           { key: 'fish_bogLamprey',      label: 'Bog Lamprey',      icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: 'any', timesOfDay: ['night'],         fishClass: 'dart',    difficulty: 50 },
-          { key: 'fish_murkwaterGar',    label: 'Murkwater Gar',    icon: '🐠', rarity: 'rare',     sellPrice: 61, seasons: ['Rain'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 70 },
-          { key: 'fish_willOWispEel',    label: "Will-o'-Wisp Eel", icon: '🐡', rarity: 'rare',     sellPrice: 66, seasons: ['Storm'],                    timesOfDay: ['night'],         fishClass: 'floater', difficulty: 74 },
+          { key: 'fish_murkwaterGar',    label: 'Murkwater Gar',    icon: '🐠', rarity: 'rare',     sellPrice: 61, seasons: ['Longpour'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 70 },
+          { key: 'fish_willOWispEel',    label: "Will-o'-Wisp Eel", icon: '🐡', rarity: 'rare',     sellPrice: 66, seasons: ['Stormtide'],                    timesOfDay: ['night'],         fishClass: 'floater', difficulty: 74 },
         ],
       };
       const FISH_ZONE_LABELS = {
@@ -10225,7 +10231,7 @@
       let simAccumulator = 0;
       let waterFlowPhase = 0;
       let camX = COLS * TILE * 0.5, camY = ROWS * TILE * 0.72;
-      let lastActionMessage = 'Storm season — dig trenches now to route the water.';
+      let lastActionMessage = 'Stormtide — dig trenches now to route the water.';
       let paused = false;
 
       // Facing lag: visual/reticle angle lags behind raw movement angle.
@@ -13701,6 +13707,21 @@
       // Floor material for vegetation tiles — matches weed foliage HSL color
       const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
 
+      // Recolors the grass ground material and the grass billboard tufts
+      // (color + density) to the current regional season — vibrant/full for
+      // the wet seasons, sparse and off-hue for Deadgrass and Coldmuck.
+      // Defined here (next to tileMats/vegFloorMat) but not called until the
+      // grass billboard texture below has loaded — _grassTint/grassBillboardMat
+      // are declared further down the file and would TDZ-throw if this ran
+      // any earlier than that.
+      function applySeasonalGrassAppearance() {
+        const season = currentSeason();
+        tileMats.grass.color.copy(season.grassColor);
+        vegFloorMat.color.copy(season.grassColor);
+        _grassTint.copy(season.grassColor);
+        if (grassBillboardMat) grassBillboardMat.uniforms.uDensity.value = season.grassDensity;
+      }
+
       // Fixed per-terrain-type ID colours feeding the same material-ID-seam
       // outline used for furniture (see _markFurnitureEdgeId), generalized to
       // ground tiles: unlike furniture (every part gets its own unique
@@ -15986,6 +16007,7 @@
         uniform float uTime;
         uniform float uStrength;
         varying vec2 vUv;
+        varying float vRandom;
         void main() {
           vUv = uv;
           #ifdef USE_INSTANCING
@@ -15993,6 +16015,11 @@
           #else
             vec4 worldPos = modelMatrix * vec4(position, 1.0);
           #endif
+          // Stable per-blade pseudo-random value from its (fixed) ground
+          // position — used by the fragment shader to thin the tuft count
+          // seasonally (Deadgrass/Coldmuck) without touching the instance
+          // buffer itself, so density can change with a single uniform.
+          vRandom = fract(sin(dot(worldPos.xz, vec2(12.9898, 78.233))) * 43758.5453);
           float topFactor = uv.y;
           float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
           float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
@@ -16008,8 +16035,11 @@
         uniform vec3 uTint;
         uniform vec3 uLightColor;
         uniform float uLightMul;
+        uniform float uDensity;
         varying vec2 vUv;
+        varying float vRandom;
         void main() {
+          if (vRandom > uDensity) discard;
           vec4 texel = texture2D(uGrassTex, vUv);
           if (texel.a < 0.5) discard;
           // Treat grass_1.png as mint-toned; desaturate and re-tint to grass color
@@ -16039,6 +16069,7 @@
           uStrength:   { value: 0.04 },
           uLightColor: { value: new THREE.Color(1, 1, 1) },
           uLightMul:   { value: 1 },
+          uDensity:    { value: 1 },
         });
         grassBillboardMat = new THREE.ShaderMaterial({
           uniforms:       sharedUniforms(),
@@ -16046,6 +16077,7 @@
           fragmentShader: _grassBillFrag,
           alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
         });
+        applySeasonalGrassAppearance();
         cuttableBillboardGlowMat = new THREE.ShaderMaterial({
           uniforms: {
             uGrassTex: { value: tex },
@@ -17634,6 +17666,7 @@
 
       function chooseWeatherForDay() {
         const season = currentSeason();
+        applySeasonalGrassAppearance();
         const seed = seededRandom(calendar.day * 991 + season.name.length * 37);
         const stormRoll = seededRandom(calendar.day * 373 + 11);
         const hasStorm = stormRoll < season.stormChance;
@@ -17647,12 +17680,12 @@
           calendar.nextRainWindows.push({ start: 19, end: 21, strength: 2 });
         } else if (hasRain) {
           // A fixed 5-hour window meant even a 'rain' day in the wettest
-          // season (Rain, 70% daily chance) only actually had it raining
+          // season (Longpour, 70% daily chance) only actually had it raining
           // ~5/24 = 21% of the time — the season label reads "wet" but the
           // moment-to-moment odds of catching rain stayed low. Scale the
-          // window length with how rainy the season is so Rain/Storm days
-          // visibly rain for a large chunk of the day, while a dry-season
-          // pity-timer shower stays a brief, isolated event.
+          // window length with how rainy the season is so Longpour/Stormtide
+          // days visibly rain for a large chunk of the day, while a
+          // Deadgrass pity-timer shower stays a brief, isolated event.
           const windowHours = Math.round(4 + season.rainChance * 8);
           const start = 8 + Math.floor(seededRandom(calendar.day * 157) * 6);
           calendar.nextRainWindows.push({ start, end: start + windowHours, strength: 2 });
@@ -19030,8 +19063,8 @@
             });
           }
         } catch {}
-        lastActionMessage = 'Farm reset. Storm season — dig trenches to route the water.';
-        showToast('Farm reset to the Storm season.', true);
+        lastActionMessage = 'Farm reset. Stormtide — dig trenches to route the water.';
+        showToast('Farm reset to Stormtide.', true);
         debugLog('prototype reset');
         refreshActionBar();
         refreshItemScroll();
