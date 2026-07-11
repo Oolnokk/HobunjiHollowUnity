@@ -1,0 +1,2544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cutscene Director</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #171311;
+    --panel: #2a211c;
+    --panel-dark: #1b1613;
+    --line: #665044;
+    --text: #fff4dc;
+    --muted: #cfbea5;
+    --accent: #f2b755;
+    --danger: #d66b68;
+    --good: #79c987;
+    --shadow: rgba(0,0,0,.42);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    color: var(--text);
+    background:
+      radial-gradient(circle at 10% 0%, rgba(242,183,85,.11), transparent 30rem),
+      var(--bg);
+    font-family: ui-rounded, "Trebuchet MS", system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  button, input, select, textarea { font: inherit; }
+  button {
+    min-height: 40px;
+    padding: 8px 11px;
+    border: 2px solid var(--line);
+    border-radius: 10px;
+    color: var(--text);
+    background: linear-gradient(#493a31, #302620);
+    box-shadow: 0 2px 0 #0b0908;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:hover, button:focus-visible { border-color: var(--accent); outline: none; }
+  button:disabled { opacity: .42; cursor: default; }
+  button.primary {
+    border-color: #ffd47d;
+    color: #281708;
+    background: linear-gradient(#f8cb75, #c77b2e);
+    font-weight: 1000;
+  }
+  button.danger {
+    border-color: #9c5352;
+    background: linear-gradient(#653837, #3d2322);
+  }
+  button.small { min-height: 32px; padding: 5px 9px; font-size: .82rem; }
+
+  input, select, textarea {
+    width: 100%;
+    padding: 9px 10px;
+    border: 2px solid var(--line);
+    border-radius: 9px;
+    color: var(--text);
+    background: #15110f;
+  }
+  textarea { min-height: 90px; resize: vertical; line-height: 1.42; }
+  label { display: grid; gap: 6px; color: var(--muted); font-size: .9rem; }
+
+  .check-row {
+    display: flex;
+    gap: 9px;
+    align-items: center;
+    min-height: 42px;
+    padding: 7px 10px;
+    border: 2px solid #59473c;
+    border-radius: 9px;
+    color: var(--text);
+    background: #1c1714;
+  }
+  .check-row input { width: 20px; height: 20px; margin: 0; }
+
+  #shell { display: flex; flex-direction: column; height: 100%; }
+
+  .header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 9px max(12px, env(safe-area-inset-right)) 9px max(12px, env(safe-area-inset-left));
+    border-bottom: 2px solid #49382f;
+    background: rgba(23,19,17,.97);
+    flex-shrink: 0;
+  }
+  .header strong { display: block; font-size: 1.04rem; }
+  .header small { color: var(--muted); }
+  .header-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .header-actions button { min-height: 36px; padding: 6px 9px; font-size: .85rem; }
+
+  .tabs {
+    display: flex;
+    gap: 6px;
+    padding: 7px max(10px, env(safe-area-inset-right)) 7px max(10px, env(safe-area-inset-left));
+    border-bottom: 1px solid #44352d;
+    background: rgba(23,19,17,.97);
+    flex-shrink: 0;
+    overflow-x: auto;
+  }
+  .tab {
+    min-height: 42px;
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 1000;
+    white-space: nowrap;
+  }
+  .tab.active {
+    border-color: #ffd47d;
+    color: #281708;
+    background: linear-gradient(#f5c66e, #bd7229);
+  }
+
+  #app-layout {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(300px, 400px) 1fr;
+    min-height: 0;
+  }
+
+  #left-col {
+    overflow-y: auto;
+    padding: 12px;
+    border-right: 2px solid #382c25;
+  }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  .stack { display: grid; gap: 10px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+
+  .panel {
+    overflow: hidden;
+    border: 2px solid #4d3c33;
+    border-radius: 13px;
+    background: linear-gradient(160deg, #382c25, #241c18);
+    box-shadow: 0 6px 20px var(--shadow);
+  }
+  .panel + .panel { margin-top: 12px; }
+  .panel-head {
+    padding: 11px 13px;
+    border-bottom: 2px solid #4d3c33;
+    background: #2c231e;
+  }
+  .panel-head h2, .panel-head h3 { margin: 0; font-size: 1rem; }
+  .panel-head p { margin: 5px 0 0; color: var(--muted); line-height: 1.4; font-size: .85rem; }
+  .panel-body { padding: 12px; }
+
+  .tip {
+    padding: 9px 11px;
+    border: 2px solid #665344;
+    border-radius: 10px;
+    color: var(--muted);
+    background: #1b1613;
+    line-height: 1.4;
+    font-size: .85rem;
+  }
+  .tip strong { color: var(--text); }
+  .tip.warn { border-color: #a67a3f; color: #f0d9ae; }
+
+  .item-list { display: grid; gap: 6px; }
+  .item-card {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    min-height: 50px;
+    padding: 6px 8px;
+    border: 2px solid #57453a;
+    border-radius: 10px;
+    background: #211a17;
+    cursor: pointer;
+  }
+  .item-card.selected { border-color: #ffd47d; background: #3c2d22; }
+  .item-card small {
+    display: block;
+    overflow: hidden;
+    color: var(--muted);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .item-card button { min-height: 32px; padding: 4px 8px; }
+  .swatch {
+    display: grid;
+    place-items: center;
+    width: 33px;
+    height: 33px;
+    border: 2px solid #fff0cf;
+    border-radius: 50%;
+    color: #fff;
+    font-weight: 1000;
+    font-size: .78rem;
+    text-shadow: 0 2px 2px #000;
+    overflow: hidden;
+  }
+  .swatch img { width: 100%; height: 100%; object-fit: cover; }
+  .point-dot {
+    display: grid;
+    place-items: center;
+    width: 33px;
+    height: 33px;
+    border: 3px solid #fff0cf;
+    border-radius: 50%;
+    color: #27160a;
+    background: var(--accent);
+    font-weight: 1000;
+  }
+
+  .board-scroll { overflow: auto; padding: 10px; overscroll-behavior: contain; max-height: 46vh; border-radius: 9px; background: #0e0b09; }
+  .map-board {
+    --cols: 24;
+    --rows: 16;
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(var(--cols), 1fr);
+    width: max(100%, 480px);
+    aspect-ratio: calc(var(--cols) / var(--rows));
+    overflow: hidden;
+    border: 4px solid #755943;
+    border-radius: 9px;
+    box-shadow: inset 0 0 0 2px #251911;
+    user-select: none;
+    touch-action: pan-x pan-y;
+  }
+  .tile {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .tile::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-right: 1px solid rgba(0,0,0,.16);
+    border-bottom: 1px solid rgba(0,0,0,.16);
+    pointer-events: none;
+  }
+
+  .point-token {
+    position: absolute;
+    z-index: 9;
+    display: grid;
+    place-items: center;
+    width: calc(100% / var(--cols));
+    height: calc(100% / var(--rows));
+    cursor: grab;
+    touch-action: none;
+  }
+  .point-token:active { cursor: grabbing; }
+  .point-token .pin {
+    display: grid;
+    place-items: center;
+    width: 70%;
+    height: 70%;
+    border: 3px solid #fff2d5;
+    border-radius: 50% 50% 50% 12%;
+    color: #2a190c;
+    background: var(--accent);
+    box-shadow: 0 3px 0 rgba(0,0,0,.34);
+    font-size: clamp(.5rem,1.6vw,.8rem);
+    font-weight: 1000;
+    transform: rotate(-45deg);
+  }
+  .point-token .pin span { transform: rotate(45deg); }
+  .point-token.selected .pin { outline: 3px solid #ffe36e; outline-offset: 2px; }
+
+  .actor-token {
+    position: absolute;
+    z-index: 7;
+    display: grid;
+    place-items: center;
+    width: calc(100% / var(--cols));
+    height: calc(100% / var(--rows));
+    pointer-events: none;
+  }
+  .actor-token .body {
+    width: 62%;
+    height: 62%;
+    border: 2px solid #fff2d5;
+    border-radius: 50%;
+    box-shadow: 0 3px 0 rgba(0,0,0,.32);
+  }
+
+  .add-stage-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .add-stage-grid button {
+    min-height: 66px;
+    display: grid;
+    place-items: center;
+    gap: 2px;
+    padding: 6px 4px;
+    font-weight: 1000;
+    font-size: .78rem;
+  }
+  .big-icon { font-size: 1.35rem; }
+
+  .stage-list { display: grid; gap: 8px; }
+  .stage-card {
+    display: grid;
+    grid-template-columns: 42px minmax(0,1fr) auto;
+    gap: 9px;
+    align-items: center;
+    padding: 8px;
+    border: 2px solid #5d493d;
+    border-radius: 11px;
+    background: #211a17;
+    cursor: pointer;
+  }
+  .stage-card.selected { border-color: #ffd47d; background: #3b2c22; }
+  .stage-number {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 9px;
+    color: #27160a;
+    background: #e8b45e;
+    font-weight: 1000;
+  }
+  .stage-summary { min-width: 0; }
+  .stage-summary strong, .stage-summary span { display: block; }
+  .stage-summary span {
+    margin-top: 2px;
+    overflow: hidden;
+    color: var(--muted);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: .82rem;
+  }
+  .stage-actions { display: grid; grid-template-columns: repeat(2,32px); gap: 4px; }
+  .stage-actions button { min-height: 32px; padding: 3px; }
+
+  .editor-empty, .empty-state {
+    padding: 20px;
+    border: 2px dashed #5c493d;
+    border-radius: 11px;
+    color: var(--muted);
+    text-align: center;
+    font-size: .88rem;
+  }
+  .editor-fields { display: grid; gap: 11px; }
+  .editor-title { display: flex; gap: 8px; align-items: center; }
+  .round-icon {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    color: #2b1809;
+    background: var(--accent);
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+  .option-card, .combat-card {
+    display: grid;
+    gap: 7px;
+    padding: 9px;
+    border: 2px solid #59473c;
+    border-radius: 10px;
+    background: #1c1714;
+  }
+  .option-top { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  .combat-grid { display: grid; gap: 6px; }
+  .combat-row {
+    display: grid;
+    grid-template-columns: minmax(0,1fr) auto auto;
+    gap: 7px;
+    align-items: center;
+    padding: 7px;
+    border: 2px solid #4f4036;
+    border-radius: 8px;
+    background: #16120f;
+  }
+  .combat-row label { display: flex; gap: 5px; align-items: center; color: var(--text); font-size: .76rem; }
+  .combat-row input { width: 18px; height: 18px; }
+
+  /* ── Right column: persistent 3D preview ─────────────────────────── */
+  #right-col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  #preview-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    align-items: center;
+    padding: 9px 12px;
+    border-bottom: 2px solid #382c25;
+    background: #1c1714;
+    flex-shrink: 0;
+  }
+  #preview-toolbar button { min-height: 34px; padding: 6px 10px; font-size: .82rem; }
+  #mapStatusPill, #playStatusPill {
+    padding: 6px 10px;
+    border: 2px solid #604d41;
+    border-radius: 9px;
+    color: var(--muted);
+    background: #1d1714;
+    font-size: .8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #playStatusPill { flex: 1; min-width: 140px; }
+  #viewport-wrap { position: relative; flex: 1; min-height: 0; background: #05070a; }
+  #canvas3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #viewport-hint {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    z-index: 5;
+    padding: 5px 9px;
+    border-radius: 7px;
+    background: rgba(10,8,7,.6);
+    color: var(--muted);
+    font-size: .72rem;
+    pointer-events: none;
+  }
+
+  .fade-overlay {
+    position: absolute;
+    z-index: 18;
+    inset: 0;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 1s linear;
+  }
+  .dialogue-box {
+    display: none;
+    position: absolute;
+    z-index: 20;
+    left: 4%;
+    right: 4%;
+    bottom: 4%;
+    max-height: 60%;
+    overflow: auto;
+    padding: 13px;
+    border: 4px solid #6c4d34;
+    border-radius: 12px;
+    color: #2a1b11;
+    background: #fff2d2;
+    box-shadow: 0 8px 0 rgba(0,0,0,.35);
+  }
+  .dialogue-box.show { display: block; }
+  .dialogue-speaker {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    padding: 4px 9px;
+    border-radius: 7px;
+    color: #fff;
+    background: #6b3f25;
+    font-weight: 1000;
+  }
+  .dialogue-text { min-height: 40px; line-height: 1.42; white-space: pre-wrap; }
+  .dialogue-actions { display: grid; gap: 6px; margin-top: 9px; }
+  .dialogue-actions button {
+    color: #2a1b11;
+    border-color: #8b6848;
+    background: linear-gradient(#fffaf0,#eacb96);
+    box-shadow: 0 2px 0 #8d6238;
+    text-align: left;
+    font-weight: 1000;
+  }
+  .dialogue-actions button.continue { text-align: center; background: linear-gradient(#ffd47c,#df9c41); }
+
+  #npc-picker-overlay {
+    display: none;
+    position: fixed;
+    z-index: 200;
+    inset: 0;
+    padding: 20px;
+    background: rgba(8,6,5,.72);
+    align-items: center;
+    justify-content: center;
+  }
+  #npc-picker-overlay.show { display: flex; }
+  #npc-picker-modal {
+    width: min(560px, 100%);
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+  }
+  #npc-picker-list { overflow-y: auto; padding: 10px; gap: 6px; }
+
+  details.debug-panel {
+    margin: 0;
+    border-top: 2px solid #493a31;
+    background: #201916;
+    flex-shrink: 0;
+  }
+  details.debug-panel summary { padding: 9px 12px; color: var(--muted); cursor: pointer; font-weight: 1000; font-size: .85rem; }
+  .debug-body { display: grid; gap: 8px; padding: 0 12px 12px; max-height: 30vh; overflow: auto; }
+  #debugLog {
+    min-height: 90px;
+    max-height: 180px;
+    overflow: auto;
+    padding: 8px;
+    border-radius: 8px;
+    color: #d5e8cf;
+    background: #0e100d;
+    font: .74rem ui-monospace,SFMono-Regular,Consolas,monospace;
+    white-space: pre-wrap;
+  }
+  .validation-list { display: grid; gap: 4px; }
+  .validation-item { padding: 6px 9px; border-radius: 7px; color: #2a180b; background: #efc963; font-size: .82rem; }
+  .validation-item.good { background: var(--good); }
+
+  .toast {
+    position: fixed;
+    z-index: 300;
+    left: 50%;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    transform: translate(-50%,20px);
+    max-width: min(90vw,520px);
+    padding: 10px 14px;
+    border: 2px solid #d9a752;
+    border-radius: 10px;
+    color: #251509;
+    background: #f8d58c;
+    box-shadow: 0 10px 30px rgba(0,0,0,.42);
+    opacity: 0;
+    pointer-events: none;
+    transition: .18s ease;
+    font-weight: 1000;
+    text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%,0); }
+  .hidden { display: none !important; }
+
+  @media (max-width: 860px) {
+    #app-layout { grid-template-columns: 1fr; grid-template-rows: 46vh 1fr; overflow-y: auto; }
+    #left-col { border-right: none; border-bottom: 2px solid #382c25; overflow-y: visible; }
+    .add-stage-grid { grid-template-columns: repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+<div id="shell">
+  <header class="header">
+    <div>
+      <strong>🎬 Cutscene Director</strong>
+      <small>Real NPCs · real maps · private instanced 3D preview</small>
+    </div>
+    <div class="header-actions">
+      <button id="exportBtn">Save JSON</button>
+      <button id="importBtn">Open JSON</button>
+      <button id="exampleBtn">Example</button>
+      <input id="importFile" class="hidden" type="file" accept=".json,application/json">
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Cutscene Director sections">
+    <button class="tab active" data-screen="stage"><span class="icon">🗺️</span><span>Stage &amp; Points</span></button>
+    <button class="tab" data-screen="characters"><span class="icon">🎭</span><span>Characters</span></button>
+    <button class="tab" data-screen="cutscene"><span class="icon">🎬</span><span>Cutscene</span></button>
+  </nav>
+
+  <div id="app-layout">
+    <div id="left-col">
+
+      <section id="screen-stage" class="screen active">
+        <div class="stack">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Load a real map</h2>
+              <p>Fetches the map's JSON fresh from the server and builds a private, throwaway 3D copy — nothing here touches the live game or Map Editor.</p>
+            </div>
+            <div class="panel-body stack">
+              <label>Map<select id="mapSelect"><option value="">Loading map list…</option></select></label>
+              <div class="row">
+                <button id="loadMapBtn" class="primary">Load map</button>
+                <button id="clearMapBtn">Blank stage</button>
+              </div>
+              <div id="mapLoadStatus" class="tip">No map loaded yet — using a blank 24×16 practice grid.</div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Named points</h2>
+              <p>Tile coordinates on the loaded map. Move a point once and every linked movement repaths.</p>
+            </div>
+            <div class="panel-body stack">
+              <div class="row">
+                <input id="newPointName" maxlength="28" placeholder="Example: Bench">
+                <button id="addPointBtn" class="primary">Add</button>
+              </div>
+              <div id="pointList" class="item-list"></div>
+              <div id="pointEditor" class="stack hidden">
+                <label>Point name<input id="pointNameInput" maxlength="28"></label>
+                <div class="row">
+                  <button id="movePointBtn" class="primary">📍 Move point</button>
+                  <button id="deletePointBtn" class="danger">Delete</button>
+                </div>
+              </div>
+              <div id="pickBanner" class="tip hidden">Tap a tile below to place the selected point.</div>
+              <div class="board-scroll"><div id="editorBoard" class="map-board" aria-label="Named point grid"></div></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="screen-characters" class="screen">
+        <div class="stack">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Characters</h2>
+              <p>Pull a real NPC from the global database, or add a freeform actor (creatures, unlisted characters).</p>
+            </div>
+            <div class="panel-body stack">
+              <div class="row">
+                <button id="addNpcActorBtn" class="primary">🧑 Add from NPC database</button>
+              </div>
+              <div class="row">
+                <input id="newActorName" maxlength="24" placeholder="Custom character name">
+                <button id="addActorBtn">Add custom</button>
+              </div>
+              <div id="actorList" class="item-list"></div>
+              <div id="actorEditor" class="stack hidden">
+                <div id="actorNpcBadge" class="tip hidden"></div>
+                <label>Name<input id="actorNameInput" maxlength="24"></label>
+                <label>Token color<input id="actorColorInput" type="color"></label>
+                <label>Starting point<select id="actorStartSelect"></select></label>
+                <label>Starting rotation in degrees<input id="actorRotationInput" type="number" min="0" max="359" step="1"></label>
+                <label>Starting pose
+                  <select id="actorPoseSelect">
+                    <option value="standing">Standing</option>
+                    <option value="prone">Prone</option>
+                  </select>
+                </label>
+                <label class="check-row"><input id="actorCombatInput" type="checkbox"> Combat on at scene start</label>
+                <label class="check-row"><input id="actorCanLoseInput" type="checkbox"> Can lose by default</label>
+                <button id="unlinkNpcBtn" class="hidden">Unlink NPC (make custom)</button>
+                <button id="deleteActorBtn" class="danger">Delete character</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="screen-cutscene" class="screen">
+        <div class="stack">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Add a scene card</h2>
+              <p>Each card performs one clear action.</p>
+            </div>
+            <div class="panel-body">
+              <div class="add-stage-grid">
+                <button data-add-stage="move"><span class="big-icon">👣</span><span>Move</span></button>
+                <button data-add-stage="talk"><span class="big-icon">💬</span><span>Talk</span></button>
+                <button data-add-stage="choice"><span class="big-icon">🔀</span><span>Choice</span></button>
+                <button data-add-stage="animation"><span class="big-icon">🎞️</span><span>Animation</span></button>
+                <button data-add-stage="turn"><span class="big-icon">↻</span><span>Turn</span></button>
+                <button data-add-stage="combat"><span class="big-icon">⚔️</span><span>Combat</span></button>
+                <button data-add-stage="fade"><span class="big-icon">⬛</span><span>Fade</span></button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><h2>Scene cards</h2><p>Tap a card to edit it.</p></div>
+            <div class="panel-body"><div id="stageList" class="stage-list"></div></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><h2>Edit selected card</h2><p>Only controls used by this card appear.</p></div>
+            <div id="stageEditor" class="panel-body"></div>
+          </section>
+        </div>
+      </section>
+
+    </div>
+
+    <div id="right-col">
+      <div id="preview-toolbar">
+        <div id="mapStatusPill">No map loaded</div>
+        <div id="playStatusPill">Press Start to play the cutscene.</div>
+        <button id="startPlayBtn" class="primary small">▶ Start</button>
+        <button id="resetPlayBtn" class="small">↺ Reset</button>
+        <button id="captureCameraBtn" class="small">📷 Capture camera</button>
+        <button id="resetCameraBtn" class="small">🎯 Frame stage</button>
+      </div>
+      <div id="viewport-wrap">
+        <canvas id="canvas3d"></canvas>
+        <div id="viewport-hint">Drag to orbit · scroll to zoom · private preview scene</div>
+        <div id="fadeOverlay" class="fade-overlay"></div>
+        <div id="dialogueBox" class="dialogue-box" role="dialog" aria-live="polite">
+          <div id="dialogueSpeaker" class="dialogue-speaker"></div>
+          <div id="dialogueText" class="dialogue-text"></div>
+          <div id="dialogueActions" class="dialogue-actions"></div>
+        </div>
+      </div>
+
+      <details class="debug-panel">
+        <summary>🧰 Troubleshooting</summary>
+        <div class="debug-body">
+          <div class="row">
+            <button id="checkBtn" class="small">Check scene</button>
+            <button id="copyLogBtn" class="small">Copy log</button>
+          </div>
+          <div id="validationList" class="validation-list"></div>
+          <div id="debugLog">Ready.</div>
+        </div>
+      </details>
+    </div>
+  </div>
+</div>
+
+<div id="npc-picker-overlay">
+  <div id="npc-picker-modal" class="panel">
+    <div class="panel-head">
+      <h2>Add from NPC database</h2>
+      <p id="npcPickerStatus">Loading NPC database…</p>
+      <input id="npcPickerSearch" type="search" placeholder="Search by name, species, role…" style="margin-top:8px">
+    </div>
+    <div id="npc-picker-list" class="item-list"></div>
+    <div class="panel-body row">
+      <button id="npcPickerCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<!-- ── Three.js r128 + the same reusable world-building modules the live
+     game, Map Editor, and Building Interior Author load — this tool never
+     redefines terrain/wall/furniture math of its own; it calls exactly what
+     they call, against a freshly-fetched, privately-held copy of a map's
+     JSON, so the preview stays "accurate" without risking the live game or
+     other tools' in-memory/localStorage state. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="../../js/GLTFLoader.js"></script>
+<script src="../../js/WallBuilder.js"></script>
+<script src="../../js/HousePieceGen.js"></script>
+<script src="../../js/procedural-furniture.js"></script>
+<script src="../../js/foliage-generator.js"></script>
+<script src="../../js/terrain-preview.js"></script>
+
+<!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
+<script src="../../config/scratchbones-config.js"></script>
+<script>
+  // scratchbones-config.js's asset paths are authored repo-root-relative
+  // (docs/assets/, docs/config/) for the top-level game page; this tool
+  // lives two levels under docs/tools/, so rewrite them the same way
+  // docs/index.html does before the portrait/breathing systems read them —
+  // otherwise breathing/emote playback silently no-ops on a bad fetch path.
+  if (window.SCRATCHBONES_CONFIG?.game?.assets?.portrait) {
+    window.SCRATCHBONES_CONFIG.game.assets.portrait.assetBase = '../../assets/';
+    window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = '../../config/';
+  }
+</script>
+<script src="../../js/portrait-utils.js"></script>
+<script src="../../js/portrait-breathing.js"></script>
+<script src="../../js/npc-avatar-preview-utils.js"></script>
+<script src="../../js/png-plane-avatar.js"></script>
+
+<script>
+(() => {
+  "use strict";
+
+  const STORAGE_KEY = "hobunjiCutsceneDirector.v1";
+  const MAP_INDEX_URL = "../../config/maps/index.json";
+  const NPC_DB_URL = "../../config/npcs/hobunji-starter-npc-database.json";
+  const ASSET_BASE = "../../";
+  const ACTOR_COLORS = ["#3d7dd8","#d55353","#9b65d6","#3ca66f","#d48c38","#d45b9a","#5f9caa","#8a795f"];
+  const STAGE_TYPES = new Set(["move","talk","choice","animation","turn","combat","fade"]);
+  const EMOTE_NAMES = ["laugh","disgust","love","alarmed","curious"];
+  const DEFAULT_COLS = 24, DEFAULT_ROWS = 16;
+  // Mirrors docs/tools/map-editor/index.html's TILE_INFO exactly so the 2D
+  // authoring grid and the 3D terrain preview agree on what a tile type
+  // looks like.
+  const TILE_INFO = {
+    grass:{color:'#4a7c43'}, weeds:{color:'#6b8c3a'}, tilled:{color:'#7a5230'},
+    trench:{color:'#3d2c1e'}, raised:{color:'#a8835a'}, paddy:{color:'#3f7fae'},
+    rock:{color:'#8a8f98'}, shrub:{color:'#2f6f3f'}, path:{color:'#b8956a'},
+    river:{color:'#2f6fb8'}, stream:{color:'#4f9bd9'}, waterfall:{color:'#bfe9f7'}, ramp:{color:'#c2b280'}
+  };
+  const INTERIOR_FLOOR_COLOR = '#5d4a37';
+  const INTERIOR_WALL_TILE_COLOR = '#1c1410';
+  // Exact defaults docs/game.js uses for town buildings' WallBuilder pass
+  // (docs/game.js:8111-8113) — copied so the preview's brick walls match.
+  const WB_DEFAULTS = { unitMult: 0.4375, rockScale: 1.5, preScale: [1,1,0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
+
+  const els = {};
+
+  const state = {
+    project: null,
+    activeScreen: "stage",
+    selectedPointId: null,
+    selectedActorId: null,
+    selectedStageId: null,
+    movingPointId: null,
+    draggingPointId: null,
+    mapIndex: [],
+    mapMeta: { loaded: false, id: null, name: "", kind: "blank", cols: DEFAULT_COLS, rows: DEFAULT_ROWS, tiles: new Map(), floorSet: new Set(), zGrid: null, buildings: [] },
+    mapLoadToken: 0,
+    npcDb: { loaded: false, loading: false, list: [], byId: new Map() },
+    cosmeticsReady: null,
+    three: null,
+    actorObjects: new Map(),
+    pointObjects: new Map(),
+    preview: { running: false, currentStageId: null, actorStates: new Map(), timer: null, token: 0, fadeOpacity: 0 },
+    logs: []
+  };
+
+  const $ = id => document.getElementById(id);
+
+  function uid(prefix) { return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`; }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;").replaceAll("'","&#039;");
+  }
+
+  function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+
+  function normalizeAngle(value) {
+    const number = Number(value) || 0;
+    return ((Math.round(number) % 360) + 360) % 360;
+  }
+
+  function log(message, level = "INFO") {
+    const line = `[${new Date().toLocaleTimeString()}] ${level}  ${message}`;
+    state.logs.push(line);
+    if (state.logs.length > 160) state.logs.shift();
+    if (els.debugLog) els.debugLog.textContent = state.logs.join("\n");
+  }
+
+  let toastTimer = null;
+  function toast(message) {
+    els.toast.textContent = message;
+    els.toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => els.toast.classList.remove("show"), 2200);
+  }
+
+  function GRID_COLS() { return state.mapMeta.cols || DEFAULT_COLS; }
+  function GRID_ROWS() { return state.mapMeta.rows || DEFAULT_ROWS; }
+
+  // ── Example scene ──────────────────────────────────────────────────────
+  // Ported from the original "Gar-wolf Rescue" heart-scene script. Jubmir
+  // and Spearhead Unumanuk are real NPCs in the starter database
+  // (config/npcs/hobunji-starter-npc-database.json), so this demo links
+  // them by npcId to show the live-database hookup; the wolves/hounds/player
+  // aren't roster NPCs so they stay freeform actors, same as any monster or
+  // the player character would.
+  function buildRescueExample() {
+    const points = {};
+    const addPoint = (key, name, c, r) => { const p = { id: uid("point"), name, c, r }; points[key] = p; return p; };
+    [
+      addPoint("playerDown","Player Down",11,8), addPoint("playerStep","Player Step",11,7),
+      addPoint("wolf1Over","Wolf 1 Over Player",10,7), addPoint("wolf2Over","Wolf 2 Over Player",12,7),
+      addPoint("wolf3Over","Wolf 3 Over Player",11,6),
+      addPoint("wolf1Escape","Wolf 1 Escape",23,2), addPoint("wolf2Escape","Wolf 2 Escape",23,4), addPoint("wolf3Escape","Wolf 3 Escape",23,6),
+      addPoint("hound1Start","Hound 1 South Start",9,15), addPoint("hound2Start","Hound 2 South Start",13,15),
+      addPoint("hound1Fight","Hound 1 Fight",9,9), addPoint("hound2Fight","Hound 2 Fight",13,9),
+      addPoint("jubmirStart","Jubmir South Start",11,15), addPoint("jubmirNear","Jubmir Near Player",10,9),
+      addPoint("spearheadStart","Spearhead North Start",16,0), addPoint("spearheadEntrance","Spearhead Entrance",16,4), addPoint("spearheadPlayer","Spearhead At Player",12,8)
+    ];
+
+    const actors = {};
+    const addActor = (key, name, color, startPoint, rotation, opts = {}) => {
+      const actor = { id: uid("actor"), name, color, npcId: opts.npcId || null, startPointId: startPoint.id, rotation, pose: opts.pose || "standing", combatOn: false, canLose: false };
+      actors[key] = actor; return actor;
+    };
+    [
+      addActor("player","Player","#3d7dd8",points.playerDown,270,{pose:"prone"}),
+      addActor("wolf1","Gar-wolf1","#9e4b45",points.wolf1Over,45),
+      addActor("wolf2","Gar-wolf2","#8b403c",points.wolf2Over,135),
+      addActor("wolf3","Gar-wolf3","#763733",points.wolf3Over,90),
+      addActor("jubmir","Jubmir","#3ca66f",points.jubmirStart,0,{npcId:"jubmir"}),
+      addActor("spearhead","Spearhead","#d48c38",points.spearheadStart,180,{npcId:"spearhead_unumanuk"}),
+      addActor("hound1","Hound1","#7a6b58",points.hound1Start,0),
+      addActor("hound2","Hound2","#8a795f",points.hound2Start,0)
+    ];
+
+    const stages = {};
+    const addStage = (key, stage) => { stage.id = uid("stage"); stages[key] = stage; return stage; };
+    [
+      addStage("wolf1Growl",{ type:"talk", speakerId:actors.wolf1.id, text:"Grrrr!", next:"__next__" }),
+      addStage("wolf2Growl",{ type:"talk", speakerId:actors.wolf2.id, text:"Hrrrr!!!", next:"__next__" }),
+      addStage("wolf3Growl",{ type:"talk", speakerId:actors.wolf3.id, text:"Hreeeeech!!!", next:"__next__" }),
+      addStage("hound1Run",{ type:"move", actorId:actors.hound1.id, pointId:points.hound1Fight.id, speed:"fast", next:"__next__" }),
+      addStage("hound2Run",{ type:"move", actorId:actors.hound2.id, pointId:points.hound2Fight.id, speed:"fast", next:"__next__" }),
+      addStage("combat",{ type:"combat", duration:10,
+        participants:[
+          { actorId:actors.wolf1.id, combatOn:true, canLose:false }, { actorId:actors.wolf2.id, combatOn:true, canLose:false }, { actorId:actors.wolf3.id, combatOn:true, canLose:false },
+          { actorId:actors.hound1.id, combatOn:true, canLose:false }, { actorId:actors.hound2.id, combatOn:true, canLose:false }
+        ], next:"__next__", lossNext:"__end__" }),
+      addStage("wolf1Flee",{ type:"move", actorId:actors.wolf1.id, pointId:points.wolf1Escape.id, speed:"fast", next:"__next__" }),
+      addStage("wolf2Flee",{ type:"move", actorId:actors.wolf2.id, pointId:points.wolf2Escape.id, speed:"fast", next:"__next__" }),
+      addStage("wolf3Flee",{ type:"move", actorId:actors.wolf3.id, pointId:points.wolf3Escape.id, speed:"fast", next:"__next__" }),
+      addStage("jubmirEnter",{ type:"move", actorId:actors.jubmir.id, pointId:points.jubmirNear.id, speed:"fast", next:"__next__" }),
+      addStage("jubmirQuestion",{ type:"talk", speakerId:actors.jubmir.id, text:"Are you alright? Are you hurt?", next:"__next__" }),
+      addStage("playerChoice",{ type:"choice", speakerId:actors.player.id, text:"How do you answer?",
+        options:[ { text:"I'm fine", next:"" }, { text:"Who in the void are you?", next:"" } ] }),
+      addStage("fineReply",{ type:"talk", speakerId:actors.jubmir.id, text:"Well your wounds say otherwise.", next:"" }),
+      addStage("whoReply",{ type:"talk", speakerId:actors.jubmir.id, text:"My name's Jubmir, I'm a trader — but my primary interest right now is making sure you don't bleed out and die.", next:"" }),
+      addStage("healerLine",{ type:"talk", speakerId:actors.jubmir.id, text:"We need to get you to a healer. Can you walk?", next:"__next__" }),
+      addStage("slowStand",{ type:"animation", actorId:actors.player.id, animationName:"slow stand", animKind:"none", resultPose:"standing", duration:1.5, next:"__next__" }),
+      addStage("playerStep",{ type:"move", actorId:actors.player.id, pointId:points.playerStep.id, speed:"slow", next:"__next__" }),
+      addStage("collapse",{ type:"animation", actorId:actors.player.id, animationName:"collapse", animKind:"none", resultPose:"prone", duration:1.0, next:"__next__" }),
+      addStage("ohDear",{ type:"talk", speakerId:actors.jubmir.id, text:"Oh dear.", next:"__next__" }),
+      addStage("spearheadEnter",{ type:"move", actorId:actors.spearhead.id, pointId:points.spearheadEntrance.id, speed:"fast", next:"__next__" }),
+      addStage("spearheadLine",{ type:"talk", speakerId:actors.spearhead.id, text:"What's all this then?", next:"__next__" }),
+      addStage("jubmirTurn",{ type:"turn", actorId:actors.jubmir.id, mode:"actor", targetActorId:actors.spearhead.id, angle:0, duration:.45, next:"__next__" }),
+      addStage("jubmirRequest",{ type:"talk", speakerId:actors.jubmir.id, text:"Spearhead — you can't imagine how glad I am to see you. Help me bring this stranger into town.", next:"__next__" }),
+      addStage("spearheadRush",{ type:"move", actorId:actors.spearhead.id, pointId:points.spearheadPlayer.id, speed:"fast", next:"__next__" }),
+      addStage("fadeOut",{ type:"fade", direction:"out", duration:1.2, next:"__end__" })
+    ];
+    stages.playerChoice.options[0].next = stages.fineReply.id;
+    stages.playerChoice.options[1].next = stages.whoReply.id;
+    stages.fineReply.next = stages.healerLine.id;
+    stages.whoReply.next = stages.healerLine.id;
+
+    return {
+      version: 5, title: "Gar-wolf Rescue Heart Scene", mapId: "map_hobunji_town", camera3d: null,
+      points: Object.values(points), actors: Object.values(actors), stages: Object.values(stages)
+    };
+  }
+
+  function blankProject() {
+    return { version: 5, title: "New Cutscene", mapId: "", camera3d: null, points: [], actors: [], stages: [] };
+  }
+
+  function normalizeProject(raw) {
+    if (!raw || !Array.isArray(raw.points)) return buildRescueExample();
+    const cols = DEFAULT_COLS, rows = DEFAULT_ROWS; // real bounds are re-clamped once a map (or blank grid) is loaded
+    const points = raw.points.map((point,index) => ({
+      id:String(point.id || uid("point")), name:String(point.name || `Point ${index+1}`).slice(0,28),
+      c:clamp(Math.round(Number(point.c ?? point.x)||0),0,2000), r:clamp(Math.round(Number(point.r ?? point.y)||0),0,2000)
+    }));
+    if (!points.length) points.push({ id:uid("point"), name:"Start", c:4, r:8 });
+
+    const pointIds = new Set(points.map(p => p.id));
+    const actors = (Array.isArray(raw.actors) ? raw.actors : []).map((actor,index) => ({
+      id:String(actor.id || uid("actor")), name:String(actor.name || `Character ${index+1}`).slice(0,24),
+      color:/^#[0-9a-f]{6}$/i.test(actor.color || "") ? actor.color : ACTOR_COLORS[index % ACTOR_COLORS.length],
+      npcId: actor.npcId ? String(actor.npcId) : null,
+      startPointId:pointIds.has(actor.startPointId) ? actor.startPointId : points[0].id,
+      rotation:normalizeAngle(actor.rotation), pose:actor.pose === "prone" ? "prone" : "standing",
+      combatOn:Boolean(actor.combatOn), canLose:Boolean(actor.canLose)
+    }));
+
+    const actorIds = new Set(actors.map(a => a.id));
+    const firstActorId = actors[0]?.id || "";
+    const firstPointId = points[0]?.id || "";
+
+    const stages = (Array.isArray(raw.stages) ? raw.stages : []).map(stage => {
+      const type = STAGE_TYPES.has(stage.type) ? stage.type : "talk";
+      const id = String(stage.id || uid("stage"));
+      if (type === "move") return { id, type, actorId:actorIds.has(stage.actorId)?stage.actorId:firstActorId, pointId:pointIds.has(stage.pointId)?stage.pointId:firstPointId, speed:["slow","normal","fast"].includes(stage.speed)?stage.speed:"normal", next:String(stage.next||"__next__") };
+      if (type === "talk") return { id, type, speakerId:actorIds.has(stage.speakerId)?stage.speakerId:firstActorId, text:String(stage.text||"Dialogue").slice(0,2500), next:String(stage.next||"__next__") };
+      if (type === "choice") return { id, type, speakerId:actorIds.has(stage.speakerId)?stage.speakerId:firstActorId, text:String(stage.text||"What do you choose?").slice(0,2500),
+        options: Array.isArray(stage.options) && stage.options.length ? stage.options.map(o => ({ text:String(o.text||"Choice").slice(0,300), next:String(o.next||"__next__") })) : [{text:"Choice 1",next:"__next__"},{text:"Choice 2",next:"__end__"}] };
+      if (type === "animation") return { id, type, actorId:actorIds.has(stage.actorId)?stage.actorId:firstActorId, animationName:String(stage.animationName||"animation").slice(0,80),
+        animKind: ["none","breathing","emote"].includes(stage.animKind) ? stage.animKind : "none",
+        emoteName: EMOTE_NAMES.includes(stage.emoteName) ? stage.emoteName : EMOTE_NAMES[0],
+        resultPose: stage.resultPose==="prone"?"prone":stage.resultPose==="standing"?"standing":"unchanged", duration:clamp(Number(stage.duration)||1,0,30), next:String(stage.next||"__next__") };
+      if (type === "turn") return { id, type, actorId:actorIds.has(stage.actorId)?stage.actorId:firstActorId, mode:stage.mode==="angle"?"angle":"actor", targetActorId:actorIds.has(stage.targetActorId)?stage.targetActorId:firstActorId, angle:normalizeAngle(stage.angle), duration:clamp(Number(stage.duration)||.4,0,10), next:String(stage.next||"__next__") };
+      if (type === "combat") return { id, type, duration:clamp(Number(stage.duration)||10,0,300),
+        participants: Array.isArray(stage.participants) ? stage.participants.filter(i=>actorIds.has(i.actorId)).map(i=>({actorId:i.actorId,combatOn:Boolean(i.combatOn),canLose:Boolean(i.canLose)})) : actors.map(a=>({actorId:a.id,combatOn:false,canLose:a.canLose})),
+        next:String(stage.next||"__next__"), lossNext:String(stage.lossNext||"__end__") };
+      return { id, type:"fade", direction: stage.direction==="in"?"in":"out", duration:clamp(Number(stage.duration)||1,0,10), next:String(stage.next||"__next__") };
+    });
+
+    return {
+      version: 5, title:String(raw.title||"Cutscene").slice(0,80), mapId:String(raw.mapId||""),
+      camera3d: raw.camera3d && raw.camera3d.pos && raw.camera3d.target ? raw.camera3d : null,
+      points, actors, stages
+    };
+  }
+
+  function saveLocal() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.project)); }
+    catch (error) { log(`Could not autosave: ${error.message}`,"ERROR"); }
+  }
+
+  function changed(message) {
+    saveLocal();
+    log(message);
+    resetPreview(false);
+    renderAll();
+  }
+
+  function pointById(id) { return state.project.points.find(p => p.id === id) || null; }
+  function actorById(id) { return state.project.actors.find(a => a.id === id) || null; }
+  function stageById(id) { return state.project.stages.find(s => s.id === id) || null; }
+  function stageIndex(id) { return state.project.stages.findIndex(s => s.id === id); }
+  function npcById(id) { return id ? (state.npcDb.byId.get(id) || null) : null; }
+
+  function switchScreen(name) {
+    state.activeScreen = name;
+    document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.id === `screen-${name}`));
+    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.screen === name));
+  }
+
+  function pointSelectHtml(selectedId) {
+    return state.project.points.length
+      ? state.project.points.map(p => `<option value="${escapeHtml(p.id)}" ${p.id===selectedId?"selected":""}>${escapeHtml(p.name)}</option>`).join("")
+      : `<option value="">No points</option>`;
+  }
+  function actorSelectHtml(selectedId) {
+    return state.project.actors.length
+      ? state.project.actors.map(a => `<option value="${escapeHtml(a.id)}" ${a.id===selectedId?"selected":""}>${escapeHtml(a.name)}</option>`).join("")
+      : `<option value="">No characters</option>`;
+  }
+  function stageName(type) { return { move:"Move", talk:"Talk", choice:"Choice", animation:"Animation", turn:"Turn", combat:"Combat", fade:"Fade" }[type] || "Stage"; }
+  function stageIcon(type) { return { move:"👣", talk:"💬", choice:"🔀", animation:"🎞️", turn:"↻", combat:"⚔️", fade:"⬛" }[type] || "•"; }
+  function stageLabel(stage, index = stageIndex(stage.id)) { return `${index+1}. ${stageIcon(stage.type)} ${stageName(stage.type)}`; }
+
+  function nextSelectHtml(selectedValue, currentStageId) {
+    const options = [
+      `<option value="__next__" ${selectedValue==="__next__"?"selected":""}>Next card</option>`,
+      `<option value="__end__" ${selectedValue==="__end__"?"selected":""}>End scene</option>`
+    ];
+    state.project.stages.forEach((stage,index) => {
+      if (stage.id === currentStageId) return;
+      options.push(`<option value="${escapeHtml(stage.id)}" ${selectedValue===stage.id?"selected":""}>Go to ${escapeHtml(stageLabel(stage,index))}</option>`);
+    });
+    return options.join("");
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  Map database — fetch, private-instance build, 3D world
+  // ══════════════════════════════════════════════════════════════════════
+
+  async function fetchMapIndex() {
+    try {
+      const res = await fetch(MAP_INDEX_URL);
+      const json = await res.json();
+      state.mapIndex = Array.isArray(json.maps) ? json.maps : [];
+      renderMapSelect();
+      log(`Map database loaded: ${state.mapIndex.length} maps.`);
+    } catch (error) {
+      log(`Could not load map database: ${error.message}`, "ERROR");
+      els.mapSelect.innerHTML = `<option value="">Map database unavailable</option>`;
+    }
+  }
+
+  function renderMapSelect() {
+    if (!state.mapIndex.length) { els.mapSelect.innerHTML = `<option value="">No maps found</option>`; return; }
+    const groups = {};
+    state.mapIndex.forEach(m => { (groups[m.category || "other"] = groups[m.category || "other"] || []).push(m); });
+    const html = Object.entries(groups).map(([cat, maps]) => `
+      <optgroup label="${escapeHtml(cat)}">
+        ${maps.map(m => `<option value="${escapeHtml(m.id)}" ${state.project?.mapId===m.id?"selected":""}>${escapeHtml(m.name||m.id)}</option>`).join("")}
+      </optgroup>`).join("");
+    els.mapSelect.innerHTML = `<option value="">— choose a map —</option>${html}`;
+    if (state.project?.mapId) els.mapSelect.value = state.project.mapId;
+  }
+
+  // Array-of-{c,r,type,crop} → dict keyed "c,r", the shape
+  // TerrainPreview.buildMergedZoneGrid expects (mirrors map-editor's
+  // normalizeWorkspaceTiles/normalizeWorkspaceTileRecord).
+  function tilesArrayToDict(tiles) {
+    const out = {};
+    (tiles || []).forEach(t => {
+      if (!t || !Number.isFinite(t.c) || !Number.isFinite(t.r)) return;
+      out[`${t.c},${t.r}`] = { type: t.type || "grass", crop: t.crop || "" };
+    });
+    return out;
+  }
+
+  async function loadMap(mapId) {
+    const entry = state.mapIndex.find(m => m.id === mapId);
+    if (!entry) { toast("Unknown map."); return; }
+    const token = ++state.mapLoadToken;
+    els.mapLoadStatus.textContent = `Loading ${entry.name || mapId}…`;
+    log(`Loading map "${mapId}" (private instance, fetched fresh)…`);
+    try {
+      const res = await fetch("../../" + entry.file);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const mapData = await res.json();
+      if (token !== state.mapLoadToken) return; // superseded by a newer load
+      applyLoadedMap(entry, mapData);
+    } catch (error) {
+      if (token !== state.mapLoadToken) return;
+      log(`Failed to load map "${mapId}": ${error.message}`, "ERROR");
+      toast("Could not load that map — see the log.");
+      els.mapLoadStatus.textContent = `Failed to load ${entry.name || mapId}: ${error.message}`;
+    }
+  }
+
+  function applyLoadedMap(entry, mapData) {
+    const kind = entry.category === "exterior" ? "exterior" : "interior";
+    const cols = clamp(Number(mapData.cols) || DEFAULT_COLS, 4, 400);
+    const rows = clamp(Number(mapData.rows) || DEFAULT_ROWS, 4, 400);
+    const floorSet = new Set();
+    if (Array.isArray(mapData.floor)) mapData.floor.forEach(([c,r]) => floorSet.add(`${c},${r}`));
+    state.mapMeta = {
+      loaded: true, id: entry.id, name: mapData.name || entry.name || entry.id, kind, cols, rows,
+      tiles: new Map((Array.isArray(mapData.tiles)?mapData.tiles:[]).map(t => [`${t.c},${t.r}`, t])),
+      floorSet, exits: Array.isArray(mapData.exits) ? mapData.exits : [],
+      buildings: Array.isArray(mapData.buildings) ? mapData.buildings : [],
+      furniture: Array.isArray(mapData.furniture) ? mapData.furniture : [],
+      npcStations: Array.isArray(mapData.npcStations) ? mapData.npcStations : [],
+      raw: mapData, zGrid: null
+    };
+    state.project.mapId = entry.id;
+    state.project.points.forEach(p => { p.c = clamp(p.c, 0, cols-1); p.r = clamp(p.r, 0, rows-1); });
+    els.mapLoadStatus.textContent = `Loaded "${state.mapMeta.name}" — ${cols}×${rows} tiles (${kind}).`;
+    els.mapStatusPill.textContent = `Map: ${state.mapMeta.name}`;
+    els.mapSelect.value = entry.id;
+    log(`Map "${state.mapMeta.name}" ready (${kind}, ${cols}×${rows}).`);
+    saveLocal();
+    build3DScene();
+    renderAll();
+  }
+
+  function clearMap() {
+    state.mapLoadToken++;
+    state.mapMeta = { loaded:false, id:null, name:"", kind:"blank", cols:DEFAULT_COLS, rows:DEFAULT_ROWS, tiles:new Map(), floorSet:new Set(), zGrid:null, buildings:[] };
+    state.project.mapId = "";
+    els.mapLoadStatus.textContent = "No map loaded — using a blank 24×16 practice grid.";
+    els.mapStatusPill.textContent = "No map loaded";
+    els.mapSelect.value = "";
+    log("Cleared map — back to a blank practice grid.");
+    saveLocal();
+    build3DScene();
+    renderAll();
+  }
+
+  function tileTypeAt(c, r) {
+    if (state.mapMeta.kind === "interior") return state.mapMeta.floorSet.has(`${c},${r}`) ? "grass" : "rock";
+    if (state.mapMeta.kind === "exterior") { const t = state.mapMeta.tiles.get(`${c},${r}`); return (t && t.type) || "grass"; }
+    return "grass";
+  }
+  function tileColorAt(c, r) {
+    if (state.mapMeta.kind === "interior") return tileTypeAt(c,r) === "grass" ? INTERIOR_FLOOR_COLOR : INTERIOR_WALL_TILE_COLOR;
+    return (TILE_INFO[tileTypeAt(c,r)] || TILE_INFO.grass).color;
+  }
+  function groundYAt(c, r) {
+    const zGrid = state.mapMeta.zGrid;
+    if (!zGrid || state.mapMeta.kind !== "exterior") return 0;
+    const cell = zGrid[clamp(Math.round(r),0,zGrid.length-1)]?.[clamp(Math.round(c),0,(zGrid[0]||[]).length-1)];
+    if (!cell) return 0;
+    return TerrainPreview.NORMAL_TOP + (cell.elevTier || 0) * TerrainPreview.PLATEAU_UNIT;
+  }
+
+  // ── Three.js scene lifecycle (persistent across tabs; never destroyed) ──
+
+  function init3D() {
+    if (!window.THREE || !THREE.WebGLRenderer || !THREE.OrbitControls) {
+      log("Three.js failed to load — 3D preview unavailable.", "ERROR");
+      return;
+    }
+    const canvas = els.canvas3d;
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setClearColor(0x07101a, 1);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+    camera.position.set(20, 22, 20);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.85);
+    sun.position.set(40, 60, 20);
+    scene.add(sun);
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    const worldGroup = new THREE.Group();
+    const terrainGroup = new THREE.Group(); worldGroup.add(terrainGroup);
+    const buildingsGroup = new THREE.Group(); worldGroup.add(buildingsGroup);
+    const markersGroup = new THREE.Group(); worldGroup.add(markersGroup);
+    const actorsGroup = new THREE.Group(); worldGroup.add(actorsGroup);
+    scene.add(worldGroup);
+
+    state.three = { renderer, scene, camera, controls, terrainGroup, buildingsGroup, markersGroup, actorsGroup, wallBuilder: null };
+
+    function resize() {
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      const r = els.viewportWrap.getBoundingClientRect();
+      const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+      renderer.setPixelRatio(dpr);
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener("resize", resize);
+    resize();
+
+    function tick() {
+      requestAnimationFrame(tick);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    tick();
+    frameCameraToStage();
+  }
+
+  function disposeGroupChildren(group) {
+    while (group.children.length) {
+      const obj = group.children.pop();
+      obj.traverse?.(child => {
+        child.geometry?.dispose?.();
+        const mats = child.material ? (Array.isArray(child.material) ? child.material : [child.material]) : [];
+        mats.forEach(m => { m.map?.dispose?.(); m.dispose?.(); });
+      });
+    }
+  }
+
+  function _terrainGeometryFromArrays(pos, idx) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  async function ensureWallBuilder() {
+    const three = state.three;
+    if (!three || !window.WallBuilder) return null;
+    if (three.wallBuilder) return three.wallBuilder;
+    const wb = new WallBuilder({ glbBasePath: ASSET_BASE + "assets/models/" });
+    try { await wb.loadDefaultGlb(); } catch (e) { wb.ensurePlaceholderGlb(); }
+    three.wallBuilder = wb;
+    return wb;
+  }
+
+  // Builds a private, throwaway 3D copy of the currently loaded map (or a
+  // flat practice plane when no map is loaded) using the exact same
+  // reusable modules (TerrainPreview/WallBuilder/HousePieceGen/
+  // ProceduralFurniture/FoliageGenerator) the Map Editor's live preview and
+  // the real game use — see docs/tools/map-editor/index.html's rebuild3D()
+  // for the terrain half of this, which this mirrors, upgraded to build
+  // real building geometry (HousePieceGen) instead of a placeholder box.
+  let _buildGeneration = 0;
+  async function build3DScene() {
+    const three = state.three;
+    if (!three) return;
+    const myGen = ++_buildGeneration;
+    disposeGroupChildren(three.terrainGroup);
+    disposeGroupChildren(three.buildingsGroup);
+
+    if (!state.mapMeta.loaded) {
+      buildBlankPracticePlane();
+      frameCameraToStage();
+      rebuildActorAndPointMarkers();
+      return;
+    }
+    if (state.mapMeta.kind === "exterior") {
+      await buildExteriorScene(myGen);
+    } else {
+      await buildInteriorScene(myGen);
+    }
+    if (myGen !== _buildGeneration) return;
+    frameCameraToStage();
+    rebuildActorAndPointMarkers();
+  }
+
+  function buildBlankPracticePlane() {
+    const three = state.three;
+    const cols = GRID_COLS(), rows = GRID_ROWS();
+    const geo = new THREE.PlaneGeometry(cols, rows);
+    geo.rotateX(-Math.PI/2);
+    geo.translate(cols/2, 0, rows/2);
+    const mat = new THREE.MeshLambertMaterial({ color: 0x3c5a37, side: THREE.DoubleSide });
+    three.terrainGroup.add(new THREE.Mesh(geo, mat));
+    const grid = new THREE.GridHelper(Math.max(cols,rows), Math.max(cols,rows), 0x2a3d27, 0x2a3d27);
+    grid.position.set(cols/2, 0.01, rows/2);
+    three.terrainGroup.add(grid);
+    state.mapMeta.zGrid = null;
+  }
+
+  async function buildExteriorScene(myGen) {
+    const three = state.three;
+    const map = state.mapMeta.raw;
+    let merged;
+    try {
+      const ws = { maps: [{ ...map, tiles: tilesArrayToDict(map.tiles) }], plateauGroups: [] };
+      merged = TerrainPreview.buildMergedZoneGrid(ws, map.id);
+    } catch (e) {
+      log(`Terrain build failed, falling back to a flat plane: ${e.message}`, "ERROR");
+      buildBlankPracticePlane();
+      return;
+    }
+    const zGrid = TerrainPreview.buildZGrid(merged.cols, merged.rows, merged.tiles);
+    TerrainPreview.applyRampCurtainFlags(zGrid, merged.cols, merged.rows);
+    state.mapMeta.zGrid = zGrid;
+
+    const CARVED_TYPES = { river:0x2f6fa8, stream:0x2f6fa8, waterfall:0x2f6fa8, trench:0x6b5638, raised:0x6b5638 };
+    const floorMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    const colorOf = hex => { const n = parseInt(hex.slice(1),16); return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255]; };
+    const fPos=[], fCol=[], fIdx=[];
+    for (let r=0;r<merged.rows;r++) for (let c=0;c<merged.cols;c++) {
+      const t = zGrid[r][c];
+      if (!t || t.skipFloor) continue;
+      const tile = merged.tiles.get(`${c},${r}`);
+      if (!tile || tile.type === 'ramp' || CARVED_TYPES[tile.type] !== undefined) continue;
+      const y = TerrainPreview.NORMAL_TOP + (t.elevTier||0)*TerrainPreview.PLATEAU_UNIT;
+      const col = colorOf((TILE_INFO[tile.type]||{color:'#4a7c43'}).color);
+      const base = fPos.length/3;
+      fPos.push(c,y,r, c+1,y,r, c+1,y,r+1, c,y,r+1);
+      for (let k=0;k<4;k++) fCol.push(...col);
+      fIdx.push(base,base+1,base+2, base,base+2,base+3);
+    }
+    if (fIdx.length) {
+      const fGeo = new THREE.BufferGeometry();
+      fGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fPos),3));
+      fGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(fCol),3));
+      fGeo.setIndex(fIdx); fGeo.computeVertexNormals();
+      three.terrainGroup.add(new THREE.Mesh(fGeo, floorMat));
+    }
+
+    const carvedGrassMat = new THREE.MeshLambertMaterial({ color:0x4f9a4f, side:THREE.DoubleSide });
+    for (const [type, bedColor] of Object.entries(CARVED_TYPES)) {
+      const bedMat = new THREE.MeshLambertMaterial({ color:bedColor, side:THREE.DoubleSide });
+      const cPos=[], dIdx=[], gIdx=[];
+      for (let r=0;r<merged.rows;r++) for (let c=0;c<merged.cols;c++) {
+        if (zGrid[r][c].type !== type) continue;
+        let geo; try { geo = TerrainPreview.buildTerrainTileGeo(c,r,type,zGrid); } catch(e){ continue; }
+        const base = cPos.length/3;
+        const tierY = (zGrid[r][c].elevTier||0)*TerrainPreview.PLATEAU_UNIT;
+        const gp = geo.pos;
+        if (tierY) for (let k=1;k<gp.length;k+=3) gp[k]+=tierY;
+        cPos.push(...gp);
+        for (const v of geo.dirtIdx) dIdx.push(v+base);
+        for (const v of geo.grassIdx) gIdx.push(v+base);
+      }
+      if (dIdx.length) three.terrainGroup.add(new THREE.Mesh(_terrainGeometryFromArrays(cPos,dIdx), bedMat));
+      if (gIdx.length) three.terrainGroup.add(new THREE.Mesh(_terrainGeometryFromArrays(cPos,gIdx), carvedGrassMat));
+    }
+
+    const mesaMat = new THREE.MeshLambertMaterial({ color:0xa8835a, side:THREE.DoubleSide });
+    const skinMat = new THREE.MeshLambertMaterial({ color:0x6b5638, side:THREE.DoubleSide });
+    for (const mesa of merged.mesas) {
+      const elevOffset = (mesa.toTier - mesa.fromTier) * TerrainPreview.PLATEAU_UNIT;
+      if (elevOffset <= 0) continue;
+      let geo; try { geo = TerrainPreview.buildPlateauMesaGeometry(mesa, elevOffset, mesa.fromTier*TerrainPreview.PLATEAU_UNIT, zGrid); } catch(e){ continue; }
+      const grassIdx = geo.idx.slice(0, geo.grassCount);
+      const stoneIdx = geo.idx.slice(geo.grassCount);
+      if (grassIdx.length) three.terrainGroup.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.pos,grassIdx), mesaMat));
+      if (stoneIdx.length) three.terrainGroup.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.pos,stoneIdx), skinMat));
+    }
+
+    const rampMat = new THREE.MeshLambertMaterial({ color:0xc2b280, side:THREE.DoubleSide });
+    const curtainMat = new THREE.MeshLambertMaterial({ color:0x8a7550, side:THREE.DoubleSide });
+    try {
+      const rampGeo = TerrainPreview.buildRampMeshGeometry(zGrid, merged.cols, merged.rows);
+      if (rampGeo.idx.length) three.terrainGroup.add(new THREE.Mesh(_terrainGeometryFromArrays(rampGeo.pos,rampGeo.idx), rampMat));
+      const curtainGeo = TerrainPreview.buildRampCurtainGeometry(zGrid, merged.cols, merged.rows);
+      if (curtainGeo.idx.length) three.terrainGroup.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.pos,curtainGeo.idx), curtainMat));
+    } catch (e) { /* ramp geometry is best-effort, mirrors map-editor */ }
+
+    try {
+      const rockGeo = TerrainPreview.buildRockFormationGeometry(merged, zGrid, merged.cols, merged.rows);
+      if (rockGeo.idx.length) three.terrainGroup.add(new THREE.Mesh(_terrainGeometryFromArrays(rockGeo.pos,rockGeo.idx), skinMat));
+    } catch (e) { /* best-effort */ }
+
+    const waterfallMat = new THREE.MeshBasicMaterial({ color:0x2f8fc2, transparent:true, opacity:.55, side:THREE.DoubleSide, depthWrite:false });
+    try {
+      const wfGeo = TerrainPreview.buildWaterfallWallGeometry(zGrid, merged.cols, merged.rows);
+      if (wfGeo.idx.length) three.terrainGroup.add(new THREE.Mesh(_terrainGeometryFromArrays(wfGeo.pos,wfGeo.idx), waterfallMat));
+    } catch (e) { /* best-effort */ }
+
+    // Foliage: shrub tiles get the real procedural shrub mesh the game uses.
+    if (window.FoliageGenerator) {
+      for (let r=0;r<merged.rows;r++) for (let c=0;c<merged.cols;c++) {
+        const tile = merged.tiles.get(`${c},${r}`);
+        if (tile?.type === 'shrub') {
+          try { const m = window.FoliageGenerator.buildShrubMesh(c, r); if (m) three.terrainGroup.add(m); } catch (e) { /* best-effort */ }
+        }
+      }
+    }
+
+    if (myGen !== _buildGeneration) return;
+
+    // Real buildings via HousePieceGen (the same function + defaults
+    // docs/game.js uses for town buildings), not a placeholder box.
+    const wb = await ensureWallBuilder();
+    if (myGen !== _buildGeneration) return;
+    for (const b of (merged.buildings || [])) {
+      if (!b.pieceFile) continue;
+      try {
+        const res = await fetch(ASSET_BASE + b.pieceFile);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const piece = await res.json();
+        if (myGen !== _buildGeneration) return;
+        const group = HousePieceGen.buildGroupFromPiece(THREE, piece, b.gridX, b.gridZ, {
+          wallBuilder: wb, wbUsePlaceholder: true,
+          wbOpts: b.wbOpts || WB_DEFAULTS, wbGableOpts: b.wbGableOpts,
+          rotationDeg: b.rotationDeg || 0, elevationY: TerrainPreview.NORMAL_TOP + (b.elevTier||0)*TerrainPreview.PLATEAU_UNIT
+        });
+        three.buildingsGroup.add(group);
+      } catch (e) {
+        log(`Building "${b.label||b.id}" failed to build (${e.message}) — showing a placeholder box instead.`, "ERROR");
+        const w = b.footprintW||1, d = b.footprintD||1, h = TerrainPreview.PLATEAU_UNIT;
+        const y0 = TerrainPreview.NORMAL_TOP + (b.elevTier||0)*TerrainPreview.PLATEAU_UNIT;
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshLambertMaterial({ color:0xe85d4a, transparent:true, opacity:.55 }));
+        mesh.position.set(b.gridX+w/2, y0+h/2, b.gridZ+d/2);
+        three.buildingsGroup.add(mesh);
+      }
+    }
+  }
+
+  // Interiors have no wall geometry in their JSON — walls are derived from
+  // floor[]/exits[] at runtime. This is a simplified per-edge wall author
+  // (every floor-cell edge bordering a non-floor cell becomes a wall panel,
+  // with a gap left at any tile tagged by an exit) rather than the full
+  // run-merging algorithm docs/tools/building-interior-author/index.html
+  // uses, so tight diagonal nooks may look slightly boxier here than in the
+  // real interior — acceptable for staging a cutscene, not meant to be a
+  // architecture-accurate substitute for Building Interior Author.
+  async function buildInteriorScene(myGen) {
+    const three = state.three;
+    const meta = state.mapMeta;
+    const cols = meta.cols, rows = meta.rows;
+
+    const floorMat = new THREE.MeshLambertMaterial({ color: 0x5d4a37, side: THREE.DoubleSide });
+    const fPos=[], fIdx=[];
+    meta.floorSet.forEach(key => {
+      const [c,r] = key.split(",").map(Number);
+      const base = fPos.length/3;
+      fPos.push(c,0,r, c+1,0,r, c+1,0,r+1, c,0,r+1);
+      fIdx.push(base,base+1,base+2, base,base+2,base+3);
+    });
+    if (fIdx.length) three.terrainGroup.add(new THREE.Mesh(_terrainGeometryFromArrays(fPos,fIdx), floorMat));
+
+    const exitTileKeys = new Set();
+    (meta.exits||[]).forEach(exit => (exit.tiles||[]).forEach(([c,r]) => exitTileKeys.add(`${c},${r}`)));
+
+    const panels = [];
+    const WALL_H = 2.4;
+    meta.floorSet.forEach(key => {
+      const [c,r] = key.split(",").map(Number);
+      const edges = [ [1,0, c+1,r, c+1,r+1], [-1,0, c,r, c,r+1], [0,1, c,r+1, c+1,r+1], [0,-1, c,r, c+1,r] ];
+      for (const [dc,dr, x1,z1, x2,z2] of edges) {
+        const nc = c+dc, nr = r+dr;
+        const neighborKey = `${nc},${nr}`;
+        if (meta.floorSet.has(neighborKey)) continue; // open interior — no wall
+        if (exitTileKeys.has(key) || exitTileKeys.has(neighborKey)) continue; // doorway gap
+        const mx = (x1+x2)/2, mz = (z1+z2)/2;
+        const rotY = (dc !== 0) ? 90 : 0;
+        panels.push({ id: `wall_${c}_${r}_${dc}_${dr}`, width: 1, height: WALL_H, position:[mx, WALL_H/2, mz], rotationDeg:[0, rotY, 0] });
+      }
+    });
+    if (panels.length && window.WallBuilder) {
+      try {
+        const wb = await ensureWallBuilder();
+        if (myGen !== _buildGeneration) return;
+        const group = wb.build(panels, { unitMult: 0.5, usePlaceholder: true });
+        three.buildingsGroup.add(group);
+      } catch (e) { log(`Interior wall build failed: ${e.message}`, "ERROR"); }
+    }
+
+    if (window.ProceduralFurniture) {
+      for (const f of (meta.furniture||[])) {
+        const key = String(f.itemKey||"").endsWith("Furniture") ? f.itemKey.slice(0,-9) : f.itemKey;
+        try {
+          const group = window.ProceduralFurniture.buildFurnitureGroup(key, 0x8b6540);
+          if (!group.children.length) continue; // unknown recipe — skip rather than show nothing useful
+          const fw = 1, fd = 1;
+          group.position.set((f.col||0)+fw/2+(f.postX||0), f.postY||0, (f.row||0)+fd/2+(f.postZ||0));
+          group.rotation.y = THREE.MathUtils.degToRad(f.rotY||0);
+          group.scale.set(f.postSX??1, f.postSY??1, f.postSZ??1);
+          three.buildingsGroup.add(group);
+        } catch (e) { /* best-effort per docs/game.js's own furniture pass */ }
+      }
+    }
+  }
+
+  function frameCameraToStage() {
+    const three = state.three;
+    if (!three) return;
+    if (state.project?.camera3d) { applyCamera3D(state.project.camera3d); return; }
+    const cols = GRID_COLS(), rows = GRID_ROWS();
+    const dist = Math.max(cols, rows);
+    three.camera.position.set(cols*0.5 + dist*0.35, dist*0.55, rows*0.5 + dist*0.55);
+    three.controls.target.set(cols/2, 0, rows/2);
+    three.camera.lookAt(three.controls.target);
+    three.controls.update();
+  }
+
+  function applyCamera3D(cam) {
+    const three = state.three;
+    if (!three || !cam) return;
+    three.camera.position.set(cam.pos.x, cam.pos.y, cam.pos.z);
+    three.controls.target.set(cam.target.x, cam.target.y, cam.target.z);
+    three.camera.lookAt(three.controls.target);
+    three.controls.update();
+  }
+
+  function captureCamera3D() {
+    const three = state.three;
+    if (!three) return;
+    state.project.camera3d = {
+      pos: { x: three.camera.position.x, y: three.camera.position.y, z: three.camera.position.z },
+      target: { x: three.controls.target.x, y: three.controls.target.y, z: three.controls.target.z }
+    };
+    saveLocal();
+    toast("Camera captured for Play.");
+    log("Play camera captured from the current 3D view.");
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  NPC database — fetch + real 3D avatar building
+  // ══════════════════════════════════════════════════════════════════════
+
+  async function fetchNpcDb() {
+    state.npcDb.loading = true;
+    try {
+      const res = await fetch(NPC_DB_URL);
+      const json = await res.json();
+      const list = Array.isArray(json.npcs) ? json.npcs : (Array.isArray(json) ? json : []);
+      state.npcDb.list = list;
+      state.npcDb.byId = new Map(list.map(n => [n.id, n]));
+      state.npcDb.loaded = true;
+      log(`NPC database loaded: ${list.length} NPCs.`);
+    } catch (error) {
+      log(`Could not load NPC database: ${error.message}`, "ERROR");
+    } finally {
+      state.npcDb.loading = false;
+      renderNpcPickerList();
+      renderActors(); // badges may need to resolve now that names are known
+    }
+  }
+
+  async function ensureCosmetics() {
+    if (!window.NpcAvatarPreview) return null;
+    if (!state.cosmeticsReady) {
+      state.cosmeticsReady = window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: ASSET_BASE + "assets/", configBase: ASSET_BASE + "config/" }).catch(e => { log(`Cosmetics failed to load: ${e.message}`, "ERROR"); return null; });
+    }
+    return state.cosmeticsReady;
+  }
+
+  const DEFAULT_APPEARANCE = {
+    speciesId: "mao-ao", gender: "male", cosmetics: {},
+    bodyColors: { A:{h:0,s:-0.7,v:-0.3}, B:{h:0,s:-0.7,v:-0.5}, C:{h:0,s:-0.65,v:-0.12} },
+    chatColor: { h:210, s:75, l:68 }
+  };
+
+  function npcExportShape(npc) {
+    const appearance = { ...DEFAULT_APPEARANCE, ...(npc.appearance || {}) };
+    appearance.cosmetics = { ...DEFAULT_APPEARANCE.cosmetics, ...(npc.appearance?.cosmetics || {}) };
+    appearance.bodyColors = { ...DEFAULT_APPEARANCE.bodyColors, ...(npc.appearance?.bodyColors || {}) };
+    return {
+      name: npc.name || npc.id, appearance,
+      equippedCosmetics: Array.isArray(npc.equippedCosmetics) ? npc.equippedCosmetics : [],
+      appliedDyes: npc.appliedDyes || {}, portrait: npc.portrait || {}
+    };
+  }
+
+  // Builds a real PNGPlaneAvatar 3D avatar for an NPC (front+back portrait
+  // planes rendered from the NPC's actual appearance/cosmetics data), or
+  // returns null if anything about that pipeline isn't available/fails —
+  // callers must fall back to the plain color-token placeholder, the same
+  // graceful-degradation policy this tool uses for animation data that may
+  // or may not exist.
+  async function buildNpcAvatarGroup(npc) {
+    if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar || !window.THREE) return null;
+    try {
+      await ensureCosmetics();
+      const exportShape = npcExportShape(npc);
+      const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(exportShape);
+      if (!profile) return null;
+      const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+      const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
+      const size = avatarCfg.previewPortraitCanvasSize ?? 200;
+      const frontCanvas = document.createElement("canvas"); frontCanvas.width = frontCanvas.height = size;
+      await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+      const backCanvas = document.createElement("canvas"); backCanvas.width = backCanvas.height = size;
+      await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: "behind" });
+      const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, frontCanvas, {
+        backCanvas, profile, npcRecord: npc, name: `npc_avatar_${npc.id}`,
+        modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01
+      });
+      const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
+      avatarGroup.position.set(0, avatarHeight/2, 0);
+      return { group: avatarGroup, profile, frontCanvas, backCanvas };
+    } catch (error) {
+      log(`Avatar build failed for NPC "${npc.name||npc.id}": ${error.message}`, "ERROR");
+      return null;
+    }
+  }
+
+  function buildPlaceholderAvatarGroup(actor) {
+    // THREE r128 predates CapsuleGeometry (added far later), so the token
+    // body is a plain cylinder+sphere instead.
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshLambertMaterial({ color: actor.color || "#cccccc" });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.85, 10), bodyMat);
+    body.position.y = 0.28 + 0.85/2;
+    group.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), bodyMat);
+    head.position.y = 0.28 + 0.85 + 0.18;
+    group.add(head);
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.22, 8), new THREE.MeshBasicMaterial({ color: 0xfff7ad }));
+    arrow.position.set(0, 0.6, 0.3);
+    arrow.rotation.x = Math.PI/2;
+    group.add(arrow);
+    return group;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  Actor / point 3D markers (rebuilt cheaply on every project edit —
+  //  never touches terrainGroup/buildingsGroup, which only rebuild on map load)
+  // ══════════════════════════════════════════════════════════════════════
+
+  function actorHeight(actorId) {
+    const rec = state.actorObjects.get(actorId);
+    return rec?.avatarHeight || 1.6;
+  }
+
+  async function ensureActorObject(actor) {
+    const three = state.three;
+    if (!three) return null;
+    let rec = state.actorObjects.get(actor.id);
+    if (rec && rec.npcId === actor.npcId && rec.name === actor.name) return rec;
+
+    if (rec) { three.actorsGroup.remove(rec.root); }
+    const root = new THREE.Group();
+    root.name = `actor_${actor.id}`;
+    let avatarInfo = null;
+    const npc = npcById(actor.npcId);
+    if (npc) avatarInfo = await buildNpcAvatarGroup(npc);
+    const usingPlaceholder = !avatarInfo;
+    let avatarGroup;
+    try { avatarGroup = avatarInfo ? avatarInfo.group : buildPlaceholderAvatarGroup(actor); }
+    catch (e) { log(`Could not build any avatar for "${actor.name}": ${e.message}`, "ERROR"); avatarGroup = new THREE.Group(); }
+    root.add(avatarGroup);
+    three.actorsGroup.add(root);
+    rec = {
+      root, avatarGroup, npcId: actor.npcId, name: actor.name, usingPlaceholder,
+      profile: avatarInfo?.profile || null, frontCanvas: avatarInfo?.frontCanvas || null,
+      avatarHeight: avatarGroup.userData?.portraitModelHeight || 1.6, breathTimer: null
+    };
+    state.actorObjects.set(actor.id, rec);
+    return rec;
+  }
+
+  function pruneStaleActorObjects() {
+    const validIds = new Set(state.project.actors.map(a => a.id));
+    for (const [id, rec] of state.actorObjects) {
+      if (validIds.has(id)) continue;
+      clearInterval(rec.breathTimer);
+      state.three?.actorsGroup.remove(rec.root);
+      state.actorObjects.delete(id);
+    }
+  }
+
+  async function rebuildActorAndPointMarkers() {
+    const three = state.three;
+    if (!three || !state.project) return;
+    disposeGroupChildren(three.markersGroup);
+    pruneStaleActorObjects();
+
+    state.project.points.forEach((point, index) => {
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.55, 10), new THREE.MeshBasicMaterial({ color: point.id===state.selectedPointId ? 0xffe36e : 0xf2b755 }));
+      cone.position.set(point.c+0.5, groundYAt(point.c,point.r)+0.9, point.r+0.5);
+      cone.rotation.x = Math.PI;
+      cone.name = `point_${point.id}`;
+      three.markersGroup.add(cone);
+    });
+
+    const initial = initialActorStates();
+    for (const actor of state.project.actors) {
+      const rec = await ensureActorObject(actor);
+      if (!rec) continue;
+      const st = initial.get(actor.id);
+      if (!st) continue;
+      rec.root.position.set(st.c+0.5, groundYAt(st.c,st.r), st.r+0.5);
+      rec.root.rotation.y = THREE.MathUtils.degToRad(st.rotation);
+      rec.root.scale.setScalar(st.pose === "prone" ? 0.6 : 1);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  2D authoring grid (points placement) — dynamic size, real tile tint
+  // ══════════════════════════════════════════════════════════════════════
+
+  function getBoardCellFromPointer(board, clientX, clientY) {
+    const rect = board.getBoundingClientRect();
+    return { c: clamp(Math.floor((clientX-rect.left)/rect.width*GRID_COLS()),0,GRID_COLS()-1), r: clamp(Math.floor((clientY-rect.top)/rect.height*GRID_ROWS()),0,GRID_ROWS()-1) };
+  }
+
+  function renderEditorBoard() {
+    const board = els.editorBoard;
+    const cols = GRID_COLS(), rows = GRID_ROWS();
+    board.style.setProperty("--cols", cols);
+    board.style.setProperty("--rows", rows);
+    board.innerHTML = "";
+    for (let index=0; index<cols*rows; index++) {
+      const c = index % cols, r = Math.floor(index/cols);
+      const tile = document.createElement("button");
+      tile.className = "tile";
+      tile.style.background = tileColorAt(c,r);
+      tile.setAttribute("aria-label", `Tile ${c+1}, ${r+1}`);
+      tile.addEventListener("click", () => {
+        if (state.draggingPointId || !state.movingPointId) return;
+        movePointTo(state.movingPointId, c, r);
+      });
+      board.appendChild(tile);
+    }
+
+    state.project.points.forEach(point => {
+      const token = document.createElement("div");
+      token.className = `point-token ${point.id===state.selectedPointId?"selected":""}`;
+      token.style.left = `${point.c*100/cols}%`;
+      token.style.top = `${point.r*100/rows}%`;
+      token.innerHTML = `<span class="pin"><span>${escapeHtml(point.name.slice(0,2))}</span></span>`;
+      token.addEventListener("click", e => { e.stopPropagation(); state.selectedPointId = point.id; state.movingPointId = null; renderAll(); });
+      token.addEventListener("pointerdown", e => {
+        e.preventDefault(); e.stopPropagation();
+        state.selectedPointId = point.id; state.draggingPointId = point.id;
+        token.setPointerCapture?.(e.pointerId);
+        renderPointLists();
+      });
+      token.addEventListener("pointermove", e => {
+        if (state.draggingPointId !== point.id) return;
+        const cell = getBoardCellFromPointer(board, e.clientX, e.clientY);
+        const live = pointById(point.id);
+        if (!live || (live.c===cell.c && live.r===cell.r)) return;
+        live.c = cell.c; live.r = cell.r;
+        saveLocal();
+        renderEditorBoard();
+      });
+      token.addEventListener("pointerup", e => {
+        if (state.draggingPointId !== point.id) return;
+        token.releasePointerCapture?.(e.pointerId);
+        state.draggingPointId = null;
+        log(`${point.name} moved. Linked movement repathed.`);
+        changed("");
+      });
+      token.addEventListener("pointercancel", () => { state.draggingPointId = null; renderAll(); });
+      board.appendChild(token);
+    });
+
+    els.pickBanner.classList.toggle("hidden", !state.movingPointId);
+  }
+
+  function movePointTo(pointId, c, r) {
+    const point = pointById(pointId);
+    if (!point) return;
+    point.c = c; point.r = r;
+    state.movingPointId = null;
+    changed(`${point.name} moved to tile ${c+1}, ${r+1}.`);
+    toast(`${point.name} moved.`);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  Points / Characters / Stages list rendering (left column)
+  // ══════════════════════════════════════════════════════════════════════
+
+  function renderPointLists() {
+    if (state.selectedPointId && !pointById(state.selectedPointId)) state.selectedPointId = null;
+    els.pointList.innerHTML = state.project.points.length
+      ? state.project.points.map((point,index) => `
+          <div class="item-card ${point.id===state.selectedPointId?"selected":""}" data-point-id="${escapeHtml(point.id)}">
+            <span class="point-dot">${index+1}</span>
+            <span><strong>${escapeHtml(point.name)}</strong><small>Tile ${point.c+1}, ${point.r+1}</small></span>
+            <button data-move-point="${escapeHtml(point.id)}">Move</button>
+          </div>`).join("")
+      : `<div class="empty-state">Add your first named point.</div>`;
+
+    els.pointList.querySelectorAll("[data-point-id]").forEach(card => {
+      card.addEventListener("click", e => {
+        state.selectedPointId = card.dataset.pointId;
+        if (e.target.closest("[data-move-point]")) { state.movingPointId = card.dataset.pointId; toast("Tap a tile below."); }
+        renderAll();
+      });
+    });
+
+    const point = pointById(state.selectedPointId);
+    els.pointEditor.classList.toggle("hidden", !point);
+    if (point) els.pointNameInput.value = point.name;
+  }
+
+  function actorAvatarBadgeHtml(actor) {
+    const rec = state.actorObjects.get(actor.id);
+    if (!actor.npcId) return `<span class="swatch" style="background:${escapeHtml(actor.color)}">${escapeHtml(actor.name.slice(0,2))}</span>`;
+    if (rec && !rec.usingPlaceholder && rec.frontCanvas) return `<span class="swatch"><img src="${rec.frontCanvas.toDataURL()}" alt=""></span>`;
+    return `<span class="swatch" style="background:${escapeHtml(actor.color)}">${escapeHtml(actor.name.slice(0,2))}</span>`;
+  }
+
+  function renderActors() {
+    if (state.selectedActorId && !actorById(state.selectedActorId)) state.selectedActorId = null;
+    els.actorList.innerHTML = state.project.actors.length
+      ? state.project.actors.map(actor => {
+          const start = pointById(actor.startPointId);
+          const npc = npcById(actor.npcId);
+          const npcLabel = actor.npcId ? (npc ? `NPC: ${escapeHtml(npc.name)}` : `NPC: ${escapeHtml(actor.npcId)} (not found)`) : "custom actor";
+          return `
+            <div class="item-card ${actor.id===state.selectedActorId?"selected":""}" data-actor-id="${escapeHtml(actor.id)}">
+              ${actorAvatarBadgeHtml(actor)}
+              <span><strong>${escapeHtml(actor.name)}</strong><small>${npcLabel} · ${escapeHtml(start?.name||"Missing point")} · ${actor.rotation}°</small></span>
+              <button>Edit</button>
+            </div>`;
+        }).join("")
+      : `<div class="empty-state">Add a character from the NPC database, or a custom one.</div>`;
+
+    els.actorList.querySelectorAll("[data-actor-id]").forEach(card => {
+      card.addEventListener("click", () => { state.selectedActorId = card.dataset.actorId; renderAll(); });
+    });
+
+    const actor = actorById(state.selectedActorId);
+    els.actorEditor.classList.toggle("hidden", !actor);
+    if (actor) {
+      els.actorNameInput.value = actor.name;
+      els.actorColorInput.value = actor.color;
+      els.actorStartSelect.innerHTML = pointSelectHtml(actor.startPointId);
+      els.actorRotationInput.value = actor.rotation;
+      els.actorPoseSelect.value = actor.pose;
+      els.actorCombatInput.checked = actor.combatOn;
+      els.actorCanLoseInput.checked = actor.canLose;
+      const npc = npcById(actor.npcId);
+      els.actorNpcBadge.classList.toggle("hidden", !actor.npcId);
+      els.unlinkNpcBtn.classList.toggle("hidden", !actor.npcId);
+      if (actor.npcId) {
+        const rec = state.actorObjects.get(actor.id);
+        const status = !state.npcDb.loaded ? "NPC database still loading…" : !npc ? "⚠ NPC id not found in the database." : rec?.usingPlaceholder ? "⚠ Real avatar failed to build — showing a color token instead." : "✓ Live 3D avatar built from this NPC's real appearance.";
+        els.actorNpcBadge.innerHTML = `<strong>Linked NPC: ${escapeHtml(npc?.name||actor.npcId)}</strong><br>${escapeHtml(status)}`;
+      }
+    }
+  }
+
+  function stageSummary(stage) {
+    if (stage.type === "move") return `${actorById(stage.actorId)?.name||"Missing actor"} → ${pointById(stage.pointId)?.name||"Missing point"}`;
+    if (stage.type === "talk") return `${actorById(stage.speakerId)?.name||"Missing actor"}: ${stage.text||"Empty dialogue"}`;
+    if (stage.type === "choice") return `${stage.options.length} answers: ${stage.text||"Choice"}`;
+    if (stage.type === "animation") {
+      const kind = stage.animKind === "breathing" ? "breathing loop" : stage.animKind === "emote" ? `emote: ${stage.emoteName}` : "pose only (no live animation data)";
+      return `${actorById(stage.actorId)?.name||"Missing actor"}: ${stage.animationName} (${kind})`;
+    }
+    if (stage.type === "turn") return stage.mode==="actor" ? `${actorById(stage.actorId)?.name||"Missing actor"} faces ${actorById(stage.targetActorId)?.name||"Missing actor"}` : `${actorById(stage.actorId)?.name||"Missing actor"} → ${stage.angle}°`;
+    if (stage.type === "combat") { const active = stage.participants.filter(i=>i.combatOn).length; const losable = stage.participants.filter(i=>i.combatOn&&i.canLose).length; return `${stage.duration}s · ${active} active · ${losable} can lose`; }
+    return `${stage.direction==="out"?"Fade to black":"Fade in"} · ${stage.duration}s`;
+  }
+
+  function renderStages() {
+    if (state.selectedStageId && !stageById(state.selectedStageId)) state.selectedStageId = null;
+    if (!state.project.stages.length) {
+      els.stageList.innerHTML = `<div class="empty-state">Add a scene card above.</div>`;
+      els.stageEditor.innerHTML = `<div class="editor-empty">Select a card to edit it.</div>`;
+      return;
+    }
+    els.stageList.innerHTML = state.project.stages.map((stage,index) => `
+      <article class="stage-card ${stage.id===state.selectedStageId?"selected":""}" data-stage-id="${escapeHtml(stage.id)}">
+        <div class="stage-number">${index+1}</div>
+        <div class="stage-summary"><strong>${stageIcon(stage.type)} ${stageName(stage.type)}</strong><span>${escapeHtml(stageSummary(stage))}</span></div>
+        <div class="stage-actions">
+          <button data-action="up" ${index===0?"disabled":""}>↑</button>
+          <button data-action="down" ${index===state.project.stages.length-1?"disabled":""}>↓</button>
+          <button data-action="copy">⧉</button>
+          <button data-action="delete">✕</button>
+        </div>
+      </article>`).join("");
+
+    els.stageList.querySelectorAll(".stage-card").forEach(card => {
+      card.addEventListener("click", e => {
+        const action = e.target.closest("[data-action]");
+        if (action) { e.stopPropagation(); handleStageAction(card.dataset.stageId, action.dataset.action); return; }
+        state.selectedStageId = card.dataset.stageId;
+        renderStages();
+      });
+    });
+    renderStageEditor();
+  }
+
+  function handleStageAction(id, action) {
+    const index = stageIndex(id);
+    if (index < 0) return;
+    if (action === "up" && index > 0) { [state.project.stages[index-1],state.project.stages[index]] = [state.project.stages[index],state.project.stages[index-1]]; changed("Card moved up."); return; }
+    if (action === "down" && index < state.project.stages.length-1) { [state.project.stages[index+1],state.project.stages[index]] = [state.project.stages[index],state.project.stages[index+1]]; changed("Card moved down."); return; }
+    if (action === "copy") { const copy = JSON.parse(JSON.stringify(state.project.stages[index])); copy.id = uid("stage"); state.project.stages.splice(index+1,0,copy); state.selectedStageId = copy.id; changed("Card copied."); return; }
+    if (action === "delete") {
+      state.project.stages.splice(index,1);
+      state.project.stages.forEach(stage => {
+        if (stage.next === id) stage.next = "__next__";
+        if (stage.lossNext === id) stage.lossNext = "__end__";
+        if (stage.type === "choice") stage.options.forEach(o => { if (o.next === id) o.next = "__next__"; });
+      });
+      state.selectedStageId = state.project.stages[index]?.id || state.project.stages[index-1]?.id || null;
+      changed("Card deleted.");
+    }
+  }
+
+  function renderStageEditor() {
+    const stage = stageById(state.selectedStageId);
+    if (!stage) { els.stageEditor.innerHTML = `<div class="editor-empty">Tap a scene card on the left.</div>`; return; }
+    let fields = "";
+    if (stage.type === "move") {
+      fields = `
+        <label>Who moves?<select id="editActor">${actorSelectHtml(stage.actorId)}</select></label>
+        <label>Move to which point?<select id="editPoint">${pointSelectHtml(stage.pointId)}</select></label>
+        <label>Speed<select id="editSpeed">
+          <option value="slow" ${stage.speed==="slow"?"selected":""}>Slow</option>
+          <option value="normal" ${stage.speed==="normal"?"selected":""}>Normal</option>
+          <option value="fast" ${stage.speed==="fast"?"selected":""}>Fast</option>
+        </select></label>
+        <label>After moving<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
+    } else if (stage.type === "talk") {
+      fields = `
+        <label>Who talks?<select id="editSpeaker">${actorSelectHtml(stage.speakerId)}</select></label>
+        <label>Dialogue<textarea id="editText" maxlength="2500">${escapeHtml(stage.text)}</textarea></label>
+        <label>After this<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
+    } else if (stage.type === "choice") {
+      fields = `
+        <label>Whose name appears?<select id="editSpeaker">${actorSelectHtml(stage.speakerId)}</select></label>
+        <label>Prompt<textarea id="editText" maxlength="2500">${escapeHtml(stage.text)}</textarea></label>
+        <div class="stack">
+          ${stage.options.map((option,index) => `
+            <div class="option-card">
+              <div class="option-top"><strong>Answer ${index+1}</strong><button class="danger" data-remove-option="${index}" ${stage.options.length<=2?"disabled":""}>Remove</button></div>
+              <label>Button text<input data-option-text="${index}" maxlength="300" value="${escapeHtml(option.text)}"></label>
+              <label>Then<select data-option-next="${index}">${nextSelectHtml(option.next,stage.id)}</select></label>
+            </div>`).join("")}
+        </div>
+        <button id="addOptionBtn">＋ Add answer</button>`;
+    } else if (stage.type === "animation") {
+      fields = `
+        <label>Who animates?<select id="editActor">${actorSelectHtml(stage.actorId)}</select></label>
+        <label>Animation trigger name (label only)<input id="editAnimationName" maxlength="80" value="${escapeHtml(stage.animationName)}"></label>
+        <label>Live animation source
+          <select id="editAnimKind">
+            <option value="none" ${stage.animKind==="none"?"selected":""}>None — this project has no matching animation data; just hold the pose</option>
+            <option value="breathing" ${stage.animKind==="breathing"?"selected":""}>Breathing loop (needs an NPC-linked actor)</option>
+            <option value="emote" ${stage.animKind==="emote"?"selected":""}>One-shot emote (needs an NPC-linked actor)</option>
+          </select>
+        </label>
+        <div id="emoteFields" class="${stage.animKind==="emote"?"":"hidden"}">
+          <label>Emote<select id="editEmoteName">${EMOTE_NAMES.map(n=>`<option value="${n}" ${stage.emoteName===n?"selected":""}>${n}</option>`).join("")}</select></label>
+        </div>
+        <div class="tip">This game has no general-purpose idle/walk/attack animation database yet — only the portrait breathing cycle and its emote overlays exist as live data. "None" is the honest default for anything else (creature actors, custom moves); it still holds for the given duration and can change the actor's pose.</div>
+        <label>Pose after animation<select id="editResultPose">
+          <option value="unchanged" ${stage.resultPose==="unchanged"?"selected":""}>Leave pose unchanged</option>
+          <option value="standing" ${stage.resultPose==="standing"?"selected":""}>Standing</option>
+          <option value="prone" ${stage.resultPose==="prone"?"selected":""}>Prone</option>
+        </select></label>
+        <label>Length in seconds<input id="editDuration" type="number" min="0" max="30" step=".1" value="${stage.duration}"></label>
+        <label>After animation<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
+    } else if (stage.type === "turn") {
+      fields = `
+        <label>Who turns?<select id="editActor">${actorSelectHtml(stage.actorId)}</select></label>
+        <label>Turn method<select id="editTurnMode">
+          <option value="actor" ${stage.mode==="actor"?"selected":""}>Face another character</option>
+          <option value="angle" ${stage.mode==="angle"?"selected":""}>Use an exact angle</option>
+        </select></label>
+        <div id="turnActorFields" class="${stage.mode==="actor"?"":"hidden"}"><label>Face whom?<select id="editTargetActor">${actorSelectHtml(stage.targetActorId)}</select></label></div>
+        <div id="turnAngleFields" class="${stage.mode==="angle"?"":"hidden"}"><label>Rotation: 0°–359°<input id="editAngle" type="number" min="0" max="359" step="1" value="${stage.angle}"></label></div>
+        <label>Turn length in seconds<input id="editDuration" type="number" min="0" max="10" step=".05" value="${stage.duration}"></label>
+        <label>After turning<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
+    } else if (stage.type === "combat") {
+      const participants = new Map(stage.participants.map(i => [i.actorId,i]));
+      fields = `
+        <label>Combat length in seconds<input id="editDuration" type="number" min="0" max="300" step=".5" value="${stage.duration}"></label>
+        <div class="tip"><strong>Combat On</strong> activates that character for this card. <strong>Can Lose</strong> makes the loss branch available.</div>
+        <div class="combat-card"><strong>Characters in this combat</strong><div class="combat-grid">
+          ${state.project.actors.map(actor => { const item = participants.get(actor.id) || { combatOn:false, canLose:actor.canLose };
+            return `<div class="combat-row"><strong>${escapeHtml(actor.name)}</strong>
+              <label><input data-combat-on="${escapeHtml(actor.id)}" type="checkbox" ${item.combatOn?"checked":""}>Combat On</label>
+              <label><input data-can-lose="${escapeHtml(actor.id)}" type="checkbox" ${item.canLose?"checked":""}>Can Lose</label></div>`; }).join("")}
+        </div></div>
+        <label>Normal result<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>
+        <label>If a loss happens<select id="editLossNext">${nextSelectHtml(stage.lossNext,stage.id)}</select></label>`;
+    } else {
+      fields = `
+        <label>Fade direction<select id="editFadeDirection">
+          <option value="out" ${stage.direction==="out"?"selected":""}>Fade to black</option>
+          <option value="in" ${stage.direction==="in"?"selected":""}>Fade in from black</option>
+        </select></label>
+        <label>Length in seconds<input id="editDuration" type="number" min="0" max="10" step=".1" value="${stage.duration}"></label>
+        <label>After fade<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
+    }
+
+    const index = stageIndex(stage.id);
+    els.stageEditor.innerHTML = `<div class="editor-fields">
+      <div class="editor-title"><span class="round-icon">${stageIcon(stage.type)}</span><div><strong>${escapeHtml(stageLabel(stage,index))}</strong><div style="color:var(--muted)">${stageName(stage.type)} card</div></div></div>
+      ${fields}
+    </div>`;
+    bindStageEditor(stage);
+  }
+
+  function bindStageEditor(stage) {
+    const bindSelect = (id, property, transform=v=>v) => { const el = $(id); if (!el) return; el.addEventListener("change", () => { stage[property] = transform(el.value); changed(`${stageName(stage.type)} card updated.`); }); };
+    bindSelect("editActor","actorId"); bindSelect("editPoint","pointId"); bindSelect("editSpeaker","speakerId");
+    bindSelect("editSpeed","speed"); bindSelect("editNext","next"); bindSelect("editLossNext","lossNext");
+    bindSelect("editResultPose","resultPose"); bindSelect("editTurnMode","mode"); bindSelect("editTargetActor","targetActorId");
+    bindSelect("editFadeDirection","direction"); bindSelect("editAnimKind","animKind"); bindSelect("editEmoteName","emoteName");
+
+    const text = $("editText"); if (text) text.addEventListener("input", () => { stage.text = text.value; saveLocal(); renderStageListSummaryOnly(); });
+    const animationName = $("editAnimationName"); if (animationName) animationName.addEventListener("input", () => { stage.animationName = animationName.value; saveLocal(); renderStageListSummaryOnly(); });
+    const duration = $("editDuration"); if (duration) duration.addEventListener("change", () => { stage.duration = clamp(Number(duration.value)||0,0,stage.type==="combat"?300:30); changed("Duration updated."); });
+    const angle = $("editAngle"); if (angle) angle.addEventListener("change", () => { stage.angle = normalizeAngle(angle.value); changed("Rotation updated."); });
+
+    if (stage.type === "choice") {
+      els.stageEditor.querySelectorAll("[data-option-text]").forEach(input => input.addEventListener("input", () => { const o = stage.options[Number(input.dataset.optionText)]; if (!o) return; o.text = input.value; saveLocal(); renderStageListSummaryOnly(); }));
+      els.stageEditor.querySelectorAll("[data-option-next]").forEach(select => select.addEventListener("change", () => { const o = stage.options[Number(select.dataset.optionNext)]; if (!o) return; o.next = select.value; changed("Choice branch updated."); }));
+      els.stageEditor.querySelectorAll("[data-remove-option]").forEach(button => button.addEventListener("click", () => { if (stage.options.length<=2) return; stage.options.splice(Number(button.dataset.removeOption),1); changed("Choice answer removed."); }));
+      $("addOptionBtn")?.addEventListener("click", () => { stage.options.push({ text:`Choice ${stage.options.length+1}`, next:"__next__" }); changed("Choice answer added."); });
+    }
+    if (stage.type === "combat") {
+      els.stageEditor.querySelectorAll("[data-combat-on]").forEach(input => input.addEventListener("change", () => updateCombatParticipant(stage, input.dataset.combatOn, "combatOn", input.checked)));
+      els.stageEditor.querySelectorAll("[data-can-lose]").forEach(input => input.addEventListener("change", () => updateCombatParticipant(stage, input.dataset.canLose, "canLose", input.checked)));
+    }
+  }
+
+  function updateCombatParticipant(stage, actorId, property, value) {
+    let item = stage.participants.find(p => p.actorId === actorId);
+    if (!item) { item = { actorId, combatOn:false, canLose:false }; stage.participants.push(item); }
+    item[property] = value;
+    changed("Combat switches updated.");
+  }
+
+  function renderStageListSummaryOnly() {
+    state.project.stages.forEach(stage => {
+      const summary = els.stageList.querySelector(`[data-stage-id="${CSS.escape(stage.id)}"] .stage-summary span`);
+      if (summary) summary.textContent = stageSummary(stage);
+    });
+  }
+
+  function addStage(type) {
+    const firstActor = state.project.actors[0], firstPoint = state.project.points[0];
+    if (!firstPoint) { toast("Add a named point first."); switchScreen("stage"); return; }
+    if (!firstActor) { toast("Add a character first."); switchScreen("characters"); return; }
+    let stage;
+    if (type === "move") stage = { id:uid("stage"), type, actorId:firstActor.id, pointId:firstPoint.id, speed:"normal", next:"__next__" };
+    else if (type === "talk") stage = { id:uid("stage"), type, speakerId:firstActor.id, text:"Type the dialogue here.", next:"__next__" };
+    else if (type === "choice") stage = { id:uid("stage"), type, speakerId:firstActor.id, text:"How do you answer?", options:[{text:"First answer",next:"__next__"},{text:"Second answer",next:"__end__"}] };
+    else if (type === "animation") stage = { id:uid("stage"), type, actorId:firstActor.id, animationName:"animation", animKind:"none", emoteName:EMOTE_NAMES[0], resultPose:"unchanged", duration:1, next:"__next__" };
+    else if (type === "turn") stage = { id:uid("stage"), type, actorId:firstActor.id, mode:"angle", targetActorId:firstActor.id, angle:0, duration:.4, next:"__next__" };
+    else if (type === "combat") stage = { id:uid("stage"), type, duration:10, participants:state.project.actors.map(a=>({actorId:a.id,combatOn:false,canLose:a.canLose})), next:"__next__", lossNext:"__end__" };
+    else stage = { id:uid("stage"), type:"fade", direction:"out", duration:1, next:"__next__" };
+    state.project.stages.push(stage);
+    state.selectedStageId = stage.id;
+    changed(`${stageName(stage.type)} card added.`);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  Play engine — drives the persistent 3D scene
+  // ══════════════════════════════════════════════════════════════════════
+
+  function getResolvedNext(stageId, requestedNext) {
+    if (requestedNext === "__end__") return null;
+    if (requestedNext && requestedNext !== "__next__") return stageById(requestedNext) ? requestedNext : null;
+    const index = stageIndex(stageId);
+    return state.project.stages[index+1]?.id || null;
+  }
+
+  function initialActorStates() {
+    return new Map(state.project.actors.map(actor => {
+      const point = pointById(actor.startPointId);
+      return [actor.id, { c: point?.c||0, r: point?.r||0, rotation: normalizeAngle(actor.rotation), pose: actor.pose, combatOn: Boolean(actor.combatOn), canLose: Boolean(actor.canLose), animationName: "" }];
+    }));
+  }
+
+  function applyActorStateToScene(actorId, st) {
+    const rec = state.actorObjects.get(actorId);
+    if (!rec) return;
+    rec.root.position.set(st.c+0.5, groundYAt(st.c,st.r), st.r+0.5);
+    rec.root.rotation.y = THREE.MathUtils.degToRad(st.rotation);
+    rec.root.scale.setScalar(st.pose === "prone" ? 0.6 : 1);
+  }
+
+  function resetPreview(showToast=false) {
+    state.preview.running = false;
+    state.preview.currentStageId = null;
+    state.preview.token += 1;
+    clearTimeout(state.preview.timer);
+    state.preview.timer = null;
+    state.preview.actorStates = initialActorStates();
+    state.preview.fadeOpacity = 0;
+    for (const rec of state.actorObjects.values()) { clearInterval(rec.breathTimer); rec.breathTimer = null; }
+    hideDialogue();
+    if (els.playStatusPill) els.playStatusPill.textContent = "Press Start to play the cutscene.";
+    if (els.fadeOverlay) { els.fadeOverlay.style.transitionDuration = "0s"; els.fadeOverlay.style.opacity = "0"; }
+    for (const [actorId, st] of state.preview.actorStates) applyActorStateToScene(actorId, st);
+    if (showToast) toast("Preview reset.");
+  }
+
+  function showDialogue(speaker, text, buttons) {
+    els.dialogueSpeaker.textContent = speaker || "Scene";
+    els.dialogueText.textContent = text || "";
+    els.dialogueActions.innerHTML = "";
+    buttons.forEach(info => {
+      const button = document.createElement("button");
+      button.textContent = info.text;
+      if (info.primary) button.classList.add("continue");
+      button.addEventListener("click", info.onClick);
+      els.dialogueActions.appendChild(button);
+    });
+    els.dialogueBox.classList.add("show");
+  }
+  function hideDialogue() { els.dialogueBox.classList.remove("show"); els.dialogueActions.innerHTML = ""; }
+
+  function startPreview() {
+    const problems = validateProject();
+    const errors = problems.filter(p => p.level === "error");
+    if (errors.length) { renderValidation(problems); toast(`Fix ${errors.length} scene problem${errors.length===1?"":"s"} first.`); return; }
+    resetPreview(false);
+    if (state.project.camera3d) applyCamera3D(state.project.camera3d);
+    state.preview.running = true;
+    state.preview.currentStageId = state.project.stages[0]?.id || null;
+    const token = state.preview.token;
+    log("Preview started.");
+    runCurrentStage(token);
+  }
+
+  function finishPreview(message="Scene finished.") {
+    state.preview.running = false;
+    state.preview.currentStageId = null;
+    els.playStatusPill.textContent = message;
+    hideDialogue();
+    log(message);
+  }
+
+  function continueTo(nextId, token) {
+    if (token !== state.preview.token || !state.preview.running) return;
+    hideDialogue();
+    if (!nextId) { finishPreview(); return; }
+    state.preview.currentStageId = nextId;
+    runCurrentStage(token);
+  }
+
+  function runCurrentStage(token) {
+    if (token !== state.preview.token || !state.preview.running) return;
+    const stage = stageById(state.preview.currentStageId);
+    if (!stage) { finishPreview("The next card could not be found."); return; }
+    const index = stageIndex(stage.id);
+    els.playStatusPill.textContent = `Playing card ${index+1}: ${stageName(stage.type)}`;
+    log(`Playing ${stageLabel(stage,index)}.`);
+    if (stage.type === "move") return runMoveStage(stage, token);
+    if (stage.type === "animation") return runAnimationStage(stage, token);
+    if (stage.type === "turn") return runTurnStage(stage, token);
+    if (stage.type === "combat") return runCombatStage(stage, token);
+    if (stage.type === "fade") return runFadeStage(stage, token);
+    const speaker = actorById(stage.speakerId)?.name || "Someone";
+    if (stage.type === "choice") { showDialogue(speaker, stage.text, stage.options.map(o => ({ text:o.text||"Choice", onClick:() => continueTo(getResolvedNext(stage.id,o.next),token) }))); return; }
+    showDialogue(speaker, stage.text, [{ text:"Continue", primary:true, onClick:() => continueTo(getResolvedNext(stage.id,stage.next),token) }]);
+  }
+
+  function buildGridPath(start, goal) {
+    const path = [{ c:start.c, r:start.r }];
+    let c = start.c, r = start.r, horizontalTurn = true;
+    while (c !== goal.c || r !== goal.r) {
+      const canH = c !== goal.c, canV = r !== goal.r;
+      if ((horizontalTurn && canH) || !canV) c += Math.sign(goal.c-c); else r += Math.sign(goal.r-r);
+      path.push({ c, r });
+      horizontalTurn = !horizontalTurn;
+    }
+    return path;
+  }
+  function angleToward(from, to) { const radians = Math.atan2(to.r-from.r, to.c-from.c); return normalizeAngle(radians*180/Math.PI + 90); }
+
+  function runMoveStage(stage, token) {
+    const actor = actorById(stage.actorId), target = pointById(stage.pointId), actorState = state.preview.actorStates.get(stage.actorId);
+    if (!actor || !target || !actorState) { continueTo(getResolvedNext(stage.id,stage.next),token); return; }
+    const path = buildGridPath(actorState, target);
+    const delay = stage.speed==="slow"?430:stage.speed==="fast"?90:210;
+    let stepIndex = 1;
+    const advance = () => {
+      if (token !== state.preview.token || !state.preview.running) return;
+      if (stepIndex >= path.length) { continueTo(getResolvedNext(stage.id,stage.next),token); return; }
+      const previous = { c:actorState.c, r:actorState.r };
+      const step = path[stepIndex++];
+      actorState.c = step.c; actorState.r = step.r;
+      actorState.rotation = angleToward(previous, step);
+      applyActorStateToScene(stage.actorId, actorState);
+      state.preview.timer = setTimeout(advance, delay);
+    };
+    if (path.length <= 1) state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id,stage.next),token), 180);
+    else advance();
+  }
+
+  // Breathing/emote playback: re-bakes the actor's portrait texture on a
+  // real interval for the stage's duration (see the file-header note on
+  // docs/js/portrait-breathing.js — it only warps a 2D canvas, so "live" 3D
+  // breathing means re-rendering that canvas and pushing it onto the plane
+  // avatar's texture ourselves, per docs/js/png-plane-avatar.js's
+  // refreshSinglePlaneAvatarModel). No-ops silently if this actor has no
+  // working NPC-backed profile.
+  function runAnimationStage(stage, token) {
+    const actorState = state.preview.actorStates.get(stage.actorId);
+    if (!actorState) { continueTo(getResolvedNext(stage.id,stage.next),token); return; }
+    actorState.animationName = stage.animationName;
+    const rec = state.actorObjects.get(stage.actorId);
+    const composer = window.portraitBreathingComposer;
+    if (stage.animKind === "emote" && rec?.profile && composer) {
+      composer.triggerEmote(stage.emoteName);
+    }
+    if ((stage.animKind === "breathing" || stage.animKind === "emote") && rec?.profile && composer && window.NpcAvatarPreview && window.PNGPlaneAvatar) {
+      clearInterval(rec.breathTimer);
+      rec.breathTimer = setInterval(async () => {
+        if (token !== state.preview.token) { clearInterval(rec.breathTimer); return; }
+        try {
+          await window.NpcAvatarPreview.renderProfileToCanvas(rec.frontCanvas, rec.profile, { breathingComposer: composer });
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(rec.avatarGroup, rec.frontCanvas);
+        } catch (e) { /* best-effort live animation; never breaks stage playback */ }
+      }, 120);
+    }
+    state.preview.timer = setTimeout(() => {
+      if (token !== state.preview.token || !state.preview.running) return;
+      const rec2 = state.actorObjects.get(stage.actorId);
+      if (rec2) { clearInterval(rec2.breathTimer); rec2.breathTimer = null; }
+      actorState.animationName = "";
+      if (stage.resultPose !== "unchanged") actorState.pose = stage.resultPose;
+      applyActorStateToScene(stage.actorId, actorState);
+      continueTo(getResolvedNext(stage.id,stage.next),token);
+    }, stage.duration*1000);
+  }
+
+  function runTurnStage(stage, token) {
+    const actorState = state.preview.actorStates.get(stage.actorId);
+    if (!actorState) { continueTo(getResolvedNext(stage.id,stage.next),token); return; }
+    if (stage.mode === "actor") { const targetState = state.preview.actorStates.get(stage.targetActorId); if (targetState) actorState.rotation = angleToward(actorState, targetState); }
+    else actorState.rotation = normalizeAngle(stage.angle);
+    applyActorStateToScene(stage.actorId, actorState);
+    state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id,stage.next),token), stage.duration*1000);
+  }
+
+  function runCombatStage(stage, token) {
+    stage.participants.forEach(p => { const st = state.preview.actorStates.get(p.actorId); if (st) { st.combatOn = p.combatOn; st.canLose = p.canLose; } });
+    const endCombat = loss => {
+      stage.participants.forEach(p => { const st = state.preview.actorStates.get(p.actorId); if (st) st.combatOn = false; });
+      continueTo(getResolvedNext(stage.id, loss?stage.lossNext:stage.next), token);
+    };
+    state.preview.timer = setTimeout(() => {
+      if (token !== state.preview.token || !state.preview.running) return;
+      const canLose = stage.participants.some(p => p.combatOn && p.canLose);
+      if (!canLose) { endCombat(false); return; }
+      showDialogue("Combat result", "A character marked Can Lose may use the separate loss branch.", [
+        { text:"No loss", primary:true, onClick:() => endCombat(false) },
+        { text:"Loss happens", onClick:() => endCombat(true) }
+      ]);
+    }, stage.duration*1000);
+  }
+
+  function runFadeStage(stage, token) {
+    const targetOpacity = stage.direction === "out" ? 1 : 0;
+    state.preview.fadeOpacity = targetOpacity;
+    els.fadeOverlay.style.transitionDuration = `${stage.duration}s`;
+    requestAnimationFrame(() => { els.fadeOverlay.style.opacity = String(targetOpacity); });
+    state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id,stage.next),token), stage.duration*1000);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  Validation / export / import
+  // ══════════════════════════════════════════════════════════════════════
+
+  function validateProject() {
+    const problems = [];
+    const pointIds = new Set(state.project.points.map(p=>p.id));
+    const actorIds = new Set(state.project.actors.map(a=>a.id));
+    const stageIds = new Set(state.project.stages.map(s=>s.id));
+    const validNext = v => v==="__next__" || v==="__end__" || stageIds.has(v);
+
+    if (!state.mapMeta.loaded) problems.push({ level:"warning", text:"No real map loaded — playing on a blank practice grid." });
+    if (!state.project.points.length) problems.push({ level:"error", text:"Add at least one named point." });
+    if (!state.project.actors.length) problems.push({ level:"error", text:"Add at least one character." });
+    if (!state.project.stages.length) problems.push({ level:"error", text:"Add at least one scene card." });
+
+    state.project.actors.forEach(actor => {
+      if (!pointIds.has(actor.startPointId)) problems.push({ level:"error", text:`${actor.name} has no valid starting point.` });
+      if (actor.npcId && !npcById(actor.npcId)) problems.push({ level:"warning", text:`${actor.name} is linked to NPC id "${actor.npcId}", which isn't in the loaded database.` });
+    });
+
+    state.project.stages.forEach((stage,index) => {
+      const label = `Card ${index+1}`;
+      if (stage.type === "move") {
+        if (!actorIds.has(stage.actorId)) problems.push({ level:"error", text:`${label} has no valid moving character.` });
+        if (!pointIds.has(stage.pointId)) problems.push({ level:"error", text:`${label} has no valid destination point.` });
+      } else if (stage.type === "talk" || stage.type === "choice") {
+        if (!actorIds.has(stage.speakerId)) problems.push({ level:"error", text:`${label} has no valid speaker.` });
+        if (!stage.text.trim()) problems.push({ level:"warning", text:`${label} has empty text.` });
+        if (stage.type === "choice") {
+          if (stage.options.length < 2) problems.push({ level:"error", text:`${label} needs at least two answers.` });
+          stage.options.forEach((o,i) => { if (!validNext(o.next)) problems.push({ level:"error", text:`${label}, answer ${i+1} points to a missing card.` }); });
+        }
+      } else if (stage.type === "animation") {
+        if (!actorIds.has(stage.actorId)) problems.push({ level:"error", text:`${label} has no valid animated character.` });
+      } else if (stage.type === "turn") {
+        if (!actorIds.has(stage.actorId)) problems.push({ level:"error", text:`${label} has no valid turning character.` });
+        if (stage.mode==="actor" && !actorIds.has(stage.targetActorId)) problems.push({ level:"error", text:`${label} has no valid facing target.` });
+      } else if (stage.type === "combat") {
+        stage.participants.forEach(p => { if (!actorIds.has(p.actorId)) problems.push({ level:"error", text:`${label} references a missing combat character.` }); });
+        if (!validNext(stage.lossNext)) problems.push({ level:"error", text:`${label}'s loss branch points to a missing card.` });
+      }
+      if (stage.type !== "choice" && !validNext(stage.next)) problems.push({ level:"error", text:`${label} points to a missing next card.` });
+    });
+    return problems;
+  }
+
+  function renderValidation(problems=validateProject()) {
+    if (!problems.length) { els.validationList.innerHTML = `<div class="validation-item good">✓ Scene is ready to play.</div>`; return; }
+    els.validationList.innerHTML = problems.map(p => `<div class="validation-item">${p.level==="error"?"✕":"!"} ${escapeHtml(p.text)}</div>`).join("");
+  }
+
+  function exportProject() {
+    const safeTitle = (state.project.title||"cutscene").replace(/[^a-z0-9_-]+/gi,"_");
+    const blob = new Blob([JSON.stringify(state.project,null,2)], { type:"application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = `${safeTitle}.json`; anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    log("Scene JSON downloaded.");
+    toast("Scene saved as JSON.");
+  }
+
+  async function importProject(file) {
+    try {
+      const raw = JSON.parse(await file.text());
+      state.project = normalizeProject(raw);
+      state.selectedPointId = state.project.points[0]?.id || null;
+      state.selectedActorId = state.project.actors[0]?.id || null;
+      state.selectedStageId = state.project.stages[0]?.id || null;
+      state.movingPointId = null;
+      resetPreview(false);
+      saveLocal();
+      if (state.project.mapId) await loadMap(state.project.mapId); else { clearMap(); }
+      renderAll();
+      log(`Opened ${file.name}.`);
+      toast("Scene opened.");
+    } catch (error) {
+      log(`Could not open JSON: ${error.message}`, "ERROR");
+      toast("That file is not valid scene JSON.");
+    } finally { els.importFile.value = ""; }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  NPC picker modal
+  // ══════════════════════════════════════════════════════════════════════
+
+  function openNpcPicker() {
+    els.npcPickerOverlay.classList.add("show");
+    els.npcPickerSearch.value = "";
+    renderNpcPickerList();
+    els.npcPickerSearch.focus();
+  }
+  function closeNpcPicker() { els.npcPickerOverlay.classList.remove("show"); }
+
+  function renderNpcPickerList() {
+    const status = els.npcPickerStatus;
+    if (state.npcDb.loading) { status.textContent = "Loading NPC database…"; }
+    else if (!state.npcDb.loaded) { status.textContent = "NPC database unavailable — add a custom character instead."; }
+    else { status.textContent = `${state.npcDb.list.length} NPCs in the global database.`; }
+
+    const q = (els.npcPickerSearch.value || "").toLowerCase();
+    const list = q ? state.npcDb.list.filter(n => (n.id||"").includes(q) || (n.name||"").toLowerCase().includes(q) || (n.role||"").toLowerCase().includes(q) || (n.appearance?.speciesId||"").toLowerCase().includes(q)) : state.npcDb.list;
+
+    els.npcPickerList.innerHTML = list.length ? list.map(n => `
+      <div class="item-card" data-npc-id="${escapeHtml(n.id)}">
+        <span class="swatch">${escapeHtml((n.name||n.id).slice(0,2))}</span>
+        <span><strong>${escapeHtml(n.name||n.id)}</strong><small>${escapeHtml(n.role||n.appearance?.speciesId||"")}</small></span>
+        <button>Add</button>
+      </div>`).join("") : `<div class="empty-state">${state.npcDb.loaded ? "No NPCs match that search." : "Waiting on the NPC database…"}</div>`;
+
+    els.npcPickerList.querySelectorAll("[data-npc-id]").forEach(card => card.addEventListener("click", () => addActorFromNpc(card.dataset.npcId)));
+  }
+
+  async function addActorFromNpc(npcId) {
+    const npc = npcById(npcId);
+    if (!npc) { toast("NPC not found."); return; }
+    if (!state.project.points.length) { toast("Add a named point first."); closeNpcPicker(); switchScreen("stage"); return; }
+    const actor = {
+      id: uid("actor"), name: npc.name || npc.id, color: ACTOR_COLORS[state.project.actors.length % ACTOR_COLORS.length],
+      npcId: npc.id, startPointId: state.selectedPointId || state.project.points[0].id, rotation: 0, pose: "standing", combatOn: false, canLose: false
+    };
+    state.project.actors.push(actor);
+    state.selectedActorId = actor.id;
+    closeNpcPicker();
+    changed(`${actor.name} added from the NPC database.`);
+    switchScreen("characters");
+    toast(`Building ${actor.name}'s 3D avatar…`);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  Wiring
+  // ══════════════════════════════════════════════════════════════════════
+
+  async function renderAll() {
+    renderPointLists();
+    renderActors();
+    renderEditorBoard();
+    renderStages();
+    renderValidation();
+    els.mapStatusPill.textContent = state.mapMeta.loaded ? `Map: ${state.mapMeta.name}` : "No map loaded";
+    await rebuildActorAndPointMarkers();
+    renderActors(); // avatar thumbnails may have resolved during marker rebuild
+  }
+
+  function bindEvents() {
+    document.querySelectorAll(".tab").forEach(tab => tab.addEventListener("click", () => switchScreen(tab.dataset.screen)));
+    document.querySelectorAll("[data-add-stage]").forEach(button => button.addEventListener("click", () => addStage(button.dataset.addStage)));
+
+    els.mapSelect.addEventListener("change", () => { /* selection only; Load Map applies it */ });
+    els.loadMapBtn.addEventListener("click", () => { const id = els.mapSelect.value; if (!id) { toast("Choose a map first."); return; } loadMap(id); });
+    els.clearMapBtn.addEventListener("click", clearMap);
+
+    els.addPointBtn.addEventListener("click", () => {
+      const name = els.newPointName.value.trim() || `Point ${state.project.points.length+1}`;
+      const point = { id: uid("point"), name: name.slice(0,28), c: clamp(4+state.project.points.length*2,0,GRID_COLS()-1), r: clamp(4+state.project.points.length,0,GRID_ROWS()-1) };
+      state.project.points.push(point);
+      state.selectedPointId = point.id; state.movingPointId = point.id;
+      els.newPointName.value = "";
+      changed(`${point.name} added.`);
+      toast("Tap its position on the stage.");
+    });
+    els.newPointName.addEventListener("keydown", e => { if (e.key === "Enter") els.addPointBtn.click(); });
+    els.pointNameInput.addEventListener("input", () => { const p = pointById(state.selectedPointId); if (!p) return; p.name = els.pointNameInput.value.slice(0,28) || "Point"; saveLocal(); renderPointLists(); renderEditorBoard(); renderStages(); });
+    els.movePointBtn.addEventListener("click", () => { if (!pointById(state.selectedPointId)) return; state.movingPointId = state.selectedPointId; renderAll(); toast("Tap the point's new tile."); });
+    els.deletePointBtn.addEventListener("click", () => {
+      const point = pointById(state.selectedPointId); if (!point) return;
+      const used = state.project.actors.some(a=>a.startPointId===point.id) || state.project.stages.some(s=>s.type==="move"&&s.pointId===point.id);
+      if (used) { toast("This point is still used by a character or Move card."); return; }
+      state.project.points = state.project.points.filter(p=>p.id!==point.id);
+      state.selectedPointId = state.project.points[0]?.id || null;
+      changed(`${point.name} deleted.`);
+    });
+
+    els.addNpcActorBtn.addEventListener("click", openNpcPicker);
+    els.npcPickerCloseBtn.addEventListener("click", closeNpcPicker);
+    els.npcPickerOverlay.addEventListener("click", e => { if (e.target === els.npcPickerOverlay) closeNpcPicker(); });
+    els.npcPickerSearch.addEventListener("input", renderNpcPickerList);
+
+    els.addActorBtn.addEventListener("click", () => {
+      if (!state.project.points.length) { toast("Add a named point first."); return; }
+      const name = els.newActorName.value.trim() || `Character ${state.project.actors.length+1}`;
+      const actor = { id: uid("actor"), name: name.slice(0,24), color: ACTOR_COLORS[state.project.actors.length % ACTOR_COLORS.length], npcId: null, startPointId: state.selectedPointId || state.project.points[0].id, rotation:0, pose:"standing", combatOn:false, canLose:false };
+      state.project.actors.push(actor);
+      state.selectedActorId = actor.id;
+      els.newActorName.value = "";
+      changed(`${actor.name} added.`);
+    });
+    els.newActorName.addEventListener("keydown", e => { if (e.key === "Enter") els.addActorBtn.click(); });
+
+    els.actorNameInput.addEventListener("input", () => { const a = actorById(state.selectedActorId); if (!a) return; a.name = els.actorNameInput.value.slice(0,24) || "Character"; saveLocal(); renderActors(); renderStages(); });
+    els.actorColorInput.addEventListener("input", () => { const a = actorById(state.selectedActorId); if (!a) return; a.color = els.actorColorInput.value; changed(""); });
+    els.actorStartSelect.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.startPointId = els.actorStartSelect.value; changed(`${a.name}'s starting point changed.`); });
+    els.actorRotationInput.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.rotation = normalizeAngle(els.actorRotationInput.value); changed(`${a.name}'s starting rotation changed.`); });
+    els.actorPoseSelect.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.pose = els.actorPoseSelect.value==="prone"?"prone":"standing"; changed(`${a.name}'s starting pose changed.`); });
+    els.actorCombatInput.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.combatOn = els.actorCombatInput.checked; changed(`${a.name}'s starting combat switch changed.`); });
+    els.actorCanLoseInput.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.canLose = els.actorCanLoseInput.checked; changed(`${a.name}'s Can Lose switch changed.`); });
+    els.unlinkNpcBtn.addEventListener("click", () => { const a = actorById(state.selectedActorId); if (!a) return; a.npcId = null; changed(`${a.name} unlinked from its NPC — now a custom actor.`); });
+    els.deleteActorBtn.addEventListener("click", () => {
+      const actor = actorById(state.selectedActorId); if (!actor) return;
+      const used = state.project.stages.some(s => s.actorId===actor.id || s.speakerId===actor.id || s.targetActorId===actor.id || (s.type==="combat" && s.participants.some(p=>p.actorId===actor.id)));
+      if (used) { toast("This character is still used by a scene card."); return; }
+      state.project.actors = state.project.actors.filter(a=>a.id!==actor.id);
+      state.selectedActorId = state.project.actors[0]?.id || null;
+      changed(`${actor.name} deleted.`);
+    });
+
+    els.startPlayBtn.addEventListener("click", startPreview);
+    els.resetPlayBtn.addEventListener("click", () => resetPreview(true));
+    els.captureCameraBtn.addEventListener("click", captureCamera3D);
+    els.resetCameraBtn.addEventListener("click", () => { state.project.camera3d = null; saveLocal(); frameCameraToStage(); toast("Camera framed to the whole stage."); });
+
+    els.exportBtn.addEventListener("click", exportProject);
+    els.importBtn.addEventListener("click", () => els.importFile.click());
+    els.importFile.addEventListener("change", () => { const file = els.importFile.files?.[0]; if (file) importProject(file); });
+
+    els.exampleBtn.addEventListener("click", async () => {
+      state.project = buildRescueExample();
+      state.selectedPointId = state.project.points[0]?.id || null;
+      state.selectedActorId = state.project.actors[0]?.id || null;
+      state.selectedStageId = state.project.stages[0]?.id || null;
+      state.movingPointId = null;
+      resetPreview(false);
+      saveLocal();
+      renderMapSelect();
+      await loadMap(state.project.mapId);
+      renderAll();
+      switchScreen("stage");
+      log("Gar-wolf rescue example restored (Jubmir and Spearhead are linked to their real NPC database entries).");
+      toast("Rescue example restored.");
+    });
+
+    els.checkBtn.addEventListener("click", () => {
+      const problems = validateProject();
+      renderValidation(problems);
+      const errors = problems.filter(p=>p.level==="error").length, warnings = problems.filter(p=>p.level==="warning").length;
+      log(`Scene check: ${errors} error(s), ${warnings} warning(s).`);
+      toast(errors ? `${errors} problem${errors===1?"":"s"} must be fixed.` : "Scene is ready.");
+    });
+    els.copyLogBtn.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(state.logs.join("\n")); toast("Debug log copied."); }
+      catch { toast("Could not copy. Select the log manually."); }
+    });
+  }
+
+  async function init() {
+    [
+      "exportBtn","importBtn","exampleBtn","importFile","mapSelect","loadMapBtn","clearMapBtn","mapLoadStatus",
+      "pickBanner","editorBoard","newPointName","addPointBtn","pointList","pointEditor","pointNameInput","movePointBtn","deletePointBtn",
+      "addNpcActorBtn","newActorName","addActorBtn","actorList","actorEditor","actorNpcBadge","actorNameInput","actorColorInput",
+      "actorStartSelect","actorRotationInput","actorPoseSelect","actorCombatInput","actorCanLoseInput","unlinkNpcBtn","deleteActorBtn",
+      "stageList","stageEditor","mapStatusPill","playStatusPill","startPlayBtn","resetPlayBtn","captureCameraBtn","resetCameraBtn",
+      "canvas3d","fadeOverlay","dialogueBox","dialogueSpeaker","dialogueText","dialogueActions",
+      "checkBtn","copyLogBtn","validationList","debugLog","toast",
+      "npcPickerStatus","npcPickerSearch","npcPickerCloseBtn"
+    ].forEach(id => { els[id] = $(id); });
+    // These markup ids are kebab-case (shared with the CSS selectors), so
+    // grab them explicitly instead of via the camelCase loop above.
+    els.viewportWrap = $("viewport-wrap");
+    els.npcPickerOverlay = $("npc-picker-overlay");
+    els.npcPickerList = $("npc-picker-list");
+
+    let stored = null;
+    try { stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch (error) { console.warn(error); }
+    state.project = stored ? normalizeProject(stored) : buildRescueExample();
+    state.selectedPointId = state.project.points[0]?.id || null;
+    state.selectedActorId = state.project.actors[0]?.id || null;
+    state.selectedStageId = state.project.stages[0]?.id || null;
+
+    bindEvents();
+    init3D();
+    resetPreview(false);
+    log("Cutscene Director loaded.");
+
+    await Promise.all([fetchMapIndex(), fetchNpcDb()]);
+    if (state.project.mapId) await loadMap(state.project.mapId); else renderMapSelect();
+    renderAll();
+  }
+
+  // Same iframe-hub bridge convention docs/tools/index.html uses for the
+  // other tools (_editorBridge, _mapEditorBridge, _biaBridge) — lets a host
+  // page add a real NPC as an actor without going through the picker UI.
+  window._cutsceneDirectorBridge = {
+    addNpcActor(npcId) { return addActorFromNpc(npcId); }
+  };
+
+  init();
+})();
+</script>
+</body>
+</html>
