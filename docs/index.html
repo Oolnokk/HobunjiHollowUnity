@@ -281,12 +281,13 @@
 
       <!-- ── Calendar pane ─────────────────────────────────── -->
       <div class="mp-pane" id="mpCalendar">
+        <div class="cal-month-header">
+          <button class="mp-ctrl-btn" id="calPrevMonth" title="Previous month">‹</button>
+          <div class="cal-month-title" id="calMonthTitle">Waxingheat — Year 1</div>
+          <button class="mp-ctrl-btn" id="calNextMonth" title="Next month">›</button>
+        </div>
         <div class="cal-today" id="calToday">Anan, Waxingheat 1st, 1st week of Storm</div>
-        <div class="cal-season" id="calSeasonInfo">⛈️ Storm season — week 1 of 20 (year weeks 1–20)</div>
-        <div class="cal-grid-label">This Week</div>
-        <div class="cal-grid" id="calGrid"></div>
-        <div class="cal-legend-label">Year at a Glance</div>
-        <div class="cal-legend" id="calLegend"></div>
+        <div class="cal-weeks" id="calWeeks"></div>
       </div><!-- /mpCalendar -->
 
       <!-- ── Shipping box transfer pane ───────────────────────

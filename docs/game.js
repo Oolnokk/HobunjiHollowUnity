@@ -20,9 +20,10 @@
       const spSeason  = document.getElementById('spSeason');
       // Calendar (lives in the menu's Calendar tab — see #mpCalendar)
       const calToday         = document.getElementById('calToday');
-      const calSeasonInfo    = document.getElementById('calSeasonInfo');
-      const calGrid          = document.getElementById('calGrid');
-      const calLegend        = document.getElementById('calLegend');
+      const calMonthTitle    = document.getElementById('calMonthTitle');
+      const calPrevMonth     = document.getElementById('calPrevMonth');
+      const calNextMonth     = document.getElementById('calNextMonth');
+      const calWeeks         = document.getElementById('calWeeks');
       const spWeather = document.getElementById('spWeather');
       const spTool    = document.getElementById('spTool');
       const spTile    = document.getElementById('spTile');
@@ -10720,29 +10721,69 @@
         return `${weekdayNameForDay(day)}, ${monthName(day)} ${dom}${ordinalSuffix(dom)}, ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
       }
 
+      // Absolute day of a month's first day. Months are exactly 4 weeks
+      // (28 days), so every month starts on Anan — no partial first/last
+      // week to special-case, unlike a real Gregorian month grid.
+      function absDayForMonthStart(year, monthIdx0) {
+        return (year - 1) * YEAR_LENGTH_DAYS + monthIdx0 * DAYS_PER_MONTH + 1;
+      }
+
+      let calViewYear = 1, calViewMonthIndex = 0;
+
       function renderCalendarPanel() {
         if (!calToday) return;
-        const today = calendar.day;
-        const season = seasonForDay(today);
-        calToday.textContent = formatCalendarDateFull(today);
-        calSeasonInfo.textContent = `${season.emoji} ${season.name} season — week ${weekOfSeason(today)} of ${season.endWeek - season.startWeek + 1} (year weeks ${season.startWeek}–${season.endWeek})`;
-
-        // "This Week" — the meaningful gameplay unit — Anan..Uung, today highlighted.
-        calGrid.innerHTML = '';
-        const weekStartDay = today - weekdayIndexForCalendarDay(today);
-        for (let i = 0; i < DAYS_PER_WEEK; i++) {
-          const d = weekStartDay + i;
-          const cell = document.createElement('div');
-          cell.className = 'cal-day' + (d === today ? ' today' : '');
-          cell.innerHTML = `<span>${WEEKDAY_NAMES[i]}</span><span class="cal-day-num">${dayOfMonth(d)}${ordinalSuffix(dayOfMonth(d))}</span>`;
-          calGrid.appendChild(cell);
-        }
-
-        // Year-at-a-glance: the four regional seasons, current one highlighted.
-        calLegend.innerHTML = seasons.map(s =>
-          `<span class="cal-season-chip${s.name === season.name ? ' current' : ''}">${s.emoji} ${s.name} (wks ${s.startWeek}–${s.endWeek})</span>`
-        ).join(' ');
+        calViewYear = yearNumber(calendar.day);
+        calViewMonthIndex = monthIndex(calendar.day);
+        calToday.textContent = formatCalendarDateFull(calendar.day);
+        renderCalendarMonthView();
       }
+
+      // Redraws the currently-navigated month (calViewYear/calViewMonthIndex)
+      // as 4 week rows — the core gameplay unit — each its own tight
+      // container: a season+week label on the left, its 7 days packed
+      // together on the right, with only today's cell picked out in a
+      // different color.
+      function renderCalendarMonthView() {
+        const monthStartDay = absDayForMonthStart(calViewYear, calViewMonthIndex);
+        calMonthTitle.textContent = `${MONTH_NAMES[calViewMonthIndex]} — Year ${calViewYear}`;
+        calPrevMonth.disabled = (calViewYear === 1 && calViewMonthIndex === 0);
+
+        calWeeks.innerHTML = '';
+        for (let w = 0; w < DAYS_PER_MONTH / DAYS_PER_WEEK; w++) {
+          const weekStartDay = monthStartDay + w * DAYS_PER_WEEK;
+          const season = seasonForDay(weekStartDay);
+          const row = document.createElement('div');
+          row.className = 'cal-week-row';
+          const label = document.createElement('div');
+          label.className = 'cal-week-label';
+          label.innerHTML = `${season.emoji} ${season.name}<br>Week ${weekOfSeason(weekStartDay)}`;
+          row.appendChild(label);
+          const daysWrap = document.createElement('div');
+          daysWrap.className = 'cal-week-days';
+          for (let i = 0; i < DAYS_PER_WEEK; i++) {
+            const d = weekStartDay + i;
+            const cell = document.createElement('button');
+            cell.type = 'button';
+            cell.className = 'cal-day-btn' + (d === calendar.day ? ' today' : '');
+            cell.innerHTML = `<span>${WEEKDAY_NAMES[i]}</span><span class="cal-day-num">${dayOfMonth(d)}</span>`;
+            daysWrap.appendChild(cell);
+          }
+          row.appendChild(daysWrap);
+          calWeeks.appendChild(row);
+        }
+      }
+
+      calPrevMonth.addEventListener('click', () => {
+        if (calViewYear === 1 && calViewMonthIndex === 0) return;
+        if (calViewMonthIndex === 0) { calViewYear--; calViewMonthIndex = 11; }
+        else calViewMonthIndex--;
+        renderCalendarMonthView();
+      });
+      calNextMonth.addEventListener('click', () => {
+        if (calViewMonthIndex === 11) { calViewYear++; calViewMonthIndex = 0; }
+        else calViewMonthIndex++;
+        renderCalendarMonthView();
+      });
 
       function isDigRemovableVegetation(tile) {
         // Used by shovel dig so day-one overgrowth can be destroyed by digging underneath it.
