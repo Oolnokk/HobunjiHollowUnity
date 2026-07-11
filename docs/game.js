@@ -176,6 +176,23 @@
       // Debug log copy-to-clipboard button
       const _dbgCopy = document.getElementById('debugCopyBtn');
       if (_dbgCopy) _dbgCopy.addEventListener('click', () => copyDebugLog());
+      // Debug log filter tabs — filtering itself lives in debug.js's
+      // _renderDebugPanel (window.__debugLogFilter), since that's what
+      // actually owns window.__farmDebugLog and re-renders on every new
+      // entry; this just switches the active tab and the visual state.
+      document.querySelectorAll('.debug-filter-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          window.__debugLogFilter = btn.dataset.filter;
+          document.querySelectorAll('.debug-filter-tab').forEach(b => {
+            const active = b === btn;
+            b.classList.toggle('active', active);
+            b.style.background = active ? 'rgba(106,167,255,.22)' : 'rgba(255,255,255,.08)';
+            b.style.borderColor = active ? 'rgba(106,167,255,.5)' : 'rgba(255,255,255,.2)';
+            b.style.color = active ? '#6aa7ff' : '#d1d5db';
+          });
+          if (window._renderDebugPanel) window._renderDebugPanel();
+        });
+      });
       // Inventory category filter
       document.querySelectorAll('.inv-cat').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -4737,6 +4754,19 @@
         audioDebug('marked audio failed url=' + resolved + ' reason=' + reason, 'audio-failed-' + resolved, 0);
       }
 
+      // MediaError.code === 1 is MEDIA_ERR_ABORTED — the browser's own fetch
+      // for this element was deliberately interrupted (e.g. the .pause()
+      // that a fade-out's _stopMusic calls mid-buffer when the player
+      // changes areas), not a sign the file itself is broken. A bgm 'error'
+      // listener that blacklisted on any error unconditionally could
+      // permanently lose a perfectly fine track like bgm_farm1.m4a for the
+      // rest of the session the first time the player left an area while it
+      // was still loading — same root cause as the AbortError carve-out on
+      // the play() rejection path below, just on the native error event.
+      function isRealMediaError(snd) {
+        return (snd?.error?.code || 0) !== 1;
+      }
+
       function audioUrlFailed(url) {
         const resolved = resolveAudioUrl(url);
         return !!resolved && _audioFailedUrls.has(resolved);
@@ -4928,7 +4958,7 @@
               releaseMusicGain(snd);
             };
             snd.addEventListener('ended', finishCombatBgm, { once: true });
-            snd.addEventListener('error', () => { markAudioUrlFailed(track.url, 'media error'); finishCombatBgm(); }, { once: true });
+            snd.addEventListener('error', () => { if (isRealMediaError(snd)) markAudioUrlFailed(track.url, 'media error'); finishCombatBgm(); }, { once: true });
             _ambientCueState.currentCombatBgm = snd;
             snd.play().catch(err => {
               const errName = err?.name || '';
@@ -5005,7 +5035,14 @@
           scheduleNextCueDelay();
         };
         snd.addEventListener('ended', finishBgm, { once: true });
-        snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0, 'bgm'); markAudioUrlFailed(bgmUrl, 'media error'); releaseMusicGain(snd); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
+        snd.addEventListener('error', () => {
+          audioDebug('bgm error ' + snd.src + ' code=' + (snd.error?.code || 'none'), 'bgm-error-' + bgmUrl, 0, 'bgm');
+          if (isRealMediaError(snd)) markAudioUrlFailed(bgmUrl, 'media error');
+          releaseMusicGain(snd);
+          if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
+          _ambientCueState.mode = 'bgm';
+          _ambientCueState.nextAt = performance.now() + 1000;
+        }, { once: true });
         snd._watchForStall(10000, () => {
           if (_ambientCueState.currentBgm !== snd) return;
           // Not marked failed (unlike the 'error' case above) — a stall can

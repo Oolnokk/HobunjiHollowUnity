@@ -9,6 +9,28 @@
       _renderDebugPanel();
     };
 
+    // Active debug-panel filter tab — see the data-filter buttons in
+    // index.html and the click wiring in game.js. 'all' shows everything.
+    window.__debugLogFilter = window.__debugLogFilter || 'all';
+
+    const AUDIO_LEVELS = { audio: true, bgm: true, cue: true, bgs: true };
+    const NAMED_LEVELS = { audio: true, bgm: true, cue: true, bgs: true, error: true, warn: true, info: true };
+    function _isScheduleEntry(e) { return e.msg.startsWith('[schedule]'); }
+    function _matchesDebugFilter(e, filter) {
+      switch (filter) {
+        case 'all':      return true;
+        case 'schedule': return _isScheduleEntry(e);
+        case 'audio':    return !!AUDIO_LEVELS[e.lvl];
+        case 'warn':
+        case 'info':     return e.lvl === filter && !_isScheduleEntry(e);
+        case 'error':    return e.lvl === 'error';
+        // Everything not claimed by a named tab above — fish/promise/
+        // wildlife/etc, or any future ad-hoc level.
+        case 'other':    return !NAMED_LEVELS[e.lvl];
+        default:         return true;
+      }
+    }
+
     function _renderDebugPanel() {
       const panel = document.getElementById('debugLog');
       if (!panel) return;
@@ -21,12 +43,15 @@
       // to read older ones — otherwise re-rendering would yank them back down.
       const stuckToBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 16;
       const prevScrollTop = panel.scrollTop;
-      panel.innerHTML = window.__farmDebugLog.map(e => {
-        const c = COLOR[e.lvl] || COLOR.info;
-        const safe = e.msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-          .replace(/fallback/gi, m => `<span style="color:#f87171;font-weight:bold">${m}</span>`);
-        return `<span style="color:#6b7280">[${e.t}]</span> <span style="color:${c}">${safe}</span>`;
-      }).join('\n');
+      const filter = window.__debugLogFilter || 'all';
+      panel.innerHTML = window.__farmDebugLog
+        .filter(e => _matchesDebugFilter(e, filter))
+        .map(e => {
+          const c = COLOR[e.lvl] || COLOR.info;
+          const safe = e.msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/fallback/gi, m => `<span style="color:#f87171;font-weight:bold">${m}</span>`);
+          return `<span style="color:#6b7280">[${e.t}]</span> <span style="color:${c}">${safe}</span>`;
+        }).join('\n');
       panel.scrollTop = stuckToBottom ? panel.scrollHeight : prevScrollTop;
     }
 

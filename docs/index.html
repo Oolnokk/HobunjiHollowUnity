@@ -573,6 +573,21 @@
               <button id="debugClearBtn" style="font-size:11px;padding:3px 10px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.35);border-radius:6px;color:#f87171;cursor:pointer">Clear</button>
             </div>
           </div>
+          <div id="debugFilterTabs" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 6px;flex-shrink:0">
+            <!-- data-filter values are handled by _renderDebugPanel() in debug.js:
+                 'all' = no filtering; 'audio' = lvl in {audio,bgm,cue,bgs}; 'schedule'
+                 = msg starts with '[schedule]' (its own tab since NPC schedule
+                 fallback/no-rule-matched spam otherwise drowns everything else);
+                 'warn'/'error'/'info' = that lvl, minus anything already claimed by
+                 the schedule tab; 'other' = whatever's left (fish/promise/wildlife/…). -->
+            <button class="debug-filter-tab active" data-filter="all"      style="font-size:10px;padding:2px 8px;background:rgba(106,167,255,.22);border:1px solid rgba(106,167,255,.5);border-radius:10px;color:#6aa7ff;cursor:pointer">All</button>
+            <button class="debug-filter-tab"        data-filter="audio"   style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Audio</button>
+            <button class="debug-filter-tab"        data-filter="schedule" style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Schedule</button>
+            <button class="debug-filter-tab"        data-filter="warn"    style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Warn</button>
+            <button class="debug-filter-tab"        data-filter="error"   style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Error</button>
+            <button class="debug-filter-tab"        data-filter="info"    style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Info</button>
+            <button class="debug-filter-tab"        data-filter="other"   style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Other</button>
+          </div>
           <pre id="debugLog" style="flex:1;overflow-y:auto;margin:0;padding:8px 12px 12px;font-size:11px;line-height:1.55;color:#d1d5db;white-space:pre-wrap;word-break:break-all;background:transparent"></pre>
         </div>
       </div><!-- /mpDebug -->
