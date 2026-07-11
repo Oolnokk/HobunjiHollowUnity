@@ -20105,6 +20105,41 @@
         return { kind: 'placeholder', root: group };
       }
 
+      const cutscenePreviewAngleToward = (from, to) => (((Math.atan2(to.r - from.r, to.c - from.c) * 180 / Math.PI + 90) % 360) + 360) % 360;
+      const cutscenePreviewNormalizeAngle180 = deg => { const d = ((deg % 360) + 360) % 360; return d > 180 ? d - 360 : d; };
+      // "Theatre cheating" for a creature (buildAnimalPlaneAvatarModel's
+      // crossed-plane sprite, readable from any angle): a staged facing
+      // (turn stage, or squaring up to attack) is nudged no more than
+      // cheatMaxOffsetDeg away from also generally facing the camera, so it
+      // never fully turns its back to the audience — same convention stage
+      // actors use. Natural walking facing (moveToward's own turn toward
+      // direction of travel) is intentionally left uncheated.
+      const cutscenePreviewCheatMaxOffsetDeg = 132;
+      function cutscenePreviewTheatreCheatAngle(desiredDeg, fromSt) {
+        const camDeg = cutscenePreviewAngleToward(fromSt, { c: camera.position.x, r: camera.position.z });
+        const diff = cutscenePreviewNormalizeAngle180(desiredDeg - camDeg);
+        const clamped = Math.max(-cutscenePreviewCheatMaxOffsetDeg, Math.min(cutscenePreviewCheatMaxOffsetDeg, diff));
+        return ((camDeg + clamped) % 360 + 360) % 360;
+      }
+      // An NPC/player avatar (buildSinglePlaneAvatarModel) is a flat
+      // "coin" — a front plane and a back plane both lying in the same
+      // local plane (see createSinglePlaneAssembly in png-plane-avatar.js),
+      // unlike a creature's crossed side-view planes. Empirically (not just
+      // by the perpClamp dead-zone comments, which describe live-walking
+      // facing, not this one-shot staged case) it only reads as a clearly
+      // visible portrait very close to fully facing the camera or fully
+      // facing away — even 40-90 degrees off either of those two poles
+      // already looks thin/near-edge-on. A soft clamp therefore isn't
+      // enough; snap fully to whichever of those two poles is nearer the
+      // authored intent instead, trading facing nuance for guaranteed
+      // visibility (live NPC walking still uses moveToward's own
+      // perpClamp/cameraRelativePerps() dead zones, unaffected by this).
+      function cutscenePreviewNpcFacingCheatAngle(desiredDeg, fromSt) {
+        const camDeg = cutscenePreviewAngleToward(fromSt, { c: camera.position.x, r: camera.position.z });
+        const diff = cutscenePreviewNormalizeAngle180(desiredDeg - camDeg);
+        return Math.abs(diff) <= 90 ? camDeg : ((camDeg + 180) % 360 + 360) % 360;
+      }
+
       function cutscenePreviewApplyState(entity, area, st) {
         const surfY = npcSurfaceY(area, Math.round(st.c), Math.round(st.r));
         if (entity.kind === 'creature') {
@@ -20169,65 +20204,15 @@
         const targetCols  = getActiveCols();
         const targetRows  = getActiveRows();
 
-        const entities = new Map(); // actorId -> { kind:'npc'|'creature'|'placeholder', root, ... }
-        for (const actor of (payload.actors || [])) {
-          let entity = null;
-          try {
-            if (actor.npcId && actor.npcRecord) {
-              const walker = await makeNpcWalker(actor.npcRecord, { area, c: actor.worldC, r: actor.worldR });
-              if (walker) {
-                walker.rot = THREE.MathUtils.degToRad(actor.rotation || 0);
-                walker.root.rotation.y = walker.rot;
-                walker.pause = Infinity; // scripted entirely by the director below — never the idle/wander AI
-                entity = { kind: 'npc', root: walker.root, walker, rec: actor.npcRecord, profile: walker.profile, avatarFrontCanvas: walker.avatarFrontCanvas, avatarBackCanvas: walker.avatarBackCanvas };
-              }
-            } else if (actor.creatureTypeId && CREATURE_DB[actor.creatureTypeId]) {
-              // makeCreatureEntity's ground-height lookup reads the global
-              // `currentArea` directly rather than taking it as an option,
-              // so it's bookended here even though currentArea already
-              // equals `area` by this point (kept explicit/defensive in
-              // case that assignment above ever moves).
-              const savedArea = currentArea;
-              currentArea = area;
-              const creature = makeCreatureEntity(actor.creatureTypeId, (actor.worldC + 0.5) * TILE, (actor.worldR + 0.5) * TILE, { scene: targetScene, grid: targetGrid, cols: targetCols, rows: targetRows });
-              currentArea = savedArea;
-              if (creature) {
-                creature.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(actor.rotation || 0);
-                entity = { kind: 'creature', root: creature.avatarRef.group, creature };
-              }
-            } else if (actor.isPlayer) {
-              // The scene's authored stand-in for whoever's actually running
-              // this preview — built through the exact same makeNpcWalker
-              // pipeline an NPC actor uses, just fed a synthetic "record"
-              // sourced from the real player's own appearance instead of the
-              // NPC database, so it gets a real PNG-plane avatar instead of
-              // the generic placeholder every other freeform actor falls
-              // back to.
-              const playerProfile = _playerData || window.__hobunjiPlayerProfile;
-              const fakeRec = {
-                id: 'player', name: actor.name || 'Player',
-                appearance: playerProfile?.appearance,
-                equippedCosmetics: playerProfile?.equippedCosmetics || [],
-                appliedDyes: playerProfile?.appliedDyes || {},
-              };
-              const walker = await makeNpcWalker(fakeRec, { area, c: actor.worldC, r: actor.worldR });
-              if (walker) {
-                walker.rot = THREE.MathUtils.degToRad(actor.rotation || 0);
-                walker.root.rotation.y = walker.rot;
-                walker.pause = Infinity;
-                entity = { kind: 'npc', root: walker.root, walker, rec: fakeRec, profile: walker.profile, avatarFrontCanvas: walker.avatarFrontCanvas, avatarBackCanvas: walker.avatarBackCanvas };
-              }
-            }
-          } catch (e) { console.error('[cutscene preview] actor spawn failed for', actor.name, e); }
-          if (!entity) entity = cutscenePreviewMakePlaceholder(actor, area, targetScene);
-          entities.set(actor.id, entity);
-        }
-
         // ── Camera: an "establishing" mode for everything except active
         //    dialogue, computed from the Director's captured shot (already
         //    resolved to world tile-space) via the same
         //    distance/angleFromGroundDeg/azimuthDeg basis the real fishing
         //    minigame's camera-mode swap uses (see updateCameraPosition).
+        //    Set up before actors spawn (rather than after, from their
+        //    entities) so camera.position is already correct in time for
+        //    each NPC/player actor's initial spawn facing to check itself
+        //    against it (see cutscenePreviewNpcFacingCheatAngle below).
         const baseDlgCfg = cameraModeConfig(cameraConfig().dialogueMode || 'npcDialogue');
         const dlgModeKey = 'cutscenePreviewDialogue';
         (window.SCRATCHBONES_CONFIG.game.camera.modes ||= {})[dlgModeKey] = {
@@ -20268,14 +20253,73 @@
           idleCameraTarget = { position: new THREE.Vector3(t.x, t.y, t.z) };
           camTargetX = t.x; camTargetY = t.y; camTargetZ = t.z; // instant cut, not a slow lerp in from the farm spawn
         } else {
-          const firstEntity = entities.get(payload.actors?.[0]?.id);
+          const firstActor = (payload.actors || [])[0];
           idleCameraMode = cameraConfig().defaultMode || 'default';
-          idleCameraTarget = firstEntity ? { position: firstEntity.root.position } : null;
-          if (firstEntity) { camTargetX = firstEntity.root.position.x; camTargetY = firstEntity.root.position.y; camTargetZ = firstEntity.root.position.z; }
+          if (firstActor) {
+            const fx = firstActor.worldC + 0.5, fz = firstActor.worldR + 0.5, fy = npcSurfaceY(area, firstActor.worldC, firstActor.worldR);
+            idleCameraTarget = { position: new THREE.Vector3(fx, fy, fz) };
+            camTargetX = fx; camTargetY = fy; camTargetZ = fz;
+          } else {
+            idleCameraTarget = null;
+          }
         }
         activeCameraMode = idleCameraMode;
         activeCameraTarget = idleCameraTarget;
         updateCameraPosition();
+
+        const entities = new Map(); // actorId -> { kind:'npc'|'creature'|'placeholder', root, ... }
+        for (const actor of (payload.actors || [])) {
+          let entity = null;
+          try {
+            if (actor.npcId && actor.npcRecord) {
+              const walker = await makeNpcWalker(actor.npcRecord, { area, c: actor.worldC, r: actor.worldR });
+              if (walker) {
+                walker.rot = THREE.MathUtils.degToRad(cutscenePreviewNpcFacingCheatAngle(actor.rotation || 0, { c: actor.worldC, r: actor.worldR }));
+                walker.root.rotation.y = walker.rot;
+                walker.pause = Infinity; // scripted entirely by the director below — never the idle/wander AI
+                entity = { kind: 'npc', root: walker.root, walker, rec: actor.npcRecord, profile: walker.profile, avatarFrontCanvas: walker.avatarFrontCanvas, avatarBackCanvas: walker.avatarBackCanvas };
+              }
+            } else if (actor.creatureTypeId && CREATURE_DB[actor.creatureTypeId]) {
+              // makeCreatureEntity's ground-height lookup reads the global
+              // `currentArea` directly rather than taking it as an option,
+              // so it's bookended here even though currentArea already
+              // equals `area` by this point (kept explicit/defensive in
+              // case that assignment above ever moves).
+              const savedArea = currentArea;
+              currentArea = area;
+              const creature = makeCreatureEntity(actor.creatureTypeId, (actor.worldC + 0.5) * TILE, (actor.worldR + 0.5) * TILE, { scene: targetScene, grid: targetGrid, cols: targetCols, rows: targetRows });
+              currentArea = savedArea;
+              if (creature) {
+                creature.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(actor.rotation || 0);
+                entity = { kind: 'creature', root: creature.avatarRef.group, creature };
+              }
+            } else if (actor.isPlayer) {
+              // The scene's authored stand-in for whoever's actually running
+              // this preview — built through the exact same makeNpcWalker
+              // pipeline an NPC actor uses, just fed a synthetic "record"
+              // sourced from the real player's own appearance instead of the
+              // NPC database, so it gets a real PNG-plane avatar instead of
+              // the generic placeholder every other freeform actor falls
+              // back to.
+              const playerProfile = _playerData || window.__hobunjiPlayerProfile;
+              const fakeRec = {
+                id: 'player', name: actor.name || 'Player',
+                appearance: playerProfile?.appearance,
+                equippedCosmetics: playerProfile?.equippedCosmetics || [],
+                appliedDyes: playerProfile?.appliedDyes || {},
+              };
+              const walker = await makeNpcWalker(fakeRec, { area, c: actor.worldC, r: actor.worldR });
+              if (walker) {
+                walker.rot = THREE.MathUtils.degToRad(cutscenePreviewNpcFacingCheatAngle(actor.rotation || 0, { c: actor.worldC, r: actor.worldR }));
+                walker.root.rotation.y = walker.rot;
+                walker.pause = Infinity;
+                entity = { kind: 'npc', root: walker.root, walker, rec: fakeRec, profile: walker.profile, avatarFrontCanvas: walker.avatarFrontCanvas, avatarBackCanvas: walker.avatarBackCanvas };
+              }
+            }
+          } catch (e) { console.error('[cutscene preview] actor spawn failed for', actor.name, e); }
+          if (!entity) entity = cutscenePreviewMakePlaceholder(actor, area, targetScene);
+          entities.set(actor.id, entity);
+        }
 
         // ── Stage engine ──────────────────────────────────────────────
         // Same move/talk/choice/animation/turn/combat/fade semantics as
@@ -20297,21 +20341,9 @@
           if (requestedNext && requestedNext !== '__next__') return stagesById.has(requestedNext) ? requestedNext : null;
           return stageOrder[stageOrder.indexOf(stageId) + 1] || null;
         };
-        const angleTowardState = (from, to) => (((Math.atan2(to.r - from.r, to.c - from.c) * 180 / Math.PI + 90) % 360) + 360) % 360;
-        // "Theatre cheating": a staged facing (turn stage, or a creature
-        // squaring up to attack) is nudged no more than maxOffsetDeg away
-        // from also generally facing the audience/camera — same convention
-        // stage actors use to never fully turn their back to the house even
-        // mid-conversation. Natural walking facing (moveToward's own turn
-        // toward direction-of-travel) is intentionally left uncheated.
-        const cheatMaxOffsetDeg = 132;
-        const normalizeAngle180 = deg => { const d = ((deg % 360) + 360) % 360; return d > 180 ? d - 360 : d; };
-        const theatreCheatAngle = (desiredDeg, fromSt) => {
-          const camDeg = angleTowardState(fromSt, { c: camera.position.x, r: camera.position.z });
-          const diff = normalizeAngle180(desiredDeg - camDeg);
-          const clamped = Math.max(-cheatMaxOffsetDeg, Math.min(cheatMaxOffsetDeg, diff));
-          return ((camDeg + clamped) % 360 + 360) % 360;
-        };
+        const angleTowardState = cutscenePreviewAngleToward;
+        const theatreCheatAngle = cutscenePreviewTheatreCheatAngle;
+        const npcFacingCheatAngle = cutscenePreviewNpcFacingCheatAngle;
         const buildGridPath = (start, goal) => {
           const path = [{ c: start.c, r: start.r }];
           let c = start.c, r = start.r, horizontalTurn = true;
@@ -20508,11 +20540,16 @@
         function runTurn(stage) {
           const st = actorStates.get(stage.actorId);
           if (!st) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          // A coin-plane NPC/player avatar needs the tighter visibility-
+          // preserving cheat (see cutscenePreviewNpcFacingCheatAngle); a
+          // creature's crossed side-view planes only need the softer
+          // don't-show-your-back theatre cheat.
+          const cheat = entities.get(stage.actorId)?.kind === 'npc' ? npcFacingCheatAngle : theatreCheatAngle;
           if (stage.mode === 'actor') {
             const targetSt = actorStates.get(stage.targetActorId);
-            if (targetSt) st.rotation = theatreCheatAngle(angleTowardState(st, targetSt), st);
+            if (targetSt) st.rotation = cheat(angleTowardState(st, targetSt), st);
           } else {
-            st.rotation = theatreCheatAngle(((Math.round(stage.angle) % 360) + 360) % 360, st);
+            st.rotation = cheat(((Math.round(stage.angle) % 360) + 360) % 360, st);
           }
           applyState(stage.actorId);
           setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), (stage.duration || 0) * 1000);

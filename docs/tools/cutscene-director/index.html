@@ -944,11 +944,14 @@
       addPoint("wolf1Over","Wolf 1 Over Player",10,7), addPoint("wolf2Over","Wolf 2 Over Player",12,7),
       addPoint("wolf3Over","Wolf 3 Over Player",11,6),
       addPoint("wolf1Escape","Wolf 1 Escape",23,2), addPoint("wolf2Escape","Wolf 2 Escape",23,4), addPoint("wolf3Escape","Wolf 3 Escape",23,6),
-      // Close enough that the real combat AI's own aggro range (~6.2 tiles
-      // for both species) picks up the wolves the instant the combat card
-      // goes live, instead of needing a scripted approach first — see the
-      // combat stage below.
-      addPoint("hound1Start","Hound 1 South Start",9,11), addPoint("hound2Start","Hound 2 South Start",13,11),
+      // Hounds spawn well off south (out of the wolves' real aggro range —
+      // ~6.2 tiles for both species) and run in for real (see the
+      // hound1Run/hound2Run move cards) to a spot just inside that range —
+      // a genuine "they arrive" beat via the real locomotion system, not a
+      // scripted teleport — so the combat card's own live AI still does the
+      // actual clash/chase from there rather than starting the fight cold.
+      addPoint("hound1Start","Hound 1 South Start",9,15), addPoint("hound2Start","Hound 2 South Start",13,15),
+      addPoint("hound1Arrived","Hound 1 Arrived",9,11), addPoint("hound2Arrived","Hound 2 Arrived",13,11),
       addPoint("hound1Fight","Hound 1 Fight",9,9), addPoint("hound2Fight","Hound 2 Fight",13,9),
       addPoint("jubmirStart","Jubmir South Start",11,15), addPoint("jubmirNear","Jubmir Near Player",10,7),
       addPoint("spearheadStart","Spearhead North Start",16,0), addPoint("spearheadEntrance","Spearhead Entrance",16,4), addPoint("spearheadPlayer","Spearhead At Player",12,8)
@@ -977,11 +980,13 @@
     const stages = {};
     const addStage = (key, stage) => { stage.id = uid("stage"); stages[key] = stage; return stage; };
     [
-      // No scripted growl lines or pre-combat approach — the combat card's
-      // own live AI (real CREATURE_DB aggro/attack ranges, real chase
-      // locomotion) is what makes the hounds actually arrive and clash with
-      // the wolves; see the hound1Start/hound2Start point comment above for
-      // why they're close enough for that AI to pick the fight up on its own.
+      // No scripted growl lines or fake fight animation — the hounds
+      // genuinely run in (real locomotion, not a teleport) from off south,
+      // then the combat card's own live AI (real CREATURE_DB aggro/attack
+      // ranges, real chase) takes over the instant they're close enough to
+      // notice the wolves.
+      addStage("hound1Run",{ type:"move", actorId:actors.hound1.id, pointId:points.hound1Arrived.id, speed:"fast", next:"__next__" }),
+      addStage("hound2Run",{ type:"move", actorId:actors.hound2.id, pointId:points.hound2Arrived.id, speed:"fast", next:"__next__" }),
       addStage("combat",{ type:"combat", duration:5,
         participants:[
           { actorId:actors.wolf1.id, combatOn:true, canLose:false }, { actorId:actors.wolf2.id, combatOn:true, canLose:false }, { actorId:actors.wolf3.id, combatOn:true, canLose:false },
@@ -1033,7 +1038,12 @@
     // and actor moves with it, nothing needs re-authoring.
     return {
       version: 6, title: "Gar-wolf Rescue Heart Scene", mapId: "",
-      anchor: { c: 0, r: 0, rotationDeg: 0 }, camera3d: null,
+      anchor: { c: 0, r: 0, rotationDeg: 0 },
+      // A captured establishing shot, not the generic "default" camera
+      // mode's wide 14-tile/33-degree farm-overview framing — that reads
+      // as much too high/distant for an intimate rescue scene. Local
+      // coordinates (pre-anchor), same as "Capture camera" would save.
+      camera3d: { localPos: { x: 11, y: 3.5, z: 15 }, localTarget: { x: 11, y: 0.6, z: 7 } },
       points: Object.values(points), actors: Object.values(actors), stages: Object.values(stages)
     };
   }
@@ -2419,7 +2429,8 @@
   function initialActorStates() {
     return new Map(state.project.actors.map(actor => {
       const w = worldOfPoint(pointById(actor.startPointId));
-      return [actor.id, { c: w.c, r: w.r, rotation: normalizeAngle(actor.rotation), pose: actor.pose, combatOn: Boolean(actor.combatOn), canLose: Boolean(actor.canLose), animationName: "" }];
+      const rotation = facingCheatFor(actor.id)(normalizeAngle(actor.rotation), w);
+      return [actor.id, { c: w.c, r: w.r, rotation, pose: actor.pose, combatOn: Boolean(actor.combatOn), canLose: Boolean(actor.canLose), animationName: "" }];
     }));
   }
 
@@ -2469,8 +2480,13 @@
     const problems = validateProject();
     const errors = problems.filter(p => p.level === "error");
     if (errors.length) { renderValidation(problems); toast(`Fix ${errors.length} scene problem${errors.length===1?"":"s"} first.`); return; }
-    resetPreview(false);
+    // Camera moved into place before resetPreview computes each actor's
+    // initial facing (see facingCheatFor/npcFacingCheatAngle) — an NPC's
+    // portrait-plane avatar only reads clearly very close to facing toward
+    // or away from wherever the camera actually is, so it needs to already
+    // be at the captured shot, not wherever the author last orbited it.
     if (state.project.camera3d) applyCamera3D(state.project.camera3d);
+    resetPreview(false);
     state.preview.running = true;
     state.preview.currentStageId = state.project.stages[0]?.id || null;
     const token = state.preview.token;
@@ -2537,6 +2553,26 @@
     const diff = Math.max(-cheatMaxOffsetDeg, Math.min(cheatMaxOffsetDeg, normalizeAngle180(desiredDeg - camDeg)));
     return normalizeAngle(camDeg + diff);
   }
+  // An NPC's avatar (buildSinglePlaneAvatarModel) is a flat "coin" — front
+  // and back planes both lying in the same local plane (see
+  // createSinglePlaneAssembly in png-plane-avatar.js) — unlike a
+  // creature's crossed side-view planes. Empirically it only reads as a
+  // clearly visible portrait very close to fully facing the camera or
+  // fully facing away — even 40-90 degrees off either of those two poles
+  // already looks thin/near-edge-on. A soft clamp isn't enough; snap fully
+  // to whichever of those two poles is nearer the authored intent instead,
+  // trading facing nuance for guaranteed visibility.
+  function npcFacingCheatAngle(desiredDeg, fromSt) {
+    const cam = state.three?.camera?.position;
+    if (!cam) return desiredDeg;
+    const camDeg = angleToward(fromSt, { c: cam.x, r: cam.z });
+    const diff = normalizeAngle180(desiredDeg - camDeg);
+    return normalizeAngle(Math.abs(diff) <= 90 ? camDeg : camDeg + 180);
+  }
+  function facingCheatFor(actorId) {
+    const actor = actorById(actorId);
+    return actor?.npcId ? npcFacingCheatAngle : actor?.creatureTypeId ? theatreCheatAngle : (deg) => deg;
+  }
 
   function runMoveStage(stage, token) {
     const actor = actorById(stage.actorId), targetPoint = pointById(stage.pointId), actorState = state.preview.actorStates.get(stage.actorId);
@@ -2599,8 +2635,9 @@
   function runTurnStage(stage, token) {
     const actorState = state.preview.actorStates.get(stage.actorId);
     if (!actorState) { continueTo(getResolvedNext(stage.id,stage.next),token); return; }
-    if (stage.mode === "actor") { const targetState = state.preview.actorStates.get(stage.targetActorId); if (targetState) actorState.rotation = theatreCheatAngle(angleToward(actorState, targetState), actorState); }
-    else actorState.rotation = theatreCheatAngle(normalizeAngle(stage.angle), actorState);
+    const cheat = facingCheatFor(stage.actorId);
+    if (stage.mode === "actor") { const targetState = state.preview.actorStates.get(stage.targetActorId); if (targetState) actorState.rotation = cheat(angleToward(actorState, targetState), actorState); }
+    else actorState.rotation = cheat(normalizeAngle(stage.angle), actorState);
     applyActorStateToScene(stage.actorId, actorState);
     state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id,stage.next),token), stage.duration*1000);
   }
