@@ -480,7 +480,7 @@
   }
   .dialogue-actions button.continue { text-align: center; background: linear-gradient(#ffd47c,#df9c41); }
 
-  #npc-picker-overlay {
+  #npc-picker-overlay, #creature-picker-overlay {
     display: none;
     position: fixed;
     z-index: 200;
@@ -490,14 +490,14 @@
     align-items: center;
     justify-content: center;
   }
-  #npc-picker-overlay.show { display: flex; }
-  #npc-picker-modal {
+  #npc-picker-overlay.show, #creature-picker-overlay.show { display: flex; }
+  #npc-picker-modal, #creature-picker-modal {
     width: min(560px, 100%);
     max-height: 82vh;
     display: flex;
     flex-direction: column;
   }
-  #npc-picker-list { overflow-y: auto; padding: 10px; gap: 6px; }
+  #npc-picker-list, #creature-picker-list { overflow-y: auto; padding: 10px; gap: 6px; }
 
   details.debug-panel {
     margin: 0;
@@ -622,11 +622,12 @@
           <section class="panel">
             <div class="panel-head">
               <h2>Characters</h2>
-              <p>Pull a real NPC from the global database, or add a freeform actor (creatures, unlisted characters).</p>
+              <p>Pull a real NPC or creature from the global databases, or add a freeform actor.</p>
             </div>
             <div class="panel-body stack">
               <div class="row">
                 <button id="addNpcActorBtn" class="primary">🧑 Add from NPC database</button>
+                <button id="addCreatureActorBtn" class="primary">🐾 Add creature instance</button>
               </div>
               <div class="row">
                 <input id="newActorName" maxlength="24" placeholder="Custom character name">
@@ -635,6 +636,7 @@
               <div id="actorList" class="item-list"></div>
               <div id="actorEditor" class="stack hidden">
                 <div id="actorNpcBadge" class="tip hidden"></div>
+                <div id="actorCreatureBadge" class="tip hidden"></div>
                 <label>Name<input id="actorNameInput" maxlength="24"></label>
                 <label>Token color<input id="actorColorInput" type="color"></label>
                 <label>Starting point<select id="actorStartSelect"></select></label>
@@ -645,9 +647,13 @@
                     <option value="prone">Prone</option>
                   </select>
                 </label>
+                <label>Team (combat AI only fights opposing teams — leave blank to sit combat out)
+                  <input id="actorTeamInput" maxlength="24" placeholder="e.g. gar_wolves">
+                </label>
                 <label class="check-row"><input id="actorCombatInput" type="checkbox"> Combat on at scene start</label>
                 <label class="check-row"><input id="actorCanLoseInput" type="checkbox"> Can lose by default</label>
                 <button id="unlinkNpcBtn" class="hidden">Unlink NPC (make custom)</button>
+                <button id="unlinkCreatureBtn" class="hidden">Unlink creature (make custom)</button>
                 <button id="deleteActorBtn" class="danger">Delete character</button>
               </div>
             </div>
@@ -738,6 +744,20 @@
   </div>
 </div>
 
+<div id="creature-picker-overlay">
+  <div id="creature-picker-modal" class="panel">
+    <div class="panel-head">
+      <h2>Add creature instance</h2>
+      <p id="creaturePickerStatus">Loading creature bestiary…</p>
+      <p style="margin-top:6px">Each click spawns one more numbered instance of that species (e.g. "Gar-wolf 1", "Gar-wolf 2") with a real sprite avatar and combat stats from the live bestiary.</p>
+    </div>
+    <div id="creature-picker-list" class="item-list"></div>
+    <div class="panel-body row">
+      <button id="creaturePickerCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
 
 <!-- ── Three.js r128 + the same reusable world-building modules the live
@@ -780,6 +800,7 @@
   const STORAGE_KEY = "hobunjiCutsceneDirector.v1";
   const MAP_INDEX_URL = "../../config/maps/index.json";
   const NPC_DB_URL = "../../config/npcs/hobunji-starter-npc-database.json";
+  const CREATURE_DB_URL = "../../config/creatures/hobunji-creature-bestiary.json";
   const ASSET_BASE = "../../";
   const ACTOR_COLORS = ["#3d7dd8","#d55353","#9b65d6","#3ca66f","#d48c38","#d45b9a","#5f9caa","#8a795f"];
   const STAGE_TYPES = new Set(["move","talk","choice","animation","turn","combat","fade"]);
@@ -814,6 +835,7 @@
     mapMeta: { loaded: false, id: null, name: "", kind: "blank", cols: DEFAULT_COLS, rows: DEFAULT_ROWS, tiles: new Map(), floorSet: new Set(), zGrid: null, buildings: [] },
     mapLoadToken: 0,
     npcDb: { loaded: false, loading: false, list: [], byId: new Map() },
+    bestiary: { loaded: false, loading: false, list: [], byId: new Map() },
     cosmeticsReady: null,
     three: null,
     actorObjects: new Map(),
@@ -858,12 +880,20 @@
   function GRID_ROWS() { return state.mapMeta.rows || DEFAULT_ROWS; }
 
   // ── Example scene ──────────────────────────────────────────────────────
-  // Ported from the original "Gar-wolf Rescue" heart-scene script. Jubmir
-  // and Spearhead Unumanuk are real NPCs in the starter database
-  // (config/npcs/hobunji-starter-npc-database.json), so this demo links
-  // them by npcId to show the live-database hookup; the wolves/hounds/player
-  // aren't roster NPCs so they stay freeform actors, same as any monster or
-  // the player character would.
+  // Ported from the original "Gar-wolf Rescue" heart-scene script, now
+  // hooked into every live database this tool understands:
+  //  - Jubmir and Spearhead Unumanuk are real NPCs in the starter database
+  //    (config/npcs/hobunji-starter-npc-database.json), linked by npcId.
+  //  - The three Gar-wolves and two Dabinggi-hounds are real creature types
+  //    already implemented in docs/game.js's CREATURE_DB (sprites, combat
+  //    stats, AI) and mirrored for this tool in
+  //    config/creatures/hobunji-creature-bestiary.json — each is a distinct
+  //    named *instance* of its species, linked by creatureTypeId, so it gets
+  //    the real side-view sprite avatar instead of a placeholder token.
+  //  - Wolves and hounds are placed on opposing teams ("gar_wolves" vs
+  //    "dabinggi_hounds") so the Combat card's live AI (see runCombatStage)
+  //    actually recognizes each other as threats and fights; the player
+  //    isn't marked combatOn in that card, so it's left alone.
   function buildRescueExample() {
     const points = {};
     const addPoint = (key, name, c, r) => { const p = { id: uid("point"), name, c, r }; points[key] = p; return p; };
@@ -880,18 +910,21 @@
 
     const actors = {};
     const addActor = (key, name, color, startPoint, rotation, opts = {}) => {
-      const actor = { id: uid("actor"), name, color, npcId: opts.npcId || null, startPointId: startPoint.id, rotation, pose: opts.pose || "standing", combatOn: false, canLose: false };
+      const actor = {
+        id: uid("actor"), name, color, npcId: opts.npcId || null, creatureTypeId: opts.creatureTypeId || null,
+        team: opts.team || "", startPointId: startPoint.id, rotation, pose: opts.pose || "standing", combatOn: false, canLose: false
+      };
       actors[key] = actor; return actor;
     };
     [
-      addActor("player","Player","#3d7dd8",points.playerDown,270,{pose:"prone"}),
-      addActor("wolf1","Gar-wolf1","#9e4b45",points.wolf1Over,45),
-      addActor("wolf2","Gar-wolf2","#8b403c",points.wolf2Over,135),
-      addActor("wolf3","Gar-wolf3","#763733",points.wolf3Over,90),
+      addActor("player","Player","#3d7dd8",points.playerDown,270,{pose:"prone",team:"player"}),
+      addActor("wolf1","Gar-wolf 1","#9e4b45",points.wolf1Over,45,{creatureTypeId:"gar-wolf",team:"gar_wolves"}),
+      addActor("wolf2","Gar-wolf 2","#8b403c",points.wolf2Over,135,{creatureTypeId:"gar-wolf",team:"gar_wolves"}),
+      addActor("wolf3","Gar-wolf 3","#763733",points.wolf3Over,90,{creatureTypeId:"gar-wolf",team:"gar_wolves"}),
       addActor("jubmir","Jubmir","#3ca66f",points.jubmirStart,0,{npcId:"jubmir"}),
       addActor("spearhead","Spearhead","#d48c38",points.spearheadStart,180,{npcId:"spearhead_unumanuk"}),
-      addActor("hound1","Hound1","#7a6b58",points.hound1Start,0),
-      addActor("hound2","Hound2","#8a795f",points.hound2Start,0)
+      addActor("hound1","Dabinggi-hound 1","#7a6b58",points.hound1Start,0,{creatureTypeId:"dabinggi-hound",team:"dabinggi_hounds"}),
+      addActor("hound2","Dabinggi-hound 2","#8a795f",points.hound2Start,0,{creatureTypeId:"dabinggi-hound",team:"dabinggi_hounds"})
     ];
 
     const stages = {};
@@ -934,13 +967,13 @@
     stages.whoReply.next = stages.healerLine.id;
 
     return {
-      version: 5, title: "Gar-wolf Rescue Heart Scene", mapId: "map_hobunji_town", camera3d: null,
+      version: 6, title: "Gar-wolf Rescue Heart Scene", mapId: "map_hobunji_town", camera3d: null,
       points: Object.values(points), actors: Object.values(actors), stages: Object.values(stages)
     };
   }
 
   function blankProject() {
-    return { version: 5, title: "New Cutscene", mapId: "", camera3d: null, points: [], actors: [], stages: [] };
+    return { version: 6, title: "New Cutscene", mapId: "", camera3d: null, points: [], actors: [], stages: [] };
   }
 
   function normalizeProject(raw) {
@@ -957,6 +990,10 @@
       id:String(actor.id || uid("actor")), name:String(actor.name || `Character ${index+1}`).slice(0,24),
       color:/^#[0-9a-f]{6}$/i.test(actor.color || "") ? actor.color : ACTOR_COLORS[index % ACTOR_COLORS.length],
       npcId: actor.npcId ? String(actor.npcId) : null,
+      // A creature-linked actor never also carries an npcId — the two are
+      // mutually exclusive avatar sources (person portrait vs. sprite).
+      creatureTypeId: (!actor.npcId && actor.creatureTypeId) ? String(actor.creatureTypeId) : null,
+      team: String(actor.team || "").slice(0,24),
       startPointId:pointIds.has(actor.startPointId) ? actor.startPointId : points[0].id,
       rotation:normalizeAngle(actor.rotation), pose:actor.pose === "prone" ? "prone" : "standing",
       combatOn:Boolean(actor.combatOn), canLose:Boolean(actor.canLose)
@@ -985,7 +1022,7 @@
     });
 
     return {
-      version: 5, title:String(raw.title||"Cutscene").slice(0,80), mapId:String(raw.mapId||""),
+      version: 6, title:String(raw.title||"Cutscene").slice(0,80), mapId:String(raw.mapId||""),
       camera3d: raw.camera3d && raw.camera3d.pos && raw.camera3d.target ? raw.camera3d : null,
       points, actors, stages
     };
@@ -1008,6 +1045,7 @@
   function stageById(id) { return state.project.stages.find(s => s.id === id) || null; }
   function stageIndex(id) { return state.project.stages.findIndex(s => s.id === id); }
   function npcById(id) { return id ? (state.npcDb.byId.get(id) || null) : null; }
+  function creatureById(id) { return id ? (state.bestiary.byId.get(id) || null) : null; }
 
   function switchScreen(name) {
     state.activeScreen = name;
@@ -1534,6 +1572,25 @@
     }
   }
 
+  async function fetchCreatureBestiary() {
+    state.bestiary.loading = true;
+    try {
+      const res = await fetch(CREATURE_DB_URL);
+      const json = await res.json();
+      const list = Array.isArray(json.creatures) ? json.creatures : [];
+      state.bestiary.list = list;
+      state.bestiary.byId = new Map(list.map(c => [c.id, c]));
+      state.bestiary.loaded = true;
+      log(`Creature bestiary loaded: ${list.length} creature types.`);
+    } catch (error) {
+      log(`Could not load creature bestiary: ${error.message}`, "ERROR");
+    } finally {
+      state.bestiary.loading = false;
+      renderCreaturePickerList();
+      renderActors();
+    }
+  }
+
   async function ensureCosmetics() {
     if (!window.NpcAvatarPreview) return null;
     if (!state.cosmeticsReady) {
@@ -1592,6 +1649,36 @@
     }
   }
 
+  // Builds a real PNGPlaneAvatar sprite avatar for a creature instance, using
+  // the exact species sprite + aspect ratio docs/game.js's makeCreatureEntity
+  // uses (see config/creatures/hobunji-creature-bestiary.json's header note).
+  // Returns null on any failure so callers fall back to the placeholder
+  // token, same policy as buildNpcAvatarGroup. Note: the animal sprite's
+  // "front"/"broadside" convention (docs/game.js:4459-4465) was tuned for
+  // the live game's fixed near-top-down camera, not this tool's freely
+  // orbiting one, so facing direction is only approximate here.
+  function buildCreatureAvatarGroup(creature) {
+    if (!window.PNGPlaneAvatar || !window.THREE) return null;
+    try {
+      const modelWidth = creature.modelWidth || 2;
+      const modelHeight = modelWidth * (creature.spriteAspect || 0.43636);
+      const spriteUrl = ASSET_BASE + (creature.sprites?.idle || "");
+      const avatarGroup = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, spriteUrl, {
+        modelWidth, modelHeight, name: `creature_avatar_${creature.id}`
+      }).group;
+      if (creature.tint && creature.tint.toLowerCase() !== "#ffffff") {
+        const tintColor = new THREE.Color(creature.tint);
+        avatarGroup.traverse(child => { if (child.material?.color) child.material.color = tintColor; });
+      }
+      avatarGroup.userData.portraitModelHeight = modelHeight;
+      avatarGroup.position.set(0, modelHeight/2, 0);
+      return { group: avatarGroup, modelHeight };
+    } catch (error) {
+      log(`Avatar build failed for creature "${creature.label||creature.id}": ${error.message}`, "ERROR");
+      return null;
+    }
+  }
+
   function buildPlaceholderAvatarGroup(actor) {
     // THREE r128 predates CapsuleGeometry (added far later), so the token
     // body is a plain cylinder+sphere instead.
@@ -1624,14 +1711,16 @@
     const three = state.three;
     if (!three) return null;
     let rec = state.actorObjects.get(actor.id);
-    if (rec && rec.npcId === actor.npcId && rec.name === actor.name) return rec;
+    if (rec && rec.npcId === actor.npcId && rec.creatureTypeId === actor.creatureTypeId && rec.name === actor.name) return rec;
 
     if (rec) { three.actorsGroup.remove(rec.root); }
     const root = new THREE.Group();
     root.name = `actor_${actor.id}`;
     let avatarInfo = null;
     const npc = npcById(actor.npcId);
+    const creature = creatureById(actor.creatureTypeId);
     if (npc) avatarInfo = await buildNpcAvatarGroup(npc);
+    else if (creature) avatarInfo = buildCreatureAvatarGroup(creature);
     const usingPlaceholder = !avatarInfo;
     let avatarGroup;
     try { avatarGroup = avatarInfo ? avatarInfo.group : buildPlaceholderAvatarGroup(actor); }
@@ -1639,9 +1728,10 @@
     root.add(avatarGroup);
     three.actorsGroup.add(root);
     rec = {
-      root, avatarGroup, npcId: actor.npcId, name: actor.name, usingPlaceholder,
+      root, avatarGroup, npcId: actor.npcId, creatureTypeId: actor.creatureTypeId, name: actor.name, usingPlaceholder,
       profile: avatarInfo?.profile || null, frontCanvas: avatarInfo?.frontCanvas || null,
-      avatarHeight: avatarGroup.userData?.portraitModelHeight || 1.6, breathTimer: null
+      avatarHeight: avatarGroup.userData?.portraitModelHeight || 1.6, breathTimer: null,
+      lastAttackAt: 0, attackFlashTimer: null
     };
     state.actorObjects.set(actor.id, rec);
     return rec;
@@ -1786,8 +1876,13 @@
 
   function actorAvatarBadgeHtml(actor) {
     const rec = state.actorObjects.get(actor.id);
-    if (!actor.npcId) return `<span class="swatch" style="background:${escapeHtml(actor.color)}">${escapeHtml(actor.name.slice(0,2))}</span>`;
-    if (rec && !rec.usingPlaceholder && rec.frontCanvas) return `<span class="swatch"><img src="${rec.frontCanvas.toDataURL()}" alt=""></span>`;
+    if (actor.npcId) {
+      if (rec && !rec.usingPlaceholder && rec.frontCanvas) return `<span class="swatch"><img src="${rec.frontCanvas.toDataURL()}" alt=""></span>`;
+      return `<span class="swatch" style="background:${escapeHtml(actor.color)}">${escapeHtml(actor.name.slice(0,2))}</span>`;
+    }
+    if (actor.creatureTypeId) {
+      return `<span class="swatch" style="background:${escapeHtml(actor.color)}">🐾</span>`;
+    }
     return `<span class="swatch" style="background:${escapeHtml(actor.color)}">${escapeHtml(actor.name.slice(0,2))}</span>`;
   }
 
@@ -1797,15 +1892,20 @@
       ? state.project.actors.map(actor => {
           const start = pointById(actor.startPointId);
           const npc = npcById(actor.npcId);
-          const npcLabel = actor.npcId ? (npc ? `NPC: ${escapeHtml(npc.name)}` : `NPC: ${escapeHtml(actor.npcId)} (not found)`) : "custom actor";
+          const creature = creatureById(actor.creatureTypeId);
+          let kindLabel;
+          if (actor.npcId) kindLabel = npc ? `NPC: ${escapeHtml(npc.name)}` : `NPC: ${escapeHtml(actor.npcId)} (not found)`;
+          else if (actor.creatureTypeId) kindLabel = creature ? `Creature: ${escapeHtml(creature.label)}` : `Creature: ${escapeHtml(actor.creatureTypeId)} (not found)`;
+          else kindLabel = "custom actor";
+          const teamLabel = actor.team ? ` · team ${escapeHtml(actor.team)}` : "";
           return `
             <div class="item-card ${actor.id===state.selectedActorId?"selected":""}" data-actor-id="${escapeHtml(actor.id)}">
               ${actorAvatarBadgeHtml(actor)}
-              <span><strong>${escapeHtml(actor.name)}</strong><small>${npcLabel} · ${escapeHtml(start?.name||"Missing point")} · ${actor.rotation}°</small></span>
+              <span><strong>${escapeHtml(actor.name)}</strong><small>${kindLabel} · ${escapeHtml(start?.name||"Missing point")} · ${actor.rotation}°${teamLabel}</small></span>
               <button>Edit</button>
             </div>`;
         }).join("")
-      : `<div class="empty-state">Add a character from the NPC database, or a custom one.</div>`;
+      : `<div class="empty-state">Add a character from the NPC database, a creature instance, or a custom one.</div>`;
 
     els.actorList.querySelectorAll("[data-actor-id]").forEach(card => {
       card.addEventListener("click", () => { state.selectedActorId = card.dataset.actorId; renderAll(); });
@@ -1819,15 +1919,25 @@
       els.actorStartSelect.innerHTML = pointSelectHtml(actor.startPointId);
       els.actorRotationInput.value = actor.rotation;
       els.actorPoseSelect.value = actor.pose;
+      els.actorTeamInput.value = actor.team || "";
       els.actorCombatInput.checked = actor.combatOn;
       els.actorCanLoseInput.checked = actor.canLose;
       const npc = npcById(actor.npcId);
+      const creature = creatureById(actor.creatureTypeId);
       els.actorNpcBadge.classList.toggle("hidden", !actor.npcId);
       els.unlinkNpcBtn.classList.toggle("hidden", !actor.npcId);
+      els.actorCreatureBadge.classList.toggle("hidden", !actor.creatureTypeId);
+      els.unlinkCreatureBtn.classList.toggle("hidden", !actor.creatureTypeId);
       if (actor.npcId) {
         const rec = state.actorObjects.get(actor.id);
         const status = !state.npcDb.loaded ? "NPC database still loading…" : !npc ? "⚠ NPC id not found in the database." : rec?.usingPlaceholder ? "⚠ Real avatar failed to build — showing a color token instead." : "✓ Live 3D avatar built from this NPC's real appearance.";
         els.actorNpcBadge.innerHTML = `<strong>Linked NPC: ${escapeHtml(npc?.name||actor.npcId)}</strong><br>${escapeHtml(status)}`;
+      }
+      if (actor.creatureTypeId) {
+        const rec = state.actorObjects.get(actor.id);
+        const status = !state.bestiary.loaded ? "Creature bestiary still loading…" : !creature ? "⚠ Creature type id not found in the bestiary." : rec?.usingPlaceholder ? "⚠ Real sprite avatar failed to build — showing a color token instead." : "✓ Live sprite avatar built from the real creature bestiary.";
+        const aiNote = creature ? `Combat AI: aggro ${creature.aggroRangeTiles ?? "—"} tiles, attack range ${creature.attackRangeTiles ?? "—"} tiles. Set a Team below so it only fights opposing teams during a Combat card.` : "";
+        els.actorCreatureBadge.innerHTML = `<strong>Creature type: ${escapeHtml(creature?.label||actor.creatureTypeId)}</strong><br>${escapeHtml(status)}${aiNote ? `<br>${escapeHtml(aiNote)}` : ""}`;
       }
     }
   }
@@ -1962,10 +2072,12 @@
       const participants = new Map(stage.participants.map(i => [i.actorId,i]));
       fields = `
         <label>Combat length in seconds<input id="editDuration" type="number" min="0" max="300" step=".5" value="${stage.duration}"></label>
-        <div class="tip"><strong>Combat On</strong> activates that character for this card. <strong>Can Lose</strong> makes the loss branch available.</div>
+        <div class="tip"><strong>Combat On</strong> activates that character for this card. <strong>Can Lose</strong> makes the loss branch available. Creature-linked characters with a Team set (see Characters tab) fight autonomously — chasing and attacking Combat On characters on an opposing team — for the card's whole duration.</div>
         <div class="combat-card"><strong>Characters in this combat</strong><div class="combat-grid">
           ${state.project.actors.map(actor => { const item = participants.get(actor.id) || { combatOn:false, canLose:actor.canLose };
-            return `<div class="combat-row"><strong>${escapeHtml(actor.name)}</strong>
+            const creature = creatureById(actor.creatureTypeId);
+            const aiNote = creature ? (actor.team ? ` (AI: team "${actor.team}")` : " (AI: no team set — won't fight)") : "";
+            return `<div class="combat-row"><strong>${escapeHtml(actor.name)}${escapeHtml(aiNote)}</strong>
               <label><input data-combat-on="${escapeHtml(actor.id)}" type="checkbox" ${item.combatOn?"checked":""}>Combat On</label>
               <label><input data-can-lose="${escapeHtml(actor.id)}" type="checkbox" ${item.canLose?"checked":""}>Can Lose</label></div>`; }).join("")}
         </div></div>
@@ -2078,7 +2190,10 @@
     state.preview.timer = null;
     state.preview.actorStates = initialActorStates();
     state.preview.fadeOpacity = 0;
-    for (const rec of state.actorObjects.values()) { clearInterval(rec.breathTimer); rec.breathTimer = null; }
+    for (const rec of state.actorObjects.values()) {
+      clearInterval(rec.breathTimer); rec.breathTimer = null;
+      clearTimeout(rec.attackFlashTimer); rec.attackFlashTimer = null;
+    }
     hideDialogue();
     if (els.playStatusPill) els.playStatusPill.textContent = "Press Start to play the cutscene.";
     if (els.fadeOverlay) { els.fadeOverlay.style.transitionDuration = "0s"; els.fadeOverlay.style.opacity = "0"; }
@@ -2226,14 +2341,95 @@
     state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id,stage.next),token), stage.duration*1000);
   }
 
+  function tileDist(a, b) { return Math.hypot(a.c - b.c, a.r - b.r); }
+
+  // Stand-in for the real pounce animation (docs/js/combat/combat-animal-
+  // attacks.js's windup→leap frame sequence) — this tool has no general
+  // animation database (see the Animation card's own notice), so an
+  // "attack" here is an honest scale-pulse cue, not a faked recreation of
+  // the real attack's motion.
+  function triggerCreatureAttackPulse(actorId, targetSt) {
+    const rec = state.actorObjects.get(actorId);
+    const st = state.preview.actorStates.get(actorId);
+    if (!rec || !st) return;
+    rec.lastAttackAt = performance.now();
+    const baseScale = st.pose === "prone" ? 0.6 : 1;
+    rec.root.scale.setScalar(baseScale * 1.35);
+    clearTimeout(rec.attackFlashTimer);
+    rec.attackFlashTimer = setTimeout(() => {
+      rec.attackFlashTimer = null;
+      if (state.actorObjects.get(actorId) === rec) rec.root.scale.setScalar(baseScale);
+    }, 260);
+  }
+
+  // Combat card: activates the "normal combat AI" of creature-linked
+  // participants for the card's duration. A creature only recognizes another
+  // combatOn creature as a threat if both are on a team (actor.team) and the
+  // teams differ — same team = ally, no team = sits combat out, matching the
+  // "opposite teams" requirement. Threats within aggroRangeTiles are chased
+  // (direct-line stepping, not the orthogonal path Move cards use — a
+  // continuous chase reads better) and attacked (a cooldown-gated pulse) once
+  // within attackRangeTiles, exactly as CREATURE_DB's aggro/attack ranges
+  // define in docs/game.js. Non-creature combatOn participants (e.g. a
+  // person NPC ever marked combatOn) are left stationary — this simulation
+  // only drives creature AI, not a full clone of the player combat system.
   function runCombatStage(stage, token) {
     stage.participants.forEach(p => { const st = state.preview.actorStates.get(p.actorId); if (st) { st.combatOn = p.combatOn; st.canLose = p.canLose; } });
+
+    const aiActorIds = stage.participants.filter(p => p.combatOn).map(p => p.actorId)
+      .filter(id => { const a = actorById(id); return a && a.creatureTypeId && a.team; });
+
+    let aiTimer = null;
+    if (aiActorIds.length) {
+      aiTimer = setInterval(() => {
+        if (token !== state.preview.token || !state.preview.running) { clearInterval(aiTimer); return; }
+        for (const actorId of aiActorIds) {
+          const rec = state.actorObjects.get(actorId);
+          if (rec && rec.attackFlashTimer) continue; // mid-attack pulse, let it finish
+          const st = state.preview.actorStates.get(actorId);
+          const actor = actorById(actorId);
+          const creature = creatureById(actor?.creatureTypeId);
+          if (!st || !st.combatOn || !actor || !creature) continue;
+
+          let bestId = null, bestDist = Infinity;
+          for (const otherId of aiActorIds) {
+            if (otherId === actorId) continue;
+            const otherActor = actorById(otherId);
+            const otherSt = state.preview.actorStates.get(otherId);
+            if (!otherActor || !otherSt || !otherSt.combatOn || otherActor.team === actor.team) continue;
+            const d = tileDist(st, otherSt);
+            if (d < bestDist) { bestDist = d; bestId = otherId; }
+          }
+          if (bestId == null) continue; // no opposing-team threat recognized — idle
+
+          const targetSt = state.preview.actorStates.get(bestId);
+          st.rotation = angleToward(st, targetSt);
+          const aggroRange = creature.aggroRangeTiles ?? 6;
+          const attackRange = Math.max(creature.attackRangeTiles ?? 1, 0.9);
+          if (bestDist > aggroRange) { applyActorStateToScene(actorId, st); continue; }
+          if (bestDist <= attackRange) {
+            applyActorStateToScene(actorId, st);
+            if (performance.now() - (rec?.lastAttackAt || 0) >= 900) triggerCreatureAttackPulse(actorId, targetSt);
+          } else {
+            st.c += Math.sign(targetSt.c - st.c);
+            st.r += Math.sign(targetSt.r - st.r);
+            applyActorStateToScene(actorId, st);
+          }
+        }
+      }, 220);
+    }
+
     const endCombat = loss => {
-      stage.participants.forEach(p => { const st = state.preview.actorStates.get(p.actorId); if (st) st.combatOn = false; });
+      clearInterval(aiTimer);
+      stage.participants.forEach(p => {
+        const st = state.preview.actorStates.get(p.actorId); if (st) st.combatOn = false;
+        const rec = state.actorObjects.get(p.actorId);
+        if (rec) { clearTimeout(rec.attackFlashTimer); rec.attackFlashTimer = null; }
+      });
       continueTo(getResolvedNext(stage.id, loss?stage.lossNext:stage.next), token);
     };
     state.preview.timer = setTimeout(() => {
-      if (token !== state.preview.token || !state.preview.running) return;
+      if (token !== state.preview.token || !state.preview.running) { clearInterval(aiTimer); return; }
       const canLose = stage.participants.some(p => p.combatOn && p.canLose);
       if (!canLose) { endCombat(false); return; }
       showDialogue("Combat result", "A character marked Can Lose may use the separate loss branch.", [
@@ -2270,6 +2466,11 @@
     state.project.actors.forEach(actor => {
       if (!pointIds.has(actor.startPointId)) problems.push({ level:"error", text:`${actor.name} has no valid starting point.` });
       if (actor.npcId && !npcById(actor.npcId)) problems.push({ level:"warning", text:`${actor.name} is linked to NPC id "${actor.npcId}", which isn't in the loaded database.` });
+      if (actor.creatureTypeId && !creatureById(actor.creatureTypeId)) problems.push({ level:"warning", text:`${actor.name} is linked to creature type "${actor.creatureTypeId}", which isn't in the loaded bestiary.` });
+      if (actor.creatureTypeId && !actor.team) {
+        const usedInCombat = state.project.stages.some(s => s.type === "combat" && s.participants.some(p => p.actorId === actor.id && p.combatOn));
+        if (usedInCombat) problems.push({ level:"warning", text:`${actor.name} is Combat On in a combat card but has no Team set — its AI won't recognize any threats.` });
+      }
     });
 
     state.project.stages.forEach((stage,index) => {
@@ -2371,7 +2572,8 @@
     if (!state.project.points.length) { toast("Add a named point first."); closeNpcPicker(); switchScreen("stage"); return; }
     const actor = {
       id: uid("actor"), name: npc.name || npc.id, color: ACTOR_COLORS[state.project.actors.length % ACTOR_COLORS.length],
-      npcId: npc.id, startPointId: state.selectedPointId || state.project.points[0].id, rotation: 0, pose: "standing", combatOn: false, canLose: false
+      npcId: npc.id, creatureTypeId: null, team: "",
+      startPointId: state.selectedPointId || state.project.points[0].id, rotation: 0, pose: "standing", combatOn: false, canLose: false
     };
     state.project.actors.push(actor);
     state.selectedActorId = actor.id;
@@ -2379,6 +2581,46 @@
     changed(`${actor.name} added from the NPC database.`);
     switchScreen("characters");
     toast(`Building ${actor.name}'s 3D avatar…`);
+  }
+
+  function openCreaturePicker() {
+    els.creaturePickerOverlay.classList.add("show");
+    renderCreaturePickerList();
+  }
+  function closeCreaturePicker() { els.creaturePickerOverlay.classList.remove("show"); }
+
+  function renderCreaturePickerList() {
+    const status = els.creaturePickerStatus;
+    if (state.bestiary.loading) status.textContent = "Loading creature bestiary…";
+    else if (!state.bestiary.loaded) status.textContent = "Creature bestiary unavailable — add a custom character instead.";
+    else status.textContent = `${state.bestiary.list.length} creature types in the live bestiary.`;
+
+    els.creaturePickerList.innerHTML = state.bestiary.list.length ? state.bestiary.list.map(c => `
+      <div class="item-card" data-creature-id="${escapeHtml(c.id)}">
+        <span class="swatch">🐾</span>
+        <span><strong>${escapeHtml(c.label||c.id)}</strong><small>${c.hostile ? "hostile" : "non-hostile"} · aggro ${c.aggroRangeTiles ?? "—"} tiles · attack ${c.attackRangeTiles ?? "—"} tiles</small></span>
+        <button>Add</button>
+      </div>`).join("") : `<div class="empty-state">${state.bestiary.loaded ? "No creature types found." : "Waiting on the creature bestiary…"}</div>`;
+
+    els.creaturePickerList.querySelectorAll("[data-creature-id]").forEach(card => card.addEventListener("click", () => addCreatureActor(card.dataset.creatureId)));
+  }
+
+  function addCreatureActor(creatureTypeId) {
+    const creature = creatureById(creatureTypeId);
+    if (!creature) { toast("Creature type not found."); return; }
+    if (!state.project.points.length) { toast("Add a named point first."); closeCreaturePicker(); switchScreen("stage"); return; }
+    const existingCount = state.project.actors.filter(a => a.creatureTypeId === creatureTypeId).length;
+    const name = `${creature.label || creatureTypeId} ${existingCount + 1}`;
+    const actor = {
+      id: uid("actor"), name, color: ACTOR_COLORS[state.project.actors.length % ACTOR_COLORS.length],
+      npcId: null, creatureTypeId, team: "",
+      startPointId: state.selectedPointId || state.project.points[0].id, rotation: 0, pose: "standing", combatOn: false, canLose: false
+    };
+    state.project.actors.push(actor);
+    state.selectedActorId = actor.id;
+    changed(`${actor.name} added from the creature bestiary.`);
+    switchScreen("characters");
+    toast(`Building ${actor.name}'s sprite avatar…`);
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -2430,10 +2672,14 @@
     els.npcPickerOverlay.addEventListener("click", e => { if (e.target === els.npcPickerOverlay) closeNpcPicker(); });
     els.npcPickerSearch.addEventListener("input", renderNpcPickerList);
 
+    els.addCreatureActorBtn.addEventListener("click", openCreaturePicker);
+    els.creaturePickerCloseBtn.addEventListener("click", closeCreaturePicker);
+    els.creaturePickerOverlay.addEventListener("click", e => { if (e.target === els.creaturePickerOverlay) closeCreaturePicker(); });
+
     els.addActorBtn.addEventListener("click", () => {
       if (!state.project.points.length) { toast("Add a named point first."); return; }
       const name = els.newActorName.value.trim() || `Character ${state.project.actors.length+1}`;
-      const actor = { id: uid("actor"), name: name.slice(0,24), color: ACTOR_COLORS[state.project.actors.length % ACTOR_COLORS.length], npcId: null, startPointId: state.selectedPointId || state.project.points[0].id, rotation:0, pose:"standing", combatOn:false, canLose:false };
+      const actor = { id: uid("actor"), name: name.slice(0,24), color: ACTOR_COLORS[state.project.actors.length % ACTOR_COLORS.length], npcId: null, creatureTypeId: null, team: "", startPointId: state.selectedPointId || state.project.points[0].id, rotation:0, pose:"standing", combatOn:false, canLose:false };
       state.project.actors.push(actor);
       state.selectedActorId = actor.id;
       els.newActorName.value = "";
@@ -2446,9 +2692,11 @@
     els.actorStartSelect.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.startPointId = els.actorStartSelect.value; changed(`${a.name}'s starting point changed.`); });
     els.actorRotationInput.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.rotation = normalizeAngle(els.actorRotationInput.value); changed(`${a.name}'s starting rotation changed.`); });
     els.actorPoseSelect.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.pose = els.actorPoseSelect.value==="prone"?"prone":"standing"; changed(`${a.name}'s starting pose changed.`); });
+    els.actorTeamInput.addEventListener("input", () => { const a = actorById(state.selectedActorId); if (!a) return; a.team = els.actorTeamInput.value.slice(0,24); saveLocal(); renderStages(); });
     els.actorCombatInput.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.combatOn = els.actorCombatInput.checked; changed(`${a.name}'s starting combat switch changed.`); });
     els.actorCanLoseInput.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.canLose = els.actorCanLoseInput.checked; changed(`${a.name}'s Can Lose switch changed.`); });
     els.unlinkNpcBtn.addEventListener("click", () => { const a = actorById(state.selectedActorId); if (!a) return; a.npcId = null; changed(`${a.name} unlinked from its NPC — now a custom actor.`); });
+    els.unlinkCreatureBtn.addEventListener("click", () => { const a = actorById(state.selectedActorId); if (!a) return; a.creatureTypeId = null; changed(`${a.name} unlinked from its creature type — now a custom actor.`); });
     els.deleteActorBtn.addEventListener("click", () => {
       const actor = actorById(state.selectedActorId); if (!actor) return;
       const used = state.project.stages.some(s => s.actorId===actor.id || s.speakerId===actor.id || s.targetActorId===actor.id || (s.type==="combat" && s.participants.some(p=>p.actorId===actor.id)));
@@ -2500,18 +2748,20 @@
     [
       "exportBtn","importBtn","exampleBtn","importFile","mapSelect","loadMapBtn","clearMapBtn","mapLoadStatus",
       "pickBanner","editorBoard","newPointName","addPointBtn","pointList","pointEditor","pointNameInput","movePointBtn","deletePointBtn",
-      "addNpcActorBtn","newActorName","addActorBtn","actorList","actorEditor","actorNpcBadge","actorNameInput","actorColorInput",
-      "actorStartSelect","actorRotationInput","actorPoseSelect","actorCombatInput","actorCanLoseInput","unlinkNpcBtn","deleteActorBtn",
+      "addNpcActorBtn","addCreatureActorBtn","newActorName","addActorBtn","actorList","actorEditor","actorNpcBadge","actorCreatureBadge","actorNameInput","actorColorInput",
+      "actorStartSelect","actorRotationInput","actorPoseSelect","actorTeamInput","actorCombatInput","actorCanLoseInput","unlinkNpcBtn","unlinkCreatureBtn","deleteActorBtn",
       "stageList","stageEditor","mapStatusPill","playStatusPill","startPlayBtn","resetPlayBtn","captureCameraBtn","resetCameraBtn",
       "canvas3d","fadeOverlay","dialogueBox","dialogueSpeaker","dialogueText","dialogueActions",
       "checkBtn","copyLogBtn","validationList","debugLog","toast",
-      "npcPickerStatus","npcPickerSearch","npcPickerCloseBtn"
+      "npcPickerStatus","npcPickerSearch","npcPickerCloseBtn","creaturePickerStatus","creaturePickerCloseBtn"
     ].forEach(id => { els[id] = $(id); });
     // These markup ids are kebab-case (shared with the CSS selectors), so
     // grab them explicitly instead of via the camelCase loop above.
     els.viewportWrap = $("viewport-wrap");
     els.npcPickerOverlay = $("npc-picker-overlay");
     els.npcPickerList = $("npc-picker-list");
+    els.creaturePickerOverlay = $("creature-picker-overlay");
+    els.creaturePickerList = $("creature-picker-list");
 
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch (error) { console.warn(error); }
@@ -2525,7 +2775,7 @@
     resetPreview(false);
     log("Cutscene Director loaded.");
 
-    await Promise.all([fetchMapIndex(), fetchNpcDb()]);
+    await Promise.all([fetchMapIndex(), fetchNpcDb(), fetchCreatureBestiary()]);
     if (state.project.mapId) await loadMap(state.project.mapId); else renderMapSelect();
     renderAll();
   }

@@ -1,0 +1,57 @@
+{
+  "schema": "hobunji_creature_bestiary.v1",
+  "note": "Mirrors the relevant fields of CREATURE_DB in docs/game.js. Not imported — game.js's creature system lives inside its main closure with no exported globals, the same reason docs/js/terrain-preview.js mirrors (rather than imports) game.js's terrain math. aggroRangeTiles/leashRangeTiles/attackRangeTiles are already tile multiples in game.js's own source (e.g. aggroRangePx: TILE * 6.2), copied here as plain tile counts, EXCEPT dabinggi-hound's aggro/leash range: in the real game it's a non-hostile, player-directed whistle companion with no autonomous aggro range of its own, so those two fields are a tools-only estimate (matched to gar-wolf's) for cutscenes that stage it as a fighting defender, like the bundled rescue example. modelWidth/spriteAspect match game.js's makeCreatureEntity (all creature sprites are 1375x600px, modelHeight = modelWidth * 600/1375). Keep this file in sync if CREATURE_DB changes.",
+  "creatures": [
+    {
+      "id": "gar-wolf",
+      "label": "Gar-wolf",
+      "hostile": true,
+      "aggroRangeTiles": 6.2,
+      "leashRangeTiles": 9,
+      "attackRangeTiles": 0.85,
+      "attacks": ["pounce"],
+      "attackTag": "sharp",
+      "modelWidth": 2.1,
+      "spriteAspect": 0.43636,
+      "tint": "#ffffff",
+      "sprites": {
+        "idle": "assets/creaturesprites/gar-wolf_idle.png",
+        "run": ["assets/creaturesprites/gar-wolf_run1.png", "assets/creaturesprites/gar-wolf_run2.png"]
+      }
+    },
+    {
+      "id": "gar-wolf-alpha",
+      "label": "Gar-wolf Alpha",
+      "hostile": true,
+      "aggroRangeTiles": 7,
+      "leashRangeTiles": 10,
+      "attackRangeTiles": 0.85,
+      "attacks": ["pounce"],
+      "attackTag": "sharp",
+      "modelWidth": 3.1,
+      "spriteAspect": 0.43636,
+      "tint": "#ffb0a0",
+      "sprites": {
+        "idle": "assets/creaturesprites/gar-wolf_idle.png",
+        "run": ["assets/creaturesprites/gar-wolf_run1.png", "assets/creaturesprites/gar-wolf_run2.png"]
+      }
+    },
+    {
+      "id": "dabinggi-hound",
+      "label": "Dabinggi-hound",
+      "hostile": false,
+      "aggroRangeTiles": 6.2,
+      "leashRangeTiles": 9,
+      "attackRangeTiles": 0.9,
+      "attacks": ["pounce"],
+      "attackTag": "poison",
+      "modelWidth": 1.9,
+      "spriteAspect": 0.43636,
+      "tint": "#ffffff",
+      "sprites": {
+        "idle": "assets/creaturesprites/dabinggi-hound_idle.png",
+        "run": ["assets/creaturesprites/dabinggi-hound_run1.png", "assets/creaturesprites/dabinggi-hound_run2.png"]
+      }
+    }
+  ]
+}
