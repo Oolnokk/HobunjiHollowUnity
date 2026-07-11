@@ -18,6 +18,14 @@
       const spTime    = document.getElementById('spTime');
       const spDay     = document.getElementById('spDay');
       const spSeason  = document.getElementById('spSeason');
+      // Calendar popup
+      const calendarBackdrop = document.getElementById('calendarBackdrop');
+      const calendarPanel    = document.getElementById('calendarPanel');
+      const calClose         = document.getElementById('calClose');
+      const calToday         = document.getElementById('calToday');
+      const calSeasonInfo    = document.getElementById('calSeasonInfo');
+      const calGrid          = document.getElementById('calGrid');
+      const calLegend        = document.getElementById('calLegend');
       const spWeather = document.getElementById('spWeather');
       const spTool    = document.getElementById('spTool');
       const spTile    = document.getElementById('spTile');
@@ -119,6 +127,7 @@
       // ── Menu open/close ────────────────────────────────────
       let menuOpen = false;
       function openMenu(targetPanel = 'inventory') {
+        if (calendarOpen) closeCalendar();
         menuOpen = true;
         menuBtn.classList.add('open');
         menuBtn.setAttribute('aria-expanded', 'true');
@@ -143,6 +152,28 @@
       }
       menuBtn.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
       menuBackdrop.addEventListener('click', closeMenu);
+
+      // ── Calendar popup open/close ──────────────────────────
+      let calendarOpen = false;
+      function openCalendar() {
+        if (menuOpen) closeMenu();
+        calendarOpen = true;
+        spDay.setAttribute('aria-expanded', 'true');
+        calendarBackdrop.classList.add('open');
+        calendarPanel.classList.add('open');
+        paused = true;
+        renderCalendarPanel();
+      }
+      function closeCalendar() {
+        calendarOpen = false;
+        spDay.setAttribute('aria-expanded', 'false');
+        calendarBackdrop.classList.remove('open');
+        calendarPanel.classList.remove('open');
+        if (!menuOpen) paused = false;
+      }
+      spDay.addEventListener('click', () => calendarOpen ? closeCalendar() : openCalendar());
+      calendarBackdrop.addEventListener('click', closeCalendar);
+      calClose.addEventListener('click', closeCalendar);
 
       // ── New panel tab switching ────────────────────────────
 
@@ -6772,7 +6803,17 @@
           if (ruleActive && rule.stationId) {
             const stationTarget = resolveNpcStationTarget(rule.stationId);
             if (stationTarget) return { ...stationTarget, routeId: rule.routeId || null, activity: rule.activity || '' };
-            window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found`, 'warn');
+            // The station's building scene may simply not have been visited/loaded
+            // yet this session (its npcStations only register once it loads) —
+            // warm it up so the lookup succeeds on a later tick, and throttle the
+            // warning instead of spamming it every tick until that load completes.
+            const missingArea = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
+            if (_isBuildingArea(missingArea) && !_buildingScenes.has(missingArea)) loadBuildingScene(missingArea);
+            const warnKey = `${rec?.id || 'npc'}|${rule.stationId}`;
+            if (!_scheduleFallbackLogKeys.has(warnKey)) {
+              _scheduleFallbackLogKeys.add(warnKey);
+              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found (warming up ${missingArea})`, 'warn');
+            }
           }
           const c = rule.c ?? rule.position?.c;
           const r = rule.r ?? rule.position?.r;
@@ -6811,32 +6852,58 @@
         return worldTransitions.filter(t => (t.area || 'farm') === area);
       }
 
+      // One-hop links reachable directly from `area`, in the shape
+      // { toArea, exit:{c,r}, spawn:{c,r} } — the raw edges of the area graph
+      // findNpcAreaLink() searches below. Mirrors the exact matching rules the
+      // single-hop version of this code used to use, so existing direct links
+      // (town↔building, building→town, farm↔interior) behave identically.
+      function areaLinksFrom(area) {
+        const pool = npcTransitionPool(area);
+        const links = [];
+        for (const t of pool) {
+          if (t.target === 'building' && t.targetMapId) {
+            if (!_buildingScenes.has(t.targetMapId)) loadBuildingScene(t.targetMapId); // warm it up before an NPC reaches the door
+            const bi = _buildingScenes.get(t.targetMapId);
+            const spawn = bi ? buildingSpawnFromExit(bi, bi.cols, bi.rows)
+              : { col: t.targetCol ?? 0, row: t.targetRow ?? 0 };
+            links.push({ toArea: t.targetMapId, exit: { c: t.col, r: t.row }, spawn: { c: spawn.col, r: spawn.row } });
+          } else if (t.target === 'exit_building') {
+            const townSpot = worldTownTransitions.find(x => x.target === 'building' && x.targetMapId === area);
+            const spawn = townSpot ? { c: townSpot.col, r: townSpot.row } : { c: t.targetCol ?? 0, r: t.targetRow ?? 0 };
+            links.push({ toArea: 'town', exit: { c: t.col, r: t.row }, spawn });
+          } else if (t.target && t.target !== 'zone' && Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)) {
+            links.push({ toArea: t.target, exit: { c: t.col, r: t.row }, spawn: { c: t.targetCol, r: t.targetRow } });
+          }
+        }
+        return links;
+      }
+
       // Resolves the door an NPC should walk to in order to leave `fromArea`
-      // for `toArea`, plus the spot they should appear at once they arrive —
+      // toward `toArea`, plus the spot they should appear at once they arrive —
       // i.e. the Spot doubles as both the movement target on the way out and
       // the spawn point on the way in, so NPCs are never warped straight to
-      // their final schedule target through a wall.
+      // their final schedule target through a wall. `toArea` may be several
+      // hops away (e.g. town → a building's ground floor → one of its
+      // upstairs rooms) — this does a short BFS over the area graph and
+      // returns only the *first* hop; the caller re-resolves on arrival,
+      // which naturally chains the walk leg by leg instead of skipping
+      // straight to the final room.
       function findNpcAreaLink(fromArea, toArea) {
-        const pool = npcTransitionPool(fromArea);
-        if (_isBuildingArea(toArea)) {
-          const t = pool.find(x => x.target === 'building' && x.targetMapId === toArea);
-          if (!t) return null;
-          const bi = _buildingScenes.get(toArea);
-          if (!_buildingScenes.has(toArea)) loadBuildingScene(toArea); // warm it up before the NPC reaches the door
-          const spawn = bi ? buildingSpawnFromExit(bi, bi.cols, bi.rows)
-            : { col: t.targetCol ?? 0, row: t.targetRow ?? 0 };
-          return { exit: { c: t.col, r: t.row }, spawn: { c: spawn.col, r: spawn.row } };
+        if (fromArea === toArea) return null;
+        const visited = new Set([fromArea]);
+        const queue = [{ area: fromArea, firstHop: null }];
+        while (queue.length) {
+          const { area, firstHop } = queue.shift();
+          for (const link of areaLinksFrom(area)) {
+            const hop = firstHop || link;
+            if (link.toArea === toArea) return hop;
+            if (!visited.has(link.toArea)) {
+              visited.add(link.toArea);
+              queue.push({ area: link.toArea, firstHop: hop });
+            }
+          }
         }
-        if (_isBuildingArea(fromArea)) {
-          const t = pool.find(x => x.target === 'exit_building');
-          if (!t) return null;
-          const townSpot = worldTownTransitions.find(x => x.target === 'building' && x.targetMapId === fromArea);
-          const spawn = townSpot ? { c: townSpot.col, r: townSpot.row } : { c: t.targetCol ?? 0, r: t.targetRow ?? 0 };
-          return { exit: { c: t.col, r: t.row }, spawn };
-        }
-        const t = pool.find(x => x.target === toArea);
-        if (!t || !Number.isFinite(t.targetCol) || !Number.isFinite(t.targetRow)) return null;
-        return { exit: { c: t.col, r: t.row }, spawn: { c: t.targetCol, r: t.targetRow } };
+        return null;
       }
 
       async function spawnScheduledNpcs(extraRecords) {
@@ -6910,7 +6977,7 @@
 
         const walker = {
           root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
-          state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null,
+          state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
           resetRouteState() {
@@ -6984,17 +7051,23 @@
             const targetArea = normalizeNpcArea(target.area);
             if (targetArea !== this.area) {
               if (!this._exitSpot) {
+                // May be several hops away (e.g. town → a building → one of its
+                // upstairs rooms) — findNpcAreaLink only returns the next leg,
+                // whose destination (_exitToArea) can differ from the ultimate
+                // targetArea. Arriving there re-enters this branch and resolves
+                // the next leg, so a multi-hop trip is walked leg by leg.
                 const link = findNpcAreaLink(this.area, targetArea);
-                if (link) { this._exitSpot = link.exit; this._entrySpot = link.spawn; }
+                if (link) { this._exitSpot = link.exit; this._entrySpot = link.spawn; this._exitToArea = link.toArea; }
               }
               if (this._exitSpot) {
                 const ex = this._exitSpot.c + 0.5, ez = this._exitSpot.r + 0.5;
                 const arrival = npcMovementConfig().arrivalRadiusTiles ?? 0.18;
                 if (Math.hypot(root.position.x - ex, root.position.z - ez) <= arrival) {
-                  window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: transferring via exit spot "${this.area}"→"${targetArea}" | playerMap="${currentArea}"`, 'info');
+                  const hopArea = this._exitToArea || targetArea;
+                  window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: transferring via exit spot "${this.area}"→"${hopArea}"${hopArea !== targetArea ? ` (en route to "${targetArea}")` : ''} | playerMap="${currentArea}"`, 'info');
                   const spawn = this._entrySpot || this._exitSpot;
-                  this._exitSpot = null; this._entrySpot = null;
-                  this.transferToArea(targetArea, spawn);
+                  this._exitSpot = null; this._entrySpot = null; this._exitToArea = null;
+                  this.transferToArea(hopArea, spawn);
                 } else {
                   this.moveToward(ex, ez, dt);
                 }
@@ -7110,9 +7183,16 @@
           const target = resolveNpcScheduleTarget(w.rec);
           if (!target) continue;
           if (normalizeNpcArea(target.area) !== toArea) continue;
-          const link = (w._exitSpot && w._entrySpot) ? { exit: w._exitSpot, spawn: w._entrySpot } : findNpcAreaLink(fromArea, toArea);
+          const link = (w._exitSpot && w._entrySpot)
+            ? { exit: w._exitSpot, spawn: w._entrySpot, toArea: w._exitToArea || toArea }
+            : findNpcAreaLink(fromArea, toArea);
           if (!link) continue;
-          w._exitSpot = null; w._entrySpot = null;
+          // findNpcAreaLink may return an intermediate leg (e.g. fromArea is
+          // several hops from toArea) — only fast-forward the "caught leaving"
+          // polish when that leg actually lands them in toArea; otherwise let
+          // the walker's own update() carry them there leg by leg as normal.
+          if (link.toArea && link.toArea !== toArea) continue;
+          w._exitSpot = null; w._entrySpot = null; w._exitToArea = null;
           w.transferToArea(toArea, link.spawn);
           const dx = link.spawn.c - link.exit.c, dz = link.spawn.r - link.exit.r;
           const dist = Math.hypot(dx, dz);
@@ -10578,8 +10658,11 @@
         return seasons[index];
       }
 
+      function weekdayIndexForCalendarDay(day) {
+        return ((day - 1) % 7 + 7) % 7;
+      }
       function currentWeekdayIndex() {
-        return ((calendar.day - 1) % 7 + 7) % 7;
+        return weekdayIndexForCalendarDay(calendar.day);
       }
       function currentWeekdayName() {
         return WEEKDAY_NAMES[currentWeekdayIndex()];
@@ -10600,6 +10683,24 @@
       function formatCalendarDate() {
         const day = currentSeasonDayNumber();
         return `${currentWeekdayName()}, ${day}${ordinalSuffix(day)} of ${currentSeason().name}`;
+      }
+
+      function renderCalendarPanel() {
+        const season = currentSeason();
+        const seasonIndex = Math.floor((calendar.day - 1) / SEASON_LENGTH_DAYS) % seasons.length;
+        const todayInSeason = currentSeasonDayNumber();
+        calToday.textContent = formatCalendarDate();
+        calSeasonInfo.textContent = `${season.emoji} ${season.name} — Season ${seasonIndex + 1} of ${seasons.length}`;
+        calGrid.innerHTML = '';
+        for (let d = 1; d <= SEASON_LENGTH_DAYS; d++) {
+          const absDay = calendar.day - todayInSeason + d;
+          const weekdayName = WEEKDAY_NAMES[weekdayIndexForCalendarDay(absDay)];
+          const cell = document.createElement('div');
+          cell.className = 'cal-day' + (d === todayInSeason ? ' today' : '');
+          cell.innerHTML = `<span>${weekdayName}</span><span class="cal-day-num">${d}${ordinalSuffix(d)}</span>`;
+          calGrid.appendChild(cell);
+        }
+        calLegend.textContent = `Week: ${WEEKDAY_NAMES.join(' · ')}`;
       }
 
       function isDigRemovableVegetation(tile) {
@@ -18737,7 +18838,7 @@
           `Joystick viewport anchor: ${Math.round(joystickZone.getBoundingClientRect().left)}px left, ${Math.round(window.innerHeight - joystickZone.getBoundingClientRect().bottom)}px bottom`,
           `Movement tuning: speed=${MOVE_SPEED} accel=${ACCEL} turn=${TURN_ACCEL} decel=${DECEL} deadzone=${JOYSTICK_DEADZONE}`,
           `Action FX: particles=${actionParticles.length} tileFlashes=${actionTileEffects.length} slashTrails=${weaponTrailEffects.length}`,
-          `Calendar: ${currentSeason().name} Day ${calendar.day}, ${formatClock(getHour())}, ${calendar.weather}`,
+          `Calendar: ${formatCalendarDate()} (raw day ${calendar.day}), ${formatClock(getHour())}, ${calendar.weather}`,
           `Tool/action: ${toolName(activeTool)} / ${actionName(activeAction)}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           '--- raw log ---',

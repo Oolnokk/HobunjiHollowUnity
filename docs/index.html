@@ -70,7 +70,7 @@
   <div id="statusBar">
     <span class="sb-time" id="spTime">6:00 AM</span>
     <div class="sb-div"></div>
-    <span class="sb-info" id="spDay">Anan, 1st of First Rains</span>
+    <button class="sb-info sb-daybtn" id="spDay" type="button" aria-haspopup="dialog" aria-expanded="false" title="Open calendar">Anan, 1st of First Rains</button>
     <div class="sb-div"></div>
     <span class="sb-info" id="spSeason">🌦️ First Rains</span>
     <div class="sb-div"></div>
@@ -162,6 +162,19 @@
 
   <!-- Menu button (top-right) -->
   <button id="menuBtn" aria-label="Open menu" aria-expanded="false">☰</button>
+
+  <!-- Calendar Backdrop + Panel -->
+  <div id="calendarBackdrop"></div>
+  <div id="calendarPanel" role="dialog" aria-label="Calendar">
+    <div class="cal-header">
+      <span class="cal-title">📅 Calendar</span>
+      <button class="mp-ctrl-btn" id="calClose" title="Close calendar">✕</button>
+    </div>
+    <div class="cal-today" id="calToday">Anan, 1st of First Rains</div>
+    <div class="cal-season" id="calSeasonInfo">🌦️ First Rains — Season 1 of 4</div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-legend" id="calLegend"></div>
+  </div>
 
   <!-- Menu Backdrop -->
   <div id="menuBackdrop"></div>
