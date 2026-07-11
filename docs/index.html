@@ -784,6 +784,16 @@
           farmhandPermissions: {}, nonGearInventory: base.nonGearInventory || {},
           packClothing: base.packClothing || [], npcRelationships: base.npcRelationships || {},
           questProgress: base.questProgress || {}, isNewWorld: true,
+          // Without a real local save, base has no appearance at all —
+          // buildProfileFromNpcExport (npc-avatar-preview-utils.js) bails
+          // out on a missing appearance and the player falls back to the
+          // plain placeholder pawn, unlike NPCs (which always carry a full
+          // appearance from the NPC database). A plain default identity
+          // gets the player the same real PNG-plane avatar NPCs get; a real
+          // save's own appearance is still preferred when one exists.
+          appearance: base.appearance || { speciesId: 'mao-ao', gender: 'male', cosmetics: {} },
+          equippedCosmetics: base.equippedCosmetics || [],
+          appliedDyes: base.appliedDyes || {},
         });
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();

@@ -943,9 +943,13 @@
       addPoint("wolf1Over","Wolf 1 Over Player",10,7), addPoint("wolf2Over","Wolf 2 Over Player",12,7),
       addPoint("wolf3Over","Wolf 3 Over Player",11,6),
       addPoint("wolf1Escape","Wolf 1 Escape",23,2), addPoint("wolf2Escape","Wolf 2 Escape",23,4), addPoint("wolf3Escape","Wolf 3 Escape",23,6),
-      addPoint("hound1Start","Hound 1 South Start",9,15), addPoint("hound2Start","Hound 2 South Start",13,15),
+      // Close enough that the real combat AI's own aggro range (~6.2 tiles
+      // for both species) picks up the wolves the instant the combat card
+      // goes live, instead of needing a scripted approach first — see the
+      // combat stage below.
+      addPoint("hound1Start","Hound 1 South Start",9,11), addPoint("hound2Start","Hound 2 South Start",13,11),
       addPoint("hound1Fight","Hound 1 Fight",9,9), addPoint("hound2Fight","Hound 2 Fight",13,9),
-      addPoint("jubmirStart","Jubmir South Start",11,15), addPoint("jubmirNear","Jubmir Near Player",10,9),
+      addPoint("jubmirStart","Jubmir South Start",11,15), addPoint("jubmirNear","Jubmir Near Player",10,7),
       addPoint("spearheadStart","Spearhead North Start",16,0), addPoint("spearheadEntrance","Spearhead Entrance",16,4), addPoint("spearheadPlayer","Spearhead At Player",12,8)
     ];
 
@@ -960,7 +964,7 @@
     [
       addActor("player","Player","#3d7dd8",points.playerDown,270,{pose:"prone",team:"player"}),
       addActor("wolf1","Gar-wolf 1","#9e4b45",points.wolf1Over,45,{creatureTypeId:"gar-wolf",team:"gar_wolves"}),
-      addActor("wolf2","Gar-wolf 2","#8b403c",points.wolf2Over,135,{creatureTypeId:"gar-wolf",team:"gar_wolves"}),
+      addActor("wolf2","Gar-wolf 2","#8b403c",points.wolf2Over,270,{creatureTypeId:"gar-wolf",team:"gar_wolves"}),
       addActor("wolf3","Gar-wolf 3","#763733",points.wolf3Over,90,{creatureTypeId:"gar-wolf",team:"gar_wolves"}),
       addActor("jubmir","Jubmir","#3ca66f",points.jubmirStart,0,{npcId:"jubmir"}),
       addActor("spearhead","Spearhead","#d48c38",points.spearheadStart,180,{npcId:"spearhead_unumanuk"}),
@@ -971,20 +975,31 @@
     const stages = {};
     const addStage = (key, stage) => { stage.id = uid("stage"); stages[key] = stage; return stage; };
     [
-      addStage("wolf1Growl",{ type:"talk", speakerId:actors.wolf1.id, text:"Grrrr!", next:"__next__" }),
-      addStage("wolf2Growl",{ type:"talk", speakerId:actors.wolf2.id, text:"Hrrrr!!!", next:"__next__" }),
-      addStage("wolf3Growl",{ type:"talk", speakerId:actors.wolf3.id, text:"Hreeeeech!!!", next:"__next__" }),
-      addStage("hound1Run",{ type:"move", actorId:actors.hound1.id, pointId:points.hound1Fight.id, speed:"fast", next:"__next__" }),
-      addStage("hound2Run",{ type:"move", actorId:actors.hound2.id, pointId:points.hound2Fight.id, speed:"fast", next:"__next__" }),
+      // No scripted growl lines or pre-combat approach — the combat card's
+      // own live AI (real CREATURE_DB aggro/attack ranges, real chase
+      // locomotion) is what makes the hounds actually arrive and clash with
+      // the wolves; see the hound1Start/hound2Start point comment above for
+      // why they're close enough for that AI to pick the fight up on its own.
       addStage("combat",{ type:"combat", duration:10,
         participants:[
           { actorId:actors.wolf1.id, combatOn:true, canLose:false }, { actorId:actors.wolf2.id, combatOn:true, canLose:false }, { actorId:actors.wolf3.id, combatOn:true, canLose:false },
           { actorId:actors.hound1.id, combatOn:true, canLose:false }, { actorId:actors.hound2.id, combatOn:true, canLose:false }
         ], next:"__next__", lossNext:"__end__" }),
+      // Once Combat On is toggled back off, both sides autopath to their
+      // own authored resting spots — the hounds stand their ground near the
+      // player, the wolves peel off-screen — instead of freezing in place
+      // wherever the fight happened to end.
+      addStage("hound1Settle",{ type:"move", actorId:actors.hound1.id, pointId:points.hound1Fight.id, speed:"normal", next:"__next__" }),
+      addStage("hound2Settle",{ type:"move", actorId:actors.hound2.id, pointId:points.hound2Fight.id, speed:"normal", next:"__next__" }),
       addStage("wolf1Flee",{ type:"move", actorId:actors.wolf1.id, pointId:points.wolf1Escape.id, speed:"fast", next:"__next__" }),
       addStage("wolf2Flee",{ type:"move", actorId:actors.wolf2.id, pointId:points.wolf2Escape.id, speed:"fast", next:"__next__" }),
       addStage("wolf3Flee",{ type:"move", actorId:actors.wolf3.id, pointId:points.wolf3Escape.id, speed:"fast", next:"__next__" }),
       addStage("jubmirEnter",{ type:"move", actorId:actors.jubmir.id, pointId:points.jubmirNear.id, speed:"fast", next:"__next__" }),
+      // jubmirNear sits north of the player's row so Jubmir ends up on the
+      // camera-facing side of them — this turn is what actually points him
+      // south to face the player (and the camera) instead of arriving still
+      // facing the north-bound direction he walked in from.
+      addStage("jubmirFacePlayer",{ type:"turn", actorId:actors.jubmir.id, mode:"actor", targetActorId:actors.player.id, angle:0, duration:.3, next:"__next__" }),
       addStage("jubmirQuestion",{ type:"talk", speakerId:actors.jubmir.id, text:"Are you alright? Are you hurt?", next:"__next__" }),
       addStage("playerChoice",{ type:"choice", speakerId:actors.player.id, text:"How do you answer?",
         options:[ { text:"I'm fine", next:"" }, { text:"Who in the void are you?", next:"" } ] }),
