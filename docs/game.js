@@ -4717,6 +4717,7 @@
       // (e.g. switching areas) instead of cutting the track off mid-note.
       function playMusicTrack(url, baseVolume, fadeInMs, fadeOutMs) {
         const snd = makeGameAudio(url);
+        snd._trackUrl = url; // lets area-change handling recognize "same song on both playlists" — see areaBgmIncludesTrack
         attachMusicGain(snd);
         setMusicVolumeNow(snd, 0);
         let fadingOut = false;
@@ -4909,6 +4910,19 @@
         return list[Math.floor(Math.random() * list.length)] || null;
       }
 
+      // True if `snd`'s track appears anywhere in `area`'s configured bgm
+      // list — a "same song on both playlists" check for area-transition
+      // continuity (see updateAmbientCues), not an eligibility check (so it
+      // ignores sunriseOnly/nightOnly/oncePerDay — those gate which track
+      // gets *picked*, not whether a song already playing should keep going).
+      function areaBgmIncludesTrack(area, snd) {
+        const trackUrl = snd?._trackUrl;
+        if (!trackUrl) return false;
+        const resolved = resolveAudioUrl(trackUrl);
+        const list = gameAudioConfig().areaBgm?.[area] || [];
+        return list.some(t => t?.url && resolveAudioUrl(t.url) === resolved);
+      }
+
       function scheduleNextCueDelay() {
         const audioCfg = gameAudioConfig();
         const minSec = Number(audioCfg.ambientCueMinDelaySec) || 20;
@@ -4919,7 +4933,25 @@
       function updateAmbientCues() {
         const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) { audioTrace('ambient disabled by config', 'ambient-disabled', 3000); return; }
-        if (_ambientCueState.area !== currentArea) { stopAmbientCue(); resetAmbientCueTimer(currentArea); }
+        if (_ambientCueState.area !== currentArea) {
+          const keepBgm = _ambientCueState.mode === 'bgm'
+            && _ambientCueState.currentBgm
+            && !_ambientCueState.currentBgm.ended
+            && areaBgmIncludesTrack(currentArea, _ambientCueState.currentBgm);
+          if (keepBgm) {
+            // The song already playing is on both areas' playlists (e.g.
+            // bgm_farm1.m4a is a fallback track shared by farm and town) —
+            // walking through a door shouldn't fade it out and re-roll a
+            // track for the new area, possibly landing on this exact song
+            // again a moment later with an audible gap in between.
+            _ambientCueState.area = currentArea;
+            _ambientCueState.indexId = resolveAreaAudioIndex(currentArea);
+            audioDebug('area changed to ' + currentArea + ' — bgm track is on both playlists, kept playing', 'ambient-area-keep-' + currentArea, 0, 'bgm');
+          } else {
+            stopAmbientCue();
+            resetAmbientCueTimer(currentArea);
+          }
+        }
 
         const inCombat = isPlayerInCombat();
         if (inCombat !== _ambientCueState.inCombat) {
