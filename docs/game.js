@@ -905,19 +905,22 @@
       // weather off week-of-year bands (Stormtide/Deadgrass/Longpour, plus a
       // short Coldmuck slush-cover/wind-hinge season with occasional pituraq
       // micro-winter squalls at the Longpour→Stormtide turn) rather than the
-      // calendar month.
+      // calendar month. Deliberately unbalanced 4/2/4/2 months (not the
+      // "pure" 5/1/5/1 the doc's week math would give) — Secondfall was
+      // pulled into Deadgrass and Secondrise into Coldmuck for pacing, so
+      // neither short season is a single awkward month.
       // grassColor/grassDensity drive the ground tile material and the grass
       // billboard tufts (see applySeasonalGrassAppearance()) — vibrant/full
       // for the wet seasons, sparse and off-hue for Deadgrass (dead, dry) and
       // Coldmuck (slush-covered, dormant).
       const seasons = [
-        { name: 'Stormtide', emoji: '⛈️',  rainChance: 0.35, stormChance: 0.30, startWeek: 1,  endWeek: 20, grassColor: new THREE.Color().setHSL(108/360, 0.58, 0.28), grassDensity: 1.00 },
-        { name: 'Deadgrass', emoji: '☀️',  rainChance: 0.06, stormChance: 0.01, startWeek: 21, endWeek: 24, grassColor: new THREE.Color().setHSL(45/360,  0.40, 0.34), grassDensity: 0.40 },
-        { name: 'Longpour',  emoji: '🌧️', rainChance: 0.70, stormChance: 0.05, startWeek: 25, endWeek: 44, grassColor: new THREE.Color().setHSL(122/360, 0.55, 0.22), grassDensity: 1.00 },
-        { name: 'Coldmuck',  emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 45, endWeek: 48, grassColor: new THREE.Color().setHSL(165/360, 0.15, 0.46), grassDensity: 0.45 },
+        { name: 'Stormtide', emoji: '⛈️',  rainChance: 0.35, stormChance: 0.30, startWeek: 1,  endWeek: 16, grassColor: new THREE.Color().setHSL(108/360, 0.58, 0.28), grassDensity: 1.00 },
+        { name: 'Deadgrass', emoji: '☀️',  rainChance: 0.06, stormChance: 0.01, startWeek: 17, endWeek: 24, grassColor: new THREE.Color().setHSL(45/360,  0.40, 0.34), grassDensity: 0.40 },
+        { name: 'Longpour',  emoji: '🌧️', rainChance: 0.70, stormChance: 0.05, startWeek: 25, endWeek: 40, grassColor: new THREE.Color().setHSL(122/360, 0.55, 0.22), grassDensity: 1.00 },
+        { name: 'Coldmuck',  emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 41, endWeek: 48, grassColor: new THREE.Color().setHSL(165/360, 0.15, 0.46), grassDensity: 0.45 },
       ];
-      // Deadgrass rolls as low as a 6% rain chance per day and runs 4
-      // weeks (28 days) straight, long enough in real time to read as "it
+      // Deadgrass rolls as low as a 6% rain chance per day and runs 8
+      // weeks (56 days) straight, long enough in real time to read as "it
       // never rains anymore." chooseWeatherForDay()'s pity timer guarantees a
       // rain day whenever the drought runs past this many days, without
       // touching the per-season odds the rest of the time. Declared
