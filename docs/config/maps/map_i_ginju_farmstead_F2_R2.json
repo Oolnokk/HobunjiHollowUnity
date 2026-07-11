@@ -1,0 +1,281 @@
+{
+  "schema": "hobunji_building_interior.v1",
+  "id": "map_i_ginju_farmstead_F2_R2",
+  "name": "Aliri & Gantami's Room",
+  "cols": 20,
+  "rows": 20,
+  "furniture": [
+    {
+      "id": "f_ginjuroom_bed_aliri",
+      "itemKey": "basicBedFurniture",
+      "col": 7,
+      "row": 6,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_ginjuroom_nightstand_aliri",
+      "itemKey": "nightstandFurniture",
+      "col": 6,
+      "row": 6,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_ginjuroom_bed_gantami",
+      "itemKey": "basicBedFurniture",
+      "col": 11,
+      "row": 6,
+      "rotY": 180,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_ginjuroom_nightstand_gantami",
+      "itemKey": "nightstandFurniture",
+      "col": 12,
+      "row": 6,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_ginjuroom_wardrobe",
+      "itemKey": "wardrobeFurniture",
+      "col": 9,
+      "row": 9,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_ginjuroom_rug",
+      "itemKey": "rugFurniture",
+      "col": 9,
+      "row": 7,
+      "rotY": 0,
+      "postX": -0.432,
+      "postY": 0,
+      "postZ": -0.008,
+      "postSX": 3.269,
+      "postSY": 1,
+      "postSZ": 1.61
+    }
+  ],
+  "floor": [
+    [
+      10,
+      6
+    ],
+    [
+      9,
+      6
+    ],
+    [
+      8,
+      6
+    ],
+    [
+      7,
+      6
+    ],
+    [
+      6,
+      6
+    ],
+    [
+      11,
+      6
+    ],
+    [
+      12,
+      6
+    ],
+    [
+      12,
+      7
+    ],
+    [
+      12,
+      8
+    ],
+    [
+      12,
+      9
+    ],
+    [
+      11,
+      9
+    ],
+    [
+      10,
+      9
+    ],
+    [
+      9,
+      9
+    ],
+    [
+      8,
+      9
+    ],
+    [
+      7,
+      9
+    ],
+    [
+      6,
+      9
+    ],
+    [
+      6,
+      8
+    ],
+    [
+      6,
+      7
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      8,
+      8
+    ],
+    [
+      9,
+      8
+    ],
+    [
+      10,
+      8
+    ],
+    [
+      11,
+      8
+    ],
+    [
+      11,
+      7
+    ],
+    [
+      10,
+      7
+    ],
+    [
+      9,
+      7
+    ],
+    [
+      8,
+      7
+    ],
+    [
+      7,
+      7
+    ],
+    [
+      9,
+      5
+    ]
+  ],
+  "exits": [
+    {
+      "id": "exit_ginjuroom_kids_down",
+      "label": "Stairs Down",
+      "tiles": [
+        [
+          9,
+          5
+        ]
+      ],
+      "targetMap": "map_i_ginju_farmstead",
+      "spawnCol": 17,
+      "spawnRow": 10
+    }
+  ],
+  "colliders": [
+    [
+      11,
+      9
+    ],
+    [
+      10,
+      9
+    ],
+    [
+      7,
+      6
+    ],
+    [
+      6,
+      6
+    ],
+    [
+      11,
+      6
+    ],
+    [
+      12,
+      6
+    ],
+    [
+      7,
+      7
+    ],
+    [
+      12,
+      9
+    ]
+  ],
+  "vendorZones": [],
+  "routes": [],
+  "npcStations": [
+    {
+      "id": "station_ginju_bed_aliri",
+      "label": "Aliri's Bed",
+      "col": 7,
+      "row": 6,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_ginju_bed_gantami",
+      "label": "Gantami's Bed",
+      "col": 11,
+      "row": 6,
+      "rotY": 180,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
+  ],
+  "npcPaths": []
+}

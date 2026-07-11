@@ -25,15 +25,133 @@
       "targetMap": "",
       "spawnCol": 0,
       "spawnRow": 0
+    },
+    {
+      "id": "exit_ginju_stairs_parents",
+      "label": "Stairs to Gorobi & Gikali's Room",
+      "tiles": [
+        [
+          15,
+          10
+        ]
+      ],
+      "targetMap": "map_i_ginju_farmstead_F2_R1",
+      "spawnCol": 11,
+      "spawnRow": 6
+    },
+    {
+      "id": "exit_ginju_stairs_kids",
+      "label": "Stairs to Aliri & Gantami's Room",
+      "tiles": [
+        [
+          17,
+          10
+        ]
+      ],
+      "targetMap": "map_i_ginju_farmstead_F2_R2",
+      "spawnCol": 9,
+      "spawnRow": 6
     }
   ],
   "colliders": [],
   "vendorZones": [],
   "npcPaths": [
-    { "id": "pth_gorobi", "label": "Gorobi works", "npcId": "gorobi_ginju", "nodes": [[1, 2], [8, 2], [8, 4], [1, 4]] },
-    { "id": "pth_gikali", "label": "Gikali cooks", "npcId": "gikali_ginju", "nodes": [[2, 3], [4, 3], [4, 7], [2, 7]] },
-    { "id": "pth_aliri", "label": "Aliri routine", "npcId": "aliri_ginju", "nodes": [[6, 3], [8, 3], [8, 8], [6, 8], [4, 8]] },
-    { "id": "pth_gantami", "label": "Gantami races around", "npcId": "gantami_ginju", "nodes": [[1, 2], [8, 2], [8, 8], [1, 8]] }
+    {
+      "id": "pth_gorobi",
+      "label": "Gorobi works",
+      "npcId": "gorobi_ginju",
+      "nodes": [
+        [
+          1,
+          2
+        ],
+        [
+          8,
+          2
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "id": "pth_gikali",
+      "label": "Gikali cooks",
+      "npcId": "gikali_ginju",
+      "nodes": [
+        [
+          2,
+          3
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          2,
+          7
+        ]
+      ]
+    },
+    {
+      "id": "pth_aliri",
+      "label": "Aliri routine",
+      "npcId": "aliri_ginju",
+      "nodes": [
+        [
+          6,
+          3
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          6,
+          8
+        ],
+        [
+          4,
+          8
+        ]
+      ]
+    },
+    {
+      "id": "pth_gantami",
+      "label": "Gantami races around",
+      "npcId": "gantami_ginju",
+      "nodes": [
+        [
+          1,
+          2
+        ],
+        [
+          8,
+          2
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          1,
+          8
+        ]
+      ]
+    }
   ],
   "floor": [
     [
@@ -1769,58 +1887,6 @@
       "postSZ": 1
     },
     {
-      "id": "f_ginju_bed1",
-      "itemKey": "doubleBedFurniture",
-      "col": 7,
-      "row": 14,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_ginju_night1",
-      "itemKey": "nightstandFurniture",
-      "col": 8,
-      "row": 14,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_ginju_bed2",
-      "itemKey": "basicBedFurniture",
-      "col": 12,
-      "row": 14,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_ginju_rug",
-      "itemKey": "rugFurniture",
-      "col": 9,
-      "row": 9,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
       "id": "f_ginju_lamp",
       "itemKey": "standingLampFurniture",
       "col": 9,
@@ -1847,45 +1913,12 @@
       "toolAnimStyle": ""
     },
     {
-      "id": "station_ginju_bed_parents",
-      "label": "Sleeping",
-      "col": 7,
-      "row": 14,
-      "rotY": 0,
-      "pose": "lie",
-      "toolKey": "",
-      "toolIntervalSec": 0,
-      "toolAnimStyle": ""
-    },
-    {
       "id": "station_ginju_table_sit1",
       "label": "Sitting at the Table",
       "col": 9,
       "row": 3,
       "rotY": 180,
       "pose": "sit",
-      "toolKey": "",
-      "toolIntervalSec": 0,
-      "toolAnimStyle": ""
-    },
-    {
-      "id": "station_ginju_bed_aliri",
-      "label": "Aliri's Bed",
-      "col": 12,
-      "row": 14,
-      "rotY": 0,
-      "pose": "lie",
-      "toolKey": "",
-      "toolIntervalSec": 0,
-      "toolAnimStyle": ""
-    },
-    {
-      "id": "station_ginju_rug_gantami",
-      "label": "Gantami's Floor Mat",
-      "col": 9,
-      "row": 9,
-      "rotY": 0,
-      "pose": "lie",
       "toolKey": "",
       "toolIntervalSec": 0,
       "toolAnimStyle": ""

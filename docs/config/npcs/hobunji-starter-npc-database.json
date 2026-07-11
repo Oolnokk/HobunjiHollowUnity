@@ -488,6 +488,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Tothu",
+            "from": "06:00",
+            "to": "19:00",
+            "mapId": "map_hobunji_town",
+            "stationId": "station_ginju_market_gorobi",
+            "position": {
+              "c": 28,
+              "r": 30
+            },
+            "activity": "selling produce at market"
+          },
+          {
             "from": "06:00",
             "to": "12:00",
             "mapId": "map_hobunji_town",
@@ -523,11 +535,11 @@
           {
             "from": "19:00",
             "to": "06:00",
-            "mapId": "map_i_ginju_farmstead",
+            "mapId": "map_i_ginju_farmstead_F2_R1",
             "stationId": "station_ginju_bed_parents",
             "position": {
               "c": 7,
-              "r": 14
+              "r": 6
             },
             "activity": "sleeping"
           }
@@ -717,6 +729,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Tothu",
+            "from": "07:00",
+            "to": "18:00",
+            "mapId": "map_hobunji_town",
+            "stationId": "station_ginju_market_gikali",
+            "position": {
+              "c": 28,
+              "r": 32
+            },
+            "activity": "selling produce at market"
+          },
+          {
             "from": "07:00",
             "to": "09:00",
             "mapId": "map_i_ginju_farmstead",
@@ -741,11 +765,11 @@
           {
             "from": "18:00",
             "to": "07:00",
-            "mapId": "map_i_ginju_farmstead",
+            "mapId": "map_i_ginju_farmstead_F2_R1",
             "stationId": "station_ginju_bed_parents",
             "position": {
               "c": 7,
-              "r": 14
+              "r": 6
             },
             "activity": "sleeping"
           }
@@ -1298,11 +1322,11 @@
           {
             "from": "17:00",
             "to": "07:00",
-            "mapId": "map_i_ginju_farmstead",
+            "mapId": "map_i_ginju_farmstead_F2_R2",
             "stationId": "station_ginju_bed_aliri",
             "position": {
-              "c": 12,
-              "r": 14
+              "c": 7,
+              "r": 6
             },
             "activity": "home"
           }
@@ -1496,17 +1520,18 @@
           {
             "from": "19:00",
             "to": "08:00",
-            "mapId": "map_i_ginju_farmstead",
-            "stationId": "station_ginju_rug_gantami",
+            "mapId": "map_i_ginju_farmstead_F2_R2",
+            "stationId": "station_ginju_bed_gantami",
             "position": {
-              "c": 9,
-              "r": 9
+              "c": 11,
+              "r": 6
             },
-            "activity": "home"
+            "activity": "sleeping"
           }
         ],
         "defaultStationId": "station_ginju_rug_gantami"
-      }
+      },
+      "defaultStationId": "station_ginju_bed_gantami"
     },
     {
       "id": "leaf",
@@ -2308,6 +2333,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Naru",
+            "from": "06:00",
+            "to": "18:00",
+            "mapId": "map_hobunji_town",
+            "stationId": "station_furunji_dayoff",
+            "position": {
+              "c": 29,
+              "r": 31
+            },
+            "activity": "enjoying a day off"
+          },
+          {
             "from": "06:00",
             "to": "08:00",
             "mapId": "map_i_general_store",
@@ -2720,6 +2757,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Naru",
+            "from": "08:00",
+            "to": "19:00",
+            "mapId": "map_hobunji_town",
+            "stationId": "station_foroji_music",
+            "position": {
+              "c": 31,
+              "r": 31
+            },
+            "activity": "playing music all day, day off"
+          },
+          {
             "from": "08:00",
             "to": "14:00",
             "mapId": "map_i_general_store",
@@ -2935,6 +2984,18 @@
         "workBuildingId": "smithy",
         "shopHours": "",
         "rules": [
+          {
+            "day": "Tothu",
+            "from": "07:00",
+            "to": "18:00",
+            "mapId": "map_i_smithy",
+            "stationId": "station_smi_evening_kzubug",
+            "position": {
+              "c": 9,
+              "r": 5
+            },
+            "activity": "resting at home, forge cold"
+          },
           {
             "from": "07:00",
             "to": "12:00",
@@ -4532,6 +4593,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Muunu",
+            "from": "06:00",
+            "to": "19:00",
+            "mapId": "map_i_kunjis_potions_F1",
+            "stationId": "station_kaboku_dayoff",
+            "position": {
+              "c": 3,
+              "r": 9
+            },
+            "activity": "enjoying a rare day off"
+          },
+          {
             "from": "06:00",
             "to": "09:00",
             "stationId": "station_6z6x4",
@@ -4832,6 +4905,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Muunu",
+            "from": "06:00",
+            "to": "19:00",
+            "mapId": "map_i_kunjis_potions_F1",
+            "stationId": "station_kinami_dayoff",
+            "position": {
+              "c": 7,
+              "r": 9
+            },
+            "activity": "enjoying a rare day off"
+          },
+          {
             "from": "06:00",
             "to": "12:00",
             "mapId": "map_hobunji_town",
@@ -5092,6 +5177,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Uung",
+            "from": "07:00",
+            "to": "17:00",
+            "mapId": "map_hobunji_town",
+            "stationId": "station_dzibim_home",
+            "position": {
+              "c": 37,
+              "r": 25
+            },
+            "activity": "day off, at home"
+          },
+          {
             "from": "07:00",
             "to": "12:00",
             "mapId": "map_i_carpenters",
@@ -5262,6 +5359,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Uung",
+            "from": "08:00",
+            "to": "17:00",
+            "mapId": "map_hobunji_town",
+            "stationId": "station_dzahiri_home",
+            "position": {
+              "c": 38,
+              "r": 25
+            },
+            "activity": "day off, at home"
+          },
+          {
             "from": "08:00",
             "to": "17:00",
             "mapId": "map_i_carpenters",
@@ -5403,6 +5512,18 @@
         "workBuildingId": "carpenters",
         "shopHours": "",
         "rules": [
+          {
+            "day": "Uung",
+            "from": "08:00",
+            "to": "17:00",
+            "mapId": "map_hobunji_town",
+            "stationId": "station_nashka_home",
+            "position": {
+              "c": 39,
+              "r": 25
+            },
+            "activity": "day off, at home"
+          },
           {
             "from": "08:00",
             "to": "17:00",
@@ -5633,11 +5754,11 @@
           {
             "from": "18:00",
             "to": "09:00",
-            "mapId": "map_i_unumanuk_household",
+            "mapId": "map_i_unumanuk_household_bedroom",
             "stationId": "station_unmh_teacup_bed",
             "position": {
-              "c": 2,
-              "r": 16
+              "c": 7,
+              "r": 8
             },
             "activity": "home"
           }
@@ -5800,11 +5921,11 @@
           {
             "from": "19:00",
             "to": "07:00",
-            "mapId": "map_i_unumanuk_household",
+            "mapId": "map_i_unumanuk_household_bedroom",
             "stationId": "station_unmh_binding_bed",
             "position": {
-              "c": 7,
-              "r": 14
+              "c": 10,
+              "r": 8
             },
             "activity": "resting at home"
           }
@@ -5945,6 +6066,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Hronu",
+            "from": "07:00",
+            "to": "20:00",
+            "mapId": "map_i_unumanuk_household_bedroom",
+            "stationId": "station_unmh_spearhead_bed",
+            "position": {
+              "c": 8,
+              "r": 8
+            },
+            "activity": "resting at home, off duty"
+          },
+          {
             "day": "Anan",
             "from": "00:00",
             "to": "03:00",
@@ -5969,6 +6102,17 @@
           },
           {
             "from": "12:00",
+            "to": "12:30",
+            "mapId": "map_i_watchhouse",
+            "stationId": "station_watch_desk_spearhead",
+            "position": {
+              "c": 8,
+              "r": 11
+            },
+            "activity": "filing a patrol report at the watchhouse"
+          },
+          {
+            "from": "12:30",
             "to": "15:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_spearhead_p2",
@@ -5992,11 +6136,11 @@
           {
             "from": "20:00",
             "to": "07:00",
-            "mapId": "map_i_unumanuk_household",
+            "mapId": "map_i_unumanuk_household_bedroom",
             "stationId": "station_unmh_spearhead_bed",
             "position": {
-              "c": 6,
-              "r": 14
+              "c": 8,
+              "r": 8
             },
             "activity": "home"
           }
@@ -6142,6 +6286,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Naru",
+            "from": "08:00",
+            "to": "20:00",
+            "mapId": "map_i_unumanuk_household_bedroom",
+            "stationId": "station_unmh_oddclaw_bed",
+            "position": {
+              "c": 9,
+              "r": 8
+            },
+            "activity": "resting at home, off duty"
+          },
+          {
             "day": "Anan",
             "from": "00:00",
             "to": "03:00",
@@ -6167,13 +6323,13 @@
           {
             "from": "12:00",
             "to": "14:00",
-            "mapId": "map_hobunji_town",
-            "stationId": "station_oddclaw_lunch",
+            "mapId": "map_i_watchhouse",
+            "stationId": "station_watch_desk_oddclaw",
             "position": {
-              "c": 27,
-              "r": 27
+              "c": 10,
+              "r": 11
             },
-            "activity": "lunch break"
+            "activity": "lunch break at the watchhouse"
           },
           {
             "from": "14:00",
@@ -6189,11 +6345,11 @@
           {
             "from": "20:00",
             "to": "08:00",
-            "mapId": "map_i_unumanuk_household",
+            "mapId": "map_i_unumanuk_household_bedroom",
             "stationId": "station_unmh_oddclaw_bed",
             "position": {
-              "c": 6,
-              "r": 15
+              "c": 9,
+              "r": 8
             },
             "activity": "home"
           }
@@ -6339,6 +6495,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Kruru",
+            "from": "07:00",
+            "to": "22:00",
+            "mapId": "map_hobunji_town",
+            "stationId": "station_tooth_break",
+            "position": {
+              "c": 33,
+              "r": 32
+            },
+            "activity": "day off, relaxing"
+          },
+          {
             "day": "Anan",
             "from": "00:00",
             "to": "03:00",
@@ -6386,11 +6554,11 @@
           {
             "from": "22:00",
             "to": "07:00",
-            "mapId": "map_i_unumanuk_household",
+            "mapId": "map_i_unumanuk_household_bedroom",
             "stationId": "station_unmh_tooth_bed",
             "position": {
-              "c": 8,
-              "r": 14
+              "c": 11,
+              "r": 8
             },
             "activity": "resting at home"
           }
@@ -6628,12 +6796,7 @@
         "defaultMapId": "hobunji_main_town",
         "workBuildingId": "hatayap_clan_deceased",
         "shopHours": "",
-        "rules": [],
-        "defaultPosition": {
-          "area": "town",
-          "c": 20,
-          "r": 15
-        }
+        "rules": []
       }
     },
     {
@@ -6747,12 +6910,7 @@
         "defaultMapId": "hobunji_main_town",
         "workBuildingId": "hatayap_clan_deceased",
         "shopHours": "",
-        "rules": [],
-        "defaultPosition": {
-          "area": "town",
-          "c": 20,
-          "r": 15
-        }
+        "rules": []
       }
     },
     {

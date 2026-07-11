@@ -10584,6 +10584,23 @@
       function currentWeekdayName() {
         return WEEKDAY_NAMES[currentWeekdayIndex()];
       }
+      function currentSeasonDayNumber() {
+        return ((calendar.day - 1) % SEASON_LENGTH_DAYS) + 1;
+      }
+      function ordinalSuffix(n) {
+        const v = n % 100;
+        if (v >= 11 && v <= 13) return 'th';
+        switch (n % 10) {
+          case 1: return 'st';
+          case 2: return 'nd';
+          case 3: return 'rd';
+          default: return 'th';
+        }
+      }
+      function formatCalendarDate() {
+        const day = currentSeasonDayNumber();
+        return `${currentWeekdayName()}, ${day}${ordinalSuffix(day)} of ${currentSeason().name}`;
+      }
 
       function isDigRemovableVegetation(tile) {
         // Used by shovel dig so day-one overgrowth can be destroyed by digging underneath it.
@@ -18573,7 +18590,7 @@
         spWeather.textContent = weatherText + ' ' + precipText;
 
         spTime.textContent = clock;
-        if (spDay) spDay.textContent = currentWeekdayName();
+        if (spDay) spDay.textContent = formatCalendarDate();
         spTool.textContent = toolEmoji(activeTool) + ' ' + actionName(activeAction);
 
         // Reticle tile info

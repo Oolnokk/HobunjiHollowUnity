@@ -1,0 +1,274 @@
+{
+  "schema": "hobunji_building_interior.v1",
+  "id": "map_i_unumanuk_household_bedroom",
+  "name": "Unumanuk Bedroll Room",
+  "cols": 20,
+  "rows": 20,
+  "furniture": [
+    {
+      "id": "f_unmhbed_teacup",
+      "itemKey": "basicBedFurniture",
+      "col": 7,
+      "row": 8,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_unmhbed_roll_spearhead",
+      "itemKey": "bedrollFurniture",
+      "col": 8,
+      "row": 8,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_unmhbed_roll_oddclaw",
+      "itemKey": "bedrollFurniture",
+      "col": 9,
+      "row": 8,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_unmhbed_roll_binding",
+      "itemKey": "bedrollFurniture",
+      "col": 10,
+      "row": 8,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_unmhbed_roll_tooth",
+      "itemKey": "bedrollFurniture",
+      "col": 11,
+      "row": 8,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_unmhbed_nightstand",
+      "itemKey": "nightstandFurniture",
+      "col": 9,
+      "row": 9,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    }
+  ],
+  "floor": [
+    [
+      7,
+      6
+    ],
+    [
+      8,
+      6
+    ],
+    [
+      9,
+      6
+    ],
+    [
+      10,
+      6
+    ],
+    [
+      11,
+      6
+    ],
+    [
+      7,
+      7
+    ],
+    [
+      8,
+      7
+    ],
+    [
+      9,
+      7
+    ],
+    [
+      10,
+      7
+    ],
+    [
+      11,
+      7
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      8,
+      8
+    ],
+    [
+      9,
+      8
+    ],
+    [
+      10,
+      8
+    ],
+    [
+      11,
+      8
+    ],
+    [
+      7,
+      9
+    ],
+    [
+      8,
+      9
+    ],
+    [
+      9,
+      9
+    ],
+    [
+      10,
+      9
+    ],
+    [
+      11,
+      9
+    ],
+    [
+      9,
+      5
+    ]
+  ],
+  "exits": [
+    {
+      "id": "exit_unmhbed_down",
+      "label": "Door to the Household",
+      "tiles": [
+        [
+          9,
+          5
+        ]
+      ],
+      "targetMap": "map_i_unumanuk_household",
+      "spawnCol": 15,
+      "spawnRow": 10
+    }
+  ],
+  "colliders": [
+    [
+      7,
+      8
+    ],
+    [
+      8,
+      8
+    ],
+    [
+      9,
+      8
+    ],
+    [
+      10,
+      8
+    ],
+    [
+      11,
+      8
+    ],
+    [
+      9,
+      9
+    ]
+  ],
+  "vendorZones": [],
+  "routes": [],
+  "npcStations": [
+    {
+      "id": "station_unmh_teacup_bed",
+      "label": "Teacup's Bed",
+      "col": 7,
+      "row": 8,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_unmh_spearhead_bed",
+      "label": "Spearhead's Bedroll",
+      "col": 8,
+      "row": 8,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_unmh_oddclaw_bed",
+      "label": "Oddclaw's Bedroll",
+      "col": 9,
+      "row": 8,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_unmh_binding_bed",
+      "label": "Binding's Bedroll",
+      "col": 10,
+      "row": 8,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_unmh_tooth_bed",
+      "label": "Tooth's Bedroll",
+      "col": 11,
+      "row": 8,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
+  ],
+  "npcPaths": []
+}

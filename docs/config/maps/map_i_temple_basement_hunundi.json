@@ -18,13 +18,13 @@
     [6, 8], [6, 7],
     [7, 8], [8, 8], [9, 8], [10, 8], [11, 8],
     [11, 7], [10, 7], [9, 7], [8, 7], [7, 7],
-    [7, 5]
+    [11, 5]
   ],
   "exits": [
     {
       "id": "exit_tbhunundi_down",
       "label": "Door to Basement",
-      "tiles": [[7, 5]],
+      "tiles": [[11, 5]],
       "targetMap": "map_i_temple_basement",
       "spawnCol": 11,
       "spawnRow": 6

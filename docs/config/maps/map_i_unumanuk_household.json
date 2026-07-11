@@ -25,6 +25,19 @@
       "targetMap": "",
       "spawnCol": 0,
       "spawnRow": 0
+    },
+    {
+      "id": "exit_unmh_stairs_bedroom",
+      "label": "Stairs to the Bedroll Room",
+      "tiles": [
+        [
+          15,
+          10
+        ]
+      ],
+      "targetMap": "map_i_unumanuk_household_bedroom",
+      "spawnCol": 9,
+      "spawnRow": 6
     }
   ],
   "colliders": [],
@@ -1711,162 +1724,6 @@
       "postSZ": 1
     },
     {
-      "id": "f_unmh_bed_teacup",
-      "itemKey": "basicBedFurniture",
-      "col": 2,
-      "row": 16,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_unmh_nightstand",
-      "itemKey": "nightstandFurniture",
-      "col": 3,
-      "row": 16,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_unmh_bedroll1",
-      "itemKey": "bedrollFurniture",
-      "col": 6,
-      "row": 14,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_unmh_bedroll2",
-      "itemKey": "bedrollFurniture",
-      "col": 7,
-      "row": 14,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_unmh_bedroll3",
-      "itemKey": "bedrollFurniture",
-      "col": 8,
-      "row": 14,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_unmh_bedroll4",
-      "itemKey": "bedrollFurniture",
-      "col": 6,
-      "row": 15,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_unmh_bedroll5",
-      "itemKey": "bedrollFurniture",
-      "col": 7,
-      "row": 15,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_unmh_bedroll6",
-      "itemKey": "bedrollFurniture",
-      "col": 6,
-      "row": 17,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_unmh_bedroll7",
-      "itemKey": "bedrollFurniture",
-      "col": 7,
-      "row": 17,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_unmh_bedroll8",
-      "itemKey": "bedrollFurniture",
-      "col": 8,
-      "row": 17,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_unmh_bedroll9",
-      "itemKey": "bedrollFurniture",
-      "col": 11,
-      "row": 14,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_unmh_bedroll10",
-      "itemKey": "bedrollFurniture",
-      "col": 12,
-      "row": 14,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
       "id": "f_unmh_rug",
       "itemKey": "rugFurniture",
       "col": 6,
@@ -1971,61 +1828,5 @@
       "postSZ": 1
     }
   ],
-  "npcStations": [
-    {
-      "id": "station_unmh_teacup_bed",
-      "label": "Teacup's Bed",
-      "col": 2,
-      "row": 16,
-      "rotY": 0,
-      "pose": "lie",
-      "toolKey": "",
-      "toolIntervalSec": 0,
-      "toolAnimStyle": ""
-    },
-    {
-      "id": "station_unmh_spearhead_bed",
-      "label": "Spearhead's Bedroll",
-      "col": 6,
-      "row": 14,
-      "rotY": 0,
-      "pose": "lie",
-      "toolKey": "",
-      "toolIntervalSec": 0,
-      "toolAnimStyle": ""
-    },
-    {
-      "id": "station_unmh_oddclaw_bed",
-      "label": "Oddclaw's Bedroll",
-      "col": 6,
-      "row": 15,
-      "rotY": 0,
-      "pose": "lie",
-      "toolKey": "",
-      "toolIntervalSec": 0,
-      "toolAnimStyle": ""
-    },
-    {
-      "id": "station_unmh_binding_bed",
-      "label": "Binding's Bedroll",
-      "col": 7,
-      "row": 14,
-      "rotY": 0,
-      "pose": "lie",
-      "toolKey": "",
-      "toolIntervalSec": 0,
-      "toolAnimStyle": ""
-    },
-    {
-      "id": "station_unmh_tooth_bed",
-      "label": "Tooth's Bedroll",
-      "col": 8,
-      "row": 14,
-      "rotY": 0,
-      "pose": "lie",
-      "toolKey": "",
-      "toolIntervalSec": 0,
-      "toolAnimStyle": ""
-    }
-  ]
+  "npcStations": []
 }

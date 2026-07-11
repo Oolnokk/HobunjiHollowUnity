@@ -7,7 +7,7 @@
   "furniture": [],
   "exits": [
     { "id": "exit_temple_bsmt_up", "label": "Stairs Up", "tiles": [[9, 1]], "targetMap": "map_i_temple", "spawnCol": 14, "spawnRow": 4 },
-    { "id": "exit_temple_bsmt_twins", "label": "Twins' Room", "tiles": [[7, 6]], "targetMap": "map_i_temple_basement_twins", "spawnCol": 11, "spawnRow": 6 },
+    { "id": "exit_temple_bsmt_twins", "label": "Twins' Room", "tiles": [[7, 6]], "targetMap": "map_i_temple_basement_twins", "spawnCol": 9, "spawnRow": 6 },
     { "id": "exit_temple_bsmt_hunundi", "label": "Father Hunundi's Room", "tiles": [[11, 6]], "targetMap": "map_i_temple_basement_hunundi", "spawnCol": 11, "spawnRow": 6 }
   ],
   "colliders": [],
