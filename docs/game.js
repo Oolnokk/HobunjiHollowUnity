@@ -909,15 +909,24 @@
       // "pure" 5/1/5/1 the doc's week math would give) — Secondfall was
       // pulled into Deadgrass and Secondrise into Coldmuck for pacing, so
       // neither short season is a single awkward month.
+      // Every transition falls mid-month (week 2 of a 4-week month) rather
+      // than on a month boundary, so a player looking at the Calendar tab
+      // sees the season already starting to turn partway through the
+      // currently-open month page instead of the change only showing up
+      // once they flip to the next one. Stormtide's band therefore wraps
+      // the year boundary (weeks 47-48, then 1-14) — seasonForDay()/
+      // weekOfSeason() below handle startWeek > endWeek as a wraparound,
+      // same convention isNowWithinNpcRuleWindow() uses for overnight
+      // schedule rules.
       // grassColor/grassDensity drive the ground tile material and the grass
       // billboard tufts (see applySeasonalGrassAppearance()) — vibrant/full
       // for the wet seasons, sparse and off-hue for Deadgrass (dead, dry) and
       // Coldmuck (slush-covered, dormant).
       const seasons = [
-        { name: 'Stormtide', emoji: '⛈️',  rainChance: 0.35, stormChance: 0.30, startWeek: 1,  endWeek: 16, grassColor: new THREE.Color().setHSL(108/360, 0.58, 0.28), grassDensity: 1.00 },
-        { name: 'Deadgrass', emoji: '☀️',  rainChance: 0.06, stormChance: 0.01, startWeek: 17, endWeek: 24, grassColor: new THREE.Color().setHSL(45/360,  0.40, 0.34), grassDensity: 0.40 },
-        { name: 'Longpour',  emoji: '🌧️', rainChance: 0.70, stormChance: 0.05, startWeek: 25, endWeek: 40, grassColor: new THREE.Color().setHSL(122/360, 0.55, 0.22), grassDensity: 1.00 },
-        { name: 'Coldmuck',  emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 41, endWeek: 48, grassColor: new THREE.Color().setHSL(165/360, 0.15, 0.46), grassDensity: 0.45 },
+        { name: 'Stormtide', emoji: '⛈️',  rainChance: 0.35, stormChance: 0.30, startWeek: 47, endWeek: 14, grassColor: new THREE.Color().setHSL(108/360, 0.58, 0.28), grassDensity: 1.00 },
+        { name: 'Deadgrass', emoji: '☀️',  rainChance: 0.06, stormChance: 0.01, startWeek: 15, endWeek: 22, grassColor: new THREE.Color().setHSL(45/360,  0.40, 0.34), grassDensity: 0.40 },
+        { name: 'Longpour',  emoji: '🌧️', rainChance: 0.70, stormChance: 0.05, startWeek: 23, endWeek: 38, grassColor: new THREE.Color().setHSL(122/360, 0.55, 0.22), grassDensity: 1.00 },
+        { name: 'Coldmuck',  emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 39, endWeek: 46, grassColor: new THREE.Color().setHSL(165/360, 0.15, 0.46), grassDensity: 0.45 },
       ];
       // Deadgrass rolls as low as a 6% rain chance per day and runs 8
       // weeks (56 days) straight, long enough in real time to read as "it
@@ -1462,7 +1471,7 @@
 
       // Used by calendarHud and water simulation to turn rain into an automatic timed condition.
       const calendar = {
-        day: 1,            // Anan, Waxingheat 1st — week 1 of Stormtide, year 1
+        day: 1,            // Anan, Waxingheat 1st — week 3 of Stormtide (its band wraps the year: 47-48, then 1-14), year 1
         time01: 0.30,      // ~10:30 AM — mid-morning, well into a rain window
         weather: 'rain',
         isRaining: true,
@@ -10686,15 +10695,24 @@
       function dayOfMonth(day = calendar.day) {
         return ((dayOfYear(day) - 1) % DAYS_PER_MONTH) + 1; // 1..28
       }
+      // startWeek > endWeek means the season wraps the year boundary (see
+      // Stormtide, weeks 47-48 then 1-14) — same "overnight window"
+      // convention as isNowWithinNpcRuleWindow().
       function seasonForDay(day = calendar.day) {
         const wk = weekOfYear(day);
-        return seasons.find(s => wk >= s.startWeek && wk <= s.endWeek) || seasons[seasons.length - 1];
+        return seasons.find(s => s.startWeek <= s.endWeek
+          ? (wk >= s.startWeek && wk <= s.endWeek)
+          : (wk >= s.startWeek || wk <= s.endWeek)
+        ) || seasons[seasons.length - 1];
       }
       function currentSeason() {
         return seasonForDay(calendar.day);
       }
       function weekOfSeason(day = calendar.day) {
-        return weekOfYear(day) - seasonForDay(day).startWeek + 1;
+        const wk = weekOfYear(day);
+        const season = seasonForDay(day);
+        if (season.startWeek <= season.endWeek) return wk - season.startWeek + 1;
+        return wk >= season.startWeek ? wk - season.startWeek + 1 : wk + (WEEKS_PER_YEAR - season.startWeek + 1);
       }
 
       function weekdayIndexForCalendarDay(day) {
