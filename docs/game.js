@@ -19874,6 +19874,15 @@
         if (gearInventory.tools.pickshovel) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
         if (gearInventory.tools.hatchet)    equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
         if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
+        // A cutscene preview's ephemeral profile can inherit gearInventory
+        // (and an already-equipped whistle) straight from the real local
+        // save via docs/index.html's onboarding-profile handoff, and the
+        // line above auto-equips the starter whistle for any profile that
+        // has none — either way, an uninvited companion animal would spawn
+        // and compete for camera framing in a scene the Director never
+        // authored one for. A scene's own creature actors are unaffected;
+        // this only clears the real player's own companion slot.
+        if (window.__hobunjiCutscenePreview) equipmentSlots.whistle = null;
         rebuildToolMeshes();
         refreshWeaponSwitchBtn();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
@@ -20212,6 +20221,21 @@
           // still zooms the plain follow camera to whoever is speaking.
           alignToDialoguePortraitCenters: false,
         };
+        // A creature's root position (avatarRef.group) already sits at its
+        // own body-center height (see makeCreatureEntity/updateCreatureMesh),
+        // unlike an NPC walker's root, which sits at ground level — so the
+        // human-chest-height targetYOffsetTiles npcDialogue tunes for
+        // overshoots way above a low-slung creature like a wolf. This
+        // variant looks only slightly above the creature's own center and
+        // sits lower/closer so it still reads as a proper close-up.
+        const dlgModeKeyCreature = 'cutscenePreviewDialogueCreature';
+        window.SCRATCHBONES_CONFIG.game.camera.modes[dlgModeKeyCreature] = {
+          ...baseDlgCfg,
+          alignToDialoguePortraitCenters: false,
+          targetYOffsetTiles: 0.08,
+          angleFromGroundDeg: Math.min(baseDlgCfg.angleFromGroundDeg ?? 10.64, 6),
+          distanceTiles: (baseDlgCfg.distanceTiles ?? 4.67) * 0.78,
+        };
 
         let idleCameraMode, idleCameraTarget;
         if (payload.camera3d) {
@@ -20339,7 +20363,7 @@
         async function openLine(entity, speakerName, text) {
           dialogueOpen = true;
           _dialogueWalker = entity?.kind === 'npc' ? { root: entity.root, rec: entity.rec, profile: entity.profile, avatarFrontCanvas: entity.avatarFrontCanvas } : null;
-          activeCameraMode = dlgModeKey;
+          activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
           activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
           _npcDialogueNameEl.textContent = speakerName;
           if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = '';
