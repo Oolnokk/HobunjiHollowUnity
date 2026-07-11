@@ -1399,6 +1399,11 @@
 
   // ── Public API ────────────────────────────────────────────────────────
   function init(options) {
+    // Cutscene Director "Preview in game": index.html's boot handoff script
+    // (runs before game.js) already synthesized window.__hobunjiPlayerProfile
+    // for this session, so the save-select/character-creation overlay would
+    // just be unnecessary UI sitting on top of the preview — skip it.
+    if (window.__hobunjiCutscenePreview) return;
     if (!options?.resetProfile) {
       // New multi-save system: show save select if any characters exist
       const meta = loadSaveMeta();

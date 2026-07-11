@@ -733,6 +733,9 @@
 
       function advanceNpcDialogue() {
         if (_npcDialogueTypeText) { _stopNpcDialogueTypewriter(true); return; }
+        // Cutscene Preview drives its own talk/choice stage sequence instead
+        // of an authored dialogueTree — see "Cutscene Preview Mode" below.
+        if (cutscenePreviewActive) { cutscenePreviewAdvance?.(); return; }
         if (_dlgTree) { _advanceDlgNode(); return; }
         _dialogueLineIdx++;
         if (_dialogueLineIdx >= _dialogueLines.length) { closeNpcDialogue(); return; }
@@ -6478,6 +6481,12 @@
       }
 
       function beginNpcDialogueStaging(walker) {
+        // Cutscene Preview drives every participant's position/facing itself
+        // (see "Cutscene Preview Mode" below) — walking/turning the real
+        // singleton `player` to stand next to whoever it opened dialogue
+        // with would fight the director's own scripted blocking, and there
+        // may not even be a "player" in the scene the preview is running.
+        if (cutscenePreviewActive) return;
         const npcX = walker?.root?.position?.x;
         const npcZ = walker?.root?.position?.z;
         if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
@@ -6495,6 +6504,7 @@
       }
 
       function faceNpcDialogueParticipants() {
+        if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
         const walker = npcDialogueStaging?.walker || _dialogueWalker;
         if (!walker?.root) return;
         const cfg = npcDialogueStagingConfig();
@@ -6512,6 +6522,7 @@
       }
 
       function updateNpcDialogueStaging(dt) {
+        if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
         if (!npcDialogueStaging?.walker?.root) return;
         const cfg = npcDialogueStagingConfig();
         const speed = (cfg.moveSpeedTilesPerSecond ?? 4.25) * TILE;
@@ -19965,6 +19976,524 @@
           useActiveAction();
         },
       });
+
+      // ══════════════════════════════════════════════════════════════════
+      //  Cutscene Preview Mode
+      // ──────────────────────────────────────────────────────────────────
+      //  Boots this tab with a throwaway character/world (see the inline
+      //  handoff script in index.html, just before <script src="game.js">,
+      //  and docs/tools/cutscene-director/index.html's "Preview in game"
+      //  button) instead of the real save, and replays an authored
+      //  cutscene using the REAL dialogue UI and REAL dialogue-zoom camera
+      //  system — not the Director tool's own private preview.
+      //
+      //  The differences from a normal conversation are deliberate and
+      //  narrow, and live right next to the code they change:
+      //    - beginNpcDialogueStaging / faceNpcDialogueParticipants /
+      //      updateNpcDialogueStaging (above) no-op when
+      //      cutscenePreviewActive — the director already scripts every
+      //      participant's exact position/facing frame by frame, so the
+      //      real "walk the player up to the NPC" auto-staging would only
+      //      fight it, and there may not even be a "player" among the
+      //      scene's actors.
+      //    - advanceNpcDialogue (above) delegates to
+      //      cutscenePreviewAdvance — the director walks its own
+      //      move/talk/choice/... stage list, not an authored dialogueTree.
+      //    - Camera/dialogue-zoom targeting reuses activeCameraTarget
+      //      exactly as normal NPC dialogue already does (openNpcDialogue
+      //      sets it to walker.root) — it's just pointed at whichever
+      //      cutscene participant is currently speaking instead of always
+      //      being "the NPC the player walked up to." That target is never
+      //      the real singleton player/playerMesh, even for a "Player"
+      //      role actor in the scene — every actor, including that one, is
+      //      spawned as its own independent stand-in entity here, so this
+      //      previewer never reads or writes the real player's position.
+      //      The real player sits exactly wherever their save left them,
+      //      off-screen and untouched, for the whole preview.
+      // ══════════════════════════════════════════════════════════════════
+
+      let cutscenePreviewActive = false;
+      let cutscenePreviewAdvance = null; // set while a talk/choice line is showing
+
+      function cutscenePreviewBanner(text, isError) {
+        let el = document.getElementById('cutscenePreviewBanner');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'cutscenePreviewBanner';
+          el.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:99999;'
+            + 'padding:8px 16px;border-radius:10px;font:600 14px/1.3 system-ui,sans-serif;color:#fff;'
+            + 'background:rgba(20,14,10,.86);border:2px solid #f2b755;box-shadow:0 6px 18px rgba(0,0,0,.4);'
+            + 'display:flex;gap:10px;align-items:center;pointer-events:auto;';
+          const label = document.createElement('span');
+          label.id = 'cutscenePreviewBannerLabel';
+          el.appendChild(label);
+          const closeBtn = document.createElement('button');
+          closeBtn.textContent = 'Exit preview';
+          closeBtn.style.cssText = 'font:600 12px system-ui,sans-serif;padding:4px 8px;border-radius:6px;'
+            + 'border:1px solid #f2b755;background:#3a2c22;color:#fff;cursor:pointer;';
+          // A plain reload is enough to leave preview mode cleanly: the
+          // handoff key is one-shot (already consumed) and the ephemeral
+          // profile only ever lived in window.__hobunjiPlayerProfile, never
+          // written to the real hobunjiPlayerProfile/hobunjiSaveMeta keys.
+          closeBtn.addEventListener('click', () => location.reload());
+          el.appendChild(closeBtn);
+          document.body.appendChild(el);
+        }
+        el.style.borderColor = isError ? '#d66b68' : '#f2b755';
+        document.getElementById('cutscenePreviewBannerLabel').textContent = text;
+      }
+
+      function cutscenePreviewFadeEl() {
+        let el = document.getElementById('cutscenePreviewFade');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'cutscenePreviewFade';
+          el.style.cssText = 'position:fixed;inset:0;z-index:99998;background:#000;opacity:0;'
+            + 'pointer-events:none;transition:opacity 1s linear;';
+          document.body.appendChild(el);
+        }
+        return el;
+      }
+
+      async function cutscenePreviewWaitForArea(area, timeoutMs, predicate) {
+        const check = predicate || (() => !!(sceneForNpcArea(area) && npcGridForArea(area)));
+        const start = performance.now();
+        while (performance.now() - start < timeoutMs) {
+          if (check()) return true;
+          await new Promise(r => setTimeout(r, 100));
+        }
+        return false;
+      }
+
+      // Freeform ("custom") actors, and any actor whose real NPC/creature
+      // spawn failed, fall back to a plain placeholder mesh — same
+      // graceful-degradation policy the Cutscene Director tool's own
+      // standalone preview uses for the same cases.
+      function cutscenePreviewMakePlaceholder(actor, area, targetScene) {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshLambertMaterial({ color: actor.color || '#cccccc' });
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.85, 10), mat);
+        body.position.y = 0.28 + 0.85 / 2;
+        group.add(body);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), mat);
+        head.position.y = 0.28 + 0.85 + 0.18;
+        group.add(head);
+        const surfY = npcSurfaceY(area, actor.worldC, actor.worldR);
+        group.position.set(actor.worldC + 0.5, surfY, actor.worldR + 0.5);
+        group.rotation.y = THREE.MathUtils.degToRad(actor.rotation || 0);
+        targetScene.add(group);
+        return { kind: 'placeholder', root: group };
+      }
+
+      function cutscenePreviewApplyState(entity, area, st) {
+        const surfY = npcSurfaceY(area, Math.round(st.c), Math.round(st.r));
+        if (entity.kind === 'creature') {
+          const c = entity.creature;
+          c.x = st.c * TILE; c.y = st.r * TILE;
+          c.avatarRef.group.position.set(st.c + 0.5, surfY + c.halfHeight, st.r + 0.5);
+          c.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(st.rotation);
+          c.groundShadow?.position.set(st.c + 0.5, surfY + characterGroundShadowSurfaceOffset(), st.r + 0.5);
+          c.avatarRef.group.scale.setScalar(st.pose === 'prone' ? 0.6 : 1);
+        } else if (entity.kind === 'npc') {
+          entity.walker.rot = THREE.MathUtils.degToRad(st.rotation);
+          entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
+          entity.root.rotation.y = entity.walker.rot;
+          entity.root.scale.setScalar(st.pose === 'prone' ? 0.6 : 1);
+        } else {
+          entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
+          entity.root.rotation.y = THREE.MathUtils.degToRad(st.rotation);
+          entity.root.scale.setScalar(st.pose === 'prone' ? 0.6 : 1);
+        }
+      }
+
+      // Stand-in for the real pounce animation (docs/js/combat/combat-
+      // animal-attacks.js's windup→leap frame sequence) — same honest
+      // scale-pulse cue the Cutscene Director tool's own preview uses,
+      // since this project has no general animation database.
+      function cutscenePreviewAttackPulse(entity, st) {
+        entity._lastAttackAt = performance.now();
+        const baseScale = st.pose === 'prone' ? 0.6 : 1;
+        entity.root.scale.setScalar(baseScale * 1.35);
+        clearTimeout(entity._attackFlashTimer);
+        entity._attackFlashTimer = setTimeout(() => {
+          entity._attackFlashTimer = null;
+          entity.root.scale.setScalar(baseScale);
+        }, 260);
+      }
+
+      async function runCutscenePreview(payload) {
+        cutscenePreviewActive = true;
+        cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
+
+        const area = normalizeNpcArea(payload.mapId);
+        if (_isBuildingArea(area)) {
+          try { await loadBuildingScene(area); } catch (e) { console.error(e); }
+        } else if (area === 'town' && !townScene) {
+          // The town's tile/route data loads automatically at boot
+          // (_loadTownFromWorkspace → initTownTravel), but the actual 3D
+          // scene (buildTownScene, which sets `townScene`) is normally only
+          // built lazily the moment the player first walks in from the farm
+          // (enterTown). enterTown() also does things this previewer must
+          // never do to the real player (moves player.x/y, stamps
+          // farmPlayerSave, flips currentArea) — buildTownScene() itself is
+          // the standalone, player-untouched half of that, so it's called
+          // directly here instead of enterTown().
+          try {
+            if (!townGrid) await cutscenePreviewWaitForArea('__townGrid__', 15000, () => !!townGrid);
+            buildTownScene();
+          } catch (e) { console.error('[cutscene preview] buildTownScene failed:', e); }
+        }
+        const ready = await cutscenePreviewWaitForArea(area, 20000);
+        if (!ready) {
+          cutscenePreviewBanner(`Could not load map "${payload.mapId}" for preview.`, true);
+          cutscenePreviewActive = false;
+          return;
+        }
+        currentArea = area; // switches the whole game's render/active-scene target to the cutscene's map
+
+        const targetScene = sceneForNpcArea(area);
+        const targetGrid  = npcGridForArea(area);
+        const targetCols  = getActiveCols();
+        const targetRows  = getActiveRows();
+
+        const entities = new Map(); // actorId -> { kind:'npc'|'creature'|'placeholder', root, ... }
+        for (const actor of (payload.actors || [])) {
+          let entity = null;
+          try {
+            if (actor.npcId && actor.npcRecord) {
+              const walker = await makeNpcWalker(actor.npcRecord, { area, c: actor.worldC, r: actor.worldR });
+              if (walker) {
+                walker.rot = THREE.MathUtils.degToRad(actor.rotation || 0);
+                walker.root.rotation.y = walker.rot;
+                walker.pause = Infinity; // scripted entirely by the director below — never the idle/wander AI
+                entity = { kind: 'npc', root: walker.root, walker, rec: actor.npcRecord, profile: walker.profile, avatarFrontCanvas: walker.avatarFrontCanvas, avatarBackCanvas: walker.avatarBackCanvas };
+              }
+            } else if (actor.creatureTypeId && CREATURE_DB[actor.creatureTypeId]) {
+              // makeCreatureEntity's ground-height lookup reads the global
+              // `currentArea` directly rather than taking it as an option,
+              // so it's bookended here even though currentArea already
+              // equals `area` by this point (kept explicit/defensive in
+              // case that assignment above ever moves).
+              const savedArea = currentArea;
+              currentArea = area;
+              const creature = makeCreatureEntity(actor.creatureTypeId, (actor.worldC + 0.5) * TILE, (actor.worldR + 0.5) * TILE, { scene: targetScene, grid: targetGrid, cols: targetCols, rows: targetRows });
+              currentArea = savedArea;
+              if (creature) {
+                creature.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(actor.rotation || 0);
+                entity = { kind: 'creature', root: creature.avatarRef.group, creature };
+              }
+            }
+          } catch (e) { console.error('[cutscene preview] actor spawn failed for', actor.name, e); }
+          if (!entity) entity = cutscenePreviewMakePlaceholder(actor, area, targetScene);
+          entities.set(actor.id, entity);
+        }
+
+        // ── Camera: an "establishing" mode for everything except active
+        //    dialogue, computed from the Director's captured shot (already
+        //    resolved to world tile-space) via the same
+        //    distance/angleFromGroundDeg/azimuthDeg basis the real fishing
+        //    minigame's camera-mode swap uses (see updateCameraPosition).
+        const baseDlgCfg = cameraModeConfig(cameraConfig().dialogueMode || 'npcDialogue');
+        const dlgModeKey = 'cutscenePreviewDialogue';
+        (window.SCRATCHBONES_CONFIG.game.camera.modes ||= {})[dlgModeKey] = {
+          ...baseDlgCfg,
+          // Portrait-center alignment hardcodes the real player mesh as one
+          // of its two framing anchors (see dialoguePortraitCameraAim) —
+          // not meaningful here since neither dialogue participant is ever
+          // the real player, so it's left off; activeCameraTarget below
+          // still zooms the plain follow camera to whoever is speaking.
+          alignToDialoguePortraitCenters: false,
+        };
+
+        let idleCameraMode, idleCameraTarget;
+        if (payload.camera3d) {
+          const p = payload.camera3d.worldPos, t = payload.camera3d.worldTarget;
+          const dx = p.x - t.x, dy = p.y - t.y, dz = p.z - t.z;
+          const distance = Math.max(0.5, Math.hypot(dx, dy, dz));
+          const angleFromGroundDeg = Math.asin(clamp(dy / distance, -1, 1)) * 180 / Math.PI;
+          const azimuthDeg = Math.atan2(dx, dz) * 180 / Math.PI;
+          const shotModeKey = 'cutscenePreviewShot';
+          window.SCRATCHBONES_CONFIG.game.camera.modes[shotModeKey] = { distanceTiles: distance, angleFromGroundDeg, azimuthDeg, fovDeg: 42, followLerp: 1, targetYOffsetTiles: 0 };
+          idleCameraMode = shotModeKey;
+          idleCameraTarget = { position: new THREE.Vector3(t.x, t.y, t.z) };
+          camTargetX = t.x; camTargetY = t.y; camTargetZ = t.z; // instant cut, not a slow lerp in from the farm spawn
+        } else {
+          const firstEntity = entities.get(payload.actors?.[0]?.id);
+          idleCameraMode = cameraConfig().defaultMode || 'default';
+          idleCameraTarget = firstEntity ? { position: firstEntity.root.position } : null;
+          if (firstEntity) { camTargetX = firstEntity.root.position.x; camTargetY = firstEntity.root.position.y; camTargetZ = firstEntity.root.position.z; }
+        }
+        activeCameraMode = idleCameraMode;
+        activeCameraTarget = idleCameraTarget;
+        updateCameraPosition();
+
+        // ── Stage engine ──────────────────────────────────────────────
+        // Same move/talk/choice/animation/turn/combat/fade semantics as
+        // docs/tools/cutscene-director/index.html's own preview engine
+        // (ported, not shared code — that tool drives a private Three.js
+        // scene, this drives real spawned entities + the real dialogue UI),
+        // reading a payload the Director tool has already fully resolved
+        // to world tile coordinates (see its "Preview in game" handler).
+        const actorsById  = new Map((payload.actors || []).map(a => [a.id, a]));
+        const actorStates = new Map((payload.actors || []).map(a => [a.id, {
+          c: a.worldC, r: a.worldR, rotation: a.rotation || 0, pose: a.pose || 'standing', combatOn: false, canLose: false,
+        }]));
+        const stagesById  = new Map((payload.stages || []).map(s => [s.id, s]));
+        const stageOrder  = (payload.stages || []).map(s => s.id);
+        let running = true;
+
+        const getResolvedNext = (stageId, requestedNext) => {
+          if (requestedNext === '__end__') return null;
+          if (requestedNext && requestedNext !== '__next__') return stagesById.has(requestedNext) ? requestedNext : null;
+          return stageOrder[stageOrder.indexOf(stageId) + 1] || null;
+        };
+        const angleTowardState = (from, to) => (((Math.atan2(to.r - from.r, to.c - from.c) * 180 / Math.PI + 90) % 360) + 360) % 360;
+        const buildGridPath = (start, goal) => {
+          const path = [{ c: start.c, r: start.r }];
+          let c = start.c, r = start.r, horizontalTurn = true;
+          while (c !== goal.c || r !== goal.r) {
+            const canH = c !== goal.c, canV = r !== goal.r;
+            if ((horizontalTurn && canH) || !canV) c += Math.sign(goal.c - c); else r += Math.sign(goal.r - r);
+            path.push({ c, r });
+            horizontalTurn = !horizontalTurn;
+          }
+          return path;
+        };
+        const applyState = actorId => { const entity = entities.get(actorId), st = actorStates.get(actorId); if (entity && st) cutscenePreviewApplyState(entity, area, st); };
+
+        const finish = message => {
+          running = false;
+          cutscenePreviewActive = false;
+          activeCameraMode = cameraConfig().defaultMode || 'default';
+          activeCameraTarget = null;
+          cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
+        };
+
+        async function openLine(entity, speakerName, text) {
+          dialogueOpen = true;
+          _dialogueWalker = entity?.kind === 'npc' ? { root: entity.root, rec: entity.rec, profile: entity.profile, avatarFrontCanvas: entity.avatarFrontCanvas } : null;
+          activeCameraMode = dlgModeKey;
+          activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
+          _npcDialogueNameEl.textContent = speakerName;
+          if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = '';
+          _arcContainerEl?.classList.add('arc-hidden');
+          const ctx = _npcPortraitCanvas.getContext('2d');
+          if (_dialogueWalker?.profile && window.NpcAvatarPreview) {
+            ctx.fillStyle = '#1b3529'; ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
+            await _renderNpcDialoguePortrait();
+          } else {
+            ctx.clearRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
+          }
+          _npcDialogueEl.classList.add('open');
+          _npcDialogueEl.setAttribute('aria-hidden', 'false');
+          _hideChoiceButtons();
+          _setNpcDialogueText(text);
+        }
+
+        function closeLine() {
+          dialogueOpen = false;
+          cutscenePreviewAdvance = null;
+          _hideChoiceButtons();
+          window.portraitBreathingComposer?.setExpression(_dialogueSeatId(), 'neutral');
+          window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), 'neutral');
+          _dialogueWalker = null;
+          _npcDialogueEl.classList.remove('open');
+          _npcDialogueEl.setAttribute('aria-hidden', 'true');
+          _arcContainerEl?.classList.remove('arc-hidden');
+          activeCameraMode = idleCameraMode;
+          activeCameraTarget = idleCameraTarget;
+        }
+
+        function showChoiceOptions(options) {
+          const optEls = [1, 2, 3, 4, 5, 6].map(i => document.getElementById(`dlgOpt${i}`));
+          optEls.forEach(el => { if (!el) return; const label = el.querySelector('.dlg-opt-label'); if (label) { label.textContent = ''; label.style.fontSize = ''; } el.classList.remove('dlg-opt-visible'); el.onclick = null; });
+          options.slice(0, 6).forEach((opt, i) => {
+            const el = optEls[i]; if (!el) return;
+            const label = el.querySelector('.dlg-opt-label'); if (label) label.textContent = opt.text || 'Choice';
+            el.classList.add('dlg-opt-visible');
+            el.onclick = () => { if (!dialogueOpen) return; opt.onClick(); };
+          });
+          optEls.forEach(el => { if (el && el.classList.contains('dlg-opt-visible')) _fitDlgOptionLabel(el); });
+          const continueBtn = document.getElementById('npcDialogueContinue');
+          if (continueBtn) continueBtn.style.display = options.length ? 'none' : '';
+        }
+
+        function continueTo(nextId) {
+          if (!running) return;
+          if (dialogueOpen) closeLine();
+          if (!nextId) { finish(); return; }
+          runStage(nextId);
+        }
+
+        function runStage(stageId) {
+          if (!running) return;
+          const stage = stagesById.get(stageId);
+          if (!stage) { finish('Preview stopped — the next card could not be found.'); return; }
+          cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
+
+          if (stage.type === 'move') return runMove(stage);
+          if (stage.type === 'animation') return runAnimation(stage);
+          if (stage.type === 'turn') return runTurn(stage);
+          if (stage.type === 'combat') return runCombat(stage);
+          if (stage.type === 'fade') return runFade(stage);
+
+          const speakerActor  = actorsById.get(stage.speakerId);
+          const speakerEntity = entities.get(stage.speakerId);
+          const speakerName   = speakerActor?.name || 'Someone';
+          if (!speakerEntity) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          if (stage.type === 'choice') {
+            openLine(speakerEntity, speakerName, stage.text).then(() => {
+              showChoiceOptions((stage.options || []).map(o => ({ text: o.text, onClick: () => continueTo(getResolvedNext(stage.id, o.next)) })));
+            });
+            cutscenePreviewAdvance = () => {}; // choices only ever advance via their own button
+            return;
+          }
+          openLine(speakerEntity, speakerName, stage.text);
+          cutscenePreviewAdvance = () => continueTo(getResolvedNext(stage.id, stage.next));
+        }
+
+        function runMove(stage) {
+          const st = actorStates.get(stage.actorId);
+          const goal = stage.targetWorld;
+          if (!st || !goal) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          const path = buildGridPath(st, goal);
+          const delay = stage.speed === 'slow' ? 430 : stage.speed === 'fast' ? 90 : 210;
+          let stepIndex = 1;
+          const advance = () => {
+            if (!running) return;
+            if (stepIndex >= path.length) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+            const previous = { c: st.c, r: st.r };
+            const step = path[stepIndex++];
+            st.c = step.c; st.r = step.r;
+            st.rotation = angleTowardState(previous, step);
+            applyState(stage.actorId);
+            setTimeout(advance, delay);
+          };
+          if (path.length <= 1) setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), 180);
+          else advance();
+        }
+
+        function runAnimation(stage) {
+          const st = actorStates.get(stage.actorId);
+          const entity = entities.get(stage.actorId);
+          if (!st || !entity) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          const composer = window.portraitBreathingComposer;
+          let breathTimer = null;
+          if (stage.animKind === 'emote' && entity.kind === 'npc' && entity.profile && composer) composer.triggerEmote(stage.emoteName);
+          if ((stage.animKind === 'breathing' || stage.animKind === 'emote') && entity.kind === 'npc' && entity.profile && composer && window.NpcAvatarPreview && window.PNGPlaneAvatar) {
+            breathTimer = setInterval(async () => {
+              if (!running) { clearInterval(breathTimer); return; }
+              try {
+                await window.NpcAvatarPreview.renderProfileToCanvas(entity.avatarFrontCanvas, entity.profile, { breathingComposer: composer });
+                window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(entity.walker.avatarGroup, entity.avatarFrontCanvas);
+              } catch (e) {}
+            }, 120);
+          }
+          setTimeout(() => {
+            if (!running) return;
+            if (breathTimer) clearInterval(breathTimer);
+            if (stage.resultPose !== 'unchanged') st.pose = stage.resultPose;
+            applyState(stage.actorId);
+            continueTo(getResolvedNext(stage.id, stage.next));
+          }, (stage.duration || 0) * 1000);
+        }
+
+        function runTurn(stage) {
+          const st = actorStates.get(stage.actorId);
+          if (!st) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          if (stage.mode === 'actor') { const targetSt = actorStates.get(stage.targetActorId); if (targetSt) st.rotation = angleTowardState(st, targetSt); }
+          else st.rotation = ((Math.round(stage.angle) % 360) + 360) % 360;
+          applyState(stage.actorId);
+          setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), (stage.duration || 0) * 1000);
+        }
+
+        // Live creature-vs-creature AI, identical in spirit to the Cutscene
+        // Director tool's own combat-card simulation: a creature-linked,
+        // teamed participant chases the nearest Combat On participant on a
+        // different team within the real CREATURE_DB aggro range, and
+        // attacks (cooldown-gated pulse) once within attack range. Same
+        // team or no team = never a threat. Non-creature participants (a
+        // person NPC ever marked Combat On) are left stationary.
+        function runCombat(stage) {
+          stage.participants.forEach(p => { const st = actorStates.get(p.actorId); if (st) { st.combatOn = p.combatOn; st.canLose = p.canLose; } });
+          const aiIds = stage.participants.filter(p => p.combatOn).map(p => p.actorId)
+            .filter(id => { const a = actorsById.get(id); return a && a.creatureTypeId && a.team; });
+
+          let aiTimer = null;
+          if (aiIds.length) {
+            aiTimer = setInterval(() => {
+              if (!running) { clearInterval(aiTimer); return; }
+              for (const actorId of aiIds) {
+                const entity = entities.get(actorId);
+                if (entity?._attackFlashTimer) continue;
+                const st = actorStates.get(actorId);
+                const actor = actorsById.get(actorId);
+                const def = CREATURE_DB[actor?.creatureTypeId];
+                if (!st || !st.combatOn || !actor || !def) continue;
+
+                let bestId = null, bestDist = Infinity;
+                for (const otherId of aiIds) {
+                  if (otherId === actorId) continue;
+                  const otherActor = actorsById.get(otherId), otherSt = actorStates.get(otherId);
+                  if (!otherActor || !otherSt || !otherSt.combatOn || otherActor.team === actor.team) continue;
+                  const d = Math.hypot(st.c - otherSt.c, st.r - otherSt.r);
+                  if (d < bestDist) { bestDist = d; bestId = otherId; }
+                }
+                if (bestId == null) continue;
+
+                const targetSt = actorStates.get(bestId);
+                st.rotation = angleTowardState(st, targetSt);
+                const aggroRange  = def.aggroRangePx ? def.aggroRangePx / TILE : 6.2;
+                const attackRange = Math.max(def.attackRangePx ? def.attackRangePx / TILE : 1, 0.9);
+                if (bestDist > aggroRange) { applyState(actorId); continue; }
+                if (bestDist <= attackRange) {
+                  applyState(actorId);
+                  if (performance.now() - (entity._lastAttackAt || 0) >= 900) cutscenePreviewAttackPulse(entity, st);
+                } else {
+                  st.c += Math.sign(targetSt.c - st.c); st.r += Math.sign(targetSt.r - st.r);
+                  applyState(actorId);
+                }
+              }
+            }, 220);
+          }
+
+          setTimeout(() => {
+            if (!running) { clearInterval(aiTimer); return; }
+            clearInterval(aiTimer);
+            stage.participants.forEach(p => { const st = actorStates.get(p.actorId); if (st) st.combatOn = false; });
+            const canLose = stage.participants.some(p => p.combatOn && p.canLose);
+            if (!canLose) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+            const anyEntity = entities.get(stage.participants[0]?.actorId);
+            openLine(anyEntity, 'Combat result', 'A character marked Can Lose may use the separate loss branch.').then(() => {
+              showChoiceOptions([
+                { text: 'No loss', onClick: () => continueTo(getResolvedNext(stage.id, stage.next)) },
+                { text: 'Loss happens', onClick: () => continueTo(getResolvedNext(stage.id, stage.lossNext)) },
+              ]);
+            });
+            cutscenePreviewAdvance = () => {};
+          }, (stage.duration || 0) * 1000);
+        }
+
+        function runFade(stage) {
+          const fadeEl = cutscenePreviewFadeEl();
+          const targetOpacity = stage.direction === 'out' ? 1 : 0;
+          fadeEl.style.transitionDuration = `${stage.duration || 0}s`;
+          requestAnimationFrame(() => { fadeEl.style.opacity = String(targetOpacity); });
+          setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), (stage.duration || 0) * 1000);
+        }
+
+        if (!stageOrder.length) { finish('Preview stopped — this scene has no cards.'); return; }
+        cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'}`, false);
+        runStage(stageOrder[0]);
+      }
+
+      if (window.__hobunjiCutscenePreview) {
+        runCutscenePreview(window.__hobunjiCutscenePreview).catch(err => {
+          console.error('[cutscene preview] failed to start:', err);
+          cutscenePreviewActive = false;
+          cutscenePreviewBanner('Preview failed to start — see console.', true);
+        });
+      }
 
       requestAnimationFrame(gameLoop);
     })();

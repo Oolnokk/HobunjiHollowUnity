@@ -761,6 +761,33 @@
   <div id="fishingOverlay"></div>
 
   <script src="js/tool-icon-render.js"></script>
+  <!-- Cutscene Director "Preview in game" one-shot handoff — must run
+       BEFORE game.js so window.__hobunjiPlayerProfile is already set when
+       game.js's own synchronous boot check reads it. Consumed once (the
+       localStorage key is cleared immediately) and never written to the
+       real hobunjiPlayerProfile/hobunjiSaveMeta keys, so it never touches
+       the real save; see docs/game.js's "Cutscene Preview Mode" section
+       and docs/tools/cutscene-director/index.html's "Preview in game"
+       button for the rest of this feature. -->
+  <script>
+    (function () {
+      var raw = localStorage.getItem('hobunji_cutscene_preview_v1');
+      if (!raw) return;
+      localStorage.removeItem('hobunji_cutscene_preview_v1');
+      try {
+        window.__hobunjiCutscenePreview = JSON.parse(raw);
+        var base = (window.HobunjiOnboarding && window.HobunjiOnboarding.loadProfile()) || {};
+        var previewId = 'preview_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+        window.__hobunjiPlayerProfile = Object.assign({}, base, {
+          playerId: previewId, characterId: previewId, worldId: previewId,
+          worldLabel: 'Cutscene Preview', worldOwnerCharacterId: previewId, isWorldOwner: true,
+          farmhandPermissions: {}, nonGearInventory: base.nonGearInventory || {},
+          packClothing: base.packClothing || [], npcRelationships: base.npcRelationships || {},
+          questProgress: base.questProgress || {}, isNewWorld: true,
+        });
+      } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
+    })();
+  </script>
   <script src="game.js"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle

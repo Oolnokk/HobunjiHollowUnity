@@ -737,6 +737,7 @@
         <button id="resetPlayBtn" class="small">↺ Reset</button>
         <button id="captureCameraBtn" class="small">📷 Capture camera</button>
         <button id="resetCameraBtn" class="small">🎯 Frame stage</button>
+        <button id="previewInGameBtn" class="small">🎮 Preview in game</button>
       </div>
       <div id="viewport-wrap">
         <canvas id="canvas3d"></canvas>
@@ -1657,6 +1658,61 @@
     saveLocal();
     toast("Camera captured for Play.");
     log("Play camera captured from the current 3D view — it'll follow the scene if you move the anchor.");
+  }
+
+  const PREVIEW_HANDOFF_KEY = "hobunji_cutscene_preview_v1";
+
+  // Resolves every point/actor/camera position this scene uses down to
+  // plain WORLD tile coordinates on the currently loaded map (applying the
+  // scene anchor transform once, here) and embeds each linked NPC's full
+  // database record — so docs/game.js's "Cutscene Preview Mode" never has
+  // to re-derive the anchor math or re-fetch the NPC database itself, only
+  // resolve creature types against its own real CREATURE_DB by id.
+  function buildPreviewPayload() {
+    if (!state.mapMeta.loaded) return { error: "Load a real map first (Stage & Points tab) — the game previewer needs a real map to open." };
+    if (state.mapMeta.kind === "exterior" && state.mapMeta.id !== "map_hobunji_town") {
+      return { error: "Only the town map and building interiors can be previewed in-game right now." };
+    }
+    const actors = state.project.actors.map(actor => {
+      const w = worldOfPoint(pointById(actor.startPointId));
+      return {
+        id: actor.id, name: actor.name, color: actor.color, rotation: actor.rotation, pose: actor.pose, team: actor.team || "",
+        npcId: actor.npcId || null, npcRecord: actor.npcId ? (npcById(actor.npcId) || null) : null,
+        creatureTypeId: actor.creatureTypeId || null,
+        worldC: w.c, worldR: w.r,
+      };
+    });
+    const stages = state.project.stages.map(stage => {
+      if (stage.type !== "move") return { ...stage };
+      const w = worldOfPoint(pointById(stage.pointId));
+      return { ...stage, targetWorld: { c: w.c, r: w.r } };
+    });
+    let camera3d = null;
+    if (state.project.camera3d) {
+      const cam = state.project.camera3d;
+      const worldPos = localToWorld(cam.localPos.x, cam.localPos.z);
+      const worldTarget = localToWorld(cam.localTarget.x, cam.localTarget.z);
+      camera3d = {
+        worldPos: { x: worldPos.c, y: cam.localPos.y, z: worldPos.r },
+        worldTarget: { x: worldTarget.c, y: cam.localTarget.y, z: worldTarget.r },
+      };
+    }
+    return { payload: { title: state.project.title, mapId: state.mapMeta.id, actors, stages, camera3d } };
+  }
+
+  function previewInGame() {
+    const result = buildPreviewPayload();
+    if (result.error) { toast(result.error); log(result.error, "ERROR"); return; }
+    try {
+      localStorage.setItem(PREVIEW_HANDOFF_KEY, JSON.stringify(result.payload));
+    } catch (error) {
+      toast("Could not hand off to the game preview: " + error.message);
+      log(`Preview handoff failed: ${error.message}`, "ERROR");
+      return;
+    }
+    window.open("../../index.html", "_blank");
+    toast("Opening the game preview in a new tab…");
+    log("Handed the scene off to docs/index.html for an in-game preview (real dialogue UI + camera).");
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -2905,6 +2961,7 @@
     els.resetPlayBtn.addEventListener("click", () => resetPreview(true));
     els.captureCameraBtn.addEventListener("click", captureCamera3D);
     els.resetCameraBtn.addEventListener("click", () => { state.project.camera3d = null; saveLocal(); frameCameraToStage(); toast("Camera framed to the whole stage."); });
+    els.previewInGameBtn.addEventListener("click", previewInGame);
 
     els.exportBtn.addEventListener("click", exportProject);
     els.importBtn.addEventListener("click", () => els.importFile.click());
@@ -2946,7 +3003,7 @@
       "pickBanner","editorBoard","newPointName","addPointBtn","pointList","pointEditor","pointNameInput","movePointBtn","deletePointBtn",
       "addNpcActorBtn","addCreatureActorBtn","newActorName","addActorBtn","actorList","actorEditor","actorNpcBadge","actorCreatureBadge","actorNameInput","actorColorInput",
       "actorStartSelect","actorRotationInput","actorPoseSelect","actorTeamInput","actorCombatInput","actorCanLoseInput","unlinkNpcBtn","unlinkCreatureBtn","deleteActorBtn",
-      "stageList","stageEditor","mapStatusPill","playStatusPill","startPlayBtn","resetPlayBtn","captureCameraBtn","resetCameraBtn",
+      "stageList","stageEditor","mapStatusPill","playStatusPill","startPlayBtn","resetPlayBtn","captureCameraBtn","resetCameraBtn","previewInGameBtn",
       "canvas3d","fadeOverlay","dialogueBox","dialogueSpeaker","dialogueText","dialogueActions",
       "checkBtn","copyLogBtn","validationList","debugLog","toast",
       "npcPickerStatus","npcPickerSearch","npcPickerCloseBtn","creaturePickerStatus","creaturePickerCloseBtn"
