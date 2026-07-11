@@ -18,10 +18,7 @@
       const spTime    = document.getElementById('spTime');
       const spDay     = document.getElementById('spDay');
       const spSeason  = document.getElementById('spSeason');
-      // Calendar popup
-      const calendarBackdrop = document.getElementById('calendarBackdrop');
-      const calendarPanel    = document.getElementById('calendarPanel');
-      const calClose         = document.getElementById('calClose');
+      // Calendar (lives in the menu's Calendar tab — see #mpCalendar)
       const calToday         = document.getElementById('calToday');
       const calSeasonInfo    = document.getElementById('calSeasonInfo');
       const calGrid          = document.getElementById('calGrid');
@@ -127,7 +124,6 @@
       // ── Menu open/close ────────────────────────────────────
       let menuOpen = false;
       function openMenu(targetPanel = 'inventory') {
-        if (calendarOpen) closeCalendar();
         menuOpen = true;
         menuBtn.classList.add('open');
         menuBtn.setAttribute('aria-expanded', 'true');
@@ -152,28 +148,11 @@
       }
       menuBtn.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
       menuBackdrop.addEventListener('click', closeMenu);
-
-      // ── Calendar popup open/close ──────────────────────────
-      let calendarOpen = false;
-      function openCalendar() {
-        if (menuOpen) closeMenu();
-        calendarOpen = true;
-        spDay.setAttribute('aria-expanded', 'true');
-        calendarBackdrop.classList.add('open');
-        calendarPanel.classList.add('open');
-        paused = true;
-        renderCalendarPanel();
-      }
-      function closeCalendar() {
-        calendarOpen = false;
-        spDay.setAttribute('aria-expanded', 'false');
-        calendarBackdrop.classList.remove('open');
-        calendarPanel.classList.remove('open');
-        if (!menuOpen) paused = false;
-      }
-      spDay.addEventListener('click', () => calendarOpen ? closeCalendar() : openCalendar());
-      calendarBackdrop.addEventListener('click', closeCalendar);
-      calClose.addEventListener('click', closeCalendar);
+      spDay.addEventListener('click', () => {
+        const onCalendarTab = document.querySelector('.mp-tab[data-mpanel="calendar"]')?.classList.contains('active');
+        if (menuOpen && onCalendarTab) closeMenu();
+        else openMenu('calendar');
+      });
 
       // ── New panel tab switching ────────────────────────────
 
@@ -184,6 +163,7 @@
           p.classList.toggle('active',
             p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
+        if (id === 'calendar') renderCalendarPanel();
         if (id === 'shipping') buildShippingTransferUI();
         if (id === 'supplies') renderSupplyPage();
         if (id === 'generalStore') renderGeneralStorePage();
@@ -847,8 +827,22 @@
       const DAY_LENGTH_SECONDS = 288; // 4x the original 72s — time now runs at 25% speed
       const MORNING_HOUR = 6;
       const NIGHT_HOUR   = 22;
-      const SEASON_LENGTH_DAYS = 8;
+      // ── Khymeryyan civil calendar ──
+      // Universal calendar used across Tanka: 7-day weeks, 48 weeks/year (336
+      // days), 12 months of 28 days (= exactly 4 weeks) each. calendar.day is
+      // an ever-incrementing absolute day count from world start (day 1);
+      // year/month/week/day-of-year are all derived from it via modulo.
       const WEEKDAY_NAMES = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // calendar.day 1 falls on Anan
+      const DAYS_PER_WEEK  = WEEKDAY_NAMES.length; // 7
+      const WEEKS_PER_YEAR = 48;
+      const YEAR_LENGTH_DAYS = DAYS_PER_WEEK * WEEKS_PER_YEAR; // 336
+      const DAYS_PER_MONTH = 28; // exactly 4 weeks
+      const MONTH_NAMES = [
+        'Waxingheat', 'Highheat', 'Waningheat',       // Summer
+        'Firstfall', 'Secondfall', 'Thirdfall',       // Fall
+        'Shallowfrost', 'Deepfrost', 'Pouringfrost',  // Winter
+        'Firstrise', 'Secondrise', 'Thirdrise',       // Spring
+      ]; // universal civil months — decoupled from Tanka's regional tropical seasons
 
       // ── Highland House — adjust these to fit the GLB and position it on the farm ──
       // Values sourced from Footprint_Highlandhouse_medium.json (footprint mapper v3)
@@ -905,18 +899,21 @@
       const TRENCH_SILT_RATE  = 0.0006;  // depth lost per sim tick, per unit rain strength
 
       // ── Game data ──
+      // Regional seasons: Northwestern Tanka. The civil calendar above is
+      // universal, but lived seasons are regional — this location reads its
+      // weather off week-of-year bands (Storm/Dry/Rain, plus a short Piturak
+      // wind-hinge at the Rain→Storm turn) rather than the calendar month.
       const seasons = [
-        { name: 'Early Dry',   emoji: '☀️',  rainChance: 0.04, stormChance: 0.00 },
-        { name: 'Late Dry',    emoji: '🌞',  rainChance: 0.08, stormChance: 0.01 },
-        { name: 'First Rains', emoji: '🌦️', rainChance: 0.42, stormChance: 0.06 },
-        { name: 'Wet Peak',    emoji: '⛈️', rainChance: 0.66, stormChance: 0.18 },
+        { name: 'Storm',   emoji: '⛈️',  rainChance: 0.35, stormChance: 0.30, startWeek: 1,  endWeek: 20 },
+        { name: 'Dry',     emoji: '☀️',  rainChance: 0.06, stormChance: 0.01, startWeek: 21, endWeek: 24 },
+        { name: 'Rain',    emoji: '🌧️', rainChance: 0.70, stormChance: 0.05, startWeek: 25, endWeek: 44 },
+        { name: 'Piturak', emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 45, endWeek: 48 },
       ];
-      // Dry seasons (Early Dry / Late Dry) roll as low as a 4-8% rain chance per
-      // day and run 8 days back-to-back, so two of them in a row can leave a
-      // ~16-day stretch with no rain at all — long enough in real time to read
-      // as "it never rains anymore." chooseWeatherForDay()'s pity timer
-      // guarantees a rain day whenever the drought runs past this many days,
-      // without touching the per-season odds the rest of the time. Declared
+      // The Dry season rolls as low as a 6% rain chance per day and runs 4
+      // weeks (28 days) straight, long enough in real time to read as "it
+      // never rains anymore." chooseWeatherForDay()'s pity timer guarantees a
+      // rain day whenever the drought runs past this many days, without
+      // touching the per-season odds the rest of the time. Declared
       // here (rather than next to chooseWeatherForDay() itself, much further
       // down) because createInitialGrid() calls chooseWeatherForDay() during
       // startup, well before that later point in the file — a `const` placed
@@ -1455,13 +1452,13 @@
 
       // Used by calendarHud and water simulation to turn rain into an automatic timed condition.
       const calendar = {
-        day: 17,           // Day 1 of "First Rains" season (season index 2 = days 17–24)
+        day: 1,            // Anan, Waxingheat 1st — week 1 of the Storm season, year 1
         time01: 0.30,      // ~10:30 AM — mid-morning, well into a rain window
         weather: 'rain',
         isRaining: true,
         rainStrength: 2,
         nextRainWindows: [{ start: 8, end: 14, strength: 2 }],
-        lastRainDay: 17     // last day a rain/storm window was scheduled — drives the drought pity timer below
+        lastRainDay: 1      // last day a rain/storm window was scheduled — drives the drought pity timer below
       };
 
       // Used by inventoryHud and planting/harvesting actions.
@@ -3737,7 +3734,7 @@
       };
 
       function currentTothalYear() {
-        return Math.floor((calendar.day - 1) / (SEASON_LENGTH_DAYS * seasons.length)) + 1;
+        return yearNumber(calendar.day);
       }
 
       function _tothalWorldId() {
@@ -9123,39 +9120,39 @@
         town: [
           { key: 'fish_riverMinnow',     label: 'River Minnow',     icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: 'any',            fishClass: 'smooth',  difficulty: 28 },
           { key: 'fish_speckledCarp',    label: 'Speckled Carp',    icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['day', 'dusk'],   fishClass: 'sinker',  difficulty: 35 },
-          { key: 'fish_bronzefinTrout',  label: 'Bronzefin Trout',  icon: '🐡', rarity: 'uncommon', sellPrice: 22, seasons: ['Early Dry', 'Late Dry'],          timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 52 },
-          { key: 'fish_mossbackCatfish', label: 'Mossback Catfish', icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: ['First Rains', 'Wet Peak'],        timesOfDay: ['night'],         fishClass: 'floater', difficulty: 48 },
+          { key: 'fish_bronzefinTrout',  label: 'Bronzefin Trout',  icon: '🐡', rarity: 'uncommon', sellPrice: 22, seasons: ['Dry'],          timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 52 },
+          { key: 'fish_mossbackCatfish', label: 'Mossback Catfish', icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: ['Storm', 'Rain'],        timesOfDay: ['night'],         fishClass: 'floater', difficulty: 48 },
           { key: 'fish_goldenKoi',       label: 'Golden Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 60, seasons: 'any', timesOfDay: ['dawn'],          fishClass: 'mixed',   difficulty: 70 },
         ],
         northernCliffs: [
-          { key: 'fish_cliffsideChar',   label: 'Cliffside Char',   icon: '🐟', rarity: 'common',   sellPrice: 10, seasons: ['Early Dry', 'Late Dry'],          timesOfDay: 'any',             fishClass: 'dart',    difficulty: 38 },
+          { key: 'fish_cliffsideChar',   label: 'Cliffside Char',   icon: '🐟', rarity: 'common',   sellPrice: 10, seasons: ['Dry'],          timesOfDay: 'any',             fishClass: 'dart',    difficulty: 38 },
           { key: 'fish_stonebellyTrout', label: 'Stonebelly Trout', icon: '🐠', rarity: 'common',   sellPrice: 11, seasons: 'any', timesOfDay: ['day'],           fishClass: 'sinker',  difficulty: 34 },
-          { key: 'fish_frostWhiskerEel', label: 'Frost Whisker Eel',icon: '🐡', rarity: 'uncommon', sellPrice: 26, seasons: ['First Rains', 'Wet Peak'],        timesOfDay: ['night'],         fishClass: 'smooth',  difficulty: 50 },
-          { key: 'fish_cliffHawkSalmon', label: 'Cliff Hawk Salmon',icon: '🐠', rarity: 'rare',     sellPrice: 65, seasons: ['Wet Peak'],                       timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 72 },
+          { key: 'fish_frostWhiskerEel', label: 'Frost Whisker Eel',icon: '🐡', rarity: 'uncommon', sellPrice: 26, seasons: ['Storm', 'Rain'],        timesOfDay: ['night'],         fishClass: 'smooth',  difficulty: 50 },
+          { key: 'fish_cliffHawkSalmon', label: 'Cliff Hawk Salmon',icon: '🐠', rarity: 'rare',     sellPrice: 65, seasons: ['Rain'],                       timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 72 },
           { key: 'fish_ironscalePike',   label: 'Ironscale Pike',   icon: '🐟', rarity: 'rare',     sellPrice: 58, seasons: 'any', timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 68 },
         ],
         cloudForest: [
           { key: 'fish_cloudmistGuppy',  label: 'Cloudmist Guppy',  icon: '🐠', rarity: 'common',   sellPrice: 7,  seasons: 'any', timesOfDay: ['dawn', 'dusk'],  fishClass: 'floater', difficulty: 26 },
-          { key: 'fish_fernshadeLoach',  label: 'Fernshade Loach',  icon: '🐟', rarity: 'common',   sellPrice: 9,  seasons: ['First Rains', 'Wet Peak'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
-          { key: 'fish_orchidBetta',     label: 'Orchid Betta',     icon: '🐡', rarity: 'uncommon', sellPrice: 28, seasons: ['Wet Peak'],                       timesOfDay: ['day'],           fishClass: 'mixed',   difficulty: 46 },
+          { key: 'fish_fernshadeLoach',  label: 'Fernshade Loach',  icon: '🐟', rarity: 'common',   sellPrice: 9,  seasons: ['Storm', 'Rain'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
+          { key: 'fish_orchidBetta',     label: 'Orchid Betta',     icon: '🐡', rarity: 'uncommon', sellPrice: 28, seasons: ['Rain'],                       timesOfDay: ['day'],           fishClass: 'mixed',   difficulty: 46 },
           { key: 'fish_vinehookGar',     label: 'Vinehook Gar',     icon: '🐟', rarity: 'uncommon', sellPrice: 25, seasons: 'any', timesOfDay: ['night'],         fishClass: 'dart',    difficulty: 49 },
-          { key: 'fish_canopyKoi',       label: 'Canopy Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 62, seasons: ['First Rains'],                    timesOfDay: ['dawn'],          fishClass: 'floater', difficulty: 71 },
+          { key: 'fish_canopyKoi',       label: 'Canopy Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 62, seasons: ['Storm'],                    timesOfDay: ['dawn'],          fishClass: 'floater', difficulty: 71 },
         ],
         westernSlope: [
-          { key: 'fish_glacierSmelt',    label: 'Glacier Smelt',    icon: '🐟', rarity: 'common',   sellPrice: 8,  seasons: ['Early Dry', 'Late Dry'],          timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
+          { key: 'fish_glacierSmelt',    label: 'Glacier Smelt',    icon: '🐟', rarity: 'common',   sellPrice: 8,  seasons: ['Dry'],          timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
           { key: 'fish_frostbellyGrayling', label: 'Frostbelly Grayling', icon: '🐠', rarity: 'common', sellPrice: 10, seasons: 'any', timesOfDay: ['day'],     fishClass: 'dart',    difficulty: 37 },
-          { key: 'fish_iceveilWhitefish',label: 'Iceveil Whitefish',icon: '🐡', rarity: 'uncommon', sellPrice: 27, seasons: ['Late Dry', 'First Rains'],        timesOfDay: ['dusk', 'night'], fishClass: 'sinker',  difficulty: 51 },
-          { key: 'fish_snowmeltSalmon',  label: 'Snowmelt Salmon',  icon: '🐠', rarity: 'uncommon', sellPrice: 30, seasons: ['First Rains'],                    timesOfDay: ['dawn'],          fishClass: 'dart',    difficulty: 55 },
-          { key: 'fish_glassfinChar',    label: 'Glassfin Char',    icon: '🐟', rarity: 'rare',     sellPrice: 64, seasons: ['Wet Peak'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 73 },
-          { key: 'fish_permafrostEel',   label: 'Permafrost Eel',   icon: '🐡', rarity: 'rare',     sellPrice: 59, seasons: ['Early Dry'],                      timesOfDay: ['night'],         fishClass: 'floater', difficulty: 69 },
+          { key: 'fish_iceveilWhitefish',label: 'Iceveil Whitefish',icon: '🐡', rarity: 'uncommon', sellPrice: 27, seasons: ['Dry', 'Storm'],        timesOfDay: ['dusk', 'night'], fishClass: 'sinker',  difficulty: 51 },
+          { key: 'fish_snowmeltSalmon',  label: 'Snowmelt Salmon',  icon: '🐠', rarity: 'uncommon', sellPrice: 30, seasons: ['Storm'],                    timesOfDay: ['dawn'],          fishClass: 'dart',    difficulty: 55 },
+          { key: 'fish_glassfinChar',    label: 'Glassfin Char',    icon: '🐟', rarity: 'rare',     sellPrice: 64, seasons: ['Rain'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 73 },
+          { key: 'fish_permafrostEel',   label: 'Permafrost Eel',   icon: '🐡', rarity: 'rare',     sellPrice: 59, seasons: ['Dry'],                      timesOfDay: ['night'],         fishClass: 'floater', difficulty: 69 },
         ],
         easternMire: [
           { key: 'fish_mudskipper',      label: 'Mudskipper',       icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: ['day'],           fishClass: 'sinker',  difficulty: 27 },
           { key: 'fish_swampBullhead',   label: 'Swamp Bullhead',   icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['dusk', 'night'], fishClass: 'floater', difficulty: 33 },
-          { key: 'fish_mireleafTetra',   label: 'Mireleaf Tetra',   icon: '🐡', rarity: 'uncommon', sellPrice: 23, seasons: ['Wet Peak', 'First Rains'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 45 },
+          { key: 'fish_mireleafTetra',   label: 'Mireleaf Tetra',   icon: '🐡', rarity: 'uncommon', sellPrice: 23, seasons: ['Rain', 'Storm'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 45 },
           { key: 'fish_bogLamprey',      label: 'Bog Lamprey',      icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: 'any', timesOfDay: ['night'],         fishClass: 'dart',    difficulty: 50 },
-          { key: 'fish_murkwaterGar',    label: 'Murkwater Gar',    icon: '🐠', rarity: 'rare',     sellPrice: 61, seasons: ['Wet Peak'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 70 },
-          { key: 'fish_willOWispEel',    label: "Will-o'-Wisp Eel", icon: '🐡', rarity: 'rare',     sellPrice: 66, seasons: ['First Rains'],                    timesOfDay: ['night'],         fishClass: 'floater', difficulty: 74 },
+          { key: 'fish_murkwaterGar',    label: 'Murkwater Gar',    icon: '🐠', rarity: 'rare',     sellPrice: 61, seasons: ['Rain'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 70 },
+          { key: 'fish_willOWispEel',    label: "Will-o'-Wisp Eel", icon: '🐡', rarity: 'rare',     sellPrice: 66, seasons: ['Storm'],                    timesOfDay: ['night'],         fishClass: 'floater', difficulty: 74 },
         ],
       };
       const FISH_ZONE_LABELS = {
@@ -10227,7 +10224,7 @@
       let simAccumulator = 0;
       let waterFlowPhase = 0;
       let camX = COLS * TILE * 0.5, camY = ROWS * TILE * 0.72;
-      let lastActionMessage = 'First Rains — dig trenches now to route the water.';
+      let lastActionMessage = 'Storm season — dig trenches now to route the water.';
       let paused = false;
 
       // Facing lag: visual/reticle angle lags behind raw movement angle.
@@ -10328,12 +10325,11 @@
         // function runs at startup, on doReset(), and on per-world grid
         // rebuilds, and every one of those call sites already has a valid
         // calendar.weather/nextRainWindows for the current calendar.day
-        // (the hardcoded day-17 init, or doReset()'s explicit reset just
+        // (the hardcoded day-1 init, or doReset()'s explicit reset just
         // above its own createInitialGrid() call). Re-rolling here silently
         // overwrote that — and since the roll is seeded purely by
-        // calendar.day, day 17's roll is the same for every player on every
-        // load (0.4719 vs First Rains' 0.42 threshold — just barely
-        // 'clear'), which is why the game appeared to always start clear
+        // calendar.day, day 1's roll is the same for every player on every
+        // load, which is why the game once appeared to always start clear
         // regardless of the intended "raining on day one" state.
         recomputeWater(false, nextGrid);
         return nextGrid;
@@ -10653,22 +10649,55 @@
         return MORNING_HOUR + calendar.time01 * (NIGHT_HOUR - MORNING_HOUR);
       }
 
+      // ── Calendar derivations ──
+      // calendar.day is an ever-incrementing absolute day count from world
+      // start (day 1). Everything else — year, month, week-of-year, weekday,
+      // and the regional season — is derived from it via modulo, and every
+      // helper below takes an optional absolute day (defaulting to
+      // calendar.day) so the Calendar tab can compute dates other than today.
+      function dayOfYear(day = calendar.day) {
+        return ((day - 1) % YEAR_LENGTH_DAYS) + 1; // 1..336
+      }
+      function yearNumber(day = calendar.day) {
+        return Math.floor((day - 1) / YEAR_LENGTH_DAYS) + 1;
+      }
+      function weekOfYear(day = calendar.day) {
+        return Math.floor((dayOfYear(day) - 1) / DAYS_PER_WEEK) + 1; // 1..48
+      }
+      function monthIndex(day = calendar.day) {
+        return Math.floor((dayOfYear(day) - 1) / DAYS_PER_MONTH); // 0..11
+      }
+      function monthNumber(day = calendar.day) {
+        return monthIndex(day) + 1; // 1..12
+      }
+      function monthName(day = calendar.day) {
+        return MONTH_NAMES[monthIndex(day)];
+      }
+      function dayOfMonth(day = calendar.day) {
+        return ((dayOfYear(day) - 1) % DAYS_PER_MONTH) + 1; // 1..28
+      }
+      function seasonForDay(day = calendar.day) {
+        const wk = weekOfYear(day);
+        return seasons.find(s => wk >= s.startWeek && wk <= s.endWeek) || seasons[seasons.length - 1];
+      }
       function currentSeason() {
-        const index = Math.floor((calendar.day - 1) / SEASON_LENGTH_DAYS) % seasons.length;
-        return seasons[index];
+        return seasonForDay(calendar.day);
+      }
+      function weekOfSeason(day = calendar.day) {
+        return weekOfYear(day) - seasonForDay(day).startWeek + 1;
       }
 
       function weekdayIndexForCalendarDay(day) {
-        return ((day - 1) % 7 + 7) % 7;
+        return ((day - 1) % DAYS_PER_WEEK + DAYS_PER_WEEK) % DAYS_PER_WEEK;
+      }
+      function weekdayNameForDay(day = calendar.day) {
+        return WEEKDAY_NAMES[weekdayIndexForCalendarDay(day)];
       }
       function currentWeekdayIndex() {
         return weekdayIndexForCalendarDay(calendar.day);
       }
       function currentWeekdayName() {
-        return WEEKDAY_NAMES[currentWeekdayIndex()];
-      }
-      function currentSeasonDayNumber() {
-        return ((calendar.day - 1) % SEASON_LENGTH_DAYS) + 1;
+        return weekdayNameForDay(calendar.day);
       }
       function ordinalSuffix(n) {
         const v = n % 100;
@@ -10680,27 +10709,39 @@
           default: return 'th';
         }
       }
-      function formatCalendarDate() {
-        const day = currentSeasonDayNumber();
-        return `${currentWeekdayName()}, ${day}${ordinalSuffix(day)} of ${currentSeason().name}`;
+      // HUD-friendly short date, e.g. "Anan, 1/1, 1st week of Storm"
+      function formatCalendarDate(day = calendar.day) {
+        const dom = dayOfMonth(day), wk = weekOfSeason(day);
+        return `${weekdayNameForDay(day)}, ${dom}/${monthNumber(day)}, ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
+      }
+      // Full date for the Calendar tab header, e.g. "Anan, Waxingheat 1st, 1st week of Storm"
+      function formatCalendarDateFull(day = calendar.day) {
+        const dom = dayOfMonth(day), wk = weekOfSeason(day);
+        return `${weekdayNameForDay(day)}, ${monthName(day)} ${dom}${ordinalSuffix(dom)}, ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
       }
 
       function renderCalendarPanel() {
-        const season = currentSeason();
-        const seasonIndex = Math.floor((calendar.day - 1) / SEASON_LENGTH_DAYS) % seasons.length;
-        const todayInSeason = currentSeasonDayNumber();
-        calToday.textContent = formatCalendarDate();
-        calSeasonInfo.textContent = `${season.emoji} ${season.name} — Season ${seasonIndex + 1} of ${seasons.length}`;
+        if (!calToday) return;
+        const today = calendar.day;
+        const season = seasonForDay(today);
+        calToday.textContent = formatCalendarDateFull(today);
+        calSeasonInfo.textContent = `${season.emoji} ${season.name} season — week ${weekOfSeason(today)} of ${season.endWeek - season.startWeek + 1} (year weeks ${season.startWeek}–${season.endWeek})`;
+
+        // "This Week" — the meaningful gameplay unit — Anan..Uung, today highlighted.
         calGrid.innerHTML = '';
-        for (let d = 1; d <= SEASON_LENGTH_DAYS; d++) {
-          const absDay = calendar.day - todayInSeason + d;
-          const weekdayName = WEEKDAY_NAMES[weekdayIndexForCalendarDay(absDay)];
+        const weekStartDay = today - weekdayIndexForCalendarDay(today);
+        for (let i = 0; i < DAYS_PER_WEEK; i++) {
+          const d = weekStartDay + i;
           const cell = document.createElement('div');
-          cell.className = 'cal-day' + (d === todayInSeason ? ' today' : '');
-          cell.innerHTML = `<span>${weekdayName}</span><span class="cal-day-num">${d}${ordinalSuffix(d)}</span>`;
+          cell.className = 'cal-day' + (d === today ? ' today' : '');
+          cell.innerHTML = `<span>${WEEKDAY_NAMES[i]}</span><span class="cal-day-num">${dayOfMonth(d)}${ordinalSuffix(dayOfMonth(d))}</span>`;
           calGrid.appendChild(cell);
         }
-        calLegend.textContent = `Week: ${WEEKDAY_NAMES.join(' · ')}`;
+
+        // Year-at-a-glance: the four regional seasons, current one highlighted.
+        calLegend.innerHTML = seasons.map(s =>
+          `<span class="cal-season-chip${s.name === season.name ? ' current' : ''}">${s.emoji} ${s.name} (wks ${s.startWeek}–${s.endWeek})</span>`
+        ).join(' ');
       }
 
       function isDigRemovableVegetation(tile) {
@@ -17565,12 +17606,12 @@
           calendar.nextRainWindows.push({ start: 19, end: 21, strength: 2 });
         } else if (hasRain) {
           // A fixed 5-hour window meant even a 'rain' day in the wettest
-          // season (Wet Peak, 66% daily chance) only actually had it raining
+          // season (Rain, 70% daily chance) only actually had it raining
           // ~5/24 = 21% of the time — the season label reads "wet" but the
           // moment-to-moment odds of catching rain stayed low. Scale the
-          // window length with how rainy the season is so Wet Peak/First
-          // Rains days visibly rain for a large chunk of the day, while a
-          // dry-season pity-timer shower stays a brief, isolated event.
+          // window length with how rainy the season is so Rain/Storm days
+          // visibly rain for a large chunk of the day, while a dry-season
+          // pity-timer shower stays a brief, isolated event.
           const windowHours = Math.round(4 + season.rainChance * 8);
           const start = 8 + Math.floor(seededRandom(calendar.day * 157) * 6);
           calendar.nextRainWindows.push({ start, end: start + windowHours, strength: 2 });
@@ -18888,13 +18929,13 @@
           showToast("Only the farm's owner can reset the farm.", false);
           return;
         }
-        calendar.day = 17;
+        calendar.day = 1;
         calendar.time01 = 0.30;
         calendar.weather = 'rain';
         calendar.isRaining = true;
         calendar.rainStrength = 2;
         calendar.nextRainWindows = [{ start: 8, end: 14, strength: 2 }];
-        calendar.lastRainDay = 17;
+        calendar.lastRainDay = 1;
         Object.keys(inventory).forEach(key => { delete inventory[key]; });
         Object.assign(inventory, { ...STARTING_INVENTORY });
         clearPlacedProcessingFurniture();
@@ -18948,8 +18989,8 @@
             });
           }
         } catch {}
-        lastActionMessage = 'Farm reset. First Rains — dig trenches to route the water.';
-        showToast('Farm reset to First Rains.', true);
+        lastActionMessage = 'Farm reset. Storm season — dig trenches to route the water.';
+        showToast('Farm reset to the Storm season.', true);
         debugLog('prototype reset');
         refreshActionBar();
         refreshItemScroll();

@@ -70,9 +70,9 @@
   <div id="statusBar">
     <span class="sb-time" id="spTime">6:00 AM</span>
     <div class="sb-div"></div>
-    <button class="sb-info sb-daybtn" id="spDay" type="button" aria-haspopup="dialog" aria-expanded="false" title="Open calendar">Anan, 1st of First Rains</button>
+    <button class="sb-info sb-daybtn" id="spDay" type="button" title="Open calendar">Anan, 1/1, 1st week of Storm</button>
     <div class="sb-div"></div>
-    <span class="sb-info" id="spSeason">🌦️ First Rains</span>
+    <span class="sb-info" id="spSeason">⛈️ Storm</span>
     <div class="sb-div"></div>
     <span class="sb-info" id="spWeather">🌧️ Rain</span>
     <div class="sb-div"></div>
@@ -163,19 +163,6 @@
   <!-- Menu button (top-right) -->
   <button id="menuBtn" aria-label="Open menu" aria-expanded="false">☰</button>
 
-  <!-- Calendar Backdrop + Panel -->
-  <div id="calendarBackdrop"></div>
-  <div id="calendarPanel" role="dialog" aria-label="Calendar">
-    <div class="cal-header">
-      <span class="cal-title">📅 Calendar</span>
-      <button class="mp-ctrl-btn" id="calClose" title="Close calendar">✕</button>
-    </div>
-    <div class="cal-today" id="calToday">Anan, 1st of First Rains</div>
-    <div class="cal-season" id="calSeasonInfo">🌦️ First Rains — Season 1 of 4</div>
-    <div class="cal-grid" id="calGrid"></div>
-    <div class="cal-legend" id="calLegend"></div>
-  </div>
-
   <!-- Menu Backdrop -->
   <div id="menuBackdrop"></div>
 
@@ -187,8 +174,12 @@
     <div class="mp-header">
       <div class="mp-tabs" role="tablist">
         <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
-        <button class="mp-tab"        data-mpanel="shipping"      role="tab">📦 Shipping</button>
-        <button class="mp-tab"        data-mpanel="supplies"      role="tab">🧺 Supplies</button>
+        <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
+        <!-- Shipping and Supplies are meant to open as their own windows when
+             interacting with their associated objects in the world, not as
+             menu tabs — buttons removed here, but #mpShipping/#mpSupplies and
+             buildShippingTransferUI()/renderSupplyPage() are left intact
+             below for that future hookup. -->
         <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
         <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
@@ -288,7 +279,15 @@
 
       </div><!-- /mpInventory -->
 
-
+      <!-- ── Calendar pane ─────────────────────────────────── -->
+      <div class="mp-pane" id="mpCalendar">
+        <div class="cal-today" id="calToday">Anan, Waxingheat 1st, 1st week of Storm</div>
+        <div class="cal-season" id="calSeasonInfo">⛈️ Storm season — week 1 of 20 (year weeks 1–20)</div>
+        <div class="cal-grid-label">This Week</div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="cal-legend-label">Year at a Glance</div>
+        <div class="cal-legend" id="calLegend"></div>
+      </div><!-- /mpCalendar -->
 
       <!-- ── Shipping box transfer pane ───────────────────────
            Adapted from HHItemTransferLayoutV1: left player bag,
