@@ -20151,6 +20151,14 @@
         }
         currentArea = area; // switches the whole game's render/active-scene target to the cutscene's map
 
+        // Without this, NPC avatars silently fall back to placeholder
+        // capsules: buildProfileFromNpcExport (npc-avatar-preview-utils.js)
+        // returns null whenever its module-level cosmetics cache hasn't
+        // loaded yet. spawnPlayerAvatar's own boot-time call (game.js
+        // ~19883) races this function rather than reliably beating it, so
+        // this waits on the same shared cache/promise explicitly.
+        await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+
         const targetScene = sceneForNpcArea(area);
         const targetGrid  = npcGridForArea(area);
         const targetCols  = getActiveCols();
@@ -20248,6 +20256,20 @@
           return stageOrder[stageOrder.indexOf(stageId) + 1] || null;
         };
         const angleTowardState = (from, to) => (((Math.atan2(to.r - from.r, to.c - from.c) * 180 / Math.PI + 90) % 360) + 360) % 360;
+        // "Theatre cheating": a staged facing (turn stage, or a creature
+        // squaring up to attack) is nudged no more than maxOffsetDeg away
+        // from also generally facing the audience/camera — same convention
+        // stage actors use to never fully turn their back to the house even
+        // mid-conversation. Natural walking facing (moveToward's own turn
+        // toward direction-of-travel) is intentionally left uncheated.
+        const cheatMaxOffsetDeg = 132;
+        const normalizeAngle180 = deg => { const d = ((deg % 360) + 360) % 360; return d > 180 ? d - 360 : d; };
+        const theatreCheatAngle = (desiredDeg, fromSt) => {
+          const camDeg = angleTowardState(fromSt, { c: camera.position.x, r: camera.position.z });
+          const diff = normalizeAngle180(desiredDeg - camDeg);
+          const clamped = Math.max(-cheatMaxOffsetDeg, Math.min(cheatMaxOffsetDeg, diff));
+          return ((camDeg + clamped) % 360 + 360) % 360;
+        };
         const buildGridPath = (start, goal) => {
           const path = [{ c: start.c, r: start.r }];
           let c = start.c, r = start.r, horizontalTurn = true;
@@ -20260,6 +20282,51 @@
           return path;
         };
         const applyState = actorId => { const entity = entities.get(actorId), st = actorStates.get(actorId); if (entity && st) cutscenePreviewApplyState(entity, area, st); };
+
+        // Per-frame travel toward a tile-center target, reusing the real
+        // game's own locomotion instead of the discrete grid-hop stepping
+        // this used to do: an NPC actor rides the exact same
+        // walker.moveToward() the schedule system drives real villagers
+        // with, and a creature actor rides moveCreatureToward() +
+        // updateCreatureMesh()/updateCreatureAnimFrame() — the same trio
+        // updateHostiles() drives wild creatures with. A freeform/failed-
+        // spawn placeholder actor has no real system to borrow, so it gets
+        // an honest straight-line lerp (same degrade-gracefully policy as
+        // cutscenePreviewMakePlaceholder itself). Returns true once arrived.
+        const advanceActorToward = (actorId, tx, tz, dt, speedMul = 1) => {
+          const entity = entities.get(actorId), st = actorStates.get(actorId);
+          if (!entity || !st) return true;
+          if (entity.kind === 'npc' && entity.walker) {
+            entity.walker.catchup = speedMul; // preview-scripted walkers are never schedule-driven, so catchup is free to repurpose as a speed dial
+            const arrived = entity.walker.moveToward(tx, tz, dt);
+            st.c = entity.root.position.x - 0.5;
+            st.r = entity.root.position.z - 0.5;
+            st.rotation = THREE.MathUtils.radToDeg(entity.walker.rot);
+            return arrived;
+          }
+          if (entity.kind === 'creature' && entity.creature) {
+            const c = entity.creature;
+            const speed = (c.def.moveSpeed || 2.4) * speedMul;
+            const moving = moveCreatureToward(c, tx * TILE, tz * TILE, speed, dt);
+            const dist = Math.hypot(c.x - tx * TILE, c.y - tz * TILE);
+            const aimAngle = moving ? Math.atan2(tz * TILE - c.y, tx * TILE - c.x) : c.facing;
+            c.facing = aimAngle;
+            updateCreatureMesh(c, dt, aimAngle);
+            updateCreatureAnimFrame(c, dt, moving);
+            st.c = c.x / TILE - 0.5;
+            st.r = c.y / TILE - 0.5;
+            st.rotation = ((THREE.MathUtils.radToDeg(aimAngle) % 360) + 360) % 360;
+            return dist < TILE * 0.12;
+          }
+          const previous = { c: st.c, r: st.r };
+          const dx = tx - 0.5 - st.c, dz = tz - 0.5 - st.r;
+          const d = Math.hypot(dx, dz);
+          const step = Math.max(0.001, 1.6 * speedMul * dt);
+          if (d <= step) { st.c = tx - 0.5; st.r = tz - 0.5; } else { st.c += dx / d * step; st.r += dz / d * step; }
+          if (d > 0.001) st.rotation = angleTowardState(previous, st);
+          applyState(actorId);
+          return d <= step;
+        };
 
         const finish = message => {
           running = false;
@@ -20356,21 +20423,19 @@
           const st = actorStates.get(stage.actorId);
           const goal = stage.targetWorld;
           if (!st || !goal) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
-          const path = buildGridPath(st, goal);
-          const delay = stage.speed === 'slow' ? 430 : stage.speed === 'fast' ? 90 : 210;
-          let stepIndex = 1;
-          const advance = () => {
+          const speedMul = stage.speed === 'slow' ? 0.6 : stage.speed === 'fast' ? 1.85 : 1;
+          const tx = goal.c + 0.5, tz = goal.r + 0.5;
+          let lastT = performance.now();
+          const step = () => {
             if (!running) return;
-            if (stepIndex >= path.length) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
-            const previous = { c: st.c, r: st.r };
-            const step = path[stepIndex++];
-            st.c = step.c; st.r = step.r;
-            st.rotation = angleTowardState(previous, step);
-            applyState(stage.actorId);
-            setTimeout(advance, delay);
+            const now = performance.now();
+            const dt = Math.min(0.05, (now - lastT) / 1000);
+            lastT = now;
+            const arrived = advanceActorToward(stage.actorId, tx, tz, dt, speedMul);
+            if (arrived) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+            requestAnimationFrame(step);
           };
-          if (path.length <= 1) setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), 180);
-          else advance();
+          requestAnimationFrame(step);
         }
 
         function runAnimation(stage) {
@@ -20401,8 +20466,12 @@
         function runTurn(stage) {
           const st = actorStates.get(stage.actorId);
           if (!st) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
-          if (stage.mode === 'actor') { const targetSt = actorStates.get(stage.targetActorId); if (targetSt) st.rotation = angleTowardState(st, targetSt); }
-          else st.rotation = ((Math.round(stage.angle) % 360) + 360) % 360;
+          if (stage.mode === 'actor') {
+            const targetSt = actorStates.get(stage.targetActorId);
+            if (targetSt) st.rotation = theatreCheatAngle(angleTowardState(st, targetSt), st);
+          } else {
+            st.rotation = theatreCheatAngle(((Math.round(stage.angle) % 360) + 360) % 360, st);
+          }
           applyState(stage.actorId);
           setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), (stage.duration || 0) * 1000);
         }
@@ -20419,47 +20488,53 @@
           const aiIds = stage.participants.filter(p => p.combatOn).map(p => p.actorId)
             .filter(id => { const a = actorsById.get(id); return a && a.creatureTypeId && a.team; });
 
-          let aiTimer = null;
-          if (aiIds.length) {
-            aiTimer = setInterval(() => {
-              if (!running) { clearInterval(aiTimer); return; }
-              for (const actorId of aiIds) {
-                const entity = entities.get(actorId);
-                if (entity?._attackFlashTimer) continue;
-                const st = actorStates.get(actorId);
-                const actor = actorsById.get(actorId);
-                const def = CREATURE_DB[actor?.creatureTypeId];
-                if (!st || !st.combatOn || !actor || !def) continue;
+          let aiActive = aiIds.length > 0;
+          let lastT = performance.now();
+          const aiTick = () => {
+            if (!running || !aiActive) return;
+            const now = performance.now();
+            const dt = Math.min(0.05, (now - lastT) / 1000);
+            lastT = now;
+            for (const actorId of aiIds) {
+              const entity = entities.get(actorId);
+              if (!entity || entity._attackFlashTimer) continue;
+              const st = actorStates.get(actorId);
+              const actor = actorsById.get(actorId);
+              const def = CREATURE_DB[actor?.creatureTypeId];
+              if (!st || !st.combatOn || !actor || !def) continue;
 
-                let bestId = null, bestDist = Infinity;
-                for (const otherId of aiIds) {
-                  if (otherId === actorId) continue;
-                  const otherActor = actorsById.get(otherId), otherSt = actorStates.get(otherId);
-                  if (!otherActor || !otherSt || !otherSt.combatOn || otherActor.team === actor.team) continue;
-                  const d = Math.hypot(st.c - otherSt.c, st.r - otherSt.r);
-                  if (d < bestDist) { bestDist = d; bestId = otherId; }
-                }
-                if (bestId == null) continue;
-
-                const targetSt = actorStates.get(bestId);
-                st.rotation = angleTowardState(st, targetSt);
-                const aggroRange  = def.aggroRangePx ? def.aggroRangePx / TILE : 6.2;
-                const attackRange = Math.max(def.attackRangePx ? def.attackRangePx / TILE : 1, 0.9);
-                if (bestDist > aggroRange) { applyState(actorId); continue; }
-                if (bestDist <= attackRange) {
-                  applyState(actorId);
-                  if (performance.now() - (entity._lastAttackAt || 0) >= 900) cutscenePreviewAttackPulse(entity, st);
-                } else {
-                  st.c += Math.sign(targetSt.c - st.c); st.r += Math.sign(targetSt.r - st.r);
-                  applyState(actorId);
-                }
+              let bestId = null, bestDist = Infinity;
+              for (const otherId of aiIds) {
+                if (otherId === actorId) continue;
+                const otherActor = actorsById.get(otherId), otherSt = actorStates.get(otherId);
+                if (!otherActor || !otherSt || !otherSt.combatOn || otherActor.team === actor.team) continue;
+                const d = Math.hypot(st.c - otherSt.c, st.r - otherSt.r);
+                if (d < bestDist) { bestDist = d; bestId = otherId; }
               }
-            }, 220);
-          }
+              if (bestId == null) continue;
+
+              const targetSt = actorStates.get(bestId);
+              const aggroRange  = def.aggroRangePx ? def.aggroRangePx / TILE : 6.2;
+              const attackRange = Math.max(def.attackRangePx ? def.attackRangePx / TILE : 1, 0.9);
+              if (bestDist > aggroRange) continue;
+              if (bestDist <= attackRange) {
+                // Squared up to attack — a static facing moment, so it gets
+                // the same theatre cheat a staged turn does; the chase leg
+                // below is real locomotion and stays uncheated.
+                st.rotation = theatreCheatAngle(angleTowardState(st, targetSt), st);
+                applyState(actorId);
+                if (performance.now() - (entity._lastAttackAt || 0) >= 900) cutscenePreviewAttackPulse(entity, st);
+              } else {
+                advanceActorToward(actorId, targetSt.c + 0.5, targetSt.r + 0.5, dt);
+              }
+            }
+            requestAnimationFrame(aiTick);
+          };
+          if (aiActive) requestAnimationFrame(aiTick);
 
           setTimeout(() => {
-            if (!running) { clearInterval(aiTimer); return; }
-            clearInterval(aiTimer);
+            if (!running) { aiActive = false; return; }
+            aiActive = false;
             stage.participants.forEach(p => { const st = actorStates.get(p.actorId); if (st) st.combatOn = false; });
             const canLose = stage.participants.some(p => p.combatOn && p.canLose);
             if (!canLose) { continueTo(getResolvedNext(stage.id, stage.next)); return; }

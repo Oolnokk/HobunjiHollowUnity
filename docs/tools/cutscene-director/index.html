@@ -2498,6 +2498,20 @@
     return path;
   }
   function angleToward(from, to) { const radians = Math.atan2(to.r-from.r, to.c-from.c); return normalizeAngle(radians*180/Math.PI + 90); }
+  // "Theatre cheating": a staged facing (turn card, or a creature squared up
+  // toward its combat target) is nudged no more than cheatMaxOffsetDeg away
+  // from also generally facing whichever camera the author is currently
+  // previewing through — the same convention stage actors use to never
+  // fully turn their back to the house mid-scene.
+  const cheatMaxOffsetDeg = 132;
+  function normalizeAngle180(deg) { const d = ((deg % 360) + 360) % 360; return d > 180 ? d - 360 : d; }
+  function theatreCheatAngle(desiredDeg, fromSt) {
+    const cam = state.three?.camera?.position;
+    if (!cam) return desiredDeg;
+    const camDeg = angleToward(fromSt, { c: cam.x, r: cam.z });
+    const diff = Math.max(-cheatMaxOffsetDeg, Math.min(cheatMaxOffsetDeg, normalizeAngle180(desiredDeg - camDeg)));
+    return normalizeAngle(camDeg + diff);
+  }
 
   function runMoveStage(stage, token) {
     const actor = actorById(stage.actorId), targetPoint = pointById(stage.pointId), actorState = state.preview.actorStates.get(stage.actorId);
@@ -2560,8 +2574,8 @@
   function runTurnStage(stage, token) {
     const actorState = state.preview.actorStates.get(stage.actorId);
     if (!actorState) { continueTo(getResolvedNext(stage.id,stage.next),token); return; }
-    if (stage.mode === "actor") { const targetState = state.preview.actorStates.get(stage.targetActorId); if (targetState) actorState.rotation = angleToward(actorState, targetState); }
-    else actorState.rotation = normalizeAngle(stage.angle);
+    if (stage.mode === "actor") { const targetState = state.preview.actorStates.get(stage.targetActorId); if (targetState) actorState.rotation = theatreCheatAngle(angleToward(actorState, targetState), actorState); }
+    else actorState.rotation = theatreCheatAngle(normalizeAngle(stage.angle), actorState);
     applyActorStateToScene(stage.actorId, actorState);
     state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id,stage.next),token), stage.duration*1000);
   }
@@ -2628,7 +2642,7 @@
           if (bestId == null) continue; // no opposing-team threat recognized — idle
 
           const targetSt = state.preview.actorStates.get(bestId);
-          st.rotation = angleToward(st, targetSt);
+          st.rotation = theatreCheatAngle(angleToward(st, targetSt), st);
           const aggroRange = creature.aggroRangeTiles ?? 6;
           const attackRange = Math.max(creature.attackRangeTiles ?? 1, 0.9);
           if (bestDist > aggroRange) { applyActorStateToScene(actorId, st); continue; }
