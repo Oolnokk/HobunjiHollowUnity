@@ -268,8 +268,8 @@ window.SCRATCHBONES_CONFIG = {
     "appearanceEditor": {
       "availability": {
         "tletingan": {
-          "genders": ["male"],
-          "randomizableGenders": ["male"]
+          "genders": ["male", "female"],
+          "randomizableGenders": ["male", "female"]
         }
       },
       "species": {
@@ -3196,24 +3196,41 @@ window.SCRATCHBONES_CONFIG = {
           "volume": 0.85
         },
         "bgmVolume": 0.48,
+        // Played instead of the area's normal bgm/ambient cues whenever
+        // isPlayerInCombat() is true (see updateAmbientCues in game.js).
+        // Empty for now — no combat-specific tracks exist yet in
+        // assets/audio/music/bgm/. Same track-object shape as areaBgm
+        // entries ({ url, ... }); global rather than per-area since combat
+        // doesn't have its own zone-flavored themes the way exploration does.
+        "combatBgm": [],
         "musicFadeMs": 280,
         "songFadeInMs": 2200,
         "songFadeOutMs": 2600,
-        "ambientCueMinDelaySec": 300,
-        "ambientCueMaxDelaySec": 600,
+        "ambientCueMinDelaySec": 20,
+        "ambientCueMaxDelaySec": 45,
         "areaBgm": {
           "farm": [
-            { "url": "assets/audio/music/bgm/bgm_farm1.m4a" },
+            { "url": "assets/audio/music/bgm/bgm_farm1.m4a", "fallback": true },
             { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 },
             { "url": "assets/audio/music/bgm/bgm_follow_the_signs.ogg", "nightOnly": true }
           ],
           "town": [
-            { "url": "assets/audio/music/bgm/bgm_farm1.m4a" },
+            { "url": "assets/audio/music/bgm/bgm_farm1.m4a", "fallback": true },
             { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 },
             { "url": "assets/audio/music/bgm/bgm_follow_the_signs.ogg", "nightOnly": true }
           ],
           "map_northern_cliffs": [
-            { "url": "assets/audio/music/bgm/bgm_what_the_winds_carry.mp3" }
+            { "url": "assets/audio/music/bgm/bgm_what_the_winds_carry.mp3", "fallback": true },
+            { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 }
+          ],
+          "map_southern_cloud_forest": [
+            { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 }
+          ],
+          "map_western_slope": [
+            { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 }
+          ],
+          "map_eastern_mire": [
+            { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 }
           ]
         },
         "bgs": {

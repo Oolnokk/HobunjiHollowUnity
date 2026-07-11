@@ -966,26 +966,26 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   if (_allResolved) {
     imgMap = new Map(_allUrls.map(url => [url, IMG_CACHE.get(url)]));
   } else {
-    try {
-      const entries = await Promise.all(
-        _allUrls.map(async (url) => [url, await loadImg(url)])
-      );
-      imgMap = new Map(entries);
-    } catch (err) {
-      console.warn('[portrait] image load error', {
-        message: err?.message || String(err),
-        name: err?.name || 'Error',
-        relPath: err?.relPath || null,
-        attemptedUrls: Array.isArray(err?.attemptedUrls) ? err.attemptedUrls : [],
-      });
-      ctx.fillStyle = '#220000'; ctx.fillRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
-      ctx.fillStyle = '#ff4444'; ctx.font = '11px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
-      ctx.strokeText('Load error', PORTRAIT_CW / 2, PORTRAIT_CH / 2);
-      ctx.fillText('Load error', PORTRAIT_CW / 2, PORTRAIT_CH / 2);
-      if (_needsScale) ctx.restore();
-      return;
+    // Load every layer independently — a missing/404ing sprite (e.g. a
+    // species/gender combo whose art isn't drawn yet) should just omit that
+    // one layer, not blank the whole portrait. Once the file shows up at its
+    // expected path, this starts drawing it with no further code changes.
+    const settled = await Promise.allSettled(
+      _allUrls.map(async (url) => [url, await loadImg(url)])
+    );
+    imgMap = new Map();
+    for (const result of settled) {
+      if (result.status === 'fulfilled') {
+        imgMap.set(result.value[0], result.value[1]);
+      } else {
+        const err = result.reason;
+        console.warn('[portrait] image load error — omitting layer', {
+          message: err?.message || String(err),
+          name: err?.name || 'Error',
+          relPath: err?.relPath || null,
+          attemptedUrls: Array.isArray(err?.attemptedUrls) ? err.attemptedUrls : [],
+        });
+      }
     }
   }
   // Load mouth expression sprite separately — it may not exist for all species/gender combos.

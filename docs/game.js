@@ -176,6 +176,23 @@
       // Debug log copy-to-clipboard button
       const _dbgCopy = document.getElementById('debugCopyBtn');
       if (_dbgCopy) _dbgCopy.addEventListener('click', () => copyDebugLog());
+      // Debug log filter tabs — filtering itself lives in debug.js's
+      // _renderDebugPanel (window.__debugLogFilter), since that's what
+      // actually owns window.__farmDebugLog and re-renders on every new
+      // entry; this just switches the active tab and the visual state.
+      document.querySelectorAll('.debug-filter-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          window.__debugLogFilter = btn.dataset.filter;
+          document.querySelectorAll('.debug-filter-tab').forEach(b => {
+            const active = b === btn;
+            b.classList.toggle('active', active);
+            b.style.background = active ? 'rgba(106,167,255,.22)' : 'rgba(255,255,255,.08)';
+            b.style.borderColor = active ? 'rgba(106,167,255,.5)' : 'rgba(255,255,255,.2)';
+            b.style.color = active ? '#6aa7ff' : '#d1d5db';
+          });
+          if (window._renderDebugPanel) window._renderDebugPanel();
+        });
+      });
       // Inventory category filter
       document.querySelectorAll('.inv-cat').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -861,6 +878,17 @@
         { name: 'First Rains', emoji: '🌦️', rainChance: 0.42, stormChance: 0.06 },
         { name: 'Wet Peak',    emoji: '⛈️', rainChance: 0.66, stormChance: 0.18 },
       ];
+      // Dry seasons (Early Dry / Late Dry) roll as low as a 4-8% rain chance per
+      // day and run 8 days back-to-back, so two of them in a row can leave a
+      // ~16-day stretch with no rain at all — long enough in real time to read
+      // as "it never rains anymore." chooseWeatherForDay()'s pity timer
+      // guarantees a rain day whenever the drought runs past this many days,
+      // without touching the per-season odds the rest of the time. Declared
+      // here (rather than next to chooseWeatherForDay() itself, much further
+      // down) because createInitialGrid() calls chooseWeatherForDay() during
+      // startup, well before that later point in the file — a `const` placed
+      // after that call site would be in its temporal dead zone and throw.
+      const RAIN_PITY_DAYS = 5;
 
       const cropData = {
         needlegrain:   { emoji: '🌾', seedKey: 'needlegrainSeeds',   cropKey: 'needlegrain',   growDays: 3, idealMin: 0.20, idealMax: 0.50, label: 'needlegrain',   tags: ['Grain', 'Dry-default crop'] },
@@ -1346,6 +1374,10 @@
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
+          // No zone-specific cue pack recorded yet — 'general' keeps this
+          // zone from being dead silent (no areaBgm track exists for it
+          // either) until one gets authored, same as farm/town's default.
+          audioIndex: 'general',
         },
         // Western Slope/Eastern Mire have always had real authored layouts in
         // town-workspace-v1.json (unlike the two placeholder zones above), but
@@ -1364,6 +1396,8 @@
           entryCol: 48, entryRow: 20,
           exitCol: 48, exitRow: 20,
           townReturnCol: 1, townReturnRow: 25,
+          // See map_southern_cloud_forest above — no zone-specific cue pack yet.
+          audioIndex: 'general',
         },
         map_eastern_mire: {
           label: 'Eastern Mire',
@@ -1372,6 +1406,8 @@
           entryCol: 1, entryRow: 20,
           exitCol: 1, exitRow: 20,
           townReturnCol: 58, townReturnRow: 25,
+          // See map_southern_cloud_forest above — no zone-specific cue pack yet.
+          audioIndex: 'general',
         },
       };
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
@@ -1391,7 +1427,8 @@
         weather: 'rain',
         isRaining: true,
         rainStrength: 2,
-        nextRainWindows: [{ start: 8, end: 14, strength: 2 }]
+        nextRainWindows: [{ start: 8, end: 14, strength: 2 }],
+        lastRainDay: 17     // last day a rain/storm window was scheduled — drives the drought pity timer below
       };
 
       // Used by inventoryHud and planting/harvesting actions.
@@ -2118,6 +2155,28 @@
         if (!tile || tile.type === TileType.ROCK) return false;
         if (currentArea === 'farm' && isHouseFootprint(col, row)) return false;
         return !interiorFurnitureObjects.find(o => o.col === col && o.row === row);
+      }
+
+      // Which placed decorative-furniture keys the player can interact with
+      // (as opposed to purely-decorative pieces like a bookshelf or chest
+      // prop). Derived from the piece's key at lookup time rather than
+      // baked onto each placed instance, so it applies uniformly to every
+      // creation path (placing one fresh, loading a saved layout, restoring
+      // on reset) with no extra bookkeeping at any of those call sites.
+      function getInteriorInteractableAt(col, row) {
+        const o = interiorFurnitureObjects.find(f => f.area === 'interior' && f.col === col && f.row === row);
+        if (!o) return null;
+        if (o.key === 'basicBed' || o.key === 'doubleBed' || o.key === 'bedroll') {
+          return {
+            interactIcon: '😴',
+            interactLabel: 'Sleep',
+            onAction(action) {
+              if (action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
+              return sleepInBed();
+            },
+          };
+        }
+        return null;
       }
 
       function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea) {
@@ -3007,6 +3066,19 @@
           if (dist <= bestDist) { best = c; bestDist = dist; }
         }
         return best;
+      }
+
+      // Used by updateAmbientCues() to duck exploration/dawn music during a
+      // fight — true whenever any live hostile in the player's current area
+      // is actively chasing/attacking (state === 'chase'), regardless of
+      // whether the player currently has a weapon out (unlike
+      // findAutoTarget, which is gated on that — a wolf mid-charge should
+      // still cut the music even if the player hasn't drawn a weapon yet).
+      function isPlayerInCombat() {
+        for (const c of hostileObjects) {
+          if (c.health > 0 && c.areaId === currentArea && c.state === 'chase') return true;
+        }
+        return false;
       }
 
       // Swap the auto-target to the CLOSEST hostile within a cone around
@@ -4427,7 +4499,7 @@
 
       const _audioCueIndexes = new Map();
       const _mapAudioIndexes = new Map();
-      let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null };
+      let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null, inCombat: false, currentCombatBgm: null };
       const _furnitureSfxSources = [];
       const _loopingBgs = new Map();
       const _audioDebugLast = new Map();
@@ -4496,22 +4568,23 @@
       // smoothly and boosted past the element's volume<=1 ceiling (needed to
       // normalize quiet tracks up to the target level). Falls back to plain
       // `snd.volume` (capped at 1, no boosting) if Web Audio is unavailable.
+      //
+      // Disabled (always returns null) as of a live debugging session: bgs
+      // tracks (birds/wind/nightbugs — see setLoopingBgs), which use plain
+      // `snd.volume` and never touch this GainNode graph, were reliably
+      // audible; bgm/cues routed through this graph were not, even while
+      // every JS-visible signal reported healthy (ctx.state === 'running',
+      // live gain at its ramped target, unmuted — see the diagnostic in
+      // gameLoop's audio tick). That combination means the graph's actual
+      // connection to ctx.destination isn't reaching real output in this
+      // environment, which nothing on the JS side can detect or recover
+      // from — so route bgm/cues through the same plain-volume path that's
+      // proven to work instead. Left in place (rather than deleted) in case
+      // a future environment's Web Audio destination behaves correctly and
+      // this is worth re-enabling; loudness-boosting quiet tracks above
+      // volume 1.0 is the one feature lost by staying on the plain path.
       function attachMusicGain(snd) {
-        const ctx = getMusicAudioCtx();
-        if (!ctx) return null;
-        if (_musicGainNodes.has(snd)) return _musicGainNodes.get(snd);
-        try {
-          const source = ctx.createMediaElementSource(snd);
-          const gain = ctx.createGain();
-          gain.gain.value = 0;
-          source.connect(gain).connect(ctx.destination);
-          const node = { ctx, gain, target: 0 };
-          _musicGainNodes.set(snd, node);
-          return node;
-        } catch (e) {
-          audioDebug('music gain attach failed ' + snd.src + ': ' + (e?.message || e), 'music-gain-attach-fail', 0);
-          return null;
-        }
+        return null;
       }
 
       function releaseMusicGain(snd) {
@@ -4569,8 +4642,15 @@
         snd._fadeToken = token;
         const step = now => {
           if (snd._fadeToken !== token) return;
-          const t = Math.min(1, (now - startTime) / dur);
-          snd.volume = start + (clampedTarget - start) * t;
+          // rAF's own `now` timestamp isn't guaranteed to line up with the
+          // performance.now() captured above (some browsers snapshot it at
+          // the start of the frame, which can land a hair earlier) — an
+          // unclamped lower bound let a barely-negative t extrapolate volume
+          // to a barely-negative number on the very first frame of a fade-in
+          // from 0, and HTMLMediaElement.volume throws (IndexSizeError) on
+          // anything outside [0,1], aborting the whole ramp right there.
+          const t = Math.max(0, Math.min(1, (now - startTime) / dur));
+          snd.volume = Math.max(0, Math.min(1, start + (clampedTarget - start) * t));
           if (t < 1) requestAnimationFrame(step);
           else onDone?.();
         };
@@ -4637,6 +4717,7 @@
       // (e.g. switching areas) instead of cutting the track off mid-note.
       function playMusicTrack(url, baseVolume, fadeInMs, fadeOutMs) {
         const snd = makeGameAudio(url);
+        snd._trackUrl = url; // lets area-change handling recognize "same song on both playlists" — see areaBgmIncludesTrack
         attachMusicGain(snd);
         setMusicVolumeNow(snd, 0);
         let fadingOut = false;
@@ -4679,6 +4760,19 @@
         if (!resolved) return;
         _audioFailedUrls.add(resolved);
         audioDebug('marked audio failed url=' + resolved + ' reason=' + reason, 'audio-failed-' + resolved, 0);
+      }
+
+      // MediaError.code === 1 is MEDIA_ERR_ABORTED — the browser's own fetch
+      // for this element was deliberately interrupted (e.g. the .pause()
+      // that a fade-out's _stopMusic calls mid-buffer when the player
+      // changes areas), not a sign the file itself is broken. A bgm 'error'
+      // listener that blacklisted on any error unconditionally could
+      // permanently lose a perfectly fine track like bgm_farm1.m4a for the
+      // rest of the session the first time the player left an area while it
+      // was still loading — same root cause as the AbortError carve-out on
+      // the play() rejection path below, just on the native error event.
+      function isRealMediaError(snd) {
+        return (snd?.error?.code || 0) !== 1;
       }
 
       function audioUrlFailed(url) {
@@ -4816,17 +4910,105 @@
         return list[Math.floor(Math.random() * list.length)] || null;
       }
 
+      // True if `snd`'s track appears anywhere in `area`'s configured bgm
+      // list — a "same song on both playlists" check for area-transition
+      // continuity (see updateAmbientCues), not an eligibility check (so it
+      // ignores sunriseOnly/nightOnly/oncePerDay — those gate which track
+      // gets *picked*, not whether a song already playing should keep going).
+      function areaBgmIncludesTrack(area, snd) {
+        const trackUrl = snd?._trackUrl;
+        if (!trackUrl) return false;
+        const resolved = resolveAudioUrl(trackUrl);
+        const list = gameAudioConfig().areaBgm?.[area] || [];
+        return list.some(t => t?.url && resolveAudioUrl(t.url) === resolved);
+      }
+
       function scheduleNextCueDelay() {
         const audioCfg = gameAudioConfig();
-        const minSec = Number(audioCfg.ambientCueMinDelaySec) || 300;
-        const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 600);
+        const minSec = Number(audioCfg.ambientCueMinDelaySec) || 20;
+        const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 45);
         _ambientCueState.nextAt = performance.now() + (minSec + Math.random() * (maxSec - minSec)) * 1000;
       }
 
       function updateAmbientCues() {
         const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) { audioTrace('ambient disabled by config', 'ambient-disabled', 3000); return; }
-        if (_ambientCueState.area !== currentArea) { stopAmbientCue(); resetAmbientCueTimer(currentArea); }
+        if (_ambientCueState.area !== currentArea) {
+          const keepBgm = _ambientCueState.mode === 'bgm'
+            && _ambientCueState.currentBgm
+            && !_ambientCueState.currentBgm.ended
+            && areaBgmIncludesTrack(currentArea, _ambientCueState.currentBgm);
+          if (keepBgm) {
+            // The song already playing is on both areas' playlists (e.g.
+            // bgm_farm1.m4a is a fallback track shared by farm and town) —
+            // walking through a door shouldn't fade it out and re-roll a
+            // track for the new area, possibly landing on this exact song
+            // again a moment later with an audible gap in between.
+            _ambientCueState.area = currentArea;
+            _ambientCueState.indexId = resolveAreaAudioIndex(currentArea);
+            audioDebug('area changed to ' + currentArea + ' — bgm track is on both playlists, kept playing', 'ambient-area-keep-' + currentArea, 0, 'bgm');
+          } else {
+            stopAmbientCue();
+            resetAmbientCueTimer(currentArea);
+          }
+        }
+
+        const inCombat = isPlayerInCombat();
+        if (inCombat !== _ambientCueState.inCombat) {
+          _ambientCueState.inCombat = inCombat;
+          const fade = musicFadeConfig();
+          if (inCombat) {
+            // Duck exploration/dawn music for the fight. combatBgm (see
+            // scratchbones-config.js — empty until real tracks exist) takes
+            // over below; until then this just goes quiet rather than
+            // clashing with the fight.
+            for (const key of ['currentCue', 'currentBgm']) {
+              const snd = _ambientCueState[key];
+              _ambientCueState[key] = null;
+              if (!snd) continue;
+              if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
+              else snd.pause();
+            }
+            audioDebug('combat started — ducking ambient music', 'combat-duck-' + currentArea, 0, 'bgm');
+          } else {
+            if (_ambientCueState.currentCombatBgm) {
+              const snd = _ambientCueState.currentCombatBgm;
+              _ambientCueState.currentCombatBgm = null;
+              if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
+              else snd.pause();
+            }
+            // Try exploration music fresh rather than resuming whatever was
+            // cut off — time of day (or area) may have moved on mid-fight.
+            _ambientCueState.mode = 'bgm';
+            _ambientCueState.nextAt = performance.now();
+            audioDebug('combat ended — resuming ambient music', 'combat-unduck-' + currentArea, 0, 'bgm');
+          }
+        }
+
+        if (inCombat) {
+          const combatTracks = (audioCfg.combatBgm || []).filter(t => t?.url && !audioUrlFailed(t.url));
+          if (!_ambientCueState.currentCombatBgm && combatTracks.length) {
+            const track = combatTracks[Math.floor(Math.random() * combatTracks.length)];
+            const fade = musicFadeConfig();
+            const vol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
+            const snd = playMusicTrack(track.url, vol, fade.songFadeInMs, fade.songFadeOutMs);
+            const finishCombatBgm = () => {
+              if (_ambientCueState.currentCombatBgm === snd) _ambientCueState.currentCombatBgm = null;
+              releaseMusicGain(snd);
+            };
+            snd.addEventListener('ended', finishCombatBgm, { once: true });
+            snd.addEventListener('error', () => { if (isRealMediaError(snd)) markAudioUrlFailed(track.url, 'media error'); finishCombatBgm(); }, { once: true });
+            _ambientCueState.currentCombatBgm = snd;
+            snd.play().catch(err => {
+              const errName = err?.name || '';
+              if (errName !== 'NotAllowedError' && errName !== 'AbortError') markAudioUrlFailed(track.url, errName || 'play failed');
+              finishCombatBgm();
+            });
+          }
+          audioTrace('ambient suppressed (in combat) area=' + currentArea + ' combatTracks=' + combatTracks.length, 'ambient-combat-' + currentArea, 5000);
+          return;
+        }
+
         const idx = _audioCueIndexes.get(_ambientCueState.indexId);
         const cues = idx?.ambient_cues || [];
         audioTrace('ambient state area=' + currentArea + ' mode=' + _ambientCueState.mode + ' index=' + (_ambientCueState.indexId || 'none') + ' cues=' + cues.length + ' bgmActive=' + !!_ambientCueState.currentBgm + ' cueActive=' + !!_ambientCueState.currentCue + ' nextInMs=' + Math.max(0, Math.round((_ambientCueState.nextAt || 0) - performance.now())), 'ambient-state-' + currentArea, 5000);
@@ -4835,7 +5017,7 @@
 
         if (_ambientCueState.mode === 'cue_wait') {
           if (performance.now() < _ambientCueState.nextAt) return;
-          if (!cues.length) { _ambientCueState.mode = 'bgm'; return; }
+          if (!cues.length) { _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
           const cue = cues[Math.floor(Math.random() * cues.length)];
           if (!cue?.file) { scheduleNextCueDelay(); return; }
           const fade = musicFadeConfig();
@@ -4871,7 +5053,17 @@
         if (performance.now() < _ambientCueState.nextAt) return;
         const bgmTrack = resolveAreaBgm(currentArea);
         const bgmUrl = bgmTrack?.url || '';
-        if (!bgmUrl) { audioDebug('no eligible bgm for area=' + currentArea + '; retrying bgm resolution soon', 'bgm-missing-' + currentArea, 3000, 'bgm'); _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
+        if (!bgmUrl) {
+          // No areaBgm track configured/eligible for this area (e.g. a
+          // wilderness zone with no music of its own) — fall back to the
+          // ambient cue pool instead of parking in 'bgm' mode forever, which
+          // used to retry bgm resolution every 5s indefinitely and never
+          // give the cue system a turn even when it had cues available.
+          audioDebug('no eligible bgm for area=' + currentArea + '; falling back to ambient cues', 'bgm-missing-' + currentArea, 3000, 'bgm');
+          _ambientCueState.mode = 'cue_wait';
+          _ambientCueState.nextAt = performance.now();
+          return;
+        }
         const fade = musicFadeConfig();
         const bgmBaseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
         const snd = playMusicTrack(bgmUrl, bgmBaseVolume, fade.songFadeInMs, fade.songFadeOutMs);
@@ -4882,12 +5074,24 @@
           scheduleNextCueDelay();
         };
         snd.addEventListener('ended', finishBgm, { once: true });
-        snd.addEventListener('error', () => { audioDebug('bgm error ' + snd.src, 'bgm-error-' + bgmUrl, 0, 'bgm'); markAudioUrlFailed(bgmUrl, 'media error'); releaseMusicGain(snd); if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null; _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 1000; }, { once: true });
-        snd._watchForStall(6000, () => {
+        snd.addEventListener('error', () => {
+          audioDebug('bgm error ' + snd.src + ' code=' + (snd.error?.code || 'none'), 'bgm-error-' + bgmUrl, 0, 'bgm');
+          if (isRealMediaError(snd)) markAudioUrlFailed(bgmUrl, 'media error');
+          releaseMusicGain(snd);
+          if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
+          _ambientCueState.mode = 'bgm';
+          _ambientCueState.nextAt = performance.now() + 1000;
+        }, { once: true });
+        snd._watchForStall(10000, () => {
           if (_ambientCueState.currentBgm !== snd) return;
           // Not marked failed (unlike the 'error' case above) — a stall can
           // be a transient slow-load/decode hiccup rather than a permanently
           // broken file, and blacklisting would wrongly exclude it forever.
+          // (10s rather than the cue watcher's 6s: a live session showed a
+          // bgm track's canplaythrough only landing ~4s after a 6s watchdog
+          // had already given up and paused it, which used to look like a
+          // real failure via the AbortError that pausing an in-flight
+          // play() triggers — see the play().catch() below.)
           audioDebug('bgm stalled (no playback progress) ' + snd.src, 'bgm-stall-' + currentArea + '-' + bgmUrl, 0, 'bgm');
           releaseMusicGain(snd);
           _ambientCueState.currentBgm = null;
@@ -4904,7 +5108,14 @@
           }
         }).catch(err => {
           audioDebug('bgm play blocked/failed area=' + currentArea + ': ' + (err?.name || err), 'bgm-fail-' + currentArea, 0, 'bgm');
-          if ((err?.name || '') !== 'NotAllowedError') markAudioUrlFailed(bgmUrl, err?.name || err || 'play failed');
+          // NotAllowedError = autoplay policy block, AbortError = play()
+          // interrupted by a pause() call elsewhere (e.g. the stall watchdog
+          // below pausing a track that was just slow to buffer, not actually
+          // broken) — neither means the file itself is bad, so don't
+          // permanently blacklist the URL over them the way a real decode/
+          // network error warrants.
+          const errName = err?.name || '';
+          if (errName !== 'NotAllowedError' && errName !== 'AbortError') markAudioUrlFailed(bgmUrl, err?.name || err || 'play failed');
           releaseMusicGain(snd);
           if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
           _ambientCueState.mode = 'bgm';
@@ -5761,6 +5972,7 @@
         const mesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
         mesh.frustumCulled = false;
         mesh.visible = s_grass;
+        mesh.userData.isBillboard = true;
         const dummy = new THREE.Object3D();
         let idx = 0;
         for (let row = 0; row < zrows; row++) {
@@ -9988,7 +10200,17 @@
           nextGrid[row][col].crop = CropType.NONE;
         });
 
-        chooseWeatherForDay();
+        // NOTE: deliberately does not call chooseWeatherForDay() here — this
+        // function runs at startup, on doReset(), and on per-world grid
+        // rebuilds, and every one of those call sites already has a valid
+        // calendar.weather/nextRainWindows for the current calendar.day
+        // (the hardcoded day-17 init, or doReset()'s explicit reset just
+        // above its own createInitialGrid() call). Re-rolling here silently
+        // overwrote that — and since the roll is seeded purely by
+        // calendar.day, day 17's roll is the same for every player on every
+        // load (0.4719 vs First Rains' 0.42 threshold — just barely
+        // 'clear'), which is why the game appeared to always start clear
+        // regardless of the intended "raining on day one" state.
         recomputeWater(false, nextGrid);
         return nextGrid;
       }
@@ -11058,7 +11280,10 @@
         }
         if (activeAction.startsWith('obj_')) {
           const _r = getReticleTile();
-          const _o = getWorldObjectAt(_r.col, _r.row);
+          // worldObjects is farm-scene-only (see its declaration) — interior
+          // interactables (e.g. a bed) live in interiorFurnitureObjects
+          // instead, via getInteriorInteractableAt.
+          const _o = currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row) : getWorldObjectAt(_r.col, _r.row);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
           showToast(_res.message, _res.ok !== false);
@@ -13021,8 +13246,19 @@
             float dU = linearDepth(texture2D(tDepth, vUv + vec2(0.0, uTexel.y)).r);
             float dD = linearDepth(texture2D(tDepth, vUv - vec2(0.0, uTexel.y)).r);
             float depthDelta  = max(max(abs(d0 - dL), abs(d0 - dR)), max(abs(d0 - dU), abs(d0 - dD)));
-            float depthThresh = mix(0.015, 0.6, clamp(d0 / uCameraFar, 0.0, 1.0)) * uDepthThreshScale;
-            float depthEdge   = step(depthThresh, depthDelta) * uDepthOutlinesOn;
+            // Compare the depth gap *relative to* the pixel's own depth rather than
+            // an absolute world-space gap. Under perspective, the true depth gap
+            // between neighbouring pixels on a continuous receding surface (e.g.
+            // flat ground running toward the horizon) grows with distance even
+            // where there's no real silhouette edge — an absolute threshold (even
+            // one scaled up at range) gets outpaced by that growth and the far
+            // ground lights up with false edges. Dividing by d0 cancels the
+            // perspective-driven growth out, so a real edge (a genuine jump in
+            // depth) still triggers at any distance while a smooth receding
+            // surface does not.
+            float relDepthDelta = depthDelta / max(d0, uCameraNear);
+            float depthThresh   = 0.010 * uDepthThreshScale;
+            float depthEdge     = step(depthThresh, relDepthDelta) * uDepthOutlinesOn;
 
             vec4 id0 = texture2D(tEdgeId, vUv);
             vec4 idL = texture2D(tEdgeId, vUv - vec2(uTexel.x, 0.0));
@@ -14222,6 +14458,7 @@
         townBorderGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, pts.length * BLADES * 2);
         townBorderGrassBillMesh.frustumCulled = false;
         townBorderGrassBillMesh.visible = s_grass;
+        townBorderGrassBillMesh.userData.isBillboard = true;
         const dummy = new THREE.Object3D();
         let idx = 0;
         for (const { px, pz, py, seed } of pts) {
@@ -15637,16 +15874,19 @@
         farmGrassBillMesh.frustumCulled = false;
         farmGrassBillMesh.count = 0;
         farmGrassBillMesh.visible = s_grass;
+        farmGrassBillMesh.userData.isBillboard = true;
         scene.add(farmGrassBillMesh);
 
         farmWeedBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, cap);
         farmWeedBillMesh.frustumCulled = false;
         farmWeedBillMesh.count = 0;
+        farmWeedBillMesh.userData.isBillboard = true;
         scene.add(farmWeedBillMesh);
 
         cuttableBillboardGlowMesh = new THREE.InstancedMesh(_grassBladeGeo, cuttableBillboardGlowMat || grassBillboardMat, 28);
         cuttableBillboardGlowMesh.frustumCulled = false;
         cuttableBillboardGlowMesh.count = 0;
+        cuttableBillboardGlowMesh.userData.isBillboard = true;
         scene.add(cuttableBillboardGlowMesh);
       }
 
@@ -15687,6 +15927,7 @@
         townGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
         townGrassBillMesh.frustumCulled = false;
         townGrassBillMesh.visible = s_grass;
+        townGrassBillMesh.userData.isBillboard = true;
         const dummy = new THREE.Object3D();
         let idx = 0;
         for (let row = 0; row < trows; row++) {
@@ -16565,6 +16806,26 @@
         updateFurnitureSfxSources();
         updateAmbientCues();
         audioDebug('audio tick active area=' + currentArea + ' paused=' + paused + ' gameStarted=' + gameStarted, 'audio-tick-' + currentArea, 5000);
+        // Diagnostic for "bgm/cue reports playing but is silent": the actual
+        // audible level lives in this GainNode graph, not on the <audio>
+        // element's own .volume, so a healthy-looking playback state (no
+        // errors, paused=false) can still be inaudible if the context is
+        // stuck suspended or the gain never reached its ramped target.
+        {
+          const activeSnd = _ambientCueState.currentBgm || _ambientCueState.currentCue;
+          const gainNode = activeSnd ? _musicGainNodes.get(activeSnd) : null;
+          audioDebug(
+            'music gain ctxState=' + (_musicAudioCtx?.state || 'none') +
+            ' hasActiveTrack=' + !!activeSnd +
+            ' liveGain=' + (gainNode ? gainNode.gain.gain.value.toFixed(3) : 'n/a') +
+            ' targetGain=' + (gainNode ? gainNode.target.toFixed(3) : 'n/a') +
+            ' sndVolume=' + (activeSnd ? activeSnd.volume.toFixed(3) : 'n/a') +
+            ' sndMuted=' + (activeSnd ? activeSnd.muted : 'n/a'),
+            'music-gain-diag',
+            5000,
+            'bgm'
+          );
+        }
 
         if (!paused) {
           updateCalendar(dt);
@@ -16745,19 +17006,25 @@
           camera.layers.enableAll();
 
           // Depth-only source for the depth-edge detector, PNG-plane avatars
-          // hidden for this pass only (see _markPngPlane) so sprite cutout
-          // silhouettes never feed the detector. Opt-in/off by default since
-          // it's an extra full scene pass on top of everything above.
+          // (see _markPngPlane) and grass billboards (userData.isBillboard,
+          // set at creation on every InstancedMesh built from _grassBladeGeo)
+          // hidden for this pass only so their sprite cutout silhouettes and
+          // near-edge-on quad angles never feed the detector as false edges.
+          // Opt-in/off by default since it's an extra full scene pass on top
+          // of everything above.
           if (s_depthOutlines) {
-            const _hiddenPngPlanes = [];
+            const _hiddenForDepthPass = [];
             activeScene.traverse(o => {
-              if (o.userData.isPngPlane && o.visible) { o.visible = false; _hiddenPngPlanes.push(o); }
+              if ((o.userData.isPngPlane || o.userData.isBillboard) && o.visible) {
+                o.visible = false;
+                _hiddenForDepthPass.push(o);
+              }
             });
             renderer.setRenderTarget(_depthOnlyRT);
             activeScene.overrideMaterial = _depthOnlyMat;
             renderer.render(activeScene, camera);
             activeScene.overrideMaterial = null;
-            _hiddenPngPlanes.forEach(o => { o.visible = true; });
+            _hiddenForDepthPass.forEach(o => { o.visible = true; });
           }
 
           // Composite: blend depth-discontinuity + furniture material-seam
@@ -17094,12 +17361,33 @@
         pendingDenRespawn.clear();
       }
 
+      // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
+      // the next morning rather than waiting for calendar.time01 to wrap
+      // naturally — same day-rollover work as advanceDay() (weather reroll,
+      // crop growth, Tothal Shift check, den respawns), plus resetting the
+      // clock itself and restoring the player, which advanceDay() doesn't
+      // need to do since it only ever fires from a real elapsed-time wrap.
+      function sleepInBed() {
+        calendar.day += 1;
+        calendar.time01 = 0; // wake at MORNING_HOUR
+        chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
+        tickCropDay();
+        checkTothalShift();
+        pendingDenRespawn.clear();
+        player.health  = player.maxHealth;
+        player.stamina = player.maxStamina;
+        const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
+        lastActionMessage = msg;
+        return { ok: true, message: msg };
+      }
+
       function chooseWeatherForDay() {
         const season = currentSeason();
         const seed = seededRandom(calendar.day * 991 + season.name.length * 37);
         const stormRoll = seededRandom(calendar.day * 373 + 11);
         const hasStorm = stormRoll < season.stormChance;
-        const hasRain = hasStorm || seed < season.rainChance;
+        const droughtDays = calendar.day - calendar.lastRainDay;
+        const hasRain = hasStorm || seed < season.rainChance || droughtDays >= RAIN_PITY_DAYS;
         calendar.weather = hasStorm ? 'storm' : hasRain ? 'rain' : 'clear';
         calendar.nextRainWindows = [];
 
@@ -17107,9 +17395,18 @@
           calendar.nextRainWindows.push({ start: 11, end: 17, strength: 3 });
           calendar.nextRainWindows.push({ start: 19, end: 21, strength: 2 });
         } else if (hasRain) {
+          // A fixed 5-hour window meant even a 'rain' day in the wettest
+          // season (Wet Peak, 66% daily chance) only actually had it raining
+          // ~5/24 = 21% of the time — the season label reads "wet" but the
+          // moment-to-moment odds of catching rain stayed low. Scale the
+          // window length with how rainy the season is so Wet Peak/First
+          // Rains days visibly rain for a large chunk of the day, while a
+          // dry-season pity-timer shower stays a brief, isolated event.
+          const windowHours = Math.round(4 + season.rainChance * 8);
           const start = 8 + Math.floor(seededRandom(calendar.day * 157) * 6);
-          calendar.nextRainWindows.push({ start, end: start + 5, strength: 2 });
+          calendar.nextRainWindows.push({ start, end: start + windowHours, strength: 2 });
         }
+        if (hasRain) calendar.lastRainDay = calendar.day;
         updateRainState();
       }
 
@@ -17747,8 +18044,12 @@
           const nearExit = reticle.row >= INTERIOR_EXIT_ROW && reticle.col >= INTERIOR_EXIT_COL && reticle.col < INTERIOR_EXIT_COL + 2;
           const btns     = [];
           if (nearExit) btns.push({ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true });
-          const iObj = getWorldObjectAt(reticle.col, reticle.row);
-          if (iObj) btns.push({ icon: '🔔', label: 'Interact', action: 'obj_interact', style: 'primary', allowed: true });
+          // getInteriorInteractableAt, not getWorldObjectAt — worldObjects is
+          // the farm scene's own coordinate space (see its declaration), so
+          // reticle coords while standing in the interior were being checked
+          // against farm-placed objects at those same numeric coordinates.
+          const iObj = getInteriorInteractableAt(reticle.col, reticle.row);
+          if (iObj) btns.push({ icon: iObj.interactIcon || '🔔', label: iObj.interactLabel || 'Interact', action: 'obj_interact', style: 'primary', allowed: true });
           return btns;
         }
 
@@ -18352,8 +18653,14 @@
 
       async function copyDebugLog() {
         const reticle = getReticleTile();
+        const filter = window.__debugLogFilter || 'all';
+        const rawLog = window.__farmDebugLog || [];
+        const filteredLog = window.__debugLogMatchesFilter
+          ? rawLog.filter(e => window.__debugLogMatchesFilter(e, filter))
+          : rawLog;
         const lines = [
           'Tropical Trench Farm Debug Report',
+          ...(filter !== 'all' ? [`Debug filter: ${filter} (${filteredLog.length}/${rawLog.length} entries)`] : []),
           `User agent: ${navigator.userAgent}`,
           `Viewport: ${window.innerWidth}x${window.innerHeight}`,
           `UI rect: ${getComputedStyle(document.documentElement).getPropertyValue('--gw').trim()} × ${getComputedStyle(document.documentElement).getPropertyValue('--gh').trim()} at ${getComputedStyle(document.documentElement).getPropertyValue('--ox').trim()}, ${getComputedStyle(document.documentElement).getPropertyValue('--oy').trim()}`,
@@ -18365,7 +18672,7 @@
           `Tool/action: ${toolName(activeTool)} / ${actionName(activeAction)}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           '--- raw log ---',
-          ...(window.__farmDebugLog || []).map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
+          ...filteredLog.map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
         ];
         const text = lines.join('\n');
         try {
@@ -18417,6 +18724,7 @@
         calendar.isRaining = true;
         calendar.rainStrength = 2;
         calendar.nextRainWindows = [{ start: 8, end: 14, strength: 2 }];
+        calendar.lastRainDay = 17;
         Object.keys(inventory).forEach(key => { delete inventory[key]; });
         Object.assign(inventory, { ...STARTING_INVENTORY });
         clearPlacedProcessingFurniture();
@@ -19196,6 +19504,25 @@
         const _worldLayout = loadFarmLayout();
         if (_worldLayout) applyFarmLayoutToGrid(_worldLayout);
         applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
+        // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
+        // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
+        // player has no bed item in inventory yet to buy+place one themselves.
+        // Gated on this world having no saved layout at all, so it never
+        // re-appears for a returning player, including one who moved or
+        // removed their starter bed (farmLayoutKey() is per-world, so this
+        // check has to happen here — after playerData.worldId is known —
+        // rather than at module init, where it would save under the wrong,
+        // not-yet-namespaced key and then get cleared right back out by this
+        // same per-world reload).
+        if (!_worldLayout) {
+          try {
+            const starterBed = makeDecorativeFurnitureMesh(1, 1, 'basicBed', interiorScene, 'interior');
+            if (starterBed) {
+              interiorFurnitureObjects.push({ key: 'basicBed', col: 1, row: 1, mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior' });
+              saveFarmLayout();
+            }
+          } catch (e) { console.error('starter bed seed:', e); }
+        }
         respawnWorldLivestock(); // after furniture, so occupancy checks see final tile state
         recomputeWater(false);
 

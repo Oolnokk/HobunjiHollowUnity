@@ -3014,7 +3014,7 @@
       },
       "appearance": {
         "speciesId": "tletingan",
-        "gender": "male",
+        "gender": "female",
         "cosmetics": {},
         "bodyColors": {
           "A": {
@@ -3048,7 +3048,7 @@
           "source": "character-studio default",
           "appearance": {
             "speciesId": "tletingan",
-            "gender": "male",
+            "gender": "female",
             "cosmetics": {},
             "bodyColors": {
               "A": {
@@ -5283,7 +5283,7 @@
       },
       "appearance": {
         "speciesId": "mashtzarr",
-        "gender": "male",
+        "gender": "female",
         "cosmetics": {},
         "bodyColors": {
           "A": {
@@ -5321,7 +5321,7 @@
           "source": "character-studio",
           "appearance": {
             "speciesId": "mashtzarr",
-            "gender": "male",
+            "gender": "female",
             "cosmetics": {},
             "bodyColors": {
               "A": {
