@@ -16,7 +16,14 @@
 
       // Status pill
       const spTime    = document.getElementById('spTime');
+      const spDay     = document.getElementById('spDay');
       const spSeason  = document.getElementById('spSeason');
+      // Calendar (lives in the menu's Calendar tab — see #mpCalendar)
+      const calToday         = document.getElementById('calToday');
+      const calMonthTitle    = document.getElementById('calMonthTitle');
+      const calPrevMonth     = document.getElementById('calPrevMonth');
+      const calNextMonth     = document.getElementById('calNextMonth');
+      const calWeeks         = document.getElementById('calWeeks');
       const spWeather = document.getElementById('spWeather');
       const spTool    = document.getElementById('spTool');
       const spTile    = document.getElementById('spTile');
@@ -142,6 +149,11 @@
       }
       menuBtn.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
       menuBackdrop.addEventListener('click', closeMenu);
+      spDay.addEventListener('click', () => {
+        const onCalendarTab = document.querySelector('.mp-tab[data-mpanel="calendar"]')?.classList.contains('active');
+        if (menuOpen && onCalendarTab) closeMenu();
+        else openMenu('calendar');
+      });
 
       // ── New panel tab switching ────────────────────────────
 
@@ -152,6 +164,7 @@
           p.classList.toggle('active',
             p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
+        if (id === 'calendar') renderCalendarPanel();
         if (id === 'shipping') buildShippingTransferUI();
         if (id === 'supplies') renderSupplyPage();
         if (id === 'generalStore') renderGeneralStorePage();
@@ -815,7 +828,22 @@
       const DAY_LENGTH_SECONDS = 288; // 4x the original 72s — time now runs at 25% speed
       const MORNING_HOUR = 6;
       const NIGHT_HOUR   = 22;
-      const SEASON_LENGTH_DAYS = 8;
+      // ── Khymeryyan civil calendar ──
+      // Universal calendar used across Tanka: 7-day weeks, 48 weeks/year (336
+      // days), 12 months of 28 days (= exactly 4 weeks) each. calendar.day is
+      // an ever-incrementing absolute day count from world start (day 1);
+      // year/month/week/day-of-year are all derived from it via modulo.
+      const WEEKDAY_NAMES = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // calendar.day 1 falls on Anan
+      const DAYS_PER_WEEK  = WEEKDAY_NAMES.length; // 7
+      const WEEKS_PER_YEAR = 48;
+      const YEAR_LENGTH_DAYS = DAYS_PER_WEEK * WEEKS_PER_YEAR; // 336
+      const DAYS_PER_MONTH = 28; // exactly 4 weeks
+      const MONTH_NAMES = [
+        'Waxingheat', 'Highheat', 'Waningheat',       // Summer
+        'Firstfall', 'Secondfall', 'Thirdfall',       // Fall
+        'Shallowfrost', 'Deepfrost', 'Pouringfrost',  // Winter
+        'Firstrise', 'Secondrise', 'Thirdrise',       // Spring
+      ]; // universal civil months — decoupled from Tanka's regional tropical seasons
 
       // ── Highland House — adjust these to fit the GLB and position it on the farm ──
       // Values sourced from Footprint_Highlandhouse_medium.json (footprint mapper v3)
@@ -872,18 +900,39 @@
       const TRENCH_SILT_RATE  = 0.0006;  // depth lost per sim tick, per unit rain strength
 
       // ── Game data ──
+      // Regional seasons: Northwestern Tanka. The civil calendar above is
+      // universal, but lived seasons are regional — this location reads its
+      // weather off week-of-year bands (Stormtide/Deadgrass/Longpour, plus a
+      // short Coldmuck slush-cover/wind-hinge season with occasional pituraq
+      // micro-winter squalls at the Longpour→Stormtide turn) rather than the
+      // calendar month. Deliberately unbalanced 4/2/4/2 months (not the
+      // "pure" 5/1/5/1 the doc's week math would give) — Secondfall was
+      // pulled into Deadgrass and Secondrise into Coldmuck for pacing, so
+      // neither short season is a single awkward month.
+      // Every transition falls mid-month (week 2 of a 4-week month) rather
+      // than on a month boundary, so a player looking at the Calendar tab
+      // sees the season already starting to turn partway through the
+      // currently-open month page instead of the change only showing up
+      // once they flip to the next one. Stormtide's band therefore wraps
+      // the year boundary (weeks 47-48, then 1-14) — seasonForDay()/
+      // weekOfSeason() below handle startWeek > endWeek as a wraparound,
+      // same convention isNowWithinNpcRuleWindow() uses for overnight
+      // schedule rules.
+      // grassColor/grassDensity drive the ground tile material and the grass
+      // billboard tufts (see applySeasonalGrassAppearance()) — vibrant/full
+      // for the wet seasons, sparse and off-hue for Deadgrass (dead, dry) and
+      // Coldmuck (slush-covered, dormant).
       const seasons = [
-        { name: 'Early Dry',   emoji: '☀️',  rainChance: 0.04, stormChance: 0.00 },
-        { name: 'Late Dry',    emoji: '🌞',  rainChance: 0.08, stormChance: 0.01 },
-        { name: 'First Rains', emoji: '🌦️', rainChance: 0.42, stormChance: 0.06 },
-        { name: 'Wet Peak',    emoji: '⛈️', rainChance: 0.66, stormChance: 0.18 },
+        { name: 'Stormtide', emoji: '⛈️',  rainChance: 0.35, stormChance: 0.30, startWeek: 47, endWeek: 14, grassColor: new THREE.Color().setHSL(108/360, 0.58, 0.28), grassDensity: 1.00 },
+        { name: 'Deadgrass', emoji: '☀️',  rainChance: 0.06, stormChance: 0.01, startWeek: 15, endWeek: 22, grassColor: new THREE.Color().setHSL(45/360,  0.40, 0.34), grassDensity: 0.40 },
+        { name: 'Longpour',  emoji: '🌧️', rainChance: 0.70, stormChance: 0.05, startWeek: 23, endWeek: 38, grassColor: new THREE.Color().setHSL(122/360, 0.55, 0.22), grassDensity: 1.00 },
+        { name: 'Coldmuck',  emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 39, endWeek: 46, grassColor: new THREE.Color().setHSL(165/360, 0.15, 0.46), grassDensity: 0.45 },
       ];
-      // Dry seasons (Early Dry / Late Dry) roll as low as a 4-8% rain chance per
-      // day and run 8 days back-to-back, so two of them in a row can leave a
-      // ~16-day stretch with no rain at all — long enough in real time to read
-      // as "it never rains anymore." chooseWeatherForDay()'s pity timer
-      // guarantees a rain day whenever the drought runs past this many days,
-      // without touching the per-season odds the rest of the time. Declared
+      // Deadgrass rolls as low as a 6% rain chance per day and runs 8
+      // weeks (56 days) straight, long enough in real time to read as "it
+      // never rains anymore." chooseWeatherForDay()'s pity timer guarantees a
+      // rain day whenever the drought runs past this many days, without
+      // touching the per-season odds the rest of the time. Declared
       // here (rather than next to chooseWeatherForDay() itself, much further
       // down) because createInitialGrid() calls chooseWeatherForDay() during
       // startup, well before that later point in the file — a `const` placed
@@ -1422,13 +1471,13 @@
 
       // Used by calendarHud and water simulation to turn rain into an automatic timed condition.
       const calendar = {
-        day: 17,           // Day 1 of "First Rains" season (season index 2 = days 17–24)
+        day: 1,            // Anan, Waxingheat 1st — week 3 of Stormtide (its band wraps the year: 47-48, then 1-14), year 1
         time01: 0.30,      // ~10:30 AM — mid-morning, well into a rain window
         weather: 'rain',
         isRaining: true,
         rainStrength: 2,
         nextRainWindows: [{ start: 8, end: 14, strength: 2 }],
-        lastRainDay: 17     // last day a rain/storm window was scheduled — drives the drought pity timer below
+        lastRainDay: 1      // last day a rain/storm window was scheduled — drives the drought pity timer below
       };
 
       // Used by inventoryHud and planting/harvesting actions.
@@ -3704,7 +3753,7 @@
       };
 
       function currentTothalYear() {
-        return Math.floor((calendar.day - 1) / (SEASON_LENGTH_DAYS * seasons.length)) + 1;
+        return yearNumber(calendar.day);
       }
 
       function _tothalWorldId() {
@@ -6726,23 +6775,75 @@
         window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback ${kind} area=${area} c=${c} r=${r}`, 'warn');
       }
 
+      // A rule may restrict itself to one or more weekdays via "day" (single
+      // name) or "days" (array); rules with neither run every day, same as before.
+      function isNpcRuleActiveOnDay(rule) {
+        if (rule.day) return rule.day === currentWeekdayName();
+        if (rule.days) return rule.days.includes(currentWeekdayName());
+        return true;
+      }
+
+      // Village-wide Temple Service (Anan 9-11am): any villager without a
+      // schedule rule of their own for that window joins the congregation in
+      // a pew instead of following their usual routine. Deceased/banished
+      // NPCs are excluded even though they still carry the "villager" tag.
+      const TEMPLE_SERVICE_DAY = 'Anan';
+      const TEMPLE_SERVICE_START_MIN = parseNpcTimeMinutes('09:00');
+      const TEMPLE_SERVICE_END_MIN   = parseNpcTimeMinutes('11:00');
+      const TEMPLE_SERVICE_EXCLUDED_NPC_IDS = new Set([
+        'talisman_hatayap',    // deceased
+        'bowstring_hatayap',   // deceased
+        'hammerhead_tuhupnuk', // banished from the clan
+      ]);
+      const TEMPLE_PEW_STATION_IDS = [
+        'station_temple_pew_1', 'station_temple_pew_2', 'station_temple_pew_3',
+        'station_temple_pew_4', 'station_temple_pew_5', 'station_temple_pew_6',
+        'station_temple_pew_7', 'station_temple_pew_8', 'station_temple_pew_9',
+        'station_temple_pew_10', 'station_temple_pew_11',
+      ];
+      function hashNpcIdToIndex(id, mod) {
+        let h = 0;
+        const s = String(id || '');
+        for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+        return Math.abs(h) % mod;
+      }
+
       function resolveNpcScheduleTarget(rec) {
         const hooks = rec?.scheduleHooks || {};
         const now = currentGameMinutes();
         for (const rule of hooks.rules || []) {
+          if (!isNpcRuleActiveOnDay(rule)) continue;
           const start = parseNpcTimeMinutes(rule.start ?? rule.from);
           const end   = parseNpcTimeMinutes(rule.end   ?? rule.to);
           const ruleActive = isNowWithinNpcRuleWindow(now, start, end);
           if (ruleActive && rule.stationId) {
             const stationTarget = resolveNpcStationTarget(rule.stationId);
             if (stationTarget) return { ...stationTarget, routeId: rule.routeId || null, activity: rule.activity || '' };
-            window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found`, 'warn');
+            // The station's building scene may simply not have been visited/loaded
+            // yet this session (its npcStations only register once it loads) —
+            // warm it up so the lookup succeeds on a later tick, and throttle the
+            // warning instead of spamming it every tick until that load completes.
+            const missingArea = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
+            if (_isBuildingArea(missingArea) && !_buildingScenes.has(missingArea)) loadBuildingScene(missingArea);
+            const warnKey = `${rec?.id || 'npc'}|${rule.stationId}`;
+            if (!_scheduleFallbackLogKeys.has(warnKey)) {
+              _scheduleFallbackLogKeys.add(warnKey);
+              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found (warming up ${missingArea})`, 'warn');
+            }
           }
           const c = rule.c ?? rule.position?.c;
           const r = rule.r ?? rule.position?.r;
           const area = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
           if (ruleActive && Number.isFinite(c) && Number.isFinite(r))
             return { area, c, r, routeId: rule.routeId || null, activity: rule.activity || '' };
+        }
+        if (currentWeekdayName() === TEMPLE_SERVICE_DAY
+            && isNowWithinNpcRuleWindow(now, TEMPLE_SERVICE_START_MIN, TEMPLE_SERVICE_END_MIN)
+            && (rec?.tags || []).includes('villager')
+            && !TEMPLE_SERVICE_EXCLUDED_NPC_IDS.has(rec?.id)) {
+          const pewId = TEMPLE_PEW_STATION_IDS[hashNpcIdToIndex(rec?.id, TEMPLE_PEW_STATION_IDS.length)];
+          const pewTarget = resolveNpcStationTarget(pewId);
+          if (pewTarget) return { ...pewTarget, activity: 'Temple Service' };
         }
         if (hooks.defaultStationId) {
           const stationTarget = resolveNpcStationTarget(hooks.defaultStationId);
@@ -6767,32 +6868,58 @@
         return worldTransitions.filter(t => (t.area || 'farm') === area);
       }
 
+      // One-hop links reachable directly from `area`, in the shape
+      // { toArea, exit:{c,r}, spawn:{c,r} } — the raw edges of the area graph
+      // findNpcAreaLink() searches below. Mirrors the exact matching rules the
+      // single-hop version of this code used to use, so existing direct links
+      // (town↔building, building→town, farm↔interior) behave identically.
+      function areaLinksFrom(area) {
+        const pool = npcTransitionPool(area);
+        const links = [];
+        for (const t of pool) {
+          if (t.target === 'building' && t.targetMapId) {
+            if (!_buildingScenes.has(t.targetMapId)) loadBuildingScene(t.targetMapId); // warm it up before an NPC reaches the door
+            const bi = _buildingScenes.get(t.targetMapId);
+            const spawn = bi ? buildingSpawnFromExit(bi, bi.cols, bi.rows)
+              : { col: t.targetCol ?? 0, row: t.targetRow ?? 0 };
+            links.push({ toArea: t.targetMapId, exit: { c: t.col, r: t.row }, spawn: { c: spawn.col, r: spawn.row } });
+          } else if (t.target === 'exit_building') {
+            const townSpot = worldTownTransitions.find(x => x.target === 'building' && x.targetMapId === area);
+            const spawn = townSpot ? { c: townSpot.col, r: townSpot.row } : { c: t.targetCol ?? 0, r: t.targetRow ?? 0 };
+            links.push({ toArea: 'town', exit: { c: t.col, r: t.row }, spawn });
+          } else if (t.target && t.target !== 'zone' && Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)) {
+            links.push({ toArea: t.target, exit: { c: t.col, r: t.row }, spawn: { c: t.targetCol, r: t.targetRow } });
+          }
+        }
+        return links;
+      }
+
       // Resolves the door an NPC should walk to in order to leave `fromArea`
-      // for `toArea`, plus the spot they should appear at once they arrive —
+      // toward `toArea`, plus the spot they should appear at once they arrive —
       // i.e. the Spot doubles as both the movement target on the way out and
       // the spawn point on the way in, so NPCs are never warped straight to
-      // their final schedule target through a wall.
+      // their final schedule target through a wall. `toArea` may be several
+      // hops away (e.g. town → a building's ground floor → one of its
+      // upstairs rooms) — this does a short BFS over the area graph and
+      // returns only the *first* hop; the caller re-resolves on arrival,
+      // which naturally chains the walk leg by leg instead of skipping
+      // straight to the final room.
       function findNpcAreaLink(fromArea, toArea) {
-        const pool = npcTransitionPool(fromArea);
-        if (_isBuildingArea(toArea)) {
-          const t = pool.find(x => x.target === 'building' && x.targetMapId === toArea);
-          if (!t) return null;
-          const bi = _buildingScenes.get(toArea);
-          if (!_buildingScenes.has(toArea)) loadBuildingScene(toArea); // warm it up before the NPC reaches the door
-          const spawn = bi ? buildingSpawnFromExit(bi, bi.cols, bi.rows)
-            : { col: t.targetCol ?? 0, row: t.targetRow ?? 0 };
-          return { exit: { c: t.col, r: t.row }, spawn: { c: spawn.col, r: spawn.row } };
+        if (fromArea === toArea) return null;
+        const visited = new Set([fromArea]);
+        const queue = [{ area: fromArea, firstHop: null }];
+        while (queue.length) {
+          const { area, firstHop } = queue.shift();
+          for (const link of areaLinksFrom(area)) {
+            const hop = firstHop || link;
+            if (link.toArea === toArea) return hop;
+            if (!visited.has(link.toArea)) {
+              visited.add(link.toArea);
+              queue.push({ area: link.toArea, firstHop: hop });
+            }
+          }
         }
-        if (_isBuildingArea(fromArea)) {
-          const t = pool.find(x => x.target === 'exit_building');
-          if (!t) return null;
-          const townSpot = worldTownTransitions.find(x => x.target === 'building' && x.targetMapId === fromArea);
-          const spawn = townSpot ? { c: townSpot.col, r: townSpot.row } : { c: t.targetCol ?? 0, r: t.targetRow ?? 0 };
-          return { exit: { c: t.col, r: t.row }, spawn };
-        }
-        const t = pool.find(x => x.target === toArea);
-        if (!t || !Number.isFinite(t.targetCol) || !Number.isFinite(t.targetRow)) return null;
-        return { exit: { c: t.col, r: t.row }, spawn: { c: t.targetCol, r: t.targetRow } };
+        return null;
       }
 
       async function spawnScheduledNpcs(extraRecords) {
@@ -6866,7 +6993,7 @@
 
         const walker = {
           root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
-          state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null,
+          state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
           resetRouteState() {
@@ -6940,17 +7067,23 @@
             const targetArea = normalizeNpcArea(target.area);
             if (targetArea !== this.area) {
               if (!this._exitSpot) {
+                // May be several hops away (e.g. town → a building → one of its
+                // upstairs rooms) — findNpcAreaLink only returns the next leg,
+                // whose destination (_exitToArea) can differ from the ultimate
+                // targetArea. Arriving there re-enters this branch and resolves
+                // the next leg, so a multi-hop trip is walked leg by leg.
                 const link = findNpcAreaLink(this.area, targetArea);
-                if (link) { this._exitSpot = link.exit; this._entrySpot = link.spawn; }
+                if (link) { this._exitSpot = link.exit; this._entrySpot = link.spawn; this._exitToArea = link.toArea; }
               }
               if (this._exitSpot) {
                 const ex = this._exitSpot.c + 0.5, ez = this._exitSpot.r + 0.5;
                 const arrival = npcMovementConfig().arrivalRadiusTiles ?? 0.18;
                 if (Math.hypot(root.position.x - ex, root.position.z - ez) <= arrival) {
-                  window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: transferring via exit spot "${this.area}"→"${targetArea}" | playerMap="${currentArea}"`, 'info');
+                  const hopArea = this._exitToArea || targetArea;
+                  window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: transferring via exit spot "${this.area}"→"${hopArea}"${hopArea !== targetArea ? ` (en route to "${targetArea}")` : ''} | playerMap="${currentArea}"`, 'info');
                   const spawn = this._entrySpot || this._exitSpot;
-                  this._exitSpot = null; this._entrySpot = null;
-                  this.transferToArea(targetArea, spawn);
+                  this._exitSpot = null; this._entrySpot = null; this._exitToArea = null;
+                  this.transferToArea(hopArea, spawn);
                 } else {
                   this.moveToward(ex, ez, dt);
                 }
@@ -7066,9 +7199,16 @@
           const target = resolveNpcScheduleTarget(w.rec);
           if (!target) continue;
           if (normalizeNpcArea(target.area) !== toArea) continue;
-          const link = (w._exitSpot && w._entrySpot) ? { exit: w._exitSpot, spawn: w._entrySpot } : findNpcAreaLink(fromArea, toArea);
+          const link = (w._exitSpot && w._entrySpot)
+            ? { exit: w._exitSpot, spawn: w._entrySpot, toArea: w._exitToArea || toArea }
+            : findNpcAreaLink(fromArea, toArea);
           if (!link) continue;
-          w._exitSpot = null; w._entrySpot = null;
+          // findNpcAreaLink may return an intermediate leg (e.g. fromArea is
+          // several hops from toArea) — only fast-forward the "caught leaving"
+          // polish when that leg actually lands them in toArea; otherwise let
+          // the walker's own update() carry them there leg by leg as normal.
+          if (link.toArea && link.toArea !== toArea) continue;
+          w._exitSpot = null; w._entrySpot = null; w._exitToArea = null;
           w.transferToArea(toArea, link.spawn);
           const dx = link.spawn.c - link.exit.c, dz = link.spawn.r - link.exit.r;
           const dist = Math.hypot(dx, dz);
@@ -8999,39 +9139,39 @@
         town: [
           { key: 'fish_riverMinnow',     label: 'River Minnow',     icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: 'any',            fishClass: 'smooth',  difficulty: 28 },
           { key: 'fish_speckledCarp',    label: 'Speckled Carp',    icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['day', 'dusk'],   fishClass: 'sinker',  difficulty: 35 },
-          { key: 'fish_bronzefinTrout',  label: 'Bronzefin Trout',  icon: '🐡', rarity: 'uncommon', sellPrice: 22, seasons: ['Early Dry', 'Late Dry'],          timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 52 },
-          { key: 'fish_mossbackCatfish', label: 'Mossback Catfish', icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: ['First Rains', 'Wet Peak'],        timesOfDay: ['night'],         fishClass: 'floater', difficulty: 48 },
+          { key: 'fish_bronzefinTrout',  label: 'Bronzefin Trout',  icon: '🐡', rarity: 'uncommon', sellPrice: 22, seasons: ['Deadgrass'],          timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 52 },
+          { key: 'fish_mossbackCatfish', label: 'Mossback Catfish', icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: ['Stormtide', 'Longpour'],        timesOfDay: ['night'],         fishClass: 'floater', difficulty: 48 },
           { key: 'fish_goldenKoi',       label: 'Golden Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 60, seasons: 'any', timesOfDay: ['dawn'],          fishClass: 'mixed',   difficulty: 70 },
         ],
         northernCliffs: [
-          { key: 'fish_cliffsideChar',   label: 'Cliffside Char',   icon: '🐟', rarity: 'common',   sellPrice: 10, seasons: ['Early Dry', 'Late Dry'],          timesOfDay: 'any',             fishClass: 'dart',    difficulty: 38 },
+          { key: 'fish_cliffsideChar',   label: 'Cliffside Char',   icon: '🐟', rarity: 'common',   sellPrice: 10, seasons: ['Deadgrass'],          timesOfDay: 'any',             fishClass: 'dart',    difficulty: 38 },
           { key: 'fish_stonebellyTrout', label: 'Stonebelly Trout', icon: '🐠', rarity: 'common',   sellPrice: 11, seasons: 'any', timesOfDay: ['day'],           fishClass: 'sinker',  difficulty: 34 },
-          { key: 'fish_frostWhiskerEel', label: 'Frost Whisker Eel',icon: '🐡', rarity: 'uncommon', sellPrice: 26, seasons: ['First Rains', 'Wet Peak'],        timesOfDay: ['night'],         fishClass: 'smooth',  difficulty: 50 },
-          { key: 'fish_cliffHawkSalmon', label: 'Cliff Hawk Salmon',icon: '🐠', rarity: 'rare',     sellPrice: 65, seasons: ['Wet Peak'],                       timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 72 },
+          { key: 'fish_frostWhiskerEel', label: 'Frost Whisker Eel',icon: '🐡', rarity: 'uncommon', sellPrice: 26, seasons: ['Stormtide', 'Longpour'],        timesOfDay: ['night'],         fishClass: 'smooth',  difficulty: 50 },
+          { key: 'fish_cliffHawkSalmon', label: 'Cliff Hawk Salmon',icon: '🐠', rarity: 'rare',     sellPrice: 65, seasons: ['Longpour'],                       timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 72 },
           { key: 'fish_ironscalePike',   label: 'Ironscale Pike',   icon: '🐟', rarity: 'rare',     sellPrice: 58, seasons: 'any', timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 68 },
         ],
         cloudForest: [
           { key: 'fish_cloudmistGuppy',  label: 'Cloudmist Guppy',  icon: '🐠', rarity: 'common',   sellPrice: 7,  seasons: 'any', timesOfDay: ['dawn', 'dusk'],  fishClass: 'floater', difficulty: 26 },
-          { key: 'fish_fernshadeLoach',  label: 'Fernshade Loach',  icon: '🐟', rarity: 'common',   sellPrice: 9,  seasons: ['First Rains', 'Wet Peak'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
-          { key: 'fish_orchidBetta',     label: 'Orchid Betta',     icon: '🐡', rarity: 'uncommon', sellPrice: 28, seasons: ['Wet Peak'],                       timesOfDay: ['day'],           fishClass: 'mixed',   difficulty: 46 },
+          { key: 'fish_fernshadeLoach',  label: 'Fernshade Loach',  icon: '🐟', rarity: 'common',   sellPrice: 9,  seasons: ['Stormtide', 'Longpour'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
+          { key: 'fish_orchidBetta',     label: 'Orchid Betta',     icon: '🐡', rarity: 'uncommon', sellPrice: 28, seasons: ['Longpour'],                       timesOfDay: ['day'],           fishClass: 'mixed',   difficulty: 46 },
           { key: 'fish_vinehookGar',     label: 'Vinehook Gar',     icon: '🐟', rarity: 'uncommon', sellPrice: 25, seasons: 'any', timesOfDay: ['night'],         fishClass: 'dart',    difficulty: 49 },
-          { key: 'fish_canopyKoi',       label: 'Canopy Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 62, seasons: ['First Rains'],                    timesOfDay: ['dawn'],          fishClass: 'floater', difficulty: 71 },
+          { key: 'fish_canopyKoi',       label: 'Canopy Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 62, seasons: ['Stormtide'],                    timesOfDay: ['dawn'],          fishClass: 'floater', difficulty: 71 },
         ],
         westernSlope: [
-          { key: 'fish_glacierSmelt',    label: 'Glacier Smelt',    icon: '🐟', rarity: 'common',   sellPrice: 8,  seasons: ['Early Dry', 'Late Dry'],          timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
+          { key: 'fish_glacierSmelt',    label: 'Glacier Smelt',    icon: '🐟', rarity: 'common',   sellPrice: 8,  seasons: ['Deadgrass'],          timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
           { key: 'fish_frostbellyGrayling', label: 'Frostbelly Grayling', icon: '🐠', rarity: 'common', sellPrice: 10, seasons: 'any', timesOfDay: ['day'],     fishClass: 'dart',    difficulty: 37 },
-          { key: 'fish_iceveilWhitefish',label: 'Iceveil Whitefish',icon: '🐡', rarity: 'uncommon', sellPrice: 27, seasons: ['Late Dry', 'First Rains'],        timesOfDay: ['dusk', 'night'], fishClass: 'sinker',  difficulty: 51 },
-          { key: 'fish_snowmeltSalmon',  label: 'Snowmelt Salmon',  icon: '🐠', rarity: 'uncommon', sellPrice: 30, seasons: ['First Rains'],                    timesOfDay: ['dawn'],          fishClass: 'dart',    difficulty: 55 },
-          { key: 'fish_glassfinChar',    label: 'Glassfin Char',    icon: '🐟', rarity: 'rare',     sellPrice: 64, seasons: ['Wet Peak'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 73 },
-          { key: 'fish_permafrostEel',   label: 'Permafrost Eel',   icon: '🐡', rarity: 'rare',     sellPrice: 59, seasons: ['Early Dry'],                      timesOfDay: ['night'],         fishClass: 'floater', difficulty: 69 },
+          { key: 'fish_iceveilWhitefish',label: 'Iceveil Whitefish',icon: '🐡', rarity: 'uncommon', sellPrice: 27, seasons: ['Deadgrass', 'Stormtide'],        timesOfDay: ['dusk', 'night'], fishClass: 'sinker',  difficulty: 51 },
+          { key: 'fish_snowmeltSalmon',  label: 'Snowmelt Salmon',  icon: '🐠', rarity: 'uncommon', sellPrice: 30, seasons: ['Stormtide'],                    timesOfDay: ['dawn'],          fishClass: 'dart',    difficulty: 55 },
+          { key: 'fish_glassfinChar',    label: 'Glassfin Char',    icon: '🐟', rarity: 'rare',     sellPrice: 64, seasons: ['Longpour'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 73 },
+          { key: 'fish_permafrostEel',   label: 'Permafrost Eel',   icon: '🐡', rarity: 'rare',     sellPrice: 59, seasons: ['Deadgrass'],                      timesOfDay: ['night'],         fishClass: 'floater', difficulty: 69 },
         ],
         easternMire: [
           { key: 'fish_mudskipper',      label: 'Mudskipper',       icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: ['day'],           fishClass: 'sinker',  difficulty: 27 },
           { key: 'fish_swampBullhead',   label: 'Swamp Bullhead',   icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['dusk', 'night'], fishClass: 'floater', difficulty: 33 },
-          { key: 'fish_mireleafTetra',   label: 'Mireleaf Tetra',   icon: '🐡', rarity: 'uncommon', sellPrice: 23, seasons: ['Wet Peak', 'First Rains'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 45 },
+          { key: 'fish_mireleafTetra',   label: 'Mireleaf Tetra',   icon: '🐡', rarity: 'uncommon', sellPrice: 23, seasons: ['Longpour', 'Stormtide'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 45 },
           { key: 'fish_bogLamprey',      label: 'Bog Lamprey',      icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: 'any', timesOfDay: ['night'],         fishClass: 'dart',    difficulty: 50 },
-          { key: 'fish_murkwaterGar',    label: 'Murkwater Gar',    icon: '🐠', rarity: 'rare',     sellPrice: 61, seasons: ['Wet Peak'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 70 },
-          { key: 'fish_willOWispEel',    label: "Will-o'-Wisp Eel", icon: '🐡', rarity: 'rare',     sellPrice: 66, seasons: ['First Rains'],                    timesOfDay: ['night'],         fishClass: 'floater', difficulty: 74 },
+          { key: 'fish_murkwaterGar',    label: 'Murkwater Gar',    icon: '🐠', rarity: 'rare',     sellPrice: 61, seasons: ['Longpour'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 70 },
+          { key: 'fish_willOWispEel',    label: "Will-o'-Wisp Eel", icon: '🐡', rarity: 'rare',     sellPrice: 66, seasons: ['Stormtide'],                    timesOfDay: ['night'],         fishClass: 'floater', difficulty: 74 },
         ],
       };
       const FISH_ZONE_LABELS = {
@@ -10103,7 +10243,7 @@
       let simAccumulator = 0;
       let waterFlowPhase = 0;
       let camX = COLS * TILE * 0.5, camY = ROWS * TILE * 0.72;
-      let lastActionMessage = 'First Rains — dig trenches now to route the water.';
+      let lastActionMessage = 'Stormtide — dig trenches now to route the water.';
       let paused = false;
 
       // Facing lag: visual/reticle angle lags behind raw movement angle.
@@ -10204,12 +10344,11 @@
         // function runs at startup, on doReset(), and on per-world grid
         // rebuilds, and every one of those call sites already has a valid
         // calendar.weather/nextRainWindows for the current calendar.day
-        // (the hardcoded day-17 init, or doReset()'s explicit reset just
+        // (the hardcoded day-1 init, or doReset()'s explicit reset just
         // above its own createInitialGrid() call). Re-rolling here silently
         // overwrote that — and since the roll is seeded purely by
-        // calendar.day, day 17's roll is the same for every player on every
-        // load (0.4719 vs First Rains' 0.42 threshold — just barely
-        // 'clear'), which is why the game appeared to always start clear
+        // calendar.day, day 1's roll is the same for every player on every
+        // load, which is why the game once appeared to always start clear
         // regardless of the intended "raining on day one" state.
         recomputeWater(false, nextGrid);
         return nextGrid;
@@ -10529,10 +10668,149 @@
         return MORNING_HOUR + calendar.time01 * (NIGHT_HOUR - MORNING_HOUR);
       }
 
-      function currentSeason() {
-        const index = Math.floor((calendar.day - 1) / SEASON_LENGTH_DAYS) % seasons.length;
-        return seasons[index];
+      // ── Calendar derivations ──
+      // calendar.day is an ever-incrementing absolute day count from world
+      // start (day 1). Everything else — year, month, week-of-year, weekday,
+      // and the regional season — is derived from it via modulo, and every
+      // helper below takes an optional absolute day (defaulting to
+      // calendar.day) so the Calendar tab can compute dates other than today.
+      function dayOfYear(day = calendar.day) {
+        return ((day - 1) % YEAR_LENGTH_DAYS) + 1; // 1..336
       }
+      function yearNumber(day = calendar.day) {
+        return Math.floor((day - 1) / YEAR_LENGTH_DAYS) + 1;
+      }
+      function weekOfYear(day = calendar.day) {
+        return Math.floor((dayOfYear(day) - 1) / DAYS_PER_WEEK) + 1; // 1..48
+      }
+      function monthIndex(day = calendar.day) {
+        return Math.floor((dayOfYear(day) - 1) / DAYS_PER_MONTH); // 0..11
+      }
+      function monthNumber(day = calendar.day) {
+        return monthIndex(day) + 1; // 1..12
+      }
+      function monthName(day = calendar.day) {
+        return MONTH_NAMES[monthIndex(day)];
+      }
+      function dayOfMonth(day = calendar.day) {
+        return ((dayOfYear(day) - 1) % DAYS_PER_MONTH) + 1; // 1..28
+      }
+      // startWeek > endWeek means the season wraps the year boundary (see
+      // Stormtide, weeks 47-48 then 1-14) — same "overnight window"
+      // convention as isNowWithinNpcRuleWindow().
+      function seasonForDay(day = calendar.day) {
+        const wk = weekOfYear(day);
+        return seasons.find(s => s.startWeek <= s.endWeek
+          ? (wk >= s.startWeek && wk <= s.endWeek)
+          : (wk >= s.startWeek || wk <= s.endWeek)
+        ) || seasons[seasons.length - 1];
+      }
+      function currentSeason() {
+        return seasonForDay(calendar.day);
+      }
+      function weekOfSeason(day = calendar.day) {
+        const wk = weekOfYear(day);
+        const season = seasonForDay(day);
+        if (season.startWeek <= season.endWeek) return wk - season.startWeek + 1;
+        return wk >= season.startWeek ? wk - season.startWeek + 1 : wk + (WEEKS_PER_YEAR - season.startWeek + 1);
+      }
+
+      function weekdayIndexForCalendarDay(day) {
+        return ((day - 1) % DAYS_PER_WEEK + DAYS_PER_WEEK) % DAYS_PER_WEEK;
+      }
+      function weekdayNameForDay(day = calendar.day) {
+        return WEEKDAY_NAMES[weekdayIndexForCalendarDay(day)];
+      }
+      function currentWeekdayIndex() {
+        return weekdayIndexForCalendarDay(calendar.day);
+      }
+      function currentWeekdayName() {
+        return weekdayNameForDay(calendar.day);
+      }
+      function ordinalSuffix(n) {
+        const v = n % 100;
+        if (v >= 11 && v <= 13) return 'th';
+        switch (n % 10) {
+          case 1: return 'st';
+          case 2: return 'nd';
+          case 3: return 'rd';
+          default: return 'th';
+        }
+      }
+      // HUD-friendly short date, e.g. "Anan, 1/1, 1st week of Storm"
+      function formatCalendarDate(day = calendar.day) {
+        const dom = dayOfMonth(day), wk = weekOfSeason(day);
+        return `${weekdayNameForDay(day)}, ${dom}/${monthNumber(day)}, ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
+      }
+      // Full date for the Calendar tab header, e.g. "Anan, Waxingheat 1st, 1st week of Storm"
+      function formatCalendarDateFull(day = calendar.day) {
+        const dom = dayOfMonth(day), wk = weekOfSeason(day);
+        return `${weekdayNameForDay(day)}, ${monthName(day)} ${dom}${ordinalSuffix(dom)}, ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
+      }
+
+      // Absolute day of a month's first day. Months are exactly 4 weeks
+      // (28 days), so every month starts on Anan — no partial first/last
+      // week to special-case, unlike a real Gregorian month grid.
+      function absDayForMonthStart(year, monthIdx0) {
+        return (year - 1) * YEAR_LENGTH_DAYS + monthIdx0 * DAYS_PER_MONTH + 1;
+      }
+
+      let calViewYear = 1, calViewMonthIndex = 0;
+
+      function renderCalendarPanel() {
+        if (!calToday) return;
+        calViewYear = yearNumber(calendar.day);
+        calViewMonthIndex = monthIndex(calendar.day);
+        calToday.textContent = formatCalendarDateFull(calendar.day);
+        renderCalendarMonthView();
+      }
+
+      // Redraws the currently-navigated month (calViewYear/calViewMonthIndex)
+      // as 4 week rows — the core gameplay unit — each its own tight
+      // container: a season+week label on the left, its 7 days packed
+      // together on the right, with only today's cell picked out in a
+      // different color.
+      function renderCalendarMonthView() {
+        const monthStartDay = absDayForMonthStart(calViewYear, calViewMonthIndex);
+        calMonthTitle.textContent = `${MONTH_NAMES[calViewMonthIndex]} — Year ${calViewYear}`;
+        calPrevMonth.disabled = (calViewYear === 1 && calViewMonthIndex === 0);
+
+        calWeeks.innerHTML = '';
+        for (let w = 0; w < DAYS_PER_MONTH / DAYS_PER_WEEK; w++) {
+          const weekStartDay = monthStartDay + w * DAYS_PER_WEEK;
+          const season = seasonForDay(weekStartDay);
+          const row = document.createElement('div');
+          row.className = 'cal-week-row';
+          const label = document.createElement('div');
+          label.className = 'cal-week-label';
+          label.innerHTML = `${season.emoji} ${season.name}<br>Week ${weekOfSeason(weekStartDay)}`;
+          row.appendChild(label);
+          const daysWrap = document.createElement('div');
+          daysWrap.className = 'cal-week-days';
+          for (let i = 0; i < DAYS_PER_WEEK; i++) {
+            const d = weekStartDay + i;
+            const cell = document.createElement('button');
+            cell.type = 'button';
+            cell.className = 'cal-day-btn' + (d === calendar.day ? ' today' : '');
+            cell.innerHTML = `<span>${WEEKDAY_NAMES[i]}</span><span class="cal-day-num">${dayOfMonth(d)}</span>`;
+            daysWrap.appendChild(cell);
+          }
+          row.appendChild(daysWrap);
+          calWeeks.appendChild(row);
+        }
+      }
+
+      calPrevMonth.addEventListener('click', () => {
+        if (calViewYear === 1 && calViewMonthIndex === 0) return;
+        if (calViewMonthIndex === 0) { calViewYear--; calViewMonthIndex = 11; }
+        else calViewMonthIndex--;
+        renderCalendarMonthView();
+      });
+      calNextMonth.addEventListener('click', () => {
+        if (calViewMonthIndex === 11) { calViewYear++; calViewMonthIndex = 0; }
+        else calViewMonthIndex++;
+        renderCalendarMonthView();
+      });
 
       function isDigRemovableVegetation(tile) {
         // Used by shovel dig so day-one overgrowth can be destroyed by digging underneath it.
@@ -13450,6 +13728,21 @@
       // Floor material for vegetation tiles — matches weed foliage HSL color
       const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
 
+      // Recolors the grass ground material and the grass billboard tufts
+      // (color + density) to the current regional season — vibrant/full for
+      // the wet seasons, sparse and off-hue for Deadgrass and Coldmuck.
+      // Defined here (next to tileMats/vegFloorMat) but not called until the
+      // grass billboard texture below has loaded — _grassTint/grassBillboardMat
+      // are declared further down the file and would TDZ-throw if this ran
+      // any earlier than that.
+      function applySeasonalGrassAppearance() {
+        const season = currentSeason();
+        tileMats.grass.color.copy(season.grassColor);
+        vegFloorMat.color.copy(season.grassColor);
+        _grassTint.copy(season.grassColor);
+        if (grassBillboardMat) grassBillboardMat.uniforms.uDensity.value = season.grassDensity;
+      }
+
       // Fixed per-terrain-type ID colours feeding the same material-ID-seam
       // outline used for furniture (see _markFurnitureEdgeId), generalized to
       // ground tiles: unlike furniture (every part gets its own unique
@@ -15735,6 +16028,7 @@
         uniform float uTime;
         uniform float uStrength;
         varying vec2 vUv;
+        varying float vRandom;
         void main() {
           vUv = uv;
           #ifdef USE_INSTANCING
@@ -15742,6 +16036,11 @@
           #else
             vec4 worldPos = modelMatrix * vec4(position, 1.0);
           #endif
+          // Stable per-blade pseudo-random value from its (fixed) ground
+          // position — used by the fragment shader to thin the tuft count
+          // seasonally (Deadgrass/Coldmuck) without touching the instance
+          // buffer itself, so density can change with a single uniform.
+          vRandom = fract(sin(dot(worldPos.xz, vec2(12.9898, 78.233))) * 43758.5453);
           float topFactor = uv.y;
           float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
           float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
@@ -15757,8 +16056,11 @@
         uniform vec3 uTint;
         uniform vec3 uLightColor;
         uniform float uLightMul;
+        uniform float uDensity;
         varying vec2 vUv;
+        varying float vRandom;
         void main() {
+          if (vRandom > uDensity) discard;
           vec4 texel = texture2D(uGrassTex, vUv);
           if (texel.a < 0.5) discard;
           // Treat grass_1.png as mint-toned; desaturate and re-tint to grass color
@@ -15788,6 +16090,7 @@
           uStrength:   { value: 0.04 },
           uLightColor: { value: new THREE.Color(1, 1, 1) },
           uLightMul:   { value: 1 },
+          uDensity:    { value: 1 },
         });
         grassBillboardMat = new THREE.ShaderMaterial({
           uniforms:       sharedUniforms(),
@@ -15795,6 +16098,7 @@
           fragmentShader: _grassBillFrag,
           alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
         });
+        applySeasonalGrassAppearance();
         cuttableBillboardGlowMat = new THREE.ShaderMaterial({
           uniforms: {
             uGrassTex: { value: tex },
@@ -17383,6 +17687,7 @@
 
       function chooseWeatherForDay() {
         const season = currentSeason();
+        applySeasonalGrassAppearance();
         const seed = seededRandom(calendar.day * 991 + season.name.length * 37);
         const stormRoll = seededRandom(calendar.day * 373 + 11);
         const hasStorm = stormRoll < season.stormChance;
@@ -17396,12 +17701,12 @@
           calendar.nextRainWindows.push({ start: 19, end: 21, strength: 2 });
         } else if (hasRain) {
           // A fixed 5-hour window meant even a 'rain' day in the wettest
-          // season (Wet Peak, 66% daily chance) only actually had it raining
+          // season (Longpour, 70% daily chance) only actually had it raining
           // ~5/24 = 21% of the time — the season label reads "wet" but the
           // moment-to-moment odds of catching rain stayed low. Scale the
-          // window length with how rainy the season is so Wet Peak/First
-          // Rains days visibly rain for a large chunk of the day, while a
-          // dry-season pity-timer shower stays a brief, isolated event.
+          // window length with how rainy the season is so Longpour/Stormtide
+          // days visibly rain for a large chunk of the day, while a
+          // Deadgrass pity-timer shower stays a brief, isolated event.
           const windowHours = Math.round(4 + season.rainChance * 8);
           const start = 8 + Math.floor(seededRandom(calendar.day * 157) * 6);
           calendar.nextRainWindows.push({ start, end: start + windowHours, strength: 2 });
@@ -18522,6 +18827,7 @@
         spWeather.textContent = weatherText + ' ' + precipText;
 
         spTime.textContent = clock;
+        if (spDay) spDay.textContent = formatCalendarDate();
         spTool.textContent = toolEmoji(activeTool) + ' ' + actionName(activeAction);
 
         // Reticle tile info
@@ -18668,7 +18974,7 @@
           `Joystick viewport anchor: ${Math.round(joystickZone.getBoundingClientRect().left)}px left, ${Math.round(window.innerHeight - joystickZone.getBoundingClientRect().bottom)}px bottom`,
           `Movement tuning: speed=${MOVE_SPEED} accel=${ACCEL} turn=${TURN_ACCEL} decel=${DECEL} deadzone=${JOYSTICK_DEADZONE}`,
           `Action FX: particles=${actionParticles.length} tileFlashes=${actionTileEffects.length} slashTrails=${weaponTrailEffects.length}`,
-          `Calendar: ${currentSeason().name} Day ${calendar.day}, ${formatClock(getHour())}, ${calendar.weather}`,
+          `Calendar: ${formatCalendarDate()} (raw day ${calendar.day}), ${formatClock(getHour())}, ${calendar.weather}`,
           `Tool/action: ${toolName(activeTool)} / ${actionName(activeAction)}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           '--- raw log ---',
@@ -18718,13 +19024,13 @@
           showToast("Only the farm's owner can reset the farm.", false);
           return;
         }
-        calendar.day = 17;
+        calendar.day = 1;
         calendar.time01 = 0.30;
         calendar.weather = 'rain';
         calendar.isRaining = true;
         calendar.rainStrength = 2;
         calendar.nextRainWindows = [{ start: 8, end: 14, strength: 2 }];
-        calendar.lastRainDay = 17;
+        calendar.lastRainDay = 1;
         Object.keys(inventory).forEach(key => { delete inventory[key]; });
         Object.assign(inventory, { ...STARTING_INVENTORY });
         clearPlacedProcessingFurniture();
@@ -18778,8 +19084,8 @@
             });
           }
         } catch {}
-        lastActionMessage = 'Farm reset. First Rains — dig trenches to route the water.';
-        showToast('Farm reset to First Rains.', true);
+        lastActionMessage = 'Farm reset. Stormtide — dig trenches to route the water.';
+        showToast('Farm reset to Stormtide.', true);
         debugLog('prototype reset');
         refreshActionBar();
         refreshItemScroll();

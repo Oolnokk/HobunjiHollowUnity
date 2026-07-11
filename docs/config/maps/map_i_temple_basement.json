@@ -4,13 +4,11 @@
   "name": "Temple Basement",
   "cols": 20,
   "rows": 20,
-  "furniture": [
-    { "id": "f_temple_bsmt_bed1", "itemKey": "bedrollFurniture", "col": 8, "row": 4, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "f_temple_bsmt_bed2", "itemKey": "bedrollFurniture", "col": 9, "row": 4, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "f_temple_bsmt_bed3", "itemKey": "bedrollFurniture", "col": 10, "row": 4, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 }
-  ],
+  "furniture": [],
   "exits": [
-    { "id": "exit_temple_bsmt_up", "label": "Stairs Up", "tiles": [[9, 1]], "targetMap": "map_i_temple", "spawnCol": 14, "spawnRow": 4 }
+    { "id": "exit_temple_bsmt_up", "label": "Stairs Up", "tiles": [[9, 1]], "targetMap": "map_i_temple", "spawnCol": 14, "spawnRow": 4 },
+    { "id": "exit_temple_bsmt_twins", "label": "Twins' Room", "tiles": [[7, 6]], "targetMap": "map_i_temple_basement_twins", "spawnCol": 9, "spawnRow": 6 },
+    { "id": "exit_temple_bsmt_hunundi", "label": "Father Hunundi's Room", "tiles": [[11, 6]], "targetMap": "map_i_temple_basement_hunundi", "spawnCol": 11, "spawnRow": 6 }
   ],
   "colliders": [],
   "vendorZones": [],
@@ -22,9 +20,5 @@
     [7, 5], [8, 5], [9, 5], [10, 5], [11, 5],
     [7, 6], [8, 6], [9, 6], [10, 6], [11, 6]
   ],
-  "npcStations": [
-    { "id": "station_temple_bsmt_hunundi", "label": "Father Hunundi's Bedroll", "col": 8, "row": 4, "rotY": 0, "pose": "lie", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_temple_bsmt_namui", "label": "Namu'i's Bedroll", "col": 9, "row": 4, "rotY": 0, "pose": "lie", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_temple_bsmt_takua", "label": "Taku'a's Bedroll", "col": 10, "row": 4, "rotY": 0, "pose": "lie", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" }
-  ]
+  "npcStations": []
 }

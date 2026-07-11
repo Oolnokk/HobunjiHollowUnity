@@ -551,7 +551,7 @@
       livestock:         [],   // [{ id, kind, col, row, releasedAt }] — belongs to the world itself, not any character
       keyItems:          [],
       lastDay:           1,
-      lastSeason:        'First Rains',
+      lastSeason:        'Stormtide',
       createdAt:         Date.now(),
       lastPlayed:        Date.now(),
     };

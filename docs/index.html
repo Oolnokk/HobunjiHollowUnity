@@ -70,7 +70,9 @@
   <div id="statusBar">
     <span class="sb-time" id="spTime">6:00 AM</span>
     <div class="sb-div"></div>
-    <span class="sb-info" id="spSeason">🌦️ First Rains</span>
+    <button class="sb-info sb-daybtn" id="spDay" type="button" title="Open calendar">Anan, 1/1, 3rd week of Stormtide</button>
+    <div class="sb-div"></div>
+    <span class="sb-info" id="spSeason">⛈️ Stormtide</span>
     <div class="sb-div"></div>
     <span class="sb-info" id="spWeather">🌧️ Rain</span>
     <div class="sb-div"></div>
@@ -172,8 +174,12 @@
     <div class="mp-header">
       <div class="mp-tabs" role="tablist">
         <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
-        <button class="mp-tab"        data-mpanel="shipping"      role="tab">📦 Shipping</button>
-        <button class="mp-tab"        data-mpanel="supplies"      role="tab">🧺 Supplies</button>
+        <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
+        <!-- Shipping and Supplies are meant to open as their own windows when
+             interacting with their associated objects in the world, not as
+             menu tabs — buttons removed here, but #mpShipping/#mpSupplies and
+             buildShippingTransferUI()/renderSupplyPage() are left intact
+             below for that future hookup. -->
         <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
         <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
@@ -273,7 +279,16 @@
 
       </div><!-- /mpInventory -->
 
-
+      <!-- ── Calendar pane ─────────────────────────────────── -->
+      <div class="mp-pane" id="mpCalendar">
+        <div class="cal-month-header">
+          <button class="mp-ctrl-btn" id="calPrevMonth" title="Previous month">‹</button>
+          <div class="cal-month-title" id="calMonthTitle">Waxingheat — Year 1</div>
+          <button class="mp-ctrl-btn" id="calNextMonth" title="Next month">›</button>
+        </div>
+        <div class="cal-today" id="calToday">Anan, Waxingheat 1st, 3rd week of Stormtide</div>
+        <div class="cal-weeks" id="calWeeks"></div>
+      </div><!-- /mpCalendar -->
 
       <!-- ── Shipping box transfer pane ───────────────────────
            Adapted from HHItemTransferLayoutV1: left player bag,

@@ -18406,6 +18406,15 @@
       "row": 49,
       "targetMapId": "map_southern_cloud_forest",
       "targetSpotId": "sp_scloud_n"
+    },
+    {
+      "id": "spot_watchhouse",
+      "label": "Enter the Watchhouse",
+      "col": 24,
+      "row": 18,
+      "targetMapId": "map_i_watchhouse",
+      "targetSpotId": "sp_watchhouse_entry",
+      "buildingId": "bldg_watchhouse"
     }
   ],
   "npcStations": [
@@ -18727,6 +18736,39 @@
       "toolKey": "",
       "toolIntervalSec": 0,
       "toolAnimStyle": ""
+    },
+    {
+      "id": "station_furunji_dayoff",
+      "label": "Enjoying a Day Off in the Square",
+      "col": 29,
+      "row": 31,
+      "rotY": 0,
+      "pose": "sit",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_ginju_market_gorobi",
+      "label": "Selling Produce at Market",
+      "col": 28,
+      "row": 30,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_ginju_market_gikali",
+      "label": "Selling Produce at Market",
+      "col": 28,
+      "row": 32,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
     }
   ],
   "buildings": [
@@ -18903,6 +18945,25 @@
         "ly": 2,
         "rawW": 7,
         "rawD": 3,
+        "odx": 0,
+        "ody": 1
+      }
+    },
+    {
+      "id": "bldg_watchhouse",
+      "label": "Watchhouse",
+      "pieceFile": "config/pieces/placeholder-medium.json",
+      "gridX": 22,
+      "gridZ": 14,
+      "footprintW": 5,
+      "footprintD": 4,
+      "wbOpts": null,
+      "wbGableOpts": null,
+      "doorEntrance": {
+        "lx": 2,
+        "ly": 3,
+        "rawW": 5,
+        "rawD": 4,
         "odx": 0,
         "ody": 1
       }
