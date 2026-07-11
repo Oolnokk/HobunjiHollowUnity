@@ -4642,8 +4642,15 @@
         snd._fadeToken = token;
         const step = now => {
           if (snd._fadeToken !== token) return;
-          const t = Math.min(1, (now - startTime) / dur);
-          snd.volume = start + (clampedTarget - start) * t;
+          // rAF's own `now` timestamp isn't guaranteed to line up with the
+          // performance.now() captured above (some browsers snapshot it at
+          // the start of the frame, which can land a hair earlier) — an
+          // unclamped lower bound let a barely-negative t extrapolate volume
+          // to a barely-negative number on the very first frame of a fade-in
+          // from 0, and HTMLMediaElement.volume throws (IndexSizeError) on
+          // anything outside [0,1], aborting the whole ramp right there.
+          const t = Math.max(0, Math.min(1, (now - startTime) / dur));
+          snd.volume = Math.max(0, Math.min(1, start + (clampedTarget - start) * t));
           if (t < 1) requestAnimationFrame(step);
           else onDone?.();
         };
@@ -18614,8 +18621,14 @@
 
       async function copyDebugLog() {
         const reticle = getReticleTile();
+        const filter = window.__debugLogFilter || 'all';
+        const rawLog = window.__farmDebugLog || [];
+        const filteredLog = window.__debugLogMatchesFilter
+          ? rawLog.filter(e => window.__debugLogMatchesFilter(e, filter))
+          : rawLog;
         const lines = [
           'Tropical Trench Farm Debug Report',
+          ...(filter !== 'all' ? [`Debug filter: ${filter} (${filteredLog.length}/${rawLog.length} entries)`] : []),
           `User agent: ${navigator.userAgent}`,
           `Viewport: ${window.innerWidth}x${window.innerHeight}`,
           `UI rect: ${getComputedStyle(document.documentElement).getPropertyValue('--gw').trim()} × ${getComputedStyle(document.documentElement).getPropertyValue('--gh').trim()} at ${getComputedStyle(document.documentElement).getPropertyValue('--ox').trim()}, ${getComputedStyle(document.documentElement).getPropertyValue('--oy').trim()}`,
@@ -18627,7 +18640,7 @@
           `Tool/action: ${toolName(activeTool)} / ${actionName(activeAction)}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           '--- raw log ---',
-          ...(window.__farmDebugLog || []).map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
+          ...filteredLog.map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
         ];
         const text = lines.join('\n');
         try {

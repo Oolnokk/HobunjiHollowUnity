@@ -56,6 +56,9 @@
     }
 
     window._renderDebugPanel = _renderDebugPanel;
+    // Exposed so copyDebugLog() (game.js) can export only what the active
+    // filter tab is showing, instead of always exporting everything.
+    window.__debugLogMatchesFilter = _matchesDebugFilter;
 
     window.addEventListener('error', function (event) {
       window.__farmLog(`${event.message} @ ${event.filename || 'inline'}:${event.lineno || '?'}:${event.colno || '?'}`, 'error');
