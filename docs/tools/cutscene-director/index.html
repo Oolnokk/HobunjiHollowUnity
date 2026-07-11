@@ -982,7 +982,7 @@
       // locomotion) is what makes the hounds actually arrive and clash with
       // the wolves; see the hound1Start/hound2Start point comment above for
       // why they're close enough for that AI to pick the fight up on its own.
-      addStage("combat",{ type:"combat", duration:10,
+      addStage("combat",{ type:"combat", duration:5,
         participants:[
           { actorId:actors.wolf1.id, combatOn:true, canLose:false }, { actorId:actors.wolf2.id, combatOn:true, canLose:false }, { actorId:actors.wolf3.id, combatOn:true, canLose:false },
           { actorId:actors.hound1.id, combatOn:true, canLose:false }, { actorId:actors.hound2.id, combatOn:true, canLose:false }
