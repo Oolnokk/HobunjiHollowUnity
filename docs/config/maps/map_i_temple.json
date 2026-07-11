@@ -756,6 +756,25 @@
       "toolKey": "",
       "toolIntervalSec": 0,
       "toolAnimStyle": ""
-    }
+    },
+    { "id": "station_temple_counsel_teacup", "label": "Leading the Spirit Counsel, Eyes Lowered", "col": 9, "row": 9, "rotY": 0, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_counsel_ring_1", "label": "Gathered for the Spirit Counsel", "col": 9, "row": 8, "rotY": 180, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_counsel_ring_2", "label": "Gathered for the Spirit Counsel", "col": 9, "row": 10, "rotY": 0, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_counsel_ring_3", "label": "Gathered for the Spirit Counsel", "col": 8, "row": 9, "rotY": 90, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_counsel_ring_4", "label": "Gathered for the Spirit Counsel", "col": 10, "row": 9, "rotY": 270, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_counsel_ring_5", "label": "Gathered for the Spirit Counsel", "col": 8, "row": 8, "rotY": 135, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_counsel_ring_6", "label": "Gathered for the Spirit Counsel", "col": 10, "row": 8, "rotY": 225, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_counsel_hunundi", "label": "Watching the Spirit Counsel from a Far Pew", "col": 12, "row": 11, "rotY": 90, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_pew_1", "label": "Seated for Temple Service", "col": 12, "row": 7, "rotY": 90, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_pew_2", "label": "Seated for Temple Service", "col": 6, "row": 9, "rotY": 270, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_pew_3", "label": "Seated for Temple Service", "col": 12, "row": 9, "rotY": 90, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_pew_4", "label": "Seated for Temple Service", "col": 6, "row": 11, "rotY": 270, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_pew_5", "label": "Seated for Temple Service", "col": 12, "row": 11, "rotY": 90, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_pew_6", "label": "Seated for Temple Service", "col": 7, "row": 7, "rotY": 270, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_pew_7", "label": "Seated for Temple Service", "col": 11, "row": 7, "rotY": 90, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_pew_8", "label": "Seated for Temple Service", "col": 7, "row": 9, "rotY": 270, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_pew_9", "label": "Seated for Temple Service", "col": 11, "row": 9, "rotY": 90, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_pew_10", "label": "Seated for Temple Service", "col": 7, "row": 11, "rotY": 270, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_pew_11", "label": "Seated for Temple Service", "col": 11, "row": 11, "rotY": 90, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" }
   ]
 }

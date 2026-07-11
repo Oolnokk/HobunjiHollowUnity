@@ -3809,6 +3809,30 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Anan",
+            "from": "00:00",
+            "to": "03:00",
+            "mapId": "map_i_temple",
+            "stationId": "station_temple_counsel_hunundi",
+            "position": {
+              "c": 12,
+              "r": 11
+            },
+            "activity": "watching the Spirit Counsel from a far pew"
+          },
+          {
+            "day": "Anan",
+            "from": "09:00",
+            "to": "11:00",
+            "mapId": "map_i_temple",
+            "stationId": "station_temple_altar",
+            "position": {
+              "c": 9,
+              "r": 5
+            },
+            "activity": "leading Temple Service"
+          },
+          {
             "from": "07:00",
             "to": "10:00",
             "mapId": "map_i_temple",
@@ -3855,11 +3879,11 @@
           {
             "from": "22:00",
             "to": "07:00",
-            "mapId": "map_i_temple_basement",
+            "mapId": "map_i_temple_basement_hunundi",
             "stationId": "station_temple_bsmt_hunundi",
             "position": {
-              "c": 8,
-              "r": 4
+              "c": 7,
+              "r": 6
             },
             "activity": "sleeping"
           }
@@ -4080,11 +4104,11 @@
           {
             "from": "21:00",
             "to": "08:00",
-            "mapId": "map_i_temple_basement",
+            "mapId": "map_i_temple_basement_twins",
             "stationId": "station_temple_bsmt_namui",
             "position": {
-              "c": 9,
-              "r": 4
+              "c": 7,
+              "r": 6
             },
             "activity": "sleeping"
           }
@@ -4313,11 +4337,11 @@
           {
             "from": "21:00",
             "to": "09:00",
-            "mapId": "map_i_temple_basement",
+            "mapId": "map_i_temple_basement_twins",
             "stationId": "station_temple_bsmt_takua",
             "position": {
-              "c": 10,
-              "r": 4
+              "c": 11,
+              "r": 6
             },
             "activity": "sleeping"
           }
@@ -5584,6 +5608,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Anan",
+            "from": "00:00",
+            "to": "03:00",
+            "mapId": "map_i_temple",
+            "stationId": "station_temple_counsel_teacup",
+            "position": {
+              "c": 9,
+              "r": 9
+            },
+            "activity": "leading the Spirit Counsel, eyes lowered"
+          },
+          {
             "from": "09:00",
             "to": "18:00",
             "mapId": "map_hobunji_town",
@@ -5738,6 +5774,18 @@
         "workBuildingId": "ginju_farmstead",
         "shopHours": "",
         "rules": [
+          {
+            "day": "Anan",
+            "from": "00:00",
+            "to": "03:00",
+            "mapId": "map_i_temple",
+            "stationId": "station_temple_counsel_ring_1",
+            "position": {
+              "c": 9,
+              "r": 8
+            },
+            "activity": "attending the Spirit Counsel"
+          },
           {
             "from": "07:00",
             "to": "19:00",
@@ -5896,6 +5944,18 @@
         "workBuildingId": "watch",
         "shopHours": "",
         "rules": [
+          {
+            "day": "Anan",
+            "from": "00:00",
+            "to": "03:00",
+            "mapId": "map_i_temple",
+            "stationId": "station_temple_counsel_ring_2",
+            "position": {
+              "c": 9,
+              "r": 10
+            },
+            "activity": "attending the Spirit Counsel"
+          },
           {
             "from": "07:00",
             "to": "12:00",
@@ -6082,6 +6142,18 @@
         "shopHours": "",
         "rules": [
           {
+            "day": "Anan",
+            "from": "00:00",
+            "to": "03:00",
+            "mapId": "map_i_temple",
+            "stationId": "station_temple_counsel_ring_3",
+            "position": {
+              "c": 8,
+              "r": 9
+            },
+            "activity": "attending the Spirit Counsel"
+          },
+          {
             "from": "08:00",
             "to": "12:00",
             "mapId": "map_hobunji_town",
@@ -6266,6 +6338,18 @@
         "workBuildingId": "inn",
         "shopHours": "",
         "rules": [
+          {
+            "day": "Anan",
+            "from": "00:00",
+            "to": "03:00",
+            "mapId": "map_i_temple",
+            "stationId": "station_temple_counsel_ring_4",
+            "position": {
+              "c": 10,
+              "r": 9
+            },
+            "activity": "attending the Spirit Counsel"
+          },
           {
             "from": "07:00",
             "to": "15:00",
@@ -6826,7 +6910,20 @@
         "defaultMapId": "hobunji_main_town",
         "workBuildingId": "<suggestion: location — needs a hunter's lodge/cabin placed near the town outskirts; no building exists for him yet>",
         "shopHours": "",
-        "rules": [],
+        "rules": [
+          {
+            "day": "Anan",
+            "from": "00:00",
+            "to": "03:00",
+            "mapId": "map_i_temple",
+            "stationId": "station_temple_counsel_ring_5",
+            "position": {
+              "c": 8,
+              "r": 8
+            },
+            "activity": "attending the Spirit Counsel"
+          }
+        ],
         "defaultPosition": {
           "area": "town",
           "c": 0,

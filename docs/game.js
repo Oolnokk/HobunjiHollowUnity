@@ -16,6 +16,7 @@
 
       // Status pill
       const spTime    = document.getElementById('spTime');
+      const spDay     = document.getElementById('spDay');
       const spSeason  = document.getElementById('spSeason');
       const spWeather = document.getElementById('spWeather');
       const spTool    = document.getElementById('spTool');
@@ -816,6 +817,7 @@
       const MORNING_HOUR = 6;
       const NIGHT_HOUR   = 22;
       const SEASON_LENGTH_DAYS = 8;
+      const WEEKDAY_NAMES = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // calendar.day 1 falls on Anan
 
       // ── Highland House — adjust these to fit the GLB and position it on the farm ──
       // Values sourced from Footprint_Highlandhouse_medium.json (footprint mapper v3)
@@ -6726,10 +6728,44 @@
         window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback ${kind} area=${area} c=${c} r=${r}`, 'warn');
       }
 
+      // A rule may restrict itself to one or more weekdays via "day" (single
+      // name) or "days" (array); rules with neither run every day, same as before.
+      function isNpcRuleActiveOnDay(rule) {
+        if (rule.day) return rule.day === currentWeekdayName();
+        if (rule.days) return rule.days.includes(currentWeekdayName());
+        return true;
+      }
+
+      // Village-wide Temple Service (Anan 9-11am): any villager without a
+      // schedule rule of their own for that window joins the congregation in
+      // a pew instead of following their usual routine. Deceased/banished
+      // NPCs are excluded even though they still carry the "villager" tag.
+      const TEMPLE_SERVICE_DAY = 'Anan';
+      const TEMPLE_SERVICE_START_MIN = parseNpcTimeMinutes('09:00');
+      const TEMPLE_SERVICE_END_MIN   = parseNpcTimeMinutes('11:00');
+      const TEMPLE_SERVICE_EXCLUDED_NPC_IDS = new Set([
+        'talisman_hatayap',    // deceased
+        'bowstring_hatayap',   // deceased
+        'hammerhead_tuhupnuk', // banished from the clan
+      ]);
+      const TEMPLE_PEW_STATION_IDS = [
+        'station_temple_pew_1', 'station_temple_pew_2', 'station_temple_pew_3',
+        'station_temple_pew_4', 'station_temple_pew_5', 'station_temple_pew_6',
+        'station_temple_pew_7', 'station_temple_pew_8', 'station_temple_pew_9',
+        'station_temple_pew_10', 'station_temple_pew_11',
+      ];
+      function hashNpcIdToIndex(id, mod) {
+        let h = 0;
+        const s = String(id || '');
+        for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+        return Math.abs(h) % mod;
+      }
+
       function resolveNpcScheduleTarget(rec) {
         const hooks = rec?.scheduleHooks || {};
         const now = currentGameMinutes();
         for (const rule of hooks.rules || []) {
+          if (!isNpcRuleActiveOnDay(rule)) continue;
           const start = parseNpcTimeMinutes(rule.start ?? rule.from);
           const end   = parseNpcTimeMinutes(rule.end   ?? rule.to);
           const ruleActive = isNowWithinNpcRuleWindow(now, start, end);
@@ -6743,6 +6779,14 @@
           const area = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
           if (ruleActive && Number.isFinite(c) && Number.isFinite(r))
             return { area, c, r, routeId: rule.routeId || null, activity: rule.activity || '' };
+        }
+        if (currentWeekdayName() === TEMPLE_SERVICE_DAY
+            && isNowWithinNpcRuleWindow(now, TEMPLE_SERVICE_START_MIN, TEMPLE_SERVICE_END_MIN)
+            && (rec?.tags || []).includes('villager')
+            && !TEMPLE_SERVICE_EXCLUDED_NPC_IDS.has(rec?.id)) {
+          const pewId = TEMPLE_PEW_STATION_IDS[hashNpcIdToIndex(rec?.id, TEMPLE_PEW_STATION_IDS.length)];
+          const pewTarget = resolveNpcStationTarget(pewId);
+          if (pewTarget) return { ...pewTarget, activity: 'Temple Service' };
         }
         if (hooks.defaultStationId) {
           const stationTarget = resolveNpcStationTarget(hooks.defaultStationId);
@@ -10532,6 +10576,13 @@
       function currentSeason() {
         const index = Math.floor((calendar.day - 1) / SEASON_LENGTH_DAYS) % seasons.length;
         return seasons[index];
+      }
+
+      function currentWeekdayIndex() {
+        return ((calendar.day - 1) % 7 + 7) % 7;
+      }
+      function currentWeekdayName() {
+        return WEEKDAY_NAMES[currentWeekdayIndex()];
       }
 
       function isDigRemovableVegetation(tile) {
@@ -18522,6 +18573,7 @@
         spWeather.textContent = weatherText + ' ' + precipText;
 
         spTime.textContent = clock;
+        if (spDay) spDay.textContent = currentWeekdayName();
         spTool.textContent = toolEmoji(activeTool) + ' ' + actionName(activeAction);
 
         // Reticle tile info
