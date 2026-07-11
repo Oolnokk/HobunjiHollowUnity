@@ -3709,6 +3709,12 @@
       // Called every farm/zone-area frame; cheap no-op once in sync. Also
       // re-spawns into the new area's scene whenever the player travels.
       function syncCompanionFromWhistle() {
+        // A cutscene preview's combat card manages companionObjects directly
+        // (see runCutscenePreview/runCombat) — this whistle-driven sync
+        // would otherwise despawn a hound the instant it runs, since the
+        // real player's whistle slot is always cleared during preview (see
+        // the boot handoff in docs/index.html).
+        if (cutscenePreviewActive) return;
         const whistle = equipmentSlots.whistle
           ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
           : null;
@@ -4263,6 +4269,11 @@
       }
 
       function updateHostileSpawning(dt) {
+        // Ambient wildlife spawning has no business intruding on an
+        // authored cutscene once this scene finally lives on a real
+        // wilderness zone map — the combat card's own wolves are added to
+        // hostileObjects explicitly (see runCombat).
+        if (cutscenePreviewActive) return;
         if (!_isZoneArea(currentArea)) return;
         denCheckTimer -= dt;
         if (denCheckTimer > 0) return;
@@ -20115,21 +20126,6 @@
         }
       }
 
-      // Stand-in for the real pounce animation (docs/js/combat/combat-
-      // animal-attacks.js's windup→leap frame sequence) — same honest
-      // scale-pulse cue the Cutscene Director tool's own preview uses,
-      // since this project has no general animation database.
-      function cutscenePreviewAttackPulse(entity, st) {
-        entity._lastAttackAt = performance.now();
-        const baseScale = st.pose === 'prone' ? 0.6 : 1;
-        entity.root.scale.setScalar(baseScale * 1.35);
-        clearTimeout(entity._attackFlashTimer);
-        entity._attackFlashTimer = setTimeout(() => {
-          entity._attackFlashTimer = null;
-          entity.root.scale.setScalar(baseScale);
-        }, 260);
-      }
-
       async function runCutscenePreview(payload) {
         cutscenePreviewActive = true;
         cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
@@ -20198,6 +20194,28 @@
               if (creature) {
                 creature.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(actor.rotation || 0);
                 entity = { kind: 'creature', root: creature.avatarRef.group, creature };
+              }
+            } else if (actor.isPlayer) {
+              // The scene's authored stand-in for whoever's actually running
+              // this preview — built through the exact same makeNpcWalker
+              // pipeline an NPC actor uses, just fed a synthetic "record"
+              // sourced from the real player's own appearance instead of the
+              // NPC database, so it gets a real PNG-plane avatar instead of
+              // the generic placeholder every other freeform actor falls
+              // back to.
+              const playerProfile = _playerData || window.__hobunjiPlayerProfile;
+              const fakeRec = {
+                id: 'player', name: actor.name || 'Player',
+                appearance: playerProfile?.appearance,
+                equippedCosmetics: playerProfile?.equippedCosmetics || [],
+                appliedDyes: playerProfile?.appliedDyes || {},
+              };
+              const walker = await makeNpcWalker(fakeRec, { area, c: actor.worldC, r: actor.worldR });
+              if (walker) {
+                walker.rot = THREE.MathUtils.degToRad(actor.rotation || 0);
+                walker.root.rotation.y = walker.rot;
+                walker.pause = Infinity;
+                entity = { kind: 'npc', root: walker.root, walker, rec: fakeRec, profile: walker.profile, avatarFrontCanvas: walker.avatarFrontCanvas, avatarBackCanvas: walker.avatarBackCanvas };
               }
             }
           } catch (e) { console.error('[cutscene preview] actor spawn failed for', actor.name, e); }
@@ -20509,56 +20527,57 @@
         // person NPC ever marked Combat On) are left stationary.
         function runCombat(stage) {
           stage.participants.forEach(p => { const st = actorStates.get(p.actorId); if (st) { st.combatOn = p.combatOn; st.canLose = p.canLose; } });
-          const aiIds = stage.participants.filter(p => p.combatOn).map(p => p.actorId)
-            .filter(id => { const a = actorsById.get(id); return a && a.creatureTypeId && a.team; });
 
-          let aiActive = aiIds.length > 0;
-          let lastT = performance.now();
-          const aiTick = () => {
-            if (!running || !aiActive) return;
-            const now = performance.now();
-            const dt = Math.min(0.05, (now - lastT) / 1000);
-            lastT = now;
-            for (const actorId of aiIds) {
-              const entity = entities.get(actorId);
-              if (!entity || entity._attackFlashTimer) continue;
-              const st = actorStates.get(actorId);
-              const actor = actorsById.get(actorId);
-              const def = CREATURE_DB[actor?.creatureTypeId];
-              if (!st || !st.combatOn || !actor || !def) continue;
+          // Real hostile/companion AI, not a bespoke simulation: a hostile
+          // species (CREATURE_DB[...].hostile === true, e.g. gar-wolf) is
+          // added to the real hostileObjects Set and driven by the exact
+          // same updateHostiles() wild creatures chase/attack the player
+          // with. A non-hostile species (e.g. dabinggi-hound) is added to
+          // the real companionObjects Set and driven by updateCompanions()
+          // — the same "defend whoever's nearest hostileObjects to the
+          // player" AI a whistle-summoned companion uses, treating the
+          // player as its master. Both are already ticked every frame by
+          // the main game loop, so nothing here drives them by hand; this
+          // only registers/unregisters them and parks the real player.x/y
+          // at the scene's Player actor so that targeting resolves against
+          // the right spot instead of wherever the real player last stood.
+          const combatOnIds = stage.participants.filter(p => p.combatOn).map(p => p.actorId)
+            .filter(id => { const a = actorsById.get(id); return a && a.creatureTypeId && CREATURE_DB[a.creatureTypeId]; });
 
-              let bestId = null, bestDist = Infinity;
-              for (const otherId of aiIds) {
-                if (otherId === actorId) continue;
-                const otherActor = actorsById.get(otherId), otherSt = actorStates.get(otherId);
-                if (!otherActor || !otherSt || !otherSt.combatOn || otherActor.team === actor.team) continue;
-                const d = Math.hypot(st.c - otherSt.c, st.r - otherSt.r);
-                if (d < bestDist) { bestDist = d; bestId = otherId; }
-              }
-              if (bestId == null) continue;
+          const playerActor = (payload.actors || []).find(a => a.isPlayer);
+          const playerSt = playerActor ? actorStates.get(playerActor.id) : null;
+          const savedPlayerX = player.x, savedPlayerY = player.y;
+          if (playerSt) { player.x = (playerSt.c + 0.5) * TILE; player.y = (playerSt.r + 0.5) * TILE; }
 
-              const targetSt = actorStates.get(bestId);
-              const aggroRange  = def.aggroRangePx ? def.aggroRangePx / TILE : 6.2;
-              const attackRange = Math.max(def.attackRangePx ? def.attackRangePx / TILE : 1, 0.9);
-              if (bestDist > aggroRange) continue;
-              if (bestDist <= attackRange) {
-                // Squared up to attack — a static facing moment, so it gets
-                // the same theatre cheat a staged turn does; the chase leg
-                // below is real locomotion and stays uncheated.
-                st.rotation = theatreCheatAngle(angleTowardState(st, targetSt), st);
-                applyState(actorId);
-                if (performance.now() - (entity._lastAttackAt || 0) >= 900) cutscenePreviewAttackPulse(entity, st);
-              } else {
-                advanceActorToward(actorId, targetSt.c + 0.5, targetSt.r + 0.5, dt);
-              }
+          const registered = [];
+          for (const actorId of combatOnIds) {
+            const entity = entities.get(actorId);
+            if (!entity || entity.kind !== 'creature') continue;
+            const c = entity.creature;
+            c.state = 'idle';
+            if (c.def.hostile) {
+              c.homeX = c.x; c.homeY = c.y;
+              hostileObjects.add(c);
+              registered.push({ c, set: hostileObjects });
+            } else {
+              c.isCompanion = true;
+              companionObjects.add(c);
+              registered.push({ c, set: companionObjects });
             }
-            requestAnimationFrame(aiTick);
-          };
-          if (aiActive) requestAnimationFrame(aiTick);
+          }
 
           setTimeout(() => {
-            if (!running) { aiActive = false; return; }
-            aiActive = false;
+            for (const { c, set } of registered) set.delete(c);
+            player.x = savedPlayerX; player.y = savedPlayerY;
+            if (!running) return;
+            // Sync each combatant's authored-coordinate state from wherever
+            // the real AI actually left it, so the next stage (a Settle/Flee
+            // move) starts from its true position instead of snapping back
+            // to its pre-combat spawn point.
+            for (const actorId of combatOnIds) {
+              const entity = entities.get(actorId), st = actorStates.get(actorId);
+              if (entity?.kind === 'creature' && st) { st.c = entity.creature.x / TILE - 0.5; st.r = entity.creature.y / TILE - 0.5; }
+            }
             stage.participants.forEach(p => { const st = actorStates.get(p.actorId); if (st) st.combatOn = false; });
             const canLose = stage.participants.some(p => p.combatOn && p.canLose);
             if (!canLose) { continueTo(getResolvedNext(stage.id, stage.next)); return; }

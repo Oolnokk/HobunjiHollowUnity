@@ -686,6 +686,7 @@
                 </label>
                 <label class="check-row"><input id="actorCombatInput" type="checkbox"> Combat on at scene start</label>
                 <label class="check-row"><input id="actorCanLoseInput" type="checkbox"> Can lose by default</label>
+                <label class="check-row"><input id="actorIsPlayerInput" type="checkbox"> This is the player (real avatar in-game, not a placeholder — only for a custom actor with no NPC/creature link)</label>
                 <button id="unlinkNpcBtn" class="hidden">Unlink NPC (make custom)</button>
                 <button id="unlinkCreatureBtn" class="hidden">Unlink creature (make custom)</button>
                 <button id="deleteActorBtn" class="danger">Delete character</button>
@@ -957,12 +958,13 @@
     const addActor = (key, name, color, startPoint, rotation, opts = {}) => {
       const actor = {
         id: uid("actor"), name, color, npcId: opts.npcId || null, creatureTypeId: opts.creatureTypeId || null,
-        team: opts.team || "", startPointId: startPoint.id, rotation, pose: opts.pose || "standing", combatOn: false, canLose: false
+        team: opts.team || "", startPointId: startPoint.id, rotation, pose: opts.pose || "standing", combatOn: false, canLose: false,
+        isPlayer: opts.isPlayer || false
       };
       actors[key] = actor; return actor;
     };
     [
-      addActor("player","Player","#3d7dd8",points.playerDown,270,{pose:"prone",team:"player"}),
+      addActor("player","Player","#3d7dd8",points.playerDown,270,{pose:"prone",team:"player",isPlayer:true}),
       addActor("wolf1","Gar-wolf 1","#9e4b45",points.wolf1Over,45,{creatureTypeId:"gar-wolf",team:"gar_wolves"}),
       addActor("wolf2","Gar-wolf 2","#8b403c",points.wolf2Over,270,{creatureTypeId:"gar-wolf",team:"gar_wolves"}),
       addActor("wolf3","Gar-wolf 3","#763733",points.wolf3Over,90,{creatureTypeId:"gar-wolf",team:"gar_wolves"}),
@@ -1075,7 +1077,13 @@
       team: String(actor.team || "").slice(0,24),
       startPointId:pointIds.has(actor.startPointId) ? actor.startPointId : points[0].id,
       rotation:normalizeAngle(actor.rotation), pose:actor.pose === "prone" ? "prone" : "standing",
-      combatOn:Boolean(actor.combatOn), canLose:Boolean(actor.canLose)
+      combatOn:Boolean(actor.combatOn), canLose:Boolean(actor.canLose),
+      // The game previewer's actual player character, not a stand-in — its
+      // avatar is built from whoever's actually running the preview (see
+      // docs/game.js's runCutscenePreview) instead of falling back to the
+      // plain placeholder pawn every other freeform actor gets. Never
+      // combined with npcId/creatureTypeId.
+      isPlayer: !actor.npcId && !actor.creatureTypeId && Boolean(actor.isPlayer)
     }));
 
     const actorIds = new Set(actors.map(a => a.id));
@@ -1693,7 +1701,7 @@
       return {
         id: actor.id, name: actor.name, color: actor.color, rotation: actor.rotation, pose: actor.pose, team: actor.team || "",
         npcId: actor.npcId || null, npcRecord: actor.npcId ? (npcById(actor.npcId) || null) : null,
-        creatureTypeId: actor.creatureTypeId || null,
+        creatureTypeId: actor.creatureTypeId || null, isPlayer: Boolean(actor.isPlayer),
         worldC: w.c, worldR: w.r,
       };
     });
@@ -2161,6 +2169,8 @@
       els.actorTeamInput.value = actor.team || "";
       els.actorCombatInput.checked = actor.combatOn;
       els.actorCanLoseInput.checked = actor.canLose;
+      els.actorIsPlayerInput.checked = actor.isPlayer;
+      els.actorIsPlayerInput.disabled = Boolean(actor.npcId || actor.creatureTypeId);
       const npc = npcById(actor.npcId);
       const creature = creatureById(actor.creatureTypeId);
       els.actorNpcBadge.classList.toggle("hidden", !actor.npcId);
@@ -2975,6 +2985,13 @@
     els.actorTeamInput.addEventListener("input", () => { const a = actorById(state.selectedActorId); if (!a) return; a.team = els.actorTeamInput.value.slice(0,24); saveLocal(); renderStages(); });
     els.actorCombatInput.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.combatOn = els.actorCombatInput.checked; changed(`${a.name}'s starting combat switch changed.`); });
     els.actorCanLoseInput.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.canLose = els.actorCanLoseInput.checked; changed(`${a.name}'s Can Lose switch changed.`); });
+    els.actorIsPlayerInput.addEventListener("change", () => {
+      const a = actorById(state.selectedActorId); if (!a) return;
+      a.isPlayer = els.actorIsPlayerInput.checked;
+      // Exactly one actor can be the player — flipping this one off any others.
+      if (a.isPlayer) state.project.actors.forEach(other => { if (other.id !== a.id) other.isPlayer = false; });
+      changed(`${a.name}'s player switch changed.`);
+    });
     els.unlinkNpcBtn.addEventListener("click", () => { const a = actorById(state.selectedActorId); if (!a) return; a.npcId = null; changed(`${a.name} unlinked from its NPC — now a custom actor.`); });
     els.unlinkCreatureBtn.addEventListener("click", () => { const a = actorById(state.selectedActorId); if (!a) return; a.creatureTypeId = null; changed(`${a.name} unlinked from its creature type — now a custom actor.`); });
     els.deleteActorBtn.addEventListener("click", () => {
@@ -3031,7 +3048,7 @@
       "anchorCInput","anchorRInput","anchorRotationSelect","moveAnchorBtn","centerAnchorBtn",
       "pickBanner","editorBoard","newPointName","addPointBtn","pointList","pointEditor","pointNameInput","movePointBtn","deletePointBtn",
       "addNpcActorBtn","addCreatureActorBtn","newActorName","addActorBtn","actorList","actorEditor","actorNpcBadge","actorCreatureBadge","actorNameInput","actorColorInput",
-      "actorStartSelect","actorRotationInput","actorPoseSelect","actorTeamInput","actorCombatInput","actorCanLoseInput","unlinkNpcBtn","unlinkCreatureBtn","deleteActorBtn",
+      "actorStartSelect","actorRotationInput","actorPoseSelect","actorTeamInput","actorCombatInput","actorCanLoseInput","actorIsPlayerInput","unlinkNpcBtn","unlinkCreatureBtn","deleteActorBtn",
       "stageList","stageEditor","mapStatusPill","playStatusPill","startPlayBtn","resetPlayBtn","captureCameraBtn","resetCameraBtn","previewInGameBtn",
       "canvas3d","fadeOverlay","dialogueBox","dialogueSpeaker","dialogueText","dialogueActions",
       "checkBtn","copyLogBtn","validationList","debugLog","toast",
