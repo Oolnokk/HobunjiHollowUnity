@@ -277,6 +277,15 @@
   }
   .point-token .pin span { transform: rotate(45deg); }
   .point-token.selected .pin { outline: 3px solid #ffe36e; outline-offset: 2px; }
+  .anchor-token { z-index: 10; cursor: grab; }
+  .anchor-token:active { cursor: grabbing; }
+  .anchor-pin {
+    border-radius: 8px !important;
+    background: #4fb3e8 !important;
+    color: #072534 !important;
+    transform: none !important;
+  }
+  .anchor-pin span { transform: none !important; }
 
   .actor-token {
     position: absolute;
@@ -594,8 +603,33 @@
 
           <section class="panel">
             <div class="panel-head">
+              <h2>Scene placement</h2>
+              <p>Points live on the scene's own local grid, like a structure's blueprint — grid-agnostic, so the same blocking works on any map. The anchor (⚑ below) is where that local grid sits on the current map; move or rotate it and every point, actor, and the captured camera shift together.</p>
+            </div>
+            <div class="panel-body stack">
+              <div class="row">
+                <label>Anchor tile C<input id="anchorCInput" type="number" step="1"></label>
+                <label>Anchor tile R<input id="anchorRInput" type="number" step="1"></label>
+              </div>
+              <label>Rotation
+                <select id="anchorRotationSelect">
+                  <option value="0">0°</option>
+                  <option value="90">90°</option>
+                  <option value="180">180°</option>
+                  <option value="270">270°</option>
+                </select>
+              </label>
+              <div class="row">
+                <button id="moveAnchorBtn" class="primary">📍 Move scene</button>
+                <button id="centerAnchorBtn">Center on stage</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
               <h2>Named points</h2>
-              <p>Tile coordinates on the loaded map. Move a point once and every linked movement repaths.</p>
+              <p>Local coordinates within the scene. Move a point once and every linked movement repaths.</p>
             </div>
             <div class="panel-body stack">
               <div class="row">
@@ -831,6 +865,8 @@
     selectedStageId: null,
     movingPointId: null,
     draggingPointId: null,
+    movingAnchor: false,
+    draggingAnchor: false,
     mapIndex: [],
     mapMeta: { loaded: false, id: null, name: "", kind: "blank", cols: DEFAULT_COLS, rows: DEFAULT_ROWS, tiles: new Map(), floorSet: new Set(), zGrid: null, buildings: [] },
     mapLoadToken: 0,
@@ -896,7 +932,11 @@
   //    isn't marked combatOn in that card, so it's left alone.
   function buildRescueExample() {
     const points = {};
-    const addPoint = (key, name, c, r) => { const p = { id: uid("point"), name, c, r }; points[key] = p; return p; };
+    // c/r here are the scene's own local grid — see the anchor system below
+    // (state.project.anchor) — not raw map tiles. With the default anchor
+    // {c:0,r:0,rotationDeg:0} local coordinates equal world tiles, so this
+    // reads exactly like the original absolute layout.
+    const addPoint = (key, name, lc, lr) => { const p = { id: uid("point"), name, lc, lr }; points[key] = p; return p; };
     [
       addPoint("playerDown","Player Down",11,8), addPoint("playerStep","Player Step",11,7),
       addPoint("wolf1Over","Wolf 1 Over Player",10,7), addPoint("wolf2Over","Wolf 2 Over Player",12,7),
@@ -966,24 +1006,47 @@
     stages.fineReply.next = stages.healerLine.id;
     stages.whoReply.next = stages.healerLine.id;
 
+    // No mapId: a gar-wolf ambush has no business happening inside town —
+    // it belongs on a wilderness map (the Northern Cliffs, per the gar-wolf
+    // den pool in docs/game.js's EXTERIOR_ZONES) that doesn't exist as an
+    // authored map file yet. This is exactly what the scene anchor is for:
+    // author the blocking now on the blank practice grid, then once that
+    // map exists, load it and drag the scene anchor onto it — every point
+    // and actor moves with it, nothing needs re-authoring.
     return {
-      version: 6, title: "Gar-wolf Rescue Heart Scene", mapId: "map_hobunji_town", camera3d: null,
+      version: 6, title: "Gar-wolf Rescue Heart Scene", mapId: "",
+      anchor: { c: 0, r: 0, rotationDeg: 0 }, camera3d: null,
       points: Object.values(points), actors: Object.values(actors), stages: Object.values(stages)
     };
   }
 
   function blankProject() {
-    return { version: 6, title: "New Cutscene", mapId: "", camera3d: null, points: [], actors: [], stages: [] };
+    return { version: 6, title: "New Cutscene", mapId: "", anchor: { c: 0, r: 0, rotationDeg: 0 }, camera3d: null, points: [], actors: [], stages: [] };
+  }
+
+  function normalizeAnchorRotation(value) {
+    return (((Math.round((Number(value)||0)/90)*90) % 360) + 360) % 360;
+  }
+  function normalizeAnchor(raw) {
+    const a = raw && typeof raw === "object" ? raw : {};
+    return { c: clamp(Math.round(Number(a.c)||0),-2000,2000), r: clamp(Math.round(Number(a.r)||0),-2000,2000), rotationDeg: normalizeAnchorRotation(a.rotationDeg) };
   }
 
   function normalizeProject(raw) {
     if (!raw || !Array.isArray(raw.points)) return buildRescueExample();
-    const cols = DEFAULT_COLS, rows = DEFAULT_ROWS; // real bounds are re-clamped once a map (or blank grid) is loaded
+    // Points are stored in the scene's own local grid — see "Scene
+    // placement" (state.project.anchor) — not raw map tiles, so a scene's
+    // blocking is grid-agnostic and can be dropped anywhere on any map, like
+    // a structure. `point.c/point.r` (pre-anchor exports) are read as local
+    // coordinates too: those scenes had no anchor concept, which is
+    // equivalent to anchor {c:0,r:0,rotationDeg:0} — an identity transform,
+    // so old saves still land exactly where they used to.
     const points = raw.points.map((point,index) => ({
       id:String(point.id || uid("point")), name:String(point.name || `Point ${index+1}`).slice(0,28),
-      c:clamp(Math.round(Number(point.c ?? point.x)||0),0,2000), r:clamp(Math.round(Number(point.r ?? point.y)||0),0,2000)
+      lc:clamp(Math.round(Number(point.lc ?? point.c ?? point.x)||0),-2000,2000),
+      lr:clamp(Math.round(Number(point.lr ?? point.r ?? point.y)||0),-2000,2000)
     }));
-    if (!points.length) points.push({ id:uid("point"), name:"Start", c:4, r:8 });
+    if (!points.length) points.push({ id:uid("point"), name:"Start", lc:4, lr:8 });
 
     const pointIds = new Set(points.map(p => p.id));
     const actors = (Array.isArray(raw.actors) ? raw.actors : []).map((actor,index) => ({
@@ -1021,9 +1084,17 @@
       return { id, type:"fade", direction: stage.direction==="in"?"in":"out", duration:clamp(Number(stage.duration)||1,0,10), next:String(stage.next||"__next__") };
     });
 
+    // Pre-anchor exports stored the captured camera as absolute world
+    // {pos,target} — equivalent to {localPos,localTarget} under the
+    // identity anchor those scenes always had, so it's read the same way.
+    const rawCam = raw.camera3d;
+    const camera3d = rawCam && rawCam.localPos && rawCam.localTarget ? rawCam
+      : rawCam && rawCam.pos && rawCam.target ? { localPos: rawCam.pos, localTarget: rawCam.target }
+      : null;
+
     return {
       version: 6, title:String(raw.title||"Cutscene").slice(0,80), mapId:String(raw.mapId||""),
-      camera3d: raw.camera3d && raw.camera3d.pos && raw.camera3d.target ? raw.camera3d : null,
+      anchor: normalizeAnchor(raw.anchor), camera3d,
       points, actors, stages
     };
   }
@@ -1041,6 +1112,36 @@
   }
 
   function pointById(id) { return state.project.points.find(p => p.id === id) || null; }
+
+  // ── Scene placement (anchor) transform ──────────────────────────────────
+  // Every point stores its position in the scene's own local grid (lc/lr),
+  // independent of any map. state.project.anchor {c,r,rotationDeg} is where
+  // that local origin sits on the *currently loaded* map/blank stage —
+  // exactly like a building's {gridX,gridZ,rotationDeg} on the town map.
+  // Moving or rotating the anchor is the only thing that changes; every
+  // point (and, downstream, every actor and the captured camera) is derived
+  // from it here, so they all shift/rotate together automatically. Rotation
+  // is locked to 90° steps, same as building placement, so local<->world
+  // stays exact integer tile math.
+  function localToWorld(lc, lr) {
+    const a = state.project.anchor;
+    const rot = normalizeAnchorRotation(a.rotationDeg);
+    if (rot === 90)  return { c: a.c - lr, r: a.r + lc };
+    if (rot === 180) return { c: a.c - lc, r: a.r - lr };
+    if (rot === 270) return { c: a.c + lr, r: a.r - lc };
+    return { c: a.c + lc, r: a.r + lr };
+  }
+  function worldToLocal(c, r) {
+    const a = state.project.anchor;
+    const rot = normalizeAnchorRotation(a.rotationDeg);
+    const dc = c - a.c, dr = r - a.r;
+    if (rot === 90)  return { c: dr, r: -dc };
+    if (rot === 180) return { c: -dc, r: -dr };
+    if (rot === 270) return { c: -dr, r: dc };
+    return { c: dc, r: dr };
+  }
+  function worldOfPoint(point) { return point ? localToWorld(point.lc, point.lr) : { c: 0, r: 0 }; }
+
   function actorById(id) { return state.project.actors.find(a => a.id === id) || null; }
   function stageById(id) { return state.project.stages.find(s => s.id === id) || null; }
   function stageIndex(id) { return state.project.stages.findIndex(s => s.id === id); }
@@ -1519,7 +1620,7 @@
   function frameCameraToStage() {
     const three = state.three;
     if (!three) return;
-    if (state.project?.camera3d) { applyCamera3D(state.project.camera3d); return; }
+    if (state.project?.camera3d) { applyCamera3D(); return; }
     const cols = GRID_COLS(), rows = GRID_ROWS();
     const dist = Math.max(cols, rows);
     three.camera.position.set(cols*0.5 + dist*0.35, dist*0.55, rows*0.5 + dist*0.55);
@@ -1528,11 +1629,18 @@
     three.controls.update();
   }
 
-  function applyCamera3D(cam) {
+  // Captured camera shots are stored relative to the scene anchor (same
+  // localToWorld/worldToLocal transform as points — x/z are tile-space, so
+  // the same rotation math applies) so a captured shot keeps framing the
+  // scene correctly after the anchor is moved or rotated.
+  function applyCamera3D() {
     const three = state.three;
+    const cam = state.project?.camera3d;
     if (!three || !cam) return;
-    three.camera.position.set(cam.pos.x, cam.pos.y, cam.pos.z);
-    three.controls.target.set(cam.target.x, cam.target.y, cam.target.z);
+    const worldPos = localToWorld(cam.localPos.x, cam.localPos.z);
+    const worldTarget = localToWorld(cam.localTarget.x, cam.localTarget.z);
+    three.camera.position.set(worldPos.c, cam.localPos.y, worldPos.r);
+    three.controls.target.set(worldTarget.c, cam.localTarget.y, worldTarget.r);
     three.camera.lookAt(three.controls.target);
     three.controls.update();
   }
@@ -1540,13 +1648,15 @@
   function captureCamera3D() {
     const three = state.three;
     if (!three) return;
+    const localPos = worldToLocal(three.camera.position.x, three.camera.position.z);
+    const localTarget = worldToLocal(three.controls.target.x, three.controls.target.z);
     state.project.camera3d = {
-      pos: { x: three.camera.position.x, y: three.camera.position.y, z: three.camera.position.z },
-      target: { x: three.controls.target.x, y: three.controls.target.y, z: three.controls.target.z }
+      localPos: { x: localPos.c, y: three.camera.position.y, z: localPos.r },
+      localTarget: { x: localTarget.c, y: three.controls.target.y, z: localTarget.r }
     };
     saveLocal();
     toast("Camera captured for Play.");
-    log("Play camera captured from the current 3D view.");
+    log("Play camera captured from the current 3D view — it'll follow the scene if you move the anchor.");
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -1754,12 +1864,22 @@
     pruneStaleActorObjects();
 
     state.project.points.forEach((point, index) => {
+      const w = worldOfPoint(point);
       const cone = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.55, 10), new THREE.MeshBasicMaterial({ color: point.id===state.selectedPointId ? 0xffe36e : 0xf2b755 }));
-      cone.position.set(point.c+0.5, groundYAt(point.c,point.r)+0.9, point.r+0.5);
+      cone.position.set(w.c+0.5, groundYAt(w.c,w.r)+0.9, w.r+0.5);
       cone.rotation.x = Math.PI;
       cone.name = `point_${point.id}`;
       three.markersGroup.add(cone);
     });
+
+    // Anchor marker: where the scene's local origin sits on the current map.
+    {
+      const a = state.project.anchor;
+      const anchorMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), new THREE.MeshBasicMaterial({ color: 0x7fd4ff, wireframe: true }));
+      anchorMesh.position.set(a.c+0.5, groundYAt(a.c,a.r)+0.5, a.r+0.5);
+      anchorMesh.name = "scene_anchor_marker";
+      three.markersGroup.add(anchorMesh);
+    }
 
     const initial = initialActorStates();
     for (const actor of state.project.actors) {
@@ -1795,17 +1915,19 @@
       tile.style.background = tileColorAt(c,r);
       tile.setAttribute("aria-label", `Tile ${c+1}, ${r+1}`);
       tile.addEventListener("click", () => {
-        if (state.draggingPointId || !state.movingPointId) return;
-        movePointTo(state.movingPointId, c, r);
+        if (state.draggingPointId) return;
+        if (state.movingAnchor) { moveAnchorTo(c, r); return; }
+        if (state.movingPointId) movePointTo(state.movingPointId, c, r);
       });
       board.appendChild(tile);
     }
 
     state.project.points.forEach(point => {
+      const w = worldOfPoint(point);
       const token = document.createElement("div");
       token.className = `point-token ${point.id===state.selectedPointId?"selected":""}`;
-      token.style.left = `${point.c*100/cols}%`;
-      token.style.top = `${point.r*100/rows}%`;
+      token.style.left = `${w.c*100/cols}%`;
+      token.style.top = `${w.r*100/rows}%`;
       token.innerHTML = `<span class="pin"><span>${escapeHtml(point.name.slice(0,2))}</span></span>`;
       token.addEventListener("click", e => { e.stopPropagation(); state.selectedPointId = point.id; state.movingPointId = null; renderAll(); });
       token.addEventListener("pointerdown", e => {
@@ -1818,8 +1940,11 @@
         if (state.draggingPointId !== point.id) return;
         const cell = getBoardCellFromPointer(board, e.clientX, e.clientY);
         const live = pointById(point.id);
-        if (!live || (live.c===cell.c && live.r===cell.r)) return;
-        live.c = cell.c; live.r = cell.r;
+        if (!live) return;
+        const liveWorld = worldOfPoint(live);
+        if (liveWorld.c===cell.c && liveWorld.r===cell.r) return;
+        const local = worldToLocal(cell.c, cell.r);
+        live.lc = local.c; live.lr = local.r;
         saveLocal();
         renderEditorBoard();
       });
@@ -1834,16 +1959,59 @@
       board.appendChild(token);
     });
 
-    els.pickBanner.classList.toggle("hidden", !state.movingPointId);
+    {
+      const a = state.project.anchor;
+      const anchorToken = document.createElement("div");
+      anchorToken.className = "point-token anchor-token";
+      anchorToken.style.left = `${a.c*100/cols}%`;
+      anchorToken.style.top = `${a.r*100/rows}%`;
+      anchorToken.title = "Scene anchor — drag to move the whole scene";
+      anchorToken.innerHTML = `<span class="pin anchor-pin"><span>⚑</span></span>`;
+      anchorToken.addEventListener("click", e => { e.stopPropagation(); });
+      anchorToken.addEventListener("pointerdown", e => {
+        e.preventDefault(); e.stopPropagation();
+        state.draggingAnchor = true;
+        anchorToken.setPointerCapture?.(e.pointerId);
+      });
+      anchorToken.addEventListener("pointermove", e => {
+        if (!state.draggingAnchor) return;
+        const cell = getBoardCellFromPointer(board, e.clientX, e.clientY);
+        if (state.project.anchor.c===cell.c && state.project.anchor.r===cell.r) return;
+        state.project.anchor.c = cell.c; state.project.anchor.r = cell.r;
+        saveLocal();
+        renderEditorBoard();
+      });
+      anchorToken.addEventListener("pointerup", e => {
+        if (!state.draggingAnchor) return;
+        anchorToken.releasePointerCapture?.(e.pointerId);
+        state.draggingAnchor = false;
+        log(`Scene anchor moved to tile ${state.project.anchor.c+1}, ${state.project.anchor.r+1}. Every point/actor shifted with it.`);
+        changed("");
+      });
+      anchorToken.addEventListener("pointercancel", () => { state.draggingAnchor = false; renderAll(); });
+      board.appendChild(anchorToken);
+    }
+
+    els.pickBanner.classList.toggle("hidden", !state.movingPointId && !state.movingAnchor);
+    if (state.movingAnchor) els.pickBanner.textContent = "Tap a tile below to place the scene anchor — everything moves with it.";
+    else if (state.movingPointId) els.pickBanner.textContent = "Tap a tile below to place the selected point.";
   }
 
   function movePointTo(pointId, c, r) {
     const point = pointById(pointId);
     if (!point) return;
-    point.c = c; point.r = r;
+    const local = worldToLocal(c, r);
+    point.lc = local.c; point.lr = local.r;
     state.movingPointId = null;
     changed(`${point.name} moved to tile ${c+1}, ${r+1}.`);
     toast(`${point.name} moved.`);
+  }
+
+  function moveAnchorTo(c, r) {
+    state.project.anchor.c = c; state.project.anchor.r = r;
+    state.movingAnchor = false;
+    changed(`Scene moved to tile ${c+1}, ${r+1} — every point and actor shifted with it.`);
+    toast("Scene moved.");
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -1853,12 +2021,12 @@
   function renderPointLists() {
     if (state.selectedPointId && !pointById(state.selectedPointId)) state.selectedPointId = null;
     els.pointList.innerHTML = state.project.points.length
-      ? state.project.points.map((point,index) => `
+      ? state.project.points.map((point,index) => { const w = worldOfPoint(point); return `
           <div class="item-card ${point.id===state.selectedPointId?"selected":""}" data-point-id="${escapeHtml(point.id)}">
             <span class="point-dot">${index+1}</span>
-            <span><strong>${escapeHtml(point.name)}</strong><small>Tile ${point.c+1}, ${point.r+1}</small></span>
+            <span><strong>${escapeHtml(point.name)}</strong><small>Tile ${w.c+1}, ${w.r+1} (local ${point.lc},${point.lr})</small></span>
             <button data-move-point="${escapeHtml(point.id)}">Move</button>
-          </div>`).join("")
+          </div>`; }).join("")
       : `<div class="empty-state">Add your first named point.</div>`;
 
     els.pointList.querySelectorAll("[data-point-id]").forEach(card => {
@@ -2169,8 +2337,8 @@
 
   function initialActorStates() {
     return new Map(state.project.actors.map(actor => {
-      const point = pointById(actor.startPointId);
-      return [actor.id, { c: point?.c||0, r: point?.r||0, rotation: normalizeAngle(actor.rotation), pose: actor.pose, combatOn: Boolean(actor.combatOn), canLose: Boolean(actor.canLose), animationName: "" }];
+      const w = worldOfPoint(pointById(actor.startPointId));
+      return [actor.id, { c: w.c, r: w.r, rotation: normalizeAngle(actor.rotation), pose: actor.pose, combatOn: Boolean(actor.combatOn), canLose: Boolean(actor.canLose), animationName: "" }];
     }));
   }
 
@@ -2276,8 +2444,9 @@
   function angleToward(from, to) { const radians = Math.atan2(to.r-from.r, to.c-from.c); return normalizeAngle(radians*180/Math.PI + 90); }
 
   function runMoveStage(stage, token) {
-    const actor = actorById(stage.actorId), target = pointById(stage.pointId), actorState = state.preview.actorStates.get(stage.actorId);
-    if (!actor || !target || !actorState) { continueTo(getResolvedNext(stage.id,stage.next),token); return; }
+    const actor = actorById(stage.actorId), targetPoint = pointById(stage.pointId), actorState = state.preview.actorStates.get(stage.actorId);
+    if (!actor || !targetPoint || !actorState) { continueTo(getResolvedNext(stage.id,stage.next),token); return; }
+    const target = worldOfPoint(targetPoint);
     const path = buildGridPath(actorState, target);
     const delay = stage.speed==="slow"?430:stage.speed==="fast"?90:210;
     let stepIndex = 1;
@@ -2627,9 +2796,18 @@
   //  Wiring
   // ══════════════════════════════════════════════════════════════════════
 
+  function renderScenePlacement() {
+    const a = state.project.anchor;
+    els.anchorCInput.value = a.c;
+    els.anchorRInput.value = a.r;
+    els.anchorRotationSelect.value = String(a.rotationDeg);
+    els.moveAnchorBtn.classList.toggle("primary", !state.movingAnchor);
+  }
+
   async function renderAll() {
     renderPointLists();
     renderActors();
+    renderScenePlacement();
     renderEditorBoard();
     renderStages();
     renderValidation();
@@ -2646,9 +2824,26 @@
     els.loadMapBtn.addEventListener("click", () => { const id = els.mapSelect.value; if (!id) { toast("Choose a map first."); return; } loadMap(id); });
     els.clearMapBtn.addEventListener("click", clearMap);
 
+    els.anchorCInput.addEventListener("change", () => { state.project.anchor.c = clamp(Math.round(Number(els.anchorCInput.value)||0),-2000,2000); changed("Scene anchor moved — everything shifted with it."); });
+    els.anchorRInput.addEventListener("change", () => { state.project.anchor.r = clamp(Math.round(Number(els.anchorRInput.value)||0),-2000,2000); changed("Scene anchor moved — everything shifted with it."); });
+    els.anchorRotationSelect.addEventListener("change", () => { state.project.anchor.rotationDeg = normalizeAnchorRotation(els.anchorRotationSelect.value); changed("Scene rotated — everything rotated with it."); });
+    els.moveAnchorBtn.addEventListener("click", () => {
+      state.movingAnchor = !state.movingAnchor;
+      state.movingPointId = null;
+      renderAll();
+      if (state.movingAnchor) toast("Tap a tile below to place the scene.");
+    });
+    els.centerAnchorBtn.addEventListener("click", () => {
+      state.project.anchor.c = Math.round(GRID_COLS()/2);
+      state.project.anchor.r = Math.round(GRID_ROWS()/2);
+      changed("Scene centered on the stage.");
+    });
+
     els.addPointBtn.addEventListener("click", () => {
       const name = els.newPointName.value.trim() || `Point ${state.project.points.length+1}`;
-      const point = { id: uid("point"), name: name.slice(0,28), c: clamp(4+state.project.points.length*2,0,GRID_COLS()-1), r: clamp(4+state.project.points.length,0,GRID_ROWS()-1) };
+      // Local coordinates — placed near the scene's own origin, not clamped
+      // to the current map's size, since local space is grid-agnostic.
+      const point = { id: uid("point"), name: name.slice(0,28), lc: clamp(4+state.project.points.length*2,-2000,2000), lr: clamp(4+state.project.points.length,-2000,2000) };
       state.project.points.push(point);
       state.selectedPointId = point.id; state.movingPointId = point.id;
       els.newPointName.value = "";
@@ -2724,10 +2919,10 @@
       resetPreview(false);
       saveLocal();
       renderMapSelect();
-      await loadMap(state.project.mapId);
+      if (state.project.mapId) await loadMap(state.project.mapId); else clearMap();
       renderAll();
       switchScreen("stage");
-      log("Gar-wolf rescue example restored (Jubmir and Spearhead are linked to their real NPC database entries).");
+      log("Gar-wolf rescue example restored (Jubmir and Spearhead are linked to their real NPC database entries; no map yet — it belongs on a wilderness map that doesn't exist as a file yet, so it starts on the blank practice grid and can be dragged onto one once it does).");
       toast("Rescue example restored.");
     });
 
@@ -2747,6 +2942,7 @@
   async function init() {
     [
       "exportBtn","importBtn","exampleBtn","importFile","mapSelect","loadMapBtn","clearMapBtn","mapLoadStatus",
+      "anchorCInput","anchorRInput","anchorRotationSelect","moveAnchorBtn","centerAnchorBtn",
       "pickBanner","editorBoard","newPointName","addPointBtn","pointList","pointEditor","pointNameInput","movePointBtn","deletePointBtn",
       "addNpcActorBtn","addCreatureActorBtn","newActorName","addActorBtn","actorList","actorEditor","actorNpcBadge","actorCreatureBadge","actorNameInput","actorColorInput",
       "actorStartSelect","actorRotationInput","actorPoseSelect","actorTeamInput","actorCombatInput","actorCanLoseInput","unlinkNpcBtn","unlinkCreatureBtn","deleteActorBtn",
