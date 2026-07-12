@@ -987,7 +987,7 @@
       // notice the wolves.
       addStage("hound1Run",{ type:"move", actorId:actors.hound1.id, pointId:points.hound1Arrived.id, speed:"fast", next:"__next__" }),
       addStage("hound2Run",{ type:"move", actorId:actors.hound2.id, pointId:points.hound2Arrived.id, speed:"fast", next:"__next__" }),
-      addStage("combat",{ type:"combat", duration:5,
+      addStage("combat",{ type:"combat", duration:3,
         participants:[
           { actorId:actors.wolf1.id, combatOn:true, canLose:false }, { actorId:actors.wolf2.id, combatOn:true, canLose:false }, { actorId:actors.wolf3.id, combatOn:true, canLose:false },
           { actorId:actors.hound1.id, combatOn:true, canLose:false }, { actorId:actors.hound2.id, combatOn:true, canLose:false }

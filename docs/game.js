@@ -20153,7 +20153,24 @@
           entity.walker.rot = THREE.MathUtils.degToRad(st.rotation);
           entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
           entity.root.rotation.y = entity.walker.rot;
-          entity.root.scale.setScalar(st.pose === 'prone' ? 0.6 : 1);
+          entity.root.scale.setScalar(1);
+          // Prone tips the flat portrait plane down onto its back instead of
+          // just shrinking a standing figure — this walker is scripted
+          // entirely by the director (pause:Infinity, see the actor-spawn
+          // loop) and never dialogue-staged (guarded by cutscenePreviewActive
+          // in beginNpcDialogueStaging/faceNpcDialogueParticipants), so
+          // nothing else re-asserts a standing transform over this pose.
+          const avatarGroup = entity.walker.avatarGroup;
+          if (avatarGroup) {
+            const avatarHeight = avatarGroup.userData?.portraitModelHeight || 1;
+            if (st.pose === 'prone') {
+              avatarGroup.rotation.x = Math.PI / 2;
+              avatarGroup.position.y = avatarHeight * 0.06;
+            } else {
+              avatarGroup.rotation.x = 0;
+              avatarGroup.position.y = avatarHeight / 2;
+            }
+          }
         } else {
           entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
           entity.root.rotation.y = THREE.MathUtils.degToRad(st.rotation);
@@ -20274,7 +20291,7 @@
             if (actor.npcId && actor.npcRecord) {
               const walker = await makeNpcWalker(actor.npcRecord, { area, c: actor.worldC, r: actor.worldR });
               if (walker) {
-                walker.rot = THREE.MathUtils.degToRad(cutscenePreviewNpcFacingCheatAngle(actor.rotation || 0, { c: actor.worldC, r: actor.worldR }));
+                walker.rot = THREE.MathUtils.degToRad(actor.rotation || 0); // corrected below once actorStates/applyState exist — see the initial-pose pass before runStage
                 walker.root.rotation.y = walker.rot;
                 walker.pause = Infinity; // scripted entirely by the director below — never the idle/wander AI
                 entity = { kind: 'npc', root: walker.root, walker, rec: actor.npcRecord, profile: walker.profile, avatarFrontCanvas: walker.avatarFrontCanvas, avatarBackCanvas: walker.avatarBackCanvas };
@@ -20310,7 +20327,7 @@
               };
               const walker = await makeNpcWalker(fakeRec, { area, c: actor.worldC, r: actor.worldR });
               if (walker) {
-                walker.rot = THREE.MathUtils.degToRad(cutscenePreviewNpcFacingCheatAngle(actor.rotation || 0, { c: actor.worldC, r: actor.worldR }));
+                walker.rot = THREE.MathUtils.degToRad(actor.rotation || 0); // corrected below once actorStates/applyState exist — see the initial-pose pass before runStage
                 walker.root.rotation.y = walker.rot;
                 walker.pause = Infinity;
                 entity = { kind: 'npc', root: walker.root, walker, rec: fakeRec, profile: walker.profile, avatarFrontCanvas: walker.avatarFrontCanvas, avatarBackCanvas: walker.avatarBackCanvas };
@@ -20329,9 +20346,19 @@
         // reading a payload the Director tool has already fully resolved
         // to world tile coordinates (see its "Preview in game" handler).
         const actorsById  = new Map((payload.actors || []).map(a => [a.id, a]));
-        const actorStates = new Map((payload.actors || []).map(a => [a.id, {
-          c: a.worldC, r: a.worldR, rotation: a.rotation || 0, pose: a.pose || 'standing', combatOn: false, canLose: false,
-        }]));
+        // An NPC/player actor's authored rotation gets the visibility cheat
+        // here (not at spawn time, which happens before this Map or
+        // applyState exist) — this is the single source of truth for every
+        // actor's rotation from here on, kept in sync with the mesh only
+        // through applyState, so it can't drift out of sync with what's
+        // actually on screen the way computing it twice would.
+        const actorStates = new Map((payload.actors || []).map(a => {
+          const rawRotation = a.rotation || 0;
+          const rotation = entities.get(a.id)?.kind === 'npc'
+            ? cutscenePreviewNpcFacingCheatAngle(rawRotation, { c: a.worldC, r: a.worldR })
+            : rawRotation;
+          return [a.id, { c: a.worldC, r: a.worldR, rotation, pose: a.pose || 'standing', combatOn: false, canLose: false }];
+        }));
         const stagesById  = new Map((payload.stages || []).map(s => [s.id, s]));
         const stageOrder  = (payload.stages || []).map(s => s.id);
         let running = true;
@@ -20636,6 +20663,14 @@
           requestAnimationFrame(() => { fadeEl.style.opacity = String(targetOpacity); });
           setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), (stage.duration || 0) * 1000);
         }
+
+        // Actors otherwise only get their state (rotation, and any starting
+        // pose like Prone) pushed onto their mesh the first time some stage
+        // happens to touch them — an actor a scene never turns, moves, or
+        // animates would sit at its raw spawn transform forever. Every
+        // actor's initial authored state is applied once, up front, so a
+        // resting Prone/rotation reads correctly from frame one.
+        for (const actorId of actorStates.keys()) applyState(actorId);
 
         if (!stageOrder.length) { finish('Preview stopped — this scene has no cards.'); return; }
         cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'}`, false);
