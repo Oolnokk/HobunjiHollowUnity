@@ -680,6 +680,11 @@
                   <button id="movePointBtn" class="primary">📍 Move point</button>
                   <button id="deletePointBtn" class="danger">Delete</button>
                 </div>
+                <label><input id="pointFacingEnabled" type="checkbox"> Turn to face a direction on arrival</label>
+                <div id="pointFacingRow" class="row hidden">
+                  <input id="pointFacingInput" type="number" min="0" max="359" step="1">
+                </div>
+                <p class="tip">Without this, an actor arriving here just keeps facing whichever way it was already walking.</p>
               </div>
               <div id="pickBanner" class="tip hidden">Tap a tile below to place the selected point.</div>
               <div class="board-scroll"><div id="editorBoard" class="map-board" aria-label="Named point grid"></div></div>
@@ -746,7 +751,7 @@
                 <button data-add-stage="talk"><span class="big-icon">💬</span><span>Talk</span></button>
                 <button data-add-stage="choice"><span class="big-icon">🔀</span><span>Choice</span></button>
                 <button data-add-stage="animation"><span class="big-icon">🎞️</span><span>Animation</span></button>
-                <button data-add-stage="turn"><span class="big-icon">↻</span><span>Turn</span></button>
+                <button data-add-stage="turn"><span class="big-icon">↻</span><span>Turn in place</span></button>
                 <button data-add-stage="combat"><span class="big-icon">⚔️</span><span>Combat</span></button>
                 <button data-add-stage="fade"><span class="big-icon">⬛</span><span>Fade</span></button>
               </div>
@@ -843,15 +848,15 @@
      other tools' in-memory/localStorage state. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/GLTFLoader.js?v=20260712f"></script>
-<script src="../../js/WallBuilder.js?v=20260712f"></script>
-<script src="../../js/HousePieceGen.js?v=20260712f"></script>
-<script src="../../js/procedural-furniture.js?v=20260712f"></script>
-<script src="../../js/foliage-generator.js?v=20260712f"></script>
-<script src="../../js/terrain-preview.js?v=20260712f"></script>
+<script src="../../js/GLTFLoader.js?v=20260712g"></script>
+<script src="../../js/WallBuilder.js?v=20260712g"></script>
+<script src="../../js/HousePieceGen.js?v=20260712g"></script>
+<script src="../../js/procedural-furniture.js?v=20260712g"></script>
+<script src="../../js/foliage-generator.js?v=20260712g"></script>
+<script src="../../js/terrain-preview.js?v=20260712g"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
-<script src="../../config/scratchbones-config.js?v=20260712f"></script>
+<script src="../../config/scratchbones-config.js?v=20260712g"></script>
 <script>
   // scratchbones-config.js's asset paths are authored repo-root-relative
   // (docs/assets/, docs/config/) for the top-level game page; this tool
@@ -863,10 +868,10 @@
     window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = '../../config/';
   }
 </script>
-<script src="../../js/portrait-utils.js?v=20260712f"></script>
-<script src="../../js/portrait-breathing.js?v=20260712f"></script>
-<script src="../../js/npc-avatar-preview-utils.js?v=20260712f"></script>
-<script src="../../js/png-plane-avatar.js?v=20260712f"></script>
+<script src="../../js/portrait-utils.js?v=20260712g"></script>
+<script src="../../js/portrait-breathing.js?v=20260712g"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20260712g"></script>
+<script src="../../js/png-plane-avatar.js?v=20260712g"></script>
 
 <script>
 (() => {
@@ -978,7 +983,7 @@
     // (state.project.anchor) — not raw map tiles. With the default anchor
     // {c:0,r:0,rotationDeg:0} local coordinates equal world tiles, so this
     // reads exactly like the original absolute layout.
-    const addPoint = (key, name, lc, lr) => { const p = { id: uid("point"), name, lc, lr }; points[key] = p; return p; };
+    const addPoint = (key, name, lc, lr, facing=null) => { const p = { id: uid("point"), name, lc, lr, facing }; points[key] = p; return p; };
     [
       addPoint("playerDown","Player Down",11,8), addPoint("playerStep","Player Step",11,7),
       addPoint("wolf1Over","Wolf 1 Over Player",10,7), addPoint("wolf2Over","Wolf 2 Over Player",12,7),
@@ -1125,7 +1130,12 @@
       // Not rounded — points are placed freely, not snapped to whole tiles
       // (see getBoardExactFromPointer).
       lc:clamp(Number(point.lc ?? point.c ?? point.x)||0,-2000,2000),
-      lr:clamp(Number(point.lr ?? point.r ?? point.y)||0,-2000,2000)
+      lr:clamp(Number(point.lr ?? point.r ?? point.y)||0,-2000,2000),
+      // Arrival facing: null = keep whatever direction the actor was
+      // already facing from its walk (moveToward's own turn-toward-travel);
+      // a number = snap to that heading the instant a Move card lands an
+      // actor on this point (see runMoveStage/runMove's onArrive).
+      facing: point.facing==null || point.facing==="" ? null : normalizeAngle(point.facing)
     }));
     if (!points.length) points.push({ id:uid("point"), name:"Start", lc:4, lr:8 });
 
@@ -1251,7 +1261,7 @@
       ? state.project.actors.map(a => `<option value="${escapeHtml(a.id)}" ${a.id===selectedId?"selected":""}>${escapeHtml(a.name)}</option>`).join("")
       : `<option value="">No characters</option>`;
   }
-  function stageName(type) { return { move:"Move", talk:"Talk", choice:"Choice", animation:"Animation", turn:"Turn", combat:"Combat", fade:"Fade" }[type] || "Stage"; }
+  function stageName(type) { return { move:"Move", talk:"Talk", choice:"Choice", animation:"Animation", turn:"Turn in place", combat:"Combat", fade:"Fade" }[type] || "Stage"; }
   function stageIcon(type) { return { move:"👣", talk:"💬", choice:"🔀", animation:"🎞️", turn:"↻", combat:"⚔️", fade:"⬛" }[type] || "•"; }
   function stageLabel(stage, index = stageIndex(stage.id)) { return `${index+1}. ${stageIcon(stage.type)} ${stageName(stage.type)}`; }
 
@@ -1880,9 +1890,10 @@
     const stages = state.project.stages.map(stage => {
       if (stage.type !== "move") return { ...stage };
       const pt = pointById(stage.pointId);
-      if (isWilderness) return { ...stage, targetLocal: { lc: pt?.lc || 0, lr: pt?.lr || 0 } };
+      const facing = pt?.facing ?? null;
+      if (isWilderness) return { ...stage, targetLocal: { lc: pt?.lc || 0, lr: pt?.lr || 0, facing } };
       const w = worldOfPoint(pt);
-      return { ...stage, targetWorld: { c: w.c, r: w.r } };
+      return { ...stage, targetWorld: { c: w.c, r: w.r, facing } };
     });
     let camera3d = null;
     if (state.project.camera3d) {
@@ -2399,7 +2410,12 @@
 
     const point = pointById(state.selectedPointId);
     els.pointEditor.classList.toggle("hidden", !point);
-    if (point) els.pointNameInput.value = point.name;
+    if (point) {
+      els.pointNameInput.value = point.name;
+      els.pointFacingEnabled.checked = point.facing != null;
+      els.pointFacingRow.classList.toggle("hidden", point.facing == null);
+      els.pointFacingInput.value = point.facing != null ? point.facing : 0;
+    }
   }
 
   function actorAvatarBadgeHtml(actor) {
@@ -2886,7 +2902,19 @@
     // keeps walking in the background — the loop below still runs (still
     // gated on the same preview token, so a reset/stop cancels it exactly
     // like a blocking move) but nothing here waits on it.
-    const onArrive = () => { if (arrived) return; arrived = true; if (waitForArrival) continueTo(getResolvedNext(stage.id,stage.next),token); };
+    const onArrive = () => {
+      if (arrived) return;
+      arrived = true;
+      // The target point's own authored arrival facing (if any) wins over
+      // whatever direction the walk itself left the actor facing — same
+      // instant-snap-plus-cheat convention "Turn in place" cards use, just
+      // triggered by landing on this point instead of an explicit card.
+      if (targetPoint.facing != null) {
+        actorState.rotation = facingCheatFor(stage.actorId)(targetPoint.facing, actorState);
+        applyActorStateToScene(stage.actorId, actorState);
+      }
+      if (waitForArrival) continueTo(getResolvedNext(stage.id,stage.next),token);
+    };
     const advance = () => {
       if (token !== state.preview.token || !state.preview.running) return;
       if (stepIndex >= path.length) { onArrive(); return; }
@@ -3285,7 +3313,7 @@
       const name = els.newPointName.value.trim() || `Point ${state.project.points.length+1}`;
       // Local coordinates — placed near the scene's own origin, not clamped
       // to the current map's size, since local space is grid-agnostic.
-      const point = { id: uid("point"), name: name.slice(0,28), lc: clamp(4+state.project.points.length*2,-2000,2000), lr: clamp(4+state.project.points.length,-2000,2000) };
+      const point = { id: uid("point"), name: name.slice(0,28), lc: clamp(4+state.project.points.length*2,-2000,2000), lr: clamp(4+state.project.points.length,-2000,2000), facing: null };
       state.project.points.push(point);
       state.selectedPointId = point.id; state.movingPointId = point.id;
       els.newPointName.value = "";
@@ -3294,6 +3322,17 @@
     });
     els.newPointName.addEventListener("keydown", e => { if (e.key === "Enter") els.addPointBtn.click(); });
     els.pointNameInput.addEventListener("input", () => { const p = pointById(state.selectedPointId); if (!p) return; p.name = els.pointNameInput.value.slice(0,28) || "Point"; saveLocal(); renderPointLists(); renderEditorBoard(); renderStages(); });
+    els.pointFacingEnabled.addEventListener("change", () => {
+      const p = pointById(state.selectedPointId); if (!p) return;
+      p.facing = els.pointFacingEnabled.checked ? normalizeAngle(els.pointFacingInput.value) : null;
+      els.pointFacingRow.classList.toggle("hidden", p.facing == null);
+      changed(p.facing != null ? `${p.name} now turns to face ${p.facing}° on arrival.` : `${p.name} no longer auto-turns on arrival.`);
+    });
+    els.pointFacingInput.addEventListener("change", () => {
+      const p = pointById(state.selectedPointId); if (!p || !els.pointFacingEnabled.checked) return;
+      p.facing = normalizeAngle(els.pointFacingInput.value);
+      changed(`${p.name}'s arrival facing set to ${p.facing}°.`);
+    });
     els.movePointBtn.addEventListener("click", () => { if (!pointById(state.selectedPointId)) return; state.movingPointId = state.selectedPointId; renderAll(); toast("Tap the point's new tile."); });
     els.deletePointBtn.addEventListener("click", () => {
       const point = pointById(state.selectedPointId); if (!point) return;
@@ -3396,6 +3435,7 @@
       "wildernessSelect","useWildernessBtn",
       "anchorCInput","anchorRInput","anchorRotationSelect","moveAnchorBtn","centerAnchorBtn",
       "pickBanner","editorBoard","newPointName","addPointBtn","pointList","pointEditor","pointNameInput","movePointBtn","deletePointBtn",
+      "pointFacingEnabled","pointFacingRow","pointFacingInput",
       "addNpcActorBtn","addCreatureActorBtn","newActorName","addActorBtn","actorList","actorEditor","actorNpcBadge","actorCreatureBadge","actorNameInput","actorColorInput",
       "actorStartSelect","actorRotationInput","actorPoseSelect","actorTeamInput","actorCombatInput","actorCanLoseInput","actorIsPlayerInput","unlinkNpcBtn","unlinkCreatureBtn","deleteActorBtn",
       "stageList","stageEditor","mapStatusPill","playStatusPill","startPlayBtn","resetPlayBtn","captureCameraBtn","resetCameraBtn","viewModeBtn","previewInGameBtn",

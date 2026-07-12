@@ -20296,7 +20296,7 @@
               a.worldR = (a.lr || 0) + offsetR;
             }
             for (const s of (payload.stages || [])) {
-              if (s.type === 'move' && s.targetLocal) s.targetWorld = { c: s.targetLocal.lc + offsetC, r: s.targetLocal.lr + offsetR };
+              if (s.type === 'move' && s.targetLocal) s.targetWorld = { c: s.targetLocal.lc + offsetC, r: s.targetLocal.lr + offsetR, facing: s.targetLocal.facing ?? null };
             }
             if (payload.camera3d?.localPos && payload.camera3d?.localTarget) {
               payload.camera3d.worldPos = { x: payload.camera3d.localPos.x + offsetC, y: payload.camera3d.localPos.y, z: payload.camera3d.localPos.z + offsetR };
@@ -20634,7 +20634,20 @@
           const tx = goal.c + 0.5, tz = goal.r + 0.5;
           let lastT = performance.now();
           let arrivedAlready = false;
-          const onArrive = () => { if (arrivedAlready) return; arrivedAlready = true; if (waitForArrival) continueTo(getResolvedNext(stage.id, stage.next)); };
+          const onArrive = () => {
+            if (arrivedAlready) return;
+            arrivedAlready = true;
+            // The target point's own authored arrival facing (if any) wins
+            // over whatever direction the walk itself left the actor facing
+            // — same instant-snap-plus-cheat convention a "Turn in place"
+            // card uses, just triggered by landing on this point.
+            if (goal.facing != null) {
+              const cheat = entities.get(stage.actorId)?.kind === 'npc' ? npcFacingCheatAngle : theatreCheatAngle;
+              st.rotation = cheat(goal.facing, st);
+              applyState(stage.actorId);
+            }
+            if (waitForArrival) continueTo(getResolvedNext(stage.id, stage.next));
+          };
           const step = () => {
             if (!running) return;
             const now = performance.now();
