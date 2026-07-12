@@ -814,15 +814,15 @@
      other tools' in-memory/localStorage state. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/GLTFLoader.js?v=20260712"></script>
-<script src="../../js/WallBuilder.js?v=20260712"></script>
-<script src="../../js/HousePieceGen.js?v=20260712"></script>
-<script src="../../js/procedural-furniture.js?v=20260712"></script>
-<script src="../../js/foliage-generator.js?v=20260712"></script>
-<script src="../../js/terrain-preview.js?v=20260712"></script>
+<script src="../../js/GLTFLoader.js?v=20260712b"></script>
+<script src="../../js/WallBuilder.js?v=20260712b"></script>
+<script src="../../js/HousePieceGen.js?v=20260712b"></script>
+<script src="../../js/procedural-furniture.js?v=20260712b"></script>
+<script src="../../js/foliage-generator.js?v=20260712b"></script>
+<script src="../../js/terrain-preview.js?v=20260712b"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
-<script src="../../config/scratchbones-config.js?v=20260712"></script>
+<script src="../../config/scratchbones-config.js?v=20260712b"></script>
 <script>
   // scratchbones-config.js's asset paths are authored repo-root-relative
   // (docs/assets/, docs/config/) for the top-level game page; this tool
@@ -834,10 +834,10 @@
     window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = '../../config/';
   }
 </script>
-<script src="../../js/portrait-utils.js?v=20260712"></script>
-<script src="../../js/portrait-breathing.js?v=20260712"></script>
-<script src="../../js/npc-avatar-preview-utils.js?v=20260712"></script>
-<script src="../../js/png-plane-avatar.js?v=20260712"></script>
+<script src="../../js/portrait-utils.js?v=20260712b"></script>
+<script src="../../js/portrait-breathing.js?v=20260712b"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20260712b"></script>
+<script src="../../js/png-plane-avatar.js?v=20260712b"></script>
 
 <script>
 (() => {
@@ -990,7 +990,7 @@
     const stages = {};
     const addStage = (key, stage) => { stage.id = uid("stage"); stages[key] = stage; return stage; };
     [
-      // A beat of tension before the hounds arrive: the wolves get a real
+      // A beat of tension before the hounds arrive: each wolf gets a real
       // "talk" card (like an NPC's, just voiced as a growl) so the scene
       // doesn't cut straight to combat with zero warning — same creature-
       // dialogue camera framing (cutscenePreviewDialogueCreature) an actual
@@ -999,7 +999,9 @@
       // off south, then the combat card's own live AI (real CREATURE_DB
       // aggro/attack ranges, real chase) takes over the instant they're
       // close enough to notice the wolves.
-      addStage("wolfGrowl",{ type:"talk", speakerId:actors.wolf1.id, text:"(the gar-wolves circle and snarl, closing in on the fallen stranger)", next:"__next__" }),
+      addStage("wolf1Growl",{ type:"talk", speakerId:actors.wolf1.id, text:"Grrrr!", next:"__next__" }),
+      addStage("wolf2Growl",{ type:"talk", speakerId:actors.wolf2.id, text:"Hrrrr!!!", next:"__next__" }),
+      addStage("wolf3Growl",{ type:"talk", speakerId:actors.wolf3.id, text:"Hreeeeech!!!", next:"__next__" }),
       addStage("hound1Run",{ type:"move", actorId:actors.hound1.id, pointId:points.hound1Arrived.id, speed:"fast", next:"__next__" }),
       addStage("hound2Run",{ type:"move", actorId:actors.hound2.id, pointId:points.hound2Arrived.id, speed:"fast", next:"__next__" }),
       addStage("combat",{ type:"combat", duration:3,
