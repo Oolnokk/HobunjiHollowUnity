@@ -2426,11 +2426,18 @@
     return state.project.stages[index+1]?.id || null;
   }
 
+  // Raw authored rotation, no facing cheat — this also backs the idle
+  // editor markers (see the scene-rebuild loop that calls this), which
+  // have no fixed "camera for this shot" at all: the author's free-roam
+  // orbit camera isn't a stand-in for it, so cheating against it there
+  // just makes an actor's displayed rotation drift depending on whatever
+  // angle the author last happened to leave the view at. Preview playback
+  // applies the cheat itself, once the camera is actually at the captured
+  // shot — see resetPreview.
   function initialActorStates() {
     return new Map(state.project.actors.map(actor => {
       const w = worldOfPoint(pointById(actor.startPointId));
-      const rotation = facingCheatFor(actor.id)(normalizeAngle(actor.rotation), w);
-      return [actor.id, { c: w.c, r: w.r, rotation, pose: actor.pose, combatOn: Boolean(actor.combatOn), canLose: Boolean(actor.canLose), animationName: "" }];
+      return [actor.id, { c: w.c, r: w.r, rotation: normalizeAngle(actor.rotation), pose: actor.pose, combatOn: Boolean(actor.combatOn), canLose: Boolean(actor.canLose), animationName: "" }];
     }));
   }
 
@@ -2449,6 +2456,11 @@
     clearTimeout(state.preview.timer);
     state.preview.timer = null;
     state.preview.actorStates = initialActorStates();
+    // Preview playback (unlike the idle editor markers) does have a fixed
+    // camera for this shot — the captured camera3d, already moved into
+    // place by startPreview before this runs — so it's the one place an
+    // actor's initial facing safely gets the visibility/theatre cheat.
+    for (const [actorId, st] of state.preview.actorStates) st.rotation = facingCheatFor(actorId)(st.rotation, st);
     state.preview.fadeOpacity = 0;
     for (const rec of state.actorObjects.values()) {
       clearInterval(rec.breathTimer); rec.breathTimer = null;
