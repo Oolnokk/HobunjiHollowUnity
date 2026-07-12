@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Tropical Wet/Dry Trench Farm</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="js/GLTFLoader.js?v=20260712"></script>
-  <script src="js/WallBuilder.js?v=20260712"></script>
-  <script src="js/HousePieceGen.js?v=20260712"></script>
+  <script src="js/GLTFLoader.js?v=20260712c"></script>
+  <script src="js/WallBuilder.js?v=20260712c"></script>
+  <script src="js/HousePieceGen.js?v=20260712c"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20260712"></script>
+  <script src="debug.js?v=20260712c"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
-  <script src="config/scratchbones-config.js?v=20260712"></script>
-  <link rel="stylesheet" href="style.css?v=20260712">
+  <script src="config/scratchbones-config.js?v=20260712c"></script>
+  <link rel="stylesheet" href="style.css?v=20260712c">
   <!-- Portrait system (ScratchbonesGame) -->
   <script>
     /* scratchbones-config uses repo-root paths; fix them for docs/ serving */
@@ -22,38 +22,38 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20260712"></script>
-  <script src="js/portrait-breathing.js?v=20260712"></script>
-  <script src="js/npc-avatar-preview-utils.js?v=20260712"></script>
-  <script src="js/png-plane-avatar.js?v=20260712"></script>
+  <script src="js/portrait-utils.js?v=20260712c"></script>
+  <script src="js/portrait-breathing.js?v=20260712c"></script>
+  <script src="js/npc-avatar-preview-utils.js?v=20260712c"></script>
+  <script src="js/png-plane-avatar.js?v=20260712c"></script>
   <!-- Procedural foliage / crop geometry -->
-  <script src="js/foliage-generator.js?v=20260712"></script>
+  <script src="js/foliage-generator.js?v=20260712c"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20260712"></script>
+  <script src="js/procedural-furniture.js?v=20260712c"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
-  <script src="js/terrain-preview.js?v=20260712"></script>
-  <script src="js/wilderness-map-generator.js?v=20260712"></script>
+  <script src="js/terrain-preview.js?v=20260712c"></script>
+  <script src="js/wilderness-map-generator.js?v=20260712c"></script>
   <!-- Onboarding overlay -->
-  <link rel="stylesheet" href="onboarding.css?v=20260712">
-  <script src="onboarding.js?v=20260712"></script>
+  <link rel="stylesheet" href="onboarding.css?v=20260712c">
+  <script src="onboarding.js?v=20260712c"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20260712"></script>
-  <script src="js/combat/resource-rings.js?v=20260712"></script>
-  <script src="js/combat/combat-core.js?v=20260712"></script>
-  <script src="js/combat/combat-enemy-telegraph.js?v=20260712"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20260712"></script>
-  <script src="js/combat/combat-loadout.js?v=20260712"></script>
-  <script src="js/combat/combat-progression.js?v=20260712"></script>
-  <script src="js/combat/combat-input.js?v=20260712"></script>
-  <script src="js/combat/combat-combo.js?v=20260712"></script>
-  <script src="js/combat/combat-combo-streak.js?v=20260712"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20260712"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20260712"></script>
-  <script src="js/combat/combat-blink-dodge.js?v=20260712"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20260712"></script>
-  <script src="js/combat/combat-flurry.js?v=20260712"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20260712"></script>
+  <script src="js/combat/resource-system.js?v=20260712c"></script>
+  <script src="js/combat/resource-rings.js?v=20260712c"></script>
+  <script src="js/combat/combat-core.js?v=20260712c"></script>
+  <script src="js/combat/combat-enemy-telegraph.js?v=20260712c"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20260712c"></script>
+  <script src="js/combat/combat-loadout.js?v=20260712c"></script>
+  <script src="js/combat/combat-progression.js?v=20260712c"></script>
+  <script src="js/combat/combat-input.js?v=20260712c"></script>
+  <script src="js/combat/combat-combo.js?v=20260712c"></script>
+  <script src="js/combat/combat-combo-streak.js?v=20260712c"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20260712c"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20260712c"></script>
+  <script src="js/combat/combat-blink-dodge.js?v=20260712c"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20260712c"></script>
+  <script src="js/combat/combat-flurry.js?v=20260712c"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20260712c"></script>
 </head>
 <body>
   <!-- Game world -->
@@ -760,7 +760,7 @@
   <!-- Spearfishing minigame overlay (built dynamically in game.js) -->
   <div id="fishingOverlay"></div>
 
-  <script src="js/tool-icon-render.js?v=20260712"></script>
+  <script src="js/tool-icon-render.js?v=20260712c"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the
@@ -798,7 +798,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260712"></script>
+  <script src="game.js?v=20260712c"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
