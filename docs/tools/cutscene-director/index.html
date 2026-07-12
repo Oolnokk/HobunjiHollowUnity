@@ -872,15 +872,15 @@
      other tools' in-memory/localStorage state. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/GLTFLoader.js?v=20260712k"></script>
-<script src="../../js/WallBuilder.js?v=20260712k"></script>
-<script src="../../js/HousePieceGen.js?v=20260712k"></script>
-<script src="../../js/procedural-furniture.js?v=20260712k"></script>
-<script src="../../js/foliage-generator.js?v=20260712k"></script>
-<script src="../../js/terrain-preview.js?v=20260712k"></script>
+<script src="../../js/GLTFLoader.js?v=20260712l"></script>
+<script src="../../js/WallBuilder.js?v=20260712l"></script>
+<script src="../../js/HousePieceGen.js?v=20260712l"></script>
+<script src="../../js/procedural-furniture.js?v=20260712l"></script>
+<script src="../../js/foliage-generator.js?v=20260712l"></script>
+<script src="../../js/terrain-preview.js?v=20260712l"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
-<script src="../../config/scratchbones-config.js?v=20260712k"></script>
+<script src="../../config/scratchbones-config.js?v=20260712l"></script>
 <script>
   // scratchbones-config.js's asset paths are authored repo-root-relative
   // (docs/assets/, docs/config/) for the top-level game page; this tool
@@ -892,10 +892,10 @@
     window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = '../../config/';
   }
 </script>
-<script src="../../js/portrait-utils.js?v=20260712k"></script>
-<script src="../../js/portrait-breathing.js?v=20260712k"></script>
-<script src="../../js/npc-avatar-preview-utils.js?v=20260712k"></script>
-<script src="../../js/png-plane-avatar.js?v=20260712k"></script>
+<script src="../../js/portrait-utils.js?v=20260712l"></script>
+<script src="../../js/portrait-breathing.js?v=20260712l"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20260712l"></script>
+<script src="../../js/png-plane-avatar.js?v=20260712l"></script>
 
 <script>
 (() => {
@@ -946,7 +946,7 @@
     three: null,
     actorObjects: new Map(),
     pointObjects: new Map(),
-    preview: { running: false, currentStageId: null, actorStates: new Map(), timer: null, token: 0, fadeOpacity: 0, zoomPercent: 100, zoomBaseDistance: null },
+    preview: { running: false, currentStageId: null, actorStates: new Map(), timer: null, token: 0, fadeOpacity: 0, zoomPercent: 100, zoomBaseDistance: null, desiredFacingDeg: new Map(), externallyDriven: new Set() },
     viewMode: "3d",
     gameCameraMatch: false,
     matchCameraZoomPercent: 100,
@@ -2964,14 +2964,8 @@
     return state.project.stages[index+1]?.id || null;
   }
 
-  // Raw authored rotation, no facing cheat — this also backs the idle
-  // editor markers (see the scene-rebuild loop that calls this), which
-  // have no fixed "camera for this shot" at all: the author's free-roam
-  // orbit camera isn't a stand-in for it, so cheating against it there
-  // just makes an actor's displayed rotation drift depending on whatever
-  // angle the author last happened to leave the view at. Preview playback
-  // applies the cheat itself, once the camera is actually at the captured
-  // shot — see resetPreview.
+  // Raw authored rotation, exactly as given — also backs the idle editor
+  // markers (see the scene-rebuild loop that calls this).
   function initialActorStates() {
     return new Map(state.project.actors.map(actor => {
       const w = worldOfPoint(pointById(actor.startPointId));
@@ -3020,11 +3014,8 @@
     // in the real game (see game.js's cutscenePreviewActive gating on wheel-
     // zoom/drag-to-look) — only re-enabled once playback actually stops.
     if (state.three) state.three.controls.enabled = true;
-    // Preview playback (unlike the idle editor markers) does have a fixed
-    // camera for this shot — the captured camera3d, already moved into
-    // place by startPreview before this runs — so it's the one place an
-    // actor's initial facing safely gets the visibility/theatre cheat.
-    for (const [actorId, st] of state.preview.actorStates) st.rotation = facingCheatFor(actorId)(st.rotation, st);
+    state.preview.desiredFacingDeg = new Map([...state.preview.actorStates].map(([id, st]) => [id, st.rotation]));
+    state.preview.externallyDriven = new Set();
     state.preview.fadeOpacity = 0;
     for (const rec of state.actorObjects.values()) {
       clearInterval(rec.breathTimer); rec.breathTimer = null;
@@ -3056,11 +3047,8 @@
     const problems = validateProject();
     const errors = problems.filter(p => p.level === "error");
     if (errors.length) { renderValidation(problems); toast(`Fix ${errors.length} scene problem${errors.length===1?"":"s"} first.`); return; }
-    // Camera moved into place before resetPreview computes each actor's
-    // initial facing (see facingCheatFor/npcFacingCheatAngle) — an NPC's
-    // portrait-plane avatar only reads clearly very close to facing toward
-    // or away from wherever the camera actually is, so it needs to already
-    // be at the captured shot, not wherever the author last orbited it.
+    // Camera moved into place before resetPreview — a Zoom card and the
+    // "Match game camera" HUD both scale relative to wherever it lands.
     if (state.project.camera3d) applyCamera3D(state.project.camera3d);
     resetPreview(false);
     // Cutscenes always start at 100% zoom, based off wherever the camera
@@ -3073,6 +3061,8 @@
     state.preview.running = true;
     state.preview.currentStageId = state.project.stages[0]?.id || null;
     const token = state.preview.token;
+    toolRotLastT = performance.now();
+    toolRotationTick();
     log("Preview started.");
     runCurrentStage(token);
   }
@@ -3136,93 +3126,42 @@
     return path;
   }
   function angleToward(from, to) { const radians = Math.atan2(to.r-from.r, to.c-from.c); return normalizeAngle(radians*180/Math.PI + 90); }
-  // "Theatre cheating": a staged facing (turn card, or a creature squared up
-  // toward its combat target) is nudged no more than cheatMaxOffsetDeg away
-  // from also generally facing whichever camera the author is currently
-  // previewing through — the same convention stage actors use to never
-  // fully turn their back to the house mid-scene.
-  const cheatMaxOffsetDeg = 132;
-  function normalizeAngle180(deg) { const d = ((deg % 360) + 360) % 360; return d > 180 ? d - 360 : d; }
-  function theatreCheatAngle(desiredDeg, fromSt) {
-    const cam = state.three?.camera?.position;
-    if (!cam) return desiredDeg;
-    const camDeg = angleToward(fromSt, { c: cam.x, r: cam.z });
-    const diff = Math.max(-cheatMaxOffsetDeg, Math.min(cheatMaxOffsetDeg, normalizeAngle180(desiredDeg - camDeg)));
-    return normalizeAngle(camDeg + diff);
-  }
-  // An NPC's avatar (buildSinglePlaneAvatarModel) is a flat "coin" — front
-  // and back planes both lying in the same local plane (see
-  // createSinglePlaneAssembly in png-plane-avatar.js) — unlike a
-  // creature's crossed side-view planes. Empirically it only reads as a
-  // clearly visible portrait very close to fully facing the camera or
-  // fully facing away — even 40-90 degrees off either of those two poles
-  // already looks thin/near-edge-on. A soft clamp isn't enough; snap fully
-  // to whichever of those two poles is nearer the authored intent instead,
-  // trading facing nuance for guaranteed visibility.
-  function npcFacingCheatAngle(desiredDeg, fromSt) {
-    const cam = state.three?.camera?.position;
-    if (!cam) return desiredDeg;
-    const camDeg = angleToward(fromSt, { c: cam.x, r: cam.z });
-    const diff = normalizeAngle180(desiredDeg - camDeg);
-    return normalizeAngle(Math.abs(diff) <= 90 ? camDeg : camDeg + 180);
-  }
-  function facingCheatFor(actorId) {
-    const actor = actorById(actorId);
-    return actor?.npcId ? npcFacingCheatAngle : actor?.creatureTypeId ? theatreCheatAngle : (deg) => deg;
-  }
 
-  // ── Gradual turning — a cutscene Turn card or a move's arrival facing
-  //    eases toward its target at a limited per-frame rate (matching
-  //    game.js's own idle "face player" turn) instead of snapping in one
-  //    frame, so it reads as the actor genuinely attempting to turn there.
-  //
-  //    Deliberately NOT routed through a perpClamp-style dead zone: that
-  //    exists in game.js to bias a *continuously recomputed* facing
-  //    (walking direction, look-at target) away from the camera-
-  //    perpendicular angle where a billboard sprite goes edge-on. A Turn
-  //    card or arrival facing is a one-shot authored angle chosen by the
-  //    scene author — already passed through facingCheatFor() above for
-  //    camera-visibility — so redirecting it again here would silently
-  //    override the very angle the author set (e.g. a creature facing
-  //    exactly 180° sits right on one of the camera-relative creature
-  //    poles, so a dead zone would force it up to 30° away from what was
-  //    authored). ──
+  // ── Continuous rotation — a Turn card, a move's arrival facing, or a
+  //    combat participant's chase-facing all just set an actor's
+  //    desiredFacingDeg (below); toolRotationTick is the only thing that
+  //    ever turns that into an actual mesh rotation, continuously, for the
+  //    actor's entire time in the scene (idle included, not just while a
+  //    card's own timer is running) — mirroring game.js's real dead-zone
+  //    rotation (a stationary NPC eases toward a target via its own idle
+  //    "face player" turn; a creature is driven by updateCreatureMesh every
+  //    frame whether moving or holding still) rather than a fixed-duration
+  //    one-shot turn animation, and using authored angles exactly as given
+  //    (no camera-visibility biasing). ──
   function toolAngleDiff(target, current) {
     let d = target - current;
     while (d > Math.PI) d -= Math.PI*2;
     while (d < -Math.PI) d += Math.PI*2;
     return d;
   }
-
-  // actorId -> raf
-  const toolTurnDrivers = new Map();
-  function stopToolSmoothTurn(actorId) {
-    const d = toolTurnDrivers.get(actorId);
-    if (d) { cancelAnimationFrame(d.raf); toolTurnDrivers.delete(actorId); }
-  }
-  function startToolSmoothTurn(actorId, targetDeg, durationMs, onDone) {
-    stopToolSmoothTurn(actorId);
-    const st = state.preview.actorStates.get(actorId);
-    if (!st) { onDone?.(); return; }
-    const isNpc = !!actorById(actorId)?.npcId;
-    const rawTarget = THREE.MathUtils.degToRad(targetDeg);
-    const startTime = performance.now();
-    let lastT = startTime;
-    const step = () => {
-      if (!state.preview.running) { toolTurnDrivers.delete(actorId); return; }
-      const now = performance.now();
-      const dt = Math.min(0.05, (now - lastT) / 1000);
-      lastT = now;
+  let toolRotLastT = performance.now();
+  function toolRotationTick() {
+    if (!state.preview.running) return;
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - toolRotLastT) / 1000);
+    toolRotLastT = now;
+    for (const [actorId, st] of state.preview.actorStates) {
+      if (state.preview.externallyDriven.has(actorId)) continue;
+      const targetDeg = state.preview.desiredFacingDeg.get(actorId);
+      if (targetDeg == null) continue;
+      const isNpc = !!actorById(actorId)?.npcId;
       const current = THREE.MathUtils.degToRad(st.rotation);
-      const turnRate = isNpc ? 0.15 : Math.min(1, dt * 10);
-      const next = current + toolAngleDiff(rawTarget, current) * turnRate;
+      const turnRate = isNpc ? 0.15 : Math.min(1, dt * 10); // matches game.js's own npc/creature turn rates
+      const next = current + toolAngleDiff(THREE.MathUtils.degToRad(targetDeg), current) * turnRate;
       st.rotation = THREE.MathUtils.radToDeg(next);
       applyActorStateToScene(actorId, st);
-      if (now - startTime >= durationMs) { toolTurnDrivers.delete(actorId); onDone?.(); return; }
-      const raf = requestAnimationFrame(step);
-      toolTurnDrivers.set(actorId, { raf });
-    };
-    step();
+    }
+    requestAnimationFrame(toolRotationTick);
   }
 
   function runMoveStage(stage, token) {
@@ -3234,6 +3173,7 @@
     const waitForArrival = stage.waitForArrival !== false;
     let stepIndex = 1;
     let arrived = false;
+    state.preview.externallyDriven.add(stage.actorId); // advance() below owns rotation until arrival
     // When unchecked, the next card starts immediately while this actor
     // keeps walking in the background — the loop below still runs (still
     // gated on the same preview token, so a reset/stop cancels it exactly
@@ -3241,15 +3181,14 @@
     const onArrive = () => {
       if (arrived) return;
       arrived = true;
+      state.preview.externallyDriven.delete(stage.actorId);
       // The target point's own authored arrival facing (if any) wins over
-      // whatever direction the walk itself left the actor facing — same
-      // cheat "Turn in place" cards use, just triggered by landing on this
-      // point. Eases into it through the dead-zone turn rate instead of a
-      // hard snap, and never blocks the scene — it keeps turning in the
+      // whatever direction the walk itself left the actor facing — handed
+      // to toolRotationTick as this actor's new desired facing (no arrival
+      // facing at all just keeps whatever direction the walk left it
+      // facing) — never blocks the scene, it keeps turning in the
       // background while the next card starts.
-      if (targetPoint.facing != null) {
-        startToolSmoothTurn(stage.actorId, facingCheatFor(stage.actorId)(targetPoint.facing, actorState), 450, () => {});
-      }
+      state.preview.desiredFacingDeg.set(stage.actorId, targetPoint.facing != null ? targetPoint.facing : actorState.rotation);
       if (waitForArrival) continueTo(getResolvedNext(stage.id,stage.next),token);
     };
     const advance = () => {
@@ -3305,18 +3244,22 @@
     }, stage.duration*1000);
   }
 
+  // Just hands toolRotationTick a new desired facing — the continuous
+  // ticker eases the actor's rotation toward it (no instant snap). The
+  // card's own duration is a pacing beat for the scene (when the next card
+  // starts), not a literal "wait until the turn finishes" gate.
   function runTurnStage(stage, token) {
     const actorState = state.preview.actorStates.get(stage.actorId);
     if (!actorState) { continueTo(getResolvedNext(stage.id,stage.next),token); return; }
-    const cheat = facingCheatFor(stage.actorId);
     let targetDeg = actorState.rotation;
     if (stage.mode === "actor") {
       const targetState = state.preview.actorStates.get(stage.targetActorId);
-      if (targetState) targetDeg = cheat(angleToward(actorState, targetState), actorState);
+      if (targetState) targetDeg = angleToward(actorState, targetState);
     } else {
-      targetDeg = cheat(normalizeAngle(stage.angle), actorState);
+      targetDeg = normalizeAngle(stage.angle);
     }
-    startToolSmoothTurn(stage.actorId, targetDeg, stage.duration*1000, () => continueTo(getResolvedNext(stage.id,stage.next),token));
+    state.preview.desiredFacingDeg.set(stage.actorId, targetDeg);
+    state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id,stage.next),token), stage.duration*1000);
   }
 
   function tileDist(a, b) { return Math.hypot(a.c - b.c, a.r - b.r); }
@@ -3356,6 +3299,7 @@
 
     const aiActorIds = stage.participants.filter(p => p.combatOn).map(p => p.actorId)
       .filter(id => { const a = actorById(id); return a && a.creatureTypeId && a.team; });
+    for (const actorId of aiActorIds) state.preview.externallyDriven.add(actorId); // the AI loop below owns rotation now
 
     let aiTimer = null;
     if (aiActorIds.length) {
@@ -3381,7 +3325,7 @@
           if (bestId == null) continue; // no opposing-team threat recognized — idle
 
           const targetSt = state.preview.actorStates.get(bestId);
-          st.rotation = theatreCheatAngle(angleToward(st, targetSt), st);
+          st.rotation = angleToward(st, targetSt);
           const aggroRange = creature.aggroRangeTiles ?? 6;
           const attackRange = Math.max(creature.attackRangeTiles ?? 1, 0.9);
           if (bestDist > aggroRange) { applyActorStateToScene(actorId, st); continue; }
@@ -3404,6 +3348,15 @@
         const rec = state.actorObjects.get(p.actorId);
         if (rec) { clearTimeout(rec.attackFlashTimer); rec.attackFlashTimer = null; }
       });
+      // Hand toolRotationTick back control with the actor's actual
+      // post-combat facing as its new desired target — otherwise it'd
+      // resume next frame and yank the creature toward whatever stale
+      // pre-combat target it had before.
+      for (const actorId of aiActorIds) {
+        state.preview.externallyDriven.delete(actorId);
+        const st = state.preview.actorStates.get(actorId);
+        if (st) state.preview.desiredFacingDeg.set(actorId, st.rotation);
+      }
       continueTo(getResolvedNext(stage.id, loss?stage.lossNext:stage.next), token);
     };
     state.preview.timer = setTimeout(() => {

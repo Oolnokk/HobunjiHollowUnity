@@ -13602,6 +13602,7 @@
       // first time the game camera positions itself at all.
       let cutscenePreviewActive = false;
       let cutscenePreviewZoomPercent = 100; // a cutscene Zoom card's percent (100 = unmodified); reset on preview start/end
+      let cutscenePreviewDialogueSpeaker = null; // current Talk stage's { kind, root, creature } entity, or null; see dialoguePortraitCameraAim
 
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
@@ -13638,8 +13639,31 @@
         return center;
       }
 
+      // Cutscene dialogue's stand-in for a "player" anchor: the real
+      // dialoguePortraitCameraAim below hardcodes the actual player mesh as
+      // one of its two portrait-center anchors, which is meaningless here
+      // (neither cutscene speaker is ever the real player, who may be
+      // sitting untouched somewhere else entirely in the save). Pins the
+      // shot to the SPEAKING actor's own visual center instead — a
+      // creature's avatarRef.group already sits at its own body-center
+      // height (see cutscenePreviewApplyState), while an NPC/player's
+      // coin-plane needs the same portrait-tagged-child lookup real
+      // gameplay uses. Returns null (falling back to the generic elevated
+      // follow-camera framing) for a freeform placeholder actor, which has
+      // neither.
+      function cutscenePreviewSpeakerCenterY(entity) {
+        if (!entity) return null;
+        if (entity.kind === 'creature') return entity.root?.position.y ?? null;
+        return portraitAvatarCenterWorldPosition(entity.root)?.y ?? null;
+      }
+
       function dialoguePortraitCameraAim(modeCfg, tx, tz, distance, baseAngle) {
-        if (!modeCfg.alignToDialoguePortraitCenters || !_dialogueWalker?.root) return null;
+        if (!modeCfg.alignToDialoguePortraitCenters) return null;
+        if (cutscenePreviewActive) {
+          const y = cutscenePreviewSpeakerCenterY(cutscenePreviewDialogueSpeaker);
+          return y == null ? null : { cameraY: y, lookY: y, targetX: tx, targetZ: tz };
+        }
+        if (!_dialogueWalker?.root) return null;
         const playerCenter = portraitAvatarCenterWorldPosition(playerMesh);
         const npcCenter = portraitAvatarCenterWorldPosition(_dialogueWalker.root);
         if (!playerCenter || !npcCenter) return null;
@@ -20188,39 +20212,6 @@
       }
 
       const cutscenePreviewAngleToward = (from, to) => (((Math.atan2(to.r - from.r, to.c - from.c) * 180 / Math.PI + 90) % 360) + 360) % 360;
-      const cutscenePreviewNormalizeAngle180 = deg => { const d = ((deg % 360) + 360) % 360; return d > 180 ? d - 360 : d; };
-      // "Theatre cheating" for a creature (buildAnimalPlaneAvatarModel's
-      // crossed-plane sprite, readable from any angle): a staged facing
-      // (turn stage, or squaring up to attack) is nudged no more than
-      // cheatMaxOffsetDeg away from also generally facing the camera, so it
-      // never fully turns its back to the audience — same convention stage
-      // actors use. Natural walking facing (moveToward's own turn toward
-      // direction of travel) is intentionally left uncheated.
-      const cutscenePreviewCheatMaxOffsetDeg = 132;
-      function cutscenePreviewTheatreCheatAngle(desiredDeg, fromSt) {
-        const camDeg = cutscenePreviewAngleToward(fromSt, { c: camera.position.x, r: camera.position.z });
-        const diff = cutscenePreviewNormalizeAngle180(desiredDeg - camDeg);
-        const clamped = Math.max(-cutscenePreviewCheatMaxOffsetDeg, Math.min(cutscenePreviewCheatMaxOffsetDeg, diff));
-        return ((camDeg + clamped) % 360 + 360) % 360;
-      }
-      // An NPC/player avatar (buildSinglePlaneAvatarModel) is a flat
-      // "coin" — a front plane and a back plane both lying in the same
-      // local plane (see createSinglePlaneAssembly in png-plane-avatar.js),
-      // unlike a creature's crossed side-view planes. Empirically (not just
-      // by the perpClamp dead-zone comments, which describe live-walking
-      // facing, not this one-shot staged case) it only reads as a clearly
-      // visible portrait very close to fully facing the camera or fully
-      // facing away — even 40-90 degrees off either of those two poles
-      // already looks thin/near-edge-on. A soft clamp therefore isn't
-      // enough; snap fully to whichever of those two poles is nearer the
-      // authored intent instead, trading facing nuance for guaranteed
-      // visibility (live NPC walking still uses moveToward's own
-      // perpClamp/cameraRelativePerps() dead zones, unaffected by this).
-      function cutscenePreviewNpcFacingCheatAngle(desiredDeg, fromSt) {
-        const camDeg = cutscenePreviewAngleToward(fromSt, { c: camera.position.x, r: camera.position.z });
-        const diff = cutscenePreviewNormalizeAngle180(desiredDeg - camDeg);
-        return Math.abs(diff) <= 90 ? camDeg : ((camDeg + 180) % 360 + 360) % 360;
-      }
 
       function cutscenePreviewApplyState(entity, area, st) {
         const surfY = npcSurfaceY(area, Math.round(st.c), Math.round(st.r));
@@ -20229,6 +20220,11 @@
           c.x = st.c * TILE; c.y = st.r * TILE;
           c.avatarRef.group.position.set(st.c + 0.5, surfY + c.halfHeight, st.r + 0.5);
           c.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(st.rotation);
+          // Seeds groupRot/pngRot to match so cutsceneRotationTick's first
+          // real tick (see below) starts an angleDiff of exactly 0 instead
+          // of smoothly sweeping in from wherever makeCreatureEntity's
+          // groupRot:0 default left them.
+          c.groupRot = c.pngRot = THREE.MathUtils.degToRad(st.rotation);
           c.groundShadow?.position.set(st.c + 0.5, surfY + characterGroundShadowSurfaceOffset(), st.r + 0.5);
           c.avatarRef.group.scale.setScalar(st.pose === 'prone' ? 0.6 : 1);
         } else if (entity.kind === 'npc') {
@@ -20370,12 +20366,17 @@
         const dlgModeKey = 'cutscenePreviewDialogue';
         (window.SCRATCHBONES_CONFIG.game.camera.modes ||= {})[dlgModeKey] = {
           ...baseDlgCfg,
-          // Portrait-center alignment hardcodes the real player mesh as one
-          // of its two framing anchors (see dialoguePortraitCameraAim) —
-          // not meaningful here since neither dialogue participant is ever
-          // the real player, so it's left off; activeCameraTarget below
-          // still zooms the plain follow camera to whoever is speaking.
-          alignToDialoguePortraitCenters: false,
+          // Real gameplay's alignToDialoguePortraitCenters hardcodes the
+          // actual player mesh as one of its two framing anchors, which is
+          // meaningless here (neither cutscene speaker is ever the real
+          // player) — but the alignment itself (an eye-level shot pinned to
+          // the speaker's own visual center, not the generic elevated
+          // follow-camera's sin(angle)*distance climb above it) is exactly
+          // what a cutscene close-up wants too, so this stays on and
+          // dialoguePortraitCameraAim substitutes the speaking actor's own
+          // center (see cutscenePreviewSpeakerCenterY) instead of playerMesh
+          // whenever cutscenePreviewActive is set.
+          alignToDialoguePortraitCenters: true,
         };
         // A creature's root position (avatarRef.group) already sits at its
         // own body-center height (see makeCreatureEntity/updateCreatureMesh),
@@ -20387,7 +20388,12 @@
         const dlgModeKeyCreature = 'cutscenePreviewDialogueCreature';
         window.SCRATCHBONES_CONFIG.game.camera.modes[dlgModeKeyCreature] = {
           ...baseDlgCfg,
-          alignToDialoguePortraitCenters: false,
+          // Also pinned to the speaker's own center (cameraY/lookY come from
+          // dialoguePortraitCameraAim, not targetYOffsetTiles/angle below) —
+          // angleFromGroundDeg/distanceTiles still shape the horizontal
+          // framing (azimuth distance/height-of-shot feel), just no longer
+          // the vertical climb.
+          alignToDialoguePortraitCenters: true,
           targetYOffsetTiles: 0.08,
           angleFromGroundDeg: Math.min(baseDlgCfg.angleFromGroundDeg ?? 10.64, 6),
           distanceTiles: (baseDlgCfg.distanceTiles ?? 4.67) * 0.78,
@@ -20482,19 +20488,35 @@
         // reading a payload the Director tool has already fully resolved
         // to world tile coordinates (see its "Preview in game" handler).
         const actorsById  = new Map((payload.actors || []).map(a => [a.id, a]));
-        // An NPC/player actor's authored rotation gets the visibility cheat
-        // here (not at spawn time, which happens before this Map or
-        // applyState exist) — this is the single source of truth for every
-        // actor's rotation from here on, kept in sync with the mesh only
-        // through applyState, so it can't drift out of sync with what's
-        // actually on screen the way computing it twice would.
-        const actorStates = new Map((payload.actors || []).map(a => {
-          const rawRotation = a.rotation || 0;
-          const rotation = entities.get(a.id)?.kind === 'npc'
-            ? cutscenePreviewNpcFacingCheatAngle(rawRotation, { c: a.worldC, r: a.worldR })
-            : rawRotation;
-          return [a.id, { c: a.worldC, r: a.worldR, rotation, pose: a.pose || 'standing', combatOn: false, canLose: false }];
-        }));
+        // Authored rotation, used exactly as given — no camera-visibility
+        // biasing. This is the single source of truth for every actor's
+        // rotation from here on, kept in sync with the mesh only through
+        // applyState, so it can't drift out of sync with what's actually on
+        // screen the way computing it twice would.
+        const actorStates = new Map((payload.actors || []).map(a =>
+          [a.id, { c: a.worldC, r: a.worldR, rotation: a.rotation || 0, pose: a.pose || 'standing', combatOn: false, canLose: false }]
+        ));
+        // actorId -> desired facing in degrees: what each actor is currently
+        // trying to face (set at spawn from its raw authored rotation, and
+        // whenever a Turn card or a move's arrival facing gives it a new
+        // one). cutsceneRotationTick (below) is the only thing that ever
+        // turns this into an actual mesh rotation, continuously, for the
+        // actor's entire time on screen — mirroring how real gameplay never
+        // snaps a stationary NPC/creature's facing in one frame either (see
+        // faceNpcDialogueParticipants's npcFacePlayerLerp, updateHostiles/
+        // updateCompanions calling updateCreatureMesh every frame whether a
+        // creature is moving or holding still) — rather than a fixed-
+        // duration one-shot "turn card" animation that stops driving once
+        // its own timer runs out.
+        const desiredFacingDeg = new Map((payload.actors || []).map(a => [a.id, a.rotation || 0]));
+        // actorIds currently owning their own rotation each frame — a Move
+        // stage's own per-frame stepper (walker.moveToward's perpClamp, or
+        // updateCreatureMesh driven by live travel direction), or a Combat
+        // stage's real hostileObjects/companionObjects AI (updateHostiles/
+        // updateCompanions, which also call updateCreatureMesh themselves
+        // with their own chase-target aimAngle). cutsceneRotationTick skips
+        // anyone in here so it never fights whatever's actively driving them.
+        const externallyDrivenActorIds = new Set();
         const stagesById  = new Map((payload.stages || []).map(s => [s.id, s]));
         const stageOrder  = (payload.stages || []).map(s => s.id);
         let running = true;
@@ -20505,8 +20527,6 @@
           return stageOrder[stageOrder.indexOf(stageId) + 1] || null;
         };
         const angleTowardState = cutscenePreviewAngleToward;
-        const theatreCheatAngle = cutscenePreviewTheatreCheatAngle;
-        const npcFacingCheatAngle = cutscenePreviewNpcFacingCheatAngle;
         const buildGridPath = (start, goal) => {
           const path = [{ c: start.c, r: start.r }];
           let c = start.c, r = start.r, horizontalTurn = true;
@@ -20552,7 +20572,17 @@
             updateCreatureAnimFrame(c, dt, moving);
             st.c = c.x / TILE - 0.5;
             st.r = c.y / TILE - 0.5;
-            st.rotation = ((THREE.MathUtils.radToDeg(aimAngle) % 360) + 360) % 360;
+            // st.rotation is the "direct model Y-rotation" convention every
+            // other creature rotation path uses (Turn cards, spawn, the
+            // tool's own gizmo/preview) — NOT aimAngle's raw world-direction
+            // convention (updateCreatureMesh internally maps aimAngle to
+            // groupRot via rawTargetRotY = -(aimAngle) + PI/2, a reflected,
+            // *not* simply offset, relationship). Reading it back from the
+            // mesh's actual resulting groupRot keeps it consistent so
+            // cutsceneRotationTick's post-arrival fallback (when a move has
+            // no authored arrival facing) picks up from the true current
+            // facing instead of a rotation the creature never actually had.
+            st.rotation = ((THREE.MathUtils.radToDeg(c.groupRot) % 360) + 360) % 360;
             return dist < TILE * 0.12;
           }
           const previous = { c: st.c, r: st.r };
@@ -20569,6 +20599,7 @@
           running = false;
           cutscenePreviewActive = false;
           cutscenePreviewZoomPercent = 100; // never leak an authored zoom into normal gameplay afterward
+          cutscenePreviewDialogueSpeaker = null;
           activeCameraMode = cameraConfig().defaultMode || 'default';
           activeCameraTarget = null;
           cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
@@ -20577,6 +20608,7 @@
         async function openLine(entity, speakerName, text) {
           dialogueOpen = true;
           _dialogueWalker = entity?.kind === 'npc' ? { root: entity.root, rec: entity.rec, profile: entity.profile, avatarFrontCanvas: entity.avatarFrontCanvas } : null;
+          cutscenePreviewDialogueSpeaker = entity || null;
           activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
           activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
           _npcDialogueNameEl.textContent = speakerName;
@@ -20602,6 +20634,7 @@
           window.portraitBreathingComposer?.setExpression(_dialogueSeatId(), 'neutral');
           window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), 'neutral');
           _dialogueWalker = null;
+          cutscenePreviewDialogueSpeaker = null;
           _npcDialogueEl.classList.remove('open');
           _npcDialogueEl.setAttribute('aria-hidden', 'true');
           _arcContainerEl?.classList.remove('arc-hidden');
@@ -20667,20 +20700,31 @@
           const tx = goal.c + 0.5, tz = goal.r + 0.5;
           let lastT = performance.now();
           let arrivedAlready = false;
+          externallyDrivenActorIds.add(stage.actorId); // advanceActorToward below owns rotation until arrival
           const onArrive = () => {
             if (arrivedAlready) return;
             arrivedAlready = true;
+            externallyDrivenActorIds.delete(stage.actorId);
+            // advanceActorToward's own "arrived" gate (TILE*0.12) is looser
+            // than moveCreatureToward's internal one (a flat 1px), so the
+            // loop above can exit here while the creature was still just
+            // inside that inner threshold on its very last step — i.e.
+            // still mid-run-cycle sprite (updateCreatureAnimFrame's
+            // `moving` was still true that frame). cutsceneRotationTick
+            // (below) picks up idle framing on its very next tick once this
+            // actor is out of externallyDrivenActorIds, so no explicit
+            // cleanup call is needed here for that.
+            //
             // The target point's own authored arrival facing (if any) wins
             // over whatever direction the walk itself left the actor facing
-            // — same cheat a "Turn in place" card uses, just triggered by
-            // landing on this point. Eases into it via the real dead-zone
-            // turn rate (startSmoothTurn) instead of a hard snap, and never
-            // blocks the scene on it — the actor keeps turning in the
-            // background while the next card starts.
-            if (goal.facing != null) {
-              const cheat = entities.get(stage.actorId)?.kind === 'npc' ? npcFacingCheatAngle : theatreCheatAngle;
-              startSmoothTurn(stage.actorId, cheat(goal.facing, st), 450, () => {});
-            }
+            // — same as a "Turn in place" card, just triggered by landing on
+            // this point. Handed to cutsceneRotationTick as this actor's new
+            // desired facing (no arrival facing at all just keeps whatever
+            // direction the walk left it facing, exactly like real NPC/
+            // creature movement does) — never blocks the scene on it, the
+            // actor keeps turning in the background while the next card
+            // starts.
+            desiredFacingDeg.set(stage.actorId, goal.facing != null ? goal.facing : st.rotation);
             if (waitForArrival) continueTo(getResolvedNext(stage.id, stage.next));
           };
           const step = () => {
@@ -20727,73 +20771,25 @@
           }, (stage.duration || 0) * 1000);
         }
 
-        // actorId -> raf — a Turn card or a move's arrival facing used to
-        // force st.rotation to its target in one instant frame. Real
-        // stationary NPC turning never does that: the "face player" idle
-        // turn (see walker.rot += angleDiff(...) * npcFacePlayerLerp above)
-        // eases toward its target at a limited per-frame rate instead of
-        // snapping. This drives the same kind of lerp so a cutscene actor
-        // reads as genuinely attempting to turn there, rather than
-        // teleporting its facing.
-        //
-        // Deliberately NOT routed through perpClamp: that dead zone exists
-        // to bias a *continuously recomputed* facing (moveToward's walking
-        // direction, updateCreatureMesh's look target) away from the
-        // camera-perpendicular angle where a billboard sprite goes edge-on.
-        // A Turn card or arrival facing is a one-shot authored angle chosen
-        // by the scene author — already passed through npcFacingCheatAngle/
-        // theatreCheatAngle above for camera-visibility — so redirecting it
-        // again here would silently override the very angle the author set
-        // (e.g. a creature facing exactly 180° sits right on one of
-        // cameraRelativeCreaturePerps()'s poles, so perpClamp would force it
-        // up to 30° away from what was authored).
-        const cutsceneTurnDrivers = new Map();
-        function stopSmoothTurn(actorId) {
-          const d = cutsceneTurnDrivers.get(actorId);
-          if (d) { cancelAnimationFrame(d.raf); cutsceneTurnDrivers.delete(actorId); }
-        }
-        function startSmoothTurn(actorId, targetDeg, durationMs, onDone) {
-          stopSmoothTurn(actorId);
-          const st = actorStates.get(actorId);
-          if (!st) { onDone?.(); return; }
-          const isNpc = entities.get(actorId)?.kind === 'npc';
-          const rawTarget = THREE.MathUtils.degToRad(targetDeg);
-          const startTime = performance.now();
-          let lastT = startTime;
-          const step = () => {
-            if (!running) { cutsceneTurnDrivers.delete(actorId); return; }
-            const now = performance.now();
-            const dt = Math.min(0.05, (now - lastT) / 1000);
-            lastT = now;
-            const current = THREE.MathUtils.degToRad(st.rotation);
-            const turnRate = isNpc ? 0.15 : Math.min(1, dt * 10); // matches moveToward / updateCreatureMesh's own rates
-            const next = current + angleDiff(rawTarget, current) * turnRate;
-            st.rotation = THREE.MathUtils.radToDeg(next);
-            applyState(actorId);
-            if (now - startTime >= durationMs) { cutsceneTurnDrivers.delete(actorId); onDone?.(); return; }
-            const raf = requestAnimationFrame(step);
-            cutsceneTurnDrivers.set(actorId, { raf });
-          };
-          step();
-        }
-
+        // A Turn card just hands cutsceneRotationTick (below) a new desired
+        // facing — the continuous per-frame ticker is what actually eases
+        // the actor's rotation toward it, exactly like a stationary real
+        // NPC/creature turning to face something (no instant snap). The
+        // card's own duration is a pacing beat for the scene (when the next
+        // card starts), not a literal "wait until the turn finishes" gate —
+        // same as it was before.
         function runTurn(stage) {
           const st = actorStates.get(stage.actorId);
           if (!st) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
-          // A coin-plane NPC/player avatar needs the tighter visibility-
-          // preserving cheat (see cutscenePreviewNpcFacingCheatAngle); a
-          // creature's crossed side-view planes only need the softer
-          // don't-show-your-back theatre cheat.
-          const cheat = entities.get(stage.actorId)?.kind === 'npc' ? npcFacingCheatAngle : theatreCheatAngle;
           let targetDeg = st.rotation;
           if (stage.mode === 'actor') {
             const targetSt = actorStates.get(stage.targetActorId);
-            if (targetSt) targetDeg = cheat(angleTowardState(st, targetSt), st);
+            if (targetSt) targetDeg = angleTowardState(st, targetSt);
           } else {
-            targetDeg = cheat(((Math.round(stage.angle) % 360) + 360) % 360, st);
+            targetDeg = ((Math.round(stage.angle) % 360) + 360) % 360;
           }
-          const durationMs = (stage.duration || 0) * 1000;
-          startSmoothTurn(stage.actorId, targetDeg, durationMs, () => continueTo(getResolvedNext(stage.id, stage.next)));
+          desiredFacingDeg.set(stage.actorId, targetDeg);
+          setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), (stage.duration || 0) * 1000);
         }
 
         // Live creature-vs-creature AI, identical in spirit to the Cutscene
@@ -20833,6 +20829,7 @@
             if (!entity || entity.kind !== 'creature') continue;
             const c = entity.creature;
             c.state = 'idle';
+            externallyDrivenActorIds.add(actorId); // updateHostiles/updateCompanions own this creature's rotation now
             if (c.def.hostile) {
               c.homeX = c.x; c.homeY = c.y;
               hostileObjects.add(c);
@@ -20851,10 +20848,20 @@
             // Sync each combatant's authored-coordinate state from wherever
             // the real AI actually left it, so the next stage (a Settle/Flee
             // move) starts from its true position instead of snapping back
-            // to its pre-combat spawn point.
+            // to its pre-combat spawn point. Same for rotation/desired
+            // facing — handing cutsceneRotationTick back control (it resumes
+            // next frame, now that this actorId is out of
+            // externallyDrivenActorIds) with the wrong desired facing would
+            // yank the creature toward its old pre-combat target the instant
+            // combat ends.
             for (const actorId of combatOnIds) {
               const entity = entities.get(actorId), st = actorStates.get(actorId);
-              if (entity?.kind === 'creature' && st) { st.c = entity.creature.x / TILE - 0.5; st.r = entity.creature.y / TILE - 0.5; }
+              externallyDrivenActorIds.delete(actorId);
+              if (entity?.kind === 'creature' && st) {
+                st.c = entity.creature.x / TILE - 0.5; st.r = entity.creature.y / TILE - 0.5;
+                st.rotation = THREE.MathUtils.radToDeg(entity.creature.groupRot);
+                desiredFacingDeg.set(actorId, st.rotation);
+              }
             }
             stage.participants.forEach(p => { const st = actorStates.get(p.actorId); if (st) st.combatOn = false; });
             const canLose = stage.participants.some(p => p.combatOn && p.canLose);
@@ -20899,13 +20906,75 @@
           step();
         }
 
-        // Actors otherwise only get their state (rotation, and any starting
+        // Actors otherwise only get their state (position, and any starting
         // pose like Prone) pushed onto their mesh the first time some stage
-        // happens to touch them — an actor a scene never turns, moves, or
-        // animates would sit at its raw spawn transform forever. Every
-        // actor's initial authored state is applied once, up front, so a
-        // resting Prone/rotation reads correctly from frame one.
+        // happens to touch them — an actor a scene never moves or animates
+        // would sit at its raw spawn transform forever. Every actor's
+        // initial authored state is applied once, up front, so a resting
+        // Prone/rotation reads correctly from frame one (and so a
+        // creature's groupRot/pngRot are seeded to match before
+        // cutsceneRotationTick's first real tick below).
         for (const actorId of actorStates.keys()) applyState(actorId);
+
+        // Continuously eases every actor's rotation toward desiredFacingDeg
+        // (set at spawn from its raw authored rotation, and updated by a
+        // Turn card or a move's arrival facing), every frame, for the
+        // actor's entire time in the scene — not a fixed-duration one-shot
+        // animation that stops driving once a card's own timer runs out.
+        // Skips anyone in externallyDrivenActorIds: a Move stage's own
+        // stepper (walker.moveToward's perpClamp, or updateCreatureMesh
+        // driven by live travel direction) or a Combat stage's real
+        // hostileObjects/companionObjects AI already owns their rotation
+        // that frame.
+        let cutsceneRotLastT = performance.now();
+        function cutsceneRotationTick() {
+          if (!running) return;
+          const now = performance.now();
+          const dt = Math.min(0.05, (now - cutsceneRotLastT) / 1000);
+          cutsceneRotLastT = now;
+          for (const [actorId, st] of actorStates) {
+            if (externallyDrivenActorIds.has(actorId)) continue;
+            const entity = entities.get(actorId);
+            if (!entity) continue;
+            const targetDeg = desiredFacingDeg.get(actorId) ?? st.rotation;
+            if (entity.kind === 'creature' && entity.creature) {
+              // The exact same function real wild/companion creatures are
+              // driven through every frame whether moving or holding still
+              // (see updateHostiles/updateCompanions): groupRot eases
+              // toward the raw target with no dead zone of its own, while
+              // the crossed-plane sprite gets its own separate perpClamp
+              // dead zone (cameraRelativeCreaturePerps/CREATURE_PERP_DEAD_
+              // RAD) internally so it never goes edge-on.
+              //
+              // updateCreatureMesh's own aimAngle parameter is a raw
+              // world-direction angle, converted internally via
+              // rawTargetRotY = -(aimAngle) + PI/2 — a reflected relationship
+              // with groupRot, not a simple additive offset. targetDeg here
+              // is in the "direct model Y-rotation" convention every other
+              // creature rotation path uses instead (Turn cards, spawn, the
+              // tool's own gizmo/preview), so it has to go through the
+              // inverse of that same mapping (creatureAimAngleForGroupRot)
+              // to land groupRot on the actual authored angle rather than
+              // its mirror.
+              updateCreatureMesh(entity.creature, dt, creatureAimAngleForGroupRot(THREE.MathUtils.degToRad(targetDeg)));
+              updateCreatureAnimFrame(entity.creature, dt, false);
+              st.rotation = THREE.MathUtils.radToDeg(entity.creature.groupRot);
+            } else {
+              // NPC/player/placeholder: the same idle "face player" ease
+              // real stationary NPCs use (see faceNpcDialogueParticipants's
+              // npcFacePlayerLerp) — a flat coin-plane avatar has no edge-on
+              // issue to dead-zone against, so there's nothing else this
+              // needs to run through.
+              const cfg = npcDialogueStagingConfig();
+              const current = THREE.MathUtils.degToRad(st.rotation);
+              const next = current + angleDiff(THREE.MathUtils.degToRad(targetDeg), current) * (cfg.npcFacePlayerLerp ?? 0.28);
+              st.rotation = THREE.MathUtils.radToDeg(next);
+              applyState(actorId);
+            }
+          }
+          requestAnimationFrame(cutsceneRotationTick);
+        }
+        cutsceneRotationTick();
 
         if (!stageOrder.length) { finish('Preview stopped — this scene has no cards.'); return; }
         cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'}`, false);
