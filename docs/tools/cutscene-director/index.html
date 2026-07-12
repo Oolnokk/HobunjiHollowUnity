@@ -597,6 +597,16 @@
                 <button id="loadMapBtn" class="primary">Load map</button>
                 <button id="clearMapBtn">Blank stage</button>
               </div>
+              <label>Wilderness zone (procedurally generated)<select id="wildernessSelect">
+                <option value="">— none —</option>
+                <option value="map_northern_cliffs">Northern Cliffs</option>
+                <option value="map_southern_cloud_forest">Southern Cloud Forest</option>
+                <option value="map_western_slope">Western Slope</option>
+                <option value="map_eastern_mire">Eastern Mire</option>
+              </select></label>
+              <div class="row">
+                <button id="useWildernessBtn">Use wilderness zone</button>
+              </div>
               <div id="mapLoadStatus" class="tip">No map loaded yet — using a blank 24×16 practice grid.</div>
             </div>
           </section>
@@ -1295,6 +1305,7 @@
     els.mapLoadStatus.textContent = `Loaded "${state.mapMeta.name}" — ${cols}×${rows} tiles (${kind}).`;
     els.mapStatusPill.textContent = `Map: ${state.mapMeta.name}`;
     els.mapSelect.value = entry.id;
+    els.wildernessSelect.value = "";
     log(`Map "${state.mapMeta.name}" ready (${kind}, ${cols}×${rows}).`);
     saveLocal();
     build3DScene();
@@ -1308,7 +1319,46 @@
     els.mapLoadStatus.textContent = "No map loaded — using a blank 24×16 practice grid.";
     els.mapStatusPill.textContent = "No map loaded";
     els.mapSelect.value = "";
+    els.wildernessSelect.value = "";
     log("Cleared map — back to a blank practice grid.");
+    saveLocal();
+    build3DScene();
+    renderAll();
+  }
+
+  // Hardcoded rather than fetched from config/maps/index.json — these four
+  // are procedurally regenerated every in-game Tothal year (performTothalShift
+  // in game.js) rather than living as static map files, so there's no JSON
+  // for the map database to list. Ids/names mirror game.js's EXTERIOR_ZONES.
+  const WILDERNESS_ZONES = [
+    { id: "map_northern_cliffs", name: "Northern Cliffs" },
+    { id: "map_southern_cloud_forest", name: "Southern Cloud Forest" },
+    { id: "map_western_slope", name: "Western Slope" },
+    { id: "map_eastern_mire", name: "Eastern Mire" },
+  ];
+
+  // A wilderness zone's real terrain is generated fresh in-game (and can
+  // reroll yearly), so there's nothing real to load into the editor here —
+  // this just tags the scene as belonging to that zone (kind:"wilderness")
+  // and keeps editing on the same blank practice grid every other "no real
+  // map" state uses. The actual placement — waiting for the zone to
+  // generate, scanning its tiles for a clear footprint-sized spot, and
+  // translating every local point/actor/camera position onto it — happens
+  // live in the game previewer (see buildPreviewPayload + game.js's
+  // runCutscenePreview wilderness branch).
+  function useWildernessZone(zoneId) {
+    const zone = WILDERNESS_ZONES.find(z => z.id === zoneId);
+    if (!zone) { toast("Choose a wilderness zone first."); return; }
+    state.mapLoadToken++;
+    state.mapMeta = {
+      loaded: true, id: zone.id, name: zone.name, kind: "wilderness", cols: DEFAULT_COLS, rows: DEFAULT_ROWS,
+      tiles: new Map(), floorSet: new Set(), zGrid: null, buildings: [],
+    };
+    state.project.mapId = zone.id;
+    els.mapLoadStatus.textContent = `Using "${zone.name}" (procedurally generated) — editing on a blank ${DEFAULT_COLS}×${DEFAULT_ROWS} practice grid; the real terrain generates and this scene is placed on it live in the previewer.`;
+    els.mapStatusPill.textContent = `Map: ${zone.name} (wilderness)`;
+    els.mapSelect.value = "";
+    log(`Wilderness zone "${zone.name}" selected — placement is resolved live in the game previewer, not shown here.`);
     saveLocal();
     build3DScene();
     renderAll();
@@ -1424,7 +1474,12 @@
     disposeGroupChildren(three.terrainGroup);
     disposeGroupChildren(three.buildingsGroup);
 
-    if (!state.mapMeta.loaded) {
+    if (!state.mapMeta.loaded || state.mapMeta.kind === "wilderness") {
+      // A wilderness zone's real terrain is procedurally generated and
+      // doesn't exist until the game previewer runs (see runCutscenePreview's
+      // wilderness branch in game.js) — the editor just shows the same blank
+      // practice grid as "no map loaded" while still treating the scene as
+      // "loaded" for validation/payload purposes (see buildPreviewPayload).
       buildBlankPracticePlane();
       frameCameraToStage();
       rebuildActorAndPointMarkers();
@@ -1695,42 +1750,79 @@
 
   const PREVIEW_HANDOFF_KEY = "hobunji_cutscene_preview_v1";
 
+  // Bounding box (padded by `margin` tiles) of every point and captured
+  // camera position this scene touches, in raw local (un-anchored) grid
+  // units — the w×h a wilderness placement needs to clear on the real
+  // generated terrain, plus an origin so the previewer's translation-only
+  // anchor offset (see game.js's runCutscenePreview wilderness branch) is
+  // well-defined: worldC = localC + (anchorCol - originC), same for rows.
+  function computeLocalFootprint(margin = 1) {
+    const xs = [], zs = [];
+    state.project.points.forEach(p => { xs.push(p.lc); zs.push(p.lr); });
+    if (state.project.camera3d) {
+      xs.push(state.project.camera3d.localPos.x, state.project.camera3d.localTarget.x);
+      zs.push(state.project.camera3d.localPos.z, state.project.camera3d.localTarget.z);
+    }
+    if (!xs.length) return { w: 4, h: 4, originC: -2, originR: -2 };
+    const originC = Math.floor(Math.min(...xs)) - margin, maxC = Math.ceil(Math.max(...xs)) + margin;
+    const originR = Math.floor(Math.min(...zs)) - margin, maxR = Math.ceil(Math.max(...zs)) + margin;
+    return { w: Math.max(1, maxC - originC), h: Math.max(1, maxR - originR), originC, originR };
+  }
+
   // Resolves every point/actor/camera position this scene uses down to
   // plain WORLD tile coordinates on the currently loaded map (applying the
   // scene anchor transform once, here) and embeds each linked NPC's full
   // database record — so docs/game.js's "Cutscene Preview Mode" never has
   // to re-derive the anchor math or re-fetch the NPC database itself, only
   // resolve creature types against its own real CREATURE_DB by id.
+  //
+  // A wilderness zone (mapMeta.kind === "wilderness") has no real map here
+  // to resolve an anchor against — its terrain doesn't exist until the
+  // previewer generates it — so that case instead sends raw LOCAL
+  // coordinates (ignoring the scene anchor entirely) plus a footprint
+  // bounding box, and lets the previewer pick where on the real map that
+  // footprint lands (see findZonePlacementFootprint in game.js).
   function buildPreviewPayload() {
     if (!state.mapMeta.loaded) return { error: "Load a real map first (Stage & Points tab) — the game previewer needs a real map to open." };
-    if (state.mapMeta.kind === "exterior" && state.mapMeta.id !== "map_hobunji_town") {
-      return { error: "Only the town map and building interiors can be previewed in-game right now." };
+    const isWilderness = state.mapMeta.kind === "wilderness";
+    if (!isWilderness && state.mapMeta.kind === "exterior" && state.mapMeta.id !== "map_hobunji_town") {
+      return { error: "Only the town map, building interiors, and wilderness zones can be previewed in-game right now." };
     }
     const actors = state.project.actors.map(actor => {
-      const w = worldOfPoint(pointById(actor.startPointId));
-      return {
+      const pt = pointById(actor.startPointId);
+      const base = {
         id: actor.id, name: actor.name, color: actor.color, rotation: actor.rotation, pose: actor.pose, team: actor.team || "",
         npcId: actor.npcId || null, npcRecord: actor.npcId ? (npcById(actor.npcId) || null) : null,
         creatureTypeId: actor.creatureTypeId || null, isPlayer: Boolean(actor.isPlayer),
-        worldC: w.c, worldR: w.r,
       };
+      if (isWilderness) return { ...base, lc: pt?.lc || 0, lr: pt?.lr || 0 };
+      const w = worldOfPoint(pt);
+      return { ...base, worldC: w.c, worldR: w.r };
     });
     const stages = state.project.stages.map(stage => {
       if (stage.type !== "move") return { ...stage };
-      const w = worldOfPoint(pointById(stage.pointId));
+      const pt = pointById(stage.pointId);
+      if (isWilderness) return { ...stage, targetLocal: { lc: pt?.lc || 0, lr: pt?.lr || 0 } };
+      const w = worldOfPoint(pt);
       return { ...stage, targetWorld: { c: w.c, r: w.r } };
     });
     let camera3d = null;
     if (state.project.camera3d) {
       const cam = state.project.camera3d;
-      const worldPos = localToWorld(cam.localPos.x, cam.localPos.z);
-      const worldTarget = localToWorld(cam.localTarget.x, cam.localTarget.z);
-      camera3d = {
-        worldPos: { x: worldPos.c, y: cam.localPos.y, z: worldPos.r },
-        worldTarget: { x: worldTarget.c, y: cam.localTarget.y, z: worldTarget.r },
-      };
+      if (isWilderness) {
+        camera3d = { localPos: { ...cam.localPos }, localTarget: { ...cam.localTarget } };
+      } else {
+        const worldPos = localToWorld(cam.localPos.x, cam.localPos.z);
+        const worldTarget = localToWorld(cam.localTarget.x, cam.localTarget.z);
+        camera3d = {
+          worldPos: { x: worldPos.c, y: cam.localPos.y, z: worldPos.r },
+          worldTarget: { x: worldTarget.c, y: cam.localTarget.y, z: worldTarget.r },
+        };
+      }
     }
-    return { payload: { title: state.project.title, mapId: state.mapMeta.id, actors, stages, camera3d } };
+    const payload = { title: state.project.title, mapId: state.mapMeta.id, actors, stages, camera3d };
+    if (isWilderness) { payload.wilderness = true; payload.footprint = computeLocalFootprint(); }
+    return { payload };
   }
 
   function previewInGame() {
@@ -2967,6 +3059,8 @@
     els.mapSelect.addEventListener("change", () => { /* selection only; Load Map applies it */ });
     els.loadMapBtn.addEventListener("click", () => { const id = els.mapSelect.value; if (!id) { toast("Choose a map first."); return; } loadMap(id); });
     els.clearMapBtn.addEventListener("click", clearMap);
+    els.wildernessSelect.addEventListener("change", () => { /* selection only; Use Wilderness Zone applies it */ });
+    els.useWildernessBtn.addEventListener("click", () => { const id = els.wildernessSelect.value; if (!id) { toast("Choose a wilderness zone first."); return; } useWildernessZone(id); });
 
     els.anchorCInput.addEventListener("change", () => { state.project.anchor.c = clamp(Math.round(Number(els.anchorCInput.value)||0),-2000,2000); changed("Scene anchor moved — everything shifted with it."); });
     els.anchorRInput.addEventListener("change", () => { state.project.anchor.r = clamp(Math.round(Number(els.anchorRInput.value)||0),-2000,2000); changed("Scene anchor moved — everything shifted with it."); });
@@ -3094,6 +3188,7 @@
   async function init() {
     [
       "exportBtn","importBtn","exampleBtn","importFile","mapSelect","loadMapBtn","clearMapBtn","mapLoadStatus",
+      "wildernessSelect","useWildernessBtn",
       "anchorCInput","anchorRInput","anchorRotationSelect","moveAnchorBtn","centerAnchorBtn",
       "pickBanner","editorBoard","newPointName","addPointBtn","pointList","pointEditor","pointNameInput","movePointBtn","deletePointBtn",
       "addNpcActorBtn","addCreatureActorBtn","newActorName","addActorBtn","actorList","actorEditor","actorNpcBadge","actorCreatureBadge","actorNameInput","actorColorInput",

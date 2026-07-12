@@ -6734,6 +6734,7 @@
         if (area === 'interior') return 'interior';
         if (area === 'town' || area === 'hobunji_main_town' || area === 'map_hobunji_town') return 'town';
         if (_isBuildingArea(area)) return area;
+        if (_isZoneArea(area)) return area;
         window.__farmLog?.(`[schedule] Unknown area "${area}" → fallback to farm`, 'warn');
         return 'farm';
       }
@@ -6769,18 +6770,23 @@
         if (area === 'interior') return interiorScene;
         if (area === 'town') return townScene;
         if (_isBuildingArea(area)) return _buildingScenes.get(area)?.scene || null;
+        if (_isZoneArea(area)) return _zoneScenes.get(area)?.scene || null;
         return scene;
       }
       function npcGridForArea(area) {
         if (area === 'interior') return interiorGrid;
         if (area === 'town') return townGrid;
         if (_isBuildingArea(area)) return _buildingScenes.get(area)?.grid || null;
+        if (_isZoneArea(area)) return _zoneScenes.get(area)?.grid || null;
         return grid;
       }
       function npcSurfaceY(area, c, r) {
         const g = npcGridForArea(area);
         const tile = g?.[r]?.[c];
-        return tile ? tileSurfaceY(tile.type) : 0;
+        if (!tile) return 0;
+        // Zone terrain has real plateau tiers/ramps — tileSurfaceY(type) alone
+        // (used by every other area, all flat ground) would ignore them.
+        return _isZoneArea(area) ? tileSurfaceYInArea(tile, area) : tileSurfaceY(tile.type);
       }
       function resolveNpcSpawnPosition(rec, target) {
         const legacy = target?.legacyPath || null;
@@ -20085,6 +20091,65 @@
         return false;
       }
 
+      // Scans a generated wilderness zone's real tile grid for a clear, flat
+      // w×h rectangle to drop an authored scene's whole local footprint onto
+      // — same tile-level exclusion checklist wilderness-map-generator.js's
+      // own areaFree/randomFreeArea use (uniform elevation tier, no incline/
+      // ramp/water/solid tiles), plus building/decor/furniture/den occupancy
+      // that live outside the tile grid itself (see buildZoneScene /
+      // _spawnZoneDecorFurniture / performTothalShift's `dens`). Searches
+      // outward in Chebyshev rings from the zone's center so a found spot is
+      // never farther from the middle of the map than it has to be.
+      function findZonePlacementFootprint(area, w, h) {
+        const zi = _zoneScenes.get(area);
+        const grid = zi?.grid;
+        if (!grid) return null;
+        const cols = zi.cols, rows = zi.rows;
+        const zoneData = _zoneLayouts.get(area);
+        const occupied = Array.from({ length: rows }, () => new Array(cols).fill(false));
+        const markOccupied = (col, row, ow, oh) => {
+          for (let r = Math.max(0, row); r < Math.min(rows, row + oh); r++)
+            for (let c = Math.max(0, col); c < Math.min(cols, col + ow); c++) occupied[r][c] = true;
+        };
+        for (const b of (zoneData?.buildings || [])) markOccupied(b.gridX || 0, b.gridZ || 0, b.footprintW ?? b.w ?? 1, b.footprintD ?? b.h ?? 1);
+        for (const d of (zoneData?.dens || [])) markOccupied(d.x, d.y, d.w || 1, d.h || 1);
+        for (const d of (zoneData?.decor || [])) markOccupied(d.col, d.row, 1, 1);
+        for (const f of (zoneData?.furniture || [])) markOccupied(f.col, f.row, 1, 1);
+
+        function rectOk(col, row) {
+          if (col < 1 || row < 1 || col + w > cols - 1 || row + h > rows - 1) return false; // stay off the border terrain skirt
+          let elevTier = null;
+          for (let r = row; r < row + h; r++) {
+            for (let c = col; c < col + w; c++) {
+              if (occupied[r][c]) return false;
+              const tile = grid[r][c];
+              if (!tile) return false;
+              if (tile.water) return false;
+              if (tile.incline) return false;
+              if (tile.type === TileType.RAMP) return false;
+              if (isSolid(tile.type)) return false;
+              const tier = tile.elevTier || 0;
+              if (elevTier === null) elevTier = tier;
+              else if (tier !== elevTier) return false;
+            }
+          }
+          return true;
+        }
+
+        const centerCol = Math.floor((cols - w) / 2), centerRow = Math.floor((rows - h) / 2);
+        const maxRadius = Math.max(cols, rows);
+        for (let radius = 0; radius <= maxRadius; radius++) {
+          for (let dr = -radius; dr <= radius; dr++) {
+            for (let dc = -radius; dc <= radius; dc++) {
+              if (Math.max(Math.abs(dr), Math.abs(dc)) !== radius) continue; // ring only — interior already checked at smaller radii
+              const col = centerCol + dc, row = centerRow + dr;
+              if (rectOk(col, row)) return { col, row };
+            }
+          }
+        }
+        return null;
+      }
+
       // Freeform ("custom") actors, and any actor whose real NPC/creature
       // spawn failed, fall back to a plain placeholder mesh — same
       // graceful-degradation policy the Cutscene Director tool's own
@@ -20199,6 +20264,46 @@
             if (!townGrid) await cutscenePreviewWaitForArea('__townGrid__', 15000, () => !!townGrid);
             buildTownScene();
           } catch (e) { console.error('[cutscene preview] buildTownScene failed:', e); }
+        } else if (payload.wilderness && _isZoneArea(area)) {
+          // A wilderness zone's real terrain doesn't exist until the yearly
+          // Tothal Shift generates it (performTothalShift, kicked off at
+          // world boot by checkTothalShift) — wait for that to finish, then
+          // build the zone's 3D scene and scan its actual tile grid for a
+          // clear, flat spot to drop this scene's whole local footprint onto
+          // (findZonePlacementFootprint). The Director sends every point/
+          // actor/camera position in local, un-anchored coordinates for this
+          // mode (see buildPreviewPayload) precisely because that anchor —
+          // which map, and where on it — can only be resolved here, against
+          // real generated terrain, not authored ahead of time.
+          try {
+            if (_tothalShiftPromise) await _tothalShiftPromise;
+            if (!_zoneLayouts.has(area)) {
+              checkTothalShift();
+              await cutscenePreviewWaitForArea(area, 20000, () => _zoneLayouts.has(area));
+            }
+            buildZoneScene(area);
+            const fp = payload.footprint || {};
+            const fw = Math.max(1, Math.ceil(fp.w || 6)), fh = Math.max(1, Math.ceil(fp.h || 6));
+            const anchor = findZonePlacementFootprint(area, fw, fh);
+            if (!anchor) {
+              cutscenePreviewBanner(`Could not find a clear ${fw}×${fh} spot for this scene on "${payload.mapId}".`, true);
+              cutscenePreviewActive = false;
+              return;
+            }
+            const offsetC = anchor.col - (fp.originC || 0), offsetR = anchor.row - (fp.originR || 0);
+            for (const a of (payload.actors || [])) {
+              a.worldC = (a.lc || 0) + offsetC;
+              a.worldR = (a.lr || 0) + offsetR;
+            }
+            for (const s of (payload.stages || [])) {
+              if (s.type === 'move' && s.targetLocal) s.targetWorld = { c: s.targetLocal.lc + offsetC, r: s.targetLocal.lr + offsetR };
+            }
+            if (payload.camera3d?.localPos && payload.camera3d?.localTarget) {
+              payload.camera3d.worldPos = { x: payload.camera3d.localPos.x + offsetC, y: payload.camera3d.localPos.y, z: payload.camera3d.localPos.z + offsetR };
+              payload.camera3d.worldTarget = { x: payload.camera3d.localTarget.x + offsetC, y: payload.camera3d.localTarget.y, z: payload.camera3d.localTarget.z + offsetR };
+            }
+            debugLog(`[cutscene preview] wilderness placement: ${payload.mapId} footprint ${fw}x${fh} anchored at (${anchor.col},${anchor.row})`);
+          } catch (e) { console.error('[cutscene preview] wilderness zone placement failed:', e); }
         }
         const ready = await cutscenePreviewWaitForArea(area, 20000);
         if (!ready) {
