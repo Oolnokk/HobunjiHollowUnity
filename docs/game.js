@@ -20727,15 +20727,26 @@
           }, (stage.duration || 0) * 1000);
         }
 
-        // actorId -> { raf, perpState } — a Turn card or a move's arrival
-        // facing used to force st.rotation to its target in one instant
-        // frame. Real NPC/creature turning never does that: moveToward and
-        // updateCreatureMesh always approach a heading through perpClamp's
-        // dead zone at a limited turn rate (see docs/game.js's own
-        // perpClamp/angleDiff). This drives the SAME functions per frame so
-        // a cutscene actor reads as genuinely attempting to turn there,
-        // exactly like it would mid-pathing/AI, rather than teleporting its
-        // facing.
+        // actorId -> raf — a Turn card or a move's arrival facing used to
+        // force st.rotation to its target in one instant frame. Real
+        // stationary NPC turning never does that: the "face player" idle
+        // turn (see walker.rot += angleDiff(...) * npcFacePlayerLerp above)
+        // eases toward its target at a limited per-frame rate instead of
+        // snapping. This drives the same kind of lerp so a cutscene actor
+        // reads as genuinely attempting to turn there, rather than
+        // teleporting its facing.
+        //
+        // Deliberately NOT routed through perpClamp: that dead zone exists
+        // to bias a *continuously recomputed* facing (moveToward's walking
+        // direction, updateCreatureMesh's look target) away from the
+        // camera-perpendicular angle where a billboard sprite goes edge-on.
+        // A Turn card or arrival facing is a one-shot authored angle chosen
+        // by the scene author — already passed through npcFacingCheatAngle/
+        // theatreCheatAngle above for camera-visibility — so redirecting it
+        // again here would silently override the very angle the author set
+        // (e.g. a creature facing exactly 180° sits right on one of
+        // cameraRelativeCreaturePerps()'s poles, so perpClamp would force it
+        // up to 30° away from what was authored).
         const cutsceneTurnDrivers = new Map();
         function stopSmoothTurn(actorId) {
           const d = cutsceneTurnDrivers.get(actorId);
@@ -20746,9 +20757,6 @@
           const st = actorStates.get(actorId);
           if (!st) { onDone?.(); return; }
           const isNpc = entities.get(actorId)?.kind === 'npc';
-          const perps = isNpc ? cameraRelativePerps() : cameraRelativeCreaturePerps();
-          const deadRad = isNpc ? PERP_DEAD_RAD : CREATURE_PERP_DEAD_RAD;
-          const perpState = {};
           const rawTarget = THREE.MathUtils.degToRad(targetDeg);
           const startTime = performance.now();
           let lastT = startTime;
@@ -20757,15 +20765,14 @@
             const now = performance.now();
             const dt = Math.min(0.05, (now - lastT) / 1000);
             lastT = now;
-            const { effectiveTarget, snapTo } = perpClamp(perpState, rawTarget, perps, deadRad);
             const current = THREE.MathUtils.degToRad(st.rotation);
             const turnRate = isNpc ? 0.15 : Math.min(1, dt * 10); // matches moveToward / updateCreatureMesh's own rates
-            const next = snapTo !== null ? snapTo : current + angleDiff(effectiveTarget, current) * turnRate;
+            const next = current + angleDiff(rawTarget, current) * turnRate;
             st.rotation = THREE.MathUtils.radToDeg(next);
             applyState(actorId);
             if (now - startTime >= durationMs) { cutsceneTurnDrivers.delete(actorId); onDone?.(); return; }
             const raf = requestAnimationFrame(step);
-            cutsceneTurnDrivers.set(actorId, { raf, perpState });
+            cutsceneTurnDrivers.set(actorId, { raf });
           };
           step();
         }

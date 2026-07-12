@@ -872,15 +872,15 @@
      other tools' in-memory/localStorage state. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/GLTFLoader.js?v=20260712j"></script>
-<script src="../../js/WallBuilder.js?v=20260712j"></script>
-<script src="../../js/HousePieceGen.js?v=20260712j"></script>
-<script src="../../js/procedural-furniture.js?v=20260712j"></script>
-<script src="../../js/foliage-generator.js?v=20260712j"></script>
-<script src="../../js/terrain-preview.js?v=20260712j"></script>
+<script src="../../js/GLTFLoader.js?v=20260712k"></script>
+<script src="../../js/WallBuilder.js?v=20260712k"></script>
+<script src="../../js/HousePieceGen.js?v=20260712k"></script>
+<script src="../../js/procedural-furniture.js?v=20260712k"></script>
+<script src="../../js/foliage-generator.js?v=20260712k"></script>
+<script src="../../js/terrain-preview.js?v=20260712k"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
-<script src="../../config/scratchbones-config.js?v=20260712j"></script>
+<script src="../../config/scratchbones-config.js?v=20260712k"></script>
 <script>
   // scratchbones-config.js's asset paths are authored repo-root-relative
   // (docs/assets/, docs/config/) for the top-level game page; this tool
@@ -892,10 +892,10 @@
     window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = '../../config/';
   }
 </script>
-<script src="../../js/portrait-utils.js?v=20260712j"></script>
-<script src="../../js/portrait-breathing.js?v=20260712j"></script>
-<script src="../../js/npc-avatar-preview-utils.js?v=20260712j"></script>
-<script src="../../js/png-plane-avatar.js?v=20260712j"></script>
+<script src="../../js/portrait-utils.js?v=20260712k"></script>
+<script src="../../js/portrait-breathing.js?v=20260712k"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20260712k"></script>
+<script src="../../js/png-plane-avatar.js?v=20260712k"></script>
 
 <script>
 (() => {
@@ -3171,54 +3171,30 @@
     return actor?.npcId ? npcFacingCheatAngle : actor?.creatureTypeId ? theatreCheatAngle : (deg) => deg;
   }
 
-  // ── Rotation dead zones — a port of docs/game.js's own perpClamp/
-  //    angleDiff (see moveToward/updateCreatureMesh there) so a cutscene
-  //    Turn card or a move's arrival facing reads as the actor genuinely
-  //    attempting to turn there, exactly like real pathing/AI, instead of
-  //    forcibly snapping its facing in one frame. ──
-  const TOOL_PERP_DEAD_RAD = THREE.MathUtils.degToRad(40); // matches game.js's default perpRotDeadzoneDeg
-  const TOOL_CREATURE_PERP_DEAD_RAD = THREE.MathUtils.degToRad(30);
-  const TOOL_PERP_HYSTERESIS_RAD = THREE.MathUtils.degToRad(6);
+  // ── Gradual turning — a cutscene Turn card or a move's arrival facing
+  //    eases toward its target at a limited per-frame rate (matching
+  //    game.js's own idle "face player" turn) instead of snapping in one
+  //    frame, so it reads as the actor genuinely attempting to turn there.
+  //
+  //    Deliberately NOT routed through a perpClamp-style dead zone: that
+  //    exists in game.js to bias a *continuously recomputed* facing
+  //    (walking direction, look-at target) away from the camera-
+  //    perpendicular angle where a billboard sprite goes edge-on. A Turn
+  //    card or arrival facing is a one-shot authored angle chosen by the
+  //    scene author — already passed through facingCheatFor() above for
+  //    camera-visibility — so redirecting it again here would silently
+  //    override the very angle the author set (e.g. a creature facing
+  //    exactly 180° sits right on one of the camera-relative creature
+  //    poles, so a dead zone would force it up to 30° away from what was
+  //    authored). ──
   function toolAngleDiff(target, current) {
     let d = target - current;
     while (d > Math.PI) d -= Math.PI*2;
     while (d < -Math.PI) d += Math.PI*2;
     return d;
   }
-  function toolCameraAzimuthRad() {
-    const three = state.three;
-    if (!three) return 0;
-    const dx = three.camera.position.x - three.controls.target.x, dz = three.camera.position.z - three.controls.target.z;
-    return Math.atan2(dx, dz);
-  }
-  function toolCameraRelativePerps() { const az = toolCameraAzimuthRad(); return [Math.PI/2 + az, -Math.PI/2 + az]; }
-  function toolCameraRelativeCreaturePerps() { const az = toolCameraAzimuthRad(); return [0 + az, Math.PI + az]; }
-  function toolPerpClamp(pState, rawTarget, perps, deadRad) {
-    if (!pState.perpSides) pState.perpSides = perps.map(() => null);
-    if (!pState.locked) pState.locked = perps.map(() => false);
-    let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
-    for (let i = 0; i < perps.length; i++) {
-      const dT = toolAngleDiff(rawTarget, perps[i]);
-      const a = Math.abs(dT);
-      if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
-    }
-    const P = perps[nearestI];
-    const wasLocked = pState.locked[nearestI];
-    const isLocked = wasLocked ? nearestAbs < deadRad + TOOL_PERP_HYSTERESIS_RAD : nearestAbs < deadRad;
-    let effectiveTarget = rawTarget, snapTo = null;
-    if (!isLocked) {
-      const newSide = nearestDT > 0 ? 1 : -1;
-      if (pState.perpSides[nearestI] !== null && pState.perpSides[nearestI] !== newSide) snapTo = P + newSide * deadRad;
-      pState.perpSides[nearestI] = newSide;
-    } else {
-      if (pState.perpSides[nearestI] === null) pState.perpSides[nearestI] = nearestDT >= 0 ? 1 : -1;
-      effectiveTarget = P + pState.perpSides[nearestI] * deadRad;
-    }
-    pState.locked[nearestI] = isLocked;
-    return { effectiveTarget, snapTo };
-  }
 
-  // actorId -> { raf, perpState }
+  // actorId -> raf
   const toolTurnDrivers = new Map();
   function stopToolSmoothTurn(actorId) {
     const d = toolTurnDrivers.get(actorId);
@@ -3229,9 +3205,6 @@
     const st = state.preview.actorStates.get(actorId);
     if (!st) { onDone?.(); return; }
     const isNpc = !!actorById(actorId)?.npcId;
-    const perps = isNpc ? toolCameraRelativePerps() : toolCameraRelativeCreaturePerps();
-    const deadRad = isNpc ? TOOL_PERP_DEAD_RAD : TOOL_CREATURE_PERP_DEAD_RAD;
-    const perpState = {};
     const rawTarget = THREE.MathUtils.degToRad(targetDeg);
     const startTime = performance.now();
     let lastT = startTime;
@@ -3240,15 +3213,14 @@
       const now = performance.now();
       const dt = Math.min(0.05, (now - lastT) / 1000);
       lastT = now;
-      const { effectiveTarget, snapTo } = toolPerpClamp(perpState, rawTarget, perps, deadRad);
       const current = THREE.MathUtils.degToRad(st.rotation);
       const turnRate = isNpc ? 0.15 : Math.min(1, dt * 10);
-      const next = snapTo !== null ? snapTo : current + toolAngleDiff(effectiveTarget, current) * turnRate;
+      const next = current + toolAngleDiff(rawTarget, current) * turnRate;
       st.rotation = THREE.MathUtils.radToDeg(next);
       applyActorStateToScene(actorId, st);
       if (now - startTime >= durationMs) { toolTurnDrivers.delete(actorId); onDone?.(); return; }
       const raf = requestAnimationFrame(step);
-      toolTurnDrivers.set(actorId, { raf, perpState });
+      toolTurnDrivers.set(actorId, { raf });
     };
     step();
   }
