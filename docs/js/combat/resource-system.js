@@ -24,6 +24,34 @@
   const round1 = value => Math.round(value * 10) / 10;
   const nowMs = () => performance.now();
 
+  // Seedable RNG for gameplay-affecting rolls (affliction procs, creature AI
+  // decisions, pack spawns, loot quantities, etc.) — everything that two
+  // peers would eventually need to agree on, as opposed to purely cosmetic
+  // randomness (particle FX, audio pitch variance) which can stay on the
+  // browser's own unseeded Math.random(). Not networked yet — there's no
+  // networking in this repo at all today — but centralizing these rolls
+  // behind one seedable source is the precondition for a future
+  // authoritative host to either seed this deterministically or resolve+
+  // broadcast individual rolls instead of each peer rolling independently.
+  // Mulberry32: tiny, fast, statistically fine for gameplay (not
+  // cryptographic).
+  function mulberry32(seed) {
+    let s = seed >>> 0;
+    return function () {
+      s = (s + 0x6D2B79F5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  let _rngSeed = (Math.random() * 0xffffffff) >>> 0;
+  let _rng = mulberry32(_rngSeed);
+  window.GameRandom = {
+    random: () => _rng(),
+    seed: (seed) => { _rngSeed = seed >>> 0; _rng = mulberry32(_rngSeed); },
+    getSeed: () => _rngSeed,
+  };
+
   // Footing-bar and archived rules from the source demo are omitted — this
   // game has no Footing resource. woundedStamina/infectedStamina/
   // shatteredStamina/windedStamina live on 'stamina'; the rest on 'health'.
@@ -320,8 +348,8 @@
     const infected = getAffliction(entity, "infectedStamina");
     if (infected <= 0) return null;
     const chancePerSec = clamp(cfg.pukeChancePerSec * (.35 + infected / 100), 0, .9);
-    if (Math.random() > chancePerSec * dt) return null;
-    const windedAmount = round1(clamp(2 + Math.random() * infected * .28, 1, 14));
+    if (window.GameRandom.random() > chancePerSec * dt) return null;
+    const windedAmount = round1(clamp(2 + window.GameRandom.random() * infected * .28, 1, 14));
     const poisonAmount = round1(clamp(windedAmount * .22, .2, 4));
     addAffliction(entity, "windedStamina", windedAmount);
     addAffliction(entity, "poisonedHealth", poisonAmount);

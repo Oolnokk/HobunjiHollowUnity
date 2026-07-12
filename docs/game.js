@@ -1,6 +1,13 @@
     (() => {
       'use strict';
 
+      // Gameplay-affecting randomness (creature AI decisions, pack spawns,
+      // loot rolls) goes through this seedable source instead of raw
+      // Math.random() — see the window.GameRandom definition in
+      // resource-system.js for why. Purely cosmetic randomness (particle FX,
+      // audio pitch variance) is left on Math.random().
+      const rnd = () => window.GameRandom.random();
+
       const threeContainer = document.getElementById('threeContainer');
       const overlayCanvas  = document.getElementById('overlayCanvas');
       const octx           = overlayCanvas.getContext('2d');
@@ -1253,6 +1260,25 @@
         climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
       };
 
+      // All players present in this session — just the local `player` today
+      // (there is no networking in this repo yet). Hostile-creature target
+      // acquisition reads from this list via nearestPlayer() below instead
+      // of hardcoding `player` directly, so a second connected player would
+      // just need to be pushed into this array for hostiles to be able to
+      // notice and chase them too, with nothing in the AI itself to change.
+      const players = [player];
+
+      // Nearest live player to (x, y) — see updateHostiles' targetPlayer.
+      // Identical to hardcoding `player` while `players` has one entry.
+      function nearestPlayer(x, y) {
+        let best = null, bestDist = Infinity;
+        for (const p of players) {
+          const d = Math.hypot(p.x - x, p.y - y);
+          if (d < bestDist) { best = p; bestDist = d; }
+        }
+        return best;
+      }
+
       // Health/Stamina afflictions + Exhausted/black-stamina debt — see
       // docs/js/combat/resource-system.js. Adds player.afflictions/
       // exhaustion/lastAttack*At without disturbing the flat health/
@@ -1715,6 +1741,25 @@
           if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
           const ch = (meta.characters || []).find(c => c.id === window.__hobunjiPlayerProfile.characterId);
           if (ch) { ch.gearInventory = gearInventory; localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta)); }
+        } catch {}
+      }
+
+      // Persists which literal tool/weapon/whistle instance is equipped in
+      // each slot (equipmentSlots) and which one is actually held right now
+      // (activeTool) — separate from gearInventory (what's owned) above.
+      // Mirrors saveGearInventory()'s pattern. Without this, logging back in
+      // always fell back to the starter-gear defaults instead of whatever
+      // was actually equipped/held last session.
+      function saveEquipmentSlots() {
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
+          const ch = (meta.characters || []).find(c => c.id === window.__hobunjiPlayerProfile.characterId);
+          if (ch) {
+            ch.equipmentSlots = { ...equipmentSlots };
+            ch.activeTool = activeTool;
+            localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+          }
         } catch {}
       }
 
@@ -2530,11 +2575,11 @@
           tick() {
             tickCounter++;
             if (tickCounter % 3 !== 0) return;
-            if (Math.random() > 0.55) return;
+            if (rnd() > 0.55) return;
 
             const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
             for (let i = dirs.length - 1; i > 0; i--) {
-              const j = Math.floor(Math.random() * (i + 1));
+              const j = Math.floor(rnd() * (i + 1));
               [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
             }
             for (const d of dirs) {
@@ -2757,8 +2802,16 @@
           scaleY: 1,
           attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
           knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
-          runFrame: 0, runFrameT: 0, currentFrameUrl: def.sprites.idle,
+          runFrame: 0, runFrameDistPx: 0, currentFrameUrl: def.sprites.idle,
           isCompanion: false,
+          // Whichever entity this companion follows/defends/anchors to —
+          // {x, y, angle, climbing}, same shape as the real `player` object.
+          // Defaults to null (hostiles/wild creatures have no master); a
+          // companion always gets one passed in via opts (see
+          // syncCompanionFromWhistle). Kept as a plain reference rather than
+          // hardcoding `player` so a future NPC-owned companion (or a second
+          // remote player's companion) can point at any qualifying entity.
+          master: null,
           name: def.label,
           state: 'idle',
           wanderTarget: null, wanderT: 0,
@@ -2951,7 +3004,7 @@
       function rollLootFromTable(lootTable) {
         const gained = {};
         for (const entry of lootTable || []) {
-          const qty = entry.min + Math.floor(Math.random() * (entry.max - entry.min + 1));
+          const qty = entry.min + Math.floor(rnd() * (entry.max - entry.min + 1));
           if (qty > 0) gained[entry.key] = (gained[entry.key] || 0) + qty;
         }
         return gained;
@@ -3238,10 +3291,10 @@
       function wanderTick(c, dt, anchorX, anchorY, radiusPx) {
         c.wanderT -= dt;
         if (!c.wanderTarget || c.wanderT <= 0) {
-          const ang = Math.random() * Math.PI * 2;
-          const r = Math.random() * radiusPx;
+          const ang = rnd() * Math.PI * 2;
+          const r = rnd() * radiusPx;
           c.wanderTarget = { x: anchorX + Math.cos(ang) * r, y: anchorY + Math.sin(ang) * r };
-          c.wanderT = 1.5 + Math.random() * 2;
+          c.wanderT = 1.5 + rnd() * 2;
         }
         return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
       }
@@ -3311,17 +3364,34 @@
         }
       }
 
+      // Ground covered per run-cycle frame advance — picked so a typical
+      // chase-speed creature (~200px/s) cycles at roughly the old fixed
+      // 0.18s/frame cadence this replaced.
+      const RUN_FRAME_STRIDE_PX = 30;
+
       function updateCreatureAnimFrame(c, dt, moving) {
         if (!moving) {
           if (c.currentFrameUrl !== c.def.sprites.idle) {
             setCreatureFrame(c.avatarRef, c.def.sprites.idle);
             c.currentFrameUrl = c.def.sprites.idle;
           }
+          // Not tracking ground covered while idle, so resuming movement
+          // doesn't "catch up" on distance never actually traveled.
+          c._animLastX = c.x; c._animLastY = c.y;
           return;
         }
-        c.runFrameT += dt;
-        if (c.runFrameT >= 0.18) {
-          c.runFrameT = 0;
+        // The run frame is derived from actual ground covered since the last
+        // call (same accumulator pattern as _footstepAdvance/tickCreatureFootsteps
+        // just above), not from elapsed dt — dt/time only measures how fast
+        // *this* client's clock ran, whereas position is exactly the thing a
+        // networked peer already has to agree on, so a distance-driven frame
+        // index falls out of position sync for free instead of needing its
+        // own state kept in lockstep.
+        const movedPx = Math.hypot(c.x - (c._animLastX ?? c.x), c.y - (c._animLastY ?? c.y));
+        c._animLastX = c.x; c._animLastY = c.y;
+        c.runFrameDistPx = (c.runFrameDistPx || 0) + movedPx;
+        while (c.runFrameDistPx >= RUN_FRAME_STRIDE_PX) {
+          c.runFrameDistPx -= RUN_FRAME_STRIDE_PX;
           c.runFrame = (c.runFrame + 1) % c.def.sprites.run.length;
         }
         const url = c.def.sprites.run[c.runFrame];
@@ -3376,7 +3446,7 @@
 
       function ensureCreatureStage(c, stages) {
         if (!c._stage || c._stage.stages !== stages) {
-          c._stage = { stages, idx: 0, mode: 'active', t: 0, orbitSign: Math.random() < 0.5 ? -1 : 1 };
+          c._stage = { stages, idx: 0, mode: 'active', t: 0, orbitSign: rnd() < 0.5 ? -1 : 1 };
         }
         return c._stage;
       }
@@ -3392,7 +3462,7 @@
         st.idx = (st.idx + 1) % st.stages.length;
         st.mode = 'active';
         st.t = 0;
-        st.orbitSign = Math.random() < 0.5 ? -1 : 1;
+        st.orbitSign = rnd() < 0.5 ? -1 : 1;
       }
 
       // Drives one creature's behavior-stage cycle for one frame. target is
@@ -3451,11 +3521,21 @@
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
           window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
 
-          const dxp = player.x - c.x, dyp = player.y - c.y;
+          // Aggro/chase locks onto whichever player is nearest at the moment
+          // it's acquired (see nearestPlayer) rather than the single global
+          // `player` — with one entry in `players` today this behaves
+          // identically, but a second connected player just needs to be
+          // pushed into that list for hostiles to be able to notice and
+          // chase them too, with nothing else here to change. The lock
+          // persists for the rest of the chase so the creature doesn't
+          // flicker between equally-near players every frame.
+          if (c.state !== 'chase') c.targetPlayer = null;
+          const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
+          const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
 
-          if (c.state !== 'chase' && distToPlayer <= def.aggroRangePx) c.state = 'chase';
+          if (c.state !== 'chase' && distToPlayer <= def.aggroRangePx) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
           // Leaving chase mid-windup (player broke the leash) abandons the
@@ -3499,19 +3579,19 @@
               // Slottable behavior-stage cycle (Pounce attempt <-> evasive
               // orbit, separated by a backing-up beat) replaces the plain
               // chase-and-trigger logic below for any creature that lists one.
-              const result = updateCreatureBehaviorStage(c, dt, player, def, (dist) => {
+              const result = updateCreatureBehaviorStage(c, dt, targetPlayer, def, (dist) => {
                 const triggerRangePx = creatureAimColliderReachPx(def);
                 if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c)) return false;
                 window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
                 return !!(def.attacks?.length && window.Combat?.animalAttacks?.start(
-                  c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
+                  c, def.attacks[Math.floor(rnd() * def.attacks.length)], { target: targetPlayer }
                 ));
               });
               aimAngle = result.aimAngle;
               moving = result.moving;
             } else {
-              moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
+              moving = moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, dt);
               // Pounce-capable creatures commit once the target enters their
               // forward aim collider (always pointed straight at the target
               // via aimAngle above) rather than the bite's short flat range.
@@ -3522,7 +3602,7 @@
                 c.attackCooldownT = def.attackCooldownS;
                 const hadNamedAttack = !!def.attacks?.length;
                 const startedModular = hadNamedAttack && window.Combat?.animalAttacks?.start(
-                  c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
+                  c, def.attacks[Math.floor(rnd() * def.attacks.length)], { target: targetPlayer }
                 );
                 if (startedModular) aimAngle = c.facing;
                 if (!startedModular) {
@@ -3531,7 +3611,14 @@
                     windupS: BITE_TELEGRAPH_WINDUP_S,
                     strikeS: BITE_TELEGRAPH_STRIKE_S,
                     onStrike: () => {
-                      if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
+                      // damagePlayer/respawnPlayer are still hardwired to the
+                      // single local `player` (see their definitions above) —
+                      // making a hit against an arbitrary targetPlayer
+                      // actually land is the per-player-instancing work this
+                      // pass deliberately doesn't take on. Harmless today
+                      // since targetPlayer === player whenever `players` has
+                      // one entry.
+                      if (Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) <= def.attackRangePx) {
                         damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp' });
                         playCreatureClawHit(c);
                       }
@@ -3587,20 +3674,29 @@
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
 
-          if (player.climbing) {
+          // The entity this companion follows/defends — the real player for
+          // an ordinary whistle-summoned companion, but not necessarily: see
+          // the `master` field comment in makeCreatureEntity. Falls back to
+          // `player` only so any pre-existing companion spawned before this
+          // field existed (e.g. a save mid-load) doesn't go masterless.
+          const master = c.master || player;
+
+          if (master.climbing) {
             // Teleport-and-stick: an untagged companion can't path through an
             // incline tile on its own (see CREATURE_DB canClimb / moveCreatureToward),
-            // so for the duration of the climb it just clings to the player's
+            // so for the duration of the climb it just clings to its master's
             // back instead of trying to follow normally.
-            const backAngle = player.angle + Math.PI;
-            c.x = player.x + Math.cos(backAngle) * TILE * 0.35;
-            c.y = player.y + Math.sin(backAngle) * TILE * 0.35;
-            c.facing = player.angle;
+            const backAngle = master.angle + Math.PI;
+            c.x = master.x + Math.cos(backAngle) * TILE * 0.35;
+            c.y = master.y + Math.sin(backAngle) * TILE * 0.35;
+            c.facing = master.angle;
             c.vx = 0; c.vy = 0;
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            // Pin to the player's actual climb-blended height rather than the
+            // Pin to the master's actual climb-blended height rather than the
             // incline tile's raw (unblended) surface — see updatePlayerMesh.
+            // (Only the real player has a climb-blended playerMesh height;
+            // a non-player master would need its own mesh reference here.)
             c.avatarRef.group.position.y = playerMesh.position.y + c.halfHeight * 0.5;
             continue;
           }
@@ -3609,13 +3705,13 @@
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
           window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
 
-          const dxp = player.x - c.x, dyp = player.y - c.y;
-          const distToPlayer = Math.hypot(dxp, dyp);
+          const dxp = master.x - c.x, dyp = master.y - c.y;
+          const distToMaster = Math.hypot(dxp, dyp);
           let target = null;
           for (const h of hostileObjects) {
             if (h.health <= 0) continue;
             if (h.areaId !== currentArea) continue;
-            if (Math.hypot(h.x - player.x, h.y - player.y) <= ALERT_RANGE_PX) { target = h; break; }
+            if (Math.hypot(h.x - master.x, h.y - master.y) <= ALERT_RANGE_PX) { target = h; break; }
           }
 
           if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
@@ -3662,7 +3758,7 @@
                   // the short 0-damage/high-knockback guard charge instead.
                   c._behaviorActionCount = (c._behaviorActionCount || 0) + 1;
                   const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % 4 === 0);
-                  const attackId = useRealAttack ? def.attacks[Math.floor(Math.random() * def.attacks.length)] : 'guardCharge';
+                  const attackId = useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge';
                   const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
                   if (startedModular) {
                     aimAngle = c.facing;
@@ -3684,11 +3780,11 @@
                 }
               }
             }
-          } else if (distToPlayer > FOLLOW_FAR_PX) {
-            moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
+          } else if (distToMaster > FOLLOW_FAR_PX) {
+            moving = moveCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(dyp, dxp);
           } else {
-            moving = wanderTick(c, dt, player.x, player.y, FOLLOW_NEAR_PX);
+            moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
           c.facing = aimAngle;
@@ -3700,15 +3796,28 @@
         }
       }
 
-      function despawnCompanions() {
-        companionObjects.forEach(c => despawnCreature(c));
-        companionObjects.clear();
+      // With no `master` given, clears every companion (full reset/QA use —
+      // see the farm-reset call site). Given a `master`, only despawns that
+      // master's own companion, leaving any other master's companion alone —
+      // needed so two masters (e.g. two whistle-bearing entities) syncing
+      // independently don't clobber each other's pet.
+      function despawnCompanions(master) {
+        for (const c of [...companionObjects]) {
+          if (master && c.master !== master) continue;
+          despawnCreature(c);
+          companionObjects.delete(c);
+        }
       }
 
-      // Spawns/despawns the active companion to match the equipped whistle.
-      // Called every farm/zone-area frame; cheap no-op once in sync. Also
-      // re-spawns into the new area's scene whenever the player travels.
-      function syncCompanionFromWhistle() {
+      // Spawns/despawns the given master's active companion to match its
+      // equipped whistle. Called every farm/zone-area frame for the real
+      // player (master defaults to `player`); cheap no-op once in sync. Also
+      // re-spawns into the new area's scene whenever the master travels.
+      // Takes an explicit `master` (rather than always reading the real
+      // player) so this same function can eventually drive a second
+      // whistle-bearing player's companion, or an NPC's, without change —
+      // see the `master` field on the companion entity itself.
+      function syncCompanionFromWhistle(master = player) {
         // A cutscene preview's combat card manages companionObjects directly
         // (see runCutscenePreview/runCombat) — this whistle-driven sync
         // would otherwise despawn a hound the instant it runs, since the
@@ -3718,17 +3827,17 @@
         const whistle = equipmentSlots.whistle
           ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
           : null;
-        const existing = [...companionObjects][0];
+        const existing = [...companionObjects].find(c => c.master === master);
         if (!whistle) {
-          if (existing) despawnCompanions();
+          if (existing) despawnCompanions(master);
           return;
         }
         if (existing && existing.creatureKey === whistle.creatureKey && existing.areaId === currentArea) return;
-        despawnCompanions();
-        const spawnX = player.x + Math.cos(player.angle + Math.PI) * TILE * 1.4;
-        const spawnY = player.y + Math.sin(player.angle + Math.PI) * TILE * 1.4;
+        despawnCompanions(master);
+        const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
+        const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
         const companion = makeCreatureEntity(whistle.creatureKey, spawnX, spawnY, {
-          isCompanion: true, name: whistle.name, homeX: spawnX, homeY: spawnY, state: 'idle',
+          isCompanion: true, name: whistle.name, homeX: spawnX, homeY: spawnY, state: 'idle', master,
         });
         if (companion) companionObjects.add(companion);
       }
@@ -4155,6 +4264,14 @@
       const DEN_SETTLE_RADIUS_PX = TILE * 0.6;
       let denCheckTimer = 0;
 
+      // Set on entering a wilderness zone (see enterZone); cleared the next
+      // time updateHostileSpawning's den-check actually runs for that same
+      // zone, at which point it logs the living-animal count so entering a
+      // zone reliably reports whether wildlife is actually spawning there —
+      // logging immediately in enterZone itself would usually just show 0,
+      // since den spawning is lazy/timer-gated rather than synchronous.
+      let _zoneEntryAnimalLogPending = null;
+
       // denKey → true once that den has ever had a pack spawned (so a fresh
       // zone's dens seed immediately, while a den that's merely between
       // packs waits for pendingDenRespawn to clear on the next day instead).
@@ -4194,13 +4311,13 @@
           window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
           return;
         }
-        const speciesKey = pool[Math.floor(Math.random() * pool.length)];
+        const speciesKey = pool[Math.floor(rnd() * pool.length)];
         const homeX = den.x * TILE + TILE * 0.5, homeY = den.y * TILE + TILE * 0.5;
-        const count = DEN_PACK_SIZE_MIN + Math.floor(Math.random() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
+        const count = DEN_PACK_SIZE_MIN + Math.floor(rnd() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
         let spawned = 0;
         for (let i = 0; i < count; i++) {
-          const angle = Math.random() * Math.PI * 2;
-          const dist = TILE * (0.8 + Math.random() * 1.6);
+          const angle = rnd() * Math.PI * 2;
+          const dist = TILE * (0.8 + rnd() * 1.6);
           const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
           const creature = makeCreatureEntity(speciesKey, x, y, { homeX, homeY, state: 'idle', denKey });
           if (creature) { hostileObjects.add(creature); spawned++; }
@@ -4280,6 +4397,12 @@
         denCheckTimer = DEN_CHECK_INTERVAL_S;
         if (!buildZoneScene(currentArea)) return;
         ensureCurrentZoneDenPacks();
+        if (_zoneEntryAnimalLogPending === currentArea) {
+          _zoneEntryAnimalLogPending = null;
+          let alive = 0;
+          for (const c of hostileObjects) if (c.health > 0 && c.areaId === currentArea) alive++;
+          window.__farmLog?.(`[wildlife] entered "${currentArea}": ${alive} living animal${alive === 1 ? '' : 's'} present.`, 'wildlife');
+        }
       }
 
       function updatePlayerVitals(dt) {
@@ -6990,10 +7113,14 @@
         const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
         const frontCanvas = document.createElement('canvas');
         frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+        // forceEyesOpen: this bakes one static texture at spawn and never
+        // re-renders it, so an unlucky blink-timing roll here would leave
+        // the NPC's world model with its eyes shut forever (see
+        // renderProfile's forceEyesOpen handling in portrait-utils.js).
+        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
@@ -8106,6 +8233,11 @@
         zi.scene.add(reticleWavyGroup);
         refreshActionBar();
         logMapSwap('enterZone', currentArea);
+        // Fire the den-check on the very next frame instead of waiting up to
+        // DEN_CHECK_INTERVAL_S — see _zoneEntryAnimalLogPending above — so
+        // wildlife populates promptly on arrival and the log reflects it.
+        denCheckTimer = 0;
+        _zoneEntryAnimalLogPending = mapId;
       }
 
       // ── Town building detection ──────────────────────────────────────
@@ -9606,12 +9738,24 @@
       }
 
       function applyGearClothingToPlayerData(playerData) {
-        const equipped = Object.values(gearInventory?.clothing || {}).filter(Boolean);
+        const shopCatalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
         const equippedCosmetics = new Set(Array.isArray(playerData?.equippedCosmetics) ? playerData.equippedCosmetics : []);
         const bodyColors = { ...(playerData?.appearance?.bodyColors || {}) };
-        for (const item of equipped) {
+        for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
+          // Clear out whatever cosmetic previously occupied this category
+          // (character-creation's own pick, or a since-unequipped item)
+          // before considering the current gearInventory item — this used to
+          // only ever ADD an id here and never remove one, so unequipping a
+          // clothing slot in-game left the original character-creation
+          // cosmetic (and its stale tint) rendering underneath instead of
+          // actually clearing the slot.
+          for (const catItem of shopCatalog) {
+            if (catItem.category === slot) equippedCosmetics.delete(catItem.id);
+          }
+          const item = gearInventory?.clothing?.[slot];
+          if (!item) continue;
           if (item.cosmeticId) equippedCosmetics.add(item.cosmeticId);
-          const [primaryTintKey, secondaryTintKey] = clothingTintKeysForSlot(item.slot);
+          const [primaryTintKey, secondaryTintKey] = clothingTintKeysForSlot(slot);
           if (primaryTintKey && item.colorA) bodyColors[primaryTintKey] = { ...item.colorA };
           if (secondaryTintKey && item.colorB) bodyColors[secondaryTintKey] = { ...item.colorB };
         }
@@ -9658,11 +9802,16 @@
         const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
         const frontCanvas = document.createElement('canvas');
         frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+        // forceEyesOpen: same reasoning as makeNpcWalker's world avatar —
+        // this bakes one static texture and never re-renders it, so an
+        // unlucky blink-timing roll here would leave the player's own world
+        // model stuck with its eyes shut until the next gear/cosmetic change
+        // happens to trigger a fresh bake.
+        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
@@ -10089,13 +10238,13 @@
 
       function equipWhistle(whistleId) {
         equipmentSlots.whistle = whistleId;
-        saveGearInventory();
+        saveEquipmentSlots();
         buildWhistleEquipUI();
       }
 
       function unequipWhistle() {
         equipmentSlots.whistle = null;
-        saveGearInventory();
+        saveEquipmentSlots();
         buildWhistleEquipUI();
       }
 
@@ -17967,7 +18116,7 @@
         return point.col >= 0 && point.col < COLS && point.row >= 0 && point.row < ROWS;
       }
 
-      function setActiveTool(tool) {
+      function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
         // Picking a tool through any of the normal paths (arc, digit keys,
         // scroll) while the weapon quick-switch is engaged cancels its
@@ -17989,9 +18138,14 @@
         closeToolPicker();
         refreshActionBar();
         refreshWeaponSwitchBtn();
-        const msg = `${label} selected.`;
-        lastActionMessage = msg;
-        showToast(msg, true);
+        // opts.silent: hydrating the tool held last session (see
+        // spawnPlayerAvatar) shouldn't pop a "X selected" toast on login.
+        if (!opts.silent) {
+          const msg = `${label} selected.`;
+          lastActionMessage = msg;
+          showToast(msg, true);
+        }
+        saveEquipmentSlots();
       }
 
       // Weapon quick-switch icon always shows whatever's actually equipped in
@@ -19928,6 +20082,20 @@
         if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
         if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
         ensureGearClothingCollection();
+        // Restore whichever literal tool/weapon/whistle instance was equipped
+        // in each slot last session (see saveEquipmentSlots) — skips any slot
+        // whose saved item no longer exists in this character's gearInventory
+        // (sold/lost since, or a save from before this field existed), which
+        // then falls through to the starter-gear defaults just below.
+        if (playerData.equipmentSlots && typeof playerData.equipmentSlots === 'object') {
+          for (const [slot, itemId] of Object.entries(playerData.equipmentSlots)) {
+            if (!itemId || !(slot in equipmentSlots)) continue;
+            const stillOwned = slot === 'whistle'
+              ? gearInventory.whistles.some(w => w.id === itemId)
+              : !!gearInventory.tools[itemId];
+            if (stillOwned) equipmentSlots[slot] = itemId;
+          }
+        }
         // Set default equipment slot assignments
         if (gearInventory.tools.bronzehoe)  equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
         if (gearInventory.tools.pickshovel) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
@@ -19943,9 +20111,15 @@
         // this only clears the real player's own companion slot.
         if (window.__hobunjiCutscenePreview) equipmentSlots.whistle = null;
         rebuildToolMeshes();
-        refreshWeaponSwitchBtn();
-        Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
-        if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+        // Restore the tool actually held last session (see saveEquipmentSlots)
+        // — silent so returning to a save doesn't pop a "X selected" toast.
+        if (playerData.activeTool && toolActions[playerData.activeTool]) {
+          setActiveTool(playerData.activeTool, { silent: true });
+        } else {
+          refreshWeaponSwitchBtn();
+          Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+          if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+        }
         buildEquipmentSlots();
         try {
           await window.NpcAvatarPreview.ensurePortraitCosmetics({
@@ -19975,6 +20149,7 @@
 
       window.Combat?.init({
         player,
+        players,
         TILE,
         hostileObjects,
         companionObjects,
@@ -20808,13 +20983,16 @@
           // same updateHostiles() wild creatures chase/attack the player
           // with. A non-hostile species (e.g. dabinggi-hound) is added to
           // the real companionObjects Set and driven by updateCompanions()
-          // — the same "defend whoever's nearest hostileObjects to the
-          // player" AI a whistle-summoned companion uses, treating the
-          // player as its master. Both are already ticked every frame by
-          // the main game loop, so nothing here drives them by hand; this
-          // only registers/unregisters them and parks the real player.x/y
-          // at the scene's Player actor so that targeting resolves against
-          // the right spot instead of wherever the real player last stood.
+          // — the same "defend whoever's nearest hostileObjects to its
+          // master" AI a whistle-summoned companion uses, explicitly pointed
+          // at the real player via c.master (see the `master` field on
+          // makeCreatureEntity — a future authored master besides the
+          // player would just need this line to pick a different entity).
+          // Both are already ticked every frame by the main game loop, so
+          // nothing here drives them by hand; this only registers/
+          // unregisters them and parks the real player.x/y at the scene's
+          // Player actor so that targeting resolves against the right spot
+          // instead of wherever the real player last stood.
           const combatOnIds = stage.participants.filter(p => p.combatOn).map(p => p.actorId)
             .filter(id => { const a = actorsById.get(id); return a && a.creatureTypeId && CREATURE_DB[a.creatureTypeId]; });
 
@@ -20836,13 +21014,14 @@
               registered.push({ c, set: hostileObjects });
             } else {
               c.isCompanion = true;
+              c.master = player;
               companionObjects.add(c);
               registered.push({ c, set: companionObjects });
             }
           }
 
           setTimeout(() => {
-            for (const { c, set } of registered) set.delete(c);
+            for (const { c, set } of registered) { set.delete(c); if (set === companionObjects) c.master = null; }
             player.x = savedPlayerX; player.y = savedPlayerY;
             if (!running) return;
             // Sync each combatant's authored-coordinate state from wherever

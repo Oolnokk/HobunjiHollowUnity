@@ -87,7 +87,11 @@
         if (h.health > 0 && h.areaId === c.areaId) out.push({ isPlayer: false, ref: h });
       }
     } else {
-      out.push({ isPlayer: true, ref: deps.player });
+      // deps.players is the full player list (see game.js's `players` array)
+      // — falls back to just deps.player for any older/ad-hoc deps object
+      // that doesn't set it. A hostile's leap/charge can clip whichever of
+      // them it actually catches in its cone, not only the local player.
+      for (const p of deps.players || [deps.player]) out.push({ isPlayer: true, ref: p });
       for (const comp of deps.companionObjects) {
         if (comp.health > 0 && comp.areaId === c.areaId) out.push({ isPlayer: false, ref: comp });
       }
@@ -193,7 +197,12 @@
   function guardChargeStart(c, state, ctx, deps) {
     state.t = 0;
     const directAngle = Math.atan2(ctx.target.y - c.y, ctx.target.x - c.x);
-    const awayFromMasterAngle = Math.atan2(c.y - deps.player.y, c.x - deps.player.x);
+    // guardCharge only ever fires from a companion's own behavior loop (see
+    // updateCompanions in game.js), so c.master is normally already set to
+    // whoever it's guarding — the deps.player fallback only covers a
+    // companion caught mid-save-migration without the field yet.
+    const master = c.master || deps.player;
+    const awayFromMasterAngle = Math.atan2(c.y - master.y, c.x - master.x);
     state.angle = Math.atan2(
       Math.sin(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.sin(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
       Math.cos(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.cos(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,

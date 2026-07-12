@@ -34,3 +34,12 @@ The game is `docs/index.html` (+ `docs/game.js`, `docs/onboarding.js`). All tool
 ## Setup note
 
 Serve this repository as static files and load portrait scripts from `docs/js/` so the runtime can fetch configs from `docs/config/` and image assets from `docs/assets/`.
+
+## Future plans: multiplayer
+
+Eventual multiplayer support (one world-owner host + guest players joining
+with their own character saves) is a design goal, not yet implemented. See
+[`MULTIPLAYER.md`](MULTIPLAYER.md) for the intended model, a review of what
+in the current save/combat/AI architecture already lines up with it, and the
+desync risks (NPC/creature transforms, combat timing, animation state) that
+will need addressing.
