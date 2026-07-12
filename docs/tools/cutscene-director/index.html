@@ -843,15 +843,15 @@
      other tools' in-memory/localStorage state. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/GLTFLoader.js?v=20260712e"></script>
-<script src="../../js/WallBuilder.js?v=20260712e"></script>
-<script src="../../js/HousePieceGen.js?v=20260712e"></script>
-<script src="../../js/procedural-furniture.js?v=20260712e"></script>
-<script src="../../js/foliage-generator.js?v=20260712e"></script>
-<script src="../../js/terrain-preview.js?v=20260712e"></script>
+<script src="../../js/GLTFLoader.js?v=20260712f"></script>
+<script src="../../js/WallBuilder.js?v=20260712f"></script>
+<script src="../../js/HousePieceGen.js?v=20260712f"></script>
+<script src="../../js/procedural-furniture.js?v=20260712f"></script>
+<script src="../../js/foliage-generator.js?v=20260712f"></script>
+<script src="../../js/terrain-preview.js?v=20260712f"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
-<script src="../../config/scratchbones-config.js?v=20260712e"></script>
+<script src="../../config/scratchbones-config.js?v=20260712f"></script>
 <script>
   // scratchbones-config.js's asset paths are authored repo-root-relative
   // (docs/assets/, docs/config/) for the top-level game page; this tool
@@ -863,10 +863,10 @@
     window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = '../../config/';
   }
 </script>
-<script src="../../js/portrait-utils.js?v=20260712e"></script>
-<script src="../../js/portrait-breathing.js?v=20260712e"></script>
-<script src="../../js/npc-avatar-preview-utils.js?v=20260712e"></script>
-<script src="../../js/png-plane-avatar.js?v=20260712e"></script>
+<script src="../../js/portrait-utils.js?v=20260712f"></script>
+<script src="../../js/portrait-breathing.js?v=20260712f"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20260712f"></script>
+<script src="../../js/png-plane-avatar.js?v=20260712f"></script>
 
 <script>
 (() => {
@@ -1122,8 +1122,10 @@
     // so old saves still land exactly where they used to.
     const points = raw.points.map((point,index) => ({
       id:String(point.id || uid("point")), name:String(point.name || `Point ${index+1}`).slice(0,28),
-      lc:clamp(Math.round(Number(point.lc ?? point.c ?? point.x)||0),-2000,2000),
-      lr:clamp(Math.round(Number(point.lr ?? point.r ?? point.y)||0),-2000,2000)
+      // Not rounded — points are placed freely, not snapped to whole tiles
+      // (see getBoardExactFromPointer).
+      lc:clamp(Number(point.lc ?? point.c ?? point.x)||0,-2000,2000),
+      lr:clamp(Number(point.lr ?? point.r ?? point.y)||0,-2000,2000)
     }));
     if (!points.length) points.push({ id:uid("point"), name:"Start", lc:4, lr:8 });
 
@@ -2187,6 +2189,20 @@
     return { c: clamp(Math.floor((clientX-rect.left)/rect.width*GRID_COLS()),0,GRID_COLS()-1), r: clamp(Math.floor((clientY-rect.top)/rect.height*GRID_ROWS()),0,GRID_ROWS()-1) };
   }
 
+  // Unsnapped variant for points: returns the raw lc/lr a point needs so its
+  // rendered pin (always drawn +0.5 cell off its raw coordinate — the same
+  // "tile center" convention every world position in this tool and in
+  // game.js uses) lands exactly under the pointer, instead of snapping to
+  // whichever whole tile contains it.
+  function getBoardExactFromPointer(board, clientX, clientY) {
+    const rect = board.getBoundingClientRect();
+    const cols = GRID_COLS(), rows = GRID_ROWS();
+    return {
+      c: clamp((clientX-rect.left)/rect.width*cols - 0.5, -0.5, cols-0.5),
+      r: clamp((clientY-rect.top)/rect.height*rows - 0.5, -0.5, rows-0.5),
+    };
+  }
+
   // Renders one grid instance (tiles + points + actor tokens + anchor) into
   // the given board element — shared by the small "Stage & Points" sidebar
   // grid and the main-viewport 2D mode toggled in above the 3D view (see
@@ -2228,10 +2244,15 @@
       tile.className = "tile";
       tile.style.background = tileColorAt(c,r);
       tile.setAttribute("aria-label", `Tile ${c+1}, ${r+1}`);
-      tile.addEventListener("click", () => {
+      tile.addEventListener("click", e => {
         if (state.draggingPointId) return;
         if (state.movingAnchor) { moveAnchorTo(c, r); return; }
-        if (state.movingPointId) movePointTo(state.movingPointId, c, r);
+        if (state.movingPointId) {
+          // Points aren't grid-snapped — place at the exact clicked spot,
+          // not just "which tile" was clicked.
+          const exact = getBoardExactFromPointer(board, e.clientX, e.clientY);
+          movePointTo(state.movingPointId, exact.c, exact.r);
+        }
       });
       board.appendChild(tile);
     }
@@ -2273,11 +2294,11 @@
       });
       token.addEventListener("pointermove", e => {
         if (state.draggingPointId !== point.id) return;
-        const cell = getBoardCellFromPointer(board, e.clientX, e.clientY);
+        const cell = getBoardExactFromPointer(board, e.clientX, e.clientY);
         const live = pointById(point.id);
         if (!live) return;
         const liveWorld = worldOfPoint(live);
-        if (liveWorld.c===cell.c && liveWorld.r===cell.r) return;
+        if (Math.abs(liveWorld.c-cell.c)<0.01 && Math.abs(liveWorld.r-cell.r)<0.01) return;
         const local = worldToLocal(cell.c, cell.r);
         live.lc = local.c; live.lr = local.r;
         saveLocal();
@@ -2342,7 +2363,7 @@
     const local = worldToLocal(c, r);
     point.lc = local.c; point.lr = local.r;
     state.movingPointId = null;
-    changed(`${point.name} moved to tile ${c+1}, ${r+1}.`);
+    changed(`${point.name} moved to (${c.toFixed(1)}, ${r.toFixed(1)}).`);
     toast(`${point.name} moved.`);
   }
 
@@ -2363,7 +2384,7 @@
       ? state.project.points.map((point,index) => { const w = worldOfPoint(point); return `
           <div class="item-card ${point.id===state.selectedPointId?"selected":""}" data-point-id="${escapeHtml(point.id)}">
             <span class="point-dot">${index+1}</span>
-            <span><strong>${escapeHtml(point.name)}</strong><small>Tile ${w.c+1}, ${w.r+1} (local ${point.lc},${point.lr})</small></span>
+            <span><strong>${escapeHtml(point.name)}</strong><small>Tile ${(w.c+1).toFixed(1)}, ${(w.r+1).toFixed(1)} (local ${point.lc.toFixed(1)},${point.lr.toFixed(1)})</small></span>
             <button data-move-point="${escapeHtml(point.id)}">Move</button>
           </div>`; }).join("")
       : `<div class="empty-state">Add your first named point.</div>`;
@@ -2796,9 +2817,21 @@
   function buildGridPath(start, goal) {
     const path = [{ c:start.c, r:start.r }];
     let c = start.c, r = start.r, horizontalTurn = true;
-    while (c !== goal.c || r !== goal.r) {
-      const canH = c !== goal.c, canV = r !== goal.r;
-      if ((horizontalTurn && canH) || !canV) c += Math.sign(goal.c-c); else r += Math.sign(goal.r-r);
+    // Points aren't grid-snapped anymore, so a goal can land at a fractional
+    // tile — step by whole tiles as before but clamp the final partial step
+    // to land exactly on goal.c/goal.r (epsilon-compared) instead of
+    // requiring exact integer equality, which a non-integer goal could
+    // never reach and would loop forever.
+    const EPS = 1e-6;
+    const closeEnough = (a,b) => Math.abs(a-b) < EPS;
+    let guard = 0;
+    while ((!closeEnough(c,goal.c) || !closeEnough(r,goal.r)) && guard++ < 100000) {
+      const canH = !closeEnough(c,goal.c), canV = !closeEnough(r,goal.r);
+      if ((horizontalTurn && canH) || !canV) {
+        c = Math.abs(goal.c-c) <= 1 ? goal.c : c + Math.sign(goal.c-c);
+      } else {
+        r = Math.abs(goal.r-r) <= 1 ? goal.r : r + Math.sign(goal.r-r);
+      }
       path.push({ c, r });
       horizontalTurn = !horizontalTurn;
     }
