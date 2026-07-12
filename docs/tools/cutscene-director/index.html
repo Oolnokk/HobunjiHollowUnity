@@ -814,15 +814,15 @@
      other tools' in-memory/localStorage state. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/GLTFLoader.js?v=20260712c"></script>
-<script src="../../js/WallBuilder.js?v=20260712c"></script>
-<script src="../../js/HousePieceGen.js?v=20260712c"></script>
-<script src="../../js/procedural-furniture.js?v=20260712c"></script>
-<script src="../../js/foliage-generator.js?v=20260712c"></script>
-<script src="../../js/terrain-preview.js?v=20260712c"></script>
+<script src="../../js/GLTFLoader.js?v=20260712d"></script>
+<script src="../../js/WallBuilder.js?v=20260712d"></script>
+<script src="../../js/HousePieceGen.js?v=20260712d"></script>
+<script src="../../js/procedural-furniture.js?v=20260712d"></script>
+<script src="../../js/foliage-generator.js?v=20260712d"></script>
+<script src="../../js/terrain-preview.js?v=20260712d"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
-<script src="../../config/scratchbones-config.js?v=20260712c"></script>
+<script src="../../config/scratchbones-config.js?v=20260712d"></script>
 <script>
   // scratchbones-config.js's asset paths are authored repo-root-relative
   // (docs/assets/, docs/config/) for the top-level game page; this tool
@@ -834,10 +834,10 @@
     window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = '../../config/';
   }
 </script>
-<script src="../../js/portrait-utils.js?v=20260712c"></script>
-<script src="../../js/portrait-breathing.js?v=20260712c"></script>
-<script src="../../js/npc-avatar-preview-utils.js?v=20260712c"></script>
-<script src="../../js/png-plane-avatar.js?v=20260712c"></script>
+<script src="../../js/portrait-utils.js?v=20260712d"></script>
+<script src="../../js/portrait-breathing.js?v=20260712d"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20260712d"></script>
+<script src="../../js/png-plane-avatar.js?v=20260712d"></script>
 
 <script>
 (() => {
@@ -2009,6 +2009,32 @@
     return rec?.avatarHeight || 1.6;
   }
 
+  // Debug overlay: a bright, unlit, always-on-top arrow attached directly to
+  // an actor's root — the exact node whose rotation.y gets set to
+  // THREE.MathUtils.degToRad(actor.rotation) everywhere (rebuildActorAndPointMarkers,
+  // applyActorStateToScene). It always points along local +Z, so whatever the
+  // code actually treats as "0 degrees" for this actor is what the arrow
+  // shows — no separate assumption about which way an avatar "looks" like
+  // it's facing, since that reading has been wrong before (coin-plane NPCs
+  // vs crossed-plane creatures read differently at the same rotation value).
+  function buildForwardArrowMarker(avatarHeight) {
+    const group = new THREE.Group();
+    group.name = "forward_arrow_debug";
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff2fd6, depthTest: false });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.6, 8), mat);
+    shaft.rotation.x = Math.PI / 2;
+    shaft.position.set(0, 0, 0.3);
+    shaft.renderOrder = 999;
+    group.add(shaft);
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.28, 10), mat);
+    head.rotation.x = Math.PI / 2;
+    head.position.set(0, 0, 0.74);
+    head.renderOrder = 999;
+    group.add(head);
+    group.position.set(0, clamp(avatarHeight * 0.65, 0.5, 1.6), 0);
+    return group;
+  }
+
   async function ensureActorObject(actor) {
     const three = state.three;
     if (!three) return null;
@@ -2028,11 +2054,13 @@
     try { avatarGroup = avatarInfo ? avatarInfo.group : buildPlaceholderAvatarGroup(actor); }
     catch (e) { log(`Could not build any avatar for "${actor.name}": ${e.message}`, "ERROR"); avatarGroup = new THREE.Group(); }
     root.add(avatarGroup);
+    const avatarHeight = avatarGroup.userData?.portraitModelHeight || 1.6;
+    root.add(buildForwardArrowMarker(avatarHeight));
     three.actorsGroup.add(root);
     rec = {
       root, avatarGroup, npcId: actor.npcId, creatureTypeId: actor.creatureTypeId, name: actor.name, usingPlaceholder,
       profile: avatarInfo?.profile || null, frontCanvas: avatarInfo?.frontCanvas || null,
-      avatarHeight: avatarGroup.userData?.portraitModelHeight || 1.6, breathTimer: null,
+      avatarHeight, breathTimer: null,
       lastAttackAt: 0, attackFlashTimer: null
     };
     state.actorObjects.set(actor.id, rec);
