@@ -466,6 +466,22 @@
     font-size: .72rem;
     pointer-events: none;
   }
+  #matchCameraZoomHud {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 6;
+    padding: 6px 12px;
+    border-radius: 7px;
+    background: rgba(10,8,7,.72);
+    color: #ffe36e;
+    font-size: .85rem;
+    font-weight: 1000;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .2s;
+  }
+  #matchCameraZoomHud.show { opacity: 1; }
 
   .fade-overlay {
     position: absolute;
@@ -759,6 +775,7 @@
                 <button data-add-stage="turn"><span class="big-icon">↻</span><span>Turn in place</span></button>
                 <button data-add-stage="combat"><span class="big-icon">⚔️</span><span>Combat</span></button>
                 <button data-add-stage="fade"><span class="big-icon">⬛</span><span>Fade</span></button>
+                <button data-add-stage="zoom"><span class="big-icon">🔍</span><span>Zoom</span></button>
               </div>
             </div>
           </section>
@@ -793,6 +810,7 @@
         <canvas id="canvas3d"></canvas>
         <div id="mainGrid2DWrap"><div id="mainGrid2D" class="map-board" aria-label="Scene grid, top-down"></div></div>
         <div id="viewport-hint">Drag to orbit · scroll to zoom · private preview scene</div>
+        <div id="matchCameraZoomHud"></div>
         <div id="fadeOverlay" class="fade-overlay"></div>
         <div id="dialogueBox" class="dialogue-box" role="dialog" aria-live="polite">
           <div id="dialogueSpeaker" class="dialogue-speaker"></div>
@@ -854,15 +872,15 @@
      other tools' in-memory/localStorage state. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/GLTFLoader.js?v=20260712i"></script>
-<script src="../../js/WallBuilder.js?v=20260712i"></script>
-<script src="../../js/HousePieceGen.js?v=20260712i"></script>
-<script src="../../js/procedural-furniture.js?v=20260712i"></script>
-<script src="../../js/foliage-generator.js?v=20260712i"></script>
-<script src="../../js/terrain-preview.js?v=20260712i"></script>
+<script src="../../js/GLTFLoader.js?v=20260712j"></script>
+<script src="../../js/WallBuilder.js?v=20260712j"></script>
+<script src="../../js/HousePieceGen.js?v=20260712j"></script>
+<script src="../../js/procedural-furniture.js?v=20260712j"></script>
+<script src="../../js/foliage-generator.js?v=20260712j"></script>
+<script src="../../js/terrain-preview.js?v=20260712j"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
-<script src="../../config/scratchbones-config.js?v=20260712i"></script>
+<script src="../../config/scratchbones-config.js?v=20260712j"></script>
 <script>
   // scratchbones-config.js's asset paths are authored repo-root-relative
   // (docs/assets/, docs/config/) for the top-level game page; this tool
@@ -874,10 +892,10 @@
     window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = '../../config/';
   }
 </script>
-<script src="../../js/portrait-utils.js?v=20260712i"></script>
-<script src="../../js/portrait-breathing.js?v=20260712i"></script>
-<script src="../../js/npc-avatar-preview-utils.js?v=20260712i"></script>
-<script src="../../js/png-plane-avatar.js?v=20260712i"></script>
+<script src="../../js/portrait-utils.js?v=20260712j"></script>
+<script src="../../js/portrait-breathing.js?v=20260712j"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20260712j"></script>
+<script src="../../js/png-plane-avatar.js?v=20260712j"></script>
 
 <script>
 (() => {
@@ -889,7 +907,7 @@
   const CREATURE_DB_URL = "../../config/creatures/hobunji-creature-bestiary.json";
   const ASSET_BASE = "../../";
   const ACTOR_COLORS = ["#3d7dd8","#d55353","#9b65d6","#3ca66f","#d48c38","#d45b9a","#5f9caa","#8a795f"];
-  const STAGE_TYPES = new Set(["move","talk","choice","animation","turn","combat","fade"]);
+  const STAGE_TYPES = new Set(["move","talk","choice","animation","turn","combat","fade","zoom"]);
   const EMOTE_NAMES = ["laugh","disgust","love","alarmed","curious"];
   const DEFAULT_COLS = 24, DEFAULT_ROWS = 16;
   // Mirrors docs/tools/map-editor/index.html's TILE_INFO exactly so the 2D
@@ -928,9 +946,11 @@
     three: null,
     actorObjects: new Map(),
     pointObjects: new Map(),
-    preview: { running: false, currentStageId: null, actorStates: new Map(), timer: null, token: 0, fadeOpacity: 0 },
+    preview: { running: false, currentStageId: null, actorStates: new Map(), timer: null, token: 0, fadeOpacity: 0, zoomPercent: 100, zoomBaseDistance: null },
     viewMode: "3d",
     gameCameraMatch: false,
+    matchCameraZoomPercent: 100,
+    matchCameraBaseDistance: null,
     logs: []
   };
 
@@ -1185,6 +1205,7 @@
       if (type === "combat") return { id, type, duration:clamp(Number(stage.duration)||10,0,300),
         participants: Array.isArray(stage.participants) ? stage.participants.filter(i=>actorIds.has(i.actorId)).map(i=>({actorId:i.actorId,combatOn:Boolean(i.combatOn),canLose:Boolean(i.canLose)})) : actors.map(a=>({actorId:a.id,combatOn:false,canLose:a.canLose})),
         next:String(stage.next||"__next__"), lossNext:String(stage.lossNext||"__end__") };
+      if (type === "zoom") return { id, type, percent:clamp(Number(stage.percent)||100,10,500), duration:clamp(Number(stage.duration)??0.6,0,10), next:String(stage.next||"__next__") };
       return { id, type:"fade", direction: stage.direction==="in"?"in":"out", duration:clamp(Number(stage.duration)||1,0,10), next:String(stage.next||"__next__") };
     });
 
@@ -1269,8 +1290,8 @@
       ? state.project.actors.map(a => `<option value="${escapeHtml(a.id)}" ${a.id===selectedId?"selected":""}>${escapeHtml(a.name)}</option>`).join("")
       : `<option value="">No characters</option>`;
   }
-  function stageName(type) { return { move:"Move", talk:"Talk", choice:"Choice", animation:"Animation", turn:"Turn in place", combat:"Combat", fade:"Fade" }[type] || "Stage"; }
-  function stageIcon(type) { return { move:"👣", talk:"💬", choice:"🔀", animation:"🎞️", turn:"↻", combat:"⚔️", fade:"⬛" }[type] || "•"; }
+  function stageName(type) { return { move:"Move", talk:"Talk", choice:"Choice", animation:"Animation", turn:"Turn in place", combat:"Combat", fade:"Fade", zoom:"Zoom" }[type] || "Stage"; }
+  function stageIcon(type) { return { move:"👣", talk:"💬", choice:"🔀", animation:"🎞️", turn:"↻", combat:"⚔️", fade:"⬛", zoom:"🔍" }[type] || "•"; }
   function stageLabel(stage, index = stageIndex(stage.id)) { return `${index+1}. ${stageIcon(stage.type)} ${stageName(stage.type)}`; }
 
   function nextSelectHtml(selectedValue, currentStageId) {
@@ -1461,6 +1482,21 @@
     scene.add(sun);
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    // Stepped/clamped zoom while "Match game camera" is on (see
+    // setGameCameraMatch, which sets controls.enableZoom = false so this
+    // doesn't fight the stock OrbitControls dolly-zoom) — mirrors the real
+    // game's own wheel-zoom feel (docs/game.js's setCameraZoomScale: fixed
+    // step, clamped range) instead of OrbitControls' free/instant zoom, and
+    // shows the resulting percent on screen so it's easy to read off the
+    // number for a Zoom card.
+    canvas.addEventListener("wheel", e => {
+      if (!state.gameCameraMatch) return;
+      e.preventDefault();
+      const dir = e.deltaY > 0 ? -1 : 1;
+      state.matchCameraZoomPercent = clamp(state.matchCameraZoomPercent + dir * 5, 10, 500);
+      zoomCameraToPercent(state.matchCameraBaseDistance ?? camera.position.distanceTo(controls.target), state.matchCameraZoomPercent);
+      showMatchCameraZoomHud(state.matchCameraZoomPercent);
+    }, { passive: false });
     const worldGroup = new THREE.Group();
     const terrainGroup = new THREE.Group(); worldGroup.add(terrainGroup);
     const buildingsGroup = new THREE.Group(); worldGroup.add(buildingsGroup);
@@ -1873,13 +1909,39 @@
       if (state.viewMode === "2d") setViewMode("3d");
       if (state.project.camera3d) applyCamera3D();
       else toast("No camera captured yet — showing the game's aspect ratio/FOV at the current view.");
+      // Every cutscene starts at 100% zoom off whatever the camera just
+      // landed on — scrolling here previews exactly what a Zoom card's
+      // percent would do, so it doubles as "figure out the number to type
+      // into a Zoom card." Stock OrbitControls zoom is swapped out for a
+      // stepped/clamped wheel handler (see the canvas 'wheel' listener in
+      // init3D) so it feels like the game's own zoom, not a free dolly.
+      state.matchCameraZoomPercent = 100;
+      state.matchCameraBaseDistance = state.three ? state.three.camera.position.distanceTo(state.three.controls.target) : null;
+      if (state.three) state.three.controls.enableZoom = false;
+    } else if (state.three) {
+      state.three.controls.enableZoom = true;
+      hideMatchCameraZoomHud();
     }
     els.matchGameCameraBtn.classList.toggle("primary", on);
     els.matchGameCameraBtn.textContent = on ? "🎬 Matching game camera" : "🎬 Match game camera";
     els.matchGameCameraBtn.title = on
-      ? "Showing the exact aspect ratio/FOV/dialogue framing a player would see — click to go back to free-roam authoring view"
+      ? "Showing the exact aspect ratio/FOV/dialogue framing a player would see — scroll to zoom, click to go back to free-roam authoring view"
       : "Jump to the captured camera shot and lock the viewport to the game's real aspect ratio, FOV, and dialogue box proportions";
     state.three?.resize?.();
+  }
+
+  let matchCameraZoomHudTimer = null;
+  function showMatchCameraZoomHud(percent) {
+    const hud = els.matchCameraZoomHud;
+    if (!hud) return;
+    hud.textContent = `Zoom: ${Math.round(percent)}%`;
+    hud.classList.add("show");
+    clearTimeout(matchCameraZoomHudTimer);
+    matchCameraZoomHudTimer = setTimeout(() => hud.classList.remove("show"), 1500);
+  }
+  function hideMatchCameraZoomHud() {
+    clearTimeout(matchCameraZoomHudTimer);
+    els.matchCameraZoomHud?.classList.remove("show");
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -2675,6 +2737,7 @@
     }
     if (stage.type === "turn") return stage.mode==="actor" ? `${actorById(stage.actorId)?.name||"Missing actor"} faces ${actorById(stage.targetActorId)?.name||"Missing actor"}` : `${actorById(stage.actorId)?.name||"Missing actor"} → ${stage.angle}°`;
     if (stage.type === "combat") { const active = stage.participants.filter(i=>i.combatOn).length; const losable = stage.participants.filter(i=>i.combatOn&&i.canLose).length; return `${stage.duration}s · ${active} active · ${losable} can lose`; }
+    if (stage.type === "zoom") return `Zoom to ${stage.percent}% over ${stage.duration}s`;
     return `${stage.direction==="out"?"Fade to black":"Fade in"} · ${stage.duration}s`;
   }
 
@@ -2808,6 +2871,12 @@
         </div></div>
         <label>Normal result<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>
         <label>If a loss happens<select id="editLossNext">${nextSelectHtml(stage.lossNext,stage.id)}</select></label>`;
+    } else if (stage.type === "zoom") {
+      fields = `
+        <label>Zoom to (100% = the captured shot's own framing)<input id="editZoomPercent" type="number" min="10" max="500" step="5" value="${stage.percent}"></label>
+        <label>Lerp over seconds<input id="editDuration" type="number" min="0" max="10" step=".1" value="${stage.duration}"></label>
+        <p class="tip">All cutscenes start at 100% zoom. Manual camera zoom/rotation is disabled during playback — this is the only way to change zoom mid-scene.</p>
+        <label>After zoom<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
     } else {
       fields = `
         <label>Fade direction<select id="editFadeDirection">
@@ -2837,6 +2906,7 @@
     const text = $("editText"); if (text) text.addEventListener("input", () => { stage.text = text.value; saveLocal(); renderStageListSummaryOnly(); });
     const animationName = $("editAnimationName"); if (animationName) animationName.addEventListener("input", () => { stage.animationName = animationName.value; saveLocal(); renderStageListSummaryOnly(); });
     const duration = $("editDuration"); if (duration) duration.addEventListener("change", () => { stage.duration = clamp(Number(duration.value)||0,0,stage.type==="combat"?300:30); changed("Duration updated."); });
+    const zoomPercent = $("editZoomPercent"); if (zoomPercent) zoomPercent.addEventListener("change", () => { stage.percent = clamp(Number(zoomPercent.value)||100,10,500); changed("Zoom target updated."); });
     const angle = $("editAngle"); if (angle) angle.addEventListener("change", () => { stage.angle = normalizeAngle(angle.value); changed("Rotation updated."); });
 
     if (stage.type === "choice") {
@@ -2876,6 +2946,7 @@
     else if (type === "animation") stage = { id:uid("stage"), type, actorId:firstActor.id, animationName:"animation", animKind:"none", emoteName:EMOTE_NAMES[0], resultPose:"unchanged", duration:1, next:"__next__" };
     else if (type === "turn") stage = { id:uid("stage"), type, actorId:firstActor.id, mode:"angle", targetActorId:firstActor.id, angle:0, duration:.4, next:"__next__" };
     else if (type === "combat") stage = { id:uid("stage"), type, duration:10, participants:state.project.actors.map(a=>({actorId:a.id,combatOn:false,canLose:a.canLose})), next:"__next__", lossNext:"__end__" };
+    else if (type === "zoom") stage = { id:uid("stage"), type, percent:100, duration:0.6, next:"__next__" };
     else stage = { id:uid("stage"), type:"fade", direction:"out", duration:1, next:"__next__" };
     state.project.stages.push(stage);
     state.selectedStageId = stage.id;
@@ -2917,6 +2988,27 @@
     rec.root.scale.setScalar(st.pose === "prone" ? 0.6 : 1);
   }
 
+  // Zooms the OrbitControls camera along its current view ray (target →
+  // camera) to `percent` of `baseDistance` — 100% = that base's own
+  // unmodified framing, higher = closer. Mirrors game.js's
+  // cutscenePreviewZoomPercent/updateCameraPosition so a Zoom card previews
+  // the same way here as it will in the real game.
+  function zoomCameraToPercent(baseDistance, percent) {
+    const three = state.three;
+    if (!three || baseDistance == null) return;
+    const dir = three.camera.position.clone().sub(three.controls.target);
+    const dist = dir.length() || 1;
+    const newDist = Math.max(0.3, baseDistance / (Math.max(10, percent) / 100));
+    three.camera.position.copy(three.controls.target).add(dir.multiplyScalar(newDist / dist));
+    three.controls.update();
+  }
+  function applyPreviewZoom(percent) {
+    const three = state.three;
+    if (!three) return;
+    const base = state.preview.zoomBaseDistance ?? three.camera.position.distanceTo(three.controls.target);
+    zoomCameraToPercent(base, percent);
+  }
+
   function resetPreview(showToast=false) {
     state.preview.running = false;
     state.preview.currentStageId = null;
@@ -2924,6 +3016,10 @@
     clearTimeout(state.preview.timer);
     state.preview.timer = null;
     state.preview.actorStates = initialActorStates();
+    // Manual camera control fights an authored shot exactly like it would
+    // in the real game (see game.js's cutscenePreviewActive gating on wheel-
+    // zoom/drag-to-look) — only re-enabled once playback actually stops.
+    if (state.three) state.three.controls.enabled = true;
     // Preview playback (unlike the idle editor markers) does have a fixed
     // camera for this shot — the captured camera3d, already moved into
     // place by startPreview before this runs — so it's the one place an
@@ -2967,6 +3063,13 @@
     // be at the captured shot, not wherever the author last orbited it.
     if (state.project.camera3d) applyCamera3D(state.project.camera3d);
     resetPreview(false);
+    // Cutscenes always start at 100% zoom, based off wherever the camera
+    // just landed (the captured shot, or the current free-roam view if none
+    // was captured) — a Zoom card scales relative to this. Manual zoom/
+    // rotate/pan is locked out for the duration; only Zoom cards move it.
+    state.preview.zoomPercent = 100;
+    state.preview.zoomBaseDistance = state.three ? state.three.camera.position.distanceTo(state.three.controls.target) : null;
+    if (state.three) state.three.controls.enabled = false;
     state.preview.running = true;
     state.preview.currentStageId = state.project.stages[0]?.id || null;
     const token = state.preview.token;
@@ -2977,6 +3080,7 @@
   function finishPreview(message="Scene finished.") {
     state.preview.running = false;
     state.preview.currentStageId = null;
+    if (state.three) state.three.controls.enabled = true;
     els.playStatusPill.textContent = message;
     hideDialogue();
     log(message);
@@ -3002,6 +3106,7 @@
     if (stage.type === "turn") return runTurnStage(stage, token);
     if (stage.type === "combat") return runCombatStage(stage, token);
     if (stage.type === "fade") return runFadeStage(stage, token);
+    if (stage.type === "zoom") return runZoomStage(stage, token);
     const speaker = actorById(stage.speakerId)?.name || "Someone";
     if (stage.type === "choice") { showDialogue(speaker, stage.text, stage.options.map(o => ({ text:o.text||"Choice", onClick:() => continueTo(getResolvedNext(stage.id,o.next),token) }))); return; }
     showDialogue(speaker, stage.text, [{ text:"Continue", primary:true, onClick:() => continueTo(getResolvedNext(stage.id,stage.next),token) }]);
@@ -3066,6 +3171,88 @@
     return actor?.npcId ? npcFacingCheatAngle : actor?.creatureTypeId ? theatreCheatAngle : (deg) => deg;
   }
 
+  // ── Rotation dead zones — a port of docs/game.js's own perpClamp/
+  //    angleDiff (see moveToward/updateCreatureMesh there) so a cutscene
+  //    Turn card or a move's arrival facing reads as the actor genuinely
+  //    attempting to turn there, exactly like real pathing/AI, instead of
+  //    forcibly snapping its facing in one frame. ──
+  const TOOL_PERP_DEAD_RAD = THREE.MathUtils.degToRad(40); // matches game.js's default perpRotDeadzoneDeg
+  const TOOL_CREATURE_PERP_DEAD_RAD = THREE.MathUtils.degToRad(30);
+  const TOOL_PERP_HYSTERESIS_RAD = THREE.MathUtils.degToRad(6);
+  function toolAngleDiff(target, current) {
+    let d = target - current;
+    while (d > Math.PI) d -= Math.PI*2;
+    while (d < -Math.PI) d += Math.PI*2;
+    return d;
+  }
+  function toolCameraAzimuthRad() {
+    const three = state.three;
+    if (!three) return 0;
+    const dx = three.camera.position.x - three.controls.target.x, dz = three.camera.position.z - three.controls.target.z;
+    return Math.atan2(dx, dz);
+  }
+  function toolCameraRelativePerps() { const az = toolCameraAzimuthRad(); return [Math.PI/2 + az, -Math.PI/2 + az]; }
+  function toolCameraRelativeCreaturePerps() { const az = toolCameraAzimuthRad(); return [0 + az, Math.PI + az]; }
+  function toolPerpClamp(pState, rawTarget, perps, deadRad) {
+    if (!pState.perpSides) pState.perpSides = perps.map(() => null);
+    if (!pState.locked) pState.locked = perps.map(() => false);
+    let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
+    for (let i = 0; i < perps.length; i++) {
+      const dT = toolAngleDiff(rawTarget, perps[i]);
+      const a = Math.abs(dT);
+      if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
+    }
+    const P = perps[nearestI];
+    const wasLocked = pState.locked[nearestI];
+    const isLocked = wasLocked ? nearestAbs < deadRad + TOOL_PERP_HYSTERESIS_RAD : nearestAbs < deadRad;
+    let effectiveTarget = rawTarget, snapTo = null;
+    if (!isLocked) {
+      const newSide = nearestDT > 0 ? 1 : -1;
+      if (pState.perpSides[nearestI] !== null && pState.perpSides[nearestI] !== newSide) snapTo = P + newSide * deadRad;
+      pState.perpSides[nearestI] = newSide;
+    } else {
+      if (pState.perpSides[nearestI] === null) pState.perpSides[nearestI] = nearestDT >= 0 ? 1 : -1;
+      effectiveTarget = P + pState.perpSides[nearestI] * deadRad;
+    }
+    pState.locked[nearestI] = isLocked;
+    return { effectiveTarget, snapTo };
+  }
+
+  // actorId -> { raf, perpState }
+  const toolTurnDrivers = new Map();
+  function stopToolSmoothTurn(actorId) {
+    const d = toolTurnDrivers.get(actorId);
+    if (d) { cancelAnimationFrame(d.raf); toolTurnDrivers.delete(actorId); }
+  }
+  function startToolSmoothTurn(actorId, targetDeg, durationMs, onDone) {
+    stopToolSmoothTurn(actorId);
+    const st = state.preview.actorStates.get(actorId);
+    if (!st) { onDone?.(); return; }
+    const isNpc = !!actorById(actorId)?.npcId;
+    const perps = isNpc ? toolCameraRelativePerps() : toolCameraRelativeCreaturePerps();
+    const deadRad = isNpc ? TOOL_PERP_DEAD_RAD : TOOL_CREATURE_PERP_DEAD_RAD;
+    const perpState = {};
+    const rawTarget = THREE.MathUtils.degToRad(targetDeg);
+    const startTime = performance.now();
+    let lastT = startTime;
+    const step = () => {
+      if (!state.preview.running) { toolTurnDrivers.delete(actorId); return; }
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - lastT) / 1000);
+      lastT = now;
+      const { effectiveTarget, snapTo } = toolPerpClamp(perpState, rawTarget, perps, deadRad);
+      const current = THREE.MathUtils.degToRad(st.rotation);
+      const turnRate = isNpc ? 0.15 : Math.min(1, dt * 10);
+      const next = snapTo !== null ? snapTo : current + toolAngleDiff(effectiveTarget, current) * turnRate;
+      st.rotation = THREE.MathUtils.radToDeg(next);
+      applyActorStateToScene(actorId, st);
+      if (now - startTime >= durationMs) { toolTurnDrivers.delete(actorId); onDone?.(); return; }
+      const raf = requestAnimationFrame(step);
+      toolTurnDrivers.set(actorId, { raf, perpState });
+    };
+    step();
+  }
+
   function runMoveStage(stage, token) {
     const actor = actorById(stage.actorId), targetPoint = pointById(stage.pointId), actorState = state.preview.actorStates.get(stage.actorId);
     if (!actor || !targetPoint || !actorState) { continueTo(getResolvedNext(stage.id,stage.next),token); return; }
@@ -3084,11 +3271,12 @@
       arrived = true;
       // The target point's own authored arrival facing (if any) wins over
       // whatever direction the walk itself left the actor facing — same
-      // instant-snap-plus-cheat convention "Turn in place" cards use, just
-      // triggered by landing on this point instead of an explicit card.
+      // cheat "Turn in place" cards use, just triggered by landing on this
+      // point. Eases into it through the dead-zone turn rate instead of a
+      // hard snap, and never blocks the scene — it keeps turning in the
+      // background while the next card starts.
       if (targetPoint.facing != null) {
-        actorState.rotation = facingCheatFor(stage.actorId)(targetPoint.facing, actorState);
-        applyActorStateToScene(stage.actorId, actorState);
+        startToolSmoothTurn(stage.actorId, facingCheatFor(stage.actorId)(targetPoint.facing, actorState), 450, () => {});
       }
       if (waitForArrival) continueTo(getResolvedNext(stage.id,stage.next),token);
     };
@@ -3149,10 +3337,14 @@
     const actorState = state.preview.actorStates.get(stage.actorId);
     if (!actorState) { continueTo(getResolvedNext(stage.id,stage.next),token); return; }
     const cheat = facingCheatFor(stage.actorId);
-    if (stage.mode === "actor") { const targetState = state.preview.actorStates.get(stage.targetActorId); if (targetState) actorState.rotation = cheat(angleToward(actorState, targetState), actorState); }
-    else actorState.rotation = cheat(normalizeAngle(stage.angle), actorState);
-    applyActorStateToScene(stage.actorId, actorState);
-    state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id,stage.next),token), stage.duration*1000);
+    let targetDeg = actorState.rotation;
+    if (stage.mode === "actor") {
+      const targetState = state.preview.actorStates.get(stage.targetActorId);
+      if (targetState) targetDeg = cheat(angleToward(actorState, targetState), actorState);
+    } else {
+      targetDeg = cheat(normalizeAngle(stage.angle), actorState);
+    }
+    startToolSmoothTurn(stage.actorId, targetDeg, stage.duration*1000, () => continueTo(getResolvedNext(stage.id,stage.next),token));
   }
 
   function tileDist(a, b) { return Math.hypot(a.c - b.c, a.r - b.r); }
@@ -3259,6 +3451,22 @@
     els.fadeOverlay.style.transitionDuration = `${stage.duration}s`;
     requestAnimationFrame(() => { els.fadeOverlay.style.opacity = String(targetOpacity); });
     state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id,stage.next),token), stage.duration*1000);
+  }
+
+  function runZoomStage(stage, token) {
+    const fromPercent = state.preview.zoomPercent;
+    const toPercent = clamp(Number(stage.percent) || 100, 10, 500);
+    const durationMs = Math.max(0, (stage.duration ?? 0.6) * 1000);
+    const start = performance.now();
+    const step = () => {
+      if (token !== state.preview.token || !state.preview.running) return;
+      const t = durationMs <= 0 ? 1 : Math.min(1, (performance.now() - start) / durationMs);
+      state.preview.zoomPercent = fromPercent + (toPercent - fromPercent) * t;
+      applyPreviewZoom(state.preview.zoomPercent);
+      if (t < 1) requestAnimationFrame(step);
+      else continueTo(getResolvedNext(stage.id, stage.next), token);
+    };
+    step();
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -3617,7 +3825,7 @@
       "addNpcActorBtn","addCreatureActorBtn","newActorName","addActorBtn","actorList","actorEditor","actorNpcBadge","actorCreatureBadge","actorNameInput","actorColorInput",
       "actorStartSelect","actorRotationInput","actorPoseSelect","actorTeamInput","actorCombatInput","actorCanLoseInput","actorIsPlayerInput","unlinkNpcBtn","unlinkCreatureBtn","deleteActorBtn",
       "stageList","stageEditor","mapStatusPill","playStatusPill","startPlayBtn","resetPlayBtn","captureCameraBtn","resetCameraBtn","matchGameCameraBtn","viewModeBtn","previewInGameBtn",
-      "mainGrid2DWrap","mainGrid2D",
+      "mainGrid2DWrap","mainGrid2D","matchCameraZoomHud",
       "canvas3d","fadeOverlay","dialogueBox","dialogueSpeaker","dialogueText","dialogueActions",
       "checkBtn","copyLogBtn","validationList","debugLog","toast",
       "npcPickerStatus","npcPickerSearch","npcPickerCloseBtn","creaturePickerStatus","creaturePickerCloseBtn"

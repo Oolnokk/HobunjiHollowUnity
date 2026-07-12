@@ -13594,6 +13594,14 @@
       _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
 
       let s_zoomScale = 1.5; // camera zoom level — higher = camera sits closer to the player (default 150%)
+      // Declared up here (rather than down by the rest of the Cutscene
+      // Preview Mode section) because updateCameraPosition below reads both
+      // directly — it's called during normal synchronous boot (well before
+      // that section's own module-level `let`s would run), so declaring
+      // them any later throws "cannot access before initialization" the
+      // first time the game camera positions itself at all.
+      let cutscenePreviewActive = false;
+      let cutscenePreviewZoomPercent = 100; // a cutscene Zoom card's percent (100 = unmodified); reset on preview start/end
 
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
@@ -13697,7 +13705,12 @@
 
       function updateCameraPosition() {
         const modeCfg = cameraModeConfig(activeCameraMode);
-        const baseDistance = (modeCfg.distanceTiles ?? 14) / s_zoomScale;
+        // A cutscene Zoom card's percent (100 = the captured shot's own
+        // unmodified framing, higher = closer) — entirely separate from the
+        // player's own s_zoomScale wheel setting so it never leaks into
+        // normal gameplay once the cutscene ends (see cutscenePreviewZoomPercent).
+        const cutsceneZoomMul = cutscenePreviewActive ? 100 / (cutscenePreviewZoomPercent || 100) : 1;
+        const baseDistance = (modeCfg.distanceTiles ?? 14) / s_zoomScale * cutsceneZoomMul;
         const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
         const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
         const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
@@ -19593,6 +19606,11 @@
         }
         if (heldOnly) return false;
         e.preventDefault();
+        // The Director authors every camera beat of a cutscene (including
+        // Zoom cards, cutscenePreviewZoomPercent) — manual wheel-zoom would
+        // fight that authored framing, so it's a no-op (but still consumed,
+        // so the page itself doesn't scroll) while a preview is active.
+        if (cutscenePreviewActive) return true;
         if (dialogueZoomActive()) {
           const sensitivity = dialogueZoomConfig().wheelSensitivity ?? 0.0015;
           setDialogueCameraZoomPercent(dialogueCameraZoomPercent + (-e.deltaY * sensitivity * 100));
@@ -19643,7 +19661,7 @@
       let cameraDragStartX = 0, cameraDragStartY = 0;
       let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
       function cameraDragAllowed() {
-        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active;
+        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active && !cutscenePreviewActive;
       }
       function cameraDragRequested(e) {
         return e.pointerType === 'touch';
@@ -20038,7 +20056,6 @@
       //      off-screen and untouched, for the whole preview.
       // ══════════════════════════════════════════════════════════════════
 
-      let cutscenePreviewActive = false;
       let cutscenePreviewAdvance = null; // set while a talk/choice line is showing
 
       function cutscenePreviewBanner(text, isError) {
@@ -20245,6 +20262,7 @@
 
       async function runCutscenePreview(payload) {
         cutscenePreviewActive = true;
+        cutscenePreviewZoomPercent = 100;
         cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
 
         const area = normalizeNpcArea(payload.mapId);
@@ -20299,8 +20317,21 @@
               if (s.type === 'move' && s.targetLocal) s.targetWorld = { c: s.targetLocal.lc + offsetC, r: s.targetLocal.lr + offsetR, facing: s.targetLocal.facing ?? null };
             }
             if (payload.camera3d?.localPos && payload.camera3d?.localTarget) {
-              payload.camera3d.worldPos = { x: payload.camera3d.localPos.x + offsetC, y: payload.camera3d.localPos.y, z: payload.camera3d.localPos.z + offsetR };
-              payload.camera3d.worldTarget = { x: payload.camera3d.localTarget.x + offsetC, y: payload.camera3d.localTarget.y, z: payload.camera3d.localTarget.z + offsetR };
+              // localPos.y/localTarget.y were authored against the Director's
+              // flat y=0 wilderness practice grid (groundYAt returns 0 for
+              // mapMeta.kind==="wilderness" — there's no real elevation to
+              // author against yet) — add the REAL terrain's elevation at
+              // wherever the translated camera/target actually land, or the
+              // rig sits at the wrong height the instant the anchor lands
+              // anywhere but a zero-elevation tile (actors don't have this
+              // bug — their Y is computed fresh from the real terrain at
+              // spawn time, only the camera3d block skipped it).
+              const posX = payload.camera3d.localPos.x + offsetC, posZ = payload.camera3d.localPos.z + offsetR;
+              const targetX = payload.camera3d.localTarget.x + offsetC, targetZ = payload.camera3d.localTarget.z + offsetR;
+              const posElevY = npcSurfaceY(area, Math.round(posX), Math.round(posZ));
+              const targetElevY = npcSurfaceY(area, Math.round(targetX), Math.round(targetZ));
+              payload.camera3d.worldPos = { x: posX, y: payload.camera3d.localPos.y + posElevY, z: posZ };
+              payload.camera3d.worldTarget = { x: targetX, y: payload.camera3d.localTarget.y + targetElevY, z: targetZ };
             }
             debugLog(`[cutscene preview] wilderness placement: ${payload.mapId} footprint ${fw}x${fh} anchored at (${anchor.col},${anchor.row})`);
           } catch (e) { console.error('[cutscene preview] wilderness zone placement failed:', e); }
@@ -20537,6 +20568,7 @@
         const finish = message => {
           running = false;
           cutscenePreviewActive = false;
+          cutscenePreviewZoomPercent = 100; // never leak an authored zoom into normal gameplay afterward
           activeCameraMode = cameraConfig().defaultMode || 'default';
           activeCameraTarget = null;
           cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
@@ -20609,6 +20641,7 @@
           if (stage.type === 'turn') return runTurn(stage);
           if (stage.type === 'combat') return runCombat(stage);
           if (stage.type === 'fade') return runFade(stage);
+          if (stage.type === 'zoom') return runZoom(stage);
 
           const speakerActor  = actorsById.get(stage.speakerId);
           const speakerEntity = entities.get(stage.speakerId);
@@ -20639,12 +20672,14 @@
             arrivedAlready = true;
             // The target point's own authored arrival facing (if any) wins
             // over whatever direction the walk itself left the actor facing
-            // — same instant-snap-plus-cheat convention a "Turn in place"
-            // card uses, just triggered by landing on this point.
+            // — same cheat a "Turn in place" card uses, just triggered by
+            // landing on this point. Eases into it via the real dead-zone
+            // turn rate (startSmoothTurn) instead of a hard snap, and never
+            // blocks the scene on it — the actor keeps turning in the
+            // background while the next card starts.
             if (goal.facing != null) {
               const cheat = entities.get(stage.actorId)?.kind === 'npc' ? npcFacingCheatAngle : theatreCheatAngle;
-              st.rotation = cheat(goal.facing, st);
-              applyState(stage.actorId);
+              startSmoothTurn(stage.actorId, cheat(goal.facing, st), 450, () => {});
             }
             if (waitForArrival) continueTo(getResolvedNext(stage.id, stage.next));
           };
@@ -20692,6 +20727,49 @@
           }, (stage.duration || 0) * 1000);
         }
 
+        // actorId -> { raf, perpState } — a Turn card or a move's arrival
+        // facing used to force st.rotation to its target in one instant
+        // frame. Real NPC/creature turning never does that: moveToward and
+        // updateCreatureMesh always approach a heading through perpClamp's
+        // dead zone at a limited turn rate (see docs/game.js's own
+        // perpClamp/angleDiff). This drives the SAME functions per frame so
+        // a cutscene actor reads as genuinely attempting to turn there,
+        // exactly like it would mid-pathing/AI, rather than teleporting its
+        // facing.
+        const cutsceneTurnDrivers = new Map();
+        function stopSmoothTurn(actorId) {
+          const d = cutsceneTurnDrivers.get(actorId);
+          if (d) { cancelAnimationFrame(d.raf); cutsceneTurnDrivers.delete(actorId); }
+        }
+        function startSmoothTurn(actorId, targetDeg, durationMs, onDone) {
+          stopSmoothTurn(actorId);
+          const st = actorStates.get(actorId);
+          if (!st) { onDone?.(); return; }
+          const isNpc = entities.get(actorId)?.kind === 'npc';
+          const perps = isNpc ? cameraRelativePerps() : cameraRelativeCreaturePerps();
+          const deadRad = isNpc ? PERP_DEAD_RAD : CREATURE_PERP_DEAD_RAD;
+          const perpState = {};
+          const rawTarget = THREE.MathUtils.degToRad(targetDeg);
+          const startTime = performance.now();
+          let lastT = startTime;
+          const step = () => {
+            if (!running) { cutsceneTurnDrivers.delete(actorId); return; }
+            const now = performance.now();
+            const dt = Math.min(0.05, (now - lastT) / 1000);
+            lastT = now;
+            const { effectiveTarget, snapTo } = perpClamp(perpState, rawTarget, perps, deadRad);
+            const current = THREE.MathUtils.degToRad(st.rotation);
+            const turnRate = isNpc ? 0.15 : Math.min(1, dt * 10); // matches moveToward / updateCreatureMesh's own rates
+            const next = snapTo !== null ? snapTo : current + angleDiff(effectiveTarget, current) * turnRate;
+            st.rotation = THREE.MathUtils.radToDeg(next);
+            applyState(actorId);
+            if (now - startTime >= durationMs) { cutsceneTurnDrivers.delete(actorId); onDone?.(); return; }
+            const raf = requestAnimationFrame(step);
+            cutsceneTurnDrivers.set(actorId, { raf, perpState });
+          };
+          step();
+        }
+
         function runTurn(stage) {
           const st = actorStates.get(stage.actorId);
           if (!st) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
@@ -20700,14 +20778,15 @@
           // creature's crossed side-view planes only need the softer
           // don't-show-your-back theatre cheat.
           const cheat = entities.get(stage.actorId)?.kind === 'npc' ? npcFacingCheatAngle : theatreCheatAngle;
+          let targetDeg = st.rotation;
           if (stage.mode === 'actor') {
             const targetSt = actorStates.get(stage.targetActorId);
-            if (targetSt) st.rotation = cheat(angleTowardState(st, targetSt), st);
+            if (targetSt) targetDeg = cheat(angleTowardState(st, targetSt), st);
           } else {
-            st.rotation = cheat(((Math.round(stage.angle) % 360) + 360) % 360, st);
+            targetDeg = cheat(((Math.round(stage.angle) % 360) + 360) % 360, st);
           }
-          applyState(stage.actorId);
-          setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), (stage.duration || 0) * 1000);
+          const durationMs = (stage.duration || 0) * 1000;
+          startSmoothTurn(stage.actorId, targetDeg, durationMs, () => continueTo(getResolvedNext(stage.id, stage.next)));
         }
 
         // Live creature-vs-creature AI, identical in spirit to the Cutscene
@@ -20790,6 +20869,27 @@
           fadeEl.style.transitionDuration = `${stage.duration || 0}s`;
           requestAnimationFrame(() => { fadeEl.style.opacity = String(targetOpacity); });
           setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), (stage.duration || 0) * 1000);
+        }
+
+        // Smoothly lerps cutscenePreviewZoomPercent (100 = the captured
+        // shot's own unmodified framing, higher = closer — see
+        // updateCameraPosition's cutsceneZoomMul) from wherever it currently
+        // sits to stage.percent over stage.duration seconds, driving the
+        // camera every frame along the way rather than a single instant cut.
+        function runZoom(stage) {
+          const fromPercent = cutscenePreviewZoomPercent;
+          const toPercent = Math.max(10, Number(stage.percent) || 100);
+          const durationMs = Math.max(0, (stage.duration ?? 0.6) * 1000);
+          const start = performance.now();
+          const step = () => {
+            if (!running) return;
+            const t = durationMs <= 0 ? 1 : Math.min(1, (performance.now() - start) / durationMs);
+            cutscenePreviewZoomPercent = fromPercent + (toPercent - fromPercent) * t;
+            updateCameraPosition();
+            if (t < 1) requestAnimationFrame(step);
+            else continueTo(getResolvedNext(stage.id, stage.next));
+          };
+          step();
         }
 
         // Actors otherwise only get their state (rotation, and any starting
