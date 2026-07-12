@@ -990,11 +990,16 @@
     const stages = {};
     const addStage = (key, stage) => { stage.id = uid("stage"); stages[key] = stage; return stage; };
     [
-      // No scripted growl lines or fake fight animation — the hounds
-      // genuinely run in (real locomotion, not a teleport) from off south,
-      // then the combat card's own live AI (real CREATURE_DB aggro/attack
-      // ranges, real chase) takes over the instant they're close enough to
-      // notice the wolves.
+      // A beat of tension before the hounds arrive: the wolves get a real
+      // "talk" card (like an NPC's, just voiced as a growl) so the scene
+      // doesn't cut straight to combat with zero warning — same creature-
+      // dialogue camera framing (cutscenePreviewDialogueCreature) an actual
+      // NPC/creature conversation uses. No scripted fight animation though —
+      // the hounds genuinely run in (real locomotion, not a teleport) from
+      // off south, then the combat card's own live AI (real CREATURE_DB
+      // aggro/attack ranges, real chase) takes over the instant they're
+      // close enough to notice the wolves.
+      addStage("wolfGrowl",{ type:"talk", speakerId:actors.wolf1.id, text:"(the gar-wolves circle and snarl, closing in on the fallen stranger)", next:"__next__" }),
       addStage("hound1Run",{ type:"move", actorId:actors.hound1.id, pointId:points.hound1Arrived.id, speed:"fast", next:"__next__" }),
       addStage("hound2Run",{ type:"move", actorId:actors.hound2.id, pointId:points.hound2Arrived.id, speed:"fast", next:"__next__" }),
       addStage("combat",{ type:"combat", duration:3,
