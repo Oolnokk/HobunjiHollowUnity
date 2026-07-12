@@ -733,6 +733,9 @@
 
       function advanceNpcDialogue() {
         if (_npcDialogueTypeText) { _stopNpcDialogueTypewriter(true); return; }
+        // Cutscene Preview drives its own talk/choice stage sequence instead
+        // of an authored dialogueTree — see "Cutscene Preview Mode" below.
+        if (cutscenePreviewActive) { cutscenePreviewAdvance?.(); return; }
         if (_dlgTree) { _advanceDlgNode(); return; }
         _dialogueLineIdx++;
         if (_dialogueLineIdx >= _dialogueLines.length) { closeNpcDialogue(); return; }
@@ -3706,6 +3709,12 @@
       // Called every farm/zone-area frame; cheap no-op once in sync. Also
       // re-spawns into the new area's scene whenever the player travels.
       function syncCompanionFromWhistle() {
+        // A cutscene preview's combat card manages companionObjects directly
+        // (see runCutscenePreview/runCombat) — this whistle-driven sync
+        // would otherwise despawn a hound the instant it runs, since the
+        // real player's whistle slot is always cleared during preview (see
+        // the boot handoff in docs/index.html).
+        if (cutscenePreviewActive) return;
         const whistle = equipmentSlots.whistle
           ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
           : null;
@@ -4260,6 +4269,11 @@
       }
 
       function updateHostileSpawning(dt) {
+        // Ambient wildlife spawning has no business intruding on an
+        // authored cutscene once this scene finally lives on a real
+        // wilderness zone map — the combat card's own wolves are added to
+        // hostileObjects explicitly (see runCombat).
+        if (cutscenePreviewActive) return;
         if (!_isZoneArea(currentArea)) return;
         denCheckTimer -= dt;
         if (denCheckTimer > 0) return;
@@ -6478,6 +6492,12 @@
       }
 
       function beginNpcDialogueStaging(walker) {
+        // Cutscene Preview drives every participant's position/facing itself
+        // (see "Cutscene Preview Mode" below) — walking/turning the real
+        // singleton `player` to stand next to whoever it opened dialogue
+        // with would fight the director's own scripted blocking, and there
+        // may not even be a "player" in the scene the preview is running.
+        if (cutscenePreviewActive) return;
         const npcX = walker?.root?.position?.x;
         const npcZ = walker?.root?.position?.z;
         if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
@@ -6495,6 +6515,7 @@
       }
 
       function faceNpcDialogueParticipants() {
+        if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
         const walker = npcDialogueStaging?.walker || _dialogueWalker;
         if (!walker?.root) return;
         const cfg = npcDialogueStagingConfig();
@@ -6512,6 +6533,7 @@
       }
 
       function updateNpcDialogueStaging(dt) {
+        if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
         if (!npcDialogueStaging?.walker?.root) return;
         const cfg = npcDialogueStagingConfig();
         const speed = (cfg.moveSpeedTilesPerSecond ?? 4.25) * TILE;
@@ -6712,6 +6734,7 @@
         if (area === 'interior') return 'interior';
         if (area === 'town' || area === 'hobunji_main_town' || area === 'map_hobunji_town') return 'town';
         if (_isBuildingArea(area)) return area;
+        if (_isZoneArea(area)) return area;
         window.__farmLog?.(`[schedule] Unknown area "${area}" → fallback to farm`, 'warn');
         return 'farm';
       }
@@ -6747,18 +6770,23 @@
         if (area === 'interior') return interiorScene;
         if (area === 'town') return townScene;
         if (_isBuildingArea(area)) return _buildingScenes.get(area)?.scene || null;
+        if (_isZoneArea(area)) return _zoneScenes.get(area)?.scene || null;
         return scene;
       }
       function npcGridForArea(area) {
         if (area === 'interior') return interiorGrid;
         if (area === 'town') return townGrid;
         if (_isBuildingArea(area)) return _buildingScenes.get(area)?.grid || null;
+        if (_isZoneArea(area)) return _zoneScenes.get(area)?.grid || null;
         return grid;
       }
       function npcSurfaceY(area, c, r) {
         const g = npcGridForArea(area);
         const tile = g?.[r]?.[c];
-        return tile ? tileSurfaceY(tile.type) : 0;
+        if (!tile) return 0;
+        // Zone terrain has real plateau tiers/ramps — tileSurfaceY(type) alone
+        // (used by every other area, all flat ground) would ignore them.
+        return _isZoneArea(area) ? tileSurfaceYInArea(tile, area) : tileSurfaceY(tile.type);
       }
       function resolveNpcSpawnPosition(rec, target) {
         const legacy = target?.legacyPath || null;
@@ -13566,6 +13594,15 @@
       _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
 
       let s_zoomScale = 1.5; // camera zoom level — higher = camera sits closer to the player (default 150%)
+      // Declared up here (rather than down by the rest of the Cutscene
+      // Preview Mode section) because updateCameraPosition below reads both
+      // directly — it's called during normal synchronous boot (well before
+      // that section's own module-level `let`s would run), so declaring
+      // them any later throws "cannot access before initialization" the
+      // first time the game camera positions itself at all.
+      let cutscenePreviewActive = false;
+      let cutscenePreviewZoomPercent = 100; // a cutscene Zoom card's percent (100 = unmodified); reset on preview start/end
+      let cutscenePreviewDialogueSpeaker = null; // current Talk stage's { kind, root, creature } entity, or null; see dialoguePortraitCameraAim
 
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
@@ -13602,8 +13639,31 @@
         return center;
       }
 
+      // Cutscene dialogue's stand-in for a "player" anchor: the real
+      // dialoguePortraitCameraAim below hardcodes the actual player mesh as
+      // one of its two portrait-center anchors, which is meaningless here
+      // (neither cutscene speaker is ever the real player, who may be
+      // sitting untouched somewhere else entirely in the save). Pins the
+      // shot to the SPEAKING actor's own visual center instead — a
+      // creature's avatarRef.group already sits at its own body-center
+      // height (see cutscenePreviewApplyState), while an NPC/player's
+      // coin-plane needs the same portrait-tagged-child lookup real
+      // gameplay uses. Returns null (falling back to the generic elevated
+      // follow-camera framing) for a freeform placeholder actor, which has
+      // neither.
+      function cutscenePreviewSpeakerCenterY(entity) {
+        if (!entity) return null;
+        if (entity.kind === 'creature') return entity.root?.position.y ?? null;
+        return portraitAvatarCenterWorldPosition(entity.root)?.y ?? null;
+      }
+
       function dialoguePortraitCameraAim(modeCfg, tx, tz, distance, baseAngle) {
-        if (!modeCfg.alignToDialoguePortraitCenters || !_dialogueWalker?.root) return null;
+        if (!modeCfg.alignToDialoguePortraitCenters) return null;
+        if (cutscenePreviewActive) {
+          const y = cutscenePreviewSpeakerCenterY(cutscenePreviewDialogueSpeaker);
+          return y == null ? null : { cameraY: y, lookY: y, targetX: tx, targetZ: tz };
+        }
+        if (!_dialogueWalker?.root) return null;
         const playerCenter = portraitAvatarCenterWorldPosition(playerMesh);
         const npcCenter = portraitAvatarCenterWorldPosition(_dialogueWalker.root);
         if (!playerCenter || !npcCenter) return null;
@@ -13669,7 +13729,12 @@
 
       function updateCameraPosition() {
         const modeCfg = cameraModeConfig(activeCameraMode);
-        const baseDistance = (modeCfg.distanceTiles ?? 14) / s_zoomScale;
+        // A cutscene Zoom card's percent (100 = the captured shot's own
+        // unmodified framing, higher = closer) — entirely separate from the
+        // player's own s_zoomScale wheel setting so it never leaks into
+        // normal gameplay once the cutscene ends (see cutscenePreviewZoomPercent).
+        const cutsceneZoomMul = cutscenePreviewActive ? 100 / (cutscenePreviewZoomPercent || 100) : 1;
+        const baseDistance = (modeCfg.distanceTiles ?? 14) / s_zoomScale * cutsceneZoomMul;
         const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
         const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
         const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
@@ -19565,6 +19630,11 @@
         }
         if (heldOnly) return false;
         e.preventDefault();
+        // The Director authors every camera beat of a cutscene (including
+        // Zoom cards, cutscenePreviewZoomPercent) — manual wheel-zoom would
+        // fight that authored framing, so it's a no-op (but still consumed,
+        // so the page itself doesn't scroll) while a preview is active.
+        if (cutscenePreviewActive) return true;
         if (dialogueZoomActive()) {
           const sensitivity = dialogueZoomConfig().wheelSensitivity ?? 0.0015;
           setDialogueCameraZoomPercent(dialogueCameraZoomPercent + (-e.deltaY * sensitivity * 100));
@@ -19615,7 +19685,7 @@
       let cameraDragStartX = 0, cameraDragStartY = 0;
       let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
       function cameraDragAllowed() {
-        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active;
+        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active && !cutscenePreviewActive;
       }
       function cameraDragRequested(e) {
         return e.pointerType === 'touch';
@@ -19863,6 +19933,15 @@
         if (gearInventory.tools.pickshovel) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
         if (gearInventory.tools.hatchet)    equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
         if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
+        // A cutscene preview's ephemeral profile can inherit gearInventory
+        // (and an already-equipped whistle) straight from the real local
+        // save via docs/index.html's onboarding-profile handoff, and the
+        // line above auto-equips the starter whistle for any profile that
+        // has none — either way, an uninvited companion animal would spawn
+        // and compete for camera framing in a scene the Director never
+        // authored one for. A scene's own creature actors are unaffected;
+        // this only clears the real player's own companion slot.
+        if (window.__hobunjiCutscenePreview) equipmentSlots.whistle = null;
         rebuildToolMeshes();
         refreshWeaponSwitchBtn();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
@@ -19965,6 +20044,950 @@
           useActiveAction();
         },
       });
+
+      // ══════════════════════════════════════════════════════════════════
+      //  Cutscene Preview Mode
+      // ──────────────────────────────────────────────────────────────────
+      //  Boots this tab with a throwaway character/world (see the inline
+      //  handoff script in index.html, just before <script src="game.js">,
+      //  and docs/tools/cutscene-director/index.html's "Preview in game"
+      //  button) instead of the real save, and replays an authored
+      //  cutscene using the REAL dialogue UI and REAL dialogue-zoom camera
+      //  system — not the Director tool's own private preview.
+      //
+      //  The differences from a normal conversation are deliberate and
+      //  narrow, and live right next to the code they change:
+      //    - beginNpcDialogueStaging / faceNpcDialogueParticipants /
+      //      updateNpcDialogueStaging (above) no-op when
+      //      cutscenePreviewActive — the director already scripts every
+      //      participant's exact position/facing frame by frame, so the
+      //      real "walk the player up to the NPC" auto-staging would only
+      //      fight it, and there may not even be a "player" among the
+      //      scene's actors.
+      //    - advanceNpcDialogue (above) delegates to
+      //      cutscenePreviewAdvance — the director walks its own
+      //      move/talk/choice/... stage list, not an authored dialogueTree.
+      //    - Camera/dialogue-zoom targeting reuses activeCameraTarget
+      //      exactly as normal NPC dialogue already does (openNpcDialogue
+      //      sets it to walker.root) — it's just pointed at whichever
+      //      cutscene participant is currently speaking instead of always
+      //      being "the NPC the player walked up to." That target is never
+      //      the real singleton player/playerMesh, even for a "Player"
+      //      role actor in the scene — every actor, including that one, is
+      //      spawned as its own independent stand-in entity here, so this
+      //      previewer never reads or writes the real player's position.
+      //      The real player sits exactly wherever their save left them,
+      //      off-screen and untouched, for the whole preview.
+      // ══════════════════════════════════════════════════════════════════
+
+      let cutscenePreviewAdvance = null; // set while a talk/choice line is showing
+
+      function cutscenePreviewBanner(text, isError) {
+        let el = document.getElementById('cutscenePreviewBanner');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'cutscenePreviewBanner';
+          el.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:99999;'
+            + 'padding:8px 16px;border-radius:10px;font:600 14px/1.3 system-ui,sans-serif;color:#fff;'
+            + 'background:rgba(20,14,10,.86);border:2px solid #f2b755;box-shadow:0 6px 18px rgba(0,0,0,.4);'
+            + 'display:flex;gap:10px;align-items:center;pointer-events:auto;';
+          const label = document.createElement('span');
+          label.id = 'cutscenePreviewBannerLabel';
+          el.appendChild(label);
+          const closeBtn = document.createElement('button');
+          closeBtn.textContent = 'Exit preview';
+          closeBtn.style.cssText = 'font:600 12px system-ui,sans-serif;padding:4px 8px;border-radius:6px;'
+            + 'border:1px solid #f2b755;background:#3a2c22;color:#fff;cursor:pointer;';
+          // A plain reload is enough to leave preview mode cleanly: the
+          // handoff key is one-shot (already consumed) and the ephemeral
+          // profile only ever lived in window.__hobunjiPlayerProfile, never
+          // written to the real hobunjiPlayerProfile/hobunjiSaveMeta keys.
+          closeBtn.addEventListener('click', () => location.reload());
+          el.appendChild(closeBtn);
+          document.body.appendChild(el);
+        }
+        el.style.borderColor = isError ? '#d66b68' : '#f2b755';
+        document.getElementById('cutscenePreviewBannerLabel').textContent = text;
+      }
+
+      function cutscenePreviewFadeEl() {
+        let el = document.getElementById('cutscenePreviewFade');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'cutscenePreviewFade';
+          el.style.cssText = 'position:fixed;inset:0;z-index:99998;background:#000;opacity:0;'
+            + 'pointer-events:none;transition:opacity 1s linear;';
+          document.body.appendChild(el);
+        }
+        return el;
+      }
+
+      async function cutscenePreviewWaitForArea(area, timeoutMs, predicate) {
+        const check = predicate || (() => !!(sceneForNpcArea(area) && npcGridForArea(area)));
+        const start = performance.now();
+        while (performance.now() - start < timeoutMs) {
+          if (check()) return true;
+          await new Promise(r => setTimeout(r, 100));
+        }
+        return false;
+      }
+
+      // Scans a generated wilderness zone's real tile grid for a clear, flat
+      // w×h rectangle to drop an authored scene's whole local footprint onto
+      // — same tile-level exclusion checklist wilderness-map-generator.js's
+      // own areaFree/randomFreeArea use (uniform elevation tier, no incline/
+      // ramp/water/solid tiles), plus building/decor/furniture/den occupancy
+      // that live outside the tile grid itself (see buildZoneScene /
+      // _spawnZoneDecorFurniture / performTothalShift's `dens`). Searches
+      // outward in Chebyshev rings from the zone's center so a found spot is
+      // never farther from the middle of the map than it has to be.
+      function findZonePlacementFootprint(area, w, h) {
+        const zi = _zoneScenes.get(area);
+        const grid = zi?.grid;
+        if (!grid) return null;
+        const cols = zi.cols, rows = zi.rows;
+        const zoneData = _zoneLayouts.get(area);
+        const occupied = Array.from({ length: rows }, () => new Array(cols).fill(false));
+        const markOccupied = (col, row, ow, oh) => {
+          for (let r = Math.max(0, row); r < Math.min(rows, row + oh); r++)
+            for (let c = Math.max(0, col); c < Math.min(cols, col + ow); c++) occupied[r][c] = true;
+        };
+        for (const b of (zoneData?.buildings || [])) markOccupied(b.gridX || 0, b.gridZ || 0, b.footprintW ?? b.w ?? 1, b.footprintD ?? b.h ?? 1);
+        for (const d of (zoneData?.dens || [])) markOccupied(d.x, d.y, d.w || 1, d.h || 1);
+        for (const d of (zoneData?.decor || [])) markOccupied(d.col, d.row, 1, 1);
+        for (const f of (zoneData?.furniture || [])) markOccupied(f.col, f.row, 1, 1);
+
+        function rectOk(col, row) {
+          if (col < 1 || row < 1 || col + w > cols - 1 || row + h > rows - 1) return false; // stay off the border terrain skirt
+          let elevTier = null;
+          for (let r = row; r < row + h; r++) {
+            for (let c = col; c < col + w; c++) {
+              if (occupied[r][c]) return false;
+              const tile = grid[r][c];
+              if (!tile) return false;
+              if (tile.water) return false;
+              if (tile.incline) return false;
+              if (tile.type === TileType.RAMP) return false;
+              if (isSolid(tile.type)) return false;
+              const tier = tile.elevTier || 0;
+              if (elevTier === null) elevTier = tier;
+              else if (tier !== elevTier) return false;
+            }
+          }
+          return true;
+        }
+
+        const centerCol = Math.floor((cols - w) / 2), centerRow = Math.floor((rows - h) / 2);
+        const maxRadius = Math.max(cols, rows);
+        for (let radius = 0; radius <= maxRadius; radius++) {
+          for (let dr = -radius; dr <= radius; dr++) {
+            for (let dc = -radius; dc <= radius; dc++) {
+              if (Math.max(Math.abs(dr), Math.abs(dc)) !== radius) continue; // ring only — interior already checked at smaller radii
+              const col = centerCol + dc, row = centerRow + dr;
+              if (rectOk(col, row)) return { col, row };
+            }
+          }
+        }
+        return null;
+      }
+
+      // Freeform ("custom") actors, and any actor whose real NPC/creature
+      // spawn failed, fall back to a plain placeholder mesh — same
+      // graceful-degradation policy the Cutscene Director tool's own
+      // standalone preview uses for the same cases.
+      function cutscenePreviewMakePlaceholder(actor, area, targetScene) {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshLambertMaterial({ color: actor.color || '#cccccc' });
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.85, 10), mat);
+        body.position.y = 0.28 + 0.85 / 2;
+        group.add(body);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), mat);
+        head.position.y = 0.28 + 0.85 + 0.18;
+        group.add(head);
+        const surfY = npcSurfaceY(area, actor.worldC, actor.worldR);
+        group.position.set(actor.worldC + 0.5, surfY, actor.worldR + 0.5);
+        group.rotation.y = THREE.MathUtils.degToRad(actor.rotation || 0);
+        targetScene.add(group);
+        return { kind: 'placeholder', root: group };
+      }
+
+      const cutscenePreviewAngleToward = (from, to) => (((Math.atan2(to.r - from.r, to.c - from.c) * 180 / Math.PI + 90) % 360) + 360) % 360;
+
+      function cutscenePreviewApplyState(entity, area, st) {
+        const surfY = npcSurfaceY(area, Math.round(st.c), Math.round(st.r));
+        if (entity.kind === 'creature') {
+          const c = entity.creature;
+          c.x = st.c * TILE; c.y = st.r * TILE;
+          c.avatarRef.group.position.set(st.c + 0.5, surfY + c.halfHeight, st.r + 0.5);
+          c.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(st.rotation);
+          // Seeds groupRot/pngRot to match so cutsceneRotationTick's first
+          // real tick (see below) starts an angleDiff of exactly 0 instead
+          // of smoothly sweeping in from wherever makeCreatureEntity's
+          // groupRot:0 default left them.
+          c.groupRot = c.pngRot = THREE.MathUtils.degToRad(st.rotation);
+          c.groundShadow?.position.set(st.c + 0.5, surfY + characterGroundShadowSurfaceOffset(), st.r + 0.5);
+          c.avatarRef.group.scale.setScalar(st.pose === 'prone' ? 0.6 : 1);
+        } else if (entity.kind === 'npc') {
+          entity.walker.rot = THREE.MathUtils.degToRad(st.rotation);
+          entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
+          entity.root.rotation.y = entity.walker.rot;
+          entity.root.scale.setScalar(1);
+          // Prone tips the flat portrait plane down onto its back instead of
+          // just shrinking a standing figure — this walker is scripted
+          // entirely by the director (pause:Infinity, see the actor-spawn
+          // loop) and never dialogue-staged (guarded by cutscenePreviewActive
+          // in beginNpcDialogueStaging/faceNpcDialogueParticipants), so
+          // nothing else re-asserts a standing transform over this pose.
+          const avatarGroup = entity.walker.avatarGroup;
+          if (avatarGroup) {
+            const avatarHeight = avatarGroup.userData?.portraitModelHeight || 1;
+            if (st.pose === 'prone') {
+              avatarGroup.rotation.x = Math.PI / 2;
+              avatarGroup.position.y = avatarHeight * 0.06;
+            } else {
+              avatarGroup.rotation.x = 0;
+              avatarGroup.position.y = avatarHeight / 2;
+            }
+          }
+        } else {
+          entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
+          entity.root.rotation.y = THREE.MathUtils.degToRad(st.rotation);
+          entity.root.scale.setScalar(st.pose === 'prone' ? 0.6 : 1);
+        }
+      }
+
+      async function runCutscenePreview(payload) {
+        cutscenePreviewActive = true;
+        cutscenePreviewZoomPercent = 100;
+        cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
+
+        const area = normalizeNpcArea(payload.mapId);
+        if (_isBuildingArea(area)) {
+          try { await loadBuildingScene(area); } catch (e) { console.error(e); }
+        } else if (area === 'town' && !townScene) {
+          // The town's tile/route data loads automatically at boot
+          // (_loadTownFromWorkspace → initTownTravel), but the actual 3D
+          // scene (buildTownScene, which sets `townScene`) is normally only
+          // built lazily the moment the player first walks in from the farm
+          // (enterTown). enterTown() also does things this previewer must
+          // never do to the real player (moves player.x/y, stamps
+          // farmPlayerSave, flips currentArea) — buildTownScene() itself is
+          // the standalone, player-untouched half of that, so it's called
+          // directly here instead of enterTown().
+          try {
+            if (!townGrid) await cutscenePreviewWaitForArea('__townGrid__', 15000, () => !!townGrid);
+            buildTownScene();
+          } catch (e) { console.error('[cutscene preview] buildTownScene failed:', e); }
+        } else if (payload.wilderness && _isZoneArea(area)) {
+          // A wilderness zone's real terrain doesn't exist until the yearly
+          // Tothal Shift generates it (performTothalShift, kicked off at
+          // world boot by checkTothalShift) — wait for that to finish, then
+          // build the zone's 3D scene and scan its actual tile grid for a
+          // clear, flat spot to drop this scene's whole local footprint onto
+          // (findZonePlacementFootprint). The Director sends every point/
+          // actor/camera position in local, un-anchored coordinates for this
+          // mode (see buildPreviewPayload) precisely because that anchor —
+          // which map, and where on it — can only be resolved here, against
+          // real generated terrain, not authored ahead of time.
+          try {
+            if (_tothalShiftPromise) await _tothalShiftPromise;
+            if (!_zoneLayouts.has(area)) {
+              checkTothalShift();
+              await cutscenePreviewWaitForArea(area, 20000, () => _zoneLayouts.has(area));
+            }
+            buildZoneScene(area);
+            const fp = payload.footprint || {};
+            const fw = Math.max(1, Math.ceil(fp.w || 6)), fh = Math.max(1, Math.ceil(fp.h || 6));
+            const anchor = findZonePlacementFootprint(area, fw, fh);
+            if (!anchor) {
+              cutscenePreviewBanner(`Could not find a clear ${fw}×${fh} spot for this scene on "${payload.mapId}".`, true);
+              cutscenePreviewActive = false;
+              return;
+            }
+            const offsetC = anchor.col - (fp.originC || 0), offsetR = anchor.row - (fp.originR || 0);
+            for (const a of (payload.actors || [])) {
+              a.worldC = (a.lc || 0) + offsetC;
+              a.worldR = (a.lr || 0) + offsetR;
+            }
+            for (const s of (payload.stages || [])) {
+              if (s.type === 'move' && s.targetLocal) s.targetWorld = { c: s.targetLocal.lc + offsetC, r: s.targetLocal.lr + offsetR, facing: s.targetLocal.facing ?? null };
+            }
+            if (payload.camera3d?.localPos && payload.camera3d?.localTarget) {
+              // localPos.y/localTarget.y were authored against the Director's
+              // flat y=0 wilderness practice grid (groundYAt returns 0 for
+              // mapMeta.kind==="wilderness" — there's no real elevation to
+              // author against yet) — add the REAL terrain's elevation at
+              // wherever the translated camera/target actually land, or the
+              // rig sits at the wrong height the instant the anchor lands
+              // anywhere but a zero-elevation tile (actors don't have this
+              // bug — their Y is computed fresh from the real terrain at
+              // spawn time, only the camera3d block skipped it).
+              const posX = payload.camera3d.localPos.x + offsetC, posZ = payload.camera3d.localPos.z + offsetR;
+              const targetX = payload.camera3d.localTarget.x + offsetC, targetZ = payload.camera3d.localTarget.z + offsetR;
+              const posElevY = npcSurfaceY(area, Math.round(posX), Math.round(posZ));
+              const targetElevY = npcSurfaceY(area, Math.round(targetX), Math.round(targetZ));
+              payload.camera3d.worldPos = { x: posX, y: payload.camera3d.localPos.y + posElevY, z: posZ };
+              payload.camera3d.worldTarget = { x: targetX, y: payload.camera3d.localTarget.y + targetElevY, z: targetZ };
+            }
+            debugLog(`[cutscene preview] wilderness placement: ${payload.mapId} footprint ${fw}x${fh} anchored at (${anchor.col},${anchor.row})`);
+          } catch (e) { console.error('[cutscene preview] wilderness zone placement failed:', e); }
+        }
+        const ready = await cutscenePreviewWaitForArea(area, 20000);
+        if (!ready) {
+          cutscenePreviewBanner(`Could not load map "${payload.mapId}" for preview.`, true);
+          cutscenePreviewActive = false;
+          return;
+        }
+        currentArea = area; // switches the whole game's render/active-scene target to the cutscene's map
+
+        // Without this, NPC avatars silently fall back to placeholder
+        // capsules: buildProfileFromNpcExport (npc-avatar-preview-utils.js)
+        // returns null whenever its module-level cosmetics cache hasn't
+        // loaded yet. spawnPlayerAvatar's own boot-time call (game.js
+        // ~19883) races this function rather than reliably beating it, so
+        // this waits on the same shared cache/promise explicitly.
+        await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+
+        const targetScene = sceneForNpcArea(area);
+        const targetGrid  = npcGridForArea(area);
+        const targetCols  = getActiveCols();
+        const targetRows  = getActiveRows();
+
+        // ── Camera: an "establishing" mode for everything except active
+        //    dialogue, computed from the Director's captured shot (already
+        //    resolved to world tile-space) via the same
+        //    distance/angleFromGroundDeg/azimuthDeg basis the real fishing
+        //    minigame's camera-mode swap uses (see updateCameraPosition).
+        //    Set up before actors spawn (rather than after, from their
+        //    entities) so camera.position is already correct in time for
+        //    each NPC/player actor's initial spawn facing to check itself
+        //    against it (see cutscenePreviewNpcFacingCheatAngle below).
+        const baseDlgCfg = cameraModeConfig(cameraConfig().dialogueMode || 'npcDialogue');
+        const dlgModeKey = 'cutscenePreviewDialogue';
+        (window.SCRATCHBONES_CONFIG.game.camera.modes ||= {})[dlgModeKey] = {
+          ...baseDlgCfg,
+          // Real gameplay's alignToDialoguePortraitCenters hardcodes the
+          // actual player mesh as one of its two framing anchors, which is
+          // meaningless here (neither cutscene speaker is ever the real
+          // player) — but the alignment itself (an eye-level shot pinned to
+          // the speaker's own visual center, not the generic elevated
+          // follow-camera's sin(angle)*distance climb above it) is exactly
+          // what a cutscene close-up wants too, so this stays on and
+          // dialoguePortraitCameraAim substitutes the speaking actor's own
+          // center (see cutscenePreviewSpeakerCenterY) instead of playerMesh
+          // whenever cutscenePreviewActive is set.
+          alignToDialoguePortraitCenters: true,
+        };
+        // A creature's root position (avatarRef.group) already sits at its
+        // own body-center height (see makeCreatureEntity/updateCreatureMesh),
+        // unlike an NPC walker's root, which sits at ground level — so the
+        // human-chest-height targetYOffsetTiles npcDialogue tunes for
+        // overshoots way above a low-slung creature like a wolf. This
+        // variant looks only slightly above the creature's own center and
+        // sits lower/closer so it still reads as a proper close-up.
+        const dlgModeKeyCreature = 'cutscenePreviewDialogueCreature';
+        window.SCRATCHBONES_CONFIG.game.camera.modes[dlgModeKeyCreature] = {
+          ...baseDlgCfg,
+          // Also pinned to the speaker's own center (cameraY/lookY come from
+          // dialoguePortraitCameraAim, not targetYOffsetTiles/angle below) —
+          // angleFromGroundDeg/distanceTiles still shape the horizontal
+          // framing (azimuth distance/height-of-shot feel), just no longer
+          // the vertical climb.
+          alignToDialoguePortraitCenters: true,
+          targetYOffsetTiles: 0.08,
+          angleFromGroundDeg: Math.min(baseDlgCfg.angleFromGroundDeg ?? 10.64, 6),
+          distanceTiles: (baseDlgCfg.distanceTiles ?? 4.67) * 0.78,
+        };
+
+        let idleCameraMode, idleCameraTarget;
+        if (payload.camera3d) {
+          const p = payload.camera3d.worldPos, t = payload.camera3d.worldTarget;
+          const dx = p.x - t.x, dy = p.y - t.y, dz = p.z - t.z;
+          const distance = Math.max(0.5, Math.hypot(dx, dy, dz));
+          const angleFromGroundDeg = Math.asin(clamp(dy / distance, -1, 1)) * 180 / Math.PI;
+          const azimuthDeg = Math.atan2(dx, dz) * 180 / Math.PI;
+          const shotModeKey = 'cutscenePreviewShot';
+          window.SCRATCHBONES_CONFIG.game.camera.modes[shotModeKey] = { distanceTiles: distance, angleFromGroundDeg, azimuthDeg, fovDeg: 42, followLerp: 1, targetYOffsetTiles: 0 };
+          idleCameraMode = shotModeKey;
+          idleCameraTarget = { position: new THREE.Vector3(t.x, t.y, t.z) };
+          camTargetX = t.x; camTargetY = t.y; camTargetZ = t.z; // instant cut, not a slow lerp in from the farm spawn
+        } else {
+          const firstActor = (payload.actors || [])[0];
+          idleCameraMode = cameraConfig().defaultMode || 'default';
+          if (firstActor) {
+            const fx = firstActor.worldC + 0.5, fz = firstActor.worldR + 0.5, fy = npcSurfaceY(area, firstActor.worldC, firstActor.worldR);
+            idleCameraTarget = { position: new THREE.Vector3(fx, fy, fz) };
+            camTargetX = fx; camTargetY = fy; camTargetZ = fz;
+          } else {
+            idleCameraTarget = null;
+          }
+        }
+        activeCameraMode = idleCameraMode;
+        activeCameraTarget = idleCameraTarget;
+        updateCameraPosition();
+
+        const entities = new Map(); // actorId -> { kind:'npc'|'creature'|'placeholder', root, ... }
+        for (const actor of (payload.actors || [])) {
+          let entity = null;
+          try {
+            if (actor.npcId && actor.npcRecord) {
+              const walker = await makeNpcWalker(actor.npcRecord, { area, c: actor.worldC, r: actor.worldR });
+              if (walker) {
+                walker.rot = THREE.MathUtils.degToRad(actor.rotation || 0); // corrected below once actorStates/applyState exist — see the initial-pose pass before runStage
+                walker.root.rotation.y = walker.rot;
+                walker.pause = Infinity; // scripted entirely by the director below — never the idle/wander AI
+                entity = { kind: 'npc', root: walker.root, walker, rec: actor.npcRecord, profile: walker.profile, avatarFrontCanvas: walker.avatarFrontCanvas, avatarBackCanvas: walker.avatarBackCanvas };
+              }
+            } else if (actor.creatureTypeId && CREATURE_DB[actor.creatureTypeId]) {
+              // makeCreatureEntity's ground-height lookup reads the global
+              // `currentArea` directly rather than taking it as an option,
+              // so it's bookended here even though currentArea already
+              // equals `area` by this point (kept explicit/defensive in
+              // case that assignment above ever moves).
+              const savedArea = currentArea;
+              currentArea = area;
+              const creature = makeCreatureEntity(actor.creatureTypeId, (actor.worldC + 0.5) * TILE, (actor.worldR + 0.5) * TILE, { scene: targetScene, grid: targetGrid, cols: targetCols, rows: targetRows });
+              currentArea = savedArea;
+              if (creature) {
+                creature.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(actor.rotation || 0);
+                entity = { kind: 'creature', root: creature.avatarRef.group, creature };
+              }
+            } else if (actor.isPlayer) {
+              // The scene's authored stand-in for whoever's actually running
+              // this preview — built through the exact same makeNpcWalker
+              // pipeline an NPC actor uses, just fed a synthetic "record"
+              // sourced from the real player's own appearance instead of the
+              // NPC database, so it gets a real PNG-plane avatar instead of
+              // the generic placeholder every other freeform actor falls
+              // back to.
+              const playerProfile = _playerData || window.__hobunjiPlayerProfile;
+              const fakeRec = {
+                id: 'player', name: actor.name || 'Player',
+                appearance: playerProfile?.appearance,
+                equippedCosmetics: playerProfile?.equippedCosmetics || [],
+                appliedDyes: playerProfile?.appliedDyes || {},
+              };
+              const walker = await makeNpcWalker(fakeRec, { area, c: actor.worldC, r: actor.worldR });
+              if (walker) {
+                walker.rot = THREE.MathUtils.degToRad(actor.rotation || 0); // corrected below once actorStates/applyState exist — see the initial-pose pass before runStage
+                walker.root.rotation.y = walker.rot;
+                walker.pause = Infinity;
+                entity = { kind: 'npc', root: walker.root, walker, rec: fakeRec, profile: walker.profile, avatarFrontCanvas: walker.avatarFrontCanvas, avatarBackCanvas: walker.avatarBackCanvas };
+              }
+            }
+          } catch (e) { console.error('[cutscene preview] actor spawn failed for', actor.name, e); }
+          if (!entity) entity = cutscenePreviewMakePlaceholder(actor, area, targetScene);
+          entities.set(actor.id, entity);
+        }
+
+        // ── Stage engine ──────────────────────────────────────────────
+        // Same move/talk/choice/animation/turn/combat/fade semantics as
+        // docs/tools/cutscene-director/index.html's own preview engine
+        // (ported, not shared code — that tool drives a private Three.js
+        // scene, this drives real spawned entities + the real dialogue UI),
+        // reading a payload the Director tool has already fully resolved
+        // to world tile coordinates (see its "Preview in game" handler).
+        const actorsById  = new Map((payload.actors || []).map(a => [a.id, a]));
+        // Authored rotation, used exactly as given — no camera-visibility
+        // biasing. This is the single source of truth for every actor's
+        // rotation from here on, kept in sync with the mesh only through
+        // applyState, so it can't drift out of sync with what's actually on
+        // screen the way computing it twice would.
+        const actorStates = new Map((payload.actors || []).map(a =>
+          [a.id, { c: a.worldC, r: a.worldR, rotation: a.rotation || 0, pose: a.pose || 'standing', combatOn: false, canLose: false }]
+        ));
+        // actorId -> desired facing in degrees: what each actor is currently
+        // trying to face (set at spawn from its raw authored rotation, and
+        // whenever a Turn card or a move's arrival facing gives it a new
+        // one). cutsceneRotationTick (below) is the only thing that ever
+        // turns this into an actual mesh rotation, continuously, for the
+        // actor's entire time on screen — mirroring how real gameplay never
+        // snaps a stationary NPC/creature's facing in one frame either (see
+        // faceNpcDialogueParticipants's npcFacePlayerLerp, updateHostiles/
+        // updateCompanions calling updateCreatureMesh every frame whether a
+        // creature is moving or holding still) — rather than a fixed-
+        // duration one-shot "turn card" animation that stops driving once
+        // its own timer runs out.
+        const desiredFacingDeg = new Map((payload.actors || []).map(a => [a.id, a.rotation || 0]));
+        // actorIds currently owning their own rotation each frame — a Move
+        // stage's own per-frame stepper (walker.moveToward's perpClamp, or
+        // updateCreatureMesh driven by live travel direction), or a Combat
+        // stage's real hostileObjects/companionObjects AI (updateHostiles/
+        // updateCompanions, which also call updateCreatureMesh themselves
+        // with their own chase-target aimAngle). cutsceneRotationTick skips
+        // anyone in here so it never fights whatever's actively driving them.
+        const externallyDrivenActorIds = new Set();
+        const stagesById  = new Map((payload.stages || []).map(s => [s.id, s]));
+        const stageOrder  = (payload.stages || []).map(s => s.id);
+        let running = true;
+
+        const getResolvedNext = (stageId, requestedNext) => {
+          if (requestedNext === '__end__') return null;
+          if (requestedNext && requestedNext !== '__next__') return stagesById.has(requestedNext) ? requestedNext : null;
+          return stageOrder[stageOrder.indexOf(stageId) + 1] || null;
+        };
+        const angleTowardState = cutscenePreviewAngleToward;
+        const buildGridPath = (start, goal) => {
+          const path = [{ c: start.c, r: start.r }];
+          let c = start.c, r = start.r, horizontalTurn = true;
+          while (c !== goal.c || r !== goal.r) {
+            const canH = c !== goal.c, canV = r !== goal.r;
+            if ((horizontalTurn && canH) || !canV) c += Math.sign(goal.c - c); else r += Math.sign(goal.r - r);
+            path.push({ c, r });
+            horizontalTurn = !horizontalTurn;
+          }
+          return path;
+        };
+        const applyState = actorId => { const entity = entities.get(actorId), st = actorStates.get(actorId); if (entity && st) cutscenePreviewApplyState(entity, area, st); };
+
+        // Per-frame travel toward a tile-center target, reusing the real
+        // game's own locomotion instead of the discrete grid-hop stepping
+        // this used to do: an NPC actor rides the exact same
+        // walker.moveToward() the schedule system drives real villagers
+        // with, and a creature actor rides moveCreatureToward() +
+        // updateCreatureMesh()/updateCreatureAnimFrame() — the same trio
+        // updateHostiles() drives wild creatures with. A freeform/failed-
+        // spawn placeholder actor has no real system to borrow, so it gets
+        // an honest straight-line lerp (same degrade-gracefully policy as
+        // cutscenePreviewMakePlaceholder itself). Returns true once arrived.
+        const advanceActorToward = (actorId, tx, tz, dt, speedMul = 1) => {
+          const entity = entities.get(actorId), st = actorStates.get(actorId);
+          if (!entity || !st) return true;
+          if (entity.kind === 'npc' && entity.walker) {
+            entity.walker.catchup = speedMul; // preview-scripted walkers are never schedule-driven, so catchup is free to repurpose as a speed dial
+            const arrived = entity.walker.moveToward(tx, tz, dt);
+            st.c = entity.root.position.x - 0.5;
+            st.r = entity.root.position.z - 0.5;
+            st.rotation = THREE.MathUtils.radToDeg(entity.walker.rot);
+            return arrived;
+          }
+          if (entity.kind === 'creature' && entity.creature) {
+            const c = entity.creature;
+            const speed = (c.def.moveSpeed || 2.4) * speedMul;
+            const moving = moveCreatureToward(c, tx * TILE, tz * TILE, speed, dt);
+            const dist = Math.hypot(c.x - tx * TILE, c.y - tz * TILE);
+            const aimAngle = moving ? Math.atan2(tz * TILE - c.y, tx * TILE - c.x) : c.facing;
+            c.facing = aimAngle;
+            updateCreatureMesh(c, dt, aimAngle);
+            updateCreatureAnimFrame(c, dt, moving);
+            st.c = c.x / TILE - 0.5;
+            st.r = c.y / TILE - 0.5;
+            // st.rotation is the "direct model Y-rotation" convention every
+            // other creature rotation path uses (Turn cards, spawn, the
+            // tool's own gizmo/preview) — NOT aimAngle's raw world-direction
+            // convention (updateCreatureMesh internally maps aimAngle to
+            // groupRot via rawTargetRotY = -(aimAngle) + PI/2, a reflected,
+            // *not* simply offset, relationship). Reading it back from the
+            // mesh's actual resulting groupRot keeps it consistent so
+            // cutsceneRotationTick's post-arrival fallback (when a move has
+            // no authored arrival facing) picks up from the true current
+            // facing instead of a rotation the creature never actually had.
+            st.rotation = ((THREE.MathUtils.radToDeg(c.groupRot) % 360) + 360) % 360;
+            return dist < TILE * 0.12;
+          }
+          const previous = { c: st.c, r: st.r };
+          const dx = tx - 0.5 - st.c, dz = tz - 0.5 - st.r;
+          const d = Math.hypot(dx, dz);
+          const step = Math.max(0.001, 1.6 * speedMul * dt);
+          if (d <= step) { st.c = tx - 0.5; st.r = tz - 0.5; } else { st.c += dx / d * step; st.r += dz / d * step; }
+          if (d > 0.001) st.rotation = angleTowardState(previous, st);
+          applyState(actorId);
+          return d <= step;
+        };
+
+        const finish = message => {
+          running = false;
+          cutscenePreviewActive = false;
+          cutscenePreviewZoomPercent = 100; // never leak an authored zoom into normal gameplay afterward
+          cutscenePreviewDialogueSpeaker = null;
+          activeCameraMode = cameraConfig().defaultMode || 'default';
+          activeCameraTarget = null;
+          cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
+        };
+
+        async function openLine(entity, speakerName, text) {
+          dialogueOpen = true;
+          _dialogueWalker = entity?.kind === 'npc' ? { root: entity.root, rec: entity.rec, profile: entity.profile, avatarFrontCanvas: entity.avatarFrontCanvas } : null;
+          cutscenePreviewDialogueSpeaker = entity || null;
+          activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
+          activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
+          _npcDialogueNameEl.textContent = speakerName;
+          if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = '';
+          _arcContainerEl?.classList.add('arc-hidden');
+          const ctx = _npcPortraitCanvas.getContext('2d');
+          if (_dialogueWalker?.profile && window.NpcAvatarPreview) {
+            ctx.fillStyle = '#1b3529'; ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
+            await _renderNpcDialoguePortrait();
+          } else {
+            ctx.clearRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
+          }
+          _npcDialogueEl.classList.add('open');
+          _npcDialogueEl.setAttribute('aria-hidden', 'false');
+          _hideChoiceButtons();
+          _setNpcDialogueText(text);
+        }
+
+        function closeLine() {
+          dialogueOpen = false;
+          cutscenePreviewAdvance = null;
+          _hideChoiceButtons();
+          window.portraitBreathingComposer?.setExpression(_dialogueSeatId(), 'neutral');
+          window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), 'neutral');
+          _dialogueWalker = null;
+          cutscenePreviewDialogueSpeaker = null;
+          _npcDialogueEl.classList.remove('open');
+          _npcDialogueEl.setAttribute('aria-hidden', 'true');
+          _arcContainerEl?.classList.remove('arc-hidden');
+          activeCameraMode = idleCameraMode;
+          activeCameraTarget = idleCameraTarget;
+        }
+
+        function showChoiceOptions(options) {
+          const optEls = [1, 2, 3, 4, 5, 6].map(i => document.getElementById(`dlgOpt${i}`));
+          optEls.forEach(el => { if (!el) return; const label = el.querySelector('.dlg-opt-label'); if (label) { label.textContent = ''; label.style.fontSize = ''; } el.classList.remove('dlg-opt-visible'); el.onclick = null; });
+          options.slice(0, 6).forEach((opt, i) => {
+            const el = optEls[i]; if (!el) return;
+            const label = el.querySelector('.dlg-opt-label'); if (label) label.textContent = opt.text || 'Choice';
+            el.classList.add('dlg-opt-visible');
+            el.onclick = () => { if (!dialogueOpen) return; opt.onClick(); };
+          });
+          optEls.forEach(el => { if (el && el.classList.contains('dlg-opt-visible')) _fitDlgOptionLabel(el); });
+          const continueBtn = document.getElementById('npcDialogueContinue');
+          if (continueBtn) continueBtn.style.display = options.length ? 'none' : '';
+        }
+
+        function continueTo(nextId) {
+          if (!running) return;
+          if (dialogueOpen) closeLine();
+          if (!nextId) { finish(); return; }
+          runStage(nextId);
+        }
+
+        function runStage(stageId) {
+          if (!running) return;
+          const stage = stagesById.get(stageId);
+          if (!stage) { finish('Preview stopped — the next card could not be found.'); return; }
+          cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
+
+          if (stage.type === 'move') return runMove(stage);
+          if (stage.type === 'animation') return runAnimation(stage);
+          if (stage.type === 'turn') return runTurn(stage);
+          if (stage.type === 'combat') return runCombat(stage);
+          if (stage.type === 'fade') return runFade(stage);
+          if (stage.type === 'zoom') return runZoom(stage);
+
+          const speakerActor  = actorsById.get(stage.speakerId);
+          const speakerEntity = entities.get(stage.speakerId);
+          const speakerName   = speakerActor?.name || 'Someone';
+          if (!speakerEntity) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          if (stage.type === 'choice') {
+            openLine(speakerEntity, speakerName, stage.text).then(() => {
+              showChoiceOptions((stage.options || []).map(o => ({ text: o.text, onClick: () => continueTo(getResolvedNext(stage.id, o.next)) })));
+            });
+            cutscenePreviewAdvance = () => {}; // choices only ever advance via their own button
+            return;
+          }
+          openLine(speakerEntity, speakerName, stage.text);
+          cutscenePreviewAdvance = () => continueTo(getResolvedNext(stage.id, stage.next));
+        }
+
+        function runMove(stage) {
+          const st = actorStates.get(stage.actorId);
+          const goal = stage.targetWorld;
+          if (!st || !goal) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          const speedMul = stage.speed === 'slow' ? 0.6 : stage.speed === 'fast' ? 1.85 : 1;
+          const waitForArrival = stage.waitForArrival !== false;
+          const tx = goal.c + 0.5, tz = goal.r + 0.5;
+          let lastT = performance.now();
+          let arrivedAlready = false;
+          externallyDrivenActorIds.add(stage.actorId); // advanceActorToward below owns rotation until arrival
+          const onArrive = () => {
+            if (arrivedAlready) return;
+            arrivedAlready = true;
+            externallyDrivenActorIds.delete(stage.actorId);
+            // advanceActorToward's own "arrived" gate (TILE*0.12) is looser
+            // than moveCreatureToward's internal one (a flat 1px), so the
+            // loop above can exit here while the creature was still just
+            // inside that inner threshold on its very last step — i.e.
+            // still mid-run-cycle sprite (updateCreatureAnimFrame's
+            // `moving` was still true that frame). cutsceneRotationTick
+            // (below) picks up idle framing on its very next tick once this
+            // actor is out of externallyDrivenActorIds, so no explicit
+            // cleanup call is needed here for that.
+            //
+            // The target point's own authored arrival facing (if any) wins
+            // over whatever direction the walk itself left the actor facing
+            // — same as a "Turn in place" card, just triggered by landing on
+            // this point. Handed to cutsceneRotationTick as this actor's new
+            // desired facing (no arrival facing at all just keeps whatever
+            // direction the walk left it facing, exactly like real NPC/
+            // creature movement does) — never blocks the scene on it, the
+            // actor keeps turning in the background while the next card
+            // starts.
+            desiredFacingDeg.set(stage.actorId, goal.facing != null ? goal.facing : st.rotation);
+            if (waitForArrival) continueTo(getResolvedNext(stage.id, stage.next));
+          };
+          const step = () => {
+            if (!running) return;
+            const now = performance.now();
+            const dt = Math.min(0.05, (now - lastT) / 1000);
+            lastT = now;
+            const arrived = advanceActorToward(stage.actorId, tx, tz, dt, speedMul);
+            if (arrived) { onArrive(); return; }
+            requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+          // Unchecked in the Director ("Wait for arrival before continuing")
+          // — start the next card immediately while this actor keeps
+          // walking toward its target in the background (the loop above
+          // still runs, gated on the same `running` flag a blocking move
+          // uses, so stopping the preview cancels it identically), so
+          // several actors can be sent off at once instead of one at a time.
+          if (!waitForArrival) continueTo(getResolvedNext(stage.id, stage.next));
+        }
+
+        function runAnimation(stage) {
+          const st = actorStates.get(stage.actorId);
+          const entity = entities.get(stage.actorId);
+          if (!st || !entity) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          const composer = window.portraitBreathingComposer;
+          let breathTimer = null;
+          if (stage.animKind === 'emote' && entity.kind === 'npc' && entity.profile && composer) composer.triggerEmote(stage.emoteName);
+          if ((stage.animKind === 'breathing' || stage.animKind === 'emote') && entity.kind === 'npc' && entity.profile && composer && window.NpcAvatarPreview && window.PNGPlaneAvatar) {
+            breathTimer = setInterval(async () => {
+              if (!running) { clearInterval(breathTimer); return; }
+              try {
+                await window.NpcAvatarPreview.renderProfileToCanvas(entity.avatarFrontCanvas, entity.profile, { breathingComposer: composer });
+                window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(entity.walker.avatarGroup, entity.avatarFrontCanvas);
+              } catch (e) {}
+            }, 120);
+          }
+          setTimeout(() => {
+            if (!running) return;
+            if (breathTimer) clearInterval(breathTimer);
+            if (stage.resultPose !== 'unchanged') st.pose = stage.resultPose;
+            applyState(stage.actorId);
+            continueTo(getResolvedNext(stage.id, stage.next));
+          }, (stage.duration || 0) * 1000);
+        }
+
+        // A Turn card just hands cutsceneRotationTick (below) a new desired
+        // facing — the continuous per-frame ticker is what actually eases
+        // the actor's rotation toward it, exactly like a stationary real
+        // NPC/creature turning to face something (no instant snap). The
+        // card's own duration is a pacing beat for the scene (when the next
+        // card starts), not a literal "wait until the turn finishes" gate —
+        // same as it was before.
+        function runTurn(stage) {
+          const st = actorStates.get(stage.actorId);
+          if (!st) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+          let targetDeg = st.rotation;
+          if (stage.mode === 'actor') {
+            const targetSt = actorStates.get(stage.targetActorId);
+            if (targetSt) targetDeg = angleTowardState(st, targetSt);
+          } else {
+            targetDeg = ((Math.round(stage.angle) % 360) + 360) % 360;
+          }
+          desiredFacingDeg.set(stage.actorId, targetDeg);
+          setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), (stage.duration || 0) * 1000);
+        }
+
+        // Live creature-vs-creature AI, identical in spirit to the Cutscene
+        // Director tool's own combat-card simulation: a creature-linked,
+        // teamed participant chases the nearest Combat On participant on a
+        // different team within the real CREATURE_DB aggro range, and
+        // attacks (cooldown-gated pulse) once within attack range. Same
+        // team or no team = never a threat. Non-creature participants (a
+        // person NPC ever marked Combat On) are left stationary.
+        function runCombat(stage) {
+          stage.participants.forEach(p => { const st = actorStates.get(p.actorId); if (st) { st.combatOn = p.combatOn; st.canLose = p.canLose; } });
+
+          // Real hostile/companion AI, not a bespoke simulation: a hostile
+          // species (CREATURE_DB[...].hostile === true, e.g. gar-wolf) is
+          // added to the real hostileObjects Set and driven by the exact
+          // same updateHostiles() wild creatures chase/attack the player
+          // with. A non-hostile species (e.g. dabinggi-hound) is added to
+          // the real companionObjects Set and driven by updateCompanions()
+          // — the same "defend whoever's nearest hostileObjects to the
+          // player" AI a whistle-summoned companion uses, treating the
+          // player as its master. Both are already ticked every frame by
+          // the main game loop, so nothing here drives them by hand; this
+          // only registers/unregisters them and parks the real player.x/y
+          // at the scene's Player actor so that targeting resolves against
+          // the right spot instead of wherever the real player last stood.
+          const combatOnIds = stage.participants.filter(p => p.combatOn).map(p => p.actorId)
+            .filter(id => { const a = actorsById.get(id); return a && a.creatureTypeId && CREATURE_DB[a.creatureTypeId]; });
+
+          const playerActor = (payload.actors || []).find(a => a.isPlayer);
+          const playerSt = playerActor ? actorStates.get(playerActor.id) : null;
+          const savedPlayerX = player.x, savedPlayerY = player.y;
+          if (playerSt) { player.x = (playerSt.c + 0.5) * TILE; player.y = (playerSt.r + 0.5) * TILE; }
+
+          const registered = [];
+          for (const actorId of combatOnIds) {
+            const entity = entities.get(actorId);
+            if (!entity || entity.kind !== 'creature') continue;
+            const c = entity.creature;
+            c.state = 'idle';
+            externallyDrivenActorIds.add(actorId); // updateHostiles/updateCompanions own this creature's rotation now
+            if (c.def.hostile) {
+              c.homeX = c.x; c.homeY = c.y;
+              hostileObjects.add(c);
+              registered.push({ c, set: hostileObjects });
+            } else {
+              c.isCompanion = true;
+              companionObjects.add(c);
+              registered.push({ c, set: companionObjects });
+            }
+          }
+
+          setTimeout(() => {
+            for (const { c, set } of registered) set.delete(c);
+            player.x = savedPlayerX; player.y = savedPlayerY;
+            if (!running) return;
+            // Sync each combatant's authored-coordinate state from wherever
+            // the real AI actually left it, so the next stage (a Settle/Flee
+            // move) starts from its true position instead of snapping back
+            // to its pre-combat spawn point. Same for rotation/desired
+            // facing — handing cutsceneRotationTick back control (it resumes
+            // next frame, now that this actorId is out of
+            // externallyDrivenActorIds) with the wrong desired facing would
+            // yank the creature toward its old pre-combat target the instant
+            // combat ends.
+            for (const actorId of combatOnIds) {
+              const entity = entities.get(actorId), st = actorStates.get(actorId);
+              externallyDrivenActorIds.delete(actorId);
+              if (entity?.kind === 'creature' && st) {
+                st.c = entity.creature.x / TILE - 0.5; st.r = entity.creature.y / TILE - 0.5;
+                st.rotation = THREE.MathUtils.radToDeg(entity.creature.groupRot);
+                desiredFacingDeg.set(actorId, st.rotation);
+              }
+            }
+            stage.participants.forEach(p => { const st = actorStates.get(p.actorId); if (st) st.combatOn = false; });
+            const canLose = stage.participants.some(p => p.combatOn && p.canLose);
+            if (!canLose) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+            const anyEntity = entities.get(stage.participants[0]?.actorId);
+            openLine(anyEntity, 'Combat result', 'A character marked Can Lose may use the separate loss branch.').then(() => {
+              showChoiceOptions([
+                { text: 'No loss', onClick: () => continueTo(getResolvedNext(stage.id, stage.next)) },
+                { text: 'Loss happens', onClick: () => continueTo(getResolvedNext(stage.id, stage.lossNext)) },
+              ]);
+            });
+            cutscenePreviewAdvance = () => {};
+          }, (stage.duration || 0) * 1000);
+        }
+
+        function runFade(stage) {
+          const fadeEl = cutscenePreviewFadeEl();
+          const targetOpacity = stage.direction === 'out' ? 1 : 0;
+          fadeEl.style.transitionDuration = `${stage.duration || 0}s`;
+          requestAnimationFrame(() => { fadeEl.style.opacity = String(targetOpacity); });
+          setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), (stage.duration || 0) * 1000);
+        }
+
+        // Smoothly lerps cutscenePreviewZoomPercent (100 = the captured
+        // shot's own unmodified framing, higher = closer — see
+        // updateCameraPosition's cutsceneZoomMul) from wherever it currently
+        // sits to stage.percent over stage.duration seconds, driving the
+        // camera every frame along the way rather than a single instant cut.
+        function runZoom(stage) {
+          const fromPercent = cutscenePreviewZoomPercent;
+          const toPercent = Math.max(10, Number(stage.percent) || 100);
+          const durationMs = Math.max(0, (stage.duration ?? 0.6) * 1000);
+          const start = performance.now();
+          const step = () => {
+            if (!running) return;
+            const t = durationMs <= 0 ? 1 : Math.min(1, (performance.now() - start) / durationMs);
+            cutscenePreviewZoomPercent = fromPercent + (toPercent - fromPercent) * t;
+            updateCameraPosition();
+            if (t < 1) requestAnimationFrame(step);
+            else continueTo(getResolvedNext(stage.id, stage.next));
+          };
+          step();
+        }
+
+        // Actors otherwise only get their state (position, and any starting
+        // pose like Prone) pushed onto their mesh the first time some stage
+        // happens to touch them — an actor a scene never moves or animates
+        // would sit at its raw spawn transform forever. Every actor's
+        // initial authored state is applied once, up front, so a resting
+        // Prone/rotation reads correctly from frame one (and so a
+        // creature's groupRot/pngRot are seeded to match before
+        // cutsceneRotationTick's first real tick below).
+        for (const actorId of actorStates.keys()) applyState(actorId);
+
+        // Continuously eases every actor's rotation toward desiredFacingDeg
+        // (set at spawn from its raw authored rotation, and updated by a
+        // Turn card or a move's arrival facing), every frame, for the
+        // actor's entire time in the scene — not a fixed-duration one-shot
+        // animation that stops driving once a card's own timer runs out.
+        // Skips anyone in externallyDrivenActorIds: a Move stage's own
+        // stepper (walker.moveToward's perpClamp, or updateCreatureMesh
+        // driven by live travel direction) or a Combat stage's real
+        // hostileObjects/companionObjects AI already owns their rotation
+        // that frame.
+        let cutsceneRotLastT = performance.now();
+        function cutsceneRotationTick() {
+          if (!running) return;
+          const now = performance.now();
+          const dt = Math.min(0.05, (now - cutsceneRotLastT) / 1000);
+          cutsceneRotLastT = now;
+          for (const [actorId, st] of actorStates) {
+            if (externallyDrivenActorIds.has(actorId)) continue;
+            const entity = entities.get(actorId);
+            if (!entity) continue;
+            const targetDeg = desiredFacingDeg.get(actorId) ?? st.rotation;
+            if (entity.kind === 'creature' && entity.creature) {
+              // The exact same function real wild/companion creatures are
+              // driven through every frame whether moving or holding still
+              // (see updateHostiles/updateCompanions): groupRot eases
+              // toward the raw target with no dead zone of its own, while
+              // the crossed-plane sprite gets its own separate perpClamp
+              // dead zone (cameraRelativeCreaturePerps/CREATURE_PERP_DEAD_
+              // RAD) internally so it never goes edge-on.
+              //
+              // updateCreatureMesh's own aimAngle parameter is a raw
+              // world-direction angle, converted internally via
+              // rawTargetRotY = -(aimAngle) + PI/2 — a reflected relationship
+              // with groupRot, not a simple additive offset. targetDeg here
+              // is in the "direct model Y-rotation" convention every other
+              // creature rotation path uses instead (Turn cards, spawn, the
+              // tool's own gizmo/preview), so it has to go through the
+              // inverse of that same mapping (creatureAimAngleForGroupRot)
+              // to land groupRot on the actual authored angle rather than
+              // its mirror.
+              updateCreatureMesh(entity.creature, dt, creatureAimAngleForGroupRot(THREE.MathUtils.degToRad(targetDeg)));
+              updateCreatureAnimFrame(entity.creature, dt, false);
+              st.rotation = THREE.MathUtils.radToDeg(entity.creature.groupRot);
+            } else {
+              // NPC/player/placeholder: the same idle "face player" ease
+              // real stationary NPCs use (see faceNpcDialogueParticipants's
+              // npcFacePlayerLerp) — a flat coin-plane avatar has no edge-on
+              // issue to dead-zone against, so there's nothing else this
+              // needs to run through.
+              const cfg = npcDialogueStagingConfig();
+              const current = THREE.MathUtils.degToRad(st.rotation);
+              const next = current + angleDiff(THREE.MathUtils.degToRad(targetDeg), current) * (cfg.npcFacePlayerLerp ?? 0.28);
+              st.rotation = THREE.MathUtils.radToDeg(next);
+              applyState(actorId);
+            }
+          }
+          requestAnimationFrame(cutsceneRotationTick);
+        }
+        cutsceneRotationTick();
+
+        if (!stageOrder.length) { finish('Preview stopped — this scene has no cards.'); return; }
+        cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'}`, false);
+        runStage(stageOrder[0]);
+      }
+
+      if (window.__hobunjiCutscenePreview) {
+        runCutscenePreview(window.__hobunjiCutscenePreview).catch(err => {
+          console.error('[cutscene preview] failed to start:', err);
+          cutscenePreviewActive = false;
+          cutscenePreviewBanner('Preview failed to start — see console.', true);
+        });
+      }
 
       requestAnimationFrame(gameLoop);
     })();
