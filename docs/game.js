@@ -4245,6 +4245,14 @@
       const DEN_SETTLE_RADIUS_PX = TILE * 0.6;
       let denCheckTimer = 0;
 
+      // Set on entering a wilderness zone (see enterZone); cleared the next
+      // time updateHostileSpawning's den-check actually runs for that same
+      // zone, at which point it logs the living-animal count so entering a
+      // zone reliably reports whether wildlife is actually spawning there —
+      // logging immediately in enterZone itself would usually just show 0,
+      // since den spawning is lazy/timer-gated rather than synchronous.
+      let _zoneEntryAnimalLogPending = null;
+
       // denKey → true once that den has ever had a pack spawned (so a fresh
       // zone's dens seed immediately, while a den that's merely between
       // packs waits for pendingDenRespawn to clear on the next day instead).
@@ -4370,6 +4378,12 @@
         denCheckTimer = DEN_CHECK_INTERVAL_S;
         if (!buildZoneScene(currentArea)) return;
         ensureCurrentZoneDenPacks();
+        if (_zoneEntryAnimalLogPending === currentArea) {
+          _zoneEntryAnimalLogPending = null;
+          let alive = 0;
+          for (const c of hostileObjects) if (c.health > 0 && c.areaId === currentArea) alive++;
+          window.__farmLog?.(`[wildlife] entered "${currentArea}": ${alive} living animal${alive === 1 ? '' : 's'} present.`, 'wildlife');
+        }
       }
 
       function updatePlayerVitals(dt) {
@@ -7080,10 +7094,14 @@
         const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
         const frontCanvas = document.createElement('canvas');
         frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+        // forceEyesOpen: this bakes one static texture at spawn and never
+        // re-renders it, so an unlucky blink-timing roll here would leave
+        // the NPC's world model with its eyes shut forever (see
+        // renderProfile's forceEyesOpen handling in portrait-utils.js).
+        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
@@ -8196,6 +8214,11 @@
         zi.scene.add(reticleWavyGroup);
         refreshActionBar();
         logMapSwap('enterZone', currentArea);
+        // Fire the den-check on the very next frame instead of waiting up to
+        // DEN_CHECK_INTERVAL_S — see _zoneEntryAnimalLogPending above — so
+        // wildlife populates promptly on arrival and the log reflects it.
+        denCheckTimer = 0;
+        _zoneEntryAnimalLogPending = mapId;
       }
 
       // ── Town building detection ──────────────────────────────────────
@@ -9748,11 +9771,16 @@
         const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
         const frontCanvas = document.createElement('canvas');
         frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+        // forceEyesOpen: same reasoning as makeNpcWalker's world avatar —
+        // this bakes one static texture and never re-renders it, so an
+        // unlucky blink-timing roll here would leave the player's own world
+        // model stuck with its eyes shut until the next gear/cosmetic change
+        // happens to trigger a fresh bake.
+        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
