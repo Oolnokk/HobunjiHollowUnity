@@ -848,15 +848,15 @@
      other tools' in-memory/localStorage state. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/GLTFLoader.js?v=20260712g"></script>
-<script src="../../js/WallBuilder.js?v=20260712g"></script>
-<script src="../../js/HousePieceGen.js?v=20260712g"></script>
-<script src="../../js/procedural-furniture.js?v=20260712g"></script>
-<script src="../../js/foliage-generator.js?v=20260712g"></script>
-<script src="../../js/terrain-preview.js?v=20260712g"></script>
+<script src="../../js/GLTFLoader.js?v=20260712h"></script>
+<script src="../../js/WallBuilder.js?v=20260712h"></script>
+<script src="../../js/HousePieceGen.js?v=20260712h"></script>
+<script src="../../js/procedural-furniture.js?v=20260712h"></script>
+<script src="../../js/foliage-generator.js?v=20260712h"></script>
+<script src="../../js/terrain-preview.js?v=20260712h"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
-<script src="../../config/scratchbones-config.js?v=20260712g"></script>
+<script src="../../config/scratchbones-config.js?v=20260712h"></script>
 <script>
   // scratchbones-config.js's asset paths are authored repo-root-relative
   // (docs/assets/, docs/config/) for the top-level game page; this tool
@@ -868,10 +868,10 @@
     window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = '../../config/';
   }
 </script>
-<script src="../../js/portrait-utils.js?v=20260712g"></script>
-<script src="../../js/portrait-breathing.js?v=20260712g"></script>
-<script src="../../js/npc-avatar-preview-utils.js?v=20260712g"></script>
-<script src="../../js/png-plane-avatar.js?v=20260712g"></script>
+<script src="../../js/portrait-utils.js?v=20260712h"></script>
+<script src="../../js/portrait-breathing.js?v=20260712h"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20260712h"></script>
+<script src="../../js/png-plane-avatar.js?v=20260712h"></script>
 
 <script>
 (() => {
@@ -1249,6 +1249,7 @@
     state.activeScreen = name;
     document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.id === `screen-${name}`));
     document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.screen === name));
+    updateRotationGizmo();
   }
 
   function pointSelectHtml(selectedId) {
@@ -1804,6 +1805,106 @@
     els.viewModeBtn.title = is2D ? "Switch to the free-roam 3D view" : "Switch to a top-down 2D grid view";
     if (is2D) { resizeMainGrid2D(); renderEditorBoard(); }
     else state.three?.resize?.();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  3D rotation gizmo — precisely set a selected point's arrival facing by
+  //  dragging a handle around a ring at the point's position, instead of
+  //  typing a degree value blind. Only shown on the Stage & Points tab, for
+  //  the selected point, while it has an arrival facing enabled.
+  // ══════════════════════════════════════════════════════════════════════
+
+  function ensureRotationGizmo() {
+    const three = state.three;
+    if (!three) return null;
+    if (three.gizmo) return three.gizmo;
+    const group = new THREE.Group();
+    group.visible = false;
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xff2fd6, side: THREE.DoubleSide, transparent: true, opacity: 0.5, depthTest: false });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.82, 0.94, 40), ringMat);
+    ring.rotation.x = -Math.PI/2;
+    ring.renderOrder = 998;
+    group.add(ring);
+    const handleGroup = new THREE.Group();
+    const handleMat = new THREE.MeshBasicMaterial({ color: 0xff2fd6, depthTest: false });
+    const handle = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.42, 14), handleMat);
+    handle.rotation.x = Math.PI/2;
+    handle.position.set(0, 0, 0.9);
+    handle.renderOrder = 999;
+    handleGroup.add(handle);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.7, 8), handleMat);
+    shaft.rotation.x = Math.PI/2;
+    shaft.position.set(0, 0, 0.5);
+    shaft.renderOrder = 999;
+    handleGroup.add(shaft);
+    group.add(handleGroup);
+    three.scene.add(group);
+    three.gizmo = { group, handleGroup, handle };
+    setupGizmoInteraction(three);
+    return three.gizmo;
+  }
+
+  // Repositions/shows or hides the gizmo for whatever point is currently
+  // selected — called whenever the selection, its facing, or the active
+  // tab changes (renderPointLists, switchScreen).
+  function updateRotationGizmo() {
+    const gizmo = ensureRotationGizmo();
+    if (!gizmo) return;
+    const point = pointById(state.selectedPointId);
+    if (!point || point.facing == null || state.activeScreen !== "stage") { gizmo.group.visible = false; return; }
+    const w = worldOfPoint(point);
+    gizmo.group.position.set(w.c+0.5, groundYAt(w.c,w.r)+0.06, w.r+0.5);
+    gizmo.handleGroup.rotation.y = THREE.MathUtils.degToRad(point.facing);
+    gizmo.group.visible = true;
+  }
+
+  function setupGizmoInteraction(three) {
+    const canvas = three.renderer.domElement;
+    const raycaster = new THREE.Raycaster();
+    const groundPlane = new THREE.Plane();
+    const hitPoint = new THREE.Vector3();
+    let dragging = false;
+
+    function ndcFromEvent(e) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: ((e.clientX-rect.left)/rect.width)*2-1, y: -((e.clientY-rect.top)/rect.height)*2+1 };
+    }
+
+    canvas.addEventListener("pointerdown", e => {
+      const gizmo = three.gizmo;
+      if (!gizmo || !gizmo.group.visible || state.viewMode !== "3d") return;
+      raycaster.setFromCamera(ndcFromEvent(e), three.camera);
+      if (!raycaster.intersectObject(gizmo.handle, false).length) return;
+      dragging = true;
+      three.controls.enabled = false;
+      canvas.setPointerCapture?.(e.pointerId);
+      e.preventDefault(); e.stopPropagation();
+    });
+    canvas.addEventListener("pointermove", e => {
+      if (!dragging) return;
+      const point = pointById(state.selectedPointId);
+      const gizmo = three.gizmo;
+      if (!point || !gizmo) return;
+      raycaster.setFromCamera(ndcFromEvent(e), three.camera);
+      groundPlane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0,1,0), gizmo.group.position);
+      if (!raycaster.ray.intersectPlane(groundPlane, hitPoint)) return;
+      const dx = hitPoint.x - gizmo.group.position.x, dz = hitPoint.z - gizmo.group.position.z;
+      if (Math.hypot(dx,dz) < 0.05) return; // too close to the pivot to get a stable angle
+      const deg = normalizeAngle(Math.atan2(dz,dx) * 180/Math.PI + 90);
+      point.facing = deg;
+      gizmo.handleGroup.rotation.y = THREE.MathUtils.degToRad(deg);
+      if (pointById(state.selectedPointId) === point) els.pointFacingInput.value = deg;
+      saveLocal();
+    });
+    const endDrag = () => {
+      if (!dragging) return;
+      dragging = false;
+      three.controls.enabled = true;
+      const point = pointById(state.selectedPointId);
+      if (point) changed(`${point.name}'s arrival facing set to ${Math.round(point.facing)}°.`);
+    };
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
   }
 
   // Captured camera shots are stored relative to the scene anchor (same
@@ -2416,6 +2517,7 @@
       els.pointFacingRow.classList.toggle("hidden", point.facing == null);
       els.pointFacingInput.value = point.facing != null ? point.facing : 0;
     }
+    updateRotationGizmo();
   }
 
   function actorAvatarBadgeHtml(actor) {
