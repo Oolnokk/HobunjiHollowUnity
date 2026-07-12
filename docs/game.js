@@ -2759,6 +2759,14 @@
           knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
           runFrame: 0, runFrameT: 0, currentFrameUrl: def.sprites.idle,
           isCompanion: false,
+          // Whichever entity this companion follows/defends/anchors to —
+          // {x, y, angle, climbing}, same shape as the real `player` object.
+          // Defaults to null (hostiles/wild creatures have no master); a
+          // companion always gets one passed in via opts (see
+          // syncCompanionFromWhistle). Kept as a plain reference rather than
+          // hardcoding `player` so a future NPC-owned companion (or a second
+          // remote player's companion) can point at any qualifying entity.
+          master: null,
           name: def.label,
           state: 'idle',
           wanderTarget: null, wanderT: 0,
@@ -3587,20 +3595,29 @@
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
 
-          if (player.climbing) {
+          // The entity this companion follows/defends — the real player for
+          // an ordinary whistle-summoned companion, but not necessarily: see
+          // the `master` field comment in makeCreatureEntity. Falls back to
+          // `player` only so any pre-existing companion spawned before this
+          // field existed (e.g. a save mid-load) doesn't go masterless.
+          const master = c.master || player;
+
+          if (master.climbing) {
             // Teleport-and-stick: an untagged companion can't path through an
             // incline tile on its own (see CREATURE_DB canClimb / moveCreatureToward),
-            // so for the duration of the climb it just clings to the player's
+            // so for the duration of the climb it just clings to its master's
             // back instead of trying to follow normally.
-            const backAngle = player.angle + Math.PI;
-            c.x = player.x + Math.cos(backAngle) * TILE * 0.35;
-            c.y = player.y + Math.sin(backAngle) * TILE * 0.35;
-            c.facing = player.angle;
+            const backAngle = master.angle + Math.PI;
+            c.x = master.x + Math.cos(backAngle) * TILE * 0.35;
+            c.y = master.y + Math.sin(backAngle) * TILE * 0.35;
+            c.facing = master.angle;
             c.vx = 0; c.vy = 0;
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            // Pin to the player's actual climb-blended height rather than the
+            // Pin to the master's actual climb-blended height rather than the
             // incline tile's raw (unblended) surface — see updatePlayerMesh.
+            // (Only the real player has a climb-blended playerMesh height;
+            // a non-player master would need its own mesh reference here.)
             c.avatarRef.group.position.y = playerMesh.position.y + c.halfHeight * 0.5;
             continue;
           }
@@ -3609,13 +3626,13 @@
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
           window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
 
-          const dxp = player.x - c.x, dyp = player.y - c.y;
-          const distToPlayer = Math.hypot(dxp, dyp);
+          const dxp = master.x - c.x, dyp = master.y - c.y;
+          const distToMaster = Math.hypot(dxp, dyp);
           let target = null;
           for (const h of hostileObjects) {
             if (h.health <= 0) continue;
             if (h.areaId !== currentArea) continue;
-            if (Math.hypot(h.x - player.x, h.y - player.y) <= ALERT_RANGE_PX) { target = h; break; }
+            if (Math.hypot(h.x - master.x, h.y - master.y) <= ALERT_RANGE_PX) { target = h; break; }
           }
 
           if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
@@ -3684,11 +3701,11 @@
                 }
               }
             }
-          } else if (distToPlayer > FOLLOW_FAR_PX) {
-            moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
+          } else if (distToMaster > FOLLOW_FAR_PX) {
+            moving = moveCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(dyp, dxp);
           } else {
-            moving = wanderTick(c, dt, player.x, player.y, FOLLOW_NEAR_PX);
+            moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
           c.facing = aimAngle;
@@ -3700,15 +3717,28 @@
         }
       }
 
-      function despawnCompanions() {
-        companionObjects.forEach(c => despawnCreature(c));
-        companionObjects.clear();
+      // With no `master` given, clears every companion (full reset/QA use —
+      // see the farm-reset call site). Given a `master`, only despawns that
+      // master's own companion, leaving any other master's companion alone —
+      // needed so two masters (e.g. two whistle-bearing entities) syncing
+      // independently don't clobber each other's pet.
+      function despawnCompanions(master) {
+        for (const c of [...companionObjects]) {
+          if (master && c.master !== master) continue;
+          despawnCreature(c);
+          companionObjects.delete(c);
+        }
       }
 
-      // Spawns/despawns the active companion to match the equipped whistle.
-      // Called every farm/zone-area frame; cheap no-op once in sync. Also
-      // re-spawns into the new area's scene whenever the player travels.
-      function syncCompanionFromWhistle() {
+      // Spawns/despawns the given master's active companion to match its
+      // equipped whistle. Called every farm/zone-area frame for the real
+      // player (master defaults to `player`); cheap no-op once in sync. Also
+      // re-spawns into the new area's scene whenever the master travels.
+      // Takes an explicit `master` (rather than always reading the real
+      // player) so this same function can eventually drive a second
+      // whistle-bearing player's companion, or an NPC's, without change —
+      // see the `master` field on the companion entity itself.
+      function syncCompanionFromWhistle(master = player) {
         // A cutscene preview's combat card manages companionObjects directly
         // (see runCutscenePreview/runCombat) — this whistle-driven sync
         // would otherwise despawn a hound the instant it runs, since the
@@ -3718,17 +3748,17 @@
         const whistle = equipmentSlots.whistle
           ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
           : null;
-        const existing = [...companionObjects][0];
+        const existing = [...companionObjects].find(c => c.master === master);
         if (!whistle) {
-          if (existing) despawnCompanions();
+          if (existing) despawnCompanions(master);
           return;
         }
         if (existing && existing.creatureKey === whistle.creatureKey && existing.areaId === currentArea) return;
-        despawnCompanions();
-        const spawnX = player.x + Math.cos(player.angle + Math.PI) * TILE * 1.4;
-        const spawnY = player.y + Math.sin(player.angle + Math.PI) * TILE * 1.4;
+        despawnCompanions(master);
+        const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
+        const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
         const companion = makeCreatureEntity(whistle.creatureKey, spawnX, spawnY, {
-          isCompanion: true, name: whistle.name, homeX: spawnX, homeY: spawnY, state: 'idle',
+          isCompanion: true, name: whistle.name, homeX: spawnX, homeY: spawnY, state: 'idle', master,
         });
         if (companion) companionObjects.add(companion);
       }
@@ -20808,13 +20838,16 @@
           // same updateHostiles() wild creatures chase/attack the player
           // with. A non-hostile species (e.g. dabinggi-hound) is added to
           // the real companionObjects Set and driven by updateCompanions()
-          // — the same "defend whoever's nearest hostileObjects to the
-          // player" AI a whistle-summoned companion uses, treating the
-          // player as its master. Both are already ticked every frame by
-          // the main game loop, so nothing here drives them by hand; this
-          // only registers/unregisters them and parks the real player.x/y
-          // at the scene's Player actor so that targeting resolves against
-          // the right spot instead of wherever the real player last stood.
+          // — the same "defend whoever's nearest hostileObjects to its
+          // master" AI a whistle-summoned companion uses, explicitly pointed
+          // at the real player via c.master (see the `master` field on
+          // makeCreatureEntity — a future authored master besides the
+          // player would just need this line to pick a different entity).
+          // Both are already ticked every frame by the main game loop, so
+          // nothing here drives them by hand; this only registers/
+          // unregisters them and parks the real player.x/y at the scene's
+          // Player actor so that targeting resolves against the right spot
+          // instead of wherever the real player last stood.
           const combatOnIds = stage.participants.filter(p => p.combatOn).map(p => p.actorId)
             .filter(id => { const a = actorsById.get(id); return a && a.creatureTypeId && CREATURE_DB[a.creatureTypeId]; });
 
@@ -20836,13 +20869,14 @@
               registered.push({ c, set: hostileObjects });
             } else {
               c.isCompanion = true;
+              c.master = player;
               companionObjects.add(c);
               registered.push({ c, set: companionObjects });
             }
           }
 
           setTimeout(() => {
-            for (const { c, set } of registered) set.delete(c);
+            for (const { c, set } of registered) { set.delete(c); if (set === companionObjects) c.master = null; }
             player.x = savedPlayerX; player.y = savedPlayerY;
             if (!running) return;
             // Sync each combatant's authored-coordinate state from wherever
