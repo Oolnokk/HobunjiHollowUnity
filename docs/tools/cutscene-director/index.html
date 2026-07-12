@@ -493,6 +493,11 @@
     box-shadow: 0 8px 0 rgba(0,0,0,.35);
   }
   .dialogue-box.show { display: block; }
+  /* Matches the real game's #npcDialogue proportions (see style.css: full
+     width, bottom 8/18 of the reference viewport, flush edges) — position
+     itself is computed in JS (applyDialogueBoxLayout) against the
+     letterboxed 16:9 rect standing in for the player's screen. */
+  .dialogue-box.game-match { border-radius: 12px 12px 0 0; overflow-y: auto; }
   .dialogue-speaker {
     display: inline-flex;
     align-items: center;
@@ -780,6 +785,7 @@
         <button id="resetPlayBtn" class="small">↺ Reset</button>
         <button id="captureCameraBtn" class="small">📷 Capture camera</button>
         <button id="resetCameraBtn" class="small">🎯 Frame stage</button>
+        <button id="matchGameCameraBtn" class="small">🎬 Match game camera</button>
         <button id="viewModeBtn" class="small">▦ 2D grid</button>
         <button id="previewInGameBtn" class="small">🎮 Preview in game</button>
       </div>
@@ -848,15 +854,15 @@
      other tools' in-memory/localStorage state. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/GLTFLoader.js?v=20260712h"></script>
-<script src="../../js/WallBuilder.js?v=20260712h"></script>
-<script src="../../js/HousePieceGen.js?v=20260712h"></script>
-<script src="../../js/procedural-furniture.js?v=20260712h"></script>
-<script src="../../js/foliage-generator.js?v=20260712h"></script>
-<script src="../../js/terrain-preview.js?v=20260712h"></script>
+<script src="../../js/GLTFLoader.js?v=20260712i"></script>
+<script src="../../js/WallBuilder.js?v=20260712i"></script>
+<script src="../../js/HousePieceGen.js?v=20260712i"></script>
+<script src="../../js/procedural-furniture.js?v=20260712i"></script>
+<script src="../../js/foliage-generator.js?v=20260712i"></script>
+<script src="../../js/terrain-preview.js?v=20260712i"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
-<script src="../../config/scratchbones-config.js?v=20260712h"></script>
+<script src="../../config/scratchbones-config.js?v=20260712i"></script>
 <script>
   // scratchbones-config.js's asset paths are authored repo-root-relative
   // (docs/assets/, docs/config/) for the top-level game page; this tool
@@ -868,10 +874,10 @@
     window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = '../../config/';
   }
 </script>
-<script src="../../js/portrait-utils.js?v=20260712h"></script>
-<script src="../../js/portrait-breathing.js?v=20260712h"></script>
-<script src="../../js/npc-avatar-preview-utils.js?v=20260712h"></script>
-<script src="../../js/png-plane-avatar.js?v=20260712h"></script>
+<script src="../../js/portrait-utils.js?v=20260712i"></script>
+<script src="../../js/portrait-breathing.js?v=20260712i"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20260712i"></script>
+<script src="../../js/png-plane-avatar.js?v=20260712i"></script>
 
 <script>
 (() => {
@@ -924,6 +930,7 @@
     pointObjects: new Map(),
     preview: { running: false, currentStageId: null, actorStates: new Map(), timer: null, token: 0, fadeOpacity: 0 },
     viewMode: "3d",
+    gameCameraMatch: false,
     logs: []
   };
 
@@ -1446,7 +1453,7 @@
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setClearColor(0x07101a, 1);
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+    const camera = new THREE.PerspectiveCamera(TOOL_DEFAULT_FOV, 1, 0.1, 2000);
     camera.position.set(20, 22, 20);
     scene.add(new THREE.AmbientLight(0xffffff, 0.65));
     const sun = new THREE.DirectionalLight(0xffffff, 0.85);
@@ -1466,10 +1473,27 @@
     function resize() {
       if (state.viewMode === "2d") return; // canvas3d is hidden; nothing to size
       const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-      const r = els.viewportWrap.getBoundingClientRect();
-      const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+      const wrapRect = els.viewportWrap.getBoundingClientRect();
+      let w = wrapRect.width, h = wrapRect.height;
+      if (state.gameCameraMatch) {
+        // Letterbox to the game's own 16:9 UI reference grid (style.css:
+        // --col:100vw/32, --row:100vh/18 — 32:18 reduces to 16:9) so the
+        // framing you compose here matches what a player actually sees,
+        // instead of whatever arbitrary aspect this panel happens to be.
+        w = wrapRect.width; h = w / GAME_ASPECT;
+        if (h > wrapRect.height) { h = wrapRect.height; w = h * GAME_ASPECT; }
+        const x = (wrapRect.width - w) / 2, y = (wrapRect.height - h) / 2;
+        canvas.style.left = `${x}px`; canvas.style.top = `${y}px`;
+        canvas.style.width = `${w}px`; canvas.style.height = `${h}px`;
+        camera.fov = GAME_FOV; // matches runCutscenePreview's shotModeKey fovDeg in game.js
+        applyDialogueBoxLayout({ x, y, w, h });
+      } else {
+        canvas.style.left = ""; canvas.style.top = ""; canvas.style.width = ""; canvas.style.height = "";
+        camera.fov = TOOL_DEFAULT_FOV;
+        applyDialogueBoxLayout(null);
+      }
       renderer.setPixelRatio(dpr);
-      renderer.setSize(w, h, false);
+      renderer.setSize(Math.max(1,Math.round(w)), Math.max(1,Math.round(h)), false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     }
@@ -1803,8 +1827,59 @@
     els.canvas3d.style.display = is2D ? "none" : "block";
     els.viewModeBtn.textContent = is2D ? "🧊 3D view" : "▦ 2D grid";
     els.viewModeBtn.title = is2D ? "Switch to the free-roam 3D view" : "Switch to a top-down 2D grid view";
-    if (is2D) { resizeMainGrid2D(); renderEditorBoard(); }
-    else state.three?.resize?.();
+    if (is2D) {
+      // Letterboxing/dialogue-box matching only means something with the
+      // 3D camera actually visible — drop it rather than leave it silently
+      // armed for whenever 3D comes back.
+      if (state.gameCameraMatch) setGameCameraMatch(false);
+      resizeMainGrid2D(); renderEditorBoard();
+    } else state.three?.resize?.();
+  }
+
+  // ── "Match game camera": letterbox the 3D view to the game's own 16:9 UI
+  //    reference grid, lock the FOV to what a cutscene shot actually
+  //    renders at, jump to the captured shot if one exists, and resize the
+  //    dialogue box overlay to the real game's proportions — see resize()
+  //    and applyDialogueBoxLayout below for the actual layout math. ──
+  const TOOL_DEFAULT_FOV = 55; // this tool's own free-roam authoring FOV
+  const GAME_FOV = 42; // matches game.js's cutscene shotModeKey fovDeg
+  const GAME_ASPECT = 32/18; // docs/style.css's --col:100vw/32, --row:100vh/18 reference grid
+
+  // Mirrors docs/style.css's real #npcDialogue: full width, bottom 8/18 of
+  // the reference viewport, flush to the bottom edge — here "viewport"
+  // means the letterboxed rect passed in, standing in for the player's
+  // actual screen. `rect` null reverts to the tool's own normal CSS sizing.
+  function applyDialogueBoxLayout(rect) {
+    const box = els.dialogueBox;
+    if (!box) return;
+    if (!rect) {
+      box.classList.remove("game-match");
+      box.style.left = ""; box.style.right = ""; box.style.top = ""; box.style.bottom = ""; box.style.width = ""; box.style.height = ""; box.style.maxHeight = "";
+      return;
+    }
+    box.classList.add("game-match");
+    box.style.left = `${rect.x}px`;
+    box.style.right = "";
+    box.style.width = `${rect.w}px`;
+    box.style.top = `${rect.y + rect.h * 10/18}px`;
+    box.style.bottom = "";
+    box.style.height = `${rect.h * 8/18}px`;
+    box.style.maxHeight = `${rect.h * 8/18}px`;
+  }
+
+  function setGameCameraMatch(on) {
+    state.gameCameraMatch = on;
+    if (on) {
+      if (state.viewMode === "2d") setViewMode("3d");
+      if (state.project.camera3d) applyCamera3D();
+      else toast("No camera captured yet — showing the game's aspect ratio/FOV at the current view.");
+    }
+    els.matchGameCameraBtn.classList.toggle("primary", on);
+    els.matchGameCameraBtn.textContent = on ? "🎬 Matching game camera" : "🎬 Match game camera";
+    els.matchGameCameraBtn.title = on
+      ? "Showing the exact aspect ratio/FOV/dialogue framing a player would see — click to go back to free-roam authoring view"
+      : "Jump to the captured camera shot and lock the viewport to the game's real aspect ratio, FOV, and dialogue box proportions";
+    state.three?.resize?.();
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -3496,6 +3571,7 @@
     els.captureCameraBtn.addEventListener("click", captureCamera3D);
     els.resetCameraBtn.addEventListener("click", () => { state.project.camera3d = null; saveLocal(); frameCameraToStage(); toast("Camera framed to the whole stage."); });
     els.viewModeBtn.addEventListener("click", () => setViewMode(state.viewMode === "2d" ? "3d" : "2d"));
+    els.matchGameCameraBtn.addEventListener("click", () => setGameCameraMatch(!state.gameCameraMatch));
     els.previewInGameBtn.addEventListener("click", previewInGame);
 
     els.exportBtn.addEventListener("click", exportProject);
@@ -3540,7 +3616,7 @@
       "pointFacingEnabled","pointFacingRow","pointFacingInput",
       "addNpcActorBtn","addCreatureActorBtn","newActorName","addActorBtn","actorList","actorEditor","actorNpcBadge","actorCreatureBadge","actorNameInput","actorColorInput",
       "actorStartSelect","actorRotationInput","actorPoseSelect","actorTeamInput","actorCombatInput","actorCanLoseInput","actorIsPlayerInput","unlinkNpcBtn","unlinkCreatureBtn","deleteActorBtn",
-      "stageList","stageEditor","mapStatusPill","playStatusPill","startPlayBtn","resetPlayBtn","captureCameraBtn","resetCameraBtn","viewModeBtn","previewInGameBtn",
+      "stageList","stageEditor","mapStatusPill","playStatusPill","startPlayBtn","resetPlayBtn","captureCameraBtn","resetCameraBtn","matchGameCameraBtn","viewModeBtn","previewInGameBtn",
       "mainGrid2DWrap","mainGrid2D",
       "canvas3d","fadeOverlay","dialogueBox","dialogueSpeaker","dialogueText","dialogueActions",
       "checkBtn","copyLogBtn","validationList","debugLog","toast",
