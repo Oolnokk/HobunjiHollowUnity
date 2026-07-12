@@ -289,7 +289,7 @@
 
   .actor-token {
     position: absolute;
-    z-index: 7;
+    z-index: 12;
     display: grid;
     place-items: center;
     width: calc(100% / var(--cols));
@@ -297,12 +297,32 @@
     pointer-events: none;
   }
   .actor-token .body {
+    position: relative;
     width: 62%;
     height: 62%;
     border: 2px solid #fff2d5;
     border-radius: 50%;
     box-shadow: 0 3px 0 rgba(0,0,0,.32);
+    display: grid;
+    place-items: center;
   }
+  /* Wedge showing the exact "forward" direction the code assumes for this
+     actor's rotation value — rotated via inline style using the SAME
+     rotate()-degrees value as actor.rotation, no conversion needed, since
+     angleToward's own convention (0°=north, clockwise) already matches
+     CSS rotate()'s clockwise-from-up behavior on a shape drawn pointing up
+     (see buildForwardArrowMarker, the 3D counterpart of this marker). */
+  .actor-token .body::before {
+    content: "";
+    position: absolute;
+    top: -8px; left: 50%; margin-left: -5px;
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 9px solid #fff2d5;
+    filter: drop-shadow(0 1px 0 rgba(0,0,0,.5));
+  }
+  .actor-token .initials { font-size: .58rem; font-weight: 1000; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.75); }
 
   .add-stage-grid {
     display: grid;
@@ -427,6 +447,13 @@
   #playStatusPill { flex: 1; min-width: 140px; }
   #viewport-wrap { position: relative; flex: 1; min-height: 0; background: #05070a; }
   #canvas3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #mainGrid2DWrap {
+    position: absolute; inset: 0; display: none;
+    align-items: center; justify-content: center;
+    padding: 14px; background: #05070a;
+  }
+  #mainGrid2DWrap.show { display: flex; }
+  #mainGrid2D { flex-shrink: 0; }
   #viewport-hint {
     position: absolute;
     left: 10px;
@@ -748,10 +775,12 @@
         <button id="resetPlayBtn" class="small">↺ Reset</button>
         <button id="captureCameraBtn" class="small">📷 Capture camera</button>
         <button id="resetCameraBtn" class="small">🎯 Frame stage</button>
+        <button id="viewModeBtn" class="small">▦ 2D grid</button>
         <button id="previewInGameBtn" class="small">🎮 Preview in game</button>
       </div>
       <div id="viewport-wrap">
         <canvas id="canvas3d"></canvas>
+        <div id="mainGrid2DWrap"><div id="mainGrid2D" class="map-board" aria-label="Scene grid, top-down"></div></div>
         <div id="viewport-hint">Drag to orbit · scroll to zoom · private preview scene</div>
         <div id="fadeOverlay" class="fade-overlay"></div>
         <div id="dialogueBox" class="dialogue-box" role="dialog" aria-live="polite">
@@ -814,15 +843,15 @@
      other tools' in-memory/localStorage state. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/GLTFLoader.js?v=20260712d"></script>
-<script src="../../js/WallBuilder.js?v=20260712d"></script>
-<script src="../../js/HousePieceGen.js?v=20260712d"></script>
-<script src="../../js/procedural-furniture.js?v=20260712d"></script>
-<script src="../../js/foliage-generator.js?v=20260712d"></script>
-<script src="../../js/terrain-preview.js?v=20260712d"></script>
+<script src="../../js/GLTFLoader.js?v=20260712e"></script>
+<script src="../../js/WallBuilder.js?v=20260712e"></script>
+<script src="../../js/HousePieceGen.js?v=20260712e"></script>
+<script src="../../js/procedural-furniture.js?v=20260712e"></script>
+<script src="../../js/foliage-generator.js?v=20260712e"></script>
+<script src="../../js/terrain-preview.js?v=20260712e"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
-<script src="../../config/scratchbones-config.js?v=20260712d"></script>
+<script src="../../config/scratchbones-config.js?v=20260712e"></script>
 <script>
   // scratchbones-config.js's asset paths are authored repo-root-relative
   // (docs/assets/, docs/config/) for the top-level game page; this tool
@@ -834,10 +863,10 @@
     window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = '../../config/';
   }
 </script>
-<script src="../../js/portrait-utils.js?v=20260712d"></script>
-<script src="../../js/portrait-breathing.js?v=20260712d"></script>
-<script src="../../js/npc-avatar-preview-utils.js?v=20260712d"></script>
-<script src="../../js/png-plane-avatar.js?v=20260712d"></script>
+<script src="../../js/portrait-utils.js?v=20260712e"></script>
+<script src="../../js/portrait-breathing.js?v=20260712e"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20260712e"></script>
+<script src="../../js/png-plane-avatar.js?v=20260712e"></script>
 
 <script>
 (() => {
@@ -889,6 +918,7 @@
     actorObjects: new Map(),
     pointObjects: new Map(),
     preview: { running: false, currentStageId: null, actorStates: new Map(), timer: null, token: 0, fadeOpacity: 0 },
+    viewMode: "3d",
     logs: []
   };
 
@@ -1421,6 +1451,7 @@
     state.three = { renderer, scene, camera, controls, terrainGroup, buildingsGroup, markersGroup, actorsGroup, wallBuilder: null };
 
     function resize() {
+      if (state.viewMode === "2d") return; // canvas3d is hidden; nothing to size
       const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
       const r = els.viewportWrap.getBoundingClientRect();
       const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
@@ -1429,6 +1460,7 @@
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     }
+    state.three.resize = resize;
     window.addEventListener("resize", resize);
     resize();
 
@@ -1727,6 +1759,39 @@
     three.controls.target.set(cols/2, 0, rows/2);
     three.camera.lookAt(three.controls.target);
     three.controls.update();
+  }
+
+  // Fits the main-viewport 2D grid to whatever room #mainGrid2DWrap has,
+  // preserving the scene's actual cols:rows aspect ratio (computed in JS
+  // rather than via CSS aspect-ratio, since the wrap's available box isn't
+  // itself that ratio and needs to letterbox whichever dimension is tighter).
+  function resizeMainGrid2D() {
+    const wrap = els.mainGrid2DWrap, board = els.mainGrid2D;
+    if (!wrap || !board) return;
+    const pad = 28; // 14px padding on #mainGrid2DWrap, both sides
+    const availW = wrap.clientWidth - pad, availH = wrap.clientHeight - pad;
+    if (availW <= 0 || availH <= 0) return;
+    const cols = GRID_COLS(), rows = GRID_ROWS();
+    let w = availW, h = w * rows / cols;
+    if (h > availH) { h = availH; w = h * cols / rows; }
+    board.style.width = `${Math.round(w)}px`;
+    board.style.height = `${Math.round(h)}px`;
+  }
+  window.addEventListener("resize", () => { if (state.viewMode === "2d") resizeMainGrid2D(); });
+
+  // Toggles the main preview panel between the free-roam 3D view and a
+  // top-down 2D grid (the same grid/tokens as the "Stage & Points" sidebar
+  // widget — see renderBoardTokens) — useful for reasoning about blocking
+  // and facing without 3D camera confusion.
+  function setViewMode(mode) {
+    state.viewMode = mode;
+    const is2D = mode === "2d";
+    els.mainGrid2DWrap.classList.toggle("show", is2D);
+    els.canvas3d.style.display = is2D ? "none" : "block";
+    els.viewModeBtn.textContent = is2D ? "🧊 3D view" : "▦ 2D grid";
+    els.viewModeBtn.title = is2D ? "Switch to the free-roam 3D view" : "Switch to a top-down 2D grid view";
+    if (is2D) { resizeMainGrid2D(); renderEditorBoard(); }
+    else state.three?.resize?.();
   }
 
   // Captured camera shots are stored relative to the scene anchor (same
@@ -2122,11 +2187,40 @@
     return { c: clamp(Math.floor((clientX-rect.left)/rect.width*GRID_COLS()),0,GRID_COLS()-1), r: clamp(Math.floor((clientY-rect.top)/rect.height*GRID_ROWS()),0,GRID_ROWS()-1) };
   }
 
-  function renderEditorBoard() {
-    const board = els.editorBoard;
+  // Renders one grid instance (tiles + points + actor tokens + anchor) into
+  // the given board element — shared by the small "Stage & Points" sidebar
+  // grid and the main-viewport 2D mode toggled in above the 3D view (see
+  // renderEditorBoard below, which drives both from one source of truth so
+  // dragging a point/anchor in either place keeps them in sync).
+  // actorId -> [{ boardEl, token, bodyEl, initialsEl, cols, rows }] — lets
+  // applyActorStateToScene push a live position/rotation update straight
+  // onto an actor's existing 2D token (a couple of style writes) instead of
+  // rebuilding the whole grid every combat AI tick (every 220ms per active
+  // creature — see runCombatStage) or move step.
+  const actorTokenEls = new Map();
+  function untrackTokensForBoard(board) {
+    for (const [id, entries] of actorTokenEls) {
+      const kept = entries.filter(e => e.boardEl !== board);
+      if (kept.length) actorTokenEls.set(id, kept); else actorTokenEls.delete(id);
+    }
+  }
+  function updateActorToken2D(actorId, st) {
+    const entries = actorTokenEls.get(actorId);
+    if (!entries || !entries.length) return;
+    const rotation = st.rotation || 0;
+    for (const e of entries) {
+      e.token.style.left = `${st.c*100/e.cols}%`;
+      e.token.style.top = `${st.r*100/e.rows}%`;
+      if (e.bodyEl) e.bodyEl.style.transform = `rotate(${rotation}deg)`;
+      if (e.initialsEl) e.initialsEl.style.transform = `rotate(${-rotation}deg)`;
+    }
+  }
+
+  function renderBoardTokens(board) {
     const cols = GRID_COLS(), rows = GRID_ROWS();
     board.style.setProperty("--cols", cols);
     board.style.setProperty("--rows", rows);
+    untrackTokensForBoard(board);
     board.innerHTML = "";
     for (let index=0; index<cols*rows; index++) {
       const c = index % cols, r = Math.floor(index/cols);
@@ -2141,6 +2235,27 @@
       });
       board.appendChild(tile);
     }
+
+    // Actor tokens: read-only markers showing where each actor currently
+    // sits (live preview position while Playing, otherwise its authored
+    // start) and a wedge pointing in the exact direction the code treats as
+    // "forward" for its rotation value — same rotate()-degrees convention
+    // as angleToward, see the .body::before rule and buildForwardArrowMarker
+    // (that function's 3D counterpart).
+    const liveActorStates = state.preview.running ? state.preview.actorStates : initialActorStates();
+    state.project.actors.forEach(actor => {
+      const st = liveActorStates.get(actor.id);
+      if (!st) return;
+      const token = document.createElement("div");
+      token.className = "actor-token";
+      token.style.left = `${st.c*100/cols}%`;
+      token.style.top = `${st.r*100/rows}%`;
+      token.title = `${actor.name} — facing ${Math.round(st.rotation||0)}°`;
+      token.innerHTML = `<div class="body" style="background:${escapeHtml(actor.color||"#cccccc")};transform:rotate(${st.rotation||0}deg)"><span class="initials" style="transform:rotate(${-(st.rotation||0)}deg)">${escapeHtml((actor.name||"?").slice(0,2))}</span></div>`;
+      board.appendChild(token);
+      if (!actorTokenEls.has(actor.id)) actorTokenEls.set(actor.id, []);
+      actorTokenEls.get(actor.id).push({ boardEl: board, token, bodyEl: token.querySelector(".body"), initialsEl: token.querySelector(".initials"), cols, rows });
+    });
 
     state.project.points.forEach(point => {
       const w = worldOfPoint(point);
@@ -2211,7 +2326,11 @@
       anchorToken.addEventListener("pointercancel", () => { state.draggingAnchor = false; renderAll(); });
       board.appendChild(anchorToken);
     }
+  }
 
+  function renderEditorBoard() {
+    renderBoardTokens(els.editorBoard);
+    if (state.viewMode === "2d" && els.mainGrid2D) renderBoardTokens(els.mainGrid2D);
     els.pickBanner.classList.toggle("hidden", !state.movingPointId && !state.movingAnchor);
     if (state.movingAnchor) els.pickBanner.textContent = "Tap a tile below to place the scene anchor — everything moves with it.";
     else if (state.movingPointId) els.pickBanner.textContent = "Tap a tile below to place the selected point.";
@@ -2576,6 +2695,7 @@
   }
 
   function applyActorStateToScene(actorId, st) {
+    updateActorToken2D(actorId, st);
     const rec = state.actorObjects.get(actorId);
     if (!rec) return;
     rec.root.position.set(st.c+0.5, groundYAt(st.c,st.r), st.r+0.5);
@@ -3201,6 +3321,7 @@
     els.resetPlayBtn.addEventListener("click", () => resetPreview(true));
     els.captureCameraBtn.addEventListener("click", captureCamera3D);
     els.resetCameraBtn.addEventListener("click", () => { state.project.camera3d = null; saveLocal(); frameCameraToStage(); toast("Camera framed to the whole stage."); });
+    els.viewModeBtn.addEventListener("click", () => setViewMode(state.viewMode === "2d" ? "3d" : "2d"));
     els.previewInGameBtn.addEventListener("click", previewInGame);
 
     els.exportBtn.addEventListener("click", exportProject);
@@ -3244,7 +3365,8 @@
       "pickBanner","editorBoard","newPointName","addPointBtn","pointList","pointEditor","pointNameInput","movePointBtn","deletePointBtn",
       "addNpcActorBtn","addCreatureActorBtn","newActorName","addActorBtn","actorList","actorEditor","actorNpcBadge","actorCreatureBadge","actorNameInput","actorColorInput",
       "actorStartSelect","actorRotationInput","actorPoseSelect","actorTeamInput","actorCombatInput","actorCanLoseInput","actorIsPlayerInput","unlinkNpcBtn","unlinkCreatureBtn","deleteActorBtn",
-      "stageList","stageEditor","mapStatusPill","playStatusPill","startPlayBtn","resetPlayBtn","captureCameraBtn","resetCameraBtn","previewInGameBtn",
+      "stageList","stageEditor","mapStatusPill","playStatusPill","startPlayBtn","resetPlayBtn","captureCameraBtn","resetCameraBtn","viewModeBtn","previewInGameBtn",
+      "mainGrid2DWrap","mainGrid2D",
       "canvas3d","fadeOverlay","dialogueBox","dialogueSpeaker","dialogueText","dialogueActions",
       "checkBtn","copyLogBtn","validationList","debugLog","toast",
       "npcPickerStatus","npcPickerSearch","npcPickerCloseBtn","creaturePickerStatus","creaturePickerCloseBtn"
