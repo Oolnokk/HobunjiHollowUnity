@@ -1,6 +1,13 @@
     (() => {
       'use strict';
 
+      // Gameplay-affecting randomness (creature AI decisions, pack spawns,
+      // loot rolls) goes through this seedable source instead of raw
+      // Math.random() — see the window.GameRandom definition in
+      // resource-system.js for why. Purely cosmetic randomness (particle FX,
+      // audio pitch variance) is left on Math.random().
+      const rnd = () => window.GameRandom.random();
+
       const threeContainer = document.getElementById('threeContainer');
       const overlayCanvas  = document.getElementById('overlayCanvas');
       const octx           = overlayCanvas.getContext('2d');
@@ -1252,6 +1259,25 @@
         climbStartX: 0, climbStartY: 0, climbEndX: 0, climbEndY: 0,
         climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
       };
+
+      // All players present in this session — just the local `player` today
+      // (there is no networking in this repo yet). Hostile-creature target
+      // acquisition reads from this list via nearestPlayer() below instead
+      // of hardcoding `player` directly, so a second connected player would
+      // just need to be pushed into this array for hostiles to be able to
+      // notice and chase them too, with nothing in the AI itself to change.
+      const players = [player];
+
+      // Nearest live player to (x, y) — see updateHostiles' targetPlayer.
+      // Identical to hardcoding `player` while `players` has one entry.
+      function nearestPlayer(x, y) {
+        let best = null, bestDist = Infinity;
+        for (const p of players) {
+          const d = Math.hypot(p.x - x, p.y - y);
+          if (d < bestDist) { best = p; bestDist = d; }
+        }
+        return best;
+      }
 
       // Health/Stamina afflictions + Exhausted/black-stamina debt — see
       // docs/js/combat/resource-system.js. Adds player.afflictions/
@@ -2530,11 +2556,11 @@
           tick() {
             tickCounter++;
             if (tickCounter % 3 !== 0) return;
-            if (Math.random() > 0.55) return;
+            if (rnd() > 0.55) return;
 
             const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
             for (let i = dirs.length - 1; i > 0; i--) {
-              const j = Math.floor(Math.random() * (i + 1));
+              const j = Math.floor(rnd() * (i + 1));
               [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
             }
             for (const d of dirs) {
@@ -2757,7 +2783,7 @@
           scaleY: 1,
           attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
           knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
-          runFrame: 0, runFrameT: 0, currentFrameUrl: def.sprites.idle,
+          runFrame: 0, runFrameDistPx: 0, currentFrameUrl: def.sprites.idle,
           isCompanion: false,
           // Whichever entity this companion follows/defends/anchors to —
           // {x, y, angle, climbing}, same shape as the real `player` object.
@@ -2959,7 +2985,7 @@
       function rollLootFromTable(lootTable) {
         const gained = {};
         for (const entry of lootTable || []) {
-          const qty = entry.min + Math.floor(Math.random() * (entry.max - entry.min + 1));
+          const qty = entry.min + Math.floor(rnd() * (entry.max - entry.min + 1));
           if (qty > 0) gained[entry.key] = (gained[entry.key] || 0) + qty;
         }
         return gained;
@@ -3246,10 +3272,10 @@
       function wanderTick(c, dt, anchorX, anchorY, radiusPx) {
         c.wanderT -= dt;
         if (!c.wanderTarget || c.wanderT <= 0) {
-          const ang = Math.random() * Math.PI * 2;
-          const r = Math.random() * radiusPx;
+          const ang = rnd() * Math.PI * 2;
+          const r = rnd() * radiusPx;
           c.wanderTarget = { x: anchorX + Math.cos(ang) * r, y: anchorY + Math.sin(ang) * r };
-          c.wanderT = 1.5 + Math.random() * 2;
+          c.wanderT = 1.5 + rnd() * 2;
         }
         return moveCreatureToward(c, c.wanderTarget.x, c.wanderTarget.y, c.def.moveSpeed * 0.5, dt);
       }
@@ -3319,17 +3345,34 @@
         }
       }
 
+      // Ground covered per run-cycle frame advance — picked so a typical
+      // chase-speed creature (~200px/s) cycles at roughly the old fixed
+      // 0.18s/frame cadence this replaced.
+      const RUN_FRAME_STRIDE_PX = 30;
+
       function updateCreatureAnimFrame(c, dt, moving) {
         if (!moving) {
           if (c.currentFrameUrl !== c.def.sprites.idle) {
             setCreatureFrame(c.avatarRef, c.def.sprites.idle);
             c.currentFrameUrl = c.def.sprites.idle;
           }
+          // Not tracking ground covered while idle, so resuming movement
+          // doesn't "catch up" on distance never actually traveled.
+          c._animLastX = c.x; c._animLastY = c.y;
           return;
         }
-        c.runFrameT += dt;
-        if (c.runFrameT >= 0.18) {
-          c.runFrameT = 0;
+        // The run frame is derived from actual ground covered since the last
+        // call (same accumulator pattern as _footstepAdvance/tickCreatureFootsteps
+        // just above), not from elapsed dt — dt/time only measures how fast
+        // *this* client's clock ran, whereas position is exactly the thing a
+        // networked peer already has to agree on, so a distance-driven frame
+        // index falls out of position sync for free instead of needing its
+        // own state kept in lockstep.
+        const movedPx = Math.hypot(c.x - (c._animLastX ?? c.x), c.y - (c._animLastY ?? c.y));
+        c._animLastX = c.x; c._animLastY = c.y;
+        c.runFrameDistPx = (c.runFrameDistPx || 0) + movedPx;
+        while (c.runFrameDistPx >= RUN_FRAME_STRIDE_PX) {
+          c.runFrameDistPx -= RUN_FRAME_STRIDE_PX;
           c.runFrame = (c.runFrame + 1) % c.def.sprites.run.length;
         }
         const url = c.def.sprites.run[c.runFrame];
@@ -3384,7 +3427,7 @@
 
       function ensureCreatureStage(c, stages) {
         if (!c._stage || c._stage.stages !== stages) {
-          c._stage = { stages, idx: 0, mode: 'active', t: 0, orbitSign: Math.random() < 0.5 ? -1 : 1 };
+          c._stage = { stages, idx: 0, mode: 'active', t: 0, orbitSign: rnd() < 0.5 ? -1 : 1 };
         }
         return c._stage;
       }
@@ -3400,7 +3443,7 @@
         st.idx = (st.idx + 1) % st.stages.length;
         st.mode = 'active';
         st.t = 0;
-        st.orbitSign = Math.random() < 0.5 ? -1 : 1;
+        st.orbitSign = rnd() < 0.5 ? -1 : 1;
       }
 
       // Drives one creature's behavior-stage cycle for one frame. target is
@@ -3459,11 +3502,21 @@
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
           window.ResourceSystem?.tick(c, dt, { staminaRegenPerSec: c.maxStamina * 0.25 });
 
-          const dxp = player.x - c.x, dyp = player.y - c.y;
+          // Aggro/chase locks onto whichever player is nearest at the moment
+          // it's acquired (see nearestPlayer) rather than the single global
+          // `player` — with one entry in `players` today this behaves
+          // identically, but a second connected player just needs to be
+          // pushed into that list for hostiles to be able to notice and
+          // chase them too, with nothing else here to change. The lock
+          // persists for the rest of the chase so the creature doesn't
+          // flicker between equally-near players every frame.
+          if (c.state !== 'chase') c.targetPlayer = null;
+          const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
+          const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
 
-          if (c.state !== 'chase' && distToPlayer <= def.aggroRangePx) c.state = 'chase';
+          if (c.state !== 'chase' && distToPlayer <= def.aggroRangePx) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
           // Leaving chase mid-windup (player broke the leash) abandons the
@@ -3507,19 +3560,19 @@
               // Slottable behavior-stage cycle (Pounce attempt <-> evasive
               // orbit, separated by a backing-up beat) replaces the plain
               // chase-and-trigger logic below for any creature that lists one.
-              const result = updateCreatureBehaviorStage(c, dt, player, def, (dist) => {
+              const result = updateCreatureBehaviorStage(c, dt, targetPlayer, def, (dist) => {
                 const triggerRangePx = creatureAimColliderReachPx(def);
                 if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c)) return false;
                 window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
                 return !!(def.attacks?.length && window.Combat?.animalAttacks?.start(
-                  c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
+                  c, def.attacks[Math.floor(rnd() * def.attacks.length)], { target: targetPlayer }
                 ));
               });
               aimAngle = result.aimAngle;
               moving = result.moving;
             } else {
-              moving = moveCreatureToward(c, player.x, player.y, def.chaseSpeed, dt);
+              moving = moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, dt);
               // Pounce-capable creatures commit once the target enters their
               // forward aim collider (always pointed straight at the target
               // via aimAngle above) rather than the bite's short flat range.
@@ -3530,7 +3583,7 @@
                 c.attackCooldownT = def.attackCooldownS;
                 const hadNamedAttack = !!def.attacks?.length;
                 const startedModular = hadNamedAttack && window.Combat?.animalAttacks?.start(
-                  c, def.attacks[Math.floor(Math.random() * def.attacks.length)], { target: player }
+                  c, def.attacks[Math.floor(rnd() * def.attacks.length)], { target: targetPlayer }
                 );
                 if (startedModular) aimAngle = c.facing;
                 if (!startedModular) {
@@ -3539,7 +3592,14 @@
                     windupS: BITE_TELEGRAPH_WINDUP_S,
                     strikeS: BITE_TELEGRAPH_STRIKE_S,
                     onStrike: () => {
-                      if (Math.hypot(player.x - c.x, player.y - c.y) <= def.attackRangePx) {
+                      // damagePlayer/respawnPlayer are still hardwired to the
+                      // single local `player` (see their definitions above) —
+                      // making a hit against an arbitrary targetPlayer
+                      // actually land is the per-player-instancing work this
+                      // pass deliberately doesn't take on. Harmless today
+                      // since targetPlayer === player whenever `players` has
+                      // one entry.
+                      if (Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) <= def.attackRangePx) {
                         damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp' });
                         playCreatureClawHit(c);
                       }
@@ -3679,7 +3739,7 @@
                   // the short 0-damage/high-knockback guard charge instead.
                   c._behaviorActionCount = (c._behaviorActionCount || 0) + 1;
                   const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % 4 === 0);
-                  const attackId = useRealAttack ? def.attacks[Math.floor(Math.random() * def.attacks.length)] : 'guardCharge';
+                  const attackId = useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge';
                   const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
                   if (startedModular) {
                     aimAngle = c.facing;
@@ -4224,13 +4284,13 @@
           window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
           return;
         }
-        const speciesKey = pool[Math.floor(Math.random() * pool.length)];
+        const speciesKey = pool[Math.floor(rnd() * pool.length)];
         const homeX = den.x * TILE + TILE * 0.5, homeY = den.y * TILE + TILE * 0.5;
-        const count = DEN_PACK_SIZE_MIN + Math.floor(Math.random() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
+        const count = DEN_PACK_SIZE_MIN + Math.floor(rnd() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
         let spawned = 0;
         for (let i = 0; i < count; i++) {
-          const angle = Math.random() * Math.PI * 2;
-          const dist = TILE * (0.8 + Math.random() * 1.6);
+          const angle = rnd() * Math.PI * 2;
+          const dist = TILE * (0.8 + rnd() * 1.6);
           const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
           const creature = makeCreatureEntity(speciesKey, x, y, { homeX, homeY, state: 'idle', denKey });
           if (creature) { hostileObjects.add(creature); spawned++; }
@@ -20005,6 +20065,7 @@
 
       window.Combat?.init({
         player,
+        players,
         TILE,
         hostileObjects,
         companionObjects,

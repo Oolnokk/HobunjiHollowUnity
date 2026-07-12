@@ -81,34 +81,57 @@ hardest to keep in sync across independent clients. In rough order of risk:
   own `performance.now()` will disagree about exactly when a window opens or
   closes. A future netcode layer needs an authoritative clock (host time, or
   a synchronized/interpolated logical clock) that all combat timers read from
-  instead of the local wall clock.
+  instead of the local wall clock. **Not fixed in this pass** — doing so
+  needs an actual shared clock, which doesn't exist without networking.
 - Hit detection is geometric cone tests (`inCone()`, `docs/game.js:3056`)
   against live `x/y` positions computed every frame from local input — this
   is classic client-side-prediction territory. Whoever is authoritative for a
   given entity's position needs to resolve the hit; the other side needs
   reconciliation/rollback or must simply defer to the authority's result.
-- **Every ability module keeps its own module-level closure state**
-  (`comboIndex`, `streak`, charge `startedAt`, dodge `active`, etc. — see
-  `combat-combo.js`, `combat-combo-streak.js`, `combat-charged-breaker.js`,
-  `combat-blink-dodge.js`, `combat-counter-shield.js`) rather than state
-  scoped to a specific player. Two simultaneous players sharing this module
-  as-is would corrupt each other's state. `combat-loadout.js`'s
-  `loadoutsByWeapon` and `combat-progression.js`'s `meta` are likewise single
-  global maps keyed only by weapon, never by player. All of this needs to
-  become per-player-instanced state (and `window.Combat.deps`, currently one
-  shared object built at `docs/game.js:19976-20005`, needs to become one
-  instance per locally-rendered player) before two players' combat can
-  coexist without stomping each other.
-- `resource-system.js:323-324` uses unseeded `Math.random()` for a
-  proc/afflict chance — anywhere randomness affects an outcome that both
-  sides need to agree on, it must become seeded/deterministic or be resolved
-  once by whichever side is authoritative and broadcast, not re-rolled locally
-  by each peer.
-- Enemy/companion targeting hardcodes the single local player as the only
-  possible target (`combat-animal-attacks.js`'s `gatherTargets()`,
-  `docs/game.js`'s `updateHostiles`/`findAutoTarget` reading `player.x/y`
-  directly). This needs to generalize to "nearest of N present players," not
-  just a different data source.
+- Each ability module (`combat-combo.js`, `combat-combo-streak.js`,
+  `combat-charged-breaker.js`, `combat-blink-dodge.js`,
+  `combat-counter-shield.js`) keeps its own module-level closure state
+  (`comboIndex`, `streak`, charge `startedAt`, dodge `active`, etc.), and
+  `combat-loadout.js`/`combat-progression.js` likewise keep single global
+  maps keyed only by weapon. **This turns out not to need per-player
+  instancing**, on reflection: the intended model has each player running
+  their *own* full client (their own browser tab/process), not one process
+  simulating several players at once — so each player's browser already has
+  its own independent copy of all this state for free, the same way it
+  already has its own independent `player`/`inventory`/`equipmentSlots`.
+  Instancing these closures would only matter for a same-process local
+  co-op/split-screen mode, which isn't the model described here. What
+  genuinely needs multi-entity awareness *within* a single client is
+  different: the world owner's client needs to know about every present
+  player for NPC/creature AI purposes (aggro, targeting, companion
+  ownership) — see the `players` list and companion `master` field below,
+  both already generalized.
+- `resource-system.js`'s afflict-proc chance/magnitude and every
+  gameplay-affecting `Math.random()` call in creature AI (attack selection,
+  wander targeting, evasive-orbit side, den-pack spawns, loot rolls) now go
+  through a shared seedable RNG (`window.GameRandom`, defined in
+  `resource-system.js`) instead of raw `Math.random()` — **done in this
+  pass**. It's still seeded from `Math.random()` at session start (so
+  single-player feel is unchanged), but every one of those rolls is now one
+  seed away from being made deterministic/replicated once an authoritative
+  host exists, or from being resolved once and broadcast instead of each
+  peer re-rolling independently. Purely cosmetic randomness (particle FX,
+  audio pitch variance, death-ragdoll tumble direction) deliberately stays on
+  `Math.random()` — nothing downstream depends on peers agreeing on those.
+- Enemy/companion targeting hardcoding the single local player as the only
+  possible target is **now fixed**: `docs/game.js` has a `players` array
+  (today just `[player]`) and a `nearestPlayer(x, y)` helper; `updateHostiles`
+  acquires and sticks to a `c.targetPlayer` drawn from that list instead of
+  reading the bare `player` singleton, and `combat-animal-attacks.js`'s
+  `gatherTargets()` iterates `deps.players` (falling back to `[deps.player]`).
+  A second connected player just needs to be pushed into `players` for
+  hostiles to notice and chase them too — nothing in the AI itself needs to
+  change further. Actually *landing* a hit on a non-local player is still out
+  of scope: `damagePlayer`/`respawnPlayer` (`docs/game.js:3043-3067`) remain
+  hardwired to the one local `player`, which is harmless today (there's only
+  ever one entry in `players`) but is real follow-up work — likely as part of
+  whatever remote-player representation a networked guest gets on the
+  owner's client, not a standalone "instance combat" refactor.
 
 ### 2. NPC/creature transforms & AI — high risk
 - Creatures are plain objects (`makeCreatureEntity`, `docs/game.js:2709+`)
@@ -125,23 +148,30 @@ hardest to keep in sync across independent clients. In rough order of risk:
   frame timing will integrate slightly differently even given identical
   inputs, which rules out true deterministic lockstep without also fixing the
   tick rate.
-- `Math.random()` is used unseeded in creature AI decisions that would need
-  to agree across peers: attack selection
-  (`docs/game.js:3508,3525,3665` at time of writing), wander
-  target/timing (`wanderTick`, `docs/game.js:3241-3244`), and pack
-  spawn species/count/position (`spawnPackAtDen`, `docs/game.js:4197-4204`).
+- Gameplay-affecting `Math.random()` calls in creature AI (attack selection,
+  wander target/timing, evasive-orbit side, pack spawn species/count/
+  position) now go through the shared seedable `window.GameRandom` — see
+  above; **done in this pass**.
 - Animation state for creatures/NPCs has no skeletal
-  `AnimationMixer`/clip-blending at all — it's sprite-plane swapping driven by
-  small **persistent timers** (`runFrame`/`runFrameT`,
-  `updateCreatureAnimFrame` at `docs/game.js:3314-3332`) and a separate
-  mesh-morph "breathing" phase-cycle
-  (`docs/config/animations/breathing-default.json`). These timers are not
-  purely derived from position, so if only positions are networked and each
-  peer free-runs its own animation timers locally, visual sync will drift
-  (a creature might look mid-stride on one peer and idle on another even
-  while agreeing on where it is). Recommendation: either replicate the
-  animation-phase timers explicitly, or derive them deterministically from a
-  shared clock + entity state rather than free-running per peer.
+  `AnimationMixer`/clip-blending at all — it's sprite-plane swapping. The
+  run-cycle frame index (`runFrame`, `updateCreatureAnimFrame` in
+  `docs/game.js`) **used to be** a small persistent per-frame timer
+  (`runFrameT += dt`, advance every 0.18s) — the kind of thing that drifts
+  once replicated, since it depends on each peer's own tick history rather
+  than on anything actually synced. **Fixed in this pass**: it's now driven
+  by actual ground covered since the last call (`runFrameDistPx`, same
+  accumulator pattern the existing `_footstepAdvance`/footstep-sound code
+  already used), so the frame falls out of position — which *is* the thing
+  that gets synced/reconciled — instead of needing its own state kept in
+  lockstep. The separate mesh-morph "breathing" phase-cycle
+  (`docs/config/animations/breathing-default.json`, driven by
+  `docs/js/portrait-breathing.js`) turned out to already be fine on this
+  specific axis — its phase is `(nowMs / 1000) % totalCycleDuration`, a pure
+  function of the timestamp with no accumulated state, so it can't drift from
+  missed ticks or differing frame timing. Its remaining gap is the one
+  described above for combat timing generally: `nowMs` is each peer's own
+  wall clock, not a shared one, so it needs the same future authoritative/
+  synchronized clock, not a code fix on its own.
 - There is today **no authoritative/client-predicted split whatsoever** —
   every creature/NPC/player is simulated locally, once, by the one browser
   tab running the game. The natural fit given the intended model (one world
@@ -203,27 +233,37 @@ being passed in as-is.
 
 ## Suggested rough shape for the eventual implementation
 
-Not a committed plan, just the shape this points toward given the above:
+Not a committed plan, just the shape this points toward given the above.
+**Each player runs their own full client** (their own browser tab/process,
+own `player`/`inventory`/`equipmentSlots`/combat ability state — none of
+that needs instancing within one process, since there's only ever one
+process per player). What a client needs beyond simulating its own player:
 
 1. **Authority**: the world owner's client is authoritative for the shared
    world simulation — NPCs, wild creatures, farm/world state, calendar/
    weather. Guest clients send their own inputs and locally predict their own
    player only; everything else (including other players) is
    received/interpolated from the owner.
-2. **Per-player instancing**: `player`, `equipmentSlots`, `gearInventory`,
-   combat ability closure state, `Combat.deps`, and loadout/progression maps
-   all need to go from "one module-level singleton" to "one instance per
-   connected player," keyed by the existing hidden `playerId` (already
-   present on character records for exactly this reason).
+2. **Multi-entity awareness on whichever client simulates the shared
+   world** (the owner's): it needs to know about every present player for
+   NPC/creature AI purposes. **Already generalized in this pass**: the
+   `players` list + `nearestPlayer()` helper let hostile creatures aggro/
+   chase/attack whichever player is nearest instead of a hardcoded singleton,
+   and the companion `master` field lets a companion follow/defend any
+   qualifying entity instead of hardcoding `player`. What's still missing is
+   the remote-player representation itself — a guest's avatar, on the
+   owner's client, needs *something* in the `players` array and *something*
+   `damagePlayer`-shaped to actually take a hit; today `damagePlayer`/
+   `respawnPlayer` are still hardwired to the one local `player` object.
 3. **Save authority split**: character-portable data (gear, levels, loadout,
    progression) is written by its owning player's client; world+member data
    (`worlds[].members[characterId]`, farm layout, livestock) is written by the
    world owner's client and pushed to joined guests.
 4. **Deterministic timing**: replace `performance.now()`-based combat/AI
-   windows with a shared/authoritative clock, and seed all gameplay-affecting
-   `Math.random()` calls (or resolve them once on the authority and broadcast
-   the result) so combat, creature attack choice, and animation-phase drift
-   don't diverge between peers.
+   windows with a shared/authoritative clock once one exists to read from.
+   Gameplay-affecting `Math.random()` calls are **already seeded** through
+   `window.GameRandom` (this pass) so that part just needs the seed itself
+   synced/broadcast, rather than each roll being converted individually.
 5. **Companion master**: now trivially per-player thanks to the change in
    this pass — each connected player's client calls
    `syncCompanionFromWhistle(theirOwnPlayerObject)`; an NPC-owned companion

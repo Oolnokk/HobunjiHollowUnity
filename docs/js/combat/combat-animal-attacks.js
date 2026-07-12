@@ -87,7 +87,11 @@
         if (h.health > 0 && h.areaId === c.areaId) out.push({ isPlayer: false, ref: h });
       }
     } else {
-      out.push({ isPlayer: true, ref: deps.player });
+      // deps.players is the full player list (see game.js's `players` array)
+      // — falls back to just deps.player for any older/ad-hoc deps object
+      // that doesn't set it. A hostile's leap/charge can clip whichever of
+      // them it actually catches in its cone, not only the local player.
+      for (const p of deps.players || [deps.player]) out.push({ isPlayer: true, ref: p });
       for (const comp of deps.companionObjects) {
         if (comp.health > 0 && comp.areaId === c.areaId) out.push({ isPlayer: false, ref: comp });
       }
