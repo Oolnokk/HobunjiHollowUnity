@@ -20630,18 +20630,28 @@
           const goal = stage.targetWorld;
           if (!st || !goal) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
           const speedMul = stage.speed === 'slow' ? 0.6 : stage.speed === 'fast' ? 1.85 : 1;
+          const waitForArrival = stage.waitForArrival !== false;
           const tx = goal.c + 0.5, tz = goal.r + 0.5;
           let lastT = performance.now();
+          let arrivedAlready = false;
+          const onArrive = () => { if (arrivedAlready) return; arrivedAlready = true; if (waitForArrival) continueTo(getResolvedNext(stage.id, stage.next)); };
           const step = () => {
             if (!running) return;
             const now = performance.now();
             const dt = Math.min(0.05, (now - lastT) / 1000);
             lastT = now;
             const arrived = advanceActorToward(stage.actorId, tx, tz, dt, speedMul);
-            if (arrived) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
+            if (arrived) { onArrive(); return; }
             requestAnimationFrame(step);
           };
           requestAnimationFrame(step);
+          // Unchecked in the Director ("Wait for arrival before continuing")
+          // — start the next card immediately while this actor keeps
+          // walking toward its target in the background (the loop above
+          // still runs, gated on the same `running` flag a blocking move
+          // uses, so stopping the preview cancels it identically), so
+          // several actors can be sent off at once instead of one at a time.
+          if (!waitForArrival) continueTo(getResolvedNext(stage.id, stage.next));
         }
 
         function runAnimation(stage) {

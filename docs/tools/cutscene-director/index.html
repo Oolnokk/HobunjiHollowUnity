@@ -814,15 +814,15 @@
      other tools' in-memory/localStorage state. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/GLTFLoader.js?v=20260712b"></script>
-<script src="../../js/WallBuilder.js?v=20260712b"></script>
-<script src="../../js/HousePieceGen.js?v=20260712b"></script>
-<script src="../../js/procedural-furniture.js?v=20260712b"></script>
-<script src="../../js/foliage-generator.js?v=20260712b"></script>
-<script src="../../js/terrain-preview.js?v=20260712b"></script>
+<script src="../../js/GLTFLoader.js?v=20260712c"></script>
+<script src="../../js/WallBuilder.js?v=20260712c"></script>
+<script src="../../js/HousePieceGen.js?v=20260712c"></script>
+<script src="../../js/procedural-furniture.js?v=20260712c"></script>
+<script src="../../js/foliage-generator.js?v=20260712c"></script>
+<script src="../../js/terrain-preview.js?v=20260712c"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
-<script src="../../config/scratchbones-config.js?v=20260712b"></script>
+<script src="../../config/scratchbones-config.js?v=20260712c"></script>
 <script>
   // scratchbones-config.js's asset paths are authored repo-root-relative
   // (docs/assets/, docs/config/) for the top-level game page; this tool
@@ -834,10 +834,10 @@
     window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = '../../config/';
   }
 </script>
-<script src="../../js/portrait-utils.js?v=20260712b"></script>
-<script src="../../js/portrait-breathing.js?v=20260712b"></script>
-<script src="../../js/npc-avatar-preview-utils.js?v=20260712b"></script>
-<script src="../../js/png-plane-avatar.js?v=20260712b"></script>
+<script src="../../js/portrait-utils.js?v=20260712c"></script>
+<script src="../../js/portrait-breathing.js?v=20260712c"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20260712c"></script>
+<script src="../../js/png-plane-avatar.js?v=20260712c"></script>
 
 <script>
 (() => {
@@ -1015,8 +1015,12 @@
       // wherever the fight happened to end.
       addStage("hound1Settle",{ type:"move", actorId:actors.hound1.id, pointId:points.hound1Fight.id, speed:"normal", next:"__next__" }),
       addStage("hound2Settle",{ type:"move", actorId:actors.hound2.id, pointId:points.hound2Fight.id, speed:"normal", next:"__next__" }),
-      addStage("wolf1Flee",{ type:"move", actorId:actors.wolf1.id, pointId:points.wolf1Escape.id, speed:"fast", next:"__next__" }),
-      addStage("wolf2Flee",{ type:"move", actorId:actors.wolf2.id, pointId:points.wolf2Escape.id, speed:"fast", next:"__next__" }),
+      // The first two flee cards don't wait for arrival — they hand off to
+      // the next card immediately so all three wolves peel off together
+      // instead of one at a time, while wolf3's card still blocks so
+      // Jubmir doesn't enter until the pack has actually cleared out.
+      addStage("wolf1Flee",{ type:"move", actorId:actors.wolf1.id, pointId:points.wolf1Escape.id, speed:"fast", waitForArrival:false, next:"__next__" }),
+      addStage("wolf2Flee",{ type:"move", actorId:actors.wolf2.id, pointId:points.wolf2Escape.id, speed:"fast", waitForArrival:false, next:"__next__" }),
       addStage("wolf3Flee",{ type:"move", actorId:actors.wolf3.id, pointId:points.wolf3Escape.id, speed:"fast", next:"__next__" }),
       addStage("jubmirEnter",{ type:"move", actorId:actors.jubmir.id, pointId:points.jubmirNear.id, speed:"fast", next:"__next__" }),
       // jubmirNear sits north of the player's row so Jubmir ends up on the
@@ -1120,7 +1124,7 @@
     const stages = (Array.isArray(raw.stages) ? raw.stages : []).map(stage => {
       const type = STAGE_TYPES.has(stage.type) ? stage.type : "talk";
       const id = String(stage.id || uid("stage"));
-      if (type === "move") return { id, type, actorId:actorIds.has(stage.actorId)?stage.actorId:firstActorId, pointId:pointIds.has(stage.pointId)?stage.pointId:firstPointId, speed:["slow","normal","fast"].includes(stage.speed)?stage.speed:"normal", next:String(stage.next||"__next__") };
+      if (type === "move") return { id, type, actorId:actorIds.has(stage.actorId)?stage.actorId:firstActorId, pointId:pointIds.has(stage.pointId)?stage.pointId:firstPointId, speed:["slow","normal","fast"].includes(stage.speed)?stage.speed:"normal", waitForArrival:stage.waitForArrival!==false, next:String(stage.next||"__next__") };
       if (type === "talk") return { id, type, speakerId:actorIds.has(stage.speakerId)?stage.speakerId:firstActorId, text:String(stage.text||"Dialogue").slice(0,2500), next:String(stage.next||"__next__") };
       if (type === "choice") return { id, type, speakerId:actorIds.has(stage.speakerId)?stage.speakerId:firstActorId, text:String(stage.text||"What do you choose?").slice(0,2500),
         options: Array.isArray(stage.options) && stage.options.length ? stage.options.map(o => ({ text:String(o.text||"Choice").slice(0,300), next:String(o.next||"__next__") })) : [{text:"Choice 1",next:"__next__"},{text:"Choice 2",next:"__end__"}] };
@@ -2301,7 +2305,7 @@
   }
 
   function stageSummary(stage) {
-    if (stage.type === "move") return `${actorById(stage.actorId)?.name||"Missing actor"} → ${pointById(stage.pointId)?.name||"Missing point"}`;
+    if (stage.type === "move") return `${actorById(stage.actorId)?.name||"Missing actor"} → ${pointById(stage.pointId)?.name||"Missing point"}${stage.waitForArrival===false?" (no wait)":""}`;
     if (stage.type === "talk") return `${actorById(stage.speakerId)?.name||"Missing actor"}: ${stage.text||"Empty dialogue"}`;
     if (stage.type === "choice") return `${stage.options.length} answers: ${stage.text||"Choice"}`;
     if (stage.type === "animation") {
@@ -2374,6 +2378,8 @@
           <option value="normal" ${stage.speed==="normal"?"selected":""}>Normal</option>
           <option value="fast" ${stage.speed==="fast"?"selected":""}>Fast</option>
         </select></label>
+        <label><input id="editWaitForArrival" type="checkbox" ${stage.waitForArrival!==false?"checked":""}> Wait for arrival before continuing</label>
+        <p class="tip">Uncheck to start the next card immediately — this actor keeps walking in the background. Use this to send several actors off at once instead of one at a time.</p>
         <label>After moving<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
     } else if (stage.type === "talk") {
       fields = `
@@ -2466,6 +2472,7 @@
     bindSelect("editResultPose","resultPose"); bindSelect("editTurnMode","mode"); bindSelect("editTargetActor","targetActorId");
     bindSelect("editFadeDirection","direction"); bindSelect("editAnimKind","animKind"); bindSelect("editEmoteName","emoteName");
 
+    const waitForArrival = $("editWaitForArrival"); if (waitForArrival) waitForArrival.addEventListener("change", () => { stage.waitForArrival = waitForArrival.checked; changed("Move card updated."); });
     const text = $("editText"); if (text) text.addEventListener("input", () => { stage.text = text.value; saveLocal(); renderStageListSummaryOnly(); });
     const animationName = $("editAnimationName"); if (animationName) animationName.addEventListener("input", () => { stage.animationName = animationName.value; saveLocal(); renderStageListSummaryOnly(); });
     const duration = $("editDuration"); if (duration) duration.addEventListener("change", () => { stage.duration = clamp(Number(duration.value)||0,0,stage.type==="combat"?300:30); changed("Duration updated."); });
@@ -2502,7 +2509,7 @@
     if (!firstPoint) { toast("Add a named point first."); switchScreen("stage"); return; }
     if (!firstActor) { toast("Add a character first."); switchScreen("characters"); return; }
     let stage;
-    if (type === "move") stage = { id:uid("stage"), type, actorId:firstActor.id, pointId:firstPoint.id, speed:"normal", next:"__next__" };
+    if (type === "move") stage = { id:uid("stage"), type, actorId:firstActor.id, pointId:firstPoint.id, speed:"normal", waitForArrival:true, next:"__next__" };
     else if (type === "talk") stage = { id:uid("stage"), type, speakerId:firstActor.id, text:"Type the dialogue here.", next:"__next__" };
     else if (type === "choice") stage = { id:uid("stage"), type, speakerId:firstActor.id, text:"How do you answer?", options:[{text:"First answer",next:"__next__"},{text:"Second answer",next:"__end__"}] };
     else if (type === "animation") stage = { id:uid("stage"), type, actorId:firstActor.id, animationName:"animation", animKind:"none", emoteName:EMOTE_NAMES[0], resultPose:"unchanged", duration:1, next:"__next__" };
@@ -2691,19 +2698,28 @@
     const target = worldOfPoint(targetPoint);
     const path = buildGridPath(actorState, target);
     const delay = stage.speed==="slow"?430:stage.speed==="fast"?90:210;
+    const waitForArrival = stage.waitForArrival !== false;
     let stepIndex = 1;
+    let arrived = false;
+    // When unchecked, the next card starts immediately while this actor
+    // keeps walking in the background — the loop below still runs (still
+    // gated on the same preview token, so a reset/stop cancels it exactly
+    // like a blocking move) but nothing here waits on it.
+    const onArrive = () => { if (arrived) return; arrived = true; if (waitForArrival) continueTo(getResolvedNext(stage.id,stage.next),token); };
     const advance = () => {
       if (token !== state.preview.token || !state.preview.running) return;
-      if (stepIndex >= path.length) { continueTo(getResolvedNext(stage.id,stage.next),token); return; }
+      if (stepIndex >= path.length) { onArrive(); return; }
       const previous = { c:actorState.c, r:actorState.r };
       const step = path[stepIndex++];
       actorState.c = step.c; actorState.r = step.r;
       actorState.rotation = angleToward(previous, step);
       applyActorStateToScene(stage.actorId, actorState);
-      state.preview.timer = setTimeout(advance, delay);
+      const t = setTimeout(advance, delay);
+      if (waitForArrival) state.preview.timer = t;
     };
-    if (path.length <= 1) state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id,stage.next),token), 180);
+    if (path.length <= 1) { const t = setTimeout(onArrive, 180); if (waitForArrival) state.preview.timer = t; }
     else advance();
+    if (!waitForArrival) continueTo(getResolvedNext(stage.id,stage.next),token);
   }
 
   // Breathing/emote playback: re-bakes the actor's portrait texture on a
