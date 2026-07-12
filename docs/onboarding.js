@@ -382,6 +382,13 @@
   let _activeTab   = 'appearance';
   let _colorAIdx   = 0;
   let _colorBIdx   = 0;
+  // Clothing dye choice (Collections tab) — deliberately separate from
+  // _colorAIdx/_colorBIdx (the body/fur color picker in the Appearance tab).
+  // Previously clothing silently reused whichever body-color swatch was
+  // selected there; null here means "use the first starter dye" (see
+  // selectedClothDye) rather than defaulting to a body color at all.
+  let _clothDyeAId = null;
+  let _clothDyeBId = null;
   let _el          = null;
   let _renderTimer = null;
 
@@ -425,6 +432,23 @@
       || cfgSpecies[normalizedKey]?.swatchBase
       || window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting?.legacyBodySwatchFallbackBase
       || window.SCRATCHBONES_CONFIG?.game?.dyes?.swatchBase;
+  }
+
+  // Dyes a new character starts with for free, independent of any species'
+  // body-color palette — the "Dusty" variant of every hue family, plus a
+  // handful of practical neutrals (see scratchbones-config.js's dyes.catalog
+  // acquisition field; everything else is mystery-pool-gated).
+  function starterClothDyes() {
+    return (window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || []).filter(d => d.acquisition === 'starter');
+  }
+
+  // Resolves the clothing dye actually chosen for tint slot 'A' or 'B' —
+  // falls back to the first starter dye so clothing always has some color
+  // even before the player has touched the picker.
+  function selectedClothDye(which) {
+    const dyes = starterClothDyes();
+    const id = which === 'B' ? _clothDyeBId : _clothDyeAId;
+    return dyes.find(d => d.id === id) || dyes[0] || null;
   }
 
   function swatchStyle(h, s, v, speciesId) {
@@ -757,6 +781,27 @@
       }
     }
 
+    // Clothing pieces preview-tint from the chosen clothing dyes (Collections
+    // tab), not from the character's own body color — a separate tint-slot
+    // namespace (see clothingTintKeysForSlot/applyGearClothingToPlayerData in
+    // game.js, the real in-game equivalent of this preview-only step) so
+    // picking a dye here never touches profile.bodyColors.A/B/C.
+    const clothDyeA = selectedClothDye('A');
+    const clothDyeB = selectedClothDye('B');
+    if (clothDyeA) {
+      profile.bodyColors = {
+        ...(profile.bodyColors || {}),
+        HAT: { ...clothDyeA.color }, HOOD: { ...clothDyeA.color },
+        TORSO: { ...clothDyeA.color }, CLOTH: { ...clothDyeA.color },
+      };
+    }
+    if (clothDyeB) {
+      profile.bodyColors = {
+        ...(profile.bodyColors || {}),
+        HOOD_B: { ...clothDyeB.color }, CLOTH_B: { ...clothDyeB.color },
+      };
+    }
+
     return profile;
   }
 
@@ -1037,6 +1082,9 @@
       appliedDyes:       { ...(char.appliedDyes || {}) },
       gearInventory:     { ...(char.gearInventory  || makeDefaultGear()) },
       combatLoadout:     { ...(char.combatLoadout  || {}) },
+      abilityProgression: { ...(char.abilityProgression || {}) },
+      equipmentSlots:    { ...(char.equipmentSlots || {}) },
+      activeTool:        char.activeTool || null,
       skillLevels:       { ...(char.skillLevels    || makeDefaultSkills()) },
       stats:             { ...char.stats },
       playerId:          char.playerId,
@@ -1151,10 +1199,13 @@
       </div>`;
     }
 
-    const gData2     = SPECIES_DATA[ap.speciesId]?.[ap.gender];
-    const colorOpts2 = gData2?.colorOptions || [];
-    const cA = colorOpts2[_colorAIdx] || { h: 0, s: 0, v: 0, label: 'Default' };
-    const cB = colorOpts2[_colorBIdx] || cA;
+    const dyes = starterClothDyes();
+    const dyeA = selectedClothDye('A');
+    const dyeB = selectedClothDye('B');
+    const dyeSwatchRow = (selected, attr) => dyes.map(d =>
+      `<button class="ob-swatch${d.id === selected?.id ? ' ob-active' : ''}" ${attr}="${esc(d.id)}"
+               style="background:${esc(d.hex)}" title="${esc(d.label)}"></button>`
+    ).join('');
     return `
       <div class="ob-col ob-col-left">
         <canvas id="ob-portrait-canvas" class="ob-portrait" width="200" height="200"></canvas>
@@ -1165,16 +1216,11 @@
         <div class="ob-cosmetics">
           ${slotsHtml || '<div class="ob-muted">No items in shop catalog.</div>'}
         </div>
-        <div class="ob-section-label" style="margin-top:10px;">Dye Colors (from Appearance tab)</div>
-        <div class="ob-swatches">
-          <button class="ob-swatch ob-active" style="${swatchStyle(cA.h, cA.s, cA.v, ap.speciesId)}" title="${esc(cA.label)}"></button>
-          <span class="ob-muted" style="font-size:11px;line-height:1;align-self:center">Primary: ${esc(cA.label)}</span>
-        </div>
-        <div class="ob-swatches" style="margin-top:4px;">
-          <button class="ob-swatch ob-active" style="${swatchStyle(cB.h, cB.s, cB.v, ap.speciesId)}" title="${esc(cB.label)}"></button>
-          <span class="ob-muted" style="font-size:11px;line-height:1;align-self:center">Secondary: ${esc(cB.label)}</span>
-        </div>
-        <div class="ob-muted" style="font-size:10px;margin-top:6px;">Rugged Poncho, Fine Poncho &amp; Fine Hood use both colors.</div>
+        <div class="ob-section-label" style="margin-top:10px;">Primary Dye</div>
+        <div class="ob-swatches">${dyeSwatchRow(dyeA, 'data-ob-cloth-dye-a')}</div>
+        <div class="ob-section-label" style="margin-top:8px;">Secondary Dye</div>
+        <div class="ob-swatches">${dyeSwatchRow(dyeB, 'data-ob-cloth-dye-b')}</div>
+        <div class="ob-muted" style="font-size:10px;margin-top:6px;">Rugged Poncho, Fine Poncho &amp; Fine Hood use both dyes. Every hue's Dusty shade is free to pick — brighter/darker variants unlock later.</div>
       </div>`;
   }
 
@@ -1299,6 +1345,20 @@
       schedulePreviewRender();
     }));
 
+    _el.querySelectorAll('[data-ob-cloth-dye-a]').forEach(btn => btn.addEventListener('click', () => {
+      const id = btn.dataset.obClothDyeA;
+      if (!starterClothDyes().some(d => d.id === id)) return;
+      _clothDyeAId = id;
+      rerender();
+    }));
+
+    _el.querySelectorAll('[data-ob-cloth-dye-b]').forEach(btn => btn.addEventListener('click', () => {
+      const id = btn.dataset.obClothDyeB;
+      if (!starterClothDyes().some(d => d.id === id)) return;
+      _clothDyeBId = id;
+      rerender();
+    }));
+
     const nicknameEl = _el.querySelector('#ob-nickname');
     if (nicknameEl) nicknameEl.addEventListener('input', () => { _state.nickname = nicknameEl.value; });
 
@@ -1328,10 +1388,14 @@
         gearInventory:    (() => {
           const gear    = makeDefaultGear();
           const catalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
-          const gData   = SPECIES_DATA[playerData.appearance.speciesId]?.[playerData.appearance.gender];
-          const opts    = gData?.colorOptions || [];
-          const colorA  = opts[_colorAIdx] || { h: 0, s: -0.70, v: -0.30, label: 'Default' };
-          const colorB  = opts[_colorBIdx] || colorA;
+          // Clothing is dyed from the Collections tab's own dye picker, not
+          // the character's body-color swatches (see selectedClothDye) — the
+          // two used to be conflated, so newly-equipped clothing always came
+          // out tinted to match skin/fur color instead of a real choice.
+          const dyeA   = selectedClothDye('A');
+          const dyeB   = selectedClothDye('B');
+          const colorA = dyeA ? { ...dyeA.color, label: dyeA.label } : { h: 0, s: -0.70, v: -0.30, label: 'Default' };
+          const colorB = dyeB ? { ...dyeB.color, label: dyeB.label } : colorA;
           for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
             const catItem = catalog.find(i => i.category === slot && playerData.equippedCosmetics.includes(i.id));
             if (catItem) gear.clothing[slot] = makeClothingItem(catItem, colorA, colorB);

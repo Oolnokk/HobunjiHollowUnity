@@ -1744,6 +1744,25 @@
         } catch {}
       }
 
+      // Persists which literal tool/weapon/whistle instance is equipped in
+      // each slot (equipmentSlots) and which one is actually held right now
+      // (activeTool) — separate from gearInventory (what's owned) above.
+      // Mirrors saveGearInventory()'s pattern. Without this, logging back in
+      // always fell back to the starter-gear defaults instead of whatever
+      // was actually equipped/held last session.
+      function saveEquipmentSlots() {
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
+          const ch = (meta.characters || []).find(c => c.id === window.__hobunjiPlayerProfile.characterId);
+          if (ch) {
+            ch.equipmentSlots = { ...equipmentSlots };
+            ch.activeTool = activeTool;
+            localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+          }
+        } catch {}
+      }
+
       function esc(s) {
         return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
       }
@@ -9719,12 +9738,24 @@
       }
 
       function applyGearClothingToPlayerData(playerData) {
-        const equipped = Object.values(gearInventory?.clothing || {}).filter(Boolean);
+        const shopCatalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
         const equippedCosmetics = new Set(Array.isArray(playerData?.equippedCosmetics) ? playerData.equippedCosmetics : []);
         const bodyColors = { ...(playerData?.appearance?.bodyColors || {}) };
-        for (const item of equipped) {
+        for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
+          // Clear out whatever cosmetic previously occupied this category
+          // (character-creation's own pick, or a since-unequipped item)
+          // before considering the current gearInventory item — this used to
+          // only ever ADD an id here and never remove one, so unequipping a
+          // clothing slot in-game left the original character-creation
+          // cosmetic (and its stale tint) rendering underneath instead of
+          // actually clearing the slot.
+          for (const catItem of shopCatalog) {
+            if (catItem.category === slot) equippedCosmetics.delete(catItem.id);
+          }
+          const item = gearInventory?.clothing?.[slot];
+          if (!item) continue;
           if (item.cosmeticId) equippedCosmetics.add(item.cosmeticId);
-          const [primaryTintKey, secondaryTintKey] = clothingTintKeysForSlot(item.slot);
+          const [primaryTintKey, secondaryTintKey] = clothingTintKeysForSlot(slot);
           if (primaryTintKey && item.colorA) bodyColors[primaryTintKey] = { ...item.colorA };
           if (secondaryTintKey && item.colorB) bodyColors[secondaryTintKey] = { ...item.colorB };
         }
@@ -10207,13 +10238,13 @@
 
       function equipWhistle(whistleId) {
         equipmentSlots.whistle = whistleId;
-        saveGearInventory();
+        saveEquipmentSlots();
         buildWhistleEquipUI();
       }
 
       function unequipWhistle() {
         equipmentSlots.whistle = null;
-        saveGearInventory();
+        saveEquipmentSlots();
         buildWhistleEquipUI();
       }
 
@@ -18085,7 +18116,7 @@
         return point.col >= 0 && point.col < COLS && point.row >= 0 && point.row < ROWS;
       }
 
-      function setActiveTool(tool) {
+      function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
         // Picking a tool through any of the normal paths (arc, digit keys,
         // scroll) while the weapon quick-switch is engaged cancels its
@@ -18107,9 +18138,14 @@
         closeToolPicker();
         refreshActionBar();
         refreshWeaponSwitchBtn();
-        const msg = `${label} selected.`;
-        lastActionMessage = msg;
-        showToast(msg, true);
+        // opts.silent: hydrating the tool held last session (see
+        // spawnPlayerAvatar) shouldn't pop a "X selected" toast on login.
+        if (!opts.silent) {
+          const msg = `${label} selected.`;
+          lastActionMessage = msg;
+          showToast(msg, true);
+        }
+        saveEquipmentSlots();
       }
 
       // Weapon quick-switch icon always shows whatever's actually equipped in
@@ -20046,6 +20082,20 @@
         if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
         if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
         ensureGearClothingCollection();
+        // Restore whichever literal tool/weapon/whistle instance was equipped
+        // in each slot last session (see saveEquipmentSlots) — skips any slot
+        // whose saved item no longer exists in this character's gearInventory
+        // (sold/lost since, or a save from before this field existed), which
+        // then falls through to the starter-gear defaults just below.
+        if (playerData.equipmentSlots && typeof playerData.equipmentSlots === 'object') {
+          for (const [slot, itemId] of Object.entries(playerData.equipmentSlots)) {
+            if (!itemId || !(slot in equipmentSlots)) continue;
+            const stillOwned = slot === 'whistle'
+              ? gearInventory.whistles.some(w => w.id === itemId)
+              : !!gearInventory.tools[itemId];
+            if (stillOwned) equipmentSlots[slot] = itemId;
+          }
+        }
         // Set default equipment slot assignments
         if (gearInventory.tools.bronzehoe)  equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
         if (gearInventory.tools.pickshovel) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
@@ -20061,9 +20111,15 @@
         // this only clears the real player's own companion slot.
         if (window.__hobunjiCutscenePreview) equipmentSlots.whistle = null;
         rebuildToolMeshes();
-        refreshWeaponSwitchBtn();
-        Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
-        if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+        // Restore the tool actually held last session (see saveEquipmentSlots)
+        // — silent so returning to a save doesn't pop a "X selected" toast.
+        if (playerData.activeTool && toolActions[playerData.activeTool]) {
+          setActiveTool(playerData.activeTool, { silent: true });
+        } else {
+          refreshWeaponSwitchBtn();
+          Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+          if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+        }
         buildEquipmentSlots();
         try {
           await window.NpcAvatarPreview.ensurePortraitCosmetics({
