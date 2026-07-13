@@ -561,8 +561,11 @@
 
   // Default farmhand permission flags. The world owner always has full
   // permissions implicitly and is never represented in the farmhands list.
+  // 'livestock' gates adding creatures to the farm and setting/breaking
+  // breeding pairs — separate from 'alterFarm' (till/plant/dig) since a
+  // farmhand may be trusted with crops but not with the animals.
   function makeDefaultFarmhandPermissions() {
-    return { storage: false, plant: false, harvest: false, placeFurniture: false, alterFarm: false };
+    return { storage: false, plant: false, harvest: false, placeFurniture: false, alterFarm: false, livestock: false };
   }
 
   function makeDefaultWorld(characterId) {
@@ -572,7 +575,9 @@
       ownerCharacterId:  characterId,
       farmhands:         [],   // [{ characterId, permissions }] — non-owner members with farm access grants
       members:           {},   // { [characterId]: memberState } — world-scoped data per character who has joined
-      livestock:         [],   // [{ id, kind, col, row, releasedAt }] — belongs to the world itself, not any character
+      livestock:         [],   // [{ id, kind, col, row, releasedAt, name, genotype }] — belongs to the world itself, not any character
+      breedingPairs:     [],   // [{ id, parentAId, parentBId, startedDay, readyDay }] — resolved on day-tick
+      storage:           {},   // { [itemKey]: count } — shared farm storage pool, world-scoped like livestock
       keyItems:          [],
       lastDay:           1,
       lastSeason:        'Stormtide',
@@ -595,9 +600,9 @@
   // Owner gets implicit full permissions; farmhands get whatever's been granted.
   function getFarmhandPermissions(world, characterId) {
     if (isWorldOwner(world, characterId)) {
-      return { storage: true, plant: true, harvest: true, placeFurniture: true, alterFarm: true };
+      return { storage: true, plant: true, harvest: true, placeFurniture: true, alterFarm: true, livestock: true };
     }
-    return getFarmhandEntry(world, characterId)?.permissions || makeDefaultFarmhandPermissions();
+    return { ...makeDefaultFarmhandPermissions(), ...(getFarmhandEntry(world, characterId)?.permissions || {}) };
   }
 
   function ensureWorldMember(world, characterId) {
@@ -1440,6 +1445,23 @@
     document.dispatchEvent(new CustomEvent('hobunjiPlayerReady', { detail: playerData }));
   }
 
+  // Lightweight fallback name/genotype for livestock saved before naming and
+  // genetics existed. The real generation logic (random fur/plate colors,
+  // sell value, breeding) lives in game.js's fuller livestock genetics
+  // module — this only needs to produce *a* valid shape so old saves load.
+  function defaultLivestockName(kind) {
+    return kind === 'uumkaoii' ? "Uumkao'ii" : (kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock');
+  }
+  function makeDefaultGenotype(kind) {
+    if (kind === 'uumkaoii') {
+      return {
+        fur:    { color: '#8a6d4b', copies: 2, inheritance: 'dominant' },
+        plates: { color: '#4b6d5f', copies: 2, inheritance: 'dominant' },
+      };
+    }
+    return {};
+  }
+
   // Brings save data created before the character/world data split up to the
   // current schema: hidden player ids + stats on characters, and
   // ownerCharacterId/farmhands/members on worlds.
@@ -1456,6 +1478,13 @@
       if (!w.farmhands) w.farmhands = [];
       if (!w.members)   w.members   = {};
       if (!w.livestock) w.livestock = [];
+      if (!w.breedingPairs) w.breedingPairs = [];
+      if (!w.storage)   w.storage   = {};
+      w.farmhands.forEach(f => { f.permissions = { ...makeDefaultFarmhandPermissions(), ...f.permissions }; });
+      w.livestock.forEach(entry => {
+        if (!entry.name) entry.name = defaultLivestockName(entry.kind);
+        if (!entry.genotype) entry.genotype = makeDefaultGenotype(entry.kind);
+      });
       if (w.ownerCharacterId) ensureWorldMember(w, w.ownerCharacterId);
     });
     return meta;

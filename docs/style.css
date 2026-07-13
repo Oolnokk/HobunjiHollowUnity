@@ -2120,6 +2120,60 @@
       padding: 1px 5px; letter-spacing: 0.04em; flex-shrink: 0;
     }
 
+    /* ── Farm pane: identity/progression hub tied to the world save ──── */
+    .farm-pane {
+      padding: clamp(6px, 1.2vmin, 16px) clamp(8px, 1.8vmin, 22px);
+      max-width: 520px; display: flex; flex-direction: column; gap: 14px;
+    }
+    .farm-header { border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+    .farm-name-row { display: flex; align-items: center; gap: 8px; }
+    .farm-name-input {
+      flex: 1; min-width: 0; background: transparent; border: 1px solid transparent;
+      color: var(--text); font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
+      font-size: 16px; letter-spacing: 0.03em; padding: 3px 4px; border-radius: 6px;
+    }
+    .farm-name-input:not(:disabled) { border-color: var(--border-bright); background: rgba(255,255,255,0.05); cursor: text; }
+    .farm-owner-row { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .farm-owner-row span { color: var(--accent); }
+    .farm-section { display: flex; flex-direction: column; gap: 6px; }
+    .farm-note { font-size: 10px; color: var(--muted); opacity: 0.75; }
+    .farm-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+    .farm-grid-wrap {
+      border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+      background: rgba(0,0,0,0.2); line-height: 0;
+    }
+    /* Overrides the page-wide `canvas { position:absolute; inset:0 }` rule
+       (meant for the game's fullscreen 3D canvas) which would otherwise
+       blow this canvas up to cover the whole Farm pane. */
+    #farmGlanceCanvas { position: static; inset: auto; width: 100%; height: auto; display: block; image-rendering: pixelated; }
+    .farm-grid-legend { display: flex; flex-wrap: wrap; gap: 8px; font-size: 9px; color: var(--muted); }
+    .farm-grid-legend span { display: inline-flex; align-items: center; gap: 3px; }
+    .farm-grid-legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+    .farm-list { display: flex; flex-direction: column; gap: 5px; max-height: 220px; overflow-y: auto; }
+    .farm-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; border-radius: 8px;
+      background: rgba(255,255,255,0.025); border: 1px solid var(--border);
+    }
+    .farm-row-icon { font-size: 14px; flex-shrink: 0; }
+    .farm-row-name {
+      flex: 1; min-width: 0; background: transparent; border: 1px solid transparent;
+      color: var(--text); font-size: 12px; padding: 2px 4px; border-radius: 5px;
+    }
+    .farm-row-name:not(:disabled) { border-color: var(--border-bright); background: rgba(255,255,255,0.05); }
+    .farm-swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); flex-shrink: 0; }
+    .farm-row-value { font-size: 10px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+    .farm-row-value.tier-Rare, .farm-row-value.tier-Exceptional { color: var(--accent); }
+
+    .farm-storage { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .farm-storage-col-title { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+    .farm-storage-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; background: rgba(255,255,255,0.025); border: 1px solid var(--border); }
+    .farm-storage-row .iib-icon, .farm-storage-row .farm-row-icon { font-size: 13px; }
+    .farm-storage-row .farm-row-value { flex: 1; }
+    @media(max-width: 480px) { .farm-storage { grid-template-columns: 1fr; } }
+
     /* ── Mobile scroll: touch-action:none lives on #gameShell now,
        not body — so menu panel children scroll freely on touch.
        Only containers that are themselves independently scrollable
@@ -2138,6 +2192,8 @@
     #mpProgress,
     #mpTasks,
     #mpRelationships,
+    #mpFarm,
+    .farm-list,
     .fed-scroll {
       touch-action: pan-y;
       -webkit-overflow-scrolling: touch;
