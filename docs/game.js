@@ -172,6 +172,8 @@
             p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
         if (id === 'calendar') renderCalendarPanel();
+        if (id === 'farm') renderFarmPanel();
+        if (id === 'stable') renderStablePanel();
         if (id === 'shipping') buildShippingTransferUI();
         if (id === 'supplies') renderSupplyPage();
         if (id === 'generalStore') renderGeneralStorePage();
@@ -1364,6 +1366,10 @@
           // dabinggi-hound's bite/pounce afflicts Poisoned Health instead of
           // the wolves' Bleeding/Wounded.
           attackTag: 'poison',
+          // Companion AI-type this species uses when summoned as an active
+          // companion (see COMPANION_AI_TYPES) — 'vigilantProtector' is
+          // updateCompanions()'s existing follow/fight behavior.
+          aiType: 'vigilantProtector',
           canClimb: false, canSwim: false,
           modelWidth: 1.9, tint: 0xffffff,
           sprites: {
@@ -1375,6 +1381,31 @@
             { key: 'dabinggiHoundHide', min: 1, max: 1 },
           ],
         },
+        // Uumkao'ii as an active companion — a separate, continuous-movement
+        // CREATURE_DB entry (not the tile-hopping farm-livestock system in
+        // LIVESTOCK_FACTORIES/makeUumkaoiiAnimal) so a stabled Uumkao'ii can
+        // be summoned via the same generic companion AI as the dabinggi-hound.
+        // Routed to 'vigilantProtector' as a stand-in per design direction —
+        // a gentler, dedicated AI type can replace this once one exists.
+        // Reuses the existing livestock sprite as-is (already the right
+        // 1375x600 side-view sheet convention makeCreatureEntity expects).
+        uumkaoii: {
+          label: "Uumkao'ii", hostile: false,
+          maxHealth: 40, maxStamina: 30,
+          moveSpeed: 130, chaseSpeed: 165,
+          attackDamage: 6, attackRangePx: TILE * 0.8, attackHalfConeRad: 45 * Math.PI / 180,
+          attackStaminaCost: 12, attackCooldownS: 1.3,
+          attacks: ['pounce'],
+          attackTag: 'blunt', // a peaceable farm bird's bump/peck, not a real bite
+          aiType: 'vigilantProtector',
+          canClimb: false, canSwim: false,
+          modelWidth: 1.6, tint: 0xffffff,
+          sprites: {
+            idle: "assets/creaturesprites/uumkao'ii.png",
+            run: ["assets/creaturesprites/uumkao'ii.png"],
+          },
+          loot: [],
+        },
         'gar-wolf': {
           label: 'Gar-wolf', hostile: true,
           maxHealth: 38, maxStamina: 30,
@@ -1385,6 +1416,9 @@
           // See dabinggi-hound's attackTag comment — gar-wolves bite/pounce
           // sharp, afflicting Bleeding Health + Wounded Stamina.
           attackTag: 'sharp',
+          // Not tameable/stable-able yet, but expected to use this same
+          // companion AI type long-term once that exists — see COMPANION_AI_TYPES.
+          aiType: 'vigilantProtector',
           // Slottable AI behavior-stage cycle (see updateCreatureBehaviorStage):
           // try a Pounce for up to 7s (ends the moment one's attempted), then
           // (after the global ~2s backing-up stage) spend up to 11s circling
@@ -1524,6 +1558,33 @@
 
       let gearInventory = null; // Loaded from player profile — character-scoped
       let packClothing  = [];   // Clothing items in world/pack inventory
+
+      // Personal livestock collection ("the stable") — character-scoped like
+      // gearInventory, travels between worlds. Distinct from a farm's
+      // world-scoped livestock: stable animals are companions (nameable,
+      // eventually levelable), can't produce goods, and can't be placed on
+      // any farm. [{ id, kind, name, genotype, aiType, level, stabledAt }]
+      let stable = [];
+      let activeCompanionId = null; // which stable entry (if any) is the active companion
+
+      // Companion AI-type registry — a small database of follow/fight
+      // behaviors a stabled species' active-companion form can use, keyed by
+      // id so multiple species can share one implementation. 'vigilantProtector'
+      // wraps the dabinggi-hound's existing whistle-summon follow/fight AI
+      // (see the whistle/companion system further down); Uumkao'ii is routed
+      // to it as a stand-in until a more tailored AI type exists, and
+      // gar-wolves are expected to just use it for the foreseeable future.
+      const COMPANION_AI_TYPES = {
+        vigilantProtector: { id: 'vigilantProtector', label: 'Vigilant Protector' },
+      };
+      const COMPANION_AI_TYPE_BY_KIND = {
+        'dabinggi-hound': 'vigilantProtector',
+        'gar-wolf':       'vigilantProtector',
+        'uumkaoii':       'vigilantProtector', // stand-in until a dedicated AI type exists
+      };
+      function companionAiTypeForKind(kind) {
+        return COMPANION_AI_TYPE_BY_KIND[kind] || 'vigilantProtector';
+      }
 
       // Tool item definitions: sprite path, compatible slots, animation style
       // dmgType ('sharp'|'blunt', weapon-slot items only) picks which flavor
@@ -1744,6 +1805,22 @@
         } catch {}
       }
 
+      // Persists the personal stable (companions) — mirrors saveGearInventory()'s
+      // pattern exactly, since both are character-scoped and touch hobunjiSaveMeta
+      // directly rather than round-tripping through onboarding.js.
+      function saveStable() {
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
+          const ch = (meta.characters || []).find(c => c.id === window.__hobunjiPlayerProfile.characterId);
+          if (ch) {
+            ch.stable = stable;
+            ch.activeCompanionId = activeCompanionId;
+            localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+          }
+        } catch {}
+      }
+
       // Persists which literal tool/weapon/whistle instance is equipped in
       // each slot (equipmentSlots) and which one is actually held right now
       // (activeTool) — separate from gearInventory (what's owned) above.
@@ -1870,7 +1947,7 @@
       const LIVESTOCK_CATALOG = [
         { key: 'puktuk',   icon: '🐐', name: 'Puktuk',   desc: 'Coming soon: meat, milk, and wool livestock.', price: 120, comingSoon: true },
         { key: 'nelk',     icon: '🐔', name: 'Nelk',     desc: 'Coming soon: meat, eggs, and mayonnaise chain.', price: 90,  comingSoon: true },
-        { key: 'uumkaoiiCrate', icon: '🦆', name: 'Uumkao’ii Crate', desc: 'A travel crate with one uumkao’ii inside. Select it in your bag and release it on any open tile.', price: 150, gives: { uumkaoiiCrate: 1 }, category: 'livestock' },
+        { key: 'uumkaoiiCrate', icon: '🦆', name: 'Uumkao’ii Crate', desc: 'A travel crate with one uumkao’ii inside. Add it to the farm’s livestock from the Farm tab.', price: 150, gives: { uumkaoiiCrate: 1 }, category: 'livestock' },
         { key: 'nazgraku', icon: '🦃', name: 'Nazgraku', desc: 'Coming soon: meat, eggs, and combat-leaning produce.', price: 160, comingSoon: true },
         { key: 'drenkirra', icon: '🪿', name: 'Drenkirra', desc: 'Coming soon: meat, eggs, and agile produce.', price: 140, comingSoon: true },
         { key: 'grehlr',   icon: '🦨', name: 'Grehlr',   desc: 'Coming soon: meat and denatured stink oil.', price: 130, comingSoon: true },
@@ -2531,6 +2608,167 @@
         });
       }
 
+      // ── Livestock genetics & breeding ───────────────────────────────
+      // Ported from the "Creature Pattern, Base Recolor & Breeding Lab"
+      // prototype: each livestock genotype holds one named fur color per
+      // permanent anatomical region (Uumkao'ii: fur + plates, both always
+      // visible — unlike other species' future optional pattern layers).
+      // Breeding blends parent colors per region with a small mutation
+      // chance; sell value rewards fur/plate color contrast. This pass is
+      // data-only: the math and Farm tab UI are fully real, but the in-game
+      // sprite doesn't yet apply per-region recoloring (no masked-texture
+      // pipeline exists for it — a follow-up once mask assets are authored).
+      const LIVESTOCK_FUR_PALETTE = [
+        {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43'},{id:'charcoal',name:'Charcoal',hex:'#55585c'},
+        {id:'blue-grey',name:'Blue Grey',hex:'#596879'},{id:'ash',name:'Ash',hex:'#6d7068'},
+        {id:'dove',name:'Dove Grey',hex:'#756f78'},{id:'warm-grey',name:'Warm Grey',hex:'#74685f'},
+        {id:'olive-grey',name:'Olive Grey',hex:'#6d7058'},{id:'pale-cream',name:'Pale Cream',hex:'#c8b991'},
+        {id:'cream',name:'Cream',hex:'#c7aa77'},{id:'champagne',name:'Champagne',hex:'#b99a72'},
+        {id:'biscuit',name:'Biscuit',hex:'#bd9463'},{id:'sand',name:'Sand',hex:'#b28754'},
+        {id:'buff',name:'Buff',hex:'#b77c49'},{id:'honey',name:'Honey',hex:'#b97832'},
+        {id:'golden',name:'Golden',hex:'#ae8430'},{id:'fawn',name:'Fawn',hex:'#a47650'},
+        {id:'taupe',name:'Taupe',hex:'#806a5b'},{id:'mushroom',name:'Mushroom',hex:'#77635b'},
+        {id:'sable',name:'Sable',hex:'#714c37'},{id:'seal-brown',name:'Seal Brown',hex:'#5e493c'},
+        {id:'chocolate',name:'Chocolate',hex:'#6a412e'},{id:'liver',name:'Liver',hex:'#65403d'},
+        {id:'chestnut',name:'Chestnut',hex:'#894e31'},{id:'mahogany',name:'Mahogany',hex:'#784337'},
+        {id:'cinnamon',name:'Cinnamon',hex:'#a45b37'},{id:'russet',name:'Russet',hex:'#994b30'},
+        {id:'auburn',name:'Auburn',hex:'#874438'},{id:'copper',name:'Copper',hex:'#a85e3a'},
+        {id:'fox-red',name:'Fox Red',hex:'#b15d30'},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267'},
+        {id:'lilac-grey',name:'Lilac Grey',hex:'#746775'},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36'},
+      ];
+
+      function _furHexToRgb(hex) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+      function _furRgbToHsv(r, g, b) {
+        r /= 255; g /= 255; b /= 255;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+        let h = 0;
+        if (d) { if (max === r) h = ((g - b) / d) % 6; else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h /= 6; if (h < 0) h += 1; }
+        return [h, max === 0 ? 0 : d / max, max];
+      }
+      function _furHsvToRgb(h, s, v) {
+        h = ((h % 1) + 1) % 1;
+        const i = Math.floor(h * 6), f = h * 6 - i, p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+        let r, g, b;
+        switch (i % 6) {
+          case 0: r = v; g = t; b = p; break; case 1: r = q; g = v; b = p; break; case 2: r = p; g = v; b = t; break;
+          case 3: r = p; g = q; b = v; break; case 4: r = t; g = p; b = v; break; default: r = v; g = p; b = q;
+        }
+        return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+      }
+      function _furNormalizeHex(s) { const m = String(s).trim().match(/^#?([0-9a-f]{6})$/i); return m ? '#' + m[1].toLowerCase() : null; }
+      function _furPaletteEntry(color) {
+        const normalized = _furNormalizeHex(color) || LIVESTOCK_FUR_PALETTE[0].hex;
+        const exact = LIVESTOCK_FUR_PALETTE.find(x => x.hex === normalized);
+        if (exact) return exact;
+        const [h, s] = _furRgbToHsv(..._furHexToRgb(normalized));
+        let best = LIVESTOCK_FUR_PALETTE[0], score = Infinity;
+        for (const entry of LIVESTOCK_FUR_PALETTE) {
+          const [eh, es] = _furRgbToHsv(..._furHexToRgb(entry.hex));
+          let dh = Math.abs(h - eh); dh = Math.min(dh, 1 - dh);
+          const d = dh * dh * 2.5 + (s - es) * (s - es);
+          if (d < score) { score = d; best = entry; }
+        }
+        return best;
+      }
+      function _furPaletteColor(color) { return _furPaletteEntry(color).hex; }
+      function _furPaletteName(color) { return _furPaletteEntry(color).name; }
+      function randomFurColor() { return LIVESTOCK_FUR_PALETTE[Math.floor(Math.random() * LIVESTOCK_FUR_PALETTE.length)].hex; }
+
+      function blendFurHex(colorA, colorB) {
+        const ha = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorA))), hb = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorB)));
+        let dh = hb[0] - ha[0]; if (dh > 0.5) dh -= 1; if (dh < -0.5) dh += 1;
+        const h = (ha[0] + dh * 0.5 + 1) % 1, s = (ha[1] + hb[1]) / 2, v = 0.72;
+        const [r, g, b] = _furHsvToRgb(h, s, v);
+        return _furPaletteColor('#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join(''));
+      }
+      function mutateFurColor(hex) {
+        const current = _furPaletteEntry(hex), choices = LIVESTOCK_FUR_PALETTE.filter(x => x.id !== current.id);
+        return choices[Math.floor(Math.random() * choices.length)].hex;
+      }
+
+      // Perceptual color contrast (CIE Lab deltaE76), used to reward
+      // striking fur/plate combinations in sell value — same math as the
+      // HTML prototype's "color strikingness" meter.
+      function _furSrgbToLinear(c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+      function _furRgbToLab(r, g, b) {
+        r = _furSrgbToLinear(r); g = _furSrgbToLinear(g); b = _furSrgbToLinear(b);
+        const x = (r * 0.4124564 + g * 0.3575761 + b * 0.1804375) / 0.95047,
+              y = r * 0.2126729 + g * 0.7151522 + b * 0.072175,
+              z = (r * 0.0193339 + g * 0.119192 + b * 0.9503041) / 1.08883;
+        const e = 216 / 24389, k = 24389 / 27, f = t => t > e ? Math.cbrt(t) : (k * t + 16) / 116;
+        const fx = f(x), fy = f(y), fz = f(z);
+        return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+      }
+      function _furDeltaE76(colorA, colorB) {
+        const a = _furRgbToLab(..._furHexToRgb(_furPaletteColor(colorA))), b = _furRgbToLab(..._furHexToRgb(_furPaletteColor(colorB)));
+        return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+      }
+
+      const LIVESTOCK_SELL_RULES = { baseValue: 100, uumPatternBonus: 175, contrastScaleDeltaE: 65 };
+      function _furColorContrastScore(colorA, colorB) {
+        const delta = _furDeltaE76(colorA, colorB);
+        return { deltaE: delta, score: clamp(Math.round(delta / LIVESTOCK_SELL_RULES.contrastScaleDeltaE * 100), 0, 100) };
+      }
+      function sellTierFor(amount) {
+        if (amount >= 600) return 'Exceptional';
+        if (amount >= 450) return 'Rare';
+        if (amount >= 300) return 'Striking';
+        if (amount >= 180) return 'Distinctive';
+        return 'Common';
+      }
+
+      function defaultLivestockName(kind) {
+        return kind === 'uumkaoii' ? "Uumkao'ii" : (kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock');
+      }
+
+      // Fresh (non-bred) livestock gets two independently random fur colors —
+      // mirrors the HTML tool's randomizeSpecimen() for Uumkao'ii.
+      function makeDefaultGenotype(kind) {
+        if (kind === 'uumkaoii') {
+          return {
+            fur:    { color: randomFurColor(), copies: 2, inheritance: 'dominant' },
+            plates: { color: randomFurColor(), copies: 2, inheritance: 'dominant' },
+          };
+        }
+        return {};
+      }
+
+      // Sell value from fur-vs-plate color contrast. Uumkao'ii's two regions
+      // are both permanent (unlike other species' optional pattern layers),
+      // so pattern count is fixed at 2 and the HTML's patternComplexityBonus
+      // collapses to a flat uumPatternBonus here.
+      function sellValueFor(genotype) {
+        const fur = genotype?.fur, plates = genotype?.plates;
+        if (!fur?.color || !plates?.color) {
+          return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: 'Plain specimen' };
+        }
+        const contrast = _furColorContrastScore(fur.color, plates.color);
+        const contrastBonus = Math.round(contrast.score * 1.8); // (.9 + .45 × 2 fixed patterns), per the HTML formula
+        const amount = LIVESTOCK_SELL_RULES.baseValue + LIVESTOCK_SELL_RULES.uumPatternBonus + contrastBonus;
+        return {
+          amount, contrastScore: contrast.score, contrastBonus,
+          tier: sellTierFor(amount),
+          comparison: `${_furPaletteName(fur.color)} fur vs. ${_furPaletteName(plates.color)} plates`,
+        };
+      }
+
+      // Breeding — direct port of the HTML's Uumkao'ii offspring path: both
+      // layers are permanent (copies:2, dominant), so offspring always blend
+      // both parents' colors per-layer with a flat mutation chance.
+      const LIVESTOCK_MUTATION_CHANCE = 0.05;
+      function crossOffspring(genotypeA, genotypeB, kind = 'uumkaoii') {
+        if (kind !== 'uumkaoii') return makeDefaultGenotype(kind);
+        const child = {};
+        for (const layerId of ['fur', 'plates']) {
+          const la = genotypeA?.[layerId] || { color: randomFurColor() };
+          const lb = genotypeB?.[layerId] || { color: randomFurColor() };
+          let color = blendFurHex(la.color, lb.color);
+          if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color);
+          child[layerId] = { color, copies: 2, inheritance: 'dominant' };
+        }
+        return child;
+      }
+
       // ── Animal system ─────────────────────────────────────────────
       function canSpawnAnimalAt(col, row) {
         const tile = grid[row]?.[col];
@@ -2627,22 +2865,68 @@
       // reads is meant to grow into other livestock types later.
       const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal };
 
-      function spawnUumkaoii(col, row) {
-        if (!canSpawnAnimalAt(col, row)) return { ok: false, message: 'The uumkao\'ii can\'t be released here.' };
-        if ((inventory.uumkaoiiCrate || 0) < 1) return { ok: false, message: 'No Uumkao\'ii Crate in bag.' };
-        const animal = makeUumkaoiiAnimal(col, row);
+      // item key -> livestock kind, for the Farm tab's "Add Livestock" flow.
+      // Grows alongside LIVESTOCK_FACTORIES as more species ship.
+      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii' };
+
+      // Adds a creature from an undeployed crate item to the farm's
+      // livestock — the only way to do so now (see the Farm tab's Livestock
+      // panel). Previously this fired directly off "using" the item on a
+      // targeted tile with no ownership check; it's now gated behind the
+      // 'livestock' farmhand permission like every other farm-alteration
+      // action, and always picks its own open tile rather than a reticle
+      // target, since it's invoked from the menu rather than the world.
+      function addLivestockFromItem(itemKey) {
+        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can add livestock." };
+        const kind = LIVESTOCK_ITEM_KINDS[itemKey];
+        if (!kind) return { ok: false, message: 'That item cannot be added to the farm.' };
+        if ((inventory[itemKey] || 0) < 1) return { ok: false, message: 'None of that item in bag.' };
+        let col = null, row = null;
+        outer: for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            if (canSpawnAnimalAt(c, r)) { col = c; row = r; break outer; }
+          }
+        }
+        if (col === null) return { ok: false, message: 'No open tile on the farm to place it.' };
+        const factory = LIVESTOCK_FACTORIES[kind];
+        const animal = factory ? factory(col, row) : null;
         if (!animal) return { ok: false, message: 'Sprite still loading — try again in a moment.' };
-        inventory.uumkaoiiCrate--;
-        clampInventoryStack('uumkaoiiCrate');
+        inventory[itemKey]--;
+        clampInventoryStack(itemKey);
         worldObjects.set(col + ',' + row, animal);
         animalObjects.add(animal);
         // Livestock belongs to the world, not this character — persisted
         // separately from saveMemberWorldData() so it stays behind for
-        // anyone who plays this world, not just whoever released it.
+        // anyone who plays this world, not just whoever added it.
         const livestock = _loadWorldLivestock();
-        livestock.push({ id: animal.livestockId, kind: 'uumkaoii', col, row, releasedAt: Date.now() });
+        livestock.push({
+          id: animal.livestockId, kind, col, row, releasedAt: Date.now(),
+          name: defaultLivestockName(kind), genotype: makeDefaultGenotype(kind),
+        });
         _saveWorldLivestock(livestock);
-        return { ok: true, message: "🦆 Uumkao'ii released!" };
+        return { ok: true, message: `🦆 ${defaultLivestockName(kind)} added to the farm!` };
+      }
+
+      // Adds a creature from an item straight into the character's personal
+      // stable — no farm/ownership involved at all (any character, anywhere,
+      // can do this with their own bag item), unlike addLivestockFromItem()
+      // above. A stabled animal is untradeable and can never be placed on any
+      // farm; it becomes a nameable, eventually-levelable companion instead.
+      function addToStable(itemKey) {
+        const kind = LIVESTOCK_ITEM_KINDS[itemKey];
+        if (!kind) return { ok: false, message: 'That item cannot be added to a stable.' };
+        if ((inventory[itemKey] || 0) < 1) return { ok: false, message: 'None of that item in bag.' };
+        inventory[itemKey]--;
+        clampInventoryStack(itemKey);
+        const entry = {
+          id: 'stable_' + Math.random().toString(36).slice(2, 10),
+          kind, name: defaultLivestockName(kind), genotype: makeDefaultGenotype(kind),
+          aiType: companionAiTypeForKind(kind), level: 0, stabledAt: Date.now(),
+        };
+        stable.push(entry);
+        if (!activeCompanionId) activeCompanionId = entry.id;
+        saveStable();
+        return { ok: true, message: `${entry.name} added to your stable!`, entry };
       }
 
       // Recreates every animal this world's owner (or any farmhand) has ever
@@ -2657,6 +2941,75 @@
           if (!animal) continue;
           worldObjects.set(entry.col + ',' + entry.row, animal);
           animalObjects.add(animal);
+        }
+      }
+
+      // Gestation length for a set breeding pair, in in-game days — resolved
+      // by tickLivestockBreeding() on the same day-tick crops use.
+      const LIVESTOCK_GESTATION_DAYS = 3;
+
+      // Resolves every breeding pair whose gestation has elapsed: crosses
+      // the parents' genotypes (crossOffspring), spawns the offspring on an
+      // open tile, and appends it to world.livestock. Pairs are consumed on
+      // resolution — a farmhand must re-pair to breed again. Called from
+      // advanceDay()/sleepInBed() alongside tickCropDay().
+      // A breeding-pair parent ref is { source: 'world'|'stable', id, characterId? }
+      // — 'world' points into this farm's own livestock, 'stable' points into
+      // a specific character's personal stable (characterId required so the
+      // pair still resolves correctly even if a *different* character is the
+      // one currently playing when gestation completes).
+      function refsEqual(a, b) {
+        return !!a && !!b && a.source === b.source && a.id === b.id;
+      }
+      function _currentCharacterId() {
+        return (window.__hobunjiPlayerProfile || _playerData)?.characterId || null;
+      }
+      function _loadCharacterStable(characterId) {
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.characters || []).find(c => c.id === characterId)?.stable ?? [];
+        } catch { return []; }
+      }
+      function resolveBreedingParent(ref, worldLivestock) {
+        if (!ref) return null;
+        if (ref.source === 'stable') return _loadCharacterStable(ref.characterId).find(s => s.id === ref.id) || null;
+        return worldLivestock.find(l => l.id === ref.id) || null;
+      }
+
+      function tickLivestockBreeding() {
+        const pairs = _loadWorldBreedingPairs();
+        if (!pairs.length) return;
+        const livestock = _loadWorldLivestock();
+        const remainingPairs = [];
+        let changed = false;
+        for (const pair of pairs) {
+          if (calendar.day < pair.readyDay) { remainingPairs.push(pair); continue; }
+          const parentA = resolveBreedingParent(pair.parentA, livestock);
+          const parentB = resolveBreedingParent(pair.parentB, livestock);
+          changed = true;
+          if (!parentA || !parentB) continue; // a parent was sold/removed/stable-emptied — pair quietly lapses
+          let col = null, row = null;
+          outer: for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+              if (canSpawnAnimalAt(c, r)) { col = c; row = r; break outer; }
+            }
+          }
+          if (col === null) continue; // no room on the farm right now — pair lapses rather than blocking forever
+          const kind = parentA.kind;
+          const factory = LIVESTOCK_FACTORIES[kind];
+          const animal = factory ? factory(col, row) : null;
+          if (!animal) continue;
+          worldObjects.set(col + ',' + row, animal);
+          animalObjects.add(animal);
+          livestock.push({
+            id: animal.livestockId, kind, col, row, releasedAt: Date.now(),
+            name: defaultLivestockName(kind), genotype: crossOffspring(parentA.genotype, parentB.genotype, kind),
+          });
+          showToast(`🐣 A new ${defaultLivestockName(kind)} was born on the farm!`, true);
+        }
+        if (changed) {
+          _saveWorldLivestock(livestock);
+          _saveWorldBreedingPairs(remainingPairs);
         }
       }
 
@@ -3809,35 +4162,49 @@
         }
       }
 
-      // Spawns/despawns the given master's active companion to match its
-      // equipped whistle. Called every farm/zone-area frame for the real
-      // player (master defaults to `player`); cheap no-op once in sync. Also
-      // re-spawns into the new area's scene whenever the master travels.
-      // Takes an explicit `master` (rather than always reading the real
-      // player) so this same function can eventually drive a second
-      // whistle-bearing player's companion, or an NPC's, without change —
-      // see the `master` field on the companion entity itself.
+      // Spawns/despawns the given master's active companion to match either
+      // the stable's designated active companion or (falling back, for any
+      // legacy whistle not represented in the stable) its equipped whistle.
+      // Called every farm/zone-area frame for the real player (master
+      // defaults to `player`); cheap no-op once in sync. Also re-spawns into
+      // the new area's scene whenever the master travels. Takes an explicit
+      // `master` (rather than always reading the real player) so this same
+      // function can eventually drive a second companion-bearing player's
+      // companion, or an NPC's, without change — see the `master` field on
+      // the companion entity itself.
       function syncCompanionFromWhistle(master = player) {
         // A cutscene preview's combat card manages companionObjects directly
-        // (see runCutscenePreview/runCombat) — this whistle-driven sync
-        // would otherwise despawn a hound the instant it runs, since the
-        // real player's whistle slot is always cleared during preview (see
-        // the boot handoff in docs/index.html).
+        // (see runCutscenePreview/runCombat) — this sync would otherwise
+        // despawn a hound the instant it runs, since the real player's
+        // active companion is always cleared during preview (see the boot
+        // handoff in docs/index.html).
         if (cutscenePreviewActive) return;
-        const whistle = equipmentSlots.whistle
+
+        // The stable is the primary source of truth for "what's my active
+        // companion" — only species with a matching CREATURE_DB entry (and
+        // therefore a companion AI type) can actually be summoned; a stabled
+        // animal of a not-yet-companion-capable kind just means no companion
+        // is spawned, rather than falling through to the legacy whistle.
+        const activeStabled = activeCompanionId ? stable.find(s => s.id === activeCompanionId) : null;
+        const stableCompanion = (activeStabled && CREATURE_DB[activeStabled.kind])
+          ? { creatureKey: activeStabled.kind, name: activeStabled.name }
+          : null;
+        const whistle = (!activeStabled && equipmentSlots.whistle)
           ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
           : null;
+        const desired = stableCompanion || whistle;
+
         const existing = [...companionObjects].find(c => c.master === master);
-        if (!whistle) {
+        if (!desired) {
           if (existing) despawnCompanions(master);
           return;
         }
-        if (existing && existing.creatureKey === whistle.creatureKey && existing.areaId === currentArea) return;
+        if (existing && existing.creatureKey === desired.creatureKey && existing.areaId === currentArea) return;
         despawnCompanions(master);
         const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
         const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
-        const companion = makeCreatureEntity(whistle.creatureKey, spawnX, spawnY, {
-          isCompanion: true, name: whistle.name, homeX: spawnX, homeY: spawnY, state: 'idle', master,
+        const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
+          isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master,
         });
         if (companion) companionObjects.add(companion);
       }
@@ -3927,6 +4294,95 @@
         } catch {}
       }
 
+      // ── Breeding pairs (world-scoped, same rationale as livestock) ─────
+      // [{ id, parentA, parentB, startedDay, readyDay }] — parentA/B are
+      // { source: 'world'|'stable', id, characterId? } refs (see
+      // resolveBreedingParent). Resolved by tickLivestockBreeding() on the
+      // day-tick, same cadence as crop growth.
+      function _loadWorldBreedingPairs() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return [];
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.breedingPairs ?? [];
+        } catch { return []; }
+      }
+
+      function _saveWorldBreedingPairs(list) {
+        const worldId = _tothalWorldId();
+        if (!worldId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.breedingPairs = list;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
+      // ── Farm storage (single shared pool, world-scoped) ────────────────
+      // { [itemKey]: count } — same shape as inventory/nonGearInventory, but
+      // belongs to the farm itself so any owner or storage-permitted
+      // farmhand can deposit/withdraw regardless of who's currently playing.
+      function _loadWorldStorage() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return {};
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.storage ?? {};
+        } catch { return {}; }
+      }
+
+      function _saveWorldStorage(store) {
+        const worldId = _tothalWorldId();
+        if (!worldId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.storage = store;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
+      // ── Farm name (reuses world.label, the same field set at world
+      // creation in onboarding.js) ────────────────────────────────────────
+      function getFarmName() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return _playerData?.worldLabel || 'Hobunji Hollow';
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.label || 'Hobunji Hollow';
+        } catch { return 'Hobunji Hollow'; }
+      }
+
+      function setFarmName(label) {
+        const worldId = _tothalWorldId();
+        const trimmed = String(label || '').trim();
+        if (!worldId || !trimmed) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.label = trimmed.slice(0, 40);
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+          if (_playerData) _playerData.worldLabel = world.label;
+        } catch {}
+      }
+
+      // Owning character's nickname, for the Farm tab header — looked up by
+      // ownerCharacterId since livestock/world records only hold ids, not
+      // display names (mirrors how char.nickname is read at save-select).
+      function getFarmOwnerName() {
+        const worldId = _tothalWorldId();
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          const owner = (meta?.characters || []).find(c => c.id === world?.ownerCharacterId);
+          return owner?.nickname || 'Unknown';
+        } catch { return 'Unknown'; }
+      }
+
       // ── Farm ownership / farmhand permissions ─────────────────────────
       // World data (non-gear inventory, NPC relationships, quest progress)
       // stays behind in the world's per-character member record rather than
@@ -3939,7 +4395,7 @@
       // Single source of truth for the permission-key set within this file
       // (onboarding.js keeps its own copy — the two closures share no module).
       function defaultFarmhandPermissions() {
-        return { storage: false, plant: false, harvest: false, placeFurniture: false, alterFarm: false };
+        return { storage: false, plant: false, harvest: false, placeFurniture: false, alterFarm: false, livestock: false };
       }
 
       function defaultWorldMemberState() {
@@ -9670,6 +10126,18 @@
             }
           }
 
+          // Undeployed creature items: anyone, anywhere, can add one straight
+          // to their personal stable — no farm/ownership involved. Adding to
+          // a farm's own livestock (tradeable, ownership-gated) instead
+          // happens from the Farm tab, not here.
+          if (LIVESTOCK_ITEM_KINDS[key] && count > 0) {
+            mkBtn('Add to Stable', 'equip', () => {
+              const result = addToStable(key);
+              showToast(result.message, result.ok);
+              if (result.ok) { buildInventoryGrid(); refreshItemScroll(); refreshActionBar(); }
+            });
+          }
+
           mkBtn('Drop  (coming soon)', '', () => showToast('Dropping items — coming soon', false));
         }
       }
@@ -10934,6 +11402,562 @@
 
       let calViewYear = 1, calViewMonthIndex = 0;
 
+      // ── Farm tab: the farm's identity/progression hub ──────────────────
+      // Reads `grid`/`worldObjects`/`animalObjects` directly (not through
+      // getActiveGrid()/getWorldObjectAt(), which are area-gated) since
+      // those bare module variables are always the farm's own state
+      // regardless of which area the player currently stands in.
+      // Keyed by `${source}:${id}` so a world-livestock id and a stable id
+      // never collide. Values are the ref objects setBreedingPair() expects.
+      let farmPairPicks = new Map();
+
+      function renderFarmPanel() {
+        if (!document.getElementById('mpFarm')) return;
+        renderFarmHeader();
+        renderFarmGridGlance();
+        renderFarmLivestock();
+        renderFarmStoragePane();
+        renderFarmhandsSection();
+
+        const addLivestockBtn = document.getElementById('farmAddLivestockBtn');
+        if (addLivestockBtn) addLivestockBtn.onclick = () => {
+          const key = Object.keys(LIVESTOCK_ITEM_KINDS).find(k => (inventory[k] || 0) > 0);
+          if (!key) { showToast('No livestock crates in your bag.', false); return; }
+          const result = addLivestockFromItem(key);
+          showToast(result.message, result.ok);
+          if (result.ok) { renderFarmLivestock(); renderFarmGridGlance(); buildInventoryGrid(); refreshActionBar(); }
+        };
+        const pairBtn = document.getElementById('farmPairBtn');
+        if (pairBtn) pairBtn.onclick = () => {
+          const [a, b] = [...farmPairPicks.values()];
+          if (a && b) setBreedingPair(a, b);
+          farmPairPicks.clear();
+          renderFarmLivestock();
+        };
+        const addFarmhandBtn = document.getElementById('farmAddFarmhandBtn');
+        if (addFarmhandBtn) addFarmhandBtn.onclick = () => {
+          const id = document.getElementById('farmAddFarmhandSelect')?.value;
+          if (!id) return;
+          window.__hobunjiAddFarmhand(id, {});
+          renderFarmhandsSection();
+        };
+      }
+
+      function renderFarmHeader() {
+        const input = document.getElementById('farmNameInput');
+        const saveBtn = document.getElementById('farmNameSaveBtn');
+        const ownerSpan = document.getElementById('farmOwnerName');
+        const owner = isFarmOwner();
+        if (input) { input.value = getFarmName(); input.disabled = !owner; }
+        if (saveBtn) {
+          saveBtn.hidden = !owner;
+          saveBtn.onclick = () => { setFarmName(input.value); renderFarmHeader(); showToast('Farm renamed.', true); };
+        }
+        if (ownerSpan) ownerSpan.textContent = getFarmOwnerName();
+      }
+
+      const FARM_GLANCE_TILE_COLORS = {
+        [TileType.GRASS]: '#3c6e3f', [TileType.WEEDS]: '#4f5c2e', [TileType.TILLED]: '#6b4a30',
+        [TileType.TRENCH]: '#25445c', [TileType.RAISED]: '#8a6a3d', [TileType.PADDY]: '#2f6a63',
+        [TileType.ROCK]: '#6b6b6f', [TileType.SHRUB]: '#2e4a2c', [TileType.PATH]: '#8f8672',
+        [TileType.RIVER]: '#2c6fa8', [TileType.STREAM]: '#3a83bd', [TileType.RAMP]: '#7a7a68', [TileType.WATERFALL]: '#4ea0d6',
+      };
+      const FARM_GLANCE_PX = 10;
+
+      // Read-only top-down status glance — modeled on the map-editor's
+      // canvas2d cell-fill approach, but simplified: no camera controls, no
+      // editing, just "what does the farm look like right now."
+      function renderFarmGridGlance() {
+        const canvas = document.getElementById('farmGlanceCanvas');
+        if (!canvas) return;
+        canvas.width = COLS * FARM_GLANCE_PX;
+        canvas.height = ROWS * FARM_GLANCE_PX;
+        const ctx = canvas.getContext('2d');
+        const PX = FARM_GLANCE_PX;
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const tile = grid[r]?.[c];
+            ctx.fillStyle = tile ? (FARM_GLANCE_TILE_COLORS[tile.type] || '#3c6e3f') : '#1a1a1a';
+            ctx.fillRect(c * PX, r * PX, PX, PX);
+            if (tile?.crop) {
+              ctx.fillStyle = tile.cropReady ? '#f9e28a' : '#8fd66b';
+              ctx.fillRect(c * PX + 2, r * PX + 2, PX - 4, PX - 4);
+            }
+            if (isHouseFootprint(c, r)) {
+              ctx.fillStyle = 'rgba(120,90,60,0.9)';
+              ctx.fillRect(c * PX, r * PX, PX, PX);
+            }
+          }
+        }
+        // Buildings / furniture / crates — everything occupying a farm tile
+        // that isn't an animal (animals get their own marker below).
+        worldObjects.forEach((obj, key) => {
+          if (!obj || obj.type === 'animal') return;
+          const [c, r] = key.split(',').map(Number);
+          ctx.fillStyle = 'rgba(200,80,60,0.9)';
+          ctx.fillRect(c * PX, r * PX, PX, PX);
+        });
+        // Livestock
+        animalObjects.forEach(a => {
+          ctx.fillStyle = '#ffd27a';
+          ctx.beginPath();
+          ctx.arc(a.col * PX + PX / 2, a.row * PX + PX / 2, PX * 0.35, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        const legend = document.getElementById('farmGridLegend');
+        if (legend && !legend.dataset.built) {
+          legend.dataset.built = '1';
+          legend.innerHTML = [
+            ['#3c6e3f', 'Grass'], ['#6b4a30', 'Tilled'], ['#25445c', 'Trench'],
+            ['#8fd66b', 'Growing crop'], ['#f9e28a', 'Ready crop'],
+            ['rgba(200,80,60,0.9)', 'Building'], ['#6b6b6f', 'Rock/obstruction'],
+            ['#ffd27a', 'Livestock'],
+          ].map(([color, label]) => `<span><i style="background:${color}"></i>${esc(label)}</span>`).join('');
+        }
+      }
+
+      // Builds one pickable livestock/stable row. `ref` identifies it for
+      // breeding-pair selection. `onRename`/`onSell` are omitted (null) for
+      // stable entries — untradeable, and renamed from the Stable tab instead;
+      // this is a breeding-only view of the stable.
+      function _buildStablePickRow(entry, ref, pairs, canManage, onRename, onSell) {
+        const value = entry.genotype?.fur ? sellValueFor(entry.genotype) : null;
+        const pending = pairs.some(p => refsEqual(p.parentA, ref) || refsEqual(p.parentB, ref));
+        const pickKey = `${ref.source}:${ref.id}`;
+        const row = document.createElement('div');
+        row.className = 'farm-row';
+        row.innerHTML =
+          (canManage ? `<input type="checkbox" class="farm-pick" ${farmPairPicks.has(pickKey) ? 'checked' : ''} ${pending ? 'disabled' : ''}>` : '') +
+          `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🦆'}</span>` +
+          (onRename
+            ? `<input class="farm-row-name" value="${esc(entry.name || defaultLivestockName(entry.kind))}" ${canManage ? '' : 'disabled'} maxlength="30">`
+            : `<span class="farm-row-name" style="padding:2px 4px">${esc(entry.name || defaultLivestockName(entry.kind))}</span>`) +
+          (entry.genotype?.fur ? `<span class="farm-swatch" style="background:${esc(entry.genotype.fur.color)}" title="Fur color"></span>` : '') +
+          (entry.genotype?.plates ? `<span class="farm-swatch" style="background:${esc(entry.genotype.plates.color)}" title="Plate color"></span>` : '') +
+          `<span class="farm-row-value${value ? ' tier-' + esc(value.tier) : ''}">${value ? `${value.amount}g · ${esc(value.tier)}` : 'Companion'}${pending ? ' · breeding…' : ''}</span>` +
+          (onSell ? `<button class="settings-small-btn farm-sell-btn">Sell</button>` : '');
+        if (canManage) {
+          if (onRename) row.querySelector('.farm-row-name').addEventListener('change', e => onRename(e.target.value));
+          row.querySelector('.farm-pick').addEventListener('change', e => {
+            if (e.target.checked) {
+              farmPairPicks.set(pickKey, ref);
+              if (farmPairPicks.size > 2) farmPairPicks.delete(farmPairPicks.keys().next().value);
+            } else farmPairPicks.delete(pickKey);
+            renderFarmLivestock();
+          });
+        }
+        if (onSell) row.querySelector('.farm-sell-btn').addEventListener('click', onSell);
+        return row;
+      }
+
+      function renderFarmLivestock() {
+        const list = document.getElementById('farmLivestockList');
+        if (!list) return;
+        const livestock = _loadWorldLivestock();
+        const pairs = _loadWorldBreedingPairs();
+        const canManage = hasFarmPermission('livestock');
+
+        const owner = isFarmOwner();
+        list.innerHTML = '';
+        if (!livestock.length) list.appendChild(Object.assign(document.createElement('div'), { className: 'farm-note', textContent: 'No livestock on the farm yet.' }));
+        livestock.forEach(entry => {
+          const row = _buildStablePickRow(
+            entry, { source: 'world', id: entry.id }, pairs, canManage,
+            name => renameLivestock(entry.id, name), () => sellLivestock(entry.id)
+          );
+
+          // Ownership-transfer / marketplace row — owner gets move/stable-able/
+          // offer-for-sale controls; a visiting farmhand gets Buy (if priced)
+          // and Take to Stable (if the owner flagged this one stable-able).
+          const extra = document.createElement('div');
+          extra.className = 'farm-row-extra';
+          if (owner) {
+            const moveBtn = document.createElement('button');
+            moveBtn.className = 'settings-small-btn';
+            moveBtn.textContent = '→ My Stable';
+            moveBtn.title = 'Move into your personal stable (untradeable, leaves this farm)';
+            moveBtn.addEventListener('click', () => moveLivestockToStable(entry.id));
+            extra.appendChild(moveBtn);
+
+            const stableableLabel = document.createElement('label');
+            stableableLabel.className = 'farm-stableable-toggle';
+            stableableLabel.innerHTML = `<input type="checkbox" ${entry.stableable ? 'checked' : ''}> Stable-able`;
+            stableableLabel.querySelector('input').addEventListener('change', e => setLivestockStableable(entry.id, e.target.checked));
+            extra.appendChild(stableableLabel);
+
+            if (entry.forSale) {
+              const cancelBtn = document.createElement('button');
+              cancelBtn.className = 'settings-small-btn';
+              cancelBtn.textContent = `For Sale: ${entry.forSale.price}g (Cancel)`;
+              cancelBtn.addEventListener('click', () => setLivestockForSale(entry.id, null));
+              extra.appendChild(cancelBtn);
+            } else {
+              const priceInput = document.createElement('input');
+              priceInput.type = 'number'; priceInput.min = '1'; priceInput.placeholder = 'Price';
+              priceInput.className = 'farm-price-input';
+              const offerBtn = document.createElement('button');
+              offerBtn.className = 'settings-small-btn';
+              offerBtn.textContent = 'Offer for Sale';
+              offerBtn.addEventListener('click', () => {
+                const price = Math.max(1, Math.round(Number(priceInput.value) || 0));
+                if (!price) { showToast('Enter a price first.', false); return; }
+                setLivestockForSale(entry.id, price);
+              });
+              extra.appendChild(priceInput);
+              extra.appendChild(offerBtn);
+            }
+          } else {
+            if (entry.forSale) {
+              const buyBtn = document.createElement('button');
+              buyBtn.className = 'settings-small-btn';
+              buyBtn.textContent = `Buy for ${entry.forSale.price}g`;
+              buyBtn.addEventListener('click', () => buyLivestock(entry.id));
+              extra.appendChild(buyBtn);
+            }
+            if (entry.stableable) {
+              const takeBtn = document.createElement('button');
+              takeBtn.className = 'settings-small-btn';
+              takeBtn.textContent = 'Take to My Stable';
+              takeBtn.addEventListener('click', () => takeStableableLivestock(entry.id));
+              extra.appendChild(takeBtn);
+            }
+          }
+          if (extra.children.length) row.appendChild(extra);
+          list.appendChild(row);
+        });
+
+        // Your own stable, offered as breeding-pair candidates on this farm —
+        // untradeable, so no rename/Sell controls here (see the Stable tab).
+        if (canManage && stable.length) {
+          const charId = _currentCharacterId();
+          const header = document.createElement('div');
+          header.className = 'farm-note';
+          header.style.marginTop = '4px';
+          header.textContent = 'Your stable (breeding only — untradeable):';
+          list.appendChild(header);
+          stable.forEach(entry => {
+            list.appendChild(_buildStablePickRow(
+              entry, { source: 'stable', id: entry.id, characterId: charId }, pairs, canManage, null, null
+            ));
+          });
+        }
+
+        const addBtn = document.getElementById('farmAddLivestockBtn');
+        if (addBtn) addBtn.disabled = !canManage;
+        const pairBtn = document.getElementById('farmPairBtn');
+        if (pairBtn) {
+          pairBtn.disabled = !canManage || farmPairPicks.size !== 2;
+          pairBtn.textContent = farmPairPicks.size === 2 ? 'Set Breeding Pair' : 'Set Breeding Pair (select 2)';
+        }
+        const note = document.getElementById('farmBreedingPairsNote');
+        if (note) note.textContent = pairs.length ? `${pairs.length} pair${pairs.length === 1 ? '' : 's'} currently breeding.` : '';
+      }
+
+      function renameLivestock(id, name) {
+        if (!hasFarmPermission('livestock')) return;
+        const trimmed = String(name || '').trim().slice(0, 30);
+        if (!trimmed) return;
+        const livestock = _loadWorldLivestock();
+        const entry = livestock.find(l => l.id === id);
+        if (!entry) return;
+        entry.name = trimmed;
+        _saveWorldLivestock(livestock);
+      }
+
+      function sellLivestock(id) {
+        if (!hasFarmPermission('livestock')) return;
+        const entry = _removeWorldLivestockAndCleanup(id);
+        if (!entry) return;
+        const value = sellValueFor(entry.genotype);
+        inventory.gold = (inventory.gold || 0) + value.amount;
+        saveMemberWorldData();
+        showToast(`Sold ${entry.name || defaultLivestockName(entry.kind)} for ${value.amount}g`, true);
+        if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
+        renderFarmLivestock(); renderFarmGridGlance();
+      }
+
+      function setBreedingPair(refA, refB) {
+        if (!hasFarmPermission('livestock') || !refA || !refB || refsEqual(refA, refB)) return;
+        const pairs = _loadWorldBreedingPairs();
+        pairs.push({ id: 'pair_' + Math.random().toString(36).slice(2, 10), parentA: refA, parentB: refB, startedDay: calendar.day, readyDay: calendar.day + LIVESTOCK_GESTATION_DAYS });
+        _saveWorldBreedingPairs(pairs);
+        showToast(`Breeding pair set — check back in ${LIVESTOCK_GESTATION_DAYS} days.`, true);
+      }
+
+      // ── Farm livestock <-> personal stable transfers ────────────────────
+      // Three ways a farm animal leaves world.livestock and becomes a
+      // personal, untradeable stable companion: the owner moves their own
+      // animal directly, a visiting farmhand buys one the owner priced for
+      // sale, or a visiting farmhand takes one the owner flagged stable-able
+      // (free). All three converge on the same removal + stabling shape.
+      function _removeWorldLivestockAndCleanup(id) {
+        const livestock = _loadWorldLivestock();
+        const idx = livestock.findIndex(l => l.id === id);
+        if (idx < 0) return null;
+        const [entry] = livestock.splice(idx, 1);
+        _saveWorldLivestock(livestock);
+        const ref = { source: 'world', id };
+        _saveWorldBreedingPairs(_loadWorldBreedingPairs().filter(p => !refsEqual(p.parentA, ref) && !refsEqual(p.parentB, ref)));
+        removeLiveAnimalEntity(id);
+        return entry;
+      }
+      function removeLiveAnimalEntity(livestockId) {
+        const animal = [...animalObjects].find(a => a.livestockId === livestockId);
+        if (animal) {
+          worldObjects.delete(animal.col + ',' + animal.row);
+          animal.reset && animal.reset();
+          animalObjects.delete(animal);
+        }
+      }
+      function _stableEntryFromLivestock(entry) {
+        return {
+          id: 'stable_' + Math.random().toString(36).slice(2, 10), kind: entry.kind, name: entry.name,
+          genotype: entry.genotype, aiType: companionAiTypeForKind(entry.kind), level: 0, stabledAt: Date.now(),
+        };
+      }
+      function _addToOwnStable(stabledEntry) {
+        stable.push(stabledEntry);
+        if (!activeCompanionId) activeCompanionId = stabledEntry.id;
+        saveStable();
+      }
+
+      function moveLivestockToStable(id) {
+        if (!isFarmOwner()) return;
+        const entry = _removeWorldLivestockAndCleanup(id);
+        if (!entry) return;
+        _addToOwnStable(_stableEntryFromLivestock(entry));
+        showToast(`${entry.name} moved to your stable.`, true);
+        renderFarmLivestock(); renderFarmGridGlance();
+      }
+
+      function setLivestockStableable(id, val) {
+        if (!isFarmOwner()) return;
+        const livestock = _loadWorldLivestock();
+        const entry = livestock.find(l => l.id === id);
+        if (!entry) return;
+        entry.stableable = !!val;
+        _saveWorldLivestock(livestock);
+        renderFarmLivestock();
+      }
+
+      function setLivestockForSale(id, price) {
+        if (!isFarmOwner()) return;
+        const livestock = _loadWorldLivestock();
+        const entry = livestock.find(l => l.id === id);
+        if (!entry) return;
+        entry.forSale = price ? { price } : null;
+        _saveWorldLivestock(livestock);
+        showToast(price ? `${entry.name} offered for sale at ${price}g.` : `${entry.name} no longer for sale.`, true);
+        renderFarmLivestock();
+      }
+
+      // Credits gold straight into the owner's per-world save data, even
+      // though they aren't the one currently playing — everything lives in
+      // one shared local save file, so this is the closest local simulation
+      // of a real sale completing (see saveMemberWorldData's shape).
+      function creditOwnerGold(amount) {
+        const worldId = _tothalWorldId();
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          const ownerId = world.ownerCharacterId;
+          if (!world.members) world.members = {};
+          if (!world.members[ownerId]) world.members[ownerId] = { nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {}, joinedAt: Date.now() };
+          const memberInv = world.members[ownerId].nonGearInventory || (world.members[ownerId].nonGearInventory = {});
+          memberInv.gold = (memberInv.gold || 0) + amount;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
+      function buyLivestock(id) {
+        const livestock = _loadWorldLivestock();
+        const target = livestock.find(l => l.id === id);
+        if (!target?.forSale) return;
+        const price = target.forSale.price;
+        if ((inventory.gold || 0) < price) { showToast(`Not enough gold (need ${price}g).`, false); return; }
+        const entry = _removeWorldLivestockAndCleanup(id);
+        if (!entry) return;
+        inventory.gold -= price;
+        creditOwnerGold(price);
+        _addToOwnStable(_stableEntryFromLivestock(entry));
+        saveMemberWorldData();
+        showToast(`Bought ${entry.name} for ${price}g!`, true);
+        if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
+        renderFarmLivestock(); renderFarmGridGlance();
+      }
+
+      // Free transfer of an owner-flagged "stable-able" animal into a
+      // farmhand's own stable — gated purely by that per-animal flag rather
+      // than the general 'livestock' permission, since the owner already
+      // opted this specific animal in.
+      function takeStableableLivestock(id) {
+        const livestock = _loadWorldLivestock();
+        const target = livestock.find(l => l.id === id);
+        if (!target?.stableable) return;
+        const entry = _removeWorldLivestockAndCleanup(id);
+        if (!entry) return;
+        _addToOwnStable(_stableEntryFromLivestock(entry));
+        showToast(`${entry.name} moved to your stable.`, true);
+        renderFarmLivestock(); renderFarmGridGlance();
+      }
+
+      function renderFarmStoragePane() {
+        const locked = document.getElementById('farmStorageLocked');
+        const body = document.getElementById('farmStorageBody');
+        const canAccess = hasFarmPermission('storage');
+        if (locked) locked.hidden = canAccess;
+        if (body) body.hidden = !canAccess;
+        if (!canAccess) return;
+
+        const store = _loadWorldStorage();
+        const bagList = document.getElementById('farmStorageBagList');
+        if (bagList) {
+          const keys = Object.keys(inventory).filter(k => k !== 'gold' && ITEM_DEFS[k] && (inventory[k] || 0) > 0);
+          bagList.innerHTML = keys.length ? '' : '<div class="farm-note">Bag is empty.</div>';
+          keys.forEach(k => {
+            const def = ITEM_DEFS[k];
+            const row = document.createElement('div');
+            row.className = 'farm-storage-row';
+            row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-value">${esc(def.label)} ×${inventory[k]}</span><button class="settings-small-btn">Store</button>`;
+            row.querySelector('button').addEventListener('click', () => depositToFarmStorage(k, 1));
+            bagList.appendChild(row);
+          });
+        }
+        const boxList = document.getElementById('farmStorageBoxList');
+        if (boxList) {
+          const keys = Object.keys(store).filter(k => (store[k] || 0) > 0);
+          boxList.innerHTML = keys.length ? '' : '<div class="farm-note">Storage is empty.</div>';
+          keys.forEach(k => {
+            const def = ITEM_DEFS[k] || { icon: '📦', label: k };
+            const row = document.createElement('div');
+            row.className = 'farm-storage-row';
+            row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-value">${esc(def.label)} ×${store[k]}</span><button class="settings-small-btn">Take</button>`;
+            row.querySelector('button').addEventListener('click', () => withdrawFromFarmStorage(k, 1));
+            boxList.appendChild(row);
+          });
+        }
+      }
+
+      function depositToFarmStorage(key, amount) {
+        if (!hasFarmPermission('storage')) return;
+        const n = Math.min(amount, inventory[key] || 0);
+        if (n <= 0) return;
+        inventory[key] -= n;
+        clampInventoryStack(key);
+        const store = _loadWorldStorage();
+        store[key] = (store[key] || 0) + n;
+        _saveWorldStorage(store);
+        saveMemberWorldData();
+        renderFarmStoragePane(); buildInventoryGrid(); refreshActionBar();
+      }
+
+      function withdrawFromFarmStorage(key, amount) {
+        if (!hasFarmPermission('storage')) return;
+        const store = _loadWorldStorage();
+        const n = Math.min(amount, store[key] || 0);
+        if (n <= 0) return;
+        store[key] -= n;
+        if (store[key] <= 0) delete store[key];
+        _saveWorldStorage(store);
+        inventory[key] = (inventory[key] || 0) + n;
+        saveMemberWorldData();
+        renderFarmStoragePane(); buildInventoryGrid(); refreshActionBar();
+      }
+
+      const FARMHAND_PERM_LABELS = { storage: 'Storage', plant: 'Plant', harvest: 'Harvest', placeFurniture: 'Furniture', alterFarm: 'Till/Dig', livestock: 'Livestock' };
+
+      // Owner-only: manage farmhand grants. Reads hobunjiSaveMeta directly
+      // (like _loadWorldLivestock() etc.) since farmhands/characters live
+      // there, not on any live in-memory state.
+      function renderFarmhandsSection() {
+        const section = document.getElementById('farmhandsSection');
+        if (!section) return;
+        const owner = isFarmOwner();
+        section.hidden = !owner;
+        if (!owner) return;
+
+        let meta = null;
+        try { meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); } catch {}
+        const world = (meta?.worlds || []).find(w => w.id === _tothalWorldId());
+        if (!world) return;
+
+        const list = document.getElementById('farmhandsList');
+        if (list) {
+          const farmhands = world.farmhands || [];
+          list.innerHTML = farmhands.length ? '' : '<div class="farm-note">No farmhands yet.</div>';
+          farmhands.forEach(fh => {
+            const char = (meta.characters || []).find(c => c.id === fh.characterId);
+            const wrap = document.createElement('div');
+            wrap.className = 'farm-row';
+            wrap.style.flexWrap = 'wrap';
+            wrap.innerHTML = `<span class="farm-row-value" style="flex:1 0 100%;font-size:12px;color:var(--text)">${esc(char?.nickname || 'Unknown')}</span>`;
+            Object.entries(FARMHAND_PERM_LABELS).forEach(([key, label]) => {
+              const cell = document.createElement('div');
+              cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px';
+              cell.innerHTML =
+                `<label class="settings-toggle" style="width:auto"><input type="checkbox" ${fh.permissions?.[key] ? 'checked' : ''}><span class="toggle-slider"></span></label>` +
+                `<span style="font-size:9px;color:var(--muted)">${esc(label)}</span>`;
+              cell.querySelector('input').addEventListener('change', e => window.__hobunjiAddFarmhand(fh.characterId, { [key]: e.target.checked }));
+              wrap.appendChild(cell);
+            });
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'settings-small-btn';
+            removeBtn.textContent = 'Remove';
+            removeBtn.addEventListener('click', () => { window.__hobunjiRemoveFarmhand(fh.characterId); renderFarmhandsSection(); });
+            wrap.appendChild(removeBtn);
+            list.appendChild(wrap);
+          });
+        }
+
+        const select = document.getElementById('farmAddFarmhandSelect');
+        if (select) {
+          const existingIds = new Set((world.farmhands || []).map(f => f.characterId));
+          const candidates = (meta.characters || []).filter(c => c.id !== world.ownerCharacterId && !existingIds.has(c.id));
+          select.innerHTML = candidates.length
+            ? candidates.map(c => `<option value="${esc(c.id)}">${esc(c.nickname || 'Unnamed')}</option>`).join('')
+            : '<option value="">No other characters</option>';
+          select.disabled = !candidates.length;
+        }
+      }
+
+      const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆' };
+
+      // Your personal companion collection — character-scoped, untradeable,
+      // never tied to any farm. Rename, set the one active companion (spawned
+      // via syncCompanionFromWhistle/updateCompanions like the starter
+      // dabinggi-hound always has been), and see the level stub for later.
+      function renderStablePanel() {
+        const list = document.getElementById('stableList');
+        if (!list) return;
+        list.innerHTML = stable.length ? '' : '<div class="farm-note">Your stable is empty. Add an undeployed creature item from the Inventory tab.</div>';
+        stable.forEach(entry => {
+          const isActive = entry.id === activeCompanionId;
+          const row = document.createElement('div');
+          row.className = 'farm-row';
+          row.innerHTML =
+            `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${isActive ? 'Active companion' : 'Set as active companion'}">${isActive ? '★' : '☆'}</button>` +
+            `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span>` +
+            `<input class="farm-row-name" value="${esc(entry.name || defaultLivestockName(entry.kind))}" maxlength="30">` +
+            (entry.genotype?.fur ? `<span class="farm-swatch" style="background:${esc(entry.genotype.fur.color)}" title="Fur color"></span>` : '') +
+            (entry.genotype?.plates ? `<span class="farm-swatch" style="background:${esc(entry.genotype.plates.color)}" title="Plate color"></span>` : '') +
+            `<span class="farm-row-value">Lv. ${entry.level || 0} <span style="opacity:.6">(leveling coming soon)</span></span>`;
+          row.querySelector('.farm-companion-btn').addEventListener('click', () => {
+            activeCompanionId = isActive ? null : entry.id;
+            saveStable();
+            renderStablePanel();
+          });
+          row.querySelector('.farm-row-name').addEventListener('change', e => {
+            const trimmed = e.target.value.trim().slice(0, 30);
+            if (!trimmed) return;
+            entry.name = trimmed;
+            saveStable();
+          });
+          list.appendChild(row);
+        });
+      }
+
       function renderCalendarPanel() {
         if (!calToday) return;
         calViewYear = yearNumber(calendar.day);
@@ -11755,7 +12779,8 @@
       // ownership-gated — wilderness/town resource gathering, combat, and
       // navigation are always open to any farmhand. Returns null when the
       // action isn't farm-alteration at all (weapon swings, obj_
-      // interactions, spawn_uumkaoii debug spawns, etc.).
+      // interactions, etc.). Adding livestock isn't a tile action at all
+      // anymore — see addLivestockFromItem(), invoked from the Farm tab.
       function farmActionPermissionCategory(tool, action) {
         if (action.startsWith('place_')) {
           // placeDecorativeFurniture() also accepts area:'interior' pieces
@@ -11789,8 +12814,6 @@
           result = placeDecorativeFurniture(col, row, action.slice(12));
         } else if (action.startsWith('place_')) {
           result = placeProcessingFurniture(col, row, action.slice(6));
-        } else if (action === 'spawn_uumkaoii') {
-          result = spawnUumkaoii(col, row);
         } else if (action.startsWith('plant_')) {
           result = plantCrop(tile, action.slice(6));
         } else if (action === 'harvest') {
@@ -17871,6 +18894,7 @@
         calendar.day += 1;
         chooseWeatherForDay();
         tickCropDay();
+        tickLivestockBreeding();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
         checkTothalShift();
         // Any den wiped out since it started waiting can now be moved back
@@ -17890,6 +18914,7 @@
         calendar.time01 = 0; // wake at MORNING_HOUR
         chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
         tickCropDay();
+        tickLivestockBreeding();
         checkTothalShift();
         pendingDenRespawn.clear();
         player.health  = player.maxHealth;
@@ -18679,16 +19704,6 @@
               action: 'place_decor_' + decorKey,
               style: 'plant',
               allowed: count > 0 && areaOk && canPlaceDecorativeFurnitureAt(reticle.col, reticle.row),
-            });
-          }
-          if (item.key === 'uumkaoiiCrate') {
-            const count = inventory.uumkaoiiCrate || 0;
-            btns.push({
-              icon: '🦆',
-              label: count > 0 ? `Release (${count})` : 'No crate',
-              action: 'spawn_uumkaoii',
-              style: 'plant',
-              allowed: count > 0 && canSpawnAnimalAt(reticle.col, reticle.row),
             });
           }
         }
@@ -20082,6 +21097,20 @@
         if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
         if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
         ensureGearClothingCollection();
+
+        // Personal stable — same lazy-seed pattern as the whistles block just
+        // above: a character with no stable yet gets the starter dabinggi-hound
+        // (matching gearInventory.whistles' starter whistle) so "the dabinggi
+        // hound you start with is stored in the stable" holds for old saves too.
+        stable = Array.isArray(playerData.stable) ? playerData.stable.map(s => ({ ...s })) : [];
+        activeCompanionId = playerData.activeCompanionId ?? null;
+        if (!stable.length) {
+          const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: null, aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
+          stable.push(starter);
+          activeCompanionId = starter.id;
+        }
+        if (!activeCompanionId && stable.length) activeCompanionId = stable[0].id;
+        saveStable();
         // Restore whichever literal tool/weapon/whistle instance was equipped
         // in each slot last session (see saveEquipmentSlots) — skips any slot
         // whose saved item no longer exists in this character's gearInventory

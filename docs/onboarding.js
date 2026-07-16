@@ -561,8 +561,11 @@
 
   // Default farmhand permission flags. The world owner always has full
   // permissions implicitly and is never represented in the farmhands list.
+  // 'livestock' gates adding creatures to the farm and setting/breaking
+  // breeding pairs — separate from 'alterFarm' (till/plant/dig) since a
+  // farmhand may be trusted with crops but not with the animals.
   function makeDefaultFarmhandPermissions() {
-    return { storage: false, plant: false, harvest: false, placeFurniture: false, alterFarm: false };
+    return { storage: false, plant: false, harvest: false, placeFurniture: false, alterFarm: false, livestock: false };
   }
 
   function makeDefaultWorld(characterId) {
@@ -572,7 +575,9 @@
       ownerCharacterId:  characterId,
       farmhands:         [],   // [{ characterId, permissions }] — non-owner members with farm access grants
       members:           {},   // { [characterId]: memberState } — world-scoped data per character who has joined
-      livestock:         [],   // [{ id, kind, col, row, releasedAt }] — belongs to the world itself, not any character
+      livestock:         [],   // [{ id, kind, col, row, releasedAt, name, genotype }] — belongs to the world itself, not any character
+      breedingPairs:     [],   // [{ id, parentA, parentB, startedDay, readyDay }] — parentA/B are { source: 'world'|'stable', id, characterId? } refs; resolved on day-tick
+      storage:           {},   // { [itemKey]: count } — shared farm storage pool, world-scoped like livestock
       keyItems:          [],
       lastDay:           1,
       lastSeason:        'Stormtide',
@@ -595,9 +600,9 @@
   // Owner gets implicit full permissions; farmhands get whatever's been granted.
   function getFarmhandPermissions(world, characterId) {
     if (isWorldOwner(world, characterId)) {
-      return { storage: true, plant: true, harvest: true, placeFurniture: true, alterFarm: true };
+      return { storage: true, plant: true, harvest: true, placeFurniture: true, alterFarm: true, livestock: true };
     }
-    return getFarmhandEntry(world, characterId)?.permissions || makeDefaultFarmhandPermissions();
+    return { ...makeDefaultFarmhandPermissions(), ...(getFarmhandEntry(world, characterId)?.permissions || {}) };
   }
 
   function ensureWorldMember(world, characterId) {
@@ -632,6 +637,16 @@
   function worldsForCharacter(meta, characterId) {
     return (meta.worlds || []).filter(w =>
       w.ownerCharacterId === characterId || (w.farmhands || []).some(f => f.characterId === characterId)
+    );
+  }
+
+  // Local worlds this character neither owns nor has joined — the pool the
+  // save-select screen's "Join a Local World" section offers, so a second
+  // character (this player's own alt, until real networking exists) can
+  // preview what joining a friend's farm as a farmhand would feel like.
+  function otherLocalWorlds(meta, characterId) {
+    return (meta.worlds || []).filter(w =>
+      w.ownerCharacterId !== characterId && !(w.farmhands || []).some(f => f.characterId === characterId)
     );
   }
 
@@ -897,6 +912,35 @@
           <div class="sl-section-label">Choose Your World <span class="sl-char-ref">— ${esc(selChar.nickname || 'Farmer')}</span></div>
           <div class="sl-world-grid">${worldCardsHtml}${newWorldHtml}</div>
         </div>`;
+
+      // Other local worlds this character could join as a farmhand — lets a
+      // second character (this player's own alt, pre-networking) preview
+      // what joining someone else's farm will feel like once multiplayer
+      // exists. Joining grants zero permissions by default; the owner grants
+      // access afterward from that farm's Farm tab, same as a real invite.
+      const joinable = otherLocalWorlds(meta, selChar.id);
+      if (joinable.length) {
+        const joinCardsHtml = joinable.map(w => {
+          const owner = chars.find(c => c.id === w.ownerCharacterId);
+          return `
+          <div class="sl-world-card-wrap">
+            <button class="sl-world-card sl-world-joinable" data-sl-world-join="${esc(w.id)}" type="button">
+              <div class="sl-world-icon">🌿</div>
+              <div class="sl-world-info">
+                <div class="sl-world-name">${esc(w.label || 'Hobunji Hollow')}</div>
+                <div class="sl-world-meta">${esc(owner?.nickname || 'Unknown')}'s farm · Day ${w.lastDay ?? 1}</div>
+                <div class="sl-world-date">${relDate(w.lastPlayed)}</div>
+              </div>
+              <div class="sl-world-join-badge">＋ Join</div>
+            </button>
+          </div>`;
+        }).join('');
+        worldSectionHtml += `
+        <div class="sl-section">
+          <div class="sl-section-label">Join a Local World <span class="sl-char-ref">— joins as an ungranted farmhand until the owner grants access</span></div>
+          <div class="sl-world-grid">${joinCardsHtml}</div>
+        </div>`;
+      }
     }
 
     const canPlay = selChar && (_selWorldId === 'new' || selWorld || worlds.length === 0);
@@ -970,6 +1014,17 @@
       if (world.members) delete world.members[_selCharId];
       saveSaveMeta(_saveMeta);
       if (_selWorldId === worldId) _selWorldId = null;
+      rerenderSaveSelect();
+    }));
+
+    _el.querySelectorAll('[data-sl-world-join]').forEach(btn => btn.addEventListener('click', () => {
+      if (!_saveMeta || !_selCharId) return;
+      const worldId = btn.dataset.slWorldJoin;
+      const world = (_saveMeta.worlds || []).find(w => w.id === worldId);
+      if (!world) return;
+      addFarmhand(world, _selCharId, {}); // zero permissions — owner grants access later, same as a real invite
+      saveSaveMeta(_saveMeta);
+      _selWorldId = worldId;
       rerenderSaveSelect();
     }));
 
@@ -1087,6 +1142,12 @@
       activeTool:        char.activeTool || null,
       skillLevels:       { ...(char.skillLevels    || makeDefaultSkills()) },
       stats:             { ...char.stats },
+      // Character-scoped personal livestock collection (companions) — travels
+      // with the character between worlds, unlike farm livestock which
+      // belongs to the world. Empty/missing is backfilled with the starter
+      // dabinggi-hound lazily in game.js, same as gearInventory.whistles.
+      stable:            (char.stable || []).map(s => ({ ...s })),
+      activeCompanionId: char.activeCompanionId ?? null,
       playerId:          char.playerId,
       characterId:       char.id,
       worldId:           world.id,
@@ -1404,6 +1465,8 @@
         })(),
         skillLevels:      makeDefaultSkills(),
         stats:            makeDefaultStats(),
+        stable:           [],   // backfilled with the starter dabinggi-hound lazily in game.js
+        activeCompanionId: null,
         createdAt:        Date.now(),
         lastPlayed:       Date.now(),
       };
@@ -1422,6 +1485,8 @@
       playerData.gearInventory  = newChar.gearInventory;
       playerData.skillLevels    = newChar.skillLevels;
       playerData.stats          = newChar.stats;
+      playerData.stable         = newChar.stable;
+      playerData.activeCompanionId = newChar.activeCompanionId;
       playerData.nonGearInventory = { ...memberState.nonGearInventory };
       playerData.packClothing   = [...memberState.packClothing];
       playerData.npcRelationships = { ...memberState.npcRelationships };
@@ -1440,6 +1505,23 @@
     document.dispatchEvent(new CustomEvent('hobunjiPlayerReady', { detail: playerData }));
   }
 
+  // Lightweight fallback name/genotype for livestock saved before naming and
+  // genetics existed. The real generation logic (random fur/plate colors,
+  // sell value, breeding) lives in game.js's fuller livestock genetics
+  // module — this only needs to produce *a* valid shape so old saves load.
+  function defaultLivestockName(kind) {
+    return kind === 'uumkaoii' ? "Uumkao'ii" : (kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock');
+  }
+  function makeDefaultGenotype(kind) {
+    if (kind === 'uumkaoii') {
+      return {
+        fur:    { color: '#8a6d4b', copies: 2, inheritance: 'dominant' },
+        plates: { color: '#4b6d5f', copies: 2, inheritance: 'dominant' },
+      };
+    }
+    return {};
+  }
+
   // Brings save data created before the character/world data split up to the
   // current schema: hidden player ids + stats on characters, and
   // ownerCharacterId/farmhands/members on worlds.
@@ -1447,6 +1529,8 @@
     (meta.characters || []).forEach(c => {
       if (!c.playerId) c.playerId = genPlayerId();
       if (!c.stats)    c.stats    = makeDefaultStats();
+      if (!c.stable)   c.stable   = []; // backfilled with the starter dabinggi-hound lazily in game.js
+      if (c.activeCompanionId === undefined) c.activeCompanionId = null;
       delete c.npcFavor; // moved to world.members[charId].npcRelationships
     });
     (meta.worlds || []).forEach(w => {
@@ -1456,6 +1540,23 @@
       if (!w.farmhands) w.farmhands = [];
       if (!w.members)   w.members   = {};
       if (!w.livestock) w.livestock = [];
+      if (!w.breedingPairs) w.breedingPairs = [];
+      if (!w.storage)   w.storage   = {};
+      w.farmhands.forEach(f => { f.permissions = { ...makeDefaultFarmhandPermissions(), ...f.permissions }; });
+      w.livestock.forEach(entry => {
+        if (!entry.name) entry.name = defaultLivestockName(entry.kind);
+        if (!entry.genotype) entry.genotype = makeDefaultGenotype(entry.kind);
+      });
+      // Breeding pairs used to store flat parentAId/parentBId (always
+      // world-livestock ids); wrap old entries as source-tagged refs so a
+      // parent can now also point into a character's personal stable.
+      w.breedingPairs.forEach(pair => {
+        if (pair.parentA && pair.parentB) return; // already migrated
+        if (pair.parentAId) pair.parentA = { source: 'world', id: pair.parentAId };
+        if (pair.parentBId) pair.parentB = { source: 'world', id: pair.parentBId };
+        delete pair.parentAId;
+        delete pair.parentBId;
+      });
       if (w.ownerCharacterId) ensureWorldMember(w, w.ownerCharacterId);
     });
     return meta;

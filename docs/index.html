@@ -180,6 +180,8 @@
              menu tabs — buttons removed here, but #mpShipping/#mpSupplies and
              buildShippingTransferUI()/renderSupplyPage() are left intact
              below for that future hookup. -->
+        <button class="mp-tab"        data-mpanel="farm"          role="tab">🚜 Farm</button>
+        <button class="mp-tab"        data-mpanel="stable"        role="tab">🐾 Stable</button>
         <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
         <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
@@ -289,6 +291,75 @@
         <div class="cal-today" id="calToday">Anan, Waxingheat 1st, 3rd week of Stormtide</div>
         <div class="cal-weeks" id="calWeeks"></div>
       </div><!-- /mpCalendar -->
+
+      <!-- ── Farm pane: the farm's identity/progression hub — name, owner,
+           a read-only layout glance, livestock roster + breeding, shared
+           storage, and (owner-only) farmhand management. See renderFarmPanel()
+           in game.js. ──────────────────────────────────────────────────── -->
+      <div class="mp-pane" id="mpFarm">
+        <div class="farm-pane">
+          <div class="farm-header">
+            <div class="farm-name-row">
+              <input id="farmNameInput" class="farm-name-input" type="text" maxlength="40" disabled aria-label="Farm name">
+              <button id="farmNameSaveBtn" class="settings-small-btn" hidden>Save</button>
+            </div>
+            <div class="farm-owner-row">Owned by <span id="farmOwnerName">—</span></div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Layout</div>
+            <div class="farm-grid-wrap"><canvas id="farmGlanceCanvas" width="480" height="480"></canvas></div>
+            <div class="farm-grid-legend" id="farmGridLegend"></div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Livestock</div>
+            <div class="farm-toolbar">
+              <button id="farmAddLivestockBtn" class="settings-small-btn">Add Livestock</button>
+              <button id="farmPairBtn" class="settings-small-btn" disabled>Set Breeding Pair (select 2)</button>
+            </div>
+            <div id="farmBreedingPairsNote" class="farm-note"></div>
+            <div id="farmLivestockList" class="farm-list"></div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Storage</div>
+            <div id="farmStorageLocked" class="farm-note" hidden>🔒 Storage access hasn't been granted to you on this farm.</div>
+            <div id="farmStorageBody" class="farm-storage">
+              <div class="farm-storage-col">
+                <div class="farm-storage-col-title">🎒 Bag</div>
+                <div id="farmStorageBagList" class="farm-list"></div>
+              </div>
+              <div class="farm-storage-col">
+                <div class="farm-storage-col-title">🏚 Farm Storage</div>
+                <div id="farmStorageBoxList" class="farm-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="farm-section" id="farmhandsSection" hidden>
+            <div class="settings-section-title">Farmhands</div>
+            <div id="farmhandsList" class="farm-list"></div>
+            <div class="farm-toolbar">
+              <select id="farmAddFarmhandSelect" class="settings-select"></select>
+              <button id="farmAddFarmhandBtn" class="settings-small-btn">Add Farmhand</button>
+            </div>
+          </div>
+        </div>
+      </div><!-- /mpFarm -->
+
+      <!-- ── Stable pane: the character's personal, untradeable companion
+           collection — separate from any farm's livestock. See
+           renderStablePanel() in game.js. ──────────────────────────────── -->
+      <div class="mp-pane" id="mpStable">
+        <div class="farm-pane">
+          <div class="farm-header">
+            <div class="settings-section-title">🐾 Your Stable</div>
+            <div class="farm-note">Companions travel with you between farms. Stabled animals can't be placed on any farm and don't produce goods, but can still be paired to breed new tradeable livestock. Add one from an undeployed creature item in your Inventory.</div>
+          </div>
+          <div id="stableList" class="farm-list"></div>
+        </div>
+      </div><!-- /mpStable -->
 
       <!-- ── Shipping box transfer pane ───────────────────────
            Adapted from HHItemTransferLayoutV1: left player bag,
