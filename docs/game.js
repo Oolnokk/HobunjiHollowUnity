@@ -14395,6 +14395,7 @@
         return best;
       }
 
+      let lastStormDay = 0;
       function checkForMajorStorm() {
         if (calendar.weather !== 'storm') return;
         if (calendar.day === lastStormDay) return;
