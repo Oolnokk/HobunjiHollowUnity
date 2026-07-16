@@ -487,6 +487,27 @@
   border-color: rgba(255, 255, 255, 0.4);
 }
 
+/* Joinable worlds — other local characters' farms this character hasn't
+   joined yet. Dashed border distinguishes "not yours" from your own saves. */
+.sl-world-joinable {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.18);
+  position: relative;
+}
+.sl-world-joinable:hover {
+  border-color: rgba(249, 226, 138, 0.5);
+  background: rgba(249, 226, 138, 0.06);
+}
+.sl-world-join-badge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 9px;
+  color: #f9e28a;
+  opacity: 0.85;
+  letter-spacing: 0.02em;
+}
+
 /* Footer */
 .sl-footer {
   display: flex;

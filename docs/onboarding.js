@@ -640,6 +640,16 @@
     );
   }
 
+  // Local worlds this character neither owns nor has joined — the pool the
+  // save-select screen's "Join a Local World" section offers, so a second
+  // character (this player's own alt, until real networking exists) can
+  // preview what joining a friend's farm as a farmhand would feel like.
+  function otherLocalWorlds(meta, characterId) {
+    return (meta.worlds || []).filter(w =>
+      w.ownerCharacterId !== characterId && !(w.farmhands || []).some(f => f.characterId === characterId)
+    );
+  }
+
   // ── Default state ─────────────────────────────────────────────────────
   function makeDefaultState(speciesId, gender) {
     speciesId = speciesId || 'mao-ao';
@@ -902,6 +912,35 @@
           <div class="sl-section-label">Choose Your World <span class="sl-char-ref">— ${esc(selChar.nickname || 'Farmer')}</span></div>
           <div class="sl-world-grid">${worldCardsHtml}${newWorldHtml}</div>
         </div>`;
+
+      // Other local worlds this character could join as a farmhand — lets a
+      // second character (this player's own alt, pre-networking) preview
+      // what joining someone else's farm will feel like once multiplayer
+      // exists. Joining grants zero permissions by default; the owner grants
+      // access afterward from that farm's Farm tab, same as a real invite.
+      const joinable = otherLocalWorlds(meta, selChar.id);
+      if (joinable.length) {
+        const joinCardsHtml = joinable.map(w => {
+          const owner = chars.find(c => c.id === w.ownerCharacterId);
+          return `
+          <div class="sl-world-card-wrap">
+            <button class="sl-world-card sl-world-joinable" data-sl-world-join="${esc(w.id)}" type="button">
+              <div class="sl-world-icon">🌿</div>
+              <div class="sl-world-info">
+                <div class="sl-world-name">${esc(w.label || 'Hobunji Hollow')}</div>
+                <div class="sl-world-meta">${esc(owner?.nickname || 'Unknown')}'s farm · Day ${w.lastDay ?? 1}</div>
+                <div class="sl-world-date">${relDate(w.lastPlayed)}</div>
+              </div>
+              <div class="sl-world-join-badge">＋ Join</div>
+            </button>
+          </div>`;
+        }).join('');
+        worldSectionHtml += `
+        <div class="sl-section">
+          <div class="sl-section-label">Join a Local World <span class="sl-char-ref">— joins as an ungranted farmhand until the owner grants access</span></div>
+          <div class="sl-world-grid">${joinCardsHtml}</div>
+        </div>`;
+      }
     }
 
     const canPlay = selChar && (_selWorldId === 'new' || selWorld || worlds.length === 0);
@@ -975,6 +1014,17 @@
       if (world.members) delete world.members[_selCharId];
       saveSaveMeta(_saveMeta);
       if (_selWorldId === worldId) _selWorldId = null;
+      rerenderSaveSelect();
+    }));
+
+    _el.querySelectorAll('[data-sl-world-join]').forEach(btn => btn.addEventListener('click', () => {
+      if (!_saveMeta || !_selCharId) return;
+      const worldId = btn.dataset.slWorldJoin;
+      const world = (_saveMeta.worlds || []).find(w => w.id === worldId);
+      if (!world) return;
+      addFarmhand(world, _selCharId, {}); // zero permissions — owner grants access later, same as a real invite
+      saveSaveMeta(_saveMeta);
+      _selWorldId = worldId;
       rerenderSaveSelect();
     }));
 
