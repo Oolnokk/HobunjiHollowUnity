@@ -2153,10 +2153,19 @@
 
     .farm-list { display: flex; flex-direction: column; gap: 5px; max-height: 220px; overflow-y: auto; }
     .farm-row {
-      display: flex; align-items: center; gap: 8px;
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
       padding: 6px 8px; border-radius: 8px;
       background: rgba(255,255,255,0.025); border: 1px solid var(--border);
     }
+    /* Ownership-transfer/marketplace controls — full-width so they wrap onto
+       their own line under the main pick/name/value row instead of cramming
+       into it. */
+    .farm-row-extra {
+      width: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+      margin-top: 2px; padding-top: 6px; border-top: 1px dashed var(--border);
+    }
+    .farm-stableable-toggle { display: flex; align-items: center; gap: 3px; font-size: 9px; color: var(--muted); }
+    .farm-price-input { width: 56px; font-size: 10px; border: 1px solid var(--border-bright); border-radius: 6px; background: rgba(255,255,255,0.05); color: var(--text); padding: 3px 5px; }
     .farm-row-icon { font-size: 14px; flex-shrink: 0; }
     .farm-row-name {
       flex: 1; min-width: 0; background: transparent; border: 1px solid transparent;
@@ -2171,6 +2180,8 @@
     .farm-storage-col-title { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
     .farm-storage-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; background: rgba(255,255,255,0.025); border: 1px solid var(--border); }
     .farm-storage-row .iib-icon, .farm-storage-row .farm-row-icon { font-size: 13px; }
+    .farm-companion-btn { flex-shrink: 0; padding: 3px 7px; }
+    .farm-companion-btn.active { color: var(--accent); border-color: var(--accent); background: rgba(249,226,138,0.14); }
     .farm-storage-row .farm-row-value { flex: 1; }
     @media(max-width: 480px) { .farm-storage { grid-template-columns: 1fr; } }
 
@@ -2193,6 +2204,7 @@
     #mpTasks,
     #mpRelationships,
     #mpFarm,
+    #mpStable,
     .farm-list,
     .fed-scroll {
       touch-action: pan-y;

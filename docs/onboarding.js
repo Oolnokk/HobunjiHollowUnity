@@ -576,7 +576,7 @@
       farmhands:         [],   // [{ characterId, permissions }] — non-owner members with farm access grants
       members:           {},   // { [characterId]: memberState } — world-scoped data per character who has joined
       livestock:         [],   // [{ id, kind, col, row, releasedAt, name, genotype }] — belongs to the world itself, not any character
-      breedingPairs:     [],   // [{ id, parentAId, parentBId, startedDay, readyDay }] — resolved on day-tick
+      breedingPairs:     [],   // [{ id, parentA, parentB, startedDay, readyDay }] — parentA/B are { source: 'world'|'stable', id, characterId? } refs; resolved on day-tick
       storage:           {},   // { [itemKey]: count } — shared farm storage pool, world-scoped like livestock
       keyItems:          [],
       lastDay:           1,
@@ -1142,6 +1142,12 @@
       activeTool:        char.activeTool || null,
       skillLevels:       { ...(char.skillLevels    || makeDefaultSkills()) },
       stats:             { ...char.stats },
+      // Character-scoped personal livestock collection (companions) — travels
+      // with the character between worlds, unlike farm livestock which
+      // belongs to the world. Empty/missing is backfilled with the starter
+      // dabinggi-hound lazily in game.js, same as gearInventory.whistles.
+      stable:            (char.stable || []).map(s => ({ ...s })),
+      activeCompanionId: char.activeCompanionId ?? null,
       playerId:          char.playerId,
       characterId:       char.id,
       worldId:           world.id,
@@ -1459,6 +1465,8 @@
         })(),
         skillLevels:      makeDefaultSkills(),
         stats:            makeDefaultStats(),
+        stable:           [],   // backfilled with the starter dabinggi-hound lazily in game.js
+        activeCompanionId: null,
         createdAt:        Date.now(),
         lastPlayed:       Date.now(),
       };
@@ -1477,6 +1485,8 @@
       playerData.gearInventory  = newChar.gearInventory;
       playerData.skillLevels    = newChar.skillLevels;
       playerData.stats          = newChar.stats;
+      playerData.stable         = newChar.stable;
+      playerData.activeCompanionId = newChar.activeCompanionId;
       playerData.nonGearInventory = { ...memberState.nonGearInventory };
       playerData.packClothing   = [...memberState.packClothing];
       playerData.npcRelationships = { ...memberState.npcRelationships };
@@ -1519,6 +1529,8 @@
     (meta.characters || []).forEach(c => {
       if (!c.playerId) c.playerId = genPlayerId();
       if (!c.stats)    c.stats    = makeDefaultStats();
+      if (!c.stable)   c.stable   = []; // backfilled with the starter dabinggi-hound lazily in game.js
+      if (c.activeCompanionId === undefined) c.activeCompanionId = null;
       delete c.npcFavor; // moved to world.members[charId].npcRelationships
     });
     (meta.worlds || []).forEach(w => {
@@ -1534,6 +1546,16 @@
       w.livestock.forEach(entry => {
         if (!entry.name) entry.name = defaultLivestockName(entry.kind);
         if (!entry.genotype) entry.genotype = makeDefaultGenotype(entry.kind);
+      });
+      // Breeding pairs used to store flat parentAId/parentBId (always
+      // world-livestock ids); wrap old entries as source-tagged refs so a
+      // parent can now also point into a character's personal stable.
+      w.breedingPairs.forEach(pair => {
+        if (pair.parentA && pair.parentB) return; // already migrated
+        if (pair.parentAId) pair.parentA = { source: 'world', id: pair.parentAId };
+        if (pair.parentBId) pair.parentB = { source: 'world', id: pair.parentBId };
+        delete pair.parentAId;
+        delete pair.parentBId;
       });
       if (w.ownerCharacterId) ensureWorldMember(w, w.ownerCharacterId);
     });

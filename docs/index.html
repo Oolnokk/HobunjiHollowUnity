@@ -181,6 +181,7 @@
              buildShippingTransferUI()/renderSupplyPage() are left intact
              below for that future hookup. -->
         <button class="mp-tab"        data-mpanel="farm"          role="tab">🚜 Farm</button>
+        <button class="mp-tab"        data-mpanel="stable"        role="tab">🐾 Stable</button>
         <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
         <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
@@ -346,6 +347,19 @@
           </div>
         </div>
       </div><!-- /mpFarm -->
+
+      <!-- ── Stable pane: the character's personal, untradeable companion
+           collection — separate from any farm's livestock. See
+           renderStablePanel() in game.js. ──────────────────────────────── -->
+      <div class="mp-pane" id="mpStable">
+        <div class="farm-pane">
+          <div class="farm-header">
+            <div class="settings-section-title">🐾 Your Stable</div>
+            <div class="farm-note">Companions travel with you between farms. Stabled animals can't be placed on any farm and don't produce goods, but can still be paired to breed new tradeable livestock. Add one from an undeployed creature item in your Inventory.</div>
+          </div>
+          <div id="stableList" class="farm-list"></div>
+        </div>
+      </div><!-- /mpStable -->
 
       <!-- ── Shipping box transfer pane ───────────────────────
            Adapted from HHItemTransferLayoutV1: left player bag,
