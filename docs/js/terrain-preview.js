@@ -668,6 +668,78 @@
     return issues;
   }
 
+  // Animal den geometry — mirrors game.js's buildAnimalDenMeshes exactly (see
+  // its own comment) so the Map Editor preview and headless watertightness
+  // checks see the same carved-mouth rock volume the live game renders.
+  function buildAnimalDenGeometry(dens, zGrid) {
+    const pos = [], idx = [], meta = [];
+    let vi = 0;
+    if (!dens || !dens.length) return { pos, idx, meta };
+    const hash01 = (x, z, salt) => {
+      let h = (2166136261 ^ Math.imul(Math.round(x * 8) + salt, 374761393) ^ Math.imul(Math.round(z * 8) - salt, 668265263)) >>> 0;
+      h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+      return h / 4294967296;
+    };
+    const DEN_HEIGHT = 1.6, DEN_SINK = 0.35;
+    const MOUTH_U0 = 0.32, MOUTH_U1 = 0.68, MOUTH_V1 = 0.58, MOUTH_DEPTH = 0.5;
+    const addPlanarQuad = (corners, segsU, segsV, jitter) => {
+      const ux = { x: corners.p10.x - corners.p00.x, y: corners.p10.y - corners.p00.y, z: corners.p10.z - corners.p00.z };
+      const vx = { x: corners.p01.x - corners.p00.x, y: corners.p01.y - corners.p00.y, z: corners.p01.z - corners.p00.z };
+      let nx = ux.y * vx.z - ux.z * vx.y, ny = ux.z * vx.x - ux.x * vx.z, nz = ux.x * vx.y - ux.y * vx.x;
+      const nlen = Math.hypot(nx, ny, nz) || 1; nx /= nlen; ny /= nlen; nz /= nlen;
+      const base = vi;
+      for (let j = 0; j <= segsV; j++) for (let i = 0; i <= segsU; i++) {
+        const u = i / segsU, v = j / segsV;
+        const x = corners.p00.x + ux.x * u + vx.x * v;
+        const y = corners.p00.y + ux.y * u + vx.y * v;
+        const z = corners.p00.z + ux.z * u + vx.z * v;
+        let d = 0;
+        if (jitter && u > 0.001 && u < 0.999 && v > 0.001 && v < 0.999) {
+          const rib = (hash01(x, z, Math.round(y * 10)) - 0.5) * 0.16;
+          const ledge = (Math.abs((v * 5) % 1 - 0.5) < 0.14) ? 0.035 : 0;
+          d = rib + ledge;
+        }
+        pos.push(x + nx * d, y + ny * d, z + nz * d);
+      }
+      for (let j = 0; j < segsV; j++) for (let i = 0; i < segsU; i++) {
+        const a = base + j * (segsU + 1) + i, b = a + 1, c0 = a + (segsU + 1), d2 = c0 + 1;
+        idx.push(a, c0, d2, a, d2, b);
+      }
+      vi += (segsU + 1) * (segsV + 1);
+    };
+    for (const den of dens) {
+      const w = den.w || 1, h = den.h || 1;
+      const centerCol = den.x + Math.floor(w / 2), centerRow = den.y + Math.floor(h / 2);
+      const elevTier = zGrid?.[centerRow]?.[centerCol]?.elevTier || 0;
+      const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT;
+      const x0 = den.x, x1 = den.x + w, z0 = den.y, z1 = den.y + h;
+      const yBase = groundY - DEN_SINK, yTop = groundY + DEN_HEIGHT;
+      const segsPerTileH = 2, segsV = 3;
+      addPlanarQuad({ p00: { x: x1, y: yBase, z: z0 }, p10: { x: x0, y: yBase, z: z0 }, p01: { x: x1, y: yTop, z: z0 }, p11: { x: x0, y: yTop, z: z0 } }, Math.max(2, w * segsPerTileH), segsV, true);
+      addPlanarQuad({ p00: { x: x1, y: yBase, z: z1 }, p10: { x: x1, y: yBase, z: z0 }, p01: { x: x1, y: yTop, z: z1 }, p11: { x: x1, y: yTop, z: z0 } }, Math.max(2, h * segsPerTileH), segsV, true);
+      addPlanarQuad({ p00: { x: x0, y: yBase, z: z0 }, p10: { x: x0, y: yBase, z: z1 }, p01: { x: x0, y: yTop, z: z0 }, p11: { x: x0, y: yTop, z: z1 } }, Math.max(2, h * segsPerTileH), segsV, true);
+      addPlanarQuad({ p00: { x: x0, y: yTop, z: z0 }, p10: { x: x1, y: yTop, z: z0 }, p01: { x: x0, y: yTop, z: z1 }, p11: { x: x1, y: yTop, z: z1 } }, Math.max(2, w * segsPerTileH), Math.max(2, h * segsPerTileH), true);
+      const xm0 = x0 + (x1 - x0) * MOUTH_U0, xm1 = x0 + (x1 - x0) * MOUTH_U1;
+      const ym1 = yBase + (yTop - yBase) * MOUTH_V1;
+      addPlanarQuad({ p00: { x: x0, y: yBase, z: z1 }, p10: { x: xm0, y: yBase, z: z1 }, p01: { x: x0, y: yTop, z: z1 }, p11: { x: xm0, y: yTop, z: z1 } }, 2, segsV, true);
+      addPlanarQuad({ p00: { x: xm1, y: yBase, z: z1 }, p10: { x: x1, y: yBase, z: z1 }, p01: { x: xm1, y: yTop, z: z1 }, p11: { x: x1, y: yTop, z: z1 } }, 2, segsV, true);
+      addPlanarQuad({ p00: { x: xm0, y: ym1, z: z1 }, p10: { x: xm1, y: ym1, z: z1 }, p01: { x: xm0, y: yTop, z: z1 }, p11: { x: xm1, y: yTop, z: z1 } }, 2, 2, true);
+      const zIn = z1 - MOUTH_DEPTH;
+      addPlanarQuad({ p00: { x: xm0, y: yBase, z: z1 }, p10: { x: xm0, y: yBase, z: zIn }, p01: { x: xm0, y: ym1, z: z1 }, p11: { x: xm0, y: ym1, z: zIn } }, 1, 2, false);
+      addPlanarQuad({ p00: { x: xm1, y: yBase, z: zIn }, p10: { x: xm1, y: yBase, z: z1 }, p01: { x: xm1, y: ym1, z: zIn }, p11: { x: xm1, y: ym1, z: z1 } }, 1, 2, false);
+      addPlanarQuad({ p00: { x: xm0, y: ym1, z: z1 }, p10: { x: xm1, y: ym1, z: z1 }, p01: { x: xm0, y: ym1, z: zIn }, p11: { x: xm1, y: ym1, z: zIn } }, 2, 1, false);
+      meta.push({ denId: den.id, x0, x1, z0, z1, yBase, yTop });
+    }
+    return { pos, idx, meta };
+  }
+
+  function validateAnimalDenGeometry(denGeo) {
+    const issues = [];
+    if (!denGeo.pos.every(Number.isFinite)) issues.push({ severity: 'error', code: 'NON_FINITE_DEN_VERTEX', message: 'Animal den geometry has a non-finite vertex.' });
+    if (denGeo.meta.length && !denGeo.pos.length) issues.push({ severity: 'error', code: 'EMPTY_DEN_GEOMETRY', message: 'Animal dens were provided but no geometry was built for them.' });
+    return issues;
+  }
+
   // ── Waterwalls: vertical water curtains where a river crosses a plateau edge ─
   // A WATERFALL cell sits on a plateau sub-map right at its own outer edge (see
   // game.js/index.html's mirrorRiverAcrossPlateau) — its merged-grid neighbor one
@@ -846,6 +918,7 @@
     buildMergedZoneGrid, buildZGrid, applyRampCurtainFlags,
     buildPlateauMesaGeometry, buildRampMeshGeometry, buildRampCurtainGeometry,
     buildRockSourceSpans, buildRockFormationGeometry, validateRockFormationGeometry,
+    buildAnimalDenGeometry, validateAnimalDenGeometry,
     buildWaterfallWallGeometry, buildTerrainTileGeo, validateTerrain,
   };
 });

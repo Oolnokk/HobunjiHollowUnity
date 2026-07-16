@@ -1457,6 +1457,29 @@
             { key: 'alphaGarWolfHide', min: 1, max: 2 },
           ],
         },
+        // A wild, huntable/fleeable herbivore for the den+foliage-patch
+        // wildlife schedule AI (see EXTERIOR_ZONES.herbivoreSpecies/
+        // spawnPackAtDen and updateHostiles' grazing/ambush states) — a
+        // separate key from the companion `uumkaoii` above so its
+        // aiType/follow fields don't leak onto a creature that never fights
+        // or follows a master. `diet: 'herbivore'` is read by the ambush-
+        // trigger check to find prey; no aggroRangePx/leashRangePx means it
+        // never chases the player (see updateHostiles' aggro check). Not
+        // connected to the farm-livestock breeding/genotype system.
+        'uumkaoii-wild': {
+          label: "Wild Uumkao'ii", hostile: false, diet: 'herbivore',
+          maxHealth: 30, maxStamina: 20,
+          moveSpeed: 110, chaseSpeed: 110,
+          canClimb: false, canSwim: false,
+          modelWidth: 1.6, tint: 0xffffff,
+          sprites: {
+            idle: "assets/creaturesprites/uumkao'ii.png",
+            run: ["assets/creaturesprites/uumkao'ii.png"],
+          },
+          loot: [
+            { key: 'uumkaoiiMeat', min: 1, max: 2 },
+          ],
+        },
       };
 
       // Minimal standalone exterior zones reachable from the town's pre-authored
@@ -1473,6 +1496,11 @@
           // wiped-out den's replacement pack isn't necessarily the same
           // species as the one it replaces.
           packSpecies: ['gar-wolf', 'gar-wolf-alpha'],
+          // Species pool a den's next HERD is randomly drawn from, when a den
+          // rolls a herbivore population instead of a predator pack this
+          // cycle (see spawnPackAtDen) — kept as a sibling pool to packSpecies
+          // since a den's population type is decided per spawn, not fixed.
+          herbivoreSpecies: ['uumkaoii-wild'],
           entryCol: 11, entryRow: 14,
           exitCol: 11, exitRow: 15,
           townReturnCol: 30, townReturnRow: 2,
@@ -1483,6 +1511,7 @@
           cols: 22, rows: 16,
           groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
           packSpecies: ['gar-wolf', 'gar-wolf-alpha'],
+          herbivoreSpecies: ['uumkaoii-wild'],
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
@@ -1505,6 +1534,7 @@
           label: 'Western Slope',
           cols: 50, rows: 40,
           groundColor: 0x6b6a52, fogColor: 0x35342a,
+          herbivoreSpecies: ['uumkaoii-wild'],
           entryCol: 48, entryRow: 20,
           exitCol: 48, exitRow: 20,
           townReturnCol: 1, townReturnRow: 25,
@@ -1515,6 +1545,7 @@
           label: 'Eastern Mire',
           cols: 50, rows: 40,
           groundColor: 0x3a4a3a, fogColor: 0x22301f,
+          herbivoreSpecies: ['uumkaoii-wild'],
           entryCol: 1, entryRow: 20,
           exitCol: 1, exitRow: 20,
           townReturnCol: 58, townReturnRow: 25,
@@ -3887,10 +3918,30 @@
           const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
+          // A recently-fled animal gets a grace period at home before it can
+          // be re-aggro'd by the player or re-picked as ambush prey (see
+          // 'fleeing-low-health' below and applyWildlifeSkirmishDamage).
+          const onFleeCooldown = c._fleeCooldownUntil > performance.now();
 
-          if (c.state !== 'chase' && distToPlayer <= def.aggroRangePx) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
+          if (c.state !== 'chase' && c.state !== 'fleeing-low-health' && !onFleeCooldown && distToPlayer <= def.aggroRangePx) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
+
+          // Ambush trigger: only while a predator is actively watching its
+          // station (not traveling to it, fleeing, chasing, or returning) —
+          // a simple radius check against grazing herbivores tied to the same
+          // foliage patch (no line-of-sight system exists for creature-vs-
+          // creature sight today).
+          if (c.state === 'at-station-ambush-watching' && def.diet !== 'herbivore' && !onFleeCooldown) {
+            for (const prey of hostileObjects) {
+              if (prey === c || prey.health <= 0 || prey.areaId !== c.areaId) continue;
+              if (prey.def?.diet !== 'herbivore' || prey.state !== 'at-station-grazing') continue;
+              if (prey.grazingPatchId !== c.linkedPatchId) continue;
+              if (Math.hypot(prey.x - c.x, prey.y - c.y) > AMBUSH_TRIGGER_RANGE_PX) continue;
+              c.state = 'ambush-chase'; c.targetCreature = prey;
+              break;
+            }
+          }
           // Leaving chase mid-windup (player broke the leash) abandons the
           // telegraphed bite/modular attack rather than landing it from way
           // out of range.
@@ -3911,6 +3962,42 @@
             c.x = ckSwept.x; c.y = ckSwept.y;
             if (ckSwept.blockedX) c.knockbackVX = 0;
             if (ckSwept.blockedY) c.knockbackVY = 0;
+          } else if (c.state === 'fleeing-low-health') {
+            // Beelines home ignoring player/prey aggro (see the guards above)
+            // until it settles, then starts its re-aggro cooldown — nothing
+            // fights to the death in a wildlife skirmish (applyWildlifeSkirmishDamage).
+            if (distFromHome < DEN_SETTLE_RADIUS_PX) {
+              c.state = 'idle';
+              c._fleeCooldownUntil = performance.now() + WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS;
+              aimAngle = idleCreatureAimAngle(c.groupRot);
+            } else {
+              moving = moveCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, dt);
+              if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
+            }
+          } else if (c.state === 'ambush-chase') {
+            // A simplified creature-vs-creature chase (no telegraph/pounce
+            // theatrics — those are built around damaging the player
+            // specifically) — beelines onto the prey and lands plain bite
+            // damage through applyWildlifeSkirmishDamage on cooldown.
+            const prey = c.targetCreature;
+            const preyGone = !prey || prey.health <= 0 || prey.areaId !== c.areaId || prey.state === 'fleeing-low-health';
+            if (preyGone) {
+              c.state = 'idle'; c.targetCreature = null;
+            } else {
+              const pdx = prey.x - c.x, pdy = prey.y - c.y;
+              const pdist = Math.hypot(pdx, pdy);
+              if (pdist > (def.leashRangePx || TILE * 9) || distFromHome > (def.leashRangePx || TILE * 9)) {
+                c.state = 'return'; c.targetCreature = null;
+              } else {
+                aimAngle = Math.atan2(pdy, pdx);
+                moving = moveCreatureToward(c, prey.x, prey.y, def.chaseSpeed || def.moveSpeed, dt);
+                const triggerRangePx = def.attackRangePx || TILE * 0.85;
+                if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
+                  c.attackCooldownT = def.attackCooldownS || 1.0;
+                  applyWildlifeSkirmishDamage(c, prey, def.attackDamage || 8);
+                }
+              }
+            }
           } else if (c.state === 'chase') {
             aimAngle = Math.atan2(dyp, dxp);
             if (c.retreatT > 0) {
@@ -3996,15 +4083,35 @@
               aimAngle = idleCreatureAimAngle(c.groupRot);
             }
           } else {
-            // Active hours (or a non-denned creature, e.g. legacy/authored
-            // zones without den data): pack creatures roam a wider territory
-            // around their den by day than the tight loiter radius everything
-            // else uses.
-            const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
-            moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
-            // Wandering has an explicit heading; paused between legs, there's no
-            // specific direction to look, so settle broadside to the camera.
-            aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
+            // Active hours. A creature with an assigned foliage-patch station
+            // (see assignWildlifeStation) travels to it and settles there
+            // instead of wandering freely — a herbivore grazes in the patch
+            // itself, a predator watches from its nearby ambush point (see
+            // the ambush-trigger check above). Falls back to the original
+            // plain wander with no station assigned (legacy zones without
+            // generator data, or no rich patch found for a predator).
+            const isHerbivore = def.diet === 'herbivore';
+            const station = isHerbivore ? c.grazingTile : c.ambushStation;
+            if (station) {
+              const stationX = (station.x + 0.5) * TILE, stationY = (station.y + 0.5) * TILE;
+              const distToStation = Math.hypot(c.x - stationX, c.y - stationY);
+              if (distToStation > DEN_SETTLE_RADIUS_PX) {
+                c.state = 'scheduled-travel-to-station';
+                moving = moveCreatureToward(c, stationX, stationY, def.moveSpeed, dt);
+                if (moving) aimAngle = Math.atan2(stationY - c.y, stationX - c.x);
+              } else {
+                c.state = isHerbivore ? 'at-station-grazing' : 'at-station-ambush-watching';
+                aimAngle = idleCreatureAimAngle(c.groupRot);
+              }
+            } else {
+              // Pack creatures roam a wider territory around their den by day
+              // than the tight loiter radius everything else uses.
+              const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
+              moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
+              // Wandering has an explicit heading; paused between legs, there's no
+              // specific direction to look, so settle broadside to the camera.
+              aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
+            }
           }
           c.facing = aimAngle;
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
@@ -4064,6 +4171,10 @@
           for (const h of hostileObjects) {
             if (h.health <= 0) continue;
             if (h.areaId !== currentArea) continue;
+            // Wild herbivores (e.g. uumkaoii-wild) live in hostileObjects too
+            // (see spawnPackAtDen/EXTERIOR_ZONES.herbivoreSpecies) but never
+            // fight — companions should ignore them, not treat them as prey.
+            if (h.def?.hostile === false) continue;
             if (Math.hypot(h.x - master.x, h.y - master.y) <= ALERT_RANGE_PX) { target = h; break; }
           }
 
@@ -4585,11 +4696,28 @@
             if (!merged) { debugLog(`Tothal Shift: no fold math available for ${zoneId}, skipping`, 'warn'); continue; }
 
             const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
+            // One entrance transition per den, at its mouth tile — leads into
+            // the procedurally generated cavern synthesized in-memory by
+            // loadBuildingScene (see its 'map_i_den_' handling). Den ids are
+            // already unique per zone (see placeAnimalDens), so the cavern
+            // mapId built from zoneId+denId is stable across a session and
+            // regenerates fresh whenever the zone itself reshapes.
+            const denTransitions = (workspace.animalDens || [])
+              .filter(den => den.mouthAnchor)
+              .map(den => ({
+                id: `den_${den.id}_enter`, label: 'A dark burrow', col: den.mouthAnchor.x, row: den.mouthAnchor.y,
+                target: 'building', targetMapId: `map_i_den_${zoneId}_${den.id}`,
+              }));
             _zoneLayouts.set(zoneId, {
               cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
-              transitions: preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
+              transitions: [
+                ...preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
+                ...denTransitions,
+              ],
               toTownExit, mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
               dens: workspace.animalDens || [],
+              foliagePatches: workspace.foliagePatches || [],
+              ambushStations: workspace.ambushStations || [],
             });
             // A reshaped zone's dens are all new — forget any leftover pack/
             // respawn bookkeeping from the previous layout's den ids (see
@@ -4720,6 +4848,74 @@
       const DEN_SETTLE_RADIUS_PX = TILE * 0.6;
       let denCheckTimer = 0;
 
+      // Wildlife schedule AI (den = home, foliage patches = feeding/ambush
+      // stations) — see applyWildlifeSkirmishDamage/assignWildlifeStation
+      // and updateHostiles' 'fleeing-low-health'/'ambush-chase'/
+      // 'at-station-grazing'/'at-station-ambush-watching' states.
+      const WILDLIFE_FLEE_HP_THRESHOLD = 0.3; // health ratio that forces a losing animal to disengage and run home
+      const WILDLIFE_HP_FLOOR_FRACTION = 0.12; // wildlife-vs-wildlife skirmishes can never reduce health below this fraction — nothing dies from them
+      const WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS = 6000; // grace period after reaching home before a fled animal can be re-aggro'd/re-ambushed
+      const AMBUSH_TRIGGER_RANGE_PX = TILE * 3.5; // how close a grazing herbivore has to wander for a watching predator to notice it
+
+      // Non-lethal analogue of damageCreature, used only for predator-vs-prey
+      // wildlife skirmishes (see the 'ambush-chase' state) — player and
+      // companion combat still go through damageCreature directly and stay
+      // lethal. Clamps damage so health can never drop below
+      // WILDLIFE_HP_FLOOR_FRACTION, and forces the target into
+      // 'fleeing-low-health' once it's hurt enough, even if it was already
+      // below threshold before this hit.
+      function applyWildlifeSkirmishDamage(attacker, target, amount) {
+        const floor = target.maxHealth * WILDLIFE_HP_FLOOR_FRACTION;
+        const clamped = Math.max(0, Math.min(amount, target.health - floor));
+        if (clamped > 0) damageCreature(target, clamped, attacker.x, attacker.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp' });
+        if (target.health > 0 && target.health / target.maxHealth <= WILDLIFE_FLEE_HP_THRESHOLD) {
+          target.state = 'fleeing-low-health';
+          target.targetCreature = null;
+        }
+      }
+
+      // The foliage patch (see workspace.foliagePatches) nearest a den's home
+      // point — geographic proximity, not zone-wide random pick, so a pack
+      // doesn't get assigned a station clear across the map. preferRich only
+      // matters for predators (see assignWildlifeStation): a predator needs a
+      // *rich* patch (the only ones with ambushStations), a herbivore will
+      // graze at any patch.
+      function nearestFoliagePatch(zoneData, homeX, homeY, { preferRich = false } = {}) {
+        const patches = zoneData?.foliagePatches;
+        if (!patches || !patches.length) return null;
+        const homeCol = homeX / TILE, homeRow = homeY / TILE;
+        const scored = patches.map(p => ({ p, d: Math.hypot(p.centroid.x - homeCol, p.centroid.y - homeRow) })).sort((a, b) => a.d - b.d);
+        if (preferRich) {
+          const rich = scored.find(s => s.p.rich);
+          if (rich) return rich.p;
+          return null; // no rich patch anywhere in the zone — this predator gets no ambush station, falls back to plain wander
+        }
+        return scored[0].p;
+      }
+
+      // Assigns a herbivore's grazing tile or a predator's ambush station,
+      // mutating the opts object makeCreatureEntity is about to be called
+      // with (see spawnPackAtDen) — a creature with neither field set just
+      // falls back to plain wandering (legacy zones without generator data,
+      // or no rich patch found).
+      function assignWildlifeStation(opts, zoneData, homeX, homeY, isHerbivore) {
+        if (isHerbivore) {
+          const patch = nearestFoliagePatch(zoneData, homeX, homeY, { preferRich: false });
+          if (!patch) return;
+          const tile = patch.tiles[Math.floor(rnd() * patch.tiles.length)];
+          opts.grazingTile = { x: tile.x, y: tile.y };
+          opts.grazingPatchId = patch.id;
+        } else {
+          const patch = nearestFoliagePatch(zoneData, homeX, homeY, { preferRich: true });
+          if (!patch) return;
+          const group = (zoneData.ambushStations || []).find(g => g.patchId === patch.id);
+          if (!group?.points?.length) return;
+          const pt = group.points[Math.floor(rnd() * group.points.length)];
+          opts.ambushStation = { x: pt.x, y: pt.y };
+          opts.linkedPatchId = patch.id;
+        }
+      }
+
       // Set on entering a wilderness zone (see enterZone); cleared the next
       // time updateHostileSpawning's den-check actually runs for that same
       // zone, at which point it logs the living-animal count so entering a
@@ -4762,20 +4958,31 @@
 
       function spawnPackAtDen(zoneId, den, denKey) {
         const zdef = EXTERIOR_ZONES[zoneId];
-        const pool = zdef?.packSpecies;
+        // A den's population type (predator pack vs. herbivore herd) is
+        // decided fresh each spawn cycle rather than fixed per den — simplest
+        // v1 (see the wildlife-schedule-AI plan's Feature 4 notes). Falls
+        // back to whichever pool the zone actually has if only one exists.
+        const hasPack = zdef?.packSpecies?.length, hasHerd = zdef?.herbivoreSpecies?.length;
+        const useHerd = hasHerd && (!hasPack || rnd() < 0.5);
+        const pool = useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies;
         if (!pool || !pool.length) {
-          window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
+          window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies/herbivoreSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
           return;
         }
         const speciesKey = pool[Math.floor(rnd() * pool.length)];
-        const homeX = den.x * TILE + TILE * 0.5, homeY = den.y * TILE + TILE * 0.5;
+        // den.x/den.y are the footprint's top-left tile (see workspace.animalDens
+        // in wilderness-map-generator.js) — spawn/home anchor is the footprint center.
+        const homeX = (den.x + (den.w || 1) * 0.5) * TILE, homeY = (den.y + (den.h || 1) * 0.5) * TILE;
         const count = DEN_PACK_SIZE_MIN + Math.floor(rnd() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
+        const zoneData = _zoneLayouts.get(zoneId);
         let spawned = 0;
         for (let i = 0; i < count; i++) {
           const angle = rnd() * Math.PI * 2;
           const dist = TILE * (0.8 + rnd() * 1.6);
           const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
-          const creature = makeCreatureEntity(speciesKey, x, y, { homeX, homeY, state: 'idle', denKey });
+          const opts = { homeX, homeY, state: 'idle', denKey };
+          assignWildlifeStation(opts, zoneData, homeX, homeY, useHerd);
+          const creature = makeCreatureEntity(speciesKey, x, y, opts);
           if (creature) { hostileObjects.add(creature); spawned++; }
           else window.__farmLog?.(`[wildlife] ${denKey}: makeCreatureEntity("${speciesKey}") returned null (attempt ${i + 1}/${count}) — bad/missing CREATURE_DB entry?`, 'wildlife');
         }
@@ -4803,9 +5010,10 @@
           // authored-only layout — see the other _zoneLayouts.set call site)
           // silently produced none. Only log once per zone per session so
           // this doesn't spam every DEN_CHECK_INTERVAL_S.
-          if (EXTERIOR_ZONES[currentArea]?.packSpecies?.length && !_loggedMissingDenZones.has(currentArea)) {
+          const zdef = EXTERIOR_ZONES[currentArea];
+          if ((zdef?.packSpecies?.length || zdef?.herbivoreSpecies?.length) && !_loggedMissingDenZones.has(currentArea)) {
             _loggedMissingDenZones.add(currentArea);
-            window.__farmLog?.(`[wildlife] zone "${currentArea}" has a packSpecies pool but no den anchors in _zoneLayouts (fallback: no wild packs will spawn here this session).`, 'wildlife');
+            window.__farmLog?.(`[wildlife] zone "${currentArea}" has a packSpecies/herbivoreSpecies pool but no den anchors in _zoneLayouts (fallback: no wild packs will spawn here this session).`, 'wildlife');
           }
           return;
         }
@@ -6008,6 +6216,7 @@
         buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
+        buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
         _zoneWaterMeshes.set(mapId, [
           ...buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
           ...buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
@@ -6472,6 +6681,97 @@
         _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.ROCK));
         mesh.userData.cameraObstacle = true; // vertical cliff-face skin — see buildPlateauMesa's own tag
         console.log(`%c[zone:${mapId}] solved rock formation built: ${spans.size} edge span(s)`, 'color:#22c55e;font-weight:bold');
+      }
+
+      // Animal dens: a solid rock volume over a den's footprint (see
+      // workspace.animalDens / placeAnimalDens in wilderness-map-generator.js)
+      // with a carved, walk-through mouth on its south face — the same
+      // deterministic rib/ledge displacement buildRockFormationMeshes uses on
+      // every other face, so the den reads as one more piece of the zone's
+      // rock, plus a recessed tunnel around the mouth's hole so the doorway
+      // looks like an actual opening instead of a dent (the innermost tunnel
+      // faces are left uncapped — a real gap the player walks through into
+      // the cavern transition, see isAnimalDenCollisionTile's matching cutout).
+      function buildAnimalDenMeshes(zScene, zGrid, dens, mapId) {
+        if (!dens || !dens.length) return;
+        const hash01 = (x, z, salt) => {
+          let h = (2166136261 ^ Math.imul(Math.round(x * 8) + salt, 374761393) ^ Math.imul(Math.round(z * 8) - salt, 668265263)) >>> 0;
+          h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+          return h / 4294967296;
+        };
+        const DEN_HEIGHT = 1.6, DEN_SINK = 0.35;
+        const MOUTH_U0 = 0.32, MOUTH_U1 = 0.68, MOUTH_V1 = 0.58, MOUTH_DEPTH = 0.5;
+        const pos = [], idx = []; let vi = 0;
+
+        // corners = {p00,p10,p01,p11}: u runs p00->p10 (and p01->p11), v runs p00->p01.
+        // jitter applies the rib/ledge rock-noise to interior (non-perimeter) vertices only.
+        const addPlanarQuad = (corners, segsU, segsV, jitter) => {
+          const ux = { x: corners.p10.x - corners.p00.x, y: corners.p10.y - corners.p00.y, z: corners.p10.z - corners.p00.z };
+          const vx = { x: corners.p01.x - corners.p00.x, y: corners.p01.y - corners.p00.y, z: corners.p01.z - corners.p00.z };
+          let nx = ux.y * vx.z - ux.z * vx.y, ny = ux.z * vx.x - ux.x * vx.z, nz = ux.x * vx.y - ux.y * vx.x;
+          const nlen = Math.hypot(nx, ny, nz) || 1; nx /= nlen; ny /= nlen; nz /= nlen;
+          const base = vi;
+          for (let j = 0; j <= segsV; j++) for (let i = 0; i <= segsU; i++) {
+            const u = i / segsU, v = j / segsV;
+            const x = corners.p00.x + ux.x * u + vx.x * v;
+            const y = corners.p00.y + ux.y * u + vx.y * v;
+            const z = corners.p00.z + ux.z * u + vx.z * v;
+            let d = 0;
+            if (jitter && u > 0.001 && u < 0.999 && v > 0.001 && v < 0.999) {
+              const rib = (hash01(x, z, Math.round(y * 10)) - 0.5) * 0.16;
+              const ledge = (Math.abs((v * 5) % 1 - 0.5) < 0.14) ? 0.035 : 0;
+              d = rib + ledge;
+            }
+            pos.push(x + nx * d, y + ny * d, z + nz * d);
+          }
+          for (let j = 0; j < segsV; j++) for (let i = 0; i < segsU; i++) {
+            const a = base + j * (segsU + 1) + i, b = a + 1, c0 = a + (segsU + 1), d2 = c0 + 1;
+            idx.push(a, c0, d2, a, d2, b);
+          }
+          vi += (segsU + 1) * (segsV + 1);
+        };
+
+        for (const den of dens) {
+          const w = den.w || 1, h = den.h || 1;
+          const centerCol = den.x + Math.floor(w / 2), centerRow = den.y + Math.floor(h / 2);
+          const elevTier = zGrid?.[centerRow]?.[centerCol]?.elevTier || 0;
+          const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT;
+          const x0 = den.x, x1 = den.x + w, z0 = den.y, z1 = den.y + h;
+          const yBase = groundY - DEN_SINK, yTop = groundY + DEN_HEIGHT;
+          const segsPerTileH = 2, segsV = 3;
+
+          // North / east / west faces: one full jittered rock panel each.
+          addPlanarQuad({ p00: { x: x1, y: yBase, z: z0 }, p10: { x: x0, y: yBase, z: z0 }, p01: { x: x1, y: yTop, z: z0 }, p11: { x: x0, y: yTop, z: z0 } }, Math.max(2, w * segsPerTileH), segsV, true);
+          addPlanarQuad({ p00: { x: x1, y: yBase, z: z1 }, p10: { x: x1, y: yBase, z: z0 }, p01: { x: x1, y: yTop, z: z1 }, p11: { x: x1, y: yTop, z: z0 } }, Math.max(2, h * segsPerTileH), segsV, true);
+          addPlanarQuad({ p00: { x: x0, y: yBase, z: z0 }, p10: { x: x0, y: yBase, z: z1 }, p01: { x: x0, y: yTop, z: z0 }, p11: { x: x0, y: yTop, z: z1 } }, Math.max(2, h * segsPerTileH), segsV, true);
+          // Top: bumpy rock lid.
+          addPlanarQuad({ p00: { x: x0, y: yTop, z: z0 }, p10: { x: x1, y: yTop, z: z0 }, p01: { x: x0, y: yTop, z: z1 }, p11: { x: x1, y: yTop, z: z1 } }, Math.max(2, w * segsPerTileH), Math.max(2, h * segsPerTileH), true);
+
+          // South face: a frame around the mouth hole, jittered like the other faces.
+          const xm0 = x0 + (x1 - x0) * MOUTH_U0, xm1 = x0 + (x1 - x0) * MOUTH_U1;
+          const ym1 = yBase + (yTop - yBase) * MOUTH_V1;
+          addPlanarQuad({ p00: { x: x0, y: yBase, z: z1 }, p10: { x: xm0, y: yBase, z: z1 }, p01: { x: x0, y: yTop, z: z1 }, p11: { x: xm0, y: yTop, z: z1 } }, 2, segsV, true); // left strip
+          addPlanarQuad({ p00: { x: xm1, y: yBase, z: z1 }, p10: { x: x1, y: yBase, z: z1 }, p01: { x: xm1, y: yTop, z: z1 }, p11: { x: x1, y: yTop, z: z1 } }, 2, segsV, true); // right strip
+          addPlanarQuad({ p00: { x: xm0, y: ym1, z: z1 }, p10: { x: xm1, y: ym1, z: z1 }, p01: { x: xm0, y: yTop, z: z1 }, p11: { x: xm1, y: yTop, z: z1 } }, 2, 2, true); // top strip (above the hole)
+          // Recessed tunnel walls around the mouth hole — smooth (no jitter),
+          // no far cap, so the hole is a real gap the player can walk through.
+          const zIn = z1 - MOUTH_DEPTH;
+          addPlanarQuad({ p00: { x: xm0, y: yBase, z: z1 }, p10: { x: xm0, y: yBase, z: zIn }, p01: { x: xm0, y: ym1, z: z1 }, p11: { x: xm0, y: ym1, z: zIn } }, 1, 2, false); // tunnel left wall
+          addPlanarQuad({ p00: { x: xm1, y: yBase, z: zIn }, p10: { x: xm1, y: yBase, z: z1 }, p01: { x: xm1, y: ym1, z: zIn }, p11: { x: xm1, y: ym1, z: z1 } }, 1, 2, false); // tunnel right wall
+          addPlanarQuad({ p00: { x: xm0, y: ym1, z: z1 }, p10: { x: xm1, y: ym1, z: z1 }, p01: { x: xm0, y: ym1, z: zIn }, p11: { x: xm1, y: ym1, z: zIn } }, 2, 1, false); // tunnel lintel (ceiling)
+        }
+        if (!idx.length) return;
+        const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.receiveShadow = true;
+        zScene.add(mesh);
+        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.ROCK));
+        mesh.userData.cameraObstacle = true;
+        console.log(`%c[zone:${mapId}] animal den formations built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
       }
 
       // Waterwall curtains: an animated vertical water sheet wherever a river
@@ -8155,7 +8455,7 @@
             // procedurally-placed animalDen anchors — only the Tothal Shift
             // path (WildernessMapGenerator) produces those (see
             // performTothalShift), so wild packs simply don't spawn here yet.
-            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, dens: [] });
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, dens: [], foliagePatches: [], ambushStations: [] });
             console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, decor=${outDecor.length}, furniture=${outFurniture.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
@@ -8333,11 +8633,162 @@
         return panels;
       }
 
+      // Same corner math as WallBuilder.js's panelCorners/panelMatrix (kept
+      // duplicated rather than imported — WallBuilder's build() pipeline is
+      // built around scattering instanced brick props onto this quad, not
+      // exposing the quad itself; cavern walls need the bare quad instead).
+      function panelCornersFor(p) {
+        const w = p.width / 2, h = p.height;
+        const base = [
+          new THREE.Vector3(-w, 0, 0), new THREE.Vector3(w, 0, 0),
+          new THREE.Vector3(w, h, 0), new THREE.Vector3(-w, h, 0),
+        ];
+        const rd = p.rotationDeg || [0, 0, 0];
+        const euler = new THREE.Euler(THREE.MathUtils.degToRad(rd[0] || 0), THREE.MathUtils.degToRad(rd[1] || 0), THREE.MathUtils.degToRad(rd[2] || 0), 'XYZ');
+        const m = new THREE.Matrix4().compose(
+          new THREE.Vector3(p.position[0], p.position[1], p.position[2]),
+          new THREE.Quaternion().setFromEuler(euler),
+          new THREE.Vector3(1, 1, 1)
+        );
+        return base.map(v => v.applyMatrix4(m));
+      }
+
+      // Cavern interior walls: a solid, per-vertex-displaced rock quad per
+      // boundary panel (buildWallPanelsFromFloorSet's own edge-detection,
+      // reused as-is) instead of houseWallBuilder's instanced-brick scatter —
+      // same rib/ledge deterministic-hash technique as buildAnimalDenMeshes/
+      // buildRockFormationMeshes, so a den's cavern reads as the same rock as
+      // its mouth outside. Determinism comes for free from the panel
+      // positions themselves (derived from the den's seeded floor blob), not
+      // from any seed threaded in here.
+      function buildCavernWalls(wallPanels, wallHeight) {
+        const hash01 = (x, z, salt) => {
+          let h = (2166136261 ^ Math.imul(Math.round(x * 8) + salt, 374761393) ^ Math.imul(Math.round(z * 8) - salt, 668265263)) >>> 0;
+          h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+          return h / 4294967296;
+        };
+        const pos = [], idx = []; let vi = 0;
+        for (const panel of wallPanels) {
+          const [bl, br, , tl] = panelCornersFor(panel);
+          const ux = { x: br.x - bl.x, y: br.y - bl.y, z: br.z - bl.z };
+          const vx = { x: tl.x - bl.x, y: tl.y - bl.y, z: tl.z - bl.z };
+          let nx = ux.y * vx.z - ux.z * vx.y, ny = ux.z * vx.x - ux.x * vx.z, nz = ux.x * vx.y - ux.y * vx.x;
+          const nlen = Math.hypot(nx, ny, nz) || 1; nx /= nlen; ny /= nlen; nz /= nlen;
+          const segsU = Math.max(2, Math.round(panel.width * 2)), segsV = Math.max(2, Math.round(panel.height * 2));
+          const base = vi;
+          for (let j = 0; j <= segsV; j++) for (let i = 0; i <= segsU; i++) {
+            const u = i / segsU, v = j / segsV;
+            const x = bl.x + ux.x * u + vx.x * v, y = bl.y + ux.y * u + vx.y * v, z = bl.z + ux.z * u + vx.z * v;
+            let d = 0;
+            if (u > 0.001 && u < 0.999 && v > 0.001 && v < 0.999) {
+              const rib = (hash01(x, z, Math.round(y * 10)) - 0.5) * 0.16;
+              const ledge = (Math.abs((v * 5) % 1 - 0.5) < 0.14) ? 0.035 : 0;
+              d = rib + ledge;
+            }
+            pos.push(x + nx * d, y + ny * d, z + nz * d);
+          }
+          for (let j = 0; j < segsV; j++) for (let i = 0; i < segsU; i++) {
+            const a = base + j * (segsU + 1) + i, b = a + 1, c0 = a + (segsU + 1), d2 = c0 + 1;
+            idx.push(a, c0, d2, a, d2, b);
+          }
+          vi += (segsU + 1) * (segsV + 1);
+        }
+        const group = new THREE.Group();
+        if (!idx.length) return group;
+        const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.receiveShadow = true;
+        mesh.userData.cameraObstacle = true;
+        group.add(mesh);
+        return group;
+      }
+
+      // A den's cavern floor: an organic irregular blob (seeded RNG growth,
+      // biased toward rounder shapes, then a safe erosion pass that only ever
+      // trims dead-end spurs — removing a cell with exactly one neighbor can
+      // never disconnect the rest of the blob) — same reasoning as the
+      // wilderness generator's own plateau blobs, reimplemented standalone
+      // since this runs at den-entry time in the live game, not inside the
+      // map-generator tool. Deterministic per den id (see synthesizeCavernMapData).
+      function generateCavernFloor(seedText) {
+        const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(seedText) : Math.random;
+        const targetTiles = 12 + Math.floor(rng() * 13); // 12-24 tiles
+        const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        const cells = new Set(['0,0']);
+        const frontier = new Map();
+        const addFrontier = (x, y) => {
+          for (const [dx, dy] of DIRS4) {
+            const nx = x + dx, ny = y + dy, key = `${nx},${ny}`;
+            if (!cells.has(key)) frontier.set(key, [nx, ny]);
+          }
+        };
+        addFrontier(0, 0);
+        while (cells.size < targetTiles && frontier.size) {
+          const keys = [...frontier.keys()];
+          const weights = keys.map(k => {
+            const [x, y] = frontier.get(k);
+            let n = 0;
+            for (const [dx, dy] of DIRS4) if (cells.has(`${x + dx},${y + dy}`)) n++;
+            return n * n + 0.2; // bias toward rounder growth over spindly arms
+          });
+          const total = weights.reduce((a, b) => a + b, 0);
+          let r = rng() * total, pick = keys[keys.length - 1];
+          for (let i = 0; i < keys.length; i++) { r -= weights[i]; if (r <= 0) { pick = keys[i]; break; } }
+          const [px, py] = frontier.get(pick);
+          frontier.delete(pick);
+          cells.add(pick);
+          addFrontier(px, py);
+        }
+        // Erode dead-end spurs only (leaves — safe to remove, can't disconnect anything).
+        // The origin tile is the cavern's entrance and is never eroded.
+        for (const key of [...cells]) {
+          if (key === '0,0' || cells.size <= 6) continue;
+          const [x, y] = key.split(',').map(Number);
+          let n = 0;
+          for (const [dx, dy] of DIRS4) if (cells.has(`${x + dx},${y + dy}`)) n++;
+          if (n <= 1 && rng() < 0.5) cells.delete(key);
+        }
+        let minX = Infinity, minY = Infinity;
+        for (const key of cells) { const [x, y] = key.split(',').map(Number); if (x < minX) minX = x; if (y < minY) minY = y; }
+        const floor = [...cells].map(key => { const [x, y] = key.split(',').map(Number); return [x - minX + 1, y - minY + 1]; });
+        const cols = Math.max(...floor.map(f => f[0])) + 2, rows = Math.max(...floor.map(f => f[1])) + 2;
+        return { floor, cols, rows, exitCol: 0 - minX + 1, exitRow: 0 - minY + 1 };
+      }
+
+      // Synthesized in-memory map data for a den's cavern — no map_i_den_*.json
+      // is ever written to disk; loadBuildingScene builds this on the fly the
+      // first time the id is requested, exactly like a wilderness zone itself
+      // regenerates from a seed with nothing persisted (see performTothalShift).
+      // The seed is the mapId itself (already unique per zone+den, see
+      // performTothalShift's denTransitions), so re-entering the same den
+      // always reaches the same cavern.
+      function synthesizeCavernMapData(mapId) {
+        const { floor, cols, rows, exitCol, exitRow } = generateCavernFloor(mapId);
+        return {
+          schema: 'hobunji_building_interior.v1',
+          id: mapId, name: 'A Dark Burrow',
+          cols, rows,
+          exits: [{ id: 'den_exit', label: 'Back outside', tiles: [[exitCol, exitRow]], targetMap: '', spawnCol: 0, spawnRow: 0 }],
+          colliders: [], floor, furniture: [],
+          wallStyle: 'cavern',
+        };
+      }
+
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
         let mapData = null;
         let loadSource = 'missing';
+        if (mapId.startsWith('map_i_den_')) {
+          // A den's cavern is generated in-memory, never fetched/persisted
+          // (see synthesizeCavernMapData).
+          mapData = synthesizeCavernMapData(mapId);
+          loadSource = 'cavern';
+        } else {
         try {
           const resp = await fetch('config/maps/' + mapId + '.json');
           if (resp.ok) { mapData = await resp.json(); loadSource = 'config'; }
@@ -8355,6 +8806,7 @@
             loadSource = 'workspace';
             window.__farmLog?.(`[building] ${mapId}: loaded from workspace fallback (${mapData.cols}x${mapData.rows})`, 'warn');
           }
+        }
         }
 
         // ── hobunji_building_interior.v1 schema ──────────────────────────
@@ -8409,21 +8861,29 @@
           const dl = new THREE.DirectionalLight(0xffeedd, 0.5);
           dl.position.set(5, 10, 5);
           bScene.add(dl);
-          const floorMat = new THREE.MeshLambertMaterial({ color: 0x8b6914 });
-          new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
-            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-            floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
-          }, undefined, () => {});
+          const floorMat = mapData.wallStyle === 'cavern'
+            ? new THREE.MeshLambertMaterial({ color: 0x4a463f }) // bare cavern dirt/stone, no plank texture
+            : new THREE.MeshLambertMaterial({ color: 0x8b6914 });
+          if (mapData.wallStyle !== 'cavern') {
+            new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
+              tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+              floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
+            }, undefined, () => {});
+          }
           // Floor tiles only for defined floor set
           for (const [c, r] of (mapData.floor || [])) {
             const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
             fl.position.set(c + 0.5, -0.05, r + 0.5);
             bScene.add(fl);
           }
-          // Irregular brick walls with gaps at all exit tiles
+          // Irregular brick walls with gaps at all exit tiles — or, for a den's
+          // cavern (mapData.wallStyle === 'cavern'), solid deformed rock walls
+          // instead (see buildCavernWalls).
           const wallPanels = buildWallPanelsFromFloorSet(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
           if (wallPanels.length) {
-            const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+            const wallGroup = mapData.wallStyle === 'cavern'
+              ? buildCavernWalls(wallPanels, INTERIOR_WALL_HEIGHT)
+              : houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
             _markOutline(wallGroup);
             bScene.add(wallGroup);
           }
@@ -8643,7 +9103,13 @@
           }
           player.vx = 0; player.vy = 0;
           _snapCameraTarget();
-          const toScene = returnArea === 'town' ? townScene : scene;
+          // A den's cavern (see loadBuildingScene's map_i_den_ synthesis) is
+          // entered from a wilderness zone, not the farm — this used to only
+          // special-case 'town' here, so returning from any other non-farm
+          // area silently landed the player on the farm scene instead (see
+          // enterZone, which builds/adds to the zone scene the same way on
+          // the way in).
+          const toScene = returnArea === 'town' ? townScene : (_isZoneArea(returnArea) ? buildZoneScene(returnArea)?.scene : scene);
           if (toScene) {
             toScene.add(playerMesh); toScene.add(playerGroundShadow);
             toScene.add(toolHolder); toScene.add(reticleMesh);
@@ -9665,6 +10131,7 @@
         { key: 'dabinggiHoundMeat',  icon: '🥩', label: 'DABINGGI-HOUND MEAT', max: 99 },
         { key: 'dabinggiHoundHide',  icon: '🟫', label: 'DABINGGI-HOUND HIDE', max: 99 },
         { key: 'uumkaoiiCrate',      icon: '🦆', label: 'UUMKAO\'II CRATE',  max: 9  },
+        { key: 'uumkaoiiMeat',       icon: '🥩', label: 'UUMKAO\'II MEAT',  max: 99 },
         { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
         { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
         { key: 'fishingmace',  icon: '🎣', label: 'FISHING MACE',  max: 9 },
@@ -9704,6 +10171,7 @@
         dabinggiHoundMeat: { icon: '🥩', label: 'Dabinggi-hound Meat', cat: 'material', sellPrice: 8, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a fallen dabinggi-hound.' },
         dabinggiHoundHide: { icon: '🟫', label: 'Dabinggi-hound Hide', cat: 'material', sellPrice: 12, tags: ['Material', 'Hide'], desc: 'A soft hide stripped from a fallen dabinggi-hound.' },
         uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
+        uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
         bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
         hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
         fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
@@ -10856,7 +11324,18 @@
         const zoneBuildingSources = loadedZoneGroups.length
           ? loadedZoneGroups
           : (_zoneLayouts.get(area)?.buildings || []).map(bldg => ({ bldg, piece: null }));
-        return zoneBuildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row));
+        if (zoneBuildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row))) return true;
+        return isAnimalDenCollisionTile(col, row, area);
+      }
+      // Animal dens are a solid rock volume (see buildAnimalDenMeshes) except
+      // their south-facing mouth tile, which stays walkable — it's both the
+      // doorway gap in the mesh and the cavern-entrance transition tile.
+      function isAnimalDenCollisionTile(col, row, area) {
+        for (const den of (_zoneLayouts.get(area)?.dens || [])) {
+          if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue;
+          if (col >= den.x && col < den.x + (den.w || 1) && row >= den.y && row < den.y + (den.h || 1)) return true;
+        }
+        return false;
       }
       // The two tiles immediately north of the door act as a second entrance
       function isHouseEntranceTile(col, row) {

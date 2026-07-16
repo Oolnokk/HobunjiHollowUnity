@@ -69,6 +69,19 @@ for (const zoneId of G.zoneMapIds()) {
     typeCounts[t.type] = (typeCounts[t.type] || 0) + 1;
   }
   console.log(`  folded tile types: ${Object.entries(typeCounts).map(([k, v]) => `${k}:${v}`).join(', ')}`);
+
+  // Animal den geometry (carved-mouth rock volumes) — same watertightness
+  // class of check as the mesas above, mirroring game.js's buildAnimalDenMeshes.
+  try {
+    const denGeo = TP.buildAnimalDenGeometry(ws.animalDens || [], zGrid);
+    for (const issue of TP.validateAnimalDenGeometry(denGeo)) {
+      if (issue.severity === 'error') fail(`den geometry: ${issue.message}`);
+      else console.log(`  ⚠ den geometry: ${issue.message}`);
+    }
+    console.log(`  animal dens: ${(ws.animalDens || []).length}`);
+  } catch (e) {
+    fail(`buildAnimalDenGeometry threw: ${e.message}`);
+  }
   if (ws.warnings.length) console.log(`  generator warnings: ${ws.warnings.length}\n    ${ws.warnings.join('\n    ')}`);
 }
 
