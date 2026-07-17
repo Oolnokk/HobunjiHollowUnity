@@ -1010,6 +1010,33 @@
       100% { transform: translateY(-50%) translateX(0) rotate(0deg) scale(1); }
     }
 
+    /* ── Den-Mother nest hold-to-take progress bar ─────────────── */
+    #nestTakeHud {
+      position: fixed;
+      top: calc(var(--oy) + 10.4 * var(--row)); left: var(--play-center);
+      transform: translateX(-50%);
+      z-index: 65;
+      width: min(240px, 60vw);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    #nestTakeHud.visible { opacity: 1; }
+    #nestTakeHud .nest-take-label {
+      color: var(--text); font-size: 11px; text-align: center;
+      margin-bottom: 4px; text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    }
+    #nestTakeHud .nest-take-track {
+      height: 10px; border-radius: 6px;
+      background: var(--glass-2); border: 1px solid var(--border-bright);
+      overflow: hidden;
+    }
+    #nestTakeHud .nest-take-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, #ffd166, #ffb347);
+      transition: width 0.05s linear;
+    }
+
     /* ── Menu action row + buttons ───────────────────────────── */
     .menu-action-row { display: flex; gap: 10px; margin-top: 8px; }
     .menu-action-btn {

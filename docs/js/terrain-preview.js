@@ -668,6 +668,161 @@
     return issues;
   }
 
+  // Rounded boulder-mound bump field — mirrors game.js's
+  // buildRockMoundBumpField exactly (same BFS-grown-plateau algorithm and
+  // seam/roughness noise formulas as buildRockTileGeo's loose farm rocks),
+  // generalized to an arbitrary col×row footprint. Boundary vertices are
+  // forced to exactly 0 so adjacent faces/panels sharing an edge stay
+  // crack-free even though each field is grown independently.
+  const ROCK_MOUND_CELLS_PER_TILE = 6;
+  function buildRockMoundBumpField(colsTiles, rowsTiles, worldU0, worldV0, salt, peakScale = 1) {
+    const CX = Math.max(1, Math.round(colsTiles * ROCK_MOUND_CELLS_PER_TILE));
+    const CZ = Math.max(1, Math.round(rowsTiles * ROCK_MOUND_CELLS_PER_TILE));
+    const VX = CX + 1, VZ = CZ + 1, STEP = 1 / ROCK_MOUND_CELLS_PER_TILE;
+    let _s = ((Math.round(worldU0 * 8) * 374761393) ^ (Math.round(worldV0 * 8) * 668265263) ^ Math.imul(salt, 2654435761)) >>> 0;
+    const rng = () => { _s += 0x6D2B79F5; let t = Math.imul(_s ^ _s >>> 15, _s | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+    const seamDisp = (vx, vz) => {
+      const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+      let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+      h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+      return (h / 4294967296 - 0.5) * 0.026;
+    };
+    const roughDisp = (vx, vz) => {
+      const kx = Math.round(vx * 8) | 0, kz = Math.round(vz * 8) | 0;
+      let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+      h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+      return (h / 4294967296 - 0.5) * 0.05;
+    };
+    const Y = new Float32Array(VX * VZ);
+    for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) Y[vj * VX + vi] = seamDisp(worldU0 + vi * STEP, worldV0 + vj * STEP);
+    if (CX >= 3 && CZ >= 3) {
+      const lobeCount = Math.max(1, Math.round(colsTiles * rowsTiles * 0.7));
+      for (let lobe = 0; lobe < lobeCount; lobe++) {
+        const startCi = 1 + Math.floor(rng() * (CX - 2));
+        const startCj = 1 + Math.floor(rng() * (CZ - 2));
+        const maxSize = 2 + Math.floor(rng() * 12);
+        const group = new Set([startCj * CX + startCi]);
+        const front = [[startCi, startCj]];
+        while (front.length && group.size < maxSize) {
+          const fi = Math.floor(rng() * front.length);
+          const [ci, cj] = front.splice(fi, 1)[0];
+          for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const ni = ci + dc, nj = cj + dr;
+            if (ni < 1 || ni > CX - 2 || nj < 1 || nj > CZ - 2) continue;
+            const nk = nj * CX + ni;
+            if (group.has(nk)) continue;
+            group.add(nk); front.push([ni, nj]);
+          }
+        }
+        let maxY = -Infinity;
+        const raised = new Set();
+        for (const ck of group) {
+          const ci = ck % CX, cj = (ck / CX) | 0;
+          for (const vv of [cj * VX + ci, cj * VX + ci + 1, (cj + 1) * VX + ci, (cj + 1) * VX + ci + 1]) {
+            raised.add(vv);
+            if (Y[vv] > maxY) maxY = Y[vv];
+          }
+        }
+        const PEAK = (0.22 + rng() * 0.3) * peakScale;
+        const target = maxY + PEAK;
+        for (const vv of raised) {
+          const vix = vv % VX, viy = (vv / VX) | 0;
+          const edgeDist = Math.min(vix, VX - 1 - vix, viy, VZ - 1 - viy);
+          const blend = Math.min(1, edgeDist / 2);
+          if (blend <= 0) continue;
+          const vx = worldU0 + vix * STEP, vz = worldV0 + viy * STEP;
+          const hgt = seamDisp(vx, vz) + blend * target + roughDisp(vx, vz) * blend;
+          if (hgt > Y[vv]) Y[vv] = hgt;
+        }
+      }
+    }
+    for (let vi = 0; vi < VX; vi++) { Y[vi] = 0; Y[(VZ - 1) * VX + vi] = 0; }
+    for (let vj = 0; vj < VZ; vj++) { Y[vj * VX] = 0; Y[vj * VX + VX - 1] = 0; }
+    return { VX, VZ, Y };
+  }
+  function sampleRockMoundBump(field, u, v) {
+    const fx = u * (field.VX - 1), fz = v * (field.VZ - 1);
+    const ix = Math.max(0, Math.min(field.VX - 2, Math.floor(fx))), iz = Math.max(0, Math.min(field.VZ - 2, Math.floor(fz)));
+    const tx = fx - ix, tz = fz - iz;
+    const y00 = field.Y[iz * field.VX + ix], y10 = field.Y[iz * field.VX + ix + 1];
+    const y01 = field.Y[(iz + 1) * field.VX + ix], y11 = field.Y[(iz + 1) * field.VX + ix + 1];
+    return y00 * (1 - tx) * (1 - tz) + y10 * tx * (1 - tz) + y01 * (1 - tx) * tz + y11 * tx * tz;
+  }
+
+  // Animal den geometry — mirrors game.js's buildAnimalDenMeshes exactly (see
+  // its own comment) so the Map Editor preview and headless watertightness
+  // checks see the same carved-mouth rounded-boulder rock volume the live
+  // game renders.
+  function buildAnimalDenGeometry(dens, zGrid) {
+    const pos = [], idx = [], meta = [];
+    let vi = 0;
+    if (!dens || !dens.length) return { pos, idx, meta };
+    const DEN_HEIGHT = 1.6, DEN_SINK = 0.35;
+    const MOUTH_U0 = 0.32, MOUTH_U1 = 0.68, MOUTH_V1 = 0.58, MOUTH_DEPTH = 0.5;
+    const addPlanarQuad = (corners, segsU, segsV, bumpField) => {
+      const ux = { x: corners.p10.x - corners.p00.x, y: corners.p10.y - corners.p00.y, z: corners.p10.z - corners.p00.z };
+      const vx = { x: corners.p01.x - corners.p00.x, y: corners.p01.y - corners.p00.y, z: corners.p01.z - corners.p00.z };
+      let nx = ux.y * vx.z - ux.z * vx.y, ny = ux.z * vx.x - ux.x * vx.z, nz = ux.x * vx.y - ux.y * vx.x;
+      const nlen = Math.hypot(nx, ny, nz) || 1; nx /= nlen; ny /= nlen; nz /= nlen;
+      const base = vi;
+      for (let j = 0; j <= segsV; j++) for (let i = 0; i <= segsU; i++) {
+        const u = i / segsU, v = j / segsV;
+        const x = corners.p00.x + ux.x * u + vx.x * v;
+        const y = corners.p00.y + ux.y * u + vx.y * v;
+        const z = corners.p00.z + ux.z * u + vx.z * v;
+        const d = bumpField ? sampleRockMoundBump(bumpField, u, v) : 0;
+        pos.push(x + nx * d, y + ny * d, z + nz * d);
+      }
+      for (let j = 0; j < segsV; j++) for (let i = 0; i < segsU; i++) {
+        const a = base + j * (segsU + 1) + i, b = a + 1, c0 = a + (segsU + 1), d2 = c0 + 1;
+        idx.push(a, c0, d2, a, d2, b);
+      }
+      vi += (segsU + 1) * (segsV + 1);
+    };
+    for (const den of dens) {
+      const w = den.w || 1, h = den.h || 1;
+      const centerCol = den.x + Math.floor(w / 2), centerRow = den.y + Math.floor(h / 2);
+      const elevTier = zGrid?.[centerRow]?.[centerCol]?.elevTier || 0;
+      const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT;
+      const x0 = den.x, x1 = den.x + w, z0 = den.y, z1 = den.y + h;
+      const yBase = groundY - DEN_SINK, yTop = groundY + DEN_HEIGHT;
+      const vTiles = yTop - yBase;
+      const segsW = Math.max(4, Math.round(w * ROCK_MOUND_CELLS_PER_TILE));
+      const segsH = Math.max(4, Math.round(h * ROCK_MOUND_CELLS_PER_TILE));
+      const segsVert = Math.max(4, Math.round(vTiles * ROCK_MOUND_CELLS_PER_TILE));
+      const northField = buildRockMoundBumpField(w, vTiles, x0, yBase, 1);
+      const eastField  = buildRockMoundBumpField(h, vTiles, z0, yBase, 2);
+      const westField  = buildRockMoundBumpField(h, vTiles, z0, yBase, 3);
+      const topField   = buildRockMoundBumpField(w, h, x0, z0, 4, 1.4);
+      addPlanarQuad({ p00: { x: x1, y: yBase, z: z0 }, p10: { x: x0, y: yBase, z: z0 }, p01: { x: x1, y: yTop, z: z0 }, p11: { x: x0, y: yTop, z: z0 } }, segsW, segsVert, northField);
+      addPlanarQuad({ p00: { x: x1, y: yBase, z: z1 }, p10: { x: x1, y: yBase, z: z0 }, p01: { x: x1, y: yTop, z: z1 }, p11: { x: x1, y: yTop, z: z0 } }, segsH, segsVert, eastField);
+      addPlanarQuad({ p00: { x: x0, y: yBase, z: z0 }, p10: { x: x0, y: yBase, z: z1 }, p01: { x: x0, y: yTop, z: z0 }, p11: { x: x0, y: yTop, z: z1 } }, segsH, segsVert, westField);
+      addPlanarQuad({ p00: { x: x0, y: yTop, z: z0 }, p10: { x: x1, y: yTop, z: z0 }, p01: { x: x0, y: yTop, z: z1 }, p11: { x: x1, y: yTop, z: z1 } }, segsW, segsH, topField);
+      const xm0 = x0 + (x1 - x0) * MOUTH_U0, xm1 = x0 + (x1 - x0) * MOUTH_U1;
+      const ym1 = yBase + (yTop - yBase) * MOUTH_V1;
+      const leftW = xm0 - x0, rightW = x1 - xm1, topStripH = yTop - ym1, mouthW = xm1 - xm0;
+      const southLeftField  = buildRockMoundBumpField(leftW, vTiles, x0, yBase, 5);
+      const southRightField = buildRockMoundBumpField(rightW, vTiles, xm1, yBase, 6);
+      const southTopField   = buildRockMoundBumpField(mouthW, topStripH, xm0, ym1, 7);
+      addPlanarQuad({ p00: { x: x0, y: yBase, z: z1 }, p10: { x: xm0, y: yBase, z: z1 }, p01: { x: x0, y: yTop, z: z1 }, p11: { x: xm0, y: yTop, z: z1 } }, Math.max(3, Math.round(leftW * ROCK_MOUND_CELLS_PER_TILE)), segsVert, southLeftField);
+      addPlanarQuad({ p00: { x: xm1, y: yBase, z: z1 }, p10: { x: x1, y: yBase, z: z1 }, p01: { x: xm1, y: yTop, z: z1 }, p11: { x: x1, y: yTop, z: z1 } }, Math.max(3, Math.round(rightW * ROCK_MOUND_CELLS_PER_TILE)), segsVert, southRightField);
+      addPlanarQuad({ p00: { x: xm0, y: ym1, z: z1 }, p10: { x: xm1, y: ym1, z: z1 }, p01: { x: xm0, y: yTop, z: z1 }, p11: { x: xm1, y: yTop, z: z1 } }, Math.max(3, Math.round(mouthW * ROCK_MOUND_CELLS_PER_TILE)), Math.max(3, Math.round(topStripH * ROCK_MOUND_CELLS_PER_TILE)), southTopField);
+      const zIn = z1 - MOUTH_DEPTH;
+      addPlanarQuad({ p00: { x: xm0, y: yBase, z: z1 }, p10: { x: xm0, y: yBase, z: zIn }, p01: { x: xm0, y: ym1, z: z1 }, p11: { x: xm0, y: ym1, z: zIn } }, 1, 2, null);
+      addPlanarQuad({ p00: { x: xm1, y: yBase, z: zIn }, p10: { x: xm1, y: yBase, z: z1 }, p01: { x: xm1, y: ym1, z: zIn }, p11: { x: xm1, y: ym1, z: z1 } }, 1, 2, null);
+      addPlanarQuad({ p00: { x: xm0, y: ym1, z: z1 }, p10: { x: xm1, y: ym1, z: z1 }, p01: { x: xm0, y: ym1, z: zIn }, p11: { x: xm1, y: ym1, z: zIn } }, 2, 1, null);
+      meta.push({ denId: den.id, x0, x1, z0, z1, yBase, yTop });
+    }
+    return { pos, idx, meta };
+  }
+
+  function validateAnimalDenGeometry(denGeo) {
+    const issues = [];
+    if (!denGeo.pos.every(Number.isFinite)) issues.push({ severity: 'error', code: 'NON_FINITE_DEN_VERTEX', message: 'Animal den geometry has a non-finite vertex.' });
+    if (denGeo.meta.length && !denGeo.pos.length) issues.push({ severity: 'error', code: 'EMPTY_DEN_GEOMETRY', message: 'Animal dens were provided but no geometry was built for them.' });
+    return issues;
+  }
+
   // ── Waterwalls: vertical water curtains where a river crosses a plateau edge ─
   // A WATERFALL cell sits on a plateau sub-map right at its own outer edge (see
   // game.js/index.html's mirrorRiverAcrossPlateau) — its merged-grid neighbor one
@@ -846,6 +1001,8 @@
     buildMergedZoneGrid, buildZGrid, applyRampCurtainFlags,
     buildPlateauMesaGeometry, buildRampMeshGeometry, buildRampCurtainGeometry,
     buildRockSourceSpans, buildRockFormationGeometry, validateRockFormationGeometry,
+    buildAnimalDenGeometry, validateAnimalDenGeometry,
+    buildRockMoundBumpField, sampleRockMoundBump,
     buildWaterfallWallGeometry, buildTerrainTileGeo, validateTerrain,
   };
 });

@@ -178,6 +178,7 @@
         if (id === 'supplies') renderSupplyPage();
         if (id === 'generalStore') renderGeneralStorePage();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
+        if (id === 'wildlife') renderWildlifeDebugPanel();
       }
 
       document.querySelectorAll('.mp-tab').forEach(tab => {
@@ -1344,14 +1345,19 @@
       // speed in water. Attacking is disallowed while swimming regardless
       // of species — see isPlayerSwimming/isCreatureSwimming.
       const SWIM_SPEED_MUL = 0.5;
+      // Same idea as SWIM_SPEED_MUL, for cliff (incline) tiles — see
+      // moveCreatureToward/isCreatureClimbing.
+      const CLIMB_SPEED_MUL = 0.5;
 
       // Global creature database — companions (whistle-bound) and hostiles
       // (ambient-spawned) are both built from this table.
-      // canClimb: default false — a creature without the tag can't enter an
-      // incline (cliff wall) tile at all. canSwim: default false — a
-      // creature without the tag can still enter a river/stream tile (it's
-      // no longer a hard block), just at SWIM_SPEED_MUL speed and unable to
-      // attack while in it. See moveCreatureToward/isCreatureSwimming.
+      // canClimb: default false — a creature without the tag can still enter
+      // an incline (cliff wall) tile (no longer a hard block), just at
+      // CLIMB_SPEED_MUL speed, same as a non-swimmer crossing water. canSwim:
+      // default false — a creature without the tag can still enter a
+      // river/stream tile (it's no longer a hard block), just at
+      // SWIM_SPEED_MUL speed and unable to attack while in it. See
+      // moveCreatureToward/isCreatureClimbing/isCreatureSwimming.
       const CREATURE_DB = {
         'dabinggi-hound': {
           label: 'Dabinggi-hound', hostile: false,
@@ -1407,7 +1413,7 @@
           loot: [],
         },
         'gar-wolf': {
-          label: 'Gar-wolf', hostile: true,
+          label: 'Gar-wolf', hostile: true, liveBirth: true,
           maxHealth: 38, maxStamina: 30,
           moveSpeed: 130, chaseSpeed: 195,
           attackDamage: 12, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
@@ -1437,7 +1443,7 @@
           ],
         },
         'gar-wolf-alpha': {
-          label: 'Gar-wolf Alpha', hostile: true,
+          label: 'Gar-wolf Alpha', hostile: true, liveBirth: true,
           maxHealth: 78, maxStamina: 46,
           moveSpeed: 140, chaseSpeed: 205,
           attackDamage: 18, attackRangePx: TILE * 0.95, attackHalfConeRad: 46 * Math.PI / 180,
@@ -1457,6 +1463,77 @@
             { key: 'alphaGarWolfHide', min: 1, max: 2 },
           ],
         },
+        // A wild, huntable/fleeable herbivore for the den+foliage-patch
+        // wildlife schedule AI (see EXTERIOR_ZONES.herbivoreSpecies/
+        // spawnPackAtDen and updateHostiles' grazing/patrol states) — a
+        // separate key from the companion `uumkaoii` above so its
+        // aiType/follow fields don't leak onto a creature that never fights
+        // or follows a master. `diet: 'herbivore'` is read by the patrol-
+        // sighting check to find prey; no aggroRangePx/leashRangePx means it
+        // never chases the player (see updateHostiles' aggro check). Not
+        // connected to the farm-livestock breeding/genotype system.
+        'uumkaoii-wild': {
+          label: "Wild Uumkao'ii", hostile: false, diet: 'herbivore', liveBirth: false,
+          maxHealth: 30, maxStamina: 20,
+          moveSpeed: 110, chaseSpeed: 110,
+          canClimb: false, canSwim: false,
+          modelWidth: 1.6, tint: 0xffffff,
+          sprites: {
+            idle: "assets/creaturesprites/uumkao'ii.png",
+            run: ["assets/creaturesprites/uumkao'ii.png"],
+          },
+          loot: [
+            { key: 'uumkaoiiMeat', min: 1, max: 2 },
+          ],
+        },
+        // Den-Mother mini-bosses: one spawns per den cavern (see
+        // pickDenMotherKind/loadBuildingScene's 'map_i_den_' handling),
+        // guarding a 2x2 nest at the far end of the cavern and never leaving
+        // it (very tight leashRangePx around the nest — otherwise plain
+        // wander/chase/return like any other hostile, no schedule AI). Boosted
+        // stats over the regular pack member, reused sprite with a darker
+        // tint read as "bigger/tougher". `liveBirth` drives the nest's
+        // "Taking Egg"/"Taking Baby" wording (see updateNestInteraction).
+        'gar-wolf-den-mother': {
+          label: 'Den-Mother', hostile: true, liveBirth: true,
+          maxHealth: 240, maxStamina: 90,
+          moveSpeed: 120, chaseSpeed: 175,
+          attackDamage: 24, attackRangePx: TILE * 1.0, attackHalfConeRad: 46 * Math.PI / 180,
+          attackStaminaCost: 16, attackCooldownS: 1.0,
+          attacks: ['pounce'],
+          attackTag: 'sharp',
+          behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
+          aggroRangePx: TILE * 6, leashRangePx: TILE * 4.5,
+          canClimb: false, canSwim: false,
+          modelWidth: 3.6, tint: 0x6b4040,
+          sprites: {
+            idle: 'assets/creaturesprites/gar-wolf_idle.png',
+            run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
+          },
+          loot: [
+            { key: 'garWolfMeat', min: 3, max: 6 },
+            { key: 'garWolfHide', min: 1, max: 2 },
+          ],
+        },
+        'uumkaoii-wild-den-mother': {
+          label: 'Den-Mother', hostile: true, liveBirth: false,
+          maxHealth: 170, maxStamina: 70,
+          moveSpeed: 95, chaseSpeed: 140,
+          attackDamage: 17, attackRangePx: TILE * 0.9, attackHalfConeRad: 45 * Math.PI / 180,
+          attackStaminaCost: 14, attackCooldownS: 1.1,
+          attacks: ['pounce'],
+          attackTag: 'blunt',
+          aggroRangePx: TILE * 5.5, leashRangePx: TILE * 4.5,
+          canClimb: false, canSwim: false,
+          modelWidth: 2.8, tint: 0x8a6a3a,
+          sprites: {
+            idle: "assets/creaturesprites/uumkao'ii.png",
+            run: ["assets/creaturesprites/uumkao'ii.png"],
+          },
+          loot: [
+            { key: 'uumkaoiiMeat', min: 2, max: 4 },
+          ],
+        },
       };
 
       // Minimal standalone exterior zones reachable from the town's pre-authored
@@ -1473,6 +1550,11 @@
           // wiped-out den's replacement pack isn't necessarily the same
           // species as the one it replaces.
           packSpecies: ['gar-wolf', 'gar-wolf-alpha'],
+          // Species pool a den's next HERD is randomly drawn from, when a den
+          // rolls a herbivore population instead of a predator pack this
+          // cycle (see spawnPackAtDen) — kept as a sibling pool to packSpecies
+          // since a den's population type is decided per spawn, not fixed.
+          herbivoreSpecies: ['uumkaoii-wild'],
           entryCol: 11, entryRow: 14,
           exitCol: 11, exitRow: 15,
           townReturnCol: 30, townReturnRow: 2,
@@ -1483,6 +1565,7 @@
           cols: 22, rows: 16,
           groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
           packSpecies: ['gar-wolf', 'gar-wolf-alpha'],
+          herbivoreSpecies: ['uumkaoii-wild'],
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
@@ -1505,6 +1588,7 @@
           label: 'Western Slope',
           cols: 50, rows: 40,
           groundColor: 0x6b6a52, fogColor: 0x35342a,
+          herbivoreSpecies: ['uumkaoii-wild'],
           entryCol: 48, entryRow: 20,
           exitCol: 48, exitRow: 20,
           townReturnCol: 1, townReturnRow: 25,
@@ -1515,6 +1599,7 @@
           label: 'Eastern Mire',
           cols: 50, rows: 40,
           groundColor: 0x3a4a3a, fogColor: 0x22301f,
+          herbivoreSpecies: ['uumkaoii-wild'],
           entryCol: 1, entryRow: 20,
           exitCol: 1, exitRow: 20,
           townReturnCol: 58, townReturnRow: 25,
@@ -2718,11 +2803,52 @@
       }
 
       function defaultLivestockName(kind) {
-        return kind === 'uumkaoii' ? "Uumkao'ii" : (kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock');
+        if (kind === 'uumkaoii') return "Uumkao'ii";
+        if (kind === 'gar-wolf') return 'Gar-wolf';
+        if (kind === 'dabinggi-hound') return 'Dabinggi-hound';
+        return kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock';
+      }
+
+      // Optional pattern layers per species — the HTML lab's Dabinggi-hound
+      // and Gar-wolf "layers" (mitts/spectacles/stripes, colorpoint/foxtail/
+      // mitts respectively). Order matters: it's the draw/composite order
+      // (see composeGenotypeFrame in creature-genetics-render.js).
+      const LIVESTOCK_PATTERN_DEFS = {
+        'gar-wolf': ['colorpoint', 'foxtail', 'mitts'],
+        'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
+      };
+      // CREATURE_DB variants that reuse a pattern-species' sprite/pattern
+      // assets under a different creatureKey (different stats/label, same
+      // art) — used to resolve which CreatureGeneticsRender.SPECIES entry
+      // a given creature's genotype should render against. Without this,
+      // gar-wolf-alpha and gar-wolf-den-mother genotypes never render:
+      // CreatureGeneticsRender.SPECIES only has a "gar-wolf" key.
+      const GENOTYPE_SPECIES_ALIAS = {
+        'gar-wolf-alpha': 'gar-wolf',
+        'gar-wolf-den-mother': 'gar-wolf',
+      };
+      // Picks two fur colors that read as visually distinct — same rejection-
+      // sample loop as the HTML lab's pickTwoFurColors().
+      function pickTwoLivestockFurColors() {
+        let a = LIVESTOCK_FUR_PALETTE[Math.floor(Math.random() * LIVESTOCK_FUR_PALETTE.length)], b = a;
+        for (let i = 0; i < 40; i++) {
+          b = LIVESTOCK_FUR_PALETTE[Math.floor(Math.random() * LIVESTOCK_FUR_PALETTE.length)];
+          const [ah, as] = _furRgbToHsv(..._furHexToRgb(a.hex)), [bh, bs] = _furRgbToHsv(..._furHexToRgb(b.hex));
+          let dh = Math.abs(ah - bh); dh = Math.min(dh, 1 - dh);
+          if (a.id !== b.id && (dh > 0.045 || Math.abs(as - bs) > 0.18)) break;
+        }
+        if (a.id === b.id) b = LIVESTOCK_FUR_PALETTE[(LIVESTOCK_FUR_PALETTE.indexOf(a) + 7) % LIVESTOCK_FUR_PALETTE.length];
+        return [a, b];
       }
 
       // Fresh (non-bred) livestock gets two independently random fur colors —
-      // mirrors the HTML tool's randomizeSpecimen() for Uumkao'ii.
+      // mirrors the HTML tool's randomizeSpecimen(). Uumkao'ii's fur+plates
+      // are both permanent (copies:2, dominant). Gar-wolf/Dabinggi-hound get
+      // one base fur color plus a shared pattern color applied to 0-3
+      // randomly-chosen optional pattern layers (copies:1, dominant) — the
+      // exact same odds used for wild-den pack genotypes (see
+      // spawnPackAtDen/pickDenGenotype), so a farm-bought crate and a wild
+      // pack member are statistically the same roll.
       function makeDefaultGenotype(kind) {
         if (kind === 'uumkaoii') {
           return {
@@ -2730,42 +2856,109 @@
             plates: { color: randomFurColor(), copies: 2, inheritance: 'dominant' },
           };
         }
+        const patterns = LIVESTOCK_PATTERN_DEFS[kind];
+        if (patterns) {
+          const [first, second] = pickTwoLivestockFurColors();
+          // Each pattern layer gets an independent 1/3 chance of showing up
+          // (rather than rolling "how many, then which") — with 3 patterns
+          // that's ~70% odds of at least one being visible per specimen,
+          // instead of leaving a pack looking plain too often.
+          const genotype = { base: { color: first.hex, copies: 2, inheritance: 'dominant' } };
+          for (const id of patterns) {
+            const enabled = Math.random() < (1 / 3);
+            genotype[id] = { color: second.hex, copies: enabled ? 1 : 0, inheritance: 'dominant', enabled };
+          }
+          const enabledIds = patterns.filter(id => genotype[id].enabled);
+          window.__farmLog?.(`[genotype] makeDefaultGenotype(${kind}): base=${first.name}(${first.hex}) pattern=${second.name}(${second.hex}) enabled=[${enabledIds.join(',') || 'none'}]`, 'wildlife');
+          return genotype;
+        }
         return {};
       }
 
-      // Sell value from fur-vs-plate color contrast. Uumkao'ii's two regions
-      // are both permanent (unlike other species' optional pattern layers),
-      // so pattern count is fixed at 2 and the HTML's patternComplexityBonus
-      // collapses to a flat uumPatternBonus here.
-      function sellValueFor(genotype) {
-        const fur = genotype?.fur, plates = genotype?.plates;
-        if (!fur?.color || !plates?.color) {
-          return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: 'Plain specimen' };
+      // Sell value from color contrast + pattern complexity — generalizes
+      // the HTML's sellValueFor to any species: Uumkao'ii's two permanent
+      // regions collapse to a flat bonus (as before); pattern-layer species
+      // get a per-enabled-pattern bonus (HTML's patternBonuses table) plus
+      // base-vs-pattern-color contrast.
+      const LIVESTOCK_PATTERN_BONUSES = [0, 70, 175, 315];
+      function sellValueFor(genotype, kind = 'uumkaoii') {
+        if (kind === 'uumkaoii' || (!LIVESTOCK_PATTERN_DEFS[kind] && genotype?.fur)) {
+          const fur = genotype?.fur, plates = genotype?.plates;
+          if (!fur?.color || !plates?.color) {
+            return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: 'Plain specimen' };
+          }
+          const contrast = _furColorContrastScore(fur.color, plates.color);
+          const contrastBonus = Math.round(contrast.score * 1.8); // (.9 + .45 × 2 fixed patterns), per the HTML formula
+          const amount = LIVESTOCK_SELL_RULES.baseValue + LIVESTOCK_SELL_RULES.uumPatternBonus + contrastBonus;
+          return {
+            amount, contrastScore: contrast.score, contrastBonus,
+            tier: sellTierFor(amount),
+            comparison: `${_furPaletteName(fur.color)} fur vs. ${_furPaletteName(plates.color)} plates`,
+          };
         }
-        const contrast = _furColorContrastScore(fur.color, plates.color);
-        const contrastBonus = Math.round(contrast.score * 1.8); // (.9 + .45 × 2 fixed patterns), per the HTML formula
-        const amount = LIVESTOCK_SELL_RULES.baseValue + LIVESTOCK_SELL_RULES.uumPatternBonus + contrastBonus;
+        const patterns = LIVESTOCK_PATTERN_DEFS[kind];
+        if (!patterns) return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: 'Plain specimen' };
+        const baseColor = genotype?.base?.color;
+        const enabledIds = patterns.filter(id => genotype?.[id]?.enabled && genotype[id]?.copies > 0);
+        if (!baseColor || !enabledIds.length) {
+          return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: baseColor ? `Plain ${_furPaletteName(baseColor)} coat` : 'Plain specimen' };
+        }
+        const patternColor = genotype[enabledIds[0]].color;
+        const contrast = _furColorContrastScore(baseColor, patternColor);
+        const contrastBonus = Math.round(contrast.score * (0.9 + 0.45 * enabledIds.length));
+        const patternBonus = LIVESTOCK_PATTERN_BONUSES[Math.min(enabledIds.length, LIVESTOCK_PATTERN_BONUSES.length - 1)];
+        const amount = LIVESTOCK_SELL_RULES.baseValue + patternBonus + contrastBonus;
         return {
           amount, contrastScore: contrast.score, contrastBonus,
           tier: sellTierFor(amount),
-          comparison: `${_furPaletteName(fur.color)} fur vs. ${_furPaletteName(plates.color)} plates`,
+          comparison: `${_furPaletteName(baseColor)} coat with ${enabledIds.length} pattern${enabledIds.length === 1 ? '' : 's'} in ${_furPaletteName(patternColor)}`,
         };
       }
 
-      // Breeding — direct port of the HTML's Uumkao'ii offspring path: both
-      // layers are permanent (copies:2, dominant), so offspring always blend
-      // both parents' colors per-layer with a flat mutation chance.
+      // Breeding — the HTML's two offspring paths generalized: Uumkao'ii's
+      // permanent dual-region blend (unchanged), and a Mendelian pattern-
+      // layer path for gar-wolf/dabinggi-hound (each parent contributes 0-1
+      // allele per pattern based on its own copies/2 odds; dominant/
+      // recessive/codominant expression + a flat de-novo mutation chance —
+      // same math as the lab's generateOffspring()).
       const LIVESTOCK_MUTATION_CHANCE = 0.05;
+      function _livestockAlleleContribution(layer) {
+        const copies = clamp(Number(layer?.copies) || 0, 0, 2);
+        return Math.random() < copies / 2 ? { color: layer.color } : null;
+      }
       function crossOffspring(genotypeA, genotypeB, kind = 'uumkaoii') {
-        if (kind !== 'uumkaoii') return makeDefaultGenotype(kind);
-        const child = {};
-        for (const layerId of ['fur', 'plates']) {
-          const la = genotypeA?.[layerId] || { color: randomFurColor() };
-          const lb = genotypeB?.[layerId] || { color: randomFurColor() };
-          let color = blendFurHex(la.color, lb.color);
-          if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color);
-          child[layerId] = { color, copies: 2, inheritance: 'dominant' };
+        if (kind === 'uumkaoii') {
+          const child = {};
+          for (const layerId of ['fur', 'plates']) {
+            const la = genotypeA?.[layerId] || { color: randomFurColor() };
+            const lb = genotypeB?.[layerId] || { color: randomFurColor() };
+            let color = blendFurHex(la.color, lb.color);
+            if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color);
+            child[layerId] = { color, copies: 2, inheritance: 'dominant' };
+          }
+          return child;
         }
+        const patterns = LIVESTOCK_PATTERN_DEFS[kind];
+        if (!patterns) return makeDefaultGenotype(kind);
+        const child = {};
+        const baseA = genotypeA?.base || { color: randomFurColor() }, baseB = genotypeB?.base || { color: randomFurColor() };
+        let baseColor = blendFurHex(baseA.color, baseB.color);
+        if (Math.random() < LIVESTOCK_MUTATION_CHANCE) baseColor = mutateFurColor(baseColor);
+        child.base = { color: baseColor, copies: 2, inheritance: 'dominant' };
+        for (const id of patterns) {
+          const la = genotypeA?.[id] || { copies: 0, color: randomFurColor(), inheritance: 'dominant' };
+          const lb = genotypeB?.[id] || { copies: 0, color: randomFurColor(), inheritance: 'dominant' };
+          const alleleA = _livestockAlleleContribution(la), alleleB = _livestockAlleleContribution(lb);
+          let copies = (alleleA ? 1 : 0) + (alleleB ? 1 : 0), mutated = false;
+          if (copies === 0 && Math.random() < LIVESTOCK_MUTATION_CHANCE) { copies = 1; mutated = true; }
+          const inheritance = (la.copies ? la.inheritance : lb.copies ? lb.inheritance : la.inheritance) || 'dominant';
+          const enabled = inheritance === 'recessive' ? copies === 2 : copies >= 1;
+          let color = alleleA && alleleB ? blendFurHex(alleleA.color, alleleB.color) : (alleleA?.color || alleleB?.color || randomFurColor());
+          if (mutated) color = mutateFurColor(color);
+          child[id] = { color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
+        }
+        const childEnabledIds = patterns.filter(id => child[id].enabled);
+        window.__farmLog?.(`[genotype] crossOffspring(${kind}): base=${_furPaletteName(child.base.color)} enabled=[${childEnabledIds.join(',') || 'none'}]`, 'wildlife');
         return child;
       }
 
@@ -2860,14 +3053,149 @@
         return animal;
       }
 
+      // Pattern-layer species (gar-wolf, dabinggi-hound) as placeable farm
+      // livestock — same tile-hopping wander/no-combat shape as
+      // makeUumkaoiiAnimal, but with its genotype actually rendered via
+      // creature-genetics-render.js's recolor+composite pipeline (falls
+      // back to the plain uncolored sprite, already loaded synchronously
+      // below, until that async compose resolves).
+      function makePatternLivestockAnimal(kind, label, icon, col, row, livestockId, genotype) {
+        const ANIMAL_W = kind === 'gar-wolf' ? 1.9 : 1.7;
+        const ANIMAL_H = ANIMAL_W * (600 / 1375); // sprite is 1375x600px, same convention as CREATURE_DB
+        const halfH = ANIMAL_H / 2;
+        const baseUrl = window.CreatureGeneticsRender?.SPECIES?.[kind]?.base?.idle || `assets/creaturesprites/${kind}_idle.png`;
+
+        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, baseUrl, {
+          modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
+          name: kind.replace(/-/g, '_') + '_' + col + '_' + row,
+        });
+
+        const initSurfY = tileSurfaceY(grid[row][col].type);
+        avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
+        avatarRef.group.rotation.y = Math.PI / 2; // start facing east
+        _markPngPlane(avatarRef.group);
+        scene.add(avatarRef.group);
+
+        if (genotype && window.CreatureGeneticsRender) {
+          window.CreatureGeneticsRender.composeFrame(kind, 'idle', genotype).then(canvas => {
+            if (!canvas) return;
+            const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
+            const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
+            backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
+            for (const child of avatarRef.group.children) {
+              if (!child.material) continue;
+              if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
+              else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
+            }
+          }).catch(() => {});
+        }
+
+        let tickCounter = 0;
+        const animal = {
+          id: kind + '_' + col + '_' + row + '_' + (performance.now() | 0),
+          livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
+          type: 'animal', animalKey: kind, genotype,
+          col, row, targetCol: col, targetRow: row,
+          wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
+          halfHeight: halfH, avatarRef,
+          groupRot: Math.PI / 2, targetRot: Math.PI / 2,
+          perpState: {},
+
+          getButtons() {
+            return [{ icon, label, action: 'obj_' + kind.replace(/-/g, '') + '_' + this.id, style: 'secondary', allowed: false }];
+          },
+          onAction() {
+            return { ok: false, message: `The ${label.toLowerCase()} ignores you.` };
+          },
+          tick() {
+            tickCounter++;
+            if (tickCounter % 3 !== 0) return;
+            if (rnd() > 0.55) return;
+
+            const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
+            for (let i = dirs.length - 1; i > 0; i--) {
+              const j = Math.floor(rnd() * (i + 1));
+              [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+            }
+            for (const d of dirs) {
+              const nc = this.col + d.dc, nr = this.row + d.dr;
+              if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+              if (!canSpawnAnimalAt(nc, nr)) continue;
+              worldObjects.delete(this.col + ',' + this.row);
+              this.col = nc; this.row = nr;
+              this.targetCol = nc; this.targetRow = nr;
+              worldObjects.set(nc + ',' + nr, this);
+              this.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
+              break;
+            }
+          },
+          update(dt) {
+            const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
+            const tile = grid[this.targetRow]?.[this.targetCol];
+            const ty = tile ? tileSurfaceY(tile.type) + this.halfHeight : this.wy;
+            const sp = Math.min(1, dt * 4);
+            this.wx += (tx - this.wx) * sp;
+            this.wz += (tz - this.wz) * sp;
+            this.wy += (ty - this.wy) * sp;
+            this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
+            this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
+
+            const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
+            const lookTarget = idle ? nearestAngleAmong(this.groupRot, cameraRelativePerps()) : this.targetRot;
+            const { effectiveTarget, snapTo } = perpClamp(this.perpState, lookTarget, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
+            if (snapTo !== null) this.groupRot = effectiveTarget;
+            else this.groupRot += angleDiff(effectiveTarget, this.groupRot) * 0.18;
+            this.avatarRef.group.rotation.y = this.groupRot;
+          },
+          reset() {
+            scene.remove(avatarRef.group);
+            avatarRef.dispose();
+          },
+        };
+        return animal;
+      }
+      function makeGarWolfAnimal(col, row, livestockId, genotype) {
+        return makePatternLivestockAnimal('gar-wolf', 'Gar-wolf', '🐺', col, row, livestockId, genotype);
+      }
+      function makeDabinggiHoundAnimal(col, row, livestockId, genotype) {
+        return makePatternLivestockAnimal('dabinggi-hound', 'Dabinggi-hound', '🐕', col, row, livestockId, genotype);
+      }
+
       // Livestock kind → factory, so restoring saved livestock on world load
       // can dispatch by kind without hardcoding uumkao'ii — the array this
       // reads is meant to grow into other livestock types later.
-      const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal };
+      const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal };
 
       // item key -> livestock kind, for the Farm tab's "Add Livestock" flow.
-      // Grows alongside LIVESTOCK_FACTORIES as more species ship.
-      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii' };
+      // Grows alongside LIVESTOCK_FACTORIES as more species ship. Both new
+      // Den-Mother nest rewards (see updateNestInteraction) piggyback on this
+      // exact mechanism per the design intent — "the existing livestock
+      // items, just renamed" — rather than inventing a separate egg/baby
+      // item system. garWolfBaby has no LIVESTOCK_FACTORIES entry (gar-wolf
+      // isn't a farm-deployable species), so addToStable is its only valid
+      // path — addLivestockFromItem degrades to its existing "no factory"
+      // failure message rather than crashing.
+      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf' };
+
+      // itemKey -> FIFO queue of genotypes carried by not-yet-hatched units of
+      // that item — populated when a Den-Mother's nest grants an egg/baby
+      // (see updateNestInteraction), so the resulting livestock/companion
+      // shares its pack's exact genes instead of rolling a fresh random one.
+      // Not persisted: this only bridges "just took it from the nest" to
+      // "added it to the farm/stable this same session" — a stack of eggs
+      // carried across a save/reload falls back to a fresh roll, same as any
+      // item whose instance-level data isn't part of the save format.
+      const _pendingLivestockGenotypes = {};
+      function _queueLivestockItemGenotype(itemKey, genotype) {
+        if (!genotype) return;
+        (_pendingLivestockGenotypes[itemKey] || (_pendingLivestockGenotypes[itemKey] = [])).push(genotype);
+        window.__farmLog?.(`[genotype] queued a carried genotype for ${itemKey} (${_pendingLivestockGenotypes[itemKey].length} pending)`, 'wildlife');
+      }
+      function _consumeLivestockItemGenotype(itemKey) {
+        const genotype = _pendingLivestockGenotypes[itemKey]?.shift() || null;
+        window.__farmLog?.(`[genotype] addLivestockFromItem/addToStable(${itemKey}): ${genotype ? 'used a carried genotype from the nest queue' : 'no carried genotype pending — rolling a fresh one'}`, 'wildlife');
+        return genotype;
+      }
 
       // Adds a creature from an undeployed crate item to the farm's
       // livestock — the only way to do so now (see the Farm tab's Livestock
@@ -2888,8 +3216,9 @@
           }
         }
         if (col === null) return { ok: false, message: 'No open tile on the farm to place it.' };
+        const genotype = _consumeLivestockItemGenotype(itemKey) || makeDefaultGenotype(kind);
         const factory = LIVESTOCK_FACTORIES[kind];
-        const animal = factory ? factory(col, row) : null;
+        const animal = factory ? factory(col, row, null, genotype) : null;
         if (!animal) return { ok: false, message: 'Sprite still loading — try again in a moment.' };
         inventory[itemKey]--;
         clampInventoryStack(itemKey);
@@ -2901,7 +3230,7 @@
         const livestock = _loadWorldLivestock();
         livestock.push({
           id: animal.livestockId, kind, col, row, releasedAt: Date.now(),
-          name: defaultLivestockName(kind), genotype: makeDefaultGenotype(kind),
+          name: defaultLivestockName(kind), genotype,
         });
         _saveWorldLivestock(livestock);
         return { ok: true, message: `🦆 ${defaultLivestockName(kind)} added to the farm!` };
@@ -2920,7 +3249,7 @@
         clampInventoryStack(itemKey);
         const entry = {
           id: 'stable_' + Math.random().toString(36).slice(2, 10),
-          kind, name: defaultLivestockName(kind), genotype: makeDefaultGenotype(kind),
+          kind, name: defaultLivestockName(kind), genotype: _consumeLivestockItemGenotype(itemKey) || makeDefaultGenotype(kind),
           aiType: companionAiTypeForKind(kind), level: 0, stabledAt: Date.now(),
         };
         stable.push(entry);
@@ -2937,7 +3266,7 @@
         for (const entry of _loadWorldLivestock()) {
           const factory = LIVESTOCK_FACTORIES[entry.kind];
           if (!factory || !canSpawnAnimalAt(entry.col, entry.row)) continue;
-          const animal = factory(entry.col, entry.row, entry.id);
+          const animal = factory(entry.col, entry.row, entry.id, entry.genotype);
           if (!animal) continue;
           worldObjects.set(entry.col + ',' + entry.row, animal);
           animalObjects.add(animal);
@@ -2996,14 +3325,15 @@
           }
           if (col === null) continue; // no room on the farm right now — pair lapses rather than blocking forever
           const kind = parentA.kind;
+          const childGenotype = crossOffspring(parentA.genotype, parentB.genotype, kind);
           const factory = LIVESTOCK_FACTORIES[kind];
-          const animal = factory ? factory(col, row) : null;
+          const animal = factory ? factory(col, row, null, childGenotype) : null;
           if (!animal) continue;
           worldObjects.set(col + ',' + row, animal);
           animalObjects.add(animal);
           livestock.push({
             id: animal.livestockId, kind, col, row, releasedAt: Date.now(),
-            name: defaultLivestockName(kind), genotype: crossOffspring(parentA.genotype, parentB.genotype, kind),
+            name: defaultLivestockName(kind), genotype: childGenotype,
           });
           showToast(`🐣 A new ${defaultLivestockName(kind)} was born on the farm!`, true);
         }
@@ -3049,14 +3379,62 @@
         }
         return _creatureTexCache.back.get(url);
       }
-      function setCreatureFrame(avatarRef, url) {
+      // Genotype-composited textures for pattern-layer livestock (gar-wolf,
+      // dabinggi-hound) — mirrors _creatureTexCache's URL-keyed pattern but
+      // keyed by (kind, frame, genotype signature) instead, since the actual
+      // pixels come from an async canvas composite (see
+      // creature-genetics-render.js) rather than a static file. While a
+      // signature's compose is still in flight, callers fall back to the
+      // species' plain (uncolored) sprite — see setCreatureFrame below.
+      const _genotypeTexCache = { front: new Map(), back: new Map() };
+      const _genotypeTexPending = new Set();
+      function _getGenotypeTextures(kind, frame, genotype) {
+        const renderer = window.CreatureGeneticsRender;
+        if (!renderer || !genotype) return null;
+        const sig = renderer.genotypeSignature(kind, genotype);
+        const key = `${kind}|${frame}|${sig}`;
+        if (_genotypeTexCache.front.has(key)) {
+          return { front: _genotypeTexCache.front.get(key), back: _genotypeTexCache.back.get(key) };
+        }
+        if (!_genotypeTexPending.has(key)) {
+          _genotypeTexPending.add(key);
+          renderer.composeFrame(kind, frame, genotype).then(canvas => {
+            _genotypeTexPending.delete(key);
+            if (!canvas) return;
+            const front = new THREE.CanvasTexture(canvas);
+            front.colorSpace = THREE.SRGBColorSpace;
+            const back = new THREE.CanvasTexture(canvas);
+            back.colorSpace = THREE.SRGBColorSpace;
+            back.wrapS = THREE.RepeatWrapping; back.repeat.set(-1, 1); back.offset.set(1, 0);
+            _genotypeTexCache.front.set(key, front);
+            _genotypeTexCache.back.set(key, back);
+          }).catch(() => { _genotypeTexPending.delete(key); });
+        }
+        return null;
+      }
+      // Returns true when a real composited texture (not the plain
+      // fallback) got applied — updateCreatureAnimFrame uses this to keep
+      // retrying a genotype creature's current frame every tick until its
+      // specific (kind,frame,signature) compose actually finishes, instead
+      // of a global "something somewhere finished" signal (the previous
+      // design: a single shared generation counter bumped by ANY frame's
+      // compose finishing, anywhere, for any creature — which let a
+      // creature get marked "up to date" the instant some unrelated
+      // frame/genotype completed, permanently stranding it on the plain
+      // fallback if its own specific frame wasn't ready at that exact
+      // moment and nothing else ever bumped the counter again).
+      function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype) {
+        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype) : null;
+        const front = genoTex?.front || _getCreatureFrontTexture(url);
+        const back = genoTex?.back || _getCreatureBackTexture(url);
         for (const child of avatarRef.group.children) {
           if (!child.material) continue;
-          if (child.name.endsWith('_front_plane')) child.material.map = _getCreatureFrontTexture(url);
-          else if (child.name.endsWith('_back_plane')) child.material.map = _getCreatureBackTexture(url);
+          if (child.name.endsWith('_front_plane')) child.material.map = front;
+          else if (child.name.endsWith('_back_plane')) child.material.map = back;
           else continue;
           child.material.needsUpdate = true;
         }
+        return !!genoTex;
       }
 
       // spriteUrl -> resolved bottom-opacity ratio (0..1, see
@@ -3122,7 +3500,12 @@
         });
         avatarRef.frontPlane = avatarRef.group.children[0] || null;
         avatarRef.backPlane  = avatarRef.group.children[1] || null;
-        if (def.tint && def.tint !== 0xffffff) {
+        // Skip the species-differentiation tint for genotype-bearing
+        // creatures (gar-wolf/dabinggi-hound) — their sprite is about to be
+        // replaced by a genotype-composited texture and def.tint would
+        // multiply over it, muddying the actual bred color (see the
+        // matching genotype check in updateCreatureMesh's per-tick tint).
+        if (def.tint && def.tint !== 0xffffff && !opts.genotype) {
           for (const child of avatarRef.group.children) {
             if (child.material) child.material.color.setHex(def.tint);
           }
@@ -3437,6 +3820,7 @@
         // riposte instead of applying damage normally — only one hold
         // ability can be active at a time, so this is a single settable slot.
         if (window.Combat?.tryInterceptPlayerDamage?.(amount, fromX, fromY)) return;
+        _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, amount, dmgOpts || {});
         else player.health = Math.max(0, player.health - amount);
         if (player.health > 0) {
@@ -3586,17 +3970,14 @@
       }
 
       // Narrow terrain gate for creature movement — unlike tileSpeedAt (used by
-      // the player), this only cares about cliff faces and water crossings, so
-      // untagged creatures keep wandering over rock/shrub exactly as before.
-      // canClimb/canSwim on the creature's CREATURE_DB entry opt out per type.
+      // the player), this only cares about map bounds; cliff faces and water
+      // crossings are no longer hard blocks for any creature, just speed
+      // penalties for the ones without canClimb/canSwim (see
+      // isCreatureClimbing/isCreatureSwimming and moveCreatureToward's
+      // CLIMB_SPEED_MUL/SWIM_SPEED_MUL slowdowns).
       function creatureCanEnterTile(def, wx, wy) {
         const aC = getActiveCols(), aR = getActiveRows();
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
-        const tile = getActiveGrid()[Math.floor(wy / TILE)][Math.floor(wx / TILE)];
-        if (tile.incline && !def?.canClimb) return false;
-        // River/stream is no longer a hard block for non-swimmers — see
-        // moveCreatureToward's SWIM_SPEED_MUL slowdown and
-        // isCreatureSwimming's attack lockout.
         return true;
       }
 
@@ -3621,12 +4002,23 @@
         return isSwimmingAt(c.x, c.y, c.def?.canSwim, c.areaGrid);
       }
 
+      // True while a creature without canClimb is standing on a cliff-face
+      // (incline) tile — same pattern as isCreatureSwimming, drives
+      // moveCreatureToward's CLIMB_SPEED_MUL slowdown. A canClimb creature
+      // scales cliffs at full speed.
+      function isCreatureClimbing(c) {
+        if (c.def?.canClimb) return false;
+        const g = c.areaGrid || getActiveGrid();
+        const col = Math.floor(c.x / TILE), row = Math.floor(c.y / TILE);
+        return !!g[row]?.[col]?.incline;
+      }
+
       function moveCreatureToward(c, tx, ty, speed, dt) {
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
         const nx = dx / dist, ny = dy / dist;
-        const effectiveSpeed = isCreatureSwimming(c) ? speed * SWIM_SPEED_MUL : speed;
+        const effectiveSpeed = isCreatureSwimming(c) ? speed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? speed * CLIMB_SPEED_MUL : speed;
         const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
         // slides along it instead of freezing outright (mirrors the player's
@@ -3705,10 +4097,18 @@
         // hit flash so "you damaged it" feedback still reads clearly even if
         // a strike lands mid-windup. Resolved every frame (not just on
         // change) so the tint always reverts cleanly once both clear.
+        // A genotype-bearing creature's texture is already the correct
+        // per-den color (see updateCreatureAnimFrame/composeFrame below) —
+        // def.tint is a plain species-differentiation multiply that would
+        // wash a correctly-composited golden/etc. texture back toward
+        // whatever hardcoded tint that species variant (e.g. gar-wolf-alpha,
+        // gar-wolf-den-mother) happens to have, so skip it for those and
+        // fall back to white. Combat feedback (hit flash / telegraph) still
+        // applies to every creature regardless of genotype.
         const desiredTint = c.hitFlashT > 0 ? 0xff5050
           : c.telegraphState === 'strike' ? 0xffffff
           : c.telegraphState === 'windup' ? 0xffc23d
-          : (c.def.tint || 0xffffff);
+          : (c.genotype ? 0xffffff : (c.def.tint || 0xffffff));
         if (c._tintHex !== desiredTint) {
           c._tintHex = desiredTint;
           for (const child of grp.children) {
@@ -3723,10 +4123,30 @@
       const RUN_FRAME_STRIDE_PX = 30;
 
       function updateCreatureAnimFrame(c, dt, moving) {
+        // A genotype-bearing creature (gar-wolf/dabinggi-hound with genes —
+        // see makeCreatureEntity's opts.genotype) needs its composited
+        // texture re-applied once the async compose finishes, even if the
+        // frame URL string itself hasn't changed since the fallback swap —
+        // c._genotypeReadyFrames tracks which frame keys have already
+        // gotten their real (non-fallback) texture applied, so a not-yet-
+        // ready frame keeps retrying every tick (cheap: a cache lookup)
+        // until setCreatureFrame reports success, instead of relying on
+        // any global "something finished" signal that can't tell whether
+        // it was actually THIS creature's THIS frame that became ready.
+        // gar-wolf-alpha/gar-wolf-den-mother are separate CREATURE_DB
+        // entries (different stats) but share the plain gar-wolf's sprite
+        // files and pattern assets — GENOTYPE_SPECIES_ALIAS maps them back
+        // to the "gar-wolf" key CreatureGeneticsRender.SPECIES actually
+        // knows, otherwise composeFrame silently no-ops for them (spec not
+        // found) and they'd never render a fill/pattern at all.
+        const genotypeKind = c.genotype ? (GENOTYPE_SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null;
         if (!moving) {
-          if (c.currentFrameUrl !== c.def.sprites.idle) {
-            setCreatureFrame(c.avatarRef, c.def.sprites.idle);
+          const frameKey = 'idle';
+          const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
+          if (c.currentFrameUrl !== c.def.sprites.idle || needsRetry) {
+            const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype);
             c.currentFrameUrl = c.def.sprites.idle;
+            if (genotypeKind && applied) (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
           }
           // Not tracking ground covered while idle, so resuming movement
           // doesn't "catch up" on distance never actually traveled.
@@ -3748,9 +4168,12 @@
           c.runFrame = (c.runFrame + 1) % c.def.sprites.run.length;
         }
         const url = c.def.sprites.run[c.runFrame];
-        if (c.currentFrameUrl !== url) {
-          setCreatureFrame(c.avatarRef, url);
+        const frameKey = 'run' + (c.runFrame + 1);
+        const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
+        if (c.currentFrameUrl !== url || needsRetry) {
+          const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype);
           c.currentFrameUrl = url;
+          if (genotypeKind && applied) (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
         }
       }
 
@@ -3887,10 +4310,34 @@
           const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
           const distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
+          // A recently-fled animal gets a grace period at home before it can
+          // be re-aggro'd by the player or re-picked as ambush prey (see
+          // 'fleeing-low-health' below and applyWildlifeSkirmishDamage).
+          const onFleeCooldown = c._fleeCooldownUntil > performance.now();
 
-          if (c.state !== 'chase' && distToPlayer <= def.aggroRangePx) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
+          if (c.state !== 'chase' && c.state !== 'fleeing-low-health' && !onFleeCooldown && distToPlayer <= def.aggroRangePx) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
+
+          // Patrol sighting: a predator that's out patrolling its route (or
+          // fallback-wandering with no route) is alert the whole time it's
+          // moving, not just when parked at one spot — checked whenever it
+          // isn't already busy with the player or another skirmish. Simple
+          // radius check against grazing herbivores tied to the same foliage
+          // patch (no line-of-sight system exists for creature-vs-creature
+          // sight today).
+          const predatorAvailable = def.diet !== 'herbivore' && !onFleeCooldown
+            && c.state !== 'chase' && c.state !== 'patrol-chase' && c.state !== 'return' && c.state !== 'fleeing-low-health';
+          if (predatorAvailable) {
+            for (const prey of hostileObjects) {
+              if (prey === c || prey.health <= 0 || prey.areaId !== c.areaId) continue;
+              if (prey.def?.diet !== 'herbivore' || prey.state !== 'at-station-grazing') continue;
+              if (prey.grazingPatchId !== c.linkedPatchId) continue;
+              if (Math.hypot(prey.x - c.x, prey.y - c.y) > PATROL_SIGHT_RANGE_PX) continue;
+              c.state = 'patrol-chase'; c.targetCreature = prey;
+              break;
+            }
+          }
           // Leaving chase mid-windup (player broke the leash) abandons the
           // telegraphed bite/modular attack rather than landing it from way
           // out of range.
@@ -3911,6 +4358,42 @@
             c.x = ckSwept.x; c.y = ckSwept.y;
             if (ckSwept.blockedX) c.knockbackVX = 0;
             if (ckSwept.blockedY) c.knockbackVY = 0;
+          } else if (c.state === 'fleeing-low-health') {
+            // Beelines home ignoring player/prey aggro (see the guards above)
+            // until it settles, then starts its re-aggro cooldown — nothing
+            // fights to the death in a wildlife skirmish (applyWildlifeSkirmishDamage).
+            if (distFromHome < DEN_SETTLE_RADIUS_PX) {
+              c.state = 'idle';
+              c._fleeCooldownUntil = performance.now() + WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS;
+              aimAngle = idleCreatureAimAngle(c.groupRot);
+            } else {
+              moving = moveCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, dt);
+              if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
+            }
+          } else if (c.state === 'patrol-chase') {
+            // A simplified creature-vs-creature chase (no telegraph/pounce
+            // theatrics — those are built around damaging the player
+            // specifically) — beelines onto the prey and lands plain bite
+            // damage through applyWildlifeSkirmishDamage on cooldown.
+            const prey = c.targetCreature;
+            const preyGone = !prey || prey.health <= 0 || prey.areaId !== c.areaId || prey.state === 'fleeing-low-health';
+            if (preyGone) {
+              c.state = 'idle'; c.targetCreature = null;
+            } else {
+              const pdx = prey.x - c.x, pdy = prey.y - c.y;
+              const pdist = Math.hypot(pdx, pdy);
+              if (pdist > (def.leashRangePx || TILE * 9) || distFromHome > (def.leashRangePx || TILE * 9)) {
+                c.state = 'return'; c.targetCreature = null;
+              } else {
+                aimAngle = Math.atan2(pdy, pdx);
+                moving = moveCreatureToward(c, prey.x, prey.y, def.chaseSpeed || def.moveSpeed, dt);
+                const triggerRangePx = def.attackRangePx || TILE * 0.85;
+                if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
+                  c.attackCooldownT = def.attackCooldownS || 1.0;
+                  applyWildlifeSkirmishDamage(c, prey, def.attackDamage || 8);
+                }
+              }
+            }
           } else if (c.state === 'chase') {
             aimAngle = Math.atan2(dyp, dxp);
             if (c.retreatT > 0) {
@@ -3995,11 +4478,74 @@
             } else {
               aimAngle = idleCreatureAimAngle(c.groupRot);
             }
+          } else if (def.diet === 'herbivore') {
+            // Active hours: a herbivore periodically breaks off grazing to
+            // visit water (see assignWildlifeStation's waterTile, checked
+            // against a running game-hour clock so a whole pack doesn't all
+            // drink in lockstep — patrolIndex-style stagger isn't needed here
+            // since nextDrinkHour is seeded with jitter at spawn, see
+            // spawnPackAtDen), otherwise travels to its assigned grazing tile
+            // and settles there. Falls back to plain wander with neither
+            // assigned (legacy zones without generator data).
+            const nowHours = (calendar.day - 1) * 24 + getHour();
+            if (c.nextDrinkHour == null) c.nextDrinkHour = nowHours + rnd() * WILDLIFE_DRINK_INTERVAL_HOURS;
+            const wantsDrink = c.waterTile && nowHours >= c.nextDrinkHour;
+            if (wantsDrink) {
+              const wx = (c.waterTile.x + 0.5) * TILE, wy = (c.waterTile.y + 0.5) * TILE;
+              const distToWater = Math.hypot(c.x - wx, c.y - wy);
+              if (distToWater > DEN_SETTLE_RADIUS_PX) {
+                c.state = 'traveling-to-drink';
+                moving = moveCreatureToward(c, wx, wy, def.moveSpeed, dt);
+                if (moving) aimAngle = Math.atan2(wy - c.y, wx - c.x);
+              } else {
+                c.state = 'drinking';
+                aimAngle = idleCreatureAimAngle(c.groupRot);
+                c._drinkT = (c._drinkT || 0) + dt;
+                if (c._drinkT >= WILDLIFE_DRINK_DURATION_S) {
+                  c._drinkT = 0;
+                  c.nextDrinkHour = nowHours + WILDLIFE_DRINK_INTERVAL_HOURS;
+                }
+              }
+            } else {
+              const station = c.grazingTile;
+              if (station) {
+                const stationX = (station.x + 0.5) * TILE, stationY = (station.y + 0.5) * TILE;
+                const distToStation = Math.hypot(c.x - stationX, c.y - stationY);
+                if (distToStation > DEN_SETTLE_RADIUS_PX) {
+                  c.state = 'scheduled-travel-to-station';
+                  moving = moveCreatureToward(c, stationX, stationY, def.moveSpeed, dt);
+                  if (moving) aimAngle = Math.atan2(stationY - c.y, stationX - c.x);
+                } else {
+                  c.state = 'at-station-grazing';
+                  aimAngle = idleCreatureAimAngle(c.groupRot);
+                }
+              } else {
+                const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
+                moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
+                aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
+              }
+            }
+          } else if (c.patrolPoints && c.patrolPoints.length) {
+            // Active hours: a predator loops continuously between its
+            // assigned patrol waypoints (see assignWildlifeStation — the
+            // same nearby-cover points a stationary "ambush" used to camp
+            // at, now walked as a route) instead of parking at one spot —
+            // the patrol-sighting check above fires the whole time it's out
+            // here, whether mid-leg or paused at a waypoint.
+            c.state = 'patrolling';
+            const target = c.patrolPoints[(c.patrolIndex || 0) % c.patrolPoints.length];
+            const targetX = (target.x + 0.5) * TILE, targetY = (target.y + 0.5) * TILE;
+            const distToTarget = Math.hypot(c.x - targetX, c.y - targetY);
+            if (distToTarget <= DEN_SETTLE_RADIUS_PX) {
+              c.patrolIndex = ((c.patrolIndex || 0) + 1) % c.patrolPoints.length;
+              aimAngle = idleCreatureAimAngle(c.groupRot);
+            } else {
+              moving = moveCreatureToward(c, targetX, targetY, def.moveSpeed, dt);
+              if (moving) aimAngle = Math.atan2(targetY - c.y, targetX - c.x);
+            }
           } else {
-            // Active hours (or a non-denned creature, e.g. legacy/authored
-            // zones without den data): pack creatures roam a wider territory
-            // around their den by day than the tight loiter radius everything
-            // else uses.
+            // Pack creatures roam a wider territory around their den by day
+            // than the tight loiter radius everything else uses.
             const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
             moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
             // Wandering has an explicit heading; paused between legs, there's no
@@ -4009,6 +4555,18 @@
           c.facing = aimAngle;
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
+
+          // One line per AI-state transition for den-spawned wildlife (not
+          // scripted combat-card creatures, which have no denKey) — lets the
+          // schedule loop (travel to station, arrive/watch/graze, ambush,
+          // flee, settle) be observed purely as text via window.__farmLog's
+          // debug panel or window.__wildlifeDebug.dump(), without needing to
+          // watch the 3D scene.
+          if (c.denKey && c.state !== c._prevAiState) {
+            const tx = Math.round(c.x / TILE), ty = Math.round(c.y / TILE);
+            window.__farmLog?.(`[wildlife] ${c.creatureKey} (${c.id}) den=${c.denKey}: ${c._prevAiState || '(spawn)'} -> ${c.state} @ (${tx},${ty})`, 'wildlife');
+            c._prevAiState = c.state;
+          }
 
           updateCreatureMesh(c, dt, aimAngle);
           // A modular attack in its leap stage owns the sprite frame (locked
@@ -4064,6 +4622,10 @@
           for (const h of hostileObjects) {
             if (h.health <= 0) continue;
             if (h.areaId !== currentArea) continue;
+            // Wild herbivores (e.g. uumkaoii-wild) live in hostileObjects too
+            // (see spawnPackAtDen/EXTERIOR_ZONES.herbivoreSpecies) but never
+            // fight — companions should ignore them, not treat them as prey.
+            if (h.def?.hostile === false) continue;
             if (Math.hypot(h.x - master.x, h.y - master.y) <= ALERT_RANGE_PX) { target = h; break; }
           }
 
@@ -4187,7 +4749,7 @@
         // is spawned, rather than falling through to the legacy whistle.
         const activeStabled = activeCompanionId ? stable.find(s => s.id === activeCompanionId) : null;
         const stableCompanion = (activeStabled && CREATURE_DB[activeStabled.kind])
-          ? { creatureKey: activeStabled.kind, name: activeStabled.name }
+          ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype }
           : null;
         const whistle = (!activeStabled && equipmentSlots.whistle)
           ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
@@ -4199,12 +4761,16 @@
           if (existing) despawnCompanions(master);
           return;
         }
-        if (existing && existing.creatureKey === desired.creatureKey && existing.areaId === currentArea) return;
+        // Swapping between two stabled specimens of the same species (e.g.
+        // two differently-bred gar-wolves) still needs a respawn so the new
+        // one's genotype actually renders.
+        if (existing && existing.creatureKey === desired.creatureKey && existing.areaId === currentArea
+          && JSON.stringify(existing.genotype || null) === JSON.stringify(desired.genotype || null)) return;
         despawnCompanions(master);
         const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
         const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
         const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
-          isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master,
+          isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype,
         });
         if (companion) companionObjects.add(companion);
       }
@@ -4585,11 +5151,42 @@
             if (!merged) { debugLog(`Tothal Shift: no fold math available for ${zoneId}, skipping`, 'warn'); continue; }
 
             const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
+            // One entrance transition per den, at its mouth tile — leads into
+            // the procedurally generated cavern synthesized in-memory by
+            // loadBuildingScene (see its 'map_i_den_' handling). Den ids are
+            // already unique per zone (see placeAnimalDens), so the cavern
+            // mapId built from zoneId+denId is stable across a session and
+            // regenerates fresh whenever the zone itself reshapes.
+            // targetCol/targetRow are set explicitly (the cavern's own
+            // guaranteed-walkable entrance tile, from the same deterministic
+            // generateCavernFloor(mapId) loadBuildingScene will call again
+            // later) rather than left for enterBuilding's default
+            // buildingSpawnFromExit fallback to guess — that heuristic
+            // assumes "one tile north of the exit" is walkable, true for a
+            // rectangular room but not for this cavern's organic floor blob,
+            // which is exactly why entering used to strand the player outside
+            // the walkable area.
+            const denTransitions = (workspace.animalDens || [])
+              .filter(den => den.mouthAnchor)
+              .map(den => {
+                const cavernMapId = denCavernMapId(zoneId, den.id);
+                const { exitCol, exitRow } = generateCavernFloor(cavernMapId);
+                return {
+                  id: `den_${den.id}_enter`, label: 'A dark burrow', col: den.mouthAnchor.x, row: den.mouthAnchor.y,
+                  target: 'building', targetMapId: cavernMapId,
+                  targetCol: exitCol, targetRow: exitRow,
+                };
+              });
             _zoneLayouts.set(zoneId, {
               cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
-              transitions: preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
+              transitions: [
+                ...preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
+                ...denTransitions,
+              ],
               toTownExit, mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
               dens: workspace.animalDens || [],
+              foliagePatches: workspace.foliagePatches || [],
+              ambushStations: workspace.ambushStations || [],
             });
             // A reshaped zone's dens are all new — forget any leftover pack/
             // respawn bookkeeping from the previous layout's den ids (see
@@ -4647,6 +5244,42 @@
       // Devtools/QA hook for the cliff-climbing feature — mirrors
       // window.forceTothalShift's role of poking otherwise-input-driven
       // state from a console/automated test.
+      // Text-only inspection of the den/foliage-patch wildlife schedule AI —
+      // observe pathing/state decisions without watching the 3D scene. Call
+      // window.__wildlifeDebug.dump() (optionally filtered to a zone) to
+      // snapshot every den-spawned creature's current AI state/position/
+      // target, or dumpZone(zoneId) for that zone's raw den/foliage-patch/
+      // ambush-station generator data. See updateHostiles' per-transition
+      // window.__farmLog line for a running text trace of the same states.
+      window.__wildlifeDebug = {
+        dump(zoneId) {
+          const out = [];
+          for (const c of hostileObjects) {
+            if (!c.denKey) continue;
+            if (zoneId && c.areaId !== zoneId) continue;
+            out.push({
+              id: c.id, creatureKey: c.creatureKey, denKey: c.denKey, areaId: c.areaId,
+              state: c.state, health: c.health, maxHealth: c.maxHealth,
+              tile: { x: Math.round(c.x / TILE), y: Math.round(c.y / TILE) },
+              home: { x: Math.round(c.homeX / TILE), y: Math.round(c.homeY / TILE) },
+              patrolPoints: c.patrolPoints || null, patrolIndex: c.patrolIndex ?? null, linkedPatchId: c.linkedPatchId || null,
+              grazingTile: c.grazingTile || null, grazingPatchId: c.grazingPatchId || null,
+              waterTile: c.waterTile || null, nextDrinkHour: c.nextDrinkHour ?? null,
+              targetCreature: c.targetCreature?.id || null,
+            });
+          }
+          return out;
+        },
+        dumpZone(zoneId) {
+          const layout = _zoneLayouts.get(zoneId);
+          if (!layout) return null;
+          return { dens: layout.dens || [], foliagePatches: layout.foliagePatches || [], ambushStations: layout.ambushStations || [] };
+        },
+        getCurrentArea: () => currentArea,
+        isNightTime,
+        hostileObjects,
+      };
+
       window.__climbDebug = {
         getPlayer: () => player,
         getClimbTarget,
@@ -4697,6 +5330,35 @@
         triggerWeaponSwingVisual,
         setActiveTool,
         TILE,
+        enterBuilding,
+        getDenNests: () => _denNests,
+        getPendingSpotTransition: () => _pendingSpotTransition,
+        isActionHeldDown: () => actionHeldDown,
+        getNestHoldT: () => _nestHoldT,
+        isPaused: () => paused,
+        isGameStarted: () => gameStarted,
+        isMenuOpen: () => menuOpen,
+        isDialogueOpen: () => dialogueOpen,
+        isFarmEditMode: () => farmEditMode,
+        getBoundDesktopEnter: () => getActionForButton('desktop', 'Enter'),
+        debugComputeActionButtons: () => computeActionButtons(),
+        getCavernFloor: (mapId) => generateCavernFloor(mapId),
+        exitBuilding: () => exitBuilding(),
+        toolHolderParent: () => (toolHolder.parent ? (toolHolder.parent === scene ? 'farmScene' : 'otherScene') : null),
+        addLivestockFromItem: (itemKey) => addLivestockFromItem(itemKey),
+        addToStable: (itemKey) => addToStable(itemKey),
+        getWorldLivestock: () => _loadWorldLivestock(),
+        getStable: () => stable,
+        animalObjects,
+        getDenGenotypes: () => _denGenotypes,
+        genotypeSignature: (kind, genotype) => window.CreatureGeneticsRender?.genotypeSignature(kind, genotype),
+        setInventory: (key, n) => { inventory[key] = n; },
+        getGenotypeTexCacheSize: () => _genotypeTexCache.front.size,
+        getGenotypeTexCacheKeys: () => [..._genotypeTexCache.front.keys()],
+        debugGetGenotypeTextures: (kind, frame, genotype) => !!_getGenotypeTextures(kind, frame, genotype),
+        makeDefaultGenotype: (kind) => makeDefaultGenotype(kind),
+        makeCreatureEntity: (key, x, y, opts) => makeCreatureEntity(key, x, y, opts),
+        getGenotypeReadyFrames: (c) => c._genotypeReadyFrames ? [...c._genotypeReadyFrames] : [],
       };
 
       // Ambient hostile spawning — wild animal dens (see WildernessMapGenerator's
@@ -4720,6 +5382,104 @@
       const DEN_SETTLE_RADIUS_PX = TILE * 0.6;
       let denCheckTimer = 0;
 
+      // Wildlife schedule AI (den = home, foliage patches = feeding/patrol
+      // grounds) — see applyWildlifeSkirmishDamage/assignWildlifeStation
+      // and updateHostiles' 'fleeing-low-health'/'patrol-chase'/
+      // 'at-station-grazing'/'patrolling' states.
+      const WILDLIFE_FLEE_HP_THRESHOLD = 0.3; // health ratio that forces a losing animal to disengage and run home
+      const WILDLIFE_HP_FLOOR_FRACTION = 0.12; // wildlife-vs-wildlife skirmishes can never reduce health below this fraction — nothing dies from them
+      const WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS = 6000; // grace period after reaching home before a fled animal can be re-aggro'd/re-picked as prey
+      const PATROL_SIGHT_RANGE_PX = TILE * 3.5; // how close a grazing herbivore has to wander for a patrolling predator to notice it
+      const WILDLIFE_DRINK_INTERVAL_HOURS = 5; // how often (in continuous game hours) a herbivore needs to break off grazing to visit water
+      const WILDLIFE_DRINK_DURATION_S = 4; // real seconds spent drinking once at the water's edge, before resuming its schedule
+
+      // Non-lethal analogue of damageCreature, used only for predator-vs-prey
+      // wildlife skirmishes (see the 'patrol-chase' state) — player and
+      // companion combat still go through damageCreature directly and stay
+      // lethal. Clamps damage so health can never drop below
+      // WILDLIFE_HP_FLOOR_FRACTION, and forces the target into
+      // 'fleeing-low-health' once it's hurt enough, even if it was already
+      // below threshold before this hit.
+      function applyWildlifeSkirmishDamage(attacker, target, amount) {
+        const floor = target.maxHealth * WILDLIFE_HP_FLOOR_FRACTION;
+        const clamped = Math.max(0, Math.min(amount, target.health - floor));
+        if (clamped > 0) damageCreature(target, clamped, attacker.x, attacker.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp' });
+        if (target.health > 0 && target.health / target.maxHealth <= WILDLIFE_FLEE_HP_THRESHOLD) {
+          target.state = 'fleeing-low-health';
+          target.targetCreature = null;
+        }
+      }
+
+      // The foliage patch (see workspace.foliagePatches) nearest a den's home
+      // point — geographic proximity, not zone-wide random pick, so a pack
+      // doesn't get assigned a patrol route clear across the map. preferRich
+      // only matters for predators (see assignWildlifeStation): a predator
+      // needs a *rich* patch (the only ones with a nearby-cover point set —
+      // see workspace.ambushStations — to patrol), a herbivore will graze at
+      // any patch.
+      function nearestFoliagePatch(zoneData, homeX, homeY, { preferRich = false } = {}) {
+        const patches = zoneData?.foliagePatches;
+        if (!patches || !patches.length) return null;
+        const homeCol = homeX / TILE, homeRow = homeY / TILE;
+        const scored = patches.map(p => ({ p, d: Math.hypot(p.centroid.x - homeCol, p.centroid.y - homeRow) })).sort((a, b) => a.d - b.d);
+        if (preferRich) {
+          const rich = scored.find(s => s.p.rich);
+          if (rich) return rich.p;
+          return null; // no rich patch anywhere in the zone — this predator gets no patrol route, falls back to plain wander
+        }
+        return scored[0].p;
+      }
+
+      // Nearest river/stream tile to a home point, scanning the zone's own
+      // exported tile list (zoneData.tiles — the same data buildZoneScene
+      // folds into zGrid) rather than requiring a live 2D grid, since this
+      // runs once at spawn time (see assignWildlifeStation) before the
+      // creature necessarily has one. Null if the zone has no water at all.
+      function nearestWaterTile(zoneData, homeX, homeY) {
+        const tiles = zoneData?.tiles;
+        if (!tiles || !tiles.length) return null;
+        const homeCol = homeX / TILE, homeRow = homeY / TILE;
+        let best = null, bestD = Infinity;
+        for (const t of tiles) {
+          if (t.type !== TileType.RIVER && t.type !== TileType.STREAM) continue;
+          const d = Math.hypot(t.c - homeCol, t.r - homeRow);
+          if (d < bestD) { bestD = d; best = { x: t.c, y: t.r }; }
+        }
+        return best;
+      }
+
+      // Assigns a herbivore's grazing tile or a predator's patrol route,
+      // mutating the opts object makeCreatureEntity is about to be called
+      // with (see spawnPackAtDen) — a creature with neither field set just
+      // falls back to plain wandering (legacy zones without generator data,
+      // or no rich patch found).
+      function assignWildlifeStation(opts, zoneData, homeX, homeY, isHerbivore) {
+        if (isHerbivore) {
+          // Assigned independently of grazing-patch availability — a
+          // herbivore still needs to know where to drink even if (rarely) no
+          // foliage patch was found nearby (see updateHostiles' drink check).
+          const water = nearestWaterTile(zoneData, homeX, homeY);
+          if (water) opts.waterTile = water;
+          const patch = nearestFoliagePatch(zoneData, homeX, homeY, { preferRich: false });
+          if (!patch) return;
+          const tile = patch.tiles[Math.floor(rnd() * patch.tiles.length)];
+          opts.grazingTile = { x: tile.x, y: tile.y };
+          opts.grazingPatchId = patch.id;
+        } else {
+          const patch = nearestFoliagePatch(zoneData, homeX, homeY, { preferRich: true });
+          if (!patch) return;
+          // The full nearby-cover point set (see workspace.ambushStations —
+          // wilderness-map-generator.js still names it after the stationary
+          // "ambush" behavior this used to drive) becomes the patrol route,
+          // walked in a loop rather than camped at as one fixed spot.
+          const group = (zoneData.ambushStations || []).find(g => g.patchId === patch.id);
+          if (!group?.points?.length) return;
+          opts.patrolPoints = group.points.map(pt => ({ x: pt.x, y: pt.y }));
+          opts.patrolIndex = Math.floor(rnd() * opts.patrolPoints.length);
+          opts.linkedPatchId = patch.id;
+        }
+      }
+
       // Set on entering a wilderness zone (see enterZone); cleared the next
       // time updateHostileSpawning's den-check actually runs for that same
       // zone, at which point it logs the living-animal count so entering a
@@ -4742,6 +5502,38 @@
       const pendingDenRespawn = new Set();
 
       function denKeyFor(zoneId, den) { return `${zoneId}:${den.id}`; }
+      // cavernMapId -> the zone it belongs to — zoneId/denId can't be
+      // reliably parsed back out of "map_i_den_<zoneId>_<denId>" (both
+      // halves can themselves contain underscores), so this side table is
+      // populated wherever a cavern id is minted (denCavernMapId) instead.
+      // Used by teleportToRandomDen to work from inside a den too.
+      const _denCavernZoneOf = new Map();
+      // Same id shape performTothalShift's denTransitions and
+      // synthesizeCavernMapData both already use for the den's cavern —
+      // reused as the shared lookup key so a den's exterior pack, its
+      // Den-Mother, and its nest rewards all resolve the same genotype
+      // without needing to parse zoneId/denId back out of the mapId string.
+      function denCavernMapId(zoneId, denId) {
+        const id = `map_i_den_${zoneId}_${denId}`;
+        _denCavernZoneOf.set(id, zoneId);
+        return id;
+      }
+      // cavernMapId -> shared "family" genotype (gar-wolf pattern shape) —
+      // one roll per den, reused by every pack member, the Den-Mother, and
+      // any eggs/babies taken from its nest, using the exact same odds as
+      // a farm-bought crate (see makeDefaultGenotype). Herbivore
+      // (uumkaoii-wild) dens never read this — no pattern genes exist for
+      // that species yet — so the entry just sits unused for them.
+      const _denGenotypes = new Map();
+      function getOrMakeDenGenotype(cavernMapId) {
+        if (!_denGenotypes.has(cavernMapId)) {
+          _denGenotypes.set(cavernMapId, makeDefaultGenotype('gar-wolf'));
+          window.__farmLog?.(`[genotype] rolled new family genotype for den ${cavernMapId} (cache size now ${_denGenotypes.size})`, 'wildlife');
+        } else {
+          window.__farmLog?.(`[genotype] reused cached family genotype for den ${cavernMapId}`, 'wildlife');
+        }
+        return _denGenotypes.get(cavernMapId);
+      }
 
       // Forgets all pack/respawn bookkeeping for a zone whose terrain (and
       // therefore den ids) just got regenerated (see performTothalShift) —
@@ -4753,6 +5545,17 @@
         for (const key of denEverSpawned) if (key.startsWith(prefix)) denEverSpawned.delete(key);
         for (const key of pendingDenRespawn) if (key.startsWith(prefix)) pendingDenRespawn.delete(key);
         for (const key of [...denLastKnownAlive.keys()]) if (key.startsWith(prefix)) denLastKnownAlive.delete(key);
+        // Den ids (e.g. "animalDen_3") are assigned sequentially per zone
+        // generation, so a fresh Tothal Shift very likely reuses an old
+        // den's exact id — without this, that den's cavern would keep
+        // returning its stale cached scene/nest/genotype from before the
+        // shift (see loadBuildingScene's _buildingScenes.has() early-return
+        // and getOrMakeDenGenotype's cache-forever lookup) instead of
+        // rolling a fresh one for the new pack that just spawned there.
+        const cavernPrefix = `map_i_den_${zoneId}_`;
+        for (const key of [..._denGenotypes.keys()]) if (key.startsWith(cavernPrefix)) _denGenotypes.delete(key);
+        for (const key of [..._denNests.keys()]) if (key.startsWith(cavernPrefix)) _denNests.delete(key);
+        for (const key of [..._buildingScenes.keys()]) if (key.startsWith(cavernPrefix)) _buildingScenes.delete(key);
       }
 
       function isDenPackAlive(denKey) {
@@ -4762,20 +5565,34 @@
 
       function spawnPackAtDen(zoneId, den, denKey) {
         const zdef = EXTERIOR_ZONES[zoneId];
-        const pool = zdef?.packSpecies;
+        // A den's population type (predator pack vs. herbivore herd) is
+        // decided fresh each spawn cycle rather than fixed per den — simplest
+        // v1 (see the wildlife-schedule-AI plan's Feature 4 notes). Falls
+        // back to whichever pool the zone actually has if only one exists.
+        const hasPack = zdef?.packSpecies?.length, hasHerd = zdef?.herbivoreSpecies?.length;
+        const useHerd = hasHerd && (!hasPack || rnd() < 0.5);
+        const pool = useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies;
         if (!pool || !pool.length) {
-          window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
+          window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies/herbivoreSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
           return;
         }
         const speciesKey = pool[Math.floor(rnd() * pool.length)];
-        const homeX = den.x * TILE + TILE * 0.5, homeY = den.y * TILE + TILE * 0.5;
+        // Every gar-wolf-family member of this pack (regular + alpha) shares
+        // one rolled-once "family" genotype — see getOrMakeDenGenotype.
+        const denGenotype = speciesKey.startsWith('gar-wolf') ? getOrMakeDenGenotype(denCavernMapId(zoneId, den.id)) : null;
+        // den.x/den.y are the footprint's top-left tile (see workspace.animalDens
+        // in wilderness-map-generator.js) — spawn/home anchor is the footprint center.
+        const homeX = (den.x + (den.w || 1) * 0.5) * TILE, homeY = (den.y + (den.h || 1) * 0.5) * TILE;
         const count = DEN_PACK_SIZE_MIN + Math.floor(rnd() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
+        const zoneData = _zoneLayouts.get(zoneId);
         let spawned = 0;
         for (let i = 0; i < count; i++) {
           const angle = rnd() * Math.PI * 2;
           const dist = TILE * (0.8 + rnd() * 1.6);
           const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
-          const creature = makeCreatureEntity(speciesKey, x, y, { homeX, homeY, state: 'idle', denKey });
+          const opts = { homeX, homeY, state: 'idle', denKey, genotype: denGenotype };
+          assignWildlifeStation(opts, zoneData, homeX, homeY, useHerd);
+          const creature = makeCreatureEntity(speciesKey, x, y, opts);
           if (creature) { hostileObjects.add(creature); spawned++; }
           else window.__farmLog?.(`[wildlife] ${denKey}: makeCreatureEntity("${speciesKey}") returned null (attempt ${i + 1}/${count}) — bad/missing CREATURE_DB entry?`, 'wildlife');
         }
@@ -4803,9 +5620,10 @@
           // authored-only layout — see the other _zoneLayouts.set call site)
           // silently produced none. Only log once per zone per session so
           // this doesn't spam every DEN_CHECK_INTERVAL_S.
-          if (EXTERIOR_ZONES[currentArea]?.packSpecies?.length && !_loggedMissingDenZones.has(currentArea)) {
+          const zdef = EXTERIOR_ZONES[currentArea];
+          if ((zdef?.packSpecies?.length || zdef?.herbivoreSpecies?.length) && !_loggedMissingDenZones.has(currentArea)) {
             _loggedMissingDenZones.add(currentArea);
-            window.__farmLog?.(`[wildlife] zone "${currentArea}" has a packSpecies pool but no den anchors in _zoneLayouts (fallback: no wild packs will spawn here this session).`, 'wildlife');
+            window.__farmLog?.(`[wildlife] zone "${currentArea}" has a packSpecies/herbivoreSpecies pool but no den anchors in _zoneLayouts (fallback: no wild packs will spawn here this session).`, 'wildlife');
           }
           return;
         }
@@ -5094,10 +5912,17 @@
       let _townBuildingDefs  = [];     // building entries from _townZone.buildings
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
+      const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
+      // A den's cavern (synthesizeCavernMapData's wallStyle:'cavern') is a
+      // monster-lair building, not a house/shop — the Den-Mother fight
+      // requires tools/weapons to actually work there, unlike every other
+      // building interior (see the combat-update gate in gameLoop and the
+      // toolHolder/reticle scene wiring in enterBuilding below).
+      function _isCavernBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_den_'); }
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       const _zoneScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions }
       // mapId → { cols, rows, tiles: [{c,r,type}], transitions, buildings, decor,
@@ -6008,12 +6833,14 @@
         buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
+        buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
         _zoneWaterMeshes.set(mapId, [
           ...buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
           ...buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
         ]);
 
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
+        _buildRichFoliageBillboards(zScene, zoneData, zGrid);
         buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
 
         const toTownExit = zoneData?.toTownExit;
@@ -6474,6 +7301,140 @@
         console.log(`%c[zone:${mapId}] solved rock formation built: ${spans.size} edge span(s)`, 'color:#22c55e;font-weight:bold');
       }
 
+      // Rounded boulder-mound bump field — the exact same BFS-grown-plateau
+      // algorithm (and the identical seam/roughness noise formulas) that
+      // buildRockTileGeo already uses for every loose rock scattered on
+      // farm/zone ground, generalized from a single 1x1 tile to an arbitrary
+      // col×row footprint so a whole surface (a den face, a cavern wall
+      // panel — see buildAnimalDenMeshes/buildCavernWalls) reads as one
+      // continuous cluster of rounded lobes, matching the farm's rocks,
+      // instead of a flat panel with small edge-only jitter. Boundary
+      // vertices are forced to exactly 0 so adjacent faces/panels that meet
+      // at a shared edge stay crack-free even though each field is grown
+      // independently in its own local coordinate space.
+      const ROCK_MOUND_CELLS_PER_TILE = 6;
+      function buildRockMoundBumpField(colsTiles, rowsTiles, worldU0, worldV0, salt, peakScale = 1) {
+        const CX = Math.max(1, Math.round(colsTiles * ROCK_MOUND_CELLS_PER_TILE));
+        const CZ = Math.max(1, Math.round(rowsTiles * ROCK_MOUND_CELLS_PER_TILE));
+        const VX = CX + 1, VZ = CZ + 1, STEP = 1 / ROCK_MOUND_CELLS_PER_TILE;
+        let _s = ((Math.round(worldU0 * 8) * 374761393) ^ (Math.round(worldV0 * 8) * 668265263) ^ Math.imul(salt, 2654435761)) >>> 0;
+        const rng = () => { _s += 0x6D2B79F5; let t = Math.imul(_s ^ _s >>> 15, _s | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 8) | 0, kz = Math.round(vz * 8) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.05;
+        };
+        const Y = new Float32Array(VX * VZ);
+        for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) Y[vj * VX + vi] = seamDisp(worldU0 + vi * STEP, worldV0 + vj * STEP);
+        if (CX >= 3 && CZ >= 3) {
+          const lobeCount = Math.max(1, Math.round(colsTiles * rowsTiles * 0.7));
+          for (let lobe = 0; lobe < lobeCount; lobe++) {
+            const startCi = 1 + Math.floor(rng() * (CX - 2));
+            const startCj = 1 + Math.floor(rng() * (CZ - 2));
+            const maxSize = 2 + Math.floor(rng() * 12);
+            const group = new Set([startCj * CX + startCi]);
+            const front = [[startCi, startCj]];
+            while (front.length && group.size < maxSize) {
+              const fi = Math.floor(rng() * front.length);
+              const [ci, cj] = front.splice(fi, 1)[0];
+              for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const ni = ci + dc, nj = cj + dr;
+                if (ni < 1 || ni > CX - 2 || nj < 1 || nj > CZ - 2) continue;
+                const nk = nj * CX + ni;
+                if (group.has(nk)) continue;
+                group.add(nk); front.push([ni, nj]);
+              }
+            }
+            let maxY = -Infinity;
+            const raised = new Set();
+            for (const ck of group) {
+              const ci = ck % CX, cj = (ck / CX) | 0;
+              for (const vv of [cj * VX + ci, cj * VX + ci + 1, (cj + 1) * VX + ci, (cj + 1) * VX + ci + 1]) {
+                raised.add(vv);
+                if (Y[vv] > maxY) maxY = Y[vv];
+              }
+            }
+            const PEAK = (0.22 + rng() * 0.3) * peakScale;
+            const target = maxY + PEAK;
+            for (const vv of raised) {
+              const vix = vv % VX, viy = (vv / VX) | 0;
+              const edgeDist = Math.min(vix, VX - 1 - vix, viy, VZ - 1 - viy);
+              const blend = Math.min(1, edgeDist / 2);
+              if (blend <= 0) continue;
+              const vx = worldU0 + vix * STEP, vz = worldV0 + viy * STEP;
+              const hgt = seamDisp(vx, vz) + blend * target + roughDisp(vx, vz) * blend;
+              if (hgt > Y[vv]) Y[vv] = hgt;
+            }
+          }
+        }
+        for (let vi = 0; vi < VX; vi++) { Y[vi] = 0; Y[(VZ - 1) * VX + vi] = 0; }
+        for (let vj = 0; vj < VZ; vj++) { Y[vj * VX] = 0; Y[vj * VX + VX - 1] = 0; }
+        return { VX, VZ, Y };
+      }
+      function sampleRockMoundBump(field, u, v) {
+        const fx = u * (field.VX - 1), fz = v * (field.VZ - 1);
+        const ix = Math.max(0, Math.min(field.VX - 2, Math.floor(fx))), iz = Math.max(0, Math.min(field.VZ - 2, Math.floor(fz)));
+        const tx = fx - ix, tz = fz - iz;
+        const y00 = field.Y[iz * field.VX + ix], y10 = field.Y[iz * field.VX + ix + 1];
+        const y01 = field.Y[(iz + 1) * field.VX + ix], y11 = field.Y[(iz + 1) * field.VX + ix + 1];
+        return y00 * (1 - tx) * (1 - tz) + y10 * tx * (1 - tz) + y01 * (1 - tx) * tz + y11 * tx * tz;
+      }
+
+      // Animal dens: a deliberately plain placeholder block over a den's
+      // footprint — a flat, unlit dark box with a simple rectangular gap cut
+      // into its south face for the walk-through mouth (see
+      // isAnimalDenCollisionTile's matching walkable cutout). Stands in for
+      // authored art; no rock-mound shading, no carved tunnel depth — just
+      // enough geometry to read as "a den with a door."
+      function buildAnimalDenMeshes(zScene, zGrid, dens, mapId) {
+        if (!dens || !dens.length) return;
+        const DEN_HEIGHT = 2.4, DEN_SINK = 0.5;
+        const MOUTH_U0 = 0.3, MOUTH_U1 = 0.7, MOUTH_V1 = 0.65;
+        const pos = [], idx = []; let vi = 0;
+        const addFlatQuad = (p00, p10, p01, p11) => {
+          const base = vi;
+          pos.push(p00.x, p00.y, p00.z, p10.x, p10.y, p10.z, p01.x, p01.y, p01.z, p11.x, p11.y, p11.z);
+          idx.push(base, base + 2, base + 3, base, base + 3, base + 1);
+          vi += 4;
+        };
+        for (const den of dens) {
+          const w = den.w || 1, h = den.h || 1;
+          const centerCol = den.x + Math.floor(w / 2), centerRow = den.y + Math.floor(h / 2);
+          const elevTier = zGrid?.[centerRow]?.[centerCol]?.elevTier || 0;
+          const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT;
+          const x0 = den.x, x1 = den.x + w, z0 = den.y, z1 = den.y + h;
+          const yBase = groundY - DEN_SINK, yTop = groundY + DEN_HEIGHT;
+          addFlatQuad({ x: x1, y: yBase, z: z0 }, { x: x0, y: yBase, z: z0 }, { x: x1, y: yTop, z: z0 }, { x: x0, y: yTop, z: z0 }); // north
+          addFlatQuad({ x: x1, y: yBase, z: z1 }, { x: x1, y: yBase, z: z0 }, { x: x1, y: yTop, z: z1 }, { x: x1, y: yTop, z: z0 }); // east
+          addFlatQuad({ x: x0, y: yBase, z: z0 }, { x: x0, y: yBase, z: z1 }, { x: x0, y: yTop, z: z0 }, { x: x0, y: yTop, z: z1 }); // west
+          addFlatQuad({ x: x0, y: yTop, z: z0 }, { x: x1, y: yTop, z: z0 }, { x: x0, y: yTop, z: z1 }, { x: x1, y: yTop, z: z1 }); // top
+          // South face: a frame around a plain rectangular mouth gap.
+          const xm0 = x0 + (x1 - x0) * MOUTH_U0, xm1 = x0 + (x1 - x0) * MOUTH_U1;
+          const ym1 = yBase + (yTop - yBase) * MOUTH_V1;
+          addFlatQuad({ x: x0, y: yBase, z: z1 }, { x: xm0, y: yBase, z: z1 }, { x: x0, y: yTop, z: z1 }, { x: xm0, y: yTop, z: z1 }); // left strip
+          addFlatQuad({ x: xm1, y: yBase, z: z1 }, { x: x1, y: yBase, z: z1 }, { x: xm1, y: yTop, z: z1 }, { x: x1, y: yTop, z: z1 }); // right strip
+          addFlatQuad({ x: xm0, y: ym1, z: z1 }, { x: xm1, y: ym1, z: z1 }, { x: xm0, y: yTop, z: z1 }, { x: xm1, y: yTop, z: z1 }); // strip above the hole
+        }
+        if (!idx.length) return;
+        const mat = new THREE.MeshBasicMaterial({ color: 0x0a0a0a, side: THREE.DoubleSide });
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, mat);
+        zScene.add(mesh);
+        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.ROCK));
+        mesh.userData.cameraObstacle = true;
+        console.log(`%c[zone:${mapId}] animal den placeholders built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
+      }
+
       // Waterwall curtains: an animated vertical water sheet wherever a river
       // crosses a plateau edge (TileType.WATERFALL, stamped by the Map Editor's
       // mirrorRiverAcrossPlateau — see docs/js/terrain-preview.js's
@@ -6623,6 +7584,65 @@
             if (tile?.type !== TileType.GRASS) continue;
             const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
             idx = _fillBillboardInstances(mesh, dummy, idx, col, row, 1.0, zoneBaseElev + tierY);
+          }
+        }
+        mesh.count = idx;
+        mesh.instanceMatrix.needsUpdate = true;
+        zScene.add(mesh);
+      }
+
+      // Rich foliage patches (see workspace.foliagePatches' `rich` flag —
+      // the dense copse clusters the wildlife schedule AI's herbivores graze
+      // in and predators patrol near) get their own tightly-packed, tall
+      // billboard cluster instead of blending into the zone's ordinary grass
+      // tufts — always visible regardless of the Settings > Grass toggle
+      // (s_grass, see _buildZoneGrassBillboards/settingGrass's handler,
+      // neither of which this mesh is wired to), since it's meant to read as
+      // a landmark, not decorative ground cover. Reuses the same blade
+      // geometry/shader as ordinary grass — the visual distinction is
+      // entirely density (more blades, tighter spread) and height (roughly
+      // 2x), not a texture/color swap.
+      function _fillDenseTallBillboardInstances(mesh, dummy, startIdx, col, row, yOffset = 0) {
+        const rand = _mbRng(((col * 31337 + row * 1009) >>> 0) ^ 0x9e3779b9);
+        const baseY = tileSurfaceY(TileType.GRASS) + yOffset;
+        let idx = startIdx;
+        const BLADES = 24; // vs. _fillBillboardInstances' 14 — reads as packed rather than scattered
+        for (let b = 0; b < BLADES; b++) {
+          const ox = (rand() - 0.5) * 0.55; // tighter spread than the normal ±0.45 tile so blades overlap into a clump
+          const oz = (rand() - 0.5) * 0.55;
+          const w  = 0.16 + rand() * 0.10; // width matches ordinary grass
+          const h  = 0.48 + rand() * 0.26; // roughly 2x a normal blade's height
+          const rot = rand() * Math.PI;
+          const px = col + 0.5 + ox, pz = row + 0.5 + oz;
+          dummy.position.set(px, baseY, pz);
+          dummy.rotation.set(0, rot, 0);
+          dummy.scale.set(w, h, 1);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(idx++, dummy.matrix);
+          dummy.rotation.set(0, rot + Math.PI * 0.5, 0);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(idx++, dummy.matrix);
+        }
+        return idx;
+      }
+      function _buildRichFoliageBillboards(zScene, zoneData, zGrid, zoneBaseElev = 0) {
+        if (!grassBillboardMat) return;
+        const richPatches = (zoneData?.foliagePatches || []).filter(p => p.rich);
+        if (!richPatches.length) return;
+        let tileCount = 0;
+        for (const patch of richPatches) tileCount += patch.tiles.length;
+        if (!tileCount) return;
+        const BLADES = 24;
+        const mesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, tileCount * BLADES * 2);
+        mesh.frustumCulled = false;
+        mesh.visible = true;
+        mesh.userData.isBillboard = true;
+        const dummy = new THREE.Object3D();
+        let idx = 0;
+        for (const patch of richPatches) {
+          for (const t of patch.tiles) {
+            const tierY = (zGrid?.[t.y]?.[t.x]?.elevTier || 0) * PLATEAU_UNIT;
+            idx = _fillDenseTallBillboardInstances(mesh, dummy, idx, t.x, t.y, zoneBaseElev + tierY);
           }
         }
         mesh.count = idx;
@@ -8155,7 +9175,7 @@
             // procedurally-placed animalDen anchors — only the Tothal Shift
             // path (WildernessMapGenerator) produces those (see
             // performTothalShift), so wild packs simply don't spawn here yet.
-            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, dens: [] });
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, dens: [], foliagePatches: [], ambushStations: [] });
             console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, decor=${outDecor.length}, furniture=${outFurniture.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
@@ -8333,11 +9353,213 @@
         return panels;
       }
 
+      // Same corner math as WallBuilder.js's panelCorners/panelMatrix (kept
+      // duplicated rather than imported — WallBuilder's build() pipeline is
+      // built around scattering instanced brick props onto this quad, not
+      // exposing the quad itself; cavern walls need the bare quad instead).
+      function panelCornersFor(p) {
+        const w = p.width / 2, h = p.height;
+        const base = [
+          new THREE.Vector3(-w, 0, 0), new THREE.Vector3(w, 0, 0),
+          new THREE.Vector3(w, h, 0), new THREE.Vector3(-w, h, 0),
+        ];
+        const rd = p.rotationDeg || [0, 0, 0];
+        const euler = new THREE.Euler(THREE.MathUtils.degToRad(rd[0] || 0), THREE.MathUtils.degToRad(rd[1] || 0), THREE.MathUtils.degToRad(rd[2] || 0), 'XYZ');
+        const m = new THREE.Matrix4().compose(
+          new THREE.Vector3(p.position[0], p.position[1], p.position[2]),
+          new THREE.Quaternion().setFromEuler(euler),
+          new THREE.Vector3(1, 1, 1)
+        );
+        return base.map(v => v.applyMatrix4(m));
+      }
+
+      // Cavern interior walls: a solid, boulder-mound-bumped rock quad per
+      // boundary panel (buildWallPanelsFromFloorSet's own edge-detection,
+      // reused as-is) instead of houseWallBuilder's instanced-brick scatter —
+      // same buildRockMoundBumpField technique as buildAnimalDenMeshes (which
+      // in turn matches the farm's own loose rocks), so a den's cavern reads
+      // as the same rock as its mouth outside. Determinism comes for free
+      // from the panel positions themselves (derived from the den's seeded
+      // floor blob), not from any seed threaded in here.
+      function buildCavernWalls(wallPanels, wallHeight) {
+        const pos = [], idx = []; let vi = 0;
+        let panelSalt = 0;
+        for (const panel of wallPanels) {
+          const [bl, br, , tl] = panelCornersFor(panel);
+          const ux = { x: br.x - bl.x, y: br.y - bl.y, z: br.z - bl.z };
+          const vx = { x: tl.x - bl.x, y: tl.y - bl.y, z: tl.z - bl.z };
+          let nx = ux.y * vx.z - ux.z * vx.y, ny = ux.z * vx.x - ux.x * vx.z, nz = ux.x * vx.y - ux.y * vx.x;
+          const nlen = Math.hypot(nx, ny, nz) || 1; nx /= nlen; ny /= nlen; nz /= nlen;
+          const segsU = Math.max(4, Math.round(panel.width * ROCK_MOUND_CELLS_PER_TILE)), segsV = Math.max(4, Math.round(panel.height * ROCK_MOUND_CELLS_PER_TILE));
+          const bumpField = buildRockMoundBumpField(panel.width, panel.height, bl.x, bl.z, 200 + (panelSalt++));
+          const base = vi;
+          for (let j = 0; j <= segsV; j++) for (let i = 0; i <= segsU; i++) {
+            const u = i / segsU, v = j / segsV;
+            const x = bl.x + ux.x * u + vx.x * v, y = bl.y + ux.y * u + vx.y * v, z = bl.z + ux.z * u + vx.z * v;
+            const d = sampleRockMoundBump(bumpField, u, v);
+            pos.push(x + nx * d, y + ny * d, z + nz * d);
+          }
+          for (let j = 0; j < segsV; j++) for (let i = 0; i < segsU; i++) {
+            const a = base + j * (segsU + 1) + i, b = a + 1, c0 = a + (segsU + 1), d2 = c0 + 1;
+            idx.push(a, c0, d2, a, d2, b);
+          }
+          vi += (segsU + 1) * (segsV + 1);
+        }
+        const group = new THREE.Group();
+        if (!idx.length) return group;
+        const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.receiveShadow = true;
+        mesh.userData.cameraObstacle = true;
+        group.add(mesh);
+        return group;
+      }
+
+      // A den's cavern floor: an organic irregular blob (seeded RNG growth,
+      // biased toward rounder shapes, then a safe erosion pass that only ever
+      // trims dead-end spurs — removing a cell with exactly one neighbor can
+      // never disconnect the rest of the blob) — same reasoning as the
+      // wilderness generator's own plateau blobs, reimplemented standalone
+      // since this runs at den-entry time in the live game, not inside the
+      // map-generator tool. Deterministic per den id (see synthesizeCavernMapData).
+      function generateCavernFloor(seedText) {
+        const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(seedText) : Math.random;
+        const targetTiles = 40 + Math.floor(rng() * 41); // 40-80 tiles — room for a Den-Mother boss fight plus the nest chamber
+        const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        // The entrance is always a straight 3-wide row (x=-1,0,1 at y=0) with
+        // an exit tile in the middle — not just wherever the organic blob
+        // happened to touch a boundary — so buildWallPanelsFromFloorSet
+        // always has 3 adjacent south-facing edges to skip (merged into one
+        // wide gap) instead of a single-tile doorway. y>0 (south of the
+        // entrance row) is never grown into, so this row stays the cavern's
+        // southern boundary and that gap reads as a real cave mouth.
+        const ENTRANCE_CELLS = ['-1,0', '0,0', '1,0'];
+        const cells = new Set(ENTRANCE_CELLS);
+        const frontier = new Map();
+        const addFrontier = (x, y) => {
+          for (const [dx, dy] of DIRS4) {
+            const nx = x + dx, ny = y + dy;
+            if (ny > 0) continue;
+            const key = `${nx},${ny}`;
+            if (!cells.has(key)) frontier.set(key, [nx, ny]);
+          }
+        };
+        for (const key of ENTRANCE_CELLS) addFrontier(...key.split(',').map(Number));
+        while (cells.size < targetTiles && frontier.size) {
+          const keys = [...frontier.keys()];
+          const weights = keys.map(k => {
+            const [x, y] = frontier.get(k);
+            let n = 0;
+            for (const [dx, dy] of DIRS4) if (cells.has(`${x + dx},${y + dy}`)) n++;
+            return n * n + 0.2; // bias toward rounder growth over spindly arms
+          });
+          const total = weights.reduce((a, b) => a + b, 0);
+          let r = rng() * total, pick = keys[keys.length - 1];
+          for (let i = 0; i < keys.length; i++) { r -= weights[i]; if (r <= 0) { pick = keys[i]; break; } }
+          const [px, py] = frontier.get(pick);
+          frontier.delete(pick);
+          cells.add(pick);
+          addFrontier(px, py);
+        }
+        // Erode dead-end spurs only (leaves — safe to remove, can't disconnect anything).
+        // The entrance row is the cavern's entrance and is never eroded.
+        for (const key of [...cells]) {
+          if (ENTRANCE_CELLS.includes(key) || cells.size <= 6) continue;
+          const [x, y] = key.split(',').map(Number);
+          let n = 0;
+          for (const [dx, dy] of DIRS4) if (cells.has(`${x + dx},${y + dy}`)) n++;
+          if (n <= 1 && rng() < 0.5) cells.delete(key);
+        }
+        // Reserve a 2x2 nest chamber at the point farthest (by walk distance)
+        // from the entrance — the Den-Mother's territory, deliberately placed
+        // so the player has to cross the whole cavern to reach it. Forced in
+        // after erosion (never itself eroded) by adding whichever of its 4
+        // tiles the organic growth didn't already produce, so the nest always
+        // exists regardless of blob shape.
+        const dist = new Map([['0,0', 0]]);
+        const queue = ['0,0'];
+        let farKey = '0,0', farDist = 0;
+        while (queue.length) {
+          const key = queue.shift();
+          const d = dist.get(key);
+          const [x, y] = key.split(',').map(Number);
+          for (const [dx, dy] of DIRS4) {
+            const nk = `${x + dx},${y + dy}`;
+            if (cells.has(nk) && !dist.has(nk)) {
+              dist.set(nk, d + 1);
+              queue.push(nk);
+              if (d + 1 > farDist) { farDist = d + 1; farKey = nk; }
+            }
+          }
+        }
+        const [nfx, nfy] = farKey.split(',').map(Number);
+        for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) cells.add(`${nfx + dx},${nfy + dy}`);
+
+        let minX = Infinity, minY = Infinity;
+        for (const key of cells) { const [x, y] = key.split(',').map(Number); if (x < minX) minX = x; if (y < minY) minY = y; }
+        const floor = [...cells].map(key => { const [x, y] = key.split(',').map(Number); return [x - minX + 1, y - minY + 1]; });
+        const cols = Math.max(...floor.map(f => f[0])) + 2, rows = Math.max(...floor.map(f => f[1])) + 2;
+        return {
+          floor, cols, rows,
+          exitCol: 0 - minX + 1, exitRow: 0 - minY + 1,
+          // The full 3-wide entrance row, shifted the same way as floor —
+          // synthesizeCavernMapData hands all 3 to the exit's tiles[] so
+          // buildWallPanelsFromFloorSet skips all 3 south edges as one gap.
+          exitTiles: ENTRANCE_CELLS.map(key => { const [x, y] = key.split(',').map(Number); return [x - minX + 1, y - minY + 1]; }),
+          nestCol: nfx - minX + 1, nestRow: nfy - minY + 1,
+        };
+      }
+
+      // Synthesized in-memory map data for a den's cavern — no map_i_den_*.json
+      // is ever written to disk; loadBuildingScene builds this on the fly the
+      // first time the id is requested, exactly like a wilderness zone itself
+      // regenerates from a seed with nothing persisted (see performTothalShift).
+      // The seed is the mapId itself (already unique per zone+den, see
+      // performTothalShift's denTransitions), so re-entering the same den
+      // always reaches the same cavern.
+      // Deterministic per den (same mapId -> same pick every time, independent
+      // of the wilderness zone's own ever-re-rolled exterior pack/herd
+      // species) — which of the two Den-Mother variants guards this den's
+      // nest. Only two species currently have a Den-Mother entry.
+      function pickDenMotherKind(mapId) {
+        const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denmother') : Math.random;
+        return rng() < 0.5 ? 'gar-wolf-den-mother' : 'uumkaoii-wild-den-mother';
+      }
+
+      function synthesizeCavernMapData(mapId) {
+        const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow } = generateCavernFloor(mapId);
+        return {
+          schema: 'hobunji_building_interior.v1',
+          id: mapId, name: 'A Dark Burrow',
+          cols, rows,
+          // All 3 entrance tiles share one exit id — checkTransitionSpots
+          // fires from any of them, and buildWallPanelsFromFloorSet skips
+          // all 3 south edges as a single merged 3-wide gap (see
+          // generateCavernFloor).
+          exits: [{ id: 'den_exit', label: 'Back outside', tiles: exitTiles, targetMap: '', spawnCol: 0, spawnRow: 0 }],
+          colliders: [], floor, furniture: [],
+          wallStyle: 'cavern',
+          // Den-Mother/nest placement — read by loadBuildingScene after the
+          // scene/floor/walls are built (see its 'map_i_den_' handling).
+          nestCol, nestRow, denMotherKind: pickDenMotherKind(mapId),
+        };
+      }
+
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
         let mapData = null;
         let loadSource = 'missing';
+        if (mapId.startsWith('map_i_den_')) {
+          // A den's cavern is generated in-memory, never fetched/persisted
+          // (see synthesizeCavernMapData).
+          mapData = synthesizeCavernMapData(mapId);
+          loadSource = 'cavern';
+        } else {
         try {
           const resp = await fetch('config/maps/' + mapId + '.json');
           if (resp.ok) { mapData = await resp.json(); loadSource = 'config'; }
@@ -8355,6 +9577,7 @@
             loadSource = 'workspace';
             window.__farmLog?.(`[building] ${mapId}: loaded from workspace fallback (${mapData.cols}x${mapData.rows})`, 'warn');
           }
+        }
         }
 
         // ── hobunji_building_interior.v1 schema ──────────────────────────
@@ -8409,23 +9632,50 @@
           const dl = new THREE.DirectionalLight(0xffeedd, 0.5);
           dl.position.set(5, 10, 5);
           bScene.add(dl);
-          const floorMat = new THREE.MeshLambertMaterial({ color: 0x8b6914 });
-          new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
-            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-            floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
-          }, undefined, () => {});
+          const floorMat = mapData.wallStyle === 'cavern'
+            ? new THREE.MeshLambertMaterial({ color: 0x4a463f }) // bare cavern dirt/stone, no plank texture
+            : new THREE.MeshLambertMaterial({ color: 0x8b6914 });
+          if (mapData.wallStyle !== 'cavern') {
+            new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
+              tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+              floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
+            }, undefined, () => {});
+          }
           // Floor tiles only for defined floor set
           for (const [c, r] of (mapData.floor || [])) {
             const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
             fl.position.set(c + 0.5, -0.05, r + 0.5);
             bScene.add(fl);
           }
-          // Irregular brick walls with gaps at all exit tiles
+          // Irregular brick walls with gaps at all exit tiles — or, for a den's
+          // cavern (mapData.wallStyle === 'cavern'), solid deformed rock walls
+          // instead (see buildCavernWalls).
           const wallPanels = buildWallPanelsFromFloorSet(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
           if (wallPanels.length) {
-            const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+            const wallGroup = mapData.wallStyle === 'cavern'
+              ? buildCavernWalls(wallPanels, INTERIOR_WALL_HEIGHT)
+              : houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
             _markOutline(wallGroup);
             bScene.add(wallGroup);
+          }
+          // A den's cavern entrance had no visual distinguishing it from any
+          // other dark corner of the cave (see generateCavernFloor's
+          // guaranteed 3-wide south opening) — a warm point light standing
+          // in for daylight spilling through the mouth, plus a lighter floor
+          // patch, makes it read as "the way out" and gives the player's
+          // spawn point some actual light instead of pitch dark.
+          if (mapData.wallStyle === 'cavern' && exitTileSet.size) {
+            let ex = 0, ez = 0;
+            for (const key of exitTileSet) { const [c, r] = key.split(',').map(Number); ex += c; ez += r; }
+            ex = ex / exitTileSet.size + 0.5; ez = ez / exitTileSet.size + 0.5;
+            const doorLight = new THREE.PointLight(0xfff2d0, 1.4, 7, 2);
+            doorLight.position.set(ex, 1.6, ez + 0.6);
+            bScene.add(doorLight);
+            const glowMat = new THREE.MeshBasicMaterial({ color: 0xe9dcb8, transparent: true, opacity: 0.35 });
+            const glow = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), glowMat);
+            glow.rotation.x = -Math.PI / 2;
+            glow.position.set(ex, 0.02, ez);
+            bScene.add(glow);
           }
           // Furniture: build combined itemKey -> def/furnitureKey lookup
           const allFurnDefs = {};
@@ -8465,6 +9715,42 @@
               registerFurnitureSfxSource(mapId, bx, bz, resolveFurnitureSfx(def));
             }
           }
+          // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
+          // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
+          // / generateCavernFloor for nestCol/nestRow/denMotherKind.
+          if (mapData.wallStyle === 'cavern' && Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)) {
+            const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
+            const motherKey = mapData.denMotherKind || 'gar-wolf-den-mother';
+            const motherDef = CREATURE_DB[motherKey];
+            // Same shared "family" genotype as this den's exterior pack (see
+            // spawnPackAtDen/getOrMakeDenGenotype) — whichever of the two
+            // spawns first rolls it, the other reuses it, so the Den-Mother
+            // and her pack (and the nest's eggs/babies) always match.
+            const denGenotype = motherKey.startsWith('gar-wolf') ? getOrMakeDenGenotype(mapId) : null;
+            if (motherDef) {
+              const homeX = (nestCol + 1) * TILE, homeY = (nestRow + 1) * TILE;
+              const mother = makeCreatureEntity(motherKey, homeX, homeY, {
+                scene: bScene, grid: bGrid, cols, rows,
+                areaId: mapId, homeX, homeY, state: 'idle',
+                isDenMother: true, genotype: denGenotype,
+              });
+              if (mother) hostileObjects.add(mother);
+            }
+            const nestRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng)
+              ? WildernessMapGenerator.makeRng(mapId + '_nestcount') : Math.random;
+            const remaining = 1 + Math.floor(nestRng() * 3); // 1-3
+            const liveBirth = !!motherDef?.liveBirth;
+            _denNests.set(mapId, {
+              col: nestCol, row: nestRow, w: 2, h: 2,
+              itemKey: liveBirth ? 'garWolfBaby' : 'uumkaoiiEgg',
+              liveBirth, remaining, genotype: denGenotype,
+            });
+            // Simple nest marker so the 2x2 chamber reads as an objective.
+            const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
+            const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
+            nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
+            bScene.add(nestMarker);
+          }
           const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
           registerNpcStations(_stationSrc.map(st => ({ ...st, area: mapId })), mapId);
           const buildingPaths = (mapData.npcPaths || []).filter(p => p && Array.isArray(p.nodes) && p.nodes.length > 0)
@@ -8486,6 +9772,11 @@
           }
           if (_currentBuildingMapId === mapId && _isBuildingArea(currentArea)) {
             bScene.add(playerMesh); bScene.add(playerGroundShadow);
+            if (_isCavernBuildingArea(mapId)) {
+              bScene.add(toolHolder); bScene.add(reticleMesh);
+              bScene.add(reticleCircleMesh); bScene.add(reticleRingMesh);
+              bScene.add(reticleWavyGroup);
+            }
             if (_pendingEntrySpawnFromExit) {
               _pendingEntrySpawnFromExit = false;
               const sp = buildingSpawnFromExit(info, cols, rows);
@@ -8624,7 +9915,14 @@
           fromScene.remove(reticleCircleMesh); fromScene.remove(reticleRingMesh);
           fromScene.remove(reticleWavyGroup);
         }
-        if (bi?.scene) { bi.scene.add(playerMesh); bi.scene.add(playerGroundShadow); }
+        if (bi?.scene) {
+          bi.scene.add(playerMesh); bi.scene.add(playerGroundShadow);
+          if (_isCavernBuildingArea(mapId)) {
+            bi.scene.add(toolHolder); bi.scene.add(reticleMesh);
+            bi.scene.add(reticleCircleMesh); bi.scene.add(reticleRingMesh);
+            bi.scene.add(reticleWavyGroup);
+          }
+        }
         refreshActionBar();
         logMapSwap('enterBuilding', currentArea, { source: bi?.loadSource || 'loading', fallback: bi?.fallback || !bi, loading: !bi });
       }
@@ -8643,7 +9941,13 @@
           }
           player.vx = 0; player.vy = 0;
           _snapCameraTarget();
-          const toScene = returnArea === 'town' ? townScene : scene;
+          // A den's cavern (see loadBuildingScene's map_i_den_ synthesis) is
+          // entered from a wilderness zone, not the farm — this used to only
+          // special-case 'town' here, so returning from any other non-farm
+          // area silently landed the player on the farm scene instead (see
+          // enterZone, which builds/adds to the zone scene the same way on
+          // the way in).
+          const toScene = returnArea === 'town' ? townScene : (_isZoneArea(returnArea) ? buildZoneScene(returnArea)?.scene : scene);
           if (toScene) {
             toScene.add(playerMesh); toScene.add(playerGroundShadow);
             toScene.add(toolHolder); toScene.add(reticleMesh);
@@ -9665,6 +10969,9 @@
         { key: 'dabinggiHoundMeat',  icon: '🥩', label: 'DABINGGI-HOUND MEAT', max: 99 },
         { key: 'dabinggiHoundHide',  icon: '🟫', label: 'DABINGGI-HOUND HIDE', max: 99 },
         { key: 'uumkaoiiCrate',      icon: '🦆', label: 'UUMKAO\'II CRATE',  max: 9  },
+        { key: 'uumkaoiiMeat',       icon: '🥩', label: 'UUMKAO\'II MEAT',  max: 99 },
+        { key: 'uumkaoiiEgg',        icon: '🥚', label: 'UUMKAO\'II EGG',   max: 9  },
+        { key: 'garWolfBaby',        icon: '🐾', label: 'GAR-WOLF PUP',    max: 9  },
         { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
         { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
         { key: 'fishingmace',  icon: '🎣', label: 'FISHING MACE',  max: 9 },
@@ -9704,6 +11011,9 @@
         dabinggiHoundMeat: { icon: '🥩', label: 'Dabinggi-hound Meat', cat: 'material', sellPrice: 8, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a fallen dabinggi-hound.' },
         dabinggiHoundHide: { icon: '🟫', label: 'Dabinggi-hound Hide', cat: 'material', sellPrice: 12, tags: ['Material', 'Hide'], desc: 'A soft hide stripped from a fallen dabinggi-hound.' },
         uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
+        uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
+        uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
+        garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
         bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
         hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
         fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
@@ -10856,7 +12166,18 @@
         const zoneBuildingSources = loadedZoneGroups.length
           ? loadedZoneGroups
           : (_zoneLayouts.get(area)?.buildings || []).map(bldg => ({ bldg, piece: null }));
-        return zoneBuildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row));
+        if (zoneBuildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row))) return true;
+        return isAnimalDenCollisionTile(col, row, area);
+      }
+      // Animal dens are a solid rock volume (see buildAnimalDenMeshes) except
+      // their south-facing mouth tile, which stays walkable — it's both the
+      // doorway gap in the mesh and the cavern-entrance transition tile.
+      function isAnimalDenCollisionTile(col, row, area) {
+        for (const den of (_zoneLayouts.get(area)?.dens || [])) {
+          if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue;
+          if (col >= den.x && col < den.x + (den.w || 1) && row >= den.y && row < den.y + (den.h || 1)) return true;
+        }
+        return false;
       }
       // The two tiles immediately north of the door act as a second entrance
       function isHouseEntranceTile(col, row) {
@@ -11522,7 +12843,8 @@
       // stable entries — untradeable, and renamed from the Stable tab instead;
       // this is a breeding-only view of the stable.
       function _buildStablePickRow(entry, ref, pairs, canManage, onRename, onSell) {
-        const value = entry.genotype?.fur ? sellValueFor(entry.genotype) : null;
+        const hasGenotype = !!(entry.genotype?.fur || entry.genotype?.base);
+        const value = hasGenotype ? sellValueFor(entry.genotype, entry.kind) : null;
         const pending = pairs.some(p => refsEqual(p.parentA, ref) || refsEqual(p.parentB, ref));
         const pickKey = `${ref.source}:${ref.id}`;
         const row = document.createElement('div');
@@ -11533,8 +12855,7 @@
           (onRename
             ? `<input class="farm-row-name" value="${esc(entry.name || defaultLivestockName(entry.kind))}" ${canManage ? '' : 'disabled'} maxlength="30">`
             : `<span class="farm-row-name" style="padding:2px 4px">${esc(entry.name || defaultLivestockName(entry.kind))}</span>`) +
-          (entry.genotype?.fur ? `<span class="farm-swatch" style="background:${esc(entry.genotype.fur.color)}" title="Fur color"></span>` : '') +
-          (entry.genotype?.plates ? `<span class="farm-swatch" style="background:${esc(entry.genotype.plates.color)}" title="Plate color"></span>` : '') +
+          _livestockSwatchesHtml(entry.genotype, entry.kind) +
           `<span class="farm-row-value${value ? ' tier-' + esc(value.tier) : ''}">${value ? `${value.amount}g · ${esc(value.tier)}` : 'Companion'}${pending ? ' · breeding…' : ''}</span>` +
           (onSell ? `<button class="settings-small-btn farm-sell-btn">Sell</button>` : '');
         if (canManage) {
@@ -11669,7 +12990,7 @@
         if (!hasFarmPermission('livestock')) return;
         const entry = _removeWorldLivestockAndCleanup(id);
         if (!entry) return;
-        const value = sellValueFor(entry.genotype);
+        const value = sellValueFor(entry.genotype, entry.kind);
         inventory.gold = (inventory.gold || 0) + value.amount;
         saveMemberWorldData();
         showToast(`Sold ${entry.name || defaultLivestockName(entry.kind)} for ${value.amount}g`, true);
@@ -11924,6 +13245,25 @@
 
       const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆' };
 
+      // Small color-swatch HTML shared by every livestock/stable row —
+      // Uumkao'ii shows its two permanent regions; pattern-layer species
+      // (gar-wolf/dabinggi-hound) show base color + first enabled pattern's
+      // color (there's only ever one shared pattern color per specimen).
+      function _livestockSwatchesHtml(genotype, kind) {
+        if (!genotype) return '';
+        if (genotype.fur || genotype.plates) {
+          return (genotype.fur ? `<span class="farm-swatch" style="background:${esc(genotype.fur.color)}" title="Fur color"></span>` : '') +
+                 (genotype.plates ? `<span class="farm-swatch" style="background:${esc(genotype.plates.color)}" title="Plate color"></span>` : '');
+        }
+        const patterns = LIVESTOCK_PATTERN_DEFS[kind];
+        if (patterns && genotype.base) {
+          const enabledId = patterns.find(id => genotype[id]?.enabled);
+          return `<span class="farm-swatch" style="background:${esc(genotype.base.color)}" title="Base color"></span>` +
+                 (enabledId ? `<span class="farm-swatch" style="background:${esc(genotype[enabledId].color)}" title="Pattern color"></span>` : '');
+        }
+        return '';
+      }
+
       // Your personal companion collection — character-scoped, untradeable,
       // never tied to any farm. Rename, set the one active companion (spawned
       // via syncCompanionFromWhistle/updateCompanions like the starter
@@ -11940,8 +13280,7 @@
             `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${isActive ? 'Active companion' : 'Set as active companion'}">${isActive ? '★' : '☆'}</button>` +
             `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span>` +
             `<input class="farm-row-name" value="${esc(entry.name || defaultLivestockName(entry.kind))}" maxlength="30">` +
-            (entry.genotype?.fur ? `<span class="farm-swatch" style="background:${esc(entry.genotype.fur.color)}" title="Fur color"></span>` : '') +
-            (entry.genotype?.plates ? `<span class="farm-swatch" style="background:${esc(entry.genotype.plates.color)}" title="Plate color"></span>` : '') +
+            _livestockSwatchesHtml(entry.genotype, entry.kind) +
             `<span class="farm-row-value">Lv. ${entry.level || 0} <span style="opacity:.6">(leveling coming soon)</span></span>`;
           row.querySelector('.farm-companion-btn').addEventListener('click', () => {
             activeCompanionId = isActive ? null : entry.id;
@@ -13916,6 +15255,7 @@
         return best;
       }
 
+      let lastStormDay = 0;
       function checkForMajorStorm() {
         if (calendar.weather !== 'storm') return;
         if (calendar.day === lastStormDay) return;
@@ -18304,6 +19644,220 @@
         // than needing to track/re-render whichever panel might currently
         // be open.
       });
+      // Cycles through a zone's dens in a shuffled, non-repeating order
+      // (per zone) instead of an independent random pick every press —
+      // with only a handful of dens per zone, plain Math.random() made it
+      // easy to land on the same 1-2 dens over and over by chance.
+      // Reshuffles whenever the den count changes (e.g. after a Tothal
+      // Shift), so a full lap always visits every den on the map exactly
+      // once before any repeat.
+      const _denTeleportCycle = new Map(); // zoneId -> { order: number[], idx: number, length: number }
+      function _pickCycledDen(zoneId, dens) {
+        let state = _denTeleportCycle.get(zoneId);
+        if (!state || state.length !== dens.length) {
+          const order = dens.map((_, i) => i);
+          for (let i = order.length - 1; i > 0; i--) {
+            const j = Math.floor(rnd() * (i + 1));
+            [order[i], order[j]] = [order[j], order[i]];
+          }
+          state = { order, idx: 0, length: dens.length };
+          _denTeleportCycle.set(zoneId, state);
+          window.__farmLog?.(`[wildlife] den teleport cycle rebuilt for ${zoneId}: ${dens.length} dens, order [${order.join(',')}]`, 'wildlife');
+        }
+        const den = dens[state.order[state.idx]];
+        window.__farmLog?.(`[wildlife] den teleport ${zoneId}: picking cycle slot ${state.idx + 1}/${state.order.length} -> den ${den.id}`, 'wildlife');
+        state.idx = (state.idx + 1) % state.order.length;
+        return den;
+      }
+      // Dev Tools: warp to a den's mouth on the CURRENT map only — no
+      // zone-switching, since the request is specifically "does this map
+      // have one" (farm/town/buildings never do; a wilderness zone does once
+      // its Tothal Shift has run — see _zoneLayouts' `dens` field).
+      function teleportToRandomDen() {
+        // Called from inside a den's own cavern (dark, no landmarks, and
+        // "no dens on this map" made no sense there since a cavern's own
+        // _zoneLayouts entry doesn't exist) — resolve the exterior zone
+        // this cavern belongs to (see _denCavernZoneOf) and warp there,
+        // landing at a den mouth like the zone-side path below instead of
+        // requiring a separate exit step first.
+        if (_isCavernBuildingArea(currentArea)) {
+          const zoneId = _denCavernZoneOf.get(currentArea);
+          const dens = zoneId ? _zoneLayouts.get(zoneId)?.dens : null;
+          if (!zoneId || !dens || !dens.length) {
+            showToast("No dens found for this burrow's map.", false);
+            return;
+          }
+          const den = _pickCycledDen(zoneId, dens);
+          const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
+          startSceneTransition(() => {
+            const fromScene = _buildingScenes.get(currentArea)?.scene || null;
+            if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+            _currentBuildingMapId = null;
+            currentArea = zoneId;
+            player.x = (anchor.x + 0.5) * TILE;
+            player.y = (anchor.y + 0.5) * TILE;
+            player.vx = 0; player.vy = 0;
+            _snapCameraTarget();
+            const toScene = buildZoneScene(zoneId)?.scene;
+            if (toScene) {
+              toScene.add(playerMesh); toScene.add(playerGroundShadow);
+              toScene.add(toolHolder); toScene.add(reticleMesh);
+              toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
+              toScene.add(reticleWavyGroup);
+            }
+            refreshActionBar();
+            showToast(`Teleported to a den (${dens.length} on this map).`, true);
+            closeMenu();
+          });
+          return;
+        }
+        const dens = _zoneLayouts.get(currentArea)?.dens;
+        if (!dens || !dens.length) {
+          showToast('No dens on this map.', false);
+          return;
+        }
+        const den = _pickCycledDen(currentArea, dens);
+        const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
+        player.x = (anchor.x + 0.5) * TILE;
+        player.y = (anchor.y + 0.5) * TILE;
+        player.vx = 0; player.vy = 0;
+        _snapCameraTarget();
+        showToast(`Teleported to a den (${dens.length} on this map).`, true);
+        closeMenu();
+      }
+      document.getElementById('devTeleportDenBtn')?.addEventListener('click', teleportToRandomDen);
+
+      // ── Wildlife/genotype debug panel (🧬 Wildlife tab) ─────────────
+      function renderWildlifeDebugPanel() {
+        const container = document.getElementById('wildlifeDenList');
+        if (!container) return;
+        if (!_denGenotypes.size) {
+          container.innerHTML = '<div style="opacity:.6;padding:8px 0">No den packs generated yet this session — enter a wilderness zone with wild dens, or force a Tothal Shift below, to populate this list.</div>';
+          return;
+        }
+        const patternIds = LIVESTOCK_PATTERN_DEFS['gar-wolf'] || [];
+        const swatch = (hex, size) => `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:3px;background:${esc(hex)};vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,.3)"></span>`;
+        const rows = [];
+        for (const [cavernMapId, genotype] of _denGenotypes) {
+          const zoneId = _denCavernZoneOf.get(cavernMapId) || '(unknown zone)';
+          const den = _zoneLayouts.get(zoneId)?.dens?.find(d => denCavernMapId(zoneId, d.id) === cavernMapId);
+          const denLabel = den ? den.id : cavernMapId.replace(`map_i_den_${zoneId}_`, '');
+          const baseColor = genotype.base?.color;
+          const baseHtml = baseColor ? `${swatch(baseColor, 13)}${esc(_furPaletteName(baseColor))}` : '(no base)';
+          const patternHtml = patternIds.map(id => {
+            const layer = genotype[id];
+            const on = layer?.enabled && layer.copies > 0;
+            return `<span style="opacity:${on ? 1 : 0.35}">${on ? swatch(layer.color, 10) : ''}${esc(id)}</span>`;
+          }).join(' &middot; ');
+          // Which live creatures are currently using this exact genotype
+          // object, if any are spawned right now — confirms the whole pack
+          // (and its Den-Mother) really do share one roll.
+          const aliveKinds = new Set();
+          for (const c of hostileObjects) if (c.genotype === genotype) aliveKinds.add(c.creatureKey);
+          const teleportBtn = den
+            ? `<button class="settings-small-btn wildlife-den-teleport-btn" data-zone="${esc(zoneId)}" data-den="${esc(den.id)}" style="font-size:10px;padding:2px 8px">Teleport</button>`
+            : '';
+          rows.push(`<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+            <div>
+              <div style="font-weight:600;color:#e5e7eb">${esc(zoneId)} — den ${esc(denLabel)}${aliveKinds.size ? ` <span style="opacity:.6;font-weight:400">(${[...aliveKinds].map(esc).join(', ')} alive now)</span>` : ' <span style="opacity:.5;font-weight:400">(none alive right now)</span>'}</div>
+              <div style="margin-top:3px">Base: ${baseHtml}</div>
+              <div style="margin-top:2px">Patterns: ${patternHtml || '(none)'}</div>
+            </div>
+            ${teleportBtn}
+          </div>`);
+        }
+        container.innerHTML = rows.join('');
+      }
+      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', renderWildlifeDebugPanel);
+      document.getElementById('wildlifeShiftBtn')?.addEventListener('click', async () => {
+        await checkTothalShift(true);
+        renderWildlifeDebugPanel();
+      });
+      // Delegated so it keeps working across every re-render of the list
+      // (container.innerHTML replacement would otherwise drop per-button
+      // listeners each time).
+      document.getElementById('wildlifeDenList')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.wildlife-den-teleport-btn');
+        if (!btn) return;
+        const zoneId = btn.dataset.zone, denId = btn.dataset.den;
+        const den = _zoneLayouts.get(zoneId)?.dens?.find(d => d.id === denId);
+        if (!den) { showToast('That den no longer exists on the current map.', false); return; }
+        warpToDenAnchor(zoneId, den);
+      });
+      // Warps the player straight to a specific den's mouth on its own
+      // zone, from anywhere (farm, town, another zone, or inside any
+      // building/cavern) — used by the Wildlife panel's per-den Teleport
+      // button. Unlike teleportToRandomDen (which only ever targets
+      // "whichever map you're currently on"), this always resolves the
+      // exact zone the picked den belongs to and does a full scene swap
+      // if that's not where the player already is.
+      function warpToDenAnchor(zoneId, den) {
+        const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
+        const land = () => {
+          player.x = (anchor.x + 0.5) * TILE;
+          player.y = (anchor.y + 0.5) * TILE;
+          player.vx = 0; player.vy = 0;
+          _snapCameraTarget();
+        };
+        if (currentArea === zoneId) {
+          land();
+          showToast(`Teleported to den ${den.id}.`, true);
+          closeMenu();
+          return;
+        }
+        startSceneTransition(() => {
+          const fromScene = getActiveScene();
+          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+          if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
+          currentArea = zoneId;
+          land();
+          const toScene = buildZoneScene(zoneId)?.scene;
+          if (toScene) {
+            toScene.add(playerMesh); toScene.add(playerGroundShadow);
+            toScene.add(toolHolder); toScene.add(reticleMesh);
+            toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
+            toScene.add(reticleWavyGroup);
+          }
+          refreshActionBar();
+          showToast(`Teleported to den ${den.id}.`, true);
+          closeMenu();
+        });
+      }
+      // ── Den-Mother nest: hold-to-take egg/baby (see _denNests, populated
+      // in loadBuildingScene) ──────────────────────────────────────────
+      const NEST_TAKE_HOLD_S = 5;
+      let _nestHoldT = 0;
+      const _nestTakeHudEl = document.getElementById('nestTakeHud');
+      const _nestTakeLabelEl = document.getElementById('nestTakeLabel');
+      const _nestTakeFillEl = document.getElementById('nestTakeFill');
+      function isPlayerNearDenNest(nest) {
+        const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
+        return Math.hypot(player.x - cx, player.y - cy) <= TILE * 1.6;
+      }
+      function updateNestInteraction(dt) {
+        const nest = _denNests.get(currentArea);
+        const near = nest && nest.remaining > 0 && isPlayerNearDenNest(nest);
+        if (!near || !actionHeldDown) {
+          if (_nestHoldT > 0) _nestHoldT = 0;
+          if (_nestTakeHudEl?.classList.contains('visible')) _nestTakeHudEl.classList.remove('visible');
+          return;
+        }
+        _nestHoldT += dt;
+        if (_nestTakeLabelEl) _nestTakeLabelEl.textContent = nest.liveBirth ? 'Taking Baby...' : 'Taking Egg...';
+        if (_nestTakeFillEl) _nestTakeFillEl.style.width = Math.min(100, (_nestHoldT / NEST_TAKE_HOLD_S) * 100) + '%';
+        _nestTakeHudEl?.classList.add('visible');
+        if (_nestHoldT >= NEST_TAKE_HOLD_S) {
+          _nestHoldT = 0;
+          _nestTakeHudEl?.classList.remove('visible');
+          nest.remaining--;
+          inventory[nest.itemKey] = Math.min(99, (inventory[nest.itemKey] || 0) + 1);
+          _queueLivestockItemGenotype(nest.itemKey, nest.genotype);
+          clampInventoryStack(nest.itemKey);
+          buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+          saveMemberWorldData();
+          showToast(`${itemIconForKey(nest.itemKey)} Took ${ITEM_DEFS[nest.itemKey]?.label || nest.itemKey}${nest.remaining > 0 ? ` (${nest.remaining} left)` : ''}`, true);
+        }
+      }
       function setCameraZoomScale(value) {
         const cfg = desktopControlsConfig();
         const min = Number.isFinite(Number(cfg.wheelZoomMin)) ? Number(cfg.wheelZoomMin) : 0.75;
@@ -18381,7 +19935,14 @@
             updateHostileSpawning(dt);
             updateHostiles(dt);
             updateCorpses(dt);
+          } else if (_isBuildingArea(currentArea)) {
+            // Den-Mother mini-bosses live in cavern buildings and still need
+            // to chase/attack/return — no spawning/companions in there, though.
+            updateHostiles(dt);
+            updateCorpses(dt);
           }
+
+          if (_isBuildingArea(currentArea)) updateNestInteraction(dt);
 
           // Interior exit detection: player walks south through exit door
           if (currentArea === 'interior' && sceneTransDir === 0) {
@@ -18445,7 +20006,9 @@
         // The player can wield tools/weapons outside the farm too (town,
         // exterior zones) — buildings/farmhouse interior intentionally
         // exclude toolHolder/reticle meshes from their scene graph instead.
-        if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
+        // A den's cavern is the one building exception: it's a boss-fight
+        // arena, so combat has to work there too (see _isCavernBuildingArea).
+        if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
           updateToolMesh(dt);
           updateCombatConeTrail();
           updateChargeAction();
@@ -19618,6 +21181,33 @@
             const icon = t.target === 'exit_building' ? '🚪' : '🪜';
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
+          }
+          const nest = _denNests.get(currentArea);
+          if (nest && nest.remaining > 0 && isPlayerNearDenNest(nest)) {
+            const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
+            return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
+          }
+          // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
+          // the weapon/tool combo buttons still need to populate the action
+          // bar here, same as farm/zone (below), even though every other
+          // building interior deliberately shows none. World objects, crops,
+          // and furniture placement don't exist in a cavern, so this skips
+          // straight to the tool-actions block instead of falling through
+          // the farm/zone branch wholesale.
+          if (_isCavernBuildingArea(currentArea) && heldMode === 'tool') {
+            const cavernReticle = getReticleTile();
+            const cavernTile = getActiveGrid()[cavernReticle.row]?.[cavernReticle.col];
+            const cavernBtns = [];
+            (toolActions[activeTool] || []).forEach((action, i) => {
+              const [fallbackIcon] = actionLabels[action];
+              const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
+              const allowed = canUseAction(activeTool, action, cavernReticle.col, cavernReticle.row);
+              cavernBtns.push({
+                icon, label: contextualActionLabel(action, cavernTile),
+                action, style: i === 0 ? 'primary' : 'secondary', allowed,
+              });
+            });
+            return cavernBtns;
           }
           return [];
         }
@@ -21105,11 +22695,19 @@
         stable = Array.isArray(playerData.stable) ? playerData.stable.map(s => ({ ...s })) : [];
         activeCompanionId = playerData.activeCompanionId ?? null;
         if (!stable.length) {
-          const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: null, aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
+          const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
           stable.push(starter);
           activeCompanionId = starter.id;
         }
         if (!activeCompanionId && stable.length) activeCompanionId = stable[0].id;
+        // Backfill genotype-less stable entries from older saves (e.g. a
+        // starter Bingo saved before pattern genes existed) so they render
+        // real genes instead of the plain uncolored sprite forever.
+        for (const entry of stable) {
+          if (!entry.genotype && (LIVESTOCK_PATTERN_DEFS[entry.kind] || entry.kind === 'uumkaoii')) {
+            entry.genotype = makeDefaultGenotype(entry.kind);
+          }
+        }
         saveStable();
         // Restore whichever literal tool/weapon/whistle instance was equipped
         // in each slot last session (see saveEquipmentSlots) — skips any slot
@@ -21194,6 +22792,7 @@
         canPlayerOccupy,
         canOccupyAt,
         setCreatureFrame,
+        genotypeKindFor: (c) => (c.genotype ? (GENOTYPE_SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null),
         showToast,
         triggerWeaponSwingVisual,
         triggerWeaponHoldVisual,

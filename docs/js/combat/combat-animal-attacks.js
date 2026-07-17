@@ -135,8 +135,17 @@
         state.t = 0;
         // Lock the sprite onto a single non-idle (mid-stride) frame for the
         // whole leap instead of letting the default run-cycle keep ticking.
+        // Must still pass genotype info through — this bypasses game.js's
+        // normal updateCreatureAnimFrame retry loop entirely for the whole
+        // leap (isBusy() suppresses it), so a plain 2-arg setCreatureFrame
+        // call here would silently stomp a gar-wolf/dabinggi-hound's
+        // composited base-color/pattern texture back to the un-recolored
+        // fallback sprite for the leap's full duration (which, if it never
+        // connects with a target, can run until it hits terrain or the map
+        // edge — i.e. a long time).
         const frameUrl = c.def.sprites.run[0];
-        deps.setCreatureFrame(c.avatarRef, frameUrl);
+        const genotypeKind = deps.genotypeKindFor ? deps.genotypeKindFor(c) : null;
+        deps.setCreatureFrame(c.avatarRef, frameUrl, genotypeKind, 'run1', c.genotype);
         c.currentFrameUrl = frameUrl;
       }
       return true;

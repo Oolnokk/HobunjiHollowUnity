@@ -3666,7 +3666,7 @@
     let placedDens = 0;
     const maxTries = Math.max(300, settings.animalDens * 70);
     for (let tries = 0; tries < maxTries && placedDens < settings.animalDens; tries++) {
-      const dims = chance(0.7) ? { w: 2, h: 2 } : { w: 2, h: 1 };
+      const dims = chance(0.7) ? { w: 3, h: 3 } : { w: 3, h: 2 };
       const spot = randomFreeArea(dims.w, dims.h, {
         filter: (x, y, w, h) => {
           if (areaElevationSpread(x, y, w, h) > 1) return false;
@@ -3677,7 +3677,20 @@
         }
       }, 1);
       if (!spot) continue;
+      // nearestFreeNeighbor(x,y) never checks (x,y) itself and its ring search
+      // isn't direction-aware (r=1's first candidate is (x-1,y-1) by iteration
+      // order, not "closest free tile south") — fine for escapeAnchor, which
+      // only needs *some* nearby free tile to flee toward, but wrong for the
+      // doorway anchor, which must be the exact tile south of the footprint
+      // to line up with the mesh's south-facing mouth carve (see
+      // buildAnimalDenMeshes) and the collision-gap cutout. Computed directly
+      // here instead, clamped to map bounds; it doesn't need a walkability
+      // check since it becomes the walkable doorway/transition tile itself.
       const anchor = nearestFreeNeighbor(spot.x + Math.floor(dims.w / 2), spot.y + dims.h);
+      const mouthAnchor = {
+        x: clamp(spot.x + Math.floor(dims.w / 2), 0, settings.width - 1),
+        y: clamp(spot.y + dims.h, 0, settings.height - 1),
+      };
       addObject({
         type: 'animalDen',
         x: spot.x,
@@ -3687,6 +3700,8 @@
         blocksMovement: true,
         escapeAnchor: anchor,
         pathAnchor: anchor,
+        // The den's south-facing doorway tile — see comment above.
+        mouthAnchor,
         spawnRole: 'wildAnimalPackHome',
         note: 'wild animal den; low-health packs can flee toward this anchor'
       });
@@ -4945,6 +4960,81 @@
     return result.sort((a, b) => b.score - a.score).slice(0, 60);
   }
 
+  // Groups placeCopses()'s per-tile 'copse' objects (each stamped with a
+  // shared copseId) back into one foliage-patch record per cluster, for
+  // consumers that need a patch as a whole rather than the lossy per-tile
+  // tile-overlay fold (see hobunjiObjectOverlayByTile) — the wildlife
+  // schedule AI's herbivore grazing/predator ambush stations, in particular.
+  // "Rich" patches (dense enough to be worth ambushing) are the ones a
+  // predator gets an ambush station for; thin patches are grazing-only.
+  const RICH_FOLIAGE_TREE_COUNT_THRESHOLD = 9;
+  function buildFoliagePatches() {
+    const byId = new Map();
+    for (const object of map.objects) {
+      if (object.type !== 'copse') continue;
+      let patch = byId.get(object.copseId);
+      if (!patch) { patch = { id: object.copseId, tiles: [], recommendedTreeCount: object.recommendedTreeCount || 0 }; byId.set(object.copseId, patch); }
+      // Each copse object's own w/h (>1x1 once scaleGeneratedTileDensity has
+      // run — see scaleGeneratedObject) is its actual final-resolution
+      // footprint, not just its top-left cell.
+      const ow = object.w || 1, oh = object.h || 1;
+      for (let dy = 0; dy < oh; dy++) for (let dx = 0; dx < ow; dx++) patch.tiles.push({ x: object.x + dx, y: object.y + dy });
+      patch.recommendedTreeCount = Math.max(patch.recommendedTreeCount, object.recommendedTreeCount || 0);
+    }
+    return [...byId.values()].map(patch => {
+      const cx = Math.round(patch.tiles.reduce((sum, t) => sum + t.x, 0) / patch.tiles.length);
+      const cy = Math.round(patch.tiles.reduce((sum, t) => sum + t.y, 0) / patch.tiles.length);
+      return {
+        id: patch.id,
+        tiles: patch.tiles,
+        centroid: { x: cx, y: cy },
+        rich: patch.recommendedTreeCount >= RICH_FOLIAGE_TREE_COUNT_THRESHOLD
+      };
+    });
+  }
+
+  // For each rich foliage patch, a handful of nearby (not inside it — that's
+  // where herbivores graze) walkable tiles for a predator to stake out as an
+  // ambush station, scored with the same cover-nearby heuristic ambushTargets()
+  // uses, biased toward the patch's immediate ring rather than its full
+  // reachable neighborhood, and spread apart so stations don't all cluster
+  // on one favored tile.
+  function buildAmbushStations(foliagePatches) {
+    const stationsByPatch = [];
+    for (const patch of foliagePatches) {
+      if (!patch.rich) continue;
+      const patchTileSet = new Set(patch.tiles.map(t => `${t.x},${t.y}`));
+      const seen = new Set();
+      const candidates = [];
+      for (const anchor of patch.tiles) {
+        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+          const nx = anchor.x + dx, ny = anchor.y + dy;
+          const key = `${nx},${ny}`;
+          if (patchTileSet.has(key) || seen.has(key)) continue;
+          const dist = Math.max(Math.abs(dx), Math.abs(dy));
+          if (dist < 1 || dist > 3) continue;
+          const tile = tileAt(nx, ny);
+          if (!isWalkableTile(tile) || tile.water || tile.path) continue;
+          seen.add(key);
+          const cover = orthogonalNeighbors(tile).some(next => next.cliffSkirt || next.ramp || (() => {
+            const object = next.occupiedBy ? getObjectById(next.occupiedBy) : null;
+            return object && ['copse', 'undiggableBoulder', 'statue', 'structure'].includes(object.type);
+          })());
+          candidates.push({ x: nx, y: ny, score: (cover ? 3 : 0) + (4 - dist) + noise2(nx, ny, 27751) });
+        }
+      }
+      candidates.sort((a, b) => b.score - a.score);
+      const picked = [];
+      for (const c of candidates) {
+        if (picked.some(p => Math.abs(p.x - c.x) <= 1 && Math.abs(p.y - c.y) <= 1)) continue;
+        picked.push({ x: c.x, y: c.y });
+        if (picked.length >= 4) break;
+      }
+      if (picked.length) stationsByPatch.push({ patchId: patch.id, points: picked });
+    }
+    return stationsByPatch;
+  }
+
   function makeAnimalRoute(agentId, behavior, denAnchor, targets, options = {}) {
     const segments = [];
     const routeStops = [];
@@ -5906,6 +5996,7 @@
     output.h = Math.max(1, scaleScalar(object.h || 1, scale, 0));
     if (object.pathAnchor) output.pathAnchor = scaleMapPoint(object.pathAnchor, scale);
     if (object.escapeAnchor) output.escapeAnchor = scaleMapPoint(object.escapeAnchor, scale);
+    if (object.mouthAnchor) output.mouthAnchor = scaleMapPoint(object.mouthAnchor, scale);
     if (object.anchor) output.anchor = scaleMapPoint(object.anchor, scale);
     return output;
   }
@@ -7555,21 +7646,35 @@
     const workspace = buildHobunjiMapExport();
     workspace.entry = map.entry ? { col: map.entry.x, row: map.entry.y, side: map.entry.side } : null;
     workspace.warnings = map.warnings.slice();
-    // Raw animal-den anchors (root-map tile coords, already tile-density-
+    // Raw animal-den footprints (root-map tile coords, already tile-density-
     // scaled — see scaleGeneratedTileDensity/scaleGeneratedObject above),
     // exposed separately from buildHobunjiMapExport()'s tile stream because
     // that export only encodes a den's *presence* as a generic 'rock'-style
     // overlay on its footprint tiles (see hobunjiObjectOverlayByTile) — real
     // consumers that need to know *where the dens actually are* (e.g. the
-    // game's own wild-pack spawner) read this instead of trying to recover
-    // positions from the lossy tile overlay.
+    // game's own wild-pack spawner, den mesh/collision builder, and cavern
+    // entrance) read this instead of trying to recover positions from the
+    // lossy tile overlay. x,y is the footprint's top-left tile; mouthAnchor
+    // is the walkable tile just south of the footprint (the den's doorway).
     workspace.animalDens = (map.objects || [])
       .filter(object => object.type === 'animalDen')
       .map(object => ({
         id: object.id,
-        x: object.x + Math.floor((object.w || 1) / 2),
-        y: object.y + Math.floor((object.h || 1) / 2),
+        x: object.x,
+        y: object.y,
+        w: object.w || 1,
+        h: object.h || 1,
+        mouthAnchor: object.mouthAnchor ? { x: object.mouthAnchor.x, y: object.mouthAnchor.y } : null,
       }));
+    // Foliage patches (grouped copse clusters — see buildFoliagePatches) and,
+    // for the dense/"rich" ones, a handful of nearby ambush-station points
+    // (see buildAmbushStations) — the wildlife schedule AI's herbivore
+    // grazing targets and predator stakeout points. Same reasoning as
+    // animalDens above: buildHobunjiMapExport()'s tile stream only encodes a
+    // copse tile's presence, not the cluster it belongs to.
+    const foliagePatches = buildFoliagePatches();
+    workspace.foliagePatches = foliagePatches;
+    workspace.ambushStations = buildAmbushStations(foliagePatches);
     return workspace;
   }
 
