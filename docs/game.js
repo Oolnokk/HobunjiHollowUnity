@@ -3406,9 +3406,19 @@
       // species' plain (uncolored) sprite — see setCreatureFrame below.
       const _genotypeTexCache = { front: new Map(), back: new Map() };
       const _genotypeTexPending = new Set();
+      // Every key this function has ever logged a "kicking off compose" line
+      // for — so a creature stuck retrying every tick (see
+      // updateCreatureAnimFrame's needsRetry loop) logs its request/failure
+      // ONCE per (kind,frame,signature) instead of spamming the debug panel
+      // every frame while it waits.
+      const _genotypeTexLogged = new Set();
       function _getGenotypeTextures(kind, frame, genotype) {
         const renderer = window.CreatureGeneticsRender;
-        if (!renderer || !genotype) return null;
+        if (!renderer) {
+          window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): window.CreatureGeneticsRender is not loaded — creature-genetics-render.js failed to load or hasn't run yet`, 'warn');
+          return null;
+        }
+        if (!genotype) return null;
         const sig = renderer.genotypeSignature(kind, genotype);
         const key = `${kind}|${frame}|${sig}`;
         if (_genotypeTexCache.front.has(key)) {
@@ -3416,9 +3426,16 @@
         }
         if (!_genotypeTexPending.has(key)) {
           _genotypeTexPending.add(key);
+          if (!_genotypeTexLogged.has(key)) {
+            _genotypeTexLogged.add(key);
+            window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" — kicking off composeFrame`, 'wildlife');
+          }
           renderer.composeFrame(kind, frame, genotype).then(canvas => {
             _genotypeTexPending.delete(key);
-            if (!canvas) return;
+            if (!canvas) {
+              window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composeFrame resolved null for sig="${sig}" — falling back to plain sprite (see composeFrame's own log line just above for why)`, 'warn');
+              return;
+            }
             const front = new THREE.CanvasTexture(canvas);
             front.colorSpace = THREE.SRGBColorSpace;
             const back = new THREE.CanvasTexture(canvas);
@@ -3426,7 +3443,11 @@
             back.wrapS = THREE.RepeatWrapping; back.repeat.set(-1, 1); back.offset.set(1, 0);
             _genotypeTexCache.front.set(key, front);
             _genotypeTexCache.back.set(key, back);
-          }).catch(() => { _genotypeTexPending.delete(key); });
+            window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composited texture cached for sig="${sig}" (canvas ${canvas.width}x${canvas.height})`, 'wildlife');
+          }).catch(err => {
+            _genotypeTexPending.delete(key);
+            window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composeFrame THREW for sig="${sig}" — ${err?.stack || err}`, 'error');
+          });
         }
         return null;
       }
@@ -3527,6 +3548,11 @@
           for (const child of avatarRef.group.children) {
             if (child.material) child.material.color.setHex(def.tint);
           }
+        }
+        if (opts.genotype) {
+          const genotypeKind = GENOTYPE_SPECIES_ALIAS[creatureKey] || creatureKey;
+          const supported = !!window.CreatureGeneticsRender?.SPECIES?.[genotypeKind];
+          window.__farmLog?.(`[genotype-render] makeCreatureEntity(${creatureKey}): genotype attached, genotypeKind="${genotypeKind}", ${supported ? 'SUPPORTED by CreatureGeneticsRender.SPECIES — should recolor' : 'NOT in CreatureGeneticsRender.SPECIES — will stay on its plain default sprite, this is expected for this species'}`, 'wildlife');
         }
         const col = clamp(Math.floor(x / TILE), 0, gridCols - 1);
         const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
@@ -4161,10 +4187,17 @@
         if (!moving) {
           const frameKey = 'idle';
           const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
+          if (needsRetry && !c._genotypeLogged?.has(frameKey)) {
+            (c._genotypeLogged || (c._genotypeLogged = new Set())).add(frameKey);
+            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${frameKey}" texture (kind=${genotypeKind})`, 'wildlife');
+          }
           if (c.currentFrameUrl !== c.def.sprites.idle || needsRetry) {
             const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype);
             c.currentFrameUrl = c.def.sprites.idle;
-            if (genotypeKind && applied) (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
+            if (genotypeKind && applied) {
+              (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
+              window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${frameKey}" texture APPLIED`, 'wildlife');
+            }
           }
           // Not tracking ground covered while idle, so resuming movement
           // doesn't "catch up" on distance never actually traveled.
@@ -4188,10 +4221,17 @@
         const url = c.def.sprites.run[c.runFrame];
         const frameKey = 'run' + (c.runFrame + 1);
         const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
+        if (needsRetry && !c._genotypeLogged?.has(frameKey)) {
+          (c._genotypeLogged || (c._genotypeLogged = new Set())).add(frameKey);
+          window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${frameKey}" texture (kind=${genotypeKind})`, 'wildlife');
+        }
         if (c.currentFrameUrl !== url || needsRetry) {
           const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype);
           c.currentFrameUrl = url;
-          if (genotypeKind && applied) (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
+          if (genotypeKind && applied) {
+            (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
+            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${frameKey}" texture APPLIED`, 'wildlife');
+          }
         }
       }
 
@@ -19964,7 +20004,10 @@
           companionObjects.add(creature);
         }
         _arenaSpawnedCreatures.add(creature);
-        window.__farmLog?.(`[dev-arena] spawned ${creatureKey} genotype=${JSON.stringify(genotype)}`, 'wildlife');
+        const renderSupported = !!window.CreatureGeneticsRender?.SPECIES?.[genotypeKind];
+        const msg = `[dev-arena] spawned ${creatureKey} #${creature.id} (aiSet=${def.hostile ? 'hostileObjects' : 'companionObjects'}, genotypeKind=${genotypeKind}, renderSupported=${renderSupported}) genotype=${JSON.stringify(genotype)}`;
+        window.__farmLog?.(msg, 'wildlife');
+        console.log(msg);
         renderDevSpawnPanel();
       }
       document.getElementById('devSpawnBtnAction')?.addEventListener('click', () => spawnDevArenaCreature(devSpawnSelectedKey));
