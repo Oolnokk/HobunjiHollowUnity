@@ -61,6 +61,16 @@
     if (_imageCache.has(url)) return _imageCache.get(url);
     const p = new Promise((resolve, reject) => {
       const img = new Image();
+      // Without this, an image served from a different origin than the page
+      // (a CDN mirror like raw.githack.com, or any future asset CDN in front
+      // of the real deployment) loads fine but permanently taints every
+      // canvas it's ever drawn onto — getImageData/toDataURL then throw
+      // SecurityError the instant recolorPixels tries to read pixels back
+      // out (see recoloredBase/recoloredPattern below). Requesting it in
+      // CORS mode is a no-op for a same-origin load and only requires the
+      // server send back Access-Control-Allow-Origin, which raw file CDNs
+      // already do for exactly this reason.
+      img.crossOrigin = 'anonymous';
       img.onload = () => resolve(img);
       img.onerror = () => reject(new Error('Failed to load ' + url));
       img.src = url;

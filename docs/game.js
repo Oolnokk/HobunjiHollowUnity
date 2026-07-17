@@ -3412,6 +3412,9 @@
       // ONCE per (kind,frame,signature) instead of spamming the debug panel
       // every frame while it waits.
       const _genotypeTexLogged = new Set();
+      // key -> performance.now() of its most recent failure — see the
+      // cooldown check in _getGenotypeTextures below.
+      const _genotypeTexFailedAt = new Map();
       function _getGenotypeTextures(kind, frame, genotype) {
         const renderer = window.CreatureGeneticsRender;
         if (!renderer) {
@@ -3424,6 +3427,14 @@
         if (_genotypeTexCache.front.has(key)) {
           return { front: _genotypeTexCache.front.get(key), back: _genotypeTexCache.back.get(key) };
         }
+        // A key that just failed (thrown or resolved null) gets a short
+        // cooldown before it's allowed to retry — without this, a
+        // persistent failure (e.g. the canvas-tainting bug this logging
+        // caught) re-kicks composeFrame on literally every tick forever,
+        // which is both wasted work and floods the debug log with the same
+        // error dozens of times a second.
+        const failedAt = _genotypeTexFailedAt.get(key);
+        if (failedAt && performance.now() - failedAt < 3000) return null;
         if (!_genotypeTexPending.has(key)) {
           _genotypeTexPending.add(key);
           if (!_genotypeTexLogged.has(key)) {
@@ -3433,9 +3444,11 @@
           renderer.composeFrame(kind, frame, genotype).then(canvas => {
             _genotypeTexPending.delete(key);
             if (!canvas) {
+              _genotypeTexFailedAt.set(key, performance.now());
               window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composeFrame resolved null for sig="${sig}" — falling back to plain sprite (see composeFrame's own log line just above for why)`, 'warn');
               return;
             }
+            _genotypeTexFailedAt.delete(key);
             const front = new THREE.CanvasTexture(canvas);
             front.colorSpace = THREE.SRGBColorSpace;
             const back = new THREE.CanvasTexture(canvas);
@@ -3446,6 +3459,7 @@
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composited texture cached for sig="${sig}" (canvas ${canvas.width}x${canvas.height})`, 'wildlife');
           }).catch(err => {
             _genotypeTexPending.delete(key);
+            _genotypeTexFailedAt.set(key, performance.now());
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composeFrame THREW for sig="${sig}" — ${err?.stack || err}`, 'error');
           });
         }
