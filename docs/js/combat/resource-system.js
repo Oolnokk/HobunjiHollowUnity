@@ -155,17 +155,40 @@
     entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina, 0, 100));
   }
 
+  // Floor on how far Exhausted can slow an in-flight attack's own
+  // windup/strike (and the gap before the next one — see combat-flurry.js,
+  // combat-combo.js, combat-charged-breaker.js's timeScale). This used to
+  // bottom out at .01 (a 100x stretch): a strike already committed right as
+  // black-Stamina bottomed out could balloon its own short windup/strike
+  // into 10+ seconds of still playing out — releasing the hold button stops
+  // *new* strikes immediately (see combat-flurry.js's onHoldEnd) but can't
+  // un-stretch one already in flight, so it read as "still attacking a long
+  // while after letting go." .2 keeps the intended "grinds to a crawl"
+  // feel without that runaway tail.
+  const EXHAUSTION_SPEED_FLOOR = 0.2;
+
   function getExhaustionSpeed(entity) {
     if (!entity.exhaustion.active) return 1;
     const black = clamp(entity.exhaustion.blackStamina, 0, 100);
     if (black >= 100) return 1;
-    if (black <= 1) return .01;
-    return clamp(black / 100, .01, 1);
+    return clamp(black / 100, EXHAUSTION_SPEED_FLOOR, 1);
   }
+
+  // A tiny overspend (e.g. just barely tipping over your last sliver of
+  // Stamina) used to produce almost no black-Stamina debt, which
+  // regenerates back to 100 (see tick()'s exhaustionRegenPerSec, up to
+  // 48/sec while rested) in a fraction of a second — Exhausted would clear
+  // itself before the player could even perceive it, reading as "my
+  // Stamina just went back to full" instead of actually entering Exhausted.
+  // Flooring the debt guarantees entering Exhausted always costs a real,
+  // felt recovery window regardless of how small the triggering overspend
+  // was.
+  const MIN_EXHAUSTION_DEBT = 20;
 
   function enterExhausted(entity, excessCost) {
     entity.exhaustion.active = true;
-    entity.exhaustion.blackStamina = round1(clamp(100 - excessCost, 0, 100));
+    const debt = Math.max(excessCost, MIN_EXHAUSTION_DEBT);
+    entity.exhaustion.blackStamina = round1(clamp(100 - debt, 0, 100));
     entity.stamina = 0;
   }
 
