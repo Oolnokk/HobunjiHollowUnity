@@ -2914,7 +2914,15 @@
           window.__farmLog?.(`[genotype] makeDefaultGenotype(${kind}): base=${first.name}(${first.hex}) pattern=${second.name}(${second.hex}) enabled=[${enabledIds.join(',') || 'none'}]`, 'wildlife');
           return genotype;
         }
-        return {};
+        // null, not {} — an empty object is still truthy, and every caller
+        // (makeCreatureEntity's opts.genotype check, updateCreatureAnimFrame's
+        // genotypeKind resolution) treats "has a genotype" as "try to render
+        // it", which for a species with no gene system at all (uumkaoii-wild,
+        // the den-mother variants, ...) meant composeFrame got called every
+        // tick forever, always failing (no SPECIES config), never caching,
+        // never giving up — exactly the infinite-retry log spam a real
+        // report caught. null reads as "no genotype" everywhere downstream.
+        return null;
       }
 
       // Sell value from color contrast + pattern complexity — generalizes
@@ -3459,6 +3467,14 @@
       // key -> performance.now() of its most recent failure — see the
       // cooldown check in _getGenotypeTextures below.
       const _genotypeTexFailedAt = new Map();
+      // Kinds confirmed to have no CreatureGeneticsRender.SPECIES entry —
+      // unlike a load failure, "this species has no cosmetic art" can never
+      // resolve itself no matter how many times it's retried, so it gets
+      // logged once and then permanently skipped instead of the transient-
+      // failure 3s cooldown below (which would otherwise still retry it
+      // forever, one full composeFrame call at a time, competing with every
+      // other creature's real compose work for the same main thread).
+      const _genotypeUnsupportedKinds = new Set();
       function _getGenotypeTextures(kind, frame, genotype) {
         const renderer = window.CreatureGeneticsRender;
         if (!renderer) {
@@ -3466,6 +3482,12 @@
           return null;
         }
         if (!genotype) return null;
+        if (_genotypeUnsupportedKinds.has(kind)) return null;
+        if (!renderer.SPECIES[kind]) {
+          _genotypeUnsupportedKinds.add(kind);
+          window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): "${kind}" has no CreatureGeneticsRender.SPECIES entry — will never render a genotype, skipping permanently instead of retrying`, 'warn');
+          return null;
+        }
         const sig = renderer.genotypeSignature(kind, genotype);
         const key = `${kind}|${frame}|${sig}`;
         if (_genotypeTexCache.front.has(key)) {
