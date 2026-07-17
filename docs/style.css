@@ -227,8 +227,27 @@
     #farmEditBtn:hover { background: rgba(255,255,255,0.12); }
     #farmEditBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
 
+    /* ── Dev spawn menu toggle button (same slot as #farmEditBtn) ────── */
+    #devSpawnBtn {
+      position: fixed;
+      left: calc(var(--play-right) - 10 * var(--col)); top: calc(var(--oy) + 2 * var(--row));
+      width: calc(4 * var(--col)); height: calc(2 * var(--row));
+      z-index: 60;
+      border-radius: 0 0 14px 14px;
+      background: var(--glass);
+      border: 1px solid var(--border-bright);
+      border-top: none;
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      color: var(--text); font-size: 15px;
+      display: grid; place-items: center;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+      transition: background 0.15s; cursor: pointer;
+    }
+    #devSpawnBtn:hover { background: rgba(255,255,255,0.12); }
+    #devSpawnBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
+
     /* ── Farm editor panel ───────────────────────────────── */
-    #farmEditorPanel {
+    #farmEditorPanel, #devSpawnPanel {
       position: fixed;
       right: 2px;
       top: calc(var(--oy) + 4 * var(--row));

@@ -1606,6 +1606,24 @@
           // See map_southern_cloud_forest above — no zone-specific cue pack yet.
           audioIndex: 'general',
         },
+        // Dev-only sandbox — reachable solely through Settings' "Teleport to
+        // Test Arena" button (see teleportToDevArena), never through a town
+        // transition spot. No packSpecies/herbivoreSpecies pool means it never
+        // spawns ambient wildlife on its own (see spawnPackAtDen's empty-pool
+        // early-return) — every creature in it comes from the dev spawn menu
+        // that replaces the farm-editor pencil button while standing here
+        // (see _refreshEditorButtonVisibility). exitCol/Row sits in a back
+        // corner, well away from the entry/spawn point, purely as a walk-out
+        // safety valve back to town if the Settings button is ever unreachable.
+        map_dev_arena: {
+          label: 'Testing Arena',
+          cols: 18, rows: 18,
+          groundColor: 0x55565c, fogColor: 0x24262c,
+          entryCol: 9, entryRow: 9,
+          exitCol: 1, exitRow: 1,
+          townReturnCol: 30, townReturnRow: 2,
+          audioIndex: 'general',
+        },
       };
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
 
@@ -19823,6 +19841,176 @@
           closeMenu();
         });
       }
+
+      // ── Dev Tools: Testing Arena + creature spawner ─────────────────
+      const DEV_ARENA_ZONE_ID = 'map_dev_arena';
+      // Remembers where the player was standing before warping into the
+      // arena so the same Settings button can toggle them back out again —
+      // unlike warpToDenAnchor's targets, the arena has no natural "return"
+      // spot of its own (see EXTERIOR_ZONES.map_dev_arena's exitCol/Row
+      // comment for the walk-out fallback).
+      let _devArenaReturnAnchor = null;
+      function teleportToDevArena() {
+        if (currentArea === DEV_ARENA_ZONE_ID) {
+          const back = _devArenaReturnAnchor || { area: 'farm', x: (COLS / 2) * TILE, y: (ROWS / 2) * TILE };
+          _devArenaReturnAnchor = null;
+          startSceneTransition(() => {
+            const fromScene = getActiveScene();
+            if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+            if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
+            currentArea = back.area;
+            player.x = back.x; player.y = back.y;
+            player.vx = 0; player.vy = 0;
+            _snapCameraTarget();
+            const toScene = getActiveScene();
+            if (toScene) {
+              toScene.add(playerMesh); toScene.add(playerGroundShadow);
+              toScene.add(toolHolder); toScene.add(reticleMesh);
+              toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
+              toScene.add(reticleWavyGroup);
+            }
+            refreshActionBar();
+            showToast('Left the Testing Arena.', true);
+            closeMenu();
+          });
+          return;
+        }
+        _devArenaReturnAnchor = { area: currentArea, x: player.x, y: player.y };
+        startSceneTransition(() => {
+          const fromScene = getActiveScene();
+          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+          if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
+          currentArea = DEV_ARENA_ZONE_ID;
+          const zdef = EXTERIOR_ZONES[DEV_ARENA_ZONE_ID];
+          player.x = (zdef.entryCol + 0.5) * TILE;
+          player.y = (zdef.entryRow + 0.5) * TILE;
+          player.vx = 0; player.vy = 0;
+          _snapCameraTarget();
+          const toScene = buildZoneScene(DEV_ARENA_ZONE_ID)?.scene;
+          if (toScene) {
+            toScene.add(playerMesh); toScene.add(playerGroundShadow);
+            toScene.add(toolHolder); toScene.add(reticleMesh);
+            toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
+            toScene.add(reticleWavyGroup);
+          }
+          refreshActionBar();
+          showToast('Teleported to the Testing Arena — creature spawner unlocked.', true);
+          closeMenu();
+        });
+      }
+      document.getElementById('devTeleportArenaBtn')?.addEventListener('click', teleportToDevArena);
+
+      // Creatures the dev spawn menu has placed in the arena this session —
+      // a separate tracking set from hostileObjects/companionObjects (which
+      // this panel also adds its spawns to, so the normal AI/render tick
+      // loops pick them up) purely so "Auto Kill All" only ever touches
+      // arena test subjects, never a real wild pack or summoned companion.
+      const _arenaSpawnedCreatures = new Set();
+      let devSpawnSelectedKey = Object.keys(CREATURE_DB)[0];
+
+      function renderDevSpawnPanel() {
+        const grid = document.getElementById('devSpawnSpeciesGrid');
+        if (grid) {
+          grid.innerHTML = Object.keys(CREATURE_DB).map(key => {
+            const label = CREATURE_DB[key].label || key;
+            const active = key === devSpawnSelectedKey ? ' fed-active' : '';
+            return `<button type="button" class="fed-btn${active}" data-species="${esc(key)}">${esc(label)}</button>`;
+          }).join('');
+        }
+        const countEl = document.getElementById('devArenaSpawnCount');
+        if (countEl) countEl.textContent = String(_arenaSpawnedCreatures.size);
+      }
+      document.getElementById('devSpawnSpeciesGrid')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.fed-btn');
+        if (!btn) return;
+        devSpawnSelectedKey = btn.dataset.species;
+        renderDevSpawnPanel();
+      });
+
+      // Rolls the exact same cosmetic-gene odds a wild den pack (or a
+      // farm-bought crate) gets — see makeDefaultGenotype — before placing
+      // the creature, so this panel doubles as the place to confirm which
+      // species' genes actually render (see CreatureGeneticsRender.SPECIES:
+      // today only gar-wolf/dabinggi-hound have real cosmetic art; any other
+      // species spawned here with a genotype will keep showing its plain
+      // default sprite/tint instead — that's the "why don't my genes show
+      // up" bug this whole panel exists to help chase down, not a spawner bug).
+      function spawnDevArenaCreature(creatureKey) {
+        if (currentArea !== DEV_ARENA_ZONE_ID) return;
+        const def = CREATURE_DB[creatureKey];
+        if (!def) return;
+        const angle = Math.random() * Math.PI * 2;
+        const dist = TILE * (1.5 + Math.random() * 2.5);
+        const x = player.x + Math.cos(angle) * dist;
+        const y = player.y + Math.sin(angle) * dist;
+        // Roll against the "family" species (see GENOTYPE_SPECIES_ALIAS) —
+        // same normalization getOrMakeDenGenotype applies for wild packs —
+        // so gar-wolf-alpha/den-mother variants get real pattern genes too,
+        // instead of makeDefaultGenotype silently no-opping on an exact key
+        // LIVESTOCK_PATTERN_DEFS never defines.
+        const genotypeKind = GENOTYPE_SPECIES_ALIAS[creatureKey] || creatureKey;
+        const genotype = makeDefaultGenotype(genotypeKind);
+        const creature = makeCreatureEntity(creatureKey, x, y, { homeX: x, homeY: y, state: 'idle', genotype });
+        if (!creature) { showToast(`Could not spawn "${creatureKey}" — missing CREATURE_DB entry.`, false); return; }
+        // Same real-AI registration the cutscene combat stager uses (see
+        // runCombat's combatOnIds loop) — hostile species chase/attack via
+        // updateHostiles, everything else follows/defends the player via
+        // updateCompanions, instead of a bespoke test-only behavior.
+        if (def.hostile) {
+          hostileObjects.add(creature);
+        } else {
+          creature.isCompanion = true;
+          creature.master = player;
+          companionObjects.add(creature);
+        }
+        _arenaSpawnedCreatures.add(creature);
+        window.__farmLog?.(`[dev-arena] spawned ${creatureKey} genotype=${JSON.stringify(genotype)}`, 'wildlife');
+        renderDevSpawnPanel();
+      }
+      document.getElementById('devSpawnBtnAction')?.addEventListener('click', () => spawnDevArenaCreature(devSpawnSelectedKey));
+
+      function devArenaAutoKillAll() {
+        const toKill = [..._arenaSpawnedCreatures];
+        for (const c of toKill) {
+          _arenaSpawnedCreatures.delete(c);
+          if (c.health > 0) damageCreature(c, c.health, undefined, undefined, 0, {});
+        }
+        showToast(`Auto-killed ${toKill.length} arena creature${toKill.length === 1 ? '' : 's'}.`, true);
+        renderDevSpawnPanel();
+      }
+      document.getElementById('devKillAllBtn')?.addEventListener('click', devArenaAutoKillAll);
+
+      window._devSpawner = {
+        toggle() {
+          const panel = document.getElementById('devSpawnPanel');
+          const btn = document.getElementById('devSpawnBtn');
+          const open = panel?.style.display !== 'flex';
+          if (panel) panel.style.display = open ? 'flex' : 'none';
+          if (btn) btn.classList.toggle('fed-open', open);
+          if (open) renderDevSpawnPanel();
+        },
+      };
+
+      // Pencil (farm editor) and 🐾 (dev spawner) toggle buttons share one
+      // top-right UI slot and are mutually exclusive by area: farmEditBtn
+      // previously had NO visibility gating at all and stayed on screen in
+      // every area (town, wilderness, indoors) even though the editor itself
+      // only ever does anything on the farm — this is what actually hides it
+      // everywhere else, and reveals the spawner only inside the arena.
+      function _refreshEditorButtonVisibility() {
+        const showFarmEdit = currentArea === 'farm' && isFarmOwner();
+        const showDevSpawn = currentArea === DEV_ARENA_ZONE_ID;
+        const farmBtn = document.getElementById('farmEditBtn');
+        const spawnBtn = document.getElementById('devSpawnBtn');
+        if (farmBtn) farmBtn.style.display = showFarmEdit ? '' : 'none';
+        if (spawnBtn) spawnBtn.style.display = showDevSpawn ? '' : 'none';
+        if (!showFarmEdit && farmEditMode) toggleFarmEditMode();
+        if (!showDevSpawn) {
+          const panel = document.getElementById('devSpawnPanel');
+          if (panel && panel.style.display !== 'none') { panel.style.display = 'none'; spawnBtn?.classList.remove('fed-open'); }
+        }
+      }
+
       // ── Den-Mother nest: hold-to-take egg/baby (see _denNests, populated
       // in loadBuildingScene) ──────────────────────────────────────────
       const NEST_TAKE_HOLD_S = 5;
@@ -21316,6 +21504,7 @@
       let _lastBarKey = '';
 
       function refreshActionBar() {
+        _refreshEditorButtonVisibility();
         const reticle = getReticleTile();
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 
