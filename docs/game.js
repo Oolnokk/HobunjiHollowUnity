@@ -1464,11 +1464,11 @@
         },
         // A wild, huntable/fleeable herbivore for the den+foliage-patch
         // wildlife schedule AI (see EXTERIOR_ZONES.herbivoreSpecies/
-        // spawnPackAtDen and updateHostiles' grazing/ambush states) — a
+        // spawnPackAtDen and updateHostiles' grazing/patrol states) — a
         // separate key from the companion `uumkaoii` above so its
         // aiType/follow fields don't leak onto a creature that never fights
-        // or follows a master. `diet: 'herbivore'` is read by the ambush-
-        // trigger check to find prey; no aggroRangePx/leashRangePx means it
+        // or follows a master. `diet: 'herbivore'` is read by the patrol-
+        // sighting check to find prey; no aggroRangePx/leashRangePx means it
         // never chases the player (see updateHostiles' aggro check). Not
         // connected to the farm-livestock breeding/genotype system.
         'uumkaoii-wild': {
@@ -3940,18 +3940,22 @@
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
 
-          // Ambush trigger: only while a predator is actively watching its
-          // station (not traveling to it, fleeing, chasing, or returning) —
-          // a simple radius check against grazing herbivores tied to the same
-          // foliage patch (no line-of-sight system exists for creature-vs-
-          // creature sight today).
-          if (c.state === 'at-station-ambush-watching' && def.diet !== 'herbivore' && !onFleeCooldown) {
+          // Patrol sighting: a predator that's out patrolling its route (or
+          // fallback-wandering with no route) is alert the whole time it's
+          // moving, not just when parked at one spot — checked whenever it
+          // isn't already busy with the player or another skirmish. Simple
+          // radius check against grazing herbivores tied to the same foliage
+          // patch (no line-of-sight system exists for creature-vs-creature
+          // sight today).
+          const predatorAvailable = def.diet !== 'herbivore' && !onFleeCooldown
+            && c.state !== 'chase' && c.state !== 'patrol-chase' && c.state !== 'return' && c.state !== 'fleeing-low-health';
+          if (predatorAvailable) {
             for (const prey of hostileObjects) {
               if (prey === c || prey.health <= 0 || prey.areaId !== c.areaId) continue;
               if (prey.def?.diet !== 'herbivore' || prey.state !== 'at-station-grazing') continue;
               if (prey.grazingPatchId !== c.linkedPatchId) continue;
-              if (Math.hypot(prey.x - c.x, prey.y - c.y) > AMBUSH_TRIGGER_RANGE_PX) continue;
-              c.state = 'ambush-chase'; c.targetCreature = prey;
+              if (Math.hypot(prey.x - c.x, prey.y - c.y) > PATROL_SIGHT_RANGE_PX) continue;
+              c.state = 'patrol-chase'; c.targetCreature = prey;
               break;
             }
           }
@@ -3987,7 +3991,7 @@
               moving = moveCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, dt);
               if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
             }
-          } else if (c.state === 'ambush-chase') {
+          } else if (c.state === 'patrol-chase') {
             // A simplified creature-vs-creature chase (no telegraph/pounce
             // theatrics — those are built around damaging the player
             // specifically) — beelines onto the prey and lands plain bite
@@ -4095,36 +4099,79 @@
             } else {
               aimAngle = idleCreatureAimAngle(c.groupRot);
             }
-          } else {
-            // Active hours. A creature with an assigned foliage-patch station
-            // (see assignWildlifeStation) travels to it and settles there
-            // instead of wandering freely — a herbivore grazes in the patch
-            // itself, a predator watches from its nearby ambush point (see
-            // the ambush-trigger check above). Falls back to the original
-            // plain wander with no station assigned (legacy zones without
-            // generator data, or no rich patch found for a predator).
-            const isHerbivore = def.diet === 'herbivore';
-            const station = isHerbivore ? c.grazingTile : c.ambushStation;
-            if (station) {
-              const stationX = (station.x + 0.5) * TILE, stationY = (station.y + 0.5) * TILE;
-              const distToStation = Math.hypot(c.x - stationX, c.y - stationY);
-              if (distToStation > DEN_SETTLE_RADIUS_PX) {
-                c.state = 'scheduled-travel-to-station';
-                moving = moveCreatureToward(c, stationX, stationY, def.moveSpeed, dt);
-                if (moving) aimAngle = Math.atan2(stationY - c.y, stationX - c.x);
+          } else if (def.diet === 'herbivore') {
+            // Active hours: a herbivore periodically breaks off grazing to
+            // visit water (see assignWildlifeStation's waterTile, checked
+            // against a running game-hour clock so a whole pack doesn't all
+            // drink in lockstep — patrolIndex-style stagger isn't needed here
+            // since nextDrinkHour is seeded with jitter at spawn, see
+            // spawnPackAtDen), otherwise travels to its assigned grazing tile
+            // and settles there. Falls back to plain wander with neither
+            // assigned (legacy zones without generator data).
+            const nowHours = (calendar.day - 1) * 24 + getHour();
+            if (c.nextDrinkHour == null) c.nextDrinkHour = nowHours + rnd() * WILDLIFE_DRINK_INTERVAL_HOURS;
+            const wantsDrink = c.waterTile && nowHours >= c.nextDrinkHour;
+            if (wantsDrink) {
+              const wx = (c.waterTile.x + 0.5) * TILE, wy = (c.waterTile.y + 0.5) * TILE;
+              const distToWater = Math.hypot(c.x - wx, c.y - wy);
+              if (distToWater > DEN_SETTLE_RADIUS_PX) {
+                c.state = 'traveling-to-drink';
+                moving = moveCreatureToward(c, wx, wy, def.moveSpeed, dt);
+                if (moving) aimAngle = Math.atan2(wy - c.y, wx - c.x);
               } else {
-                c.state = isHerbivore ? 'at-station-grazing' : 'at-station-ambush-watching';
+                c.state = 'drinking';
                 aimAngle = idleCreatureAimAngle(c.groupRot);
+                c._drinkT = (c._drinkT || 0) + dt;
+                if (c._drinkT >= WILDLIFE_DRINK_DURATION_S) {
+                  c._drinkT = 0;
+                  c.nextDrinkHour = nowHours + WILDLIFE_DRINK_INTERVAL_HOURS;
+                }
               }
             } else {
-              // Pack creatures roam a wider territory around their den by day
-              // than the tight loiter radius everything else uses.
-              const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
-              moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
-              // Wandering has an explicit heading; paused between legs, there's no
-              // specific direction to look, so settle broadside to the camera.
-              aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
+              const station = c.grazingTile;
+              if (station) {
+                const stationX = (station.x + 0.5) * TILE, stationY = (station.y + 0.5) * TILE;
+                const distToStation = Math.hypot(c.x - stationX, c.y - stationY);
+                if (distToStation > DEN_SETTLE_RADIUS_PX) {
+                  c.state = 'scheduled-travel-to-station';
+                  moving = moveCreatureToward(c, stationX, stationY, def.moveSpeed, dt);
+                  if (moving) aimAngle = Math.atan2(stationY - c.y, stationX - c.x);
+                } else {
+                  c.state = 'at-station-grazing';
+                  aimAngle = idleCreatureAimAngle(c.groupRot);
+                }
+              } else {
+                const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
+                moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
+                aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
+              }
             }
+          } else if (c.patrolPoints && c.patrolPoints.length) {
+            // Active hours: a predator loops continuously between its
+            // assigned patrol waypoints (see assignWildlifeStation — the
+            // same nearby-cover points a stationary "ambush" used to camp
+            // at, now walked as a route) instead of parking at one spot —
+            // the patrol-sighting check above fires the whole time it's out
+            // here, whether mid-leg or paused at a waypoint.
+            c.state = 'patrolling';
+            const target = c.patrolPoints[(c.patrolIndex || 0) % c.patrolPoints.length];
+            const targetX = (target.x + 0.5) * TILE, targetY = (target.y + 0.5) * TILE;
+            const distToTarget = Math.hypot(c.x - targetX, c.y - targetY);
+            if (distToTarget <= DEN_SETTLE_RADIUS_PX) {
+              c.patrolIndex = ((c.patrolIndex || 0) + 1) % c.patrolPoints.length;
+              aimAngle = idleCreatureAimAngle(c.groupRot);
+            } else {
+              moving = moveCreatureToward(c, targetX, targetY, def.moveSpeed, dt);
+              if (moving) aimAngle = Math.atan2(targetY - c.y, targetX - c.x);
+            }
+          } else {
+            // Pack creatures roam a wider territory around their den by day
+            // than the tight loiter radius everything else uses.
+            const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
+            moving = wanderTick(c, dt, c.homeX, c.homeY, wanderRadiusPx);
+            // Wandering has an explicit heading; paused between legs, there's no
+            // specific direction to look, so settle broadside to the camera.
+            aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
           }
           c.facing = aimAngle;
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
@@ -4818,8 +4865,9 @@
               state: c.state, health: c.health, maxHealth: c.maxHealth,
               tile: { x: Math.round(c.x / TILE), y: Math.round(c.y / TILE) },
               home: { x: Math.round(c.homeX / TILE), y: Math.round(c.homeY / TILE) },
-              ambushStation: c.ambushStation || null, linkedPatchId: c.linkedPatchId || null,
+              patrolPoints: c.patrolPoints || null, patrolIndex: c.patrolIndex ?? null, linkedPatchId: c.linkedPatchId || null,
               grazingTile: c.grazingTile || null, grazingPatchId: c.grazingPatchId || null,
+              waterTile: c.waterTile || null, nextDrinkHour: c.nextDrinkHour ?? null,
               targetCreature: c.targetCreature?.id || null,
             });
           }
@@ -4908,17 +4956,19 @@
       const DEN_SETTLE_RADIUS_PX = TILE * 0.6;
       let denCheckTimer = 0;
 
-      // Wildlife schedule AI (den = home, foliage patches = feeding/ambush
-      // stations) — see applyWildlifeSkirmishDamage/assignWildlifeStation
-      // and updateHostiles' 'fleeing-low-health'/'ambush-chase'/
-      // 'at-station-grazing'/'at-station-ambush-watching' states.
+      // Wildlife schedule AI (den = home, foliage patches = feeding/patrol
+      // grounds) — see applyWildlifeSkirmishDamage/assignWildlifeStation
+      // and updateHostiles' 'fleeing-low-health'/'patrol-chase'/
+      // 'at-station-grazing'/'patrolling' states.
       const WILDLIFE_FLEE_HP_THRESHOLD = 0.3; // health ratio that forces a losing animal to disengage and run home
       const WILDLIFE_HP_FLOOR_FRACTION = 0.12; // wildlife-vs-wildlife skirmishes can never reduce health below this fraction — nothing dies from them
-      const WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS = 6000; // grace period after reaching home before a fled animal can be re-aggro'd/re-ambushed
-      const AMBUSH_TRIGGER_RANGE_PX = TILE * 3.5; // how close a grazing herbivore has to wander for a watching predator to notice it
+      const WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS = 6000; // grace period after reaching home before a fled animal can be re-aggro'd/re-picked as prey
+      const PATROL_SIGHT_RANGE_PX = TILE * 3.5; // how close a grazing herbivore has to wander for a patrolling predator to notice it
+      const WILDLIFE_DRINK_INTERVAL_HOURS = 5; // how often (in continuous game hours) a herbivore needs to break off grazing to visit water
+      const WILDLIFE_DRINK_DURATION_S = 4; // real seconds spent drinking once at the water's edge, before resuming its schedule
 
       // Non-lethal analogue of damageCreature, used only for predator-vs-prey
-      // wildlife skirmishes (see the 'ambush-chase' state) — player and
+      // wildlife skirmishes (see the 'patrol-chase' state) — player and
       // companion combat still go through damageCreature directly and stay
       // lethal. Clamps damage so health can never drop below
       // WILDLIFE_HP_FLOOR_FRACTION, and forces the target into
@@ -4936,10 +4986,11 @@
 
       // The foliage patch (see workspace.foliagePatches) nearest a den's home
       // point — geographic proximity, not zone-wide random pick, so a pack
-      // doesn't get assigned a station clear across the map. preferRich only
-      // matters for predators (see assignWildlifeStation): a predator needs a
-      // *rich* patch (the only ones with ambushStations), a herbivore will
-      // graze at any patch.
+      // doesn't get assigned a patrol route clear across the map. preferRich
+      // only matters for predators (see assignWildlifeStation): a predator
+      // needs a *rich* patch (the only ones with a nearby-cover point set —
+      // see workspace.ambushStations — to patrol), a herbivore will graze at
+      // any patch.
       function nearestFoliagePatch(zoneData, homeX, homeY, { preferRich = false } = {}) {
         const patches = zoneData?.foliagePatches;
         if (!patches || !patches.length) return null;
@@ -4948,18 +4999,41 @@
         if (preferRich) {
           const rich = scored.find(s => s.p.rich);
           if (rich) return rich.p;
-          return null; // no rich patch anywhere in the zone — this predator gets no ambush station, falls back to plain wander
+          return null; // no rich patch anywhere in the zone — this predator gets no patrol route, falls back to plain wander
         }
         return scored[0].p;
       }
 
-      // Assigns a herbivore's grazing tile or a predator's ambush station,
+      // Nearest river/stream tile to a home point, scanning the zone's own
+      // exported tile list (zoneData.tiles — the same data buildZoneScene
+      // folds into zGrid) rather than requiring a live 2D grid, since this
+      // runs once at spawn time (see assignWildlifeStation) before the
+      // creature necessarily has one. Null if the zone has no water at all.
+      function nearestWaterTile(zoneData, homeX, homeY) {
+        const tiles = zoneData?.tiles;
+        if (!tiles || !tiles.length) return null;
+        const homeCol = homeX / TILE, homeRow = homeY / TILE;
+        let best = null, bestD = Infinity;
+        for (const t of tiles) {
+          if (t.type !== TileType.RIVER && t.type !== TileType.STREAM) continue;
+          const d = Math.hypot(t.c - homeCol, t.r - homeRow);
+          if (d < bestD) { bestD = d; best = { x: t.c, y: t.r }; }
+        }
+        return best;
+      }
+
+      // Assigns a herbivore's grazing tile or a predator's patrol route,
       // mutating the opts object makeCreatureEntity is about to be called
       // with (see spawnPackAtDen) — a creature with neither field set just
       // falls back to plain wandering (legacy zones without generator data,
       // or no rich patch found).
       function assignWildlifeStation(opts, zoneData, homeX, homeY, isHerbivore) {
         if (isHerbivore) {
+          // Assigned independently of grazing-patch availability — a
+          // herbivore still needs to know where to drink even if (rarely) no
+          // foliage patch was found nearby (see updateHostiles' drink check).
+          const water = nearestWaterTile(zoneData, homeX, homeY);
+          if (water) opts.waterTile = water;
           const patch = nearestFoliagePatch(zoneData, homeX, homeY, { preferRich: false });
           if (!patch) return;
           const tile = patch.tiles[Math.floor(rnd() * patch.tiles.length)];
@@ -4968,10 +5042,14 @@
         } else {
           const patch = nearestFoliagePatch(zoneData, homeX, homeY, { preferRich: true });
           if (!patch) return;
+          // The full nearby-cover point set (see workspace.ambushStations —
+          // wilderness-map-generator.js still names it after the stationary
+          // "ambush" behavior this used to drive) becomes the patrol route,
+          // walked in a loop rather than camped at as one fixed spot.
           const group = (zoneData.ambushStations || []).find(g => g.patchId === patch.id);
           if (!group?.points?.length) return;
-          const pt = group.points[Math.floor(rnd() * group.points.length)];
-          opts.ambushStation = { x: pt.x, y: pt.y };
+          opts.patrolPoints = group.points.map(pt => ({ x: pt.x, y: pt.y }));
+          opts.patrolIndex = Math.floor(rnd() * opts.patrolPoints.length);
           opts.linkedPatchId = patch.id;
         }
       }
@@ -6283,6 +6361,7 @@
         ]);
 
         _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
+        _buildRichFoliageBillboards(zScene, zoneData, zGrid);
         buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
 
         const toTownExit = zoneData?.toTownExit;
@@ -7071,6 +7150,65 @@
             if (tile?.type !== TileType.GRASS) continue;
             const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
             idx = _fillBillboardInstances(mesh, dummy, idx, col, row, 1.0, zoneBaseElev + tierY);
+          }
+        }
+        mesh.count = idx;
+        mesh.instanceMatrix.needsUpdate = true;
+        zScene.add(mesh);
+      }
+
+      // Rich foliage patches (see workspace.foliagePatches' `rich` flag —
+      // the dense copse clusters the wildlife schedule AI's herbivores graze
+      // in and predators patrol near) get their own tightly-packed, tall
+      // billboard cluster instead of blending into the zone's ordinary grass
+      // tufts — always visible regardless of the Settings > Grass toggle
+      // (s_grass, see _buildZoneGrassBillboards/settingGrass's handler,
+      // neither of which this mesh is wired to), since it's meant to read as
+      // a landmark, not decorative ground cover. Reuses the same blade
+      // geometry/shader as ordinary grass — the visual distinction is
+      // entirely density (more blades, tighter spread) and height (roughly
+      // 2x), not a texture/color swap.
+      function _fillDenseTallBillboardInstances(mesh, dummy, startIdx, col, row, yOffset = 0) {
+        const rand = _mbRng(((col * 31337 + row * 1009) >>> 0) ^ 0x9e3779b9);
+        const baseY = tileSurfaceY(TileType.GRASS) + yOffset;
+        let idx = startIdx;
+        const BLADES = 24; // vs. _fillBillboardInstances' 14 — reads as packed rather than scattered
+        for (let b = 0; b < BLADES; b++) {
+          const ox = (rand() - 0.5) * 0.55; // tighter spread than the normal ±0.45 tile so blades overlap into a clump
+          const oz = (rand() - 0.5) * 0.55;
+          const w  = 0.16 + rand() * 0.10; // width matches ordinary grass
+          const h  = 0.48 + rand() * 0.26; // roughly 2x a normal blade's height
+          const rot = rand() * Math.PI;
+          const px = col + 0.5 + ox, pz = row + 0.5 + oz;
+          dummy.position.set(px, baseY, pz);
+          dummy.rotation.set(0, rot, 0);
+          dummy.scale.set(w, h, 1);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(idx++, dummy.matrix);
+          dummy.rotation.set(0, rot + Math.PI * 0.5, 0);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(idx++, dummy.matrix);
+        }
+        return idx;
+      }
+      function _buildRichFoliageBillboards(zScene, zoneData, zGrid, zoneBaseElev = 0) {
+        if (!grassBillboardMat) return;
+        const richPatches = (zoneData?.foliagePatches || []).filter(p => p.rich);
+        if (!richPatches.length) return;
+        let tileCount = 0;
+        for (const patch of richPatches) tileCount += patch.tiles.length;
+        if (!tileCount) return;
+        const BLADES = 24;
+        const mesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, tileCount * BLADES * 2);
+        mesh.frustumCulled = false;
+        mesh.visible = true;
+        mesh.userData.isBillboard = true;
+        const dummy = new THREE.Object3D();
+        let idx = 0;
+        for (const patch of richPatches) {
+          for (const t of patch.tiles) {
+            const tierY = (zGrid?.[t.y]?.[t.x]?.elevTier || 0) * PLATEAU_UNIT;
+            idx = _fillDenseTallBillboardInstances(mesh, dummy, idx, t.x, t.y, zoneBaseElev + tierY);
           }
         }
         mesh.count = idx;
@@ -18924,6 +19062,26 @@
         // than needing to track/re-render whichever panel might currently
         // be open.
       });
+      // Dev Tools: warp to a random den's mouth on the CURRENT map only — no
+      // zone-switching, since the request is specifically "does this map
+      // have one" (farm/town/buildings never do; a wilderness zone does once
+      // its Tothal Shift has run — see _zoneLayouts' `dens` field).
+      function teleportToRandomDen() {
+        const dens = _zoneLayouts.get(currentArea)?.dens;
+        if (!dens || !dens.length) {
+          showToast('No dens on this map.', false);
+          return;
+        }
+        const den = dens[Math.floor(rnd() * dens.length)];
+        const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
+        player.x = (anchor.x + 0.5) * TILE;
+        player.y = (anchor.y + 0.5) * TILE;
+        player.vx = 0; player.vy = 0;
+        _snapCameraTarget();
+        showToast(`Teleported to a den (${dens.length} on this map).`, true);
+        closeMenu();
+      }
+      document.getElementById('devTeleportDenBtn')?.addEventListener('click', teleportToRandomDen);
       function setCameraZoomScale(value) {
         const cfg = desktopControlsConfig();
         const min = Number.isFinite(Number(cfg.wheelZoomMin)) ? Number(cfg.wheelZoomMin) : 0.75;
