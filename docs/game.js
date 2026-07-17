@@ -1412,7 +1412,7 @@
           loot: [],
         },
         'gar-wolf': {
-          label: 'Gar-wolf', hostile: true,
+          label: 'Gar-wolf', hostile: true, liveBirth: true,
           maxHealth: 38, maxStamina: 30,
           moveSpeed: 130, chaseSpeed: 195,
           attackDamage: 12, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
@@ -1442,7 +1442,7 @@
           ],
         },
         'gar-wolf-alpha': {
-          label: 'Gar-wolf Alpha', hostile: true,
+          label: 'Gar-wolf Alpha', hostile: true, liveBirth: true,
           maxHealth: 78, maxStamina: 46,
           moveSpeed: 140, chaseSpeed: 205,
           attackDamage: 18, attackRangePx: TILE * 0.95, attackHalfConeRad: 46 * Math.PI / 180,
@@ -1472,7 +1472,7 @@
         // never chases the player (see updateHostiles' aggro check). Not
         // connected to the farm-livestock breeding/genotype system.
         'uumkaoii-wild': {
-          label: "Wild Uumkao'ii", hostile: false, diet: 'herbivore',
+          label: "Wild Uumkao'ii", hostile: false, diet: 'herbivore', liveBirth: false,
           maxHealth: 30, maxStamina: 20,
           moveSpeed: 110, chaseSpeed: 110,
           canClimb: false, canSwim: false,
@@ -1483,6 +1483,54 @@
           },
           loot: [
             { key: 'uumkaoiiMeat', min: 1, max: 2 },
+          ],
+        },
+        // Den-Mother mini-bosses: one spawns per den cavern (see
+        // pickDenMotherKind/loadBuildingScene's 'map_i_den_' handling),
+        // guarding a 2x2 nest at the far end of the cavern and never leaving
+        // it (very tight leashRangePx around the nest — otherwise plain
+        // wander/chase/return like any other hostile, no schedule AI). Boosted
+        // stats over the regular pack member, reused sprite with a darker
+        // tint read as "bigger/tougher". `liveBirth` drives the nest's
+        // "Taking Egg"/"Taking Baby" wording (see updateNestInteraction).
+        'gar-wolf-den-mother': {
+          label: 'Den-Mother', hostile: true, liveBirth: true,
+          maxHealth: 240, maxStamina: 90,
+          moveSpeed: 120, chaseSpeed: 175,
+          attackDamage: 24, attackRangePx: TILE * 1.0, attackHalfConeRad: 46 * Math.PI / 180,
+          attackStaminaCost: 16, attackCooldownS: 1.0,
+          attacks: ['pounce'],
+          attackTag: 'sharp',
+          behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
+          aggroRangePx: TILE * 6, leashRangePx: TILE * 4.5,
+          canClimb: false, canSwim: false,
+          modelWidth: 3.6, tint: 0x6b4040,
+          sprites: {
+            idle: 'assets/creaturesprites/gar-wolf_idle.png',
+            run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
+          },
+          loot: [
+            { key: 'garWolfMeat', min: 3, max: 6 },
+            { key: 'garWolfHide', min: 1, max: 2 },
+          ],
+        },
+        'uumkaoii-wild-den-mother': {
+          label: 'Den-Mother', hostile: true, liveBirth: false,
+          maxHealth: 170, maxStamina: 70,
+          moveSpeed: 95, chaseSpeed: 140,
+          attackDamage: 17, attackRangePx: TILE * 0.9, attackHalfConeRad: 45 * Math.PI / 180,
+          attackStaminaCost: 14, attackCooldownS: 1.1,
+          attacks: ['pounce'],
+          attackTag: 'blunt',
+          aggroRangePx: TILE * 5.5, leashRangePx: TILE * 4.5,
+          canClimb: false, canSwim: false,
+          modelWidth: 2.8, tint: 0x8a6a3a,
+          sprites: {
+            idle: "assets/creaturesprites/uumkao'ii.png",
+            run: ["assets/creaturesprites/uumkao'ii.png"],
+          },
+          loot: [
+            { key: 'uumkaoiiMeat', min: 2, max: 4 },
           ],
         },
       };
@@ -2902,8 +2950,15 @@
       const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal };
 
       // item key -> livestock kind, for the Farm tab's "Add Livestock" flow.
-      // Grows alongside LIVESTOCK_FACTORIES as more species ship.
-      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii' };
+      // Grows alongside LIVESTOCK_FACTORIES as more species ship. Both new
+      // Den-Mother nest rewards (see updateNestInteraction) piggyback on this
+      // exact mechanism per the design intent — "the existing livestock
+      // items, just renamed" — rather than inventing a separate egg/baby
+      // item system. garWolfBaby has no LIVESTOCK_FACTORIES entry (gar-wolf
+      // isn't a farm-deployable species), so addToStable is its only valid
+      // path — addLivestockFromItem degrades to its existing "no factory"
+      // failure message rather than crashing.
+      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf' };
 
       // Adds a creature from an undeployed crate item to the farm's
       // livestock — the only way to do so now (see the Farm tab's Livestock
@@ -3473,6 +3528,7 @@
         // riposte instead of applying damage normally — only one hold
         // ability can be active at a time, so this is a single settable slot.
         if (window.Combat?.tryInterceptPlayerDamage?.(amount, fromX, fromY)) return;
+        _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, amount, dmgOpts || {});
         else player.health = Math.max(0, player.health - amount);
         if (player.health > 0) {
@@ -4774,12 +4830,26 @@
             // already unique per zone (see placeAnimalDens), so the cavern
             // mapId built from zoneId+denId is stable across a session and
             // regenerates fresh whenever the zone itself reshapes.
+            // targetCol/targetRow are set explicitly (the cavern's own
+            // guaranteed-walkable entrance tile, from the same deterministic
+            // generateCavernFloor(mapId) loadBuildingScene will call again
+            // later) rather than left for enterBuilding's default
+            // buildingSpawnFromExit fallback to guess — that heuristic
+            // assumes "one tile north of the exit" is walkable, true for a
+            // rectangular room but not for this cavern's organic floor blob,
+            // which is exactly why entering used to strand the player outside
+            // the walkable area.
             const denTransitions = (workspace.animalDens || [])
               .filter(den => den.mouthAnchor)
-              .map(den => ({
-                id: `den_${den.id}_enter`, label: 'A dark burrow', col: den.mouthAnchor.x, row: den.mouthAnchor.y,
-                target: 'building', targetMapId: `map_i_den_${zoneId}_${den.id}`,
-              }));
+              .map(den => {
+                const cavernMapId = `map_i_den_${zoneId}_${den.id}`;
+                const { exitCol, exitRow } = generateCavernFloor(cavernMapId);
+                return {
+                  id: `den_${den.id}_enter`, label: 'A dark burrow', col: den.mouthAnchor.x, row: den.mouthAnchor.y,
+                  target: 'building', targetMapId: cavernMapId,
+                  targetCol: exitCol, targetRow: exitRow,
+                };
+              });
             _zoneLayouts.set(zoneId, {
               cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
               transitions: [
@@ -4933,6 +5003,15 @@
         triggerWeaponSwingVisual,
         setActiveTool,
         TILE,
+        enterBuilding,
+        getDenNests: () => _denNests,
+        getPendingSpotTransition: () => _pendingSpotTransition,
+        isActionHeldDown: () => actionHeldDown,
+        getNestHoldT: () => _nestHoldT,
+        isPaused: () => paused,
+        isGameStarted: () => gameStarted,
+        isMenuOpen: () => menuOpen,
+        isDialogueOpen: () => dialogueOpen,
       };
 
       // Ambient hostile spawning — wild animal dens (see WildernessMapGenerator's
@@ -5440,6 +5519,7 @@
       let _townBuildingDefs  = [];     // building entries from _townZone.buildings
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
+      const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
@@ -6908,45 +6988,23 @@
         return y00 * (1 - tx) * (1 - tz) + y10 * tx * (1 - tz) + y01 * (1 - tx) * tz + y11 * tx * tz;
       }
 
-      // Animal dens: a solid rock volume over a den's footprint (see
-      // workspace.animalDens / placeAnimalDens in wilderness-map-generator.js)
-      // with a carved, walk-through mouth on its south face — a rounded
-      // boulder-mound surface on every face (see buildRockMoundBumpField),
-      // matching the farm's own loose rocks, plus a recessed tunnel around
-      // the mouth's hole so the doorway looks like an actual opening instead
-      // of a dent (the innermost tunnel faces are left uncapped — a real gap
-      // the player walks through into the cavern transition, see
-      // isAnimalDenCollisionTile's matching cutout).
+      // Animal dens: a deliberately plain placeholder block over a den's
+      // footprint — a flat, unlit dark box with a simple rectangular gap cut
+      // into its south face for the walk-through mouth (see
+      // isAnimalDenCollisionTile's matching walkable cutout). Stands in for
+      // authored art; no rock-mound shading, no carved tunnel depth — just
+      // enough geometry to read as "a den with a door."
       function buildAnimalDenMeshes(zScene, zGrid, dens, mapId) {
         if (!dens || !dens.length) return;
-        const DEN_HEIGHT = 1.6, DEN_SINK = 0.35;
-        const MOUTH_U0 = 0.32, MOUTH_U1 = 0.68, MOUTH_V1 = 0.58, MOUTH_DEPTH = 0.5;
+        const DEN_HEIGHT = 2.4, DEN_SINK = 0.5;
+        const MOUTH_U0 = 0.3, MOUTH_U1 = 0.7, MOUTH_V1 = 0.65;
         const pos = [], idx = []; let vi = 0;
-
-        // corners = {p00,p10,p01,p11}: u runs p00->p10 (and p01->p11), v runs p00->p01.
-        // bumpField (or null for a smooth/flat quad) is sampled per-vertex and
-        // displaced along the quad's own outward normal.
-        const addPlanarQuad = (corners, segsU, segsV, bumpField) => {
-          const ux = { x: corners.p10.x - corners.p00.x, y: corners.p10.y - corners.p00.y, z: corners.p10.z - corners.p00.z };
-          const vx = { x: corners.p01.x - corners.p00.x, y: corners.p01.y - corners.p00.y, z: corners.p01.z - corners.p00.z };
-          let nx = ux.y * vx.z - ux.z * vx.y, ny = ux.z * vx.x - ux.x * vx.z, nz = ux.x * vx.y - ux.y * vx.x;
-          const nlen = Math.hypot(nx, ny, nz) || 1; nx /= nlen; ny /= nlen; nz /= nlen;
+        const addFlatQuad = (p00, p10, p01, p11) => {
           const base = vi;
-          for (let j = 0; j <= segsV; j++) for (let i = 0; i <= segsU; i++) {
-            const u = i / segsU, v = j / segsV;
-            const x = corners.p00.x + ux.x * u + vx.x * v;
-            const y = corners.p00.y + ux.y * u + vx.y * v;
-            const z = corners.p00.z + ux.z * u + vx.z * v;
-            const d = bumpField ? sampleRockMoundBump(bumpField, u, v) : 0;
-            pos.push(x + nx * d, y + ny * d, z + nz * d);
-          }
-          for (let j = 0; j < segsV; j++) for (let i = 0; i < segsU; i++) {
-            const a = base + j * (segsU + 1) + i, b = a + 1, c0 = a + (segsU + 1), d2 = c0 + 1;
-            idx.push(a, c0, d2, a, d2, b);
-          }
-          vi += (segsU + 1) * (segsV + 1);
+          pos.push(p00.x, p00.y, p00.z, p10.x, p10.y, p10.z, p01.x, p01.y, p01.z, p11.x, p11.y, p11.z);
+          idx.push(base, base + 2, base + 3, base, base + 3, base + 1);
+          vi += 4;
         };
-
         for (const den of dens) {
           const w = den.w || 1, h = den.h || 1;
           const centerCol = den.x + Math.floor(w / 2), centerRow = den.y + Math.floor(h / 2);
@@ -6954,51 +7012,28 @@
           const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT;
           const x0 = den.x, x1 = den.x + w, z0 = den.y, z1 = den.y + h;
           const yBase = groundY - DEN_SINK, yTop = groundY + DEN_HEIGHT;
-          const vTiles = yTop - yBase;
-          const segsW = Math.max(4, Math.round(w * ROCK_MOUND_CELLS_PER_TILE));
-          const segsH = Math.max(4, Math.round(h * ROCK_MOUND_CELLS_PER_TILE));
-          const segsVert = Math.max(4, Math.round(vTiles * ROCK_MOUND_CELLS_PER_TILE));
-
-          const northField = buildRockMoundBumpField(w, vTiles, x0, yBase, 1);
-          const eastField  = buildRockMoundBumpField(h, vTiles, z0, yBase, 2);
-          const westField  = buildRockMoundBumpField(h, vTiles, z0, yBase, 3);
-          const topField   = buildRockMoundBumpField(w, h, x0, z0, 4, 1.4);
-
-          addPlanarQuad({ p00: { x: x1, y: yBase, z: z0 }, p10: { x: x0, y: yBase, z: z0 }, p01: { x: x1, y: yTop, z: z0 }, p11: { x: x0, y: yTop, z: z0 } }, segsW, segsVert, northField);
-          addPlanarQuad({ p00: { x: x1, y: yBase, z: z1 }, p10: { x: x1, y: yBase, z: z0 }, p01: { x: x1, y: yTop, z: z1 }, p11: { x: x1, y: yTop, z: z0 } }, segsH, segsVert, eastField);
-          addPlanarQuad({ p00: { x: x0, y: yBase, z: z0 }, p10: { x: x0, y: yBase, z: z1 }, p01: { x: x0, y: yTop, z: z0 }, p11: { x: x0, y: yTop, z: z1 } }, segsH, segsVert, westField);
-          // Top: bumpy rock lid — a taller peakScale since it's the most visible face.
-          addPlanarQuad({ p00: { x: x0, y: yTop, z: z0 }, p10: { x: x1, y: yTop, z: z0 }, p01: { x: x0, y: yTop, z: z1 }, p11: { x: x1, y: yTop, z: z1 } }, segsW, segsH, topField);
-
-          // South face: a boulder-mound frame around the mouth hole.
+          addFlatQuad({ x: x1, y: yBase, z: z0 }, { x: x0, y: yBase, z: z0 }, { x: x1, y: yTop, z: z0 }, { x: x0, y: yTop, z: z0 }); // north
+          addFlatQuad({ x: x1, y: yBase, z: z1 }, { x: x1, y: yBase, z: z0 }, { x: x1, y: yTop, z: z1 }, { x: x1, y: yTop, z: z0 }); // east
+          addFlatQuad({ x: x0, y: yBase, z: z0 }, { x: x0, y: yBase, z: z1 }, { x: x0, y: yTop, z: z0 }, { x: x0, y: yTop, z: z1 }); // west
+          addFlatQuad({ x: x0, y: yTop, z: z0 }, { x: x1, y: yTop, z: z0 }, { x: x0, y: yTop, z: z1 }, { x: x1, y: yTop, z: z1 }); // top
+          // South face: a frame around a plain rectangular mouth gap.
           const xm0 = x0 + (x1 - x0) * MOUTH_U0, xm1 = x0 + (x1 - x0) * MOUTH_U1;
           const ym1 = yBase + (yTop - yBase) * MOUTH_V1;
-          const leftW = xm0 - x0, rightW = x1 - xm1, topStripH = yTop - ym1, mouthW = xm1 - xm0;
-          const southLeftField  = buildRockMoundBumpField(leftW, vTiles, x0, yBase, 5);
-          const southRightField = buildRockMoundBumpField(rightW, vTiles, xm1, yBase, 6);
-          const southTopField   = buildRockMoundBumpField(mouthW, topStripH, xm0, ym1, 7);
-          addPlanarQuad({ p00: { x: x0, y: yBase, z: z1 }, p10: { x: xm0, y: yBase, z: z1 }, p01: { x: x0, y: yTop, z: z1 }, p11: { x: xm0, y: yTop, z: z1 } }, Math.max(3, Math.round(leftW * ROCK_MOUND_CELLS_PER_TILE)), segsVert, southLeftField); // left strip
-          addPlanarQuad({ p00: { x: xm1, y: yBase, z: z1 }, p10: { x: x1, y: yBase, z: z1 }, p01: { x: xm1, y: yTop, z: z1 }, p11: { x: x1, y: yTop, z: z1 } }, Math.max(3, Math.round(rightW * ROCK_MOUND_CELLS_PER_TILE)), segsVert, southRightField); // right strip
-          addPlanarQuad({ p00: { x: xm0, y: ym1, z: z1 }, p10: { x: xm1, y: ym1, z: z1 }, p01: { x: xm0, y: yTop, z: z1 }, p11: { x: xm1, y: yTop, z: z1 } }, Math.max(3, Math.round(mouthW * ROCK_MOUND_CELLS_PER_TILE)), Math.max(3, Math.round(topStripH * ROCK_MOUND_CELLS_PER_TILE)), southTopField); // top strip (above the hole)
-          // Recessed tunnel walls around the mouth hole — smooth (no bump),
-          // no far cap, so the hole is a real gap the player can walk through.
-          const zIn = z1 - MOUTH_DEPTH;
-          addPlanarQuad({ p00: { x: xm0, y: yBase, z: z1 }, p10: { x: xm0, y: yBase, z: zIn }, p01: { x: xm0, y: ym1, z: z1 }, p11: { x: xm0, y: ym1, z: zIn } }, 1, 2, null); // tunnel left wall
-          addPlanarQuad({ p00: { x: xm1, y: yBase, z: zIn }, p10: { x: xm1, y: yBase, z: z1 }, p01: { x: xm1, y: ym1, z: zIn }, p11: { x: xm1, y: ym1, z: z1 } }, 1, 2, null); // tunnel right wall
-          addPlanarQuad({ p00: { x: xm0, y: ym1, z: z1 }, p10: { x: xm1, y: ym1, z: z1 }, p01: { x: xm0, y: ym1, z: zIn }, p11: { x: xm1, y: ym1, z: zIn } }, 2, 1, null); // tunnel lintel (ceiling)
+          addFlatQuad({ x: x0, y: yBase, z: z1 }, { x: xm0, y: yBase, z: z1 }, { x: x0, y: yTop, z: z1 }, { x: xm0, y: yTop, z: z1 }); // left strip
+          addFlatQuad({ x: xm1, y: yBase, z: z1 }, { x: x1, y: yBase, z: z1 }, { x: xm1, y: yTop, z: z1 }, { x: x1, y: yTop, z: z1 }); // right strip
+          addFlatQuad({ x: xm0, y: ym1, z: z1 }, { x: xm1, y: ym1, z: z1 }, { x: xm0, y: yTop, z: z1 }, { x: xm1, y: yTop, z: z1 }); // strip above the hole
         }
         if (!idx.length) return;
-        const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+        const mat = new THREE.MeshBasicMaterial({ color: 0x0a0a0a, side: THREE.DoubleSide });
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
         geo.computeVertexNormals();
         const mesh = new THREE.Mesh(geo, mat);
-        mesh.receiveShadow = true;
         zScene.add(mesh);
         _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.ROCK));
         mesh.userData.cameraObstacle = true;
-        console.log(`%c[zone:${mapId}] animal den formations built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
+        console.log(`%c[zone:${mapId}] animal den placeholders built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
       }
 
       // Waterwall curtains: an animated vertical water sheet wherever a river
@@ -8994,7 +9029,7 @@
       // map-generator tool. Deterministic per den id (see synthesizeCavernMapData).
       function generateCavernFloor(seedText) {
         const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(seedText) : Math.random;
-        const targetTiles = 12 + Math.floor(rng() * 13); // 12-24 tiles
+        const targetTiles = 40 + Math.floor(rng() * 41); // 40-80 tiles — room for a Den-Mother boss fight plus the nest chamber
         const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
         const cells = new Set(['0,0']);
         const frontier = new Map();
@@ -9030,11 +9065,40 @@
           for (const [dx, dy] of DIRS4) if (cells.has(`${x + dx},${y + dy}`)) n++;
           if (n <= 1 && rng() < 0.5) cells.delete(key);
         }
+        // Reserve a 2x2 nest chamber at the point farthest (by walk distance)
+        // from the entrance — the Den-Mother's territory, deliberately placed
+        // so the player has to cross the whole cavern to reach it. Forced in
+        // after erosion (never itself eroded) by adding whichever of its 4
+        // tiles the organic growth didn't already produce, so the nest always
+        // exists regardless of blob shape.
+        const dist = new Map([['0,0', 0]]);
+        const queue = ['0,0'];
+        let farKey = '0,0', farDist = 0;
+        while (queue.length) {
+          const key = queue.shift();
+          const d = dist.get(key);
+          const [x, y] = key.split(',').map(Number);
+          for (const [dx, dy] of DIRS4) {
+            const nk = `${x + dx},${y + dy}`;
+            if (cells.has(nk) && !dist.has(nk)) {
+              dist.set(nk, d + 1);
+              queue.push(nk);
+              if (d + 1 > farDist) { farDist = d + 1; farKey = nk; }
+            }
+          }
+        }
+        const [nfx, nfy] = farKey.split(',').map(Number);
+        for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) cells.add(`${nfx + dx},${nfy + dy}`);
+
         let minX = Infinity, minY = Infinity;
         for (const key of cells) { const [x, y] = key.split(',').map(Number); if (x < minX) minX = x; if (y < minY) minY = y; }
         const floor = [...cells].map(key => { const [x, y] = key.split(',').map(Number); return [x - minX + 1, y - minY + 1]; });
         const cols = Math.max(...floor.map(f => f[0])) + 2, rows = Math.max(...floor.map(f => f[1])) + 2;
-        return { floor, cols, rows, exitCol: 0 - minX + 1, exitRow: 0 - minY + 1 };
+        return {
+          floor, cols, rows,
+          exitCol: 0 - minX + 1, exitRow: 0 - minY + 1,
+          nestCol: nfx - minX + 1, nestRow: nfy - minY + 1,
+        };
       }
 
       // Synthesized in-memory map data for a den's cavern — no map_i_den_*.json
@@ -9044,8 +9108,17 @@
       // The seed is the mapId itself (already unique per zone+den, see
       // performTothalShift's denTransitions), so re-entering the same den
       // always reaches the same cavern.
+      // Deterministic per den (same mapId -> same pick every time, independent
+      // of the wilderness zone's own ever-re-rolled exterior pack/herd
+      // species) — which of the two Den-Mother variants guards this den's
+      // nest. Only two species currently have a Den-Mother entry.
+      function pickDenMotherKind(mapId) {
+        const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denmother') : Math.random;
+        return rng() < 0.5 ? 'gar-wolf-den-mother' : 'uumkaoii-wild-den-mother';
+      }
+
       function synthesizeCavernMapData(mapId) {
-        const { floor, cols, rows, exitCol, exitRow } = generateCavernFloor(mapId);
+        const { floor, cols, rows, exitCol, exitRow, nestCol, nestRow } = generateCavernFloor(mapId);
         return {
           schema: 'hobunji_building_interior.v1',
           id: mapId, name: 'A Dark Burrow',
@@ -9053,6 +9126,9 @@
           exits: [{ id: 'den_exit', label: 'Back outside', tiles: [[exitCol, exitRow]], targetMap: '', spawnCol: 0, spawnRow: 0 }],
           colliders: [], floor, furniture: [],
           wallStyle: 'cavern',
+          // Den-Mother/nest placement — read by loadBuildingScene after the
+          // scene/floor/walls are built (see its 'map_i_den_' handling).
+          nestCol, nestRow, denMotherKind: pickDenMotherKind(mapId),
         };
       }
 
@@ -9202,6 +9278,37 @@
               bScene.add(ph);
               registerFurnitureSfxSource(mapId, bx, bz, resolveFurnitureSfx(def));
             }
+          }
+          // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
+          // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
+          // / generateCavernFloor for nestCol/nestRow/denMotherKind.
+          if (mapData.wallStyle === 'cavern' && Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)) {
+            const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
+            const motherKey = mapData.denMotherKind || 'gar-wolf-den-mother';
+            const motherDef = CREATURE_DB[motherKey];
+            if (motherDef) {
+              const homeX = (nestCol + 1) * TILE, homeY = (nestRow + 1) * TILE;
+              const mother = makeCreatureEntity(motherKey, homeX, homeY, {
+                scene: bScene, grid: bGrid, cols, rows,
+                areaId: mapId, homeX, homeY, state: 'idle',
+                isDenMother: true,
+              });
+              if (mother) hostileObjects.add(mother);
+            }
+            const nestRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng)
+              ? WildernessMapGenerator.makeRng(mapId + '_nestcount') : Math.random;
+            const remaining = 1 + Math.floor(nestRng() * 3); // 1-3
+            const liveBirth = !!motherDef?.liveBirth;
+            _denNests.set(mapId, {
+              col: nestCol, row: nestRow, w: 2, h: 2,
+              itemKey: liveBirth ? 'garWolfBaby' : 'uumkaoiiEgg',
+              liveBirth, remaining,
+            });
+            // Simple nest marker so the 2x2 chamber reads as an objective.
+            const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
+            const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
+            nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
+            bScene.add(nestMarker);
           }
           const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
           registerNpcStations(_stationSrc.map(st => ({ ...st, area: mapId })), mapId);
@@ -10410,6 +10517,8 @@
         { key: 'dabinggiHoundHide',  icon: '🟫', label: 'DABINGGI-HOUND HIDE', max: 99 },
         { key: 'uumkaoiiCrate',      icon: '🦆', label: 'UUMKAO\'II CRATE',  max: 9  },
         { key: 'uumkaoiiMeat',       icon: '🥩', label: 'UUMKAO\'II MEAT',  max: 99 },
+        { key: 'uumkaoiiEgg',        icon: '🥚', label: 'UUMKAO\'II EGG',   max: 9  },
+        { key: 'garWolfBaby',        icon: '🐾', label: 'GAR-WOLF PUP',    max: 9  },
         { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
         { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
         { key: 'fishingmace',  icon: '🎣', label: 'FISHING MACE',  max: 9 },
@@ -10450,6 +10559,8 @@
         dabinggiHoundHide: { icon: '🟫', label: 'Dabinggi-hound Hide', cat: 'material', sellPrice: 12, tags: ['Material', 'Hide'], desc: 'A soft hide stripped from a fallen dabinggi-hound.' },
         uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
         uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
+        uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
+        garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
         bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
         hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
         fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
@@ -19082,6 +19193,40 @@
         closeMenu();
       }
       document.getElementById('devTeleportDenBtn')?.addEventListener('click', teleportToRandomDen);
+      // ── Den-Mother nest: hold-to-take egg/baby (see _denNests, populated
+      // in loadBuildingScene) ──────────────────────────────────────────
+      const NEST_TAKE_HOLD_S = 5;
+      let _nestHoldT = 0;
+      const _nestTakeHudEl = document.getElementById('nestTakeHud');
+      const _nestTakeLabelEl = document.getElementById('nestTakeLabel');
+      const _nestTakeFillEl = document.getElementById('nestTakeFill');
+      function isPlayerNearDenNest(nest) {
+        const cx = (nest.col + nest.w / 2) * TILE, cy = (nest.row + nest.h / 2) * TILE;
+        return Math.hypot(player.x - cx, player.y - cy) <= TILE * 1.6;
+      }
+      function updateNestInteraction(dt) {
+        const nest = _denNests.get(currentArea);
+        const near = nest && nest.remaining > 0 && isPlayerNearDenNest(nest);
+        if (!near || !actionHeldDown) {
+          if (_nestHoldT > 0) _nestHoldT = 0;
+          if (_nestTakeHudEl?.classList.contains('visible')) _nestTakeHudEl.classList.remove('visible');
+          return;
+        }
+        _nestHoldT += dt;
+        if (_nestTakeLabelEl) _nestTakeLabelEl.textContent = nest.liveBirth ? 'Taking Baby...' : 'Taking Egg...';
+        if (_nestTakeFillEl) _nestTakeFillEl.style.width = Math.min(100, (_nestHoldT / NEST_TAKE_HOLD_S) * 100) + '%';
+        _nestTakeHudEl?.classList.add('visible');
+        if (_nestHoldT >= NEST_TAKE_HOLD_S) {
+          _nestHoldT = 0;
+          _nestTakeHudEl?.classList.remove('visible');
+          nest.remaining--;
+          inventory[nest.itemKey] = Math.min(99, (inventory[nest.itemKey] || 0) + 1);
+          clampInventoryStack(nest.itemKey);
+          buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+          saveMemberWorldData();
+          showToast(`${itemIconForKey(nest.itemKey)} Took ${ITEM_DEFS[nest.itemKey]?.label || nest.itemKey}${nest.remaining > 0 ? ` (${nest.remaining} left)` : ''}`, true);
+        }
+      }
       function setCameraZoomScale(value) {
         const cfg = desktopControlsConfig();
         const min = Number.isFinite(Number(cfg.wheelZoomMin)) ? Number(cfg.wheelZoomMin) : 0.75;
@@ -19159,7 +19304,14 @@
             updateHostileSpawning(dt);
             updateHostiles(dt);
             updateCorpses(dt);
+          } else if (_isBuildingArea(currentArea)) {
+            // Den-Mother mini-bosses live in cavern buildings and still need
+            // to chase/attack/return — no spawning/companions in there, though.
+            updateHostiles(dt);
+            updateCorpses(dt);
           }
+
+          if (_isBuildingArea(currentArea)) updateNestInteraction(dt);
 
           // Interior exit detection: player walks south through exit door
           if (currentArea === 'interior' && sceneTransDir === 0) {
@@ -20396,6 +20548,11 @@
             const icon = t.target === 'exit_building' ? '🚪' : '🪜';
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
+          }
+          const nest = _denNests.get(currentArea);
+          if (nest && nest.remaining > 0 && isPlayerNearDenNest(nest)) {
+            const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
+            return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
           }
           return [];
         }

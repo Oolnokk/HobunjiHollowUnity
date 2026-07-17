@@ -3666,7 +3666,7 @@
     let placedDens = 0;
     const maxTries = Math.max(300, settings.animalDens * 70);
     for (let tries = 0; tries < maxTries && placedDens < settings.animalDens; tries++) {
-      const dims = chance(0.7) ? { w: 2, h: 2 } : { w: 2, h: 1 };
+      const dims = chance(0.7) ? { w: 3, h: 3 } : { w: 3, h: 2 };
       const spot = randomFreeArea(dims.w, dims.h, {
         filter: (x, y, w, h) => {
           if (areaElevationSpread(x, y, w, h) > 1) return false;
