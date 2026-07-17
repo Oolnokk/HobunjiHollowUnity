@@ -19739,10 +19739,16 @@
           // (and its Den-Mother) really do share one roll.
           const aliveKinds = new Set();
           for (const c of hostileObjects) if (c.genotype === genotype) aliveKinds.add(c.creatureKey);
-          rows.push(`<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08)">
-            <div style="font-weight:600;color:#e5e7eb">${esc(zoneId)} — den ${esc(denLabel)}${aliveKinds.size ? ` <span style="opacity:.6;font-weight:400">(${[...aliveKinds].map(esc).join(', ')} alive now)</span>` : ' <span style="opacity:.5;font-weight:400">(none alive right now)</span>'}</div>
-            <div style="margin-top:3px">Base: ${baseHtml}</div>
-            <div style="margin-top:2px">Patterns: ${patternHtml || '(none)'}</div>
+          const teleportBtn = den
+            ? `<button class="settings-small-btn wildlife-den-teleport-btn" data-zone="${esc(zoneId)}" data-den="${esc(den.id)}" style="font-size:10px;padding:2px 8px">Teleport</button>`
+            : '';
+          rows.push(`<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+            <div>
+              <div style="font-weight:600;color:#e5e7eb">${esc(zoneId)} — den ${esc(denLabel)}${aliveKinds.size ? ` <span style="opacity:.6;font-weight:400">(${[...aliveKinds].map(esc).join(', ')} alive now)</span>` : ' <span style="opacity:.5;font-weight:400">(none alive right now)</span>'}</div>
+              <div style="margin-top:3px">Base: ${baseHtml}</div>
+              <div style="margin-top:2px">Patterns: ${patternHtml || '(none)'}</div>
+            </div>
+            ${teleportBtn}
           </div>`);
         }
         container.innerHTML = rows.join('');
@@ -19752,6 +19758,56 @@
         await checkTothalShift(true);
         renderWildlifeDebugPanel();
       });
+      // Delegated so it keeps working across every re-render of the list
+      // (container.innerHTML replacement would otherwise drop per-button
+      // listeners each time).
+      document.getElementById('wildlifeDenList')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.wildlife-den-teleport-btn');
+        if (!btn) return;
+        const zoneId = btn.dataset.zone, denId = btn.dataset.den;
+        const den = _zoneLayouts.get(zoneId)?.dens?.find(d => d.id === denId);
+        if (!den) { showToast('That den no longer exists on the current map.', false); return; }
+        warpToDenAnchor(zoneId, den);
+      });
+      // Warps the player straight to a specific den's mouth on its own
+      // zone, from anywhere (farm, town, another zone, or inside any
+      // building/cavern) — used by the Wildlife panel's per-den Teleport
+      // button. Unlike teleportToRandomDen (which only ever targets
+      // "whichever map you're currently on"), this always resolves the
+      // exact zone the picked den belongs to and does a full scene swap
+      // if that's not where the player already is.
+      function warpToDenAnchor(zoneId, den) {
+        const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
+        const land = () => {
+          player.x = (anchor.x + 0.5) * TILE;
+          player.y = (anchor.y + 0.5) * TILE;
+          player.vx = 0; player.vy = 0;
+          _snapCameraTarget();
+        };
+        if (currentArea === zoneId) {
+          land();
+          showToast(`Teleported to den ${den.id}.`, true);
+          closeMenu();
+          return;
+        }
+        startSceneTransition(() => {
+          const fromScene = getActiveScene();
+          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+          if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
+          currentArea = zoneId;
+          land();
+          const toScene = buildZoneScene(zoneId)?.scene;
+          if (toScene) {
+            toScene.add(playerMesh); toScene.add(playerGroundShadow);
+            toScene.add(toolHolder); toScene.add(reticleMesh);
+            toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
+            toScene.add(reticleWavyGroup);
+          }
+          refreshActionBar();
+          showToast(`Teleported to den ${den.id}.`, true);
+          closeMenu();
+        });
+      }
       // ── Den-Mother nest: hold-to-take egg/baby (see _denNests, populated
       // in loadBuildingScene) ──────────────────────────────────────────
       const NEST_TAKE_HOLD_S = 5;

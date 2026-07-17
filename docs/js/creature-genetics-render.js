@@ -1,10 +1,19 @@
 // Base-color recolor + pattern-overlay compositing for genotype-bearing
-// livestock (gar-wolf, dabinggi-hound) — a runtime port of the "Same direct
-// fill" recolor algorithm and layer compositing from the uploaded
-// "Creature Pattern, Base Recolor & Breeding Lab" HTML tool. Masked base
-// pixels and every non-transparent pattern-overlay pixel get their hue and
-// saturation replaced by the target palette color while keeping their
-// original value (shading) and alpha — see recolorPixels below.
+// livestock (gar-wolf, dabinggi-hound). Layer compositing (base + ordered
+// pattern overlays) follows the uploaded "Creature Pattern, Base Recolor &
+// Breeding Lab" HTML tool; the actual per-pixel recolor math instead
+// mimics this game's own established body-cosmetics pipeline — the same
+// "hex shade-fill" tint portrait-utils.js's getTintedShadeFillCanvas uses
+// for NPC skin/hair/clothing layers, which then feed into
+// PNGPlaneAvatar.buildSinglePlaneAvatarModel the same way this module's
+// output feeds into the animal plane avatars. That's a multiplicative
+// luminance-based tint (target color scaled by each pixel's own relative
+// luminance, clamped to a shadow/highlight range), not an HSV hue/
+// saturation replace — see recolorPixels below. Near-black outline ink is
+// protected automatically by luminance, same as the NPC pipeline; the
+// creature base sprites still need an explicit region mask on top of that
+// (see loadBaseMasks) since they're one flat multi-region image rather
+// than separate per-part layers the way NPC art is authored.
 //
 // Public API: window.CreatureGeneticsRender = {
 //   composeFrame(kind, frame, genotype) -> Promise<canvas|null>,
@@ -61,45 +70,49 @@
   }
 
   function hexToRgb(hex) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
-  function rgbToHsv(r, g, b) {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
-    let h = 0;
-    if (d) { if (max === r) h = ((g - b) / d) % 6; else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h /= 6; if (h < 0) h += 1; }
-    return [h, max === 0 ? 0 : d / max, max];
-  }
-  function hsvToRgb(h, s, v) {
-    h = ((h % 1) + 1) % 1;
-    const i = Math.floor(h * 6), f = h * 6 - i, p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
-    let r, g, b;
-    switch (i % 6) {
-      case 0: r = v; g = t; b = p; break; case 1: r = q; g = v; b = p; break; case 2: r = p; g = v; b = t; break;
-      case 3: r = p; g = q; b = v; break; case 4: r = t; g = p; b = v; break; default: r = v; g = p; b = q;
-    }
-    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+  function clampByte(v) { return Math.max(0, Math.min(255, Math.round(v))); }
+  function relativeLuminance(r, g, b) { return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; }
+
+  // Same config surface (and same defaults) as portrait-utils.js's
+  // getPortraitTintingConfig — reads window.SCRATCHBONES_CONFIG.game.
+  // portrait.tinting so tuning that dial once affects NPCs and creatures
+  // alike, instead of duplicating a second set of hand-picked constants.
+  function shadeFillConfig() {
+    const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
+    return {
+      shadowFloor: Number.isFinite(Number(cfg.shadowFloor)) ? Number(cfg.shadowFloor) : 0.18,
+      highlightBoost: Number.isFinite(Number(cfg.highlightBoost)) ? Number(cfg.highlightBoost) : 1.18,
+      neutralLuminance: Number.isFinite(Number(cfg.neutralLuminance)) ? Number(cfg.neutralLuminance) : 0.55,
+      gamma: Number.isFinite(Number(cfg.gamma)) && Number(cfg.gamma) > 0 ? Number(cfg.gamma) : 1,
+      preserveNearBlackOutlines: cfg.preserveNearBlackOutlines !== false,
+      outlineThreshold: Number.isFinite(Number(cfg.outlineThreshold)) ? Number(cfg.outlineThreshold) : 0.08,
+    };
   }
 
-  // The source art's recolorable fur/pattern pixels are drawn quite dark
-  // (measured: ~90% of the base sprite's masked pixels fall between 0.2 and
-  // 0.4 value, average ~0.25) — feeding that straight into hsvToRgb crushes
-  // every target hue/saturation into a visually similar dark, muddy tone,
-  // which is why different palette colors were reading as "everything looks
-  // reddish" with no real variation between packs. Remapping into a
-  // brighter working range keeps the original shading's relative contrast
-  // (shadow vs highlight) while giving the target color enough brightness
-  // to actually read as itself.
-  function _remapValue(v) { return Math.min(1, 0.3 + v * 1.4); }
-
-  // "Same direct fill": every affected pixel keeps its original value+alpha
-  // (remapped — see _remapValue), only hue+saturation are replaced with the
-  // target color's.
-  function recolorPixels(px, targetH, targetS, predicate) {
+  // "Hex shade-fill": the target color's own RGB channels are scaled by a
+  // per-pixel shade factor derived from that pixel's ORIGINAL relative
+  // luminance (normalized against neutralLuminance, gamma-curved, clamped
+  // to [shadowFloor, highlightBoost]) — a multiplicative tint, not an HSV
+  // hue/saturation replace. Near-black outline ink (luminance at/below
+  // outlineThreshold) is left untouched entirely, same as the NPC
+  // pipeline's automatic ink protection. This reads correctly on the
+  // creature art's fairly dark cel-shaded fur (unlike a raw HSV value
+  // replace, which measured ~0.25 average value there and crushed every
+  // target hue toward the same dark, muddy tone).
+  function recolorPixels(px, targetRgb, predicate) {
+    const cfg = shadeFillConfig();
+    const neutral = Math.max(0.0001, cfg.neutralLuminance);
+    const [tr, tg, tb] = targetRgb;
     for (let i = 0; i < px.length; i += 4) {
       if (px[i + 3] === 0) continue;
       if (predicate && !predicate(i)) continue;
-      const value = _remapValue(Math.max(px[i], px[i + 1], px[i + 2]) / 255);
-      const [r, g, b] = hsvToRgb(targetH, targetS, value);
-      px[i] = r; px[i + 1] = g; px[i + 2] = b;
+      const lum = relativeLuminance(px[i], px[i + 1], px[i + 2]);
+      if (cfg.preserveNearBlackOutlines && lum <= cfg.outlineThreshold) continue;
+      const normalized = Math.pow(Math.max(0, lum) / neutral, cfg.gamma);
+      const shade = Math.max(cfg.shadowFloor, Math.min(cfg.highlightBoost, normalized));
+      px[i] = clampByte(tr * shade);
+      px[i + 1] = clampByte(tg * shade);
+      px[i + 2] = clampByte(tb * shade);
     }
   }
 
@@ -113,8 +126,7 @@
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
       const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;
-      const [tr, tg, tb] = hexToRgb(color), [targetH, targetS] = rgbToHsv(tr, tg, tb);
-      recolorPixels(px, targetH, targetS, (i) => mask.data[i / 4]);
+      recolorPixels(px, hexToRgb(color), (i) => mask.data[i / 4]);
       ctx.putImageData(data, 0, 0);
       return c;
     })().catch(err => { _recolorCache.delete(key); throw err; });
@@ -129,8 +141,7 @@
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
       const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;
-      const [tr, tg, tb] = hexToRgb(color), [targetH, targetS] = rgbToHsv(tr, tg, tb);
-      recolorPixels(px, targetH, targetS, null);
+      recolorPixels(px, hexToRgb(color), null);
       ctx.putImageData(data, 0, 0);
       return c;
     })().catch(err => { _recolorCache.delete(key); throw err; });
