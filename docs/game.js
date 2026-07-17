@@ -178,6 +178,7 @@
         if (id === 'supplies') renderSupplyPage();
         if (id === 'generalStore') renderGeneralStorePage();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
+        if (id === 'wildlife') renderWildlifeDebugPanel();
       }
 
       document.querySelectorAll('.mp-tab').forEach(tab => {
@@ -2857,6 +2858,8 @@
             const enabled = Math.random() < (1 / 3);
             genotype[id] = { color: second.hex, copies: enabled ? 1 : 0, inheritance: 'dominant', enabled };
           }
+          const enabledIds = patterns.filter(id => genotype[id].enabled);
+          window.__farmLog?.(`[genotype] makeDefaultGenotype(${kind}): base=${first.name}(${first.hex}) pattern=${second.name}(${second.hex}) enabled=[${enabledIds.join(',') || 'none'}]`, 'wildlife');
           return genotype;
         }
         return {};
@@ -2944,6 +2947,8 @@
           if (mutated) color = mutateFurColor(color);
           child[id] = { color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
         }
+        const childEnabledIds = patterns.filter(id => child[id].enabled);
+        window.__farmLog?.(`[genotype] crossOffspring(${kind}): base=${_furPaletteName(child.base.color)} enabled=[${childEnabledIds.join(',') || 'none'}]`, 'wildlife');
         return child;
       }
 
@@ -3174,9 +3179,12 @@
       function _queueLivestockItemGenotype(itemKey, genotype) {
         if (!genotype) return;
         (_pendingLivestockGenotypes[itemKey] || (_pendingLivestockGenotypes[itemKey] = [])).push(genotype);
+        window.__farmLog?.(`[genotype] queued a carried genotype for ${itemKey} (${_pendingLivestockGenotypes[itemKey].length} pending)`, 'wildlife');
       }
       function _consumeLivestockItemGenotype(itemKey) {
-        return _pendingLivestockGenotypes[itemKey]?.shift() || null;
+        const genotype = _pendingLivestockGenotypes[itemKey]?.shift() || null;
+        window.__farmLog?.(`[genotype] addLivestockFromItem/addToStable(${itemKey}): ${genotype ? 'used a carried genotype from the nest queue' : 'no carried genotype pending — rolling a fresh one'}`, 'wildlife');
+        return genotype;
       }
 
       // Adds a creature from an undeployed crate item to the farm's
@@ -5301,6 +5309,7 @@
         genotypeSignature: (kind, genotype) => window.CreatureGeneticsRender?.genotypeSignature(kind, genotype),
         setInventory: (key, n) => { inventory[key] = n; },
         getGenotypeTexCacheSize: () => _genotypeTexCache.front.size,
+        makeDefaultGenotype: (kind) => makeDefaultGenotype(kind),
       };
 
       // Ambient hostile spawning — wild animal dens (see WildernessMapGenerator's
@@ -5468,7 +5477,12 @@
       // that species yet — so the entry just sits unused for them.
       const _denGenotypes = new Map();
       function getOrMakeDenGenotype(cavernMapId) {
-        if (!_denGenotypes.has(cavernMapId)) _denGenotypes.set(cavernMapId, makeDefaultGenotype('gar-wolf'));
+        if (!_denGenotypes.has(cavernMapId)) {
+          _denGenotypes.set(cavernMapId, makeDefaultGenotype('gar-wolf'));
+          window.__farmLog?.(`[genotype] rolled new family genotype for den ${cavernMapId} (cache size now ${_denGenotypes.size})`, 'wildlife');
+        } else {
+          window.__farmLog?.(`[genotype] reused cached family genotype for den ${cavernMapId}`, 'wildlife');
+        }
         return _denGenotypes.get(cavernMapId);
       }
 
@@ -19581,7 +19595,32 @@
         // than needing to track/re-render whichever panel might currently
         // be open.
       });
-      // Dev Tools: warp to a random den's mouth on the CURRENT map only — no
+      // Cycles through a zone's dens in a shuffled, non-repeating order
+      // (per zone) instead of an independent random pick every press —
+      // with only a handful of dens per zone, plain Math.random() made it
+      // easy to land on the same 1-2 dens over and over by chance.
+      // Reshuffles whenever the den count changes (e.g. after a Tothal
+      // Shift), so a full lap always visits every den on the map exactly
+      // once before any repeat.
+      const _denTeleportCycle = new Map(); // zoneId -> { order: number[], idx: number, length: number }
+      function _pickCycledDen(zoneId, dens) {
+        let state = _denTeleportCycle.get(zoneId);
+        if (!state || state.length !== dens.length) {
+          const order = dens.map((_, i) => i);
+          for (let i = order.length - 1; i > 0; i--) {
+            const j = Math.floor(rnd() * (i + 1));
+            [order[i], order[j]] = [order[j], order[i]];
+          }
+          state = { order, idx: 0, length: dens.length };
+          _denTeleportCycle.set(zoneId, state);
+          window.__farmLog?.(`[wildlife] den teleport cycle rebuilt for ${zoneId}: ${dens.length} dens, order [${order.join(',')}]`, 'wildlife');
+        }
+        const den = dens[state.order[state.idx]];
+        window.__farmLog?.(`[wildlife] den teleport ${zoneId}: picking cycle slot ${state.idx + 1}/${state.order.length} -> den ${den.id}`, 'wildlife');
+        state.idx = (state.idx + 1) % state.order.length;
+        return den;
+      }
+      // Dev Tools: warp to a den's mouth on the CURRENT map only — no
       // zone-switching, since the request is specifically "does this map
       // have one" (farm/town/buildings never do; a wilderness zone does once
       // its Tothal Shift has run — see _zoneLayouts' `dens` field).
@@ -19599,7 +19638,7 @@
             showToast("No dens found for this burrow's map.", false);
             return;
           }
-          const den = dens[Math.floor(rnd() * dens.length)];
+          const den = _pickCycledDen(zoneId, dens);
           const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
           startSceneTransition(() => {
             const fromScene = _buildingScenes.get(currentArea)?.scene || null;
@@ -19628,7 +19667,7 @@
           showToast('No dens on this map.', false);
           return;
         }
-        const den = dens[Math.floor(rnd() * dens.length)];
+        const den = _pickCycledDen(currentArea, dens);
         const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
         player.x = (anchor.x + 0.5) * TILE;
         player.y = (anchor.y + 0.5) * TILE;
@@ -19638,6 +19677,47 @@
         closeMenu();
       }
       document.getElementById('devTeleportDenBtn')?.addEventListener('click', teleportToRandomDen);
+
+      // ── Wildlife/genotype debug panel (🧬 Wildlife tab) ─────────────
+      function renderWildlifeDebugPanel() {
+        const container = document.getElementById('wildlifeDenList');
+        if (!container) return;
+        if (!_denGenotypes.size) {
+          container.innerHTML = '<div style="opacity:.6;padding:8px 0">No den packs generated yet this session — enter a wilderness zone with wild dens, or force a Tothal Shift below, to populate this list.</div>';
+          return;
+        }
+        const patternIds = LIVESTOCK_PATTERN_DEFS['gar-wolf'] || [];
+        const swatch = (hex, size) => `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:3px;background:${esc(hex)};vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,.3)"></span>`;
+        const rows = [];
+        for (const [cavernMapId, genotype] of _denGenotypes) {
+          const zoneId = _denCavernZoneOf.get(cavernMapId) || '(unknown zone)';
+          const den = _zoneLayouts.get(zoneId)?.dens?.find(d => denCavernMapId(zoneId, d.id) === cavernMapId);
+          const denLabel = den ? den.id : cavernMapId.replace(`map_i_den_${zoneId}_`, '');
+          const baseColor = genotype.base?.color;
+          const baseHtml = baseColor ? `${swatch(baseColor, 13)}${esc(_furPaletteName(baseColor))}` : '(no base)';
+          const patternHtml = patternIds.map(id => {
+            const layer = genotype[id];
+            const on = layer?.enabled && layer.copies > 0;
+            return `<span style="opacity:${on ? 1 : 0.35}">${on ? swatch(layer.color, 10) : ''}${esc(id)}</span>`;
+          }).join(' &middot; ');
+          // Which live creatures are currently using this exact genotype
+          // object, if any are spawned right now — confirms the whole pack
+          // (and its Den-Mother) really do share one roll.
+          const aliveKinds = new Set();
+          for (const c of hostileObjects) if (c.genotype === genotype) aliveKinds.add(c.creatureKey);
+          rows.push(`<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08)">
+            <div style="font-weight:600;color:#e5e7eb">${esc(zoneId)} — den ${esc(denLabel)}${aliveKinds.size ? ` <span style="opacity:.6;font-weight:400">(${[...aliveKinds].map(esc).join(', ')} alive now)</span>` : ' <span style="opacity:.5;font-weight:400">(none alive right now)</span>'}</div>
+            <div style="margin-top:3px">Base: ${baseHtml}</div>
+            <div style="margin-top:2px">Patterns: ${patternHtml || '(none)'}</div>
+          </div>`);
+        }
+        container.innerHTML = rows.join('');
+      }
+      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', renderWildlifeDebugPanel);
+      document.getElementById('wildlifeShiftBtn')?.addEventListener('click', async () => {
+        await checkTothalShift(true);
+        renderWildlifeDebugPanel();
+      });
       // ── Den-Mother nest: hold-to-take egg/baby (see _denNests, populated
       // in loadBuildingScene) ──────────────────────────────────────────
       const NEST_TAKE_HOLD_S = 5;

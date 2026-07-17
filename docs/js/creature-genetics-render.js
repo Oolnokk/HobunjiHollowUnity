@@ -167,15 +167,20 @@
   // the HTML lab uses (each species' patterns object insertion order).
   async function composeFrame(kind, frame, genotype) {
     const spec = SPECIES[kind];
-    if (!spec) return null;
+    if (!spec) {
+      window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no SPECIES config for "${kind}" — returning null (creature falls back to its plain sprite)`, 'wildlife');
+      return null;
+    }
     const baseUrl = spec.base[frame] || spec.base.idle;
     const masks = await loadBaseMasks();
     const mask = masks?.[kind]?.[frame];
+    if (!mask) window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no base mask found — base fur will render unrecolored`, 'wildlife');
     const baseColor = genotype?.base?.color;
     const baseSource = (baseColor && mask) ? await recoloredBase(baseUrl, baseColor, mask) : await loadImage(baseUrl);
     const bw = baseSource.naturalWidth || baseSource.width, bh = baseSource.naturalHeight || baseSource.height;
     const c = makeCanvas(bw, bh), ctx = c.getContext('2d');
     ctx.drawImage(baseSource, 0, 0);
+    const drawnPatterns = [];
     for (const patternId of spec.patterns) {
       const layer = genotype?.[patternId];
       if (!layer?.enabled || !(layer.copies > 0) || !layer.color) continue;
@@ -183,8 +188,12 @@
       try {
         const recolored = await recoloredPattern(url, layer.color);
         ctx.drawImage(recolored, 0, 0, c.width, c.height);
-      } catch (e) { /* missing pattern asset — skip that layer */ }
+        drawnPatterns.push(patternId);
+      } catch (e) {
+        window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): pattern "${patternId}" failed to load/recolor (${url}) — skipped: ${e.message}`, 'warn');
+      }
     }
+    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} patterns=[${drawnPatterns.join(',') || 'none'}]`, 'wildlife');
     return c;
   }
 
