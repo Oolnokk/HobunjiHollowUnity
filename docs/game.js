@@ -2802,11 +2802,50 @@
       }
 
       function defaultLivestockName(kind) {
-        return kind === 'uumkaoii' ? "Uumkao'ii" : (kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock');
+        if (kind === 'uumkaoii') return "Uumkao'ii";
+        if (kind === 'gar-wolf') return 'Gar-wolf';
+        if (kind === 'dabinggi-hound') return 'Dabinggi-hound';
+        return kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock';
+      }
+
+      // Optional pattern layers per species — the HTML lab's Dabinggi-hound
+      // and Gar-wolf "layers" (mitts/spectacles/stripes, colorpoint/foxtail/
+      // mitts respectively). Order matters: it's the draw/composite order
+      // (see composeGenotypeFrame in creature-genetics-render.js).
+      const LIVESTOCK_PATTERN_DEFS = {
+        'gar-wolf': ['colorpoint', 'foxtail', 'mitts'],
+        'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
+      };
+      function shuffleCopy(arr) {
+        const a = arr.slice();
+        for (let i = a.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+      }
+      // Picks two fur colors that read as visually distinct — same rejection-
+      // sample loop as the HTML lab's pickTwoFurColors().
+      function pickTwoLivestockFurColors() {
+        let a = LIVESTOCK_FUR_PALETTE[Math.floor(Math.random() * LIVESTOCK_FUR_PALETTE.length)], b = a;
+        for (let i = 0; i < 40; i++) {
+          b = LIVESTOCK_FUR_PALETTE[Math.floor(Math.random() * LIVESTOCK_FUR_PALETTE.length)];
+          const [ah, as] = _furRgbToHsv(..._furHexToRgb(a.hex)), [bh, bs] = _furRgbToHsv(..._furHexToRgb(b.hex));
+          let dh = Math.abs(ah - bh); dh = Math.min(dh, 1 - dh);
+          if (a.id !== b.id && (dh > 0.045 || Math.abs(as - bs) > 0.18)) break;
+        }
+        if (a.id === b.id) b = LIVESTOCK_FUR_PALETTE[(LIVESTOCK_FUR_PALETTE.indexOf(a) + 7) % LIVESTOCK_FUR_PALETTE.length];
+        return [a, b];
       }
 
       // Fresh (non-bred) livestock gets two independently random fur colors —
-      // mirrors the HTML tool's randomizeSpecimen() for Uumkao'ii.
+      // mirrors the HTML tool's randomizeSpecimen(). Uumkao'ii's fur+plates
+      // are both permanent (copies:2, dominant). Gar-wolf/Dabinggi-hound get
+      // one base fur color plus a shared pattern color applied to 0-3
+      // randomly-chosen optional pattern layers (copies:1, dominant) — the
+      // exact same odds used for wild-den pack genotypes (see
+      // spawnPackAtDen/pickDenGenotype), so a farm-bought crate and a wild
+      // pack member are statistically the same roll.
       function makeDefaultGenotype(kind) {
         if (kind === 'uumkaoii') {
           return {
@@ -2814,41 +2853,101 @@
             plates: { color: randomFurColor(), copies: 2, inheritance: 'dominant' },
           };
         }
+        const patterns = LIVESTOCK_PATTERN_DEFS[kind];
+        if (patterns) {
+          const [first, second] = pickTwoLivestockFurColors();
+          const count = Math.floor(Math.random() * (Math.min(3, patterns.length) + 1));
+          const chosen = new Set(shuffleCopy(patterns).slice(0, count));
+          const genotype = { base: { color: first.hex, copies: 2, inheritance: 'dominant' } };
+          for (const id of patterns) {
+            genotype[id] = { color: second.hex, copies: chosen.has(id) ? 1 : 0, inheritance: 'dominant', enabled: chosen.has(id) };
+          }
+          return genotype;
+        }
         return {};
       }
 
-      // Sell value from fur-vs-plate color contrast. Uumkao'ii's two regions
-      // are both permanent (unlike other species' optional pattern layers),
-      // so pattern count is fixed at 2 and the HTML's patternComplexityBonus
-      // collapses to a flat uumPatternBonus here.
-      function sellValueFor(genotype) {
-        const fur = genotype?.fur, plates = genotype?.plates;
-        if (!fur?.color || !plates?.color) {
-          return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: 'Plain specimen' };
+      // Sell value from color contrast + pattern complexity — generalizes
+      // the HTML's sellValueFor to any species: Uumkao'ii's two permanent
+      // regions collapse to a flat bonus (as before); pattern-layer species
+      // get a per-enabled-pattern bonus (HTML's patternBonuses table) plus
+      // base-vs-pattern-color contrast.
+      const LIVESTOCK_PATTERN_BONUSES = [0, 70, 175, 315];
+      function sellValueFor(genotype, kind = 'uumkaoii') {
+        if (kind === 'uumkaoii' || (!LIVESTOCK_PATTERN_DEFS[kind] && genotype?.fur)) {
+          const fur = genotype?.fur, plates = genotype?.plates;
+          if (!fur?.color || !plates?.color) {
+            return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: 'Plain specimen' };
+          }
+          const contrast = _furColorContrastScore(fur.color, plates.color);
+          const contrastBonus = Math.round(contrast.score * 1.8); // (.9 + .45 × 2 fixed patterns), per the HTML formula
+          const amount = LIVESTOCK_SELL_RULES.baseValue + LIVESTOCK_SELL_RULES.uumPatternBonus + contrastBonus;
+          return {
+            amount, contrastScore: contrast.score, contrastBonus,
+            tier: sellTierFor(amount),
+            comparison: `${_furPaletteName(fur.color)} fur vs. ${_furPaletteName(plates.color)} plates`,
+          };
         }
-        const contrast = _furColorContrastScore(fur.color, plates.color);
-        const contrastBonus = Math.round(contrast.score * 1.8); // (.9 + .45 × 2 fixed patterns), per the HTML formula
-        const amount = LIVESTOCK_SELL_RULES.baseValue + LIVESTOCK_SELL_RULES.uumPatternBonus + contrastBonus;
+        const patterns = LIVESTOCK_PATTERN_DEFS[kind];
+        if (!patterns) return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: 'Plain specimen' };
+        const baseColor = genotype?.base?.color;
+        const enabledIds = patterns.filter(id => genotype?.[id]?.enabled && genotype[id]?.copies > 0);
+        if (!baseColor || !enabledIds.length) {
+          return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: baseColor ? `Plain ${_furPaletteName(baseColor)} coat` : 'Plain specimen' };
+        }
+        const patternColor = genotype[enabledIds[0]].color;
+        const contrast = _furColorContrastScore(baseColor, patternColor);
+        const contrastBonus = Math.round(contrast.score * (0.9 + 0.45 * enabledIds.length));
+        const patternBonus = LIVESTOCK_PATTERN_BONUSES[Math.min(enabledIds.length, LIVESTOCK_PATTERN_BONUSES.length - 1)];
+        const amount = LIVESTOCK_SELL_RULES.baseValue + patternBonus + contrastBonus;
         return {
           amount, contrastScore: contrast.score, contrastBonus,
           tier: sellTierFor(amount),
-          comparison: `${_furPaletteName(fur.color)} fur vs. ${_furPaletteName(plates.color)} plates`,
+          comparison: `${_furPaletteName(baseColor)} coat with ${enabledIds.length} pattern${enabledIds.length === 1 ? '' : 's'} in ${_furPaletteName(patternColor)}`,
         };
       }
 
-      // Breeding — direct port of the HTML's Uumkao'ii offspring path: both
-      // layers are permanent (copies:2, dominant), so offspring always blend
-      // both parents' colors per-layer with a flat mutation chance.
+      // Breeding — the HTML's two offspring paths generalized: Uumkao'ii's
+      // permanent dual-region blend (unchanged), and a Mendelian pattern-
+      // layer path for gar-wolf/dabinggi-hound (each parent contributes 0-1
+      // allele per pattern based on its own copies/2 odds; dominant/
+      // recessive/codominant expression + a flat de-novo mutation chance —
+      // same math as the lab's generateOffspring()).
       const LIVESTOCK_MUTATION_CHANCE = 0.05;
+      function _livestockAlleleContribution(layer) {
+        const copies = clamp(Number(layer?.copies) || 0, 0, 2);
+        return Math.random() < copies / 2 ? { color: layer.color } : null;
+      }
       function crossOffspring(genotypeA, genotypeB, kind = 'uumkaoii') {
-        if (kind !== 'uumkaoii') return makeDefaultGenotype(kind);
+        if (kind === 'uumkaoii') {
+          const child = {};
+          for (const layerId of ['fur', 'plates']) {
+            const la = genotypeA?.[layerId] || { color: randomFurColor() };
+            const lb = genotypeB?.[layerId] || { color: randomFurColor() };
+            let color = blendFurHex(la.color, lb.color);
+            if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color);
+            child[layerId] = { color, copies: 2, inheritance: 'dominant' };
+          }
+          return child;
+        }
+        const patterns = LIVESTOCK_PATTERN_DEFS[kind];
+        if (!patterns) return makeDefaultGenotype(kind);
         const child = {};
-        for (const layerId of ['fur', 'plates']) {
-          const la = genotypeA?.[layerId] || { color: randomFurColor() };
-          const lb = genotypeB?.[layerId] || { color: randomFurColor() };
-          let color = blendFurHex(la.color, lb.color);
-          if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color);
-          child[layerId] = { color, copies: 2, inheritance: 'dominant' };
+        const baseA = genotypeA?.base || { color: randomFurColor() }, baseB = genotypeB?.base || { color: randomFurColor() };
+        let baseColor = blendFurHex(baseA.color, baseB.color);
+        if (Math.random() < LIVESTOCK_MUTATION_CHANCE) baseColor = mutateFurColor(baseColor);
+        child.base = { color: baseColor, copies: 2, inheritance: 'dominant' };
+        for (const id of patterns) {
+          const la = genotypeA?.[id] || { copies: 0, color: randomFurColor(), inheritance: 'dominant' };
+          const lb = genotypeB?.[id] || { copies: 0, color: randomFurColor(), inheritance: 'dominant' };
+          const alleleA = _livestockAlleleContribution(la), alleleB = _livestockAlleleContribution(lb);
+          let copies = (alleleA ? 1 : 0) + (alleleB ? 1 : 0), mutated = false;
+          if (copies === 0 && Math.random() < LIVESTOCK_MUTATION_CHANCE) { copies = 1; mutated = true; }
+          const inheritance = (la.copies ? la.inheritance : lb.copies ? lb.inheritance : la.inheritance) || 'dominant';
+          const enabled = inheritance === 'recessive' ? copies === 2 : copies >= 1;
+          let color = alleleA && alleleB ? blendFurHex(alleleA.color, alleleB.color) : (alleleA?.color || alleleB?.color || randomFurColor());
+          if (mutated) color = mutateFurColor(color);
+          child[id] = { color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
         }
         return child;
       }
@@ -2944,10 +3043,118 @@
         return animal;
       }
 
+      // Pattern-layer species (gar-wolf, dabinggi-hound) as placeable farm
+      // livestock — same tile-hopping wander/no-combat shape as
+      // makeUumkaoiiAnimal, but with its genotype actually rendered via
+      // creature-genetics-render.js's recolor+composite pipeline (falls
+      // back to the plain uncolored sprite, already loaded synchronously
+      // below, until that async compose resolves).
+      function makePatternLivestockAnimal(kind, label, icon, col, row, livestockId, genotype) {
+        const ANIMAL_W = kind === 'gar-wolf' ? 1.9 : 1.7;
+        const ANIMAL_H = ANIMAL_W * (600 / 1375); // sprite is 1375x600px, same convention as CREATURE_DB
+        const halfH = ANIMAL_H / 2;
+        const baseUrl = window.CreatureGeneticsRender?.SPECIES?.[kind]?.base?.idle || `assets/creaturesprites/${kind}_idle.png`;
+
+        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, baseUrl, {
+          modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
+          name: kind.replace(/-/g, '_') + '_' + col + '_' + row,
+        });
+
+        const initSurfY = tileSurfaceY(grid[row][col].type);
+        avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
+        avatarRef.group.rotation.y = Math.PI / 2; // start facing east
+        _markPngPlane(avatarRef.group);
+        scene.add(avatarRef.group);
+
+        if (genotype && window.CreatureGeneticsRender) {
+          window.CreatureGeneticsRender.composeFrame(kind, 'idle', genotype).then(canvas => {
+            if (!canvas) return;
+            const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
+            const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
+            backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
+            for (const child of avatarRef.group.children) {
+              if (!child.material) continue;
+              if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
+              else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
+            }
+          }).catch(() => {});
+        }
+
+        let tickCounter = 0;
+        const animal = {
+          id: kind + '_' + col + '_' + row + '_' + (performance.now() | 0),
+          livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
+          type: 'animal', animalKey: kind, genotype,
+          col, row, targetCol: col, targetRow: row,
+          wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
+          halfHeight: halfH, avatarRef,
+          groupRot: Math.PI / 2, targetRot: Math.PI / 2,
+          perpState: {},
+
+          getButtons() {
+            return [{ icon, label, action: 'obj_' + kind.replace(/-/g, '') + '_' + this.id, style: 'secondary', allowed: false }];
+          },
+          onAction() {
+            return { ok: false, message: `The ${label.toLowerCase()} ignores you.` };
+          },
+          tick() {
+            tickCounter++;
+            if (tickCounter % 3 !== 0) return;
+            if (rnd() > 0.55) return;
+
+            const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
+            for (let i = dirs.length - 1; i > 0; i--) {
+              const j = Math.floor(rnd() * (i + 1));
+              [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+            }
+            for (const d of dirs) {
+              const nc = this.col + d.dc, nr = this.row + d.dr;
+              if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+              if (!canSpawnAnimalAt(nc, nr)) continue;
+              worldObjects.delete(this.col + ',' + this.row);
+              this.col = nc; this.row = nr;
+              this.targetCol = nc; this.targetRow = nr;
+              worldObjects.set(nc + ',' + nr, this);
+              this.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
+              break;
+            }
+          },
+          update(dt) {
+            const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
+            const tile = grid[this.targetRow]?.[this.targetCol];
+            const ty = tile ? tileSurfaceY(tile.type) + this.halfHeight : this.wy;
+            const sp = Math.min(1, dt * 4);
+            this.wx += (tx - this.wx) * sp;
+            this.wz += (tz - this.wz) * sp;
+            this.wy += (ty - this.wy) * sp;
+            this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
+            this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
+
+            const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
+            const lookTarget = idle ? nearestAngleAmong(this.groupRot, cameraRelativePerps()) : this.targetRot;
+            const { effectiveTarget, snapTo } = perpClamp(this.perpState, lookTarget, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
+            if (snapTo !== null) this.groupRot = effectiveTarget;
+            else this.groupRot += angleDiff(effectiveTarget, this.groupRot) * 0.18;
+            this.avatarRef.group.rotation.y = this.groupRot;
+          },
+          reset() {
+            scene.remove(avatarRef.group);
+            avatarRef.dispose();
+          },
+        };
+        return animal;
+      }
+      function makeGarWolfAnimal(col, row, livestockId, genotype) {
+        return makePatternLivestockAnimal('gar-wolf', 'Gar-wolf', '🐺', col, row, livestockId, genotype);
+      }
+      function makeDabinggiHoundAnimal(col, row, livestockId, genotype) {
+        return makePatternLivestockAnimal('dabinggi-hound', 'Dabinggi-hound', '🐕', col, row, livestockId, genotype);
+      }
+
       // Livestock kind → factory, so restoring saved livestock on world load
       // can dispatch by kind without hardcoding uumkao'ii — the array this
       // reads is meant to grow into other livestock types later.
-      const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal };
+      const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal };
 
       // item key -> livestock kind, for the Farm tab's "Add Livestock" flow.
       // Grows alongside LIVESTOCK_FACTORIES as more species ship. Both new
@@ -2959,6 +3166,23 @@
       // path — addLivestockFromItem degrades to its existing "no factory"
       // failure message rather than crashing.
       const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf' };
+
+      // itemKey -> FIFO queue of genotypes carried by not-yet-hatched units of
+      // that item — populated when a Den-Mother's nest grants an egg/baby
+      // (see updateNestInteraction), so the resulting livestock/companion
+      // shares its pack's exact genes instead of rolling a fresh random one.
+      // Not persisted: this only bridges "just took it from the nest" to
+      // "added it to the farm/stable this same session" — a stack of eggs
+      // carried across a save/reload falls back to a fresh roll, same as any
+      // item whose instance-level data isn't part of the save format.
+      const _pendingLivestockGenotypes = {};
+      function _queueLivestockItemGenotype(itemKey, genotype) {
+        if (!genotype) return;
+        (_pendingLivestockGenotypes[itemKey] || (_pendingLivestockGenotypes[itemKey] = [])).push(genotype);
+      }
+      function _consumeLivestockItemGenotype(itemKey) {
+        return _pendingLivestockGenotypes[itemKey]?.shift() || null;
+      }
 
       // Adds a creature from an undeployed crate item to the farm's
       // livestock — the only way to do so now (see the Farm tab's Livestock
@@ -2979,8 +3203,9 @@
           }
         }
         if (col === null) return { ok: false, message: 'No open tile on the farm to place it.' };
+        const genotype = _consumeLivestockItemGenotype(itemKey) || makeDefaultGenotype(kind);
         const factory = LIVESTOCK_FACTORIES[kind];
-        const animal = factory ? factory(col, row) : null;
+        const animal = factory ? factory(col, row, null, genotype) : null;
         if (!animal) return { ok: false, message: 'Sprite still loading — try again in a moment.' };
         inventory[itemKey]--;
         clampInventoryStack(itemKey);
@@ -2992,7 +3217,7 @@
         const livestock = _loadWorldLivestock();
         livestock.push({
           id: animal.livestockId, kind, col, row, releasedAt: Date.now(),
-          name: defaultLivestockName(kind), genotype: makeDefaultGenotype(kind),
+          name: defaultLivestockName(kind), genotype,
         });
         _saveWorldLivestock(livestock);
         return { ok: true, message: `🦆 ${defaultLivestockName(kind)} added to the farm!` };
@@ -3011,7 +3236,7 @@
         clampInventoryStack(itemKey);
         const entry = {
           id: 'stable_' + Math.random().toString(36).slice(2, 10),
-          kind, name: defaultLivestockName(kind), genotype: makeDefaultGenotype(kind),
+          kind, name: defaultLivestockName(kind), genotype: _consumeLivestockItemGenotype(itemKey) || makeDefaultGenotype(kind),
           aiType: companionAiTypeForKind(kind), level: 0, stabledAt: Date.now(),
         };
         stable.push(entry);
@@ -3028,7 +3253,7 @@
         for (const entry of _loadWorldLivestock()) {
           const factory = LIVESTOCK_FACTORIES[entry.kind];
           if (!factory || !canSpawnAnimalAt(entry.col, entry.row)) continue;
-          const animal = factory(entry.col, entry.row, entry.id);
+          const animal = factory(entry.col, entry.row, entry.id, entry.genotype);
           if (!animal) continue;
           worldObjects.set(entry.col + ',' + entry.row, animal);
           animalObjects.add(animal);
@@ -3087,14 +3312,15 @@
           }
           if (col === null) continue; // no room on the farm right now — pair lapses rather than blocking forever
           const kind = parentA.kind;
+          const childGenotype = crossOffspring(parentA.genotype, parentB.genotype, kind);
           const factory = LIVESTOCK_FACTORIES[kind];
-          const animal = factory ? factory(col, row) : null;
+          const animal = factory ? factory(col, row, null, childGenotype) : null;
           if (!animal) continue;
           worldObjects.set(col + ',' + row, animal);
           animalObjects.add(animal);
           livestock.push({
             id: animal.livestockId, kind, col, row, releasedAt: Date.now(),
-            name: defaultLivestockName(kind), genotype: crossOffspring(parentA.genotype, parentB.genotype, kind),
+            name: defaultLivestockName(kind), genotype: childGenotype,
           });
           showToast(`🐣 A new ${defaultLivestockName(kind)} was born on the farm!`, true);
         }
@@ -3140,11 +3366,51 @@
         }
         return _creatureTexCache.back.get(url);
       }
-      function setCreatureFrame(avatarRef, url) {
+      // Genotype-composited textures for pattern-layer livestock (gar-wolf,
+      // dabinggi-hound) — mirrors _creatureTexCache's URL-keyed pattern but
+      // keyed by (kind, frame, genotype signature) instead, since the actual
+      // pixels come from an async canvas composite (see
+      // creature-genetics-render.js) rather than a static file. While a
+      // signature's compose is still in flight, callers fall back to the
+      // species' plain (uncolored) sprite — see setCreatureFrame below —
+      // and _genotypeTexGeneration lets already-spawned creatures notice
+      // once the real texture becomes available and re-apply it.
+      const _genotypeTexCache = { front: new Map(), back: new Map() };
+      const _genotypeTexPending = new Set();
+      let _genotypeTexGeneration = 0;
+      function _getGenotypeTextures(kind, frame, genotype) {
+        const renderer = window.CreatureGeneticsRender;
+        if (!renderer || !genotype) return null;
+        const sig = renderer.genotypeSignature(kind, genotype);
+        const key = `${kind}|${frame}|${sig}`;
+        if (_genotypeTexCache.front.has(key)) {
+          return { front: _genotypeTexCache.front.get(key), back: _genotypeTexCache.back.get(key) };
+        }
+        if (!_genotypeTexPending.has(key)) {
+          _genotypeTexPending.add(key);
+          renderer.composeFrame(kind, frame, genotype).then(canvas => {
+            _genotypeTexPending.delete(key);
+            if (!canvas) return;
+            const front = new THREE.CanvasTexture(canvas);
+            front.colorSpace = THREE.SRGBColorSpace;
+            const back = new THREE.CanvasTexture(canvas);
+            back.colorSpace = THREE.SRGBColorSpace;
+            back.wrapS = THREE.RepeatWrapping; back.repeat.set(-1, 1); back.offset.set(1, 0);
+            _genotypeTexCache.front.set(key, front);
+            _genotypeTexCache.back.set(key, back);
+            _genotypeTexGeneration++;
+          }).catch(() => { _genotypeTexPending.delete(key); });
+        }
+        return null;
+      }
+      function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype) {
+        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype) : null;
+        const front = genoTex?.front || _getCreatureFrontTexture(url);
+        const back = genoTex?.back || _getCreatureBackTexture(url);
         for (const child of avatarRef.group.children) {
           if (!child.material) continue;
-          if (child.name.endsWith('_front_plane')) child.material.map = _getCreatureFrontTexture(url);
-          else if (child.name.endsWith('_back_plane')) child.material.map = _getCreatureBackTexture(url);
+          if (child.name.endsWith('_front_plane')) child.material.map = front;
+          else if (child.name.endsWith('_back_plane')) child.material.map = back;
           else continue;
           child.material.needsUpdate = true;
         }
@@ -3823,9 +4089,18 @@
       const RUN_FRAME_STRIDE_PX = 30;
 
       function updateCreatureAnimFrame(c, dt, moving) {
+        // A genotype-bearing creature (gar-wolf/dabinggi-hound with genes —
+        // see makeCreatureEntity's opts.genotype) needs its composited
+        // texture re-applied once the async compose finishes, even if the
+        // frame URL string itself hasn't changed since the fallback swap.
+        const genotypeKind = c.genotype ? c.creatureKey : null;
+        if (genotypeKind && c._appliedGenotypeGen !== _genotypeTexGeneration) {
+          c.currentFrameUrl = null;
+          c._appliedGenotypeGen = _genotypeTexGeneration;
+        }
         if (!moving) {
           if (c.currentFrameUrl !== c.def.sprites.idle) {
-            setCreatureFrame(c.avatarRef, c.def.sprites.idle);
+            setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, 'idle', c.genotype);
             c.currentFrameUrl = c.def.sprites.idle;
           }
           // Not tracking ground covered while idle, so resuming movement
@@ -3849,7 +4124,7 @@
         }
         const url = c.def.sprites.run[c.runFrame];
         if (c.currentFrameUrl !== url) {
-          setCreatureFrame(c.avatarRef, url);
+          setCreatureFrame(c.avatarRef, url, genotypeKind, 'run' + (c.runFrame + 1), c.genotype);
           c.currentFrameUrl = url;
         }
       }
@@ -4426,7 +4701,7 @@
         // is spawned, rather than falling through to the legacy whistle.
         const activeStabled = activeCompanionId ? stable.find(s => s.id === activeCompanionId) : null;
         const stableCompanion = (activeStabled && CREATURE_DB[activeStabled.kind])
-          ? { creatureKey: activeStabled.kind, name: activeStabled.name }
+          ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype }
           : null;
         const whistle = (!activeStabled && equipmentSlots.whistle)
           ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
@@ -4438,12 +4713,16 @@
           if (existing) despawnCompanions(master);
           return;
         }
-        if (existing && existing.creatureKey === desired.creatureKey && existing.areaId === currentArea) return;
+        // Swapping between two stabled specimens of the same species (e.g.
+        // two differently-bred gar-wolves) still needs a respawn so the new
+        // one's genotype actually renders.
+        if (existing && existing.creatureKey === desired.creatureKey && existing.areaId === currentArea
+          && JSON.stringify(existing.genotype || null) === JSON.stringify(desired.genotype || null)) return;
         despawnCompanions(master);
         const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
         const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
         const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
-          isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master,
+          isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype,
         });
         if (companion) companionObjects.add(companion);
       }
@@ -5015,6 +5294,18 @@
         isFarmEditMode: () => farmEditMode,
         getBoundDesktopEnter: () => getActionForButton('desktop', 'Enter'),
         debugComputeActionButtons: () => computeActionButtons(),
+        getCavernFloor: (mapId) => generateCavernFloor(mapId),
+        exitBuilding: () => exitBuilding(),
+        toolHolderParent: () => (toolHolder.parent ? (toolHolder.parent === scene ? 'farmScene' : 'otherScene') : null),
+        addLivestockFromItem: (itemKey) => addLivestockFromItem(itemKey),
+        addToStable: (itemKey) => addToStable(itemKey),
+        getWorldLivestock: () => _loadWorldLivestock(),
+        getStable: () => stable,
+        animalObjects,
+        getDenGenotypes: () => _denGenotypes,
+        genotypeSignature: (kind, genotype) => window.CreatureGeneticsRender?.genotypeSignature(kind, genotype),
+        setInventory: (key, n) => { inventory[key] = n; },
+        getGenotypeTexCacheSize: () => _genotypeTexCache.front.size,
       };
 
       // Ambient hostile spawning — wild animal dens (see WildernessMapGenerator's
@@ -5158,6 +5449,23 @@
       const pendingDenRespawn = new Set();
 
       function denKeyFor(zoneId, den) { return `${zoneId}:${den.id}`; }
+      // Same id shape performTothalShift's denTransitions and
+      // synthesizeCavernMapData both already use for the den's cavern —
+      // reused as the shared lookup key so a den's exterior pack, its
+      // Den-Mother, and its nest rewards all resolve the same genotype
+      // without needing to parse zoneId/denId back out of the mapId string.
+      function denCavernMapId(zoneId, denId) { return `map_i_den_${zoneId}_${denId}`; }
+      // cavernMapId -> shared "family" genotype (gar-wolf pattern shape) —
+      // one roll per den, reused by every pack member, the Den-Mother, and
+      // any eggs/babies taken from its nest, using the exact same odds as
+      // a farm-bought crate (see makeDefaultGenotype). Herbivore
+      // (uumkaoii-wild) dens never read this — no pattern genes exist for
+      // that species yet — so the entry just sits unused for them.
+      const _denGenotypes = new Map();
+      function getOrMakeDenGenotype(cavernMapId) {
+        if (!_denGenotypes.has(cavernMapId)) _denGenotypes.set(cavernMapId, makeDefaultGenotype('gar-wolf'));
+        return _denGenotypes.get(cavernMapId);
+      }
 
       // Forgets all pack/respawn bookkeeping for a zone whose terrain (and
       // therefore den ids) just got regenerated (see performTothalShift) —
@@ -5190,6 +5498,9 @@
           return;
         }
         const speciesKey = pool[Math.floor(rnd() * pool.length)];
+        // Every gar-wolf-family member of this pack (regular + alpha) shares
+        // one rolled-once "family" genotype — see getOrMakeDenGenotype.
+        const denGenotype = speciesKey.startsWith('gar-wolf') ? getOrMakeDenGenotype(denCavernMapId(zoneId, den.id)) : null;
         // den.x/den.y are the footprint's top-left tile (see workspace.animalDens
         // in wilderness-map-generator.js) — spawn/home anchor is the footprint center.
         const homeX = (den.x + (den.w || 1) * 0.5) * TILE, homeY = (den.y + (den.h || 1) * 0.5) * TILE;
@@ -5200,7 +5511,7 @@
           const angle = rnd() * Math.PI * 2;
           const dist = TILE * (0.8 + rnd() * 1.6);
           const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
-          const opts = { homeX, homeY, state: 'idle', denKey };
+          const opts = { homeX, homeY, state: 'idle', denKey, genotype: denGenotype };
           assignWildlifeStation(opts, zoneData, homeX, homeY, useHerd);
           const creature = makeCreatureEntity(speciesKey, x, y, opts);
           if (creature) { hostileObjects.add(creature); spawned++; }
@@ -5527,6 +5838,12 @@
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
+      // A den's cavern (synthesizeCavernMapData's wallStyle:'cavern') is a
+      // monster-lair building, not a house/shop — the Den-Mother fight
+      // requires tools/weapons to actually work there, unlike every other
+      // building interior (see the combat-update gate in gameLoop and the
+      // toolHolder/reticle scene wiring in enterBuilding below).
+      function _isCavernBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_den_'); }
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       const _zoneScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions }
       // mapId → { cols, rows, tiles: [{c,r,type}], transitions, buildings, decor,
@@ -9289,12 +9606,17 @@
             const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
             const motherKey = mapData.denMotherKind || 'gar-wolf-den-mother';
             const motherDef = CREATURE_DB[motherKey];
+            // Same shared "family" genotype as this den's exterior pack (see
+            // spawnPackAtDen/getOrMakeDenGenotype) — whichever of the two
+            // spawns first rolls it, the other reuses it, so the Den-Mother
+            // and her pack (and the nest's eggs/babies) always match.
+            const denGenotype = motherKey.startsWith('gar-wolf') ? getOrMakeDenGenotype(mapId) : null;
             if (motherDef) {
               const homeX = (nestCol + 1) * TILE, homeY = (nestRow + 1) * TILE;
               const mother = makeCreatureEntity(motherKey, homeX, homeY, {
                 scene: bScene, grid: bGrid, cols, rows,
                 areaId: mapId, homeX, homeY, state: 'idle',
-                isDenMother: true,
+                isDenMother: true, genotype: denGenotype,
               });
               if (mother) hostileObjects.add(mother);
             }
@@ -9305,7 +9627,7 @@
             _denNests.set(mapId, {
               col: nestCol, row: nestRow, w: 2, h: 2,
               itemKey: liveBirth ? 'garWolfBaby' : 'uumkaoiiEgg',
-              liveBirth, remaining,
+              liveBirth, remaining, genotype: denGenotype,
             });
             // Simple nest marker so the 2x2 chamber reads as an objective.
             const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
@@ -9334,6 +9656,11 @@
           }
           if (_currentBuildingMapId === mapId && _isBuildingArea(currentArea)) {
             bScene.add(playerMesh); bScene.add(playerGroundShadow);
+            if (_isCavernBuildingArea(mapId)) {
+              bScene.add(toolHolder); bScene.add(reticleMesh);
+              bScene.add(reticleCircleMesh); bScene.add(reticleRingMesh);
+              bScene.add(reticleWavyGroup);
+            }
             if (_pendingEntrySpawnFromExit) {
               _pendingEntrySpawnFromExit = false;
               const sp = buildingSpawnFromExit(info, cols, rows);
@@ -9472,7 +9799,14 @@
           fromScene.remove(reticleCircleMesh); fromScene.remove(reticleRingMesh);
           fromScene.remove(reticleWavyGroup);
         }
-        if (bi?.scene) { bi.scene.add(playerMesh); bi.scene.add(playerGroundShadow); }
+        if (bi?.scene) {
+          bi.scene.add(playerMesh); bi.scene.add(playerGroundShadow);
+          if (_isCavernBuildingArea(mapId)) {
+            bi.scene.add(toolHolder); bi.scene.add(reticleMesh);
+            bi.scene.add(reticleCircleMesh); bi.scene.add(reticleRingMesh);
+            bi.scene.add(reticleWavyGroup);
+          }
+        }
         refreshActionBar();
         logMapSwap('enterBuilding', currentArea, { source: bi?.loadSource || 'loading', fallback: bi?.fallback || !bi, loading: !bi });
       }
@@ -12393,7 +12727,8 @@
       // stable entries — untradeable, and renamed from the Stable tab instead;
       // this is a breeding-only view of the stable.
       function _buildStablePickRow(entry, ref, pairs, canManage, onRename, onSell) {
-        const value = entry.genotype?.fur ? sellValueFor(entry.genotype) : null;
+        const hasGenotype = !!(entry.genotype?.fur || entry.genotype?.base);
+        const value = hasGenotype ? sellValueFor(entry.genotype, entry.kind) : null;
         const pending = pairs.some(p => refsEqual(p.parentA, ref) || refsEqual(p.parentB, ref));
         const pickKey = `${ref.source}:${ref.id}`;
         const row = document.createElement('div');
@@ -12404,8 +12739,7 @@
           (onRename
             ? `<input class="farm-row-name" value="${esc(entry.name || defaultLivestockName(entry.kind))}" ${canManage ? '' : 'disabled'} maxlength="30">`
             : `<span class="farm-row-name" style="padding:2px 4px">${esc(entry.name || defaultLivestockName(entry.kind))}</span>`) +
-          (entry.genotype?.fur ? `<span class="farm-swatch" style="background:${esc(entry.genotype.fur.color)}" title="Fur color"></span>` : '') +
-          (entry.genotype?.plates ? `<span class="farm-swatch" style="background:${esc(entry.genotype.plates.color)}" title="Plate color"></span>` : '') +
+          _livestockSwatchesHtml(entry.genotype, entry.kind) +
           `<span class="farm-row-value${value ? ' tier-' + esc(value.tier) : ''}">${value ? `${value.amount}g · ${esc(value.tier)}` : 'Companion'}${pending ? ' · breeding…' : ''}</span>` +
           (onSell ? `<button class="settings-small-btn farm-sell-btn">Sell</button>` : '');
         if (canManage) {
@@ -12540,7 +12874,7 @@
         if (!hasFarmPermission('livestock')) return;
         const entry = _removeWorldLivestockAndCleanup(id);
         if (!entry) return;
-        const value = sellValueFor(entry.genotype);
+        const value = sellValueFor(entry.genotype, entry.kind);
         inventory.gold = (inventory.gold || 0) + value.amount;
         saveMemberWorldData();
         showToast(`Sold ${entry.name || defaultLivestockName(entry.kind)} for ${value.amount}g`, true);
@@ -12795,6 +13129,25 @@
 
       const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆' };
 
+      // Small color-swatch HTML shared by every livestock/stable row —
+      // Uumkao'ii shows its two permanent regions; pattern-layer species
+      // (gar-wolf/dabinggi-hound) show base color + first enabled pattern's
+      // color (there's only ever one shared pattern color per specimen).
+      function _livestockSwatchesHtml(genotype, kind) {
+        if (!genotype) return '';
+        if (genotype.fur || genotype.plates) {
+          return (genotype.fur ? `<span class="farm-swatch" style="background:${esc(genotype.fur.color)}" title="Fur color"></span>` : '') +
+                 (genotype.plates ? `<span class="farm-swatch" style="background:${esc(genotype.plates.color)}" title="Plate color"></span>` : '');
+        }
+        const patterns = LIVESTOCK_PATTERN_DEFS[kind];
+        if (patterns && genotype.base) {
+          const enabledId = patterns.find(id => genotype[id]?.enabled);
+          return `<span class="farm-swatch" style="background:${esc(genotype.base.color)}" title="Base color"></span>` +
+                 (enabledId ? `<span class="farm-swatch" style="background:${esc(genotype[enabledId].color)}" title="Pattern color"></span>` : '');
+        }
+        return '';
+      }
+
       // Your personal companion collection — character-scoped, untradeable,
       // never tied to any farm. Rename, set the one active companion (spawned
       // via syncCompanionFromWhistle/updateCompanions like the starter
@@ -12811,8 +13164,7 @@
             `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${isActive ? 'Active companion' : 'Set as active companion'}">${isActive ? '★' : '☆'}</button>` +
             `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span>` +
             `<input class="farm-row-name" value="${esc(entry.name || defaultLivestockName(entry.kind))}" maxlength="30">` +
-            (entry.genotype?.fur ? `<span class="farm-swatch" style="background:${esc(entry.genotype.fur.color)}" title="Fur color"></span>` : '') +
-            (entry.genotype?.plates ? `<span class="farm-swatch" style="background:${esc(entry.genotype.plates.color)}" title="Plate color"></span>` : '') +
+            _livestockSwatchesHtml(entry.genotype, entry.kind) +
             `<span class="farm-row-value">Lv. ${entry.level || 0} <span style="opacity:.6">(leveling coming soon)</span></span>`;
           row.querySelector('.farm-companion-btn').addEventListener('click', () => {
             activeCompanionId = isActive ? null : entry.id;
@@ -19224,6 +19576,7 @@
           _nestTakeHudEl?.classList.remove('visible');
           nest.remaining--;
           inventory[nest.itemKey] = Math.min(99, (inventory[nest.itemKey] || 0) + 1);
+          _queueLivestockItemGenotype(nest.itemKey, nest.genotype);
           clampInventoryStack(nest.itemKey);
           buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
           saveMemberWorldData();
@@ -19378,7 +19731,9 @@
         // The player can wield tools/weapons outside the farm too (town,
         // exterior zones) — buildings/farmhouse interior intentionally
         // exclude toolHolder/reticle meshes from their scene graph instead.
-        if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
+        // A den's cavern is the one building exception: it's a boss-fight
+        // arena, so combat has to work there too (see _isCavernBuildingArea).
+        if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
           updateToolMesh(dt);
           updateCombatConeTrail();
           updateChargeAction();
@@ -22043,11 +22398,19 @@
         stable = Array.isArray(playerData.stable) ? playerData.stable.map(s => ({ ...s })) : [];
         activeCompanionId = playerData.activeCompanionId ?? null;
         if (!stable.length) {
-          const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: null, aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
+          const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
           stable.push(starter);
           activeCompanionId = starter.id;
         }
         if (!activeCompanionId && stable.length) activeCompanionId = stable[0].id;
+        // Backfill genotype-less stable entries from older saves (e.g. a
+        // starter Bingo saved before pattern genes existed) so they render
+        // real genes instead of the plain uncolored sprite forever.
+        for (const entry of stable) {
+          if (!entry.genotype && (LIVESTOCK_PATTERN_DEFS[entry.kind] || entry.kind === 'uumkaoii')) {
+            entry.genotype = makeDefaultGenotype(entry.kind);
+          }
+        }
         saveStable();
         // Restore whichever literal tool/weapon/whistle instance was equipped
         // in each slot last session (see saveEquipmentSlots) — skips any slot
