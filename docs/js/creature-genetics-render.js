@@ -18,6 +18,7 @@
 // Public API: window.CreatureGeneticsRender = {
 //   composeFrame(kind, frame, genotype) -> Promise<canvas|null>,
 //   genotypeSignature(kind, genotype) -> string,
+//   prewarm(kinds?) -> Promise<void>,
 //   SPECIES,
 // }
 (function () {
@@ -187,6 +188,7 @@
   // Draw order matches SPECIES[kind].patterns — the same fixed layer order
   // the HTML lab uses (each species' patterns object insertion order).
   async function composeFrame(kind, frame, genotype) {
+    const t0 = performance.now();
     const spec = SPECIES[kind];
     if (!spec) {
       window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no SPECIES config for "${kind}" — returning null (creature falls back to its plain sprite)`, 'wildlife');
@@ -194,10 +196,12 @@
     }
     const baseUrl = spec.base[frame] || spec.base.idle;
     const masks = await loadBaseMasks();
+    const tMasks = performance.now();
     const mask = masks?.[kind]?.[frame];
     if (!mask) window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no base mask found — base fur will render unrecolored`, 'wildlife');
     const baseColor = genotype?.base?.color;
     const baseSource = (baseColor && mask) ? await recoloredBase(baseUrl, baseColor, mask) : await loadImage(baseUrl);
+    const tBase = performance.now();
     const bw = baseSource.naturalWidth || baseSource.width, bh = baseSource.naturalHeight || baseSource.height;
     const c = makeCanvas(bw, bh), ctx = c.getContext('2d');
     ctx.drawImage(baseSource, 0, 0);
@@ -214,8 +218,40 @@
         window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): pattern "${patternId}" failed to load/recolor (${url}) — skipped: ${e.message}`, 'warn');
       }
     }
-    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} patterns=[${drawnPatterns.join(',') || 'none'}]`, 'wildlife');
+    const tEnd = performance.now();
+    // Broken down so a slow compose (the "ran around plain for ages" symptom)
+    // shows WHERE the time went — masksMs covers the one-time mask JSON
+    // fetch+decode (only nonzero the very first call all session), baseMs
+    // covers the base sprite's network load + recolor pixel pass, patternMs
+    // covers every enabled pattern layer's load+recolor combined.
+    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} patterns=[${drawnPatterns.join(',') || 'none'}] timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');
     return c;
+  }
+
+  // Pays the network-fetch cost for a species' base/pattern sprites and the
+  // shared mask JSON ahead of time (loadImage/loadBaseMasks both cache by
+  // URL), so the FIRST real composeFrame call for that species — typically
+  // triggered the instant a creature is visibly on screen — only has to pay
+  // for the per-pixel recolor pass, not a cold network round-trip on top of
+  // it. Call this as soon as the player enters a context that's about to
+  // spawn genotype creatures (see teleportToDevArena), not lazily on first
+  // spawn, which is exactly the "ran around plain for ages" cost this exists
+  // to hide.
+  async function prewarm(kinds) {
+    const t0 = performance.now();
+    const targets = kinds && kinds.length ? kinds : Object.keys(SPECIES);
+    await loadBaseMasks();
+    const urls = [];
+    for (const kind of targets) {
+      const spec = SPECIES[kind];
+      if (!spec) continue;
+      urls.push(spec.base.idle, spec.base.run1, spec.base.run2);
+      for (const patternId of spec.patterns) {
+        urls.push(patternUrl(kind, patternId, 'idle'), patternUrl(kind, patternId, 'run1'), patternUrl(kind, patternId, 'run2'));
+      }
+    }
+    await Promise.all(urls.filter(Boolean).map(u => loadImage(u).catch(() => null)));
+    window.__farmLog?.(`[genotype-render] prewarm(${targets.join(',')}): masks + ${urls.length} sprite URLs cached in ${(performance.now() - t0).toFixed(0)}ms`, 'wildlife');
   }
 
   function genotypeSignature(kind, genotype) {
@@ -229,5 +265,5 @@
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, SPECIES };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, prewarm, SPECIES };
 })();

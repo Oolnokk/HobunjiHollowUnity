@@ -19950,6 +19950,21 @@
           refreshActionBar();
           showToast('Teleported to the Testing Arena — creature spawner unlocked.', true);
           closeMenu();
+          // Pays the mask-JSON + base/pattern sprite network fetch up front
+          // instead of on the first Spawn click — a fully-patterned species
+          // is over a megabyte of images, so without this the cold fetch
+          // happens WHILE the first spawned creature is standing there
+          // plain/undyed, which is what actually reads as "no colors" (the
+          // recolor math itself is fast; the network round-trip isn't). Not
+          // a blocking loading screen — just a toast so the wait is visible
+          // instead of silent, since it can take a few seconds on a slow
+          // connection/CDN.
+          if (window.CreatureGeneticsRender) {
+            showToast('Warming up creature art…', true);
+            window.CreatureGeneticsRender.prewarm()
+              .then(() => showToast('Creature art ready — spawn away.', true))
+              .catch(() => {});
+          }
         });
       }
       document.getElementById('devTeleportArenaBtn')?.addEventListener('click', teleportToDevArena);
