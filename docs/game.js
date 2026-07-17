@@ -2721,24 +2721,48 @@
       // data-only: the math and Farm tab UI are fully real, but the in-game
       // sprite doesn't yet apply per-region recoloring (no masked-texture
       // pipeline exists for it — a follow-up once mask assets are authored).
+      // `weight` skews which colors actually turn up on an animal — real
+      // wildlife/livestock coats are overwhelmingly gray/brown/tan, with
+      // orange an occasional accent and true red rare, so a flat uniform
+      // pick over this list (the previous behavior) way overrepresented
+      // the 4 genuinely red entries relative to how often real coats look
+      // that way. Weight is a relative share within _pickWeightedFurEntry's
+      // cumulative draw, not a percentage — gray/brown/tan sit at 4, orange
+      // at 2, red at 1, which nets out to roughly gray/brown/tan ~87%,
+      // orange ~9%, red ~4% of picks given how many entries land in each
+      // bucket (see _pickWeightedFurEntry below).
       const LIVESTOCK_FUR_PALETTE = [
-        {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43'},{id:'charcoal',name:'Charcoal',hex:'#55585c'},
-        {id:'blue-grey',name:'Blue Grey',hex:'#596879'},{id:'ash',name:'Ash',hex:'#6d7068'},
-        {id:'dove',name:'Dove Grey',hex:'#756f78'},{id:'warm-grey',name:'Warm Grey',hex:'#74685f'},
-        {id:'olive-grey',name:'Olive Grey',hex:'#6d7058'},{id:'pale-cream',name:'Pale Cream',hex:'#c8b991'},
-        {id:'cream',name:'Cream',hex:'#c7aa77'},{id:'champagne',name:'Champagne',hex:'#b99a72'},
-        {id:'biscuit',name:'Biscuit',hex:'#bd9463'},{id:'sand',name:'Sand',hex:'#b28754'},
-        {id:'buff',name:'Buff',hex:'#b77c49'},{id:'honey',name:'Honey',hex:'#b97832'},
-        {id:'golden',name:'Golden',hex:'#ae8430'},{id:'fawn',name:'Fawn',hex:'#a47650'},
-        {id:'taupe',name:'Taupe',hex:'#806a5b'},{id:'mushroom',name:'Mushroom',hex:'#77635b'},
-        {id:'sable',name:'Sable',hex:'#714c37'},{id:'seal-brown',name:'Seal Brown',hex:'#5e493c'},
-        {id:'chocolate',name:'Chocolate',hex:'#6a412e'},{id:'liver',name:'Liver',hex:'#65403d'},
-        {id:'chestnut',name:'Chestnut',hex:'#894e31'},{id:'mahogany',name:'Mahogany',hex:'#784337'},
-        {id:'cinnamon',name:'Cinnamon',hex:'#a45b37'},{id:'russet',name:'Russet',hex:'#994b30'},
-        {id:'auburn',name:'Auburn',hex:'#874438'},{id:'copper',name:'Copper',hex:'#a85e3a'},
-        {id:'fox-red',name:'Fox Red',hex:'#b15d30'},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267'},
-        {id:'lilac-grey',name:'Lilac Grey',hex:'#746775'},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36'},
+        {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43',weight:4},{id:'charcoal',name:'Charcoal',hex:'#55585c',weight:4},
+        {id:'blue-grey',name:'Blue Grey',hex:'#596879',weight:4},{id:'ash',name:'Ash',hex:'#6d7068',weight:4},
+        {id:'dove',name:'Dove Grey',hex:'#756f78',weight:4},{id:'warm-grey',name:'Warm Grey',hex:'#74685f',weight:4},
+        {id:'olive-grey',name:'Olive Grey',hex:'#6d7058',weight:4},{id:'pale-cream',name:'Pale Cream',hex:'#c8b991',weight:4},
+        {id:'cream',name:'Cream',hex:'#c7aa77',weight:4},{id:'champagne',name:'Champagne',hex:'#b99a72',weight:4},
+        {id:'biscuit',name:'Biscuit',hex:'#bd9463',weight:4},{id:'sand',name:'Sand',hex:'#b28754',weight:4},
+        {id:'buff',name:'Buff',hex:'#b77c49',weight:2},{id:'honey',name:'Honey',hex:'#b97832',weight:2},
+        {id:'golden',name:'Golden',hex:'#ae8430',weight:2},{id:'fawn',name:'Fawn',hex:'#a47650',weight:4},
+        {id:'taupe',name:'Taupe',hex:'#806a5b',weight:4},{id:'mushroom',name:'Mushroom',hex:'#77635b',weight:4},
+        {id:'sable',name:'Sable',hex:'#714c37',weight:4},{id:'seal-brown',name:'Seal Brown',hex:'#5e493c',weight:4},
+        {id:'chocolate',name:'Chocolate',hex:'#6a412e',weight:4},{id:'liver',name:'Liver',hex:'#65403d',weight:4},
+        {id:'chestnut',name:'Chestnut',hex:'#894e31',weight:1},{id:'mahogany',name:'Mahogany',hex:'#784337',weight:4},
+        {id:'cinnamon',name:'Cinnamon',hex:'#a45b37',weight:2},{id:'russet',name:'Russet',hex:'#994b30',weight:1},
+        {id:'auburn',name:'Auburn',hex:'#874438',weight:1},{id:'copper',name:'Copper',hex:'#a85e3a',weight:2},
+        {id:'fox-red',name:'Fox Red',hex:'#b15d30',weight:1},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267',weight:4},
+        {id:'lilac-grey',name:'Lilac Grey',hex:'#746775',weight:4},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36',weight:4},
       ];
+      // Cumulative-weight draw over LIVESTOCK_FUR_PALETTE (or a filtered
+      // subset, e.g. mutateFurColor excluding the current color) — every
+      // random fur-color pick in the game goes through this instead of a
+      // flat array-index pick, so the gray/brown/tan-common, orange-
+      // occasional, red-rare distribution described above actually holds.
+      function _pickWeightedFurEntry(entries = LIVESTOCK_FUR_PALETTE) {
+        const total = entries.reduce((sum, e) => sum + (e.weight || 1), 0);
+        let roll = Math.random() * total;
+        for (const entry of entries) {
+          roll -= (entry.weight || 1);
+          if (roll < 0) return entry;
+        }
+        return entries[entries.length - 1];
+      }
 
       function _furHexToRgb(hex) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
       function _furRgbToHsv(r, g, b) {
@@ -2775,7 +2799,7 @@
       }
       function _furPaletteColor(color) { return _furPaletteEntry(color).hex; }
       function _furPaletteName(color) { return _furPaletteEntry(color).name; }
-      function randomFurColor() { return LIVESTOCK_FUR_PALETTE[Math.floor(Math.random() * LIVESTOCK_FUR_PALETTE.length)].hex; }
+      function randomFurColor() { return _pickWeightedFurEntry().hex; }
 
       function blendFurHex(colorA, colorB) {
         const ha = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorA))), hb = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorB)));
@@ -2786,7 +2810,7 @@
       }
       function mutateFurColor(hex) {
         const current = _furPaletteEntry(hex), choices = LIVESTOCK_FUR_PALETTE.filter(x => x.id !== current.id);
-        return choices[Math.floor(Math.random() * choices.length)].hex;
+        return _pickWeightedFurEntry(choices).hex;
       }
 
       // Perceptual color contrast (CIE Lab deltaE76), used to reward
@@ -2848,9 +2872,9 @@
       // Picks two fur colors that read as visually distinct — same rejection-
       // sample loop as the HTML lab's pickTwoFurColors().
       function pickTwoLivestockFurColors() {
-        let a = LIVESTOCK_FUR_PALETTE[Math.floor(Math.random() * LIVESTOCK_FUR_PALETTE.length)], b = a;
+        let a = _pickWeightedFurEntry(), b = a;
         for (let i = 0; i < 40; i++) {
-          b = LIVESTOCK_FUR_PALETTE[Math.floor(Math.random() * LIVESTOCK_FUR_PALETTE.length)];
+          b = _pickWeightedFurEntry();
           const [ah, as] = _furRgbToHsv(..._furHexToRgb(a.hex)), [bh, bs] = _furRgbToHsv(..._furHexToRgb(b.hex));
           let dh = Math.abs(ah - bh); dh = Math.min(dh, 1 - dh);
           if (a.id !== b.id && (dh > 0.045 || Math.abs(as - bs) > 0.18)) break;
