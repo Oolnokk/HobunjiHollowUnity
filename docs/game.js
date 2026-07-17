@@ -2816,14 +2816,6 @@
         'gar-wolf': ['colorpoint', 'foxtail', 'mitts'],
         'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
       };
-      function shuffleCopy(arr) {
-        const a = arr.slice();
-        for (let i = a.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [a[i], a[j]] = [a[j], a[i]];
-        }
-        return a;
-      }
       // Picks two fur colors that read as visually distinct — same rejection-
       // sample loop as the HTML lab's pickTwoFurColors().
       function pickTwoLivestockFurColors() {
@@ -2856,11 +2848,14 @@
         const patterns = LIVESTOCK_PATTERN_DEFS[kind];
         if (patterns) {
           const [first, second] = pickTwoLivestockFurColors();
-          const count = Math.floor(Math.random() * (Math.min(3, patterns.length) + 1));
-          const chosen = new Set(shuffleCopy(patterns).slice(0, count));
+          // Each pattern layer gets an independent 1/3 chance of showing up
+          // (rather than rolling "how many, then which") — with 3 patterns
+          // that's ~70% odds of at least one being visible per specimen,
+          // instead of leaving a pack looking plain too often.
           const genotype = { base: { color: first.hex, copies: 2, inheritance: 'dominant' } };
           for (const id of patterns) {
-            genotype[id] = { color: second.hex, copies: chosen.has(id) ? 1 : 0, inheritance: 'dominant', enabled: chosen.has(id) };
+            const enabled = Math.random() < (1 / 3);
+            genotype[id] = { color: second.hex, copies: enabled ? 1 : 0, inheritance: 'dominant', enabled };
           }
           return genotype;
         }
@@ -5121,7 +5116,7 @@
             const denTransitions = (workspace.animalDens || [])
               .filter(den => den.mouthAnchor)
               .map(den => {
-                const cavernMapId = `map_i_den_${zoneId}_${den.id}`;
+                const cavernMapId = denCavernMapId(zoneId, den.id);
                 const { exitCol, exitRow } = generateCavernFloor(cavernMapId);
                 return {
                   id: `den_${den.id}_enter`, label: 'A dark burrow', col: den.mouthAnchor.x, row: den.mouthAnchor.y,
@@ -5449,12 +5444,22 @@
       const pendingDenRespawn = new Set();
 
       function denKeyFor(zoneId, den) { return `${zoneId}:${den.id}`; }
+      // cavernMapId -> the zone it belongs to — zoneId/denId can't be
+      // reliably parsed back out of "map_i_den_<zoneId>_<denId>" (both
+      // halves can themselves contain underscores), so this side table is
+      // populated wherever a cavern id is minted (denCavernMapId) instead.
+      // Used by teleportToRandomDen to work from inside a den too.
+      const _denCavernZoneOf = new Map();
       // Same id shape performTothalShift's denTransitions and
       // synthesizeCavernMapData both already use for the den's cavern —
       // reused as the shared lookup key so a den's exterior pack, its
       // Den-Mother, and its nest rewards all resolve the same genotype
       // without needing to parse zoneId/denId back out of the mapId string.
-      function denCavernMapId(zoneId, denId) { return `map_i_den_${zoneId}_${denId}`; }
+      function denCavernMapId(zoneId, denId) {
+        const id = `map_i_den_${zoneId}_${denId}`;
+        _denCavernZoneOf.set(id, zoneId);
+        return id;
+      }
       // cavernMapId -> shared "family" genotype (gar-wolf pattern shape) —
       // one roll per den, reused by every pack member, the Den-Mother, and
       // any eggs/babies taken from its nest, using the exact same odds as
@@ -5477,6 +5482,17 @@
         for (const key of denEverSpawned) if (key.startsWith(prefix)) denEverSpawned.delete(key);
         for (const key of pendingDenRespawn) if (key.startsWith(prefix)) pendingDenRespawn.delete(key);
         for (const key of [...denLastKnownAlive.keys()]) if (key.startsWith(prefix)) denLastKnownAlive.delete(key);
+        // Den ids (e.g. "animalDen_3") are assigned sequentially per zone
+        // generation, so a fresh Tothal Shift very likely reuses an old
+        // den's exact id — without this, that den's cavern would keep
+        // returning its stale cached scene/nest/genotype from before the
+        // shift (see loadBuildingScene's _buildingScenes.has() early-return
+        // and getOrMakeDenGenotype's cache-forever lookup) instead of
+        // rolling a fresh one for the new pack that just spawned there.
+        const cavernPrefix = `map_i_den_${zoneId}_`;
+        for (const key of [..._denGenotypes.keys()]) if (key.startsWith(cavernPrefix)) _denGenotypes.delete(key);
+        for (const key of [..._denNests.keys()]) if (key.startsWith(cavernPrefix)) _denNests.delete(key);
+        for (const key of [..._buildingScenes.keys()]) if (key.startsWith(cavernPrefix)) _buildingScenes.delete(key);
       }
 
       function isDenPackAlive(denKey) {
@@ -9351,15 +9367,25 @@
         const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(seedText) : Math.random;
         const targetTiles = 40 + Math.floor(rng() * 41); // 40-80 tiles — room for a Den-Mother boss fight plus the nest chamber
         const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-        const cells = new Set(['0,0']);
+        // The entrance is always a straight 3-wide row (x=-1,0,1 at y=0) with
+        // an exit tile in the middle — not just wherever the organic blob
+        // happened to touch a boundary — so buildWallPanelsFromFloorSet
+        // always has 3 adjacent south-facing edges to skip (merged into one
+        // wide gap) instead of a single-tile doorway. y>0 (south of the
+        // entrance row) is never grown into, so this row stays the cavern's
+        // southern boundary and that gap reads as a real cave mouth.
+        const ENTRANCE_CELLS = ['-1,0', '0,0', '1,0'];
+        const cells = new Set(ENTRANCE_CELLS);
         const frontier = new Map();
         const addFrontier = (x, y) => {
           for (const [dx, dy] of DIRS4) {
-            const nx = x + dx, ny = y + dy, key = `${nx},${ny}`;
+            const nx = x + dx, ny = y + dy;
+            if (ny > 0) continue;
+            const key = `${nx},${ny}`;
             if (!cells.has(key)) frontier.set(key, [nx, ny]);
           }
         };
-        addFrontier(0, 0);
+        for (const key of ENTRANCE_CELLS) addFrontier(...key.split(',').map(Number));
         while (cells.size < targetTiles && frontier.size) {
           const keys = [...frontier.keys()];
           const weights = keys.map(k => {
@@ -9377,9 +9403,9 @@
           addFrontier(px, py);
         }
         // Erode dead-end spurs only (leaves — safe to remove, can't disconnect anything).
-        // The origin tile is the cavern's entrance and is never eroded.
+        // The entrance row is the cavern's entrance and is never eroded.
         for (const key of [...cells]) {
-          if (key === '0,0' || cells.size <= 6) continue;
+          if (ENTRANCE_CELLS.includes(key) || cells.size <= 6) continue;
           const [x, y] = key.split(',').map(Number);
           let n = 0;
           for (const [dx, dy] of DIRS4) if (cells.has(`${x + dx},${y + dy}`)) n++;
@@ -9417,6 +9443,10 @@
         return {
           floor, cols, rows,
           exitCol: 0 - minX + 1, exitRow: 0 - minY + 1,
+          // The full 3-wide entrance row, shifted the same way as floor —
+          // synthesizeCavernMapData hands all 3 to the exit's tiles[] so
+          // buildWallPanelsFromFloorSet skips all 3 south edges as one gap.
+          exitTiles: ENTRANCE_CELLS.map(key => { const [x, y] = key.split(',').map(Number); return [x - minX + 1, y - minY + 1]; }),
           nestCol: nfx - minX + 1, nestRow: nfy - minY + 1,
         };
       }
@@ -9438,12 +9468,16 @@
       }
 
       function synthesizeCavernMapData(mapId) {
-        const { floor, cols, rows, exitCol, exitRow, nestCol, nestRow } = generateCavernFloor(mapId);
+        const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow } = generateCavernFloor(mapId);
         return {
           schema: 'hobunji_building_interior.v1',
           id: mapId, name: 'A Dark Burrow',
           cols, rows,
-          exits: [{ id: 'den_exit', label: 'Back outside', tiles: [[exitCol, exitRow]], targetMap: '', spawnCol: 0, spawnRow: 0 }],
+          // All 3 entrance tiles share one exit id — checkTransitionSpots
+          // fires from any of them, and buildWallPanelsFromFloorSet skips
+          // all 3 south edges as a single merged 3-wide gap (see
+          // generateCavernFloor).
+          exits: [{ id: 'den_exit', label: 'Back outside', tiles: exitTiles, targetMap: '', spawnCol: 0, spawnRow: 0 }],
           colliders: [], floor, furniture: [],
           wallStyle: 'cavern',
           // Den-Mother/nest placement — read by loadBuildingScene after the
@@ -9560,6 +9594,25 @@
               : houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
             _markOutline(wallGroup);
             bScene.add(wallGroup);
+          }
+          // A den's cavern entrance had no visual distinguishing it from any
+          // other dark corner of the cave (see generateCavernFloor's
+          // guaranteed 3-wide south opening) — a warm point light standing
+          // in for daylight spilling through the mouth, plus a lighter floor
+          // patch, makes it read as "the way out" and gives the player's
+          // spawn point some actual light instead of pitch dark.
+          if (mapData.wallStyle === 'cavern' && exitTileSet.size) {
+            let ex = 0, ez = 0;
+            for (const key of exitTileSet) { const [c, r] = key.split(',').map(Number); ex += c; ez += r; }
+            ex = ex / exitTileSet.size + 0.5; ez = ez / exitTileSet.size + 0.5;
+            const doorLight = new THREE.PointLight(0xfff2d0, 1.4, 7, 2);
+            doorLight.position.set(ex, 1.6, ez + 0.6);
+            bScene.add(doorLight);
+            const glowMat = new THREE.MeshBasicMaterial({ color: 0xe9dcb8, transparent: true, opacity: 0.35 });
+            const glow = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), glowMat);
+            glow.rotation.x = -Math.PI / 2;
+            glow.position.set(ex, 0.02, ez);
+            bScene.add(glow);
           }
           // Furniture: build combined itemKey -> def/furnitureKey lookup
           const allFurnDefs = {};
@@ -19533,6 +19586,43 @@
       // have one" (farm/town/buildings never do; a wilderness zone does once
       // its Tothal Shift has run — see _zoneLayouts' `dens` field).
       function teleportToRandomDen() {
+        // Called from inside a den's own cavern (dark, no landmarks, and
+        // "no dens on this map" made no sense there since a cavern's own
+        // _zoneLayouts entry doesn't exist) — resolve the exterior zone
+        // this cavern belongs to (see _denCavernZoneOf) and warp there,
+        // landing at a den mouth like the zone-side path below instead of
+        // requiring a separate exit step first.
+        if (_isCavernBuildingArea(currentArea)) {
+          const zoneId = _denCavernZoneOf.get(currentArea);
+          const dens = zoneId ? _zoneLayouts.get(zoneId)?.dens : null;
+          if (!zoneId || !dens || !dens.length) {
+            showToast("No dens found for this burrow's map.", false);
+            return;
+          }
+          const den = dens[Math.floor(rnd() * dens.length)];
+          const anchor = den.mouthAnchor || { x: den.x + (den.w || 1) / 2, y: den.y + (den.h || 1) / 2 };
+          startSceneTransition(() => {
+            const fromScene = _buildingScenes.get(currentArea)?.scene || null;
+            if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+            _currentBuildingMapId = null;
+            currentArea = zoneId;
+            player.x = (anchor.x + 0.5) * TILE;
+            player.y = (anchor.y + 0.5) * TILE;
+            player.vx = 0; player.vy = 0;
+            _snapCameraTarget();
+            const toScene = buildZoneScene(zoneId)?.scene;
+            if (toScene) {
+              toScene.add(playerMesh); toScene.add(playerGroundShadow);
+              toScene.add(toolHolder); toScene.add(reticleMesh);
+              toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
+              toScene.add(reticleWavyGroup);
+            }
+            refreshActionBar();
+            showToast(`Teleported to a den (${dens.length} on this map).`, true);
+            closeMenu();
+          });
+          return;
+        }
         const dens = _zoneLayouts.get(currentArea)?.dens;
         if (!dens || !dens.length) {
           showToast('No dens on this map.', false);
@@ -20911,6 +21001,28 @@
           if (nest && nest.remaining > 0 && isPlayerNearDenNest(nest)) {
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
             return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true }];
+          }
+          // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
+          // the weapon/tool combo buttons still need to populate the action
+          // bar here, same as farm/zone (below), even though every other
+          // building interior deliberately shows none. World objects, crops,
+          // and furniture placement don't exist in a cavern, so this skips
+          // straight to the tool-actions block instead of falling through
+          // the farm/zone branch wholesale.
+          if (_isCavernBuildingArea(currentArea) && heldMode === 'tool') {
+            const cavernReticle = getReticleTile();
+            const cavernTile = getActiveGrid()[cavernReticle.row]?.[cavernReticle.col];
+            const cavernBtns = [];
+            (toolActions[activeTool] || []).forEach((action, i) => {
+              const [fallbackIcon] = actionLabels[action];
+              const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
+              const allowed = canUseAction(activeTool, action, cavernReticle.col, cavernReticle.row);
+              cavernBtns.push({
+                icon, label: contextualActionLabel(action, cavernTile),
+                action, style: i === 0 ? 'primary' : 'secondary', allowed,
+              });
+            });
+            return cavernBtns;
           }
           return [];
         }

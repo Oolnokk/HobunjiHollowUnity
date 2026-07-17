@@ -79,13 +79,25 @@
     return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
   }
 
-  // "Same direct fill": every affected pixel keeps its original value+alpha,
-  // only hue+saturation are replaced with the target color's.
+  // The source art's recolorable fur/pattern pixels are drawn quite dark
+  // (measured: ~90% of the base sprite's masked pixels fall between 0.2 and
+  // 0.4 value, average ~0.25) — feeding that straight into hsvToRgb crushes
+  // every target hue/saturation into a visually similar dark, muddy tone,
+  // which is why different palette colors were reading as "everything looks
+  // reddish" with no real variation between packs. Remapping into a
+  // brighter working range keeps the original shading's relative contrast
+  // (shadow vs highlight) while giving the target color enough brightness
+  // to actually read as itself.
+  function _remapValue(v) { return Math.min(1, 0.3 + v * 1.4); }
+
+  // "Same direct fill": every affected pixel keeps its original value+alpha
+  // (remapped — see _remapValue), only hue+saturation are replaced with the
+  // target color's.
   function recolorPixels(px, targetH, targetS, predicate) {
     for (let i = 0; i < px.length; i += 4) {
       if (px[i + 3] === 0) continue;
       if (predicate && !predicate(i)) continue;
-      const value = Math.max(px[i], px[i + 1], px[i + 2]) / 255;
+      const value = _remapValue(Math.max(px[i], px[i + 1], px[i + 2]) / 255);
       const [r, g, b] = hsvToRgb(targetH, targetS, value);
       px[i] = r; px[i + 1] = g; px[i + 2] = b;
     }
