@@ -90,6 +90,26 @@
     }
   };
 
+  // Baseline afflictions a creature's plain attackTag applies (see game.js's
+  // CREATURE_DB attackTag field — gar-wolves 'sharp', dabinggi-hounds
+  // 'poison', Uumkao'ii 'blunt' — and combat-animal-attacks.js's Pounce/
+  // Guard Charge, which both read this so every one of a species'
+  // interchangeable attacks, the generic bite telegraph included, afflicts
+  // consistently instead of each attack guessing its own). One straight
+  // affliction per tag, at roughly the strength of the player's own first
+  // (unearned) upgrade pick for that same affliction (see combat-
+  // progression.js's BLEED/BRUISE/POISON) — a creature has no progression
+  // tree to grow into, so it just always lands at that baseline.
+  const ATTACK_TAG_AFFLICTIONS = {
+    sharp:  { bleedingHealth: 0.35 },
+    blunt:  { bruisedHealth: 0.5 },
+    poison: { poisonedHealth: 0.28 },
+  };
+
+  function afflictionBonusesForTag(tag) {
+    return ATTACK_TAG_AFFLICTIONS[tag] || null;
+  }
+
   function defaultAfflictions() {
     const out = {};
     for (const id of Object.keys(AFFLICTIONS)) out[id] = 0;
@@ -405,6 +425,7 @@
 
   window.ResourceSystem = {
     AFFLICTIONS,
+    afflictionBonusesForTag,
     config: resourceSystemConfig,
     initEntity,
     getAffliction,
