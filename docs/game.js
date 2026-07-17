@@ -3500,7 +3500,12 @@
         });
         avatarRef.frontPlane = avatarRef.group.children[0] || null;
         avatarRef.backPlane  = avatarRef.group.children[1] || null;
-        if (def.tint && def.tint !== 0xffffff) {
+        // Skip the species-differentiation tint for genotype-bearing
+        // creatures (gar-wolf/dabinggi-hound) — their sprite is about to be
+        // replaced by a genotype-composited texture and def.tint would
+        // multiply over it, muddying the actual bred color (see the
+        // matching genotype check in updateCreatureMesh's per-tick tint).
+        if (def.tint && def.tint !== 0xffffff && !opts.genotype) {
           for (const child of avatarRef.group.children) {
             if (child.material) child.material.color.setHex(def.tint);
           }
@@ -4092,10 +4097,18 @@
         // hit flash so "you damaged it" feedback still reads clearly even if
         // a strike lands mid-windup. Resolved every frame (not just on
         // change) so the tint always reverts cleanly once both clear.
+        // A genotype-bearing creature's texture is already the correct
+        // per-den color (see updateCreatureAnimFrame/composeFrame below) —
+        // def.tint is a plain species-differentiation multiply that would
+        // wash a correctly-composited golden/etc. texture back toward
+        // whatever hardcoded tint that species variant (e.g. gar-wolf-alpha,
+        // gar-wolf-den-mother) happens to have, so skip it for those and
+        // fall back to white. Combat feedback (hit flash / telegraph) still
+        // applies to every creature regardless of genotype.
         const desiredTint = c.hitFlashT > 0 ? 0xff5050
           : c.telegraphState === 'strike' ? 0xffffff
           : c.telegraphState === 'windup' ? 0xffc23d
-          : (c.def.tint || 0xffffff);
+          : (c.genotype ? 0xffffff : (c.def.tint || 0xffffff));
         if (c._tintHex !== desiredTint) {
           c._tintHex = desiredTint;
           for (const child of grp.children) {
@@ -5341,6 +5354,8 @@
         genotypeSignature: (kind, genotype) => window.CreatureGeneticsRender?.genotypeSignature(kind, genotype),
         setInventory: (key, n) => { inventory[key] = n; },
         getGenotypeTexCacheSize: () => _genotypeTexCache.front.size,
+        getGenotypeTexCacheKeys: () => [..._genotypeTexCache.front.keys()],
+        debugGetGenotypeTextures: (kind, frame, genotype) => !!_getGenotypeTextures(kind, frame, genotype),
         makeDefaultGenotype: (kind) => makeDefaultGenotype(kind),
         makeCreatureEntity: (key, x, y, opts) => makeCreatureEntity(key, x, y, opts),
         getGenotypeReadyFrames: (c) => c._genotypeReadyFrames ? [...c._genotypeReadyFrames] : [],
@@ -22777,6 +22792,7 @@
         canPlayerOccupy,
         canOccupyAt,
         setCreatureFrame,
+        genotypeKindFor: (c) => (c.genotype ? (GENOTYPE_SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null),
         showToast,
         triggerWeaponSwingVisual,
         triggerWeaponHoldVisual,
