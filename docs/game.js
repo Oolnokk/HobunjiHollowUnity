@@ -5012,6 +5012,9 @@
         isGameStarted: () => gameStarted,
         isMenuOpen: () => menuOpen,
         isDialogueOpen: () => dialogueOpen,
+        isFarmEditMode: () => farmEditMode,
+        getBoundDesktopEnter: () => getActionForButton('desktop', 'Enter'),
+        debugComputeActionButtons: () => computeActionButtons(),
       };
 
       // Ambient hostile spawning — wild animal dens (see WildernessMapGenerator's
