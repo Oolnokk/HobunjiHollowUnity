@@ -3012,7 +3012,7 @@
         return true;
       }
 
-      function makeUumkaoiiAnimal(col, row, livestockId) {
+      function makeUumkaoiiAnimal(col, row, livestockId, genotype) {
         const ANIMAL_W = 1.275;
         const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
         const halfH = ANIMAL_H / 2;
@@ -3028,11 +3028,31 @@
         _markPngPlane(avatarRef.group);
         scene.add(avatarRef.group);
 
+        // Composites the always-on fur+plates layers onto the plain base —
+        // see CreatureGeneticsRender.SPECIES.uumkaoii and makeDefaultGenotype's
+        // uumkaoii branch. Mirrors makePatternLivestockAnimal's one-shot
+        // idle-only composite below (a farm animal never runs, so there's no
+        // per-frame retry loop to wire up the way the wild/companion
+        // CREATURE_DB path needs via updateCreatureAnimFrame).
+        if (genotype && window.CreatureGeneticsRender) {
+          window.CreatureGeneticsRender.composeFrame('uumkaoii', 'idle', genotype).then(canvas => {
+            if (!canvas) return;
+            const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
+            const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
+            backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
+            for (const child of avatarRef.group.children) {
+              if (!child.material) continue;
+              if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
+              else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
+            }
+          }).catch(() => {});
+        }
+
         let tickCounter = 0;
         const animal = {
           id: 'uumkaoii_' + col + '_' + row + '_' + (performance.now() | 0),
           livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
-          type: 'animal', animalKey: 'uumkaoii',
+          type: 'animal', animalKey: 'uumkaoii', genotype,
           col, row, targetCol: col, targetRow: row,
           wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
           halfHeight: halfH, avatarRef,

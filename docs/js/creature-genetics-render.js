@@ -43,11 +43,30 @@
       },
       patterns: ['mitts', 'spectacles', 'stripes'],
     },
+    // Uumkao'ii has one static sprite (no run1/run2 art — see CREATURE_DB's
+    // sprites.run reusing the idle frame), and its two regions are always
+    // both present (see makeDefaultGenotype's uumkaoii branch: fur/plates
+    // are permanent copies:2 layers with no `enabled` roll at all, unlike
+    // gar-wolf/dabinggi-hound's optional pattern layers) — composeFrame's
+    // enabled-gate below treats a layer with no `enabled` field as always-on
+    // for exactly this reason. singleFrame tells patternUrl to skip the
+    // _idle/_run1/_run2 suffix these two overlay files don't have.
+    uumkaoii: {
+      prefix: 'uum',
+      singleFrame: true,
+      base: {
+        idle: "assets/creaturesprites/uumkao'ii.png",
+        run1: "assets/creaturesprites/uumkao'ii.png",
+        run2: "assets/creaturesprites/uumkao'ii.png",
+      },
+      patterns: ['fur', 'plates'],
+    },
   };
 
   function patternUrl(kind, patternId, frame) {
     const spec = SPECIES[kind];
     if (!spec) return null;
+    if (spec.singleFrame) return `assets/creaturesprites/patterns/${spec.prefix}_${patternId}.png`;
     return `assets/creaturesprites/patterns/${spec.prefix}_${patternId}_${frame}.png`;
   }
 
@@ -198,8 +217,13 @@
     const masks = await loadBaseMasks();
     const tMasks = performance.now();
     const mask = masks?.[kind]?.[frame];
-    if (!mask) window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no base mask found — base fur will render unrecolored`, 'wildlife');
     const baseColor = genotype?.base?.color;
+    // Only worth a warning if there was actually a base color to apply —
+    // uumkaoii's genotype has no `base` layer at all (its two regions are
+    // the fur/plates overlays below, not a recolored base), so baseColor is
+    // always undefined for it and this would otherwise fire every call for
+    // no reason.
+    if (baseColor && !mask) window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no base mask found — base fur will render unrecolored`, 'wildlife');
     const baseSource = (baseColor && mask) ? await recoloredBase(baseUrl, baseColor, mask) : await loadImage(baseUrl);
     const tBase = performance.now();
     const bw = baseSource.naturalWidth || baseSource.width, bh = baseSource.naturalHeight || baseSource.height;
@@ -208,7 +232,11 @@
     const drawnPatterns = [];
     for (const patternId of spec.patterns) {
       const layer = genotype?.[patternId];
-      if (!layer?.enabled || !(layer.copies > 0) || !layer.color) continue;
+      // A layer with no `enabled` field at all (uumkaoii's permanent
+      // fur/plates regions — see makeDefaultGenotype) is always on; only an
+      // EXPLICIT `enabled: false` (gar-wolf/dabinggi-hound's optional
+      // pattern roll) turns a layer off.
+      if (layer?.enabled === false || !(layer?.copies > 0) || !layer?.color) continue;
       const url = patternUrl(kind, patternId, frame);
       try {
         const recolored = await recoloredPattern(url, layer.color);
@@ -260,7 +288,7 @@
     const parts = [genotype?.base?.color || ''];
     for (const id of spec.patterns) {
       const l = genotype?.[id];
-      parts.push((l?.enabled && l.copies > 0 && l.color) ? `${id}:${l.color}` : '');
+      parts.push((l?.enabled !== false && l?.copies > 0 && l?.color) ? `${id}:${l.color}` : '');
     }
     return parts.join('|');
   }
