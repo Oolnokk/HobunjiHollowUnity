@@ -2817,6 +2817,16 @@
         'gar-wolf': ['colorpoint', 'foxtail', 'mitts'],
         'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
       };
+      // CREATURE_DB variants that reuse a pattern-species' sprite/pattern
+      // assets under a different creatureKey (different stats/label, same
+      // art) — used to resolve which CreatureGeneticsRender.SPECIES entry
+      // a given creature's genotype should render against. Without this,
+      // gar-wolf-alpha and gar-wolf-den-mother genotypes never render:
+      // CreatureGeneticsRender.SPECIES only has a "gar-wolf" key.
+      const GENOTYPE_SPECIES_ALIAS = {
+        'gar-wolf-alpha': 'gar-wolf',
+        'gar-wolf-den-mother': 'gar-wolf',
+      };
       // Picks two fur colors that read as visually distinct — same rejection-
       // sample loop as the HTML lab's pickTwoFurColors().
       function pickTwoLivestockFurColors() {
@@ -3375,12 +3385,9 @@
       // pixels come from an async canvas composite (see
       // creature-genetics-render.js) rather than a static file. While a
       // signature's compose is still in flight, callers fall back to the
-      // species' plain (uncolored) sprite — see setCreatureFrame below —
-      // and _genotypeTexGeneration lets already-spawned creatures notice
-      // once the real texture becomes available and re-apply it.
+      // species' plain (uncolored) sprite — see setCreatureFrame below.
       const _genotypeTexCache = { front: new Map(), back: new Map() };
       const _genotypeTexPending = new Set();
-      let _genotypeTexGeneration = 0;
       function _getGenotypeTextures(kind, frame, genotype) {
         const renderer = window.CreatureGeneticsRender;
         if (!renderer || !genotype) return null;
@@ -3401,11 +3408,21 @@
             back.wrapS = THREE.RepeatWrapping; back.repeat.set(-1, 1); back.offset.set(1, 0);
             _genotypeTexCache.front.set(key, front);
             _genotypeTexCache.back.set(key, back);
-            _genotypeTexGeneration++;
           }).catch(() => { _genotypeTexPending.delete(key); });
         }
         return null;
       }
+      // Returns true when a real composited texture (not the plain
+      // fallback) got applied — updateCreatureAnimFrame uses this to keep
+      // retrying a genotype creature's current frame every tick until its
+      // specific (kind,frame,signature) compose actually finishes, instead
+      // of a global "something somewhere finished" signal (the previous
+      // design: a single shared generation counter bumped by ANY frame's
+      // compose finishing, anywhere, for any creature — which let a
+      // creature get marked "up to date" the instant some unrelated
+      // frame/genotype completed, permanently stranding it on the plain
+      // fallback if its own specific frame wasn't ready at that exact
+      // moment and nothing else ever bumped the counter again).
       function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype) {
         const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype) : null;
         const front = genoTex?.front || _getCreatureFrontTexture(url);
@@ -3417,6 +3434,7 @@
           else continue;
           child.material.needsUpdate = true;
         }
+        return !!genoTex;
       }
 
       // spriteUrl -> resolved bottom-opacity ratio (0..1, see
@@ -4095,16 +4113,27 @@
         // A genotype-bearing creature (gar-wolf/dabinggi-hound with genes —
         // see makeCreatureEntity's opts.genotype) needs its composited
         // texture re-applied once the async compose finishes, even if the
-        // frame URL string itself hasn't changed since the fallback swap.
-        const genotypeKind = c.genotype ? c.creatureKey : null;
-        if (genotypeKind && c._appliedGenotypeGen !== _genotypeTexGeneration) {
-          c.currentFrameUrl = null;
-          c._appliedGenotypeGen = _genotypeTexGeneration;
-        }
+        // frame URL string itself hasn't changed since the fallback swap —
+        // c._genotypeReadyFrames tracks which frame keys have already
+        // gotten their real (non-fallback) texture applied, so a not-yet-
+        // ready frame keeps retrying every tick (cheap: a cache lookup)
+        // until setCreatureFrame reports success, instead of relying on
+        // any global "something finished" signal that can't tell whether
+        // it was actually THIS creature's THIS frame that became ready.
+        // gar-wolf-alpha/gar-wolf-den-mother are separate CREATURE_DB
+        // entries (different stats) but share the plain gar-wolf's sprite
+        // files and pattern assets — GENOTYPE_SPECIES_ALIAS maps them back
+        // to the "gar-wolf" key CreatureGeneticsRender.SPECIES actually
+        // knows, otherwise composeFrame silently no-ops for them (spec not
+        // found) and they'd never render a fill/pattern at all.
+        const genotypeKind = c.genotype ? (GENOTYPE_SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null;
         if (!moving) {
-          if (c.currentFrameUrl !== c.def.sprites.idle) {
-            setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, 'idle', c.genotype);
+          const frameKey = 'idle';
+          const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
+          if (c.currentFrameUrl !== c.def.sprites.idle || needsRetry) {
+            const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype);
             c.currentFrameUrl = c.def.sprites.idle;
+            if (genotypeKind && applied) (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
           }
           // Not tracking ground covered while idle, so resuming movement
           // doesn't "catch up" on distance never actually traveled.
@@ -4126,9 +4155,12 @@
           c.runFrame = (c.runFrame + 1) % c.def.sprites.run.length;
         }
         const url = c.def.sprites.run[c.runFrame];
-        if (c.currentFrameUrl !== url) {
-          setCreatureFrame(c.avatarRef, url, genotypeKind, 'run' + (c.runFrame + 1), c.genotype);
+        const frameKey = 'run' + (c.runFrame + 1);
+        const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
+        if (c.currentFrameUrl !== url || needsRetry) {
+          const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype);
           c.currentFrameUrl = url;
+          if (genotypeKind && applied) (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
         }
       }
 
@@ -5310,6 +5342,8 @@
         setInventory: (key, n) => { inventory[key] = n; },
         getGenotypeTexCacheSize: () => _genotypeTexCache.front.size,
         makeDefaultGenotype: (kind) => makeDefaultGenotype(kind),
+        makeCreatureEntity: (key, x, y, opts) => makeCreatureEntity(key, x, y, opts),
+        getGenotypeReadyFrames: (c) => c._genotypeReadyFrames ? [...c._genotypeReadyFrames] : [],
       };
 
       // Ambient hostile spawning — wild animal dens (see WildernessMapGenerator's
