@@ -22551,9 +22551,26 @@
         const next = (idx + delta + WHEEL_SLOTS.length) % WHEEL_SLOTS.length;
         setActiveTool(WHEEL_SLOTS[next]);
       }
+      // action1/action2 while wielding the weapon tool route through
+      // Combat.input's tap/hold state machine (see combat-input.js) — same
+      // as the desktop mouse-click handler just above this function already
+      // does for button 0/2 — instead of runActionButtonAtSlot's single
+      // immediate useActiveAction() call, which has no concept of "held" at
+      // all. Without this, any device whose action1/action2 goes through
+      // runInputAction (keyboard Space, every controller trigger) could
+      // never trigger a hold-slot ability: press *and* release both fired
+      // the same instant tap. Every other tool keeps its previous
+      // instant-fire behavior unchanged.
+      function weaponActionSlot(actionId) {
+        if (!(actionId === 'action1' || actionId === 'action2')) return 0;
+        if (activeTool !== 'weapon' || !window.Combat?.input) return 0;
+        return actionId === 'action1' ? 1 : 2;
+      }
       function runInputAction(actionId, phase = 'press') {
         if (phase === 'release') {
           if (actionId === 'action1') actionHeldDown = false;
+          const releaseSlot = weaponActionSlot(actionId);
+          if (releaseSlot) window.Combat.input.pressEnd(releaseSlot);
           return;
         }
         if (fishingMinigame?.active) {
@@ -22562,6 +22579,12 @@
         }
         if (menuOpen || farmEditMode) return;
         if (actionId === 'interact') { runInteractAction(); return; }
+        const weaponSlot = weaponActionSlot(actionId);
+        if (weaponSlot) {
+          if (actionId === 'action1') actionHeldDown = true;
+          window.Combat.input.pressStart(weaponSlot);
+          return;
+        }
         const actionSlot = /^action(\d+)$/.exec(actionId);
         if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
         if (actionId === 'dodge') { performContextAction(); return; }
@@ -22794,6 +22817,14 @@
       window.addEventListener('keyup', (event) => {
         const key = event.key.toLowerCase();
         input.keys.delete(key);
+        // Symmetric release for whatever keydown dispatched as a 'press' —
+        // same binding lookup/exclusion as keydown above, so a held weapon
+        // action (e.g. Space/action1) actually reaches Combat.input.pressEnd
+        // instead of only ever firing as an instant tap.
+        const boundDesktopActionUp = getActionForButton('desktop', event.code);
+        if (boundDesktopActionUp && !['KeyE', 'KeyQ'].includes(event.code)) {
+          runInputAction(boundDesktopActionUp, 'release');
+        }
         if (key === 'e' && isDesktop) {
           event.preventDefault();
           const wasHeld = finishDesktopHoldKey('e');
