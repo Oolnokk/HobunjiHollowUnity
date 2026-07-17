@@ -61,9 +61,16 @@
   // stamina), thrusting steps as Sharp (bleed + wounded stamina); each
   // combo's 3rd/finisher step also consumes the target's Bruised Health
   // for bonus damage, same as the demo's Heavy Attack rule.
+  // Forehand/Backhand knockbackMul is deliberately low — a combo's own early
+  // hits used to shove a target most of the way out of the next step's
+  // range/cone before it could land, which is what actually made 2nd/3rd
+  // combo hits feel unreliable (more than cone width or auto-aim ever was).
+  // Keeping the opening hits closer to a stagger than a launch, and saving
+  // the big shove for Cleave, means the combo has something left to hit by
+  // the time the finisher's own knockbackMul (2.4) fires.
   const SWING_STEPS = [
-    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 1.0, staminaCost: 16, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 2.0 },
-    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 1.15, staminaCost: 19, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 1.0 },
+    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 0.45, staminaCost: 16, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 2.0 },
+    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 0.55, staminaCost: 19, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 1.0 },
     // Cleave is the combo's 3rd step and its `heavy` flag — see the `heavy`
     // handling in onTap below — barely outdamages Backhand Swing on its own
     // (1.35 vs 1.25); its actual payoff scales with comboStreak.multiplier(),
@@ -77,15 +84,20 @@
   // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
   // push the weapon out farther than the first two (plain) pokes, per the
   // demo's "third one rotates even farther, pushes even farther forward" spec.
+  // Same low-early-knockback rationale as SWING_STEPS above. Step/Long
+  // Thrust's cone also widens a little over Short Thrust's — by the time
+  // those land, the target has already reacted to (or been nudged by) the
+  // opener, so the follow-ups bias toward forgiving the combo continuing
+  // over staying razor-precise.
   const POKE_STEPS = [
-    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.9, staminaCost: 13,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 2.0 },
-    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 9,  rangeMul: 1.35, knockbackMul: 1.1, staminaCost: 16, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 1.0 },
+    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.4, staminaCost: 13,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 2.0 },
+    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 12, rangeMul: 1.35, knockbackMul: 0.5, staminaCost: 16, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 1.0 },
     // Long Lunge is the poke combo's 3rd step and its `heavy` flag — barely
     // outdamages Step Thrust on its own (1.25 vs 1.15); its real payoff
     // scales with comboStreak.multiplier() the same way Cleave's does (see
     // onTap below). Same extra x1.5 knockback bump as Cleave, also excluded
     // from the streak scaling.
-    { name: 'Long Lunge',   damageMul: 1.25, halfConeDeg: 10, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
+    { name: 'Long Lunge',   damageMul: 1.25, halfConeDeg: 13, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
   ];
 
   function now() { return performance.now() / 1000; }

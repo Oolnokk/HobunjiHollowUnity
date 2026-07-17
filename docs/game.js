@@ -12427,6 +12427,7 @@
       // cardinalHoldTimer keeps the last cardinal locked briefly after stopping.
       let facingAngle = -Math.PI / 2;   // starts facing north
       const FACING_LERP    = 12;        // higher = snappier rotation (radians/sec effective rate)
+      const LUNGE_HOMING_RATE = 6;      // rad/sec cap on in-flight lunge re-aim toward the locked target
       const CARDINAL_HOLD  = 0.13;      // seconds to hold last cardinal after input stops
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
@@ -12609,6 +12610,23 @@
             tickPlayerFootsteps(_fsPrevX, _fsPrevY);
             return;
           }
+          // Gently re-aim the lunge toward the locked target's *current*
+          // position each frame, capped at LUNGE_HOMING_RATE so it reads as
+          // an in-flight correction rather than a snap. Direction otherwise
+          // stays exactly what it was locked to at lunge-start (see
+          // beginCombatLunge) — a target that sidesteps or gets knocked
+          // during the lunge's own short flight would otherwise carry the
+          // player right past it.
+          const lungeTarget = (activeTool === 'weapon' && equipmentSlots.weapon) ? findAutoTarget() : null;
+          if (lungeTarget) {
+            const desiredLungeAngle = Math.atan2(lungeTarget.y - player.y, lungeTarget.x - player.x);
+            const curLungeAngle = Math.atan2(player.lungeDirY, player.lungeDirX);
+            const lungeDiff = angleDiff(desiredLungeAngle, curLungeAngle);
+            const newLungeAngle = curLungeAngle + lungeDiff * Math.min(1, LUNGE_HOMING_RATE * dt);
+            player.lungeDirX = Math.cos(newLungeAngle);
+            player.lungeDirY = Math.sin(newLungeAngle);
+          }
+
           player.lungeT = Math.max(0, player.lungeT - dt);
           const t = 1 - player.lungeT / player.lungeDur;
           const eased = 1 - Math.pow(1 - t, 3); // ease-out: fast off the top, settles into the landing
@@ -12730,16 +12748,25 @@
 
         // Auto-aim lock takes absolute priority over mouse-look/right-stick
         // look while it's engaged, so neither can interrupt or steal facing
-        // away from the locked target — the only things that release it are
-        // an attack swing in progress (toolSwingT > 0; the swing pose drives
-        // its own body rotation) or the weapon being switched away from /
-        // unequipped (weaponEngaged false, so autoTarget is already null).
-        const autoAiming = !!autoTarget && toolSwingT <= 0;
+        // away from the locked target. It now keeps tracking through an
+        // attack swing too (toolSwingT > 0), just at a slower rate — it used
+        // to fully release during swings ("the swing pose drives its own
+        // body rotation instead"), but combo steps chain fast enough that
+        // facing/lunge direction were effectively frozen at whatever they
+        // were when the string started (see combat-combo.js's onTap, which
+        // samples player.angle fresh on every tap). A target that moved or
+        // got knocked back by an earlier combo hit would then drift right
+        // out of the next step's hit cone. The slower mid-swing rate keeps
+        // the swing pose's own bodyYaw flourish reading as the dominant
+        // motion. Only the weapon being switched away from/unequipped fully
+        // releases it (weaponEngaged false, so autoTarget is already null).
+        const autoAiming = !!autoTarget;
 
         if (autoAiming) {
           const targetAngle = Math.atan2(autoTarget.y - player.y, autoTarget.x - player.x);
           const diff = angleDiff(targetAngle, facingAngle);
-          facingAngle += diff * Math.min(1, FACING_LERP * 2 * dt);
+          const autoAimRate = toolSwingT > 0 ? FACING_LERP : FACING_LERP * 2;
+          facingAngle += diff * Math.min(1, autoAimRate * dt);
           if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
           cardinalHoldTimer = CARDINAL_HOLD;
           player.angle = facingAngle;
