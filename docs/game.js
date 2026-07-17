@@ -1606,6 +1606,24 @@
           // See map_southern_cloud_forest above — no zone-specific cue pack yet.
           audioIndex: 'general',
         },
+        // Dev-only sandbox — reachable solely through Settings' "Teleport to
+        // Test Arena" button (see teleportToDevArena), never through a town
+        // transition spot. No packSpecies/herbivoreSpecies pool means it never
+        // spawns ambient wildlife on its own (see spawnPackAtDen's empty-pool
+        // early-return) — every creature in it comes from the dev spawn menu
+        // that replaces the farm-editor pencil button while standing here
+        // (see _refreshEditorButtonVisibility). exitCol/Row sits in a back
+        // corner, well away from the entry/spawn point, purely as a walk-out
+        // safety valve back to town if the Settings button is ever unreachable.
+        map_dev_arena: {
+          label: 'Testing Arena',
+          cols: 18, rows: 18,
+          groundColor: 0x55565c, fogColor: 0x24262c,
+          entryCol: 9, entryRow: 9,
+          exitCol: 1, exitRow: 1,
+          townReturnCol: 30, townReturnRow: 2,
+          audioIndex: 'general',
+        },
       };
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
 
@@ -2703,24 +2721,48 @@
       // data-only: the math and Farm tab UI are fully real, but the in-game
       // sprite doesn't yet apply per-region recoloring (no masked-texture
       // pipeline exists for it — a follow-up once mask assets are authored).
+      // `weight` skews which colors actually turn up on an animal — real
+      // wildlife/livestock coats are overwhelmingly gray/brown/tan, with
+      // orange an occasional accent and true red rare, so a flat uniform
+      // pick over this list (the previous behavior) way overrepresented
+      // the 4 genuinely red entries relative to how often real coats look
+      // that way. Weight is a relative share within _pickWeightedFurEntry's
+      // cumulative draw, not a percentage — gray/brown/tan sit at 4, orange
+      // at 2, red at 1, which nets out to roughly gray/brown/tan ~87%,
+      // orange ~9%, red ~4% of picks given how many entries land in each
+      // bucket (see _pickWeightedFurEntry below).
       const LIVESTOCK_FUR_PALETTE = [
-        {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43'},{id:'charcoal',name:'Charcoal',hex:'#55585c'},
-        {id:'blue-grey',name:'Blue Grey',hex:'#596879'},{id:'ash',name:'Ash',hex:'#6d7068'},
-        {id:'dove',name:'Dove Grey',hex:'#756f78'},{id:'warm-grey',name:'Warm Grey',hex:'#74685f'},
-        {id:'olive-grey',name:'Olive Grey',hex:'#6d7058'},{id:'pale-cream',name:'Pale Cream',hex:'#c8b991'},
-        {id:'cream',name:'Cream',hex:'#c7aa77'},{id:'champagne',name:'Champagne',hex:'#b99a72'},
-        {id:'biscuit',name:'Biscuit',hex:'#bd9463'},{id:'sand',name:'Sand',hex:'#b28754'},
-        {id:'buff',name:'Buff',hex:'#b77c49'},{id:'honey',name:'Honey',hex:'#b97832'},
-        {id:'golden',name:'Golden',hex:'#ae8430'},{id:'fawn',name:'Fawn',hex:'#a47650'},
-        {id:'taupe',name:'Taupe',hex:'#806a5b'},{id:'mushroom',name:'Mushroom',hex:'#77635b'},
-        {id:'sable',name:'Sable',hex:'#714c37'},{id:'seal-brown',name:'Seal Brown',hex:'#5e493c'},
-        {id:'chocolate',name:'Chocolate',hex:'#6a412e'},{id:'liver',name:'Liver',hex:'#65403d'},
-        {id:'chestnut',name:'Chestnut',hex:'#894e31'},{id:'mahogany',name:'Mahogany',hex:'#784337'},
-        {id:'cinnamon',name:'Cinnamon',hex:'#a45b37'},{id:'russet',name:'Russet',hex:'#994b30'},
-        {id:'auburn',name:'Auburn',hex:'#874438'},{id:'copper',name:'Copper',hex:'#a85e3a'},
-        {id:'fox-red',name:'Fox Red',hex:'#b15d30'},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267'},
-        {id:'lilac-grey',name:'Lilac Grey',hex:'#746775'},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36'},
+        {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43',weight:4},{id:'charcoal',name:'Charcoal',hex:'#55585c',weight:4},
+        {id:'blue-grey',name:'Blue Grey',hex:'#596879',weight:4},{id:'ash',name:'Ash',hex:'#6d7068',weight:4},
+        {id:'dove',name:'Dove Grey',hex:'#756f78',weight:4},{id:'warm-grey',name:'Warm Grey',hex:'#74685f',weight:4},
+        {id:'olive-grey',name:'Olive Grey',hex:'#6d7058',weight:4},{id:'pale-cream',name:'Pale Cream',hex:'#c8b991',weight:4},
+        {id:'cream',name:'Cream',hex:'#c7aa77',weight:4},{id:'champagne',name:'Champagne',hex:'#b99a72',weight:4},
+        {id:'biscuit',name:'Biscuit',hex:'#bd9463',weight:4},{id:'sand',name:'Sand',hex:'#b28754',weight:4},
+        {id:'buff',name:'Buff',hex:'#b77c49',weight:2},{id:'honey',name:'Honey',hex:'#b97832',weight:2},
+        {id:'golden',name:'Golden',hex:'#ae8430',weight:2},{id:'fawn',name:'Fawn',hex:'#a47650',weight:4},
+        {id:'taupe',name:'Taupe',hex:'#806a5b',weight:4},{id:'mushroom',name:'Mushroom',hex:'#77635b',weight:4},
+        {id:'sable',name:'Sable',hex:'#714c37',weight:4},{id:'seal-brown',name:'Seal Brown',hex:'#5e493c',weight:4},
+        {id:'chocolate',name:'Chocolate',hex:'#6a412e',weight:4},{id:'liver',name:'Liver',hex:'#65403d',weight:4},
+        {id:'chestnut',name:'Chestnut',hex:'#894e31',weight:1},{id:'mahogany',name:'Mahogany',hex:'#784337',weight:4},
+        {id:'cinnamon',name:'Cinnamon',hex:'#a45b37',weight:2},{id:'russet',name:'Russet',hex:'#994b30',weight:1},
+        {id:'auburn',name:'Auburn',hex:'#874438',weight:1},{id:'copper',name:'Copper',hex:'#a85e3a',weight:2},
+        {id:'fox-red',name:'Fox Red',hex:'#b15d30',weight:1},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267',weight:4},
+        {id:'lilac-grey',name:'Lilac Grey',hex:'#746775',weight:4},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36',weight:4},
       ];
+      // Cumulative-weight draw over LIVESTOCK_FUR_PALETTE (or a filtered
+      // subset, e.g. mutateFurColor excluding the current color) — every
+      // random fur-color pick in the game goes through this instead of a
+      // flat array-index pick, so the gray/brown/tan-common, orange-
+      // occasional, red-rare distribution described above actually holds.
+      function _pickWeightedFurEntry(entries = LIVESTOCK_FUR_PALETTE) {
+        const total = entries.reduce((sum, e) => sum + (e.weight || 1), 0);
+        let roll = Math.random() * total;
+        for (const entry of entries) {
+          roll -= (entry.weight || 1);
+          if (roll < 0) return entry;
+        }
+        return entries[entries.length - 1];
+      }
 
       function _furHexToRgb(hex) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
       function _furRgbToHsv(r, g, b) {
@@ -2757,7 +2799,7 @@
       }
       function _furPaletteColor(color) { return _furPaletteEntry(color).hex; }
       function _furPaletteName(color) { return _furPaletteEntry(color).name; }
-      function randomFurColor() { return LIVESTOCK_FUR_PALETTE[Math.floor(Math.random() * LIVESTOCK_FUR_PALETTE.length)].hex; }
+      function randomFurColor() { return _pickWeightedFurEntry().hex; }
 
       function blendFurHex(colorA, colorB) {
         const ha = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorA))), hb = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorB)));
@@ -2768,7 +2810,7 @@
       }
       function mutateFurColor(hex) {
         const current = _furPaletteEntry(hex), choices = LIVESTOCK_FUR_PALETTE.filter(x => x.id !== current.id);
-        return choices[Math.floor(Math.random() * choices.length)].hex;
+        return _pickWeightedFurEntry(choices).hex;
       }
 
       // Perceptual color contrast (CIE Lab deltaE76), used to reward
@@ -2802,11 +2844,12 @@
         return 'Common';
       }
 
+      // Reads CREATURE_DB's own label instead of duplicating a second,
+      // separate name list here that has to be updated by hand every time a
+      // new livestock species ships — falls back to a capitalized kind (or
+      // 'Livestock') only for a kind CREATURE_DB doesn't even know about.
       function defaultLivestockName(kind) {
-        if (kind === 'uumkaoii') return "Uumkao'ii";
-        if (kind === 'gar-wolf') return 'Gar-wolf';
-        if (kind === 'dabinggi-hound') return 'Dabinggi-hound';
-        return kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock';
+        return CREATURE_DB[kind]?.label || (kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock');
       }
 
       // Optional pattern layers per species — the HTML lab's Dabinggi-hound
@@ -2826,13 +2869,15 @@
       const GENOTYPE_SPECIES_ALIAS = {
         'gar-wolf-alpha': 'gar-wolf',
         'gar-wolf-den-mother': 'gar-wolf',
+        'uumkaoii-wild': 'uumkaoii',
+        'uumkaoii-wild-den-mother': 'uumkaoii',
       };
       // Picks two fur colors that read as visually distinct — same rejection-
       // sample loop as the HTML lab's pickTwoFurColors().
       function pickTwoLivestockFurColors() {
-        let a = LIVESTOCK_FUR_PALETTE[Math.floor(Math.random() * LIVESTOCK_FUR_PALETTE.length)], b = a;
+        let a = _pickWeightedFurEntry(), b = a;
         for (let i = 0; i < 40; i++) {
-          b = LIVESTOCK_FUR_PALETTE[Math.floor(Math.random() * LIVESTOCK_FUR_PALETTE.length)];
+          b = _pickWeightedFurEntry();
           const [ah, as] = _furRgbToHsv(..._furHexToRgb(a.hex)), [bh, bs] = _furRgbToHsv(..._furHexToRgb(b.hex));
           let dh = Math.abs(ah - bh); dh = Math.min(dh, 1 - dh);
           if (a.id !== b.id && (dh > 0.045 || Math.abs(as - bs) > 0.18)) break;
@@ -2840,6 +2885,15 @@
         if (a.id === b.id) b = LIVESTOCK_FUR_PALETTE[(LIVESTOCK_FUR_PALETTE.indexOf(a) + 7) % LIVESTOCK_FUR_PALETTE.length];
         return [a, b];
       }
+
+      // Species whose genotype is two ALWAYS-present colored regions (e.g.
+      // Uumkao'ii's fur+plates) rather than a base color plus N optional
+      // pattern layers (LIVESTOCK_PATTERN_DEFS' gar-wolf/dabinggi-hound
+      // shape). makeDefaultGenotype/sellValueFor/crossOffspring all branch
+      // on this shape — checked by membership here, not a hardcoded
+      // `kind === 'uumkaoii'` at each site, so a second dual-region species
+      // is a one-line addition instead of a hunt through 3 functions.
+      const DUAL_REGION_GENOTYPE_KINDS = new Set(['uumkaoii']);
 
       // Fresh (non-bred) livestock gets two independently random fur colors —
       // mirrors the HTML tool's randomizeSpecimen(). Uumkao'ii's fur+plates
@@ -2850,7 +2904,7 @@
       // spawnPackAtDen/pickDenGenotype), so a farm-bought crate and a wild
       // pack member are statistically the same roll.
       function makeDefaultGenotype(kind) {
-        if (kind === 'uumkaoii') {
+        if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
           return {
             fur:    { color: randomFurColor(), copies: 2, inheritance: 'dominant' },
             plates: { color: randomFurColor(), copies: 2, inheritance: 'dominant' },
@@ -2872,7 +2926,15 @@
           window.__farmLog?.(`[genotype] makeDefaultGenotype(${kind}): base=${first.name}(${first.hex}) pattern=${second.name}(${second.hex}) enabled=[${enabledIds.join(',') || 'none'}]`, 'wildlife');
           return genotype;
         }
-        return {};
+        // null, not {} — an empty object is still truthy, and every caller
+        // (makeCreatureEntity's opts.genotype check, updateCreatureAnimFrame's
+        // genotypeKind resolution) treats "has a genotype" as "try to render
+        // it", which for a species with no gene system at all (uumkaoii-wild,
+        // the den-mother variants, ...) meant composeFrame got called every
+        // tick forever, always failing (no SPECIES config), never caching,
+        // never giving up — exactly the infinite-retry log spam a real
+        // report caught. null reads as "no genotype" everywhere downstream.
+        return null;
       }
 
       // Sell value from color contrast + pattern complexity — generalizes
@@ -2882,7 +2944,7 @@
       // base-vs-pattern-color contrast.
       const LIVESTOCK_PATTERN_BONUSES = [0, 70, 175, 315];
       function sellValueFor(genotype, kind = 'uumkaoii') {
-        if (kind === 'uumkaoii' || (!LIVESTOCK_PATTERN_DEFS[kind] && genotype?.fur)) {
+        if (DUAL_REGION_GENOTYPE_KINDS.has(kind) || (!LIVESTOCK_PATTERN_DEFS[kind] && genotype?.fur)) {
           const fur = genotype?.fur, plates = genotype?.plates;
           if (!fur?.color || !plates?.color) {
             return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: 'Plain specimen' };
@@ -2927,7 +2989,7 @@
         return Math.random() < copies / 2 ? { color: layer.color } : null;
       }
       function crossOffspring(genotypeA, genotypeB, kind = 'uumkaoii') {
-        if (kind === 'uumkaoii') {
+        if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
           const child = {};
           for (const layerId of ['fur', 'plates']) {
             const la = genotypeA?.[layerId] || { color: randomFurColor() };
@@ -2970,7 +3032,7 @@
         return true;
       }
 
-      function makeUumkaoiiAnimal(col, row, livestockId) {
+      function makeUumkaoiiAnimal(col, row, livestockId, genotype) {
         const ANIMAL_W = 1.275;
         const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
         const halfH = ANIMAL_H / 2;
@@ -2986,11 +3048,31 @@
         _markPngPlane(avatarRef.group);
         scene.add(avatarRef.group);
 
+        // Composites the always-on fur+plates layers onto the plain base —
+        // see CreatureGeneticsRender.SPECIES.uumkaoii and makeDefaultGenotype's
+        // uumkaoii branch. Mirrors makePatternLivestockAnimal's one-shot
+        // idle-only composite below (a farm animal never runs, so there's no
+        // per-frame retry loop to wire up the way the wild/companion
+        // CREATURE_DB path needs via updateCreatureAnimFrame).
+        if (genotype && window.CreatureGeneticsRender) {
+          window.CreatureGeneticsRender.composeFrame('uumkaoii', 'idle', genotype).then(canvas => {
+            if (!canvas) return;
+            const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
+            const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
+            backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
+            for (const child of avatarRef.group.children) {
+              if (!child.material) continue;
+              if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
+              else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
+            }
+          }).catch(() => {});
+        }
+
         let tickCounter = 0;
         const animal = {
           id: 'uumkaoii_' + col + '_' + row + '_' + (performance.now() | 0),
           livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
-          type: 'animal', animalKey: 'uumkaoii',
+          type: 'animal', animalKey: 'uumkaoii', genotype,
           col, row, targetCol: col, targetRow: row,
           wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
           halfHeight: halfH, avatarRef,
@@ -3053,6 +3135,15 @@
         return animal;
       }
 
+      // Farm-display width per pattern-layer livestock species — deliberately
+      // its own scale from CREATURE_DB's wild-creature modelWidth (a farm
+      // pen animal reads better a bit smaller/denser than its full-size wild
+      // counterpart), so it can't just read CREATURE_DB[kind].modelWidth
+      // directly. A kind missing here falls back to dabinggi-hound's 1.7
+      // rather than silently mis-sizing — add an entry for any new
+      // pattern-layer species instead of expanding a size ternary.
+      const LIVESTOCK_ANIMAL_WIDTH = { 'gar-wolf': 1.9, 'dabinggi-hound': 1.7 };
+
       // Pattern-layer species (gar-wolf, dabinggi-hound) as placeable farm
       // livestock — same tile-hopping wander/no-combat shape as
       // makeUumkaoiiAnimal, but with its genotype actually rendered via
@@ -3060,7 +3151,7 @@
       // back to the plain uncolored sprite, already loaded synchronously
       // below, until that async compose resolves).
       function makePatternLivestockAnimal(kind, label, icon, col, row, livestockId, genotype) {
-        const ANIMAL_W = kind === 'gar-wolf' ? 1.9 : 1.7;
+        const ANIMAL_W = LIVESTOCK_ANIMAL_WIDTH[kind] || 1.7;
         const ANIMAL_H = ANIMAL_W * (600 / 1375); // sprite is 1375x600px, same convention as CREATURE_DB
         const halfH = ANIMAL_H / 2;
         const baseUrl = window.CreatureGeneticsRender?.SPECIES?.[kind]?.base?.idle || `assets/creaturesprites/${kind}_idle.png`;
@@ -3176,6 +3267,15 @@
       // path — addLivestockFromItem degrades to its existing "no factory"
       // failure message rather than crashing.
       const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf' };
+
+      // Den-Mother CREATURE_DB key -> which item her nest hands out — read
+      // directly off her species (see loadBuildingScene's 'map_i_den_'
+      // handling) rather than inferred from her liveBirth flag. Those
+      // happen to bisect the same way today (gar-wolf-den-mother: true,
+      // uumkaoii-wild-den-mother: false), which is exactly the kind of
+      // coincidence that silently breaks the moment a third Den-Mother
+      // species ships sharing a liveBirth value with one of these two.
+      const DEN_MOTHER_ITEM_KEYS = { 'gar-wolf-den-mother': 'garWolfBaby', 'uumkaoii-wild-den-mother': 'uumkaoiiEgg' };
 
       // itemKey -> FIFO queue of genotypes carried by not-yet-hatched units of
       // that item — populated when a Den-Mother's nest grants an egg/baby
@@ -3388,19 +3488,63 @@
       // species' plain (uncolored) sprite — see setCreatureFrame below.
       const _genotypeTexCache = { front: new Map(), back: new Map() };
       const _genotypeTexPending = new Set();
+      // Every key this function has ever logged a "kicking off compose" line
+      // for — so a creature stuck retrying every tick (see
+      // updateCreatureAnimFrame's needsRetry loop) logs its request/failure
+      // ONCE per (kind,frame,signature) instead of spamming the debug panel
+      // every frame while it waits.
+      const _genotypeTexLogged = new Set();
+      // key -> performance.now() of its most recent failure — see the
+      // cooldown check in _getGenotypeTextures below.
+      const _genotypeTexFailedAt = new Map();
+      // Kinds confirmed to have no CreatureGeneticsRender.SPECIES entry —
+      // unlike a load failure, "this species has no cosmetic art" can never
+      // resolve itself no matter how many times it's retried, so it gets
+      // logged once and then permanently skipped instead of the transient-
+      // failure 3s cooldown below (which would otherwise still retry it
+      // forever, one full composeFrame call at a time, competing with every
+      // other creature's real compose work for the same main thread).
+      const _genotypeUnsupportedKinds = new Set();
       function _getGenotypeTextures(kind, frame, genotype) {
         const renderer = window.CreatureGeneticsRender;
-        if (!renderer || !genotype) return null;
+        if (!renderer) {
+          window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): window.CreatureGeneticsRender is not loaded — creature-genetics-render.js failed to load or hasn't run yet`, 'warn');
+          return null;
+        }
+        if (!genotype) return null;
+        if (_genotypeUnsupportedKinds.has(kind)) return null;
+        if (!renderer.SPECIES[kind]) {
+          _genotypeUnsupportedKinds.add(kind);
+          window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): "${kind}" has no CreatureGeneticsRender.SPECIES entry — will never render a genotype, skipping permanently instead of retrying`, 'warn');
+          return null;
+        }
         const sig = renderer.genotypeSignature(kind, genotype);
         const key = `${kind}|${frame}|${sig}`;
         if (_genotypeTexCache.front.has(key)) {
           return { front: _genotypeTexCache.front.get(key), back: _genotypeTexCache.back.get(key) };
         }
+        // A key that just failed (thrown or resolved null) gets a short
+        // cooldown before it's allowed to retry — without this, a
+        // persistent failure (e.g. the canvas-tainting bug this logging
+        // caught) re-kicks composeFrame on literally every tick forever,
+        // which is both wasted work and floods the debug log with the same
+        // error dozens of times a second.
+        const failedAt = _genotypeTexFailedAt.get(key);
+        if (failedAt && performance.now() - failedAt < 3000) return null;
         if (!_genotypeTexPending.has(key)) {
           _genotypeTexPending.add(key);
+          if (!_genotypeTexLogged.has(key)) {
+            _genotypeTexLogged.add(key);
+            window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" — kicking off composeFrame`, 'wildlife');
+          }
           renderer.composeFrame(kind, frame, genotype).then(canvas => {
             _genotypeTexPending.delete(key);
-            if (!canvas) return;
+            if (!canvas) {
+              _genotypeTexFailedAt.set(key, performance.now());
+              window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composeFrame resolved null for sig="${sig}" — falling back to plain sprite (see composeFrame's own log line just above for why)`, 'warn');
+              return;
+            }
+            _genotypeTexFailedAt.delete(key);
             const front = new THREE.CanvasTexture(canvas);
             front.colorSpace = THREE.SRGBColorSpace;
             const back = new THREE.CanvasTexture(canvas);
@@ -3408,7 +3552,12 @@
             back.wrapS = THREE.RepeatWrapping; back.repeat.set(-1, 1); back.offset.set(1, 0);
             _genotypeTexCache.front.set(key, front);
             _genotypeTexCache.back.set(key, back);
-          }).catch(() => { _genotypeTexPending.delete(key); });
+            window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composited texture cached for sig="${sig}" (canvas ${canvas.width}x${canvas.height})`, 'wildlife');
+          }).catch(err => {
+            _genotypeTexPending.delete(key);
+            _genotypeTexFailedAt.set(key, performance.now());
+            window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composeFrame THREW for sig="${sig}" — ${err?.stack || err}`, 'error');
+          });
         }
         return null;
       }
@@ -3509,6 +3658,11 @@
           for (const child of avatarRef.group.children) {
             if (child.material) child.material.color.setHex(def.tint);
           }
+        }
+        if (opts.genotype) {
+          const genotypeKind = GENOTYPE_SPECIES_ALIAS[creatureKey] || creatureKey;
+          const supported = !!window.CreatureGeneticsRender?.SPECIES?.[genotypeKind];
+          window.__farmLog?.(`[genotype-render] makeCreatureEntity(${creatureKey}): genotype attached, genotypeKind="${genotypeKind}", ${supported ? 'SUPPORTED by CreatureGeneticsRender.SPECIES — should recolor' : 'NOT in CreatureGeneticsRender.SPECIES — will stay on its plain default sprite, this is expected for this species'}`, 'wildlife');
         }
         const col = clamp(Math.floor(x / TILE), 0, gridCols - 1);
         const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
@@ -4143,10 +4297,17 @@
         if (!moving) {
           const frameKey = 'idle';
           const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
+          if (needsRetry && !c._genotypeLogged?.has(frameKey)) {
+            (c._genotypeLogged || (c._genotypeLogged = new Set())).add(frameKey);
+            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${frameKey}" texture (kind=${genotypeKind})`, 'wildlife');
+          }
           if (c.currentFrameUrl !== c.def.sprites.idle || needsRetry) {
             const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype);
             c.currentFrameUrl = c.def.sprites.idle;
-            if (genotypeKind && applied) (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
+            if (genotypeKind && applied) {
+              (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
+              window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${frameKey}" texture APPLIED`, 'wildlife');
+            }
           }
           // Not tracking ground covered while idle, so resuming movement
           // doesn't "catch up" on distance never actually traveled.
@@ -4170,10 +4331,17 @@
         const url = c.def.sprites.run[c.runFrame];
         const frameKey = 'run' + (c.runFrame + 1);
         const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
+        if (needsRetry && !c._genotypeLogged?.has(frameKey)) {
+          (c._genotypeLogged || (c._genotypeLogged = new Set())).add(frameKey);
+          window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${frameKey}" texture (kind=${genotypeKind})`, 'wildlife');
+        }
         if (c.currentFrameUrl !== url || needsRetry) {
           const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype);
           c.currentFrameUrl = url;
-          if (genotypeKind && applied) (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
+          if (genotypeKind && applied) {
+            (c._genotypeReadyFrames || (c._genotypeReadyFrames = new Set())).add(frameKey);
+            window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: composited "${frameKey}" texture APPLIED`, 'wildlife');
+          }
         }
       }
 
@@ -5518,21 +5686,43 @@
         _denCavernZoneOf.set(id, zoneId);
         return id;
       }
-      // cavernMapId -> shared "family" genotype (gar-wolf pattern shape) —
-      // one roll per den, reused by every pack member, the Den-Mother, and
-      // any eggs/babies taken from its nest, using the exact same odds as
-      // a farm-bought crate (see makeDefaultGenotype). Herbivore
-      // (uumkaoii-wild) dens never read this — no pattern genes exist for
-      // that species yet — so the entry just sits unused for them.
-      const _denGenotypes = new Map();
-      function getOrMakeDenGenotype(cavernMapId) {
-        if (!_denGenotypes.has(cavernMapId)) {
-          _denGenotypes.set(cavernMapId, makeDefaultGenotype('gar-wolf'));
-          window.__farmLog?.(`[genotype] rolled new family genotype for den ${cavernMapId} (cache size now ${_denGenotypes.size})`, 'wildlife');
+      // Which shared-genotype "family" a CREATURE_DB key rolls/renders as —
+      // gar-wolf/gar-wolf-alpha/gar-wolf-den-mother all share one gar-wolf-
+      // shaped genotype (base+pattern layers), uumkaoii-wild/uumkaoii-wild-
+      // den-mother share a uumkaoii-shaped one (fur+plates). Derived from
+      // GENOTYPE_SPECIES_ALIAS + CreatureGeneticsRender.SPECIES — the exact
+      // same "which real species does this variant's genotype render
+      // against" resolution updateCreatureAnimFrame/spawnDevArenaCreature
+      // already do — rather than a second, separate hardcoded name-prefix
+      // check that has to be kept in sync by hand and silently doesn't
+      // recognize any future species until someone remembers to add its
+      // prefix here too. Returns null for any species with no gene system.
+      function _denGenotypeFamily(kind) {
+        const resolved = GENOTYPE_SPECIES_ALIAS[kind] || kind;
+        return window.CreatureGeneticsRender?.SPECIES?.[resolved] ? resolved : null;
+      }
+      // (cavernMapId, family) -> shared genotype — one roll per den PER
+      // FAMILY, reused by every same-family pack member, the Den-Mother, and
+      // any eggs/babies taken from its nest, using the exact same odds as a
+      // farm-bought crate (see makeDefaultGenotype). Keyed by family, not
+      // just cavernMapId: a den's exterior population (predator pack vs.
+      // herbivore herd, re-rolled each cycle) and its Den-Mother species
+      // (pickDenMotherKind, a separate deterministic-per-den roll) are
+      // chosen independently, so the SAME den can have a gar-wolf-family
+      // occupant and a uumkaoii-family occupant at once — sharing one plain
+      // cavernMapId key would mean whichever family asked first clobbers
+      // the cache with its own shape, and the other family's genotype reads
+      // would silently come back with none of the fields it expects.
+      const _denGenotypes = new Map(); // key: `${cavernMapId}|${family}`
+      function getOrMakeDenGenotype(cavernMapId, family) {
+        const key = `${cavernMapId}|${family}`;
+        if (!_denGenotypes.has(key)) {
+          _denGenotypes.set(key, makeDefaultGenotype(family));
+          window.__farmLog?.(`[genotype] rolled new ${family} family genotype for den ${cavernMapId} (cache size now ${_denGenotypes.size})`, 'wildlife');
         } else {
-          window.__farmLog?.(`[genotype] reused cached family genotype for den ${cavernMapId}`, 'wildlife');
+          window.__farmLog?.(`[genotype] reused cached ${family} family genotype for den ${cavernMapId}`, 'wildlife');
         }
-        return _denGenotypes.get(cavernMapId);
+        return _denGenotypes.get(key);
       }
 
       // Forgets all pack/respawn bookkeeping for a zone whose terrain (and
@@ -5577,9 +5767,11 @@
           return;
         }
         const speciesKey = pool[Math.floor(rnd() * pool.length)];
-        // Every gar-wolf-family member of this pack (regular + alpha) shares
-        // one rolled-once "family" genotype — see getOrMakeDenGenotype.
-        const denGenotype = speciesKey.startsWith('gar-wolf') ? getOrMakeDenGenotype(denCavernMapId(zoneId, den.id)) : null;
+        // Every same-family member of this pack (e.g. gar-wolf + alpha, or
+        // the whole uumkaoii-wild herd) shares one rolled-once "family"
+        // genotype — see getOrMakeDenGenotype.
+        const denFamily = _denGenotypeFamily(speciesKey);
+        const denGenotype = denFamily ? getOrMakeDenGenotype(denCavernMapId(zoneId, den.id), denFamily) : null;
         // den.x/den.y are the footprint's top-left tile (see workspace.animalDens
         // in wilderness-map-generator.js) — spawn/home anchor is the footprint center.
         const homeX = (den.x + (den.w || 1) * 0.5) * TILE, homeY = (den.y + (den.h || 1) * 0.5) * TILE;
@@ -9523,11 +9715,16 @@
       // always reaches the same cavern.
       // Deterministic per den (same mapId -> same pick every time, independent
       // of the wilderness zone's own ever-re-rolled exterior pack/herd
-      // species) — which of the two Den-Mother variants guards this den's
-      // nest. Only two species currently have a Den-Mother entry.
+      // species) — which Den-Mother variant guards this den's nest. Picks
+      // uniformly from DEN_MOTHER_ITEM_KEYS' own keys (the same registry
+      // that already maps a Den-Mother species to her nest's item) instead
+      // of a hardcoded 2-way coin flip, so a third Den-Mother species is a
+      // single new entry there rather than also needing this rewritten from
+      // a `< 0.5` ternary into a 3-way split.
       function pickDenMotherKind(mapId) {
         const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denmother') : Math.random;
-        return rng() < 0.5 ? 'gar-wolf-den-mother' : 'uumkaoii-wild-den-mother';
+        const kinds = Object.keys(DEN_MOTHER_ITEM_KEYS);
+        return kinds[Math.floor(rng() * kinds.length)];
       }
 
       function synthesizeCavernMapData(mapId) {
@@ -9722,11 +9919,16 @@
             const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
             const motherKey = mapData.denMotherKind || 'gar-wolf-den-mother';
             const motherDef = CREATURE_DB[motherKey];
-            // Same shared "family" genotype as this den's exterior pack (see
-            // spawnPackAtDen/getOrMakeDenGenotype) — whichever of the two
-            // spawns first rolls it, the other reuses it, so the Den-Mother
-            // and her pack (and the nest's eggs/babies) always match.
-            const denGenotype = motherKey.startsWith('gar-wolf') ? getOrMakeDenGenotype(mapId) : null;
+            // Same shared per-family genotype as this den's exterior pack
+            // (see spawnPackAtDen/getOrMakeDenGenotype) — whichever of the
+            // two spawns first rolls it, the other reuses it, so the
+            // Den-Mother and any same-family pack members (and the nest's
+            // eggs/babies) always match. Keyed by family (not just mapId)
+            // since the Den-Mother's species is picked independently of
+            // whatever the exterior pack currently is (see
+            // pickDenMotherKind) — they can genuinely differ.
+            const motherFamily = _denGenotypeFamily(motherKey);
+            const denGenotype = motherFamily ? getOrMakeDenGenotype(mapId, motherFamily) : null;
             if (motherDef) {
               const homeX = (nestCol + 1) * TILE, homeY = (nestRow + 1) * TILE;
               const mother = makeCreatureEntity(motherKey, homeX, homeY, {
@@ -9740,10 +9942,18 @@
               ? WildernessMapGenerator.makeRng(mapId + '_nestcount') : Math.random;
             const remaining = 1 + Math.floor(nestRng() * 3); // 1-3
             const liveBirth = !!motherDef?.liveBirth;
+            let itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
+            if (!itemKey) {
+              // No mapped item for this Den-Mother species — fall back to
+              // the old liveBirth guess so the nest still hands out SOMETHING
+              // rather than breaking, but flag it since it means
+              // DEN_MOTHER_ITEM_KEYS is missing an entry for a real species.
+              itemKey = liveBirth ? 'garWolfBaby' : 'uumkaoiiEgg';
+              window.__farmLog?.(`[wildlife] Den-Mother "${motherKey}" has no DEN_MOTHER_ITEM_KEYS entry — guessing "${itemKey}" from liveBirth=${liveBirth}, may be wrong.`, 'warn');
+            }
             _denNests.set(mapId, {
               col: nestCol, row: nestRow, w: 2, h: 2,
-              itemKey: liveBirth ? 'garWolfBaby' : 'uumkaoiiEgg',
-              liveBirth, remaining, genotype: denGenotype,
+              itemKey, liveBirth, remaining, genotype: denGenotype,
             });
             // Simple nest marker so the 2x2 chamber reads as an objective.
             const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
@@ -19735,20 +19945,37 @@
           container.innerHTML = '<div style="opacity:.6;padding:8px 0">No den packs generated yet this session — enter a wilderness zone with wild dens, or force a Tothal Shift below, to populate this list.</div>';
           return;
         }
-        const patternIds = LIVESTOCK_PATTERN_DEFS['gar-wolf'] || [];
         const swatch = (hex, size) => `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:3px;background:${esc(hex)};vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,.3)"></span>`;
         const rows = [];
-        for (const [cavernMapId, genotype] of _denGenotypes) {
+        // Keys are now `${cavernMapId}|${family}` (see getOrMakeDenGenotype)
+        // since one den can independently hold a gar-wolf-family genotype
+        // and a uumkaoii-family genotype at once — split that back apart to
+        // display each family with its own shape (base+patterns vs
+        // fur+plates) instead of assuming every entry is gar-wolf-shaped.
+        for (const [key, genotype] of _denGenotypes) {
+          const sepIdx = key.lastIndexOf('|');
+          const cavernMapId = sepIdx >= 0 ? key.slice(0, sepIdx) : key;
+          const family = sepIdx >= 0 ? key.slice(sepIdx + 1) : 'gar-wolf';
           const zoneId = _denCavernZoneOf.get(cavernMapId) || '(unknown zone)';
           const den = _zoneLayouts.get(zoneId)?.dens?.find(d => denCavernMapId(zoneId, d.id) === cavernMapId);
           const denLabel = den ? den.id : cavernMapId.replace(`map_i_den_${zoneId}_`, '');
-          const baseColor = genotype.base?.color;
-          const baseHtml = baseColor ? `${swatch(baseColor, 13)}${esc(_furPaletteName(baseColor))}` : '(no base)';
-          const patternHtml = patternIds.map(id => {
-            const layer = genotype[id];
-            const on = layer?.enabled && layer.copies > 0;
-            return `<span style="opacity:${on ? 1 : 0.35}">${on ? swatch(layer.color, 10) : ''}${esc(id)}</span>`;
-          }).join(' &middot; ');
+          let bodyHtml;
+          if (family === 'uumkaoii') {
+            const furColor = genotype.fur?.color, platesColor = genotype.plates?.color;
+            bodyHtml = `<div style="margin-top:3px">Fur: ${furColor ? swatch(furColor, 13) + esc(_furPaletteName(furColor)) : '(none)'}</div>
+              <div style="margin-top:2px">Plates: ${platesColor ? swatch(platesColor, 13) + esc(_furPaletteName(platesColor)) : '(none)'}</div>`;
+          } else {
+            const patternIds = LIVESTOCK_PATTERN_DEFS[family] || [];
+            const baseColor = genotype.base?.color;
+            const baseHtml = baseColor ? `${swatch(baseColor, 13)}${esc(_furPaletteName(baseColor))}` : '(no base)';
+            const patternHtml = patternIds.map(id => {
+              const layer = genotype[id];
+              const on = layer?.enabled && layer.copies > 0;
+              return `<span style="opacity:${on ? 1 : 0.35}">${on ? swatch(layer.color, 10) : ''}${esc(id)}</span>`;
+            }).join(' &middot; ');
+            bodyHtml = `<div style="margin-top:3px">Base: ${baseHtml}</div>
+              <div style="margin-top:2px">Patterns: ${patternHtml || '(none)'}</div>`;
+          }
           // Which live creatures are currently using this exact genotype
           // object, if any are spawned right now — confirms the whole pack
           // (and its Den-Mother) really do share one roll.
@@ -19759,9 +19986,8 @@
             : '';
           rows.push(`<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
             <div>
-              <div style="font-weight:600;color:#e5e7eb">${esc(zoneId)} — den ${esc(denLabel)}${aliveKinds.size ? ` <span style="opacity:.6;font-weight:400">(${[...aliveKinds].map(esc).join(', ')} alive now)</span>` : ' <span style="opacity:.5;font-weight:400">(none alive right now)</span>'}</div>
-              <div style="margin-top:3px">Base: ${baseHtml}</div>
-              <div style="margin-top:2px">Patterns: ${patternHtml || '(none)'}</div>
+              <div style="font-weight:600;color:#e5e7eb">${esc(zoneId)} — den ${esc(denLabel)} <span style="opacity:.5;font-weight:400">(${esc(family)})</span>${aliveKinds.size ? ` <span style="opacity:.6;font-weight:400">(${[...aliveKinds].map(esc).join(', ')} alive now)</span>` : ' <span style="opacity:.5;font-weight:400">(none alive right now)</span>'}</div>
+              ${bodyHtml}
             </div>
             ${teleportBtn}
           </div>`);
@@ -19823,6 +20049,194 @@
           closeMenu();
         });
       }
+
+      // ── Dev Tools: Testing Arena + creature spawner ─────────────────
+      const DEV_ARENA_ZONE_ID = 'map_dev_arena';
+      // Remembers where the player was standing before warping into the
+      // arena so the same Settings button can toggle them back out again —
+      // unlike warpToDenAnchor's targets, the arena has no natural "return"
+      // spot of its own (see EXTERIOR_ZONES.map_dev_arena's exitCol/Row
+      // comment for the walk-out fallback).
+      let _devArenaReturnAnchor = null;
+      function teleportToDevArena() {
+        if (currentArea === DEV_ARENA_ZONE_ID) {
+          const back = _devArenaReturnAnchor || { area: 'farm', x: (COLS / 2) * TILE, y: (ROWS / 2) * TILE };
+          _devArenaReturnAnchor = null;
+          startSceneTransition(() => {
+            const fromScene = getActiveScene();
+            if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+            if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
+            currentArea = back.area;
+            player.x = back.x; player.y = back.y;
+            player.vx = 0; player.vy = 0;
+            _snapCameraTarget();
+            const toScene = getActiveScene();
+            if (toScene) {
+              toScene.add(playerMesh); toScene.add(playerGroundShadow);
+              toScene.add(toolHolder); toScene.add(reticleMesh);
+              toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
+              toScene.add(reticleWavyGroup);
+            }
+            refreshActionBar();
+            showToast('Left the Testing Arena.', true);
+            closeMenu();
+          });
+          return;
+        }
+        _devArenaReturnAnchor = { area: currentArea, x: player.x, y: player.y };
+        startSceneTransition(() => {
+          const fromScene = getActiveScene();
+          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+          if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
+          currentArea = DEV_ARENA_ZONE_ID;
+          const zdef = EXTERIOR_ZONES[DEV_ARENA_ZONE_ID];
+          player.x = (zdef.entryCol + 0.5) * TILE;
+          player.y = (zdef.entryRow + 0.5) * TILE;
+          player.vx = 0; player.vy = 0;
+          _snapCameraTarget();
+          const toScene = buildZoneScene(DEV_ARENA_ZONE_ID)?.scene;
+          if (toScene) {
+            toScene.add(playerMesh); toScene.add(playerGroundShadow);
+            toScene.add(toolHolder); toScene.add(reticleMesh);
+            toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
+            toScene.add(reticleWavyGroup);
+          }
+          refreshActionBar();
+          showToast('Teleported to the Testing Arena — creature spawner unlocked.', true);
+          closeMenu();
+          // Pays the mask-JSON + base/pattern sprite network fetch up front
+          // instead of on the first Spawn click — a fully-patterned species
+          // is over a megabyte of images, so without this the cold fetch
+          // happens WHILE the first spawned creature is standing there
+          // plain/undyed, which is what actually reads as "no colors" (the
+          // recolor math itself is fast; the network round-trip isn't). Not
+          // a blocking loading screen — just a toast so the wait is visible
+          // instead of silent, since it can take a few seconds on a slow
+          // connection/CDN.
+          if (window.CreatureGeneticsRender) {
+            showToast('Warming up creature art…', true);
+            window.CreatureGeneticsRender.prewarm()
+              .then(() => showToast('Creature art ready — spawn away.', true))
+              .catch(() => {});
+          }
+        });
+      }
+      document.getElementById('devTeleportArenaBtn')?.addEventListener('click', teleportToDevArena);
+
+      // Creatures the dev spawn menu has placed in the arena this session —
+      // a separate tracking set from hostileObjects/companionObjects (which
+      // this panel also adds its spawns to, so the normal AI/render tick
+      // loops pick them up) purely so "Auto Kill All" only ever touches
+      // arena test subjects, never a real wild pack or summoned companion.
+      const _arenaSpawnedCreatures = new Set();
+      let devSpawnSelectedKey = Object.keys(CREATURE_DB)[0];
+
+      function renderDevSpawnPanel() {
+        const grid = document.getElementById('devSpawnSpeciesGrid');
+        if (grid) {
+          grid.innerHTML = Object.keys(CREATURE_DB).map(key => {
+            const label = CREATURE_DB[key].label || key;
+            const active = key === devSpawnSelectedKey ? ' fed-active' : '';
+            return `<button type="button" class="fed-btn${active}" data-species="${esc(key)}">${esc(label)}</button>`;
+          }).join('');
+        }
+        const countEl = document.getElementById('devArenaSpawnCount');
+        if (countEl) countEl.textContent = String(_arenaSpawnedCreatures.size);
+      }
+      document.getElementById('devSpawnSpeciesGrid')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.fed-btn');
+        if (!btn) return;
+        devSpawnSelectedKey = btn.dataset.species;
+        renderDevSpawnPanel();
+      });
+
+      // Rolls the exact same cosmetic-gene odds a wild den pack (or a
+      // farm-bought crate) gets — see makeDefaultGenotype — before placing
+      // the creature, so this panel doubles as the place to confirm which
+      // species' genes actually render (see CreatureGeneticsRender.SPECIES:
+      // today only gar-wolf/dabinggi-hound have real cosmetic art; any other
+      // species spawned here with a genotype will keep showing its plain
+      // default sprite/tint instead — that's the "why don't my genes show
+      // up" bug this whole panel exists to help chase down, not a spawner bug).
+      function spawnDevArenaCreature(creatureKey) {
+        if (currentArea !== DEV_ARENA_ZONE_ID) return;
+        const def = CREATURE_DB[creatureKey];
+        if (!def) return;
+        const angle = Math.random() * Math.PI * 2;
+        const dist = TILE * (1.5 + Math.random() * 2.5);
+        const x = player.x + Math.cos(angle) * dist;
+        const y = player.y + Math.sin(angle) * dist;
+        // Roll against the "family" species (see GENOTYPE_SPECIES_ALIAS) —
+        // same normalization getOrMakeDenGenotype applies for wild packs —
+        // so gar-wolf-alpha/den-mother variants get real pattern genes too,
+        // instead of makeDefaultGenotype silently no-opping on an exact key
+        // LIVESTOCK_PATTERN_DEFS never defines.
+        const genotypeKind = GENOTYPE_SPECIES_ALIAS[creatureKey] || creatureKey;
+        const genotype = makeDefaultGenotype(genotypeKind);
+        const creature = makeCreatureEntity(creatureKey, x, y, { homeX: x, homeY: y, state: 'idle', genotype });
+        if (!creature) { showToast(`Could not spawn "${creatureKey}" — missing CREATURE_DB entry.`, false); return; }
+        // Same real-AI registration the cutscene combat stager uses (see
+        // runCombat's combatOnIds loop) — hostile species chase/attack via
+        // updateHostiles, everything else follows/defends the player via
+        // updateCompanions, instead of a bespoke test-only behavior.
+        if (def.hostile) {
+          hostileObjects.add(creature);
+        } else {
+          creature.isCompanion = true;
+          creature.master = player;
+          companionObjects.add(creature);
+        }
+        _arenaSpawnedCreatures.add(creature);
+        const renderSupported = !!window.CreatureGeneticsRender?.SPECIES?.[genotypeKind];
+        const msg = `[dev-arena] spawned ${creatureKey} #${creature.id} (aiSet=${def.hostile ? 'hostileObjects' : 'companionObjects'}, genotypeKind=${genotypeKind}, renderSupported=${renderSupported}) genotype=${JSON.stringify(genotype)}`;
+        window.__farmLog?.(msg, 'wildlife');
+        console.log(msg);
+        renderDevSpawnPanel();
+      }
+      document.getElementById('devSpawnBtnAction')?.addEventListener('click', () => spawnDevArenaCreature(devSpawnSelectedKey));
+
+      function devArenaAutoKillAll() {
+        const toKill = [..._arenaSpawnedCreatures];
+        for (const c of toKill) {
+          _arenaSpawnedCreatures.delete(c);
+          if (c.health > 0) damageCreature(c, c.health, undefined, undefined, 0, {});
+        }
+        showToast(`Auto-killed ${toKill.length} arena creature${toKill.length === 1 ? '' : 's'}.`, true);
+        renderDevSpawnPanel();
+      }
+      document.getElementById('devKillAllBtn')?.addEventListener('click', devArenaAutoKillAll);
+
+      window._devSpawner = {
+        toggle() {
+          const panel = document.getElementById('devSpawnPanel');
+          const btn = document.getElementById('devSpawnBtn');
+          const open = panel?.style.display !== 'flex';
+          if (panel) panel.style.display = open ? 'flex' : 'none';
+          if (btn) btn.classList.toggle('fed-open', open);
+          if (open) renderDevSpawnPanel();
+        },
+      };
+
+      // Pencil (farm editor) and 🐾 (dev spawner) toggle buttons share one
+      // top-right UI slot and are mutually exclusive by area: farmEditBtn
+      // previously had NO visibility gating at all and stayed on screen in
+      // every area (town, wilderness, indoors) even though the editor itself
+      // only ever does anything on the farm — this is what actually hides it
+      // everywhere else, and reveals the spawner only inside the arena.
+      function _refreshEditorButtonVisibility() {
+        const showFarmEdit = currentArea === 'farm' && isFarmOwner();
+        const showDevSpawn = currentArea === DEV_ARENA_ZONE_ID;
+        const farmBtn = document.getElementById('farmEditBtn');
+        const spawnBtn = document.getElementById('devSpawnBtn');
+        if (farmBtn) farmBtn.style.display = showFarmEdit ? '' : 'none';
+        if (spawnBtn) spawnBtn.style.display = showDevSpawn ? '' : 'none';
+        if (!showFarmEdit && farmEditMode) toggleFarmEditMode();
+        if (!showDevSpawn) {
+          const panel = document.getElementById('devSpawnPanel');
+          if (panel && panel.style.display !== 'none') { panel.style.display = 'none'; spawnBtn?.classList.remove('fed-open'); }
+        }
+      }
+
       // ── Den-Mother nest: hold-to-take egg/baby (see _denNests, populated
       // in loadBuildingScene) ──────────────────────────────────────────
       const NEST_TAKE_HOLD_S = 5;
@@ -21316,6 +21730,7 @@
       let _lastBarKey = '';
 
       function refreshActionBar() {
+        _refreshEditorButtonVisibility();
         const reticle = getReticleTile();
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 

@@ -99,8 +99,13 @@
     </div>
   </div>
 
-  <!-- Farm editor toggle button (top-right, beside menu) -->
-  <button id="farmEditBtn" aria-label="Toggle farm editor" title="Farm Editor" onclick="window._farmEditor?.toggle()">✏️</button>
+  <!-- Farm editor toggle button (top-right, beside menu) — only shown on the
+       farm, for its owner; see _refreshEditorButtonVisibility -->
+  <button id="farmEditBtn" aria-label="Toggle farm editor" title="Farm Editor" onclick="window._farmEditor?.toggle()" style="display:none;">✏️</button>
+
+  <!-- Dev Testing Arena creature-spawner toggle — same top-right slot as the
+       farm editor pencil, shown only while standing in the Testing Arena -->
+  <button id="devSpawnBtn" aria-label="Toggle creature spawn menu" title="Spawn Menu" onclick="window._devSpawner?.toggle()" style="display:none;">🐾</button>
 
   <!-- Farm Editor Panel -->
   <div id="farmEditorPanel" style="display:none;" aria-label="Farm editor">
@@ -158,6 +163,27 @@
         <button class="fed-btn fed-erase" data-btype="erase" data-bval="erase" onclick="window._farmEditor?.setBrush('erase','erase')">🗑️ Erase</button>
         <button class="fed-action-btn" onclick="window._farmEditor?.save()">💾 Save</button>
         <button class="fed-action-btn fed-danger" onclick="window._farmEditor?.clearLayout()">🗑 Clear Saved</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dev Testing Arena spawn menu -->
+  <div id="devSpawnPanel" style="display:none;" aria-label="Creature spawn menu">
+    <div class="fed-header">
+      <span>🐾 Creature Spawner</span>
+      <button class="fed-close" onclick="window._devSpawner?.toggle()" title="Close spawn menu">✕</button>
+    </div>
+    <div class="fed-scroll">
+      <div class="fed-section">
+        <div class="fed-label">Species (rolls fresh cosmetic genes per spawn)</div>
+        <div class="fed-grid" id="devSpawnSpeciesGrid"></div>
+      </div>
+      <div class="fed-section fed-actions">
+        <button class="fed-action-btn" id="devSpawnBtnAction">➕ Spawn Selected</button>
+        <button class="fed-action-btn fed-danger" id="devKillAllBtn">💀 Auto Kill All</button>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Alive from this panel: <span id="devArenaSpawnCount">0</span></div>
       </div>
     </div>
   </div>
@@ -655,6 +681,13 @@
               <div class="settings-desc">Warp to a random animal den on the current map (also works from inside a den's cavern — warps back out to a den on that den's own map)</div>
             </div>
             <button type="button" id="devTeleportDenBtn" class="settings-small-btn">Teleport</button>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Teleport to Test Arena</div>
+              <div class="settings-desc">Warp to an empty sandbox area with a creature-spawning menu (replaces the farm editor pencil while you're there). Press again to warp back to where you were.</div>
+            </div>
+            <button type="button" id="devTeleportArenaBtn" class="settings-small-btn">Teleport</button>
           </div>
         </div>
       </div><!-- /mpSettings -->
