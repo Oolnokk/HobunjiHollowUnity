@@ -2844,11 +2844,12 @@
         return 'Common';
       }
 
+      // Reads CREATURE_DB's own label instead of duplicating a second,
+      // separate name list here that has to be updated by hand every time a
+      // new livestock species ships — falls back to a capitalized kind (or
+      // 'Livestock') only for a kind CREATURE_DB doesn't even know about.
       function defaultLivestockName(kind) {
-        if (kind === 'uumkaoii') return "Uumkao'ii";
-        if (kind === 'gar-wolf') return 'Gar-wolf';
-        if (kind === 'dabinggi-hound') return 'Dabinggi-hound';
-        return kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock';
+        return CREATURE_DB[kind]?.label || (kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock');
       }
 
       // Optional pattern layers per species — the HTML lab's Dabinggi-hound
@@ -2885,6 +2886,15 @@
         return [a, b];
       }
 
+      // Species whose genotype is two ALWAYS-present colored regions (e.g.
+      // Uumkao'ii's fur+plates) rather than a base color plus N optional
+      // pattern layers (LIVESTOCK_PATTERN_DEFS' gar-wolf/dabinggi-hound
+      // shape). makeDefaultGenotype/sellValueFor/crossOffspring all branch
+      // on this shape — checked by membership here, not a hardcoded
+      // `kind === 'uumkaoii'` at each site, so a second dual-region species
+      // is a one-line addition instead of a hunt through 3 functions.
+      const DUAL_REGION_GENOTYPE_KINDS = new Set(['uumkaoii']);
+
       // Fresh (non-bred) livestock gets two independently random fur colors —
       // mirrors the HTML tool's randomizeSpecimen(). Uumkao'ii's fur+plates
       // are both permanent (copies:2, dominant). Gar-wolf/Dabinggi-hound get
@@ -2894,7 +2904,7 @@
       // spawnPackAtDen/pickDenGenotype), so a farm-bought crate and a wild
       // pack member are statistically the same roll.
       function makeDefaultGenotype(kind) {
-        if (kind === 'uumkaoii') {
+        if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
           return {
             fur:    { color: randomFurColor(), copies: 2, inheritance: 'dominant' },
             plates: { color: randomFurColor(), copies: 2, inheritance: 'dominant' },
@@ -2934,7 +2944,7 @@
       // base-vs-pattern-color contrast.
       const LIVESTOCK_PATTERN_BONUSES = [0, 70, 175, 315];
       function sellValueFor(genotype, kind = 'uumkaoii') {
-        if (kind === 'uumkaoii' || (!LIVESTOCK_PATTERN_DEFS[kind] && genotype?.fur)) {
+        if (DUAL_REGION_GENOTYPE_KINDS.has(kind) || (!LIVESTOCK_PATTERN_DEFS[kind] && genotype?.fur)) {
           const fur = genotype?.fur, plates = genotype?.plates;
           if (!fur?.color || !plates?.color) {
             return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: 'Plain specimen' };
@@ -2979,7 +2989,7 @@
         return Math.random() < copies / 2 ? { color: layer.color } : null;
       }
       function crossOffspring(genotypeA, genotypeB, kind = 'uumkaoii') {
-        if (kind === 'uumkaoii') {
+        if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
           const child = {};
           for (const layerId of ['fur', 'plates']) {
             const la = genotypeA?.[layerId] || { color: randomFurColor() };
@@ -3125,6 +3135,15 @@
         return animal;
       }
 
+      // Farm-display width per pattern-layer livestock species — deliberately
+      // its own scale from CREATURE_DB's wild-creature modelWidth (a farm
+      // pen animal reads better a bit smaller/denser than its full-size wild
+      // counterpart), so it can't just read CREATURE_DB[kind].modelWidth
+      // directly. A kind missing here falls back to dabinggi-hound's 1.7
+      // rather than silently mis-sizing — add an entry for any new
+      // pattern-layer species instead of expanding a size ternary.
+      const LIVESTOCK_ANIMAL_WIDTH = { 'gar-wolf': 1.9, 'dabinggi-hound': 1.7 };
+
       // Pattern-layer species (gar-wolf, dabinggi-hound) as placeable farm
       // livestock — same tile-hopping wander/no-combat shape as
       // makeUumkaoiiAnimal, but with its genotype actually rendered via
@@ -3132,7 +3151,7 @@
       // back to the plain uncolored sprite, already loaded synchronously
       // below, until that async compose resolves).
       function makePatternLivestockAnimal(kind, label, icon, col, row, livestockId, genotype) {
-        const ANIMAL_W = kind === 'gar-wolf' ? 1.9 : 1.7;
+        const ANIMAL_W = LIVESTOCK_ANIMAL_WIDTH[kind] || 1.7;
         const ANIMAL_H = ANIMAL_W * (600 / 1375); // sprite is 1375x600px, same convention as CREATURE_DB
         const halfH = ANIMAL_H / 2;
         const baseUrl = window.CreatureGeneticsRender?.SPECIES?.[kind]?.base?.idle || `assets/creaturesprites/${kind}_idle.png`;
@@ -3248,6 +3267,15 @@
       // path — addLivestockFromItem degrades to its existing "no factory"
       // failure message rather than crashing.
       const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf' };
+
+      // Den-Mother CREATURE_DB key -> which item her nest hands out — read
+      // directly off her species (see loadBuildingScene's 'map_i_den_'
+      // handling) rather than inferred from her liveBirth flag. Those
+      // happen to bisect the same way today (gar-wolf-den-mother: true,
+      // uumkaoii-wild-den-mother: false), which is exactly the kind of
+      // coincidence that silently breaks the moment a third Den-Mother
+      // species ships sharing a liveBirth value with one of these two.
+      const DEN_MOTHER_ITEM_KEYS = { 'gar-wolf-den-mother': 'garWolfBaby', 'uumkaoii-wild-den-mother': 'uumkaoiiEgg' };
 
       // itemKey -> FIFO queue of genotypes carried by not-yet-hatched units of
       // that item — populated when a Den-Mother's nest grants an egg/baby
@@ -5661,12 +5689,17 @@
       // Which shared-genotype "family" a CREATURE_DB key rolls/renders as —
       // gar-wolf/gar-wolf-alpha/gar-wolf-den-mother all share one gar-wolf-
       // shaped genotype (base+pattern layers), uumkaoii-wild/uumkaoii-wild-
-      // den-mother share a uumkaoii-shaped one (fur+plates) — null for any
-      // species with no gene system (e.g. a future den-mother-less species).
+      // den-mother share a uumkaoii-shaped one (fur+plates). Derived from
+      // GENOTYPE_SPECIES_ALIAS + CreatureGeneticsRender.SPECIES — the exact
+      // same "which real species does this variant's genotype render
+      // against" resolution updateCreatureAnimFrame/spawnDevArenaCreature
+      // already do — rather than a second, separate hardcoded name-prefix
+      // check that has to be kept in sync by hand and silently doesn't
+      // recognize any future species until someone remembers to add its
+      // prefix here too. Returns null for any species with no gene system.
       function _denGenotypeFamily(kind) {
-        if (kind.startsWith('gar-wolf')) return 'gar-wolf';
-        if (kind.startsWith('uumkaoii')) return 'uumkaoii';
-        return null;
+        const resolved = GENOTYPE_SPECIES_ALIAS[kind] || kind;
+        return window.CreatureGeneticsRender?.SPECIES?.[resolved] ? resolved : null;
       }
       // (cavernMapId, family) -> shared genotype — one roll per den PER
       // FAMILY, reused by every same-family pack member, the Den-Mother, and
@@ -9682,11 +9715,16 @@
       // always reaches the same cavern.
       // Deterministic per den (same mapId -> same pick every time, independent
       // of the wilderness zone's own ever-re-rolled exterior pack/herd
-      // species) — which of the two Den-Mother variants guards this den's
-      // nest. Only two species currently have a Den-Mother entry.
+      // species) — which Den-Mother variant guards this den's nest. Picks
+      // uniformly from DEN_MOTHER_ITEM_KEYS' own keys (the same registry
+      // that already maps a Den-Mother species to her nest's item) instead
+      // of a hardcoded 2-way coin flip, so a third Den-Mother species is a
+      // single new entry there rather than also needing this rewritten from
+      // a `< 0.5` ternary into a 3-way split.
       function pickDenMotherKind(mapId) {
         const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denmother') : Math.random;
-        return rng() < 0.5 ? 'gar-wolf-den-mother' : 'uumkaoii-wild-den-mother';
+        const kinds = Object.keys(DEN_MOTHER_ITEM_KEYS);
+        return kinds[Math.floor(rng() * kinds.length)];
       }
 
       function synthesizeCavernMapData(mapId) {
@@ -9904,10 +9942,18 @@
               ? WildernessMapGenerator.makeRng(mapId + '_nestcount') : Math.random;
             const remaining = 1 + Math.floor(nestRng() * 3); // 1-3
             const liveBirth = !!motherDef?.liveBirth;
+            let itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
+            if (!itemKey) {
+              // No mapped item for this Den-Mother species — fall back to
+              // the old liveBirth guess so the nest still hands out SOMETHING
+              // rather than breaking, but flag it since it means
+              // DEN_MOTHER_ITEM_KEYS is missing an entry for a real species.
+              itemKey = liveBirth ? 'garWolfBaby' : 'uumkaoiiEgg';
+              window.__farmLog?.(`[wildlife] Den-Mother "${motherKey}" has no DEN_MOTHER_ITEM_KEYS entry — guessing "${itemKey}" from liveBirth=${liveBirth}, may be wrong.`, 'warn');
+            }
             _denNests.set(mapId, {
               col: nestCol, row: nestRow, w: 2, h: 2,
-              itemKey: liveBirth ? 'garWolfBaby' : 'uumkaoiiEgg',
-              liveBirth, remaining, genotype: denGenotype,
+              itemKey, liveBirth, remaining, genotype: denGenotype,
             });
             // Simple nest marker so the 2x2 chamber reads as an objective.
             const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
