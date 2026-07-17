@@ -2868,6 +2868,8 @@
       const GENOTYPE_SPECIES_ALIAS = {
         'gar-wolf-alpha': 'gar-wolf',
         'gar-wolf-den-mother': 'gar-wolf',
+        'uumkaoii-wild': 'uumkaoii',
+        'uumkaoii-wild-den-mother': 'uumkaoii',
       };
       // Picks two fur colors that read as visually distinct — same rejection-
       // sample loop as the HTML lab's pickTwoFurColors().
@@ -5656,21 +5658,38 @@
         _denCavernZoneOf.set(id, zoneId);
         return id;
       }
-      // cavernMapId -> shared "family" genotype (gar-wolf pattern shape) —
-      // one roll per den, reused by every pack member, the Den-Mother, and
-      // any eggs/babies taken from its nest, using the exact same odds as
-      // a farm-bought crate (see makeDefaultGenotype). Herbivore
-      // (uumkaoii-wild) dens never read this — no pattern genes exist for
-      // that species yet — so the entry just sits unused for them.
-      const _denGenotypes = new Map();
-      function getOrMakeDenGenotype(cavernMapId) {
-        if (!_denGenotypes.has(cavernMapId)) {
-          _denGenotypes.set(cavernMapId, makeDefaultGenotype('gar-wolf'));
-          window.__farmLog?.(`[genotype] rolled new family genotype for den ${cavernMapId} (cache size now ${_denGenotypes.size})`, 'wildlife');
+      // Which shared-genotype "family" a CREATURE_DB key rolls/renders as —
+      // gar-wolf/gar-wolf-alpha/gar-wolf-den-mother all share one gar-wolf-
+      // shaped genotype (base+pattern layers), uumkaoii-wild/uumkaoii-wild-
+      // den-mother share a uumkaoii-shaped one (fur+plates) — null for any
+      // species with no gene system (e.g. a future den-mother-less species).
+      function _denGenotypeFamily(kind) {
+        if (kind.startsWith('gar-wolf')) return 'gar-wolf';
+        if (kind.startsWith('uumkaoii')) return 'uumkaoii';
+        return null;
+      }
+      // (cavernMapId, family) -> shared genotype — one roll per den PER
+      // FAMILY, reused by every same-family pack member, the Den-Mother, and
+      // any eggs/babies taken from its nest, using the exact same odds as a
+      // farm-bought crate (see makeDefaultGenotype). Keyed by family, not
+      // just cavernMapId: a den's exterior population (predator pack vs.
+      // herbivore herd, re-rolled each cycle) and its Den-Mother species
+      // (pickDenMotherKind, a separate deterministic-per-den roll) are
+      // chosen independently, so the SAME den can have a gar-wolf-family
+      // occupant and a uumkaoii-family occupant at once — sharing one plain
+      // cavernMapId key would mean whichever family asked first clobbers
+      // the cache with its own shape, and the other family's genotype reads
+      // would silently come back with none of the fields it expects.
+      const _denGenotypes = new Map(); // key: `${cavernMapId}|${family}`
+      function getOrMakeDenGenotype(cavernMapId, family) {
+        const key = `${cavernMapId}|${family}`;
+        if (!_denGenotypes.has(key)) {
+          _denGenotypes.set(key, makeDefaultGenotype(family));
+          window.__farmLog?.(`[genotype] rolled new ${family} family genotype for den ${cavernMapId} (cache size now ${_denGenotypes.size})`, 'wildlife');
         } else {
-          window.__farmLog?.(`[genotype] reused cached family genotype for den ${cavernMapId}`, 'wildlife');
+          window.__farmLog?.(`[genotype] reused cached ${family} family genotype for den ${cavernMapId}`, 'wildlife');
         }
-        return _denGenotypes.get(cavernMapId);
+        return _denGenotypes.get(key);
       }
 
       // Forgets all pack/respawn bookkeeping for a zone whose terrain (and
@@ -5715,9 +5734,11 @@
           return;
         }
         const speciesKey = pool[Math.floor(rnd() * pool.length)];
-        // Every gar-wolf-family member of this pack (regular + alpha) shares
-        // one rolled-once "family" genotype — see getOrMakeDenGenotype.
-        const denGenotype = speciesKey.startsWith('gar-wolf') ? getOrMakeDenGenotype(denCavernMapId(zoneId, den.id)) : null;
+        // Every same-family member of this pack (e.g. gar-wolf + alpha, or
+        // the whole uumkaoii-wild herd) shares one rolled-once "family"
+        // genotype — see getOrMakeDenGenotype.
+        const denFamily = _denGenotypeFamily(speciesKey);
+        const denGenotype = denFamily ? getOrMakeDenGenotype(denCavernMapId(zoneId, den.id), denFamily) : null;
         // den.x/den.y are the footprint's top-left tile (see workspace.animalDens
         // in wilderness-map-generator.js) — spawn/home anchor is the footprint center.
         const homeX = (den.x + (den.w || 1) * 0.5) * TILE, homeY = (den.y + (den.h || 1) * 0.5) * TILE;
@@ -9860,11 +9881,16 @@
             const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
             const motherKey = mapData.denMotherKind || 'gar-wolf-den-mother';
             const motherDef = CREATURE_DB[motherKey];
-            // Same shared "family" genotype as this den's exterior pack (see
-            // spawnPackAtDen/getOrMakeDenGenotype) — whichever of the two
-            // spawns first rolls it, the other reuses it, so the Den-Mother
-            // and her pack (and the nest's eggs/babies) always match.
-            const denGenotype = motherKey.startsWith('gar-wolf') ? getOrMakeDenGenotype(mapId) : null;
+            // Same shared per-family genotype as this den's exterior pack
+            // (see spawnPackAtDen/getOrMakeDenGenotype) — whichever of the
+            // two spawns first rolls it, the other reuses it, so the
+            // Den-Mother and any same-family pack members (and the nest's
+            // eggs/babies) always match. Keyed by family (not just mapId)
+            // since the Den-Mother's species is picked independently of
+            // whatever the exterior pack currently is (see
+            // pickDenMotherKind) — they can genuinely differ.
+            const motherFamily = _denGenotypeFamily(motherKey);
+            const denGenotype = motherFamily ? getOrMakeDenGenotype(mapId, motherFamily) : null;
             if (motherDef) {
               const homeX = (nestCol + 1) * TILE, homeY = (nestRow + 1) * TILE;
               const mother = makeCreatureEntity(motherKey, homeX, homeY, {
@@ -19873,20 +19899,37 @@
           container.innerHTML = '<div style="opacity:.6;padding:8px 0">No den packs generated yet this session — enter a wilderness zone with wild dens, or force a Tothal Shift below, to populate this list.</div>';
           return;
         }
-        const patternIds = LIVESTOCK_PATTERN_DEFS['gar-wolf'] || [];
         const swatch = (hex, size) => `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:3px;background:${esc(hex)};vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,.3)"></span>`;
         const rows = [];
-        for (const [cavernMapId, genotype] of _denGenotypes) {
+        // Keys are now `${cavernMapId}|${family}` (see getOrMakeDenGenotype)
+        // since one den can independently hold a gar-wolf-family genotype
+        // and a uumkaoii-family genotype at once — split that back apart to
+        // display each family with its own shape (base+patterns vs
+        // fur+plates) instead of assuming every entry is gar-wolf-shaped.
+        for (const [key, genotype] of _denGenotypes) {
+          const sepIdx = key.lastIndexOf('|');
+          const cavernMapId = sepIdx >= 0 ? key.slice(0, sepIdx) : key;
+          const family = sepIdx >= 0 ? key.slice(sepIdx + 1) : 'gar-wolf';
           const zoneId = _denCavernZoneOf.get(cavernMapId) || '(unknown zone)';
           const den = _zoneLayouts.get(zoneId)?.dens?.find(d => denCavernMapId(zoneId, d.id) === cavernMapId);
           const denLabel = den ? den.id : cavernMapId.replace(`map_i_den_${zoneId}_`, '');
-          const baseColor = genotype.base?.color;
-          const baseHtml = baseColor ? `${swatch(baseColor, 13)}${esc(_furPaletteName(baseColor))}` : '(no base)';
-          const patternHtml = patternIds.map(id => {
-            const layer = genotype[id];
-            const on = layer?.enabled && layer.copies > 0;
-            return `<span style="opacity:${on ? 1 : 0.35}">${on ? swatch(layer.color, 10) : ''}${esc(id)}</span>`;
-          }).join(' &middot; ');
+          let bodyHtml;
+          if (family === 'uumkaoii') {
+            const furColor = genotype.fur?.color, platesColor = genotype.plates?.color;
+            bodyHtml = `<div style="margin-top:3px">Fur: ${furColor ? swatch(furColor, 13) + esc(_furPaletteName(furColor)) : '(none)'}</div>
+              <div style="margin-top:2px">Plates: ${platesColor ? swatch(platesColor, 13) + esc(_furPaletteName(platesColor)) : '(none)'}</div>`;
+          } else {
+            const patternIds = LIVESTOCK_PATTERN_DEFS[family] || [];
+            const baseColor = genotype.base?.color;
+            const baseHtml = baseColor ? `${swatch(baseColor, 13)}${esc(_furPaletteName(baseColor))}` : '(no base)';
+            const patternHtml = patternIds.map(id => {
+              const layer = genotype[id];
+              const on = layer?.enabled && layer.copies > 0;
+              return `<span style="opacity:${on ? 1 : 0.35}">${on ? swatch(layer.color, 10) : ''}${esc(id)}</span>`;
+            }).join(' &middot; ');
+            bodyHtml = `<div style="margin-top:3px">Base: ${baseHtml}</div>
+              <div style="margin-top:2px">Patterns: ${patternHtml || '(none)'}</div>`;
+          }
           // Which live creatures are currently using this exact genotype
           // object, if any are spawned right now — confirms the whole pack
           // (and its Den-Mother) really do share one roll.
@@ -19897,9 +19940,8 @@
             : '';
           rows.push(`<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
             <div>
-              <div style="font-weight:600;color:#e5e7eb">${esc(zoneId)} — den ${esc(denLabel)}${aliveKinds.size ? ` <span style="opacity:.6;font-weight:400">(${[...aliveKinds].map(esc).join(', ')} alive now)</span>` : ' <span style="opacity:.5;font-weight:400">(none alive right now)</span>'}</div>
-              <div style="margin-top:3px">Base: ${baseHtml}</div>
-              <div style="margin-top:2px">Patterns: ${patternHtml || '(none)'}</div>
+              <div style="font-weight:600;color:#e5e7eb">${esc(zoneId)} — den ${esc(denLabel)} <span style="opacity:.5;font-weight:400">(${esc(family)})</span>${aliveKinds.size ? ` <span style="opacity:.6;font-weight:400">(${[...aliveKinds].map(esc).join(', ')} alive now)</span>` : ' <span style="opacity:.5;font-weight:400">(none alive right now)</span>'}</div>
+              ${bodyHtml}
             </div>
             ${teleportBtn}
           </div>`);
