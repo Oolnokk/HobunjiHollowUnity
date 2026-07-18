@@ -1,7 +1,7 @@
 {
   "schema": "hobunji_map.v1",
   "id": "map_hobunji_town",
-  "name": "Hobunji Hollow — Town",
+  "name": "Hobunji Hollow \u2014 Town",
   "category": "exterior",
   "cols": 60,
   "rows": 50,
@@ -18817,7 +18817,7 @@
     {
       "id": "bldg_8r0d6",
       "label": "Unumanuk Household",
-      "pieceFile": "config/pieces/placeholder-medium.json",
+      "pieceFile": "config/pieces/generic-house-medium.json",
       "gridX": 43,
       "gridZ": 23,
       "footprintW": 5,
@@ -18836,7 +18836,7 @@
     {
       "id": "bldg_3ws71",
       "label": "Ginju Farmstead",
-      "pieceFile": "config/pieces/placeholder-medium.json",
+      "pieceFile": "config/pieces/generic-house-medium.json",
       "gridX": 33,
       "gridZ": 5,
       "footprintW": 5,
@@ -18913,7 +18913,7 @@
     {
       "id": "bldg_7kl2f",
       "label": "Carpenter",
-      "pieceFile": "config/pieces/placeholder-medium.json",
+      "pieceFile": "config/pieces/generic-house-medium.json",
       "gridX": 20,
       "gridZ": 6,
       "footprintW": 5,
@@ -18952,7 +18952,7 @@
     {
       "id": "bldg_watchhouse",
       "label": "Watchhouse",
-      "pieceFile": "config/pieces/placeholder-medium.json",
+      "pieceFile": "config/pieces/generic-house-medium.json",
       "gridX": 22,
       "gridZ": 14,
       "footprintW": 5,

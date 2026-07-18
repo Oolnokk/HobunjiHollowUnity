@@ -3642,7 +3642,37 @@ $('loadTownBtn').addEventListener('click', async () => {
     setStatus('Fetching town workspace…');
     const res = await fetch('../../config/town-workspace-v1.json');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    importAny(await res.json());
+    const obj = await res.json();
+    // Mirror game.js's _loadTownFromWorkspace: a per-map file registered in
+    // config/maps/index.json takes priority over this map's inline data in
+    // town-workspace-v1.json (e.g. buildings added straight to
+    // hobunji_hollow_town.map.json, like the Watchhouse, without ever being
+    // synced back into the workspace file). Without this, "Load Town" shows
+    // a stale/incomplete town that doesn't match what the game renders.
+    if (Array.isArray(obj.maps)) {
+      try {
+        const idxRes = await fetch('../../config/maps/index.json');
+        if (idxRes.ok) {
+          const idx = await idxRes.json();
+          const mapFileIndex = {};
+          for (const e of (idx.maps || [])) if (e.id && e.file) mapFileIndex[e.id] = e.file;
+          obj.maps = await Promise.all(obj.maps.map(async m => {
+            const file = mapFileIndex[m.id];
+            if (!file) return m;
+            try {
+              const r = await fetch('../../' + file);
+              if (!r.ok) return m;
+              const data = await r.json();
+              if (data?.schema === 'hobunji_building_interior.v1' && m?.schema !== 'hobunji_building_interior.v1') {
+                return { ...m, buildingInteriorBase: data };
+              }
+              return data;
+            } catch(_) { return m; }
+          }));
+        }
+      } catch(_) {}
+    }
+    importAny(obj);
     // Auto-link: find the town map and set gameLink.townId
     const townM = ws.maps.find(m => m.id === 'map_hobunji_town');
     if (townM && !ws.gameLink.townId) {
