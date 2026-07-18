@@ -15443,8 +15443,7 @@
       // bite) -> 'bite' (splash happened, waiting on the player) -> 'active'
       // (ring open, existing spear-bridge gameplay).
       let fishingMinigame = null;
-      let fishingEls = null;       // cached ring SVG DOM refs — built on entering 'active', torn down on close
-      let fishingPromptEls = null; // cached prompt DOM refs (button/status/panic/cancel) — built on entering 'bite', persists into 'active'
+      let fishingEls = null; // cached ring SVG DOM refs — built on entering 'active', torn down on close
       const fishingOverlayEl = document.getElementById('fishingOverlay');
 
       function currentFishZoneKey() {
@@ -15775,7 +15774,6 @@
         );
         fishingOverlayEl.innerHTML = '';
         fishingEls = null;
-        fishingPromptEls = null;
         fishingOverlayEl.classList.add('open');
 
         // Swap to the "fishing" camera mode (fixed diagonal offset, matching the
@@ -15849,7 +15847,7 @@
         fishingOverlayEl.classList.remove('open');
         fishingOverlayEl.innerHTML = '';
         fishingEls = null;
-        fishingPromptEls = null;
+        hideActionPrompt();
         if (_prevCameraMode !== null) { activeCameraMode = _prevCameraMode; _prevCameraMode = null; }
         activeCameraTarget = _prevCameraTarget;
         _prevCameraTarget = null;
@@ -16152,40 +16150,9 @@
         renderFishingOverlay();
       }
 
-      // Builds the static overlay markup once per minigame session; per-frame updates
-      // only touch attributes on the cached nodes below (renderFishingOverlay), so the
-      // deformed-fish canvas/dataURL churn each frame doesn't force a full innerHTML
-      // rebuild + listener rebind every tick.
-      // Built once on entering 'bite' and left in place through 'active' —
-      // a single containerless button whose label does double duty: "Ready
-      // Harpoon" confirms a bite (opens the ring) and then, once open, drops
-      // the first bridge marker; it becomes "Throw Harpoon" for the second
-      // tap that actually releases the spear (see fishingPrimaryAction/
-      // fireFishingBridge and renderFishingOverlay's label logic).
-      function buildFishingPromptDom() {
-        const wrap = document.createElement('div');
-        wrap.className = 'fish-prompt';
-        wrap.innerHTML = `
-          <button class="fish-prompt-btn" id="fishPromptBtn">Ready Harpoon</button>
-          <div class="fish-status" id="fishStatus"></div>
-          <div class="fish-panic-wrap" id="fishPanicWrap"><div class="fish-panic-fill" id="fishPanicFill"></div></div>
-          <button class="fish-cancel-btn" id="fishCancelBtn">Give up</button>`;
-        fishingOverlayEl.appendChild(wrap);
-
-        fishingPromptEls = {
-          wrap,
-          btn: document.getElementById('fishPromptBtn'),
-          status: document.getElementById('fishStatus'),
-          panicWrap: document.getElementById('fishPanicWrap'),
-          panicFill: document.getElementById('fishPanicFill'),
-        };
-        fishingPromptEls.btn.addEventListener('pointerup', (e) => { e.stopPropagation(); fishingPrimaryAction(); });
-        const cancelBtn = document.getElementById('fishCancelBtn');
-        if (cancelBtn) cancelBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); closeFishingMinigame(); });
-      }
-
-      // Built once on entering 'active' (the ring SVG only — the prompt
-      // dock above is already in place by then, carried over from 'bite').
+      // Built once on entering 'active' (the ring SVG only — the "Ready
+      // Harpoon"/"Throw Harpoon" prompt itself now lives in the shared
+      // bottom-of-screen action prompt, see showActionPrompt below).
       function buildFishingRingDom() {
         const R = FISHING_RING;
         const outerRadius = R.fishRadius + R.outerOffset;
@@ -16337,42 +16304,25 @@
         fishingEls.ringWrap.style.top = (rect.top + top) + 'px';
       }
 
-      // Keeps the prompt (button/status/panic) parked just to the left of the
-      // player avatar on screen, instead of pinned to the bottom of the page,
-      // so it reads as attached to the character doing the fishing.
-      function updateFishingDockScreenPosition() {
-        if (!fishingPromptEls?.wrap || !playerMesh) return;
-        const proj = worldToOverlay(playerMesh.position.x, playerMesh.position.y + 0.6, playerMesh.position.z);
-        if (!proj.visible) return;
-        const dockGap = 105;
-        const dockWidth = 105; // keeps the prompt's left edge from running off-screen
-        const rect = _threeRect;
-        const left = clamp(proj.x - dockGap, dockWidth, rect.width);
-        const top = clamp(proj.y, 0, rect.height);
-        fishingPromptEls.wrap.style.left = (rect.left + left) + 'px';
-        fishingPromptEls.wrap.style.top = (rect.top + top) + 'px';
-      }
-
       function renderFishingOverlay() {
         const fm = fishingMinigame;
         if (!fm) return;
 
-        // Prompt (button + status + panic + cancel) exists from 'bite'
-        // onward and persists through 'active' — see buildFishingPromptDom.
+        // "Ready Harpoon"/"Throw Harpoon" lives in the shared bottom-of-
+        // screen action prompt from 'bite' onward — see showActionPrompt.
         if (fm.phase === 'bite' || fm.phase === 'active') {
-          if (!fishingPromptEls) buildFishingPromptDom();
-          updateFishingDockScreenPosition();
           const notYetMarked = fm.phase === 'bite' || fm.bridge.markerA == null;
-          fishingPromptEls.btn.textContent = notYetMarked ? 'Ready Harpoon' : 'Throw Harpoon';
-          if (fm.phase === 'active') {
-            fishingPromptEls.status.textContent = fm.message;
-            fishingPromptEls.status.className = 'fish-status' + (fm.messageType ? ' ' + fm.messageType : '');
-            fishingPromptEls.panicWrap.style.display = '';
-            fishingPromptEls.panicFill.style.width = fm.panic + '%';
-          } else {
-            fishingPromptEls.status.textContent = '';
-            fishingPromptEls.panicWrap.style.display = 'none';
-          }
+          showActionPrompt({
+            actionId: 'interact',
+            touchIcon: '🎣',
+            verb: notYetMarked ? 'Ready Harpoon' : 'Throw Harpoon',
+            onPress: fishingPrimaryAction,
+            cancelText: 'Give up',
+            onCancel: closeFishingMinigame,
+            statusText: fm.phase === 'active' ? fm.message : '',
+            statusType: fm.phase === 'active' ? fm.messageType : '',
+            panicPercent: fm.phase === 'active' ? fm.panic : null,
+          });
         }
 
         if (fm.phase !== 'active') return;
@@ -19514,6 +19464,28 @@
             toolSwingT = Math.max(0, toolSwingT - dt);
           }
           progress   = 1 - toolSwingT / toolSwingDur;
+        }
+
+        // Hold a simple raised/pulled-back "ready" pose while waiting on a
+        // fishing bite — deliberately bypasses the per-style branches below
+        // instead of pinning `progress` at their windup extreme: thrust's
+        // windup carries a -45° bodyYaw and sweep's carries a much larger
+        // one (both meant as a brief transient mid-swing), and holding
+        // either of those indefinitely visibly rotated the whole character
+        // away from θ (the facing set by aiming at the fished tile) instead
+        // of leaving them squared up toward it. This pose only tilts the
+        // tool itself — playerMesh.rotation.y stays exactly θ.
+        if (fishingReadyPose) {
+          playerMesh.rotation.y = θ;
+          _qFac.setFromAxisAngle(_tUp, θ);
+          _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(10.31));
+          toolHolder.quaternion.copy(_qFac).multiply(_qAnim);
+          toolHolder.position.set(
+            playerMesh.position.x + rightX * playerToolBaseX + fwdX * -0.22,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * -0.22
+          );
+          return;
         }
 
         _qFac.setFromAxisAngle(_tUp, θ);
@@ -23665,6 +23637,96 @@
         const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓' };
         return labels[code] || String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
       }
+
+      // ── Last-used input device tracking ─────────────────────────────
+      // Nothing else in the game tracks "what device is the player actually
+      // using right now" — isDesktop (see top of file) is a one-time
+      // pointer:fine media-query check, not reactive to switching between
+      // mouse, touch, and a plugged-in controller mid-session. Drives
+      // showActionPrompt below so its "press X" text matches whatever the
+      // player last actually pressed, not just their device class.
+      let lastInputDevice = isDesktop ? 'desktop' : 'touch';
+      window.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'touch') lastInputDevice = 'touch';
+        else if (e.pointerType === 'mouse' || e.pointerType === 'pen') lastInputDevice = 'desktop';
+      }, { capture: true, passive: true });
+      window.addEventListener('keydown', () => { lastInputDevice = 'desktop'; }, { capture: true });
+      // Controller presses are marked in pollControllerInput() itself (see
+      // below), since that's the only place an actual button-down edge is
+      // detected rather than just continuous stick state.
+
+      // ── Contextual bottom-of-screen action prompt ───────────────────
+      // Generic "press X to do Y" prompt shared across the game (fishing is
+      // the first caller, see beginFishingCast/renderFishingOverlay) —
+      // resolves its own key/button/icon label from lastInputDevice so
+      // callers only ever describe *what* the action does, never how to
+      // trigger it on any particular device.
+      let actionPromptEls = null;
+      function buildActionPromptDom() {
+        if (actionPromptEls) return;
+        const el = document.getElementById('actionPrompt');
+        if (!el) return;
+        el.innerHTML = `
+          <div class="ap-row">
+            <button class="ap-btn" id="apBtn"></button>
+            <button class="ap-cancel" id="apCancel"></button>
+          </div>
+          <div class="ap-status" id="apStatus"></div>
+          <div class="ap-panic-wrap" id="apPanicWrap"><div class="ap-panic-fill" id="apPanicFill"></div></div>`;
+        actionPromptEls = {
+          el,
+          btn: document.getElementById('apBtn'),
+          cancel: document.getElementById('apCancel'),
+          status: document.getElementById('apStatus'),
+          panicWrap: document.getElementById('apPanicWrap'),
+          panicFill: document.getElementById('apPanicFill'),
+        };
+      }
+      // Real key/button label on desktop/controller, taken from the
+      // player's actual current bindings (not just the defaults) so a
+      // rebound key shows correctly here too. Touch has no key to name, so
+      // callers pass the same icon already shown for that action in the
+      // tool arch (see e.g. the harpoon's 🎣 fallback in _openToolArc).
+      function actionPromptGlyph(actionId, touchIcon) {
+        if (lastInputDevice === 'controller') return buttonLabel(inputBindings.controller[actionId]);
+        if (lastInputDevice === 'touch') return touchIcon || '👆';
+        return buttonLabel(inputBindings.desktop[actionId]);
+      }
+      function showActionPrompt({ actionId, touchIcon, verb, onPress, cancelText, onCancel, statusText, statusType, panicPercent }) {
+        buildActionPromptDom();
+        if (!actionPromptEls) return;
+        const glyph = actionPromptGlyph(actionId, touchIcon);
+        actionPromptEls.btn.textContent = lastInputDevice === 'touch' ? `${glyph} ${verb}` : `[${glyph}] ${verb}`;
+        actionPromptEls.btn.onpointerup = (e) => { e.stopPropagation(); onPress?.(); };
+        if (cancelText && onCancel) {
+          actionPromptEls.cancel.textContent = cancelText;
+          actionPromptEls.cancel.style.display = '';
+          actionPromptEls.cancel.onpointerup = (e) => { e.stopPropagation(); onCancel(); };
+        } else {
+          actionPromptEls.cancel.style.display = 'none';
+          actionPromptEls.cancel.onpointerup = null;
+        }
+        if (statusText) {
+          actionPromptEls.status.textContent = statusText;
+          actionPromptEls.status.className = 'ap-status' + (statusType ? ' ' + statusType : '');
+          actionPromptEls.status.style.display = '';
+        } else {
+          actionPromptEls.status.style.display = 'none';
+        }
+        if (panicPercent != null) {
+          actionPromptEls.panicWrap.style.display = '';
+          actionPromptEls.panicFill.style.width = panicPercent + '%';
+        } else {
+          actionPromptEls.panicWrap.style.display = 'none';
+        }
+        actionPromptEls.el.classList.add('open');
+      }
+      function hideActionPrompt() {
+        if (!actionPromptEls) return;
+        actionPromptEls.el.classList.remove('open');
+        actionPromptEls.btn.onpointerup = null;
+        actionPromptEls.cancel.onpointerup = null;
+      }
       function runActionButtonAtSlot(slotIndex) {
         const btn = computeActionButtons()[slotIndex - 1];
         if (!btn) return;
@@ -23787,7 +23849,7 @@
         for (const button of down) {
           if (gamepadState.previous.has(button) || button === heldShift?.button) continue;
           const actionId = getActionForButton('controller', button, heldShift);
-          if (actionId) runInputAction(actionId, 'press');
+          if (actionId) { lastInputDevice = 'controller'; runInputAction(actionId, 'press'); }
         }
         for (const button of gamepadState.previous) {
           if (down.has(button)) continue;

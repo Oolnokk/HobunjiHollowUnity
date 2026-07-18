@@ -1060,6 +1060,36 @@
     #toast.ok   { border-color: rgba(127,232,154,0.4); }
     #toast.fail { border-color: rgba(255,128,96,0.4); }
 
+    /* ── Contextual action prompt (bottom-center) ────────────────
+       Device-aware "press X to do Y" prompt, shared across the game (not
+       fishing-specific) — see showActionPrompt/hideActionPrompt in game.js.
+       Sits just above where a Stardew-style item/hotbar row would run
+       along the very bottom of the screen. */
+    #actionPrompt {
+      position: fixed;
+      top: calc(var(--oy) + 15.2 * var(--row)); left: var(--play-center);
+      transform: translateX(-50%);
+      z-index: 60;
+      display: none; flex-direction: column; align-items: center; gap: 4px;
+      pointer-events: none;
+    }
+    #actionPrompt.open { display: flex; }
+    .ap-row { display: flex; align-items: center; gap: 10px; }
+    .ap-btn, .ap-cancel {
+      pointer-events: auto; background: none; border: none; padding: 2px 4px; cursor: pointer;
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
+      letter-spacing: 0.04em;
+      text-shadow: 0 0 6px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.9);
+    }
+    .ap-btn { font-size: 14px; color: var(--accent); }
+    .ap-btn:active { color: #fff; }
+    .ap-cancel { font-size: 9px; color: var(--muted); text-decoration: underline; }
+    .ap-status { font-size: 9px; color: var(--text); min-height: 11px; text-align: center; text-shadow: 0 0 4px rgba(0,0,0,0.85); }
+    .ap-status.good { color: var(--ok); }
+    .ap-status.bad  { color: var(--danger); }
+    .ap-panic-wrap { width: 72px; height: 3px; border-radius: 3px; background: rgba(255,255,255,0.15); overflow: hidden; }
+    .ap-panic-fill { height: 100%; width: 0%; border-radius: 3px; background: var(--danger); transition: width 0.15s; }
+
     /* ── Combo streak HUD: big "xN" readout on the screen's side, tracking
        consecutive landed combo hits (see combat-combo-streak.js). Heavy
        attacks read their damage/lunge multiplier off this same streak. ── */
@@ -2333,36 +2363,9 @@
       pointer-events: none;
     }
     .fish-ring-wrap svg { width: 100%; height: 100%; display: block; }
-    /* Containerless prompt: no box/backdrop, just the "Ready Harpoon" /
-       "Throw Harpoon" button plus minimal status/panic feedback once the
-       ring is actually open. Built once on entering 'bite' and left in
-       place through 'active' (see buildFishingPromptDom in game.js). */
-    .fish-prompt {
-      position: absolute; left: 0; top: 0; transform: translate(-100%, -50%) scale(0.85);
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
-      pointer-events: none;
-    }
-    .fish-prompt-btn {
-      pointer-events: auto; background: none; border: none; padding: 2px 4px; cursor: pointer;
-      font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
-      font-size: 13px; color: var(--accent); letter-spacing: 0.04em;
-      text-shadow: 0 0 6px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.9);
-    }
-    .fish-prompt-btn:active { color: #fff; }
     /* Fish render is a pure-black silhouette PNG (see fish_silhouette-body.png); without a
        light halo it nearly disappears against the dark backdrop, so give it the same white
        glow trick the prototype used on .fish-image-rig, just stronger for our darker scene. */
     #fishImageRig {
       filter: drop-shadow(0 0 2px rgba(255,255,255,0.95)) drop-shadow(0 0 6px rgba(255,255,255,0.65)) drop-shadow(0 0 11px rgba(255,255,255,0.4));
-    }
-    .fish-status { font-size: 8px; color: var(--text); min-height: 11px; text-align: center; text-shadow: 0 0 4px rgba(0,0,0,0.85); }
-    .fish-status.good { color: var(--ok); }
-    .fish-status.bad  { color: var(--danger); }
-    .fish-panic-wrap { width: 64px; height: 3px; border-radius: 3px; background: rgba(255,255,255,0.15); overflow: hidden; }
-    .fish-panic-fill { height: 100%; width: 0%; border-radius: 3px; background: var(--danger); transition: width 0.15s; }
-    .fish-cancel-btn {
-      pointer-events: auto;
-      font-size: 7px; color: var(--muted); background: none; border: none;
-      cursor: pointer; text-decoration: underline; letter-spacing: 0.02em;
-      text-shadow: 0 0 4px rgba(0,0,0,0.85);
     }

@@ -759,6 +759,11 @@
   <!-- Toast -->
   <div id="toast" role="status" aria-live="polite"></div>
 
+  <!-- Contextual action prompt (bottom-center) — device-aware "press X to
+       do Y" prompt shared across the game; see showActionPrompt/
+       hideActionPrompt in game.js. Empty until populated. -->
+  <div id="actionPrompt" aria-hidden="true"></div>
+
   <!-- Den-Mother nest hold-to-take progress bar -->
   <div id="nestTakeHud" aria-hidden="true">
     <div class="nest-take-label" id="nestTakeLabel"></div>
