@@ -201,7 +201,69 @@
     addSegmentOutlines(group, spec, radius, max, boundaryPoints);
 
     if (spec.resourceKey === "health") addHealthRiskGroundArc(group, entity, spec, radius);
+    // Tags this resource's whole arc group (fills + outlines together) so
+    // updateAfflictionPulses/applyAfflictionPulseTransform below can find it
+    // again on later frames without needing a rebuild.
+    group.userData.resourceKey = spec.resourceKey;
     return group;
+  }
+
+  // ── Affliction "just added" pulse/shake feedback ──────────────────────
+  // Whenever a resource's total afflicted points go up (a fresh application
+  // — bleed ticking down, recovery, etc. don't count since those only ever
+  // decrease it), that resource's whole arc group gets a brief scale pulse
+  // + position jitter so a landed affliction reads as an event instead of
+  // its color just silently appearing next frame.
+  const AFFLICTION_PULSE_DURATION_S = 1.0;
+  const AFFLICTION_PULSE_SCALE = 0.22;
+  const AFFLICTION_SHAKE_UNITS = 0.035;
+
+  function afflictionTotalFor(entity, resourceKey) {
+    const RS = window.ResourceSystem;
+    let total = 0;
+    for (const [id, def] of Object.entries(RS.AFFLICTIONS)) {
+      if (def.resource === resourceKey) total += RS.getAffliction(entity, id);
+    }
+    return total;
+  }
+
+  // Compares this frame's affliction totals against last frame's to decide
+  // whether to (re)start a pulse — called every updateRingHud, independent
+  // of whether the ring's geometry itself needed rebuilding this frame.
+  function updateAfflictionPulses(entity, nowMs) {
+    if (!entity._afflictionPulsePrev) entity._afflictionPulsePrev = { health: 0, stamina: 0 };
+    if (!entity._afflictionPulseUntil) entity._afflictionPulseUntil = { health: 0, stamina: 0 };
+    for (const key of ["health", "stamina"]) {
+      const total = afflictionTotalFor(entity, key);
+      if (total > entity._afflictionPulsePrev[key] + 0.05) {
+        entity._afflictionPulseUntil[key] = nowMs + AFFLICTION_PULSE_DURATION_S * 1000;
+      }
+      entity._afflictionPulsePrev[key] = total;
+    }
+  }
+
+  // Applies the current pulse transform to whichever child groups are
+  // tagged with a resourceKey — runs every frame (not just on rebuild) so
+  // the animation keeps playing across frames where nothing else changed.
+  function applyAfflictionPulseTransform(hudGroup, entity, nowMs) {
+    for (const child of hudGroup.children) {
+      const key = child.userData?.resourceKey;
+      if (!key) continue;
+      const until = entity._afflictionPulseUntil?.[key] || 0;
+      const remaining = (until - nowMs) / 1000;
+      if (remaining > 0) {
+        const t = 1 - remaining / AFFLICTION_PULSE_DURATION_S; // 0 -> 1 across the pulse
+        const falloff = 1 - t;
+        child.scale.setScalar(1 + AFFLICTION_PULSE_SCALE * falloff * Math.sin(t * Math.PI * 5));
+        const phase = key === "health" ? 0 : Math.PI * 0.5;
+        child.position.x = Math.sin(nowMs / 1000 * 42 + phase) * AFFLICTION_SHAKE_UNITS * falloff;
+        child.position.z = Math.cos(nowMs / 1000 * 55 + phase) * AFFLICTION_SHAKE_UNITS * falloff;
+      } else if (child.scale.x !== 1 || child.position.x !== 0 || child.position.z !== 0) {
+        child.scale.setScalar(1);
+        child.position.x = 0;
+        child.position.z = 0;
+      }
+    }
   }
 
   // Black outline around the whole ring's rim (inner+outer edge, spanning
@@ -310,6 +372,8 @@
   // until it first takes damage.
   function updateRingHud(entity, scene, radius = .6, opts = {}) {
     const isTarget = !!opts.isTarget;
+    const nowMs = performance.now();
+    updateAfflictionPulses(entity, nowMs);
     if (!entity._ringHud) {
       entity._ringHud = new THREE.Group();
       entity._ringHud.name = "resource_ring_hud";
@@ -339,6 +403,7 @@
       entity._ringHud.add(buildGroundRingForFighter(entity, radius));
       if (isTarget) entity._ringHud.add(buildTargetIndicatorRings(radius));
     }
+    applyAfflictionPulseTransform(entity._ringHud, entity, nowMs);
     return entity._ringHud;
   }
 

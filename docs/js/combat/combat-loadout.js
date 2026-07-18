@@ -26,13 +26,15 @@
   // Each slot is further restricted to a fixed ability category (finer than
   // slotFamily's plain tap/hold split): tap1 is always the weapon's own
   // Combo (see below — not player-selectable), tap2 only takes a Quick
-  // Attack, hold1 takes either a Defensive or Offensive hold, and hold2
-  // only takes an Offensive hold.
+  // Attack, hold2 (paired with tap2's own input — see combat-input.js's
+  // slot 2) takes either a Defensive or Offensive hold, and hold1 (paired
+  // with the Combo's input) only takes an Offensive hold — holding the
+  // combo button should never be able to put you in a defensive stance.
   const SLOT_CATEGORIES = {
     tap1: ['combo'],
     tap2: ['quickAttack'],
-    hold1: ['defensiveHold', 'offensiveHold'],
-    hold2: ['offensiveHold'],
+    hold1: ['offensiveHold'],
+    hold2: ['defensiveHold', 'offensiveHold'],
   };
 
   // These ids don't have to be registered yet for the loadout to reference
