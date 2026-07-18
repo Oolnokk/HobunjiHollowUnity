@@ -13,7 +13,7 @@
   <script src="debug.js?v=20260712d"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/scratchbones-config.js?v=20260712d"></script>
-  <link rel="stylesheet" href="style.css?v=20260712d">
+  <link rel="stylesheet" href="style.css?v=20260712f">
   <!-- Portrait system (ScratchbonesGame) -->
   <script>
     /* scratchbones-config uses repo-root paths; fix them for docs/ serving */
@@ -31,14 +31,14 @@
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20260712d"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20260712d"></script>
+  <script src="js/procedural-furniture.js?v=20260712f"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260712d"></script>
   <script src="js/wilderness-map-generator.js?v=20260712d"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260712d">
-  <script src="onboarding.js?v=20260712d"></script>
+  <script src="onboarding.js?v=20260712g"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260712d"></script>
   <script src="js/combat/resource-rings.js?v=20260712d"></script>
@@ -98,6 +98,9 @@
       <div class="vb-track"><div class="vb-fill vb-stamina" id="vbStaminaFill"></div></div>
     </div>
   </div>
+
+  <!-- Active alchemy buffs/debuffs (top-right-ish, below status bar) — see refreshBuffBar -->
+  <div id="buffBar" aria-label="Active potion effects"></div>
 
   <!-- Farm editor toggle button (top-right, beside menu) — only shown on the
        farm, for its owner; see _refreshEditorButtonVisibility -->
@@ -484,6 +487,21 @@
           <div id="generalStoreList" class="supply-list"></div>
         </div>
       </div><!-- /mpGeneralStore -->
+
+      <!-- ── Alchemy pane (no tab button — opened only via the Alchemy Table's
+           interact prompt, same "openMenu-only" pattern as Supplies/Shipping) ── -->
+      <div class="mp-pane" id="mpAlchemy">
+        <div class="menu-section alchemy-reagents-section">
+          <div class="menu-section-title">Reagents — choose 2–3 to test for a reaction</div>
+          <div id="alchemyReagentList" class="supply-list"></div>
+        </div>
+        <div class="menu-section alchemy-cauldron-section">
+          <div class="menu-section-title">Cauldron</div>
+          <div id="alchemySelectedStrip" class="alch-selected-strip"></div>
+          <div id="alchemyEffectPreview" class="alch-effect-preview"></div>
+          <button id="alchemyBrewBtn" class="shop-buy-btn alch-brew-btn" onclick="window._doBrewPotion?.()" disabled>⚗️ Brew Potion</button>
+        </div>
+      </div><!-- /mpAlchemy -->
 
       <!-- ── Progress pane ──────────────────────────────── -->
       <div class="mp-pane" id="mpProgress">
@@ -932,7 +950,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260712e"></script>
+  <script src="game.js?v=20260712i"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

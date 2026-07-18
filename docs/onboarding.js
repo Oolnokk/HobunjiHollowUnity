@@ -555,6 +555,9 @@
       packClothing:     [],           // unequipped clothing sitting in this world's pack
       npcRelationships: {},           // { [npcId]: { favor, memory: [{event, day, ts}] } }
       questProgress:    {},           // { [questId]: { status, progress, completedAt } }
+      alchemyKnownEffects: {},        // { [reagentKey]: [effectIndex, ...] } — discovered reagent effects
+      alchemyActiveEffects: [],       // [{ key, remainingS }] — still-active buffs/debuffs at last save
+      alchemyReagentState: {},        // { [zoneMapId]: { day, placements: [{col,row,key}] } }
       joinedAt:         Date.now(),
     };
   }
@@ -1159,6 +1162,9 @@
       packClothing:      [...(memberState.packClothing || [])],
       npcRelationships:  { ...(memberState.npcRelationships || {}) },
       questProgress:     { ...(memberState.questProgress || {}) },
+      alchemyKnownEffects: { ...(memberState.alchemyKnownEffects || {}) },
+      alchemyActiveEffects: [...(memberState.alchemyActiveEffects || [])],
+      alchemyReagentState: { ...(memberState.alchemyReagentState || {}) },
       isNewWorld,
     };
     saveProfile(playerData);
@@ -1491,6 +1497,9 @@
       playerData.packClothing   = [...memberState.packClothing];
       playerData.npcRelationships = { ...memberState.npcRelationships };
       playerData.questProgress  = { ...memberState.questProgress };
+      playerData.alchemyKnownEffects = { ...(memberState.alchemyKnownEffects || {}) };
+      playerData.alchemyActiveEffects = [...(memberState.alchemyActiveEffects || [])];
+      playerData.alchemyReagentState = { ...(memberState.alchemyReagentState || {}) };
       playerData.isNewWorld     = true;
     }
 
