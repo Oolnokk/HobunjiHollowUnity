@@ -917,6 +917,15 @@
   <!-- Spearfishing minigame overlay (built dynamically in game.js) -->
   <div id="fishingOverlay"></div>
 
+  <!-- Fish-catch victory view: camera zooms on the player, who holds the
+       caught fish and faces the camera, while this shows the star rating
+       and a Continue button — see beginFishCatchView/continueFromFishCatch. -->
+  <div id="fishCatchView" aria-hidden="true">
+    <div class="fcv-stars" id="fcvStars"></div>
+    <div class="fcv-text" id="fcvText"></div>
+    <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
+  </div>
+
   <script src="js/tool-icon-render.js?v=20260712d"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when

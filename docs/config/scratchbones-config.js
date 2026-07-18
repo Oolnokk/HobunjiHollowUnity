@@ -116,6 +116,14 @@ window.SCRATCHBONES_CONFIG = {
           "fovDeg": 42,
           "followLerp": 0.15,
           "targetYOffsetTiles": 0.35
+        },
+        "fishCatch": {
+          "distanceTiles": 7,
+          "angleFromGroundDeg": 13,
+          "azimuthDeg": 0,
+          "fovDeg": 42,
+          "followLerp": 0.15,
+          "targetYOffsetTiles": 0.9
         }
       }
     },

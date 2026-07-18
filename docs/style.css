@@ -2369,3 +2369,31 @@
     #fishImageRig {
       filter: drop-shadow(0 0 2px rgba(255,255,255,0.95)) drop-shadow(0 0 6px rgba(255,255,255,0.65)) drop-shadow(0 0 11px rgba(255,255,255,0.4));
     }
+
+    /* ── Fish-catch victory view ─────────────────────────────── */
+    #fishCatchView {
+      display: none; position: fixed; left: 50%; top: 68%;
+      transform: translate(-50%, -50%);
+      z-index: 250; text-align: center;
+      flex-direction: column; align-items: center; gap: 8px;
+      opacity: 0; transition: opacity 0.35s ease;
+    }
+    #fishCatchView.open { display: flex; opacity: 1; }
+    .fcv-stars {
+      font-size: 26px; color: #ffd166;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.6), 0 0 16px rgba(255,209,102,0.5);
+      letter-spacing: 0.08em;
+    }
+    .fcv-text {
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
+      font-size: 18px; color: var(--text);
+      text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+    }
+    .fcv-continue {
+      margin-top: 6px; padding: 8px 22px; border-radius: 20px; cursor: pointer;
+      background: var(--glass-2); border: 1px solid var(--border-bright);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: var(--accent); font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
+      font-size: 13px; letter-spacing: 0.04em;
+    }
+    .fcv-continue:active { background: rgba(249,226,138,0.2); }

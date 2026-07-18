@@ -4119,6 +4119,24 @@
         return gained;
       }
 
+      // Shared 1-5 star quality roll — fish, harvested crops, and butchered
+      // meat all use this. Weighted toward the middle (3 stars most common)
+      // rather than a flat 20% each, so it doesn't feel like a coin flip;
+      // otherwise deliberately simple/random for now, no per-item tuning.
+      function rollItemStars() {
+        const weights = [1, 3, 5, 3, 1]; // stars 1..5
+        const total = weights.reduce((a, b) => a + b, 0);
+        let r = rnd() * total;
+        for (let i = 0; i < weights.length; i++) {
+          r -= weights[i];
+          if (r <= 0) return i + 1;
+        }
+        return 3;
+      }
+      function starRatingText(stars) {
+        return '★'.repeat(stars) + '☆'.repeat(5 - stars);
+      }
+
       // Settled corpses expose the same getButtons()/onAction() shape as
       // farm world objects (see makeSellCrate) so the existing action-bar
       // wiring (getWorldObjectAt → getButtons/onAction) can loot them with
@@ -4136,7 +4154,10 @@
             const parts = [];
             Object.entries(gained).forEach(([key, qty]) => {
               inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
-              parts.push(itemIconForKey(key) + '×' + qty);
+              // Meat gets a quality roll same as fish/crops; hides and other
+              // butchering byproducts don't.
+              const stars = /meat/i.test(key) ? starRatingText(rollItemStars()) + ' ' : '';
+              parts.push(stars + itemIconForKey(key) + '×' + qty);
             });
             corpseObjects.delete(c);
             despawnCreature(c);
@@ -14355,7 +14376,8 @@
         if (!tile.cropReady) return { ok: false, message: `${tile.crop} isn't ready yet.` };
         const data = cropData[tile.crop];
         inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + 1);
-        const msg = `Harvested ${data.emoji} ${data.label}!`;
+        const stars = rollItemStars();
+        const msg = `Harvested ${starRatingText(stars)} ${data.emoji} ${data.label}!`;
         tile.crop = CropType.NONE;
         tile.cropAge = 0;
         tile.cropReady = false;
@@ -15669,6 +15691,13 @@
           mesh, mat,
           vx: vel.x, vy: vel.y, vz: vel.z,
           gravity: opts.gravity ?? -4.2,
+          // Bob mode (bobAmp > 0) ignores gravity/vy entirely and instead
+          // rides a sine wave around baseY — for things that sit and drift
+          // on the water surface rather than falling, like the bait float.
+          bobAmp: opts.bobAmp || 0,
+          bobRate: opts.bobRate || 3,
+          bobPhase: Math.random() * Math.PI * 2,
+          baseY: pos.y,
           age: 0,
           maxAge: opts.maxAge ?? 0.55,
         });
@@ -15694,16 +15723,35 @@
         }
       }
 
-      // Small upward/outward burst at the water surface for the bite —
-      // see the 'waiting' → 'bite' phase transition below.
+      // One pink fleck drifting/bobbing on the water surface — spawned
+      // repeatedly (see updateFishingMinigame's 'cast'/'waiting' handling)
+      // for as long as the player is waiting on a bite, so the surface
+      // reads as continuously "baited" rather than a one-off toss.
+      function spawnFishingFloatParticle(atWorld) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 0.05 + Math.random() * 0.32;
+        spawnFishingFxParticle(
+          { x: atWorld.x + Math.cos(angle) * dist, y: atWorld.y + 0.015, z: atWorld.z + Math.sin(angle) * dist },
+          { x: (Math.random() - 0.5) * 0.05, y: 0, z: (Math.random() - 0.5) * 0.05 },
+          { size: 0.018 + Math.random() * 0.016, color: 0xff6fb0, maxAge: 2.0 + Math.random() * 1.4, bobAmp: 0.012 + Math.random() * 0.008, bobRate: 2.2 + Math.random() * 1.4 }
+        );
+      }
+
+      // Sustained bubbling patch for the bite — several small bubbles
+      // rising and wobbling at different speeds/lifetimes instead of one
+      // instant splash burst, so it visibly reads as bubbling for a beat
+      // rather than a single flash of particles.
       function spawnFishingBiteSplash(atWorld) {
-        for (let i = 0; i < 12; i++) {
+        for (let i = 0; i < 22; i++) {
           const angle = Math.random() * Math.PI * 2;
-          const speed = 0.6 + Math.random() * 0.9;
+          const dist = Math.random() * 0.1;
+          const speed = 0.25 + Math.random() * 0.55;
           spawnFishingFxParticle(
-            { x: atWorld.x, y: atWorld.y + 0.02, z: atWorld.z },
-            { x: Math.cos(angle) * speed, y: 1.4 + Math.random() * 0.8, z: Math.sin(angle) * speed },
-            { size: 0.03 + Math.random() * 0.025, color: 0xdff3ff, gravity: -4.6, maxAge: 0.4 + Math.random() * 0.25 }
+            { x: atWorld.x + Math.cos(angle) * dist, y: atWorld.y + 0.02, z: atWorld.z + Math.sin(angle) * dist },
+            // bobAmp mode uses y as a steady rise rate (bubbles don't
+            // decelerate under gravity the way a thrown particle would).
+            { x: Math.cos(angle) * speed * 0.3, y: 0.5 + Math.random() * 0.7, z: Math.sin(angle) * speed * 0.3 },
+            { size: 0.022 + Math.random() * 0.026, color: 0xeaf7ff, maxAge: 0.5 + Math.random() * 0.55, bobAmp: 0.01, bobRate: 8 + Math.random() * 6 }
           );
         }
       }
@@ -15719,10 +15767,15 @@
             fishingFxParticles.splice(i, 1);
             continue;
           }
-          p.vy += p.gravity * dt;
           p.mesh.position.x += p.vx * dt;
-          p.mesh.position.y += p.vy * dt;
           p.mesh.position.z += p.vz * dt;
+          if (p.bobAmp) {
+            p.baseY += p.vy * dt;
+            p.mesh.position.y = p.baseY + Math.sin((p.age + p.bobPhase) * p.bobRate) * p.bobAmp;
+          } else {
+            p.vy += p.gravity * dt;
+            p.mesh.position.y += p.vy * dt;
+          }
           p.mat.opacity = Math.max(0, 1 - p.age / p.maxAge);
         }
       }
@@ -15756,6 +15809,7 @@
         fishingMinigame = {
           phase: 'cast',
           phaseTimer: 0,
+          floatSpawnTimer: 0,
           biteAt: FISHING_BITE_WAIT_MIN_S + Math.random() * (FISHING_BITE_WAIT_MAX_S - FISHING_BITE_WAIT_MIN_S),
           anchorWorld,
           fishDef: fish,
@@ -15848,6 +15902,15 @@
         fishingOverlayEl.innerHTML = '';
         fishingEls = null;
         hideActionPrompt();
+        hideFishCatchView();
+        // Always return to holding the harpoon, ready to fish again —
+        // covers the catch-view popup, which temporarily switches to
+        // heldMode 'item' so the held-item system can show the caught fish
+        // (see beginFishCatchView). A no-op for every other exit path,
+        // since heldMode/activeTool are never touched outside that popup.
+        heldMode = 'tool';
+        activeTool = 'harpoon';
+        refreshActionBar();
         if (_prevCameraMode !== null) { activeCameraMode = _prevCameraMode; _prevCameraMode = null; }
         activeCameraTarget = _prevCameraTarget;
         _prevCameraTarget = null;
@@ -15914,15 +15977,82 @@
       function resolveFishingRound(fm, caught) {
         if (caught) {
           fm.resolved = true;
-          fm.resultTimer = 1.1;
           inventory[fm.fishDef.key] = Math.min(99, (inventory[fm.fishDef.key] || 0) + 1);
-          fm.message = `Caught a ${fm.fishDef.label}! ${fm.fishDef.icon}`;
+          const stars = rollItemStars();
+          fm.message = `Caught a ${starRatingText(stars)} ${fm.fishDef.label}! ${fm.fishDef.icon}`;
           fm.messageType = 'good';
           lastActionMessage = fm.message;
           awardToolUseMasteryXp('harpoon');
+          beginFishCatchView(fm, stars);
           return;
         }
         beginFishEscapeRespawn(fm);
+      }
+
+      let fishCatchViewEls = null;
+      function buildFishCatchViewDom() {
+        if (fishCatchViewEls) return;
+        const el = document.getElementById('fishCatchView');
+        if (!el) return;
+        fishCatchViewEls = {
+          el,
+          stars: document.getElementById('fcvStars'),
+          text: document.getElementById('fcvText'),
+          continueBtn: document.getElementById('fcvContinueBtn'),
+        };
+        fishCatchViewEls.continueBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); continueFromFishCatch(); });
+      }
+
+      // The catch "victory view": zooms/angles the camera onto the player
+      // (a zoomed-out cousin of the NPC dialogue camera — see the
+      // 'fishCatch' camera mode config) while they face the camera and
+      // hold the caught fish to their chest via the same held-item system
+      // bag items use (heldMode 'item' — see heldItemHolder/
+      // updateHeldItemHolder), captioned with its star rating. Stays up
+      // until the player taps Continue (continueFromFishCatch), not on a
+      // timer — see updateFishingMinigame's 'caught' early return.
+      function beginFishCatchView(fm, stars) {
+        fm.phase = 'caught';
+        hideActionPrompt();
+        // The ring SVG would otherwise stay frozen on-screen at its last
+        // rendered frame — renderFishingOverlay never runs again once
+        // updateFishingMinigame's 'caught' branch takes over.
+        fishingOverlayEl.classList.remove('open');
+
+        // Face the fixed fishCatch camera (azimuthDeg 0 in its config sits
+        // south of the player looking north, matching playerFacing 0)
+        // regardless of whichever way the player was actually fishing.
+        playerFacing = 0;
+
+        // Point the held-item system at the fish that was just caught,
+        // not whatever bag item the player had selected before fishing.
+        const idx = getInventoryStackKeys('all').indexOf(fm.fishDef.key);
+        if (idx >= 0) activeItemIndex = idx;
+        heldMode = 'item';
+
+        // _prevCameraMode/_prevCameraTarget already hold the pre-fishing
+        // camera from beginFishingCast — left untouched here so Continue
+        // (closeFishingMinigame) restores straight back to it, skipping
+        // over the 'fishing' ring camera entirely.
+        activeCameraMode = 'fishCatch';
+        activeCameraTarget = null; // updateCameraPosition falls back to tracking the player directly
+
+        buildFishCatchViewDom();
+        if (!fishCatchViewEls) return;
+        fishCatchViewEls.stars.textContent = starRatingText(stars);
+        fishCatchViewEls.text.textContent = `You caught a ${stars} Star ${fm.fishDef.label}`;
+        fishCatchViewEls.el.classList.add('open');
+        fishCatchViewEls.el.setAttribute('aria-hidden', 'false');
+      }
+
+      function hideFishCatchView() {
+        if (!fishCatchViewEls) return;
+        fishCatchViewEls.el.classList.remove('open');
+        fishCatchViewEls.el.setAttribute('aria-hidden', 'true');
+      }
+
+      function continueFromFishCatch() {
+        closeFishingMinigame();
       }
 
       // Panic maxed out without a catch: the current fish escapes into the
@@ -16059,8 +16189,20 @@
         const fm = fishingMinigame;
         if (!fm) return;
 
+        // The catch-view popup (camera zoom + star rating + Continue) is
+        // static per-frame — it only advances via its own button, not a
+        // timer — see beginFishCatchView/continueFromFishCatch.
+        if (fm.phase === 'caught') return;
+
         if (fm.phase !== 'active') {
           fm.phaseTimer += dt;
+          if (fm.phase === 'cast' || fm.phase === 'waiting') {
+            fm.floatSpawnTimer -= dt;
+            if (fm.floatSpawnTimer <= 0) {
+              spawnFishingFloatParticle(fm.anchorWorld);
+              fm.floatSpawnTimer = 0.3 + Math.random() * 0.3;
+            }
+          }
           if (fm.phase === 'cast' && fm.phaseTimer >= FISHING_BAIT_FLIGHT_S) {
             fm.phase = 'waiting';
             fm.phaseTimer = 0;
@@ -16068,13 +16210,6 @@
             spawnFishingBiteSplash(fm.anchorWorld);
             fm.phase = 'bite';
           }
-          renderFishingOverlay();
-          return;
-        }
-
-        if (fm.resolved) {
-          fm.resultTimer -= dt;
-          if (fm.resultTimer <= 0) { closeFishingMinigame(); return; }
           renderFishingOverlay();
           return;
         }
