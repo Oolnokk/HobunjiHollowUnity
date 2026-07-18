@@ -6103,18 +6103,27 @@
         return true;
       }
 
-      // Single dedicated "context action" button — climbs a cliff-face wall
-      // when facing one, otherwise dodges evasively. getClimbTarget() has
-      // always been direction-agnostic (it lands on whatever elevation is
-      // on the far side of the wall, higher or lower — see its own comment),
-      // so "jump off a ledge" falls out of the exact same crossing for free
-      // once it's reachable from here rather than only the primary action
-      // bar's climb prompt. Walking/dodging straight into a river or stream
-      // to start swimming needs no separate trigger of its own now that
-      // water is a real (slow, non-swimmer) crossing instead of a hard
-      // block — see tileSpeedAt.
+      // Single dedicated "context action" button — takes a pending entrance/
+      // exit spot transition when standing on one, climbs a cliff-face wall
+      // when facing one, otherwise dodges evasively. Spot transitions take
+      // top priority so this always works as an "unstuck" input even when
+      // the primary action bar is showing something else entirely (e.g. an
+      // NPC standing near a doorway hijacks the action bar into an NPC
+      // dialogue button instead of the door's Exit/Enter prompt — see
+      // computeActionButtons' nearbyNpcWalker branch — which used to leave
+      // no way to actually walk through that doorway without shoving the
+      // NPC out of the way first). getClimbTarget() has always been
+      // direction-agnostic (it lands on whatever elevation is on the far
+      // side of the wall, higher or lower — see its own comment), so "jump
+      // off a ledge" falls out of the exact same crossing for free once
+      // it's reachable from here rather than only the primary action bar's
+      // climb prompt. Walking/dodging straight into a river or stream to
+      // start swimming needs no separate trigger of its own now that water
+      // is a real (slow, non-swimmer) crossing instead of a hard block —
+      // see tileSpeedAt.
       function performContextAction() {
         if (player.climbing || player.dodging) return;
+        if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
         const climb = getClimbTarget();
         if (climb) { startClimb(climb); return; }
         performDodge();
@@ -13310,12 +13319,18 @@
 
         // ── Facing ────────────────────────────────────────────
         // Computed once per frame: also drives the touch dodge button, which
-        // only matters in combat (same condition as the facing lock below).
+        // normally only matters in combat (same condition as the facing lock
+        // below) — but performContextAction() (what the button fires) also
+        // takes a pending entrance/exit spot transition first, so surface
+        // the button on that too. Otherwise a touch player standing on a
+        // doorway with an NPC hogging the action bar (see computeActionButtons'
+        // nearbyNpcWalker branch) would have no visible way to reach that
+        // "unstuck" input at all, only keyboard/gamepad's dedicated dodge key.
         // Auto-targeting only engages while an actual weapon item is
         // equipped in the weapon slot (not just the slot being active).
         const weaponEngaged = activeTool === 'weapon' && !!equipmentSlots.weapon;
         const autoTarget = weaponEngaged ? findAutoTarget() : null;
-        dodgeBtn?.classList.toggle('combat-active', !!autoTarget);
+        dodgeBtn?.classList.toggle('combat-active', !!autoTarget || !!_pendingSpotTransition);
         btnSwapTarget?.classList.toggle('abt-hidden', !weaponEngaged);
         btnWeaponSwitch?.classList.toggle('active', activeTool === 'weapon');
 
