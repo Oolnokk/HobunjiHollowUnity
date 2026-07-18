@@ -3590,11 +3590,16 @@
       // Den-Mother nest rewards (see updateNestInteraction) piggyback on this
       // exact mechanism per the design intent — "the existing livestock
       // items, just renamed" — rather than inventing a separate egg/baby
-      // item system. garWolfBaby has no LIVESTOCK_FACTORIES entry (gar-wolf
-      // isn't a farm-deployable species), so addToStable is its only valid
-      // path — addLivestockFromItem degrades to its existing "no factory"
-      // failure message rather than crashing.
-      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf' };
+      // item system. All three farm-deployable species (uumkao'ii, gar-wolf,
+      // dabinggi-hound) have a LIVESTOCK_FACTORIES entry and go through the
+      // exact same addLivestockFromItem → stasis → assignLivestockToBarn →
+      // wander/day-night-barn path — there's nothing uumkao'ii-specific
+      // about any of it. dabinggiHoundBaby has no Den-Mother source yet
+      // (dabinggi-hound isn't a hostile wild-pack species, so it has no
+      // "-den-mother" CREATURE_DB entry — see DEN_MOTHER_ITEM_KEYS below),
+      // but the item/kind mapping exists here for parity the moment one is
+      // added, or for any other future acquisition route.
+      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf', dabinggiHoundBaby: 'dabinggi-hound' };
 
       // Den-Mother CREATURE_DB key -> which item her nest hands out — read
       // directly off her species (see loadBuildingScene's 'map_i_den_'
@@ -12429,6 +12434,7 @@
         { key: 'uumkaoiiMeat',       icon: '🥩', label: 'UUMKAO\'II MEAT',  max: 99 },
         { key: 'uumkaoiiEgg',        icon: '🥚', label: 'UUMKAO\'II EGG',   max: 9  },
         { key: 'garWolfBaby',        icon: '🐾', label: 'GAR-WOLF PUP',    max: 9  },
+        { key: 'dabinggiHoundBaby',  icon: '🐾', label: 'DABINGGI-HOUND PUP', max: 9  },
         { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
         { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
         { key: 'fishingmace',  icon: '🎣', label: 'FISHING MACE',  max: 9 },
@@ -12471,6 +12477,7 @@
         uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
         uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
         garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
+        dabinggiHoundBaby: { icon: '🐾', label: 'Dabinggi-hound Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: "A dabinggi-hound pup. Add it to your farm's livestock from the Farm tab, or to your stable to raise it as a companion." },
         bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
         hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
         fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
