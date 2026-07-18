@@ -2228,12 +2228,36 @@
         const effects = key.slice('potion_'.length).split('_');
         return effects.length && effects.every(e => ALCHEMY_EFFECT_DEFS[e]) ? effects : null;
       }
-      function ensurePotionItemDef(effects) {
+      // Averages the 0xRRGGBB colors of the reagents that went into a brew —
+      // the same THREE-style hex ints ALCHEMY_REAGENT_DEFS/getReagentPlantMaterial
+      // already use — into one procedural potion color. Reagent keys missing a
+      // color (shouldn't happen; every ALCHEMY_REAGENT_DEFS entry has one) are
+      // skipped rather than treated as black, so one bad lookup can't wash the
+      // mix toward zero.
+      function mixReagentColors(reagentKeys) {
+        let r = 0, g = 0, b = 0, n = 0;
+        (reagentKeys || []).forEach(k => {
+          const c = ALCHEMY_REAGENT_DEFS[k]?.color;
+          if (c == null) return;
+          r += (c >> 16) & 255; g += (c >> 8) & 255; b += c & 255; n++;
+        });
+        if (!n) return 0x8a5fb0; // generic potion purple — only hit if reagentKeys was empty/unresolvable
+        return (Math.round(r / n) << 16) | (Math.round(g / n) << 8) | Math.round(b / n);
+      }
+
+      // reagentKeys (optional): the actual ingredients brewed this time, used
+      // to procedurally mix a color via mixReagentColors — see brewPotion.
+      // Since the item key is purely the sorted effect list (so different
+      // reagent combos sharing an effect set stack as the same item — see the
+      // comment above ALCHEMY_POTION_ITEMS), the color is fixed at whichever
+      // combo first created that effect-key item, same as its name/desc.
+      function ensurePotionItemDef(effects, reagentKeys) {
         const key = potionItemKeyForEffects(effects);
         ALCHEMY_POTION_ITEMS[key] = effects;
         if (!ITEM_DEFS[key]) {
           const names = effects.map(e => ALCHEMY_EFFECT_DEFS[e].label);
           const anyBane = effects.some(e => ALCHEMY_EFFECT_DEFS[e].kind === 'bane');
+          const color = mixReagentColors(reagentKeys);
           ITEM_DEFS[key] = {
             icon: '🧪',
             label: 'Potion of ' + names.join(' & '),
@@ -2241,6 +2265,8 @@
             sellPrice: 0,
             tags: ['Potion', 'Alchemy', ...(anyBane ? ['Mixed'] : [])],
             desc: 'A brewed potion. Drink it (from the Inventory panel, anywhere) to gain: ' + names.join(', ') + '.',
+            color,
+            spriteIcon: 'bottle_potion.png', spriteColor: color, spriteMode: 'keyed',
           };
         }
         return key;
@@ -2653,7 +2679,15 @@
         return true;
       }
 
-      function makeProcessingFurniture(col, row, furnitureKey) {
+      // barrelAging/vaseAging ("long" tier, per the flavor text on Aging
+      // Barrel/Aging Vase — literal aging, not an instant press) take this
+      // many in-game days once started, uniformly across every recipe under
+      // those two methods (existing berry Wine included) rather than some
+      // outputs being instant and others delayed on the same furniture type.
+      const AGING_DURATION_DAYS = 3;
+      const AGING_METHODS = new Set(['barrelAging', 'vaseAging']);
+
+      function makeProcessingFurniture(col, row, furnitureKey, savedJob) {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
         const mesh = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color);
@@ -2662,13 +2696,30 @@
         _markFurnitureEdgeId(mesh);
         scene.add(mesh);
 
+        const isAging = AGING_METHODS.has(def.method);
+        // { outputs: [descriptor,...], readyDay } while a barrelAging/vaseAging
+        // batch is aging; null when idle. Restored from a saved farm layout
+        // (see saveFarmLayout/applyFarmLayoutObjects) via savedJob so an aging
+        // batch survives a save/reload instead of silently vanishing.
+        let job = savedJob ? { outputs: savedJob.outputs, readyDay: savedJob.readyDay } : null;
+
         return {
           id: 'processor_' + furnitureKey + '_' + col + '_' + row,
           type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh,
           label: def.icon + ' ' + def.name,
+          getJob() { return job; }, // read by saveFarmLayout
           getButtons() {
+            if (isAging && job) {
+              const daysLeft = Math.max(0, job.readyDay - calendar.day);
+              if (daysLeft > 0) {
+                return [{ icon: '⏳', label: `Aging… ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`, action: 'obj_process_' + furnitureKey, style: 'secondary', allowed: false }];
+              }
+              const outDef = job.outputs[0];
+              return [{ icon: outDef.icon, label: `Collect ${outDef.label}`, action: 'obj_process_' + furnitureKey, style: 'primary', allowed: true }];
+            }
             const active = getActiveInventoryItem();
-            const output = active ? getProcessingOutput(def.method, active.key) : null;
+            const outputs = active ? getProcessingOutputs(def.method, active.key) : null;
+            const output = outputs ? outputs[0] : null;
             return [{
               icon: output ? def.icon : '…',
               label: output ? processButtonLabel(def.method, active.key, output) : methodIdleLabel(def.method),
@@ -2679,16 +2730,28 @@
           },
           onAction(action) {
             if (action !== 'obj_process_' + furnitureKey) return { ok: false, message: 'Unknown processor action.' };
+            if (isAging && job) {
+              if (calendar.day < job.readyDay) return { ok: false, message: 'Still aging — not ready yet.' };
+              const outputs = job.outputs;
+              job = null;
+              outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
+              saveFarmLayout();
+              return { ok: true, message: def.icon + ' Collected ' + outputs.map(o => o.label).join(', ') + '.' };
+            }
             const active = getActiveInventoryItem();
             if (!active) return { ok: false, message: def.name + ' needs an ingredient selected.' };
-            const output = getProcessingOutput(def.method, active.key);
-            if (!output) return { ok: false, message: def.name + ' cannot process ' + (ITEM_DEFS[active.key]?.label || active.label) + '.' };
+            const outputs = getProcessingOutputs(def.method, active.key);
+            if (!outputs) return { ok: false, message: def.name + ' cannot process ' + (ITEM_DEFS[active.key]?.label || active.label) + '.' };
             if ((inventory[active.key] || 0) < 1) return { ok: false, message: 'No ' + (ITEM_DEFS[active.key]?.label || active.label) + ' left.' };
-            ensureProcessedItemDef(output);
             inventory[active.key]--;
             clampInventoryStack(active.key);
-            inventory[output.key] = Math.min(99, (inventory[output.key] || 0) + 1);
-            return { ok: true, message: def.icon + ' Processed 1 ' + (ITEM_DEFS[active.key]?.label || active.label) + ' into ' + output.label + '.' };
+            if (isAging) {
+              job = { outputs, readyDay: calendar.day + AGING_DURATION_DAYS };
+              saveFarmLayout();
+              return { ok: true, message: `${def.icon} Set ${ITEM_DEFS[active.key]?.label || active.label} to age for ${AGING_DURATION_DAYS} days.` };
+            }
+            outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
+            return { ok: true, message: def.icon + ' Processed 1 ' + (ITEM_DEFS[active.key]?.label || active.label) + ' into ' + outputs.map(o => o.label).join(', ') + '.' };
           },
           reset() {
             scene.remove(mesh);
@@ -2858,6 +2921,7 @@
           tile.type = typeMap[farmEditBrush] ?? TileType.GRASS;
           if (tile.type === TileType.TRENCH) tile.depth = 1;
           tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          if (tile.dewPile) { tile.dewPile = null; removeDewPileMesh(col, row); }
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
         } else if (farmEditBrushType === 'crop') {
           if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB) tile.type = TileType.TILLED;
@@ -2891,6 +2955,7 @@
             unregisterFurnitureSfxSource(d.sfxSource);
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          if (tile.dewPile) { tile.dewPile = null; removeDewPileMesh(col, row); }
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
         }
       }
@@ -2940,13 +3005,14 @@
             for (let c = 0; c < COLS; c++) {
               const t = grid[r][c];
               const def = createDayOneTile(c, r);
-              if (t.type !== def.type || (t.crop && t.crop !== CropType.NONE)) {
-                layout.tiles.push({ c, r, type: t.type, crop: t.crop || '' });
+              if (t.type !== def.type || (t.crop && t.crop !== CropType.NONE) || t.dewPile) {
+                layout.tiles.push({ c, r, type: t.type, crop: t.crop || '', dewPile: t.dewPile || '' });
               }
             }
           }
           processingFurnitureObjects.forEach(obj => {
-            layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row });
+            const job = obj.getJob && obj.getJob();
+            layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row, ...(job ? { job } : {}) });
           });
           interiorFurnitureObjects.forEach(obj => {
             layout.decor.push({ key: obj.key, col: obj.col, row: obj.row, area: obj.area });
@@ -2976,13 +3042,14 @@
 
       function applyFarmLayoutToGrid(layout) {
         if (!layout || layout.version !== 3) return;
-        (layout.tiles || []).forEach(({ c, r, type, crop }) => {
+        (layout.tiles || []).forEach(({ c, r, type, crop, dewPile }) => {
           if (grid[r]?.[c]) {
             grid[r][c].type = type;
             // Saved layouts don't persist trench depth — restore at full depth.
             if (type === TileType.TRENCH) grid[r][c].depth = 1;
             grid[r][c].crop = crop || CropType.NONE;
             if (crop) { grid[r][c].cropAge = 50; grid[r][c].cropReady = false; }
+            grid[r][c].dewPile = dewPile || null;
           }
         });
       }
@@ -3005,9 +3072,9 @@
             const nb = makeSupplyBox(c, r); supplyBoxObject = nb; worldObjects.set(c + ',' + r, nb);
           }
         }
-        (layout.furniture || []).forEach(({ key, col, row }) => {
+        (layout.furniture || []).forEach(({ key, col, row, job }) => {
           if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
-            const obj = makeProcessingFurniture(col, row, key);
+            const obj = makeProcessingFurniture(col, row, key, job);
             if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
           }
         });
@@ -3029,6 +3096,93 @@
           farmBuildings.push(entry);
           spawnBarnEntry(entry);
         });
+        // Tile data (grid[r][c].dewPile) is restored by applyFarmLayoutToGrid,
+        // which always runs first (see the two call sites) — this just builds
+        // the meshes for whatever dew piles are already sitting in the grid,
+        // same two-phase split as furniture (data now, objects/meshes here).
+        rebuildDewPileMeshesFromGrid();
+      }
+
+      // ── Uumkao'ii dew piles ──────────────────────────────────────────
+      // A dew pile is tile data (grid[r][c].dewPile = a color string like
+      // 'blue'), the same way a crop is tile data — not a worldObjects
+      // entry — because it needs to participate in the shovel dig/fill/raise
+      // gate (canUseAction/applyAction) exactly like WEEDS/SHRUB/ROCK
+      // already do, and there's no existing precedent for worldObjects
+      // gating tile-mutation tools (see the digging-system research this
+      // was built from). dewPileMeshes tracks the purely-visual billboard
+      // per tile in parallel, the same "tile data now, mesh separately"
+      // split saveFarmLayout/applyFarmLayoutObjects already use for crops
+      // vs. their procedural meshes.
+      const dewPileMeshes = new Map(); // "col,row" -> THREE.Group
+
+      function canPlaceDewPileAt(col, row) {
+        const tile = grid[row]?.[col];
+        if (!tile || tile.dewPile || tile.crop) return false;
+        if (![TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type)) return false;
+        if (getWorldObjectAt(col, row)) return false;
+        if (isHouseFootprint(col, row)) return false;
+        return true;
+      }
+
+      function spawnDewPileMesh(col, row, colorKey) {
+        const key = col + ',' + row;
+        removeDewPileMesh(col, row);
+        const group = new THREE.Group();
+        group.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
+        scene.add(group);
+        dewPileMeshes.set(key, group);
+        if (!window.SpriteRecolor) return;
+        const colorHex = ITEM_DEFS[dewItemKey(colorKey)]?.spriteColor ?? 0x3F8FE0;
+        window.SpriteRecolor.getRecoloredCanvas('assets/objectsprites/pile_dew.png', colorHex, 'direct').then(canvas => {
+          if (dewPileMeshes.get(key) !== group) return; // tile changed/pile dug up while this was loading
+          const tex = new THREE.CanvasTexture(canvas);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          const targetH = 0.55;
+          const targetW = targetH * (canvas.width / canvas.height);
+          const geo = new THREE.PlaneGeometry(targetW, targetH);
+          const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide, depthWrite: false });
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.position.y = targetH / 2;
+          group.add(mesh);
+        }).catch(() => {});
+      }
+
+      function removeDewPileMesh(col, row) {
+        const key = col + ',' + row;
+        const group = dewPileMeshes.get(key);
+        if (!group) return;
+        scene.remove(group);
+        group.traverse(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) { if (child.material.map) child.material.map.dispose(); child.material.dispose(); }
+        });
+        dewPileMeshes.delete(key);
+      }
+
+      function rebuildDewPileMeshesFromGrid() {
+        [...dewPileMeshes.keys()].forEach(key => {
+          const [c, r] = key.split(',').map(Number);
+          removeDewPileMesh(c, r);
+        });
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            if (grid[r]?.[c]?.dewPile) spawnDewPileMesh(c, r, grid[r][c].dewPile);
+          }
+        }
+      }
+
+      // Places a persistent dew pile on an open tile — see makeUumkaoiiAnimal's
+      // tick(), which calls this on the tile a farm uumkao'ii just vacated
+      // once its dew cooldown is ready. Returns false (no state change) if
+      // the tile isn't a valid spot, so the caller can leave dewReady set
+      // and simply retry on a later successful move.
+      function dropDewPile(col, row, colorKey) {
+        if (!canPlaceDewPileAt(col, row)) return false;
+        grid[row][col].dewPile = colorKey;
+        spawnDewPileMesh(col, row, colorKey);
+        saveFarmLayout();
+        return true;
       }
 
       // ── Livestock genetics & breeding ───────────────────────────────
@@ -3413,7 +3567,8 @@
         const resDef = rec ? LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
         if (rec?.resourceReady && resDef) {
           const itemLabel = ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey;
-          return [{ icon: ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `Collect ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true }];
+          const verb = LIVESTOCK_RESOURCE_VERB[rec.kind] || 'Collect';
+          return [{ icon: ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `${verb} ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true }];
         }
         return [{ icon, label, action: 'obj_' + animal.id, style: 'secondary', allowed: false }];
       }
@@ -3480,7 +3635,17 @@
             tickCounter++;
             if (tickCounter % 3 !== 0) return;
             if (_farmAnimalBarnTick(this)) return;
-            if (rnd() > 0.55) return;
+
+            // Once this uumkao'ii's dew cooldown resets, drop a persistent
+            // dew pile on the next open tile it wanders onto — the tile it's
+            // leaving this step, which is guaranteed open the instant it
+            // steps off (see dropDewPile). Bypasses the normal 0.55 wander
+            // chance below so a ready dew resolves within a few ticks
+            // instead of waiting on the coin flip too.
+            const livestockList = _loadWorldLivestock();
+            const rec = livestockList.find(l => l.id === this.livestockId);
+            const wantsDewDrop = Boolean(rec?.dewReady);
+            if (!wantsDewDrop && rnd() > 0.55) return;
 
             const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
             for (let i = dirs.length - 1; i > 0; i--) {
@@ -3491,11 +3656,17 @@
               const nc = this.col + d.dc, nr = this.row + d.dr;
               if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
               if (!canSpawnAnimalAt(nc, nr)) continue;
+              const oldCol = this.col, oldRow = this.row;
               worldObjects.delete(this.col + ',' + this.row);
               this.col = nc; this.row = nr;
               this.targetCol = nc; this.targetRow = nr;
               worldObjects.set(nc + ',' + nr, this);
               this.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
+              if (wantsDewDrop && dropDewPile(oldCol, oldRow, rec.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
+                rec.dewReady = false;
+                rec.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+                _saveWorldLivestock(livestockList);
+              }
               break;
             }
           },
@@ -3723,6 +3894,7 @@
           id, kind, barnId: null, releasedAt: Date.now(),
           name: defaultLivestockName(kind), genotype,
           daysUntilResource: LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
+          ...(kind === 'uumkaoii' ? { dewColor: UUMKAOII_DEFAULT_DEW_COLOR, dewDaysUntil: UUMKAOII_DEW_COOLDOWN_DAYS, dewReady: false } : {}),
         });
         _saveWorldLivestock(livestock);
         return { ok: true, message: `🦆 ${defaultLivestockName(kind)} is waiting in stasis — assign it to a barn from the Farm tab to bring it out.` };
@@ -3746,6 +3918,11 @@
         const wasAssigned = !!rec.barnId;
         rec.barnId = barnId;
         if (rec.daysUntilResource == null) rec.daysUntilResource = LIVESTOCK_RESOURCE_DEFS[rec.kind]?.cooldownDays ?? null;
+        if (rec.kind === 'uumkaoii' && rec.dewDaysUntil == null) {
+          rec.dewColor = rec.dewColor || UUMKAOII_DEFAULT_DEW_COLOR;
+          rec.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+          rec.dewReady = false;
+        }
         _saveWorldLivestock(list);
         if (!wasAssigned) {
           const spot = findOpenTileNearBarn(barn);
@@ -3797,11 +3974,20 @@
         let changed = false;
         list.forEach(l => {
           const resDef = LIVESTOCK_RESOURCE_DEFS[l.kind];
-          if (!resDef || !l.barnId || l.resourceReady) return;
-          if (l.daysUntilResource == null) l.daysUntilResource = resDef.cooldownDays;
-          l.daysUntilResource--;
-          if (l.daysUntilResource <= 0) l.resourceReady = true;
-          changed = true;
+          if (resDef && l.barnId && !l.resourceReady) {
+            if (l.daysUntilResource == null) l.daysUntilResource = resDef.cooldownDays;
+            l.daysUntilResource--;
+            if (l.daysUntilResource <= 0) l.resourceReady = true;
+            changed = true;
+          }
+          // Uumkao'ii dew cooldown — separate from the egg resource above;
+          // see UUMKAOII_DEW_COOLDOWN_DAYS.
+          if (l.kind === 'uumkaoii' && l.barnId && !l.dewReady) {
+            if (l.dewDaysUntil == null) l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+            l.dewDaysUntil--;
+            if (l.dewDaysUntil <= 0) l.dewReady = true;
+            changed = true;
+          }
         });
         if (changed) _saveWorldLivestock(list);
       }
@@ -11654,6 +11840,32 @@
         return ({ redberries: 'Redberry', blueberries: 'Blueberry', yellowberries: 'Yellowberry', whiteberries: 'Whiteberry', blackberries: 'Blackberry' })[key] || (ITEM_DEFS[key]?.label || key);
       }
 
+      // Berries literally have their color in their name — used to recolor
+      // their Jam (jar_liquid.png) and Wine (bottle_wine.png) sprites.
+      const BERRY_COLORS = {
+        redberries: 0xD93A3A, blueberries: 0x3F63D9, yellowberries: 0xE0C93A,
+        whiteberries: 0xF2EFE6, blackberries: 0x241A2E,
+      };
+
+      // The 7 Uumkao'ii dew colors and their per-color processed-item keys —
+      // shared by getProcessingOutputs (squeezing dew -> milk+curds) and
+      // getProcessingOutput's barrelAging branch (milk -> nectar). "white"
+      // uses the uumkaoii-prefixed key spelling from the reference cooking
+      // spec (avoids colliding with any future generic "white dairy" family).
+      const DEW_COLOR_KEYS = ['yellow', 'green', 'blue', 'orange', 'red', 'purple', 'white'];
+      function dewItemKey(color) { return color + 'Dew'; }
+      function dewMilkKey(color) { return color === 'white' ? 'uumkaoiiWhiteDewMilk' : color + 'DewMilk'; }
+      function dewCurdsKey(color) { return color === 'white' ? 'uumkaoiiWhiteDewCurds' : color + 'DewCurds'; }
+      function dewColorFromMilkOrCurdsKey(key) {
+        for (const color of DEW_COLOR_KEYS) {
+          if (key === dewMilkKey(color) || key === dewCurdsKey(color)) return color;
+        }
+        return null;
+      }
+
+      // Single-output recipes. getProcessingOutputs (below) wraps this for
+      // the common case and special-cases the one recipe — squeezing
+      // Uumkao'ii dew — that jointly produces two outputs from one input.
       function getProcessingOutput(methodId, inputKey) {
         const input = ITEM_DEFS[inputKey];
         if (!input) return null;
@@ -11661,9 +11873,15 @@
           const base = berryBaseName(inputKey);
           return { key: inputKey + 'Juice', icon: '🧃', label: base + ' Juice', cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 5), tags: ['Processed', 'Juice', 'Fruit'], desc: 'Sweet liquid squeezed from ' + input.label.toLowerCase() + '.' };
         }
+        if (methodId === 'squeezing' && inputKey === 'garWolfMilk') {
+          return { key: 'garWolfButter', icon: '🧈', label: 'Gar-wolf Butter', cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 6), tags: ['Processed', 'Butter', 'Gar-wolf'], desc: 'Butter pressed from gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
+        }
         if (methodId === 'mashing' && isBerryKey(inputKey)) {
           const base = berryBaseName(inputKey);
-          return { key: inputKey + 'Jam', icon: input.icon, label: base + ' Jam', cat: 'processed', sellPrice: Math.max(5, (input.sellPrice || 4) + 7), tags: ['Processed', 'Jam', 'Sweet Paste'], desc: 'Thick berry preserve made at a pestle station.' };
+          return { key: inputKey + 'Jam', icon: input.icon, label: base + ' Jam', cat: 'processed', sellPrice: Math.max(5, (input.sellPrice || 4) + 7), tags: ['Processed', 'Jam', 'Sweet Paste'], desc: 'Thick berry preserve made at a pestle station.', spriteIcon: 'jar_liquid.png', spriteColor: BERRY_COLORS[inputKey], spriteMode: 'keyed' };
+        }
+        if (methodId === 'mashing' && inputKey === 'garWolfMilk') {
+          return { key: 'garWolfCream', icon: '🍦', label: 'Gar-wolf Cream', cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Cream', 'Gar-wolf'], desc: 'Cream worked from gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
         }
         if (methodId === 'mashing' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPaste', icon: '🟤', label: 'Black Mustard Paste', cat: 'processed', sellPrice: 13, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Hot pungent paste made from black mustard seed.' };
         if (methodId === 'mashing' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPaste', icon: '🟢', label: 'Green Mustard Paste', cat: 'processed', sellPrice: 12, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Fresh pungent paste made from green mustard seed.' };
@@ -11673,8 +11891,51 @@
         if (methodId === 'grinding' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPowder', icon: '⚫', label: 'Black Mustard Powder', cat: 'processed', sellPrice: 11, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground black mustard powder.' };
         if (methodId === 'grinding' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPowder', icon: '🥬', label: 'Green Mustard Powder', cat: 'processed', sellPrice: 10, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground green mustard powder.' };
         if (methodId === 'drying' && isBerryKey(inputKey)) return { key: inputKey + 'Dried', icon: input.icon, label: 'Dried ' + input.label, cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 4), tags: ['Processed', 'Dried', 'Fruit'], desc: 'Dried berries. Dry-default crops are not valid drying inputs.' };
-        if (methodId === 'barrelAging' && /Juice$/.test(inputKey)) return { key: inputKey.replace(/Juice$/, 'Wine'), icon: '🍷', label: input.label.replace(/ Juice$/, ' Wine'), cat: 'processed', sellPrice: Math.max(10, (input.sellPrice || 10) + 12), tags: ['Processed', 'Wine', 'Aged'], desc: 'Barrel-aged fruit wine.' };
+        if (methodId === 'barrelAging' && /Juice$/.test(inputKey)) {
+          const berryKey = inputKey.replace(/Juice$/, '');
+          return { key: inputKey.replace(/Juice$/, 'Wine'), icon: '🍷', label: input.label.replace(/ Juice$/, ' Wine'), cat: 'processed', sellPrice: Math.max(10, (input.sellPrice || 10) + 12), tags: ['Processed', 'Wine', 'Aged'], desc: 'Barrel-aged fruit wine.', spriteIcon: 'bottle_wine.png', spriteColor: BERRY_COLORS[berryKey], spriteMode: 'keyed' };
+        }
+        if (methodId === 'barrelAging' && dewColorFromMilkOrCurdsKey(inputKey) && /Milk$/.test(inputKey)) {
+          const color = dewColorFromMilkOrCurdsKey(inputKey);
+          const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
+          return { key: inputKey.replace(/Milk$/, 'Nectar'), icon: '🍷', label: properLabel + " Uumkao'ii Nectar", cat: 'processed', sellPrice: Math.max(14, (input.sellPrice || 14) + 10), tags: ['Processed', 'Nectar', "Uumkao'ii", 'Aged'], desc: 'Barrel-aged Uumkao\'ii milk.', spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
+        }
+        if (methodId === 'barrelAging' && inputKey === 'needlegrain') {
+          return { key: 'needlegrainSake', icon: '🍶', label: 'Needlegrain Sake', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Sake', 'Aged', 'Needlegrain'], desc: 'Barrel-aged needlegrain liquor, colored like dark pine needles.', spriteIcon: 'bottle_wine.png', spriteColor: 0x2F4A2E, spriteMode: 'keyed' };
+        }
+        if (methodId === 'barrelAging' && inputKey === 'heftroot') {
+          return { key: 'heftrootVodka', icon: '🥃', label: 'Heftroot Vodka', cat: 'processed', sellPrice: 26, tags: ['Processed', 'Vodka', 'Aged', 'Heftroot'], desc: 'Barrel-aged heftroot spirit, clear white.', spriteIcon: 'bottle_wine.png', spriteColor: 0xFFFFFF, spriteMode: 'keyed' };
+        }
+        if (methodId === 'barrelAging' && inputKey === 'garWolfMilk') {
+          return { key: 'garWolfAirag', icon: '🍶', label: 'Gar-wolf Airag', cat: 'processed', sellPrice: 22, tags: ['Processed', 'Airag', 'Aged', 'Gar-wolf'], desc: 'Barrel-fermented gar-wolf milk.', spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
+        }
+        if (methodId === 'vaseAging' && dewColorFromMilkOrCurdsKey(inputKey) && /Curds$/.test(inputKey)) {
+          return { key: 'uumkaoiiCheese', icon: '🧀', label: "Uumkao'ii Cheese", cat: 'processed', sellPrice: 28, tags: ['Processed', 'Cheese', "Uumkao'ii", 'Aged'], desc: 'Vase-aged Uumkao\'ii curds — every dew color ferments into the same cheese.', spriteIcon: 'cheese.png', spriteColor: 0xD9A441, spriteMode: 'direct' };
+        }
+        if (methodId === 'vaseAging' && inputKey === 'garWolfMilk') {
+          return { key: 'garWolfCheese', icon: '🧀', label: 'Gar-wolf Cheese', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Cheese', 'Gar-wolf', 'Aged'], desc: 'Vase-aged gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
+        }
         return null;
+      }
+
+      // Wraps getProcessingOutput in an array, except for the one recipe that
+      // jointly produces two items from a single input in a single action:
+      // squeezing raw Uumkao'ii dew into both Milk and Curds at once.
+      function getProcessingOutputs(methodId, inputKey) {
+        const input = ITEM_DEFS[inputKey];
+        if (!input) return null;
+        const dewColorMatch = DEW_COLOR_KEYS.find(color => dewItemKey(color) === inputKey);
+        if (methodId === 'squeezing' && dewColorMatch) {
+          const color = dewColorMatch;
+          const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
+          const dewColorHex = input.spriteColor;
+          return [
+            { key: dewMilkKey(color), icon: '🥛', label: properLabel + " Uumkao'ii Milk", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 3), tags: ['Processed', 'Milk', "Uumkao'ii", 'Squeezed', 'Not Animal Milk'], desc: 'Milk squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'jar_liquid.png', spriteColor: dewColorHex, spriteMode: 'keyed' },
+            { key: dewCurdsKey(color), icon: '🧀', label: properLabel + " Uumkao'ii Curds", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Curds', "Uumkao'ii", 'Squeezed', 'Not Dairy'], desc: 'Curds squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'cheese.png', spriteColor: dewColorHex, spriteMode: 'direct' },
+          ];
+        }
+        const single = getProcessingOutput(methodId, inputKey);
+        return single ? [single] : null;
       }
 
       function ensureProcessedItemDef(output) {
@@ -11685,7 +11946,8 @@
           cat: output.cat || 'processed',
           sellPrice: output.sellPrice || 1,
           tags: output.tags || ['Processed'],
-          desc: output.desc || 'Processed food item.'
+          desc: output.desc || 'Processed food item.',
+          ...(output.spriteIcon ? { spriteIcon: output.spriteIcon, spriteColor: output.spriteColor, spriteMode: output.spriteMode } : {}),
         };
       }
 
@@ -11715,7 +11977,30 @@
       // won't produce anything yet.
       const LIVESTOCK_RESOURCE_DEFS = {
         uumkaoii: { itemKey: 'uumkaoiiEgg', cooldownDays: 2 },
+        'gar-wolf': { itemKey: 'garWolfMilk', cooldownDays: 1 },
+        'dabinggi-hound': { itemKey: 'dabinggiHoundVenom', cooldownDays: 1 },
       };
+
+      // Which action verb the in-world "Collect" button shows, per kind —
+      // gar-wolf/dabinggi-hound's resource is milked out of them rather than
+      // collected like an egg, but both flow through the exact same
+      // resourceReady/collectLivestockResource machinery (see
+      // _farmAnimalGetButtons) — this only changes the button's label/action
+      // string, not the mechanic.
+      const LIVESTOCK_RESOURCE_VERB = { 'gar-wolf': 'Milk', 'dabinggi-hound': 'Milk' };
+
+      // A housed uumkao'ii's dew cooldown is tracked separately from its
+      // LIVESTOCK_RESOURCE_DEFS egg cooldown (see dewDaysUntil/dewReady on
+      // the livestock record, ticked in tickLivestockResources) — unlike the
+      // egg, a ready dew doesn't get a "Collect" button; it's dropped as a
+      // persistent, diggable world pile on the next open tile the animal
+      // wanders onto (see makeUumkaoiiAnimal's tick() / dropDewPile).
+      // Every uumkao'ii currently produces the same color — dewColor exists
+      // on the record (rather than hardcoding UUMKAOII_DEFAULT_DEW_COLOR at
+      // drop time) so a future breeding/genetics mechanism can assign a
+      // different one per-animal without touching the drop code at all.
+      const UUMKAOII_DEW_COOLDOWN_DAYS = 2;
+      const UUMKAOII_DEFAULT_DEW_COLOR = 'blue';
 
       // Tile types a farm building can never be placed/moved onto — trenches
       // and any worked/flooded soil. Rock/shrub/weeds are deliberately absent
@@ -12334,7 +12619,7 @@
           def.effects.forEach((eff, idx) => { if (effects.includes(eff)) discoverReagentEffect(rk, idx); });
         }
         keys.forEach(k => { inventory[k]--; clampInventoryStack(k); });
-        const potionKey = ensurePotionItemDef(effects);
+        const potionKey = ensurePotionItemDef(effects, keys);
         inventory[potionKey] = Math.min(99, (inventory[potionKey] || 0) + 1);
         alchemySelectedReagents = [];
         refreshItemScroll();
@@ -12625,6 +12910,28 @@
         fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
         fishingspear: { icon: '🎣', label: 'Fishing Spear', cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A slender fishing spear. Fits in the harpoon or weapon slot.' },
         pickshovel:   { icon: '⛏️', label: 'Pick-Shovel',   cat: 'tool', sellPrice: 0, tags: ['Tool', 'Shovel', 'Pick', 'Weapon'],  desc: 'A combination pick-shovel for digging. Fits in the shovel, pick, or weapon slot.' },
+
+        // ── Uumkao'ii Dew ────────────────────────────────────────────
+        // Dug up from a persistent ground pile (see UUMKAOII_DEW_COOLDOWN_DAYS/
+        // dropDewPile — the pile itself renders pile_dew.png, direct-recolored;
+        // see spawnDewPileMesh). What lands in the bag is the bottled dew, so
+        // its item sprite is jar_liquid.png, keyed-recolored the same way as
+        // any other bottled liquid. Only blueDew is actually reachable today
+        // (the default/only color a farm uumkao'ii currently produces — see
+        // UUMKAOII_DEFAULT_DEW_COLOR). The other six are pre-wired data for
+        // whichever future mechanism (breeding/genetics) assigns a farm
+        // uumkao'ii a different dew color.
+        yellowDew: { icon: '🟡', label: 'Yellow Uumkao\'ii Dew', cat: 'material', sellPrice: 9, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Dry Season'], desc: 'Glossy sweet dew from a dry-season uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xF3D23A, spriteMode: 'keyed' },
+        greenDew:  { icon: '🟢', label: 'Green Uumkao\'ii Dew',  cat: 'material', sellPrice: 9, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Wet Season'], desc: 'Glossy sweet dew from a wet-season uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x5CB84A, spriteMode: 'keyed' },
+        blueDew:   { icon: '🔵', label: 'Blue Uumkao\'ii Dew',   cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Cloud Forest'], desc: 'Glossy blue dew — the common color a farm uumkao\'ii leaves, dug up from a pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x3F8FE0, spriteMode: 'keyed' },
+        orangeDew: { icon: '🟠', label: 'Orange Uumkao\'ii Dew', cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Cloud Forest'], desc: 'Glossy sweet dew from a cloud-forest uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xF08A2E, spriteMode: 'keyed' },
+        redDew:    { icon: '🔴', label: 'Red Uumkao\'ii Dew',    cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Northern Cliffs'], desc: 'Glossy sweet dew from a northern-cliffs uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xE0453F, spriteMode: 'keyed' },
+        purpleDew: { icon: '🟣', label: 'Purple Uumkao\'ii Dew', cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy sweet dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x9B4FD9, spriteMode: 'keyed' },
+        whiteDew:  { icon: '⚪', label: 'White Uumkao\'ii Dew',  cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy pale dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xFFFFFF, spriteMode: 'keyed' },
+
+        // ── Milkable livestock resources (Gar-wolf, Dabinggi-hound) ─────
+        garWolfMilk: { icon: '🥛', label: 'Gar-wolf Milk', cat: 'material', sellPrice: 10, tags: ['Material', 'Milk', 'Gar-wolf'], desc: 'Milk collected from a housed gar-wolf. Pale white with a faint blue sheen.', spriteIcon: 'jar_liquid.png', spriteColor: 0xEFF3F8, spriteMode: 'keyed' },
+        dabinggiHoundVenom: { icon: '🧪', label: 'Dabinggi-hound Venom', cat: 'material', sellPrice: 15, tags: ['Material', 'Venom', 'Dabinggi-hound'], desc: 'Venom milked from a housed dabinggi-hound. A vivid, lime-green fluid.', spriteIcon: 'jar_liquid.png', spriteColor: 0xA6E22E, spriteMode: 'keyed' },
       };
 
       Object.values(PROCESSING_FURNITURE_DEFS).forEach(def => {
@@ -12756,6 +13063,23 @@
 
       function itemIconForKey(key) {
         return ITEM_DEFS[key]?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon || '□';
+      }
+
+      // Upgrades an already-rendered emoji icon element to a recolored PNG
+      // once it's ready (async — canvas recolor + data URL), for items whose
+      // def carries spriteIcon/spriteColor/spriteMode (see sprite-recolor.js).
+      // The emoji textContent set by the caller is left in place underneath
+      // as the instant, zero-risk fallback — el.color is only hidden once
+      // the background-image actually lands, and never touched at all for
+      // plain items or if the recolor fails.
+      function applyItemSpriteIcon(el, def) {
+        if (!el || !def?.spriteIcon || !window.SpriteRecolor) return;
+        window.SpriteRecolor.getRecoloredCanvas('assets/objectsprites/' + def.spriteIcon, def.spriteColor, def.spriteMode)
+          .then(canvas => {
+            el.style.backgroundImage = `url(${canvas.toDataURL()})`;
+            el.classList.add('sprited-icon');
+          })
+          .catch(() => {});
       }
 
       // ── Inventory panel state ──────────────────────────────────────
@@ -12987,6 +13311,7 @@
             box.appendChild(badge);
           }
           box.addEventListener('click', () => selectInventoryItem(key));
+          applyItemSpriteIcon(box.querySelector('.iib-icon'), def);
           grid.appendChild(box);
         });
 
@@ -13026,6 +13351,9 @@
 
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
         set('iiIcon',  def.icon);
+        const iiIconEl = document.getElementById('iiIcon');
+        if (iiIconEl) { iiIconEl.style.backgroundImage = ''; iiIconEl.classList.remove('sprited-icon'); }
+        applyItemSpriteIcon(iiIconEl, def);
         set('iiName',  `${def.label} ×${count}`);
         set('iiPrice', def.sellPrice > 0 ? `${def.sellPrice}g each` : '');
         set('iiTags',  def.tags.map(t => `<span class="ii-tag">${t}</span>`).join(''));
@@ -13354,6 +13682,8 @@
         if (detailEl) detailEl.style.display  = '';
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
         set('iiIcon',  def.icon);
+        const iiIconEl2 = document.getElementById('iiIcon');
+        if (iiIconEl2) { iiIconEl2.style.backgroundImage = ''; iiIconEl2.classList.remove('sprited-icon'); }
         set('iiName',  def.label + ' (Gear) — Mastery ' + toolMasteryLevel(key) + '/5');
         set('iiPrice', 'Permanent — not sellable');
         set('iiTags',  def.slots.map(t => '<span class="ii-tag">' + t + '</span>').join(''));
@@ -15190,6 +15520,10 @@
         // farm-only mechanics, and pick duplicates the shovel's terrain actions.
         if (currentArea === 'town' && (tool === 'shovel' || tool === 'hoe' || tool === 'pick')) return false;
         if (tool === 'shovel') {
+          // A dew pile must be dug up (shovel only, half a trench-dig's
+          // duration — see DIG_DEW_PILE_STAGES) before anything else can be
+          // done to this tile, including actually digging it into a trench.
+          if (tile.dewPile) return action === 'dig';
           if (action === 'dig') {
             if (blocksDiggingUnder(tile)) return false;
             // An already-dug trench can be redug (single tap) once rain has silted it shallower.
@@ -15200,6 +15534,7 @@
           if (action === 'raise') return [TileType.GRASS, TileType.TILLED].includes(tile.type) && !tile.crop;
         }
         if (tool === 'hoe') {
+          if (tile.dewPile) return false; // dig the pile up with a shovel first
           if (action === 'till') return tile.type === TileType.GRASS && !tile.crop;
           if (action === 'smooth') return [TileType.TILLED, TileType.RAISED, TileType.PADDY].includes(tile.type) && !tile.crop;
         }
@@ -15216,6 +15551,7 @@
           });
         }
         if (tool === 'pick') {
+          if (tile.dewPile) return false; // only a shovel can dig up a dew pile
           if (action === 'dig') {
             if (blocksDiggingUnder(tile)) return false;
             // An already-dug trench can be redug (single tap) once rain has silted it shallower.
@@ -15757,6 +16093,16 @@
         const tile = getActiveGrid()[row][col];
 
         if (tool === 'shovel') {
+          if (action === 'dig' && tile.dewPile) {
+            const colorKey = tile.dewPile;
+            tile.dewPile = null;
+            removeDewPileMesh(col, row);
+            const dewKey = dewItemKey(colorKey);
+            inventory[dewKey] = Math.min(99, (inventory[dewKey] || 0) + 1);
+            awardToolUseMasteryXp('shovel');
+            saveFarmLayout();
+            return { ok: true, message: `Dug up 1 ${ITEM_DEFS[dewKey]?.label || dewKey}.` };
+          }
           if (action === 'dig' && tile.type === TileType.TRENCH) {
             tile.depth = 1;
             awardToolUseMasteryXp('shovel');
@@ -15902,7 +16248,12 @@
             showToast(msg, false);
             return;
           }
-          startChargeAction(getReticleTile(), activeAction === 'fill' ? FILL_TRENCH_STAGES : DIG_NEW_TRENCH_STAGES);
+          {
+            const _chargeReticle = getReticleTile();
+            const _chargeTile = getActiveGrid()[_chargeReticle.row]?.[_chargeReticle.col];
+            const _digStages = _chargeTile?.dewPile ? DIG_DEW_PILE_STAGES : DIG_NEW_TRENCH_STAGES;
+            startChargeAction(_chargeReticle, activeAction === 'fill' ? FILL_TRENCH_STAGES : _digStages);
+          }
           return;
         }
 
@@ -20009,6 +20360,13 @@
       // from 1s+1s on the first rep down to 1/4s+1/4s on the final rep.
       const DIG_NEW_TRENCH_REP_DURATIONS = [1.0, 0.25];
       const DIG_NEW_TRENCH_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.flatMap(dur => [
+        { anim: 'thrust', dur },
+        { anim: 'toss',   dur },
+      ]);
+      // Digging up a dew pile — same held input and same two-animation
+      // (thrust/toss) shape as digging a brand-new trench, just at half the
+      // base duration per rep.
+      const DIG_DEW_PILE_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.map(dur => dur / 2).flatMap(dur => [
         { anim: 'thrust', dur },
         { anim: 'toss',   dur },
       ]);
@@ -24545,9 +24903,9 @@
         try {
           const _rl = loadFarmLayout();
           if (_rl) {
-            (_rl.furniture || []).forEach(({ key, col, row }) => {
+            (_rl.furniture || []).forEach(({ key, col, row, job }) => {
               if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
-                const obj = makeProcessingFurniture(col, row, key);
+                const obj = makeProcessingFurniture(col, row, key, job);
                 if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
               }
             });
