@@ -15840,6 +15840,12 @@
         _prevCameraTarget = activeCameraTarget;
         activeCameraMode = 'fishing';
         activeCameraTarget = { position: new THREE.Vector3(anchorWorld.x, anchorWorld.y, anchorWorld.z) };
+
+        // Drop the harpoon's "Fish" arc button immediately (computeActionButtons
+        // returns [] while fishingMinigame.active — see there) instead of
+        // waiting for whatever next unrelated event happens to call
+        // refreshActionBar(); fishing's real controls are #actionPrompt now.
+        refreshActionBar();
       }
 
       // Opens the actual spear-bridge ring once the player confirms a bite
@@ -22809,6 +22815,14 @@
 
 
       function computeActionButtons() {
+        // Fishing has its own dedicated control surface — the bottom-center
+        // #actionPrompt ("Ready Harpoon"/"Throw Harpoon"/"Give up"), see
+        // renderFishingOverlay. Without this, the harpoon's "Fish" arc
+        // button (and dodge/weapon-switch) stayed live through every phase
+        // of the cast — tapping it mid-wait just called beginFishingCast()
+        // again, silently restarting the round and making it look like the
+        // button "didn't work" instead of ever reaching a bite.
+        if (fishingMinigame?.active) return [];
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
           const btns = [npcDialogueButton()];
@@ -22996,7 +23010,14 @@
         const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
         const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
         const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction() : 'none';
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}`;
+        // fishingMinigame?.active must be in this key: computeActionButtons()
+        // returns [] the instant fishing starts (its own controls live in
+        // #actionPrompt instead), but starting/ending fishing often doesn't
+        // touch anything else the key already tracks (same tile, same tool,
+        // same reticle) — without it here, the stale "Fish" arc button never
+        // actually got rebuilt away, even though computeActionButtons() was
+        // already returning the right (empty) answer.
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${!!fishingMinigame?.active}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
