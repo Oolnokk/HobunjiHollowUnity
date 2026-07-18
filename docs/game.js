@@ -6264,8 +6264,8 @@
       // (see heldItemHolder near the tool meshes below) — higher than
       // playerToolBaseY, which targets hand height near the bottom of these
       // cropped bust-style portraits. Recomputed per-species in
-      // refreshPlayerAvatar() alongside playerToolBaseX/Y.
-      let playerItemHoldY = 0.6;
+      // refreshPlayerAvatar() alongside playerToolBaseX/Y, as playerToolBaseY + 0.19.
+      let playerItemHoldY = 0.64;
 
       // ── Dialogue tree runtime state ──────────────────────────────────
       let _dlgTree      = null;  // active tree object
@@ -6429,7 +6429,12 @@
 
       const _audioCueIndexes = new Map();
       const _mapAudioIndexes = new Map();
-      let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null, inCombat: false, currentCombatBgm: null };
+      // blockUntil: performance.now() timestamp before which updateAmbientCues
+      // won't start a new bgm/cue/combatBgm track — sets a floor so an
+      // interrupted track's fade-out (see stopAmbientCue) actually finishes
+      // fading to silence before anything new starts on top of it, instead of
+      // the two overlapping audibly for the fade's duration.
+      let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null, inCombat: false, currentCombatBgm: null, blockUntil: 0 };
       const _furnitureSfxSources = [];
       const _loopingBgs = new Map();
       const _audioDebugLast = new Map();
@@ -6799,6 +6804,9 @@
           if (!snd) continue;
           if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
           else snd.pause();
+          // Hold off starting anything new until this one has actually faded
+          // out, not just been handed off — see blockUntil's declaration.
+          _ambientCueState.blockUntil = Math.max(_ambientCueState.blockUntil, performance.now() + fade.interruptFadeMs);
         }
       }
 
@@ -6891,14 +6899,9 @@
             // Duck exploration/dawn music for the fight. combatBgm (see
             // scratchbones-config.js — empty until real tracks exist) takes
             // over below; until then this just goes quiet rather than
-            // clashing with the fight.
-            for (const key of ['currentCue', 'currentBgm']) {
-              const snd = _ambientCueState[key];
-              _ambientCueState[key] = null;
-              if (!snd) continue;
-              if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
-              else snd.pause();
-            }
+            // clashing with the fight. stopAmbientCue() also raises
+            // blockUntil, so the combatBgm start below waits for the fade.
+            stopAmbientCue();
             audioDebug('combat started — ducking ambient music', 'combat-duck-' + currentArea, 0, 'bgm');
           } else {
             if (_ambientCueState.currentCombatBgm) {
@@ -6906,6 +6909,7 @@
               _ambientCueState.currentCombatBgm = null;
               if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
               else snd.pause();
+              _ambientCueState.blockUntil = Math.max(_ambientCueState.blockUntil, performance.now() + fade.interruptFadeMs);
             }
             // Try exploration music fresh rather than resuming whatever was
             // cut off — time of day (or area) may have moved on mid-fight.
@@ -6917,7 +6921,7 @@
 
         if (inCombat) {
           const combatTracks = (audioCfg.combatBgm || []).filter(t => t?.url && !audioUrlFailed(t.url));
-          if (!_ambientCueState.currentCombatBgm && combatTracks.length) {
+          if (!_ambientCueState.currentCombatBgm && combatTracks.length && performance.now() >= _ambientCueState.blockUntil) {
             const track = combatTracks[Math.floor(Math.random() * combatTracks.length)];
             const fade = musicFadeConfig();
             const vol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
@@ -6946,7 +6950,7 @@
         if (_ambientCueState.currentCue?.ended) _ambientCueState.currentCue = null;
 
         if (_ambientCueState.mode === 'cue_wait') {
-          if (performance.now() < _ambientCueState.nextAt) return;
+          if (performance.now() < _ambientCueState.nextAt || performance.now() < _ambientCueState.blockUntil) return;
           if (!cues.length) { _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
           const cue = cues[Math.floor(Math.random() * cues.length)];
           if (!cue?.file) { scheduleNextCueDelay(); return; }
@@ -6980,7 +6984,7 @@
 
         if (_ambientCueState.currentBgm && !_ambientCueState.currentBgm.ended) return;
         _ambientCueState.currentBgm = null;
-        if (performance.now() < _ambientCueState.nextAt) return;
+        if (performance.now() < _ambientCueState.nextAt || performance.now() < _ambientCueState.blockUntil) return;
         const bgmTrack = resolveAreaBgm(currentArea);
         const bgmUrl = bgmTrack?.url || '';
         if (!bgmUrl) {
@@ -12483,7 +12487,13 @@
         }
         playerToolBaseX = avatarGroup.userData?.handAttachX ?? (-avatarWidth / 2);
         playerToolBaseY = avatarGroup.userData?.handAttachY ?? (avatarHeight / 2);
-        playerItemHoldY = avatarHeight * 0.6;
+        // Anchored to playerToolBaseY (the real per-species/gender scanned hand
+        // height) rather than a flat fraction of avatarHeight, so differently
+        // proportioned species/genders get a correctly offset chest height
+        // instead of all sharing one ratio tuned for a single species. The
+        // +0.19 was picked to reproduce the previous avatarHeight*0.6 value for
+        // mao-ao (the species that height was tuned against).
+        playerItemHoldY = playerToolBaseY + 0.19;
         _markPngPlane(avatarGroup);
         if (refreshGeneration !== playerAvatarRefreshGeneration) {
           disposeAvatarGroup(avatarGroup);
@@ -19006,7 +19016,7 @@
       // per glyph and reused as a texture, same idea as the tool/avatar PNG
       // planes above just built from a drawn glyph instead of a loaded file.
       const HELD_ITEM_PLANE_WIDTH = 0.45; // ~50% of the avatar's ~0.9 world-unit portrait width
-      const HELD_ITEM_FORWARD_OFFSET = 0.4; // "a few feet" out from the chest, clear of the avatar plane
+      const HELD_ITEM_FORWARD_OFFSET = 0.1; // a quarter of the original 0.4 — just enough clearance from the chest
       // Per-item-key overrides for HELD_ITEM_PLANE_WIDTH — most icons read fine
       // at the default size; add entries here for outliers (e.g. tiny/huge glyphs).
       const ITEM_HELD_PLANE_SCALE = {};
