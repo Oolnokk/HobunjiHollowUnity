@@ -15686,7 +15686,10 @@
         const mat = new THREE.MeshBasicMaterial({ color: opts.color ?? 0xffffff, transparent: true, opacity: 1 });
         const mesh = new THREE.Mesh(geo, mat);
         mesh.position.set(pos.x, pos.y, pos.z);
-        scene.add(mesh);
+        // Farm has its own scene; town/interiors/wilderness zones each have
+        // their own too (see getActiveScene) — adding straight to the bare
+        // farm `scene` here meant these never rendered anywhere else.
+        getActiveScene().add(mesh);
         fishingFxParticles.push({
           mesh, mat,
           vx: vel.x, vy: vel.y, vz: vel.z,
@@ -15761,7 +15764,7 @@
           const p = fishingFxParticles[i];
           p.age += dt;
           if (p.age >= p.maxAge) {
-            scene.remove(p.mesh);
+            p.mesh.parent?.remove(p.mesh);
             p.mesh.geometry.dispose();
             p.mat.dispose();
             fishingFxParticles.splice(i, 1);
@@ -20851,12 +20854,19 @@
         }
 
         // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
-        if (!player.perpState) player.perpState = {};
-        const rawTargetRotY = -facingAngle + Math.PI / 2;
-        const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, cameraRelativePerps());
-        if (pSnapTo !== null) playerFacing = pEffTarget;
-        else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
-        playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
+        // Skipped during the fish-catch view: beginFishCatchView pins playerFacing to face
+        // the camera, and this recompute runs every frame regardless of fishing state, so
+        // without the guard it fought that and spun the character back around immediately.
+        if (fishingMinigame?.phase === 'caught') {
+          playerMesh.rotation.y = playerFacing;
+        } else {
+          if (!player.perpState) player.perpState = {};
+          const rawTargetRotY = -facingAngle + Math.PI / 2;
+          const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, cameraRelativePerps());
+          if (pSnapTo !== null) playerFacing = pEffTarget;
+          else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
+          playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
+        }
 
         // Bob animation when moving
         const speed = Math.hypot(player.vx, player.vy);
@@ -24069,7 +24079,11 @@
         const key = event.key.toLowerCase();
         if (fishingMinigame?.active) {
           if (key === 'escape') { event.preventDefault(); closeFishingMinigame(); return; }
-          if (key === ' ' || key === 'enter') { event.preventDefault(); fishingPrimaryAction(); }
+          const fishingBoundAction = getActionForButton('desktop', event.code);
+          if (fishingBoundAction === 'interact' || fishingBoundAction === 'action1' || key === ' ' || key === 'enter') {
+            event.preventDefault();
+            fishingPrimaryAction();
+          }
           return;
         }
         if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
