@@ -2302,6 +2302,15 @@
                 {
                   "label": "How's Foroji doing?",
                   "next": "n_furunji_funji_3b"
+                },
+                {
+                  "label": "What's for sale?",
+                  "actions": [
+                    {
+                      "type": "openShop",
+                      "pool": "generalStoreWares"
+                    }
+                  ]
                 }
               ]
             },
@@ -2726,6 +2735,15 @@
                 {
                   "label": "Does your dad know how you feel about the shop?",
                   "next": "n_foroji_funji_3b"
+                },
+                {
+                  "label": "What's for sale?",
+                  "actions": [
+                    {
+                      "type": "openShop",
+                      "pool": "generalStoreWares"
+                    }
+                  ]
                 }
               ]
             },
@@ -3612,7 +3630,13 @@
                 },
                 {
                   "label": "Got anything good to sell?",
-                  "next": "n_jubmir_3b"
+                  "next": "n_jubmir_3b",
+                  "actions": [
+                    {
+                      "type": "openShop",
+                      "pool": "jubmirWares"
+                    }
+                  ]
                 }
               ]
             },
@@ -5169,7 +5193,48 @@
         "hated": [],
         "categoryNotes": []
       },
-      "dialogueTrees": [],
+      "dialogueTrees": [
+        {
+          "id": "tree_dzibim_khibu_first_meeting",
+          "label": "First Meeting",
+          "trigger": "interact",
+          "priority": 100,
+          "entryNode": "n_dzibim_khibu_1",
+          "nodes": [
+            {
+              "id": "n_dzibim_khibu_1",
+              "type": "text",
+              "text": "<suggestion: dialogue — Dzibim's gruff-but-warm carpenter greeting>",
+              "next": "n_dzibim_khibu_2"
+            },
+            {
+              "id": "n_dzibim_khibu_2",
+              "type": "choice",
+              "choices": [
+                {
+                  "label": "Got any building plans?",
+                  "actions": [
+                    {
+                      "type": "openShop",
+                      "pool": "carpenterBarnPlans"
+                    }
+                  ]
+                },
+                {
+                  "label": "How's business?",
+                  "next": "n_dzibim_khibu_3"
+                }
+              ]
+            },
+            {
+              "id": "n_dzibim_khibu_3",
+              "type": "text",
+              "text": "<suggestion: dialogue — his answer about the carpentry trade, maybe a nod to the family's roofing history>",
+              "next": null
+            }
+          ]
+        }
+      ],
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "hobunji_main_town",

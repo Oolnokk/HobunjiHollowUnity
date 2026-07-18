@@ -144,6 +144,8 @@
         if (targetPanel === 'shipping') buildShippingTransferUI();
         if (targetPanel === 'supplies') renderSupplyPage();
         if (targetPanel === 'generalStore') renderGeneralStorePage();
+        if (targetPanel === 'carpenterShop') renderCarpenterShopPage();
+        if (targetPanel === 'jubmirShop') renderJubmirShopPage();
         if (targetPanel === 'alchemy') renderAlchemyPanel();
         auditInventorySizing();
       }
@@ -178,6 +180,8 @@
         if (id === 'shipping') buildShippingTransferUI();
         if (id === 'supplies') renderSupplyPage();
         if (id === 'generalStore') renderGeneralStorePage();
+        if (id === 'carpenterShop') renderCarpenterShopPage();
+        if (id === 'jubmirShop') renderJubmirShopPage();
         if (id === 'alchemy') renderAlchemyPanel();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
         if (id === 'wildlife') renderWildlifeDebugPanel();
@@ -465,8 +469,11 @@
                 const st = _getNpcDlgState(_dlgNpcRec?.id);
                 st.localNickname = _resolveTokens(act.value || '', _dlgNpcRec) || null;
               } else if (act.type === 'openShop') {
-                closeNpcDialogue();
-                openMenu('generalStore');
+                // `pool` names a WARES_POOLS entry; omitted defaults to the
+                // General Store for backward compatibility with any tree
+                // authored before pools existed (bare {type:'openShop'}).
+                const pool = WARES_POOLS[act.pool || 'generalStoreWares'];
+                if (pool) { closeNpcDialogue(); openMenu(pool.menuId); }
                 skipNav = true;
               } else if (act.type === 'startChat') {
                 _beginNpcConversation(_dlgNpcRec);
@@ -726,6 +733,15 @@
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
 
+        // These synthetic pre-choice screens are a fast-path shortcut for
+        // when the NPC happens to be caught right at their counter — a
+        // quicker single-tap route to the shop than navigating their own
+        // dialogue tree. They are NOT the reliable path: that fast-path
+        // condition (idle, exact station, label match) is easy to miss if
+        // the NPC has stepped away or is mid-transition, which is why every
+        // shopkeeper below also gets a real "openShop" choice baked into
+        // their own dialogueTrees — reachable through ordinary conversation
+        // any time, with no station/idle requirement at all.
         if (isGeneralStoreNpcOnDuty(walker)) {
           const cfg = generalStoreButtonConfig();
           _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
@@ -733,8 +749,40 @@
             type: 'choice',
             text: cfg.shopGreeting || 'What can I do for you?',
             choices: [
-              { label: cfg.buyChoiceLabel || 'Buy', actions: [{ type: 'openShop' }] },
+              { label: cfg.buyChoiceLabel || 'Buy', actions: [{ type: 'openShop', pool: 'generalStoreWares' }] },
               { label: cfg.chatChoiceLabel || 'Chat', actions: [{ type: 'startChat' }] },
+            ],
+          });
+          return;
+        }
+
+        if (isCarpenterNpcOnDuty(walker)) {
+          const cfg = carpenterButtonConfig();
+          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
+          _renderDlgNode({
+            type: 'choice',
+            text: cfg.shopGreeting || 'What can I do for you?',
+            choices: [
+              { label: cfg.buyChoiceLabel || 'Buy', actions: [{ type: 'openShop', pool: 'carpenterBarnPlans' }] },
+              { label: cfg.chatChoiceLabel || 'Chat', actions: [{ type: 'startChat' }] },
+            ],
+          });
+          return;
+        }
+
+        // Jubmir the traveling trader — unlike the General Store/Carpenter,
+        // he isn't tied to a shop counter (he wanders per his schedule), so
+        // this choice is offered any time you talk to him at all rather
+        // than being station-gated. "Chat" re-enters his normal dialogue
+        // tree exactly like the General Store's Chat option does.
+        if (rec?.id === 'jubmir') {
+          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
+          _renderDlgNode({
+            type: 'choice',
+            text: 'What can I do for you?',
+            choices: [
+              { label: 'See Wares', actions: [{ type: 'openShop', pool: 'jubmirWares' }] },
+              { label: 'Chat', actions: [{ type: 'startChat' }] },
             ],
           });
           return;
@@ -873,6 +921,21 @@
       const HOUSE_FOOTPRINT_D = 4;      // footprint depth in tiles (cells y=10..13, 4 deep)
       const DOOR_COL          = 28;     // farm grid col of door zone (mapper cell 11,14 → col 28)
       const DOOR_ROW          = 6;      // farm grid row of door zone (mapper cell 11,14 → row 6)
+
+      // Mutable current top-left of the house footprint — defaults to the
+      // mapper-authored HOUSE_COL/HOUSE_ROW above, but the Farm tab's "Move
+      // Building" flow can relocate it. Every other house-position value
+      // (door tiles, GLB world position) is derived from the delta between
+      // this and the HOUSE_COL/HOUSE_ROW origin, since farm tiles map 1:1 to
+      // world units (see e.g. makeUumkaoiiAnimal's `col + 0.5` placement) —
+      // we don't need to know the mapper's original absolute offset math,
+      // just shift everything by the same amount the house moved.
+      let houseCol = HOUSE_COL;
+      let houseRow = HOUSE_ROW;
+      function currentDoorCol() { return houseCol + (DOOR_COL - HOUSE_COL); }
+      function currentDoorRow() { return houseRow + (DOOR_ROW - HOUSE_ROW); }
+      function currentHousePosX() { return HOUSE_POS_X + (houseCol - HOUSE_COL); }
+      function currentHousePosZ() { return HOUSE_POS_Z + (houseRow - HOUSE_ROW); }
       // Interior dimensions — 12×12 (doubled from original 6×6).
       // Layout: 12×10 main room (cols 0-11, rows 0-9) + 4-cell wide south corridor (cols 4-7, rows 10-11)
       const INTERIOR_COLS        = 12;
@@ -1655,6 +1718,7 @@
         redberrySeeds: 3, blueberrySeeds: 3, yellowberrySeeds: 3, whiteberrySeeds: 2, blackberrySeeds: 2,
         blackMustardSeed: 3, greenMustardSeed: 3,
         uumkaoiiCrate: 1,
+        barnPlanSmall: 1,
         gold: 40,
       };
 
@@ -2294,6 +2358,25 @@
         ...LIVESTOCK_CATALOG
       ];
 
+      // ── Named wares pools ───────────────────────────────────────────
+      // A dialogue tree's "openShop" action names a pool instead of a menu
+      // id directly — the indirection Creation Kit's Leveled Lists use for
+      // exactly this reason: a hand-authored (or future-tool-authored)
+      // dialogue node just says "open pool X", and X's actual UI can be
+      // whatever menu currently implements it, without the tree needing to
+      // know menu ids. Every pool listed here already has its own dedicated
+      // menu pane + render function (see openMenu/switchMenuPanel); this
+      // registry only decides which pane a pool opens. Not yet generalized
+      // into full weighted/leveled entries (price rolls, level gating,
+      // nested pools) since there's no second consumer (e.g. treasure-chest
+      // loot tables) to design that against yet — do that when one exists,
+      // rather than guessing the shape now.
+      const WARES_POOLS = {
+        generalStoreWares:  { label: "Funji & Son's General Store",  menuId: 'generalStore'  },
+        carpenterBarnPlans: { label: "Dzibim Khibu's Carpentry",     menuId: 'carpenterShop' },
+        jubmirWares:        { label: "Jubmir's Wares",               menuId: 'jubmirShop'    },
+      };
+
       // ── General Store catalog (Funji & Son's) ─────────────────────
       const GENERAL_STORE_CATALOG = [
         { key: 'mulchBag',      icon: '🍂', name: 'Mulch Bag',      desc: 'Boosts soil recovery and clears weeds.',        price: 3,  gives: { mulch: 5 } },
@@ -2868,6 +2951,14 @@
           interiorFurnitureObjects.forEach(obj => {
             layout.decor.push({ key: obj.key, col: obj.col, row: obj.row, area: obj.area });
           });
+          // Movable buildings — house position (only saved if moved from its
+          // default) and every barn (foundation or built). Added as extra
+          // fields on the same version-3 shape rather than bumping the
+          // version, so older saves without these fields still load fine.
+          if (houseCol !== HOUSE_COL || houseRow !== HOUSE_ROW) { layout.houseCol = houseCol; layout.houseRow = houseRow; }
+          if (farmBuildings.length) {
+            layout.buildings = farmBuildings.map(b => ({ id: b.id, kind: b.kind, tier: b.tier, col: b.col, row: b.row, w: b.w, h: b.h, stage: b.stage }));
+          }
           // Preserve map-editor-authored travel data through in-game saves
           if (worldRoutes.length)      layout.routes      = worldRoutes;
           if (worldNpcPaths.length)    layout.npcPaths    = worldNpcPaths; // legacy compatibility
@@ -2927,6 +3018,16 @@
           const targetScene = decorArea === 'interior' ? interiorScene : scene;
           const result = makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea);
           if (result) interiorFurnitureObjects.push({ key, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea });
+        });
+        if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && (layout.houseCol !== houseCol || layout.houseRow !== houseRow)) {
+          repositionHouse(layout.houseCol, layout.houseRow);
+        }
+        (layout.buildings || []).forEach(saved => {
+          if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
+          if (farmBuildings.some(b => b.id === saved.id)) return;
+          const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || BARN_FOOTPRINT_W, h: saved.h || BARN_FOOTPRINT_D, stage: saved.stage || 'foundation' };
+          farmBuildings.push(entry);
+          spawnBarnEntry(entry);
         });
       }
 
@@ -3251,6 +3352,77 @@
         return true;
       }
 
+      // ── Barn day/night + resource collection, shared by every farm-
+      // livestock factory (makeUumkaoiiAnimal, makePatternLivestockAnimal).
+      // At night, an animal assigned to a barn walks toward it and "goes
+      // inside" (hidden + its tile freed) until morning, when it re-emerges
+      // beside the barn. Unassigned (stasis) livestock never spawn at all
+      // (see addLivestockFromItem), so this only ever runs for housed ones.
+      function _farmAnimalBarnTick(animal) {
+        const night = isNightTime();
+        if (animal._barnHome) {
+          if (!night) _farmAnimalWakeUp(animal);
+          return true;
+        }
+        const rec = _loadWorldLivestock().find(l => l.id === animal.livestockId);
+        const barn = rec?.barnId ? farmBuildings.find(b => b.id === rec.barnId && b.kind === 'barn') : null;
+        if (!night || !barn) return false; // no barn, or daytime — fall through to normal wander
+        _farmAnimalStepTowardBarn(animal, barn);
+        return true;
+      }
+
+      function _farmAnimalStepTowardBarn(animal, barn) {
+        const cx = barn.col + barn.w / 2, cz = barn.row + barn.h / 2;
+        const touchingBarn = animal.col >= barn.col - 1 && animal.col <= barn.col + barn.w
+          && animal.row >= barn.row - 1 && animal.row <= barn.row + barn.h;
+        if (touchingBarn) {
+          worldObjects.delete(animal.col + ',' + animal.row);
+          animal.avatarRef.group.visible = false;
+          animal._barnHome = true;
+          return;
+        }
+        const dc = Math.sign(cx - (animal.col + 0.5)), dr = Math.sign(cz - (animal.row + 0.5));
+        const dirs = [{ dc, dr }, { dc, dr: 0 }, { dc: 0, dr }, { dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }]
+          .filter(d => d.dc || d.dr);
+        for (const d of dirs) {
+          const nc = animal.col + d.dc, nr = animal.row + d.dr;
+          if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+          if (!canSpawnAnimalAt(nc, nr)) continue;
+          worldObjects.delete(animal.col + ',' + animal.row);
+          animal.col = nc; animal.row = nr; animal.targetCol = nc; animal.targetRow = nr;
+          worldObjects.set(nc + ',' + nr, animal);
+          animal.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
+          break;
+        }
+      }
+
+      function _farmAnimalWakeUp(animal) {
+        const rec = _loadWorldLivestock().find(l => l.id === animal.livestockId);
+        const barn = rec?.barnId ? farmBuildings.find(b => b.id === rec.barnId && b.kind === 'barn') : null;
+        const spot = (barn && findOpenTileNearBarn(barn)) || (canSpawnAnimalAt(animal.col, animal.row) ? { col: animal.col, row: animal.row } : null);
+        if (!spot) return; // no room to emerge yet — stay home another tick
+        animal.col = spot.col; animal.row = spot.row; animal.targetCol = spot.col; animal.targetRow = spot.row;
+        animal.wx = spot.col + 0.5; animal.wz = spot.row + 0.5;
+        worldObjects.set(spot.col + ',' + spot.row, animal);
+        animal.avatarRef.group.visible = true;
+        animal._barnHome = false;
+      }
+
+      function _farmAnimalGetButtons(animal, label, icon) {
+        const rec = _loadWorldLivestock().find(l => l.id === animal.livestockId);
+        const resDef = rec ? LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
+        if (rec?.resourceReady && resDef) {
+          const itemLabel = ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey;
+          return [{ icon: ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `Collect ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true }];
+        }
+        return [{ icon, label, action: 'obj_' + animal.id, style: 'secondary', allowed: false }];
+      }
+
+      function _farmAnimalOnAction(animal, action, fallbackMessage) {
+        if (action === 'obj_collect_' + animal.id) return collectLivestockResource(animal.livestockId);
+        return { ok: false, message: fallbackMessage };
+      }
+
       function makeUumkaoiiAnimal(col, row, livestockId, genotype) {
         const ANIMAL_W = 1.275;
         const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
@@ -3299,14 +3471,15 @@
           perpState: {},
 
           getButtons() {
-            return [{ icon: '\u{1F986}', label: "Uumkao’ii", action: 'obj_uumkaoii_' + this.id, style: 'secondary', allowed: false }];
+            return _farmAnimalGetButtons(this, "Uumkao’ii", '\u{1F986}');
           },
-          onAction() {
-            return { ok: false, message: "The uumkao’ii ignores you." };
+          onAction(action) {
+            return _farmAnimalOnAction(this, action, "The uumkao’ii ignores you.");
           },
           tick() {
             tickCounter++;
             if (tickCounter % 3 !== 0) return;
+            if (_farmAnimalBarnTick(this)) return;
             if (rnd() > 0.55) return;
 
             const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
@@ -3412,14 +3585,15 @@
           perpState: {},
 
           getButtons() {
-            return [{ icon, label, action: 'obj_' + kind.replace(/-/g, '') + '_' + this.id, style: 'secondary', allowed: false }];
+            return _farmAnimalGetButtons(this, label, icon);
           },
-          onAction() {
-            return { ok: false, message: `The ${label.toLowerCase()} ignores you.` };
+          onAction(action) {
+            return _farmAnimalOnAction(this, action, `The ${label.toLowerCase()} ignores you.`);
           },
           tick() {
             tickCounter++;
             if (tickCounter % 3 !== 0) return;
+            if (_farmAnimalBarnTick(this)) return;
             if (rnd() > 0.55) return;
 
             const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
@@ -3481,11 +3655,15 @@
       // Den-Mother nest rewards (see updateNestInteraction) piggyback on this
       // exact mechanism per the design intent — "the existing livestock
       // items, just renamed" — rather than inventing a separate egg/baby
-      // item system. garWolfBaby has no LIVESTOCK_FACTORIES entry (gar-wolf
-      // isn't a farm-deployable species), so addToStable is its only valid
-      // path — addLivestockFromItem degrades to its existing "no factory"
-      // failure message rather than crashing.
-      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf' };
+      // item system. All three farm-deployable species (uumkao'ii, gar-wolf,
+      // dabinggi-hound) have a LIVESTOCK_FACTORIES entry and go through the
+      // exact same addLivestockFromItem → stasis → assignLivestockToBarn →
+      // wander/day-night-barn path — there's nothing uumkao'ii-specific
+      // about any of it. dabinggiHoundEgg has no Den-Mother source (dabinggi-
+      // hound isn't a hostile wild-pack species, so it has no "-den-mother"
+      // CREATURE_DB entry — see DEN_MOTHER_ITEM_KEYS below) — its only
+      // source is Jubmir's daily trader stock (see _loadJubmirStock).
+      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf', dabinggiHoundEgg: 'dabinggi-hound' };
 
       // Den-Mother CREATURE_DB key -> which item her nest hands out — read
       // directly off her species (see loadBuildingScene's 'map_i_den_'
@@ -3523,36 +3701,109 @@
       // 'livestock' farmhand permission like every other farm-alteration
       // action, and always picks its own open tile rather than a reticle
       // target, since it's invoked from the menu rather than the world.
+      // Adding livestock no longer spawns it directly — with barns in the
+      // picture, a released creature starts unassigned ("stasis": no world
+      // presence, resource cooldown paused) until assigned to a built barn
+      // with an open slot from the Farm tab's Livestock panel (see
+      // assignLivestockToBarn), which is what actually spawns it.
       function addLivestockFromItem(itemKey) {
         if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can add livestock." };
         const kind = LIVESTOCK_ITEM_KINDS[itemKey];
         if (!kind) return { ok: false, message: 'That item cannot be added to the farm.' };
         if ((inventory[itemKey] || 0) < 1) return { ok: false, message: 'None of that item in bag.' };
-        let col = null, row = null;
-        outer: for (let r = 0; r < ROWS; r++) {
-          for (let c = 0; c < COLS; c++) {
-            if (canSpawnAnimalAt(c, r)) { col = c; row = r; break outer; }
-          }
-        }
-        if (col === null) return { ok: false, message: 'No open tile on the farm to place it.' };
         const genotype = _consumeLivestockItemGenotype(itemKey) || makeDefaultGenotype(kind);
-        const factory = LIVESTOCK_FACTORIES[kind];
-        const animal = factory ? factory(col, row, null, genotype) : null;
-        if (!animal) return { ok: false, message: 'Sprite still loading — try again in a moment.' };
         inventory[itemKey]--;
         clampInventoryStack(itemKey);
-        worldObjects.set(col + ',' + row, animal);
-        animalObjects.add(animal);
         // Livestock belongs to the world, not this character — persisted
         // separately from saveMemberWorldData() so it stays behind for
         // anyone who plays this world, not just whoever added it.
         const livestock = _loadWorldLivestock();
+        const id = 'livestock_' + Math.random().toString(36).slice(2, 10);
         livestock.push({
-          id: animal.livestockId, kind, col, row, releasedAt: Date.now(),
+          id, kind, barnId: null, releasedAt: Date.now(),
           name: defaultLivestockName(kind), genotype,
+          daysUntilResource: LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
         });
         _saveWorldLivestock(livestock);
-        return { ok: true, message: `🦆 ${defaultLivestockName(kind)} added to the farm!` };
+        return { ok: true, message: `🦆 ${defaultLivestockName(kind)} is waiting in stasis — assign it to a barn from the Farm tab to bring it out.` };
+      }
+
+      // Assigns unhoused (or re-homes already-housed) livestock to a built
+      // barn with an open slot — this is what actually spawns it into the
+      // world; see addLivestockFromItem/demolishBarn/unassignLivestockFromBarn
+      // for the other transitions in/out of stasis.
+      function assignLivestockToBarn(livestockId, barnId) {
+        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+        const barn = farmBuildings.find(b => b.id === barnId && b.kind === 'barn' && b.stage === 'built');
+        if (!barn) return { ok: false, message: 'That barn is not built yet.' };
+        const list = _loadWorldLivestock();
+        const rec = list.find(l => l.id === livestockId);
+        if (!rec) return { ok: false, message: 'Livestock not found.' };
+        if (rec.barnId === barnId) return { ok: true, message: `${rec.name} is already housed there.` };
+        const tier = BARN_TIERS[barn.tier];
+        const occupants = list.filter(l => l.barnId === barnId).length;
+        if (occupants >= tier.slots) return { ok: false, message: `${tier.label} is full (${tier.slots} slots).` };
+        const wasAssigned = !!rec.barnId;
+        rec.barnId = barnId;
+        if (rec.daysUntilResource == null) rec.daysUntilResource = LIVESTOCK_RESOURCE_DEFS[rec.kind]?.cooldownDays ?? null;
+        _saveWorldLivestock(list);
+        if (!wasAssigned) {
+          const spot = findOpenTileNearBarn(barn);
+          if (spot) {
+            const factory = LIVESTOCK_FACTORIES[rec.kind];
+            const animal = factory ? factory(spot.col, spot.row, rec.id, rec.genotype) : null;
+            if (animal) { worldObjects.set(spot.col + ',' + spot.row, animal); animalObjects.add(animal); }
+          }
+        }
+        return { ok: true, message: `${rec.name} assigned to the ${tier.label}.` };
+      }
+
+      // Sends a housed animal back to stasis — despawns it if currently in
+      // the world, pauses its resource cooldown, but keeps the record (and
+      // its genotype/name) so re-assigning it later just picks up again.
+      function unassignLivestockFromBarn(livestockId) {
+        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+        const list = _loadWorldLivestock();
+        const rec = list.find(l => l.id === livestockId);
+        if (!rec) return { ok: false, message: 'Livestock not found.' };
+        rec.barnId = null;
+        _saveWorldLivestock(list);
+        const animal = [...animalObjects].find(a => a.livestockId === livestockId);
+        if (animal) { worldObjects.delete(animal.col + ',' + animal.row); animalObjects.delete(animal); animal.reset && animal.reset(); }
+        return { ok: true, message: `${rec.name} moved to stasis.` };
+      }
+
+      // Gives the ready resource item and resets the cooldown — called from
+      // the animal's own "Collect" action button (see _farmAnimalOnAction).
+      function collectLivestockResource(livestockId) {
+        const list = _loadWorldLivestock();
+        const rec = list.find(l => l.id === livestockId);
+        if (!rec) return { ok: false, message: 'Livestock not found.' };
+        const resDef = LIVESTOCK_RESOURCE_DEFS[rec.kind];
+        if (!resDef || !rec.resourceReady) return { ok: false, message: 'Nothing to collect yet.' };
+        inventory[resDef.itemKey] = Math.min(99, (inventory[resDef.itemKey] || 0) + 1);
+        rec.resourceReady = false;
+        rec.daysUntilResource = resDef.cooldownDays;
+        _saveWorldLivestock(list);
+        return { ok: true, message: `Collected 1 ${ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
+      }
+
+      // Advances every housed animal's resource cooldown by one day — called
+      // from advanceDay()/sleepInBed() alongside tickCropDay(). Unassigned
+      // (stasis) livestock simply aren't touched here, which is the "cooldown
+      // paused" behavior — no separate bookkeeping needed.
+      function tickLivestockResources() {
+        const list = _loadWorldLivestock();
+        let changed = false;
+        list.forEach(l => {
+          const resDef = LIVESTOCK_RESOURCE_DEFS[l.kind];
+          if (!resDef || !l.barnId || l.resourceReady) return;
+          if (l.daysUntilResource == null) l.daysUntilResource = resDef.cooldownDays;
+          l.daysUntilResource--;
+          if (l.daysUntilResource <= 0) l.resourceReady = true;
+          changed = true;
+        });
+        if (changed) _saveWorldLivestock(list);
       }
 
       // Adds a creature from an item straight into the character's personal
@@ -3584,10 +3835,27 @@
       function respawnWorldLivestock() {
         for (const entry of _loadWorldLivestock()) {
           const factory = LIVESTOCK_FACTORIES[entry.kind];
-          if (!factory || !canSpawnAnimalAt(entry.col, entry.row)) continue;
-          const animal = factory(entry.col, entry.row, entry.id, entry.genotype);
+          if (!factory) continue;
+          // Entries saved before barns existed have no 'barnId' property at
+          // all (vs. the new stasis default of an explicit null) — treat
+          // those as already-free-roaming and keep spawning them at their
+          // saved spot, same as always. New-format entries only spawn when
+          // actually housed in a still-existing, built barn.
+          const isLegacyRoaming = !('barnId' in entry);
+          let col = entry.col, row = entry.row;
+          if (!isLegacyRoaming) {
+            if (!entry.barnId) continue; // stasis — no world presence
+            const barn = farmBuildings.find(b => b.id === entry.barnId && b.kind === 'barn' && b.stage === 'built');
+            if (!barn) continue; // barn demolished/not yet built — stays in stasis until reassigned
+            const spot = findOpenTileNearBarn(barn);
+            if (!spot) continue;
+            col = spot.col; row = spot.row;
+          } else if (!canSpawnAnimalAt(col, row)) {
+            continue;
+          }
+          const animal = factory(col, row, entry.id, entry.genotype);
           if (!animal) continue;
-          worldObjects.set(entry.col + ',' + entry.row, animal);
+          worldObjects.set(col + ',' + row, animal);
           animalObjects.add(animal);
         }
       }
@@ -3636,25 +3904,17 @@
           const parentB = resolveBreedingParent(pair.parentB, livestock);
           changed = true;
           if (!parentA || !parentB) continue; // a parent was sold/removed/stable-emptied — pair quietly lapses
-          let col = null, row = null;
-          outer: for (let r = 0; r < ROWS; r++) {
-            for (let c = 0; c < COLS; c++) {
-              if (canSpawnAnimalAt(c, r)) { col = c; row = r; break outer; }
-            }
-          }
-          if (col === null) continue; // no room on the farm right now — pair lapses rather than blocking forever
           const kind = parentA.kind;
           const childGenotype = crossOffspring(parentA.genotype, parentB.genotype, kind);
-          const factory = LIVESTOCK_FACTORIES[kind];
-          const animal = factory ? factory(col, row, null, childGenotype) : null;
-          if (!animal) continue;
-          worldObjects.set(col + ',' + row, animal);
-          animalObjects.add(animal);
+          // Newborns start in stasis just like a freshly-released crate
+          // animal — the owner assigns them to a barn from the Farm tab
+          // when there's room, same as any other unhoused livestock.
           livestock.push({
-            id: animal.livestockId, kind, col, row, releasedAt: Date.now(),
+            id: 'livestock_' + Math.random().toString(36).slice(2, 10), kind, barnId: null, releasedAt: Date.now(),
             name: defaultLivestockName(kind), genotype: childGenotype,
+            daysUntilResource: LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
           });
-          showToast(`🐣 A new ${defaultLivestockName(kind)} was born on the farm!`, true);
+          showToast(`🐣 A new ${defaultLivestockName(kind)} was born! It's waiting in stasis until you assign it to a barn.`, true);
         }
         if (changed) {
           _saveWorldLivestock(livestock);
@@ -3671,7 +3931,10 @@
       }
 
       function updateAnimalMeshes(dt) {
-        for (const animal of animalObjects) animal.update(dt);
+        // .tick() drives wander/barn-homing steps (throttled internally via
+        // each animal's own tickCounter); .update(dt) is the continuous
+        // position/rotation lerp toward wherever tick() last moved it.
+        for (const animal of animalObjects) { animal.tick && animal.tick(); animal.update(dt); }
       }
 
       // ── Companion & hostile creatures (Whistle system + Combat system) ───────
@@ -5317,6 +5580,84 @@
           world.storage = store;
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
+      }
+
+      // ── Jubmir's daily trader stock (world-scoped — one shared egg per
+      // day, same as a real traveling trader visiting the whole village) ──
+      // { day, genotype, purchased }. Rerolled the first time anyone opens
+      // his shop on a new calendar.day; "purchased" makes that day's single
+      // egg unavailable to everyone until the next reroll, rather than each
+      // character getting their own independent copy.
+      function _loadJubmirStock() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return null;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.jubmirStock ?? null;
+        } catch { return null; }
+      }
+
+      function _saveJubmirStock(stock) {
+        const worldId = _tothalWorldId();
+        if (!worldId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.jubmirStock = stock;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
+      // Returns today's stock, rolling a fresh dabinggi-hound egg genotype
+      // the first time it's checked on a new day.
+      function getJubmirStock() {
+        let stock = _loadJubmirStock();
+        if (!stock || stock.day !== calendar.day) {
+          stock = { day: calendar.day, genotype: makeDefaultGenotype('dabinggi-hound'), purchased: false };
+          _saveJubmirStock(stock);
+        }
+        return stock;
+      }
+
+      const JUBMIR_EGG_PRICE = 200;
+
+      function buyJubmirEgg() {
+        const stock = getJubmirStock();
+        if (stock.purchased) { showToast("Jubmir's sold out for today — check back tomorrow.", false); return; }
+        const gold = inventory.gold || 0;
+        if (gold < JUBMIR_EGG_PRICE) { showToast('Not enough gold.', false); return; }
+        inventory.gold = gold - JUBMIR_EGG_PRICE;
+        inventory.dabinggiHoundEgg = Math.min(9, (inventory.dabinggiHoundEgg || 0) + 1);
+        _queueLivestockItemGenotype('dabinggiHoundEgg', stock.genotype);
+        stock.purchased = true;
+        _saveJubmirStock(stock);
+        showToast("Bought a dabinggi-hound egg from Jubmir!", true);
+        renderJubmirShopPage();
+        buildInventoryGrid();
+        saveMemberWorldData();
+      }
+
+      function renderJubmirShopPage() {
+        const goldEl = document.getElementById('jmGoldDisplay');
+        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
+        const list = document.getElementById('jubmirShopList');
+        if (!list) return;
+        list.innerHTML = '';
+        const stock = getJubmirStock();
+        const row = document.createElement('div');
+        row.className = 'shop-row';
+        row.innerHTML = `
+          <div class="sh-icon">🥚</div>
+          <div class="sh-info">
+            <div class="sh-name">Dabinggi-hound Egg</div>
+            <div class="sh-desc">${stock.purchased ? "Sold out — Jubmir will have another tomorrow." : "A rare, non-native find. One only, restocked daily."}</div>
+            <div class="sh-price">${JUBMIR_EGG_PRICE}g</div>
+          </div>
+          <button class="shop-buy-btn" ${stock.purchased ? 'disabled' : ''}>${stock.purchased ? 'Sold Out' : 'Buy'}</button>
+        `;
+        if (!stock.purchased) row.querySelector('button')?.addEventListener('click', buyJubmirEgg);
+        list.appendChild(row);
       }
 
       // ── Farm name (reuses world.label, the same field set at world
@@ -8573,6 +8914,35 @@
         };
       }
 
+      // ── Carpenter's shop — mirrors the General Store's NPC-gated shop
+      // button pattern above, but for barn plans instead of goods/clothing.
+      function carpenterButtonConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.carpenterButton || {};
+      }
+      function carpenterAction() { return carpenterButtonConfig().action || 'open_carpenter_shop'; }
+      function isCarpenterNpcOnDuty(walker) {
+        const cfg = carpenterButtonConfig();
+        const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['dzibim_khibu'];
+        const stationLabels = Array.isArray(cfg.stationLabels) ? cfg.stationLabels : ['Carpentry Work'];
+        const npcId = walker?.rec?.id || '';
+        const target = walker?.currentScheduleTarget || null;
+        const stationLabel = normalizeStationLabel(target?.label);
+        const isAtStation = walker?.state === 'idle' && target && Number.isFinite(target.c) && Number.isFinite(target.r)
+          && Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5)) <= (npcMovementConfig().arrivalRadiusTiles ?? 0.18);
+        return ids.includes(npcId) && isAtStation && stationLabels.some(label => stationLabel === normalizeStationLabel(label));
+      }
+      function carpenterButton() {
+        const cfg = carpenterButtonConfig();
+        const name = nearbyNpcWalker?.rec?.name;
+        return {
+          icon: cfg.icon || '🪚',
+          label: name ? `${cfg.label || 'Carpenter'}: ${name}` : (cfg.label || 'Carpenter'),
+          action: carpenterAction(),
+          style: cfg.style || 'primary',
+          allowed: true,
+        };
+      }
+
       function npcDialogueStagingOffsets() {
         const offsets = npcDialogueStagingConfig().playerDiagonalOffsets;
         return Array.isArray(offsets) && offsets.length ? offsets : [{ x: -0.5, y: 1 }, { x: 0.5, y: 1 }];
@@ -11319,6 +11689,303 @@
         };
       }
 
+      // ── Farm buildings: barns (movable, buildable via the Farm tab) ────
+      // A barn instance: { id, kind:'barn', tier, col, row, w, h, stage }.
+      // stage is 'foundation' (just placed, needs an interact-to-build) or
+      // 'built' (rendered as the highland-style stable.json piece). The
+      // house is tracked separately (houseCol/houseRow above) since its GLB
+      // rendering pipeline predates this system — farmBuildings only ever
+      // holds barns. Both share the same move/placement validation below.
+      const BARN_TIERS = {
+        small:  { label: 'Little Barn', slots: 4,  price: 500,  planItem: 'barnPlanSmall'  },
+        medium: { label: 'Medium Barn', slots: 8,  price: 1000, planItem: 'barnPlanMedium' },
+        large:  { label: 'Large Barn',  slots: 12, price: 1500, planItem: 'barnPlanLarge'  },
+      };
+      // Every tier builds the same highland structure (config/pieces/stable.json)
+      // once complete — there's no wood/stone system yet to justify authoring
+      // three differently-sized piece files, so tiers differ only in slot
+      // capacity and price, not in footprint or visual size.
+      const BARN_PIECE_FILE  = 'config/pieces/stable.json';
+      const BARN_FOOTPRINT_W = 7;
+      const BARN_FOOTPRINT_D = 3;
+      let farmBuildings = []; // barns placed on this farm — persisted via saveFarmLayout
+
+      // Per-species farm-resource output: item produced + how many in-game
+      // days the cooldown takes. A kind with no entry here can be housed but
+      // won't produce anything yet.
+      const LIVESTOCK_RESOURCE_DEFS = {
+        uumkaoii: { itemKey: 'uumkaoiiEgg', cooldownDays: 2 },
+      };
+
+      // Tile types a farm building can never be placed/moved onto — trenches
+      // and any worked/flooded soil. Rock/shrub/weeds are deliberately absent
+      // here: those get bulldozed by clearFarmBuildingFootprint() instead of
+      // blocking placement.
+      const FARM_BUILDING_BLOCKED_TILE_TYPES = new Set([
+        TileType.TRENCH, TileType.TILLED, TileType.RAISED, TileType.PADDY,
+        TileType.RIVER, TileType.STREAM, TileType.WATERFALL, TileType.RAMP,
+      ]);
+
+      function rectsOverlap(aCol, aRow, aW, aH, bCol, bRow, bW, bH) {
+        return aCol < bCol + bW && aCol + aW > bCol && aRow < bRow + bH && aRow + aH > bRow;
+      }
+
+      // Shared validity check for moving/placing any farm building (house or
+      // barn): in bounds, no trench/tilled/raised/paddy/water tile or crop,
+      // no other world object (furniture, crates, animals — anything already
+      // occupying worldObjects) in the footprint, and no overlap with the
+      // house or any other farm building. `excludeId` lets the building
+      // being moved ignore its own current footprint/occupancy.
+      function canPlaceFarmBuilding(col, row, w, h, excludeId) {
+        if (!Number.isFinite(col) || !Number.isFinite(row)) return false;
+        if (col < 0 || row < 0 || col + w > COLS || row + h > ROWS) return false;
+        for (let r = row; r < row + h; r++) {
+          for (let c = col; c < col + w; c++) {
+            const tile = grid[r]?.[c];
+            if (!tile || FARM_BUILDING_BLOCKED_TILE_TYPES.has(tile.type) || tile.crop) return false;
+            const obj = worldObjects.get(c + ',' + r);
+            if (obj && obj.id !== excludeId) return false;
+          }
+        }
+        if (excludeId !== 'highland_house' && rectsOverlap(col, row, w, h, houseCol, houseRow, HOUSE_FOOTPRINT_W, HOUSE_FOOTPRINT_D)) return false;
+        for (const b of farmBuildings) {
+          if (b.id === excludeId) continue;
+          if (rectsOverlap(col, row, w, h, b.col, b.row, b.w, b.h)) return false;
+        }
+        return true;
+      }
+
+      // Bulldozes rock/shrub/weeds under a just-placed-or-moved building's
+      // footprint back to plain grass — the "clears rocks and trees" half of
+      // the Farm tab's move/place flow.
+      function clearFarmBuildingFootprint(col, row, w, h) {
+        for (let r = row; r < row + h; r++) {
+          for (let c = col; c < col + w; c++) {
+            const tile = grid[r]?.[c];
+            if (tile && (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS)) {
+              tile.type = TileType.GRASS;
+              markTileDirty(c, r);
+            }
+          }
+        }
+        recomputeWater(false);
+      }
+
+      // Fetches & caches stable.json once — every barn (any tier) reuses it.
+      let _barnPiecePromise = null;
+      function loadBarnPiece() {
+        if (!_barnPiecePromise) {
+          _barnPiecePromise = fetch(BARN_PIECE_FILE).then(r => r.json())
+            .catch(e => { debugLog('Barn piece load error: ' + e, 'warn'); return null; });
+        }
+        return _barnPiecePromise;
+      }
+
+      const _barnWbDefaults = { unitMult: 0.4375, rockScale: 1.5, preScale: [1, 1, 0.6],
+                                 brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
+
+      function buildBarnFoundationMesh(col, row, w, h) {
+        const mat  = new THREE.MeshLambertMaterial({ color: 0x8a7a63 });
+        const geo  = new THREE.BoxGeometry(w * 0.94, 0.14, h * 0.94);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(col + w / 2, 0.07, row + h / 2);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+        return mesh;
+      }
+
+      function disposeBarnMesh(mesh) {
+        if (!mesh) return;
+        scene.remove(mesh);
+        mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+      }
+
+      // Swaps a foundation's placeholder slab for the real highland
+      // structure once construction completes — async since the piece JSON
+      // is fetched lazily. Bails out quietly if the barn was demolished (or
+      // reverted) while the fetch was in flight.
+      function buildBarnStructureMesh(entry) {
+        if (typeof HousePieceGen === 'undefined') { debugLog('HousePieceGen not loaded — barn shown as foundation slab', 'warn'); return; }
+        loadBarnPiece().then(piece => {
+          if (!piece || entry.stage !== 'built' || !farmBuildings.includes(entry)) return;
+          disposeBarnMesh(entry._mesh);
+          entry._mesh = HousePieceGen.buildGroupFromPiece(THREE, piece, entry.col, entry.row, {
+            wallBuilder: houseWallBuilder, wbUsePlaceholder: true, wbOpts: _barnWbDefaults,
+          });
+          scene.add(entry._mesh);
+        });
+      }
+
+      function barnLabel(entry) { return BARN_TIERS[entry.tier]?.label || 'Barn'; }
+
+      function registerBarnFootprint(entry) {
+        for (let r = entry.row; r < entry.row + entry.h; r++) {
+          for (let c = entry.col; c < entry.col + entry.w; c++) worldObjects.set(c + ',' + r, entry._worldObj);
+        }
+      }
+      function unregisterBarnFootprint(entry) {
+        for (let r = entry.row; r < entry.row + entry.h; r++) {
+          for (let c = entry.col; c < entry.col + entry.w; c++) {
+            if (worldObjects.get(c + ',' + r) === entry._worldObj) worldObjects.delete(c + ',' + r);
+          }
+        }
+      }
+
+      function makeBarnWorldObject(entry) {
+        return {
+          id: entry.id, type: 'barn', kind: 'barn',
+          get col() { return entry.col; }, get row() { return entry.row; },
+          get label() { return '🏚 ' + barnLabel(entry); },
+          getButtons() {
+            if (entry.stage === 'foundation') {
+              return [
+                { icon: '🔨', label: 'Build ' + barnLabel(entry), action: 'obj_barn_build_' + entry.id, style: 'primary', allowed: hasFarmPermission('alterFarm') },
+                { icon: '💥', label: 'Demolish', action: 'obj_barn_demolish_' + entry.id, style: 'secondary', allowed: hasFarmPermission('alterFarm') },
+              ];
+            }
+            const tier = BARN_TIERS[entry.tier];
+            const occupants = _loadWorldLivestock().filter(l => l.barnId === entry.id).length;
+            return [
+              { icon: '🐐', label: `Manage Livestock (${occupants}/${tier.slots})`, action: 'obj_barn_manage_' + entry.id, style: 'primary', allowed: hasFarmPermission('livestock') },
+              { icon: '💥', label: 'Demolish', action: 'obj_barn_demolish_' + entry.id, style: 'secondary', allowed: hasFarmPermission('alterFarm') },
+            ];
+          },
+          onAction(action) {
+            if (action === 'obj_barn_build_' + entry.id) {
+              if (!hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can do that." };
+              if (entry.stage !== 'foundation') return { ok: false, message: 'Already built.' };
+              entry.stage = 'built';
+              disposeBarnMesh(entry._mesh); entry._mesh = null;
+              buildBarnStructureMesh(entry);
+              saveFarmLayout();
+              return { ok: true, message: `🔨 ${barnLabel(entry)} construction complete!` };
+            }
+            if (action === 'obj_barn_demolish_' + entry.id) {
+              if (!hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can do that." };
+              return demolishBarn(entry.id);
+            }
+            if (action === 'obj_barn_manage_' + entry.id) {
+              if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+              _farmLivestockFocusBarnId = entry.id;
+              openMenu('farm');
+              return { ok: true, message: 'Opened the Farm tab’s Livestock panel.' };
+            }
+            return { ok: false, message: 'Unknown barn action.' };
+          },
+          reset() { disposeBarnMesh(entry._mesh); entry._mesh = null; },
+        };
+      }
+
+      function spawnBarnEntry(entry) {
+        entry._worldObj = makeBarnWorldObject(entry);
+        entry._mesh = entry.stage === 'built' ? null : buildBarnFoundationMesh(entry.col, entry.row, entry.w, entry.h);
+        if (entry.stage === 'built') buildBarnStructureMesh(entry);
+        registerBarnFootprint(entry);
+      }
+
+      function placeBarnPlan(tier, col, row) {
+        if (!hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can build here." };
+        const tierDef = BARN_TIERS[tier];
+        if (!tierDef) return { ok: false, message: 'Unknown barn plan.' };
+        if ((inventory[tierDef.planItem] || 0) < 1) return { ok: false, message: `No ${tierDef.label} plan in your bag.` };
+        if (!canPlaceFarmBuilding(col, row, BARN_FOOTPRINT_W, BARN_FOOTPRINT_D)) {
+          return { ok: false, message: 'Cannot build here — needs clear, untilled, un-trenched ground.' };
+        }
+        inventory[tierDef.planItem]--;
+        clampInventoryStack(tierDef.planItem);
+        const entry = {
+          id: 'barn_' + Math.random().toString(36).slice(2, 10),
+          kind: 'barn', tier, col, row, w: BARN_FOOTPRINT_W, h: BARN_FOOTPRINT_D, stage: 'foundation',
+        };
+        farmBuildings.push(entry);
+        spawnBarnEntry(entry);
+        clearFarmBuildingFootprint(col, row, entry.w, entry.h);
+        saveFarmLayout();
+        saveMemberWorldData();
+        return { ok: true, message: `Placed a ${tierDef.label} foundation. Interact with it to build.` };
+      }
+
+      // Removes a barn, refunding whatever materials it cost — currently
+      // none, since there's no wood/stone system yet to have spent any; this
+      // is where a future materials-cost system would credit the refund.
+      // Any livestock housed here return to stasis rather than vanishing.
+      function demolishBarn(id) {
+        const entry = farmBuildings.find(b => b.id === id);
+        if (!entry) return { ok: false, message: 'Barn not found.' };
+        const livestock = _loadWorldLivestock();
+        livestock.forEach(l => {
+          if (l.barnId !== id) return;
+          l.barnId = null;
+          const animal = [...animalObjects].find(a => a.livestockId === l.id);
+          if (animal) { worldObjects.delete(animal.col + ',' + animal.row); animalObjects.delete(animal); animal.reset && animal.reset(); }
+        });
+        _saveWorldLivestock(livestock);
+        unregisterBarnFootprint(entry);
+        disposeBarnMesh(entry._mesh);
+        farmBuildings = farmBuildings.filter(b => b.id !== id);
+        saveFarmLayout();
+        saveMemberWorldData();
+        return { ok: true, message: 'Barn demolished — its livestock are back in stasis.' };
+      }
+
+      // Moves the house or a barn to a new farm-grid top-left. `id` is
+      // either 'highland_house' or a barn's own id.
+      function moveFarmBuilding(id, newCol, newRow) {
+        if (!hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can move buildings." };
+        if (id === 'highland_house') {
+          if (!canPlaceFarmBuilding(newCol, newRow, HOUSE_FOOTPRINT_W, HOUSE_FOOTPRINT_D, 'highland_house')) {
+            return { ok: false, message: 'Cannot move the house there — needs clear, untilled, un-trenched ground.' };
+          }
+          repositionHouse(newCol, newRow);
+          clearFarmBuildingFootprint(newCol, newRow, HOUSE_FOOTPRINT_W, HOUSE_FOOTPRINT_D);
+          saveFarmLayout();
+          saveMemberWorldData();
+          return { ok: true, message: 'Moved the house.' };
+        }
+        const entry = farmBuildings.find(b => b.id === id);
+        if (!entry) return { ok: false, message: 'Building not found.' };
+        if (!canPlaceFarmBuilding(newCol, newRow, entry.w, entry.h, entry.id)) {
+          return { ok: false, message: 'Cannot move there — needs clear, untilled, un-trenched ground.' };
+        }
+        unregisterBarnFootprint(entry);
+        entry.col = newCol; entry.row = newRow;
+        registerBarnFootprint(entry);
+        if (entry.stage === 'foundation' && entry._mesh) {
+          entry._mesh.position.set(newCol + entry.w / 2, 0.07, newRow + entry.h / 2);
+        } else if (entry.stage === 'built') {
+          disposeBarnMesh(entry._mesh); entry._mesh = null;
+          buildBarnStructureMesh(entry);
+        }
+        clearFarmBuildingFootprint(newCol, newRow, entry.w, entry.h);
+        saveFarmLayout();
+        saveMemberWorldData();
+        return { ok: true, message: `Moved the ${barnLabel(entry)}.` };
+      }
+
+      function clearFarmBuildings() {
+        farmBuildings.forEach(entry => { unregisterBarnFootprint(entry); disposeBarnMesh(entry._mesh); });
+        farmBuildings = [];
+      }
+
+      // Ring-search outward from a barn's footprint for the nearest free
+      // tile — livestock spawn/emerge just outside their own barn rather
+      // than anywhere on the farm.
+      function findOpenTileNearBarn(barn) {
+        for (let ring = 1; ring <= 8; ring++) {
+          const rMin = barn.row - ring, rMax = barn.row + barn.h + ring - 1;
+          const cMin = barn.col - ring, cMax = barn.col + barn.w + ring - 1;
+          for (let r = rMin; r <= rMax; r++) {
+            for (let c = cMin; c <= cMax; c++) {
+              const onRing = r === rMin || r === rMax || c === cMin || c === cMax;
+              if (!onRing || c < 0 || r < 0 || c >= COLS || r >= ROWS) continue;
+              if (canSpawnAnimalAt(c, r)) return { col: c, row: r };
+            }
+          }
+        }
+        return null;
+      }
+
       // ── Register world objects ─────────────────────────────────────
       function initWorldObjects() {
         const sc = makeSellCrate(2, ROWS - 3);
@@ -11342,16 +12009,24 @@
             return { ok: false, message: 'Unknown house action.' };
           },
         };
-        worldObjects.set(DOOR_COL + ',' + (DOOR_ROW - 1), _doorstep);
-        worldObjects.set((DOOR_COL + 1) + ',' + (DOOR_ROW - 1), _doorstep);
+        worldObjects.set(currentDoorCol() + ',' + (currentDoorRow() - 1), _doorstep);
+        worldObjects.set((currentDoorCol() + 1) + ',' + (currentDoorRow() - 1), _doorstep);
+        _houseDoorstepObj = _doorstep;
       }
+
+      // Kept so a "Move Building" relocation can reposition the already-loaded
+      // GLB/fallback box without reloading the model, and re-register the
+      // doorstep interaction tiles at their new location.
+      let _houseFallbackMesh = null;
+      let _houseModel = null;
+      let _houseDoorstepObj = null;
 
       // ── Highland House world object + GLB loader ─────────────────
       function makeHighlandHouse() {
         // Load the GLB asynchronously; show fallback box until it arrives
         const loader = new THREE.GLTFLoader();
-        const footprintCenterX = HOUSE_COL + HOUSE_FOOTPRINT_W / 2;
-        const footprintCenterZ = HOUSE_ROW + HOUSE_FOOTPRINT_D / 2;
+        const footprintCenterX = houseCol + HOUSE_FOOTPRINT_W / 2;
+        const footprintCenterZ = houseRow + HOUSE_FOOTPRINT_D / 2;
 
         // Fallback box shown while GLB loads
         const fallbackMat  = new THREE.MeshLambertMaterial({ color: 0x7a5030 });
@@ -11360,16 +12035,18 @@
         fallbackMesh.position.set(footprintCenterX, 1.0, footprintCenterZ);
         fallbackMesh.castShadow = true;
         scene.add(fallbackMesh);
+        _houseFallbackMesh = fallbackMesh;
 
         loader.load(
           'assets/models/HighlandHouse_medium.glb',
           (gltf) => {
             scene.remove(fallbackMesh);
             fallbackGeo.dispose(); fallbackMat.dispose();
+            _houseFallbackMesh = null;
             const model = gltf.scene;
             model.scale.setScalar(HOUSE_SCALE);
             model.rotation.y = HOUSE_ROTATION_Y;
-            model.position.set(HOUSE_POS_X, HOUSE_POS_Y, HOUSE_POS_Z);
+            model.position.set(currentHousePosX(), HOUSE_POS_Y, currentHousePosZ());
             model.traverse(m => {
               if (m.isMesh) {
                 m.castShadow    = true;
@@ -11378,6 +12055,7 @@
               }
             });
             scene.add(model);
+            _houseModel = model;
             debugLog('Highland House GLB loaded');
           },
           undefined,
@@ -11386,7 +12064,7 @@
 
         return {
           id: 'highland_house', type: 'highland_house',
-          col: DOOR_COL, row: DOOR_ROW,
+          get col() { return currentDoorCol(); }, get row() { return currentDoorRow(); },
           label: '🏠 Highland House',
           getButtons() {
             return [{ icon: '🚪', label: 'Enter', action: 'obj_enter_house', style: 'primary', allowed: true }];
@@ -11399,6 +12077,30 @@
             return { ok: false, message: 'Unknown house action.' };
           },
         };
+      }
+
+      // Relocates the house to a new farm-grid top-left, moving the already-
+      // loaded GLB/fallback mesh and re-registering the door/doorstep world
+      // objects — used by the Farm tab's "Move Building" flow. Doesn't
+      // reload the GLB or touch HOUSE_SCALE/rotation; only translation is
+      // supported (no rotate-in-place for the house in this pass).
+      function repositionHouse(newCol, newRow) {
+        const houseObj = worldObjects.get(currentDoorCol() + ',' + currentDoorRow());
+        worldObjects.delete(currentDoorCol() + ',' + currentDoorRow());
+        worldObjects.delete(currentDoorCol() + ',' + (currentDoorRow() - 1));
+        worldObjects.delete((currentDoorCol() + 1) + ',' + (currentDoorRow() - 1));
+
+        houseCol = newCol;
+        houseRow = newRow;
+
+        if (_houseFallbackMesh) _houseFallbackMesh.position.set(houseCol + HOUSE_FOOTPRINT_W / 2, 1.0, houseRow + HOUSE_FOOTPRINT_D / 2);
+        if (_houseModel) _houseModel.position.set(currentHousePosX(), HOUSE_POS_Y, currentHousePosZ());
+
+        if (houseObj) worldObjects.set(currentDoorCol() + ',' + currentDoorRow(), houseObj);
+        if (_houseDoorstepObj) {
+          worldObjects.set(currentDoorCol() + ',' + (currentDoorRow() - 1), _houseDoorstepObj);
+          worldObjects.set((currentDoorCol() + 1) + ',' + (currentDoorRow() - 1), _houseDoorstepObj);
+        }
       }
 
       // ── Scene transition fade ─────────────────────────────────────
@@ -11800,6 +12502,45 @@
         if (generalStoreActiveCategory === 'clothing' || generalStoreActiveCategory === 'all') renderGeneralStoreClothing(list);
       }
 
+      // ── Carpenter's shop page — sells barn plans (see BARN_TIERS). Same
+      // shape as the General Store's goods list, just its own catalog.
+      function buyBarnPlan(tier) {
+        const tierDef = BARN_TIERS[tier];
+        if (!tierDef) return;
+        const gold = inventory.gold || 0;
+        if (gold < tierDef.price) { showToast('Not enough gold.', false); return; }
+        inventory.gold = gold - tierDef.price;
+        inventory[tierDef.planItem] = Math.min(9, (inventory[tierDef.planItem] || 0) + 1);
+        showToast(`Bought a ${tierDef.label} plan!`, true);
+        renderCarpenterShopPage();
+        buildInventoryGrid();
+        saveMemberWorldData();
+      }
+
+      function renderCarpenterShopPage() {
+        const goldEl = document.getElementById('cpGoldDisplay');
+        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
+        const list = document.getElementById('carpenterShopList');
+        if (!list) return;
+        list.innerHTML = '';
+        Object.entries(BARN_TIERS).forEach(([tier, def]) => {
+          const owned = inventory[def.planItem] || 0;
+          const row = document.createElement('div');
+          row.className = 'shop-row';
+          row.innerHTML = `
+            <div class="sh-icon">🏚</div>
+            <div class="sh-info">
+              <div class="sh-name">${esc(def.label)} Plan</div>
+              <div class="sh-desc">Houses up to ${def.slots} livestock. Owned: ${owned}</div>
+              <div class="sh-price">${def.price}g each</div>
+            </div>
+            <button class="shop-buy-btn" data-tier="${tier}">Buy</button>
+          `;
+          row.querySelector('[data-tier]')?.addEventListener('click', () => buyBarnPlan(tier));
+          list.appendChild(row);
+        });
+      }
+
             // Item scroll — ordered list of scrollable inventory slots
       const inventoryItems = [
         { key: 'needlegrainSeeds',   icon: '🌾', label: 'NEEDLEGRAIN SEEDS', max: 99, seedFor: 'needlegrain' },
@@ -11835,6 +12576,7 @@
         { key: 'uumkaoiiMeat',       icon: '🥩', label: 'UUMKAO\'II MEAT',  max: 99 },
         { key: 'uumkaoiiEgg',        icon: '🥚', label: 'UUMKAO\'II EGG',   max: 9  },
         { key: 'garWolfBaby',        icon: '🐾', label: 'GAR-WOLF PUP',    max: 9  },
+        { key: 'dabinggiHoundEgg',   icon: '🥚', label: 'DABINGGI-HOUND EGG', max: 9  },
         { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
         { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
         { key: 'fishingmace',  icon: '🎣', label: 'FISHING MACE',  max: 9 },
@@ -11877,6 +12619,7 @@
         uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
         uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
         garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
+        dabinggiHoundEgg: { icon: '🥚', label: 'Dabinggi-hound Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: "A warm, oddly leathery egg — Jubmir swears it's a dabinggi-hound egg. Add it to your farm's livestock from the Farm tab, or to your stable to raise it as a companion." },
         bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
         hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
         fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
@@ -11922,6 +12665,21 @@
             icon: def.icon, label: def.label, cat: 'material', sellPrice: def.sellPrice,
             tags: ['Reagent', 'Alchemy', EXTERIOR_ZONES[def.zone]?.label || def.zone],
             desc: `An alchemy reagent foraged in the ${EXTERIOR_ZONES[def.zone]?.label || def.zone}. Known property: ${ALCHEMY_EFFECT_DEFS[def.effects[0]].label}.`,
+          };
+        }
+      });
+
+      // Barn plans — bought from the Carpenter, placed as a foundation from
+      // the Farm tab. Same auto-registration pattern as furniture above.
+      Object.entries(BARN_TIERS).forEach(([tier, def]) => {
+        if (!inventoryItems.some(item => item.key === def.planItem)) {
+          inventoryItems.push({ key: def.planItem, icon: '📜', label: (def.label + ' Plan').toUpperCase(), max: 9 });
+        }
+        if (!ITEM_DEFS[def.planItem]) {
+          ITEM_DEFS[def.planItem] = {
+            icon: '📜', label: def.label + ' Plan', cat: 'buildingPlan', sellPrice: 0,
+            tags: ['Plan', 'Placeable', 'Barn'],
+            desc: `Place from the Farm tab to start a ${def.label.toLowerCase()} foundation (${def.slots} livestock slots). Interact with it on the farm to complete construction.`,
           };
         }
       });
@@ -13000,8 +13758,8 @@
 
       // Whether a farm-grid tile falls inside the house footprint
       function isHouseFootprint(col, row) {
-        return col >= HOUSE_COL && col < HOUSE_COL + HOUSE_FOOTPRINT_W
-            && row >= HOUSE_ROW && row < HOUSE_ROW + HOUSE_FOOTPRINT_D;
+        return col >= houseCol && col < houseCol + HOUSE_FOOTPRINT_W
+            && row >= houseRow && row < houseRow + HOUSE_FOOTPRINT_D;
       }
       function rotateBuildingCollisionCell(localX, localY, width, depth, rotationDeg) {
         const rot = ((Math.round((rotationDeg || 0) / 90) * 90) % 360 + 360) % 360;
@@ -13086,7 +13844,7 @@
       }
       // The two tiles immediately north of the door act as a second entrance
       function isHouseEntranceTile(col, row) {
-        return row === DOOR_ROW - 1 && col >= DOOR_COL && col <= DOOR_COL + 1;
+        return row === currentDoorRow() - 1 && col >= currentDoorCol() && col <= currentDoorCol() + 1;
       }
 
       // Interior grid: 12×12 — main room cols 0-11 rows 0-9, south corridor cols 4-7 rows 10-11
@@ -13670,10 +14428,21 @@
       // never collide. Values are the ref objects setBreedingPair() expects.
       let farmPairPicks = new Map();
 
+      // Farm tab "move/place" state — armed by a button in renderFarmBuildings(),
+      // consumed by the farmGlanceCanvas click handler set up in
+      // renderFarmGridGlance(). null when nothing is being moved/placed.
+      let _farmPlacementMode = null; // { type: 'move', buildingId } | { type: 'place', tier }
+      // Set by a barn's in-world "Manage Livestock" button (see
+      // makeBarnWorldObject) to jump straight to the Farm tab; currently just
+      // opens the tab (the livestock list itself has no per-barn grouping to
+      // scroll to yet), kept as a hook for a future focused view.
+      let _farmLivestockFocusBarnId = null;
+
       function renderFarmPanel() {
         if (!document.getElementById('mpFarm')) return;
         renderFarmHeader();
         renderFarmGridGlance();
+        renderFarmBuildings();
         renderFarmLivestock();
         renderFarmStoragePane();
         renderFarmhandsSection();
@@ -13774,6 +14543,89 @@
             ['#ffd27a', 'Livestock'],
           ].map(([color, label]) => `<span><i style="background:${color}"></i>${esc(label)}</span>`).join('');
         }
+
+        // Click-to-move/place — only active while _farmPlacementMode is armed
+        // (see renderFarmBuildings()'s Move/Place buttons). Bound once; reads
+        // _farmPlacementMode fresh on every click rather than being rebuilt.
+        if (!canvas.dataset.clickBound) {
+          canvas.dataset.clickBound = '1';
+          canvas.addEventListener('click', (e) => {
+            if (!_farmPlacementMode || !hasFarmPermission('alterFarm')) return;
+            const rect = canvas.getBoundingClientRect();
+            const col = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / PX);
+            const row = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / PX);
+            const mode = _farmPlacementMode;
+            const result = mode.type === 'move' ? moveFarmBuilding(mode.buildingId, col, row) : placeBarnPlan(mode.tier, col, row);
+            showToast(result.message, result.ok);
+            if (result.ok) _farmPlacementMode = null;
+            renderFarmPanel();
+          });
+        }
+        canvas.style.cursor = _farmPlacementMode ? 'crosshair' : '';
+      }
+
+      // "Buildings" section of the Farm tab: lists the house + every barn
+      // with a Move button (owner/alterFarm-gated), and any owned-but-
+      // unplaced barn plans with a Place button. Both arm _farmPlacementMode
+      // and wait for a click on the glance canvas above (see
+      // renderFarmGridGlance()'s click handler).
+      function renderFarmBuildings() {
+        const list = document.getElementById('farmBuildingsList');
+        const note = document.getElementById('farmBuildingsNote');
+        const cancelBtn = document.getElementById('farmCancelPlacementBtn');
+        if (!list) return;
+        const canAlter = hasFarmPermission('alterFarm');
+        list.innerHTML = '';
+
+        if (note) {
+          note.textContent = !canAlter ? "Only the farm's owner (or a granted farmhand) can move or build here."
+            : _farmPlacementMode
+              ? (_farmPlacementMode.type === 'move' ? 'Click a tile on the map above to move it there.' : `Click a tile above to place the ${BARN_TIERS[_farmPlacementMode.tier].label} foundation.`)
+              : 'Move the house or a barn, or place an owned barn plan, by clicking the map above.';
+        }
+        if (cancelBtn) {
+          cancelBtn.hidden = !_farmPlacementMode;
+          cancelBtn.onclick = () => { _farmPlacementMode = null; renderFarmBuildings(); };
+        }
+
+        const addRow = (label, w, h, onMove) => {
+          const row = document.createElement('div');
+          row.className = 'farm-row';
+          row.innerHTML = `<span class="farm-row-name">${esc(label)}</span><span class="farm-note">${w}×${h}</span>`;
+          if (canAlter && onMove) {
+            const btn = document.createElement('button');
+            btn.className = 'settings-small-btn';
+            btn.textContent = 'Move';
+            btn.addEventListener('click', onMove);
+            row.appendChild(btn);
+          }
+          list.appendChild(row);
+        };
+
+        addRow('🏠 Highland House', HOUSE_FOOTPRINT_W, HOUSE_FOOTPRINT_D,
+          () => { _farmPlacementMode = { type: 'move', buildingId: 'highland_house' }; renderFarmBuildings(); });
+
+        farmBuildings.filter(b => b.kind === 'barn').forEach(b => {
+          const tier = BARN_TIERS[b.tier];
+          addRow(`🏚 ${tier.label}${b.stage === 'foundation' ? ' (foundation)' : ''}`, b.w, b.h,
+            () => { _farmPlacementMode = { type: 'move', buildingId: b.id }; renderFarmBuildings(); });
+        });
+
+        if (canAlter) {
+          Object.entries(BARN_TIERS).forEach(([tier, def]) => {
+            const owned = inventory[def.planItem] || 0;
+            if (owned < 1) return;
+            const row = document.createElement('div');
+            row.className = 'farm-row';
+            row.innerHTML = `<span class="farm-row-name">📜 ${esc(def.label)} Plan</span><span class="farm-note">${owned} owned</span>`;
+            const btn = document.createElement('button');
+            btn.className = 'settings-small-btn';
+            btn.textContent = 'Place';
+            btn.addEventListener('click', () => { _farmPlacementMode = { type: 'place', tier }; renderFarmBuildings(); });
+            row.appendChild(btn);
+            list.appendChild(row);
+          });
+        }
       }
 
       // Builds one pickable livestock/stable row. `ref` identifies it for
@@ -13831,6 +14683,36 @@
           // and Take to Stable (if the owner flagged this one stable-able).
           const extra = document.createElement('div');
           extra.className = 'farm-row-extra';
+          if (canManage) {
+            const housingSelect = document.createElement('select');
+            housingSelect.className = 'settings-select farm-barn-select';
+            housingSelect.title = 'Assign to a barn to bring it out onto the farm — unassigned livestock stay in stasis (hidden, cooldown paused).';
+            const stasisOpt = document.createElement('option');
+            stasisOpt.value = ''; stasisOpt.textContent = '🚫 Stasis (no barn)';
+            housingSelect.appendChild(stasisOpt);
+            farmBuildings.filter(b => b.kind === 'barn' && b.stage === 'built').forEach(b => {
+              const tier = BARN_TIERS[b.tier];
+              const occupants = livestock.filter(l => l.barnId === b.id).length;
+              const opt = document.createElement('option');
+              opt.value = b.id;
+              opt.textContent = `${tier.label} (${occupants}/${tier.slots})`;
+              opt.disabled = occupants >= tier.slots && entry.barnId !== b.id;
+              housingSelect.appendChild(opt);
+            });
+            housingSelect.value = entry.barnId || '';
+            housingSelect.addEventListener('change', () => {
+              const result = housingSelect.value ? assignLivestockToBarn(entry.id, housingSelect.value) : unassignLivestockFromBarn(entry.id);
+              showToast(result.message, result.ok);
+              renderFarmLivestock(); renderFarmGridGlance();
+            });
+            extra.appendChild(housingSelect);
+            if (entry.resourceReady) {
+              const readyBadge = document.createElement('span');
+              readyBadge.className = 'farm-note';
+              readyBadge.textContent = '✅ Ready to collect — visit it on the farm';
+              extra.appendChild(readyBadge);
+            }
+          }
           if (owner) {
             const moveBtn = document.createElement('button');
             moveBtn.className = 'settings-small-btn';
@@ -14968,6 +15850,11 @@
         }
         if (activeTool === 'shovel' || activeTool === 'pick') {
           activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
+        }
+        if (activeAction === carpenterAction()) {
+          if (nearbyNpcWalker && isCarpenterNpcOnDuty(nearbyNpcWalker) && !farmEditMode) { openMenu('carpenterShop'); return; }
+          showToast(carpenterButtonConfig().noTargetMessage || 'The carpenter is not available right now.', false);
+          return;
         }
         if (activeAction === generalStoreAction()) {
           if (nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) && !farmEditMode) { openMenu('generalStore'); return; }
@@ -22180,6 +23067,7 @@
         chooseWeatherForDay();
         tickCropDay();
         tickLivestockBreeding();
+        tickLivestockResources();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
         checkTothalShift();
         // Any den wiped out since it started waiting can now be moved back
@@ -22201,6 +23089,7 @@
         chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
         tickCropDay();
         tickLivestockBreeding();
+        tickLivestockResources();
         checkTothalShift();
         pendingDenRespawn.clear();
         respawnAllZoneReagents();
@@ -22890,6 +23779,7 @@
         if (nearbyNpcWalker && !farmEditMode) {
           const btns = [npcDialogueButton()];
           if (isGeneralStoreNpcOnDuty(nearbyNpcWalker)) btns.push(generalStoreButton());
+          if (isCarpenterNpcOnDuty(nearbyNpcWalker)) btns.push(carpenterButton());
           return btns;
         }
 
@@ -23072,7 +23962,8 @@
         const obj = getWorldObjectAt(reticle.col, reticle.row);
         const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
         const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
-        const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction() : 'none';
+        const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction()
+          : nearbyNpcWalker && isCarpenterNpcOnDuty(nearbyNpcWalker) ? carpenterAction() : 'none';
         // fishingMinigame?.phase (not just .active) must be in this key:
         // computeActionButtons() returns different button sets across the
         // cast/waiting/bite/active/caught sequence (empty until 'bite', the
@@ -23136,7 +24027,7 @@
               // this), so gating the arc button behind it here would just mean
               // a stray leftover toolSwingT from whatever was equipped before
               // switching to the harpoon could silently eat the tap.
-              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_') || act.startsWith('fish_');
+              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_') || act.startsWith('fish_');
               if (isNavAction || toolSwingT <= 0) useActiveAction();
             }
 
@@ -23620,6 +24511,7 @@
         Object.assign(inventory, { ...STARTING_INVENTORY });
         clearPlacedProcessingFurniture();
         clearInteriorFurniture();
+        clearFarmBuildings(); // re-added from layout below, same as furniture/decor — the house/farm structures survive a reset, only day/weather/inventory/livestock do not
         clearAnimalObjects();
         _saveWorldLivestock([]); // full farm reset also clears released animals from the world file
         clearHostileObjects();
@@ -23666,6 +24558,12 @@
               const tgt = decorArea === 'interior' ? interiorScene : scene;
               const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea);
               if (r) interiorFurnitureObjects.push({ key, col, row, mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea });
+            });
+            (_rl.buildings || []).forEach(saved => {
+              if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
+              const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || BARN_FOOTPRINT_W, h: saved.h || BARN_FOOTPRINT_D, stage: saved.stage || 'foundation' };
+              farmBuildings.push(entry);
+              spawnBarnEntry(entry);
             });
           }
         } catch {}
@@ -24515,6 +25413,12 @@
         // it again would spawn every scheduled NPC a second time.
         clearPlacedProcessingFurniture();
         clearInteriorFurniture();
+        clearFarmBuildings();
+        // Module init may have moved the house per the legacy-key layout —
+        // put it back to its hard default before applying (or not finding)
+        // this world's own saved position, same rationale as the sell
+        // crate/supply box reset immediately below.
+        if (houseCol !== HOUSE_COL || houseRow !== HOUSE_ROW) repositionHouse(HOUSE_COL, HOUSE_ROW);
         worldObjects.forEach(o => o.reset && o.reset());
         grid = createInitialGrid();
         // Module init already may have moved the shipping/supply crates per the
