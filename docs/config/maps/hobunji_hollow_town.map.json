@@ -18410,8 +18410,8 @@
     {
       "id": "spot_watchhouse",
       "label": "Enter the Watchhouse",
-      "col": 24,
-      "row": 18,
+      "col": 55,
+      "row": 31,
       "targetMapId": "map_i_watchhouse",
       "targetSpotId": "sp_watchhouse_entry",
       "buildingId": "bldg_watchhouse"
@@ -18953,8 +18953,8 @@
       "id": "bldg_watchhouse",
       "label": "Watchhouse",
       "pieceFile": "config/pieces/generic-house-medium.json",
-      "gridX": 22,
-      "gridZ": 14,
+      "gridX": 49,
+      "gridZ": 31,
       "footprintW": 5,
       "footprintD": 4,
       "wbOpts": null,
