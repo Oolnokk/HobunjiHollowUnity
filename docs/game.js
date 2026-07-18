@@ -2122,6 +2122,20 @@
         knownReagentEffects[reagentKey].add(idx);
       }
 
+      // Sets aren't JSON-serializable, so save/restore go through plain
+      // arrays — see saveMemberWorldData/spawnPlayerAvatar.
+      function serializeKnownReagentEffects() {
+        const out = {};
+        Object.entries(knownReagentEffects).forEach(([key, set]) => { if (set.size) out[key] = [...set]; });
+        return out;
+      }
+      function restoreKnownReagentEffects(saved) {
+        Object.keys(knownReagentEffects).forEach(k => delete knownReagentEffects[k]);
+        Object.entries(saved || {}).forEach(([key, idxs]) => {
+          if (Array.isArray(idxs) && idxs.length) knownReagentEffects[key] = new Set(idxs);
+        });
+      }
+
       // Effects shared by 2+ of the given reagent keys — the classic ES rule
       // for what a brewed mixture actually does.
       function computeBrewEffects(reagentKeys) {
@@ -2150,6 +2164,25 @@
       function getAlchemySpeedMul() {
         const speedEff = activeAlchemyEffects.find(e => e.key === 'speed');
         return speedEff ? (ALCHEMY_EFFECT_DEFS.speed.speedMul || 1) : 1;
+      }
+
+      // expiresAt is measured against performance.now(), which resets to 0
+      // every page load — save/restore go through remaining seconds instead.
+      function serializeActiveAlchemyEffects() {
+        const now = performance.now() / 1000;
+        return activeAlchemyEffects
+          .map(e => ({ key: e.key, remainingS: e.expiresAt - now }))
+          .filter(e => e.remainingS > 0);
+      }
+      function restoreActiveAlchemyEffects(saved) {
+        activeAlchemyEffects = [];
+        const now = performance.now() / 1000;
+        (saved || []).forEach(({ key, remainingS }) => {
+          const def = ALCHEMY_EFFECT_DEFS[key];
+          if (!def || !(remainingS > 0)) return;
+          activeAlchemyEffects.push({ key, label: def.label, icon: def.icon, kind: def.kind, durationS: def.durationS, expiresAt: now + remainingS });
+        });
+        refreshBuffBar();
       }
 
       function updateAlchemyEffects() {
@@ -5272,7 +5305,11 @@
       }
 
       function defaultWorldMemberState() {
-        return { nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {}, joinedAt: Date.now() };
+        return {
+          nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
+          alchemyKnownEffects: {}, alchemyActiveEffects: [], alchemyReagentState: {},
+          joinedAt: Date.now(),
+        };
       }
 
       function isFarmOwner() {
@@ -5360,6 +5397,9 @@
           member.packClothing    = [...packClothing];
           member.npcRelationships = npcRelationshipsSnapshot();
           member.questProgress    = { ...questProgress };
+          member.alchemyKnownEffects = serializeKnownReagentEffects();
+          member.alchemyActiveEffects = serializeActiveAlchemyEffects();
+          member.alchemyReagentState = serializeZoneReagentState();
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
       }
@@ -6296,11 +6336,15 @@
       // rebuild just the reagent sprites without touching the rest of the
       // zone's (yearly-cached) scene.
       const _zoneReagentMeshGroups = new Map();
-      // mapId → calendar.day the zone's reagents were last scattered. A
-      // mismatch against the current day means the zone's reagent data is
-      // stale and gets regenerated the next time ensureZoneReagents(mapId)
-      // runs (see enterZone / respawnAllZoneReagents).
-      const _zoneReagentSpawnDay = new Map();
+      // mapId → { day, placements: [{col,row,key}, ...] } — the source of
+      // truth for a zone's reagent plants, independent of whether that
+      // zone's meshes are currently built (see ensureZoneReagents). A `day`
+      // mismatch against calendar.day means the data is stale and gets
+      // regenerated the next time ensureZoneReagents(mapId) runs (see
+      // enterZone / respawnAllZoneReagents). Persisted verbatim in
+      // saveMemberWorldData/spawnPlayerAvatar so a reload doesn't reshuffle
+      // plants the player hasn't picked yet.
+      const _zoneReagentPersist = new Map();
       // mapIds whose _zoneLayouts entry was replaced by a Tothal Shift (see
       // performTothalShift) while the player was standing inside that same
       // zone — rebuilding the live THREE.Scene out from under them mid-visit
@@ -10831,6 +10875,10 @@
             objs?.delete(col + ',' + row);
             const groups = _zoneReagentMeshGroups.get(mapId);
             if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
+            // Drop it from the persisted placement list too, so a reload
+            // before the next daily respawn doesn't bring it back.
+            const persisted = _zoneReagentPersist.get(mapId);
+            if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
             refreshItemScroll();
             return { ok: true, message: 'Picked ' + def.icon + ' ' + def.label + '.' };
           },
@@ -10850,21 +10898,27 @@
       }
 
       // Makes sure a zone's reagent plants are up to date for *today* —
-      // regenerates placements and rebuilds meshes only if this zone hasn't
-      // been scattered yet today (see _zoneReagentSpawnDay). Called on every
-      // enterZone so a zone that was already built (cached scene) still
-      // picks up a day's worth of staleness on re-entry.
+      // reuses today's persisted placements (see _zoneReagentPersist) if any
+      // exist, scattering fresh ones only the first time a zone is touched
+      // on a given day. Called on every enterZone so a zone that was already
+      // built (cached scene) still picks up a day's worth of staleness, or a
+      // reload's restored placements, on re-entry.
       function ensureZoneReagents(mapId) {
         if (typeof WildernessMapGenerator === 'undefined') return;
         if (!alchemyReagentsForZone(mapId).length) return;
-        if (_zoneReagentSpawnDay.get(mapId) === calendar.day) return;
-        clearZoneReagentMeshes(mapId);
         const zi = _zoneScenes.get(mapId);
         if (!zi) return;
-        const placements = scatterReagentsForZone(mapId);
+        let persisted = _zoneReagentPersist.get(mapId);
+        if (persisted?.day === calendar.day) {
+          if (_zoneReagentMeshGroups.has(mapId)) return; // already built for today
+        } else {
+          persisted = { day: calendar.day, placements: scatterReagentsForZone(mapId) };
+          _zoneReagentPersist.set(mapId, persisted);
+        }
+        clearZoneReagentMeshes(mapId);
         const groups = [];
         const objMap = new Map();
-        for (const { col, row, key } of placements) {
+        for (const { col, row, key } of persisted.placements) {
           const mesh = buildReagentPlantMesh(key);
           if (!mesh) continue;
           const tile = zi.grid[row]?.[col];
@@ -10875,22 +10929,35 @@
         }
         _zoneReagentMeshGroups.set(mapId, groups);
         _zoneReagentObjects.set(mapId, objMap);
-        _zoneReagentSpawnDay.set(mapId, calendar.day);
-        debugLog(`ensureZoneReagents(${mapId}): scattered ${groups.length} reagent plants for day ${calendar.day}`);
+        debugLog(`ensureZoneReagents(${mapId}): built ${groups.length} reagent plants for day ${calendar.day}`);
       }
 
       // Daily reset: clears every zone's reagent plants (freeing their
-      // meshes right away) and marks all four zones stale so the next visit
-      // to each re-scatters it — see ensureZoneReagents. Mirrors how den
-      // wildlife lazily repopulates only the zone currently being entered
-      // rather than eagerly rebuilding all four every day.
+      // meshes right away) and drops all four zones' persisted placements so
+      // the next visit to each scatters a fresh set — see ensureZoneReagents.
+      // Mirrors how den wildlife lazily repopulates only the zone currently
+      // being entered rather than eagerly rebuilding all four every day.
       function respawnAllZoneReagents() {
         if (typeof WildernessMapGenerator === 'undefined') return;
         for (const mapId of WildernessMapGenerator.zoneMapIds()) {
           clearZoneReagentMeshes(mapId);
-          _zoneReagentSpawnDay.delete(mapId);
+          _zoneReagentPersist.delete(mapId);
         }
         if (_isZoneArea(currentArea)) ensureZoneReagents(currentArea);
+      }
+
+      // Save/restore _zoneReagentPersist as a plain object — see
+      // saveMemberWorldData/spawnPlayerAvatar.
+      function serializeZoneReagentState() {
+        const out = {};
+        _zoneReagentPersist.forEach((v, mapId) => { out[mapId] = { day: v.day, placements: v.placements }; });
+        return out;
+      }
+      function restoreZoneReagentState(saved) {
+        _zoneReagentPersist.clear();
+        Object.entries(saved || {}).forEach(([mapId, v]) => {
+          if (v && Array.isArray(v.placements)) _zoneReagentPersist.set(mapId, { day: v.day, placements: v.placements });
+        });
       }
 
       // Tears down a previously built zone scene so buildZoneScene(mapId)'s
@@ -10911,11 +10978,12 @@
         _zoneDecorFurnitureGroups.delete(mapId);
         _zoneBuildingsGlbUpgradePending.delete(mapId);
         for (const source of _furnitureSfxSources.filter(s => s.area === mapId)) unregisterFurnitureSfxSource(source);
-        // Reagent plant meshes were children of the disposed scene above —
-        // just drop the tracking so ensureZoneReagents rebuilds from scratch.
+        // Reagent plant meshes were children of the disposed scene above, and
+        // the terrain just changed underneath any persisted placements — drop
+        // all of it so ensureZoneReagents scatters fresh against the new map.
         _zoneReagentMeshGroups.delete(mapId);
         _zoneReagentObjects.delete(mapId);
-        _zoneReagentSpawnDay.delete(mapId);
+        _zoneReagentPersist.delete(mapId);
       }
 
       function buildTownScene() {
@@ -13827,7 +13895,7 @@
           if (!world) return;
           const ownerId = world.ownerCharacterId;
           if (!world.members) world.members = {};
-          if (!world.members[ownerId]) world.members[ownerId] = { nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {}, joinedAt: Date.now() };
+          if (!world.members[ownerId]) world.members[ownerId] = defaultWorldMemberState();
           const memberInv = world.members[ownerId].nonGearInventory || (world.members[ownerId].nonGearInventory = {});
           memberInv.gold = (memberInv.gold || 0) + amount;
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
@@ -23666,6 +23734,13 @@
         // per character.
         loadNpcRelationships(playerData);
         questProgress = { ...(playerData.questProgress || {}) };
+
+        // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
+        // today's (not-yet-picked) wilderness reagent placements — all
+        // world-scoped per character, same as the fields just above.
+        restoreKnownReagentEffects(playerData.alchemyKnownEffects);
+        restoreActiveAlchemyEffects(playerData.alchemyActiveEffects);
+        restoreZoneReagentState(playerData.alchemyReagentState);
 
         gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
           ? playerData.gearInventory
