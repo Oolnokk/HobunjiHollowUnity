@@ -15813,7 +15813,12 @@
         r.startAngle = fm.fish.renderAngle;
         r.startRadius = fm.fish.renderRadius;
         r.centerAngle = r.startAngle;
-        r.centerRadius = 72 + Math.random() * 26;
+        // Prototype value (72 + rand*26) was tuned against its own much
+        // larger ring (r=340); scaled by FISH_DIVE_RADIUS_SCALE the same way
+        // the periodic dive's centerRadius is, so the escape actually pulls
+        // the fish well into the safe zone instead of barely off the ring
+        // edge on FISHING_RING's smaller scale.
+        r.centerRadius = (72 + Math.random() * 26) * FISH_DIVE_RADIUS_SCALE;
         r.scale = 1;
         fm.dive.active = false;
         fm.dive.visualOffset = 0;
@@ -16102,10 +16107,23 @@
           fishingEls.fishImageRig.setAttribute('opacity', '0');
           return;
         }
-        const renderAngle = pose ? pose.angle : fm.fish.renderAngle;
-        const renderRadius = pose ? pose.radius : fm.fish.renderRadius;
+        const b = fm.bridge;
+        // Once the spear actually lands, the fish rides the retracting tip
+        // back toward the player instead of staying pinned to its ring/dive
+        // spot — ported from the prototype's spearBridge caughtFish branch.
+        const caughtFollow = !pose && b.spearActive && b.caughtFish;
+        let renderAngle, fishPt;
+        if (caughtFollow) {
+          const outerRadius = FISHING_RING.fishRadius + FISHING_RING.outerOffset;
+          const anchor = fishingPolarToXY(b.lineA, outerRadius);
+          renderAngle = Math.atan2(b.tipY - anchor.y, b.tipX - anchor.x) * 180 / Math.PI;
+          fishPt = { x: b.tipX, y: b.tipY };
+        } else {
+          renderAngle = pose ? pose.angle : fm.fish.renderAngle;
+          const renderRadius = pose ? pose.radius : fm.fish.renderRadius;
+          fishPt = fishingPolarToXY(renderAngle, renderRadius);
+        }
         const renderScale = pose ? pose.scale : 1;
-        const fishPt = fishingPolarToXY(renderAngle, renderRadius);
         const deform = renderFishDeformedTexture(fm);
         // Only log on a state change (loaded vs. not), so the debug panel gets one
         // entry per session instead of one per frame at 60fps.
