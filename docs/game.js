@@ -144,6 +144,7 @@
         if (targetPanel === 'shipping') buildShippingTransferUI();
         if (targetPanel === 'supplies') renderSupplyPage();
         if (targetPanel === 'generalStore') renderGeneralStorePage();
+        if (targetPanel === 'alchemy') renderAlchemyPanel();
         auditInventorySizing();
       }
       function closeMenu() {
@@ -177,6 +178,7 @@
         if (id === 'shipping') buildShippingTransferUI();
         if (id === 'supplies') renderSupplyPage();
         if (id === 'generalStore') renderGeneralStorePage();
+        if (id === 'alchemy') renderAlchemyPanel();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
         if (id === 'wildlife') renderWildlifeDebugPanel();
       }
@@ -2046,6 +2048,143 @@
         key: def.itemKey, icon: def.icon, name: def.name, desc: def.desc,
         price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture'
       }));
+
+      // ── Alchemy: effects, reagents & active buffs ───────────────────
+      // Standard Elder-Scrolls-style setup: every reagent carries up to 3
+      // named boon/bane effects, but only effects[0] is known to the player
+      // from the start. Brewing 2-3 reagents at an Alchemy Table applies
+      // whichever effects appear on 2+ of the chosen reagents (see
+      // computeBrewEffects) and reveals ("discovers") those effects on every
+      // reagent that has them. Magnitude/duration are deliberately generic
+      // placeholders for most effects — only 'speed' is wired to an actual
+      // stat (see getAlchemySpeedMul) since the rest of the mechanical
+      // design is still open; every effect at least shows up as a named,
+      // timed buff/debuff icon in the on-screen buff bar once applied.
+      const ALCHEMY_EFFECT_DEFS = {
+        strength:   { label: 'Strength',   icon: '💪', kind: 'boon', durationS: 90, desc: 'Something in you feels sturdier.' },
+        fortitude:  { label: 'Fortitude',  icon: '🛡️', kind: 'boon', durationS: 90, desc: 'You feel harder to knock down.' },
+        vigor:      { label: 'Vigor',      icon: '⚡', kind: 'boon', durationS: 90, desc: 'Energy hums through your limbs.' },
+        speed:      { label: 'Speed',      icon: '🏃', kind: 'boon', durationS: 60, desc: 'Your steps come lighter and faster.', speedMul: 1.35 },
+        perception: { label: 'Perception', icon: '👁️', kind: 'boon', durationS: 90, desc: 'The world looks sharper somehow.' },
+        clarity:    { label: 'Clarity',    icon: '🧠', kind: 'boon', durationS: 90, desc: 'Your thoughts feel clean and ordered.' },
+        stupor:     { label: 'Stupor',     icon: '😵', kind: 'bane', durationS: 60, desc: 'Your head is thick and slow.' },
+        weakness:   { label: 'Weakness',   icon: '🦴', kind: 'bane', durationS: 60, desc: 'Your limbs feel drained of power.' },
+        frailty:    { label: 'Frailty',    icon: '💔', kind: 'bane', durationS: 60, desc: 'You feel brittle, easily hurt.' },
+        clumsiness: { label: 'Clumsiness', icon: '🤕', kind: 'bane', durationS: 60, desc: 'Your hands and feet won\'t cooperate.' },
+        nausea:     { label: 'Nausea',     icon: '🤢', kind: 'bane', durationS: 60, desc: 'Your stomach churns unpleasantly.' },
+        dread:      { label: 'Dread',      icon: '😱', kind: 'bane', durationS: 60, desc: 'A cold unease settles over you.' },
+      };
+
+      // Reagent plants foraged from the four wilderness zones. `color` tints
+      // the plant's billboard sprite — see buildReagentPlantMesh — as a
+      // placeholder stand-in until each reagent gets its own model.
+      const ALCHEMY_REAGENT_DEFS = {
+        frostcapMoss:      { label: 'Frostcap Moss',      icon: '🥶', zone: 'map_northern_cliffs',       color: 0x9fd8e6, sellPrice: 3, effects: ['fortitude', 'weakness', 'stupor'] },
+        graniteThistle:    { label: 'Granite Thistle',    icon: '🌵', zone: 'map_northern_cliffs',       color: 0x8a8a78, sellPrice: 3, effects: ['strength', 'frailty', 'clumsiness'] },
+        palehartLichen:    { label: 'Palehart Lichen',    icon: '🍂', zone: 'map_northern_cliffs',       color: 0xc9c2a0, sellPrice: 3, effects: ['perception', 'dread', 'weakness'] },
+        cinderveinBramble: { label: 'Cindervein Bramble', icon: '🌿', zone: 'map_northern_cliffs',       color: 0xb5493a, sellPrice: 3, effects: ['vigor', 'nausea', 'strength'] },
+        shalefrondFern:    { label: 'Shalefrond Fern',    icon: '🌾', zone: 'map_northern_cliffs',       color: 0x6f8f7a, sellPrice: 3, effects: ['clarity', 'stupor', 'fortitude'] },
+
+        mistpetalBloom:    { label: 'Mistpetal Bloom',    icon: '🌸', zone: 'map_southern_cloud_forest', color: 0xd7b7e8, sellPrice: 3, effects: ['clarity', 'dread', 'perception'] },
+        duskcapMushroom:   { label: 'Duskcap Mushroom',   icon: '🍄', zone: 'map_southern_cloud_forest', color: 0x5a4a78, sellPrice: 3, effects: ['vigor', 'stupor', 'nausea'] },
+        silverfernFrond:   { label: 'Silverfern Frond',   icon: '🌿', zone: 'map_southern_cloud_forest', color: 0xc8d8c0, sellPrice: 3, effects: ['perception', 'weakness', 'clarity'] },
+        cloudberryVine:    { label: 'Cloudberry Vine',    icon: '🫐', zone: 'map_southern_cloud_forest', color: 0x8ec6e0, sellPrice: 3, effects: ['speed', 'clumsiness', 'vigor'] },
+        hazewortSprig:     { label: 'Hazewort Sprig',     icon: '🌱', zone: 'map_southern_cloud_forest', color: 0xa0b090, sellPrice: 3, effects: ['fortitude', 'dread', 'speed'] },
+
+        windrootBulb:      { label: 'Windroot Bulb',      icon: '🧅', zone: 'map_western_slope',         color: 0xe8d27a, sellPrice: 3, effects: ['speed', 'weakness', 'vigor'] },
+        goldbrushWeed:     { label: 'Goldbrush Weed',     icon: '🌾', zone: 'map_western_slope',         color: 0xdba936, sellPrice: 3, effects: ['strength', 'clumsiness', 'fortitude'] },
+        larkspurTuft:      { label: 'Larkspur Tuft',      icon: '💐', zone: 'map_western_slope',         color: 0x7fb0e0, sellPrice: 3, effects: ['perception', 'stupor', 'speed'] },
+        sunbarleyHead:     { label: 'Sunbarley Head',     icon: '🌾', zone: 'map_western_slope',         color: 0xe0c95f, sellPrice: 3, effects: ['vigor', 'nausea', 'strength'] },
+        thistledownCap:    { label: 'Thistledown Cap',    icon: '🌼', zone: 'map_western_slope',         color: 0xeee4c0, sellPrice: 3, effects: ['clarity', 'frailty', 'perception'] },
+
+        bogwortLeaf:       { label: 'Bogwort Leaf',       icon: '🍃', zone: 'map_eastern_mire',          color: 0x4a6b3a, sellPrice: 3, effects: ['fortitude', 'nausea', 'strength'] },
+        mireLotusBud:      { label: 'Mire Lotus Bud',     icon: '🪷', zone: 'map_eastern_mire',          color: 0xc06090, sellPrice: 3, effects: ['clarity', 'dread', 'weakness'] },
+        sporeclusterCap:   { label: 'Sporecluster Cap',   icon: '🍄', zone: 'map_eastern_mire',          color: 0x6a5a3a, sellPrice: 3, effects: ['stupor', 'vigor', 'frailty'] },
+        weepingReed:       { label: 'Weeping Reed',       icon: '🌾', zone: 'map_eastern_mire',          color: 0x3a5a4a, sellPrice: 3, effects: ['speed', 'weakness', 'clumsiness'] },
+        muckmelonRind:     { label: 'Muckmelon Rind',     icon: '🍈', zone: 'map_eastern_mire',          color: 0x8a9a3a, sellPrice: 3, effects: ['strength', 'nausea', 'fortitude'] },
+      };
+
+      function alchemyReagentsForZone(mapId) {
+        return Object.keys(ALCHEMY_REAGENT_DEFS).filter(k => ALCHEMY_REAGENT_DEFS[k].zone === mapId);
+      }
+
+      // Which of a reagent's effects[] indices the player has learned so
+      // far. Index 0 is always known; 1/2 are revealed the first time a
+      // brew mixes that reagent with another sharing the effect.
+      const knownReagentEffects = {}; // reagentKey -> Set(effectIndex)
+      function isReagentEffectKnown(reagentKey, idx) {
+        if (idx === 0) return true;
+        return knownReagentEffects[reagentKey]?.has(idx) || false;
+      }
+      function discoverReagentEffect(reagentKey, idx) {
+        if (idx === 0) return;
+        if (!knownReagentEffects[reagentKey]) knownReagentEffects[reagentKey] = new Set();
+        knownReagentEffects[reagentKey].add(idx);
+      }
+
+      // Effects shared by 2+ of the given reagent keys — the classic ES rule
+      // for what a brewed mixture actually does.
+      function computeBrewEffects(reagentKeys) {
+        const counts = {};
+        for (const rk of reagentKeys) {
+          const def = ALCHEMY_REAGENT_DEFS[rk];
+          if (!def) continue;
+          def.effects.forEach(eff => { counts[eff] = (counts[eff] || 0) + 1; });
+        }
+        return Object.keys(counts).filter(eff => counts[eff] >= 2);
+      }
+
+      // ── Active buffs/debuffs (on-screen icon strip) ──────────────────
+      let activeAlchemyEffects = []; // [{ key, label, icon, kind, durationS, expiresAt }]
+
+      function applyAlchemyEffect(effectKey) {
+        const def = ALCHEMY_EFFECT_DEFS[effectKey];
+        if (!def) return;
+        const expiresAt = performance.now() / 1000 + def.durationS;
+        const existing = activeAlchemyEffects.find(e => e.key === effectKey);
+        if (existing) existing.expiresAt = expiresAt; // refresh duration instead of stacking a duplicate icon
+        else activeAlchemyEffects.push({ key: effectKey, label: def.label, icon: def.icon, kind: def.kind, durationS: def.durationS, expiresAt });
+        refreshBuffBar();
+      }
+
+      function getAlchemySpeedMul() {
+        const speedEff = activeAlchemyEffects.find(e => e.key === 'speed');
+        return speedEff ? (ALCHEMY_EFFECT_DEFS.speed.speedMul || 1) : 1;
+      }
+
+      function updateAlchemyEffects() {
+        if (!activeAlchemyEffects.length) return;
+        const now = performance.now() / 1000;
+        const before = activeAlchemyEffects.length;
+        activeAlchemyEffects = activeAlchemyEffects.filter(e => e.expiresAt > now);
+        refreshBuffBar(before !== activeAlchemyEffects.length);
+      }
+
+      // Rebuilds the buff bar's DOM only when the active effect *set*
+      // changes; every other call just updates each icon's countdown fill.
+      let _lastBuffBarKey = '';
+      function refreshBuffBar() {
+        const bar = document.getElementById('buffBar');
+        if (!bar) return;
+        const key = activeAlchemyEffects.map(e => e.key).join(',');
+        if (key !== _lastBuffBarKey) {
+          _lastBuffBarKey = key;
+          bar.innerHTML = activeAlchemyEffects.map(e => `
+            <div class="buff-icon ${e.kind}" data-buff="${e.key}" title="${e.label}">
+              <span class="buff-icon-glyph">${e.icon}</span>
+              <div class="buff-icon-track"><div class="buff-icon-fill" data-fill="${e.key}"></div></div>
+            </div>
+          `).join('');
+        }
+        bar.style.display = activeAlchemyEffects.length ? 'flex' : 'none';
+        const now = performance.now() / 1000;
+        activeAlchemyEffects.forEach(e => {
+          const fill = bar.querySelector(`.buff-icon-fill[data-fill="${e.key}"]`);
+          if (!fill) return;
+          const remain = Math.max(0, e.expiresAt - now);
+          fill.style.width = Math.max(0, Math.min(100, (remain / e.durationS) * 100)) + '%';
+        });
+      }
 
       const LIVESTOCK_CATALOG = [
         { key: 'puktuk',   icon: '🐐', name: 'Puktuk',   desc: 'Coming soon: meat, milk, and wool livestock.', price: 120, comingSoon: true },
@@ -6105,6 +6244,18 @@
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
       const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
+      // Game-authored (not player-placed) furniture that opens a custom
+      // panel on interact — currently just the Alchemy Table. Ordinary
+      // building furniture (mapData.furniture) is purely visual (see
+      // loadBuildingScene's furniture loop), so this is a small side
+      // registry, "mapId,col,row" -> { getButtons(), onAction() }, that
+      // computeActionButtons/the obj_ dispatcher check for building areas.
+      const _buildingInteractables = new Map();
+      // mapId -> { col, row } — which building interiors get an Alchemy
+      // Table spawned automatically, and where (see loadBuildingScene).
+      const BUILDING_ALCHEMY_TABLES = {
+        map_i_kunjis_potions_F1: { col: 5, row: 1 }, // beside the hearth at (6,1)
+      };
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
@@ -6136,6 +6287,20 @@
       // _townRiverWaterMeshes but per zone map, since a zone's water tiles never
       // share the town's flat single-tier grid.
       const _zoneWaterMeshes = new Map();
+      // mapId → Map("col,row" -> pickable reagent-plant world object) — the
+      // wilderness counterpart to the farm's worldObjects, populated by
+      // ensureZoneReagents and consulted by getWorldObjectAt.
+      const _zoneReagentObjects = new Map();
+      // mapId → [THREE.Group, ...] (reagent plant meshes) — tracked separately
+      // from _zoneDecorFurnitureGroups so the daily respawn can tear down and
+      // rebuild just the reagent sprites without touching the rest of the
+      // zone's (yearly-cached) scene.
+      const _zoneReagentMeshGroups = new Map();
+      // mapId → calendar.day the zone's reagents were last scattered. A
+      // mismatch against the current day means the zone's reagent data is
+      // stale and gets regenerated the next time ensureZoneReagents(mapId)
+      // runs (see enterZone / respawnAllZoneReagents).
+      const _zoneReagentSpawnDay = new Map();
       // mapIds whose _zoneLayouts entry was replaced by a Tothal Shift (see
       // performTothalShift) while the player was standing inside that same
       // zone — rebuilding the live THREE.Scene out from under them mid-visit
@@ -9912,6 +10077,31 @@
               registerFurnitureSfxSource(mapId, bx, bz, resolveFurnitureSfx(def));
             }
           }
+          // Game-authored Alchemy Table (see BUILDING_ALCHEMY_TABLES) — spawned
+          // the same way as ordinary furniture, but registered into
+          // _buildingInteractables so interacting with it opens the Alchemy
+          // panel instead of doing nothing (ordinary building furniture has
+          // no interaction at all — see the comment on _buildingInteractables).
+          const alchemyTableSpot = BUILDING_ALCHEMY_TABLES[mapId];
+          if (alchemyTableSpot && window.ProceduralFurniture?.CATALOG?.alchemyTable) {
+            const { col: atCol, row: atRow } = alchemyTableSpot;
+            const atModel = window.ProceduralFurniture.buildFurnitureGroup('alchemyTable', 0x6b4a8a);
+            atModel.position.set(atCol + 0.5, 0, atRow + 0.5);
+            _markOutline(atModel);
+            _markFurnitureEdgeId(atModel);
+            bScene.add(atModel);
+            if (bGrid[atRow]?.[atCol]) bGrid[atRow][atCol].type = TileType.ROCK; // solid, like the hearth/pestle/mill tiles beside it
+            _buildingInteractables.set(mapId + ',' + atCol + ',' + atRow, {
+              getButtons() {
+                return [{ icon: '⚗️', label: 'Brew Potion', action: 'obj_alchemy', style: 'primary', allowed: true }];
+              },
+              onAction(action) {
+                if (action !== 'obj_alchemy') return { ok: false, message: 'Unknown action.' };
+                openMenu('alchemy');
+                return { ok: true, message: 'Opened the alchemy table.' };
+              },
+            });
+          }
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
           // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
@@ -10182,6 +10372,7 @@
         if (!zdef && !_zoneLayouts.has(mapId)) return;
         const zi = buildZoneScene(mapId);
         if (!zi) return;
+        ensureZoneReagents(mapId);
         const fromScene = getActiveScene();
         _currentBuildingMapId = null;
         currentArea = mapId;
@@ -10505,6 +10696,203 @@
         debugLog(`_spawnZoneDecorFurniture(${mapId}): built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
       }
 
+      // ── Alchemy: reagent plant scatter (per wilderness zone) ─────────
+      function _seedFromString(str) {
+        let h = 0;
+        for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+        return h >>> 0;
+      }
+
+      // One re-tinted copy of the grass-leaf silhouette per reagent color —
+      // same texture/sway shader as ordinary grass billboards (grassBillboardMat),
+      // just a flat solid fill instead of the green tint-blend, so each
+      // reagent species reads as a distinct colored "billboard grass" tuft.
+      const _reagentPlantMaterials = new Map(); // colorHex -> ShaderMaterial
+      function getReagentPlantMaterial(colorHex) {
+        if (!_grassLeafTex) return null;
+        let mat = _reagentPlantMaterials.get(colorHex);
+        if (mat) return mat;
+        mat = new THREE.ShaderMaterial({
+          uniforms: {
+            uGrassTex: { value: _grassLeafTex },
+            uTime: { value: 0 }, uStrength: { value: 0.04 },
+            uColor: { value: new THREE.Color(colorHex) },
+          },
+          vertexShader: _grassBillVert,
+          fragmentShader: `
+            uniform sampler2D uGrassTex;
+            uniform vec3 uColor;
+            varying vec2 vUv;
+            void main() {
+              vec4 texel = texture2D(uGrassTex, vUv);
+              if (texel.a < 0.5) discard;
+              gl_FragColor = vec4(uColor, 1.0);
+            }
+          `,
+          alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
+        });
+        _reagentPlantMaterials.set(colorHex, mat);
+        return mat;
+      }
+
+      // A single reagent plant: a small two-blade cross (mirrors the
+      // "cross of quads" billboard-grass look) at 150% of a normal grass
+      // blade's size, standing alone as an individually pickable sprite
+      // instead of being folded into a shared InstancedMesh tuft.
+      function buildReagentPlantMesh(reagentKey) {
+        const def = ALCHEMY_REAGENT_DEFS[reagentKey];
+        if (!def) return null;
+        const mat = getReagentPlantMaterial(def.color);
+        if (!mat) return null;
+        const group = new THREE.Group();
+        const sizeMul = 1.5; // 150% size, per the placeholder-billboard spec
+        const w = 0.22 * sizeMul, h = 0.32 * sizeMul;
+        for (const rot of [0, Math.PI / 2]) {
+          const blade = new THREE.Mesh(_grassBladeGeo, mat);
+          blade.rotation.y = rot;
+          blade.scale.set(w, h, 1);
+          group.add(blade);
+        }
+        group.userData.isBillboard = true;
+        group.userData.reagentKey = reagentKey;
+        return group;
+      }
+
+      // Finds up to `count` distinct flat, empty (col,row) tiles in a
+      // wilderness zone for reagent placement. Uses the same tile-level
+      // exclusion checklist as findZonePlacementFootprint's single-spot
+      // search (uniform-elevation rect logic dropped since every plant is
+      // a single tile), but scans the whole grid and shuffles instead of
+      // stopping at the first hit, since we want many scattered spots.
+      function findZoneFlatEmptyTiles(mapId, count, rng) {
+        const zi = _zoneScenes.get(mapId);
+        const grid = zi?.grid;
+        if (!grid) return [];
+        const cols = zi.cols, rows = zi.rows;
+        const zoneData = _zoneLayouts.get(mapId);
+        const occupied = Array.from({ length: rows }, () => new Array(cols).fill(false));
+        const markOccupied = (col, row, ow, oh) => {
+          for (let r = Math.max(0, row); r < Math.min(rows, row + (oh || 1)); r++)
+            for (let c = Math.max(0, col); c < Math.min(cols, col + (ow || 1)); c++) { if (occupied[r]) occupied[r][c] = true; }
+        };
+        for (const b of (zoneData?.buildings || [])) markOccupied(b.gridX || 0, b.gridZ || 0, b.footprintW ?? b.w ?? 1, b.footprintD ?? b.h ?? 1);
+        for (const d of (zoneData?.dens || [])) markOccupied(d.x, d.y, d.w || 1, d.h || 1);
+        for (const d of (zoneData?.decor || [])) markOccupied(d.col, d.row, 1, 1);
+        for (const f of (zoneData?.furniture || [])) markOccupied(f.col, f.row, 1, 1);
+
+        const candidates = [];
+        for (let r = 1; r < rows - 1; r++) {
+          for (let c = 1; c < cols - 1; c++) {
+            if (occupied[r][c]) continue;
+            const tile = grid[r][c];
+            if (!tile || tile.water || tile.incline) continue;
+            if (tile.type === TileType.RAMP) continue;
+            if (isSolid(tile.type)) continue;
+            candidates.push({ col: c, row: r });
+          }
+        }
+        for (let i = candidates.length - 1; i > 0; i--) { // seeded Fisher-Yates
+          const j = Math.floor(rng() * (i + 1));
+          [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+        }
+        return candidates.slice(0, count);
+      }
+
+      // Picks fresh (col,row,reagentKey) placements for one zone — deterministic
+      // per (zone, day) so re-entering the same zone on the same day doesn't
+      // reshuffle plants that just haven't been picked yet.
+      function scatterReagentsForZone(mapId) {
+        const pool = alchemyReagentsForZone(mapId);
+        if (!pool.length) return [];
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return [];
+        const targetCount = Math.max(6, Math.min(40, Math.round((zi.cols * zi.rows) / 45)));
+        const rng = _mbRng(_seedFromString(mapId + ':' + calendar.day));
+        const spots = findZoneFlatEmptyTiles(mapId, targetCount, rng);
+        return spots.map(({ col, row }) => ({ col, row, key: pool[Math.floor(rng() * pool.length)] }));
+      }
+
+      // Builds a worldObjects-shaped pickable for one reagent plant, matching
+      // the { getButtons(), onAction() } shape getWorldObjectAt's callers expect.
+      function makeReagentPlantObject(mapId, col, row, reagentKey, mesh) {
+        const def = ALCHEMY_REAGENT_DEFS[reagentKey];
+        return {
+          id: 'reagent_' + mapId + '_' + col + '_' + row, type: 'reagent_plant',
+          col, row, mesh, reagentKey,
+          label: def.icon + ' ' + def.label,
+          getButtons() {
+            return [{ icon: def.icon, label: 'Pick ' + def.label, action: 'obj_pick_reagent', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_pick_reagent') return { ok: false, message: 'Unknown action.' };
+            inventory[reagentKey] = Math.min(99, (inventory[reagentKey] || 0) + 1);
+            _zoneScenes.get(mapId)?.scene.remove(mesh);
+            const objs = _zoneReagentObjects.get(mapId);
+            objs?.delete(col + ',' + row);
+            const groups = _zoneReagentMeshGroups.get(mapId);
+            if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
+            refreshItemScroll();
+            return { ok: true, message: 'Picked ' + def.icon + ' ' + def.label + '.' };
+          },
+        };
+      }
+
+      // Removes every currently-built reagent plant mesh/object for a zone
+      // without regenerating placement data — used both before a fresh
+      // scatter (ensureZoneReagents) and by the daily respawn to eagerly
+      // clear zones the player isn't currently standing in.
+      function clearZoneReagentMeshes(mapId) {
+        const scene = _zoneScenes.get(mapId)?.scene;
+        const groups = _zoneReagentMeshGroups.get(mapId);
+        if (scene && groups) groups.forEach(g => scene.remove(g));
+        _zoneReagentMeshGroups.delete(mapId);
+        _zoneReagentObjects.delete(mapId);
+      }
+
+      // Makes sure a zone's reagent plants are up to date for *today* —
+      // regenerates placements and rebuilds meshes only if this zone hasn't
+      // been scattered yet today (see _zoneReagentSpawnDay). Called on every
+      // enterZone so a zone that was already built (cached scene) still
+      // picks up a day's worth of staleness on re-entry.
+      function ensureZoneReagents(mapId) {
+        if (typeof WildernessMapGenerator === 'undefined') return;
+        if (!alchemyReagentsForZone(mapId).length) return;
+        if (_zoneReagentSpawnDay.get(mapId) === calendar.day) return;
+        clearZoneReagentMeshes(mapId);
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return;
+        const placements = scatterReagentsForZone(mapId);
+        const groups = [];
+        const objMap = new Map();
+        for (const { col, row, key } of placements) {
+          const mesh = buildReagentPlantMesh(key);
+          if (!mesh) continue;
+          const tile = zi.grid[row]?.[col];
+          mesh.position.set(col + 0.5, tile ? tileSurfaceYInArea(tile, mapId) : NORMAL_TOP, row + 0.5);
+          zi.scene.add(mesh);
+          groups.push(mesh);
+          objMap.set(col + ',' + row, makeReagentPlantObject(mapId, col, row, key, mesh));
+        }
+        _zoneReagentMeshGroups.set(mapId, groups);
+        _zoneReagentObjects.set(mapId, objMap);
+        _zoneReagentSpawnDay.set(mapId, calendar.day);
+        debugLog(`ensureZoneReagents(${mapId}): scattered ${groups.length} reagent plants for day ${calendar.day}`);
+      }
+
+      // Daily reset: clears every zone's reagent plants (freeing their
+      // meshes right away) and marks all four zones stale so the next visit
+      // to each re-scatters it — see ensureZoneReagents. Mirrors how den
+      // wildlife lazily repopulates only the zone currently being entered
+      // rather than eagerly rebuilding all four every day.
+      function respawnAllZoneReagents() {
+        if (typeof WildernessMapGenerator === 'undefined') return;
+        for (const mapId of WildernessMapGenerator.zoneMapIds()) {
+          clearZoneReagentMeshes(mapId);
+          _zoneReagentSpawnDay.delete(mapId);
+        }
+        if (_isZoneArea(currentArea)) ensureZoneReagents(currentArea);
+      }
+
       // Tears down a previously built zone scene so buildZoneScene(mapId)'s
       // cache check falls through and rebuilds it from whatever's now in
       // _zoneLayouts — used by a Tothal Shift to apply newly generated
@@ -10523,6 +10911,11 @@
         _zoneDecorFurnitureGroups.delete(mapId);
         _zoneBuildingsGlbUpgradePending.delete(mapId);
         for (const source of _furnitureSfxSources.filter(s => s.area === mapId)) unregisterFurnitureSfxSource(source);
+        // Reagent plant meshes were children of the disposed scene above —
+        // just drop the tracking so ensureZoneReagents rebuilds from scratch.
+        _zoneReagentMeshGroups.delete(mapId);
+        _zoneReagentObjects.delete(mapId);
+        _zoneReagentSpawnDay.delete(mapId);
       }
 
       function buildTownScene() {
@@ -10939,6 +11332,7 @@
         const corpse = getCorpseObjectAt(col, row);
         if (corpse) return corpse;
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
+        if (_isZoneArea(currentArea)) return _zoneReagentObjects.get(currentArea)?.get(col + ',' + row) || null;
         if (currentArea !== 'farm') return null;
         return worldObjects.get(col + ',' + row) || null;
       }
@@ -11051,6 +11445,104 @@
             deliveries.innerHTML = pending + history;
           }
         }
+      }
+
+      // ── Alchemy panel render ─────────────────────────────────────────
+      const ALCHEMY_MAX_REAGENTS = 3;
+      let alchemySelectedReagents = []; // up to ALCHEMY_MAX_REAGENTS reagent keys, chosen from inventory
+
+      function toggleAlchemyReagent(key) {
+        const i = alchemySelectedReagents.indexOf(key);
+        if (i >= 0) alchemySelectedReagents.splice(i, 1);
+        else if (alchemySelectedReagents.length < ALCHEMY_MAX_REAGENTS) alchemySelectedReagents.push(key);
+        renderAlchemyPanel();
+      }
+
+      // Consumes the selected reagents and applies whatever effects they
+      // share (see computeBrewEffects) as active buffs/debuffs — brewed
+      // potions are drunk on the spot rather than stored, so there's no
+      // separate "use potion" step.
+      function brewPotion() {
+        const keys = alchemySelectedReagents.filter(k => (inventory[k] || 0) > 0);
+        if (keys.length < 2) return { ok: false, message: 'Select at least 2 reagents.' };
+        const effects = computeBrewEffects(keys);
+        if (!effects.length) return { ok: false, message: 'No shared properties — the mixture does nothing.' };
+        for (const rk of keys) {
+          const def = ALCHEMY_REAGENT_DEFS[rk];
+          def.effects.forEach((eff, idx) => { if (effects.includes(eff)) discoverReagentEffect(rk, idx); });
+        }
+        keys.forEach(k => { inventory[k]--; clampInventoryStack(k); });
+        effects.forEach(eff => applyAlchemyEffect(eff));
+        alchemySelectedReagents = [];
+        refreshItemScroll();
+        const names = effects.map(e => ALCHEMY_EFFECT_DEFS[e].label).join(', ');
+        return { ok: true, message: '⚗️ Brewed a potion: ' + names + '.' };
+      }
+
+      window._doBrewPotion = function () {
+        const result = brewPotion();
+        showToast(result.message, result.ok !== false);
+        renderAlchemyPanel();
+        if (result.ok !== false) saveMemberWorldData();
+      };
+
+      function renderAlchemyPanel() {
+        const list = document.getElementById('alchemyReagentList');
+        const selectedEl = document.getElementById('alchemySelectedStrip');
+        const previewEl = document.getElementById('alchemyEffectPreview');
+        if (!list) return;
+        alchemySelectedReagents = alchemySelectedReagents.filter(k => (inventory[k] || 0) > 0);
+        const heldReagents = Object.keys(ALCHEMY_REAGENT_DEFS).filter(k => (inventory[k] || 0) > 0);
+        list.innerHTML = '';
+        if (!heldReagents.length) {
+          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">🌿</span><span class="dr-name">No reagents in your bag yet — forage them across the wilderness zones.</span><span class="dr-eta">—</span></div>';
+        }
+        heldReagents.forEach(key => {
+          const def = ALCHEMY_REAGENT_DEFS[key];
+          const selected = alchemySelectedReagents.includes(key);
+          const effectsHtml = def.effects.map((eff, idx) => isReagentEffectKnown(key, idx)
+            ? `<span class="alch-effect ${ALCHEMY_EFFECT_DEFS[eff].kind}">${ALCHEMY_EFFECT_DEFS[eff].icon} ${ALCHEMY_EFFECT_DEFS[eff].label}</span>`
+            : `<span class="alch-effect unknown">❓ ?</span>`).join('');
+          const row = document.createElement('div');
+          row.className = 'shop-row alch-reagent-row' + (selected ? ' selected' : '');
+          row.innerHTML = `
+            <div class="sh-icon">${def.icon}</div>
+            <div class="sh-info">
+              <div class="sh-name">${def.label} <span class="alch-count">×${inventory[key]}</span></div>
+              <div class="alch-effects">${effectsHtml}</div>
+            </div>
+            <button class="shop-buy-btn" data-act="toggle">${selected ? 'Selected' : 'Select'}</button>
+          `;
+          row.querySelector('[data-act="toggle"]')?.addEventListener('click', () => toggleAlchemyReagent(key));
+          list.appendChild(row);
+        });
+
+        if (selectedEl) {
+          selectedEl.innerHTML = alchemySelectedReagents.length
+            ? alchemySelectedReagents.map(k => `<span class="alch-selected-chip">${ALCHEMY_REAGENT_DEFS[k].icon} ${ALCHEMY_REAGENT_DEFS[k].label}</span>`).join('')
+            : '<span class="alch-empty-hint">Select 2–3 reagents to test for a reaction.</span>';
+        }
+        if (previewEl) {
+          const effects = computeBrewEffects(alchemySelectedReagents);
+          if (alchemySelectedReagents.length < 2) {
+            previewEl.innerHTML = '';
+          } else if (!effects.length) {
+            previewEl.innerHTML = '<div class="alch-empty-hint">No shared properties detected.</div>';
+          } else {
+            previewEl.innerHTML = effects.map(eff => {
+              const known = alchemySelectedReagents.some(k => {
+                const idx = ALCHEMY_REAGENT_DEFS[k].effects.indexOf(eff);
+                return idx >= 0 && isReagentEffectKnown(k, idx);
+              });
+              const def = ALCHEMY_EFFECT_DEFS[eff];
+              return known
+                ? `<span class="alch-effect ${def.kind}">${def.icon} ${def.label}</span>`
+                : `<span class="alch-effect unknown">❓ Unknown reaction</span>`;
+            }).join('');
+          }
+        }
+        const brewBtn = document.getElementById('alchemyBrewBtn');
+        if (brewBtn) brewBtn.disabled = alchemySelectedReagents.length < 2;
       }
 
       // ── Market page render ─────────────────────────────────────────
@@ -11256,6 +11748,19 @@
           ITEM_DEFS[def.itemKey] = {
             icon: def.icon, label: def.name, cat: 'furniture', sellPrice: 0,
             tags: ['Furniture', 'Decorative', def.area || 'interior'], desc: def.desc
+          };
+        }
+      });
+
+      Object.entries(ALCHEMY_REAGENT_DEFS).forEach(([key, def]) => {
+        if (!inventoryItems.some(item => item.key === key)) {
+          inventoryItems.push({ key, icon: def.icon, label: def.label.toUpperCase(), max: 99 });
+        }
+        if (!ITEM_DEFS[key]) {
+          ITEM_DEFS[key] = {
+            icon: def.icon, label: def.label, cat: 'material', sellPrice: def.sellPrice,
+            tags: ['Reagent', 'Alchemy', EXTERIOR_ZONES[def.zone]?.label || def.zone],
+            desc: `An alchemy reagent foraged in the ${EXTERIOR_ZONES[def.zone]?.label || def.zone}. Known property: ${ALCHEMY_EFFECT_DEFS[def.effects[0]].label}.`,
           };
         }
       });
@@ -12695,7 +13200,7 @@
         // Lets a held movement ability (Blink Dodge) slow normal walking
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul;
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * getAlchemySpeedMul();
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
@@ -14337,8 +14842,12 @@
           const _r = getReticleTile();
           // worldObjects is farm-scene-only (see its declaration) — interior
           // interactables (e.g. a bed) live in interiorFurnitureObjects
-          // instead, via getInteriorInteractableAt.
-          const _o = currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row) : getWorldObjectAt(_r.col, _r.row);
+          // instead, via getInteriorInteractableAt. Ordinary building
+          // furniture has no interaction at all — only the handful
+          // registered in _buildingInteractables (e.g. the Alchemy Table).
+          const _o = currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
+            : _isBuildingArea(currentArea) ? _buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row)
+            : getWorldObjectAt(_r.col, _r.row);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
           showToast(_res.message, _res.ok !== false);
@@ -18893,10 +19402,14 @@
       let grassBillboardMat = null;
       let cuttableBillboardGlowMat = null;
       let cuttableBillboardGlowMesh = null;
+      // Cached grass-leaf silhouette texture, reused (re-tinted per reagent)
+      // by getReagentPlantMaterial for alchemy reagent plant billboards.
+      let _grassLeafTex = null;
 
       new THREE.TextureLoader().load('assets/leaves/grass_1.png', (tex) => {
         tex.magFilter = THREE.NearestFilter;
         tex.minFilter = THREE.NearestFilter;
+        _grassLeafTex = tex;
         const sharedUniforms = () => ({
           uGrassTex:   { value: tex },
           uTint:       { value: _grassTint },
@@ -20369,6 +20882,7 @@
           pollControllerInput();
           updateMovement(dt);
           updatePlayerVitals(dt);
+          updateAlchemyEffects();
 
           if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
             syncCompanionFromWhistle();
@@ -20905,6 +21419,7 @@
         // into — see ensureCurrentZoneDenPacks, which does the actual
         // (lazy, current-zone-only) spawning once this fires.
         pendingDenRespawn.clear();
+        respawnAllZoneReagents();
       }
 
       // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
@@ -20921,6 +21436,7 @@
         tickLivestockBreeding();
         checkTothalShift();
         pendingDenRespawn.clear();
+        respawnAllZoneReagents();
         player.health  = player.maxHealth;
         player.stamina = player.maxStamina;
         const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
@@ -21650,6 +22166,9 @@
             });
             return cavernBtns;
           }
+          const bReticle = getReticleTile();
+          const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
+          if (bInteractable) return bInteractable.getButtons();
           return [];
         }
 

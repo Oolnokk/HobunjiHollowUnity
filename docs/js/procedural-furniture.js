@@ -320,6 +320,18 @@
     box(0, .93, 0, 2.8, .06, .8, 1.15),
   ];
 
+  // Alchemy Table: a squat cauldron on a stubby tripod, ringed with a few
+  // corked reagent bottles — reuses the tapered-cylinder/disc primitives
+  // rather than a bespoke model, matching every other CATALOG entry.
+  CATALOG.alchemyTable = [
+    roundLeg(0, 0, .32, .16, .8, 10),
+    cyl(0, .5, 0, .78, .5, .78, .55, { segments: 18, topScaleX: 1.12, topScaleZ: 1.12, bottomScaleX: .7, bottomScaleZ: .7 }),
+    disc(0, .74, 0, .84, .05, .84, 1.35, { segments: 18 }),
+    cyl(-.34, .34, .22, .09, .3, .09, .95, { segments: 8 }),
+    cyl(.3, .3, -.28, .08, .24, .08, 1.1, { segments: 8 }),
+    cyl(.1, .28, .36, .07, .2, .07, 1.25, { segments: 8 }),
+  ];
+
   // -- Processing furniture (used by docs/tools/building-interior-author preview) --
   CATALOG.pestle = [
     box(0, .19, 0, .6, .38, .6, .85),
