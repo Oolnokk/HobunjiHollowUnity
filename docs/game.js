@@ -6260,6 +6260,12 @@
       // vary by species and are recomputed in refreshPlayerAvatar() once the per-species
       // sprite/scale is known.
       let playerToolBaseX = -0.45, playerToolBaseY = 0.45;
+      // Chest-height anchor for a bag item held statically in front of the body
+      // (see heldItemHolder near the tool meshes below) — higher than
+      // playerToolBaseY, which targets hand height near the bottom of these
+      // cropped bust-style portraits. Recomputed per-species in
+      // refreshPlayerAvatar() alongside playerToolBaseX/Y.
+      let playerItemHoldY = 0.6;
 
       // ── Dialogue tree runtime state ──────────────────────────────────
       let _dlgTree      = null;  // active tree object
@@ -12477,6 +12483,7 @@
         }
         playerToolBaseX = avatarGroup.userData?.handAttachX ?? (-avatarWidth / 2);
         playerToolBaseY = avatarGroup.userData?.handAttachY ?? (avatarHeight / 2);
+        playerItemHoldY = avatarHeight * 0.6;
         _markPngPlane(avatarGroup);
         if (refreshGeneration !== playerAvatarRefreshGeneration) {
           disposeAvatarGroup(avatarGroup);
@@ -18988,6 +18995,82 @@
       const toolHolder = new THREE.Group();
       scene.add(toolHolder);
 
+      // ── Held bag-item plane ────────────────────────────────────────────
+      // While heldMode === 'item' (an inventory item is selected — the arch
+      // shows its use actions instead of a tool wheel), the equipped
+      // tool/weapon mesh above is hidden and this plane shows instead: the
+      // active bag item's icon on a small PNG-style plane held a little in
+      // front of the chest, since these avatars have no arms to actually
+      // grip anything. Bag items only carry an emoji `icon` (no PNG sprite
+      // like TOOL_ITEM_DEFS), so the icon is rasterized onto a canvas once
+      // per glyph and reused as a texture, same idea as the tool/avatar PNG
+      // planes above just built from a drawn glyph instead of a loaded file.
+      const HELD_ITEM_PLANE_WIDTH = 0.45; // ~50% of the avatar's ~0.9 world-unit portrait width
+      const HELD_ITEM_FORWARD_OFFSET = 0.4; // "a few feet" out from the chest, clear of the avatar plane
+      // Per-item-key overrides for HELD_ITEM_PLANE_WIDTH — most icons read fine
+      // at the default size; add entries here for outliers (e.g. tiny/huge glyphs).
+      const ITEM_HELD_PLANE_SCALE = {};
+
+      const _itemIconTextures = {};
+      function _getItemIconTexture(icon) {
+        if (_itemIconTextures[icon]) return _itemIconTextures[icon];
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.font = `${Math.round(size * 0.72)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(icon || '❓', size / 2, size * 0.56);
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.magFilter = THREE.LinearFilter;
+        tex.minFilter = THREE.LinearFilter;
+        _itemIconTextures[icon] = tex;
+        return tex;
+      }
+
+      function makeHeldItemPlaneMesh(item) {
+        if (!item) return null;
+        const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1);
+        const geo = new THREE.PlaneGeometry(w, w);
+        const mat = new THREE.MeshBasicMaterial({
+          map: _getItemIconTexture(item.icon),
+          transparent: true,
+          alphaTest: 0.05,
+          side: THREE.DoubleSide,
+        });
+        const plane = new THREE.Mesh(geo, mat);
+        plane.renderOrder = 3;
+        return plane;
+      }
+
+      // Child of playerMesh (not scene, unlike toolHolder) — it has no swing
+      // animation, so it can just ride along with the player's position and
+      // facing at a fixed local offset instead of being repositioned in world
+      // space every frame.
+      const heldItemHolder = new THREE.Group();
+      heldItemHolder.visible = false;
+      playerMesh.add(heldItemHolder);
+      _markPngPlane(heldItemHolder);
+
+      let _heldItemPlane = null, _heldItemKey = null;
+      function updateHeldItemHolder() {
+        const item = getActiveInventoryItem();
+        if (!item) { heldItemHolder.visible = false; return; }
+        if (item.key !== _heldItemKey) {
+          if (_heldItemPlane) {
+            heldItemHolder.remove(_heldItemPlane);
+            _heldItemPlane.geometry.dispose();
+            _heldItemPlane.material.dispose();
+          }
+          _heldItemPlane = makeHeldItemPlaneMesh(item);
+          _heldItemKey = item.key;
+          if (_heldItemPlane) heldItemHolder.add(_heldItemPlane);
+        }
+        heldItemHolder.position.set(0, playerItemHoldY, HELD_ITEM_FORWARD_OFFSET);
+        heldItemHolder.visible = !!_heldItemPlane;
+      }
+
       // Pre-allocated objects to avoid per-frame GC in updateToolMesh
       const _tUp      = new THREE.Vector3(0, 1, 0);
       const _xAxis    = new THREE.Vector3(1, 0, 0); // tool-local pitch axis (thrust)
@@ -19036,6 +19119,16 @@
       };
 
       function updateToolMesh(dt) {
+        // While a bag item is selected (heldMode === 'item' — the arch shows
+        // its use actions), show the held-item chest plane instead of
+        // whatever tool/weapon is equipped; the tool mesh comes back the
+        // moment the player returns to tool mode.
+        if (heldMode === 'item') {
+          toolHolder.visible = false;
+          updateHeldItemHolder();
+          return;
+        }
+        heldItemHolder.visible = false;
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
 
