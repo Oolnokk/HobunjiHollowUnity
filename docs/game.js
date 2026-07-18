@@ -2148,6 +2148,53 @@
         return Object.keys(counts).filter(eff => counts[eff] >= 2);
       }
 
+      // ── Potions (brewed, storable, drinkable from the bag anywhere) ──
+      // A potion's item key is a deterministic sort of its effect list, so
+      // the same combination of shared effects always stacks into the same
+      // item, and — since effect ids never contain '_' — the key alone is
+      // enough to recover which effects it grants after a reload, with no
+      // separate persisted registry needed (see getPotionEffectsFromKey,
+      // called for every saved inventory key in spawnPlayerAvatar).
+      const ALCHEMY_POTION_ITEMS = {}; // itemKey -> effects[], rebuilt from the key as needed
+      function potionItemKeyForEffects(effects) {
+        return 'potion_' + [...effects].sort().join('_');
+      }
+      function getPotionEffectsFromKey(key) {
+        if (!key.startsWith('potion_')) return null;
+        const effects = key.slice('potion_'.length).split('_');
+        return effects.length && effects.every(e => ALCHEMY_EFFECT_DEFS[e]) ? effects : null;
+      }
+      function ensurePotionItemDef(effects) {
+        const key = potionItemKeyForEffects(effects);
+        ALCHEMY_POTION_ITEMS[key] = effects;
+        if (!ITEM_DEFS[key]) {
+          const names = effects.map(e => ALCHEMY_EFFECT_DEFS[e].label);
+          const anyBane = effects.some(e => ALCHEMY_EFFECT_DEFS[e].kind === 'bane');
+          ITEM_DEFS[key] = {
+            icon: '🧪',
+            label: 'Potion of ' + names.join(' & '),
+            cat: 'processed',
+            sellPrice: 0,
+            tags: ['Potion', 'Alchemy', ...(anyBane ? ['Mixed'] : [])],
+            desc: 'A brewed potion. Drink it (from the Inventory panel, anywhere) to gain: ' + names.join(', ') + '.',
+          };
+        }
+        return key;
+      }
+
+      // Consumes 1 potion and applies every effect it carries — see
+      // selectInventoryItem's Drink button, the only place this is called
+      // from, so it works from the Inventory panel regardless of location.
+      function drinkPotion(key) {
+        const effects = ALCHEMY_POTION_ITEMS[key] || getPotionEffectsFromKey(key);
+        if (!effects || (inventory[key] || 0) < 1) return { ok: false, message: 'No potion to drink.' };
+        inventory[key]--;
+        clampInventoryStack(key);
+        effects.forEach(eff => applyAlchemyEffect(eff));
+        const names = effects.map(e => ALCHEMY_EFFECT_DEFS[e].label).join(', ');
+        return { ok: true, message: '🧪 Drank a potion: ' + names + '.' };
+      }
+
       // ── Active buffs/debuffs (on-screen icon strip) ──────────────────
       let activeAlchemyEffects = []; // [{ key, label, icon, kind, durationS, expiresAt }]
 
@@ -10758,8 +10805,11 @@
 
       // One re-tinted copy of the grass-leaf silhouette per reagent color —
       // same texture/sway shader as ordinary grass billboards (grassBillboardMat),
-      // just a flat solid fill instead of the green tint-blend, so each
-      // reagent species reads as a distinct colored "billboard grass" tuft.
+      // and the same luminance-preserving tint-blend those use (uTint * (0.7 +
+      // lum*0.8) in _grassBillFrag) rather than a flat solid fill, so each
+      // reagent species reads as a distinct hue while keeping the leaf
+      // texture's own light/dark shading (veins, highlights) intact — only
+      // hue/saturation change per reagent, not the source texture's value.
       const _reagentPlantMaterials = new Map(); // colorHex -> ShaderMaterial
       function getReagentPlantMaterial(colorHex) {
         if (!_grassLeafTex) return null;
@@ -10779,7 +10829,9 @@
             void main() {
               vec4 texel = texture2D(uGrassTex, vUv);
               if (texel.a < 0.5) discard;
-              gl_FragColor = vec4(uColor, 1.0);
+              float lum = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
+              vec3 tinted = uColor * (0.7 + lum * 0.8);
+              gl_FragColor = vec4(tinted, 1.0);
             }
           `,
           alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
@@ -11535,10 +11587,10 @@
         renderAlchemyPanel();
       }
 
-      // Consumes the selected reagents and applies whatever effects they
-      // share (see computeBrewEffects) as active buffs/debuffs — brewed
-      // potions are drunk on the spot rather than stored, so there's no
-      // separate "use potion" step.
+      // Consumes the selected reagents and, if they share any effects (see
+      // computeBrewEffects), credits 1 storable Potion item carrying those
+      // effects — drunk later from the Inventory panel (see
+      // selectInventoryItem's Drink button), anywhere, not just at the table.
       function brewPotion() {
         const keys = alchemySelectedReagents.filter(k => (inventory[k] || 0) > 0);
         if (keys.length < 2) return { ok: false, message: 'Select at least 2 reagents.' };
@@ -11549,11 +11601,12 @@
           def.effects.forEach((eff, idx) => { if (effects.includes(eff)) discoverReagentEffect(rk, idx); });
         }
         keys.forEach(k => { inventory[k]--; clampInventoryStack(k); });
-        effects.forEach(eff => applyAlchemyEffect(eff));
+        const potionKey = ensurePotionItemDef(effects);
+        inventory[potionKey] = Math.min(99, (inventory[potionKey] || 0) + 1);
         alchemySelectedReagents = [];
         refreshItemScroll();
         const names = effects.map(e => ALCHEMY_EFFECT_DEFS[e].label).join(', ');
-        return { ok: true, message: '⚗️ Brewed a potion: ' + names + '.' };
+        return { ok: true, message: '⚗️ Brewed a Potion of ' + names + '. Drink it from your bag any time.' };
       }
 
       window._doBrewPotion = function () {
@@ -12198,6 +12251,16 @@
             b.textContent = label; b.onclick = fn;
             actEl.appendChild(b);
           }
+          // Potions are drinkable from right here — the Inventory panel is
+          // reachable from anywhere, so this is the "consume anywhere" path
+          // (as opposed to brewing, which still needs the Alchemy Table).
+          if ((ALCHEMY_POTION_ITEMS[key] || getPotionEffectsFromKey(key)) && count > 0) {
+            mkBtn('🧪 Drink', 'equip', () => {
+              const result = drinkPotion(key);
+              showToast(result.message, result.ok !== false);
+              if (result.ok !== false) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
+            });
+          }
           if (def.sellPrice > 0 && count > 0) {
             mkBtn(`Sell All  (${count} × ${def.sellPrice}g = ${count * def.sellPrice}g)`, 'sell', () => {
               const earned = (inventory[key] || 0) * def.sellPrice;
@@ -12244,12 +12307,26 @@
         }
       }
 
+      // Single choke point for mutating equipmentSlots — every caller below
+      // (and equipWhistle/unequipWhistle further down) goes through this
+      // instead of assigning equipmentSlots[slot] directly and remembering
+      // to call saveEquipmentSlots() itself, since exactly that got missed
+      // for tool/weapon slot assignment (equipItem/unequipItem never saved
+      // at all — a tool swapped there reverted to the last-saved default on
+      // reload) while every other equip path happened to get it right. A
+      // shared setter makes that whole class of "mutated but forgot to
+      // persist" bug structurally impossible to reintroduce.
+      function setEquipmentSlot(slot, itemKeyOrNull) {
+        equipmentSlots[slot] = itemKeyOrNull;
+        saveEquipmentSlots();
+      }
+
       // Assign a tool item to a slot (tool must be in gear inventory)
       function equipItem(itemKey, slot) {
         const toolDef = TOOL_ITEM_DEFS[itemKey];
         if (!toolDef || !toolDef.slots.includes(slot)) { showToast('Cannot assign that item to that slot.', false); return; }
         if (!gearInventory?.tools?.[itemKey]) { showToast((TOOL_ITEM_DEFS[itemKey]?.label || itemKey) + ' is not in your gear. Transfer it first.', false); return; }
-        equipmentSlots[slot] = itemKey;
+        setEquipmentSlot(slot, itemKey);
         rebuildToolMeshes();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
@@ -12261,7 +12338,7 @@
       function unequipItem(slot) {
         const itemKey = equipmentSlots[slot];
         if (!itemKey) return;
-        equipmentSlots[slot] = null;
+        setEquipmentSlot(slot, null);
         rebuildToolMeshes();
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
@@ -12807,14 +12884,12 @@
       }
 
       function equipWhistle(whistleId) {
-        equipmentSlots.whistle = whistleId;
-        saveEquipmentSlots();
+        setEquipmentSlot('whistle', whistleId);
         buildWhistleEquipUI();
       }
 
       function unequipWhistle() {
-        equipmentSlots.whistle = null;
-        saveEquipmentSlots();
+        setEquipmentSlot('whistle', null);
         buildWhistleEquipUI();
       }
 
@@ -23756,6 +23831,15 @@
         restoreKnownReagentEffects(playerData.alchemyKnownEffects);
         restoreActiveAlchemyEffects(playerData.alchemyActiveEffects);
         restoreZoneReagentState(playerData.alchemyReagentState);
+        // Potion items just restored into `inventory` above have no ITEM_DEFS
+        // entry yet this page load (ITEM_DEFS starts empty of them every
+        // session, unlike the static reagent/furniture/fish tables) — rebuild
+        // each one's display/Drink metadata straight from its key, which
+        // deterministically encodes its effects (see ensurePotionItemDef).
+        Object.keys(inventory).forEach(key => {
+          const effects = getPotionEffectsFromKey(key);
+          if (effects) ensurePotionItemDef(effects);
+        });
 
         gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
           ? playerData.gearInventory
