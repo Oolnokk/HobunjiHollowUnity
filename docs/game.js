@@ -15267,6 +15267,26 @@
       const FISH_CLASS_RETARGET   = { smooth: 0.25, mixed: 0.55, sinker: 0.5, floater: 0.5, dart: 1.2 };
       const FISH_CLASS_SMOOTHNESS = { smooth: 0.8,  mixed: 1.4,  sinker: 1.5, floater: 1.5, dart: 4.0 };
 
+      // Periodic "surface → dive into the safe zone → resurface" behavior —
+      // unlike FISH_RESPAWN_TIMING's panic-triggered escape below, this is
+      // unprompted: every fish does it on its own cadence as part of normal
+      // movement, ported from the prototype's FishBehavior.maybeStartDive/
+      // updateDiveOverlay (see docs/tools, or the uploaded prototype HTML).
+      const FISH_CLASS_DIVE_CADENCE  = { smooth: 0.82, mixed: 1.0, sinker: 0.95, floater: 0.95, dart: 1.28 };
+      const FISH_CLASS_DIVE_RADIUS   = { smooth: 0.78, mixed: 1.0, sinker: 0.92, floater: 0.92, dart: 1.3 };
+      // The prototype uses two separate "indecision" tables with slightly
+      // different numbers — one tunes how eagerly a dive starts, the other
+      // how jittery the underwater inspect-motion looks. Kept distinct here
+      // rather than merged, matching the source.
+      const FISH_CLASS_DIVE_START_INDECISION   = { smooth: 0.8,  mixed: 1.0, sinker: 0.9, floater: 1.05, dart: 1.35 };
+      const FISH_CLASS_DIVE_INSPECT_INDECISION = { smooth: 0.78, mixed: 1.0, sinker: 0.9, floater: 1.0,  dart: 1.42 };
+      // The prototype's dive-radius formula below was tuned against its own
+      // ring (SVG groove sits at r=340); scaling by this ratio makes the dive
+      // pull proportionally as far toward the center on FISHING_RING's much
+      // smaller scale instead of importing the raw prototype pixel values.
+      const FISH_DIVE_RADIUS_SCALE = FISHING_RING.fishRadius / 340;
+      const FISH_DIVE_TARGET_PERCENT = 50; // % of time (clamped 50-80) a fish aims to spend submerged
+
       // Real-asset rendering for the fish silhouette + harpoon/mace sprite, ported
       // from the spearfishing prototype's ensureFishDeformCanvas/renderImageFish/
       // renderBridgeSpearSprite. The fish body+whiskers PNGs face left, same as the
@@ -15522,6 +15542,93 @@
         f.angle = (f.pos * 359) % 360;
       }
 
+      // Rolls whether the fish starts a new unprompted dive this frame. The
+      // hidden 1D ring patrol (fishStepMotion/f.angle) keeps running the whole
+      // time — a dive only pulls the *visible* render position in toward the
+      // center (f.renderRadius/f.renderAngle), it never pauses or reroutes the
+      // underlying patrol. chancePerSecond is derived so that, on average, the
+      // fish spends FISH_DIVE_TARGET_PERCENT of its time submerged.
+      function fishMaybeStartDive(fm, dt) {
+        const dive = fm.dive;
+        if (dive.active) return false;
+        dive.cooldown -= dt;
+        if (dive.cooldown > 0) return false;
+
+        const cls = fm.fishClass;
+        const d01 = fm.difficulty / 100;
+        const cadence = FISH_CLASS_DIVE_CADENCE[cls] ?? FISH_CLASS_DIVE_CADENCE.mixed;
+        const radiusMul = FISH_CLASS_DIVE_RADIUS[cls] ?? FISH_CLASS_DIVE_RADIUS.mixed;
+        const startIndecision = FISH_CLASS_DIVE_START_INDECISION[cls] ?? FISH_CLASS_DIVE_START_INDECISION.mixed;
+
+        const diveDurationEstimate = 3.4 + startIndecision * 1.2 + d01 * 1.2;
+        const targetFraction = clamp(FISH_DIVE_TARGET_PERCENT / 100, 0.5, 0.8);
+        const expectedSurfaceWindow = diveDurationEstimate * (1 - targetFraction) / Math.max(0.001, targetFraction);
+        const chancePerSecond = 1 / Math.max(0.2, expectedSurfaceWindow * (1 / cadence));
+
+        if (Math.random() < chancePerSecond * dt) {
+          dive.active = true;
+          dive.timer = 0;
+          dive.lastDuration = diveDurationEstimate;
+          dive.inspectTargetAngle = fm.fish.angle;
+          dive.visualOffset = 0;
+          dive.centerRadius = (72 + radiusMul * 18 + d01 * 16 + Math.random() * (14 + radiusMul * 8)) * FISH_DIVE_RADIUS_SCALE;
+          dive.cooldown = Math.max(0.15, expectedSurfaceWindow * 0.2 + Math.random() * expectedSurfaceWindow * 0.28);
+          fm.fish.dimmed = true;
+          return true;
+        }
+        return false;
+      }
+
+      // Drives f.renderAngle/f.renderRadius through the dive: pull in toward
+      // dive.centerRadius, "inspect" the pool by wandering visualOffset around
+      // a periodically re-picked angle, then ease back out onto the ring.
+      // Rather than ending on a fixed timer, the surfacing phase keeps easing
+      // until both the angle offset and radius have actually converged back
+      // onto the hidden ring track, so it can't visibly snap into place.
+      function fishUpdateDiveOverlay(fm, dt) {
+        const f = fm.fish, dive = fm.dive;
+        const cls = fm.fishClass;
+        const d01 = fm.difficulty / 100;
+        const inspectIndecision = FISH_CLASS_DIVE_INSPECT_INDECISION[cls] ?? FISH_CLASS_DIVE_INSPECT_INDECISION.mixed;
+        const inspectStep = 0.95 - inspectIndecision * 0.22 + (1 - d01) * 0.1;
+        const inspectTurnRate = 1.8 + inspectIndecision * 1.4 + d01 * 0.8;
+        const inspectWobble = 8 + inspectIndecision * 10;
+        const enterExitRate = 4.8 + d01 * 1.4;
+
+        dive.timer += dt;
+
+        if (dive.timer < 0.45) {
+          f.renderRadius += (dive.centerRadius - f.renderRadius) * Math.min(1, dt * enterExitRate);
+        } else if (dive.timer < dive.lastDuration - 0.65) {
+          const phase = dive.timer - 0.45;
+          if (Math.floor(phase / Math.max(0.24, inspectStep)) !== Math.floor((phase - dt) / Math.max(0.24, inspectStep))) {
+            const bias = cls === 'sinker' ? 180 : cls === 'floater' ? 0 : f.angle;
+            dive.inspectTargetAngle = (bias + (Math.random() * 120 - 60) + Math.random() * 260 * (cls === 'dart' ? 0.22 : 0.08)) % 360;
+          }
+          const targetOffset = angleDiffDeg(f.angle, dive.inspectTargetAngle);
+          dive.visualOffset += (targetOffset - dive.visualOffset) * Math.min(1, dt * inspectTurnRate);
+          dive.visualOffset += Math.sin(dive.timer * (3.2 + inspectIndecision * 1.2)) * inspectWobble * dt;
+          dive.visualOffset = clamp(dive.visualOffset, -42, 42);
+
+          f.renderRadius += (dive.centerRadius - f.renderRadius) * Math.min(1, dt * (2.4 + d01 * 1.1));
+        } else {
+          dive.visualOffset += (0 - dive.visualOffset) * Math.min(1, dt * 6.8);
+          f.renderRadius += (FISHING_RING.fishRadius - f.renderRadius) * Math.min(1, dt * (enterExitRate + 1.2));
+
+          const offsetDone = Math.abs(dive.visualOffset) < 0.55;
+          const radiusDone = Math.abs(f.renderRadius - FISHING_RING.fishRadius) < 1.25;
+
+          if (offsetDone && radiusDone) {
+            dive.active = false;
+            dive.visualOffset = 0;
+            f.renderRadius = FISHING_RING.fishRadius;
+            f.dimmed = false;
+            f.renderAngle = f.angle;
+          }
+        }
+
+        f.renderAngle = (f.angle + dive.visualOffset + 360) % 360;
+      }
       function fishingPolarToXY(angleDeg, radius) {
         const rad = (angleDeg - 90) * Math.PI / 180; // 0deg = top, matches prototype orientation
         return { x: FISHING_RING.cx + Math.cos(rad) * radius, y: FISHING_RING.cy + Math.sin(rad) * radius };
@@ -15565,7 +15672,12 @@
           anchorWorld,
           fish: {
             pos: Math.random(), vel: 0, targetVel: 0, angle: 0,
+            renderAngle: 0, renderRadius: FISHING_RING.fishRadius, dimmed: false,
             moveDir: 1, pendingMoveDir: 1, turning: false, turnProgress: 0, localFacingScale: 1,
+          },
+          dive: {
+            active: false, timer: 0, cooldown: 3 + Math.random() * 4,
+            inspectTargetAngle: 0, centerRadius: FISHING_RING.fishRadius * 0.3, lastDuration: 0, visualOffset: 0,
           },
           bridge: {
             angle: 0, direction: 1, segmentSize: FISHING_RING.segmentSize, speed: FISHING_RING.sweepSpeed,
@@ -15657,7 +15769,15 @@
       function fishingTryTipCatch(fm) {
         const b = fm.bridge;
         if (b.caughtFish || !b.spearActive) return false;
-        const fishPos = fishingPolarToXY(fm.fish.angle, FISHING_RING.fishRadius);
+        // Diving pulls the fish's *rendered* position off the ring toward the
+        // center (fm.fish.renderAngle/renderRadius) — testing against that
+        // instead of the hidden ring angle/fixed ring radius is what makes a
+        // dive genuinely unhittable, not just visually distinct. The explicit
+        // dive.active check is a belt-and-suspenders guard for the first
+        // instant of a dive, before renderRadius has eased inward enough for
+        // distance alone to rule it out.
+        if (fm.dive.active) return false;
+        const fishPos = fishingPolarToXY(fm.fish.renderAngle, fm.fish.renderRadius);
         const colliderRadius = 14;
         const dist = fishingDistPointToSegment(fishPos.x, fishPos.y, b.prevTipX, b.prevTipY, b.tipX, b.tipY);
         if (dist <= colliderRadius) { b.caughtFish = true; return true; }
@@ -15686,11 +15806,17 @@
         r.active = true;
         r.phase = 'retreat';
         r.timer = 0;
-        r.startAngle = fm.fish.angle;
-        r.startRadius = FISHING_RING.fishRadius;
+        // Start from the fish's actual current on-screen spot, not its hidden
+        // ring angle/fixed ring radius — panic can max out while a dive is
+        // mid-flight, and starting the escape slide from wherever it visually
+        // was avoids a pop to the ring edge first.
+        r.startAngle = fm.fish.renderAngle;
+        r.startRadius = fm.fish.renderRadius;
         r.centerAngle = r.startAngle;
         r.centerRadius = 72 + Math.random() * 26;
         r.scale = 1;
+        fm.dive.active = false;
+        fm.dive.visualOffset = 0;
         fm.message = 'Fish fled into the pool.';
         fm.messageType = 'bad';
       }
@@ -15711,6 +15837,11 @@
         fm.fish.localFacingScale = 1;
         fishPickTargetVel(fm);
         fm.panic = 0;
+        fm.dive.active = false;
+        fm.dive.timer = 0;
+        fm.dive.visualOffset = 0;
+        fm.dive.cooldown = 3 + Math.random() * 4;
+        fm.fish.dimmed = false;
         const r = fm.respawn;
         r.enterStartAngle = r.centerAngle;
         r.enterStartRadius = r.centerRadius;
@@ -15811,6 +15942,14 @@
 
         fm.fishAnimT += dt;
         fishStepMotion(fm, dt);
+
+        if (fishMaybeStartDive(fm, dt) || fm.dive.active) {
+          fishUpdateDiveOverlay(fm, dt);
+        } else {
+          fm.fish.renderRadius = FISHING_RING.fishRadius;
+          fm.fish.renderAngle = fm.fish.angle;
+          fm.fish.dimmed = false;
+        }
 
         const b = fm.bridge;
         b.angle = (b.angle + b.speed * b.direction * dt + 360) % 360;
@@ -15963,8 +16102,8 @@
           fishingEls.fishImageRig.setAttribute('opacity', '0');
           return;
         }
-        const renderAngle = pose ? pose.angle : fm.fish.angle;
-        const renderRadius = pose ? pose.radius : FISHING_RING.fishRadius;
+        const renderAngle = pose ? pose.angle : fm.fish.renderAngle;
+        const renderRadius = pose ? pose.radius : fm.fish.renderRadius;
         const renderScale = pose ? pose.scale : 1;
         const fishPt = fishingPolarToXY(renderAngle, renderRadius);
         const deform = renderFishDeformedTexture(fm);
@@ -15989,7 +16128,10 @@
         const scaleX = art.flipX * localFacingScale;
 
         const w = deform.w * renderScale, h = deform.h * renderScale;
-        fishingEls.fishImageRig.setAttribute('opacity', '1');
+        // Dimmed while diving/escaping (fm.fish.dimmed) — a visible cue that
+        // the fish is in the safe zone, on top of it genuinely being
+        // geometrically unreachable (see fishingTryTipCatch).
+        fishingEls.fishImageRig.setAttribute('opacity', pose || !fm.fish.dimmed ? '1' : '0.55');
         fishingEls.fishImageRig.setAttribute('transform', `translate(${fishPt.x.toFixed(2)} ${fishPt.y.toFixed(2)})`);
         fishingEls.fishImageTransform.setAttribute('transform', `rotate(${renderAngle.toFixed(2)}) scale(${scaleX.toFixed(4)} 1)`);
         fishingEls.fishDeformedImage.setAttribute('href', deform.url);
