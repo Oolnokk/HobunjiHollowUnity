@@ -14957,7 +14957,7 @@
             showToast('No river or stream here to fish.', false);
             return;
           }
-          startFishingMinigame();
+          beginFishingCast();
           return;
         }
         // Weapon attacks route through the loadout's tap-slot abilities
@@ -15240,6 +15240,10 @@
         panicStep: 34,
         panicMax: 100,
       };
+      // Bait-cast pre-minigame timings (see beginFishingCast/updateFishingMinigame).
+      const FISHING_BAIT_FLIGHT_S = 0.6; // matches spawnFishingBaitToss's ~0.5-0.62s particle flight time
+      const FISHING_BITE_WAIT_MIN_S = 1.2;
+      const FISHING_BITE_WAIT_MAX_S = 3.0;
       // Escape/respawn sequence timings, ported from the prototype's fishRespawn
       // state: when panic maxes out the fish doesn't just end the round, it visibly
       // slides into the central pool, shrinks away, waits, then a freshly rolled
@@ -15433,8 +15437,14 @@
         }
       }
 
-      let fishingMinigame = null; // non-null while the spear-bridge overlay is open
-      let fishingEls = null;      // cached persistent DOM refs, rebuilt each time the overlay opens
+      // non-null from the moment bait is cast through the whole ring minigame —
+      // fm.phase tracks where in that sequence things are: 'cast' (bait
+      // arcing through the air) -> 'waiting' (bait landed, watching for a
+      // bite) -> 'bite' (splash happened, waiting on the player) -> 'active'
+      // (ring open, existing spear-bridge gameplay).
+      let fishingMinigame = null;
+      let fishingEls = null;       // cached ring SVG DOM refs — built on entering 'active', torn down on close
+      let fishingPromptEls = null; // cached prompt DOM refs (button/status/panic/cancel) — built on entering 'bite', persists into 'active'
       const fishingOverlayEl = document.getElementById('fishingOverlay');
 
       function currentFishZoneKey() {
@@ -15642,7 +15652,89 @@
         return Math.hypot(px - (x1 + dx * t), py - (y1 + dy * t));
       }
 
-      function startFishingMinigame() {
+      // ── Fishing FX particles (bait toss / bite splash) ────────────────
+      // Small one-off 3D bursts, deliberately separate from the existing
+      // actionParticles (2D HUD-canvas tool feedback) and waterParticles
+      // (ambient, tile-local trench bubbles) systems — these need to travel
+      // through real 3D world space between the player and the fished tile.
+      const fishingFxParticles = [];
+
+      function spawnFishingFxParticle(pos, vel, opts = {}) {
+        const size = opts.size ?? 0.03;
+        const geo = new THREE.SphereGeometry(size, 4, 3);
+        const mat = new THREE.MeshBasicMaterial({ color: opts.color ?? 0xffffff, transparent: true, opacity: 1 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(pos.x, pos.y, pos.z);
+        scene.add(mesh);
+        fishingFxParticles.push({
+          mesh, mat,
+          vx: vel.x, vy: vel.y, vz: vel.z,
+          gravity: opts.gravity ?? -4.2,
+          age: 0,
+          maxAge: opts.maxAge ?? 0.55,
+        });
+      }
+
+      // Arcs a handful of small particles from the player toward the fished
+      // water tile — cosmetic stand-in for tossing bait onto the surface.
+      // These avatars have no arms to actually throw with, so the particle
+      // arc alone has to sell the motion (see beginFishingCast).
+      function spawnFishingBaitToss(fromWorld, toWorld) {
+        const dx = toWorld.x - fromWorld.x, dz = toWorld.z - fromWorld.z;
+        for (let i = 0; i < 7; i++) {
+          const T = 0.5 + Math.random() * 0.12;          // flight time
+          const h = 0.3 + Math.random() * 0.15;           // arc peak height
+          const gravity = -8 * h / (T * T);
+          const vy = 4 * h / T;
+          const jitter = 0.06;
+          spawnFishingFxParticle(
+            { x: fromWorld.x, y: fromWorld.y + 0.5, z: fromWorld.z },
+            { x: dx / T + (Math.random() - 0.5) * jitter, y: vy, z: dz / T + (Math.random() - 0.5) * jitter },
+            { size: 0.025 + Math.random() * 0.02, color: 0xcdaa6b, gravity, maxAge: T }
+          );
+        }
+      }
+
+      // Small upward/outward burst at the water surface for the bite —
+      // see the 'waiting' → 'bite' phase transition below.
+      function spawnFishingBiteSplash(atWorld) {
+        for (let i = 0; i < 12; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 0.6 + Math.random() * 0.9;
+          spawnFishingFxParticle(
+            { x: atWorld.x, y: atWorld.y + 0.02, z: atWorld.z },
+            { x: Math.cos(angle) * speed, y: 1.4 + Math.random() * 0.8, z: Math.sin(angle) * speed },
+            { size: 0.03 + Math.random() * 0.025, color: 0xdff3ff, gravity: -4.6, maxAge: 0.4 + Math.random() * 0.25 }
+          );
+        }
+      }
+
+      function updateFishingFxParticles(dt) {
+        for (let i = fishingFxParticles.length - 1; i >= 0; i--) {
+          const p = fishingFxParticles[i];
+          p.age += dt;
+          if (p.age >= p.maxAge) {
+            scene.remove(p.mesh);
+            p.mesh.geometry.dispose();
+            p.mat.dispose();
+            fishingFxParticles.splice(i, 1);
+            continue;
+          }
+          p.vy += p.gravity * dt;
+          p.mesh.position.x += p.vx * dt;
+          p.mesh.position.y += p.vy * dt;
+          p.mesh.position.z += p.vz * dt;
+          p.mat.opacity = Math.max(0, 1 - p.age / p.maxAge);
+        }
+      }
+
+      // Entry point (replaces the old immediate-start startFishingMinigame):
+      // interacting with water while a harpoon is equipped only casts bait
+      // and swaps the camera — the ring doesn't open until the player
+      // confirms a bite (see beginFishingRing). World time/NPCs/weather keep
+      // running throughout; only player movement is suspended (see the guard
+      // in updateMovement).
+      function beginFishingCast() {
         const picked = pickFishForCurrentZone();
         if (!picked) { showToast('No fish here.', false); return; }
         const { fish, zoneKey } = picked;
@@ -15663,47 +15755,27 @@
           y: tileSurfaceYInArea(reticleTile, currentArea) + 0.35,
         };
         fishingMinigame = {
-          active: true,
+          phase: 'cast',
+          phaseTimer: 0,
+          biteAt: FISHING_BITE_WAIT_MIN_S + Math.random() * (FISHING_BITE_WAIT_MAX_S - FISHING_BITE_WAIT_MIN_S),
+          anchorWorld,
           fishDef: fish,
           zoneKey,
           difficulty: fish.difficulty,
           fishClass: fish.fishClass,
-          fishAnimT: 0,
-          anchorWorld,
-          fish: {
-            pos: Math.random(), vel: 0, targetVel: 0, angle: 0,
-            renderAngle: 0, renderRadius: FISHING_RING.fishRadius, dimmed: false,
-            moveDir: 1, pendingMoveDir: 1, turning: false, turnProgress: 0, localFacingScale: 1,
-          },
-          dive: {
-            active: false, timer: 0, cooldown: 3 + Math.random() * 4,
-            inspectTargetAngle: 0, centerRadius: FISHING_RING.fishRadius * 0.3, lastDuration: 0, visualOffset: 0,
-          },
-          bridge: {
-            angle: 0, direction: 1, segmentSize: FISHING_RING.segmentSize, speed: FISHING_RING.sweepSpeed,
-            markerA: null, markerB: null, spearActive: false, lineA: null, lineB: null,
-            shotTimer: 0, retractTimer: 0, tipX: 0, tipY: 0, prevTipX: 0, prevTipY: 0, caughtFish: false,
-            weaponSpinDeg: 0, frozenWeaponAngleDeg: 0,
-          },
-          panic: 0,
-          resolved: false,
-          resultTimer: 0,
-          message: 'Tap Fire to drop the first marker.',
-          messageType: '',
-          respawn: {
-            active: false, phase: 'idle', timer: 0, scale: 1,
-            startAngle: 0, startRadius: FISHING_RING.fishRadius,
-            centerAngle: 0, centerRadius: 0,
-            enterStartAngle: 0, enterStartRadius: 0, enterTargetAngle: 0,
-          },
+          active: true,
         };
-        fishPickTargetVel(fishingMinigame);
-        _fishDeformUrlCache = null;
-        _fishDeformUrlCacheAt = -Infinity;
-        window.__farmLog?.(`fishing started: zone=${zoneKey} fish=${fish.key} anchor=(${anchorWorld.x.toFixed(2)},${anchorWorld.y.toFixed(2)},${anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`);
-        // World time/NPCs/weather keep running during the minigame — only
-        // player movement is suspended (see the guard in updateMovement).
-        renderFishingOverlay();
+        // Hold the harpoon at its windup extreme for the whole cast/waiting/
+        // bite sequence, so the character visibly looks like it's getting
+        // ready instead of resting in its normal idle pose.
+        fishingReadyPose = true;
+        spawnFishingBaitToss(
+          { x: playerMesh.position.x, y: playerMesh.position.y, z: playerMesh.position.z },
+          anchorWorld
+        );
+        fishingOverlayEl.innerHTML = '';
+        fishingEls = null;
+        fishingPromptEls = null;
         fishingOverlayEl.classList.add('open');
 
         // Swap to the "fishing" camera mode (fixed diagonal offset, matching the
@@ -15715,12 +15787,69 @@
         activeCameraTarget = { position: new THREE.Vector3(anchorWorld.x, anchorWorld.y, anchorWorld.z) };
       }
 
+      // Opens the actual spear-bridge ring once the player confirms a bite
+      // (fm.phase 'bite' -> 'active') — extends the existing fm in place
+      // rather than replacing it, so anchorWorld/camera/overlay state from
+      // beginFishingCast carries straight through.
+      function beginFishingRing(fm) {
+        fm.phase = 'active';
+        fm.fishAnimT = 0;
+        fm.fish = {
+          pos: Math.random(), vel: 0, targetVel: 0, angle: 0,
+          renderAngle: 0, renderRadius: FISHING_RING.fishRadius, dimmed: false,
+          moveDir: 1, pendingMoveDir: 1, turning: false, turnProgress: 0, localFacingScale: 1,
+        };
+        fm.dive = {
+          active: false, timer: 0, cooldown: 3 + Math.random() * 4,
+          inspectTargetAngle: 0, centerRadius: FISHING_RING.fishRadius * 0.3, lastDuration: 0, visualOffset: 0,
+        };
+        fm.bridge = {
+          angle: 0, direction: 1, segmentSize: FISHING_RING.segmentSize, speed: FISHING_RING.sweepSpeed,
+          markerA: null, markerB: null, spearActive: false, lineA: null, lineB: null,
+          shotTimer: 0, retractTimer: 0, tipX: 0, tipY: 0, prevTipX: 0, prevTipY: 0, caughtFish: false,
+          weaponSpinDeg: 0, frozenWeaponAngleDeg: 0,
+        };
+        fm.panic = 0;
+        fm.resolved = false;
+        fm.resultTimer = 0;
+        fm.message = 'Tap Fire to drop the first marker.';
+        fm.messageType = '';
+        fm.respawn = {
+          active: false, phase: 'idle', timer: 0, scale: 1,
+          startAngle: 0, startRadius: FISHING_RING.fishRadius,
+          centerAngle: 0, centerRadius: 0,
+          enterStartAngle: 0, enterStartRadius: 0, enterTargetAngle: 0,
+        };
+        fishPickTargetVel(fm);
+        _fishDeformUrlCache = null;
+        _fishDeformUrlCacheAt = -Infinity;
+        fishingReadyPose = false;
+        window.__farmLog?.(`fishing ring opened: zone=${fm.zoneKey} fish=${fm.fishDef.key} anchor=(${fm.anchorWorld.x.toFixed(2)},${fm.anchorWorld.y.toFixed(2)},${fm.anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`);
+        // The prompt DOM (button/status/panic/cancel) persists across this
+        // transition; only the ring SVG is fresh here.
+        fishingEls = null;
+        renderFishingOverlay();
+      }
+
+      // Dispatches the "primary" fishing button/key press (action bar tap,
+      // Space/Enter) to whatever it means at the current phase: confirm a
+      // bite to open the ring, or place/fire a bridge marker once it's open.
+      // No-op during 'cast'/'waiting' — there's nothing to do until a bite.
+      function fishingPrimaryAction() {
+        const fm = fishingMinigame;
+        if (!fm) return;
+        if (fm.phase === 'bite') { beginFishingRing(fm); return; }
+        if (fm.phase === 'active') { fireFishingBridge(); return; }
+      }
+
       function closeFishingMinigame() {
         if (!fishingMinigame) return;
         fishingMinigame = null;
+        fishingReadyPose = false;
         fishingOverlayEl.classList.remove('open');
         fishingOverlayEl.innerHTML = '';
         fishingEls = null;
+        fishingPromptEls = null;
         if (_prevCameraMode !== null) { activeCameraMode = _prevCameraMode; _prevCameraMode = null; }
         activeCameraTarget = _prevCameraTarget;
         _prevCameraTarget = null;
@@ -15931,6 +16060,20 @@
       function updateFishingMinigame(dt) {
         const fm = fishingMinigame;
         if (!fm) return;
+
+        if (fm.phase !== 'active') {
+          fm.phaseTimer += dt;
+          if (fm.phase === 'cast' && fm.phaseTimer >= FISHING_BAIT_FLIGHT_S) {
+            fm.phase = 'waiting';
+            fm.phaseTimer = 0;
+          } else if (fm.phase === 'waiting' && fm.phaseTimer >= fm.biteAt) {
+            spawnFishingBiteSplash(fm.anchorWorld);
+            fm.phase = 'bite';
+          }
+          renderFishingOverlay();
+          return;
+        }
+
         if (fm.resolved) {
           fm.resultTimer -= dt;
           if (fm.resultTimer <= 0) { closeFishingMinigame(); return; }
@@ -15981,17 +16124,21 @@
             const t = b.retractTimer / FISHING_RING.retractDuration;
             b.tipX = bPt.x + (a.x - bPt.x) * t;
             b.tipY = bPt.y + (a.y - bPt.y) * t;
+          } else if (b.caughtFish) {
+            // Leave the bridge/spear state alone on a catch — the fish stays
+            // pinned to the (now fully retracted) tip position for the whole
+            // "Caught!" celebration window instead of popping back onto the
+            // ring the instant it resolves. closeFishingMinigame() discards
+            // the whole fishingMinigame object once the round actually ends,
+            // so there's nothing to clean up here.
+            resolveFishingRound(fm, true);
           } else {
-            if (b.caughtFish) {
-              resolveFishingRound(fm, true);
+            fm.panic = Math.min(FISHING_RING.panicMax, fm.panic + FISHING_RING.panicStep);
+            if (fm.panic >= FISHING_RING.panicMax) {
+              resolveFishingRound(fm, false);
             } else {
-              fm.panic = Math.min(FISHING_RING.panicMax, fm.panic + FISHING_RING.panicStep);
-              if (fm.panic >= FISHING_RING.panicMax) {
-                resolveFishingRound(fm, false);
-              } else {
-                fm.message = 'Missed! Panic rising.';
-                fm.messageType = 'bad';
-              }
+              fm.message = 'Missed! Panic rising.';
+              fm.messageType = 'bad';
             }
             b.spearActive = false;
             b.lineA = null;
@@ -16009,33 +16156,57 @@
       // only touch attributes on the cached nodes below (renderFishingOverlay), so the
       // deformed-fish canvas/dataURL churn each frame doesn't force a full innerHTML
       // rebuild + listener rebind every tick.
-      function buildFishingOverlayDom(fm) {
+      // Built once on entering 'bite' and left in place through 'active' —
+      // a single containerless button whose label does double duty: "Ready
+      // Harpoon" confirms a bite (opens the ring) and then, once open, drops
+      // the first bridge marker; it becomes "Throw Harpoon" for the second
+      // tap that actually releases the spear (see fishingPrimaryAction/
+      // fireFishingBridge and renderFishingOverlay's label logic).
+      function buildFishingPromptDom() {
+        const wrap = document.createElement('div');
+        wrap.className = 'fish-prompt';
+        wrap.innerHTML = `
+          <button class="fish-prompt-btn" id="fishPromptBtn">Ready Harpoon</button>
+          <div class="fish-status" id="fishStatus"></div>
+          <div class="fish-panic-wrap" id="fishPanicWrap"><div class="fish-panic-fill" id="fishPanicFill"></div></div>
+          <button class="fish-cancel-btn" id="fishCancelBtn">Give up</button>`;
+        fishingOverlayEl.appendChild(wrap);
+
+        fishingPromptEls = {
+          wrap,
+          btn: document.getElementById('fishPromptBtn'),
+          status: document.getElementById('fishStatus'),
+          panicWrap: document.getElementById('fishPanicWrap'),
+          panicFill: document.getElementById('fishPanicFill'),
+        };
+        fishingPromptEls.btn.addEventListener('pointerup', (e) => { e.stopPropagation(); fishingPrimaryAction(); });
+        const cancelBtn = document.getElementById('fishCancelBtn');
+        if (cancelBtn) cancelBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); closeFishingMinigame(); });
+      }
+
+      // Built once on entering 'active' (the ring SVG only — the prompt
+      // dock above is already in place by then, carried over from 'bite').
+      function buildFishingRingDom() {
         const R = FISHING_RING;
         const outerRadius = R.fishRadius + R.outerOffset;
-        fishingOverlayEl.innerHTML = `
-          <div class="fish-ring-wrap" id="fishRingWrap">
-            <svg viewBox="0 0 ${R.cx * 2} ${R.cy * 2}">
-              <circle cx="${R.cx}" cy="${R.cy}" r="${R.fishRadius}" fill="none" stroke="rgba(127,232,154,0.4)" stroke-width="2"/>
-              <circle cx="${R.cx}" cy="${R.cy}" r="${outerRadius}" fill="none" stroke="rgba(255,255,255,0.32)" stroke-width="2"/>
-              <path id="fishSegArc" fill="none" stroke="#f9e28a" stroke-width="6" stroke-linecap="round"/>
-              <circle id="fishMarkerA" r="5" fill="#ff8060" opacity="0"/>
-              <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
-              <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
-              <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
-              <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
-            </svg>
-          </div>
-          <div class="fish-dock">
-            <div class="fish-title">${FISH_ZONE_LABELS[fm.zoneKey]} — Spearfishing</div>
-            <div class="fish-hint">Tap Fire once to drop marker 1, again for marker 2. The spear flies the chord between them — line it up with the fish.</div>
-            <div class="fish-status" id="fishStatus"></div>
-            <div class="fish-panic-wrap"><div class="fish-panic-fill" id="fishPanicFill"></div></div>
-            <button class="fish-fire-btn" id="fishFireBtn">Fire (Space)</button>
-            <button class="fish-cancel-btn" id="fishCancelBtn">Give up</button>
-          </div>`;
+        const ringWrap = document.createElement('div');
+        ringWrap.className = 'fish-ring-wrap';
+        ringWrap.id = 'fishRingWrap';
+        ringWrap.innerHTML = `
+          <svg viewBox="0 0 ${R.cx * 2} ${R.cy * 2}">
+            <circle cx="${R.cx}" cy="${R.cy}" r="${R.fishRadius}" fill="none" stroke="rgba(127,232,154,0.4)" stroke-width="2"/>
+            <circle cx="${R.cx}" cy="${R.cy}" r="${outerRadius}" fill="none" stroke="rgba(255,255,255,0.32)" stroke-width="2"/>
+            <path id="fishSegArc" fill="none" stroke="#f9e28a" stroke-width="6" stroke-linecap="round"/>
+            <circle id="fishMarkerA" r="5" fill="#ff8060" opacity="0"/>
+            <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
+            <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
+            <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
+            <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
+          </svg>`;
+        fishingOverlayEl.insertBefore(ringWrap, fishingOverlayEl.firstChild);
 
         fishingEls = {
-          ringWrap: document.getElementById('fishRingWrap'),
+          ringWrap,
           segArc: document.getElementById('fishSegArc'),
           markerA: document.getElementById('fishMarkerA'),
           markerB: document.getElementById('fishMarkerB'),
@@ -16045,15 +16216,7 @@
           fishImageRig: document.getElementById('fishImageRig'),
           fishImageTransform: document.getElementById('fishImageTransform'),
           fishDeformedImage: document.getElementById('fishDeformedImage'),
-          status: document.getElementById('fishStatus'),
-          panicFill: document.getElementById('fishPanicFill'),
-          dock: document.querySelector('.fish-dock'),
         };
-
-        const fireBtn = document.getElementById('fishFireBtn');
-        if (fireBtn) fireBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); fireFishingBridge(); });
-        const cancelBtn = document.getElementById('fishCancelBtn');
-        if (cancelBtn) cancelBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); closeFishingMinigame(); });
       }
 
       // Ported from the prototype's renderBridgeSpearSprite: positions the real
@@ -16174,28 +16337,48 @@
         fishingEls.ringWrap.style.top = (rect.top + top) + 'px';
       }
 
-      // Keeps the title/hint/status/panic dock parked just to the left of the
+      // Keeps the prompt (button/status/panic) parked just to the left of the
       // player avatar on screen, instead of pinned to the bottom of the page,
       // so it reads as attached to the character doing the fishing.
       function updateFishingDockScreenPosition() {
-        if (!fishingEls?.dock || !playerMesh) return;
+        if (!fishingPromptEls?.wrap || !playerMesh) return;
         const proj = worldToOverlay(playerMesh.position.x, playerMesh.position.y + 0.6, playerMesh.position.z);
         if (!proj.visible) return;
         const dockGap = 105;
-        const dockWidth = 105; // keeps the dock's left edge from running off-screen
+        const dockWidth = 105; // keeps the prompt's left edge from running off-screen
         const rect = _threeRect;
         const left = clamp(proj.x - dockGap, dockWidth, rect.width);
         const top = clamp(proj.y, 0, rect.height);
-        fishingEls.dock.style.left = (rect.left + left) + 'px';
-        fishingEls.dock.style.top = (rect.top + top) + 'px';
+        fishingPromptEls.wrap.style.left = (rect.left + left) + 'px';
+        fishingPromptEls.wrap.style.top = (rect.top + top) + 'px';
       }
 
       function renderFishingOverlay() {
         const fm = fishingMinigame;
         if (!fm) return;
-        if (!fishingEls) buildFishingOverlayDom(fm);
+
+        // Prompt (button + status + panic + cancel) exists from 'bite'
+        // onward and persists through 'active' — see buildFishingPromptDom.
+        if (fm.phase === 'bite' || fm.phase === 'active') {
+          if (!fishingPromptEls) buildFishingPromptDom();
+          updateFishingDockScreenPosition();
+          const notYetMarked = fm.phase === 'bite' || fm.bridge.markerA == null;
+          fishingPromptEls.btn.textContent = notYetMarked ? 'Ready Harpoon' : 'Throw Harpoon';
+          if (fm.phase === 'active') {
+            fishingPromptEls.status.textContent = fm.message;
+            fishingPromptEls.status.className = 'fish-status' + (fm.messageType ? ' ' + fm.messageType : '');
+            fishingPromptEls.panicWrap.style.display = '';
+            fishingPromptEls.panicFill.style.width = fm.panic + '%';
+          } else {
+            fishingPromptEls.status.textContent = '';
+            fishingPromptEls.panicWrap.style.display = 'none';
+          }
+        }
+
+        if (fm.phase !== 'active') return;
+
+        if (!fishingEls) buildFishingRingDom();
         updateFishingRingScreenPosition(fm);
-        updateFishingDockScreenPosition();
 
         const R = FISHING_RING;
         const outerRadius = R.fishRadius + R.outerOffset;
@@ -16229,10 +16412,6 @@
         }
 
         renderFishingImageFish(fm);
-
-        fishingEls.status.textContent = fm.message;
-        fishingEls.status.className = 'fish-status' + (fm.messageType ? ' ' + fm.messageType : '');
-        fishingEls.panicFill.style.width = fm.panic + '%';
       }
 
       function describeFishingArc(radius, startDeg, endDeg) {
@@ -18861,6 +19040,13 @@
       // True while a charge-and-release ability's windup is being held —
       // see triggerWeaponHoldVisual()/releaseWeaponSwingHold() below.
       let combatSwingHeld = false;
+      // True while the player is waiting on a fishing bite (see
+      // beginFishingCast/fishing cast phases below) — holds the equipped
+      // tool at its windup extreme so the harpoon visibly looks "at the
+      // ready" instead of resting in its normal idle pose. Deliberately
+      // separate from combatSwingHeld/triggerWeaponHoldVisual (which only
+      // work for activeTool === 'weapon') rather than reusing that system.
+      let fishingReadyPose = false;
       // Per-ability post-strike pause, in seconds — set via opts.holdS on a
       // triggerWeaponSwingVisual/triggerWeaponHoldVisual call (a config knob
       // each ability's own file sets, not a built-in engine default). 0 means
@@ -19351,6 +19537,12 @@
         const HF = (combatSwingAnim && combatSwingHoldS > 0)
           ? Math.min(0.99, SF + combatSwingHoldS / toolSwingDur)
           : Math.min(0.99, SF + (1 - SF) * 0.3);
+
+        // Pin the swing at its windup extreme while waiting on a bite —
+        // fourPhaseLerp(progress===wf, wf, ...) always resolves to exactly
+        // windupV regardless of style, so this holds any equipped harpoon's
+        // ready pose without needing a style-specific pose computation here.
+        if (fishingReadyPose) progress = WF;
 
         if (combatSwingAnim && combatSwingPose) {
           // POSE-DRIVEN COMBAT SWING — applies a full 7-channel pose authored
@@ -21339,6 +21531,7 @@
             updateLightningFlash(dt);
           }
           updateActionParticles(dt);
+          updateFishingFxParticles(dt);
           // Water sim ticks every 1/8 game-hour (~9s real-time)
           // Uses game time so rain and drainage are clock-consistent
           simAccumulator += dt / DAY_LENGTH_SECONDS * (NIGHT_HOUR - MORNING_HOUR); // game-hours per sec
@@ -23514,7 +23707,7 @@
           return;
         }
         if (fishingMinigame?.active) {
-          if (actionId === 'interact' || actionId === 'action1') fireFishingBridge();
+          if (actionId === 'interact' || actionId === 'action1') fishingPrimaryAction();
           return;
         }
         if (menuOpen || farmEditMode) return;
@@ -23679,7 +23872,7 @@
         const key = event.key.toLowerCase();
         if (fishingMinigame?.active) {
           if (key === 'escape') { event.preventDefault(); closeFishingMinigame(); return; }
-          if (key === ' ' || key === 'enter') { event.preventDefault(); fireFishingBridge(); }
+          if (key === ' ' || key === 'enter') { event.preventDefault(); fishingPrimaryAction(); }
           return;
         }
         if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
