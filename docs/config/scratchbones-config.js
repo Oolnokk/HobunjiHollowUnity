@@ -236,7 +236,10 @@ window.SCRATCHBONES_CONFIG = {
         "style": "primary",
         "npcIds": ["dzibim_khibu"],
         "stationLabels": ["Carpentry Work"],
-        "noTargetMessage": "Find Dzibim at the carpenter's counter to buy barn plans."
+        "noTargetMessage": "Find Dzibim at the carpenter's counter to buy barn plans.",
+        "shopGreeting": "Looking to build something?",
+        "buyChoiceLabel": "Buy",
+        "chatChoiceLabel": "Chat"
       },
       "actionArch": {
         "radiusClamp": { "minPx": 200, "vmin": 36, "maxPx": 260 },

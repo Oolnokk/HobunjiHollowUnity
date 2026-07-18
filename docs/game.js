@@ -469,12 +469,11 @@
                 const st = _getNpcDlgState(_dlgNpcRec?.id);
                 st.localNickname = _resolveTokens(act.value || '', _dlgNpcRec) || null;
               } else if (act.type === 'openShop') {
-                closeNpcDialogue();
-                openMenu('generalStore');
-                skipNav = true;
-              } else if (act.type === 'openJubmirShop') {
-                closeNpcDialogue();
-                openMenu('jubmirShop');
+                // `pool` names a WARES_POOLS entry; omitted defaults to the
+                // General Store for backward compatibility with any tree
+                // authored before pools existed (bare {type:'openShop'}).
+                const pool = WARES_POOLS[act.pool || 'generalStoreWares'];
+                if (pool) { closeNpcDialogue(); openMenu(pool.menuId); }
                 skipNav = true;
               } else if (act.type === 'startChat') {
                 _beginNpcConversation(_dlgNpcRec);
@@ -734,6 +733,15 @@
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
 
+        // These synthetic pre-choice screens are a fast-path shortcut for
+        // when the NPC happens to be caught right at their counter — a
+        // quicker single-tap route to the shop than navigating their own
+        // dialogue tree. They are NOT the reliable path: that fast-path
+        // condition (idle, exact station, label match) is easy to miss if
+        // the NPC has stepped away or is mid-transition, which is why every
+        // shopkeeper below also gets a real "openShop" choice baked into
+        // their own dialogueTrees — reachable through ordinary conversation
+        // any time, with no station/idle requirement at all.
         if (isGeneralStoreNpcOnDuty(walker)) {
           const cfg = generalStoreButtonConfig();
           _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
@@ -741,7 +749,21 @@
             type: 'choice',
             text: cfg.shopGreeting || 'What can I do for you?',
             choices: [
-              { label: cfg.buyChoiceLabel || 'Buy', actions: [{ type: 'openShop' }] },
+              { label: cfg.buyChoiceLabel || 'Buy', actions: [{ type: 'openShop', pool: 'generalStoreWares' }] },
+              { label: cfg.chatChoiceLabel || 'Chat', actions: [{ type: 'startChat' }] },
+            ],
+          });
+          return;
+        }
+
+        if (isCarpenterNpcOnDuty(walker)) {
+          const cfg = carpenterButtonConfig();
+          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
+          _renderDlgNode({
+            type: 'choice',
+            text: cfg.shopGreeting || 'What can I do for you?',
+            choices: [
+              { label: cfg.buyChoiceLabel || 'Buy', actions: [{ type: 'openShop', pool: 'carpenterBarnPlans' }] },
               { label: cfg.chatChoiceLabel || 'Chat', actions: [{ type: 'startChat' }] },
             ],
           });
@@ -759,7 +781,7 @@
             type: 'choice',
             text: 'What can I do for you?',
             choices: [
-              { label: 'See Wares', actions: [{ type: 'openJubmirShop' }] },
+              { label: 'See Wares', actions: [{ type: 'openShop', pool: 'jubmirWares' }] },
               { label: 'Chat', actions: [{ type: 'startChat' }] },
             ],
           });
@@ -2335,6 +2357,25 @@
         ...DECORATIVE_FURNITURE_CATALOG,
         ...LIVESTOCK_CATALOG
       ];
+
+      // ── Named wares pools ───────────────────────────────────────────
+      // A dialogue tree's "openShop" action names a pool instead of a menu
+      // id directly — the indirection Creation Kit's Leveled Lists use for
+      // exactly this reason: a hand-authored (or future-tool-authored)
+      // dialogue node just says "open pool X", and X's actual UI can be
+      // whatever menu currently implements it, without the tree needing to
+      // know menu ids. Every pool listed here already has its own dedicated
+      // menu pane + render function (see openMenu/switchMenuPanel); this
+      // registry only decides which pane a pool opens. Not yet generalized
+      // into full weighted/leveled entries (price rolls, level gating,
+      // nested pools) since there's no second consumer (e.g. treasure-chest
+      // loot tables) to design that against yet — do that when one exists,
+      // rather than guessing the shape now.
+      const WARES_POOLS = {
+        generalStoreWares:  { label: "Funji & Son's General Store",  menuId: 'generalStore'  },
+        carpenterBarnPlans: { label: "Dzibim Khibu's Carpentry",     menuId: 'carpenterShop' },
+        jubmirWares:        { label: "Jubmir's Wares",               menuId: 'jubmirShop'    },
+      };
 
       // ── General Store catalog (Funji & Son's) ─────────────────────
       const GENERAL_STORE_CATALOG = [
