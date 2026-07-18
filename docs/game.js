@@ -14952,6 +14952,14 @@
 
       function useActiveAction() {
         if (dialogueOpen) { advanceNpcDialogue(); return; }
+        // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
+        // builds while fishing is active — mirrors runInputAction's existing
+        // fishingMinigame?.active special-case for keyboard/controller.
+        if (fishingMinigame?.active) {
+          if (activeAction === 'fish_primary') fishingPrimaryAction();
+          else if (activeAction === 'fish_cancel') closeFishingMinigame();
+          return;
+        }
         if (activeAction === 'climb') {
           if (player.climbing) return;
           const climb = getClimbTarget();
@@ -15846,6 +15854,7 @@
         // waiting for whatever next unrelated event happens to call
         // refreshActionBar(); fishing's real controls are #actionPrompt now.
         refreshActionBar();
+        setNonFishingArcControlsHidden(true);
       }
 
       // Opens the actual spear-bridge ring once the player confirms a bite
@@ -15903,6 +15912,28 @@
         if (fm.phase === 'active') { fireFishingBridge(); return; }
       }
 
+      // The dynamic action-bar buttons (btnAction1-3/btnItemAction1-2) already
+      // swap to fish_primary/fish_cancel while fishing is active (see
+      // computeActionButtons), but the tool-select/item-select dial openers
+      // and the weapon quick-switch button are separate, always-on controls
+      // that don't go through that array at all — nothing stopped a player
+      // from switching away from the harpoon (or opening the item wheel)
+      // mid-cast. Hidden outright (not just disabled) so their own
+      // press/hold listeners can't fire either.
+      function setNonFishingArcControlsHidden(hidden) {
+        const display = hidden ? 'none' : '';
+        if (toolBtn) toolBtn.style.display = display;
+        const itemBtnEl = document.getElementById('itemBtn');
+        if (itemBtnEl) itemBtnEl.style.display = display;
+        if (btnWeaponSwitch) btnWeaponSwitch.style.display = display;
+        // dodgeBtn already defaults to hidden (see its own .combat-active
+        // toggle in updateMovement) — but that toggle stops running the
+        // instant fishing starts (updateMovement's own fishingMinigame.active
+        // guard), so whatever it was frozen at just before could otherwise
+        // stay stuck on screen for the whole round.
+        if (dodgeBtn) dodgeBtn.style.display = display;
+      }
+
       function closeFishingMinigame() {
         if (!fishingMinigame) return;
         fishingMinigame = null;
@@ -15912,6 +15943,7 @@
         fishingEls = null;
         hideActionPrompt();
         hideFishCatchView();
+        setNonFishingArcControlsHidden(false);
         // Always return to holding the harpoon, ready to fish again —
         // covers the catch-view popup, which temporarily switches to
         // heldMode 'item' so the held-item system can show the caught fish
@@ -16033,6 +16065,11 @@
         // rendered frame — renderFishingOverlay never runs again once
         // updateFishingMinigame's 'caught' branch takes over.
         fishingOverlayEl.classList.remove('open');
+        // Same reason: renderFishingOverlay (which otherwise keeps the arc's
+        // fish_primary/fish_cancel buttons in sync) stops running once
+        // 'caught' takes over, so without this the last active-phase arc
+        // buttons would stay stuck on screen underneath the victory view.
+        refreshActionBar();
 
         // Face the fixed fishCatch camera (azimuthDeg 0 in its config sits
         // south of the player looking north, matching playerFacing 0)
@@ -16273,8 +16310,9 @@
       }
 
       // Built once on entering 'active' (the ring SVG only — the "Ready
-      // Harpoon"/"Throw Harpoon" prompt itself now lives in the shared
-      // bottom-of-screen action prompt, see showActionPrompt below).
+      // Harpoon"/"Throw Harpoon" button itself is an arc button, built by
+      // computeActionButtons/applyAbt; the bottom-of-screen action prompt
+      // just mirrors it as an info display, see renderFishingOverlay).
       function buildFishingRingDom() {
         const R = FISHING_RING;
         const outerRadius = R.fishRadius + R.outerOffset;
@@ -16430,13 +16468,27 @@
         const fm = fishingMinigame;
         if (!fm) return;
 
-        // "Ready Harpoon"/"Throw Harpoon" lives in the shared bottom-of-
-        // screen action prompt from 'bite' onward — see showActionPrompt.
+        // Keeps the fish_primary/fish_cancel arc buttons in sync with phase
+        // (computeActionButtons' fishingMinigame branch returns nothing
+        // before 'bite', the button pair from 'bite' onward) — cheap no-op
+        // via refreshActionBar's own key-diff whenever the phase hasn't
+        // actually changed since the last call, so calling this every frame
+        // here is fine.
+        refreshActionBar();
+
+        // "Ready Harpoon"/"Throw Harpoon" is now primarily an arc button
+        // (see computeActionButtons' fishingMinigame branch) — natural
+        // thumb reach on touch, unlike this bottom-center spot. This prompt
+        // stays up alongside it purely as an info display (status text/
+        // panic bar, and the actual key/button label on desktop/
+        // controller), but keeps its own onPress/onCancel too as a
+        // redundant secondary tap target — harmless, and convenient for a
+        // desktop mouse user who'd rather click here than hunt for the arc.
         if (fm.phase === 'bite' || fm.phase === 'active') {
           const notYetMarked = fm.phase === 'bite' || fm.bridge.markerA == null;
           showActionPrompt({
             actionId: 'interact',
-            touchIcon: '🎣',
+            touchIcon: attackActionIconHTML('harpoon', 'fish', '🎣'),
             verb: notYetMarked ? 'Ready Harpoon' : 'Throw Harpoon',
             onPress: fishingPrimaryAction,
             cancelText: 'Give up',
@@ -22815,14 +22867,25 @@
 
 
       function computeActionButtons() {
-        // Fishing has its own dedicated control surface — the bottom-center
-        // #actionPrompt ("Ready Harpoon"/"Throw Harpoon"/"Give up"), see
-        // renderFishingOverlay. Without this, the harpoon's "Fish" arc
-        // button (and dodge/weapon-switch) stayed live through every phase
-        // of the cast — tapping it mid-wait just called beginFishingCast()
-        // again, silently restarting the round and making it look like the
-        // button "didn't work" instead of ever reaching a bite.
-        if (fishingMinigame?.active) return [];
+        // Fishing gets its own arc buttons instead of the harpoon's normal
+        // "Fish" one (which would just call beginFishingCast() again and
+        // silently restart the round) — the bottom-center #actionPrompt
+        // (see renderFishingOverlay) mirrors these as an info display
+        // (status text/panic bar/desktop key label), but the actual
+        // thumb-reachable tap target on touch is the arc, same as every
+        // other tool action. Nothing shows before 'bite' (no bite yet to
+        // react to), and nothing shows during 'caught' (the victory view
+        // has its own Continue button).
+        if (fishingMinigame?.active) {
+          const fm = fishingMinigame;
+          if (fm.phase !== 'bite' && fm.phase !== 'active') return [];
+          const notYetMarked = fm.phase === 'bite' || fm.bridge.markerA == null;
+          const icon = attackActionIconHTML('harpoon', 'fish', '🎣');
+          return [
+            { icon, label: notYetMarked ? 'Ready Harpoon' : 'Throw Harpoon', action: 'fish_primary', style: 'primary', allowed: true },
+            { icon: '🏳️', label: 'Give up', action: 'fish_cancel', style: 'secondary', allowed: true },
+          ];
+        }
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
           const btns = [npcDialogueButton()];
@@ -23010,14 +23073,16 @@
         const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
         const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
         const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction() : 'none';
-        // fishingMinigame?.active must be in this key: computeActionButtons()
-        // returns [] the instant fishing starts (its own controls live in
-        // #actionPrompt instead), but starting/ending fishing often doesn't
-        // touch anything else the key already tracks (same tile, same tool,
-        // same reticle) — without it here, the stale "Fish" arc button never
-        // actually got rebuilt away, even though computeActionButtons() was
-        // already returning the right (empty) answer.
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${!!fishingMinigame?.active}`;
+        // fishingMinigame?.phase (not just .active) must be in this key:
+        // computeActionButtons() returns different button sets across the
+        // cast/waiting/bite/active/caught sequence (empty until 'bite', the
+        // fish_primary/fish_cancel pair from 'bite' onward), but that whole
+        // sequence usually doesn't touch anything else the key tracks (same
+        // tile, same tool, same reticle) — keying on just .active would've
+        // caught the very first transition into fishing but then never
+        // rebuilt again for the rest of the round, since .active stays true
+        // throughout. Phase changes every step, so it always forces a rebuild.
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${fishingMinigame?.phase || ''}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -23065,8 +23130,13 @@
               const act = el.dataset.action;
               if (!act || el.classList.contains('abt-hidden')) return;
               activeAction = act;
-              // Navigation/interaction actions always fire; tool actions respect swing cooldown
-              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_');
+              // Navigation/interaction actions always fire; tool actions respect swing cooldown.
+              // fish_primary/fish_cancel bypass it too — spearfishing has never
+              // used the swing-timer system (see fireFishingBridge's own note on
+              // this), so gating the arc button behind it here would just mean
+              // a stray leftover toolSwingT from whatever was equipped before
+              // switching to the harpoon could silently eat the tap.
+              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_') || act.startsWith('fish_');
               if (isNavAction || toolSwingT <= 0) useActiveAction();
             }
 
@@ -23840,7 +23910,12 @@
         buildActionPromptDom();
         if (!actionPromptEls) return;
         const glyph = actionPromptGlyph(actionId, touchIcon);
-        actionPromptEls.btn.textContent = lastInputDevice === 'touch' ? `${glyph} ${verb}` : `[${glyph}] ${verb}`;
+        // innerHTML, not textContent: touchIcon may be a real <img> tag (see
+        // attackActionIconHTML) when the caller wants this to mirror the
+        // arc button's actual equipped-tool sprite instead of a plain emoji
+        // — callers only ever pass static developer strings here, never
+        // untrusted input, so this is safe.
+        actionPromptEls.btn.innerHTML = lastInputDevice === 'touch' ? `${glyph} ${verb}` : `[${glyph}] ${verb}`;
         actionPromptEls.btn.onpointerup = (e) => { e.stopPropagation(); onPress?.(); };
         if (cancelText && onCancel) {
           actionPromptEls.cancel.textContent = cancelText;
