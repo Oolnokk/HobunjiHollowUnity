@@ -2352,9 +2352,20 @@
     /* No opaque backdrop: the ring floats free over the live 3D scene, tracking
        the river tile's projected screen position (see updateFishingRingScreenPosition
        in game.js) the same way the prototype's cube-player/river-prism demo showed. */
+    /* pointer-events: none — this is a pure visual layer now (just the ring
+       SVG; touch-action: none has nothing to do here without hit-testing).
+       Its "Ready Harpoon"/"Throw Harpoon" button lives entirely in the
+       separate #actionPrompt overlay these days (see showActionPrompt in
+       game.js), but this stayed pointer-events: auto from when the old
+       boxy dock UI's buttons lived directly inside it — at z-index 240,
+       well above #actionPrompt's 60, that silently ate every tap anywhere
+       on screen before it could reach the actual button underneath.
+       Player movement is independently locked during fishing regardless
+       (see updateMovement's fishingMinigame.active guard), so there's
+       nothing this full-screen capture was still protecting. */
     #fishingOverlay {
       display: none; position: fixed; inset: 0;
-      z-index: 240; touch-action: none; pointer-events: auto;
+      z-index: 240; touch-action: none; pointer-events: none;
     }
     #fishingOverlay.open { display: block; }
     .fish-ring-wrap {
