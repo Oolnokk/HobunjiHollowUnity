@@ -15989,7 +15989,13 @@
           beginFishCatchView(fm, stars);
           return;
         }
-        beginFishEscapeRespawn(fm);
+        // Escaping used to slide the fish into the pool and swim a fresh
+        // one back out (beginFishEscapeRespawn), letting the player keep
+        // fishing the same cast indefinitely. Now a single escape just
+        // ends the round and drops back to normal gameplay.
+        fm.resolved = true;
+        showToast('The fish got away!', false);
+        closeFishingMinigame();
       }
 
       let fishCatchViewEls = null;
@@ -16056,34 +16062,6 @@
 
       function continueFromFishCatch() {
         closeFishingMinigame();
-      }
-
-      // Panic maxed out without a catch: the current fish escapes into the
-      // central pool instead of ending the round outright. A new fish is
-      // rolled mid-animation and swims back out so the player keeps fishing.
-      function beginFishEscapeRespawn(fm) {
-        const r = fm.respawn;
-        r.active = true;
-        r.phase = 'retreat';
-        r.timer = 0;
-        // Start from the fish's actual current on-screen spot, not its hidden
-        // ring angle/fixed ring radius — panic can max out while a dive is
-        // mid-flight, and starting the escape slide from wherever it visually
-        // was avoids a pop to the ring edge first.
-        r.startAngle = fm.fish.renderAngle;
-        r.startRadius = fm.fish.renderRadius;
-        r.centerAngle = r.startAngle;
-        // Prototype value (72 + rand*26) was tuned against its own much
-        // larger ring (r=340); scaled by FISH_DIVE_RADIUS_SCALE the same way
-        // the periodic dive's centerRadius is, so the escape actually pulls
-        // the fish well into the safe zone instead of barely off the ring
-        // edge on FISHING_RING's smaller scale.
-        r.centerRadius = (72 + Math.random() * 26) * FISH_DIVE_RADIUS_SCALE;
-        r.scale = 1;
-        fm.dive.active = false;
-        fm.dive.visualOffset = 0;
-        fm.message = 'Fish fled into the pool.';
-        fm.messageType = 'bad';
       }
 
       function respawnNextFish(fm) {
@@ -24161,6 +24139,12 @@
       window.addEventListener('keyup', (event) => {
         const key = event.key.toLowerCase();
         input.keys.delete(key);
+        // Mirrors the keydown handler's early return: without this, releasing
+        // the interact key (E) after fishingPrimaryAction() already fired on
+        // keydown fell through to the 'e' handling below, which calls
+        // useActiveAction() — re-triggering beginFishingCast() and clobbering
+        // the ring minigame that press had just opened.
+        if (fishingMinigame?.active) return;
         // Symmetric release for whatever keydown dispatched as a 'press' —
         // same binding lookup/exclusion as keydown above, so a held weapon
         // action (e.g. Space/action1) actually reaches Combat.input.pressEnd
