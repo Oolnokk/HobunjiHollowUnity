@@ -229,6 +229,15 @@ window.SCRATCHBONES_CONFIG = {
         "buyChoiceLabel": "Buy",
         "chatChoiceLabel": "Chat"
       },
+      "carpenterButton": {
+        "icon": "🪚",
+        "label": "Carpenter",
+        "action": "open_carpenter_shop",
+        "style": "primary",
+        "npcIds": ["dzibim_khibu"],
+        "stationLabels": ["Carpentry Work"],
+        "noTargetMessage": "Find Dzibim at the carpenter's counter to buy barn plans."
+      },
       "actionArch": {
         "radiusClamp": { "minPx": 200, "vmin": 36, "maxPx": 260 },
         "cssVar": "--scratchbones-action-arch-radius"

@@ -345,6 +345,15 @@
           </div>
 
           <div class="farm-section">
+            <div class="settings-section-title">Buildings</div>
+            <div id="farmBuildingsNote" class="farm-note"></div>
+            <div id="farmBuildingsList" class="farm-list"></div>
+            <div class="farm-toolbar">
+              <button id="farmCancelPlacementBtn" class="settings-small-btn" hidden>Cancel</button>
+            </div>
+          </div>
+
+          <div class="farm-section">
             <div class="settings-section-title">Livestock</div>
             <div class="farm-toolbar">
               <button id="farmAddLivestockBtn" class="settings-small-btn">Add Livestock</button>
@@ -487,6 +496,20 @@
           <div id="generalStoreList" class="supply-list"></div>
         </div>
       </div><!-- /mpGeneralStore -->
+
+      <!-- ── Carpenter's Shop pane (no tab button — opened only via Dzibim
+           Khibu's carpenter counter, same pattern as the General Store
+           above). Sells barn plans; see renderCarpenterShopPage() in
+           game.js. ──────────────────────────────────────────────────── -->
+      <div class="mp-pane" id="mpCarpenterShop">
+        <div class="supply-top-row">
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="cpGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title">Dzibim Khibu's Carpentry — Barn Plans</div>
+          <div id="carpenterShopList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpCarpenterShop -->
 
       <!-- ── Alchemy pane (no tab button — opened only via the Alchemy Table's
            interact prompt, same "openMenu-only" pattern as Supplies/Shipping) ── -->
