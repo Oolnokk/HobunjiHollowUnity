@@ -759,6 +759,11 @@
   <!-- Toast -->
   <div id="toast" role="status" aria-live="polite"></div>
 
+  <!-- Contextual action prompt (bottom-center) — device-aware "press X to
+       do Y" prompt shared across the game; see showActionPrompt/
+       hideActionPrompt in game.js. Empty until populated. -->
+  <div id="actionPrompt" aria-hidden="true"></div>
+
   <!-- Den-Mother nest hold-to-take progress bar -->
   <div id="nestTakeHud" aria-hidden="true">
     <div class="nest-take-label" id="nestTakeLabel"></div>
@@ -911,6 +916,15 @@
 
   <!-- Spearfishing minigame overlay (built dynamically in game.js) -->
   <div id="fishingOverlay"></div>
+
+  <!-- Fish-catch victory view: camera zooms on the player, who holds the
+       caught fish and faces the camera, while this shows the star rating
+       and a Continue button — see beginFishCatchView/continueFromFishCatch. -->
+  <div id="fishCatchView" aria-hidden="true">
+    <div class="fcv-stars" id="fcvStars"></div>
+    <div class="fcv-text" id="fcvText"></div>
+    <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
+  </div>
 
   <script src="js/tool-icon-render.js?v=20260712d"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run

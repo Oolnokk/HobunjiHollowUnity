@@ -1060,6 +1060,36 @@
     #toast.ok   { border-color: rgba(127,232,154,0.4); }
     #toast.fail { border-color: rgba(255,128,96,0.4); }
 
+    /* ── Contextual action prompt (bottom-center) ────────────────
+       Device-aware "press X to do Y" prompt, shared across the game (not
+       fishing-specific) — see showActionPrompt/hideActionPrompt in game.js.
+       Sits just above where a Stardew-style item/hotbar row would run
+       along the very bottom of the screen. */
+    #actionPrompt {
+      position: fixed;
+      top: calc(var(--oy) + 15.2 * var(--row)); left: var(--play-center);
+      transform: translateX(-50%);
+      z-index: 60;
+      display: none; flex-direction: column; align-items: center; gap: 4px;
+      pointer-events: none;
+    }
+    #actionPrompt.open { display: flex; }
+    .ap-row { display: flex; align-items: center; gap: 10px; }
+    .ap-btn, .ap-cancel {
+      pointer-events: auto; background: none; border: none; padding: 2px 4px; cursor: pointer;
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
+      letter-spacing: 0.04em;
+      text-shadow: 0 0 6px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.9);
+    }
+    .ap-btn { font-size: 14px; color: var(--accent); }
+    .ap-btn:active { color: #fff; }
+    .ap-cancel { font-size: 9px; color: var(--muted); text-decoration: underline; }
+    .ap-status { font-size: 9px; color: var(--text); min-height: 11px; text-align: center; text-shadow: 0 0 4px rgba(0,0,0,0.85); }
+    .ap-status.good { color: var(--ok); }
+    .ap-status.bad  { color: var(--danger); }
+    .ap-panic-wrap { width: 72px; height: 3px; border-radius: 3px; background: rgba(255,255,255,0.15); overflow: hidden; }
+    .ap-panic-fill { height: 100%; width: 0%; border-radius: 3px; background: var(--danger); transition: width 0.15s; }
+
     /* ── Combo streak HUD: big "xN" readout on the screen's side, tracking
        consecutive landed combo hits (see combat-combo-streak.js). Heavy
        attacks read their damage/lunge multiplier off this same streak. ── */
@@ -2322,9 +2352,20 @@
     /* No opaque backdrop: the ring floats free over the live 3D scene, tracking
        the river tile's projected screen position (see updateFishingRingScreenPosition
        in game.js) the same way the prototype's cube-player/river-prism demo showed. */
+    /* pointer-events: none — this is a pure visual layer now (just the ring
+       SVG; touch-action: none has nothing to do here without hit-testing).
+       Its "Ready Harpoon"/"Throw Harpoon" button lives entirely in the
+       separate #actionPrompt overlay these days (see showActionPrompt in
+       game.js), but this stayed pointer-events: auto from when the old
+       boxy dock UI's buttons lived directly inside it — at z-index 240,
+       well above #actionPrompt's 60, that silently ate every tap anywhere
+       on screen before it could reach the actual button underneath.
+       Player movement is independently locked during fishing regardless
+       (see updateMovement's fishingMinigame.active guard), so there's
+       nothing this full-screen capture was still protecting. */
     #fishingOverlay {
       display: none; position: fixed; inset: 0;
-      z-index: 240; touch-action: none; pointer-events: auto;
+      z-index: 240; touch-action: none; pointer-events: none;
     }
     #fishingOverlay.open { display: block; }
     .fish-ring-wrap {
@@ -2333,37 +2374,37 @@
       pointer-events: none;
     }
     .fish-ring-wrap svg { width: 100%; height: 100%; display: block; }
-    .fish-dock {
-      position: absolute; left: 0; top: 0; transform: translate(-100%, -50%) scale(0.75);
-      display: flex; flex-direction: column; align-items: center; gap: 3px;
-      max-width: min(35vw, 105px);
-      background: var(--glass-2); border: 1px solid var(--border-bright);
-      border-radius: var(--r); padding: 4px 6px 5px;
-      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-      pointer-events: auto;
-    }
-    .fish-title { font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace; font-size: 9px; color: var(--accent); letter-spacing: 0.03em; }
-    .fish-hint { font-size: 7px; color: var(--muted); text-align: center; max-width: 95px; }
     /* Fish render is a pure-black silhouette PNG (see fish_silhouette-body.png); without a
        light halo it nearly disappears against the dark backdrop, so give it the same white
        glow trick the prototype used on .fish-image-rig, just stronger for our darker scene. */
     #fishImageRig {
       filter: drop-shadow(0 0 2px rgba(255,255,255,0.95)) drop-shadow(0 0 6px rgba(255,255,255,0.65)) drop-shadow(0 0 11px rgba(255,255,255,0.4));
     }
-    .fish-status { font-size: 8px; color: var(--text); min-height: 11px; text-align: center; }
-    .fish-status.good { color: var(--ok); }
-    .fish-status.bad  { color: var(--danger); }
-    .fish-panic-wrap { width: 100%; height: 4px; border-radius: 3px; background: rgba(255,255,255,0.1); overflow: hidden; }
-    .fish-panic-fill { height: 100%; width: 0%; border-radius: 3px; background: var(--danger); transition: width 0.15s; }
-    .fish-fire-btn {
-      width: 100%; padding: 4px 0; border-radius: 6px;
-      background: rgba(249,226,138,0.16); border: 1px solid rgba(249,226,138,0.5);
-      color: var(--accent); font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace; font-size: 8px;
-      letter-spacing: 0.03em; cursor: pointer;
+
+    /* ── Fish-catch victory view ─────────────────────────────── */
+    #fishCatchView {
+      display: none; position: fixed; left: 50%; top: 68%;
+      transform: translate(-50%, -50%);
+      z-index: 250; text-align: center;
+      flex-direction: column; align-items: center; gap: 8px;
+      opacity: 0; transition: opacity 0.35s ease;
     }
-    .fish-fire-btn:active { background: rgba(249,226,138,0.3); }
-    .fish-cancel-btn {
-      font-size: 7px; color: var(--muted); background: none; border: none;
-      cursor: pointer; text-decoration: underline; letter-spacing: 0.02em;
+    #fishCatchView.open { display: flex; opacity: 1; }
+    .fcv-stars {
+      font-size: 26px; color: #ffd166;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.6), 0 0 16px rgba(255,209,102,0.5);
+      letter-spacing: 0.08em;
     }
+    .fcv-text {
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
+      font-size: 18px; color: var(--text);
+      text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+    }
+    .fcv-continue {
+      margin-top: 6px; padding: 8px 22px; border-radius: 20px; cursor: pointer;
+      background: var(--glass-2); border: 1px solid var(--border-bright);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: var(--accent); font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
+      font-size: 13px; letter-spacing: 0.04em;
+    }
+    .fcv-continue:active { background: rgba(249,226,138,0.2); }

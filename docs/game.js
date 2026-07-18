@@ -4119,6 +4119,24 @@
         return gained;
       }
 
+      // Shared 1-5 star quality roll — fish, harvested crops, and butchered
+      // meat all use this. Weighted toward the middle (3 stars most common)
+      // rather than a flat 20% each, so it doesn't feel like a coin flip;
+      // otherwise deliberately simple/random for now, no per-item tuning.
+      function rollItemStars() {
+        const weights = [1, 3, 5, 3, 1]; // stars 1..5
+        const total = weights.reduce((a, b) => a + b, 0);
+        let r = rnd() * total;
+        for (let i = 0; i < weights.length; i++) {
+          r -= weights[i];
+          if (r <= 0) return i + 1;
+        }
+        return 3;
+      }
+      function starRatingText(stars) {
+        return '★'.repeat(stars) + '☆'.repeat(5 - stars);
+      }
+
       // Settled corpses expose the same getButtons()/onAction() shape as
       // farm world objects (see makeSellCrate) so the existing action-bar
       // wiring (getWorldObjectAt → getButtons/onAction) can loot them with
@@ -4136,7 +4154,10 @@
             const parts = [];
             Object.entries(gained).forEach(([key, qty]) => {
               inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
-              parts.push(itemIconForKey(key) + '×' + qty);
+              // Meat gets a quality roll same as fish/crops; hides and other
+              // butchering byproducts don't.
+              const stars = /meat/i.test(key) ? starRatingText(rollItemStars()) + ' ' : '';
+              parts.push(stars + itemIconForKey(key) + '×' + qty);
             });
             corpseObjects.delete(c);
             despawnCreature(c);
@@ -6260,6 +6281,12 @@
       // vary by species and are recomputed in refreshPlayerAvatar() once the per-species
       // sprite/scale is known.
       let playerToolBaseX = -0.45, playerToolBaseY = 0.45;
+      // Chest-height anchor for a bag item held statically in front of the body
+      // (see heldItemHolder near the tool meshes below) — higher than
+      // playerToolBaseY, which targets hand height near the bottom of these
+      // cropped bust-style portraits. Recomputed per-species in
+      // refreshPlayerAvatar() alongside playerToolBaseX/Y, as playerToolBaseY + 0.19.
+      let playerItemHoldY = 0.64;
 
       // ── Dialogue tree runtime state ──────────────────────────────────
       let _dlgTree      = null;  // active tree object
@@ -6423,7 +6450,12 @@
 
       const _audioCueIndexes = new Map();
       const _mapAudioIndexes = new Map();
-      let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null, inCombat: false, currentCombatBgm: null };
+      // blockUntil: performance.now() timestamp before which updateAmbientCues
+      // won't start a new bgm/cue/combatBgm track — sets a floor so an
+      // interrupted track's fade-out (see stopAmbientCue) actually finishes
+      // fading to silence before anything new starts on top of it, instead of
+      // the two overlapping audibly for the fade's duration.
+      let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null, inCombat: false, currentCombatBgm: null, blockUntil: 0 };
       const _furnitureSfxSources = [];
       const _loopingBgs = new Map();
       const _audioDebugLast = new Map();
@@ -6793,6 +6825,9 @@
           if (!snd) continue;
           if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
           else snd.pause();
+          // Hold off starting anything new until this one has actually faded
+          // out, not just been handed off — see blockUntil's declaration.
+          _ambientCueState.blockUntil = Math.max(_ambientCueState.blockUntil, performance.now() + fade.interruptFadeMs);
         }
       }
 
@@ -6885,14 +6920,9 @@
             // Duck exploration/dawn music for the fight. combatBgm (see
             // scratchbones-config.js — empty until real tracks exist) takes
             // over below; until then this just goes quiet rather than
-            // clashing with the fight.
-            for (const key of ['currentCue', 'currentBgm']) {
-              const snd = _ambientCueState[key];
-              _ambientCueState[key] = null;
-              if (!snd) continue;
-              if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
-              else snd.pause();
-            }
+            // clashing with the fight. stopAmbientCue() also raises
+            // blockUntil, so the combatBgm start below waits for the fade.
+            stopAmbientCue();
             audioDebug('combat started — ducking ambient music', 'combat-duck-' + currentArea, 0, 'bgm');
           } else {
             if (_ambientCueState.currentCombatBgm) {
@@ -6900,6 +6930,7 @@
               _ambientCueState.currentCombatBgm = null;
               if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
               else snd.pause();
+              _ambientCueState.blockUntil = Math.max(_ambientCueState.blockUntil, performance.now() + fade.interruptFadeMs);
             }
             // Try exploration music fresh rather than resuming whatever was
             // cut off — time of day (or area) may have moved on mid-fight.
@@ -6911,7 +6942,7 @@
 
         if (inCombat) {
           const combatTracks = (audioCfg.combatBgm || []).filter(t => t?.url && !audioUrlFailed(t.url));
-          if (!_ambientCueState.currentCombatBgm && combatTracks.length) {
+          if (!_ambientCueState.currentCombatBgm && combatTracks.length && performance.now() >= _ambientCueState.blockUntil) {
             const track = combatTracks[Math.floor(Math.random() * combatTracks.length)];
             const fade = musicFadeConfig();
             const vol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
@@ -6940,7 +6971,7 @@
         if (_ambientCueState.currentCue?.ended) _ambientCueState.currentCue = null;
 
         if (_ambientCueState.mode === 'cue_wait') {
-          if (performance.now() < _ambientCueState.nextAt) return;
+          if (performance.now() < _ambientCueState.nextAt || performance.now() < _ambientCueState.blockUntil) return;
           if (!cues.length) { _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
           const cue = cues[Math.floor(Math.random() * cues.length)];
           if (!cue?.file) { scheduleNextCueDelay(); return; }
@@ -6974,7 +7005,7 @@
 
         if (_ambientCueState.currentBgm && !_ambientCueState.currentBgm.ended) return;
         _ambientCueState.currentBgm = null;
-        if (performance.now() < _ambientCueState.nextAt) return;
+        if (performance.now() < _ambientCueState.nextAt || performance.now() < _ambientCueState.blockUntil) return;
         const bgmTrack = resolveAreaBgm(currentArea);
         const bgmUrl = bgmTrack?.url || '';
         if (!bgmUrl) {
@@ -12477,6 +12508,13 @@
         }
         playerToolBaseX = avatarGroup.userData?.handAttachX ?? (-avatarWidth / 2);
         playerToolBaseY = avatarGroup.userData?.handAttachY ?? (avatarHeight / 2);
+        // Anchored to playerToolBaseY (the real per-species/gender scanned hand
+        // height) rather than a flat fraction of avatarHeight, so differently
+        // proportioned species/genders get a correctly offset chest height
+        // instead of all sharing one ratio tuned for a single species. The
+        // +0.19 was picked to reproduce the previous avatarHeight*0.6 value for
+        // mao-ao (the species that height was tuned against).
+        playerItemHoldY = playerToolBaseY + 0.19;
         _markPngPlane(avatarGroup);
         if (refreshGeneration !== playerAvatarRefreshGeneration) {
           disposeAvatarGroup(avatarGroup);
@@ -14338,7 +14376,8 @@
         if (!tile.cropReady) return { ok: false, message: `${tile.crop} isn't ready yet.` };
         const data = cropData[tile.crop];
         inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + 1);
-        const msg = `Harvested ${data.emoji} ${data.label}!`;
+        const stars = rollItemStars();
+        const msg = `Harvested ${starRatingText(stars)} ${data.emoji} ${data.label}!`;
         tile.crop = CropType.NONE;
         tile.cropAge = 0;
         tile.cropReady = false;
@@ -14913,6 +14952,14 @@
 
       function useActiveAction() {
         if (dialogueOpen) { advanceNpcDialogue(); return; }
+        // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
+        // builds while fishing is active — mirrors runInputAction's existing
+        // fishingMinigame?.active special-case for keyboard/controller.
+        if (fishingMinigame?.active) {
+          if (activeAction === 'fish_primary') fishingPrimaryAction();
+          else if (activeAction === 'fish_cancel') closeFishingMinigame();
+          return;
+        }
         if (activeAction === 'climb') {
           if (player.climbing) return;
           const climb = getClimbTarget();
@@ -14940,7 +14987,7 @@
             showToast('No river or stream here to fish.', false);
             return;
           }
-          startFishingMinigame();
+          beginFishingCast();
           return;
         }
         // Weapon attacks route through the loadout's tap-slot abilities
@@ -15223,6 +15270,10 @@
         panicStep: 34,
         panicMax: 100,
       };
+      // Bait-cast pre-minigame timings (see beginFishingCast/updateFishingMinigame).
+      const FISHING_BAIT_FLIGHT_S = 0.6; // matches spawnFishingBaitToss's ~0.5-0.62s particle flight time
+      const FISHING_BITE_WAIT_MIN_S = 1.2;
+      const FISHING_BITE_WAIT_MAX_S = 3.0;
       // Escape/respawn sequence timings, ported from the prototype's fishRespawn
       // state: when panic maxes out the fish doesn't just end the round, it visibly
       // slides into the central pool, shrinks away, waits, then a freshly rolled
@@ -15249,6 +15300,26 @@
       };
       const FISH_CLASS_RETARGET   = { smooth: 0.25, mixed: 0.55, sinker: 0.5, floater: 0.5, dart: 1.2 };
       const FISH_CLASS_SMOOTHNESS = { smooth: 0.8,  mixed: 1.4,  sinker: 1.5, floater: 1.5, dart: 4.0 };
+
+      // Periodic "surface → dive into the safe zone → resurface" behavior —
+      // unlike FISH_RESPAWN_TIMING's panic-triggered escape below, this is
+      // unprompted: every fish does it on its own cadence as part of normal
+      // movement, ported from the prototype's FishBehavior.maybeStartDive/
+      // updateDiveOverlay (see docs/tools, or the uploaded prototype HTML).
+      const FISH_CLASS_DIVE_CADENCE  = { smooth: 0.82, mixed: 1.0, sinker: 0.95, floater: 0.95, dart: 1.28 };
+      const FISH_CLASS_DIVE_RADIUS   = { smooth: 0.78, mixed: 1.0, sinker: 0.92, floater: 0.92, dart: 1.3 };
+      // The prototype uses two separate "indecision" tables with slightly
+      // different numbers — one tunes how eagerly a dive starts, the other
+      // how jittery the underwater inspect-motion looks. Kept distinct here
+      // rather than merged, matching the source.
+      const FISH_CLASS_DIVE_START_INDECISION   = { smooth: 0.8,  mixed: 1.0, sinker: 0.9, floater: 1.05, dart: 1.35 };
+      const FISH_CLASS_DIVE_INSPECT_INDECISION = { smooth: 0.78, mixed: 1.0, sinker: 0.9, floater: 1.0,  dart: 1.42 };
+      // The prototype's dive-radius formula below was tuned against its own
+      // ring (SVG groove sits at r=340); scaling by this ratio makes the dive
+      // pull proportionally as far toward the center on FISHING_RING's much
+      // smaller scale instead of importing the raw prototype pixel values.
+      const FISH_DIVE_RADIUS_SCALE = FISHING_RING.fishRadius / 340;
+      const FISH_DIVE_TARGET_PERCENT = 50; // % of time (clamped 50-80) a fish aims to spend submerged
 
       // Real-asset rendering for the fish silhouette + harpoon/mace sprite, ported
       // from the spearfishing prototype's ensureFishDeformCanvas/renderImageFish/
@@ -15396,8 +15467,13 @@
         }
       }
 
-      let fishingMinigame = null; // non-null while the spear-bridge overlay is open
-      let fishingEls = null;      // cached persistent DOM refs, rebuilt each time the overlay opens
+      // non-null from the moment bait is cast through the whole ring minigame —
+      // fm.phase tracks where in that sequence things are: 'cast' (bait
+      // arcing through the air) -> 'waiting' (bait landed, watching for a
+      // bite) -> 'bite' (splash happened, waiting on the player) -> 'active'
+      // (ring open, existing spear-bridge gameplay).
+      let fishingMinigame = null;
+      let fishingEls = null; // cached ring SVG DOM refs — built on entering 'active', torn down on close
       const fishingOverlayEl = document.getElementById('fishingOverlay');
 
       function currentFishZoneKey() {
@@ -15505,6 +15581,93 @@
         f.angle = (f.pos * 359) % 360;
       }
 
+      // Rolls whether the fish starts a new unprompted dive this frame. The
+      // hidden 1D ring patrol (fishStepMotion/f.angle) keeps running the whole
+      // time — a dive only pulls the *visible* render position in toward the
+      // center (f.renderRadius/f.renderAngle), it never pauses or reroutes the
+      // underlying patrol. chancePerSecond is derived so that, on average, the
+      // fish spends FISH_DIVE_TARGET_PERCENT of its time submerged.
+      function fishMaybeStartDive(fm, dt) {
+        const dive = fm.dive;
+        if (dive.active) return false;
+        dive.cooldown -= dt;
+        if (dive.cooldown > 0) return false;
+
+        const cls = fm.fishClass;
+        const d01 = fm.difficulty / 100;
+        const cadence = FISH_CLASS_DIVE_CADENCE[cls] ?? FISH_CLASS_DIVE_CADENCE.mixed;
+        const radiusMul = FISH_CLASS_DIVE_RADIUS[cls] ?? FISH_CLASS_DIVE_RADIUS.mixed;
+        const startIndecision = FISH_CLASS_DIVE_START_INDECISION[cls] ?? FISH_CLASS_DIVE_START_INDECISION.mixed;
+
+        const diveDurationEstimate = 3.4 + startIndecision * 1.2 + d01 * 1.2;
+        const targetFraction = clamp(FISH_DIVE_TARGET_PERCENT / 100, 0.5, 0.8);
+        const expectedSurfaceWindow = diveDurationEstimate * (1 - targetFraction) / Math.max(0.001, targetFraction);
+        const chancePerSecond = 1 / Math.max(0.2, expectedSurfaceWindow * (1 / cadence));
+
+        if (Math.random() < chancePerSecond * dt) {
+          dive.active = true;
+          dive.timer = 0;
+          dive.lastDuration = diveDurationEstimate;
+          dive.inspectTargetAngle = fm.fish.angle;
+          dive.visualOffset = 0;
+          dive.centerRadius = (72 + radiusMul * 18 + d01 * 16 + Math.random() * (14 + radiusMul * 8)) * FISH_DIVE_RADIUS_SCALE;
+          dive.cooldown = Math.max(0.15, expectedSurfaceWindow * 0.2 + Math.random() * expectedSurfaceWindow * 0.28);
+          fm.fish.dimmed = true;
+          return true;
+        }
+        return false;
+      }
+
+      // Drives f.renderAngle/f.renderRadius through the dive: pull in toward
+      // dive.centerRadius, "inspect" the pool by wandering visualOffset around
+      // a periodically re-picked angle, then ease back out onto the ring.
+      // Rather than ending on a fixed timer, the surfacing phase keeps easing
+      // until both the angle offset and radius have actually converged back
+      // onto the hidden ring track, so it can't visibly snap into place.
+      function fishUpdateDiveOverlay(fm, dt) {
+        const f = fm.fish, dive = fm.dive;
+        const cls = fm.fishClass;
+        const d01 = fm.difficulty / 100;
+        const inspectIndecision = FISH_CLASS_DIVE_INSPECT_INDECISION[cls] ?? FISH_CLASS_DIVE_INSPECT_INDECISION.mixed;
+        const inspectStep = 0.95 - inspectIndecision * 0.22 + (1 - d01) * 0.1;
+        const inspectTurnRate = 1.8 + inspectIndecision * 1.4 + d01 * 0.8;
+        const inspectWobble = 8 + inspectIndecision * 10;
+        const enterExitRate = 4.8 + d01 * 1.4;
+
+        dive.timer += dt;
+
+        if (dive.timer < 0.45) {
+          f.renderRadius += (dive.centerRadius - f.renderRadius) * Math.min(1, dt * enterExitRate);
+        } else if (dive.timer < dive.lastDuration - 0.65) {
+          const phase = dive.timer - 0.45;
+          if (Math.floor(phase / Math.max(0.24, inspectStep)) !== Math.floor((phase - dt) / Math.max(0.24, inspectStep))) {
+            const bias = cls === 'sinker' ? 180 : cls === 'floater' ? 0 : f.angle;
+            dive.inspectTargetAngle = (bias + (Math.random() * 120 - 60) + Math.random() * 260 * (cls === 'dart' ? 0.22 : 0.08)) % 360;
+          }
+          const targetOffset = angleDiffDeg(f.angle, dive.inspectTargetAngle);
+          dive.visualOffset += (targetOffset - dive.visualOffset) * Math.min(1, dt * inspectTurnRate);
+          dive.visualOffset += Math.sin(dive.timer * (3.2 + inspectIndecision * 1.2)) * inspectWobble * dt;
+          dive.visualOffset = clamp(dive.visualOffset, -42, 42);
+
+          f.renderRadius += (dive.centerRadius - f.renderRadius) * Math.min(1, dt * (2.4 + d01 * 1.1));
+        } else {
+          dive.visualOffset += (0 - dive.visualOffset) * Math.min(1, dt * 6.8);
+          f.renderRadius += (FISHING_RING.fishRadius - f.renderRadius) * Math.min(1, dt * (enterExitRate + 1.2));
+
+          const offsetDone = Math.abs(dive.visualOffset) < 0.55;
+          const radiusDone = Math.abs(f.renderRadius - FISHING_RING.fishRadius) < 1.25;
+
+          if (offsetDone && radiusDone) {
+            dive.active = false;
+            dive.visualOffset = 0;
+            f.renderRadius = FISHING_RING.fishRadius;
+            f.dimmed = false;
+            f.renderAngle = f.angle;
+          }
+        }
+
+        f.renderAngle = (f.angle + dive.visualOffset + 360) % 360;
+      }
       function fishingPolarToXY(angleDeg, radius) {
         const rad = (angleDeg - 90) * Math.PI / 180; // 0deg = top, matches prototype orientation
         return { x: FISHING_RING.cx + Math.cos(rad) * radius, y: FISHING_RING.cy + Math.sin(rad) * radius };
@@ -15518,7 +15681,123 @@
         return Math.hypot(px - (x1 + dx * t), py - (y1 + dy * t));
       }
 
-      function startFishingMinigame() {
+      // ── Fishing FX particles (bait toss / bite splash) ────────────────
+      // Small one-off 3D bursts, deliberately separate from the existing
+      // actionParticles (2D HUD-canvas tool feedback) and waterParticles
+      // (ambient, tile-local trench bubbles) systems — these need to travel
+      // through real 3D world space between the player and the fished tile.
+      const fishingFxParticles = [];
+
+      function spawnFishingFxParticle(pos, vel, opts = {}) {
+        const size = opts.size ?? 0.03;
+        const geo = new THREE.SphereGeometry(size, 4, 3);
+        const mat = new THREE.MeshBasicMaterial({ color: opts.color ?? 0xffffff, transparent: true, opacity: 1 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(pos.x, pos.y, pos.z);
+        // Farm has its own scene; town/interiors/wilderness zones each have
+        // their own too (see getActiveScene) — adding straight to the bare
+        // farm `scene` here meant these never rendered anywhere else.
+        getActiveScene().add(mesh);
+        fishingFxParticles.push({
+          mesh, mat,
+          vx: vel.x, vy: vel.y, vz: vel.z,
+          gravity: opts.gravity ?? -4.2,
+          // Bob mode (bobAmp > 0) ignores gravity/vy entirely and instead
+          // rides a sine wave around baseY — for things that sit and drift
+          // on the water surface rather than falling, like the bait float.
+          bobAmp: opts.bobAmp || 0,
+          bobRate: opts.bobRate || 3,
+          bobPhase: Math.random() * Math.PI * 2,
+          baseY: pos.y,
+          age: 0,
+          maxAge: opts.maxAge ?? 0.55,
+        });
+      }
+
+      // Arcs a handful of small particles from the player toward the fished
+      // water tile — cosmetic stand-in for tossing bait onto the surface.
+      // These avatars have no arms to actually throw with, so the particle
+      // arc alone has to sell the motion (see beginFishingCast).
+      function spawnFishingBaitToss(fromWorld, toWorld) {
+        const dx = toWorld.x - fromWorld.x, dz = toWorld.z - fromWorld.z;
+        for (let i = 0; i < 7; i++) {
+          const T = 0.5 + Math.random() * 0.12;          // flight time
+          const h = 0.3 + Math.random() * 0.15;           // arc peak height
+          const gravity = -8 * h / (T * T);
+          const vy = 4 * h / T;
+          const jitter = 0.06;
+          spawnFishingFxParticle(
+            { x: fromWorld.x, y: fromWorld.y + 0.5, z: fromWorld.z },
+            { x: dx / T + (Math.random() - 0.5) * jitter, y: vy, z: dz / T + (Math.random() - 0.5) * jitter },
+            { size: 0.025 + Math.random() * 0.02, color: 0xcdaa6b, gravity, maxAge: T }
+          );
+        }
+      }
+
+      // One pink fleck drifting/bobbing on the water surface — spawned
+      // repeatedly (see updateFishingMinigame's 'cast'/'waiting' handling)
+      // for as long as the player is waiting on a bite, so the surface
+      // reads as continuously "baited" rather than a one-off toss.
+      function spawnFishingFloatParticle(atWorld) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 0.05 + Math.random() * 0.32;
+        spawnFishingFxParticle(
+          { x: atWorld.x + Math.cos(angle) * dist, y: atWorld.y + 0.015, z: atWorld.z + Math.sin(angle) * dist },
+          { x: (Math.random() - 0.5) * 0.05, y: 0, z: (Math.random() - 0.5) * 0.05 },
+          { size: 0.018 + Math.random() * 0.016, color: 0xff6fb0, maxAge: 2.0 + Math.random() * 1.4, bobAmp: 0.012 + Math.random() * 0.008, bobRate: 2.2 + Math.random() * 1.4 }
+        );
+      }
+
+      // Sustained bubbling patch for the bite — several small bubbles
+      // rising and wobbling at different speeds/lifetimes instead of one
+      // instant splash burst, so it visibly reads as bubbling for a beat
+      // rather than a single flash of particles.
+      function spawnFishingBiteSplash(atWorld) {
+        for (let i = 0; i < 22; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = Math.random() * 0.1;
+          const speed = 0.25 + Math.random() * 0.55;
+          spawnFishingFxParticle(
+            { x: atWorld.x + Math.cos(angle) * dist, y: atWorld.y + 0.02, z: atWorld.z + Math.sin(angle) * dist },
+            // bobAmp mode uses y as a steady rise rate (bubbles don't
+            // decelerate under gravity the way a thrown particle would).
+            { x: Math.cos(angle) * speed * 0.3, y: 0.5 + Math.random() * 0.7, z: Math.sin(angle) * speed * 0.3 },
+            { size: 0.022 + Math.random() * 0.026, color: 0xeaf7ff, maxAge: 0.5 + Math.random() * 0.55, bobAmp: 0.01, bobRate: 8 + Math.random() * 6 }
+          );
+        }
+      }
+
+      function updateFishingFxParticles(dt) {
+        for (let i = fishingFxParticles.length - 1; i >= 0; i--) {
+          const p = fishingFxParticles[i];
+          p.age += dt;
+          if (p.age >= p.maxAge) {
+            p.mesh.parent?.remove(p.mesh);
+            p.mesh.geometry.dispose();
+            p.mat.dispose();
+            fishingFxParticles.splice(i, 1);
+            continue;
+          }
+          p.mesh.position.x += p.vx * dt;
+          p.mesh.position.z += p.vz * dt;
+          if (p.bobAmp) {
+            p.baseY += p.vy * dt;
+            p.mesh.position.y = p.baseY + Math.sin((p.age + p.bobPhase) * p.bobRate) * p.bobAmp;
+          } else {
+            p.vy += p.gravity * dt;
+            p.mesh.position.y += p.vy * dt;
+          }
+          p.mat.opacity = Math.max(0, 1 - p.age / p.maxAge);
+        }
+      }
+
+      // Entry point (replaces the old immediate-start startFishingMinigame):
+      // interacting with water while a harpoon is equipped only casts bait
+      // and swaps the camera — the ring doesn't open until the player
+      // confirms a bite (see beginFishingRing). World time/NPCs/weather keep
+      // running throughout; only player movement is suspended (see the guard
+      // in updateMovement).
+      function beginFishingCast() {
         const picked = pickFishForCurrentZone();
         if (!picked) { showToast('No fish here.', false); return; }
         const { fish, zoneKey } = picked;
@@ -15539,42 +15818,27 @@
           y: tileSurfaceYInArea(reticleTile, currentArea) + 0.35,
         };
         fishingMinigame = {
-          active: true,
+          phase: 'cast',
+          phaseTimer: 0,
+          floatSpawnTimer: 0,
+          biteAt: FISHING_BITE_WAIT_MIN_S + Math.random() * (FISHING_BITE_WAIT_MAX_S - FISHING_BITE_WAIT_MIN_S),
+          anchorWorld,
           fishDef: fish,
           zoneKey,
           difficulty: fish.difficulty,
           fishClass: fish.fishClass,
-          fishAnimT: 0,
-          anchorWorld,
-          fish: {
-            pos: Math.random(), vel: 0, targetVel: 0, angle: 0,
-            moveDir: 1, pendingMoveDir: 1, turning: false, turnProgress: 0, localFacingScale: 1,
-          },
-          bridge: {
-            angle: 0, direction: 1, segmentSize: FISHING_RING.segmentSize, speed: FISHING_RING.sweepSpeed,
-            markerA: null, markerB: null, spearActive: false, lineA: null, lineB: null,
-            shotTimer: 0, retractTimer: 0, tipX: 0, tipY: 0, prevTipX: 0, prevTipY: 0, caughtFish: false,
-            weaponSpinDeg: 0, frozenWeaponAngleDeg: 0,
-          },
-          panic: 0,
-          resolved: false,
-          resultTimer: 0,
-          message: 'Tap Fire to drop the first marker.',
-          messageType: '',
-          respawn: {
-            active: false, phase: 'idle', timer: 0, scale: 1,
-            startAngle: 0, startRadius: FISHING_RING.fishRadius,
-            centerAngle: 0, centerRadius: 0,
-            enterStartAngle: 0, enterStartRadius: 0, enterTargetAngle: 0,
-          },
+          active: true,
         };
-        fishPickTargetVel(fishingMinigame);
-        _fishDeformUrlCache = null;
-        _fishDeformUrlCacheAt = -Infinity;
-        window.__farmLog?.(`fishing started: zone=${zoneKey} fish=${fish.key} anchor=(${anchorWorld.x.toFixed(2)},${anchorWorld.y.toFixed(2)},${anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`);
-        // World time/NPCs/weather keep running during the minigame — only
-        // player movement is suspended (see the guard in updateMovement).
-        renderFishingOverlay();
+        // Hold the harpoon at its windup extreme for the whole cast/waiting/
+        // bite sequence, so the character visibly looks like it's getting
+        // ready instead of resting in its normal idle pose.
+        fishingReadyPose = true;
+        spawnFishingBaitToss(
+          { x: playerMesh.position.x, y: playerMesh.position.y, z: playerMesh.position.z },
+          anchorWorld
+        );
+        fishingOverlayEl.innerHTML = '';
+        fishingEls = null;
         fishingOverlayEl.classList.add('open');
 
         // Swap to the "fishing" camera mode (fixed diagonal offset, matching the
@@ -15584,14 +15848,110 @@
         _prevCameraTarget = activeCameraTarget;
         activeCameraMode = 'fishing';
         activeCameraTarget = { position: new THREE.Vector3(anchorWorld.x, anchorWorld.y, anchorWorld.z) };
+
+        // Drop the harpoon's "Fish" arc button immediately (computeActionButtons
+        // returns [] while fishingMinigame.active — see there) instead of
+        // waiting for whatever next unrelated event happens to call
+        // refreshActionBar(); fishing's real controls are #actionPrompt now.
+        refreshActionBar();
+        setNonFishingArcControlsHidden(true);
+      }
+
+      // Opens the actual spear-bridge ring once the player confirms a bite
+      // (fm.phase 'bite' -> 'active') — extends the existing fm in place
+      // rather than replacing it, so anchorWorld/camera/overlay state from
+      // beginFishingCast carries straight through.
+      function beginFishingRing(fm) {
+        fm.phase = 'active';
+        fm.fishAnimT = 0;
+        fm.fish = {
+          pos: Math.random(), vel: 0, targetVel: 0, angle: 0,
+          renderAngle: 0, renderRadius: FISHING_RING.fishRadius, dimmed: false,
+          moveDir: 1, pendingMoveDir: 1, turning: false, turnProgress: 0, localFacingScale: 1,
+        };
+        fm.dive = {
+          active: false, timer: 0, cooldown: 3 + Math.random() * 4,
+          inspectTargetAngle: 0, centerRadius: FISHING_RING.fishRadius * 0.3, lastDuration: 0, visualOffset: 0,
+        };
+        fm.bridge = {
+          angle: 0, direction: 1, segmentSize: FISHING_RING.segmentSize, speed: FISHING_RING.sweepSpeed,
+          markerA: null, markerB: null, spearActive: false, lineA: null, lineB: null,
+          shotTimer: 0, retractTimer: 0, tipX: 0, tipY: 0, prevTipX: 0, prevTipY: 0, caughtFish: false,
+          weaponSpinDeg: 0, frozenWeaponAngleDeg: 0,
+        };
+        fm.panic = 0;
+        fm.resolved = false;
+        fm.resultTimer = 0;
+        fm.message = 'Tap Fire to drop the first marker.';
+        fm.messageType = '';
+        fm.respawn = {
+          active: false, phase: 'idle', timer: 0, scale: 1,
+          startAngle: 0, startRadius: FISHING_RING.fishRadius,
+          centerAngle: 0, centerRadius: 0,
+          enterStartAngle: 0, enterStartRadius: 0, enterTargetAngle: 0,
+        };
+        fishPickTargetVel(fm);
+        _fishDeformUrlCache = null;
+        _fishDeformUrlCacheAt = -Infinity;
+        fishingReadyPose = false;
+        window.__farmLog?.(`fishing ring opened: zone=${fm.zoneKey} fish=${fm.fishDef.key} anchor=(${fm.anchorWorld.x.toFixed(2)},${fm.anchorWorld.y.toFixed(2)},${fm.anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`);
+        // The prompt DOM (button/status/panic/cancel) persists across this
+        // transition; only the ring SVG is fresh here.
+        fishingEls = null;
+        renderFishingOverlay();
+      }
+
+      // Dispatches the "primary" fishing button/key press (action bar tap,
+      // Space/Enter) to whatever it means at the current phase: confirm a
+      // bite to open the ring, or place/fire a bridge marker once it's open.
+      // No-op during 'cast'/'waiting' — there's nothing to do until a bite.
+      function fishingPrimaryAction() {
+        const fm = fishingMinigame;
+        if (!fm) return;
+        if (fm.phase === 'bite') { beginFishingRing(fm); return; }
+        if (fm.phase === 'active') { fireFishingBridge(); return; }
+      }
+
+      // The dynamic action-bar buttons (btnAction1-3/btnItemAction1-2) already
+      // swap to fish_primary/fish_cancel while fishing is active (see
+      // computeActionButtons), but the tool-select/item-select dial openers
+      // and the weapon quick-switch button are separate, always-on controls
+      // that don't go through that array at all — nothing stopped a player
+      // from switching away from the harpoon (or opening the item wheel)
+      // mid-cast. Hidden outright (not just disabled) so their own
+      // press/hold listeners can't fire either.
+      function setNonFishingArcControlsHidden(hidden) {
+        const display = hidden ? 'none' : '';
+        if (toolBtn) toolBtn.style.display = display;
+        const itemBtnEl = document.getElementById('itemBtn');
+        if (itemBtnEl) itemBtnEl.style.display = display;
+        if (btnWeaponSwitch) btnWeaponSwitch.style.display = display;
+        // dodgeBtn already defaults to hidden (see its own .combat-active
+        // toggle in updateMovement) — but that toggle stops running the
+        // instant fishing starts (updateMovement's own fishingMinigame.active
+        // guard), so whatever it was frozen at just before could otherwise
+        // stay stuck on screen for the whole round.
+        if (dodgeBtn) dodgeBtn.style.display = display;
       }
 
       function closeFishingMinigame() {
         if (!fishingMinigame) return;
         fishingMinigame = null;
+        fishingReadyPose = false;
         fishingOverlayEl.classList.remove('open');
         fishingOverlayEl.innerHTML = '';
         fishingEls = null;
+        hideActionPrompt();
+        hideFishCatchView();
+        setNonFishingArcControlsHidden(false);
+        // Always return to holding the harpoon, ready to fish again —
+        // covers the catch-view popup, which temporarily switches to
+        // heldMode 'item' so the held-item system can show the caught fish
+        // (see beginFishCatchView). A no-op for every other exit path,
+        // since heldMode/activeTool are never touched outside that popup.
+        heldMode = 'tool';
+        activeTool = 'harpoon';
+        refreshActionBar();
         if (_prevCameraMode !== null) { activeCameraMode = _prevCameraMode; _prevCameraMode = null; }
         activeCameraTarget = _prevCameraTarget;
         _prevCameraTarget = null;
@@ -15640,7 +16000,15 @@
       function fishingTryTipCatch(fm) {
         const b = fm.bridge;
         if (b.caughtFish || !b.spearActive) return false;
-        const fishPos = fishingPolarToXY(fm.fish.angle, FISHING_RING.fishRadius);
+        // Diving pulls the fish's *rendered* position off the ring toward the
+        // center (fm.fish.renderAngle/renderRadius) — testing against that
+        // instead of the hidden ring angle/fixed ring radius is what makes a
+        // dive genuinely unhittable, not just visually distinct. The explicit
+        // dive.active check is a belt-and-suspenders guard for the first
+        // instant of a dive, before renderRadius has eased inward enough for
+        // distance alone to rule it out.
+        if (fm.dive.active) return false;
+        const fishPos = fishingPolarToXY(fm.fish.renderAngle, fm.fish.renderRadius);
         const colliderRadius = 14;
         const dist = fishingDistPointToSegment(fishPos.x, fishPos.y, b.prevTipX, b.prevTipY, b.tipX, b.tipY);
         if (dist <= colliderRadius) { b.caughtFish = true; return true; }
@@ -15650,32 +16018,93 @@
       function resolveFishingRound(fm, caught) {
         if (caught) {
           fm.resolved = true;
-          fm.resultTimer = 1.1;
           inventory[fm.fishDef.key] = Math.min(99, (inventory[fm.fishDef.key] || 0) + 1);
-          fm.message = `Caught a ${fm.fishDef.label}! ${fm.fishDef.icon}`;
+          const stars = rollItemStars();
+          fm.message = `Caught a ${starRatingText(stars)} ${fm.fishDef.label}! ${fm.fishDef.icon}`;
           fm.messageType = 'good';
           lastActionMessage = fm.message;
           awardToolUseMasteryXp('harpoon');
+          beginFishCatchView(fm, stars);
           return;
         }
-        beginFishEscapeRespawn(fm);
+        // Escaping used to slide the fish into the pool and swim a fresh
+        // one back out (beginFishEscapeRespawn), letting the player keep
+        // fishing the same cast indefinitely. Now a single escape just
+        // ends the round and drops back to normal gameplay.
+        fm.resolved = true;
+        showToast('The fish got away!', false);
+        closeFishingMinigame();
       }
 
-      // Panic maxed out without a catch: the current fish escapes into the
-      // central pool instead of ending the round outright. A new fish is
-      // rolled mid-animation and swims back out so the player keeps fishing.
-      function beginFishEscapeRespawn(fm) {
-        const r = fm.respawn;
-        r.active = true;
-        r.phase = 'retreat';
-        r.timer = 0;
-        r.startAngle = fm.fish.angle;
-        r.startRadius = FISHING_RING.fishRadius;
-        r.centerAngle = r.startAngle;
-        r.centerRadius = 72 + Math.random() * 26;
-        r.scale = 1;
-        fm.message = 'Fish fled into the pool.';
-        fm.messageType = 'bad';
+      let fishCatchViewEls = null;
+      function buildFishCatchViewDom() {
+        if (fishCatchViewEls) return;
+        const el = document.getElementById('fishCatchView');
+        if (!el) return;
+        fishCatchViewEls = {
+          el,
+          stars: document.getElementById('fcvStars'),
+          text: document.getElementById('fcvText'),
+          continueBtn: document.getElementById('fcvContinueBtn'),
+        };
+        fishCatchViewEls.continueBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); continueFromFishCatch(); });
+      }
+
+      // The catch "victory view": zooms/angles the camera onto the player
+      // (a zoomed-out cousin of the NPC dialogue camera — see the
+      // 'fishCatch' camera mode config) while they face the camera and
+      // hold the caught fish to their chest via the same held-item system
+      // bag items use (heldMode 'item' — see heldItemHolder/
+      // updateHeldItemHolder), captioned with its star rating. Stays up
+      // until the player taps Continue (continueFromFishCatch), not on a
+      // timer — see updateFishingMinigame's 'caught' early return.
+      function beginFishCatchView(fm, stars) {
+        fm.phase = 'caught';
+        hideActionPrompt();
+        // The ring SVG would otherwise stay frozen on-screen at its last
+        // rendered frame — renderFishingOverlay never runs again once
+        // updateFishingMinigame's 'caught' branch takes over.
+        fishingOverlayEl.classList.remove('open');
+        // Same reason: renderFishingOverlay (which otherwise keeps the arc's
+        // fish_primary/fish_cancel buttons in sync) stops running once
+        // 'caught' takes over, so without this the last active-phase arc
+        // buttons would stay stuck on screen underneath the victory view.
+        refreshActionBar();
+
+        // Face the fixed fishCatch camera (azimuthDeg 0 in its config sits
+        // south of the player looking north, matching playerFacing 0)
+        // regardless of whichever way the player was actually fishing.
+        playerFacing = 0;
+
+        // Point the held-item system at the fish that was just caught,
+        // not whatever bag item the player had selected before fishing.
+        const idx = getInventoryStackKeys('all').indexOf(fm.fishDef.key);
+        if (idx >= 0) activeItemIndex = idx;
+        heldMode = 'item';
+
+        // _prevCameraMode/_prevCameraTarget already hold the pre-fishing
+        // camera from beginFishingCast — left untouched here so Continue
+        // (closeFishingMinigame) restores straight back to it, skipping
+        // over the 'fishing' ring camera entirely.
+        activeCameraMode = 'fishCatch';
+        activeCameraTarget = null; // updateCameraPosition falls back to tracking the player directly
+
+        buildFishCatchViewDom();
+        if (!fishCatchViewEls) return;
+        fishCatchViewEls.stars.textContent = starRatingText(stars);
+        fishCatchViewEls.text.textContent = `You caught a ${stars} Star ${fm.fishDef.label}`;
+        fishCatchViewEls.el.classList.add('open');
+        fishCatchViewEls.el.setAttribute('aria-hidden', 'false');
+      }
+
+      function hideFishCatchView() {
+        if (!fishCatchViewEls) return;
+        fishCatchViewEls.el.classList.remove('open');
+        fishCatchViewEls.el.setAttribute('aria-hidden', 'true');
+      }
+
+      function continueFromFishCatch() {
+        closeFishingMinigame();
       }
 
       function respawnNextFish(fm) {
@@ -15694,6 +16123,11 @@
         fm.fish.localFacingScale = 1;
         fishPickTargetVel(fm);
         fm.panic = 0;
+        fm.dive.active = false;
+        fm.dive.timer = 0;
+        fm.dive.visualOffset = 0;
+        fm.dive.cooldown = 3 + Math.random() * 4;
+        fm.fish.dimmed = false;
         const r = fm.respawn;
         r.enterStartAngle = r.centerAngle;
         r.enterStartRadius = r.centerRadius;
@@ -15778,9 +16212,28 @@
       function updateFishingMinigame(dt) {
         const fm = fishingMinigame;
         if (!fm) return;
-        if (fm.resolved) {
-          fm.resultTimer -= dt;
-          if (fm.resultTimer <= 0) { closeFishingMinigame(); return; }
+
+        // The catch-view popup (camera zoom + star rating + Continue) is
+        // static per-frame — it only advances via its own button, not a
+        // timer — see beginFishCatchView/continueFromFishCatch.
+        if (fm.phase === 'caught') return;
+
+        if (fm.phase !== 'active') {
+          fm.phaseTimer += dt;
+          if (fm.phase === 'cast' || fm.phase === 'waiting') {
+            fm.floatSpawnTimer -= dt;
+            if (fm.floatSpawnTimer <= 0) {
+              spawnFishingFloatParticle(fm.anchorWorld);
+              fm.floatSpawnTimer = 0.3 + Math.random() * 0.3;
+            }
+          }
+          if (fm.phase === 'cast' && fm.phaseTimer >= FISHING_BAIT_FLIGHT_S) {
+            fm.phase = 'waiting';
+            fm.phaseTimer = 0;
+          } else if (fm.phase === 'waiting' && fm.phaseTimer >= fm.biteAt) {
+            spawnFishingBiteSplash(fm.anchorWorld);
+            fm.phase = 'bite';
+          }
           renderFishingOverlay();
           return;
         }
@@ -15794,6 +16247,14 @@
 
         fm.fishAnimT += dt;
         fishStepMotion(fm, dt);
+
+        if (fishMaybeStartDive(fm, dt) || fm.dive.active) {
+          fishUpdateDiveOverlay(fm, dt);
+        } else {
+          fm.fish.renderRadius = FISHING_RING.fishRadius;
+          fm.fish.renderAngle = fm.fish.angle;
+          fm.fish.dimmed = false;
+        }
 
         const b = fm.bridge;
         b.angle = (b.angle + b.speed * b.direction * dt + 360) % 360;
@@ -15820,17 +16281,21 @@
             const t = b.retractTimer / FISHING_RING.retractDuration;
             b.tipX = bPt.x + (a.x - bPt.x) * t;
             b.tipY = bPt.y + (a.y - bPt.y) * t;
+          } else if (b.caughtFish) {
+            // Leave the bridge/spear state alone on a catch — the fish stays
+            // pinned to the (now fully retracted) tip position for the whole
+            // "Caught!" celebration window instead of popping back onto the
+            // ring the instant it resolves. closeFishingMinigame() discards
+            // the whole fishingMinigame object once the round actually ends,
+            // so there's nothing to clean up here.
+            resolveFishingRound(fm, true);
           } else {
-            if (b.caughtFish) {
-              resolveFishingRound(fm, true);
+            fm.panic = Math.min(FISHING_RING.panicMax, fm.panic + FISHING_RING.panicStep);
+            if (fm.panic >= FISHING_RING.panicMax) {
+              resolveFishingRound(fm, false);
             } else {
-              fm.panic = Math.min(FISHING_RING.panicMax, fm.panic + FISHING_RING.panicStep);
-              if (fm.panic >= FISHING_RING.panicMax) {
-                resolveFishingRound(fm, false);
-              } else {
-                fm.message = 'Missed! Panic rising.';
-                fm.messageType = 'bad';
-              }
+              fm.message = 'Missed! Panic rising.';
+              fm.messageType = 'bad';
             }
             b.spearActive = false;
             b.lineA = null;
@@ -15844,37 +16309,31 @@
         renderFishingOverlay();
       }
 
-      // Builds the static overlay markup once per minigame session; per-frame updates
-      // only touch attributes on the cached nodes below (renderFishingOverlay), so the
-      // deformed-fish canvas/dataURL churn each frame doesn't force a full innerHTML
-      // rebuild + listener rebind every tick.
-      function buildFishingOverlayDom(fm) {
+      // Built once on entering 'active' (the ring SVG only — the "Ready
+      // Harpoon"/"Throw Harpoon" button itself is an arc button, built by
+      // computeActionButtons/applyAbt; the bottom-of-screen action prompt
+      // just mirrors it as an info display, see renderFishingOverlay).
+      function buildFishingRingDom() {
         const R = FISHING_RING;
         const outerRadius = R.fishRadius + R.outerOffset;
-        fishingOverlayEl.innerHTML = `
-          <div class="fish-ring-wrap" id="fishRingWrap">
-            <svg viewBox="0 0 ${R.cx * 2} ${R.cy * 2}">
-              <circle cx="${R.cx}" cy="${R.cy}" r="${R.fishRadius}" fill="none" stroke="rgba(127,232,154,0.4)" stroke-width="2"/>
-              <circle cx="${R.cx}" cy="${R.cy}" r="${outerRadius}" fill="none" stroke="rgba(255,255,255,0.32)" stroke-width="2"/>
-              <path id="fishSegArc" fill="none" stroke="#f9e28a" stroke-width="6" stroke-linecap="round"/>
-              <circle id="fishMarkerA" r="5" fill="#ff8060" opacity="0"/>
-              <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
-              <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
-              <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
-              <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
-            </svg>
-          </div>
-          <div class="fish-dock">
-            <div class="fish-title">${FISH_ZONE_LABELS[fm.zoneKey]} — Spearfishing</div>
-            <div class="fish-hint">Tap Fire once to drop marker 1, again for marker 2. The spear flies the chord between them — line it up with the fish.</div>
-            <div class="fish-status" id="fishStatus"></div>
-            <div class="fish-panic-wrap"><div class="fish-panic-fill" id="fishPanicFill"></div></div>
-            <button class="fish-fire-btn" id="fishFireBtn">Fire (Space)</button>
-            <button class="fish-cancel-btn" id="fishCancelBtn">Give up</button>
-          </div>`;
+        const ringWrap = document.createElement('div');
+        ringWrap.className = 'fish-ring-wrap';
+        ringWrap.id = 'fishRingWrap';
+        ringWrap.innerHTML = `
+          <svg viewBox="0 0 ${R.cx * 2} ${R.cy * 2}">
+            <circle cx="${R.cx}" cy="${R.cy}" r="${R.fishRadius}" fill="none" stroke="rgba(127,232,154,0.4)" stroke-width="2"/>
+            <circle cx="${R.cx}" cy="${R.cy}" r="${outerRadius}" fill="none" stroke="rgba(255,255,255,0.32)" stroke-width="2"/>
+            <path id="fishSegArc" fill="none" stroke="#f9e28a" stroke-width="6" stroke-linecap="round"/>
+            <circle id="fishMarkerA" r="5" fill="#ff8060" opacity="0"/>
+            <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
+            <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
+            <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
+            <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
+          </svg>`;
+        fishingOverlayEl.insertBefore(ringWrap, fishingOverlayEl.firstChild);
 
         fishingEls = {
-          ringWrap: document.getElementById('fishRingWrap'),
+          ringWrap,
           segArc: document.getElementById('fishSegArc'),
           markerA: document.getElementById('fishMarkerA'),
           markerB: document.getElementById('fishMarkerB'),
@@ -15884,15 +16343,7 @@
           fishImageRig: document.getElementById('fishImageRig'),
           fishImageTransform: document.getElementById('fishImageTransform'),
           fishDeformedImage: document.getElementById('fishDeformedImage'),
-          status: document.getElementById('fishStatus'),
-          panicFill: document.getElementById('fishPanicFill'),
-          dock: document.querySelector('.fish-dock'),
         };
-
-        const fireBtn = document.getElementById('fishFireBtn');
-        if (fireBtn) fireBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); fireFishingBridge(); });
-        const cancelBtn = document.getElementById('fishCancelBtn');
-        if (cancelBtn) cancelBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); closeFishingMinigame(); });
       }
 
       // Ported from the prototype's renderBridgeSpearSprite: positions the real
@@ -15946,10 +16397,23 @@
           fishingEls.fishImageRig.setAttribute('opacity', '0');
           return;
         }
-        const renderAngle = pose ? pose.angle : fm.fish.angle;
-        const renderRadius = pose ? pose.radius : FISHING_RING.fishRadius;
+        const b = fm.bridge;
+        // Once the spear actually lands, the fish rides the retracting tip
+        // back toward the player instead of staying pinned to its ring/dive
+        // spot — ported from the prototype's spearBridge caughtFish branch.
+        const caughtFollow = !pose && b.spearActive && b.caughtFish;
+        let renderAngle, fishPt;
+        if (caughtFollow) {
+          const outerRadius = FISHING_RING.fishRadius + FISHING_RING.outerOffset;
+          const anchor = fishingPolarToXY(b.lineA, outerRadius);
+          renderAngle = Math.atan2(b.tipY - anchor.y, b.tipX - anchor.x) * 180 / Math.PI;
+          fishPt = { x: b.tipX, y: b.tipY };
+        } else {
+          renderAngle = pose ? pose.angle : fm.fish.renderAngle;
+          const renderRadius = pose ? pose.radius : fm.fish.renderRadius;
+          fishPt = fishingPolarToXY(renderAngle, renderRadius);
+        }
         const renderScale = pose ? pose.scale : 1;
-        const fishPt = fishingPolarToXY(renderAngle, renderRadius);
         const deform = renderFishDeformedTexture(fm);
         // Only log on a state change (loaded vs. not), so the debug panel gets one
         // entry per session instead of one per frame at 60fps.
@@ -15972,7 +16436,10 @@
         const scaleX = art.flipX * localFacingScale;
 
         const w = deform.w * renderScale, h = deform.h * renderScale;
-        fishingEls.fishImageRig.setAttribute('opacity', '1');
+        // Dimmed while diving/escaping (fm.fish.dimmed) — a visible cue that
+        // the fish is in the safe zone, on top of it genuinely being
+        // geometrically unreachable (see fishingTryTipCatch).
+        fishingEls.fishImageRig.setAttribute('opacity', pose || !fm.fish.dimmed ? '1' : '0.55');
         fishingEls.fishImageRig.setAttribute('transform', `translate(${fishPt.x.toFixed(2)} ${fishPt.y.toFixed(2)})`);
         fishingEls.fishImageTransform.setAttribute('transform', `rotate(${renderAngle.toFixed(2)}) scale(${scaleX.toFixed(4)} 1)`);
         fishingEls.fishDeformedImage.setAttribute('href', deform.url);
@@ -15997,28 +16464,45 @@
         fishingEls.ringWrap.style.top = (rect.top + top) + 'px';
       }
 
-      // Keeps the title/hint/status/panic dock parked just to the left of the
-      // player avatar on screen, instead of pinned to the bottom of the page,
-      // so it reads as attached to the character doing the fishing.
-      function updateFishingDockScreenPosition() {
-        if (!fishingEls?.dock || !playerMesh) return;
-        const proj = worldToOverlay(playerMesh.position.x, playerMesh.position.y + 0.6, playerMesh.position.z);
-        if (!proj.visible) return;
-        const dockGap = 105;
-        const dockWidth = 105; // keeps the dock's left edge from running off-screen
-        const rect = _threeRect;
-        const left = clamp(proj.x - dockGap, dockWidth, rect.width);
-        const top = clamp(proj.y, 0, rect.height);
-        fishingEls.dock.style.left = (rect.left + left) + 'px';
-        fishingEls.dock.style.top = (rect.top + top) + 'px';
-      }
-
       function renderFishingOverlay() {
         const fm = fishingMinigame;
         if (!fm) return;
-        if (!fishingEls) buildFishingOverlayDom(fm);
+
+        // Keeps the fish_primary/fish_cancel arc buttons in sync with phase
+        // (computeActionButtons' fishingMinigame branch returns nothing
+        // before 'bite', the button pair from 'bite' onward) — cheap no-op
+        // via refreshActionBar's own key-diff whenever the phase hasn't
+        // actually changed since the last call, so calling this every frame
+        // here is fine.
+        refreshActionBar();
+
+        // "Ready Harpoon"/"Throw Harpoon" is now primarily an arc button
+        // (see computeActionButtons' fishingMinigame branch) — natural
+        // thumb reach on touch, unlike this bottom-center spot. This prompt
+        // stays up alongside it purely as an info display (status text/
+        // panic bar, and the actual key/button label on desktop/
+        // controller), but keeps its own onPress/onCancel too as a
+        // redundant secondary tap target — harmless, and convenient for a
+        // desktop mouse user who'd rather click here than hunt for the arc.
+        if (fm.phase === 'bite' || fm.phase === 'active') {
+          const notYetMarked = fm.phase === 'bite' || fm.bridge.markerA == null;
+          showActionPrompt({
+            actionId: 'interact',
+            touchIcon: attackActionIconHTML('harpoon', 'fish', '🎣'),
+            verb: notYetMarked ? 'Ready Harpoon' : 'Throw Harpoon',
+            onPress: fishingPrimaryAction,
+            cancelText: 'Give up',
+            onCancel: closeFishingMinigame,
+            statusText: fm.phase === 'active' ? fm.message : '',
+            statusType: fm.phase === 'active' ? fm.messageType : '',
+            panicPercent: fm.phase === 'active' ? fm.panic : null,
+          });
+        }
+
+        if (fm.phase !== 'active') return;
+
+        if (!fishingEls) buildFishingRingDom();
         updateFishingRingScreenPosition(fm);
-        updateFishingDockScreenPosition();
 
         const R = FISHING_RING;
         const outerRadius = R.fishRadius + R.outerOffset;
@@ -16052,10 +16536,6 @@
         }
 
         renderFishingImageFish(fm);
-
-        fishingEls.status.textContent = fm.message;
-        fishingEls.status.className = 'fish-status' + (fm.messageType ? ' ' + fm.messageType : '');
-        fishingEls.panicFill.style.width = fm.panic + '%';
       }
 
       function describeFishingArc(radius, startDeg, endDeg) {
@@ -18684,6 +19164,13 @@
       // True while a charge-and-release ability's windup is being held —
       // see triggerWeaponHoldVisual()/releaseWeaponSwingHold() below.
       let combatSwingHeld = false;
+      // True while the player is waiting on a fishing bite (see
+      // beginFishingCast/fishing cast phases below) — holds the equipped
+      // tool at its windup extreme so the harpoon visibly looks "at the
+      // ready" instead of resting in its normal idle pose. Deliberately
+      // separate from combatSwingHeld/triggerWeaponHoldVisual (which only
+      // work for activeTool === 'weapon') rather than reusing that system.
+      let fishingReadyPose = false;
       // Per-ability post-strike pause, in seconds — set via opts.holdS on a
       // triggerWeaponSwingVisual/triggerWeaponHoldVisual call (a config knob
       // each ability's own file sets, not a built-in engine default). 0 means
@@ -18988,6 +19475,82 @@
       const toolHolder = new THREE.Group();
       scene.add(toolHolder);
 
+      // ── Held bag-item plane ────────────────────────────────────────────
+      // While heldMode === 'item' (an inventory item is selected — the arch
+      // shows its use actions instead of a tool wheel), the equipped
+      // tool/weapon mesh above is hidden and this plane shows instead: the
+      // active bag item's icon on a small PNG-style plane held a little in
+      // front of the chest, since these avatars have no arms to actually
+      // grip anything. Bag items only carry an emoji `icon` (no PNG sprite
+      // like TOOL_ITEM_DEFS), so the icon is rasterized onto a canvas once
+      // per glyph and reused as a texture, same idea as the tool/avatar PNG
+      // planes above just built from a drawn glyph instead of a loaded file.
+      const HELD_ITEM_PLANE_WIDTH = 0.45; // ~50% of the avatar's ~0.9 world-unit portrait width
+      const HELD_ITEM_FORWARD_OFFSET = 0.1; // a quarter of the original 0.4 — just enough clearance from the chest
+      // Per-item-key overrides for HELD_ITEM_PLANE_WIDTH — most icons read fine
+      // at the default size; add entries here for outliers (e.g. tiny/huge glyphs).
+      const ITEM_HELD_PLANE_SCALE = {};
+
+      const _itemIconTextures = {};
+      function _getItemIconTexture(icon) {
+        if (_itemIconTextures[icon]) return _itemIconTextures[icon];
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.font = `${Math.round(size * 0.72)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(icon || '❓', size / 2, size * 0.56);
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.magFilter = THREE.LinearFilter;
+        tex.minFilter = THREE.LinearFilter;
+        _itemIconTextures[icon] = tex;
+        return tex;
+      }
+
+      function makeHeldItemPlaneMesh(item) {
+        if (!item) return null;
+        const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1);
+        const geo = new THREE.PlaneGeometry(w, w);
+        const mat = new THREE.MeshBasicMaterial({
+          map: _getItemIconTexture(item.icon),
+          transparent: true,
+          alphaTest: 0.05,
+          side: THREE.DoubleSide,
+        });
+        const plane = new THREE.Mesh(geo, mat);
+        plane.renderOrder = 3;
+        return plane;
+      }
+
+      // Child of playerMesh (not scene, unlike toolHolder) — it has no swing
+      // animation, so it can just ride along with the player's position and
+      // facing at a fixed local offset instead of being repositioned in world
+      // space every frame.
+      const heldItemHolder = new THREE.Group();
+      heldItemHolder.visible = false;
+      playerMesh.add(heldItemHolder);
+      _markPngPlane(heldItemHolder);
+
+      let _heldItemPlane = null, _heldItemKey = null;
+      function updateHeldItemHolder() {
+        const item = getActiveInventoryItem();
+        if (!item) { heldItemHolder.visible = false; return; }
+        if (item.key !== _heldItemKey) {
+          if (_heldItemPlane) {
+            heldItemHolder.remove(_heldItemPlane);
+            _heldItemPlane.geometry.dispose();
+            _heldItemPlane.material.dispose();
+          }
+          _heldItemPlane = makeHeldItemPlaneMesh(item);
+          _heldItemKey = item.key;
+          if (_heldItemPlane) heldItemHolder.add(_heldItemPlane);
+        }
+        heldItemHolder.position.set(0, playerItemHoldY, HELD_ITEM_FORWARD_OFFSET);
+        heldItemHolder.visible = !!_heldItemPlane;
+      }
+
       // Pre-allocated objects to avoid per-frame GC in updateToolMesh
       const _tUp      = new THREE.Vector3(0, 1, 0);
       const _xAxis    = new THREE.Vector3(1, 0, 0); // tool-local pitch axis (thrust)
@@ -19036,6 +19599,16 @@
       };
 
       function updateToolMesh(dt) {
+        // While a bag item is selected (heldMode === 'item' — the arch shows
+        // its use actions), show the held-item chest plane instead of
+        // whatever tool/weapon is equipped; the tool mesh comes back the
+        // moment the player returns to tool mode.
+        if (heldMode === 'item') {
+          toolHolder.visible = false;
+          updateHeldItemHolder();
+          return;
+        }
+        heldItemHolder.visible = false;
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
 
@@ -19067,6 +19640,28 @@
           progress   = 1 - toolSwingT / toolSwingDur;
         }
 
+        // Hold a simple raised/pulled-back "ready" pose while waiting on a
+        // fishing bite — deliberately bypasses the per-style branches below
+        // instead of pinning `progress` at their windup extreme: thrust's
+        // windup carries a -45° bodyYaw and sweep's carries a much larger
+        // one (both meant as a brief transient mid-swing), and holding
+        // either of those indefinitely visibly rotated the whole character
+        // away from θ (the facing set by aiming at the fished tile) instead
+        // of leaving them squared up toward it. This pose only tilts the
+        // tool itself — playerMesh.rotation.y stays exactly θ.
+        if (fishingReadyPose) {
+          playerMesh.rotation.y = θ;
+          _qFac.setFromAxisAngle(_tUp, θ);
+          _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(10.31));
+          toolHolder.quaternion.copy(_qFac).multiply(_qAnim);
+          toolHolder.position.set(
+            playerMesh.position.x + rightX * playerToolBaseX + fwdX * -0.22,
+            playerMesh.position.y + playerToolBaseY,
+            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * -0.22
+          );
+          return;
+        }
+
         _qFac.setFromAxisAngle(_tUp, θ);
         _swAxis.set(rightX, 0, rightZ);
 
@@ -19088,6 +19683,12 @@
         const HF = (combatSwingAnim && combatSwingHoldS > 0)
           ? Math.min(0.99, SF + combatSwingHoldS / toolSwingDur)
           : Math.min(0.99, SF + (1 - SF) * 0.3);
+
+        // Pin the swing at its windup extreme while waiting on a bite —
+        // fourPhaseLerp(progress===wf, wf, ...) always resolves to exactly
+        // windupV regardless of style, so this holds any equipped harpoon's
+        // ready pose without needing a style-specific pose computation here.
+        if (fishingReadyPose) progress = WF;
 
         if (combatSwingAnim && combatSwingPose) {
           // POSE-DRIVEN COMBAT SWING — applies a full 7-channel pose authored
@@ -20289,12 +20890,19 @@
         }
 
         // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
-        if (!player.perpState) player.perpState = {};
-        const rawTargetRotY = -facingAngle + Math.PI / 2;
-        const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, cameraRelativePerps());
-        if (pSnapTo !== null) playerFacing = pEffTarget;
-        else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
-        playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
+        // Skipped during the fish-catch view: beginFishCatchView pins playerFacing to face
+        // the camera, and this recompute runs every frame regardless of fishing state, so
+        // without the guard it fought that and spun the character back around immediately.
+        if (fishingMinigame?.phase === 'caught') {
+          playerMesh.rotation.y = playerFacing;
+        } else {
+          if (!player.perpState) player.perpState = {};
+          const rawTargetRotY = -facingAngle + Math.PI / 2;
+          const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, cameraRelativePerps());
+          if (pSnapTo !== null) playerFacing = pEffTarget;
+          else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
+          playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
+        }
 
         // Bob animation when moving
         const speed = Math.hypot(player.vx, player.vy);
@@ -21076,6 +21684,7 @@
             updateLightningFlash(dt);
           }
           updateActionParticles(dt);
+          updateFishingFxParticles(dt);
           // Water sim ticks every 1/8 game-hour (~9s real-time)
           // Uses game time so rain and drainage are clock-consistent
           simAccumulator += dt / DAY_LENGTH_SECONDS * (NIGHT_HOUR - MORNING_HOUR); // game-hours per sec
@@ -22258,6 +22867,25 @@
 
 
       function computeActionButtons() {
+        // Fishing gets its own arc buttons instead of the harpoon's normal
+        // "Fish" one (which would just call beginFishingCast() again and
+        // silently restart the round) — the bottom-center #actionPrompt
+        // (see renderFishingOverlay) mirrors these as an info display
+        // (status text/panic bar/desktop key label), but the actual
+        // thumb-reachable tap target on touch is the arc, same as every
+        // other tool action. Nothing shows before 'bite' (no bite yet to
+        // react to), and nothing shows during 'caught' (the victory view
+        // has its own Continue button).
+        if (fishingMinigame?.active) {
+          const fm = fishingMinigame;
+          if (fm.phase !== 'bite' && fm.phase !== 'active') return [];
+          const notYetMarked = fm.phase === 'bite' || fm.bridge.markerA == null;
+          const icon = attackActionIconHTML('harpoon', 'fish', '🎣');
+          return [
+            { icon, label: notYetMarked ? 'Ready Harpoon' : 'Throw Harpoon', action: 'fish_primary', style: 'primary', allowed: true },
+            { icon: '🏳️', label: 'Give up', action: 'fish_cancel', style: 'secondary', allowed: true },
+          ];
+        }
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
           const btns = [npcDialogueButton()];
@@ -22445,7 +23073,16 @@
         const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
         const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
         const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction() : 'none';
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}`;
+        // fishingMinigame?.phase (not just .active) must be in this key:
+        // computeActionButtons() returns different button sets across the
+        // cast/waiting/bite/active/caught sequence (empty until 'bite', the
+        // fish_primary/fish_cancel pair from 'bite' onward), but that whole
+        // sequence usually doesn't touch anything else the key tracks (same
+        // tile, same tool, same reticle) — keying on just .active would've
+        // caught the very first transition into fishing but then never
+        // rebuilt again for the rest of the round, since .active stays true
+        // throughout. Phase changes every step, so it always forces a rebuild.
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${fishingMinigame?.phase || ''}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -22493,8 +23130,13 @@
               const act = el.dataset.action;
               if (!act || el.classList.contains('abt-hidden')) return;
               activeAction = act;
-              // Navigation/interaction actions always fire; tool actions respect swing cooldown
-              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_');
+              // Navigation/interaction actions always fire; tool actions respect swing cooldown.
+              // fish_primary/fish_cancel bypass it too — spearfishing has never
+              // used the swing-timer system (see fireFishingBridge's own note on
+              // this), so gating the arc button behind it here would just mean
+              // a stray leftover toolSwingT from whatever was equipped before
+              // switching to the harpoon could silently eat the tap.
+              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_') || act.startsWith('fish_');
               if (isNavAction || toolSwingT <= 0) useActiveAction();
             }
 
@@ -23209,6 +23851,101 @@
         const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓' };
         return labels[code] || String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
       }
+
+      // ── Last-used input device tracking ─────────────────────────────
+      // Nothing else in the game tracks "what device is the player actually
+      // using right now" — isDesktop (see top of file) is a one-time
+      // pointer:fine media-query check, not reactive to switching between
+      // mouse, touch, and a plugged-in controller mid-session. Drives
+      // showActionPrompt below so its "press X" text matches whatever the
+      // player last actually pressed, not just their device class.
+      let lastInputDevice = isDesktop ? 'desktop' : 'touch';
+      window.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'touch') lastInputDevice = 'touch';
+        else if (e.pointerType === 'mouse' || e.pointerType === 'pen') lastInputDevice = 'desktop';
+      }, { capture: true, passive: true });
+      window.addEventListener('keydown', () => { lastInputDevice = 'desktop'; }, { capture: true });
+      // Controller presses are marked in pollControllerInput() itself (see
+      // below), since that's the only place an actual button-down edge is
+      // detected rather than just continuous stick state.
+
+      // ── Contextual bottom-of-screen action prompt ───────────────────
+      // Generic "press X to do Y" prompt shared across the game (fishing is
+      // the first caller, see beginFishingCast/renderFishingOverlay) —
+      // resolves its own key/button/icon label from lastInputDevice so
+      // callers only ever describe *what* the action does, never how to
+      // trigger it on any particular device.
+      let actionPromptEls = null;
+      function buildActionPromptDom() {
+        if (actionPromptEls) return;
+        const el = document.getElementById('actionPrompt');
+        if (!el) return;
+        el.innerHTML = `
+          <div class="ap-row">
+            <button class="ap-btn" id="apBtn"></button>
+            <button class="ap-cancel" id="apCancel"></button>
+          </div>
+          <div class="ap-status" id="apStatus"></div>
+          <div class="ap-panic-wrap" id="apPanicWrap"><div class="ap-panic-fill" id="apPanicFill"></div></div>`;
+        actionPromptEls = {
+          el,
+          btn: document.getElementById('apBtn'),
+          cancel: document.getElementById('apCancel'),
+          status: document.getElementById('apStatus'),
+          panicWrap: document.getElementById('apPanicWrap'),
+          panicFill: document.getElementById('apPanicFill'),
+        };
+      }
+      // Real key/button label on desktop/controller, taken from the
+      // player's actual current bindings (not just the defaults) so a
+      // rebound key shows correctly here too. Touch has no key to name, so
+      // callers pass the same icon already shown for that action in the
+      // tool arch (see e.g. the harpoon's 🎣 fallback in _openToolArc).
+      function actionPromptGlyph(actionId, touchIcon) {
+        if (lastInputDevice === 'controller') return buttonLabel(inputBindings.controller[actionId]);
+        if (lastInputDevice === 'touch') return touchIcon || '👆';
+        return buttonLabel(inputBindings.desktop[actionId]);
+      }
+      function showActionPrompt({ actionId, touchIcon, verb, onPress, cancelText, onCancel, statusText, statusType, panicPercent }) {
+        buildActionPromptDom();
+        if (!actionPromptEls) return;
+        const glyph = actionPromptGlyph(actionId, touchIcon);
+        // innerHTML, not textContent: touchIcon may be a real <img> tag (see
+        // attackActionIconHTML) when the caller wants this to mirror the
+        // arc button's actual equipped-tool sprite instead of a plain emoji
+        // — callers only ever pass static developer strings here, never
+        // untrusted input, so this is safe.
+        actionPromptEls.btn.innerHTML = lastInputDevice === 'touch' ? `${glyph} ${verb}` : `[${glyph}] ${verb}`;
+        actionPromptEls.btn.onpointerup = (e) => { e.stopPropagation(); onPress?.(); };
+        if (cancelText && onCancel) {
+          actionPromptEls.cancel.textContent = cancelText;
+          actionPromptEls.cancel.style.display = '';
+          actionPromptEls.cancel.onpointerup = (e) => { e.stopPropagation(); onCancel(); };
+        } else {
+          actionPromptEls.cancel.style.display = 'none';
+          actionPromptEls.cancel.onpointerup = null;
+        }
+        if (statusText) {
+          actionPromptEls.status.textContent = statusText;
+          actionPromptEls.status.className = 'ap-status' + (statusType ? ' ' + statusType : '');
+          actionPromptEls.status.style.display = '';
+        } else {
+          actionPromptEls.status.style.display = 'none';
+        }
+        if (panicPercent != null) {
+          actionPromptEls.panicWrap.style.display = '';
+          actionPromptEls.panicFill.style.width = panicPercent + '%';
+        } else {
+          actionPromptEls.panicWrap.style.display = 'none';
+        }
+        actionPromptEls.el.classList.add('open');
+      }
+      function hideActionPrompt() {
+        if (!actionPromptEls) return;
+        actionPromptEls.el.classList.remove('open');
+        actionPromptEls.btn.onpointerup = null;
+        actionPromptEls.cancel.onpointerup = null;
+      }
       function runActionButtonAtSlot(slotIndex) {
         const btn = computeActionButtons()[slotIndex - 1];
         if (!btn) return;
@@ -23251,7 +23988,7 @@
           return;
         }
         if (fishingMinigame?.active) {
-          if (actionId === 'interact' || actionId === 'action1') fireFishingBridge();
+          if (actionId === 'interact' || actionId === 'action1') fishingPrimaryAction();
           return;
         }
         if (menuOpen || farmEditMode) return;
@@ -23331,7 +24068,7 @@
         for (const button of down) {
           if (gamepadState.previous.has(button) || button === heldShift?.button) continue;
           const actionId = getActionForButton('controller', button, heldShift);
-          if (actionId) runInputAction(actionId, 'press');
+          if (actionId) { lastInputDevice = 'controller'; runInputAction(actionId, 'press'); }
         }
         for (const button of gamepadState.previous) {
           if (down.has(button)) continue;
@@ -23416,7 +24153,11 @@
         const key = event.key.toLowerCase();
         if (fishingMinigame?.active) {
           if (key === 'escape') { event.preventDefault(); closeFishingMinigame(); return; }
-          if (key === ' ' || key === 'enter') { event.preventDefault(); fireFishingBridge(); }
+          const fishingBoundAction = getActionForButton('desktop', event.code);
+          if (fishingBoundAction === 'interact' || fishingBoundAction === 'action1' || key === ' ' || key === 'enter') {
+            event.preventDefault();
+            fishingPrimaryAction();
+          }
           return;
         }
         if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
@@ -23494,6 +24235,12 @@
       window.addEventListener('keyup', (event) => {
         const key = event.key.toLowerCase();
         input.keys.delete(key);
+        // Mirrors the keydown handler's early return: without this, releasing
+        // the interact key (E) after fishingPrimaryAction() already fired on
+        // keydown fell through to the 'e' handling below, which calls
+        // useActiveAction() — re-triggering beginFishingCast() and clobbering
+        // the ring minigame that press had just opened.
+        if (fishingMinigame?.active) return;
         // Symmetric release for whatever keydown dispatched as a 'press' —
         // same binding lookup/exclusion as keydown above, so a held weapon
         // action (e.g. Space/action1) actually reaches Combat.input.pressEnd
