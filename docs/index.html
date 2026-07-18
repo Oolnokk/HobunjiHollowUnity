@@ -511,6 +511,20 @@
         </div>
       </div><!-- /mpCarpenterShop -->
 
+      <!-- ── Jubmir's Wares pane (no tab button — opened via the "See Wares"
+           choice when talking to Jubmir, same pattern as the General Store/
+           Carpenter panes above). One dabinggi-hound egg per day; see
+           renderJubmirShopPage() in game.js. ───────────────────────────── -->
+      <div class="mp-pane" id="mpJubmirShop">
+        <div class="supply-top-row">
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="jmGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title">Jubmir's Wares</div>
+          <div id="jubmirShopList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpJubmirShop -->
+
       <!-- ── Alchemy pane (no tab button — opened only via the Alchemy Table's
            interact prompt, same "openMenu-only" pattern as Supplies/Shipping) ── -->
       <div class="mp-pane" id="mpAlchemy">

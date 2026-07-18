@@ -145,6 +145,7 @@
         if (targetPanel === 'supplies') renderSupplyPage();
         if (targetPanel === 'generalStore') renderGeneralStorePage();
         if (targetPanel === 'carpenterShop') renderCarpenterShopPage();
+        if (targetPanel === 'jubmirShop') renderJubmirShopPage();
         if (targetPanel === 'alchemy') renderAlchemyPanel();
         auditInventorySizing();
       }
@@ -180,6 +181,7 @@
         if (id === 'supplies') renderSupplyPage();
         if (id === 'generalStore') renderGeneralStorePage();
         if (id === 'carpenterShop') renderCarpenterShopPage();
+        if (id === 'jubmirShop') renderJubmirShopPage();
         if (id === 'alchemy') renderAlchemyPanel();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
         if (id === 'wildlife') renderWildlifeDebugPanel();
@@ -470,6 +472,10 @@
                 closeNpcDialogue();
                 openMenu('generalStore');
                 skipNav = true;
+              } else if (act.type === 'openJubmirShop') {
+                closeNpcDialogue();
+                openMenu('jubmirShop');
+                skipNav = true;
               } else if (act.type === 'startChat') {
                 _beginNpcConversation(_dlgNpcRec);
                 skipNav = true;
@@ -737,6 +743,24 @@
             choices: [
               { label: cfg.buyChoiceLabel || 'Buy', actions: [{ type: 'openShop' }] },
               { label: cfg.chatChoiceLabel || 'Chat', actions: [{ type: 'startChat' }] },
+            ],
+          });
+          return;
+        }
+
+        // Jubmir the traveling trader — unlike the General Store/Carpenter,
+        // he isn't tied to a shop counter (he wanders per his schedule), so
+        // this choice is offered any time you talk to him at all rather
+        // than being station-gated. "Chat" re-enters his normal dialogue
+        // tree exactly like the General Store's Chat option does.
+        if (rec?.id === 'jubmir') {
+          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
+          _renderDlgNode({
+            type: 'choice',
+            text: 'What can I do for you?',
+            choices: [
+              { label: 'See Wares', actions: [{ type: 'openJubmirShop' }] },
+              { label: 'Chat', actions: [{ type: 'startChat' }] },
             ],
           });
           return;
@@ -3594,12 +3618,11 @@
       // dabinggi-hound) have a LIVESTOCK_FACTORIES entry and go through the
       // exact same addLivestockFromItem → stasis → assignLivestockToBarn →
       // wander/day-night-barn path — there's nothing uumkao'ii-specific
-      // about any of it. dabinggiHoundBaby has no Den-Mother source yet
-      // (dabinggi-hound isn't a hostile wild-pack species, so it has no
-      // "-den-mother" CREATURE_DB entry — see DEN_MOTHER_ITEM_KEYS below),
-      // but the item/kind mapping exists here for parity the moment one is
-      // added, or for any other future acquisition route.
-      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf', dabinggiHoundBaby: 'dabinggi-hound' };
+      // about any of it. dabinggiHoundEgg has no Den-Mother source (dabinggi-
+      // hound isn't a hostile wild-pack species, so it has no "-den-mother"
+      // CREATURE_DB entry — see DEN_MOTHER_ITEM_KEYS below) — its only
+      // source is Jubmir's daily trader stock (see _loadJubmirStock).
+      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf', dabinggiHoundEgg: 'dabinggi-hound' };
 
       // Den-Mother CREATURE_DB key -> which item her nest hands out — read
       // directly off her species (see loadBuildingScene's 'map_i_den_'
@@ -5516,6 +5539,84 @@
           world.storage = store;
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
+      }
+
+      // ── Jubmir's daily trader stock (world-scoped — one shared egg per
+      // day, same as a real traveling trader visiting the whole village) ──
+      // { day, genotype, purchased }. Rerolled the first time anyone opens
+      // his shop on a new calendar.day; "purchased" makes that day's single
+      // egg unavailable to everyone until the next reroll, rather than each
+      // character getting their own independent copy.
+      function _loadJubmirStock() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return null;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.jubmirStock ?? null;
+        } catch { return null; }
+      }
+
+      function _saveJubmirStock(stock) {
+        const worldId = _tothalWorldId();
+        if (!worldId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.jubmirStock = stock;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
+      // Returns today's stock, rolling a fresh dabinggi-hound egg genotype
+      // the first time it's checked on a new day.
+      function getJubmirStock() {
+        let stock = _loadJubmirStock();
+        if (!stock || stock.day !== calendar.day) {
+          stock = { day: calendar.day, genotype: makeDefaultGenotype('dabinggi-hound'), purchased: false };
+          _saveJubmirStock(stock);
+        }
+        return stock;
+      }
+
+      const JUBMIR_EGG_PRICE = 200;
+
+      function buyJubmirEgg() {
+        const stock = getJubmirStock();
+        if (stock.purchased) { showToast("Jubmir's sold out for today — check back tomorrow.", false); return; }
+        const gold = inventory.gold || 0;
+        if (gold < JUBMIR_EGG_PRICE) { showToast('Not enough gold.', false); return; }
+        inventory.gold = gold - JUBMIR_EGG_PRICE;
+        inventory.dabinggiHoundEgg = Math.min(9, (inventory.dabinggiHoundEgg || 0) + 1);
+        _queueLivestockItemGenotype('dabinggiHoundEgg', stock.genotype);
+        stock.purchased = true;
+        _saveJubmirStock(stock);
+        showToast("Bought a dabinggi-hound egg from Jubmir!", true);
+        renderJubmirShopPage();
+        buildInventoryGrid();
+        saveMemberWorldData();
+      }
+
+      function renderJubmirShopPage() {
+        const goldEl = document.getElementById('jmGoldDisplay');
+        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
+        const list = document.getElementById('jubmirShopList');
+        if (!list) return;
+        list.innerHTML = '';
+        const stock = getJubmirStock();
+        const row = document.createElement('div');
+        row.className = 'shop-row';
+        row.innerHTML = `
+          <div class="sh-icon">🥚</div>
+          <div class="sh-info">
+            <div class="sh-name">Dabinggi-hound Egg</div>
+            <div class="sh-desc">${stock.purchased ? "Sold out — Jubmir will have another tomorrow." : "A rare, non-native find. One only, restocked daily."}</div>
+            <div class="sh-price">${JUBMIR_EGG_PRICE}g</div>
+          </div>
+          <button class="shop-buy-btn" ${stock.purchased ? 'disabled' : ''}>${stock.purchased ? 'Sold Out' : 'Buy'}</button>
+        `;
+        if (!stock.purchased) row.querySelector('button')?.addEventListener('click', buyJubmirEgg);
+        list.appendChild(row);
       }
 
       // ── Farm name (reuses world.label, the same field set at world
@@ -12434,7 +12535,7 @@
         { key: 'uumkaoiiMeat',       icon: '🥩', label: 'UUMKAO\'II MEAT',  max: 99 },
         { key: 'uumkaoiiEgg',        icon: '🥚', label: 'UUMKAO\'II EGG',   max: 9  },
         { key: 'garWolfBaby',        icon: '🐾', label: 'GAR-WOLF PUP',    max: 9  },
-        { key: 'dabinggiHoundBaby',  icon: '🐾', label: 'DABINGGI-HOUND PUP', max: 9  },
+        { key: 'dabinggiHoundEgg',   icon: '🥚', label: 'DABINGGI-HOUND EGG', max: 9  },
         { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
         { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
         { key: 'fishingmace',  icon: '🎣', label: 'FISHING MACE',  max: 9 },
@@ -12477,7 +12578,7 @@
         uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
         uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
         garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
-        dabinggiHoundBaby: { icon: '🐾', label: 'Dabinggi-hound Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: "A dabinggi-hound pup. Add it to your farm's livestock from the Farm tab, or to your stable to raise it as a companion." },
+        dabinggiHoundEgg: { icon: '🥚', label: 'Dabinggi-hound Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: "A warm, oddly leathery egg — Jubmir swears it's a dabinggi-hound egg. Add it to your farm's livestock from the Farm tab, or to your stable to raise it as a companion." },
         bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
         hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
         fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
