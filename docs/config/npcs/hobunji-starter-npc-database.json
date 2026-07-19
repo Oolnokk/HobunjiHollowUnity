@@ -349,8 +349,7 @@
             "activity": "examining a specimen"
           }
         ],
-        "defaultStationId": "station_researchers_tent_sleep",
-        "defaultPosition": { "c": 20, "r": 20 }
+        "defaultStationId": "station_researchers_tent_sleep"
       },
       "loreBackground": "Garanki came to the Highlands because the region has never been properly catalogued — too remote, too dangerous, and too unprofitable for most academics to bother with. He's effectively self-funding the expedition out of his Researcher's Tent and writes up every donation to mail back to the Tower. <suggestion: backstory — does he have a sponsor, a rival academic back home, or a reason this trip matters more than a normal sabbatical?>",
       "questHooks": [
