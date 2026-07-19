@@ -1766,7 +1766,10 @@
       // Only real starting stacks are listed; generic empty boxes are drawn by buildInventoryGrid().
       const STARTING_INVENTORY = {
         needlegrainSeeds: 6, heftrootSeeds: 4, garlinkSeeds: 4, ongyumsSeeds: 4,
-        redberrySeeds: 3, blueberrySeeds: 3, yellowberrySeeds: 3, whiteberrySeeds: 2, blackberrySeeds: 2,
+        // Berry seeds are deliberately absent — not purchasable either; all
+        // 5 varieties grow wild across the wilderness zones instead (see
+        // WILD_BERRY_ZONES) and have a small chance to yield a seed when
+        // foraged, which is the only way to get one.
         blackMustardSeed: 3, greenMustardSeed: 3,
         uumkaoiiCrate: 1,
         barnPlanSmall: 1,
@@ -2422,11 +2425,9 @@
         { key: 'heftrootSeeds',      icon: '🟡', name: 'Heftroot Seeds',      desc: 'Starchy root crop. Ideal water 25–55%.', price: 6, gives: { heftrootSeeds: 3 } },
         { key: 'garlinkSeeds',       icon: '🧄', name: 'Garlink Seeds',       desc: 'Pungent broth-base crop. Ideal water 15–45%.', price: 4, gives: { garlinkSeeds: 3 } },
         { key: 'ongyumsSeeds',       icon: '🧅', name: 'Ongyums Seeds',       desc: 'Aromatic crop. Ideal water 35–70%.', price: 4, gives: { ongyumsSeeds: 3 } },
-        { key: 'redberrySeeds',      icon: '🍓', name: 'Redberry Seeds',      desc: 'Berry crop; grows best beside ditches. Ideal water 35–70%.', price: 7, gives: { redberrySeeds: 2 } },
-        { key: 'blueberrySeeds',     icon: '🫐', name: 'Blueberry Seeds',     desc: 'Wet-loving berry; grows best beside ditches. Ideal water 50–85%.', price: 8, gives: { blueberrySeeds: 2 } },
-        { key: 'yellowberrySeeds',   icon: '🟡', name: 'Yellowberry Seeds',   desc: 'Berry crop; grows best beside ditches. Ideal water 25–60%.', price: 7, gives: { yellowberrySeeds: 2 } },
-        { key: 'whiteberrySeeds',    icon: '⚪', name: 'Whiteberry Seeds',    desc: 'Mild berry crop; grows best beside ditches. Ideal water 40–75%.', price: 8, gives: { whiteberrySeeds: 2 } },
-        { key: 'blackberrySeeds',    icon: '⚫', name: 'Blackberry Seeds',    desc: 'Dark berry crop; grows best beside ditches. Ideal water 45–80%.', price: 8, gives: { blackberrySeeds: 2 } },
+        // Berry seeds are intentionally not sold — all 5 varieties grow wild
+        // across the wilderness zones instead (see WILD_BERRY_ZONES) and
+        // have a small chance to yield a seed when foraged.
         { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mustard Seed',  desc: 'Hot mustard crop. Ideal water 15–40%.', price: 6, gives: { blackMustardSeed: 2 } },
         { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mustard Seed',  desc: 'Fresh mustard crop. Ideal water 30–65%.', price: 6, gives: { greenMustardSeed: 2 } },
         { key: 'mulchBag',           icon: '🍂', name: 'Mulch Bag',           desc: 'Boosts soil recovery and gives clearing material.', price: 3, gives: { mulch: 5 } },
@@ -5953,7 +5954,7 @@
       function defaultWorldMemberState() {
         return {
           nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
-          alchemyKnownEffects: {}, alchemyActiveEffects: [], alchemyReagentState: {},
+          alchemyKnownEffects: {}, alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {},
           joinedAt: Date.now(),
         };
       }
@@ -6046,6 +6047,7 @@
           member.alchemyKnownEffects = serializeKnownReagentEffects();
           member.alchemyActiveEffects = serializeActiveAlchemyEffects();
           member.alchemyReagentState = serializeZoneReagentState();
+          member.wildBerryState = serializeZoneBerryState();
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
       }
@@ -6140,6 +6142,24 @@
         if (/alchem|potion/.test(r)) return 'alchemy';
         if (/hunt|watch|war|smith|mining|bonehewer/.test(r)) return 'combat';
         return 'farming';
+      }
+
+      // Only villagers — anyone with a stationary home or business in one of
+      // the real town buildings — can give tasks (board or favor), plus Pahu
+      // and Leaf as a named exception (they live in the swamp house, outside
+      // town, but are otherwise settled residents). `homeId`/`workBuildingId`
+      // are authored-but-previously-unread NPC-database fields; everyone
+      // else (wilderness dwellers, Great Fae, deceased/banished lore-only
+      // entries, unbuilt placeholder roles) is excluded.
+      const QUEST_ELIGIBLE_TOWN_HOME_IDS = new Set([
+        'general_store', 'potion_shop', 'unumanuk_household', 'ginju_farmstead',
+        'inn', 'smithy', 'temple', 'carpenters',
+      ]);
+      const QUEST_ELIGIBLE_EXTRA_NPC_IDS = new Set(['pahu', 'leaf']);
+      function isQuestEligibleNpc(rec) {
+        if (!rec?.id) return false;
+        if (QUEST_ELIGIBLE_EXTRA_NPC_IDS.has(rec.id)) return true;
+        return QUEST_ELIGIBLE_TOWN_HOME_IDS.has(rec.homeId) || QUEST_ELIGIBLE_TOWN_HOME_IDS.has(rec.workBuildingId);
       }
 
       // Deliverable item pools per domain — farming is a static list (raw
@@ -6242,7 +6262,7 @@
       // asked-but-not-yet-answered), or null if none should be offered.
       function maybeOfferFavor(npcRec) {
         const npcId = npcRec?.id;
-        if (!npcId) return null;
+        if (!npcId || !isQuestEligibleNpc(npcRec)) return null;
         const stillOffered = findNpcTask(npcId, ['offered']);
         if (stillOffered) return stillOffered;
         if (findNpcTask(npcId, ['available'])) return null; // already holding one from them
@@ -6277,8 +6297,8 @@
       function maybeRefreshBoardTask() {
         const current = getCurrentBoardPosting();
         if (current && current.postedDay === calendar.day) return; // already refreshed today
-        const candidates = npcWalkers.map(w => w.rec).filter(r => r?.id && r?.name);
-        if (!candidates.length) return; // no NPCs spawned yet — try again on the next call
+        const candidates = npcWalkers.map(w => w.rec).filter(r => r?.id && r?.name && isQuestEligibleNpc(r));
+        if (!candidates.length) return; // no eligible NPCs spawned yet — try again on the next call
         const npcRec = candidates[Math.floor(Math.random() * candidates.length)];
         const tier = Math.min(FRIENDSHIP_TIER_THRESHOLDS.length - 1, 1 + Math.floor(Math.random() * 3));
         generateTask('board', npcRec, tier);
@@ -7257,6 +7277,18 @@
       // saveMemberWorldData/spawnPlayerAvatar so a reload doesn't reshuffle
       // plants the player hasn't picked yet.
       const _zoneReagentPersist = new Map();
+      // mapId → Map("col,row" -> pickable wild-berry-bush world object) —
+      // the same "wilderness counterpart to the farm's worldObjects" idea as
+      // _zoneReagentObjects just above, for wild berry bushes (see
+      // WILD_BERRY_ZONES/ensureZoneBerries). A separate trio of maps rather
+      // than folding berries into the reagent ones so the two systems' daily
+      // respawn/dispose logic stay independent, mirroring each other 1:1.
+      const _zoneBerryObjects = new Map();
+      // mapId → [THREE.Group, ...] (berry bush meshes).
+      const _zoneBerryMeshGroups = new Map();
+      // mapId → { day, placements: [{col,row,key}, ...] } — same shape/role
+      // as _zoneReagentPersist.
+      const _zoneBerryPersist = new Map();
       // mapIds whose _zoneLayouts entry was replaced by a Tothal Shift (see
       // performTothalShift) while the player was standing inside that same
       // zone — rebuilding the live THREE.Scene out from under them mid-visit
@@ -11385,6 +11417,7 @@
         const zi = buildZoneScene(mapId);
         if (!zi) return;
         ensureZoneReagents(mapId);
+        ensureZoneBerries(mapId); // after reagents, so it can see today's reagent tiles and avoid them
         const fromScene = getActiveScene();
         _currentBuildingMapId = null;
         currentArea = mapId;
@@ -11781,7 +11814,7 @@
       // search (uniform-elevation rect logic dropped since every plant is
       // a single tile), but scans the whole grid and shuffles instead of
       // stopping at the first hit, since we want many scattered spots.
-      function findZoneFlatEmptyTiles(mapId, count, rng) {
+      function findZoneFlatEmptyTiles(mapId, count, rng, extraOccupied) {
         const zi = _zoneScenes.get(mapId);
         const grid = zi?.grid;
         if (!grid) return [];
@@ -11796,6 +11829,10 @@
         for (const d of (zoneData?.dens || [])) markOccupied(d.x, d.y, d.w || 1, d.h || 1);
         for (const d of (zoneData?.decor || [])) markOccupied(d.col, d.row, 1, 1);
         for (const f of (zoneData?.furniture || [])) markOccupied(f.col, f.row, 1, 1);
+        // Lets a second scatter system (wild berries) avoid the tiles another
+        // one (reagents) already claimed for the same day — see
+        // scatterBerriesForZone.
+        for (const p of (extraOccupied || [])) markOccupied(p.col, p.row, 1, 1);
 
         const candidates = [];
         for (let r = 1; r < rows - 1; r++) {
@@ -11957,6 +11994,161 @@
         _zoneReagentMeshGroups.delete(mapId);
         _zoneReagentObjects.delete(mapId);
         _zoneReagentPersist.delete(mapId);
+        // Same reasoning as the reagent cleanup just above, for wild berries.
+        _zoneBerryMeshGroups.delete(mapId);
+        _zoneBerryObjects.delete(mapId);
+        _zoneBerryPersist.delete(mapId);
+      }
+
+      // ── Wild berry bushes (wilderness-zone counterpart of purchasable
+      // berry seeds — see STARTING_INVENTORY/SUPPLY_CATALOG) ──────────────
+      // All 5 berry varieties, split across the 4 wilderness zones. Mirrors
+      // the reagent-plant scatter system above function-for-function; see
+      // its comments for the shared mechanics (deterministic per zone+day,
+      // daily respawn, persisted placements). Colors reuse BERRY_COLORS
+      // (already defined for the jam/wine sprite recolor pipeline).
+      const WILD_BERRY_ZONES = {
+        redberries:    'map_northern_cliffs',       // canon per redDew's "Red Berry Bushes" flavor tag
+        blueberries:   'map_southern_cloud_forest',
+        yellowberries: 'map_western_slope',
+        whiteberries:  'map_western_slope',
+        blackberries:  'map_eastern_mire',
+      };
+      const WILD_BERRY_SEED_CHANCE = 0.2; // "small chance to give seeds when harvested"
+      function wildBerriesForZone(mapId) {
+        return Object.keys(WILD_BERRY_ZONES).filter(k => WILD_BERRY_ZONES[k] === mapId);
+      }
+
+      function buildBerryBushMesh(berryKey) {
+        const color = BERRY_COLORS[berryKey];
+        if (color == null) return null;
+        const mat = getReagentPlantMaterial(color); // shared shader/cache — see getReagentPlantMaterial
+        if (!mat) return null;
+        const group = new THREE.Group();
+        // A bit bigger and a 4-blade cross (vs. reagents' 2) so a bush reads
+        // fuller/rounder than a single reagent plant at a glance.
+        const sizeMul = 2.0;
+        const w = 0.22 * sizeMul, h = 0.32 * sizeMul;
+        for (const rot of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
+          const blade = new THREE.Mesh(_grassBladeGeo, mat);
+          blade.rotation.y = rot;
+          blade.scale.set(w, h, 1);
+          group.add(blade);
+        }
+        group.userData.isBillboard = true;
+        group.userData.berryKey = berryKey;
+        return group;
+      }
+
+      // Same deterministic per-(zone,day) scatter as scatterReagentsForZone,
+      // but seeded independently ('berries' in the seed string) and excluding
+      // that same day's reagent-plant tiles so the two systems never overlap
+      // a spot — see findZoneFlatEmptyTiles's optional extraOccupied param.
+      function scatterBerriesForZone(mapId) {
+        const pool = wildBerriesForZone(mapId);
+        if (!pool.length) return [];
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return [];
+        const targetCount = Math.max(4, Math.min(24, Math.round((zi.cols * zi.rows) / 70)));
+        const rng = _mbRng(_seedFromString(mapId + ':berries:' + calendar.day));
+        const reagentPlacements = _zoneReagentPersist.get(mapId)?.placements || [];
+        const spots = findZoneFlatEmptyTiles(mapId, targetCount, rng, reagentPlacements);
+        return spots.map(({ col, row }) => ({ col, row, key: pool[Math.floor(rng() * pool.length)] }));
+      }
+
+      // Builds a worldObjects-shaped pickable for one wild berry bush.
+      // Always grants the fruit; WILD_BERRY_SEED_CHANCE also grants a seed —
+      // the only way to get berry seeds, since they're no longer purchasable.
+      function makeBerryBushObject(mapId, col, row, berryKey, mesh) {
+        const data = cropData[berryKey];
+        const fruitDef = ITEM_DEFS[berryKey];
+        return {
+          id: 'berrybush_' + mapId + '_' + col + '_' + row, type: 'berry_bush',
+          col, row, mesh, berryKey,
+          label: data.emoji + ' Wild ' + (fruitDef?.label || berryKey),
+          getButtons() {
+            return [{ icon: data.emoji, label: 'Pick ' + (fruitDef?.label || berryKey), action: 'obj_pick_berry', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_pick_berry') return { ok: false, message: 'Unknown action.' };
+            inventory[berryKey] = Math.min(99, (inventory[berryKey] || 0) + 1);
+            let seedMsg = '';
+            if (Math.random() < WILD_BERRY_SEED_CHANCE) {
+              inventory[data.seedKey] = Math.min(99, (inventory[data.seedKey] || 0) + 1);
+              seedMsg = ' and found a seed!';
+            }
+            _zoneScenes.get(mapId)?.scene.remove(mesh);
+            const objs = _zoneBerryObjects.get(mapId);
+            objs?.delete(col + ',' + row);
+            const groups = _zoneBerryMeshGroups.get(mapId);
+            if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
+            const persisted = _zoneBerryPersist.get(mapId);
+            if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
+            refreshItemScroll();
+            return { ok: true, message: 'Picked ' + (fruitDef?.label || berryKey) + seedMsg };
+          },
+        };
+      }
+
+      function clearZoneBerryMeshes(mapId) {
+        const scene = _zoneScenes.get(mapId)?.scene;
+        const groups = _zoneBerryMeshGroups.get(mapId);
+        if (scene && groups) groups.forEach(g => scene.remove(g));
+        _zoneBerryMeshGroups.delete(mapId);
+        _zoneBerryObjects.delete(mapId);
+      }
+
+      // Called right after ensureZoneReagents(mapId) on every zone entry, so
+      // scatterBerriesForZone can see that same day's already-placed reagent
+      // spots and avoid them.
+      function ensureZoneBerries(mapId) {
+        if (typeof WildernessMapGenerator === 'undefined') return;
+        if (!wildBerriesForZone(mapId).length) return;
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return;
+        let persisted = _zoneBerryPersist.get(mapId);
+        if (persisted?.day === calendar.day) {
+          if (_zoneBerryMeshGroups.has(mapId)) return; // already built for today
+        } else {
+          persisted = { day: calendar.day, placements: scatterBerriesForZone(mapId) };
+          _zoneBerryPersist.set(mapId, persisted);
+        }
+        clearZoneBerryMeshes(mapId);
+        const groups = [];
+        const objMap = new Map();
+        for (const { col, row, key } of persisted.placements) {
+          const mesh = buildBerryBushMesh(key);
+          if (!mesh) continue;
+          const tile = zi.grid[row]?.[col];
+          mesh.position.set(col + 0.5, tile ? tileSurfaceYInArea(tile, mapId) : NORMAL_TOP, row + 0.5);
+          zi.scene.add(mesh);
+          groups.push(mesh);
+          objMap.set(col + ',' + row, makeBerryBushObject(mapId, col, row, key, mesh));
+        }
+        _zoneBerryMeshGroups.set(mapId, groups);
+        _zoneBerryObjects.set(mapId, objMap);
+        debugLog(`ensureZoneBerries(${mapId}): built ${groups.length} berry bushes for day ${calendar.day}`);
+      }
+
+      function respawnAllZoneBerries() {
+        if (typeof WildernessMapGenerator === 'undefined') return;
+        for (const mapId of WildernessMapGenerator.zoneMapIds()) {
+          clearZoneBerryMeshes(mapId);
+          _zoneBerryPersist.delete(mapId);
+        }
+        if (_isZoneArea(currentArea)) ensureZoneBerries(currentArea);
+      }
+
+      function serializeZoneBerryState() {
+        const out = {};
+        _zoneBerryPersist.forEach((v, mapId) => { out[mapId] = { day: v.day, placements: v.placements }; });
+        return out;
+      }
+      function restoreZoneBerryState(saved) {
+        _zoneBerryPersist.clear();
+        Object.entries(saved || {}).forEach(([mapId, v]) => {
+          if (v && Array.isArray(v.placements)) _zoneBerryPersist.set(mapId, { day: v.day, placements: v.placements });
+        });
       }
 
       function buildTownScene() {
@@ -12804,7 +12996,11 @@
         const corpse = getCorpseObjectAt(col, row);
         if (corpse) return corpse;
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
-        if (_isZoneArea(currentArea)) return _zoneReagentObjects.get(currentArea)?.get(col + ',' + row) || null;
+        if (_isZoneArea(currentArea)) {
+          return _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
+              || _zoneBerryObjects.get(currentArea)?.get(col + ',' + row)
+              || null;
+        }
         if (currentArea !== 'farm') return null;
         return worldObjects.get(col + ',' + row) || null;
       }
@@ -23859,6 +24055,7 @@
         // (lazy, current-zone-only) spawning once this fires.
         pendingDenRespawn.clear();
         respawnAllZoneReagents();
+        respawnAllZoneBerries();
       }
 
       // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
@@ -26268,6 +26465,7 @@
         restoreKnownReagentEffects(playerData.alchemyKnownEffects);
         restoreActiveAlchemyEffects(playerData.alchemyActiveEffects);
         restoreZoneReagentState(playerData.alchemyReagentState);
+        restoreZoneBerryState(playerData.wildBerryState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
         // session, unlike the static reagent/furniture/fish tables) — rebuild
