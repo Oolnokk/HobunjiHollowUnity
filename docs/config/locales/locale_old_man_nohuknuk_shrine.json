@@ -10,35 +10,32 @@
     "shrine",
     "story"
   ],
-  "cols": 13,
-  "rows": 13,
+  "cols": 10,
+  "rows": 11,
   "tiles": {
-    "6,2": {
+    "4,2": {
       "type": "rock"
     },
-    "7,2": {
+    "2,3": {
       "type": "rock"
     },
     "3,3": {
       "type": "rock"
     },
     "4,3": {
-      "type": "rock"
+      "type": "grass"
     },
     "5,3": {
       "type": "rock"
     },
     "6,3": {
-      "type": "grass"
+      "type": "rock"
     },
-    "7,3": {
-      "type": "grass"
-    },
-    "8,3": {
+    "2,4": {
       "type": "rock"
     },
     "3,4": {
-      "type": "rock"
+      "type": "grass"
     },
     "4,4": {
       "type": "grass"
@@ -47,19 +44,13 @@
       "type": "grass"
     },
     "6,4": {
-      "type": "grass"
+      "type": "rock"
     },
-    "7,4": {
-      "type": "grass"
-    },
-    "8,4": {
-      "type": "grass"
-    },
-    "9,4": {
+    "2,5": {
       "type": "rock"
     },
     "3,5": {
-      "type": "rock"
+      "type": "grass"
     },
     "4,5": {
       "type": "grass"
@@ -71,111 +62,39 @@
       "type": "grass"
     },
     "7,5": {
-      "type": "grass"
+      "type": "rock"
     },
-    "8,5": {
-      "type": "grass"
-    },
-    "9,5": {
+    "2,6": {
       "type": "rock"
     },
     "3,6": {
       "type": "rock"
     },
     "4,6": {
-      "type": "grass"
+      "type": "path"
     },
     "5,6": {
       "type": "grass"
     },
     "6,6": {
-      "type": "grass"
-    },
-    "7,6": {
-      "type": "grass"
-    },
-    "8,6": {
-      "type": "grass"
-    },
-    "9,6": {
-      "type": "grass"
-    },
-    "10,6": {
       "type": "rock"
     },
     "3,7": {
-      "type": "grass"
-    },
-    "4,7": {
-      "type": "grass"
-    },
-    "5,7": {
-      "type": "grass"
-    },
-    "6,7": {
-      "type": "path"
-    },
-    "7,7": {
-      "type": "grass"
-    },
-    "8,7": {
-      "type": "grass"
-    },
-    "9,7": {
       "type": "rock"
     },
-    "2,8": {
+    "4,7": {
+      "type": "path"
+    },
+    "5,7": {
+      "type": "rock"
+    },
+    "6,7": {
       "type": "rock"
     },
     "3,8": {
       "type": "rock"
     },
     "4,8": {
-      "type": "rock"
-    },
-    "5,8": {
-      "type": "grass"
-    },
-    "6,8": {
-      "type": "path"
-    },
-    "7,8": {
-      "type": "grass"
-    },
-    "8,8": {
-      "type": "grass"
-    },
-    "9,8": {
-      "type": "grass"
-    },
-    "4,9": {
-      "type": "rock"
-    },
-    "5,9": {
-      "type": "grass"
-    },
-    "6,9": {
-      "type": "path"
-    },
-    "7,9": {
-      "type": "rock"
-    },
-    "8,9": {
-      "type": "rock"
-    },
-    "9,9": {
-      "type": "rock"
-    },
-    "4,10": {
-      "type": "rock"
-    },
-    "5,10": {
-      "type": "rock"
-    },
-    "7,10": {
-      "type": "rock"
-    },
-    "6,10": {
       "type": "path"
     }
   },
@@ -185,8 +104,8 @@
       "kind": "structure",
       "key": "structure",
       "label": "Old Man Nohuknuk's Shrine",
-      "col": 5,
-      "row": 5,
+      "col": 3,
+      "row": 4,
       "w": 3,
       "h": 3,
       "rot": 0
@@ -197,23 +116,23 @@
       "id": "npc_1",
       "npcId": "old_man_nohuknuk",
       "name": "Old Man Nohuknuk",
-      "col": 6,
-      "row": 7,
+      "col": 4,
+      "row": 6,
       "facing": "south"
     }
   ],
   "connectors": [
     {
       "id": "conn_1",
-      "col": 6,
-      "row": 10,
+      "col": 4,
+      "row": 8,
       "side": "south",
       "label": "Wilderness path"
     }
   ],
   "placement": {
     "allowedZones": [],
-    "clearanceTiles": 3,
+    "clearanceTiles": 1,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 0,
     "notes": ""

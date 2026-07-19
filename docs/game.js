@@ -177,6 +177,7 @@
             p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
         if (id === 'calendar') renderCalendarPanel();
+        if (id === 'map') renderWildernessMapPanel();
         if (id === 'farm') renderFarmPanel();
         if (id === 'stable') renderStablePanel();
         if (id === 'shipping') buildShippingTransferUI();
@@ -5712,6 +5713,53 @@
         map_eastern_mire: [{ id: 'sp_emi_swamp', label: 'Little Swamp House', col: 34, row: 29, targetMapId: 'map_i_swamp_house', targetSpotId: 'sp_swp_entry' }],
       };
 
+      // ── Locales (docs/tools/locale-editor/, docs/config/locales/) ──────────
+      // Leaf & Pahu's House ("Little Swamp House" above) and the Researcher's
+      // Tent already have a fixed, non-relocating anchor via
+      // TOTHAL_PRESERVED_TRANSITIONS -- a real building interior is meant to
+      // be authored at that same fixed spot later, so their position never
+      // changes and the wilderness map (see the map UI) can just list them
+      // here as constants. Only the Great Fey shrines get stamped fresh into
+      // the regenerated wilderness by the generator itself (see stampLocales
+      // in wilderness-map-generator.js) -- their location genuinely reshuffles
+      // with the rest of the terrain on every Tothal Shift, which is why the
+      // map only shows their *current* position once you've found them before.
+      const FIXED_LOCALE_LANDMARKS = [
+        { localeId: 'locale_leaf_pahu_house', name: "Leaf & Pahu's House", category: 'dwelling', zoneId: 'map_eastern_mire', col: 34, row: 29 },
+        { localeId: 'locale_researchers_tent', name: "Researcher's Tent", category: 'story_poi', zoneId: 'map_northern_cliffs', col: 35, row: 29 },
+      ];
+
+      // Fetched once per page load and cached -- the locale JSON files rarely
+      // change mid-session, and every Tothal Shift needs the same list.
+      let _localeDefsPromise = null;
+      function loadStampableLocaleDefs() {
+        if (_localeDefsPromise) return _localeDefsPromise;
+        _localeDefsPromise = (async () => {
+          try {
+            const idxRes = await fetch('config/locales/index.json');
+            if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
+            const idx = await idxRes.json();
+            // Only Great Fey shrines are randomly stamped -- see the comment
+            // on FIXED_LOCALE_LANDMARKS above for why the other categories
+            // (dwelling/story_poi) are excluded here.
+            const entries = (idx.locales || []).filter(e => e.category === 'great_fey_shrine');
+            const defs = [];
+            for (const entry of entries) {
+              try {
+                const r = await fetch(entry.file);
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                defs.push(await r.json());
+              } catch (e) { debugLog(`Tothal Shift: locale load failed for ${entry.file}: ${e.message}`, 'warn'); }
+            }
+            return defs;
+          } catch (e) {
+            debugLog('Tothal Shift: locale index load failed: ' + e.message, 'warn');
+            return [];
+          }
+        })();
+        return _localeDefsPromise;
+      }
+
       function currentTothalYear() {
         return yearNumber(calendar.day);
       }
@@ -6383,6 +6431,13 @@
         const terrainPreview = (typeof TerrainPreview !== 'undefined') ? TerrainPreview : null;
         debugLog(`Tothal Shift: rerolling wilderness for year ${year} (world ${worldId})`);
         try {
+          // Each singleton locale should exist exactly once across all four
+          // zones, but generateZoneWorkspace only knows about the single zone
+          // it's generating -- so the pool of locales still needing a home
+          // shrinks as each zone claims one, and a zone that couldn't fit a
+          // locale simply leaves it for the next zone to try.
+          const localeDefs = await loadStampableLocaleDefs();
+          let remainingLocales = localeDefs.slice();
           for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
             const seed = `${worldId}_tothal_y${year}_${zoneId}`;
             const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
@@ -6391,8 +6446,9 @@
               // Random seed, entry side set per zone — otherwise the tool's own
               // defaults, no post-processing. This is meant to be exactly what
               // a human would get generating a map with the standalone tool and
-              // importing it into the Map Editor by hand.
-              workspace = WildernessMapGenerator.generateZoneWorkspace(zoneId, seed);
+              // importing it into the Map Editor by hand. remainingLocales are
+              // the not-yet-placed locales this shift (see above).
+              workspace = WildernessMapGenerator.generateZoneWorkspace(zoneId, seed, remainingLocales);
             } catch (e) {
               debugLog(`Tothal Shift: generation failed for ${zoneId}: ${e.message}`, 'warn');
               continue;
@@ -6406,6 +6462,13 @@
               continue;
             }
             if (!merged) { debugLog(`Tothal Shift: no fold math available for ${zoneId}, skipping`, 'warn'); continue; }
+
+            const localeInstances = workspace.localeInstances || [];
+            if (localeInstances.length) {
+              const placedIds = new Set(localeInstances.map(inst => inst.localeId));
+              remainingLocales = remainingLocales.filter(l => !placedIds.has(l.id));
+              debugLog(`Tothal Shift: ${zoneId} placed locale(s): ${localeInstances.map(inst => inst.localeId).join(', ')}`);
+            }
 
             const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
             // One entrance transition per den, at its mouth tile — leads into
@@ -6444,6 +6507,7 @@
               dens: workspace.animalDens || [],
               foliagePatches: workspace.foliagePatches || [],
               ambushStations: workspace.ambushStations || [],
+              localeInstances,
             });
             // A reshaped zone's dens are all new — forget any leftover pack/
             // respawn bookkeeping from the previous layout's den ids (see
@@ -6460,6 +6524,9 @@
             else _disposeZoneScene(zoneId);
             debugLog(`Tothal Shift: ${zoneId} reshaped (entry ${workspace.entry?.side ?? '?'} at ${workspace.entry?.col ?? '?'},${workspace.entry?.row ?? '?'})`);
             await new Promise(resolve => setTimeout(resolve, 0)); // yield between zones
+          }
+          if (remainingLocales.length) {
+            debugLog(`Tothal Shift: ${remainingLocales.length} locale(s) found no room in any zone this shift: ${remainingLocales.map(l => l.id).join(', ')}`, 'warn');
           }
           clearHostileObjects();
           _saveTothalYear(year);
@@ -6497,6 +6564,248 @@
           .finally(() => { _tothalShiftPromise = null; });
       }
       window.forceTothalShift = () => checkTothalShift(true);
+
+      // ── Wilderness map: fog-of-war + locale discovery ──────────────────
+      // Two kinds of state, deliberately kept separate:
+      //  - Per-zone fog (what terrain you've walked near) is bulky, cheap to
+      //    regenerate, and meaningless once a Tothal Shift reshapes that
+      //    zone's terrain -- stored outside hobunjiSaveMeta, tagged with the
+      //    Tothal year it was revealed under, and thrown away/rebuilt blank
+      //    the moment that tag goes stale.
+      //  - Discovered locales (have you ever found Leaf & Pahu's House, the
+      //    Researcher's Tent, or a Great Fey shrine) is small and meant to
+      //    last forever -- stored in hobunjiSaveMeta like the rest of the
+      //    world's permanent state (see _saveTothalYear et al. above), and
+      //    updated (never cleared) every time you rediscover one after a
+      //    shift has moved it.
+      const FOG_REVEAL_RADIUS = 7; // tiles, Chebyshev-ish (circular) around the player
+      const _fogCache = new Map(); // zoneId -> { year, cols, rows, bits: Uint8Array }
+
+      function _fogStorageKey(worldId, zoneId) { return `hobunji_zone_fog_v1_${worldId}_${zoneId}`; }
+
+      function _bitsToBase64(bytes) {
+        let bin = '';
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        return btoa(bin);
+      }
+      function _base64ToBits(b64, minBytes) {
+        const bin = atob(b64);
+        const bytes = new Uint8Array(Math.max(bin.length, minBytes));
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return bytes;
+      }
+
+      function _loadZoneFog(zoneId) {
+        const layout = _zoneLayouts.get(zoneId);
+        if (!layout) return null;
+        const year = currentTothalYear();
+        const cached = _fogCache.get(zoneId);
+        if (cached && cached.year === year && cached.cols === layout.cols && cached.rows === layout.rows) return cached;
+        const worldId = _tothalWorldId() || 'default';
+        let entry = null;
+        try {
+          const raw = localStorage.getItem(_fogStorageKey(worldId, zoneId));
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.year === year && parsed.cols === layout.cols && parsed.rows === layout.rows) {
+              entry = { year, cols: parsed.cols, rows: parsed.rows, bits: _base64ToBits(parsed.bits, Math.ceil(parsed.cols * parsed.rows / 8)) };
+            }
+          }
+        } catch {}
+        if (!entry) entry = { year, cols: layout.cols, rows: layout.rows, bits: new Uint8Array(Math.ceil(layout.cols * layout.rows / 8)) };
+        _fogCache.set(zoneId, entry);
+        return entry;
+      }
+
+      function _saveZoneFog(zoneId) {
+        const entry = _fogCache.get(zoneId);
+        if (!entry) return;
+        const worldId = _tothalWorldId() || 'default';
+        try {
+          localStorage.setItem(_fogStorageKey(worldId, zoneId), JSON.stringify({ year: entry.year, cols: entry.cols, rows: entry.rows, bits: _bitsToBase64(entry.bits) }));
+        } catch {}
+      }
+
+      function _fogIsRevealed(entry, c, r) {
+        if (!entry || c < 0 || r < 0 || c >= entry.cols || r >= entry.rows) return false;
+        const idx = r * entry.cols + c;
+        return (entry.bits[idx >> 3] & (1 << (idx & 7))) !== 0;
+      }
+      function _fogReveal(entry, c, r) {
+        if (c < 0 || r < 0 || c >= entry.cols || r >= entry.rows) return false;
+        const idx = r * entry.cols + c;
+        const byte = idx >> 3, bit = 1 << (idx & 7);
+        if (entry.bits[byte] & bit) return false;
+        entry.bits[byte] |= bit;
+        return true;
+      }
+
+      // ── Discovered locales (world-scoped, persists across Tothal Shifts) ──
+      function _loadDiscoveredLocales() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return {};
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.discoveredLocales ?? {};
+        } catch { return {}; }
+      }
+      function _saveDiscoveredLocales(discovered) {
+        const worldId = _tothalWorldId();
+        if (!worldId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.discoveredLocales = discovered;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
+      // All currently-placed locale instances this session, fixed + randomly
+      // stamped: [{ localeId, name, category, zoneId, col, row, fixed }].
+      function _allLocaleInstances() {
+        const out = FIXED_LOCALE_LANDMARKS.map(f => ({ localeId: f.localeId, name: f.name, category: f.category, zoneId: f.zoneId, col: f.col, row: f.row, fixed: true }));
+        for (const zoneId of (typeof WildernessMapGenerator !== 'undefined' ? WildernessMapGenerator.zoneMapIds() : [])) {
+          const layout = _zoneLayouts.get(zoneId);
+          for (const inst of (layout?.localeInstances || [])) {
+            out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false });
+          }
+        }
+        return out;
+      }
+
+      // Called whenever fog newly reveals ground in `zoneId` -- checks every
+      // locale instance currently placed there against the just-revealed
+      // radius and flags it discovered forever. Discovery only ever records
+      // *that* a locale was found, never *where* -- the map always draws
+      // discovered locales from _allLocaleInstances()'s live current
+      // placement, so "current location... if you've discovered them
+      // before" holds even after a later Tothal Shift moves it, with no
+      // need to physically revisit it again first.
+      function _checkLocaleDiscovery(zoneId, pc, pr) {
+        const discovered = _loadDiscoveredLocales();
+        let changed = false;
+        for (const inst of _allLocaleInstances()) {
+          if (inst.zoneId !== zoneId || discovered[inst.localeId]) continue;
+          const dist = Math.hypot(inst.col - pc, inst.row - pr);
+          if (dist > FOG_REVEAL_RADIUS) continue;
+          discovered[inst.localeId] = { name: inst.name, category: inst.category, firstDiscoveredYear: currentTothalYear() };
+          changed = true;
+          showToast(`Discovered: ${inst.name}`, true);
+        }
+        if (changed) _saveDiscoveredLocales(discovered);
+      }
+
+      let _lastFogRevealTile = null;
+      function updateZoneFogAroundPlayer() {
+        if (!_isZoneArea(currentArea)) return;
+        const zoneId = currentArea;
+        const entry = _loadZoneFog(zoneId);
+        if (!entry) return;
+        const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
+        if (_lastFogRevealTile && _lastFogRevealTile.zoneId === zoneId && _lastFogRevealTile.c === pc && _lastFogRevealTile.r === pr) return;
+        _lastFogRevealTile = { zoneId, c: pc, r: pr };
+        let changed = false;
+        const R = FOG_REVEAL_RADIUS, R2 = R * R;
+        for (let dr = -R; dr <= R; dr++) {
+          for (let dc = -R; dc <= R; dc++) {
+            if (dc * dc + dr * dr > R2) continue;
+            if (_fogReveal(entry, pc + dc, pr + dr)) changed = true;
+          }
+        }
+        if (changed) { _saveZoneFog(zoneId); }
+        _checkLocaleDiscovery(zoneId, pc, pr);
+      }
+
+      // ── Wilderness map rendering (shared by the minimap widget and the
+      // full-screen Map pane) ─────────────────────────────────────────────
+      const WMAP_ZONE_LABELS = {
+        map_northern_cliffs: 'Northern Cliffs',
+        map_southern_cloud_forest: 'Southern Cloud Forest',
+        map_western_slope: 'Western Slope',
+        map_eastern_mire: 'Eastern Mire',
+      };
+      const WMAP_TERRAIN_COLORS = {
+        grass: '#2f6b3a', weeds: '#3f7a3f', shrub: '#265a30', path: '#b8956a',
+        rock: '#6b6f76', river: '#2f6fb8', stream: '#4f9bd9', waterfall: '#bfe9f7',
+        tilled: '#5a4327', raised: '#7a6248', trench: '#2a1f16', paddy: '#33628a', ramp: '#8f8460',
+      };
+      const WMAP_LOCALE_COLORS = { dwelling: '#7fe89a', great_fey_shrine: '#c084fc', story_poi: '#6ec6f0', misc: '#f0f0f0' };
+
+      function _drawWildernessMapOnCanvas(canvas, zoneId, opts = {}) {
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#05070a';
+        ctx.fillRect(0, 0, w, h);
+        const layout = zoneId ? _zoneLayouts.get(zoneId) : null;
+        if (!layout) {
+          ctx.fillStyle = 'rgba(255,255,255,0.4)';
+          ctx.font = '13px system-ui';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('Not yet explored', w / 2, h / 2);
+          return;
+        }
+        const cols = layout.cols, rows = layout.rows;
+        const scaleX = w / cols, scaleY = h / rows;
+        const entry = _loadZoneFog(zoneId);
+        const cw = Math.ceil(scaleX), ch = Math.ceil(scaleY);
+        for (const tile of layout.tiles) {
+          if (!_fogIsRevealed(entry, tile.c, tile.r)) continue;
+          ctx.fillStyle = WMAP_TERRAIN_COLORS[tile.type] || WMAP_TERRAIN_COLORS.grass;
+          ctx.fillRect(Math.floor(tile.c * scaleX), Math.floor(tile.r * scaleY), cw, ch);
+        }
+        const markerR = Math.max(3, Math.min(scaleX, scaleY) * 1.4);
+        const discovered = _loadDiscoveredLocales();
+        for (const inst of _allLocaleInstances()) {
+          if (inst.zoneId !== zoneId || !discovered[inst.localeId]) continue;
+          const mx = (inst.col + 0.5) * scaleX, my = (inst.row + 0.5) * scaleY;
+          ctx.beginPath();
+          ctx.arc(mx, my, markerR, 0, Math.PI * 2);
+          ctx.fillStyle = WMAP_LOCALE_COLORS[inst.category] || WMAP_LOCALE_COLORS.misc;
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1; ctx.stroke();
+        }
+        if (opts.showPlayer) {
+          const mx = (player.x / TILE) * scaleX, my = (player.y / TILE) * scaleY;
+          ctx.beginPath();
+          ctx.arc(mx, my, Math.max(3, markerR * 0.8), 0, Math.PI * 2);
+          ctx.fillStyle = '#f9e28a';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
+        }
+      }
+
+      function renderWildernessMinimap() {
+        const widget = document.getElementById('minimapWidget');
+        const canvas = document.getElementById('minimapCanvas');
+        if (!widget || !canvas) return;
+        if (!_isZoneArea(currentArea)) { widget.classList.remove('show'); return; }
+        widget.classList.add('show');
+        _drawWildernessMapOnCanvas(canvas, currentArea, { showPlayer: true });
+      }
+
+      let _wmapActiveZone = null;
+      function renderWildernessMapPanel() {
+        const tabsEl = document.getElementById('wmapZoneTabs');
+        const canvas = document.getElementById('wildernessMapCanvas');
+        if (!tabsEl || !canvas) return;
+        const zoneIds = (typeof WildernessMapGenerator !== 'undefined') ? WildernessMapGenerator.zoneMapIds() : [];
+        if (!zoneIds.length) { tabsEl.innerHTML = ''; _drawWildernessMapOnCanvas(canvas, null); return; }
+        if (!_wmapActiveZone || !zoneIds.includes(_wmapActiveZone)) {
+          _wmapActiveZone = _isZoneArea(currentArea) ? currentArea : zoneIds[0];
+        }
+        tabsEl.innerHTML = '';
+        for (const zoneId of zoneIds) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'wmap-zone-tab' + (zoneId === _wmapActiveZone ? ' active' : '');
+          btn.textContent = WMAP_ZONE_LABELS[zoneId] || zoneId;
+          btn.addEventListener('click', () => { _wmapActiveZone = zoneId; renderWildernessMapPanel(); });
+          tabsEl.appendChild(btn);
+        }
+        _drawWildernessMapOnCanvas(canvas, _wmapActiveZone, { showPlayer: currentArea === _wmapActiveZone });
+      }
 
       // Devtools/QA hook for the cliff-climbing feature — mirrors
       // window.forceTothalShift's role of poking otherwise-input-driven
@@ -22964,6 +23273,7 @@
 
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
+      let _minimapRedrawAccum = 0;
 
       buildTileMeshes();
       buildBorderTerrain();
@@ -23473,6 +23783,14 @@
 
         updateSceneTransition(dt);
 
+        // Minimap redraw is throttled — it's an O(zone tile count) canvas
+        // repaint, cheap but pointless to run every single frame.
+        _minimapRedrawAccum += dt;
+        if (_minimapRedrawAccum >= 0.3) {
+          _minimapRedrawAccum = 0;
+          renderWildernessMinimap();
+        }
+
         if (fishingMinigame?.active) updateFishingMinigame(dt);
 
         updateRainAudio();
@@ -23506,6 +23824,7 @@
           _advanceSmoothedLighting(dt);
           pollControllerInput();
           updateMovement(dt);
+          updateZoneFogAroundPlayer();
           updatePlayerVitals(dt);
           updateAlchemyEffects();
 
@@ -26041,6 +26360,15 @@
           return;
         }
         if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
+        // M: wilderness map — closes if already open on the map tab (mirrors
+        // spDay's calendar-shortcut behavior), otherwise opens/switches to it.
+        if (key === 'm') {
+          event.preventDefault();
+          const onMapTab = document.querySelector('.mp-tab[data-mpanel="map"]')?.classList.contains('active');
+          if (menuOpen && onMapTab) closeMenu();
+          else openMenu('map');
+          return;
+        }
         if (menuOpen) return;
         const boundDesktopAction = getActionForButton('desktop', event.code);
         if (boundDesktopAction && !['KeyE', 'KeyQ'].includes(event.code)) {

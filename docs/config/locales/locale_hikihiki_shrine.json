@@ -10,14 +10,26 @@
     "shrine",
     "story"
   ],
-  "cols": 13,
-  "rows": 13,
+  "cols": 11,
+  "rows": 9,
   "tiles": {
+    "4,2": {
+      "type": "rock"
+    },
     "5,2": {
       "type": "rock"
     },
-    "5,3": {
+    "6,2": {
       "type": "rock"
+    },
+    "3,3": {
+      "type": "rock"
+    },
+    "4,3": {
+      "type": "grass"
+    },
+    "5,3": {
+      "type": "grass"
     },
     "6,3": {
       "type": "rock"
@@ -28,14 +40,11 @@
     "8,3": {
       "type": "rock"
     },
-    "2,4": {
-      "type": "rock"
-    },
     "3,4": {
-      "type": "rock"
+      "type": "path"
     },
     "4,4": {
-      "type": "rock"
+      "type": "path"
     },
     "5,4": {
       "type": "grass"
@@ -44,19 +53,10 @@
       "type": "grass"
     },
     "7,4": {
-      "type": "grass"
-    },
-    "8,4": {
-      "type": "rock"
-    },
-    "9,4": {
-      "type": "rock"
-    },
-    "2,5": {
       "type": "rock"
     },
     "3,5": {
-      "type": "grass"
+      "type": "rock"
     },
     "4,5": {
       "type": "grass"
@@ -65,108 +65,24 @@
       "type": "grass"
     },
     "6,5": {
-      "type": "grass"
+      "type": "rock"
     },
     "7,5": {
-      "type": "grass"
-    },
-    "8,5": {
-      "type": "grass"
-    },
-    "9,5": {
-      "type": "grass"
-    },
-    "10,5": {
       "type": "rock"
     },
     "3,6": {
-      "type": "path"
+      "type": "rock"
     },
     "4,6": {
-      "type": "path"
+      "type": "rock"
     },
     "5,6": {
-      "type": "path"
+      "type": "rock"
     },
     "6,6": {
-      "type": "grass"
-    },
-    "7,6": {
-      "type": "grass"
-    },
-    "8,6": {
-      "type": "grass"
-    },
-    "9,6": {
       "type": "rock"
     },
-    "2,7": {
-      "type": "rock"
-    },
-    "3,7": {
-      "type": "grass"
-    },
-    "4,7": {
-      "type": "grass"
-    },
-    "5,7": {
-      "type": "grass"
-    },
-    "6,7": {
-      "type": "grass"
-    },
-    "7,7": {
-      "type": "grass"
-    },
-    "8,7": {
-      "type": "grass"
-    },
-    "9,7": {
-      "type": "rock"
-    },
-    "3,8": {
-      "type": "rock"
-    },
-    "4,8": {
-      "type": "grass"
-    },
-    "5,8": {
-      "type": "grass"
-    },
-    "6,8": {
-      "type": "grass"
-    },
-    "7,8": {
-      "type": "grass"
-    },
-    "8,8": {
-      "type": "rock"
-    },
-    "3,9": {
-      "type": "rock"
-    },
-    "4,9": {
-      "type": "grass"
-    },
-    "5,9": {
-      "type": "rock"
-    },
-    "6,9": {
-      "type": "grass"
-    },
-    "7,9": {
-      "type": "rock"
-    },
-    "8,9": {
-      "type": "rock"
-    },
-    "4,10": {
-      "type": "rock"
-    },
-    "6,10": {
-      "type": "rock"
-    },
-    "2,6": {
+    "2,4": {
       "type": "path"
     }
   },
@@ -176,8 +92,8 @@
       "kind": "structure",
       "key": "structure",
       "label": "Hiki-hiki's Shrine",
-      "col": 5,
-      "row": 5,
+      "col": 4,
+      "row": 3,
       "w": 3,
       "h": 3,
       "rot": 0
@@ -188,8 +104,8 @@
       "id": "npc_1",
       "npcId": "hiki_hiki",
       "name": "Hiki-hiki",
-      "col": 6,
-      "row": 7,
+      "col": 5,
+      "row": 5,
       "facing": "south"
     }
   ],
@@ -197,14 +113,14 @@
     {
       "id": "conn_1",
       "col": 2,
-      "row": 6,
+      "row": 4,
       "side": "west",
       "label": "Wilderness path"
     }
   ],
   "placement": {
     "allowedZones": [],
-    "clearanceTiles": 3,
+    "clearanceTiles": 1,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 0,
     "notes": ""

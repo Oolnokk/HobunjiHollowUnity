@@ -9,31 +9,34 @@
     "dwelling",
     "story"
   ],
-  "cols": 13,
-  "rows": 13,
+  "cols": 11,
+  "rows": 10,
   "tiles": {
+    "3,2": {
+      "type": "weeds"
+    },
+    "4,2": {
+      "type": "weeds"
+    },
     "5,2": {
       "type": "weeds"
     },
-    "7,2": {
+    "6,2": {
       "type": "weeds"
     },
     "3,3": {
       "type": "weeds"
     },
     "4,3": {
-      "type": "weeds"
+      "type": "grass"
     },
     "5,3": {
       "type": "grass"
     },
     "6,3": {
-      "type": "weeds"
-    },
-    "7,3": {
       "type": "grass"
     },
-    "8,3": {
+    "7,3": {
       "type": "weeds"
     },
     "3,4": {
@@ -54,7 +57,7 @@
     "8,4": {
       "type": "weeds"
     },
-    "9,4": {
+    "2,5": {
       "type": "weeds"
     },
     "3,5": {
@@ -64,7 +67,7 @@
       "type": "grass"
     },
     "5,5": {
-      "type": "grass"
+      "type": "path"
     },
     "6,5": {
       "type": "grass"
@@ -72,112 +75,22 @@
     "7,5": {
       "type": "grass"
     },
-    "8,5": {
-      "type": "grass"
-    },
-    "9,5": {
-      "type": "weeds"
-    },
     "3,6": {
       "type": "weeds"
     },
     "4,6": {
-      "type": "grass"
+      "type": "weeds"
     },
     "5,6": {
-      "type": "grass"
+      "type": "path"
     },
     "6,6": {
-      "type": "grass"
+      "type": "weeds"
     },
     "7,6": {
-      "type": "grass"
-    },
-    "8,6": {
-      "type": "grass"
-    },
-    "9,6": {
-      "type": "grass"
-    },
-    "10,6": {
       "type": "weeds"
-    },
-    "2,7": {
-      "type": "weeds"
-    },
-    "3,7": {
-      "type": "grass"
-    },
-    "4,7": {
-      "type": "grass"
     },
     "5,7": {
-      "type": "grass"
-    },
-    "6,7": {
-      "type": "path"
-    },
-    "7,7": {
-      "type": "grass"
-    },
-    "8,7": {
-      "type": "grass"
-    },
-    "9,7": {
-      "type": "weeds"
-    },
-    "3,8": {
-      "type": "weeds"
-    },
-    "4,8": {
-      "type": "grass"
-    },
-    "5,8": {
-      "type": "grass"
-    },
-    "6,8": {
-      "type": "path"
-    },
-    "7,8": {
-      "type": "grass"
-    },
-    "8,8": {
-      "type": "grass"
-    },
-    "9,8": {
-      "type": "grass"
-    },
-    "10,8": {
-      "type": "weeds"
-    },
-    "3,9": {
-      "type": "weeds"
-    },
-    "4,9": {
-      "type": "weeds"
-    },
-    "5,9": {
-      "type": "weeds"
-    },
-    "6,9": {
-      "type": "path"
-    },
-    "7,9": {
-      "type": "grass"
-    },
-    "8,9": {
-      "type": "weeds"
-    },
-    "9,9": {
-      "type": "weeds"
-    },
-    "10,9": {
-      "type": "weeds"
-    },
-    "7,10": {
-      "type": "weeds"
-    },
-    "6,10": {
       "type": "path"
     }
   },
@@ -187,8 +100,8 @@
       "kind": "structure",
       "key": "structure",
       "label": "Leaf & Pahu's House",
-      "col": 5,
-      "row": 5,
+      "col": 4,
+      "row": 3,
       "w": 3,
       "h": 3,
       "rot": 0
@@ -199,31 +112,31 @@
       "id": "npc_1",
       "npcId": "leaf",
       "name": "Leaf",
-      "col": 6,
-      "row": 7,
+      "col": 5,
+      "row": 5,
       "facing": "south"
     },
     {
       "id": "npc_2",
       "npcId": "pahu",
       "name": "Pahu",
-      "col": 7,
-      "row": 7,
+      "col": 6,
+      "row": 5,
       "facing": "south"
     }
   ],
   "connectors": [
     {
       "id": "conn_1",
-      "col": 6,
-      "row": 10,
+      "col": 5,
+      "row": 7,
       "side": "south",
       "label": "Wilderness path"
     }
   ],
   "placement": {
     "allowedZones": [],
-    "clearanceTiles": 3,
+    "clearanceTiles": 1,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 0,
     "notes": ""

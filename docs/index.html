@@ -102,6 +102,13 @@
   <!-- Active alchemy buffs/debuffs (top-right-ish, below status bar) — see refreshBuffBar -->
   <div id="buffBar" aria-label="Active potion effects"></div>
 
+  <!-- Wilderness minimap (top-right, below the buff bar) — only shown while
+       standing in one of the four wilderness zones. Press M for the full
+       map. See renderWildernessMinimap()/renderWildernessMapPanel() in game.js. -->
+  <div id="minimapWidget" aria-label="Wilderness minimap" title="Press M for the full map">
+    <canvas id="minimapCanvas" width="260" height="260"></canvas>
+  </div>
+
   <!-- Farm editor toggle button (top-right, beside menu) — only shown on the
        farm, for its owner; see _refreshEditorButtonVisibility -->
   <button id="farmEditBtn" aria-label="Toggle farm editor" title="Farm Editor" onclick="window._farmEditor?.toggle()" style="display:none;">✏️</button>
@@ -206,6 +213,7 @@
       <div class="mp-tabs" role="tablist">
         <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
         <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
+        <button class="mp-tab"        data-mpanel="map"           role="tab">🗺 Map</button>
         <!-- Shipping and Supplies are meant to open as their own windows when
              interacting with their associated objects in the world, not as
              menu tabs — buttons removed here, but #mpShipping/#mpSupplies and
@@ -323,6 +331,19 @@
         <div class="cal-today" id="calToday">Anan, Waxingheat 1st, 3rd week of Stormtide</div>
         <div class="cal-weeks" id="calWeeks"></div>
       </div><!-- /mpCalendar -->
+
+      <!-- ── Map pane: fog-revealed wilderness + discovered locales. See
+           renderWildernessMapPanel() in game.js. ────────────────────────── -->
+      <div class="mp-pane" id="mpMap">
+        <div class="wmap-zone-tabs" id="wmapZoneTabs"></div>
+        <div class="wmap-canvas-wrap"><canvas id="wildernessMapCanvas" width="560" height="560"></canvas></div>
+        <div class="wmap-legend">
+          <span><i style="background:#f9e28a"></i> You</span>
+          <span><i style="background:#7fe89a"></i> Dwelling</span>
+          <span><i style="background:#c084fc"></i> Great Fey shrine</span>
+          <span><i style="background:#6ec6f0"></i> Story location</span>
+        </div>
+      </div><!-- /mpMap -->
 
       <!-- ── Farm pane: the farm's identity/progression hub — name, owner,
            a read-only layout glance, livestock roster + breeding, shared

@@ -9,26 +9,35 @@
     "poi",
     "story"
   ],
-  "cols": 12,
-  "rows": 11,
+  "cols": 10,
+  "rows": 9,
   "tiles": {
+    "2,2": {
+      "type": "rock"
+    },
+    "3,2": {
+      "type": "rock"
+    },
+    "4,2": {
+      "type": "rock"
+    },
     "5,2": {
       "type": "rock"
     },
-    "6,2": {
+    "2,3": {
       "type": "rock"
     },
     "3,3": {
       "type": "grass"
     },
     "4,3": {
-      "type": "rock"
+      "type": "grass"
     },
     "5,3": {
-      "type": "grass"
+      "type": "rock"
     },
     "6,3": {
-      "type": "grass"
+      "type": "rock"
     },
     "2,4": {
       "type": "rock"
@@ -40,13 +49,10 @@
       "type": "grass"
     },
     "5,4": {
-      "type": "grass"
+      "type": "path"
     },
     "6,4": {
-      "type": "grass"
-    },
-    "7,4": {
-      "type": "rock"
+      "type": "path"
     },
     "2,5": {
       "type": "rock"
@@ -58,63 +64,18 @@
       "type": "grass"
     },
     "5,5": {
-      "type": "grass"
-    },
-    "6,5": {
-      "type": "path"
-    },
-    "7,5": {
-      "type": "path"
-    },
-    "8,5": {
-      "type": "path"
-    },
-    "2,6": {
       "type": "rock"
     },
-    "3,6": {
+    "6,5": {
       "type": "rock"
     },
     "4,6": {
-      "type": "grass"
+      "type": "rock"
     },
     "5,6": {
-      "type": "grass"
-    },
-    "6,6": {
-      "type": "grass"
-    },
-    "7,6": {
-      "type": "grass"
-    },
-    "8,6": {
       "type": "rock"
     },
-    "3,7": {
-      "type": "rock"
-    },
-    "4,7": {
-      "type": "rock"
-    },
-    "5,7": {
-      "type": "grass"
-    },
-    "6,7": {
-      "type": "grass"
-    },
-    "7,7": {
-      "type": "rock"
-    },
-    "4,8": {
-      "type": "rock"
-    },
-    "5,8": {
-      "type": "rock"
-    },
-    "6,8": {
-      "type": "rock"
-    },
-    "9,5": {
+    "7,4": {
       "type": "path"
     }
   },
@@ -124,8 +85,8 @@
       "kind": "structure",
       "key": "structure",
       "label": "Researcher's Tent",
-      "col": 4,
-      "row": 4,
+      "col": 3,
+      "row": 3,
       "w": 2,
       "h": 2,
       "rot": 0
@@ -135,15 +96,15 @@
   "connectors": [
     {
       "id": "conn_1",
-      "col": 9,
-      "row": 5,
+      "col": 7,
+      "row": 4,
       "side": "east",
       "label": "Wilderness path"
     }
   ],
   "placement": {
     "allowedZones": [],
-    "clearanceTiles": 3,
+    "clearanceTiles": 1,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 0,
     "notes": ""

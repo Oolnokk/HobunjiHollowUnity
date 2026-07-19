@@ -224,6 +224,39 @@
     .buff-icon.boon .buff-icon-fill { background: linear-gradient(90deg, #4fbf74, #7fe89a); }
     .buff-icon.bane .buff-icon-fill { background: linear-gradient(90deg, #c0483a, #e86e5a); }
 
+    /* ── Wilderness minimap: top-right corner, only shown in a wilderness zone ── */
+    #minimapWidget {
+      display: none;
+      position: fixed;
+      right: 8px; top: calc(var(--oy) + 9 * var(--row));
+      width: 130px; height: 130px;
+      z-index: 18;
+      padding: 4px;
+      background: var(--glass);
+      border: 1px solid var(--border-bright);
+      border-radius: 14px;
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      pointer-events: none;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.32);
+    }
+    #minimapWidget.show { display: block; }
+    #minimapCanvas { width: 100%; height: 100%; border-radius: 10px; display: block; }
+
+    /* ── Full wilderness map (menu pane) ─────────────────────────────── */
+    #mpMap { padding: 14px; }
+    .wmap-canvas-wrap { display: flex; justify-content: center; margin-bottom: 12px; }
+    #wildernessMapCanvas { max-width: 100%; border-radius: 12px; border: 1px solid var(--border-bright); background: #0c1a12; }
+    .wmap-zone-tabs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-bottom: 10px; }
+    .wmap-zone-tab {
+      font: inherit; font-size: 12px; font-weight: 700; padding: 6px 12px;
+      border-radius: 999px; border: 1px solid var(--border-bright);
+      background: rgba(255,255,255,0.06); color: inherit; cursor: pointer;
+    }
+    .wmap-zone-tab.active { background: var(--accent-dim); border-color: rgba(249,226,138,0.6); }
+    .wmap-legend { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; font-size: 12px; opacity: 0.85; }
+    .wmap-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .wmap-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
     /* ── Menu button: grid x:27 y:2 w:4 h:2 ────────────── */
     #menuBtn {
       position: fixed;
