@@ -487,6 +487,9 @@
                 showToast('📋 Favor accepted — check it from the Tasks tab.', true);
               } else if (act.type === 'declineFavor') {
                 setQuestStatus(act.taskId, 'declined', {});
+              } else if (act.type === 'turnInTask') {
+                const res = turnInTask(act.taskId);
+                if (!res.ok) showToast(res.message, false);
               }
             });
             if (!skipNav) _navigateDlgTo(c.next);
@@ -741,6 +744,25 @@
 
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
+
+        // Task turn-in — checked before everything else (including a fresh
+        // favor ask): if this NPC posted/asked a quest that's now sitting
+        // ready in the player's log, offer to hand it over right here rather
+        // than piling a new favor ask on top of an already-completed one.
+        const _turnInTask = rec?.id ? getTurnInReadyTaskForNpc(rec.id) : null;
+        if (_turnInTask) {
+          const _turnInDef = ITEM_DEFS[_turnInTask.itemKey];
+          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
+          _renderDlgNode({
+            type: 'choice',
+            text: `Ah — did you bring what I asked for?`,
+            choices: [
+              { label: `Here's your ${_turnInDef?.label || _turnInTask.itemKey} ×${_turnInTask.qty}.`, actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
+              { label: 'Not yet.', actions: [] },
+            ],
+          });
+          return;
+        }
 
         // Trusted-NPC favors — checked ahead of every other fast-path
         // (including the merchant shop shortcuts below, so shopkeepers can
@@ -6065,10 +6087,20 @@
       // Every generated task rides the questProgress scaffold above (no new
       // save fields): questProgress[taskId].progress holds the full task
       // descriptor { kind:'board'|'favor', npcId, npcName, domain, itemKey,
-      // qty, rewardGold, rewardFriendship, tier, postedDay }, and .status is
-      // 'offered' (a favor just asked, awaiting accept/decline — never used
-      // for board tasks), 'available' (accepted/posted, turn-in-able),
-      // 'declined', or 'completed'.
+      // qty, rewardGold, rewardFriendship, tier, postedDay }. Every task —
+      // board or favor — always has a real npcId; you turn it in to that
+      // NPC specifically, which is what pays out both the gold and the
+      // friendship. .status is:
+      //   'posted'    — a board notice, freshly rolled, sitting on the
+      //                 board, not yet taken into the player's own log
+      //                 (board-only; never used for favors).
+      //   'offered'   — a favor just asked in dialogue, awaiting accept/decline
+      //                 (favor-only; never used for board tasks).
+      //   'available' — in the player's own quest log (board: taken off the
+      //                 board; favor: accepted) and turn-in-ready once the
+      //                 player has the items — no completion deadline.
+      //   'declined'  — a favor turned down (only blocks re-asking same day).
+      //   'completed' — turned in.
       const TASK_DOMAINS = ['farming', 'fishing', 'combat', 'alchemy'];
 
       // Friendship tiers ride the existing (previously unused) per-NPC favor
@@ -6090,13 +6122,12 @@
       }
 
       // Chance a trusted NPC asks a favor of you when you talk to them, and
-      // how much gold/friendship a favor pays out vs. an anonymous board
-      // request — both climb with friendship tier, per the design brief.
+      // how much gold/friendship a favor pays out vs. a board request posted
+      // by some NPC — both climb with friendship tier, per the design brief.
       const FAVOR_CHANCE_BY_TIER       = [0, 0.12, 0.20, 0.30, 0.42, 0.55];
       const TASK_QTY_BY_TIER           = [1, 2, 2, 3, 4, 5];
       const TASK_REWARD_MULT           = { board: 1.3, favor: 1.6 };
       const TASK_FRIENDSHIP_REWARD     = { board: [8, 10, 12, 15, 18, 22], favor: [18, 25, 35, 48, 65, 85] };
-      const BOARD_REFRESH_DAYS         = 7;
 
       // role (free-text NPC job, e.g. "carpenter / roofing family
       // connection", "great fae / fishing solution") → which item pool their
@@ -6165,23 +6196,19 @@
 
       function _makeTaskId() { return 'task_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
-      // Generates and persists one task. `npcRec` is the requesting NPC's
-      // record ({id, name, role}) for a favor, or the (optional) NPC a board
-      // notice is attributed to — pass null for a fully anonymous board post.
+      // Generates and persists one task, always attributed to a real NPC
+      // (`npcRec` — {id, name, role}; required for both kinds, since every
+      // task, board or favor, has a specific quest giver you turn it in to).
       // Domain skew is the design brief's core rule: low friendship pulls
       // toward the NPC's own skillset (npcSkillDomain), high friendship pulls
       // toward the player's own best skill — blended by a tier-weighted coin
       // flip rather than a hard cutoff, so it shifts gradually.
       function generateTask(kind, npcRec, tier) {
-        let domain;
-        if (kind === 'board' && !npcRec) {
-          domain = TASK_DOMAINS[Math.floor(Math.random() * TASK_DOMAINS.length)];
-        } else {
-          const npcDomain = npcSkillDomain(npcRec?.role);
-          const playerDomain = getPlayerHighestSkillDomain();
-          const playerWeight = tier / (FRIENDSHIP_TIER_THRESHOLDS.length - 1); // 0 at tier 0 → 1 at max tier
-          domain = Math.random() < playerWeight ? playerDomain : npcDomain;
-        }
+        if (!npcRec?.id) return null;
+        const npcDomain = npcSkillDomain(npcRec.role);
+        const playerDomain = getPlayerHighestSkillDomain();
+        const playerWeight = tier / (FRIENDSHIP_TIER_THRESHOLDS.length - 1); // 0 at tier 0 → 1 at max tier
+        const domain = Math.random() < playerWeight ? playerDomain : npcDomain;
         const itemKey = pickTaskItem(domain, tier);
         if (!itemKey) return null;
         const def = ITEM_DEFS[itemKey];
@@ -6190,10 +6217,10 @@
         const rewardFriendship = TASK_FRIENDSHIP_REWARD[kind][tier];
         const id = _makeTaskId();
         const task = {
-          kind, npcId: npcRec?.id || null, npcName: npcRec?.name || 'The town board',
+          kind, npcId: npcRec.id, npcName: npcRec.name || 'A neighbor',
           domain, itemKey, qty, rewardGold, rewardFriendship, tier, postedDay: calendar.day,
         };
-        setQuestStatus(id, kind === 'favor' ? 'offered' : 'available', task);
+        setQuestStatus(id, kind === 'favor' ? 'offered' : 'posted', task);
         return { id, ...task };
       }
 
@@ -6230,25 +6257,60 @@
         return `Actually — since I trust you, could you bring me ${task.qty}× ${itemLabel}? I'd make it well worth your while.`;
       }
 
-      // The single currently-posted board task, or null. Board tasks are
-      // deliberately not tied to any one player's friendship — a flat
-      // mid-range tier keeps the board offering reasonable variety for
-      // everyone regardless of who they've befriended.
-      function getCurrentBoardTask() {
-        const entries = Object.entries(questProgress).filter(([, st]) => st.progress?.kind === 'board' && st.status === 'available');
+      // The single currently-posted (not yet taken) board notice, or null.
+      // Board tasks are deliberately not tied to any one player's
+      // friendship — a flat mid-range tier keeps the board offering
+      // reasonable variety for everyone regardless of who they've
+      // befriended; only the *NPC picked to post it* is random.
+      function getCurrentBoardPosting() {
+        const entries = Object.entries(questProgress).filter(([, st]) => st.progress?.kind === 'board' && st.status === 'posted');
         entries.sort((a, b) => (b[1].progress.postedDay || 0) - (a[1].progress.postedDay || 0));
         return entries[0] ? { id: entries[0][0], ...entries[0][1].progress } : null;
       }
 
+      // Rolls a fresh board notice once per day (called from the day-rollover
+      // hooks and once on world load) — whatever was posted yesterday and
+      // never taken is simply superseded, not carried over; the board always
+      // shows *today's* notice. A notice the player already took (status
+      // flipped to 'available') is safe from this — it's in their own log
+      // now and this function never touches it.
       function maybeRefreshBoardTask() {
-        const current = getCurrentBoardTask();
-        if (current && calendar.day - current.postedDay < BOARD_REFRESH_DAYS) return;
+        const current = getCurrentBoardPosting();
+        if (current && current.postedDay === calendar.day) return; // already refreshed today
         const candidates = npcWalkers.map(w => w.rec).filter(r => r?.id && r?.name);
-        const npcRec = candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : null;
+        if (!candidates.length) return; // no NPCs spawned yet — try again on the next call
+        const npcRec = candidates[Math.floor(Math.random() * candidates.length)];
         const tier = Math.min(FRIENDSHIP_TIER_THRESHOLDS.length - 1, 1 + Math.floor(Math.random() * 3));
         generateTask('board', npcRec, tier);
       }
 
+      // Moves today's board notice into the player's own quest log —
+      // "accepting" a board task, the board equivalent of a favor's accept
+      // choice. Once taken it has no completion deadline and survives the
+      // board's next daily refresh untouched.
+      function takeBoardTask(taskId) {
+        const st = questProgress[taskId];
+        if (!st || st.status !== 'posted') return { ok: false, message: 'That notice is no longer available.' };
+        setQuestStatus(taskId, 'available', {});
+        showToast(`📋 Took on ${st.progress.npcName}'s request.`, true);
+        return { ok: true, message: 'Task added to your log.' };
+      }
+
+      // The first quest log entry (board or favor) attributed to this NPC
+      // that the player currently has everything for — what powers the
+      // in-dialogue turn-in offer (see openNpcDialogue).
+      function getTurnInReadyTaskForNpc(npcId) {
+        for (const [id, st] of Object.entries(questProgress)) {
+          if (st.progress?.npcId !== npcId || st.status !== 'available') continue;
+          if ((inventory[st.progress.itemKey] || 0) < st.progress.qty) continue;
+          return { id, ...st.progress };
+        }
+        return null;
+      }
+
+      // Turning a task in only ever happens by talking to the specific NPC
+      // who posted/asked it — see openNpcDialogue's turn-in offer and the
+      // 'turnInTask' dialogue-choice action.
       function turnInTask(taskId) {
         const st = questProgress[taskId];
         const task = st?.progress;
@@ -6259,10 +6321,9 @@
         inventory[task.itemKey] -= task.qty;
         clampInventoryStack(task.itemKey);
         inventory.gold = (inventory.gold || 0) + task.rewardGold;
-        if (task.npcId) adjustNpcFavor(task.npcId, task.rewardFriendship, 'task_' + task.kind);
+        adjustNpcFavor(task.npcId, task.rewardFriendship, 'task_' + task.kind);
         setQuestStatus(taskId, 'completed', {});
-        const friendMsg = task.npcId ? ` +${task.rewardFriendship} friendship with ${task.npcName}.` : '';
-        showToast(`✅ Task complete! +${task.rewardGold}g.${friendMsg}`, true);
+        showToast(`✅ Task complete! +${task.rewardGold}g, +${task.rewardFriendship} friendship with ${task.npcName}.`, true);
         return { ok: true, message: 'Task turned in.' };
       }
 
@@ -12960,6 +13021,39 @@
       // ── Tasks panel (board requests + accepted NPC favors) ───────────
       function renderTasksPanel() {
         maybeRefreshBoardTask();
+
+        // Today's board notice — not yet in the player's log. Taking it is
+        // the only action this panel offers; turning a task in (board or
+        // favor) always happens by talking to the NPC who posted/asked it.
+        const postingEl = document.getElementById('tasksBoardPosting');
+        if (postingEl) {
+          postingEl.innerHTML = '';
+          const posting = getCurrentBoardPosting();
+          if (posting) {
+            const def = ITEM_DEFS[posting.itemKey];
+            const row = document.createElement('div');
+            row.className = 'shop-row';
+            row.innerHTML = `
+              <div class="sh-icon">📋</div>
+              <div class="sh-info">
+                <div class="sh-name">${esc(posting.npcName)} wants ${esc(def?.label || posting.itemKey)} ×${posting.qty}</div>
+                <div class="sh-desc">Reward: ${posting.rewardGold}g + ${posting.rewardFriendship} friendship with ${esc(posting.npcName)} — turn in to them once you have it.</div>
+              </div>
+              <button class="shop-buy-btn" data-take="${posting.id}">Take Quest</button>
+            `;
+            row.querySelector('[data-take]')?.addEventListener('click', () => {
+              takeBoardTask(posting.id);
+              renderTasksPanel();
+            });
+            postingEl.appendChild(row);
+          } else {
+            postingEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">📋</span><span class="dr-name">Nothing posted right now — check back tomorrow.</span><span class="dr-eta">—</span></div>';
+          }
+        }
+
+        // The player's actual quest log — everything accepted, board or
+        // favor, with no completion deadline. Read-only: no turn-in button
+        // here on purpose (see above).
         const list = document.getElementById('tasksList');
         if (!list) return;
         list.innerHTML = '';
@@ -12968,29 +13062,22 @@
           .map(([id, st]) => ({ id, ...st.progress }))
           .sort((a, b) => (a.kind === 'board' ? 0 : 1) - (b.kind === 'board' ? 0 : 1));
         if (!active.length) {
-          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">📋</span><span class="dr-name">No tasks posted right now. Check the board, or talk to NPCs you trust.</span><span class="dr-eta">—</span></div>';
+          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">📜</span><span class="dr-name">No quests in your log yet.</span><span class="dr-eta">—</span></div>';
           return;
         }
         active.forEach(task => {
           const def = ITEM_DEFS[task.itemKey];
           const have = inventory[task.itemKey] || 0;
-          const ready = have >= task.qty;
-          const source = task.kind === 'board' ? `Board request (posted by ${esc(task.npcName)})` : `${esc(task.npcName)}'s favor`;
-          const friendshipNote = task.npcId ? ` + ${task.rewardFriendship} friendship with ${esc(task.npcName)}` : '';
+          const source = task.kind === 'board' ? `${esc(task.npcName)}'s board request` : `${esc(task.npcName)}'s favor`;
           const row = document.createElement('div');
           row.className = 'shop-row';
           row.innerHTML = `
             <div class="sh-icon">${task.kind === 'board' ? '📋' : '💌'}</div>
             <div class="sh-info">
               <div class="sh-name">${source} — ${esc(def?.label || task.itemKey)} ×${task.qty}</div>
-              <div class="sh-desc">Have ${have}/${task.qty}. Reward: ${task.rewardGold}g${friendshipNote}.</div>
+              <div class="sh-desc">Have ${have}/${task.qty}. Reward: ${task.rewardGold}g + ${task.rewardFriendship} friendship. Turn in to ${esc(task.npcName)}.</div>
             </div>
-            <button class="shop-buy-btn" data-task="${task.id}" ${ready ? '' : 'disabled'}>Turn In</button>
           `;
-          row.querySelector('[data-task]')?.addEventListener('click', () => {
-            const res = turnInTask(task.id);
-            if (res.ok) { renderTasksPanel(); buildInventoryGrid(); saveMemberWorldData(); }
-          });
           list.appendChild(row);
         });
       }

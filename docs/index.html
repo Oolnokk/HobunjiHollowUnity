@@ -594,11 +594,17 @@
         </div>
       </div><!-- /mpProgress -->
 
-      <!-- ── Tasks pane: board requests + accepted NPC favors — see
-           renderTasksPanel()/turnInTask() in game.js. ──────────────────── -->
+      <!-- ── Tasks pane: today's board notice (take it here) + the quest
+           log of everything accepted — turn-in itself always happens by
+           talking to the quest giver. See renderTasksPanel()/
+           takeBoardTask()/turnInTask() in game.js. ──────────────────────── -->
       <div class="mp-pane" id="mpTasks">
         <div class="menu-section">
-          <div class="menu-section-title">Active Tasks</div>
+          <div class="menu-section-title">Bulletin Board</div>
+          <div id="tasksBoardPosting" class="supply-list"></div>
+        </div>
+        <div class="menu-section">
+          <div class="menu-section-title">Quest Log</div>
           <div id="tasksList" class="supply-list"></div>
         </div>
       </div><!-- /mpTasks -->
