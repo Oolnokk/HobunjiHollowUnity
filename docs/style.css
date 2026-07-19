@@ -224,23 +224,27 @@
     .buff-icon.boon .buff-icon-fill { background: linear-gradient(90deg, #4fbf74, #7fe89a); }
     .buff-icon.bane .buff-icon-fill { background: linear-gradient(90deg, #c0483a, #e86e5a); }
 
-    /* ── Wilderness minimap: top-right corner, only shown in a wilderness zone ── */
+    /* ── Wilderness minimap: top-left corner, only shown in a wilderness zone ──
+       #vitalsBar (health/stamina) used to own this corner but is display:none
+       now that those are ground-projected resource rings instead (see its own
+       comment above) -- this corner is otherwise empty on screen. */
     #minimapWidget {
       display: none;
       position: fixed;
-      right: 8px; top: calc(var(--oy) + 9 * var(--row));
-      width: 130px; height: 130px;
+      left: var(--play-left); top: var(--oy);
+      width: 150px; height: 150px;
       z-index: 18;
       padding: 4px;
       background: var(--glass);
       border: 1px solid var(--border-bright);
-      border-radius: 14px;
+      border-top: none; border-left: none;
+      border-radius: 0 0 18px 0;
       backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
       pointer-events: none;
       box-shadow: 0 4px 18px rgba(0,0,0,0.32);
     }
     #minimapWidget.show { display: block; }
-    #minimapCanvas { width: 100%; height: 100%; border-radius: 10px; display: block; }
+    #minimapCanvas { width: 100%; height: 100%; border-radius: 0 0 14px 0; display: block; }
 
     /* ── Full wilderness map (menu pane) ─────────────────────────────── */
     #mpMap { padding: 14px; }

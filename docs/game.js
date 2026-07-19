@@ -5702,31 +5702,34 @@
       // core (docs/js/wilderness-map-generator.js) hands its export straight
       // to the same plateau/ramp fold math the Map Editor's live preview
       // already uses (docs/js/terrain-preview.js), and the game renders it
-      // exactly as it would an authored map. A handful of authored building
-      // entrances (Researcher's Tent, Little Swamp House) don't exist in the
-      // wilderness tool's own vocabulary, so they're re-attached at their
-      // original coordinates after every shift — whatever terrain the
-      // generator happened to draw there stays as-is, same as any other
-      // generated tile.
+      // exactly as it would an authored map. Little Swamp House (Leaf & Pahu's
+      // House) doesn't exist in the wilderness tool's own vocabulary, so it's
+      // re-attached at its original coordinates after every shift — whatever
+      // terrain the generator happened to draw there stays as-is, same as any
+      // other generated tile. The Researcher's Tent used to work the same way
+      // but is now a real stamped locale (see FIXED_LOCALE_LANDMARKS below)
+      // so its exterior placement, and this transition into its interior, can
+      // both move together each shift instead of the entrance drifting away
+      // from wherever the tent itself actually got drawn.
       const TOTHAL_PRESERVED_TRANSITIONS = {
-        map_northern_cliffs: [{ id: 'sp_ncl_tent', label: "Researcher's Tent", col: 35, row: 29, targetMapId: 'map_i_researchers_tent', targetSpotId: 'sp_tent_entry' }],
         map_eastern_mire: [{ id: 'sp_emi_swamp', label: 'Little Swamp House', col: 34, row: 29, targetMapId: 'map_i_swamp_house', targetSpotId: 'sp_swp_entry' }],
       };
 
       // ── Locales (docs/tools/locale-editor/, docs/config/locales/) ──────────
-      // Leaf & Pahu's House ("Little Swamp House" above) and the Researcher's
-      // Tent already have a fixed, non-relocating anchor via
-      // TOTHAL_PRESERVED_TRANSITIONS -- a real building interior is meant to
-      // be authored at that same fixed spot later, so their position never
-      // changes and the wilderness map (see the map UI) can just list them
-      // here as constants. Only the Great Fey shrines get stamped fresh into
-      // the regenerated wilderness by the generator itself (see stampLocales
-      // in wilderness-map-generator.js) -- their location genuinely reshuffles
-      // with the rest of the terrain on every Tothal Shift, which is why the
-      // map only shows their *current* position once you've found them before.
+      // Leaf & Pahu's House ("Little Swamp House" above) has a fixed,
+      // non-relocating anchor via TOTHAL_PRESERVED_TRANSITIONS -- a real
+      // building interior is meant to be authored at that same fixed spot
+      // later, so its position never changes and the wilderness map (see the
+      // map UI) can just list it here as a constant. Everything else --
+      // the Researcher's Tent and the Great Fey shrines -- gets stamped
+      // fresh into the regenerated wilderness by the generator itself (see
+      // stampLocales in wilderness-map-generator.js): their location
+      // genuinely reshuffles with the rest of the terrain on every Tothal
+      // Shift, which is why the map only shows their *current* position once
+      // you've found them before (or always, for the Tent -- see its
+      // alwaysVisibleOnMap placement flag).
       const FIXED_LOCALE_LANDMARKS = [
         { localeId: 'locale_leaf_pahu_house', name: "Leaf & Pahu's House", category: 'dwelling', zoneId: 'map_eastern_mire', col: 34, row: 29 },
-        { localeId: 'locale_researchers_tent', name: "Researcher's Tent", category: 'story_poi', zoneId: 'map_northern_cliffs', col: 35, row: 29 },
       ];
 
       // Fetched once per page load and cached -- the locale JSON files rarely
@@ -5739,10 +5742,10 @@
             const idxRes = await fetch('config/locales/index.json');
             if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
             const idx = await idxRes.json();
-            // Only Great Fey shrines are randomly stamped -- see the comment
-            // on FIXED_LOCALE_LANDMARKS above for why the other categories
-            // (dwelling/story_poi) are excluded here.
-            const entries = (idx.locales || []).filter(e => e.category === 'great_fey_shrine');
+            // Great Fey shrines + the Researcher's Tent are randomly stamped
+            // -- see the comment on FIXED_LOCALE_LANDMARKS above for why
+            // dwellings are excluded here.
+            const entries = (idx.locales || []).filter(e => e.category === 'great_fey_shrine' || e.category === 'story_poi');
             const defs = [];
             for (const entry of entries) {
               try {
@@ -6469,6 +6472,18 @@
               remainingLocales = remainingLocales.filter(l => !placedIds.has(l.id));
               debugLog(`Tothal Shift: ${zoneId} placed locale(s): ${localeInstances.map(inst => inst.localeId).join(', ')}`);
             }
+            // The Researcher's Tent's exterior placement moves with the rest
+            // of the terrain each shift (see stampLocales) -- its entrance
+            // transition into the (not-yet-authored) building interior has to
+            // follow it there rather than sitting at a fixed spot the tent
+            // may no longer occupy.
+            const tentInstance = localeInstances.find(inst => inst.localeId === 'locale_researchers_tent');
+            const tentTransitions = tentInstance ? [{
+              id: 'sp_ncl_tent', label: "Researcher's Tent",
+              col: (tentInstance.connectors[0] || tentInstance).x,
+              row: (tentInstance.connectors[0] || tentInstance).y,
+              target: 'building', targetMapId: 'map_i_researchers_tent',
+            }] : [];
 
             const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
             // One entrance transition per den, at its mouth tile — leads into
@@ -6501,6 +6516,7 @@
               cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
               transitions: [
                 ...preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
+                ...tentTransitions,
                 ...denTransitions,
               ],
               toTownExit, mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
@@ -6662,13 +6678,13 @@
       }
 
       // All currently-placed locale instances this session, fixed + randomly
-      // stamped: [{ localeId, name, category, zoneId, col, row, fixed }].
+      // stamped: [{ localeId, name, category, zoneId, col, row, fixed, alwaysVisible }].
       function _allLocaleInstances() {
-        const out = FIXED_LOCALE_LANDMARKS.map(f => ({ localeId: f.localeId, name: f.name, category: f.category, zoneId: f.zoneId, col: f.col, row: f.row, fixed: true }));
+        const out = FIXED_LOCALE_LANDMARKS.map(f => ({ localeId: f.localeId, name: f.name, category: f.category, zoneId: f.zoneId, col: f.col, row: f.row, fixed: true, alwaysVisible: false }));
         for (const zoneId of (typeof WildernessMapGenerator !== 'undefined' ? WildernessMapGenerator.zoneMapIds() : [])) {
           const layout = _zoneLayouts.get(zoneId);
           for (const inst of (layout?.localeInstances || [])) {
-            out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false });
+            out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false, alwaysVisible: !!inst.alwaysVisible });
           }
         }
         return out;
@@ -6758,7 +6774,8 @@
         const markerR = Math.max(3, Math.min(scaleX, scaleY) * 1.4);
         const discovered = _loadDiscoveredLocales();
         for (const inst of _allLocaleInstances()) {
-          if (inst.zoneId !== zoneId || !discovered[inst.localeId]) continue;
+          if (inst.zoneId !== zoneId) continue;
+          if (!inst.alwaysVisible && !discovered[inst.localeId]) continue;
           const mx = (inst.col + 0.5) * scaleX, my = (inst.row + 0.5) * scaleY;
           ctx.beginPath();
           ctx.arc(mx, my, markerR, 0, Math.PI * 2);

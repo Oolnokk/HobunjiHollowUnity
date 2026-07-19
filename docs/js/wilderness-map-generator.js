@@ -3110,6 +3110,26 @@
     return { minC, minR, w: maxC - minC + 1, h: maxR - minR + 1 };
   }
 
+  // Exhaustive variant of randomFreeArea, scoped to [x0,x1)x[y0,y1): a small
+  // rect (e.g. one of nine sectors) can hold only a handful of valid spots,
+  // some in a narrow corridor a random sampler could easily whiff on entirely
+  // -- scanning every candidate top-left deterministically finds one if it
+  // exists at all, and (with preferPoint set) picks whichever is closest to
+  // it rather than just the first hit. Used by placement.sameSectorAsEntry.
+  function bestFreeAreaInRect(x0, y0, x1, y1, w, h, options = {}, preferPoint = null) {
+    let best = null, bestDist = Infinity;
+    for (let y = y0; y <= y1 - h; y++) {
+      for (let x = x0; x <= x1 - w; x++) {
+        if (!areaFree(x, y, w, h, options)) continue;
+        if (typeof options.filter === 'function' && !options.filter(x, y, w, h)) continue;
+        if (!preferPoint) return { x, y };
+        const dist = Math.hypot((x + w / 2) - preferPoint.x, (y + h / 2) - preferPoint.y);
+        if (dist < bestDist) { bestDist = dist; best = { x, y }; }
+      }
+    }
+    return best;
+  }
+
   function stampLocale(locale) {
     const bbox = localeFootprintBBox(locale);
     if (!bbox) { warn(`locale ${locale.id}: no footprint tiles, skipped`); return null; }
@@ -3124,27 +3144,49 @@
       return null;
     }
 
-    const spot = randomFreeArea(paddedW, paddedH, {
-      filter: (x, y, w, h) => {
-        if (map.entry && minDistFromEntry > 0) {
-          const cx = x + w / 2, cy = y + h / 2;
-          const dist = Math.hypot(cx - map.entry.x, cy - map.entry.y);
-          if (dist < minDistFromEntry) return false;
-        }
-        if (requiresFlat) {
-          const centerTile = tileAt(Math.floor(x + w / 2), Math.floor(y + h / 2));
-          if (!centerTile) return false;
-          const targetHeight = tileHeight(centerTile);
-          for (let yy = y; yy < y + h; yy++) {
-            for (let xx = x; xx < x + w; xx++) {
-              const t = tileAt(xx, yy);
-              if (!t || Math.abs(tileHeight(t) - targetHeight) > 0.05) return false;
-            }
+    const placementFilter = (x, y, w, h) => {
+      if (map.entry && minDistFromEntry > 0) {
+        const cx = x + w / 2, cy = y + h / 2;
+        const dist = Math.hypot(cx - map.entry.x, cy - map.entry.y);
+        if (dist < minDistFromEntry) return false;
+      }
+      if (requiresFlat) {
+        const centerTile = tileAt(Math.floor(x + w / 2), Math.floor(y + h / 2));
+        if (!centerTile) return false;
+        const targetHeight = tileHeight(centerTile);
+        for (let yy = y; yy < y + h; yy++) {
+          for (let xx = x; xx < x + w; xx++) {
+            const t = tileAt(xx, yy);
+            if (!t || Math.abs(tileHeight(t) - targetHeight) > 0.05) return false;
           }
         }
-        return true;
       }
-    }, 2500);
+      return true;
+    };
+
+    let spot = null;
+    // Some locales (the Researcher's Tent, thematically camped near the
+    // trailhead) need to land in the same one of nine equal sectors as the
+    // zone's entry gate, wherever that ends up this shift -- rather than
+    // anywhere flat and clear in the whole zone.
+    if (placement.sameSectorAsEntry && map.entry) {
+      const sectorW = settings.width / 3, sectorH = settings.height / 3;
+      const sx = clamp(Math.floor(map.entry.x / sectorW), 0, 2);
+      const sy = clamp(Math.floor(map.entry.y / sectorH), 0, 2);
+      const x0 = Math.round(sx * sectorW), x1 = Math.round((sx + 1) * sectorW);
+      const y0 = Math.round(sy * sectorH), y1 = Math.round((sy + 1) * sectorH);
+      spot = bestFreeAreaInRect(x0, y0, x1, y1, paddedW, paddedH, { filter: placementFilter }, map.entry);
+      if (!spot) {
+        // That exact ninth has no room at all this shift (the terrain right
+        // at a cliff-preset zone's entry corridor can be almost entirely
+        // border escarpment) -- fall back to the closest valid spot
+        // anywhere in the zone rather than a uniformly random one, so it
+        // stays as near the entrance as the terrain actually allows.
+        warn(`locale ${locale.id}: no room in the entry's sector (${x0},${y0})-(${x1},${y1}), falling back to the nearest spot in the whole zone`);
+        spot = bestFreeAreaInRect(0, 0, settings.width, settings.height, paddedW, paddedH, { filter: placementFilter }, map.entry);
+      }
+    }
+    if (!spot) spot = randomFreeArea(paddedW, paddedH, { filter: placementFilter }, 2500);
     if (!spot) { warn(`locale ${locale.id}: no valid ${paddedW}x${paddedH} clearing found`); return null; }
 
     const anchorX = spot.x + clearance - bbox.minC;
@@ -3192,6 +3234,7 @@
         localeId: locale.id,
         name: locale.name,
         category: locale.category,
+        alwaysVisible: !!placement.alwaysVisibleOnMap,
         anchorX, anchorY,
         w: bbox.w, h: bbox.h,
         connectors: (locale.connectors || []).map(c => ({ col: c.col, row: c.row, side: c.side, label: c.label })),
@@ -7822,6 +7865,7 @@
           localeId: meta.localeId,
           name: meta.name,
           category: meta.category,
+          alwaysVisible: !!meta.alwaysVisible,
           x: Math.round(meta.anchorX * localeScale),
           y: Math.round(meta.anchorY * localeScale),
           w: meta.w * localeScale,

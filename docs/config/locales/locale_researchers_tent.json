@@ -103,11 +103,13 @@
     }
   ],
   "placement": {
-    "allowedZones": [],
-    "clearanceTiles": 1,
+    "allowedZones": ["map_northern_cliffs"],
+    "clearanceTiles": 0,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 0,
-    "notes": ""
+    "sameSectorAsEntry": true,
+    "alwaysVisibleOnMap": true,
+    "notes": "Camped near the trailhead: constrained to the same one of nine equal sectors as the zone's entry gate, whichever sector that lands in this Tothal Shift. Always shown on the wilderness map, even before the player has found it."
   },
   "meta": {
     "createdAt": "2026-07-19T00:00:00.000Z",

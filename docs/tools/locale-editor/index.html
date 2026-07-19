@@ -152,6 +152,8 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
             <div><label>Min distance from zone entry</label><input id="locMinDist" type="number" min="0" max="200" value="0"></div>
           </div>
           <label class="chk" style="margin-top:6px"><input type="checkbox" id="locFlatGround" checked> Requires flat ground</label>
+          <label class="chk"><input type="checkbox" id="locSameSector"> Same one-of-nine sector as the zone's entry gate</label>
+          <label class="chk"><input type="checkbox" id="locAlwaysVisible"> Always visible on the wilderness map (no discovery needed)</label>
           <div style="margin-top:6px"><label>Placement notes</label><textarea id="locPlacementNotes" rows="2"></textarea></div>
           <button class="sec" id="applyPlacementBtn" style="width:100%;margin-top:6px">Apply</button>
           <p class="muted" style="margin-top:6px">The generator looks for a flat, fully open rectangle (footprint + clearance on every side) by random search — keep the footprint small and clearance low (1–2) for a locale to reliably find room in busy wilderness terrain. A locale that fails to place in one zone is retried in its other allowed zones.</p>
@@ -260,7 +262,7 @@ function makeLocale(id, name, category) {
     objects: [],       // { id, kind, key, label, col, row, w, h, rot }
     npcAnchors: [],    // { id, npcId, name, col, row, facing }
     connectors: [],    // { id, col, row, side, label }
-    placement: { allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, notes: '' },
+    placement: { allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, notes: '' },
     meta: { createdAt: nowIso(), updatedAt: nowIso() }
   };
 }
@@ -278,7 +280,7 @@ function sanitizeLoaded(raw) {
     cols: clamp(Math.round(Number(raw.cols) || 16), 4, 120),
     rows: clamp(Math.round(Number(raw.rows) || 16), 4, 120),
     tiles: {}, objects: [], npcAnchors: [], connectors: [],
-    placement: Object.assign({ allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, notes: '' }, raw.placement || {}),
+    placement: Object.assign({ allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, notes: '' }, raw.placement || {}),
     meta: Object.assign({ createdAt: nowIso(), updatedAt: nowIso() }, raw.meta || {})
   });
   for (const [k, v] of Object.entries(raw.tiles || {})) {
@@ -744,6 +746,8 @@ function renderSettings() {
   $('locClearance').value = m.placement.clearanceTiles;
   $('locMinDist').value = m.placement.minDistanceFromEntry;
   $('locFlatGround').checked = m.placement.requiresFlatGround;
+  $('locSameSector').checked = !!m.placement.sameSectorAsEntry;
+  $('locAlwaysVisible').checked = !!m.placement.alwaysVisibleOnMap;
   $('locPlacementNotes').value = m.placement.notes;
   renderZoneChecks();
 }
@@ -792,6 +796,8 @@ $('applyPlacementBtn').addEventListener('click', () => {
   m.placement.clearanceTiles = clamp(Math.round(Number($('locClearance').value)) || 0, 0, 20);
   m.placement.minDistanceFromEntry = clamp(Math.round(Number($('locMinDist').value)) || 0, 0, 500);
   m.placement.requiresFlatGround = $('locFlatGround').checked;
+  m.placement.sameSectorAsEntry = $('locSameSector').checked;
+  m.placement.alwaysVisibleOnMap = $('locAlwaysVisible').checked;
   m.placement.notes = $('locPlacementNotes').value;
   m.placement.allowedZones = Array.from($('zoneChecks').querySelectorAll('input[data-zone]:checked')).map(i => i.dataset.zone);
   finishEdit();
