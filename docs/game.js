@@ -23313,15 +23313,22 @@
           updatePlayerVitals(dt);
           updateAlchemyEffects();
 
-          if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
+          if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
+            // Den-Mother caverns are the one building exception (boss arena,
+            // same reason tools/weapons/reticle still work in there — see
+            // enterBuilding/the combat-gate comment near updateToolMesh) —
+            // a companion should follow the player in and keep fighting
+            // alongside them, not sit frozen back in the farm/town/zone
+            // scene it was last synced into.
             syncCompanionFromWhistle();
             updateCompanions(dt);
             updateHostileSpawning(dt);
             updateHostiles(dt);
             updateCorpses(dt);
           } else if (_isBuildingArea(currentArea)) {
-            // Den-Mother mini-bosses live in cavern buildings and still need
-            // to chase/attack/return — no spawning/companions in there, though.
+            // Ordinary building interiors (house/shop) intentionally have no
+            // companions or wild spawns — only Den-Mother mini-bosses still
+            // need to chase/attack/return there.
             updateHostiles(dt);
             updateCorpses(dt);
           }
