@@ -10710,9 +10710,30 @@
         }
       }
 
+      // Periodic Garanki Gabu position/target diagnostic, tagged [schedule] so
+      // it shows up under the Debug panel's existing "Schedule" filter tab —
+      // wildlife AI logs several entries a second and the debug log caps at
+      // 200 entries, so anything logged once (e.g. at Tothal Shift time) is
+      // gone within seconds; this re-logs every few seconds instead so a
+      // fresh copy of the debug log always has current data for him, with no
+      // console commands needed.
+      let _garankiDiagT = 0;
+      function _logGarankiDiagnostic(dt) {
+        _garankiDiagT -= dt;
+        if (_garankiDiagT > 0) return;
+        _garankiDiagT = 4;
+        const g = npcWalkers.find(w => w.rec?.id === 'garanki_gabu');
+        if (!g) { window.__farmLog('[schedule] garanki_gabu DIAG: not spawned yet', 'info'); return; }
+        const zl = _zoneLayouts.get('map_northern_cliffs');
+        const tent = zl?.buildings?.find(b => b.id === 'bldg_researchers_tent');
+        const trans = zl?.transitions?.find(t => t.id === 'sp_ncl_tent');
+        window.__farmLog(`[schedule] garanki_gabu DIAG: area=${g.area} pos=(${g.root.position.x.toFixed(1)},${g.root.position.z.toFixed(1)}) state=${g.state} target=${JSON.stringify(g.currentScheduleTarget)} tentBuilding=${tent ? `(${tent.gridX},${tent.gridZ})` : 'none'} tentDoor=${trans ? `(${trans.col},${trans.row})` : 'none'}`, 'info');
+      }
+
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
         for (const w of npcWalkers) w.update(dt);
+        _logGarankiDiagnostic(dt);
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
         for (const w of npcWalkers) {
