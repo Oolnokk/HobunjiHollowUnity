@@ -177,6 +177,7 @@
             p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
         if (id === 'calendar') renderCalendarPanel();
+        if (id === 'map') renderWildernessMapPanel();
         if (id === 'farm') renderFarmPanel();
         if (id === 'stable') renderStablePanel();
         if (id === 'shipping') buildShippingTransferUI();
@@ -2153,6 +2154,7 @@
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', desc: 'A small decorative woven rug.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
+        statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
         stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.' },
         tableLong:     { itemKey: 'tableLongFurniture',     icon: '🍽️', name: 'Long Table',           modelFile: 'table_long.glb',               price: 42, fw: 4, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A long communal dining table.' },
         tableRound:    { itemKey: 'tableRoundFurniture',    icon: '🍽️', name: 'Round Table',          modelFile: 'table_round.glb',              price: 28, fw: 2, fd: 2, color: 0x7a5c3a, area: 'interior', desc: 'A round wooden dining table.' },
@@ -5701,16 +5703,66 @@
       // core (docs/js/wilderness-map-generator.js) hands its export straight
       // to the same plateau/ramp fold math the Map Editor's live preview
       // already uses (docs/js/terrain-preview.js), and the game renders it
-      // exactly as it would an authored map. A handful of authored building
-      // entrances (Researcher's Tent, Little Swamp House) don't exist in the
-      // wilderness tool's own vocabulary, so they're re-attached at their
-      // original coordinates after every shift — whatever terrain the
-      // generator happened to draw there stays as-is, same as any other
-      // generated tile.
+      // exactly as it would an authored map. Little Swamp House (Leaf & Pahu's
+      // House) doesn't exist in the wilderness tool's own vocabulary, so it's
+      // re-attached at its original coordinates after every shift — whatever
+      // terrain the generator happened to draw there stays as-is, same as any
+      // other generated tile. The Researcher's Tent used to work the same way
+      // but is now a real stamped locale (see FIXED_LOCALE_LANDMARKS below)
+      // so its exterior placement, and this transition into its interior, can
+      // both move together each shift instead of the entrance drifting away
+      // from wherever the tent itself actually got drawn.
       const TOTHAL_PRESERVED_TRANSITIONS = {
-        map_northern_cliffs: [{ id: 'sp_ncl_tent', label: "Researcher's Tent", col: 35, row: 29, targetMapId: 'map_i_researchers_tent', targetSpotId: 'sp_tent_entry' }],
         map_eastern_mire: [{ id: 'sp_emi_swamp', label: 'Little Swamp House', col: 34, row: 29, targetMapId: 'map_i_swamp_house', targetSpotId: 'sp_swp_entry' }],
       };
+
+      // ── Locales (docs/tools/locale-editor/, docs/config/locales/) ──────────
+      // Leaf & Pahu's House ("Little Swamp House" above) has a fixed,
+      // non-relocating anchor via TOTHAL_PRESERVED_TRANSITIONS -- a real
+      // building interior is meant to be authored at that same fixed spot
+      // later, so its position never changes and the wilderness map (see the
+      // map UI) can just list it here as a constant. Everything else --
+      // the Researcher's Tent and the Great Fey shrines -- gets stamped
+      // fresh into the regenerated wilderness by the generator itself (see
+      // stampLocales in wilderness-map-generator.js): their location
+      // genuinely reshuffles with the rest of the terrain on every Tothal
+      // Shift, which is why the map only shows their *current* position once
+      // you've found them before (or always, for the Tent -- see its
+      // alwaysVisibleOnMap placement flag).
+      const FIXED_LOCALE_LANDMARKS = [
+        { localeId: 'locale_leaf_pahu_house', name: "Leaf & Pahu's House", category: 'dwelling', zoneId: 'map_eastern_mire', col: 34, row: 29 },
+      ];
+
+      // Fetched once per page load and cached -- the locale JSON files rarely
+      // change mid-session, and every Tothal Shift needs the same list.
+      let _localeDefsPromise = null;
+      function loadStampableLocaleDefs() {
+        if (_localeDefsPromise) return _localeDefsPromise;
+        _localeDefsPromise = (async () => {
+          try {
+            const idxRes = await fetch('config/locales/index.json');
+            if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
+            const idx = await idxRes.json();
+            // Great Fey shrines + the Researcher's Tent are randomly stamped
+            // -- see the comment on FIXED_LOCALE_LANDMARKS above for why
+            // dwellings are excluded here.
+            const entries = (idx.locales || []).filter(e => e.category === 'great_fey_shrine' || e.category === 'story_poi');
+            const defs = [];
+            for (const entry of entries) {
+              try {
+                const r = await fetch(entry.file);
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                defs.push(await r.json());
+              } catch (e) { debugLog(`Tothal Shift: locale load failed for ${entry.file}: ${e.message}`, 'warn'); }
+            }
+            return defs;
+          } catch (e) {
+            debugLog('Tothal Shift: locale index load failed: ' + e.message, 'warn');
+            return [];
+          }
+        })();
+        return _localeDefsPromise;
+      }
 
       function currentTothalYear() {
         return yearNumber(calendar.day);
@@ -6383,6 +6435,13 @@
         const terrainPreview = (typeof TerrainPreview !== 'undefined') ? TerrainPreview : null;
         debugLog(`Tothal Shift: rerolling wilderness for year ${year} (world ${worldId})`);
         try {
+          // Each singleton locale should exist exactly once across all four
+          // zones, but generateZoneWorkspace only knows about the single zone
+          // it's generating -- so the pool of locales still needing a home
+          // shrinks as each zone claims one, and a zone that couldn't fit a
+          // locale simply leaves it for the next zone to try.
+          const localeDefs = await loadStampableLocaleDefs();
+          let remainingLocales = localeDefs.slice();
           for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
             const seed = `${worldId}_tothal_y${year}_${zoneId}`;
             const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
@@ -6391,8 +6450,9 @@
               // Random seed, entry side set per zone — otherwise the tool's own
               // defaults, no post-processing. This is meant to be exactly what
               // a human would get generating a map with the standalone tool and
-              // importing it into the Map Editor by hand.
-              workspace = WildernessMapGenerator.generateZoneWorkspace(zoneId, seed);
+              // importing it into the Map Editor by hand. remainingLocales are
+              // the not-yet-placed locales this shift (see above).
+              workspace = WildernessMapGenerator.generateZoneWorkspace(zoneId, seed, remainingLocales);
             } catch (e) {
               debugLog(`Tothal Shift: generation failed for ${zoneId}: ${e.message}`, 'warn');
               continue;
@@ -6406,6 +6466,97 @@
               continue;
             }
             if (!merged) { debugLog(`Tothal Shift: no fold math available for ${zoneId}, skipping`, 'warn'); continue; }
+
+            const localeInstances = workspace.localeInstances || [];
+            if (localeInstances.length) {
+              const placedIds = new Set(localeInstances.map(inst => inst.localeId));
+              remainingLocales = remainingLocales.filter(l => !placedIds.has(l.id));
+              debugLog(`Tothal Shift: ${zoneId} placed locale(s): ${localeInstances.map(inst => inst.localeId).join(', ')}`);
+            }
+            // The Researcher's Tent's exterior placement moves with the rest
+            // of the terrain each shift (see stampLocales) -- its entrance
+            // transition into the building interior has to follow it there
+            // rather than sitting at a fixed spot the tent may no longer
+            // occupy.
+            const tentInstance = localeInstances.find(inst => inst.localeId === 'locale_researchers_tent');
+            // The actual tent mesh (docs/config/pieces/researchers-tent.json),
+            // fed through the same zoneData.buildings pipeline _spawnZoneBuildings
+            // already uses for authored zone buildings -- without this, stampLocale's
+            // carrier 'structure' object (only used for path-routing) never gets
+            // drawn, and the spot just looks like flat ground. Rotated to face its
+            // door toward the connector's side (the piece's door faces south/+Z by
+            // default; each step here is a further 90° clockwise turn from there).
+            const TENT_DOOR_ROTATION_BY_SIDE = { south: 0, east: 90, north: 180, west: 270 };
+            const tentStructureObj = tentInstance?.objects.find(o => o.kind === 'structure');
+            const tentDoorSide = tentInstance?.connectors[0]?.side || 'south';
+            const tentElevTier = tentStructureObj ? (merged.tiles.get(`${tentStructureObj.x},${tentStructureObj.y}`)?.elevTier || 0) : 0;
+            const tentBuilding = tentStructureObj ? [{
+              id: 'bldg_researchers_tent', pieceFile: 'config/pieces/researchers-tent.json',
+              gridX: tentStructureObj.x, gridZ: tentStructureObj.y,
+              rotationDeg: TENT_DOOR_ROTATION_BY_SIDE[tentDoorSide] ?? 0,
+              elevTier: tentElevTier, footprintW: 3, footprintD: 3,
+            }] : [];
+            // The locale's connector marks where the wilderness path enters
+            // the *locale* (see stampLocale's pathAnchor use of it) -- it can
+            // sit several tiles from the tent itself (room for a clearing/
+            // desk/statues in between), so using it directly as the "enter
+            // the tent" trigger tile used to put that trigger nowhere near
+            // the actual door, making the transition seem unresponsive. The
+            // real door tile is one step off whichever edge of the
+            // structure's footprint TENT_DOOR_ROTATION_BY_SIDE turns to
+            // face, so derive it from tentStructureObj's own (already
+            // locale-scaled) position + size instead.
+            const TENT_DOOR_TILE_OFFSET_BY_SIDE = tentStructureObj ? {
+              south: { dx: Math.round(tentStructureObj.w / 2), dz: tentStructureObj.h },
+              east:  { dx: tentStructureObj.w, dz: Math.round(tentStructureObj.h / 2) },
+              north: { dx: Math.round(tentStructureObj.w / 2), dz: -1 },
+              west:  { dx: -1, dz: Math.round(tentStructureObj.h / 2) },
+            }[tentDoorSide] : null;
+            const tentTransitions = (tentInstance && tentStructureObj && TENT_DOOR_TILE_OFFSET_BY_SIDE) ? [{
+              id: 'sp_ncl_tent', label: "Researcher's Tent",
+              col: tentStructureObj.x + TENT_DOOR_TILE_OFFSET_BY_SIDE.dx,
+              row: tentStructureObj.y + TENT_DOOR_TILE_OFFSET_BY_SIDE.dz,
+              target: 'building', targetMapId: 'map_i_researchers_tent',
+            }] : [];
+            // Garanki Gabu's desk + 3 specimen statues (locale_researchers_tent's
+            // decor/prop objects) -- rendered through the same zoneData.decor
+            // pipeline _spawnZoneDecorFurniture already uses, and re-registered as
+            // named npcStations every shift (see hobunji-starter-npc-database.json's
+            // scheduleHooks) so his schedule always finds them at their *current*
+            // stamped position instead of a coordinate that stops matching once the
+            // tent moves.
+            const tentDecorObjs = tentInstance ? tentInstance.objects.filter(o => o.kind === 'decor' || o.kind === 'prop') : [];
+            const tentDecor = tentDecorObjs.map(o => ({ col: o.x, row: o.y, key: o.key, elevTier: merged.tiles.get(`${o.x},${o.y}`)?.elevTier || 0 }));
+            if (tentInstance) {
+              const findObj = id => tentInstance.objects.find(o => o.id === id);
+              const desk = findObj('obj_desk');
+              const statues = ['obj_statue_1', 'obj_statue_2', 'obj_statue_3'].map(findObj);
+              const stations = [];
+              if (desk) stations.push({ id: 'station_researchers_tent_desk', label: "Garanki's Desk", area: zoneId, c: desk.x, r: desk.y, pose: 'stand' });
+              statues.forEach((s, i) => { if (s) stations.push({ id: `station_researchers_tent_statue_${i + 1}`, label: `Specimen Statue ${i + 1}`, area: zoneId, c: s.x, r: s.y, pose: 'stand' }); });
+              // station_researchers_tent_sleep is NOT registered here — it lives
+              // inside config/maps/map_i_researchers_tent.json's own npcStations
+              // (auto-registered by loadBuildingScene once that interior loads).
+              // Registering it at tentStructureObj's position, like the other
+              // stations, used to put Garanki's "sleeping" rule (20:00-08:00,
+              // over half the day) standing inside/behind the opaque exterior
+              // tent mesh in the wilderness zone — impossible to see or find.
+              registerNpcStations(stations, zoneId);
+              // Proactively warm up the tent's interior scene right now instead
+              // of waiting for the player to actually walk in — resolveNpcScheduleTarget
+              // only auto-warms it lazily, the first time something asks for
+              // station_researchers_tent_sleep and finds it unregistered, and that
+              // warm-up is itself async. If Garanki's schedule happens to resolve
+              // during the sleeping rule before either has happened (e.g. right at
+              // world boot), every rule AND the defaultStationId fallback fail to
+              // find that station, and resolveNpcScheduleTarget falls all the way
+              // through to scheduleHooks.defaultPosition — spawning him at that
+              // arbitrary fallback tile, nowhere near the tent, until his next
+              // schedule change happens to trigger a re-resolve. Loading this now
+              // means the station is registered before spawnScheduledNpcs (or its
+              // retry loop) ever resolves his first real target.
+              loadBuildingScene('map_i_researchers_tent');
+            }
 
             const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
             // One entrance transition per den, at its mouth tile — leads into
@@ -6438,12 +6589,14 @@
               cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
               transitions: [
                 ...preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
+                ...tentTransitions,
                 ...denTransitions,
               ],
-              toTownExit, mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
+              toTownExit, mesas: merged.mesas, buildings: [...(merged.buildings || []), ...tentBuilding], decor: tentDecor, furniture: [],
               dens: workspace.animalDens || [],
               foliagePatches: workspace.foliagePatches || [],
               ambushStations: workspace.ambushStations || [],
+              localeInstances,
             });
             // A reshaped zone's dens are all new — forget any leftover pack/
             // respawn bookkeeping from the previous layout's den ids (see
@@ -6460,6 +6613,9 @@
             else _disposeZoneScene(zoneId);
             debugLog(`Tothal Shift: ${zoneId} reshaped (entry ${workspace.entry?.side ?? '?'} at ${workspace.entry?.col ?? '?'},${workspace.entry?.row ?? '?'})`);
             await new Promise(resolve => setTimeout(resolve, 0)); // yield between zones
+          }
+          if (remainingLocales.length) {
+            debugLog(`Tothal Shift: ${remainingLocales.length} locale(s) found no room in any zone this shift: ${remainingLocales.map(l => l.id).join(', ')}`, 'warn');
           }
           clearHostileObjects();
           _saveTothalYear(year);
@@ -6497,6 +6653,271 @@
           .finally(() => { _tothalShiftPromise = null; });
       }
       window.forceTothalShift = () => checkTothalShift(true);
+
+      // ── Wilderness map: fog-of-war + locale discovery ──────────────────
+      // Two kinds of state, deliberately kept separate:
+      //  - Per-zone fog (what terrain you've walked near) is bulky, cheap to
+      //    regenerate, and meaningless once a Tothal Shift reshapes that
+      //    zone's terrain -- stored outside hobunjiSaveMeta, tagged with the
+      //    Tothal year it was revealed under, and thrown away/rebuilt blank
+      //    the moment that tag goes stale.
+      //  - Discovered locales (have you ever found Leaf & Pahu's House, the
+      //    Researcher's Tent, or a Great Fey shrine) is small and meant to
+      //    last forever -- stored in hobunjiSaveMeta like the rest of the
+      //    world's permanent state (see _saveTothalYear et al. above), and
+      //    updated (never cleared) every time you rediscover one after a
+      //    shift has moved it.
+      const FOG_REVEAL_RADIUS = 7; // tiles, Chebyshev-ish (circular) around the player
+      const _fogCache = new Map(); // zoneId -> { year, cols, rows, bits: Uint8Array }
+
+      function _fogStorageKey(worldId, zoneId) { return `hobunji_zone_fog_v1_${worldId}_${zoneId}`; }
+
+      function _bitsToBase64(bytes) {
+        let bin = '';
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        return btoa(bin);
+      }
+      function _base64ToBits(b64, minBytes) {
+        const bin = atob(b64);
+        const bytes = new Uint8Array(Math.max(bin.length, minBytes));
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return bytes;
+      }
+
+      function _loadZoneFog(zoneId) {
+        const layout = _zoneLayouts.get(zoneId);
+        if (!layout) return null;
+        const year = currentTothalYear();
+        const cached = _fogCache.get(zoneId);
+        if (cached && cached.year === year && cached.cols === layout.cols && cached.rows === layout.rows) return cached;
+        const worldId = _tothalWorldId() || 'default';
+        let entry = null;
+        try {
+          const raw = localStorage.getItem(_fogStorageKey(worldId, zoneId));
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.year === year && parsed.cols === layout.cols && parsed.rows === layout.rows) {
+              entry = { year, cols: parsed.cols, rows: parsed.rows, bits: _base64ToBits(parsed.bits, Math.ceil(parsed.cols * parsed.rows / 8)) };
+            }
+          }
+        } catch {}
+        if (!entry) entry = { year, cols: layout.cols, rows: layout.rows, bits: new Uint8Array(Math.ceil(layout.cols * layout.rows / 8)) };
+        _fogCache.set(zoneId, entry);
+        return entry;
+      }
+
+      function _saveZoneFog(zoneId) {
+        const entry = _fogCache.get(zoneId);
+        if (!entry) return;
+        const worldId = _tothalWorldId() || 'default';
+        try {
+          localStorage.setItem(_fogStorageKey(worldId, zoneId), JSON.stringify({ year: entry.year, cols: entry.cols, rows: entry.rows, bits: _bitsToBase64(entry.bits) }));
+        } catch {}
+      }
+
+      function _fogIsRevealed(entry, c, r) {
+        if (!entry || c < 0 || r < 0 || c >= entry.cols || r >= entry.rows) return false;
+        const idx = r * entry.cols + c;
+        return (entry.bits[idx >> 3] & (1 << (idx & 7))) !== 0;
+      }
+      function _fogReveal(entry, c, r) {
+        if (c < 0 || r < 0 || c >= entry.cols || r >= entry.rows) return false;
+        const idx = r * entry.cols + c;
+        const byte = idx >> 3, bit = 1 << (idx & 7);
+        if (entry.bits[byte] & bit) return false;
+        entry.bits[byte] |= bit;
+        return true;
+      }
+
+      // ── Discovered locales (world-scoped, persists across Tothal Shifts) ──
+      function _loadDiscoveredLocales() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return {};
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.discoveredLocales ?? {};
+        } catch { return {}; }
+      }
+      function _saveDiscoveredLocales(discovered) {
+        const worldId = _tothalWorldId();
+        if (!worldId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.discoveredLocales = discovered;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
+      // All currently-placed locale instances this session, fixed + randomly
+      // stamped: [{ localeId, name, category, zoneId, col, row, fixed, alwaysVisible }].
+      function _allLocaleInstances() {
+        const out = FIXED_LOCALE_LANDMARKS.map(f => ({ localeId: f.localeId, name: f.name, category: f.category, zoneId: f.zoneId, col: f.col, row: f.row, fixed: true, alwaysVisible: false }));
+        for (const zoneId of (typeof WildernessMapGenerator !== 'undefined' ? WildernessMapGenerator.zoneMapIds() : [])) {
+          const layout = _zoneLayouts.get(zoneId);
+          for (const inst of (layout?.localeInstances || [])) {
+            out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false, alwaysVisible: !!inst.alwaysVisible });
+          }
+        }
+        return out;
+      }
+
+      // Called whenever fog newly reveals ground in `zoneId` -- checks every
+      // locale instance currently placed there against the just-revealed
+      // radius and flags it discovered forever. Discovery only ever records
+      // *that* a locale was found, never *where* -- the map always draws
+      // discovered locales from _allLocaleInstances()'s live current
+      // placement, so "current location... if you've discovered them
+      // before" holds even after a later Tothal Shift moves it, with no
+      // need to physically revisit it again first.
+      function _checkLocaleDiscovery(zoneId, pc, pr) {
+        const discovered = _loadDiscoveredLocales();
+        let changed = false;
+        for (const inst of _allLocaleInstances()) {
+          if (inst.zoneId !== zoneId || discovered[inst.localeId]) continue;
+          const dist = Math.hypot(inst.col - pc, inst.row - pr);
+          if (dist > FOG_REVEAL_RADIUS) continue;
+          discovered[inst.localeId] = { name: inst.name, category: inst.category, firstDiscoveredYear: currentTothalYear() };
+          changed = true;
+          showToast(`Discovered: ${inst.name}`, true);
+        }
+        if (changed) _saveDiscoveredLocales(discovered);
+      }
+
+      let _lastFogRevealTile = null;
+      function updateZoneFogAroundPlayer() {
+        if (!_isZoneArea(currentArea)) return;
+        const zoneId = currentArea;
+        const entry = _loadZoneFog(zoneId);
+        if (!entry) return;
+        const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
+        if (_lastFogRevealTile && _lastFogRevealTile.zoneId === zoneId && _lastFogRevealTile.c === pc && _lastFogRevealTile.r === pr) return;
+        _lastFogRevealTile = { zoneId, c: pc, r: pr };
+        let changed = false;
+        const R = FOG_REVEAL_RADIUS, R2 = R * R;
+        for (let dr = -R; dr <= R; dr++) {
+          for (let dc = -R; dc <= R; dc++) {
+            if (dc * dc + dr * dr > R2) continue;
+            if (_fogReveal(entry, pc + dc, pr + dr)) changed = true;
+          }
+        }
+        if (changed) { _saveZoneFog(zoneId); }
+        _checkLocaleDiscovery(zoneId, pc, pr);
+      }
+
+      // ── Wilderness map rendering (shared by the minimap widget and the
+      // full-screen Map pane) ─────────────────────────────────────────────
+      const WMAP_ZONE_LABELS = {
+        map_northern_cliffs: 'Northern Cliffs',
+        map_southern_cloud_forest: 'Southern Cloud Forest',
+        map_western_slope: 'Western Slope',
+        map_eastern_mire: 'Eastern Mire',
+      };
+      const WMAP_TERRAIN_COLORS = {
+        grass: '#2f6b3a', weeds: '#3f7a3f', shrub: '#265a30', path: '#b8956a',
+        rock: '#6b6f76', river: '#2f6fb8', stream: '#4f9bd9', waterfall: '#bfe9f7',
+        tilled: '#5a4327', raised: '#7a6248', trench: '#2a1f16', paddy: '#33628a', ramp: '#8f8460',
+      };
+      const WMAP_LOCALE_COLORS = { dwelling: '#7fe89a', great_fey_shrine: '#c084fc', story_poi: '#6ec6f0', misc: '#f0f0f0' };
+
+      function _drawWildernessMapOnCanvas(canvas, zoneId, opts = {}) {
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#05070a';
+        ctx.fillRect(0, 0, w, h);
+        const layout = zoneId ? _zoneLayouts.get(zoneId) : null;
+        if (!layout) {
+          ctx.fillStyle = 'rgba(255,255,255,0.4)';
+          ctx.font = '13px system-ui';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('Not yet explored', w / 2, h / 2);
+          return;
+        }
+        const cols = layout.cols, rows = layout.rows;
+        const scaleX = w / cols, scaleY = h / rows;
+        const entry = _loadZoneFog(zoneId);
+        const cw = Math.ceil(scaleX), ch = Math.ceil(scaleY);
+        for (const tile of layout.tiles) {
+          if (!_fogIsRevealed(entry, tile.c, tile.r)) continue;
+          ctx.fillStyle = WMAP_TERRAIN_COLORS[tile.type] || WMAP_TERRAIN_COLORS.grass;
+          ctx.fillRect(Math.floor(tile.c * scaleX), Math.floor(tile.r * scaleY), cw, ch);
+        }
+        const markerR = Math.max(3, Math.min(scaleX, scaleY) * 1.4);
+        const discovered = _loadDiscoveredLocales();
+        for (const inst of _allLocaleInstances()) {
+          if (inst.zoneId !== zoneId) continue;
+          if (!inst.alwaysVisible && !discovered[inst.localeId]) continue;
+          const mx = (inst.col + 0.5) * scaleX, my = (inst.row + 0.5) * scaleY;
+          ctx.beginPath();
+          ctx.arc(mx, my, markerR, 0, Math.PI * 2);
+          ctx.fillStyle = WMAP_LOCALE_COLORS[inst.category] || WMAP_LOCALE_COLORS.misc;
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1; ctx.stroke();
+        }
+        // Garanki Gabu's live position, drawn as his own portrait (the same
+        // baked head-with-cosmetics canvas his world model and dialogue
+        // portrait use — see makeNpcWalker's avatarFrontCanvas) instead of a
+        // plain dot, so he reads as a person to go find rather than another
+        // static map marker. Tracks whichever zone he's actually in right
+        // now, independent of which zone tab the player happens to be
+        // standing in or viewing.
+        const garanki = npcWalkers.find(w => w.rec?.id === 'garanki_gabu');
+        if (garanki && garanki.area === zoneId && garanki.avatarFrontCanvas) {
+          const gx = garanki.root.position.x * scaleX, gy = garanki.root.position.z * scaleY;
+          const gr = Math.max(4, markerR * 1.3);
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(gx, gy, gr, 0, Math.PI * 2);
+          ctx.closePath();
+          ctx.clip();
+          ctx.drawImage(garanki.avatarFrontCanvas, gx - gr, gy - gr, gr * 2, gr * 2);
+          ctx.restore();
+          ctx.beginPath();
+          ctx.arc(gx, gy, gr, 0, Math.PI * 2);
+          ctx.strokeStyle = '#f0d060'; ctx.lineWidth = 1.5; ctx.stroke();
+        }
+        if (opts.showPlayer) {
+          const mx = (player.x / TILE) * scaleX, my = (player.y / TILE) * scaleY;
+          ctx.beginPath();
+          ctx.arc(mx, my, Math.max(3, markerR * 0.8), 0, Math.PI * 2);
+          ctx.fillStyle = '#f9e28a';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
+        }
+      }
+
+      function renderWildernessMinimap() {
+        const widget = document.getElementById('minimapWidget');
+        const canvas = document.getElementById('minimapCanvas');
+        if (!widget || !canvas) return;
+        if (!_isZoneArea(currentArea)) { widget.classList.remove('show'); return; }
+        widget.classList.add('show');
+        _drawWildernessMapOnCanvas(canvas, currentArea, { showPlayer: true });
+      }
+
+      let _wmapActiveZone = null;
+      function renderWildernessMapPanel() {
+        const tabsEl = document.getElementById('wmapZoneTabs');
+        const canvas = document.getElementById('wildernessMapCanvas');
+        if (!tabsEl || !canvas) return;
+        const zoneIds = (typeof WildernessMapGenerator !== 'undefined') ? WildernessMapGenerator.zoneMapIds() : [];
+        if (!zoneIds.length) { tabsEl.innerHTML = ''; _drawWildernessMapOnCanvas(canvas, null); return; }
+        if (!_wmapActiveZone || !zoneIds.includes(_wmapActiveZone)) {
+          _wmapActiveZone = _isZoneArea(currentArea) ? currentArea : zoneIds[0];
+        }
+        tabsEl.innerHTML = '';
+        for (const zoneId of zoneIds) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'wmap-zone-tab' + (zoneId === _wmapActiveZone ? ' active' : '');
+          btn.textContent = WMAP_ZONE_LABELS[zoneId] || zoneId;
+          btn.addEventListener('click', () => { _wmapActiveZone = zoneId; renderWildernessMapPanel(); });
+          tabsEl.appendChild(btn);
+        }
+        _drawWildernessMapOnCanvas(canvas, _wmapActiveZone, { showPlayer: currentArea === _wmapActiveZone });
+      }
 
       // Devtools/QA hook for the cliff-climbing feature — mirrors
       // window.forceTothalShift's role of poking otherwise-input-driven
@@ -7248,9 +7669,11 @@
       // plateau-stack offset every tile goes through) and a resolved elevTier
       // looked up at that anchor cell — see mergeZoneTiles.
       const _zoneLayouts = new Map();
+      window._zoneLayouts = _zoneLayouts; // devtools/QA inspection hook, mirrors window._npcWalkers
       // mapId → [{ group, bldg, piece, wbOpts, wbGableOpts }] — mirrors
       // _townBuildingGroups but per zone map; see _spawnZoneBuildings.
       const _zoneBuildingGroups = new Map();
+      window._zoneBuildingGroups = _zoneBuildingGroups; // devtools/QA inspection hook
       // mapId → [THREE.Object3D, ...] (meshes + point lights) — decor/processing
       // furniture props spawned for a zone map; see _spawnZoneDecorFurniture.
       const _zoneDecorFurnitureGroups = new Map();
@@ -8222,6 +8645,15 @@
         _zoneScenes.set(mapId, info);
         _spawnZoneBuildings(mapId);
         _spawnZoneDecorFurniture(mapId);
+        // Any NPC whose schedule targeted this zone before its (expensive,
+        // built-on-first-visit) scene existed was left parked in _pendingZoneAdd
+        // limbo (see makeNpcWalker/transferToArea) -- drop them in now that it's here.
+        for (const w of npcWalkers) {
+          if (w.root._pendingZoneAdd === mapId) {
+            w.root._pendingZoneAdd = null;
+            zScene.add(w.root); w.root._npcScene = zScene;
+          }
+        }
         return info;
       }
 
@@ -9934,14 +10366,49 @@
           try { const res = await fetch('config/npcs/hobunji-starter-npc-database.json'); const json = await res.json(); dbNpcs = json.npcs || []; } catch {}
         }
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+        const deferred = [];
         for (const rec of dbNpcs) {
           const target = resolveNpcScheduleTarget(rec);
-          if (!target) { console.warn('[NPC] No schedule target for', rec?.id, '— skipped'); continue; }
+          if (!target) { deferred.push(rec); continue; }
           try { const w = await makeNpcWalker(rec, target); if (w) npcWalkers.push(w); }
           catch (e) { console.warn('NPC walker failed for schedule', rec?.id, e); }
         }
         console.log(`[NPC] Spawned ${npcWalkers.length}/${dbNpcs.length} walkers. inspect: window._npcWalkers`);
         console.log('[NPC] Areas:', npcWalkers.map(w => (w.rec?.id || '?') + '@' + (w.area || w.root?._pendingBuildingAdd || (w.root?._pendingTownAdd ? 'town(pending)' : '?'))));
+        if (deferred.length) {
+          console.log('[NPC] Deferred (no schedule target resolvable yet):', deferred.map(r => r.id));
+          _retrySpawnDeferredNpcs(deferred);
+        }
+      }
+
+      // Some NPCs (e.g. Garanki Gabu) only have schedule stations that come
+      // from content the Tothal Shift stamps into a wilderness zone at world
+      // boot -- but that shift runs fire-and-forget (see checkTothalShift's
+      // call site) and hasn't necessarily finished by the time
+      // spawnScheduledNpcs() runs at module init, so resolveNpcScheduleTarget()
+      // has nothing to resolve to yet for them. Spawning them at a made-up
+      // fallback position instead (defaultPosition) used to "fix" the missing
+      // NPC but created a worse, more visible bug: they'd spawn wherever that
+      // fallback pointed -- often far from their real, just-stamped station in
+      // a large procedurally generated zone -- and only *begin* the (slow,
+      // ~1.25 tiles/sec) walk there once their schedule re-resolves, so the
+      // NPC would still be nowhere near where a player would look for them for
+      // a long time. Waiting and retrying instead means they're only ever
+      // created once there's a real station to spawn at.
+      function _retrySpawnDeferredNpcs(records, attempt = 0) {
+        const MAX_ATTEMPTS = 30; // ~30s at 1s apart -- Tothal Shift is described as "a few seconds"
+        setTimeout(async () => {
+          const stillDeferred = [];
+          for (const rec of records) {
+            const target = resolveNpcScheduleTarget(rec);
+            if (!target) { stillDeferred.push(rec); continue; }
+            try { const w = await makeNpcWalker(rec, target); if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); } }
+            catch (e) { console.warn('NPC walker failed for schedule (retry)', rec?.id, e); }
+          }
+          if (!stillDeferred.length) return;
+          if (attempt + 1 < MAX_ATTEMPTS) _retrySpawnDeferredNpcs(stillDeferred, attempt + 1);
+          else console.warn('[NPC] Gave up waiting for a schedule target after retries:', stillDeferred.map(r => r.id));
+        }, 1000);
       }
 
       // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.
@@ -9993,12 +10460,18 @@
         const spawnArea = normalizeNpcArea(spawnTarget.area);
         root.position.set(spawnTarget.c + 0.5, npcSurfaceY(spawnArea, spawnTarget.c, spawnTarget.r), spawnTarget.r + 0.5);
         const sc = sceneForNpcArea(spawnArea);
-        if (sc) { sc.add(root); root._npcScene = sc; root._pendingTownAdd = false; root._pendingBuildingAdd = null; }
-        else if (spawnArea === 'town') { root._npcScene = null; root._pendingTownAdd = true; root._pendingBuildingAdd = null; }
+        if (sc) { sc.add(root); root._npcScene = sc; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
+        else if (spawnArea === 'town') { root._npcScene = null; root._pendingTownAdd = true; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
         else if (_isBuildingArea(spawnArea)) {
-          root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = spawnArea;
+          root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = spawnArea; root._pendingZoneAdd = null;
           if (!_buildingScenes.has(spawnArea)) loadBuildingScene(spawnArea);
-        } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; }
+        } else if (_isZoneArea(spawnArea)) {
+          // Unlike buildings, zone scenes are expensive to build (full terrain
+          // mesh generation) -- don't eagerly warm one up just to park an idle
+          // NPC there; wait for the player to actually visit it, same as any
+          // other zone content that only exists once the scene is built.
+          root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = spawnArea;
+        } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
 
         const walker = {
           root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
@@ -10021,13 +10494,15 @@
             if (root._npcScene) root._npcScene.remove(root);
             else { scene.remove(root); interiorScene?.remove(root); townScene?.remove(root); }
             _buildingScenes.forEach(bi => bi?.scene?.remove(root));
-            root._pendingTownAdd = false; root._pendingBuildingAdd = null;
+            root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null;
             const nextScene = sceneForNpcArea(area);
             if (nextScene) { nextScene.add(root); root._npcScene = nextScene; }
             else if (area === 'town') { root._npcScene = null; root._pendingTownAdd = true; }
             else if (_isBuildingArea(area)) {
               root._npcScene = null; root._pendingBuildingAdd = area;
               if (!_buildingScenes.has(area)) loadBuildingScene(area);
+            } else if (_isZoneArea(area)) {
+              root._npcScene = null; root._pendingZoneAdd = area;
             } else { scene.add(root); root._npcScene = scene; }
             this.area = area;
             this.resetRouteState();
@@ -10235,9 +10710,30 @@
         }
       }
 
+      // Periodic Garanki Gabu position/target diagnostic, tagged [schedule] so
+      // it shows up under the Debug panel's existing "Schedule" filter tab —
+      // wildlife AI logs several entries a second and the debug log caps at
+      // 200 entries, so anything logged once (e.g. at Tothal Shift time) is
+      // gone within seconds; this re-logs every few seconds instead so a
+      // fresh copy of the debug log always has current data for him, with no
+      // console commands needed.
+      let _garankiDiagT = 0;
+      function _logGarankiDiagnostic(dt) {
+        _garankiDiagT -= dt;
+        if (_garankiDiagT > 0) return;
+        _garankiDiagT = 4;
+        const g = npcWalkers.find(w => w.rec?.id === 'garanki_gabu');
+        if (!g) { window.__farmLog('[schedule] garanki_gabu DIAG: not spawned yet', 'info'); return; }
+        const zl = _zoneLayouts.get('map_northern_cliffs');
+        const tent = zl?.buildings?.find(b => b.id === 'bldg_researchers_tent');
+        const trans = zl?.transitions?.find(t => t.id === 'sp_ncl_tent');
+        window.__farmLog(`[schedule] garanki_gabu DIAG: area=${g.area} pos=(${g.root.position.x.toFixed(1)},${g.root.position.z.toFixed(1)}) state=${g.state} target=${JSON.stringify(g.currentScheduleTarget)} tentBuilding=${tent ? `(${tent.gridX},${tent.gridZ})` : 'none'} tentDoor=${trans ? `(${trans.col},${trans.row})` : 'none'}`, 'info');
+      }
+
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
         for (const w of npcWalkers) w.update(dt);
+        _logGarankiDiagnostic(dt);
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
         for (const w of npcWalkers) {
@@ -10504,15 +11000,30 @@
           }
 
           // Resolve real authored tile/transition data for every top-level exterior
-          // zone (Northern Cliffs, Southern Cloud Forest) so buildZoneScene can
-          // render actual cliff/terrain content instead of EXTERIOR_ZONES' tiny flat
-          // placeholder grid.
+          // zone so buildZoneScene can render actual cliff/terrain content instead
+          // of EXTERIOR_ZONES' tiny flat placeholder grid. This predates the Tothal
+          // Shift procedural generator (WildernessMapGenerator) -- all four of
+          // EXTERIOR_ZONES' own zones are now fully owned by that system instead
+          // (see performTothalShift's own _zoneLayouts.set(zoneId, ...) call),
+          // which runs later at world start and would otherwise race this one for
+          // the exact same _zoneLayouts key: whichever finished last silently won,
+          // meaning the player could end up standing on (and testing bug fixes
+          // against) this stale hand-authored layout instead of the freshly
+          // generated one, with no visible sign that had happened. allZoneMapIds
+          // itself still needs to include EXTERIOR_ZONES ids below -- both this
+          // loop's own transition classification (allZoneMapIds.has(...) a few
+          // lines down) and the town's own transitions further below use it to
+          // recognize "this leads into a wilderness zone" -- only the actual
+          // _zoneLayouts.set(...) for one of those four is skipped, so town's
+          // real authored gate into e.g. Northern Cliffs still works, it just
+          // doesn't get to build (and race) that zone's own terrain/buildings.
           const allZoneMapIds = new Set(Object.keys(EXTERIOR_ZONES));
           for (const m of resolvedMaps) {
             if (m.category === 'exterior' && m.id !== 'map_hobunji_town' && !m.isSubmap) allZoneMapIds.add(m.id);
           }
 
           for (const zoneMapId of allZoneMapIds) {
+            if (EXTERIOR_ZONES[zoneMapId]) continue; // owned entirely by performTothalShift now
             const zm = resolvedMaps.find(m => m.id === zoneMapId);
             if (!zm) continue;
             const outTiles = new Map(), mesas = [], outBuildings = [], outDecor = [], outFurniture = [];
@@ -10797,6 +11308,33 @@
         return group;
       }
 
+      // Flat cloth-colored wall panels for a canvas tent interior (see
+      // loadBuildingScene's mapData.wallStyle === 'canvas' handling) — same
+      // bare-quad approach as buildCavernWalls just above, minus the rock
+      // bump displacement, tinted to match the exterior tent piece's canvas
+      // material (HousePieceGen's matCanvas, 0xcbb489) instead of brick.
+      function buildCanvasWalls(wallPanels, wallHeight) {
+        const group = new THREE.Group();
+        if (!wallPanels.length) return group;
+        const mat = new THREE.MeshLambertMaterial({ color: 0xcbb489, side: THREE.DoubleSide });
+        const pos = [], idx = []; let vi = 0;
+        for (const panel of wallPanels) {
+          const [bl, br, tr, tl] = panelCornersFor(panel);
+          pos.push(bl.x, bl.y, bl.z, br.x, br.y, br.z, tr.x, tr.y, tr.z, tl.x, tl.y, tl.z);
+          idx.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+          vi += 4;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setIndex(idx);
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.receiveShadow = true;
+        mesh.userData.cameraObstacle = true;
+        group.add(mesh);
+        return group;
+      }
+
       // A den's cavern floor: an organic irregular blob (seeded RNG growth,
       // biased toward rounder shapes, then a safe erosion pass that only ever
       // trims dead-end spurs — removing a cell with exactly one neighbor can
@@ -11017,8 +11555,10 @@
           bScene.add(dl);
           const floorMat = mapData.wallStyle === 'cavern'
             ? new THREE.MeshLambertMaterial({ color: 0x4a463f }) // bare cavern dirt/stone, no plank texture
+            : mapData.wallStyle === 'canvas'
+            ? new THREE.MeshLambertMaterial({ color: 0x8a7a5c }) // packed dirt under the tent's groundsheet, no plank texture
             : new THREE.MeshLambertMaterial({ color: 0x8b6914 });
-          if (mapData.wallStyle !== 'cavern') {
+          if (mapData.wallStyle !== 'cavern' && mapData.wallStyle !== 'canvas') {
             new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
               tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
               floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
@@ -11031,12 +11571,16 @@
             bScene.add(fl);
           }
           // Irregular brick walls with gaps at all exit tiles — or, for a den's
-          // cavern (mapData.wallStyle === 'cavern'), solid deformed rock walls
-          // instead (see buildCavernWalls).
+          // cavern (mapData.wallStyle === 'cavern'), solid deformed rock walls,
+          // or for a canvas tent interior (mapData.wallStyle === 'canvas'),
+          // flat cloth-colored panels matching the exterior tent piece's
+          // 'canvas' material (see HousePieceGen's matCanvas) instead of brick.
           const wallPanels = buildWallPanelsFromFloorSet(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
           if (wallPanels.length) {
             const wallGroup = mapData.wallStyle === 'cavern'
               ? buildCavernWalls(wallPanels, INTERIOR_WALL_HEIGHT)
+              : mapData.wallStyle === 'canvas'
+              ? buildCanvasWalls(wallPanels, INTERIOR_WALL_HEIGHT)
               : houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
             _markOutline(wallGroup);
             bScene.add(wallGroup);
@@ -22964,6 +23508,7 @@
 
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
+      let _minimapRedrawAccum = 0;
 
       buildTileMeshes();
       buildBorderTerrain();
@@ -23473,6 +24018,14 @@
 
         updateSceneTransition(dt);
 
+        // Minimap redraw is throttled — it's an O(zone tile count) canvas
+        // repaint, cheap but pointless to run every single frame.
+        _minimapRedrawAccum += dt;
+        if (_minimapRedrawAccum >= 0.3) {
+          _minimapRedrawAccum = 0;
+          renderWildernessMinimap();
+        }
+
         if (fishingMinigame?.active) updateFishingMinigame(dt);
 
         updateRainAudio();
@@ -23506,6 +24059,7 @@
           _advanceSmoothedLighting(dt);
           pollControllerInput();
           updateMovement(dt);
+          updateZoneFogAroundPlayer();
           updatePlayerVitals(dt);
           updateAlchemyEffects();
 
@@ -25008,8 +25562,11 @@
               // used the swing-timer system (see fireFishingBridge's own note on
               // this), so gating the arc button behind it here would just mean
               // a stray leftover toolSwingT from whatever was equipped before
-              // switching to the harpoon could silently eat the tap.
-              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_') || act.startsWith('fish_');
+              // switching to the harpoon could silently eat the tap. climb is the
+              // same story: it's pure traversal, not a tool swing, so a leftover
+              // toolSwingT from whatever was equipped before walking up to a
+              // cliff shouldn't be able to eat the tap either.
+              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
               if (isNavAction || toolSwingT <= 0) useActiveAction();
             }
 
@@ -26041,6 +26598,15 @@
           return;
         }
         if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
+        // M: wilderness map — closes if already open on the map tab (mirrors
+        // spDay's calendar-shortcut behavior), otherwise opens/switches to it.
+        if (key === 'm') {
+          event.preventDefault();
+          const onMapTab = document.querySelector('.mp-tab[data-mpanel="map"]')?.classList.contains('active');
+          if (menuOpen && onMapTab) closeMenu();
+          else openMenu('map');
+          return;
+        }
         if (menuOpen) return;
         const boundDesktopAction = getActionForButton('desktop', event.code);
         if (boundDesktopAction && !['KeyE', 'KeyQ'].includes(event.code)) {

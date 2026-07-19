@@ -663,6 +663,12 @@
     var matBoards = opts.matBoards || new THREE.MeshLambertMaterial({ color: 0x8b6914, side: THREE.DoubleSide });
     var matStone  = opts.matStone  || new THREE.MeshLambertMaterial({ color: 0x888888, side: THREE.DoubleSide });
     var matTube   = opts.matTube   || new THREE.MeshLambertMaterial({ color: 0x9c6240, side: THREE.FrontSide });
+    // Flat, unshingled/unbricked cloth materials -- e.g. the Researcher's
+    // Tent, whose whole body is 'canvas'-tagged Highland roof/gable faces
+    // (see docs/config/pieces/researchers-tent.json) with a 'doorOpening'
+    // triangle cut into one gable for the dark interior showing through.
+    var matCanvas = opts.matCanvas || new THREE.MeshLambertMaterial({ color: 0xcbb489, side: THREE.DoubleSide });
+    var matDoorOpening = opts.matDoorOpening || new THREE.MeshBasicMaterial({ color: 0x080808, side: THREE.DoubleSide });
 
     var BOARD_TAGS = { porch: 1, porchStair: 1, railing: 1, floor: 1 };
     var STONE_TAGS = { chimney: 1 };
@@ -715,6 +721,8 @@
       // Select material
       var mat;
       if (tag === 'roof')          mat = matRoof;
+      else if (tag === 'canvas')      mat = matCanvas;
+      else if (tag === 'doorOpening') mat = matDoorOpening;
       else if (BOARD_TAGS[tag])    mat = matBoards;
       else if (STONE_TAGS[tag])    mat = matStone;
       else                         mat = matFloor;

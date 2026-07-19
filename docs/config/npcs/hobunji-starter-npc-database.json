@@ -266,36 +266,90 @@
       ],
       "events": [],
       "scheduleHooks": {
-        "defaultMapId": "hobunji_main_town",
+        "defaultMapId": "map_northern_cliffs",
         "workBuildingId": "researchers_tent",
         "shopHours": "",
         "rules": [
           {
+            "from": "20:00",
+            "to": "08:00",
+            "stationId": "station_researchers_tent_sleep",
+            "activity": "sleeping"
+          },
+          {
             "from": "08:00",
+            "to": "09:00",
+            "stationId": "station_researchers_tent_desk",
+            "activity": "reviewing notes"
+          },
+          {
+            "from": "09:00",
+            "to": "10:00",
+            "stationId": "station_researchers_tent_statue_1",
+            "activity": "examining a specimen"
+          },
+          {
+            "from": "10:00",
+            "to": "11:00",
+            "stationId": "station_researchers_tent_desk",
+            "activity": "reviewing notes"
+          },
+          {
+            "from": "11:00",
+            "to": "12:00",
+            "stationId": "station_researchers_tent_statue_2",
+            "activity": "examining a specimen"
+          },
+          {
+            "from": "12:00",
+            "to": "13:00",
+            "stationId": "station_researchers_tent_desk",
+            "activity": "reviewing notes"
+          },
+          {
+            "from": "13:00",
+            "to": "14:00",
+            "stationId": "station_researchers_tent_statue_3",
+            "activity": "examining a specimen"
+          },
+          {
+            "from": "14:00",
+            "to": "15:00",
+            "stationId": "station_researchers_tent_desk",
+            "activity": "reviewing notes"
+          },
+          {
+            "from": "15:00",
+            "to": "16:00",
+            "stationId": "station_researchers_tent_statue_1",
+            "activity": "examining a specimen"
+          },
+          {
+            "from": "16:00",
+            "to": "17:00",
+            "stationId": "station_researchers_tent_desk",
+            "activity": "reviewing notes"
+          },
+          {
+            "from": "17:00",
             "to": "18:00",
-            "mapId": "map_i_researchers_tent",
-            "position": {
-              "c": 2,
-              "r": 2
-            },
-            "activity": "researching"
+            "stationId": "station_researchers_tent_statue_2",
+            "activity": "examining a specimen"
           },
           {
             "from": "18:00",
-            "to": "08:00",
-            "mapId": "map_i_researchers_tent",
-            "position": {
-              "c": 2,
-              "r": 3
-            },
-            "activity": "resting"
+            "to": "19:00",
+            "stationId": "station_researchers_tent_desk",
+            "activity": "reviewing notes"
+          },
+          {
+            "from": "19:00",
+            "to": "20:00",
+            "stationId": "station_researchers_tent_statue_3",
+            "activity": "examining a specimen"
           }
         ],
-        "defaultPosition": {
-          "area": "map_i_researchers_tent",
-          "c": 2,
-          "r": 2
-        }
+        "defaultStationId": "station_researchers_tent_sleep"
       },
       "loreBackground": "Garanki came to the Highlands because the region has never been properly catalogued — too remote, too dangerous, and too unprofitable for most academics to bother with. He's effectively self-funding the expedition out of his Researcher's Tent and writes up every donation to mail back to the Tower. <suggestion: backstory — does he have a sponsor, a rival academic back home, or a reason this trip matters more than a normal sabbatical?>",
       "questHooks": [

@@ -1,0 +1,132 @@
+{
+  "schema": "hobunji_locale.v1",
+  "id": "locale_hikihiki_shrine",
+  "name": "Hiki-hiki's Shrine",
+  "category": "great_fey_shrine",
+  "singleton": true,
+  "description": "A Great Fey shrine sacred to Hiki-hiki, hidden in the wilderness.",
+  "tags": [
+    "great_fey",
+    "shrine",
+    "story"
+  ],
+  "cols": 11,
+  "rows": 9,
+  "tiles": {
+    "4,2": {
+      "type": "rock"
+    },
+    "5,2": {
+      "type": "rock"
+    },
+    "6,2": {
+      "type": "rock"
+    },
+    "3,3": {
+      "type": "rock"
+    },
+    "4,3": {
+      "type": "grass"
+    },
+    "5,3": {
+      "type": "grass"
+    },
+    "6,3": {
+      "type": "rock"
+    },
+    "7,3": {
+      "type": "rock"
+    },
+    "8,3": {
+      "type": "rock"
+    },
+    "3,4": {
+      "type": "path"
+    },
+    "4,4": {
+      "type": "path"
+    },
+    "5,4": {
+      "type": "grass"
+    },
+    "6,4": {
+      "type": "grass"
+    },
+    "7,4": {
+      "type": "rock"
+    },
+    "3,5": {
+      "type": "rock"
+    },
+    "4,5": {
+      "type": "grass"
+    },
+    "5,5": {
+      "type": "grass"
+    },
+    "6,5": {
+      "type": "rock"
+    },
+    "7,5": {
+      "type": "rock"
+    },
+    "3,6": {
+      "type": "rock"
+    },
+    "4,6": {
+      "type": "rock"
+    },
+    "5,6": {
+      "type": "rock"
+    },
+    "6,6": {
+      "type": "rock"
+    },
+    "2,4": {
+      "type": "path"
+    }
+  },
+  "objects": [
+    {
+      "id": "obj_structure",
+      "kind": "structure",
+      "key": "structure",
+      "label": "Hiki-hiki's Shrine",
+      "col": 4,
+      "row": 3,
+      "w": 3,
+      "h": 3,
+      "rot": 0
+    }
+  ],
+  "npcAnchors": [
+    {
+      "id": "npc_1",
+      "npcId": "hiki_hiki",
+      "name": "Hiki-hiki",
+      "col": 5,
+      "row": 5,
+      "facing": "south"
+    }
+  ],
+  "connectors": [
+    {
+      "id": "conn_1",
+      "col": 2,
+      "row": 4,
+      "side": "west",
+      "label": "Wilderness path"
+    }
+  ],
+  "placement": {
+    "allowedZones": [],
+    "clearanceTiles": 1,
+    "requiresFlatGround": true,
+    "minDistanceFromEntry": 0,
+    "notes": ""
+  },
+  "meta": {
+    "createdAt": "2026-07-19T00:00:00.000Z",
+    "updatedAt": "2026-07-19T00:00:00.000Z"
+  }
+}

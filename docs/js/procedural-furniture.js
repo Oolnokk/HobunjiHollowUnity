@@ -290,6 +290,16 @@
     disc(0, 1.0, 0, .26, .03, .26, .85, { segments: 10 }),
   ];
 
+  // Placeholder weathered-stone statue/totem: a plinth, a tapered column, and
+  // a small pointed cap -- explicit stone-gray colors (not tinted off the
+  // passed-in base color) so it reads consistently regardless of what a
+  // placement happens to pass as its "furniture color".
+  CATALOG.statue = [
+    box(0, .06, 0, .68, .12, .68, 1, { color: 0x63666c }),
+    cyl(0, .34, 0, .42, .5, .42, 1, { color: 0x54585e, topScaleX: .8, topScaleZ: .8, segments: 8 }),
+    cyl(0, .68, 0, .2, .18, .2, 1, { color: 0x40444a, topScaleX: .25, topScaleZ: .25, segments: 6 }),
+  ];
+
   CATALOG.stool = [
     disc(0, .31, 0, .8, .14, .8, 1, { segments: 20 }),
     roundLeg(Math.cos(Math.PI / 6) * .26, Math.sin(Math.PI / 6) * .26, .28, .1, .8),

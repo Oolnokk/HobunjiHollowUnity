@@ -183,7 +183,10 @@
       beehives: 7,
       treasure: 26,
       ore: 45,
-      boulders: 28
+      boulders: 28,
+      // hobunji_locale.v1 definitions (see docs/tools/locale-editor/) eligible
+      // for stamping into this zone -- see stampLocales().
+      locales: []
     };
   }
 
@@ -3080,6 +3083,222 @@
     }
     const found = rings.find(p => inBounds(p.x, p.y) && areaFree(p.x, p.y, 1, 1, { allowPath: true }));
     return found || { x: clamp(x, 0, settings.width - 1), y: clamp(y, 0, settings.height - 1) };
+  }
+
+  // ── Locales: hand-authored irregular footprints stamped into the wilderness ──
+  // A "locale" (see docs/tools/locale-editor/) is a small hand-painted area
+  // (Leaf & Pahu's House, the Researcher's Tent, a Great Fey shrine, ...)
+  // exported as hobunji_locale.v1 JSON. The caller (game.js, via
+  // generateZoneWorkspace's third argument) hands in the locale definitions
+  // already filtered to whichever ones are eligible for this zone; this pass
+  // finds a flat, clear spot for each one, reserves it (so every later
+  // placement pass -- structures/caves/dens/flora/etc -- treats it exactly
+  // like any other occupied area and never overlaps it), paints its walkable/
+  // path tiles into the live tile grid, and registers a normal 'structure'
+  // object (with a pathAnchor) so generatePaths() naturally routes a path to
+  // it like any other landmark. Runs before placeStructures() so locales get
+  // first pick of open ground.
+  function localeFootprintBBox(locale) {
+    let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
+    for (const key of Object.keys(locale.tiles || {})) {
+      const [c, r] = key.split(',').map(Number);
+      if (!Number.isFinite(c) || !Number.isFinite(r)) continue;
+      if (c < minC) minC = c; if (c > maxC) maxC = c;
+      if (r < minR) minR = r; if (r > maxR) maxR = r;
+    }
+    if (!Number.isFinite(minC)) return null;
+    return { minC, minR, w: maxC - minC + 1, h: maxR - minR + 1 };
+  }
+
+  // Exhaustive variant of randomFreeArea, scoped to [x0,x1)x[y0,y1): a small
+  // rect (e.g. one of nine sectors) can hold only a handful of valid spots,
+  // some in a narrow corridor a random sampler could easily whiff on entirely
+  // -- scanning every candidate top-left deterministically finds one if it
+  // exists at all, and (with preferPoint set) picks whichever is closest to
+  // it rather than just the first hit. Used by placement.sameSectorAsEntry.
+  function bestFreeAreaInRect(x0, y0, x1, y1, w, h, options = {}, preferPoint = null) {
+    let best = null, bestDist = Infinity;
+    for (let y = y0; y <= y1 - h; y++) {
+      for (let x = x0; x <= x1 - w; x++) {
+        if (!areaFree(x, y, w, h, options)) continue;
+        if (typeof options.filter === 'function' && !options.filter(x, y, w, h)) continue;
+        if (!preferPoint) return { x, y };
+        const dist = Math.hypot((x + w / 2) - preferPoint.x, (y + h / 2) - preferPoint.y);
+        if (dist < bestDist) { bestDist = dist; best = { x, y }; }
+      }
+    }
+    return best;
+  }
+
+  function stampLocale(locale) {
+    const bbox = localeFootprintBBox(locale);
+    if (!bbox) { warn(`locale ${locale.id}: no footprint tiles, skipped`); return null; }
+    const placement = locale.placement || {};
+    const clearance = Math.max(0, Math.round(placement.clearanceTiles ?? 3));
+    const requiresFlat = placement.requiresFlatGround !== false;
+    const minDistFromEntry = Math.max(0, Number(placement.minDistanceFromEntry) || 0);
+    const paddedW = bbox.w + clearance * 2;
+    const paddedH = bbox.h + clearance * 2;
+    if (paddedW > settings.width || paddedH > settings.height) {
+      warn(`locale ${locale.id}: footprint + clearance (${paddedW}x${paddedH}) too big for a ${settings.width}x${settings.height} zone, skipped`);
+      return null;
+    }
+
+    const placementFilter = (x, y, w, h) => {
+      if (map.entry && minDistFromEntry > 0) {
+        const cx = x + w / 2, cy = y + h / 2;
+        const dist = Math.hypot(cx - map.entry.x, cy - map.entry.y);
+        if (dist < minDistFromEntry) return false;
+      }
+      if (requiresFlat) {
+        const centerTile = tileAt(Math.floor(x + w / 2), Math.floor(y + h / 2));
+        if (!centerTile) return false;
+        const targetHeight = tileHeight(centerTile);
+        for (let yy = y; yy < y + h; yy++) {
+          for (let xx = x; xx < x + w; xx++) {
+            const t = tileAt(xx, yy);
+            if (!t || Math.abs(tileHeight(t) - targetHeight) > 0.05) return false;
+          }
+        }
+      }
+      return true;
+    };
+
+    let spot = null;
+    // Some locales (the Researcher's Tent, thematically camped near the
+    // trailhead) need to land in the same one of nine equal sectors as the
+    // zone's entry gate, wherever that ends up this shift -- rather than
+    // anywhere flat and clear in the whole zone.
+    if (placement.sameSectorAsEntry && map.entry) {
+      const sectorW = settings.width / 3, sectorH = settings.height / 3;
+      const sx = clamp(Math.floor(map.entry.x / sectorW), 0, 2);
+      const sy = clamp(Math.floor(map.entry.y / sectorH), 0, 2);
+      const x0 = Math.round(sx * sectorW), x1 = Math.round((sx + 1) * sectorW);
+      const y0 = Math.round(sy * sectorH), y1 = Math.round((sy + 1) * sectorH);
+      spot = bestFreeAreaInRect(x0, y0, x1, y1, paddedW, paddedH, { filter: placementFilter }, map.entry);
+      if (!spot) {
+        // That exact ninth has no room at all this shift (the terrain right
+        // at a cliff-preset zone's entry corridor can be almost entirely
+        // border escarpment) -- fall back to the closest valid spot
+        // anywhere in the zone rather than a uniformly random one, so it
+        // stays as near the entrance as the terrain actually allows.
+        warn(`locale ${locale.id}: no room in the entry's sector (${x0},${y0})-(${x1},${y1}), falling back to the nearest spot in the whole zone`);
+        spot = bestFreeAreaInRect(0, 0, settings.width, settings.height, paddedW, paddedH, { filter: placementFilter }, map.entry);
+      }
+    }
+    if (!spot) spot = randomFreeArea(paddedW, paddedH, { filter: placementFilter }, 2500);
+    if (!spot) { warn(`locale ${locale.id}: no valid ${paddedW}x${paddedH} clearing found`); return null; }
+
+    const anchorX = spot.x + clearance - bbox.minC;
+    const anchorY = spot.y + clearance - bbox.minR;
+
+    // Reserve the padded area so every subsequent placement pass steers clear.
+    markOccupied({ id: `locale_reserve_${locale.id}`, x: spot.x, y: spot.y, w: paddedW, h: paddedH });
+
+    // requiresFlatGround only verified the *raw* height here was uniform --
+    // it says nothing about whether these tiles carry a plateauGroupId from
+    // whatever terrain existed before the locale was stamped over it, or
+    // what's just outside its own edge. mergeZoneTilesInto (terrain-preview.js)
+    // reclassifies a plateau-tagged tile as a sloped/incline "ring" cell at
+    // scene-build time purely from adjacency to a differently-grouped (or
+    // ungrouped) neighbor -- it never looks at the raw height this filter
+    // checked. Left untouched, a locale placed on/against a plateau reads as
+    // flat and walkable at generation time but can render (and collide) as a
+    // solid cliff-wall slope later, right where a saved position could land
+    // the player inside it.
+    //
+    // Rather than always flattening the locale to ground level (which would
+    // visually sink it below a real plateau it's genuinely sitting on top
+    // of), fold it into whichever plateau group already borders it: adopting
+    // that group's id on every locale tile makes them all interior cells of
+    // the *same* mask, so the ring boundary mergeZoneTilesInto computes
+    // lands on the locale's own outer edge instead of cutting across its
+    // middle. A locale author can opt out via placement.groundOnly for
+    // content deliberately meant to read as a flat cut into the landscape
+    // regardless of what it lands on/against.
+    let adoptedPlateauGroupId = null;
+    if (!placement.groundOnly) {
+      const centerTile = tileAt(Math.floor(spot.x + paddedW / 2), Math.floor(spot.y + paddedH / 2));
+      if (centerTile) {
+        const targetHeight = tileHeight(centerTile);
+        const groupVotes = new Map();
+        const tallyIfMatch = (xx, yy) => {
+          const t = tileAt(xx, yy);
+          if (t && t.plateauGroupId && Math.abs(tileHeight(t) - targetHeight) <= 0.05) {
+            groupVotes.set(t.plateauGroupId, (groupVotes.get(t.plateauGroupId) || 0) + 1);
+          }
+        };
+        for (let xx = spot.x - 1; xx <= spot.x + paddedW; xx++) {
+          tallyIfMatch(xx, spot.y - 1);
+          tallyIfMatch(xx, spot.y + paddedH);
+        }
+        for (let yy = spot.y; yy < spot.y + paddedH; yy++) {
+          tallyIfMatch(spot.x - 1, yy);
+          tallyIfMatch(spot.x + paddedW, yy);
+        }
+        let bestVotes = 0;
+        for (const [gid, votes] of groupVotes) { if (votes > bestVotes) { bestVotes = votes; adoptedPlateauGroupId = gid; } }
+      }
+    }
+
+    // Paint the locale's own footprint tiles. Only path/water flags carry a
+    // distinct tile type through the generator's export today (see
+    // hobunjiMapTileType) -- everything else in the locale's tile palette
+    // renders as plain grass for now, which is still a real, occupied,
+    // walkable clearing shaped exactly like the authored footprint.
+    for (const [key, tileDef] of Object.entries(locale.tiles || {})) {
+      const [c, r] = key.split(',').map(Number);
+      const tile = tileAt(anchorX + c, anchorY + r);
+      if (!tile) continue;
+      tile.plateauGroupId = adoptedPlateauGroupId;
+      tile.plateauRing = false;
+      tile.plateauInterior = !!adoptedPlateauGroupId;
+      if (tileDef.type === 'path') { tile.path = true; }
+      else if (tileDef.type === 'river' || tileDef.type === 'stream') { tile.water = true; tile.terrain = tileDef.type; }
+      else if (tileDef.type === 'waterfall') { tile.waterfall = true; }
+    }
+
+    // A carrier 'structure' object per locale: gives generatePaths() a
+    // pathAnchor to route toward (via buildPathTargets(), exactly like any
+    // other landmark), and carries the locale's metadata (in pre-scale
+    // coordinates -- see stampLocales/generateWorkspace for the post-scale
+    // read-back into workspace.localeInstances).
+    const structureDef = (locale.objects || []).find(o => o.kind === 'structure') || null;
+    const primaryConnector = (locale.connectors || [])[0] || null;
+    const carrierX = structureDef ? anchorX + structureDef.col : anchorX;
+    const carrierY = structureDef ? anchorY + structureDef.row : anchorY;
+    const carrierW = structureDef ? structureDef.w : 1;
+    const carrierH = structureDef ? structureDef.h : 1;
+    const connectorWorld = primaryConnector ? { x: anchorX + primaryConnector.col, y: anchorY + primaryConnector.row } : null;
+
+    const carrier = addObject({
+      type: 'structure',
+      x: clamp(carrierX, 0, settings.width - 1),
+      y: clamp(carrierY, 0, settings.height - 1),
+      w: carrierW,
+      h: carrierH,
+      blocksMovement: !!structureDef,
+      pathAnchor: connectorWorld ? nearestFreeNeighbor(connectorWorld.x, connectorWorld.y) : null,
+      localeMeta: {
+        localeId: locale.id,
+        name: locale.name,
+        category: locale.category,
+        alwaysVisible: !!placement.alwaysVisibleOnMap,
+        anchorX, anchorY,
+        w: bbox.w, h: bbox.h,
+        connectors: (locale.connectors || []).map(c => ({ col: c.col, row: c.row, side: c.side, label: c.label })),
+        npcAnchors: (locale.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, col: n.col, row: n.row, facing: n.facing })),
+        objects: (locale.objects || []).map(o => ({ id: o.id, kind: o.kind, key: o.key, label: o.label, col: o.col, row: o.row, w: o.w, h: o.h }))
+      }
+    });
+    logDebug(`locale stamped: ${locale.id} at (${anchorX},${anchorY})`);
+    return carrier;
+  }
+
+  function stampLocales() {
+    const locales = (settings.locales || []).slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    for (const locale of locales) stampLocale(locale);
+    logDebug(`locales stamped: ${locales.filter(l => (map.objects || []).some(o => o.localeMeta?.localeId === l.id)).length}/${locales.length}`);
   }
 
   function nearestFreeWalkableNeighbor(x, y) {
@@ -7628,6 +7847,7 @@
     generateLatePaintedRivers();
     generateCliffSkirts(); // refresh after late-painted rivers
     applyManualPlateauPaintingRules(); // refresh after late-painted rivers
+    stampLocales(); // hand-authored locales get first pick of open ground
     placeStructures();
     placeCaves();
     placeAnimalDens();
@@ -7675,6 +7895,38 @@
     const foliagePatches = buildFoliagePatches();
     workspace.foliagePatches = foliagePatches;
     workspace.ambushStations = buildAmbushStations(foliagePatches);
+    // Placed locale instances (see stampLocales/stampLocale). Pulled from
+    // map.objects post-scale (scaleGeneratedTileDensity already ran by this
+    // point, so object.x/y/w/h are final) -- localeMeta itself is stored in
+    // the carrier object's *pre-scale* coordinates (scaleGeneratedObject
+    // clones unknown fields verbatim without scaling them), so it's scaled
+    // by settings.generationScale here instead.
+    const localeScale = settings.generationScale || 1;
+    workspace.localeInstances = (map.objects || [])
+      .filter(object => object.localeMeta)
+      .map(object => {
+        const meta = object.localeMeta;
+        const toWorld = (col, row) => ({
+          x: Math.round((meta.anchorX + col) * localeScale),
+          y: Math.round((meta.anchorY + row) * localeScale)
+        });
+        return {
+          localeId: meta.localeId,
+          name: meta.name,
+          category: meta.category,
+          alwaysVisible: !!meta.alwaysVisible,
+          x: Math.round(meta.anchorX * localeScale),
+          y: Math.round(meta.anchorY * localeScale),
+          w: meta.w * localeScale,
+          h: meta.h * localeScale,
+          connectors: (meta.connectors || []).map(c => ({ ...toWorld(c.col, c.row), side: c.side, label: c.label })),
+          npcAnchors: (meta.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, ...toWorld(n.col, n.row), facing: n.facing })),
+          objects: (meta.objects || []).map(o => ({
+            id: o.id, kind: o.kind, key: o.key, label: o.label, ...toWorld(o.col, o.row),
+            w: o.w * localeScale, h: o.h * localeScale
+          }))
+        };
+      });
     return workspace;
   }
 
@@ -7684,9 +7936,13 @@
   // buildHobunjiMapExport() produces is handed to the game's fold exactly as
   // if it had been exported from the standalone tool and imported into the
   // Map Editor by hand.
-  function generateZoneWorkspace(zoneMapId, seedText) {
+  function generateZoneWorkspace(zoneMapId, seedText, locales = []) {
     const zone = ZONE_CONFIG[zoneMapId];
-    return generateWorkspace(seedText, zone ? { ...zone } : { entrySide: 'random' });
+    const eligible = (locales || []).filter(l => {
+      const allowed = l?.placement?.allowedZones;
+      return !Array.isArray(allowed) || allowed.length === 0 || allowed.includes(zoneMapId);
+    });
+    return generateWorkspace(seedText, { ...(zone ? { ...zone } : { entrySide: 'random' }), locales: eligible });
   }
 
   return {

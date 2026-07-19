@@ -1,0 +1,144 @@
+{
+  "schema": "hobunji_locale.v1",
+  "id": "locale_old_man_nohuknuk_shrine",
+  "name": "Old Man Nohuknuk's Shrine",
+  "category": "great_fey_shrine",
+  "singleton": true,
+  "description": "A Great Fey shrine sacred to Old Man Nohuknuk, hidden in the wilderness.",
+  "tags": [
+    "great_fey",
+    "shrine",
+    "story"
+  ],
+  "cols": 10,
+  "rows": 11,
+  "tiles": {
+    "4,2": {
+      "type": "rock"
+    },
+    "2,3": {
+      "type": "rock"
+    },
+    "3,3": {
+      "type": "rock"
+    },
+    "4,3": {
+      "type": "grass"
+    },
+    "5,3": {
+      "type": "rock"
+    },
+    "6,3": {
+      "type": "rock"
+    },
+    "2,4": {
+      "type": "rock"
+    },
+    "3,4": {
+      "type": "grass"
+    },
+    "4,4": {
+      "type": "grass"
+    },
+    "5,4": {
+      "type": "grass"
+    },
+    "6,4": {
+      "type": "rock"
+    },
+    "2,5": {
+      "type": "rock"
+    },
+    "3,5": {
+      "type": "grass"
+    },
+    "4,5": {
+      "type": "grass"
+    },
+    "5,5": {
+      "type": "grass"
+    },
+    "6,5": {
+      "type": "grass"
+    },
+    "7,5": {
+      "type": "rock"
+    },
+    "2,6": {
+      "type": "rock"
+    },
+    "3,6": {
+      "type": "rock"
+    },
+    "4,6": {
+      "type": "path"
+    },
+    "5,6": {
+      "type": "grass"
+    },
+    "6,6": {
+      "type": "rock"
+    },
+    "3,7": {
+      "type": "rock"
+    },
+    "4,7": {
+      "type": "path"
+    },
+    "5,7": {
+      "type": "rock"
+    },
+    "6,7": {
+      "type": "rock"
+    },
+    "3,8": {
+      "type": "rock"
+    },
+    "4,8": {
+      "type": "path"
+    }
+  },
+  "objects": [
+    {
+      "id": "obj_structure",
+      "kind": "structure",
+      "key": "structure",
+      "label": "Old Man Nohuknuk's Shrine",
+      "col": 3,
+      "row": 4,
+      "w": 3,
+      "h": 3,
+      "rot": 0
+    }
+  ],
+  "npcAnchors": [
+    {
+      "id": "npc_1",
+      "npcId": "old_man_nohuknuk",
+      "name": "Old Man Nohuknuk",
+      "col": 4,
+      "row": 6,
+      "facing": "south"
+    }
+  ],
+  "connectors": [
+    {
+      "id": "conn_1",
+      "col": 4,
+      "row": 8,
+      "side": "south",
+      "label": "Wilderness path"
+    }
+  ],
+  "placement": {
+    "allowedZones": [],
+    "clearanceTiles": 1,
+    "requiresFlatGround": true,
+    "minDistanceFromEntry": 0,
+    "notes": ""
+  },
+  "meta": {
+    "createdAt": "2026-07-19T00:00:00.000Z",
+    "updatedAt": "2026-07-19T00:00:00.000Z"
+  }
+}
