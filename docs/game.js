@@ -7939,6 +7939,20 @@
       // _townRiverWaterMeshes but per zone map, since a zone's water tiles never
       // share the town's flat single-tier grid.
       const _zoneWaterMeshes = new Map();
+      // mapId → [THREE.Mesh, ...] (the merged per-material ground floor
+      // meshes built by _buildZoneFloorMeshes — grass/trench/raised/rock/
+      // etc. all merged into one mesh per material). Tracked so a runtime
+      // tile-type change (digging/filling/raising a tile with a shovel/pick
+      // — see applyAction/firePendingAction) can remove and rebuild just
+      // the ground+grass layer via refreshZoneGroundVisuals, instead of
+      // leaving a stale mesh in place (the bug where a freshly dug trench
+      // "physically" exists — tile.type/height are already correct — but
+      // its grass never disappears, since a zone's terrain is built once
+      // as merged meshes rather than the farm's per-tile mesh array).
+      const _zoneFloorMeshGroups = new Map();
+      // mapId → THREE.InstancedMesh (grass billboard tufts) — see
+      // _buildZoneGrassBillboards/refreshZoneGroundVisuals above.
+      const _zoneGrassMeshes = new Map();
       // mapId → Map("col,row" -> pickable reagent-plant world object) — the
       // wilderness counterpart to the farm's worldObjects, populated by
       // ensureZoneReagents and consulted by getWorldObjectAt.
@@ -8726,6 +8740,87 @@
         }
       }
 
+      // Ground floor for a zone: same per-vertex seam-safe heightfield pipeline
+      // as the town/farm (makeFloorGeo / buildTerrainTileGeo / buildPathNetworkGeo),
+      // merged into one mesh per material. Rock tiles get the farm's real
+      // stone-mound geometry (buildRockTileGeo) instead of town's flatten-to-grass
+      // treatment, since here rock tiles are actual cliff terrain, not building
+      // footprint markers. Extracted out of buildZoneScene (which calls this
+      // once per zone build) so refreshZoneGroundVisuals can also call it to
+      // rebuild just this layer after a runtime tile change (digging/filling/
+      // raising with a shovel/pick — see applyAction) without disposing/
+      // rebuilding the whole zone scene. Returns every mesh it added to
+      // zScene, so the caller can track and later remove them.
+      function _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId) {
+        const meshes = [];
+        const _floorBuckets = new Map();
+        const _addToBucket = (matKey, geo, x, y, z) => {
+          if (!geo) return;
+          let arr = _floorBuckets.get(matKey);
+          if (!arr) { arr = []; _floorBuckets.set(matKey, arr); }
+          arr.push({ geo, x, y, z });
+        };
+
+        const pathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS);
+        if (pathNet) {
+          _addToBucket(TileType.PATH,  pathNet.pathGeo,  0, NORMAL_TOP, 0);
+          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
+        }
+
+        for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
+          const tile = zGrid[r][c];
+          const cx = c + 0.5, cz = r + 0.5;
+          const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+
+          if (tile.skipFloor) continue; // covered by a plateau tier's mesa mesh below
+          if (tile.type === TileType.RAMP) continue; // covered by the ramp slope mesh below
+
+          if (tile.type === TileType.ROCK) {
+            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
+            const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
+            _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + tierY, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
+            continue;
+          }
+          if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED ||
+              tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) {
+            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid);
+            const bedMatKey = (tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) ? tile.type : TileType.TRENCH;
+            _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP + tierY, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
+            continue;
+          }
+          if (tile.type === TileType.PATH ||
+              (pathNet && pathNet.inBounds(c, r) && !pathNet.isExcludedTile(c, r) && tile.type === TileType.GRASS)) {
+            continue; // covered by the path network mesh above
+          }
+          if (tile.type === TileType.SHRUB) {
+            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
+            if (window.FoliageGenerator) {
+              const vegGroup = window.FoliageGenerator.buildShrubMesh(c, r);
+              vegGroup.scale.set(2, 2, 2);
+              vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS) + tierY, cz);
+              zScene.add(vegGroup);
+              _markOutline(vegGroup);
+              meshes.push(vegGroup);
+            }
+            continue;
+          }
+          const matKey = tileMats[tile.type] ? tile.type : TileType.GRASS;
+          _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tile.type) + tierY, cz);
+        }
+
+        for (const [matKey, entries] of _floorBuckets) {
+          const merged = _mergeTileGeos(entries);
+          const mesh = new THREE.Mesh(merged, tileMats[matKey] || tileMats.grass);
+          mesh.receiveShadow = true;
+          zScene.add(mesh);
+          _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
+          meshes.push(mesh);
+        }
+        return meshes;
+      }
+
       function buildZoneScene(mapId) {
         if (_dirtyZoneScenes.has(mapId)) { _disposeZoneScene(mapId); _dirtyZoneScenes.delete(mapId); }
         if (_zoneScenes.has(mapId)) return _zoneScenes.get(mapId);
@@ -8790,72 +8885,10 @@
 
         // Ground: same per-vertex seam-safe heightfield pipeline as the town/farm
         // (makeFloorGeo / buildTerrainTileGeo / buildPathNetworkGeo), merged into one
-        // mesh per material. Rock tiles get the farm's real stone-mound geometry
-        // (buildRockTileGeo) instead of town's flatten-to-grass treatment, since here
-        // rock tiles are actual cliff terrain, not building footprint markers.
-        const _floorBuckets = new Map();
-        const _addToBucket = (matKey, geo, x, y, z) => {
-          if (!geo) return;
-          let arr = _floorBuckets.get(matKey);
-          if (!arr) { arr = []; _floorBuckets.set(matKey, arr); }
-          arr.push({ geo, x, y, z });
-        };
-
-        const pathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS);
-        if (pathNet) {
-          _addToBucket(TileType.PATH,  pathNet.pathGeo,  0, NORMAL_TOP, 0);
-          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
-        }
-
-        for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
-          const tile = zGrid[r][c];
-          const cx = c + 0.5, cz = r + 0.5;
-          const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
-
-          if (tile.skipFloor) continue; // covered by a plateau tier's mesa mesh below
-          if (tile.type === TileType.RAMP) continue; // covered by the ramp slope mesh below
-
-          if (tile.type === TileType.ROCK) {
-            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
-            const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
-            _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + tierY, cz);
-            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
-            continue;
-          }
-          if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED ||
-              tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) {
-            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid);
-            const bedMatKey = (tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) ? tile.type : TileType.TRENCH;
-            _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP + tierY, cz);
-            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
-            continue;
-          }
-          if (tile.type === TileType.PATH ||
-              (pathNet && pathNet.inBounds(c, r) && !pathNet.isExcludedTile(c, r) && tile.type === TileType.GRASS)) {
-            continue; // covered by the path network mesh above
-          }
-          if (tile.type === TileType.SHRUB) {
-            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
-            if (window.FoliageGenerator) {
-              const vegGroup = window.FoliageGenerator.buildShrubMesh(c, r);
-              vegGroup.scale.set(2, 2, 2);
-              vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS) + tierY, cz);
-              zScene.add(vegGroup);
-              _markOutline(vegGroup);
-            }
-            continue;
-          }
-          const matKey = tileMats[tile.type] ? tile.type : TileType.GRASS;
-          _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tile.type) + tierY, cz);
-        }
-
-        for (const [matKey, entries] of _floorBuckets) {
-          const merged = _mergeTileGeos(entries);
-          const mesh = new THREE.Mesh(merged, tileMats[matKey] || tileMats.grass);
-          mesh.receiveShadow = true;
-          zScene.add(mesh);
-          _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
-        }
+        // mesh per material — see _buildZoneFloorMeshes. Tracked per-zone so a
+        // runtime tile change (digging/filling/raising — see
+        // refreshZoneGroundVisuals) can rebuild just this layer later.
+        _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId));
 
         // Each tier transition in the merged plateau stack renders as one continuous
         // heightfield mesa — same seam-noise/blend/steep-face-skin technique as the
@@ -8879,7 +8912,7 @@
           ...buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
         ]);
 
-        _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS);
+        _zoneGrassMeshes.set(mapId, _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS));
         _buildRichFoliageBillboards(zScene, zoneData, zGrid);
         buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
 
@@ -9614,12 +9647,12 @@
       // Grass billboard tufts for a zone — mirrors _buildTownGrassBillboards but
       // parameterized so each zone gets its own InstancedMesh sized to its real grid.
       function _buildZoneGrassBillboards(zScene, zGrid, zcols, zrows, zoneBaseElev = 0) {
-        if (!grassBillboardMat) return;
+        if (!grassBillboardMat) return null;
         let count = 0;
         for (let row = 0; row < zrows; row++)
           for (let col = 0; col < zcols; col++)
             if (zGrid[row]?.[col]?.type === TileType.GRASS) count++;
-        if (count === 0) return;
+        if (count === 0) return null;
 
         const mesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
         mesh.frustumCulled = false;
@@ -9638,6 +9671,7 @@
         mesh.count = idx;
         mesh.instanceMatrix.needsUpdate = true;
         zScene.add(mesh);
+        return mesh;
       }
 
       // Rich foliage patches (see workspace.foliagePatches' `rich` flag —
@@ -12815,6 +12849,33 @@
         _zoneTreasureMeshGroups.delete(mapId);
         _zoneTreasureObjects.delete(mapId);
         _zoneTreasurePersist.delete(mapId);
+        _zoneFloorMeshGroups.delete(mapId);
+        _zoneGrassMeshes.delete(mapId);
+      }
+
+      // Rebuilds just a zone's ground floor + grass tufts (see
+      // _buildZoneFloorMeshes/_buildZoneGrassBillboards) from its current
+      // grid, in place — used after a shovel/pick action changes a tile's
+      // type at runtime (digging/filling/raising — see applyAction) while
+      // standing inside a wilderness zone. A zone's terrain is built once as
+      // merged meshes rather than the farm's per-tile mesh array, so without
+      // this a freshly dug trench would be "physically" real (tile.type/
+      // height read live every frame) while its grass never disappears —
+      // the player would see themselves sink through still-standing grass.
+      // Deliberately narrower than _disposeZoneScene + buildZoneScene: it
+      // leaves buildings/decor/creatures/NPCs/reagents/berries/treasure
+      // alone, so it's safe to call immediately while the player is
+      // standing in the zone (unlike a full zone rebuild — see
+      // _dirtyZoneScenes' comments on why that's deferred to zone re-entry).
+      function refreshZoneGroundVisuals(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return;
+        const oldFloor = _zoneFloorMeshGroups.get(mapId);
+        if (oldFloor) for (const mesh of oldFloor) { zi.scene.remove(mesh); mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); }); if (mesh.geometry) mesh.geometry.dispose(); }
+        const oldGrass = _zoneGrassMeshes.get(mapId);
+        if (oldGrass) { zi.scene.remove(oldGrass); oldGrass.geometry?.dispose(); }
+        _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId));
+        _zoneGrassMeshes.set(mapId, _buildZoneGrassBillboards(zi.scene, zi.grid, zi.cols, zi.rows));
       }
 
       // ── Wild berry bushes (wilderness-zone counterpart of purchasable
@@ -18223,6 +18284,14 @@
         if (currentArea === 'farm') {
           recomputeWater(false);
           if (result.ok !== false) markTileDirty(col, row);
+        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe')) {
+          // Wilderness-zone counterpart of markTileDirty's farm mesh rebuild —
+          // a dig/fill/raise/till/smooth just changed this tile's type, but a
+          // zone's terrain is merged meshes built once rather than the farm's
+          // per-tile array, so the whole ground+grass layer needs rebuilding
+          // (not just this one tile) for the change to actually show up. See
+          // refreshZoneGroundVisuals.
+          refreshZoneGroundVisuals(currentArea);
         }
         if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
@@ -22476,6 +22545,11 @@
         if (currentArea === 'farm') {
           recomputeWater(false);
           if (result.ok !== false) markTileDirty(col, row);
+        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe')) {
+          // See the matching branch in firePendingAction — this is the charge-
+          // action completion path (a brand-new trench dig or a fill-in is a
+          // multi-stage charge, not a single tap), and needs the same fix.
+          refreshZoneGroundVisuals(currentArea);
         }
         if (result.ok !== false) saveMemberWorldData();
         refreshActionBar();
