@@ -3195,34 +3195,64 @@
     // Reserve the padded area so every subsequent placement pass steers clear.
     markOccupied({ id: `locale_reserve_${locale.id}`, x: spot.x, y: spot.y, w: paddedW, h: paddedH });
 
+    // requiresFlatGround only verified the *raw* height here was uniform --
+    // it says nothing about whether these tiles carry a plateauGroupId from
+    // whatever terrain existed before the locale was stamped over it, or
+    // what's just outside its own edge. mergeZoneTilesInto (terrain-preview.js)
+    // reclassifies a plateau-tagged tile as a sloped/incline "ring" cell at
+    // scene-build time purely from adjacency to a differently-grouped (or
+    // ungrouped) neighbor -- it never looks at the raw height this filter
+    // checked. Left untouched, a locale placed on/against a plateau reads as
+    // flat and walkable at generation time but can render (and collide) as a
+    // solid cliff-wall slope later, right where a saved position could land
+    // the player inside it.
+    //
+    // Rather than always flattening the locale to ground level (which would
+    // visually sink it below a real plateau it's genuinely sitting on top
+    // of), fold it into whichever plateau group already borders it: adopting
+    // that group's id on every locale tile makes them all interior cells of
+    // the *same* mask, so the ring boundary mergeZoneTilesInto computes
+    // lands on the locale's own outer edge instead of cutting across its
+    // middle. A locale author can opt out via placement.groundOnly for
+    // content deliberately meant to read as a flat cut into the landscape
+    // regardless of what it lands on/against.
+    let adoptedPlateauGroupId = null;
+    if (!placement.groundOnly) {
+      const centerTile = tileAt(Math.floor(spot.x + paddedW / 2), Math.floor(spot.y + paddedH / 2));
+      if (centerTile) {
+        const targetHeight = tileHeight(centerTile);
+        const groupVotes = new Map();
+        const tallyIfMatch = (xx, yy) => {
+          const t = tileAt(xx, yy);
+          if (t && t.plateauGroupId && Math.abs(tileHeight(t) - targetHeight) <= 0.05) {
+            groupVotes.set(t.plateauGroupId, (groupVotes.get(t.plateauGroupId) || 0) + 1);
+          }
+        };
+        for (let xx = spot.x - 1; xx <= spot.x + paddedW; xx++) {
+          tallyIfMatch(xx, spot.y - 1);
+          tallyIfMatch(xx, spot.y + paddedH);
+        }
+        for (let yy = spot.y; yy < spot.y + paddedH; yy++) {
+          tallyIfMatch(spot.x - 1, yy);
+          tallyIfMatch(spot.x + paddedW, yy);
+        }
+        let bestVotes = 0;
+        for (const [gid, votes] of groupVotes) { if (votes > bestVotes) { bestVotes = votes; adoptedPlateauGroupId = gid; } }
+      }
+    }
+
     // Paint the locale's own footprint tiles. Only path/water flags carry a
     // distinct tile type through the generator's export today (see
     // hobunjiMapTileType) -- everything else in the locale's tile palette
     // renders as plain grass for now, which is still a real, occupied,
     // walkable clearing shaped exactly like the authored footprint.
-    //
-    // requiresFlatGround only verified the *raw* height here was uniform --
-    // it says nothing about whether these tiles still carry a stale
-    // plateauGroupId from whatever terrain existed before the locale was
-    // stamped over it. A tile can be genuinely flat and still sit at the
-    // edge of some plateau's mask; mergeZoneTilesInto (terrain-preview.js)
-    // reclassifies exactly those edge cells as sloped/incline "ring" tiles
-    // at scene-build time, purely from adjacency to a differently-grouped
-    // (or ungrouped) neighbor -- it never looks at the raw height this
-    // filter checked. That's a locale clearing that reads as flat and
-    // walkable at generation time but can render (and collide) as a solid
-    // cliff-wall slope later, exactly the kind of thing that would land the
-    // player inside solid geometry when a saved position lands back on one
-    // of these tiles. Clearing the tag keeps every locale-painted tile out
-    // of that reclassification entirely, so the whole clearing renders at
-    // one flat, walkable tier no matter what plateau it happened to land on.
     for (const [key, tileDef] of Object.entries(locale.tiles || {})) {
       const [c, r] = key.split(',').map(Number);
       const tile = tileAt(anchorX + c, anchorY + r);
       if (!tile) continue;
-      tile.plateauGroupId = null;
+      tile.plateauGroupId = adoptedPlateauGroupId;
       tile.plateauRing = false;
-      tile.plateauInterior = false;
+      tile.plateauInterior = !!adoptedPlateauGroupId;
       if (tileDef.type === 'path') { tile.path = true; }
       else if (tileDef.type === 'river' || tileDef.type === 'stream') { tile.water = true; tile.terrain = tileDef.type; }
       else if (tileDef.type === 'waterfall') { tile.waterfall = true; }

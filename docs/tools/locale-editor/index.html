@@ -154,9 +154,10 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <label class="chk" style="margin-top:6px"><input type="checkbox" id="locFlatGround" checked> Requires flat ground</label>
           <label class="chk"><input type="checkbox" id="locSameSector"> Same one-of-nine sector as the zone's entry gate</label>
           <label class="chk"><input type="checkbox" id="locAlwaysVisible"> Always visible on the wilderness map (no discovery needed)</label>
+          <label class="chk"><input type="checkbox" id="locGroundOnly"> Always flat ground level (ignore any plateau it lands on/against)</label>
           <div style="margin-top:6px"><label>Placement notes</label><textarea id="locPlacementNotes" rows="2"></textarea></div>
           <button class="sec" id="applyPlacementBtn" style="width:100%;margin-top:6px">Apply</button>
-          <p class="muted" style="margin-top:6px">The generator looks for a flat, fully open rectangle (footprint + clearance on every side) by random search — keep the footprint small and clearance low (1–2) for a locale to reliably find room in busy wilderness terrain. A locale that fails to place in one zone is retried in its other allowed zones.</p>
+          <p class="muted" style="margin-top:6px">The generator looks for a flat, fully open rectangle (footprint + clearance on every side) by random search — keep the footprint small and clearance low (1–2) for a locale to reliably find room in busy wilderness terrain. A locale that fails to place in one zone is retried in its other allowed zones. By default, a locale placed on/against a plateau is folded into that plateau's own flat top instead of sinking to ground level — check "Always flat ground level" above to opt a locale out of that and force it to ground level regardless of what it lands on.</p>
         </div>
 
         <!-- VALIDATION -->
@@ -262,7 +263,7 @@ function makeLocale(id, name, category) {
     objects: [],       // { id, kind, key, label, col, row, w, h, rot }
     npcAnchors: [],    // { id, npcId, name, col, row, facing }
     connectors: [],    // { id, col, row, side, label }
-    placement: { allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, notes: '' },
+    placement: { allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' },
     meta: { createdAt: nowIso(), updatedAt: nowIso() }
   };
 }
@@ -280,7 +281,7 @@ function sanitizeLoaded(raw) {
     cols: clamp(Math.round(Number(raw.cols) || 16), 4, 120),
     rows: clamp(Math.round(Number(raw.rows) || 16), 4, 120),
     tiles: {}, objects: [], npcAnchors: [], connectors: [],
-    placement: Object.assign({ allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, notes: '' }, raw.placement || {}),
+    placement: Object.assign({ allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' }, raw.placement || {}),
     meta: Object.assign({ createdAt: nowIso(), updatedAt: nowIso() }, raw.meta || {})
   });
   for (const [k, v] of Object.entries(raw.tiles || {})) {
@@ -748,6 +749,7 @@ function renderSettings() {
   $('locFlatGround').checked = m.placement.requiresFlatGround;
   $('locSameSector').checked = !!m.placement.sameSectorAsEntry;
   $('locAlwaysVisible').checked = !!m.placement.alwaysVisibleOnMap;
+  $('locGroundOnly').checked = !!m.placement.groundOnly;
   $('locPlacementNotes').value = m.placement.notes;
   renderZoneChecks();
 }
@@ -798,6 +800,7 @@ $('applyPlacementBtn').addEventListener('click', () => {
   m.placement.requiresFlatGround = $('locFlatGround').checked;
   m.placement.sameSectorAsEntry = $('locSameSector').checked;
   m.placement.alwaysVisibleOnMap = $('locAlwaysVisible').checked;
+  m.placement.groundOnly = $('locGroundOnly').checked;
   m.placement.notes = $('locPlacementNotes').value;
   m.placement.allowedZones = Array.from($('zoneChecks').querySelectorAll('input[data-zone]:checked')).map(i => i.dataset.zone);
   finishEdit();
