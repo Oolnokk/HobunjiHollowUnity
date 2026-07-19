@@ -98,6 +98,8 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
         <div class="field"><label>&nbsp;</label><button id="scaleFaceBtn" type="button">Set tile-relative size</button></div>
       </div>
       <div class="row"><button id="markWallBtn" type="button">Tag selected as wall</button><button id="markDoorBtn" type="button">Tag selected as door/entry</button><button id="markRoofBtn" type="button">Tag selected as roof</button><button id="clearFaceTagBtn" type="button">Clear tag</button></div>
+      <div class="row"><button id="markCanvasBtn" type="button">Tag selected as canvas</button><button id="markDoorOpeningBtn" type="button">Tag selected as door opening (black)</button></div>
+      <p class="hint">Canvas and door opening are flat, unshingled/unbricked cloth materials (see the Researcher's Tent piece) &mdash; canvas renders a plain tan fabric color, door opening a flat unlit black, for a dark cutout showing through a gable.</p>
       <p class="hint">Face edits are vertex-level and remain part of the main shape. Numeric Scale U/V is tile-relative: 0.9 means 90% of the selected face's nearest grid-aligned span, not 90% of its current size. GLBs are separate detail assets and keep their own transforms.</p>
     </div>
 
@@ -960,11 +962,13 @@ const matChimney = new THREE.MeshStandardMaterial({color:0x9ca6b0, metalness:.02
 const matPorch = new THREE.MeshStandardMaterial({color:0x8a5a33, metalness:.02, roughness:.85, side:THREE.DoubleSide, transparent:true, opacity:.88});
 const matStair = new THREE.MeshStandardMaterial({color:0xd6b17b, metalness:.02, roughness:.84, side:THREE.DoubleSide, transparent:true, opacity:.9});
 const matRailing = new THREE.MeshStandardMaterial({color:0x5b3f24, metalness:.02, roughness:.82, side:THREE.DoubleSide, transparent:true, opacity:.94});
+const matCanvas = new THREE.MeshStandardMaterial({color:0xcbb489, metalness:.02, roughness:.9, side:THREE.DoubleSide, transparent:true, opacity:.86});
+const matDoorOpening = new THREE.MeshStandardMaterial({color:0x080808, metalness:0, roughness:1, side:THREE.DoubleSide, transparent:true, opacity:.9});
 function resize(){ const c=$('threeCanvas'), r=c.getBoundingClientRect(); const w=Math.max(2,Math.floor(r.width||c.clientWidth||640)); const h=Math.max(2,Math.floor(r.height||c.clientHeight||360)); renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
 window.addEventListener('resize',resize);
 function animate(){ requestAnimationFrame(animate); try{ controls.update(); renderer.render(scene,camera); }catch(err){ log('RENDER ERROR: '+(err?.message||err),'error'); } }
 
-function faceMaterial(face){ if(state.selectedFaceIds.has(face.id)) return matSelected; if(face.tag==='wall') return matWall; if(face.tag==='door') return matDoor; if(face.tag==='roof') return matRoof; if(face.tag==='entryTunnel') return matEntry; if(face.tag==='chimney') return matChimney; if(face.tag==='porch') return matPorch; if(face.tag==='porchStair') return matStair; if(face.tag==='railing') return matRailing; return matFace; }
+function faceMaterial(face){ if(state.selectedFaceIds.has(face.id)) return matSelected; if(face.tag==='wall') return matWall; if(face.tag==='door') return matDoor; if(face.tag==='roof') return matRoof; if(face.tag==='entryTunnel') return matEntry; if(face.tag==='chimney') return matChimney; if(face.tag==='porch') return matPorch; if(face.tag==='porchStair') return matStair; if(face.tag==='railing') return matRailing; if(face.tag==='canvas') return matCanvas; if(face.tag==='doorOpening') return matDoorOpening; return matFace; }
 function faceNormal(face){ const a=new THREE.Vector3(...face.v[0]), b=new THREE.Vector3(...face.v[1]), c=new THREE.Vector3(...face.v[2]); return b.clone().sub(a).cross(c.clone().sub(a)).normalize(); }
 function faceCenter(face){ const c=new THREE.Vector3(); for(const v of face.v)c.add(new THREE.Vector3(...v)); return c.multiplyScalar(1/face.v.length); }
 function faceBasis(face){
@@ -2167,7 +2171,7 @@ $('applyGridBtn').onclick=()=>{ pushUndo('Apply grid settings'); state.gridSize=
 $('clearFootprintBtn').onclick=()=>{ pushUndo('Clear footprint markers'); footprintSet.clear(); entranceSet.clear(); connectorSet.clear(); entryTunnelSet.clear(); chimneySet.clear(); porchSet.clear(); porchStairSet.clear(); railingSet.clear(); syncPieceFromSets(); drawGrid(); rebuildFootprintOverlay(); refreshExport(); log('Cleared all grid markers.'); };
 $('generateBaseBtn').onclick=generateBaseFromFootprint; $('applyPresetBtn').onclick=()=>applyBasePreset($('basePreset').value,true); $('resetBaseBtn').onclick=()=>{ pushUndo('Reset base faces'); state.piece.base.faces=[]; state.selectedFaceIds.clear(); rebuildFaceMeshes(); log('Cleared editable base faces.'); };
 $('multiSelectBtn').onclick=()=>{ state.multi=!state.multi; $('multiSelectBtn').textContent=state.multi?'Multi on':'Multi off'; $('multiSelectBtn').classList.toggle('active',state.multi); };
-$('subdivide2Btn').onclick=()=>subdivideSelected(2,2); $('subdivide3Btn').onclick=()=>subdivideSelected(3,3); $('extrudeBtn').onclick=extrudeSelected; $('moveFaceBtn').onclick=moveSelected; $('scaleFaceBtn').onclick=scaleSelected; $('markWallBtn').onclick=()=>setSelectedTag('wall'); $('markDoorBtn').onclick=()=>setSelectedTag('door'); $('markRoofBtn').onclick=()=>setSelectedTag('roof'); $('markRoofBtn2').onclick=()=>setSelectedTag('roof'); $('clearFaceTagBtn').onclick=()=>setSelectedTag('');
+$('subdivide2Btn').onclick=()=>subdivideSelected(2,2); $('subdivide3Btn').onclick=()=>subdivideSelected(3,3); $('extrudeBtn').onclick=extrudeSelected; $('moveFaceBtn').onclick=moveSelected; $('scaleFaceBtn').onclick=scaleSelected; $('markWallBtn').onclick=()=>setSelectedTag('wall'); $('markDoorBtn').onclick=()=>setSelectedTag('door'); $('markRoofBtn').onclick=()=>setSelectedTag('roof'); $('markRoofBtn2').onclick=()=>setSelectedTag('roof'); $('clearFaceTagBtn').onclick=()=>setSelectedTag(''); $('markCanvasBtn').onclick=()=>setSelectedTag('canvas'); $('markDoorOpeningBtn').onclick=()=>setSelectedTag('doorOpening');
 $('glbInput').onchange=e=>{ for(const file of e.target.files||[]) addGlbFile(file); e.target.value=''; };
 $('roofShingleGlbInput').onchange=e=>{ const file=e.target.files?.[0]; if(file) loadRoofShingleFile(file); e.target.value=''; };
 $('rebuildRoofBtn').onclick=()=>{ rebuildRoofPreview(); refreshExport(); log('Rebuilt roof preview.'); };

@@ -60,6 +60,7 @@
     { "name": "Placeholder: Small (4×4)", "path": "config/pieces/placeholder-small.json", "category": "placeholder" },
     { "name": "Placeholder: Medium (5×4)", "path": "config/pieces/placeholder-medium.json", "category": "placeholder" },
     { "name": "Funji & Son's General Store", "path": "config/pieces/general-store.json", "category": "shop" },
-    { "name": "Kunji's Potion Shop", "path": "config/pieces/potion-shop.json", "category": "shop" }
+    { "name": "Kunji's Potion Shop", "path": "config/pieces/potion-shop.json", "category": "shop" },
+    { "name": "Researcher's Tent", "path": "config/pieces/researchers-tent.json", "category": "tent" }
   ]
 }
