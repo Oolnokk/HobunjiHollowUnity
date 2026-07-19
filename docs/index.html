@@ -594,9 +594,29 @@
         </div>
       </div><!-- /mpProgress -->
 
-      <!-- ── Stub panes ──────────────────────────────────── -->
-      <div class="mp-pane" id="mpTasks">        <div class="mp-stub">📋 Tasks — coming soon</div></div>
-      <div class="mp-pane" id="mpRelationships"><div class="mp-stub">💬 Relationships — coming soon</div></div>
+      <!-- ── Tasks pane: today's board notice (take it here) + the quest
+           log of everything accepted — turn-in itself always happens by
+           talking to the quest giver. See renderTasksPanel()/
+           takeBoardTask()/turnInTask() in game.js. ──────────────────────── -->
+      <div class="mp-pane" id="mpTasks">
+        <div class="menu-section">
+          <div class="menu-section-title">Bulletin Board</div>
+          <div id="tasksBoardPosting" class="supply-list"></div>
+        </div>
+        <div class="menu-section">
+          <div class="menu-section-title">Quest Log</div>
+          <div id="tasksList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpTasks -->
+
+      <!-- ── Relationships pane: friendship tier per NPC talked to — see
+           renderRelationshipsPanel() in game.js. ───────────────────────── -->
+      <div class="mp-pane" id="mpRelationships">
+        <div class="menu-section">
+          <div class="menu-section-title">Friendship</div>
+          <div id="relationshipsList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpRelationships -->
 
       <!-- ── Combat loadout pane (filled by combat-loadout-ui.js) ── -->
       <div class="mp-pane" id="mpLoadout">
@@ -964,6 +984,7 @@
   </div>
 
   <script src="js/tool-icon-render.js?v=20260712d"></script>
+  <script src="js/sprite-recolor.js?v=20260712a"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the

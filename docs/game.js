@@ -147,6 +147,8 @@
         if (targetPanel === 'carpenterShop') renderCarpenterShopPage();
         if (targetPanel === 'jubmirShop') renderJubmirShopPage();
         if (targetPanel === 'alchemy') renderAlchemyPanel();
+        if (targetPanel === 'tasks') renderTasksPanel();
+        if (targetPanel === 'relationships') renderRelationshipsPanel();
         auditInventorySizing();
       }
       function closeMenu() {
@@ -183,6 +185,8 @@
         if (id === 'carpenterShop') renderCarpenterShopPage();
         if (id === 'jubmirShop') renderJubmirShopPage();
         if (id === 'alchemy') renderAlchemyPanel();
+        if (id === 'tasks') renderTasksPanel();
+        if (id === 'relationships') renderRelationshipsPanel();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
         if (id === 'wildlife') renderWildlifeDebugPanel();
       }
@@ -478,6 +482,14 @@
               } else if (act.type === 'startChat') {
                 _beginNpcConversation(_dlgNpcRec);
                 skipNav = true;
+              } else if (act.type === 'acceptFavor') {
+                setQuestStatus(act.taskId, 'available', {});
+                showToast('📋 Favor accepted — check it from the Tasks tab.', true);
+              } else if (act.type === 'declineFavor') {
+                setQuestStatus(act.taskId, 'declined', {});
+              } else if (act.type === 'turnInTask') {
+                const res = turnInTask(act.taskId);
+                if (!res.ok) showToast(res.message, false);
               }
             });
             if (!skipNav) _navigateDlgTo(c.next);
@@ -732,6 +744,45 @@
 
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
+
+        // Task turn-in — checked before everything else (including a fresh
+        // favor ask): if this NPC posted/asked a quest that's now sitting
+        // ready in the player's log, offer to hand it over right here rather
+        // than piling a new favor ask on top of an already-completed one.
+        const _turnInTask = rec?.id ? getTurnInReadyTaskForNpc(rec.id) : null;
+        if (_turnInTask) {
+          const _turnInDef = ITEM_DEFS[_turnInTask.itemKey];
+          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
+          _renderDlgNode({
+            type: 'choice',
+            text: `Ah — did you bring what I asked for?`,
+            choices: [
+              { label: `Here's your ${_turnInDef?.label || _turnInTask.itemKey} ×${_turnInTask.qty}.`, actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
+              { label: 'Not yet.', actions: [] },
+            ],
+          });
+          return;
+        }
+
+        // Trusted-NPC favors — checked ahead of every other fast-path
+        // (including the merchant shop shortcuts below, so shopkeepers can
+        // ask for favors too, not just villagers with an authored dialogue
+        // tree) whenever the NPC currently has, or freshly rolls, a favor to
+        // ask — gated by friendship tier. Same synthetic choice-node
+        // shortcut the shop fast-paths use. See maybeOfferFavor.
+        const _favorTask = maybeOfferFavor(rec);
+        if (_favorTask) {
+          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
+          _renderDlgNode({
+            type: 'choice',
+            text: favorAskLine(_favorTask),
+            choices: [
+              { label: "I'll help.", actions: [{ type: 'acceptFavor', taskId: _favorTask.id }] },
+              { label: 'Not right now.', actions: [{ type: 'declineFavor', taskId: _favorTask.id }] },
+            ],
+          });
+          return;
+        }
 
         // These synthetic pre-choice screens are a fast-path shortcut for
         // when the NPC happens to be caught right at their counter — a
@@ -1715,7 +1766,10 @@
       // Only real starting stacks are listed; generic empty boxes are drawn by buildInventoryGrid().
       const STARTING_INVENTORY = {
         needlegrainSeeds: 6, heftrootSeeds: 4, garlinkSeeds: 4, ongyumsSeeds: 4,
-        redberrySeeds: 3, blueberrySeeds: 3, yellowberrySeeds: 3, whiteberrySeeds: 2, blackberrySeeds: 2,
+        // Berry seeds are deliberately absent — not purchasable either; all
+        // 5 varieties grow wild across the wilderness zones instead (see
+        // WILD_BERRY_ZONES) and have a small chance to yield a seed when
+        // foraged, which is the only way to get one.
         blackMustardSeed: 3, greenMustardSeed: 3,
         uumkaoiiCrate: 1,
         barnPlanSmall: 1,
@@ -2228,12 +2282,36 @@
         const effects = key.slice('potion_'.length).split('_');
         return effects.length && effects.every(e => ALCHEMY_EFFECT_DEFS[e]) ? effects : null;
       }
-      function ensurePotionItemDef(effects) {
+      // Averages the 0xRRGGBB colors of the reagents that went into a brew —
+      // the same THREE-style hex ints ALCHEMY_REAGENT_DEFS/getReagentPlantMaterial
+      // already use — into one procedural potion color. Reagent keys missing a
+      // color (shouldn't happen; every ALCHEMY_REAGENT_DEFS entry has one) are
+      // skipped rather than treated as black, so one bad lookup can't wash the
+      // mix toward zero.
+      function mixReagentColors(reagentKeys) {
+        let r = 0, g = 0, b = 0, n = 0;
+        (reagentKeys || []).forEach(k => {
+          const c = ALCHEMY_REAGENT_DEFS[k]?.color;
+          if (c == null) return;
+          r += (c >> 16) & 255; g += (c >> 8) & 255; b += c & 255; n++;
+        });
+        if (!n) return 0x8a5fb0; // generic potion purple — only hit if reagentKeys was empty/unresolvable
+        return (Math.round(r / n) << 16) | (Math.round(g / n) << 8) | Math.round(b / n);
+      }
+
+      // reagentKeys (optional): the actual ingredients brewed this time, used
+      // to procedurally mix a color via mixReagentColors — see brewPotion.
+      // Since the item key is purely the sorted effect list (so different
+      // reagent combos sharing an effect set stack as the same item — see the
+      // comment above ALCHEMY_POTION_ITEMS), the color is fixed at whichever
+      // combo first created that effect-key item, same as its name/desc.
+      function ensurePotionItemDef(effects, reagentKeys) {
         const key = potionItemKeyForEffects(effects);
         ALCHEMY_POTION_ITEMS[key] = effects;
         if (!ITEM_DEFS[key]) {
           const names = effects.map(e => ALCHEMY_EFFECT_DEFS[e].label);
           const anyBane = effects.some(e => ALCHEMY_EFFECT_DEFS[e].kind === 'bane');
+          const color = mixReagentColors(reagentKeys);
           ITEM_DEFS[key] = {
             icon: '🧪',
             label: 'Potion of ' + names.join(' & '),
@@ -2241,6 +2319,8 @@
             sellPrice: 0,
             tags: ['Potion', 'Alchemy', ...(anyBane ? ['Mixed'] : [])],
             desc: 'A brewed potion. Drink it (from the Inventory panel, anywhere) to gain: ' + names.join(', ') + '.',
+            color,
+            spriteIcon: 'bottle_potion.png', spriteColor: color, spriteMode: 'keyed',
           };
         }
         return key;
@@ -2345,11 +2425,9 @@
         { key: 'heftrootSeeds',      icon: '🟡', name: 'Heftroot Seeds',      desc: 'Starchy root crop. Ideal water 25–55%.', price: 6, gives: { heftrootSeeds: 3 } },
         { key: 'garlinkSeeds',       icon: '🧄', name: 'Garlink Seeds',       desc: 'Pungent broth-base crop. Ideal water 15–45%.', price: 4, gives: { garlinkSeeds: 3 } },
         { key: 'ongyumsSeeds',       icon: '🧅', name: 'Ongyums Seeds',       desc: 'Aromatic crop. Ideal water 35–70%.', price: 4, gives: { ongyumsSeeds: 3 } },
-        { key: 'redberrySeeds',      icon: '🍓', name: 'Redberry Seeds',      desc: 'Berry crop; grows best beside ditches. Ideal water 35–70%.', price: 7, gives: { redberrySeeds: 2 } },
-        { key: 'blueberrySeeds',     icon: '🫐', name: 'Blueberry Seeds',     desc: 'Wet-loving berry; grows best beside ditches. Ideal water 50–85%.', price: 8, gives: { blueberrySeeds: 2 } },
-        { key: 'yellowberrySeeds',   icon: '🟡', name: 'Yellowberry Seeds',   desc: 'Berry crop; grows best beside ditches. Ideal water 25–60%.', price: 7, gives: { yellowberrySeeds: 2 } },
-        { key: 'whiteberrySeeds',    icon: '⚪', name: 'Whiteberry Seeds',    desc: 'Mild berry crop; grows best beside ditches. Ideal water 40–75%.', price: 8, gives: { whiteberrySeeds: 2 } },
-        { key: 'blackberrySeeds',    icon: '⚫', name: 'Blackberry Seeds',    desc: 'Dark berry crop; grows best beside ditches. Ideal water 45–80%.', price: 8, gives: { blackberrySeeds: 2 } },
+        // Berry seeds are intentionally not sold — all 5 varieties grow wild
+        // across the wilderness zones instead (see WILD_BERRY_ZONES) and
+        // have a small chance to yield a seed when foraged.
         { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mustard Seed',  desc: 'Hot mustard crop. Ideal water 15–40%.', price: 6, gives: { blackMustardSeed: 2 } },
         { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mustard Seed',  desc: 'Fresh mustard crop. Ideal water 30–65%.', price: 6, gives: { greenMustardSeed: 2 } },
         { key: 'mulchBag',           icon: '🍂', name: 'Mulch Bag',           desc: 'Boosts soil recovery and gives clearing material.', price: 3, gives: { mulch: 5 } },
@@ -2653,7 +2731,15 @@
         return true;
       }
 
-      function makeProcessingFurniture(col, row, furnitureKey) {
+      // barrelAging/vaseAging ("long" tier, per the flavor text on Aging
+      // Barrel/Aging Vase — literal aging, not an instant press) take this
+      // many in-game days once started, uniformly across every recipe under
+      // those two methods (existing berry Wine included) rather than some
+      // outputs being instant and others delayed on the same furniture type.
+      const AGING_DURATION_DAYS = 3;
+      const AGING_METHODS = new Set(['barrelAging', 'vaseAging']);
+
+      function makeProcessingFurniture(col, row, furnitureKey, savedJob) {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
         const mesh = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color);
@@ -2662,13 +2748,30 @@
         _markFurnitureEdgeId(mesh);
         scene.add(mesh);
 
+        const isAging = AGING_METHODS.has(def.method);
+        // { outputs: [descriptor,...], readyDay } while a barrelAging/vaseAging
+        // batch is aging; null when idle. Restored from a saved farm layout
+        // (see saveFarmLayout/applyFarmLayoutObjects) via savedJob so an aging
+        // batch survives a save/reload instead of silently vanishing.
+        let job = savedJob ? { outputs: savedJob.outputs, readyDay: savedJob.readyDay } : null;
+
         return {
           id: 'processor_' + furnitureKey + '_' + col + '_' + row,
           type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh,
           label: def.icon + ' ' + def.name,
+          getJob() { return job; }, // read by saveFarmLayout
           getButtons() {
+            if (isAging && job) {
+              const daysLeft = Math.max(0, job.readyDay - calendar.day);
+              if (daysLeft > 0) {
+                return [{ icon: '⏳', label: `Aging… ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`, action: 'obj_process_' + furnitureKey, style: 'secondary', allowed: false }];
+              }
+              const outDef = job.outputs[0];
+              return [{ icon: outDef.icon, label: `Collect ${outDef.label}`, action: 'obj_process_' + furnitureKey, style: 'primary', allowed: true }];
+            }
             const active = getActiveInventoryItem();
-            const output = active ? getProcessingOutput(def.method, active.key) : null;
+            const outputs = active ? getProcessingOutputs(def.method, active.key) : null;
+            const output = outputs ? outputs[0] : null;
             return [{
               icon: output ? def.icon : '…',
               label: output ? processButtonLabel(def.method, active.key, output) : methodIdleLabel(def.method),
@@ -2679,16 +2782,28 @@
           },
           onAction(action) {
             if (action !== 'obj_process_' + furnitureKey) return { ok: false, message: 'Unknown processor action.' };
+            if (isAging && job) {
+              if (calendar.day < job.readyDay) return { ok: false, message: 'Still aging — not ready yet.' };
+              const outputs = job.outputs;
+              job = null;
+              outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
+              saveFarmLayout();
+              return { ok: true, message: def.icon + ' Collected ' + outputs.map(o => o.label).join(', ') + '.' };
+            }
             const active = getActiveInventoryItem();
             if (!active) return { ok: false, message: def.name + ' needs an ingredient selected.' };
-            const output = getProcessingOutput(def.method, active.key);
-            if (!output) return { ok: false, message: def.name + ' cannot process ' + (ITEM_DEFS[active.key]?.label || active.label) + '.' };
+            const outputs = getProcessingOutputs(def.method, active.key);
+            if (!outputs) return { ok: false, message: def.name + ' cannot process ' + (ITEM_DEFS[active.key]?.label || active.label) + '.' };
             if ((inventory[active.key] || 0) < 1) return { ok: false, message: 'No ' + (ITEM_DEFS[active.key]?.label || active.label) + ' left.' };
-            ensureProcessedItemDef(output);
             inventory[active.key]--;
             clampInventoryStack(active.key);
-            inventory[output.key] = Math.min(99, (inventory[output.key] || 0) + 1);
-            return { ok: true, message: def.icon + ' Processed 1 ' + (ITEM_DEFS[active.key]?.label || active.label) + ' into ' + output.label + '.' };
+            if (isAging) {
+              job = { outputs, readyDay: calendar.day + AGING_DURATION_DAYS };
+              saveFarmLayout();
+              return { ok: true, message: `${def.icon} Set ${ITEM_DEFS[active.key]?.label || active.label} to age for ${AGING_DURATION_DAYS} days.` };
+            }
+            outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
+            return { ok: true, message: def.icon + ' Processed 1 ' + (ITEM_DEFS[active.key]?.label || active.label) + ' into ' + outputs.map(o => o.label).join(', ') + '.' };
           },
           reset() {
             scene.remove(mesh);
@@ -2858,6 +2973,7 @@
           tile.type = typeMap[farmEditBrush] ?? TileType.GRASS;
           if (tile.type === TileType.TRENCH) tile.depth = 1;
           tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          if (tile.dewPile) { tile.dewPile = null; removeDewPileMesh(col, row); }
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
         } else if (farmEditBrushType === 'crop') {
           if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB) tile.type = TileType.TILLED;
@@ -2891,6 +3007,7 @@
             unregisterFurnitureSfxSource(d.sfxSource);
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          if (tile.dewPile) { tile.dewPile = null; removeDewPileMesh(col, row); }
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
         }
       }
@@ -2940,13 +3057,14 @@
             for (let c = 0; c < COLS; c++) {
               const t = grid[r][c];
               const def = createDayOneTile(c, r);
-              if (t.type !== def.type || (t.crop && t.crop !== CropType.NONE)) {
-                layout.tiles.push({ c, r, type: t.type, crop: t.crop || '' });
+              if (t.type !== def.type || (t.crop && t.crop !== CropType.NONE) || t.dewPile) {
+                layout.tiles.push({ c, r, type: t.type, crop: t.crop || '', dewPile: t.dewPile || '' });
               }
             }
           }
           processingFurnitureObjects.forEach(obj => {
-            layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row });
+            const job = obj.getJob && obj.getJob();
+            layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row, ...(job ? { job } : {}) });
           });
           interiorFurnitureObjects.forEach(obj => {
             layout.decor.push({ key: obj.key, col: obj.col, row: obj.row, area: obj.area });
@@ -2976,13 +3094,14 @@
 
       function applyFarmLayoutToGrid(layout) {
         if (!layout || layout.version !== 3) return;
-        (layout.tiles || []).forEach(({ c, r, type, crop }) => {
+        (layout.tiles || []).forEach(({ c, r, type, crop, dewPile }) => {
           if (grid[r]?.[c]) {
             grid[r][c].type = type;
             // Saved layouts don't persist trench depth — restore at full depth.
             if (type === TileType.TRENCH) grid[r][c].depth = 1;
             grid[r][c].crop = crop || CropType.NONE;
             if (crop) { grid[r][c].cropAge = 50; grid[r][c].cropReady = false; }
+            grid[r][c].dewPile = dewPile || null;
           }
         });
       }
@@ -3005,9 +3124,9 @@
             const nb = makeSupplyBox(c, r); supplyBoxObject = nb; worldObjects.set(c + ',' + r, nb);
           }
         }
-        (layout.furniture || []).forEach(({ key, col, row }) => {
+        (layout.furniture || []).forEach(({ key, col, row, job }) => {
           if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
-            const obj = makeProcessingFurniture(col, row, key);
+            const obj = makeProcessingFurniture(col, row, key, job);
             if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
           }
         });
@@ -3029,6 +3148,93 @@
           farmBuildings.push(entry);
           spawnBarnEntry(entry);
         });
+        // Tile data (grid[r][c].dewPile) is restored by applyFarmLayoutToGrid,
+        // which always runs first (see the two call sites) — this just builds
+        // the meshes for whatever dew piles are already sitting in the grid,
+        // same two-phase split as furniture (data now, objects/meshes here).
+        rebuildDewPileMeshesFromGrid();
+      }
+
+      // ── Uumkao'ii dew piles ──────────────────────────────────────────
+      // A dew pile is tile data (grid[r][c].dewPile = a color string like
+      // 'blue'), the same way a crop is tile data — not a worldObjects
+      // entry — because it needs to participate in the shovel dig/fill/raise
+      // gate (canUseAction/applyAction) exactly like WEEDS/SHRUB/ROCK
+      // already do, and there's no existing precedent for worldObjects
+      // gating tile-mutation tools (see the digging-system research this
+      // was built from). dewPileMeshes tracks the purely-visual billboard
+      // per tile in parallel, the same "tile data now, mesh separately"
+      // split saveFarmLayout/applyFarmLayoutObjects already use for crops
+      // vs. their procedural meshes.
+      const dewPileMeshes = new Map(); // "col,row" -> THREE.Group
+
+      function canPlaceDewPileAt(col, row) {
+        const tile = grid[row]?.[col];
+        if (!tile || tile.dewPile || tile.crop) return false;
+        if (![TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type)) return false;
+        if (getWorldObjectAt(col, row)) return false;
+        if (isHouseFootprint(col, row)) return false;
+        return true;
+      }
+
+      function spawnDewPileMesh(col, row, colorKey) {
+        const key = col + ',' + row;
+        removeDewPileMesh(col, row);
+        const group = new THREE.Group();
+        group.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
+        scene.add(group);
+        dewPileMeshes.set(key, group);
+        if (!window.SpriteRecolor) return;
+        const colorHex = ITEM_DEFS[dewItemKey(colorKey)]?.spriteColor ?? 0x3F8FE0;
+        window.SpriteRecolor.getRecoloredCanvas('assets/objectsprites/pile_dew.png', colorHex, 'direct').then(canvas => {
+          if (dewPileMeshes.get(key) !== group) return; // tile changed/pile dug up while this was loading
+          const tex = new THREE.CanvasTexture(canvas);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          const targetH = 0.55;
+          const targetW = targetH * (canvas.width / canvas.height);
+          const geo = new THREE.PlaneGeometry(targetW, targetH);
+          const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide, depthWrite: false });
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.position.y = targetH / 2;
+          group.add(mesh);
+        }).catch(() => {});
+      }
+
+      function removeDewPileMesh(col, row) {
+        const key = col + ',' + row;
+        const group = dewPileMeshes.get(key);
+        if (!group) return;
+        scene.remove(group);
+        group.traverse(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) { if (child.material.map) child.material.map.dispose(); child.material.dispose(); }
+        });
+        dewPileMeshes.delete(key);
+      }
+
+      function rebuildDewPileMeshesFromGrid() {
+        [...dewPileMeshes.keys()].forEach(key => {
+          const [c, r] = key.split(',').map(Number);
+          removeDewPileMesh(c, r);
+        });
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            if (grid[r]?.[c]?.dewPile) spawnDewPileMesh(c, r, grid[r][c].dewPile);
+          }
+        }
+      }
+
+      // Places a persistent dew pile on an open tile — see makeUumkaoiiAnimal's
+      // tick(), which calls this on the tile a farm uumkao'ii just vacated
+      // once its dew cooldown is ready. Returns false (no state change) if
+      // the tile isn't a valid spot, so the caller can leave dewReady set
+      // and simply retry on a later successful move.
+      function dropDewPile(col, row, colorKey) {
+        if (!canPlaceDewPileAt(col, row)) return false;
+        grid[row][col].dewPile = colorKey;
+        spawnDewPileMesh(col, row, colorKey);
+        saveFarmLayout();
+        return true;
       }
 
       // ── Livestock genetics & breeding ───────────────────────────────
@@ -3413,7 +3619,8 @@
         const resDef = rec ? LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
         if (rec?.resourceReady && resDef) {
           const itemLabel = ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey;
-          return [{ icon: ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `Collect ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true }];
+          const verb = LIVESTOCK_RESOURCE_VERB[rec.kind] || 'Collect';
+          return [{ icon: ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `${verb} ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true }];
         }
         return [{ icon, label, action: 'obj_' + animal.id, style: 'secondary', allowed: false }];
       }
@@ -3480,7 +3687,17 @@
             tickCounter++;
             if (tickCounter % 3 !== 0) return;
             if (_farmAnimalBarnTick(this)) return;
-            if (rnd() > 0.55) return;
+
+            // Once this uumkao'ii's dew cooldown resets, drop a persistent
+            // dew pile on the next open tile it wanders onto — the tile it's
+            // leaving this step, which is guaranteed open the instant it
+            // steps off (see dropDewPile). Bypasses the normal 0.55 wander
+            // chance below so a ready dew resolves within a few ticks
+            // instead of waiting on the coin flip too.
+            const livestockList = _loadWorldLivestock();
+            const rec = livestockList.find(l => l.id === this.livestockId);
+            const wantsDewDrop = Boolean(rec?.dewReady);
+            if (!wantsDewDrop && rnd() > 0.55) return;
 
             const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
             for (let i = dirs.length - 1; i > 0; i--) {
@@ -3491,11 +3708,17 @@
               const nc = this.col + d.dc, nr = this.row + d.dr;
               if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
               if (!canSpawnAnimalAt(nc, nr)) continue;
+              const oldCol = this.col, oldRow = this.row;
               worldObjects.delete(this.col + ',' + this.row);
               this.col = nc; this.row = nr;
               this.targetCol = nc; this.targetRow = nr;
               worldObjects.set(nc + ',' + nr, this);
               this.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
+              if (wantsDewDrop && dropDewPile(oldCol, oldRow, rec.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
+                rec.dewReady = false;
+                rec.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+                _saveWorldLivestock(livestockList);
+              }
               break;
             }
           },
@@ -3723,6 +3946,7 @@
           id, kind, barnId: null, releasedAt: Date.now(),
           name: defaultLivestockName(kind), genotype,
           daysUntilResource: LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
+          ...(kind === 'uumkaoii' ? { dewColor: UUMKAOII_DEFAULT_DEW_COLOR, dewDaysUntil: UUMKAOII_DEW_COOLDOWN_DAYS, dewReady: false } : {}),
         });
         _saveWorldLivestock(livestock);
         return { ok: true, message: `🦆 ${defaultLivestockName(kind)} is waiting in stasis — assign it to a barn from the Farm tab to bring it out.` };
@@ -3746,6 +3970,11 @@
         const wasAssigned = !!rec.barnId;
         rec.barnId = barnId;
         if (rec.daysUntilResource == null) rec.daysUntilResource = LIVESTOCK_RESOURCE_DEFS[rec.kind]?.cooldownDays ?? null;
+        if (rec.kind === 'uumkaoii' && rec.dewDaysUntil == null) {
+          rec.dewColor = rec.dewColor || UUMKAOII_DEFAULT_DEW_COLOR;
+          rec.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+          rec.dewReady = false;
+        }
         _saveWorldLivestock(list);
         if (!wasAssigned) {
           const spot = findOpenTileNearBarn(barn);
@@ -3797,11 +4026,20 @@
         let changed = false;
         list.forEach(l => {
           const resDef = LIVESTOCK_RESOURCE_DEFS[l.kind];
-          if (!resDef || !l.barnId || l.resourceReady) return;
-          if (l.daysUntilResource == null) l.daysUntilResource = resDef.cooldownDays;
-          l.daysUntilResource--;
-          if (l.daysUntilResource <= 0) l.resourceReady = true;
-          changed = true;
+          if (resDef && l.barnId && !l.resourceReady) {
+            if (l.daysUntilResource == null) l.daysUntilResource = resDef.cooldownDays;
+            l.daysUntilResource--;
+            if (l.daysUntilResource <= 0) l.resourceReady = true;
+            changed = true;
+          }
+          // Uumkao'ii dew cooldown — separate from the egg resource above;
+          // see UUMKAOII_DEW_COOLDOWN_DAYS.
+          if (l.kind === 'uumkaoii' && l.barnId && !l.dewReady) {
+            if (l.dewDaysUntil == null) l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+            l.dewDaysUntil--;
+            if (l.dewDaysUntil <= 0) l.dewReady = true;
+            changed = true;
+          }
         });
         if (changed) _saveWorldLivestock(list);
       }
@@ -5716,7 +5954,7 @@
       function defaultWorldMemberState() {
         return {
           nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
-          alchemyKnownEffects: {}, alchemyActiveEffects: [], alchemyReagentState: {},
+          alchemyKnownEffects: {}, alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {},
           joinedAt: Date.now(),
         };
       }
@@ -5809,6 +6047,7 @@
           member.alchemyKnownEffects = serializeKnownReagentEffects();
           member.alchemyActiveEffects = serializeActiveAlchemyEffects();
           member.alchemyReagentState = serializeZoneReagentState();
+          member.wildBerryState = serializeZoneBerryState();
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
       }
@@ -5844,6 +6083,268 @@
         if (progressPatch) Object.assign(st.progress, progressPatch);
         if (status === 'completed' && !st.completedAt) st.completedAt = Date.now();
         saveMemberWorldData();
+      }
+
+      // ── Procedural tasks: bulletin board + trusted-NPC favors ─────────
+      // Every generated task rides the questProgress scaffold above (no new
+      // save fields): questProgress[taskId].progress holds the full task
+      // descriptor { kind:'board'|'favor', npcId, npcName, domain, itemKey,
+      // qty, rewardGold, rewardFriendship, tier, postedDay }. Every task —
+      // board or favor — always has a real npcId; you turn it in to that
+      // NPC specifically, which is what pays out both the gold and the
+      // friendship. .status is:
+      //   'posted'    — a board notice, freshly rolled, sitting on the
+      //                 board, not yet taken into the player's own log
+      //                 (board-only; never used for favors).
+      //   'offered'   — a favor just asked in dialogue, awaiting accept/decline
+      //                 (favor-only; never used for board tasks).
+      //   'available' — in the player's own quest log (board: taken off the
+      //                 board; favor: accepted) and turn-in-ready once the
+      //                 player has the items — no completion deadline.
+      //   'declined'  — a favor turned down (only blocks re-asking same day).
+      //   'completed' — turned in.
+      const TASK_DOMAINS = ['farming', 'fishing', 'combat', 'alchemy'];
+
+      // Friendship tiers ride the existing (previously unused) per-NPC favor
+      // counter — see _getNpcDlgState/adjustNpcFavor above. No new persisted
+      // counter needed; this just adds tier thresholds on top of it.
+      const FRIENDSHIP_TIER_THRESHOLDS = [0, 40, 100, 200, 350, 550];
+      function friendshipFavor(npcId) { return _getNpcDlgState(npcId).favor || 0; }
+      function friendshipTier(npcId) {
+        const favor = friendshipFavor(npcId);
+        let tier = 0;
+        for (let i = 0; i < FRIENDSHIP_TIER_THRESHOLDS.length; i++) if (favor >= FRIENDSHIP_TIER_THRESHOLDS[i]) tier = i;
+        return tier;
+      }
+      function friendshipTierProgress(npcId) {
+        const favor = friendshipFavor(npcId);
+        const tier = friendshipTier(npcId);
+        const next = FRIENDSHIP_TIER_THRESHOLDS[tier + 1];
+        return { tier, favor, next: next ?? null };
+      }
+
+      // Chance a trusted NPC asks a favor of you when you talk to them, and
+      // how much gold/friendship a favor pays out vs. a board request posted
+      // by some NPC — both climb with friendship tier, per the design brief.
+      const FAVOR_CHANCE_BY_TIER       = [0, 0.12, 0.20, 0.30, 0.42, 0.55];
+      const TASK_QTY_BY_TIER           = [1, 2, 2, 3, 4, 5];
+      const TASK_REWARD_MULT           = { board: 1.3, favor: 1.6 };
+      const TASK_FRIENDSHIP_REWARD     = { board: [8, 10, 12, 15, 18, 22], favor: [18, 25, 35, 48, 65, 85] };
+
+      // role (free-text NPC job, e.g. "carpenter / roofing family
+      // connection", "great fae / fishing solution") → which item pool their
+      // own favors skew toward at low friendship. Matched by substring since
+      // authored roles are prose, not an enum; anything unmatched falls back
+      // to 'farming', the most generic domain.
+      function npcSkillDomain(role) {
+        const r = (role || '').toLowerCase();
+        if (/fish/.test(r)) return 'fishing';
+        if (/alchem|potion/.test(r)) return 'alchemy';
+        if (/hunt|watch|war|smith|mining|bonehewer/.test(r)) return 'combat';
+        return 'farming';
+      }
+
+      // Only villagers — anyone with a stationary home or business in one of
+      // the real town buildings — can give tasks (board or favor), plus Pahu
+      // and Leaf as a named exception (they live in the swamp house, outside
+      // town, but are otherwise settled residents). `homeId`/`workBuildingId`
+      // are authored-but-previously-unread NPC-database fields; everyone
+      // else (wilderness dwellers, Great Fae, deceased/banished lore-only
+      // entries, unbuilt placeholder roles) is excluded.
+      const QUEST_ELIGIBLE_TOWN_HOME_IDS = new Set([
+        'general_store', 'potion_shop', 'unumanuk_household', 'ginju_farmstead',
+        'inn', 'smithy', 'temple', 'carpenters',
+      ]);
+      const QUEST_ELIGIBLE_EXTRA_NPC_IDS = new Set(['pahu', 'leaf']);
+      function isQuestEligibleNpc(rec) {
+        if (!rec?.id) return false;
+        if (QUEST_ELIGIBLE_EXTRA_NPC_IDS.has(rec.id)) return true;
+        return QUEST_ELIGIBLE_TOWN_HOME_IDS.has(rec.homeId) || QUEST_ELIGIBLE_TOWN_HOME_IDS.has(rec.workBuildingId);
+      }
+
+      // Deliverable item pools per domain — farming is a static list (raw
+      // crops + Uumkao'ii dew); fishing/combat/alchemy are derived live from
+      // their own existing catalogs (FISH_DEFS, CREATURE_DB loot,
+      // ALCHEMY_REAGENT_DEFS) instead of being duplicated here.
+      const TASK_FARMING_ITEM_POOL = [
+        'needlegrain', 'heftroot', 'garlink', 'ongyums',
+        'redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries',
+        'blackMustard', 'greenMustard',
+        'yellowDew', 'greenDew', 'blueDew', 'orangeDew', 'redDew', 'purpleDew', 'whiteDew',
+      ];
+      function taskItemPoolFor(domain) {
+        if (domain === 'fishing') return Object.values(FISH_DEFS).flat().map(f => f.key);
+        if (domain === 'combat') return [...new Set(Object.values(CREATURE_DB).flatMap(c => (c.loot || []).map(l => l.key)))];
+        if (domain === 'alchemy') return Object.keys(ALCHEMY_REAGENT_DEFS);
+        return TASK_FARMING_ITEM_POOL;
+      }
+
+      // Picks one item from a domain's pool, biased toward cheaper items at
+      // low tiers and opening up to the whole pool (including the priciest)
+      // by the top tier — sellPrice is the one value/rarity signal shared
+      // across every domain's catalog.
+      function pickTaskItem(domain, tier) {
+        const pool = taskItemPoolFor(domain);
+        if (!pool || !pool.length) return null;
+        const priced = pool.map(key => ({ key, price: ITEM_DEFS[key]?.sellPrice || 3 })).sort((a, b) => a.price - b.price);
+        const reach = Math.min(1, (tier + 2) / (FRIENDSHIP_TIER_THRESHOLDS.length + 1));
+        const maxIdx = Math.max(0, Math.min(priced.length - 1, Math.ceil(priced.length * reach) - 1));
+        return priced[Math.floor(Math.random() * (maxIdx + 1))].key;
+      }
+
+      // The only currently-live numeric skill signals in the game: per-tool
+      // mastery (see awardToolUseMasteryXp) for farming/fishing/combat, and
+      // discovered alchemy-reagent-effect count as a rough alchemy proxy
+      // (there's no dedicated alchemy mastery counter yet). skillLevels from
+      // onboarding.js is a dormant, never-incremented stub — deliberately
+      // not used here.
+      function getPlayerSkillLevels() {
+        const alchemyDiscoveries = Object.values(knownReagentEffects).reduce((n, s) => n + s.size, 0);
+        return {
+          farming: toolMasteryLevel(equipmentSlots.hoe),
+          fishing: toolMasteryLevel(equipmentSlots.harpoon),
+          combat:  toolMasteryLevel(equipmentSlots.weapon),
+          alchemy: Math.min(5, Math.floor(alchemyDiscoveries / 4)),
+        };
+      }
+      function getPlayerHighestSkillDomain() {
+        const levels = getPlayerSkillLevels();
+        let best = 'farming', bestLevel = -1;
+        for (const d of TASK_DOMAINS) { if (levels[d] > bestLevel) { bestLevel = levels[d]; best = d; } }
+        return best;
+      }
+
+      function _makeTaskId() { return 'task_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+      // Generates and persists one task, always attributed to a real NPC
+      // (`npcRec` — {id, name, role}; required for both kinds, since every
+      // task, board or favor, has a specific quest giver you turn it in to).
+      // Domain skew is the design brief's core rule: low friendship pulls
+      // toward the NPC's own skillset (npcSkillDomain), high friendship pulls
+      // toward the player's own best skill — blended by a tier-weighted coin
+      // flip rather than a hard cutoff, so it shifts gradually.
+      function generateTask(kind, npcRec, tier) {
+        if (!npcRec?.id) return null;
+        const npcDomain = npcSkillDomain(npcRec.role);
+        const playerDomain = getPlayerHighestSkillDomain();
+        const playerWeight = tier / (FRIENDSHIP_TIER_THRESHOLDS.length - 1); // 0 at tier 0 → 1 at max tier
+        const domain = Math.random() < playerWeight ? playerDomain : npcDomain;
+        const itemKey = pickTaskItem(domain, tier);
+        if (!itemKey) return null;
+        const def = ITEM_DEFS[itemKey];
+        const qty = TASK_QTY_BY_TIER[tier] + (Math.random() < 0.4 ? 1 : 0);
+        const rewardGold = Math.max(1, Math.round(qty * (def?.sellPrice || 5) * TASK_REWARD_MULT[kind]));
+        const rewardFriendship = TASK_FRIENDSHIP_REWARD[kind][tier];
+        const id = _makeTaskId();
+        const task = {
+          kind, npcId: npcRec.id, npcName: npcRec.name || 'A neighbor',
+          domain, itemKey, qty, rewardGold, rewardFriendship, tier, postedDay: calendar.day,
+        };
+        setQuestStatus(id, kind === 'favor' ? 'offered' : 'posted', task);
+        return { id, ...task };
+      }
+
+      // Finds an existing task tied to one NPC, optionally restricted to
+      // today's postings (used so a declined favor isn't re-asked the same
+      // day, but can be asked again on a later visit).
+      function findNpcTask(npcId, statuses, todayOnly) {
+        for (const [id, st] of Object.entries(questProgress)) {
+          if (st.progress?.npcId !== npcId || st.progress?.kind !== 'favor') continue;
+          if (!statuses.includes(st.status)) continue;
+          if (todayOnly && st.progress.postedDay !== calendar.day) continue;
+          return { id, ...st.progress, status: st.status };
+        }
+        return null;
+      }
+
+      // Called from openNpcDialogue for every NPC with an id — returns the
+      // favor to offer this conversation (freshly rolled, or one already
+      // asked-but-not-yet-answered), or null if none should be offered.
+      function maybeOfferFavor(npcRec) {
+        const npcId = npcRec?.id;
+        if (!npcId || !isQuestEligibleNpc(npcRec)) return null;
+        const stillOffered = findNpcTask(npcId, ['offered']);
+        if (stillOffered) return stillOffered;
+        if (findNpcTask(npcId, ['available'])) return null; // already holding one from them
+        if (findNpcTask(npcId, ['declined'], true)) return null; // already said no today
+        const tier = friendshipTier(npcId);
+        if (Math.random() > FAVOR_CHANCE_BY_TIER[tier]) return null;
+        return generateTask('favor', npcRec, tier);
+      }
+
+      function favorAskLine(task) {
+        const itemLabel = ITEM_DEFS[task.itemKey]?.label || task.itemKey;
+        return `Actually — since I trust you, could you bring me ${task.qty}× ${itemLabel}? I'd make it well worth your while.`;
+      }
+
+      // The single currently-posted (not yet taken) board notice, or null.
+      // Board tasks are deliberately not tied to any one player's
+      // friendship — a flat mid-range tier keeps the board offering
+      // reasonable variety for everyone regardless of who they've
+      // befriended; only the *NPC picked to post it* is random.
+      function getCurrentBoardPosting() {
+        const entries = Object.entries(questProgress).filter(([, st]) => st.progress?.kind === 'board' && st.status === 'posted');
+        entries.sort((a, b) => (b[1].progress.postedDay || 0) - (a[1].progress.postedDay || 0));
+        return entries[0] ? { id: entries[0][0], ...entries[0][1].progress } : null;
+      }
+
+      // Rolls a fresh board notice once per day (called from the day-rollover
+      // hooks and once on world load) — whatever was posted yesterday and
+      // never taken is simply superseded, not carried over; the board always
+      // shows *today's* notice. A notice the player already took (status
+      // flipped to 'available') is safe from this — it's in their own log
+      // now and this function never touches it.
+      function maybeRefreshBoardTask() {
+        const current = getCurrentBoardPosting();
+        if (current && current.postedDay === calendar.day) return; // already refreshed today
+        const candidates = npcWalkers.map(w => w.rec).filter(r => r?.id && r?.name && isQuestEligibleNpc(r));
+        if (!candidates.length) return; // no eligible NPCs spawned yet — try again on the next call
+        const npcRec = candidates[Math.floor(Math.random() * candidates.length)];
+        const tier = Math.min(FRIENDSHIP_TIER_THRESHOLDS.length - 1, 1 + Math.floor(Math.random() * 3));
+        generateTask('board', npcRec, tier);
+      }
+
+      // Moves today's board notice into the player's own quest log —
+      // "accepting" a board task, the board equivalent of a favor's accept
+      // choice. Once taken it has no completion deadline and survives the
+      // board's next daily refresh untouched.
+      function takeBoardTask(taskId) {
+        const st = questProgress[taskId];
+        if (!st || st.status !== 'posted') return { ok: false, message: 'That notice is no longer available.' };
+        setQuestStatus(taskId, 'available', {});
+        showToast(`📋 Took on ${st.progress.npcName}'s request.`, true);
+        return { ok: true, message: 'Task added to your log.' };
+      }
+
+      // The first quest log entry (board or favor) attributed to this NPC
+      // that the player currently has everything for — what powers the
+      // in-dialogue turn-in offer (see openNpcDialogue).
+      function getTurnInReadyTaskForNpc(npcId) {
+        for (const [id, st] of Object.entries(questProgress)) {
+          if (st.progress?.npcId !== npcId || st.status !== 'available') continue;
+          if ((inventory[st.progress.itemKey] || 0) < st.progress.qty) continue;
+          return { id, ...st.progress };
+        }
+        return null;
+      }
+
+      // Turning a task in only ever happens by talking to the specific NPC
+      // who posted/asked it — see openNpcDialogue's turn-in offer and the
+      // 'turnInTask' dialogue-choice action.
+      function turnInTask(taskId) {
+        const st = questProgress[taskId];
+        const task = st?.progress;
+        if (!task?.itemKey || st.status !== 'available') return { ok: false, message: 'That task is not ready to turn in.' };
+        if ((inventory[task.itemKey] || 0) < task.qty) {
+          return { ok: false, message: `You need ${task.qty}× ${ITEM_DEFS[task.itemKey]?.label || task.itemKey}.` };
+        }
+        inventory[task.itemKey] -= task.qty;
+        clampInventoryStack(task.itemKey);
+        inventory.gold = (inventory.gold || 0) + task.rewardGold;
+        adjustNpcFavor(task.npcId, task.rewardFriendship, 'task_' + task.kind);
+        setQuestStatus(taskId, 'completed', {});
+        showToast(`✅ Task complete! +${task.rewardGold}g, +${task.rewardFriendship} friendship with ${task.npcName}.`, true);
+        return { ok: true, message: 'Task turned in.' };
       }
 
       let _tothalShiftInFlight = false;
@@ -6720,6 +7221,13 @@
       const BUILDING_ALCHEMY_TABLES = {
         map_i_kunjis_potions_F1: { col: 5, row: 1 }, // beside the hearth at (6,1)
       };
+      // mapId -> { col, row } — same idea as BUILDING_ALCHEMY_TABLES, for the
+      // public task Bulletin Board (see the procedural task system above).
+      // Placed in the General Store's open floor between its shelving
+      // (rows 1-7) and the front door (row 11).
+      const BUILDING_BULLETIN_BOARDS = {
+        map_i_general_store: { col: 9, row: 9 },
+      };
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
@@ -6769,6 +7277,18 @@
       // saveMemberWorldData/spawnPlayerAvatar so a reload doesn't reshuffle
       // plants the player hasn't picked yet.
       const _zoneReagentPersist = new Map();
+      // mapId → Map("col,row" -> pickable wild-berry-bush world object) —
+      // the same "wilderness counterpart to the farm's worldObjects" idea as
+      // _zoneReagentObjects just above, for wild berry bushes (see
+      // WILD_BERRY_ZONES/ensureZoneBerries). A separate trio of maps rather
+      // than folding berries into the reagent ones so the two systems' daily
+      // respawn/dispose logic stay independent, mirroring each other 1:1.
+      const _zoneBerryObjects = new Map();
+      // mapId → [THREE.Group, ...] (berry bush meshes).
+      const _zoneBerryMeshGroups = new Map();
+      // mapId → { day, placements: [{col,row,key}, ...] } — same shape/role
+      // as _zoneReagentPersist.
+      const _zoneBerryPersist = new Map();
       // mapIds whose _zoneLayouts entry was replaced by a Tothal Shift (see
       // performTothalShift) while the player was standing inside that same
       // zone — rebuilding the live THREE.Scene out from under them mid-visit
@@ -10603,6 +11123,29 @@
               },
             });
           }
+          // Game-authored Bulletin Board (see BUILDING_BULLETIN_BOARDS) —
+          // same pattern as the Alchemy Table just above.
+          const bulletinBoardSpot = BUILDING_BULLETIN_BOARDS[mapId];
+          if (bulletinBoardSpot && window.ProceduralFurniture?.CATALOG?.bulletinBoard) {
+            const { col: bbCol, row: bbRow } = bulletinBoardSpot;
+            const bbModel = window.ProceduralFurniture.buildFurnitureGroup('bulletinBoard', 0x8a6a3a);
+            bbModel.position.set(bbCol + 0.5, 0, bbRow + 0.5);
+            _markOutline(bbModel);
+            _markFurnitureEdgeId(bbModel);
+            bScene.add(bbModel);
+            if (bGrid[bbRow]?.[bbCol]) bGrid[bbRow][bbCol].type = TileType.ROCK;
+            _buildingInteractables.set(mapId + ',' + bbCol + ',' + bbRow, {
+              getButtons() {
+                return [{ icon: '📋', label: 'Read Board', action: 'obj_bulletin', style: 'primary', allowed: true }];
+              },
+              onAction(action) {
+                if (action !== 'obj_bulletin') return { ok: false, message: 'Unknown action.' };
+                maybeRefreshBoardTask();
+                openMenu('tasks');
+                return { ok: true, message: 'Read the notice board.' };
+              },
+            });
+          }
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
           // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
@@ -10874,6 +11417,7 @@
         const zi = buildZoneScene(mapId);
         if (!zi) return;
         ensureZoneReagents(mapId);
+        ensureZoneBerries(mapId); // after reagents, so it can see today's reagent tiles and avoid them
         const fromScene = getActiveScene();
         _currentBuildingMapId = null;
         currentArea = mapId;
@@ -11270,7 +11814,7 @@
       // search (uniform-elevation rect logic dropped since every plant is
       // a single tile), but scans the whole grid and shuffles instead of
       // stopping at the first hit, since we want many scattered spots.
-      function findZoneFlatEmptyTiles(mapId, count, rng) {
+      function findZoneFlatEmptyTiles(mapId, count, rng, extraOccupied) {
         const zi = _zoneScenes.get(mapId);
         const grid = zi?.grid;
         if (!grid) return [];
@@ -11285,6 +11829,10 @@
         for (const d of (zoneData?.dens || [])) markOccupied(d.x, d.y, d.w || 1, d.h || 1);
         for (const d of (zoneData?.decor || [])) markOccupied(d.col, d.row, 1, 1);
         for (const f of (zoneData?.furniture || [])) markOccupied(f.col, f.row, 1, 1);
+        // Lets a second scatter system (wild berries) avoid the tiles another
+        // one (reagents) already claimed for the same day — see
+        // scatterBerriesForZone.
+        for (const p of (extraOccupied || [])) markOccupied(p.col, p.row, 1, 1);
 
         const candidates = [];
         for (let r = 1; r < rows - 1; r++) {
@@ -11446,6 +11994,161 @@
         _zoneReagentMeshGroups.delete(mapId);
         _zoneReagentObjects.delete(mapId);
         _zoneReagentPersist.delete(mapId);
+        // Same reasoning as the reagent cleanup just above, for wild berries.
+        _zoneBerryMeshGroups.delete(mapId);
+        _zoneBerryObjects.delete(mapId);
+        _zoneBerryPersist.delete(mapId);
+      }
+
+      // ── Wild berry bushes (wilderness-zone counterpart of purchasable
+      // berry seeds — see STARTING_INVENTORY/SUPPLY_CATALOG) ──────────────
+      // All 5 berry varieties, split across the 4 wilderness zones. Mirrors
+      // the reagent-plant scatter system above function-for-function; see
+      // its comments for the shared mechanics (deterministic per zone+day,
+      // daily respawn, persisted placements). Colors reuse BERRY_COLORS
+      // (already defined for the jam/wine sprite recolor pipeline).
+      const WILD_BERRY_ZONES = {
+        redberries:    'map_northern_cliffs',       // canon per redDew's "Red Berry Bushes" flavor tag
+        blueberries:   'map_southern_cloud_forest',
+        yellowberries: 'map_western_slope',
+        whiteberries:  'map_western_slope',
+        blackberries:  'map_eastern_mire',
+      };
+      const WILD_BERRY_SEED_CHANCE = 0.2; // "small chance to give seeds when harvested"
+      function wildBerriesForZone(mapId) {
+        return Object.keys(WILD_BERRY_ZONES).filter(k => WILD_BERRY_ZONES[k] === mapId);
+      }
+
+      function buildBerryBushMesh(berryKey) {
+        const color = BERRY_COLORS[berryKey];
+        if (color == null) return null;
+        const mat = getReagentPlantMaterial(color); // shared shader/cache — see getReagentPlantMaterial
+        if (!mat) return null;
+        const group = new THREE.Group();
+        // A bit bigger and a 4-blade cross (vs. reagents' 2) so a bush reads
+        // fuller/rounder than a single reagent plant at a glance.
+        const sizeMul = 2.0;
+        const w = 0.22 * sizeMul, h = 0.32 * sizeMul;
+        for (const rot of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
+          const blade = new THREE.Mesh(_grassBladeGeo, mat);
+          blade.rotation.y = rot;
+          blade.scale.set(w, h, 1);
+          group.add(blade);
+        }
+        group.userData.isBillboard = true;
+        group.userData.berryKey = berryKey;
+        return group;
+      }
+
+      // Same deterministic per-(zone,day) scatter as scatterReagentsForZone,
+      // but seeded independently ('berries' in the seed string) and excluding
+      // that same day's reagent-plant tiles so the two systems never overlap
+      // a spot — see findZoneFlatEmptyTiles's optional extraOccupied param.
+      function scatterBerriesForZone(mapId) {
+        const pool = wildBerriesForZone(mapId);
+        if (!pool.length) return [];
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return [];
+        const targetCount = Math.max(4, Math.min(24, Math.round((zi.cols * zi.rows) / 70)));
+        const rng = _mbRng(_seedFromString(mapId + ':berries:' + calendar.day));
+        const reagentPlacements = _zoneReagentPersist.get(mapId)?.placements || [];
+        const spots = findZoneFlatEmptyTiles(mapId, targetCount, rng, reagentPlacements);
+        return spots.map(({ col, row }) => ({ col, row, key: pool[Math.floor(rng() * pool.length)] }));
+      }
+
+      // Builds a worldObjects-shaped pickable for one wild berry bush.
+      // Always grants the fruit; WILD_BERRY_SEED_CHANCE also grants a seed —
+      // the only way to get berry seeds, since they're no longer purchasable.
+      function makeBerryBushObject(mapId, col, row, berryKey, mesh) {
+        const data = cropData[berryKey];
+        const fruitDef = ITEM_DEFS[berryKey];
+        return {
+          id: 'berrybush_' + mapId + '_' + col + '_' + row, type: 'berry_bush',
+          col, row, mesh, berryKey,
+          label: data.emoji + ' Wild ' + (fruitDef?.label || berryKey),
+          getButtons() {
+            return [{ icon: data.emoji, label: 'Pick ' + (fruitDef?.label || berryKey), action: 'obj_pick_berry', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_pick_berry') return { ok: false, message: 'Unknown action.' };
+            inventory[berryKey] = Math.min(99, (inventory[berryKey] || 0) + 1);
+            let seedMsg = '';
+            if (Math.random() < WILD_BERRY_SEED_CHANCE) {
+              inventory[data.seedKey] = Math.min(99, (inventory[data.seedKey] || 0) + 1);
+              seedMsg = ' and found a seed!';
+            }
+            _zoneScenes.get(mapId)?.scene.remove(mesh);
+            const objs = _zoneBerryObjects.get(mapId);
+            objs?.delete(col + ',' + row);
+            const groups = _zoneBerryMeshGroups.get(mapId);
+            if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
+            const persisted = _zoneBerryPersist.get(mapId);
+            if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
+            refreshItemScroll();
+            return { ok: true, message: 'Picked ' + (fruitDef?.label || berryKey) + seedMsg };
+          },
+        };
+      }
+
+      function clearZoneBerryMeshes(mapId) {
+        const scene = _zoneScenes.get(mapId)?.scene;
+        const groups = _zoneBerryMeshGroups.get(mapId);
+        if (scene && groups) groups.forEach(g => scene.remove(g));
+        _zoneBerryMeshGroups.delete(mapId);
+        _zoneBerryObjects.delete(mapId);
+      }
+
+      // Called right after ensureZoneReagents(mapId) on every zone entry, so
+      // scatterBerriesForZone can see that same day's already-placed reagent
+      // spots and avoid them.
+      function ensureZoneBerries(mapId) {
+        if (typeof WildernessMapGenerator === 'undefined') return;
+        if (!wildBerriesForZone(mapId).length) return;
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return;
+        let persisted = _zoneBerryPersist.get(mapId);
+        if (persisted?.day === calendar.day) {
+          if (_zoneBerryMeshGroups.has(mapId)) return; // already built for today
+        } else {
+          persisted = { day: calendar.day, placements: scatterBerriesForZone(mapId) };
+          _zoneBerryPersist.set(mapId, persisted);
+        }
+        clearZoneBerryMeshes(mapId);
+        const groups = [];
+        const objMap = new Map();
+        for (const { col, row, key } of persisted.placements) {
+          const mesh = buildBerryBushMesh(key);
+          if (!mesh) continue;
+          const tile = zi.grid[row]?.[col];
+          mesh.position.set(col + 0.5, tile ? tileSurfaceYInArea(tile, mapId) : NORMAL_TOP, row + 0.5);
+          zi.scene.add(mesh);
+          groups.push(mesh);
+          objMap.set(col + ',' + row, makeBerryBushObject(mapId, col, row, key, mesh));
+        }
+        _zoneBerryMeshGroups.set(mapId, groups);
+        _zoneBerryObjects.set(mapId, objMap);
+        debugLog(`ensureZoneBerries(${mapId}): built ${groups.length} berry bushes for day ${calendar.day}`);
+      }
+
+      function respawnAllZoneBerries() {
+        if (typeof WildernessMapGenerator === 'undefined') return;
+        for (const mapId of WildernessMapGenerator.zoneMapIds()) {
+          clearZoneBerryMeshes(mapId);
+          _zoneBerryPersist.delete(mapId);
+        }
+        if (_isZoneArea(currentArea)) ensureZoneBerries(currentArea);
+      }
+
+      function serializeZoneBerryState() {
+        const out = {};
+        _zoneBerryPersist.forEach((v, mapId) => { out[mapId] = { day: v.day, placements: v.placements }; });
+        return out;
+      }
+      function restoreZoneBerryState(saved) {
+        _zoneBerryPersist.clear();
+        Object.entries(saved || {}).forEach(([mapId, v]) => {
+          if (v && Array.isArray(v.placements)) _zoneBerryPersist.set(mapId, { day: v.day, placements: v.placements });
+        });
       }
 
       function buildTownScene() {
@@ -11654,6 +12357,32 @@
         return ({ redberries: 'Redberry', blueberries: 'Blueberry', yellowberries: 'Yellowberry', whiteberries: 'Whiteberry', blackberries: 'Blackberry' })[key] || (ITEM_DEFS[key]?.label || key);
       }
 
+      // Berries literally have their color in their name — used to recolor
+      // their Jam (jar_liquid.png) and Wine (bottle_wine.png) sprites.
+      const BERRY_COLORS = {
+        redberries: 0xD93A3A, blueberries: 0x3F63D9, yellowberries: 0xE0C93A,
+        whiteberries: 0xF2EFE6, blackberries: 0x241A2E,
+      };
+
+      // The 7 Uumkao'ii dew colors and their per-color processed-item keys —
+      // shared by getProcessingOutputs (squeezing dew -> milk+curds) and
+      // getProcessingOutput's barrelAging branch (milk -> nectar). "white"
+      // uses the uumkaoii-prefixed key spelling from the reference cooking
+      // spec (avoids colliding with any future generic "white dairy" family).
+      const DEW_COLOR_KEYS = ['yellow', 'green', 'blue', 'orange', 'red', 'purple', 'white'];
+      function dewItemKey(color) { return color + 'Dew'; }
+      function dewMilkKey(color) { return color === 'white' ? 'uumkaoiiWhiteDewMilk' : color + 'DewMilk'; }
+      function dewCurdsKey(color) { return color === 'white' ? 'uumkaoiiWhiteDewCurds' : color + 'DewCurds'; }
+      function dewColorFromMilkOrCurdsKey(key) {
+        for (const color of DEW_COLOR_KEYS) {
+          if (key === dewMilkKey(color) || key === dewCurdsKey(color)) return color;
+        }
+        return null;
+      }
+
+      // Single-output recipes. getProcessingOutputs (below) wraps this for
+      // the common case and special-cases the one recipe — squeezing
+      // Uumkao'ii dew — that jointly produces two outputs from one input.
       function getProcessingOutput(methodId, inputKey) {
         const input = ITEM_DEFS[inputKey];
         if (!input) return null;
@@ -11661,9 +12390,15 @@
           const base = berryBaseName(inputKey);
           return { key: inputKey + 'Juice', icon: '🧃', label: base + ' Juice', cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 5), tags: ['Processed', 'Juice', 'Fruit'], desc: 'Sweet liquid squeezed from ' + input.label.toLowerCase() + '.' };
         }
+        if (methodId === 'squeezing' && inputKey === 'garWolfMilk') {
+          return { key: 'garWolfButter', icon: '🧈', label: 'Gar-wolf Butter', cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 6), tags: ['Processed', 'Butter', 'Gar-wolf'], desc: 'Butter pressed from gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
+        }
         if (methodId === 'mashing' && isBerryKey(inputKey)) {
           const base = berryBaseName(inputKey);
-          return { key: inputKey + 'Jam', icon: input.icon, label: base + ' Jam', cat: 'processed', sellPrice: Math.max(5, (input.sellPrice || 4) + 7), tags: ['Processed', 'Jam', 'Sweet Paste'], desc: 'Thick berry preserve made at a pestle station.' };
+          return { key: inputKey + 'Jam', icon: input.icon, label: base + ' Jam', cat: 'processed', sellPrice: Math.max(5, (input.sellPrice || 4) + 7), tags: ['Processed', 'Jam', 'Sweet Paste'], desc: 'Thick berry preserve made at a pestle station.', spriteIcon: 'jar_liquid.png', spriteColor: BERRY_COLORS[inputKey], spriteMode: 'keyed' };
+        }
+        if (methodId === 'mashing' && inputKey === 'garWolfMilk') {
+          return { key: 'garWolfCream', icon: '🍦', label: 'Gar-wolf Cream', cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Cream', 'Gar-wolf'], desc: 'Cream worked from gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
         }
         if (methodId === 'mashing' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPaste', icon: '🟤', label: 'Black Mustard Paste', cat: 'processed', sellPrice: 13, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Hot pungent paste made from black mustard seed.' };
         if (methodId === 'mashing' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPaste', icon: '🟢', label: 'Green Mustard Paste', cat: 'processed', sellPrice: 12, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Fresh pungent paste made from green mustard seed.' };
@@ -11673,8 +12408,51 @@
         if (methodId === 'grinding' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPowder', icon: '⚫', label: 'Black Mustard Powder', cat: 'processed', sellPrice: 11, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground black mustard powder.' };
         if (methodId === 'grinding' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPowder', icon: '🥬', label: 'Green Mustard Powder', cat: 'processed', sellPrice: 10, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground green mustard powder.' };
         if (methodId === 'drying' && isBerryKey(inputKey)) return { key: inputKey + 'Dried', icon: input.icon, label: 'Dried ' + input.label, cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 4), tags: ['Processed', 'Dried', 'Fruit'], desc: 'Dried berries. Dry-default crops are not valid drying inputs.' };
-        if (methodId === 'barrelAging' && /Juice$/.test(inputKey)) return { key: inputKey.replace(/Juice$/, 'Wine'), icon: '🍷', label: input.label.replace(/ Juice$/, ' Wine'), cat: 'processed', sellPrice: Math.max(10, (input.sellPrice || 10) + 12), tags: ['Processed', 'Wine', 'Aged'], desc: 'Barrel-aged fruit wine.' };
+        if (methodId === 'barrelAging' && /Juice$/.test(inputKey)) {
+          const berryKey = inputKey.replace(/Juice$/, '');
+          return { key: inputKey.replace(/Juice$/, 'Wine'), icon: '🍷', label: input.label.replace(/ Juice$/, ' Wine'), cat: 'processed', sellPrice: Math.max(10, (input.sellPrice || 10) + 12), tags: ['Processed', 'Wine', 'Aged'], desc: 'Barrel-aged fruit wine.', spriteIcon: 'bottle_wine.png', spriteColor: BERRY_COLORS[berryKey], spriteMode: 'keyed' };
+        }
+        if (methodId === 'barrelAging' && dewColorFromMilkOrCurdsKey(inputKey) && /Milk$/.test(inputKey)) {
+          const color = dewColorFromMilkOrCurdsKey(inputKey);
+          const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
+          return { key: inputKey.replace(/Milk$/, 'Nectar'), icon: '🍷', label: properLabel + " Uumkao'ii Nectar", cat: 'processed', sellPrice: Math.max(14, (input.sellPrice || 14) + 10), tags: ['Processed', 'Nectar', "Uumkao'ii", 'Aged'], desc: 'Barrel-aged Uumkao\'ii milk.', spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
+        }
+        if (methodId === 'barrelAging' && inputKey === 'needlegrain') {
+          return { key: 'needlegrainSake', icon: '🍶', label: 'Needlegrain Sake', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Sake', 'Aged', 'Needlegrain'], desc: 'Barrel-aged needlegrain liquor, colored like dark pine needles.', spriteIcon: 'bottle_wine.png', spriteColor: 0x2F4A2E, spriteMode: 'keyed' };
+        }
+        if (methodId === 'barrelAging' && inputKey === 'heftroot') {
+          return { key: 'heftrootVodka', icon: '🥃', label: 'Heftroot Vodka', cat: 'processed', sellPrice: 26, tags: ['Processed', 'Vodka', 'Aged', 'Heftroot'], desc: 'Barrel-aged heftroot spirit, clear white.', spriteIcon: 'bottle_wine.png', spriteColor: 0xFFFFFF, spriteMode: 'keyed' };
+        }
+        if (methodId === 'barrelAging' && inputKey === 'garWolfMilk') {
+          return { key: 'garWolfAirag', icon: '🍶', label: 'Gar-wolf Airag', cat: 'processed', sellPrice: 22, tags: ['Processed', 'Airag', 'Aged', 'Gar-wolf'], desc: 'Barrel-fermented gar-wolf milk.', spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
+        }
+        if (methodId === 'vaseAging' && dewColorFromMilkOrCurdsKey(inputKey) && /Curds$/.test(inputKey)) {
+          return { key: 'uumkaoiiCheese', icon: '🧀', label: "Uumkao'ii Cheese", cat: 'processed', sellPrice: 28, tags: ['Processed', 'Cheese', "Uumkao'ii", 'Aged'], desc: 'Vase-aged Uumkao\'ii curds — every dew color ferments into the same cheese.', spriteIcon: 'cheese.png', spriteColor: 0xD9A441, spriteMode: 'direct' };
+        }
+        if (methodId === 'vaseAging' && inputKey === 'garWolfMilk') {
+          return { key: 'garWolfCheese', icon: '🧀', label: 'Gar-wolf Cheese', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Cheese', 'Gar-wolf', 'Aged'], desc: 'Vase-aged gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
+        }
         return null;
+      }
+
+      // Wraps getProcessingOutput in an array, except for the one recipe that
+      // jointly produces two items from a single input in a single action:
+      // squeezing raw Uumkao'ii dew into both Milk and Curds at once.
+      function getProcessingOutputs(methodId, inputKey) {
+        const input = ITEM_DEFS[inputKey];
+        if (!input) return null;
+        const dewColorMatch = DEW_COLOR_KEYS.find(color => dewItemKey(color) === inputKey);
+        if (methodId === 'squeezing' && dewColorMatch) {
+          const color = dewColorMatch;
+          const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
+          const dewColorHex = input.spriteColor;
+          return [
+            { key: dewMilkKey(color), icon: '🥛', label: properLabel + " Uumkao'ii Milk", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 3), tags: ['Processed', 'Milk', "Uumkao'ii", 'Squeezed', 'Not Animal Milk'], desc: 'Milk squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'jar_liquid.png', spriteColor: dewColorHex, spriteMode: 'keyed' },
+            { key: dewCurdsKey(color), icon: '🧀', label: properLabel + " Uumkao'ii Curds", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Curds', "Uumkao'ii", 'Squeezed', 'Not Dairy'], desc: 'Curds squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'cheese.png', spriteColor: dewColorHex, spriteMode: 'direct' },
+          ];
+        }
+        const single = getProcessingOutput(methodId, inputKey);
+        return single ? [single] : null;
       }
 
       function ensureProcessedItemDef(output) {
@@ -11685,7 +12463,8 @@
           cat: output.cat || 'processed',
           sellPrice: output.sellPrice || 1,
           tags: output.tags || ['Processed'],
-          desc: output.desc || 'Processed food item.'
+          desc: output.desc || 'Processed food item.',
+          ...(output.spriteIcon ? { spriteIcon: output.spriteIcon, spriteColor: output.spriteColor, spriteMode: output.spriteMode } : {}),
         };
       }
 
@@ -11715,7 +12494,30 @@
       // won't produce anything yet.
       const LIVESTOCK_RESOURCE_DEFS = {
         uumkaoii: { itemKey: 'uumkaoiiEgg', cooldownDays: 2 },
+        'gar-wolf': { itemKey: 'garWolfMilk', cooldownDays: 1 },
+        'dabinggi-hound': { itemKey: 'dabinggiHoundVenom', cooldownDays: 1 },
       };
+
+      // Which action verb the in-world "Collect" button shows, per kind —
+      // gar-wolf/dabinggi-hound's resource is milked out of them rather than
+      // collected like an egg, but both flow through the exact same
+      // resourceReady/collectLivestockResource machinery (see
+      // _farmAnimalGetButtons) — this only changes the button's label/action
+      // string, not the mechanic.
+      const LIVESTOCK_RESOURCE_VERB = { 'gar-wolf': 'Milk', 'dabinggi-hound': 'Milk' };
+
+      // A housed uumkao'ii's dew cooldown is tracked separately from its
+      // LIVESTOCK_RESOURCE_DEFS egg cooldown (see dewDaysUntil/dewReady on
+      // the livestock record, ticked in tickLivestockResources) — unlike the
+      // egg, a ready dew doesn't get a "Collect" button; it's dropped as a
+      // persistent, diggable world pile on the next open tile the animal
+      // wanders onto (see makeUumkaoiiAnimal's tick() / dropDewPile).
+      // Every uumkao'ii currently produces the same color — dewColor exists
+      // on the record (rather than hardcoding UUMKAOII_DEFAULT_DEW_COLOR at
+      // drop time) so a future breeding/genetics mechanism can assign a
+      // different one per-animal without touching the drop code at all.
+      const UUMKAOII_DEW_COOLDOWN_DAYS = 2;
+      const UUMKAOII_DEFAULT_DEW_COLOR = 'blue';
 
       // Tile types a farm building can never be placed/moved onto — trenches
       // and any worked/flooded soil. Rock/shrub/weeds are deliberately absent
@@ -12194,7 +12996,11 @@
         const corpse = getCorpseObjectAt(col, row);
         if (corpse) return corpse;
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
-        if (_isZoneArea(currentArea)) return _zoneReagentObjects.get(currentArea)?.get(col + ',' + row) || null;
+        if (_isZoneArea(currentArea)) {
+          return _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
+              || _zoneBerryObjects.get(currentArea)?.get(col + ',' + row)
+              || null;
+        }
         if (currentArea !== 'farm') return null;
         return worldObjects.get(col + ',' + row) || null;
       }
@@ -12334,7 +13140,7 @@
           def.effects.forEach((eff, idx) => { if (effects.includes(eff)) discoverReagentEffect(rk, idx); });
         }
         keys.forEach(k => { inventory[k]--; clampInventoryStack(k); });
-        const potionKey = ensurePotionItemDef(effects);
+        const potionKey = ensurePotionItemDef(effects, keys);
         inventory[potionKey] = Math.min(99, (inventory[potionKey] || 0) + 1);
         alchemySelectedReagents = [];
         refreshItemScroll();
@@ -12406,6 +13212,99 @@
         }
         const brewBtn = document.getElementById('alchemyBrewBtn');
         if (brewBtn) brewBtn.disabled = alchemySelectedReagents.length < 2;
+      }
+
+      // ── Tasks panel (board requests + accepted NPC favors) ───────────
+      function renderTasksPanel() {
+        maybeRefreshBoardTask();
+
+        // Today's board notice — not yet in the player's log. Taking it is
+        // the only action this panel offers; turning a task in (board or
+        // favor) always happens by talking to the NPC who posted/asked it.
+        const postingEl = document.getElementById('tasksBoardPosting');
+        if (postingEl) {
+          postingEl.innerHTML = '';
+          const posting = getCurrentBoardPosting();
+          if (posting) {
+            const def = ITEM_DEFS[posting.itemKey];
+            const row = document.createElement('div');
+            row.className = 'shop-row';
+            row.innerHTML = `
+              <div class="sh-icon">📋</div>
+              <div class="sh-info">
+                <div class="sh-name">${esc(posting.npcName)} wants ${esc(def?.label || posting.itemKey)} ×${posting.qty}</div>
+                <div class="sh-desc">Reward: ${posting.rewardGold}g + ${posting.rewardFriendship} friendship with ${esc(posting.npcName)} — turn in to them once you have it.</div>
+              </div>
+              <button class="shop-buy-btn" data-take="${posting.id}">Take Quest</button>
+            `;
+            row.querySelector('[data-take]')?.addEventListener('click', () => {
+              takeBoardTask(posting.id);
+              renderTasksPanel();
+            });
+            postingEl.appendChild(row);
+          } else {
+            postingEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">📋</span><span class="dr-name">Nothing posted right now — check back tomorrow.</span><span class="dr-eta">—</span></div>';
+          }
+        }
+
+        // The player's actual quest log — everything accepted, board or
+        // favor, with no completion deadline. Read-only: no turn-in button
+        // here on purpose (see above).
+        const list = document.getElementById('tasksList');
+        if (!list) return;
+        list.innerHTML = '';
+        const active = Object.entries(questProgress)
+          .filter(([, st]) => st.status === 'available' && (st.progress?.kind === 'board' || st.progress?.kind === 'favor'))
+          .map(([id, st]) => ({ id, ...st.progress }))
+          .sort((a, b) => (a.kind === 'board' ? 0 : 1) - (b.kind === 'board' ? 0 : 1));
+        if (!active.length) {
+          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">📜</span><span class="dr-name">No quests in your log yet.</span><span class="dr-eta">—</span></div>';
+          return;
+        }
+        active.forEach(task => {
+          const def = ITEM_DEFS[task.itemKey];
+          const have = inventory[task.itemKey] || 0;
+          const source = task.kind === 'board' ? `${esc(task.npcName)}'s board request` : `${esc(task.npcName)}'s favor`;
+          const row = document.createElement('div');
+          row.className = 'shop-row';
+          row.innerHTML = `
+            <div class="sh-icon">${task.kind === 'board' ? '📋' : '💌'}</div>
+            <div class="sh-info">
+              <div class="sh-name">${source} — ${esc(def?.label || task.itemKey)} ×${task.qty}</div>
+              <div class="sh-desc">Have ${have}/${task.qty}. Reward: ${task.rewardGold}g + ${task.rewardFriendship} friendship. Turn in to ${esc(task.npcName)}.</div>
+            </div>
+          `;
+          list.appendChild(row);
+        });
+      }
+
+      // ── Relationships panel (friendship tier per NPC talked to) ──────
+      function renderRelationshipsPanel() {
+        const list = document.getElementById('relationshipsList');
+        if (!list) return;
+        list.innerHTML = '';
+        const knownIds = [..._npcDlgState.keys()].filter(id => (_npcDlgState.get(id).memory || []).length > 0);
+        if (!knownIds.length) {
+          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">💬</span><span class="dr-name">You haven\'t talked to anyone yet.</span><span class="dr-eta">—</span></div>';
+          return;
+        }
+        knownIds
+          .map(npcId => ({ npcId, rec: npcWalkers.find(w => w.rec?.id === npcId)?.rec, ...friendshipTierProgress(npcId) }))
+          .sort((a, b) => b.favor - a.favor)
+          .forEach(({ npcId, rec, tier, favor, next }) => {
+            const name = rec?.name || npcId;
+            const progressNote = next != null ? `${next - favor} favor to Tier ${tier + 1}` : 'max tier';
+            const row = document.createElement('div');
+            row.className = 'shop-row';
+            row.innerHTML = `
+              <div class="sh-icon">💬</div>
+              <div class="sh-info">
+                <div class="sh-name">${esc(name)} — Friendship Tier ${tier}</div>
+                <div class="sh-desc">${favor} favor (${progressNote})</div>
+              </div>
+            `;
+            list.appendChild(row);
+          });
       }
 
       // ── Market page render ─────────────────────────────────────────
@@ -12625,6 +13524,28 @@
         fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
         fishingspear: { icon: '🎣', label: 'Fishing Spear', cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A slender fishing spear. Fits in the harpoon or weapon slot.' },
         pickshovel:   { icon: '⛏️', label: 'Pick-Shovel',   cat: 'tool', sellPrice: 0, tags: ['Tool', 'Shovel', 'Pick', 'Weapon'],  desc: 'A combination pick-shovel for digging. Fits in the shovel, pick, or weapon slot.' },
+
+        // ── Uumkao'ii Dew ────────────────────────────────────────────
+        // Dug up from a persistent ground pile (see UUMKAOII_DEW_COOLDOWN_DAYS/
+        // dropDewPile — the pile itself renders pile_dew.png, direct-recolored;
+        // see spawnDewPileMesh). What lands in the bag is the bottled dew, so
+        // its item sprite is jar_liquid.png, keyed-recolored the same way as
+        // any other bottled liquid. Only blueDew is actually reachable today
+        // (the default/only color a farm uumkao'ii currently produces — see
+        // UUMKAOII_DEFAULT_DEW_COLOR). The other six are pre-wired data for
+        // whichever future mechanism (breeding/genetics) assigns a farm
+        // uumkao'ii a different dew color.
+        yellowDew: { icon: '🟡', label: 'Yellow Uumkao\'ii Dew', cat: 'material', sellPrice: 9, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Dry Season'], desc: 'Glossy sweet dew from a dry-season uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xF3D23A, spriteMode: 'keyed' },
+        greenDew:  { icon: '🟢', label: 'Green Uumkao\'ii Dew',  cat: 'material', sellPrice: 9, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Wet Season'], desc: 'Glossy sweet dew from a wet-season uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x5CB84A, spriteMode: 'keyed' },
+        blueDew:   { icon: '🔵', label: 'Blue Uumkao\'ii Dew',   cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Cloud Forest'], desc: 'Glossy blue dew — the common color a farm uumkao\'ii leaves, dug up from a pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x3F8FE0, spriteMode: 'keyed' },
+        orangeDew: { icon: '🟠', label: 'Orange Uumkao\'ii Dew', cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Cloud Forest'], desc: 'Glossy sweet dew from a cloud-forest uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xF08A2E, spriteMode: 'keyed' },
+        redDew:    { icon: '🔴', label: 'Red Uumkao\'ii Dew',    cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Northern Cliffs'], desc: 'Glossy sweet dew from a northern-cliffs uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xE0453F, spriteMode: 'keyed' },
+        purpleDew: { icon: '🟣', label: 'Purple Uumkao\'ii Dew', cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy sweet dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x9B4FD9, spriteMode: 'keyed' },
+        whiteDew:  { icon: '⚪', label: 'White Uumkao\'ii Dew',  cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy pale dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xFFFFFF, spriteMode: 'keyed' },
+
+        // ── Milkable livestock resources (Gar-wolf, Dabinggi-hound) ─────
+        garWolfMilk: { icon: '🥛', label: 'Gar-wolf Milk', cat: 'material', sellPrice: 10, tags: ['Material', 'Milk', 'Gar-wolf'], desc: 'Milk collected from a housed gar-wolf. Pale white with a faint blue sheen.', spriteIcon: 'jar_liquid.png', spriteColor: 0xEFF3F8, spriteMode: 'keyed' },
+        dabinggiHoundVenom: { icon: '🧪', label: 'Dabinggi-hound Venom', cat: 'material', sellPrice: 15, tags: ['Material', 'Venom', 'Dabinggi-hound'], desc: 'Venom milked from a housed dabinggi-hound. A vivid, lime-green fluid.', spriteIcon: 'jar_liquid.png', spriteColor: 0xA6E22E, spriteMode: 'keyed' },
       };
 
       Object.values(PROCESSING_FURNITURE_DEFS).forEach(def => {
@@ -12756,6 +13677,23 @@
 
       function itemIconForKey(key) {
         return ITEM_DEFS[key]?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon || '□';
+      }
+
+      // Upgrades an already-rendered emoji icon element to a recolored PNG
+      // once it's ready (async — canvas recolor + data URL), for items whose
+      // def carries spriteIcon/spriteColor/spriteMode (see sprite-recolor.js).
+      // The emoji textContent set by the caller is left in place underneath
+      // as the instant, zero-risk fallback — el.color is only hidden once
+      // the background-image actually lands, and never touched at all for
+      // plain items or if the recolor fails.
+      function applyItemSpriteIcon(el, def) {
+        if (!el || !def?.spriteIcon || !window.SpriteRecolor) return;
+        window.SpriteRecolor.getRecoloredCanvas('assets/objectsprites/' + def.spriteIcon, def.spriteColor, def.spriteMode)
+          .then(canvas => {
+            el.style.backgroundImage = `url(${canvas.toDataURL()})`;
+            el.classList.add('sprited-icon');
+          })
+          .catch(() => {});
       }
 
       // ── Inventory panel state ──────────────────────────────────────
@@ -12987,6 +13925,7 @@
             box.appendChild(badge);
           }
           box.addEventListener('click', () => selectInventoryItem(key));
+          applyItemSpriteIcon(box.querySelector('.iib-icon'), def);
           grid.appendChild(box);
         });
 
@@ -13026,6 +13965,9 @@
 
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
         set('iiIcon',  def.icon);
+        const iiIconEl = document.getElementById('iiIcon');
+        if (iiIconEl) { iiIconEl.style.backgroundImage = ''; iiIconEl.classList.remove('sprited-icon'); }
+        applyItemSpriteIcon(iiIconEl, def);
         set('iiName',  `${def.label} ×${count}`);
         set('iiPrice', def.sellPrice > 0 ? `${def.sellPrice}g each` : '');
         set('iiTags',  def.tags.map(t => `<span class="ii-tag">${t}</span>`).join(''));
@@ -13354,6 +14296,8 @@
         if (detailEl) detailEl.style.display  = '';
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
         set('iiIcon',  def.icon);
+        const iiIconEl2 = document.getElementById('iiIcon');
+        if (iiIconEl2) { iiIconEl2.style.backgroundImage = ''; iiIconEl2.classList.remove('sprited-icon'); }
         set('iiName',  def.label + ' (Gear) — Mastery ' + toolMasteryLevel(key) + '/5');
         set('iiPrice', 'Permanent — not sellable');
         set('iiTags',  def.slots.map(t => '<span class="ii-tag">' + t + '</span>').join(''));
@@ -15190,6 +16134,10 @@
         // farm-only mechanics, and pick duplicates the shovel's terrain actions.
         if (currentArea === 'town' && (tool === 'shovel' || tool === 'hoe' || tool === 'pick')) return false;
         if (tool === 'shovel') {
+          // A dew pile must be dug up (shovel only, half a trench-dig's
+          // duration — see DIG_DEW_PILE_STAGES) before anything else can be
+          // done to this tile, including actually digging it into a trench.
+          if (tile.dewPile) return action === 'dig';
           if (action === 'dig') {
             if (blocksDiggingUnder(tile)) return false;
             // An already-dug trench can be redug (single tap) once rain has silted it shallower.
@@ -15200,6 +16148,7 @@
           if (action === 'raise') return [TileType.GRASS, TileType.TILLED].includes(tile.type) && !tile.crop;
         }
         if (tool === 'hoe') {
+          if (tile.dewPile) return false; // dig the pile up with a shovel first
           if (action === 'till') return tile.type === TileType.GRASS && !tile.crop;
           if (action === 'smooth') return [TileType.TILLED, TileType.RAISED, TileType.PADDY].includes(tile.type) && !tile.crop;
         }
@@ -15216,6 +16165,7 @@
           });
         }
         if (tool === 'pick') {
+          if (tile.dewPile) return false; // only a shovel can dig up a dew pile
           if (action === 'dig') {
             if (blocksDiggingUnder(tile)) return false;
             // An already-dug trench can be redug (single tap) once rain has silted it shallower.
@@ -15757,6 +16707,16 @@
         const tile = getActiveGrid()[row][col];
 
         if (tool === 'shovel') {
+          if (action === 'dig' && tile.dewPile) {
+            const colorKey = tile.dewPile;
+            tile.dewPile = null;
+            removeDewPileMesh(col, row);
+            const dewKey = dewItemKey(colorKey);
+            inventory[dewKey] = Math.min(99, (inventory[dewKey] || 0) + 1);
+            awardToolUseMasteryXp('shovel');
+            saveFarmLayout();
+            return { ok: true, message: `Dug up 1 ${ITEM_DEFS[dewKey]?.label || dewKey}.` };
+          }
           if (action === 'dig' && tile.type === TileType.TRENCH) {
             tile.depth = 1;
             awardToolUseMasteryXp('shovel');
@@ -15902,7 +16862,12 @@
             showToast(msg, false);
             return;
           }
-          startChargeAction(getReticleTile(), activeAction === 'fill' ? FILL_TRENCH_STAGES : DIG_NEW_TRENCH_STAGES);
+          {
+            const _chargeReticle = getReticleTile();
+            const _chargeTile = getActiveGrid()[_chargeReticle.row]?.[_chargeReticle.col];
+            const _digStages = _chargeTile?.dewPile ? DIG_DEW_PILE_STAGES : DIG_NEW_TRENCH_STAGES;
+            startChargeAction(_chargeReticle, activeAction === 'fill' ? FILL_TRENCH_STAGES : _digStages);
+          }
           return;
         }
 
@@ -20012,6 +20977,13 @@
         { anim: 'thrust', dur },
         { anim: 'toss',   dur },
       ]);
+      // Digging up a dew pile — same held input and same two-animation
+      // (thrust/toss) shape as digging a brand-new trench, just at half the
+      // base duration per rep.
+      const DIG_DEW_PILE_STAGES = DIG_NEW_TRENCH_REP_DURATIONS.map(dur => dur / 2).flatMap(dur => [
+        { anim: 'thrust', dur },
+        { anim: 'toss',   dur },
+      ]);
       // Filling a trench back in plays a repeating 5-stage flourish: turn 45°
       // toward the camera and swing, turn back and strike again (no recoil),
       // then a paused 180° length-wise twist of the shovel out and back, and a
@@ -22537,15 +23509,22 @@
           updatePlayerVitals(dt);
           updateAlchemyEffects();
 
-          if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea)) {
+          if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
+            // Den-Mother caverns are the one building exception (boss arena,
+            // same reason tools/weapons/reticle still work in there — see
+            // enterBuilding/the combat-gate comment near updateToolMesh) —
+            // a companion should follow the player in and keep fighting
+            // alongside them, not sit frozen back in the farm/town/zone
+            // scene it was last synced into.
             syncCompanionFromWhistle();
             updateCompanions(dt);
             updateHostileSpawning(dt);
             updateHostiles(dt);
             updateCorpses(dt);
           } else if (_isBuildingArea(currentArea)) {
-            // Den-Mother mini-bosses live in cavern buildings and still need
-            // to chase/attack/return — no spawning/companions in there, though.
+            // Ordinary building interiors (house/shop) intentionally have no
+            // companions or wild spawns — only Den-Mother mini-bosses still
+            // need to chase/attack/return there.
             updateHostiles(dt);
             updateCorpses(dt);
           }
@@ -23068,6 +24047,7 @@
         tickCropDay();
         tickLivestockBreeding();
         tickLivestockResources();
+        maybeRefreshBoardTask();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
         checkTothalShift();
         // Any den wiped out since it started waiting can now be moved back
@@ -23075,6 +24055,7 @@
         // (lazy, current-zone-only) spawning once this fires.
         pendingDenRespawn.clear();
         respawnAllZoneReagents();
+        respawnAllZoneBerries();
       }
 
       // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
@@ -23090,6 +24071,7 @@
         tickCropDay();
         tickLivestockBreeding();
         tickLivestockResources();
+        maybeRefreshBoardTask();
         checkTothalShift();
         pendingDenRespawn.clear();
         respawnAllZoneReagents();
@@ -24545,9 +25527,9 @@
         try {
           const _rl = loadFarmLayout();
           if (_rl) {
-            (_rl.furniture || []).forEach(({ key, col, row }) => {
+            (_rl.furniture || []).forEach(({ key, col, row, job }) => {
               if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
-                const obj = makeProcessingFurniture(col, row, key);
+                const obj = makeProcessingFurniture(col, row, key, job);
                 if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
               }
             });
@@ -25475,6 +26457,7 @@
         // per character.
         loadNpcRelationships(playerData);
         questProgress = { ...(playerData.questProgress || {}) };
+        maybeRefreshBoardTask(); // makes sure a board task exists even before the first day rollover
 
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
         // today's (not-yet-picked) wilderness reagent placements — all
@@ -25482,6 +26465,7 @@
         restoreKnownReagentEffects(playerData.alchemyKnownEffects);
         restoreActiveAlchemyEffects(playerData.alchemyActiveEffects);
         restoreZoneReagentState(playerData.alchemyReagentState);
+        restoreZoneBerryState(playerData.wildBerryState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
         // session, unlike the static reagent/furniture/fish tables) — rebuild

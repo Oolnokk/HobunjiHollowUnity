@@ -1800,6 +1800,11 @@
       opacity: 0.55;
     }
     .iib-icon  { font-size: clamp(16px, calc(0.56 * var(--row)), 26px); line-height: 1; pointer-events: none; }
+    /* Upgrades an emoji icon (.iib-icon in the inventory grid, .ii-icon in
+       the detail panel) to a recolored sprite once applyItemSpriteIcon's
+       async canvas resolves — see game.js. The emoji glyph stays in the DOM
+       underneath (untouched fallback) and is just hidden via color:transparent. */
+    .sprited-icon { display: inline-block; width: 1em; height: 1em; background-size: contain; background-repeat: no-repeat; background-position: center; color: transparent; }
     .iib-count {
       position: absolute; bottom: 2px; right: 3px;
       font-size: var(--inv-font-xs); color: var(--muted);
