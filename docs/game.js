@@ -6484,6 +6484,22 @@
               row: (tentInstance.connectors[0] || tentInstance).y,
               target: 'building', targetMapId: 'map_i_researchers_tent',
             }] : [];
+            // The actual tent mesh (docs/config/pieces/researchers-tent.json),
+            // fed through the same zoneData.buildings pipeline _spawnZoneBuildings
+            // already uses for authored zone buildings -- without this, stampLocale's
+            // carrier 'structure' object (only used for path-routing) never gets
+            // drawn, and the spot just looks like flat ground. Rotated to face its
+            // door toward the connector's side (the piece's door faces south/+Z by
+            // default; each step here is a further 90° clockwise turn from there).
+            const TENT_DOOR_ROTATION_BY_SIDE = { south: 0, east: 90, north: 180, west: 270 };
+            const tentStructureObj = tentInstance?.objects.find(o => o.kind === 'structure');
+            const tentElevTier = tentStructureObj ? (merged.tiles.get(`${tentStructureObj.x},${tentStructureObj.y}`)?.elevTier || 0) : 0;
+            const tentBuilding = tentStructureObj ? [{
+              id: 'bldg_researchers_tent', pieceFile: 'config/pieces/researchers-tent.json',
+              gridX: tentStructureObj.x, gridZ: tentStructureObj.y,
+              rotationDeg: TENT_DOOR_ROTATION_BY_SIDE[tentInstance.connectors[0]?.side] ?? 0,
+              elevTier: tentElevTier, footprintW: 3, footprintD: 3,
+            }] : [];
 
             const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
             // One entrance transition per den, at its mouth tile — leads into
@@ -6519,7 +6535,7 @@
                 ...tentTransitions,
                 ...denTransitions,
               ],
-              toTownExit, mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
+              toTownExit, mesas: merged.mesas, buildings: [...(merged.buildings || []), ...tentBuilding], decor: [], furniture: [],
               dens: workspace.animalDens || [],
               foliagePatches: workspace.foliagePatches || [],
               ambushStations: workspace.ambushStations || [],
