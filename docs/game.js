@@ -6542,6 +6542,20 @@
               // over half the day) standing inside/behind the opaque exterior
               // tent mesh in the wilderness zone — impossible to see or find.
               registerNpcStations(stations, zoneId);
+              // Proactively warm up the tent's interior scene right now instead
+              // of waiting for the player to actually walk in — resolveNpcScheduleTarget
+              // only auto-warms it lazily, the first time something asks for
+              // station_researchers_tent_sleep and finds it unregistered, and that
+              // warm-up is itself async. If Garanki's schedule happens to resolve
+              // during the sleeping rule before either has happened (e.g. right at
+              // world boot), every rule AND the defaultStationId fallback fail to
+              // find that station, and resolveNpcScheduleTarget falls all the way
+              // through to scheduleHooks.defaultPosition — spawning him at that
+              // arbitrary fallback tile, nowhere near the tent, until his next
+              // schedule change happens to trigger a re-resolve. Loading this now
+              // means the station is registered before spawnScheduledNpcs (or its
+              // retry loop) ever resolves his first real target.
+              loadBuildingScene('map_i_researchers_tent');
             }
 
             const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
