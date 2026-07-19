@@ -320,6 +320,16 @@
     box(0, .93, 0, 2.8, .06, .8, 1.15),
   ];
 
+  // Bulletin Board: a post-mounted panel with a couple of pinned notices —
+  // the public task board (see game.js's task/favor system).
+  CATALOG.bulletinBoard = [
+    leg(-.55, 0, .95, .09, .7), leg(.55, 0, .95, .09, .7),
+    box(0, .95, 0, 1.3, 1.0, .08, 1, { topScaleX: .97, topScaleZ: 1 }),
+    box(0, .95, .045, 1.15, .82, .02, 1.4),
+    box(-.28, 1.08, .06, .32, .22, .01, 1.6),
+    box(.22, .82, .06, .3, .2, .01, 1.6),
+  ];
+
   // Alchemy Table: a squat cauldron on a stubby tripod, ringed with a few
   // corked reagent bottles — reuses the tapered-cylinder/disc primitives
   // rather than a bespoke model, matching every other CATALOG entry.

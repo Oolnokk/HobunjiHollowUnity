@@ -147,6 +147,8 @@
         if (targetPanel === 'carpenterShop') renderCarpenterShopPage();
         if (targetPanel === 'jubmirShop') renderJubmirShopPage();
         if (targetPanel === 'alchemy') renderAlchemyPanel();
+        if (targetPanel === 'tasks') renderTasksPanel();
+        if (targetPanel === 'relationships') renderRelationshipsPanel();
         auditInventorySizing();
       }
       function closeMenu() {
@@ -183,6 +185,8 @@
         if (id === 'carpenterShop') renderCarpenterShopPage();
         if (id === 'jubmirShop') renderJubmirShopPage();
         if (id === 'alchemy') renderAlchemyPanel();
+        if (id === 'tasks') renderTasksPanel();
+        if (id === 'relationships') renderRelationshipsPanel();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
         if (id === 'wildlife') renderWildlifeDebugPanel();
       }
@@ -478,6 +482,11 @@
               } else if (act.type === 'startChat') {
                 _beginNpcConversation(_dlgNpcRec);
                 skipNav = true;
+              } else if (act.type === 'acceptFavor') {
+                setQuestStatus(act.taskId, 'available', {});
+                showToast('📋 Favor accepted — check it from the Tasks tab.', true);
+              } else if (act.type === 'declineFavor') {
+                setQuestStatus(act.taskId, 'declined', {});
               }
             });
             if (!skipNav) _navigateDlgTo(c.next);
@@ -732,6 +741,26 @@
 
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
+
+        // Trusted-NPC favors — checked ahead of every other fast-path
+        // (including the merchant shop shortcuts below, so shopkeepers can
+        // ask for favors too, not just villagers with an authored dialogue
+        // tree) whenever the NPC currently has, or freshly rolls, a favor to
+        // ask — gated by friendship tier. Same synthetic choice-node
+        // shortcut the shop fast-paths use. See maybeOfferFavor.
+        const _favorTask = maybeOfferFavor(rec);
+        if (_favorTask) {
+          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
+          _renderDlgNode({
+            type: 'choice',
+            text: favorAskLine(_favorTask),
+            choices: [
+              { label: "I'll help.", actions: [{ type: 'acceptFavor', taskId: _favorTask.id }] },
+              { label: 'Not right now.', actions: [{ type: 'declineFavor', taskId: _favorTask.id }] },
+            ],
+          });
+          return;
+        }
 
         // These synthetic pre-choice screens are a fast-path shortcut for
         // when the NPC happens to be caught right at their counter — a
@@ -6032,6 +6061,211 @@
         saveMemberWorldData();
       }
 
+      // ── Procedural tasks: bulletin board + trusted-NPC favors ─────────
+      // Every generated task rides the questProgress scaffold above (no new
+      // save fields): questProgress[taskId].progress holds the full task
+      // descriptor { kind:'board'|'favor', npcId, npcName, domain, itemKey,
+      // qty, rewardGold, rewardFriendship, tier, postedDay }, and .status is
+      // 'offered' (a favor just asked, awaiting accept/decline — never used
+      // for board tasks), 'available' (accepted/posted, turn-in-able),
+      // 'declined', or 'completed'.
+      const TASK_DOMAINS = ['farming', 'fishing', 'combat', 'alchemy'];
+
+      // Friendship tiers ride the existing (previously unused) per-NPC favor
+      // counter — see _getNpcDlgState/adjustNpcFavor above. No new persisted
+      // counter needed; this just adds tier thresholds on top of it.
+      const FRIENDSHIP_TIER_THRESHOLDS = [0, 40, 100, 200, 350, 550];
+      function friendshipFavor(npcId) { return _getNpcDlgState(npcId).favor || 0; }
+      function friendshipTier(npcId) {
+        const favor = friendshipFavor(npcId);
+        let tier = 0;
+        for (let i = 0; i < FRIENDSHIP_TIER_THRESHOLDS.length; i++) if (favor >= FRIENDSHIP_TIER_THRESHOLDS[i]) tier = i;
+        return tier;
+      }
+      function friendshipTierProgress(npcId) {
+        const favor = friendshipFavor(npcId);
+        const tier = friendshipTier(npcId);
+        const next = FRIENDSHIP_TIER_THRESHOLDS[tier + 1];
+        return { tier, favor, next: next ?? null };
+      }
+
+      // Chance a trusted NPC asks a favor of you when you talk to them, and
+      // how much gold/friendship a favor pays out vs. an anonymous board
+      // request — both climb with friendship tier, per the design brief.
+      const FAVOR_CHANCE_BY_TIER       = [0, 0.12, 0.20, 0.30, 0.42, 0.55];
+      const TASK_QTY_BY_TIER           = [1, 2, 2, 3, 4, 5];
+      const TASK_REWARD_MULT           = { board: 1.3, favor: 1.6 };
+      const TASK_FRIENDSHIP_REWARD     = { board: [8, 10, 12, 15, 18, 22], favor: [18, 25, 35, 48, 65, 85] };
+      const BOARD_REFRESH_DAYS         = 7;
+
+      // role (free-text NPC job, e.g. "carpenter / roofing family
+      // connection", "great fae / fishing solution") → which item pool their
+      // own favors skew toward at low friendship. Matched by substring since
+      // authored roles are prose, not an enum; anything unmatched falls back
+      // to 'farming', the most generic domain.
+      function npcSkillDomain(role) {
+        const r = (role || '').toLowerCase();
+        if (/fish/.test(r)) return 'fishing';
+        if (/alchem|potion/.test(r)) return 'alchemy';
+        if (/hunt|watch|war|smith|mining|bonehewer/.test(r)) return 'combat';
+        return 'farming';
+      }
+
+      // Deliverable item pools per domain — farming is a static list (raw
+      // crops + Uumkao'ii dew); fishing/combat/alchemy are derived live from
+      // their own existing catalogs (FISH_DEFS, CREATURE_DB loot,
+      // ALCHEMY_REAGENT_DEFS) instead of being duplicated here.
+      const TASK_FARMING_ITEM_POOL = [
+        'needlegrain', 'heftroot', 'garlink', 'ongyums',
+        'redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries',
+        'blackMustard', 'greenMustard',
+        'yellowDew', 'greenDew', 'blueDew', 'orangeDew', 'redDew', 'purpleDew', 'whiteDew',
+      ];
+      function taskItemPoolFor(domain) {
+        if (domain === 'fishing') return Object.values(FISH_DEFS).flat().map(f => f.key);
+        if (domain === 'combat') return [...new Set(Object.values(CREATURE_DB).flatMap(c => (c.loot || []).map(l => l.key)))];
+        if (domain === 'alchemy') return Object.keys(ALCHEMY_REAGENT_DEFS);
+        return TASK_FARMING_ITEM_POOL;
+      }
+
+      // Picks one item from a domain's pool, biased toward cheaper items at
+      // low tiers and opening up to the whole pool (including the priciest)
+      // by the top tier — sellPrice is the one value/rarity signal shared
+      // across every domain's catalog.
+      function pickTaskItem(domain, tier) {
+        const pool = taskItemPoolFor(domain);
+        if (!pool || !pool.length) return null;
+        const priced = pool.map(key => ({ key, price: ITEM_DEFS[key]?.sellPrice || 3 })).sort((a, b) => a.price - b.price);
+        const reach = Math.min(1, (tier + 2) / (FRIENDSHIP_TIER_THRESHOLDS.length + 1));
+        const maxIdx = Math.max(0, Math.min(priced.length - 1, Math.ceil(priced.length * reach) - 1));
+        return priced[Math.floor(Math.random() * (maxIdx + 1))].key;
+      }
+
+      // The only currently-live numeric skill signals in the game: per-tool
+      // mastery (see awardToolUseMasteryXp) for farming/fishing/combat, and
+      // discovered alchemy-reagent-effect count as a rough alchemy proxy
+      // (there's no dedicated alchemy mastery counter yet). skillLevels from
+      // onboarding.js is a dormant, never-incremented stub — deliberately
+      // not used here.
+      function getPlayerSkillLevels() {
+        const alchemyDiscoveries = Object.values(knownReagentEffects).reduce((n, s) => n + s.size, 0);
+        return {
+          farming: toolMasteryLevel(equipmentSlots.hoe),
+          fishing: toolMasteryLevel(equipmentSlots.harpoon),
+          combat:  toolMasteryLevel(equipmentSlots.weapon),
+          alchemy: Math.min(5, Math.floor(alchemyDiscoveries / 4)),
+        };
+      }
+      function getPlayerHighestSkillDomain() {
+        const levels = getPlayerSkillLevels();
+        let best = 'farming', bestLevel = -1;
+        for (const d of TASK_DOMAINS) { if (levels[d] > bestLevel) { bestLevel = levels[d]; best = d; } }
+        return best;
+      }
+
+      function _makeTaskId() { return 'task_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+      // Generates and persists one task. `npcRec` is the requesting NPC's
+      // record ({id, name, role}) for a favor, or the (optional) NPC a board
+      // notice is attributed to — pass null for a fully anonymous board post.
+      // Domain skew is the design brief's core rule: low friendship pulls
+      // toward the NPC's own skillset (npcSkillDomain), high friendship pulls
+      // toward the player's own best skill — blended by a tier-weighted coin
+      // flip rather than a hard cutoff, so it shifts gradually.
+      function generateTask(kind, npcRec, tier) {
+        let domain;
+        if (kind === 'board' && !npcRec) {
+          domain = TASK_DOMAINS[Math.floor(Math.random() * TASK_DOMAINS.length)];
+        } else {
+          const npcDomain = npcSkillDomain(npcRec?.role);
+          const playerDomain = getPlayerHighestSkillDomain();
+          const playerWeight = tier / (FRIENDSHIP_TIER_THRESHOLDS.length - 1); // 0 at tier 0 → 1 at max tier
+          domain = Math.random() < playerWeight ? playerDomain : npcDomain;
+        }
+        const itemKey = pickTaskItem(domain, tier);
+        if (!itemKey) return null;
+        const def = ITEM_DEFS[itemKey];
+        const qty = TASK_QTY_BY_TIER[tier] + (Math.random() < 0.4 ? 1 : 0);
+        const rewardGold = Math.max(1, Math.round(qty * (def?.sellPrice || 5) * TASK_REWARD_MULT[kind]));
+        const rewardFriendship = TASK_FRIENDSHIP_REWARD[kind][tier];
+        const id = _makeTaskId();
+        const task = {
+          kind, npcId: npcRec?.id || null, npcName: npcRec?.name || 'The town board',
+          domain, itemKey, qty, rewardGold, rewardFriendship, tier, postedDay: calendar.day,
+        };
+        setQuestStatus(id, kind === 'favor' ? 'offered' : 'available', task);
+        return { id, ...task };
+      }
+
+      // Finds an existing task tied to one NPC, optionally restricted to
+      // today's postings (used so a declined favor isn't re-asked the same
+      // day, but can be asked again on a later visit).
+      function findNpcTask(npcId, statuses, todayOnly) {
+        for (const [id, st] of Object.entries(questProgress)) {
+          if (st.progress?.npcId !== npcId || st.progress?.kind !== 'favor') continue;
+          if (!statuses.includes(st.status)) continue;
+          if (todayOnly && st.progress.postedDay !== calendar.day) continue;
+          return { id, ...st.progress, status: st.status };
+        }
+        return null;
+      }
+
+      // Called from openNpcDialogue for every NPC with an id — returns the
+      // favor to offer this conversation (freshly rolled, or one already
+      // asked-but-not-yet-answered), or null if none should be offered.
+      function maybeOfferFavor(npcRec) {
+        const npcId = npcRec?.id;
+        if (!npcId) return null;
+        const stillOffered = findNpcTask(npcId, ['offered']);
+        if (stillOffered) return stillOffered;
+        if (findNpcTask(npcId, ['available'])) return null; // already holding one from them
+        if (findNpcTask(npcId, ['declined'], true)) return null; // already said no today
+        const tier = friendshipTier(npcId);
+        if (Math.random() > FAVOR_CHANCE_BY_TIER[tier]) return null;
+        return generateTask('favor', npcRec, tier);
+      }
+
+      function favorAskLine(task) {
+        const itemLabel = ITEM_DEFS[task.itemKey]?.label || task.itemKey;
+        return `Actually — since I trust you, could you bring me ${task.qty}× ${itemLabel}? I'd make it well worth your while.`;
+      }
+
+      // The single currently-posted board task, or null. Board tasks are
+      // deliberately not tied to any one player's friendship — a flat
+      // mid-range tier keeps the board offering reasonable variety for
+      // everyone regardless of who they've befriended.
+      function getCurrentBoardTask() {
+        const entries = Object.entries(questProgress).filter(([, st]) => st.progress?.kind === 'board' && st.status === 'available');
+        entries.sort((a, b) => (b[1].progress.postedDay || 0) - (a[1].progress.postedDay || 0));
+        return entries[0] ? { id: entries[0][0], ...entries[0][1].progress } : null;
+      }
+
+      function maybeRefreshBoardTask() {
+        const current = getCurrentBoardTask();
+        if (current && calendar.day - current.postedDay < BOARD_REFRESH_DAYS) return;
+        const candidates = npcWalkers.map(w => w.rec).filter(r => r?.id && r?.name);
+        const npcRec = candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : null;
+        const tier = Math.min(FRIENDSHIP_TIER_THRESHOLDS.length - 1, 1 + Math.floor(Math.random() * 3));
+        generateTask('board', npcRec, tier);
+      }
+
+      function turnInTask(taskId) {
+        const st = questProgress[taskId];
+        const task = st?.progress;
+        if (!task?.itemKey || st.status !== 'available') return { ok: false, message: 'That task is not ready to turn in.' };
+        if ((inventory[task.itemKey] || 0) < task.qty) {
+          return { ok: false, message: `You need ${task.qty}× ${ITEM_DEFS[task.itemKey]?.label || task.itemKey}.` };
+        }
+        inventory[task.itemKey] -= task.qty;
+        clampInventoryStack(task.itemKey);
+        inventory.gold = (inventory.gold || 0) + task.rewardGold;
+        if (task.npcId) adjustNpcFavor(task.npcId, task.rewardFriendship, 'task_' + task.kind);
+        setQuestStatus(taskId, 'completed', {});
+        const friendMsg = task.npcId ? ` +${task.rewardFriendship} friendship with ${task.npcName}.` : '';
+        showToast(`✅ Task complete! +${task.rewardGold}g.${friendMsg}`, true);
+        return { ok: true, message: 'Task turned in.' };
+      }
+
       let _tothalShiftInFlight = false;
       // Set while a shift is running so enterZone() can wait for it instead
       // of building a zone scene from the about-to-be-replaced authored/prior
@@ -6905,6 +7139,13 @@
       // Table spawned automatically, and where (see loadBuildingScene).
       const BUILDING_ALCHEMY_TABLES = {
         map_i_kunjis_potions_F1: { col: 5, row: 1 }, // beside the hearth at (6,1)
+      };
+      // mapId -> { col, row } — same idea as BUILDING_ALCHEMY_TABLES, for the
+      // public task Bulletin Board (see the procedural task system above).
+      // Placed in the General Store's open floor between its shelving
+      // (rows 1-7) and the front door (row 11).
+      const BUILDING_BULLETIN_BOARDS = {
+        map_i_general_store: { col: 9, row: 9 },
       };
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
@@ -10789,6 +11030,29 @@
               },
             });
           }
+          // Game-authored Bulletin Board (see BUILDING_BULLETIN_BOARDS) —
+          // same pattern as the Alchemy Table just above.
+          const bulletinBoardSpot = BUILDING_BULLETIN_BOARDS[mapId];
+          if (bulletinBoardSpot && window.ProceduralFurniture?.CATALOG?.bulletinBoard) {
+            const { col: bbCol, row: bbRow } = bulletinBoardSpot;
+            const bbModel = window.ProceduralFurniture.buildFurnitureGroup('bulletinBoard', 0x8a6a3a);
+            bbModel.position.set(bbCol + 0.5, 0, bbRow + 0.5);
+            _markOutline(bbModel);
+            _markFurnitureEdgeId(bbModel);
+            bScene.add(bbModel);
+            if (bGrid[bbRow]?.[bbCol]) bGrid[bbRow][bbCol].type = TileType.ROCK;
+            _buildingInteractables.set(mapId + ',' + bbCol + ',' + bbRow, {
+              getButtons() {
+                return [{ icon: '📋', label: 'Read Board', action: 'obj_bulletin', style: 'primary', allowed: true }];
+              },
+              onAction(action) {
+                if (action !== 'obj_bulletin') return { ok: false, message: 'Unknown action.' };
+                maybeRefreshBoardTask();
+                openMenu('tasks');
+                return { ok: true, message: 'Read the notice board.' };
+              },
+            });
+          }
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
           // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
@@ -12691,6 +12955,73 @@
         }
         const brewBtn = document.getElementById('alchemyBrewBtn');
         if (brewBtn) brewBtn.disabled = alchemySelectedReagents.length < 2;
+      }
+
+      // ── Tasks panel (board requests + accepted NPC favors) ───────────
+      function renderTasksPanel() {
+        maybeRefreshBoardTask();
+        const list = document.getElementById('tasksList');
+        if (!list) return;
+        list.innerHTML = '';
+        const active = Object.entries(questProgress)
+          .filter(([, st]) => st.status === 'available' && (st.progress?.kind === 'board' || st.progress?.kind === 'favor'))
+          .map(([id, st]) => ({ id, ...st.progress }))
+          .sort((a, b) => (a.kind === 'board' ? 0 : 1) - (b.kind === 'board' ? 0 : 1));
+        if (!active.length) {
+          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">📋</span><span class="dr-name">No tasks posted right now. Check the board, or talk to NPCs you trust.</span><span class="dr-eta">—</span></div>';
+          return;
+        }
+        active.forEach(task => {
+          const def = ITEM_DEFS[task.itemKey];
+          const have = inventory[task.itemKey] || 0;
+          const ready = have >= task.qty;
+          const source = task.kind === 'board' ? `Board request (posted by ${esc(task.npcName)})` : `${esc(task.npcName)}'s favor`;
+          const friendshipNote = task.npcId ? ` + ${task.rewardFriendship} friendship with ${esc(task.npcName)}` : '';
+          const row = document.createElement('div');
+          row.className = 'shop-row';
+          row.innerHTML = `
+            <div class="sh-icon">${task.kind === 'board' ? '📋' : '💌'}</div>
+            <div class="sh-info">
+              <div class="sh-name">${source} — ${esc(def?.label || task.itemKey)} ×${task.qty}</div>
+              <div class="sh-desc">Have ${have}/${task.qty}. Reward: ${task.rewardGold}g${friendshipNote}.</div>
+            </div>
+            <button class="shop-buy-btn" data-task="${task.id}" ${ready ? '' : 'disabled'}>Turn In</button>
+          `;
+          row.querySelector('[data-task]')?.addEventListener('click', () => {
+            const res = turnInTask(task.id);
+            if (res.ok) { renderTasksPanel(); buildInventoryGrid(); saveMemberWorldData(); }
+          });
+          list.appendChild(row);
+        });
+      }
+
+      // ── Relationships panel (friendship tier per NPC talked to) ──────
+      function renderRelationshipsPanel() {
+        const list = document.getElementById('relationshipsList');
+        if (!list) return;
+        list.innerHTML = '';
+        const knownIds = [..._npcDlgState.keys()].filter(id => (_npcDlgState.get(id).memory || []).length > 0);
+        if (!knownIds.length) {
+          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">💬</span><span class="dr-name">You haven\'t talked to anyone yet.</span><span class="dr-eta">—</span></div>';
+          return;
+        }
+        knownIds
+          .map(npcId => ({ npcId, rec: npcWalkers.find(w => w.rec?.id === npcId)?.rec, ...friendshipTierProgress(npcId) }))
+          .sort((a, b) => b.favor - a.favor)
+          .forEach(({ npcId, rec, tier, favor, next }) => {
+            const name = rec?.name || npcId;
+            const progressNote = next != null ? `${next - favor} favor to Tier ${tier + 1}` : 'max tier';
+            const row = document.createElement('div');
+            row.className = 'shop-row';
+            row.innerHTML = `
+              <div class="sh-icon">💬</div>
+              <div class="sh-info">
+                <div class="sh-name">${esc(name)} — Friendship Tier ${tier}</div>
+                <div class="sh-desc">${favor} favor (${progressNote})</div>
+              </div>
+            `;
+            list.appendChild(row);
+          });
       }
 
       // ── Market page render ─────────────────────────────────────────
@@ -23426,6 +23757,7 @@
         tickCropDay();
         tickLivestockBreeding();
         tickLivestockResources();
+        maybeRefreshBoardTask();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
         checkTothalShift();
         // Any den wiped out since it started waiting can now be moved back
@@ -23448,6 +23780,7 @@
         tickCropDay();
         tickLivestockBreeding();
         tickLivestockResources();
+        maybeRefreshBoardTask();
         checkTothalShift();
         pendingDenRespawn.clear();
         respawnAllZoneReagents();
@@ -25833,6 +26166,7 @@
         // per character.
         loadNpcRelationships(playerData);
         questProgress = { ...(playerData.questProgress || {}) };
+        maybeRefreshBoardTask(); // makes sure a board task exists even before the first day rollover
 
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
         // today's (not-yet-picked) wilderness reagent placements — all

@@ -594,9 +594,23 @@
         </div>
       </div><!-- /mpProgress -->
 
-      <!-- ── Stub panes ──────────────────────────────────── -->
-      <div class="mp-pane" id="mpTasks">        <div class="mp-stub">📋 Tasks — coming soon</div></div>
-      <div class="mp-pane" id="mpRelationships"><div class="mp-stub">💬 Relationships — coming soon</div></div>
+      <!-- ── Tasks pane: board requests + accepted NPC favors — see
+           renderTasksPanel()/turnInTask() in game.js. ──────────────────── -->
+      <div class="mp-pane" id="mpTasks">
+        <div class="menu-section">
+          <div class="menu-section-title">Active Tasks</div>
+          <div id="tasksList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpTasks -->
+
+      <!-- ── Relationships pane: friendship tier per NPC talked to — see
+           renderRelationshipsPanel() in game.js. ───────────────────────── -->
+      <div class="mp-pane" id="mpRelationships">
+        <div class="menu-section">
+          <div class="menu-section-title">Friendship</div>
+          <div id="relationshipsList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpRelationships -->
 
       <!-- ── Combat loadout pane (filled by combat-loadout-ui.js) ── -->
       <div class="mp-pane" id="mpLoadout">
