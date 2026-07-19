@@ -1,0 +1,155 @@
+{
+  "schema": "hobunji_locale.v1",
+  "id": "locale_researchers_tent",
+  "name": "Researcher's Tent",
+  "category": "story_poi",
+  "singleton": true,
+  "description": "A field camp where a traveling researcher has pitched a tent to study the wilderness.",
+  "tags": [
+    "poi",
+    "story"
+  ],
+  "cols": 12,
+  "rows": 11,
+  "tiles": {
+    "5,2": {
+      "type": "rock"
+    },
+    "6,2": {
+      "type": "rock"
+    },
+    "3,3": {
+      "type": "grass"
+    },
+    "4,3": {
+      "type": "rock"
+    },
+    "5,3": {
+      "type": "grass"
+    },
+    "6,3": {
+      "type": "grass"
+    },
+    "2,4": {
+      "type": "rock"
+    },
+    "3,4": {
+      "type": "grass"
+    },
+    "4,4": {
+      "type": "grass"
+    },
+    "5,4": {
+      "type": "grass"
+    },
+    "6,4": {
+      "type": "grass"
+    },
+    "7,4": {
+      "type": "rock"
+    },
+    "2,5": {
+      "type": "rock"
+    },
+    "3,5": {
+      "type": "grass"
+    },
+    "4,5": {
+      "type": "grass"
+    },
+    "5,5": {
+      "type": "grass"
+    },
+    "6,5": {
+      "type": "path"
+    },
+    "7,5": {
+      "type": "path"
+    },
+    "8,5": {
+      "type": "path"
+    },
+    "2,6": {
+      "type": "rock"
+    },
+    "3,6": {
+      "type": "rock"
+    },
+    "4,6": {
+      "type": "grass"
+    },
+    "5,6": {
+      "type": "grass"
+    },
+    "6,6": {
+      "type": "grass"
+    },
+    "7,6": {
+      "type": "grass"
+    },
+    "8,6": {
+      "type": "rock"
+    },
+    "3,7": {
+      "type": "rock"
+    },
+    "4,7": {
+      "type": "rock"
+    },
+    "5,7": {
+      "type": "grass"
+    },
+    "6,7": {
+      "type": "grass"
+    },
+    "7,7": {
+      "type": "rock"
+    },
+    "4,8": {
+      "type": "rock"
+    },
+    "5,8": {
+      "type": "rock"
+    },
+    "6,8": {
+      "type": "rock"
+    },
+    "9,5": {
+      "type": "path"
+    }
+  },
+  "objects": [
+    {
+      "id": "obj_structure",
+      "kind": "structure",
+      "key": "structure",
+      "label": "Researcher's Tent",
+      "col": 4,
+      "row": 4,
+      "w": 2,
+      "h": 2,
+      "rot": 0
+    }
+  ],
+  "npcAnchors": [],
+  "connectors": [
+    {
+      "id": "conn_1",
+      "col": 9,
+      "row": 5,
+      "side": "east",
+      "label": "Wilderness path"
+    }
+  ],
+  "placement": {
+    "allowedZones": [],
+    "clearanceTiles": 3,
+    "requiresFlatGround": true,
+    "minDistanceFromEntry": 0,
+    "notes": ""
+  },
+  "meta": {
+    "createdAt": "2026-07-19T00:00:00.000Z",
+    "updatedAt": "2026-07-19T00:00:00.000Z"
+  }
+}

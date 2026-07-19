@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Hobunji Hollow — Locale Editor</title>
+<style>
+:root{--bg:#07101a;--panel:#111b28;--panel2:#0c141e;--border:rgba(255,255,255,.12);--acc:#6aa7ff;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185;--text:#edf5ff;--muted:#9fb4cf}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:13px}
+button,input,select,textarea{font:inherit}
+button{border:1px solid rgba(106,167,255,.38);background:rgba(106,167,255,.16);color:var(--text);border-radius:9px;padding:7px 11px;font-weight:700;cursor:pointer}
+button:hover{background:rgba(106,167,255,.26)}
+button:active{transform:translateY(1px)}
+button.sec{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.06)}
+button.ok{border-color:rgba(52,211,153,.42);background:rgba(52,211,153,.14)}
+button.warn{border-color:rgba(251,191,36,.42);background:rgba(251,191,36,.12)}
+button.bad{border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.12)}
+button.act{outline:2px solid var(--acc);outline-offset:1px}
+input,select,textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:var(--text);padding:7px 9px;outline:none}
+textarea{min-height:60px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.35}
+label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.muted{color:var(--muted);font-size:11px;line-height:1.4}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);border-radius:999px;padding:3px 8px;color:var(--muted);font-size:11px;white-space:nowrap}
+.item{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);border-radius:8px;padding:6px 9px;cursor:pointer;margin-bottom:4px}
+.item:hover{background:rgba(255,255,255,.07)}
+.item.sel{outline:2px solid var(--acc);outline-offset:1px}
+.item-name{font-weight:700;font-size:12px}
+.item-meta{color:var(--muted);font-size:11px;margin-top:2px}
+#shell{display:flex;flex-direction:column;height:100%}
+#topbar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#topbar h1{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.3px;margin-right:4px}
+#topbar-right{margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#main{display:flex;flex:1;min-height:0}
+#sidebar{width:340px;min-width:250px;max-width:50vw;display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--border);flex-shrink:0}
+#sidebar-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 0 16px;-webkit-overflow-scrolling:touch}
+.section{border-left:4px solid var(--sec,var(--acc));background:linear-gradient(180deg,var(--secBg,rgba(106,167,255,.08)),transparent);margin:8px;border-radius:0 8px 8px 0;padding:8px}
+.sect-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
+.sect-head b{font-size:12px;text-transform:uppercase;letter-spacing:.3px}
+.sect-tag{font-size:10px;color:var(--muted);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:2px 7px}
+#modeBar{display:flex;gap:3px;padding:4px 6px;background:var(--panel2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#modeBar button{padding:4px 7px;font-size:11px;font-weight:600;border-radius:7px}
+.itemlist{max-height:200px;overflow-y:auto;padding-right:2px}
+#view{flex:1;position:relative;min-width:0;min-height:0}
+#canvas2d{display:block;width:100%;height:100%;touch-action:none}
+#hud{position:absolute;left:8px;top:8px;display:flex;gap:5px;flex-wrap:wrap;pointer-events:none;max-width:calc(100% - 16px)}
+.palBtn{display:flex;align-items:center;gap:6px;width:100%;text-align:left;margin-bottom:4px;padding:6px 9px}
+.palSw{width:14px;height:14px;border-radius:4px;border:1px solid rgba(255,255,255,.4);flex:0 0 auto}
+.vIssue{border-radius:6px;padding:5px 7px;margin-bottom:4px;font-size:11px;line-height:1.4}
+.vIssue.error{background:rgba(251,113,133,.14);border:1px solid rgba(251,113,133,.35)}
+.vIssue.warning{background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.32)}
+.vIssue.info{background:rgba(106,167,255,.1);border:1px solid rgba(106,167,255,.28)}
+.chk{display:flex;align-items:center;gap:6px;cursor:pointer;margin:3px 0}
+.chk input{width:auto}
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="topbar">
+    <h1>LOCALE EDITOR</h1>
+    <span class="pill" id="activeLocalePill">no locale</span>
+    <div id="topbar-right">
+      <button class="sec" id="copyJsonBtn">📋 Copy JSON</button>
+      <button class="ok" id="downloadJsonBtn">⬇ Download JSON</button>
+      <button class="sec" id="copyIndexEntryBtn">📋 Copy index entry</button>
+      <button class="sec" id="importBtn">Import</button>
+      <input id="importFile" type="file" hidden accept=".json,application/json">
+    </div>
+  </div>
+
+  <div id="main">
+    <aside id="sidebar">
+      <div id="modeBar">
+        <button class="sec act" data-mode="pan">✋ Pan</button>
+        <button class="sec" data-mode="tile">🖌 Footprint</button>
+        <button class="sec" data-mode="erase">⌫ Erase</button>
+        <button class="sec" data-mode="object">📦 Object</button>
+        <button class="sec" data-mode="npc">🧍 NPC Anchor</button>
+        <button class="sec" data-mode="connector">🔗 Connector</button>
+        <button class="sec" id="fitBtn" style="margin-left:auto">Fit</button>
+      </div>
+      <div id="sidebar-scroll">
+
+        <!-- LOCALES (workspace) -->
+        <div class="section" style="--sec:#94a3b8;--secBg:rgba(148,163,184,.08)">
+          <div class="sect-head"><b>Locales (workspace)</b><span class="sect-tag" id="localeCountTag">0</span></div>
+          <div class="itemlist" id="localeList"></div>
+          <div class="row" style="margin-top:6px">
+            <button class="ok" id="newLocaleBtn">+ New</button>
+            <button class="sec" id="dupLocaleBtn">Duplicate</button>
+            <button class="bad" id="delLocaleBtn">Delete</button>
+          </div>
+        </div>
+
+        <!-- SERVER LIBRARY -->
+        <div class="section" style="--sec:#c084fc;--secBg:rgba(192,132,252,.08)">
+          <div class="sect-head"><b>Repo Library</b><span class="sect-tag" id="libraryCountTag">—</span></div>
+          <div class="itemlist" id="libraryList"><div class="muted">Loading…</div></div>
+          <p class="muted" style="margin-top:5px">Locales already saved under <code>docs/config/locales/</code>. Click one to load an editable copy into the workspace above.</p>
+        </div>
+
+        <!-- LOCALE SETTINGS -->
+        <div class="section" style="--sec:#6aa7ff;--secBg:rgba(106,167,255,.08)">
+          <div class="sect-head"><b>Locale Settings</b><span class="sect-tag" id="settingsTag">—</span></div>
+          <div><label>Id (stable — used for discovery/save tracking)</label><input id="locId" placeholder="locale_leaf_pahu_house"></div>
+          <div style="margin-top:6px"><label>Name</label><input id="locName" placeholder="Leaf &amp; Pahu's House"></div>
+          <div class="g2" style="margin-top:6px">
+            <div><label>Category</label>
+              <select id="locCategory">
+                <option value="dwelling">dwelling</option>
+                <option value="great_fey_shrine">great_fey_shrine</option>
+                <option value="story_poi">story_poi</option>
+                <option value="misc">misc</option>
+              </select>
+            </div>
+            <div><label>&nbsp;</label>
+              <label class="chk"><input type="checkbox" id="locSingleton"> Singleton (one instance in the world)</label>
+            </div>
+          </div>
+          <div style="margin-top:6px"><label>Description</label><textarea id="locDescription" rows="3"></textarea></div>
+          <div style="margin-top:6px"><label>Tags (comma-separated)</label><input id="locTags" placeholder="great_fey, shrine, story"></div>
+          <div class="g3" style="margin-top:6px">
+            <div><label>Columns</label><input id="locCols" type="number" min="4" max="120"></div>
+            <div><label>Rows</label><input id="locRows" type="number" min="4" max="120"></div>
+            <div style="display:flex;align-items:flex-end"><button class="sec" id="applySettingsBtn" style="width:100%">Apply</button></div>
+          </div>
+          <p class="muted" style="margin-top:5px">Columns/rows are just the editing canvas — only <b>painted</b> cells belong to the locale. Unpainted cells inside the canvas are open: the wilderness generator's own terrain shows through there instead of being overwritten, which is how the locale blends in without overlapping.</p>
+        </div>
+
+        <!-- PALETTE -->
+        <div class="section" style="--sec:#34d399;--secBg:rgba(52,211,153,.08)">
+          <div class="sect-head"><b>Palette</b><span class="sect-tag" id="paletteTag">footprint</span></div>
+          <div id="paletteBox"></div>
+        </div>
+
+        <!-- INSPECTOR -->
+        <div class="section" style="--sec:#f59e0b;--secBg:rgba(245,158,11,.08)">
+          <div class="sect-head"><b>Inspector</b><span class="sect-tag" id="inspectorTag">none selected</span></div>
+          <div id="inspectorBox"><p class="muted">Select an object, NPC anchor, or connector on the canvas to edit it here.</p></div>
+        </div>
+
+        <!-- PLACEMENT RULES -->
+        <div class="section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.08)">
+          <div class="sect-head"><b>Placement Rules</b><span class="sect-tag">for the generator</span></div>
+          <label>Allowed wilderness zones (none checked = any)</label>
+          <div id="zoneChecks"></div>
+          <div class="g2" style="margin-top:6px">
+            <div><label>Clearance tiles (buffer kept clear around footprint)</label><input id="locClearance" type="number" min="0" max="20" value="3"></div>
+            <div><label>Min distance from zone entry</label><input id="locMinDist" type="number" min="0" max="200" value="0"></div>
+          </div>
+          <label class="chk" style="margin-top:6px"><input type="checkbox" id="locFlatGround" checked> Requires flat ground</label>
+          <div style="margin-top:6px"><label>Placement notes</label><textarea id="locPlacementNotes" rows="2"></textarea></div>
+          <button class="sec" id="applyPlacementBtn" style="width:100%;margin-top:6px">Apply</button>
+        </div>
+
+        <!-- VALIDATION -->
+        <div class="section" style="--sec:#fb7185;--secBg:rgba(251,113,133,.08)">
+          <div class="sect-head"><b>Validation</b><span class="sect-tag" id="validateCountTag">—</span></div>
+          <div id="validateList"></div>
+        </div>
+
+        <!-- JSON -->
+        <div class="section" style="--sec:#9fb4cf;--secBg:rgba(159,180,207,.06)">
+          <div class="sect-head"><b>Active Locale JSON</b><span class="sect-tag" id="statusPill">Ready</span></div>
+          <textarea id="jsonPreview" rows="8" readonly></textarea>
+        </div>
+
+      </div>
+    </aside>
+
+    <div id="view">
+      <canvas id="canvas2d"></canvas>
+      <div id="hud">
+        <span class="pill" id="modePill">Mode: pan</span>
+        <span class="pill" id="cursorPill">—</span>
+        <span class="pill" id="footprintPill">—</span>
+        <span class="pill" id="blendPill">—</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const uid = p => `${p}_${Math.random().toString(36).slice(2,7)}`;
+const nowIso = () => new Date().toISOString();
+
+// ── Shared vocab (kept identical to map-editor / wilderness-map-generator's
+// HOBUNJI_EDITOR_TILE_TYPES so painted locale tiles validate against the
+// same generator-side tile-type set the wilderness zones use) ───────────────
+const TILE_INFO = {
+  grass:  { label:'Grass',  color:'#4a7c43' },
+  weeds:  { label:'Weeds',  color:'#6b8c3a' },
+  tilled: { label:'Tilled', color:'#7a5230' },
+  trench: { label:'Trench', color:'#3d2c1e' },
+  raised: { label:'Raised', color:'#a8835a' },
+  paddy:  { label:'Paddy',  color:'#3f7fae' },
+  rock:   { label:'Rock',   color:'#8a8f98' },
+  shrub:  { label:'Shrub',  color:'#2f6f3f' },
+  path:   { label:'Path',   color:'#b8956a' },
+  river:  { label:'River',  color:'#2f6fb8' },
+  stream: { label:'Stream', color:'#4f9bd9' },
+  waterfall: { label:'Waterfall', color:'#bfe9f7' },
+  ramp:   { label:'Ramp',   color:'#c2b280' }
+};
+const TILE_ORDER = ['grass','weeds','shrub','path','rock','tilled','raised','trench','paddy','river','stream','waterfall','ramp'];
+
+const OBJECT_PALETTE = [
+  { kind:'structure', key:'structure', label:'Structure (house/tent/shrine)', icon:'🏠', w:3, h:3 },
+  { kind:'decor',     key:'bench',        label:'Bench',          icon:'🪑', w:1, h:1 },
+  { kind:'decor',     key:'chest',        label:'Storage Chest',  icon:'📦', w:1, h:1 },
+  { kind:'decor',     key:'hearth',       label:'Hearth/Firepit', icon:'🔥', w:1, h:1 },
+  { kind:'decor',     key:'crateStack',   label:'Crate Stack',    icon:'📦', w:1, h:1 },
+  { kind:'decor',     key:'standingLamp', label:'Lantern',        icon:'💡', w:1, h:1 },
+  { kind:'decor',     key:'bucket',       label:'Bucket',         icon:'🪣', w:1, h:1 },
+  { kind:'decor',     key:'stool',        label:'Stool',          icon:'🪑', w:1, h:1 },
+  { kind:'processor', key:'dryingRack',   label:'Drying Rack',    icon:'☀️', w:1, h:1 },
+  { kind:'processor', key:'smoker',       label:'Smoking Hut',    icon:'💨', w:1, h:1 },
+  { kind:'prop',      key:'statue',       label:'Statue/Totem',   icon:'🗿', w:1, h:1 },
+  { kind:'prop',      key:'offering',     label:'Offering Spot',  icon:'✨', w:1, h:1 }
+];
+
+const NPC_PRESETS = [
+  { npcId:'leaf', name:'Leaf' },
+  { npcId:'pahu', name:'Pahu' },
+  { npcId:'researcher', name:'Researcher' },
+  { npcId:'banubu', name:'Banubu' },
+  { npcId:'hiki_hiki', name:'Hiki-hiki' },
+  { npcId:'mother_rahayobi', name:'Mother Rahayobi' },
+  { npcId:'old_man_nohuknuk', name:'Old Man Nohuknuk' }
+];
+
+const WILDERNESS_ZONES = [
+  { id:'map_northern_cliffs', label:'Northern Cliffs' },
+  { id:'map_southern_cloud_forest', label:'Southern Cloud Forest' },
+  { id:'map_western_slope', label:'Western Slope' },
+  { id:'map_eastern_mire', label:'Eastern Mire' }
+];
+
+// ── Locale model ──────────────────────────────────────────────────────────────
+function makeLocale(id, name, category) {
+  return {
+    schema: 'hobunji_locale.v1',
+    id: id || uid('locale'),
+    name: name || 'New Locale',
+    category: category || 'misc',
+    singleton: false,
+    description: '',
+    tags: [],
+    cols: 16, rows: 16,
+    tiles: {},        // "c,r" -> { type }
+    objects: [],       // { id, kind, key, label, col, row, w, h, rot }
+    npcAnchors: [],    // { id, npcId, name, col, row, facing }
+    connectors: [],    // { id, col, row, side, label }
+    placement: { allowedZones: [], clearanceTiles: 3, requiresFlatGround: true, minDistanceFromEntry: 0, notes: '' },
+    meta: { createdAt: nowIso(), updatedAt: nowIso() }
+  };
+}
+
+function sanitizeLoaded(raw) {
+  const m = makeLocale();
+  Object.assign(m, {
+    schema: 'hobunji_locale.v1',
+    id: raw.id || m.id,
+    name: raw.name || m.name,
+    category: raw.category || 'misc',
+    singleton: !!raw.singleton,
+    description: raw.description || '',
+    tags: Array.isArray(raw.tags) ? raw.tags.slice() : [],
+    cols: clamp(Math.round(Number(raw.cols) || 16), 4, 120),
+    rows: clamp(Math.round(Number(raw.rows) || 16), 4, 120),
+    tiles: {}, objects: [], npcAnchors: [], connectors: [],
+    placement: Object.assign({ allowedZones: [], clearanceTiles: 3, requiresFlatGround: true, minDistanceFromEntry: 0, notes: '' }, raw.placement || {}),
+    meta: Object.assign({ createdAt: nowIso(), updatedAt: nowIso() }, raw.meta || {})
+  });
+  for (const [k, v] of Object.entries(raw.tiles || {})) {
+    const type = TILE_INFO[v?.type] ? v.type : 'grass';
+    m.tiles[k] = { type };
+  }
+  for (const o of (raw.objects || [])) {
+    m.objects.push({ id: o.id || uid('obj'), kind: o.kind || 'decor', key: o.key || 'bench', label: o.label || '', col: o.col|0, row: o.row|0, w: Math.max(1, o.w|0 || 1), h: Math.max(1, o.h|0 || 1), rot: o.rot || 0 });
+  }
+  for (const n of (raw.npcAnchors || [])) {
+    m.npcAnchors.push({ id: n.id || uid('npc'), npcId: n.npcId || '', name: n.name || 'NPC', col: n.col|0, row: n.row|0, facing: n.facing || 'south' });
+  }
+  for (const c of (raw.connectors || [])) {
+    m.connectors.push({ id: c.id || uid('conn'), col: c.col|0, row: c.row|0, side: c.side || 'south', label: c.label || 'Wilderness path' });
+  }
+  return m;
+}
+
+// ── Workspace (autosaved) ─────────────────────────────────────────────────────
+const WS_KEY = 'hobunji_locale_editor_workspace_v1';
+let ws = { schema: 'hobunji_locale_editor_workspace_v1', locales: [], activeId: null };
+
+function loadWorkspace() {
+  try {
+    const raw = localStorage.getItem(WS_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.locales) || !parsed.locales.length) return false;
+    ws.locales = parsed.locales.map(sanitizeLoaded);
+    ws.activeId = parsed.activeId && ws.locales.find(l => l.id === parsed.activeId) ? parsed.activeId : ws.locales[0].id;
+    return true;
+  } catch (e) { return false; }
+}
+function saveWorkspace() {
+  try { localStorage.setItem(WS_KEY, JSON.stringify(ws)); } catch (e) {}
+}
+function activeLocale() { return ws.locales.find(l => l.id === ws.activeId) || null; }
+
+// ── Selection / mode state ────────────────────────────────────────────────────
+let mode = 'pan';
+let selected = null; // { type: 'object'|'npc'|'connector', id }
+let paletteTile = 'grass';
+let paletteObject = OBJECT_PALETTE[0];
+let paletteNpc = null; // { npcId, name } or null = custom
+let painting = false;
+let paintErase = false;
+
+// ── View / canvas ─────────────────────────────────────────────────────────────
+const canvas = $('canvas2d');
+const ctx = canvas.getContext('2d');
+let view = { cell: 28, panX: 40, panY: 40 };
+let hover = null;
+let isPanning = false, panStart = null;
+
+function resizeCanvas() {
+  const r = canvas.parentElement.getBoundingClientRect();
+  canvas.width = Math.round(r.width * devicePixelRatio);
+  canvas.height = Math.round(r.height * devicePixelRatio);
+  canvas.style.width = r.width + 'px';
+  canvas.style.height = r.height + 'px';
+  draw();
+}
+
+function screenToCell(sx, sy) {
+  const rect = canvas.getBoundingClientRect();
+  const x = (sx - rect.left) * devicePixelRatio;
+  const y = (sy - rect.top) * devicePixelRatio;
+  const cs = view.cell * devicePixelRatio;
+  const c = Math.floor((x - view.panX * devicePixelRatio) / cs);
+  const r = Math.floor((y - view.panY * devicePixelRatio) / cs);
+  return { c, r };
+}
+
+function fitView() {
+  const m = activeLocale();
+  if (!m) return;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const cs = Math.max(8, Math.min((rect.width - 60) / m.cols, (rect.height - 60) / m.rows));
+  view.cell = clamp(cs, 8, 48);
+  view.panX = (rect.width - m.cols * view.cell) / 2;
+  view.panY = (rect.height - m.rows * view.cell) / 2;
+  draw();
+}
+
+function isOpen(m, c, r) { return !m.tiles[`${c},${r}`]; }
+function inBounds(m, c, r) { return c >= 0 && r >= 0 && c < m.cols && r < m.rows; }
+
+function isBlendEdge(m, c, r) {
+  if (isOpen(m, c, r)) return false;
+  const nbrs = [[1,0],[-1,0],[0,1],[0,-1]];
+  return nbrs.some(([dx,dy]) => {
+    const nc = c+dx, nr = r+dy;
+    return !inBounds(m, nc, nr) || isOpen(m, nc, nr);
+  });
+}
+
+function draw() {
+  const m = activeLocale();
+  const dpr = devicePixelRatio;
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle = '#0b1420';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (!m) return;
+  ctx.setTransform(dpr,0,0,dpr,view.panX*dpr,view.panY*dpr);
+  const cs = view.cell;
+
+  // Wilderness bleed-through backdrop (hatched) beyond/within canvas bounds
+  ctx.fillStyle = 'rgba(255,255,255,0.02)';
+  ctx.fillRect(-4*cs, -4*cs, m.cols*cs + 8*cs, m.rows*cs + 8*cs);
+
+  for (let r = 0; r < m.rows; r++) {
+    for (let c = 0; c < m.cols; c++) {
+      const key = `${c},${r}`;
+      const tile = m.tiles[key];
+      const x = c*cs, y = r*cs;
+      if (tile) {
+        ctx.fillStyle = TILE_INFO[tile.type]?.color || '#4a7c43';
+        ctx.fillRect(x, y, cs, cs);
+      } else {
+        // open cell — wilderness shows through, drawn as a faint hash
+        ctx.fillStyle = 'rgba(106,167,255,0.03)';
+        ctx.fillRect(x, y, cs, cs);
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+      ctx.strokeRect(x+.5, y+.5, cs-1, cs-1);
+    }
+  }
+
+  // Blend-edge outline (amber) — the seam where the locale meets generated wilderness
+  ctx.strokeStyle = 'rgba(251,191,36,0.85)';
+  ctx.lineWidth = 2;
+  for (let r = 0; r < m.rows; r++) {
+    for (let c = 0; c < m.cols; c++) {
+      if (!isBlendEdge(m, c, r)) continue;
+      const x = c*cs, y = r*cs;
+      const nbrs = [[1,0,cs,0,cs,cs],[-1,0,0,0,0,cs],[0,1,0,cs,cs,cs],[0,-1,0,0,cs,0]];
+      for (const [dx,dy,x1,y1,x2,y2] of nbrs) {
+        const nc = c+dx, nr = r+dy;
+        if (!inBounds(m, nc, nr) || isOpen(m, nc, nr)) {
+          ctx.beginPath(); ctx.moveTo(x+x1, y+y1); ctx.lineTo(x+x2, y+y2); ctx.stroke();
+        }
+      }
+    }
+  }
+
+  // Canvas working-bounds border
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, m.cols*cs, m.rows*cs);
+
+  // Connectors
+  for (const conn of m.connectors) {
+    const x = conn.col*cs + cs/2, y = conn.row*cs + cs/2;
+    const sel = selected?.type === 'connector' && selected.id === conn.id;
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.moveTo(x, y-cs*0.32); ctx.lineTo(x+cs*0.32, y); ctx.lineTo(x, y+cs*0.32); ctx.lineTo(x-cs*0.32, y);
+    ctx.closePath(); ctx.fill();
+    if (sel) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
+  }
+
+  // Objects
+  for (const obj of m.objects) {
+    const x = obj.col*cs, y = obj.row*cs, w = obj.w*cs, h = obj.h*cs;
+    const sel = selected?.type === 'object' && selected.id === obj.id;
+    ctx.fillStyle = obj.kind === 'structure' ? 'rgba(138,91,43,0.55)' : 'rgba(106,167,255,0.35)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = sel ? '#fff' : 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = sel ? 2 : 1;
+    ctx.strokeRect(x+1, y+1, w-2, h-2);
+    if (cs >= 14) {
+      const info = OBJECT_PALETTE.find(o => o.key === obj.key);
+      ctx.fillStyle = '#fff';
+      ctx.font = `${Math.round(cs*0.6)}px system-ui`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(info?.icon || '❓', x+w/2, y+h/2);
+    }
+  }
+
+  // NPC anchors
+  for (const npc of m.npcAnchors) {
+    const x = npc.col*cs + cs/2, y = npc.row*cs + cs/2;
+    const sel = selected?.type === 'npc' && selected.id === npc.id;
+    ctx.fillStyle = '#c084fc';
+    ctx.beginPath(); ctx.arc(x, y, cs*0.34, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = sel ? '#fff' : 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = sel ? 2 : 1;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.round(cs*0.42)}px system-ui`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText((npc.name || '?').slice(0,1).toUpperCase(), x, y);
+    // facing arrow
+    const dir = { north:[0,-1], south:[0,1], east:[1,0], west:[-1,0] }[npc.facing] || [0,1];
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x+dir[0]*cs*0.5, y+dir[1]*cs*0.5); ctx.stroke();
+  }
+
+  // Hover highlight
+  if (hover && inBounds(m, hover.c, hover.r)) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(hover.c*cs+1, hover.r*cs+1, cs-2, cs-2);
+  }
+}
+
+// ── Interaction ────────────────────────────────────────────────────────────────
+function setMode(newMode) {
+  mode = newMode;
+  document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.classList.toggle('act', b.dataset.mode === mode));
+  $('modePill').textContent = 'Mode: ' + mode;
+  renderPalette();
+}
+document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+$('fitBtn').addEventListener('click', fitView);
+
+function applyTileAt(c, r, erase) {
+  const m = activeLocale();
+  if (!m || !inBounds(m, c, r)) return;
+  const key = `${c},${r}`;
+  if (erase) { delete m.tiles[key]; }
+  else { m.tiles[key] = { type: paletteTile }; }
+}
+
+function placeOrSelectObject(c, r) {
+  const m = activeLocale();
+  if (!m) return;
+  const hit = m.objects.find(o => c >= o.col && c < o.col+o.w && r >= o.row && r < o.row+o.h);
+  if (hit) { selected = { type:'object', id: hit.id }; renderInspector(); draw(); return; }
+  const p = paletteObject;
+  const obj = { id: uid('obj'), kind: p.kind, key: p.key, label: p.label, col: c, row: r, w: p.w, h: p.h, rot: 0 };
+  m.objects.push(obj);
+  selected = { type:'object', id: obj.id };
+  finishEdit();
+}
+
+function placeOrSelectNpc(c, r) {
+  const m = activeLocale();
+  if (!m) return;
+  const hit = m.npcAnchors.find(n => n.col === c && n.row === r);
+  if (hit) { selected = { type:'npc', id: hit.id }; renderInspector(); draw(); return; }
+  const preset = paletteNpc;
+  const npc = { id: uid('npc'), npcId: preset?.npcId || '', name: preset?.name || 'NPC', col: c, row: r, facing: 'south' };
+  m.npcAnchors.push(npc);
+  selected = { type:'npc', id: npc.id };
+  finishEdit();
+}
+
+function placeOrSelectConnector(c, r) {
+  const m = activeLocale();
+  if (!m) return;
+  const hit = m.connectors.find(cn => cn.col === c && cn.row === r);
+  if (hit) { selected = { type:'connector', id: hit.id }; renderInspector(); draw(); return; }
+  // infer a facing side from the nearest open neighbor, defaulting south
+  let side = 'south';
+  const nbrs = [['east',1,0],['west',-1,0],['south',0,1],['north',0,-1]];
+  for (const [s,dx,dy] of nbrs) { if (isOpen(m, c+dx, r+dy) || !inBounds(m, c+dx, r+dy)) { side = s; break; } }
+  const conn = { id: uid('conn'), col: c, row: r, side, label: 'Wilderness path' };
+  m.connectors.push(conn);
+  selected = { type:'connector', id: conn.id };
+  finishEdit();
+}
+
+function finishEdit() {
+  const m = activeLocale();
+  if (m) m.meta.updatedAt = nowIso();
+  saveWorkspace(); renderInspector(); renderJson(); renderValidation(); updateHud(); draw();
+}
+
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  const { c, r } = screenToCell(e.clientX, e.clientY);
+  if (mode === 'pan' || e.button === 1 || e.shiftKey) {
+    isPanning = true; panStart = { x: e.clientX, y: e.clientY, panX: view.panX, panY: view.panY };
+    return;
+  }
+  const m = activeLocale();
+  if (!m) return;
+  if (mode === 'tile') { painting = true; paintErase = false; applyTileAt(c, r, false); finishEdit(); }
+  else if (mode === 'erase') { painting = true; paintErase = true; applyTileAt(c, r, true); finishEdit(); }
+  else if (mode === 'object') placeOrSelectObject(c, r);
+  else if (mode === 'npc') placeOrSelectNpc(c, r);
+  else if (mode === 'connector') placeOrSelectConnector(c, r);
+});
+canvas.addEventListener('pointermove', e => {
+  const { c, r } = screenToCell(e.clientX, e.clientY);
+  hover = { c, r };
+  $('cursorPill').textContent = `${c}, ${r}`;
+  if (isPanning && panStart) {
+    view.panX = panStart.panX + (e.clientX - panStart.x);
+    view.panY = panStart.panY + (e.clientY - panStart.y);
+    draw(); return;
+  }
+  if (painting && (mode === 'tile' || mode === 'erase')) { applyTileAt(c, r, paintErase); draw(); }
+  else draw();
+});
+window.addEventListener('pointerup', () => {
+  if (painting) { painting = false; finishEdit(); }
+  isPanning = false; panStart = null;
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const before = view.cell;
+  view.cell = clamp(view.cell * (e.deltaY > 0 ? 0.9 : 1.1), 6, 64);
+  const scale = view.cell / before;
+  view.panX = mx - (mx - view.panX) * scale;
+  view.panY = my - (my - view.panY) * scale;
+  draw();
+}, { passive: false });
+
+// ── Palette rendering ──────────────────────────────────────────────────────────
+function renderPalette() {
+  const box = $('paletteBox');
+  $('paletteTag').textContent = mode === 'tile' || mode === 'erase' ? 'footprint' : mode;
+  box.innerHTML = '';
+  if (mode === 'tile') {
+    for (const t of TILE_ORDER) {
+      const info = TILE_INFO[t];
+      const btn = document.createElement('button');
+      btn.className = 'palBtn sec' + (paletteTile === t ? ' act' : '');
+      btn.innerHTML = `<span class="palSw" style="background:${info.color}"></span> ${info.label}`;
+      btn.addEventListener('click', () => { paletteTile = t; renderPalette(); });
+      box.appendChild(btn);
+    }
+  } else if (mode === 'erase') {
+    box.innerHTML = '<p class="muted">Click or drag over painted footprint cells to open them back up to the wilderness.</p>';
+  } else if (mode === 'object') {
+    for (const o of OBJECT_PALETTE) {
+      const btn = document.createElement('button');
+      btn.className = 'palBtn sec' + (paletteObject.key === o.key ? ' act' : '');
+      btn.innerHTML = `${o.icon} ${o.label} <span class="muted" style="margin-left:auto">${o.w}×${o.h}</span>`;
+      btn.style.justifyContent = 'space-between';
+      btn.addEventListener('click', () => { paletteObject = o; renderPalette(); });
+      box.appendChild(btn);
+    }
+    box.appendChild(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Click empty ground to place the selected object; click an existing object to select and edit it below.' }));
+  } else if (mode === 'npc') {
+    const custom = document.createElement('button');
+    custom.className = 'palBtn sec' + (paletteNpc === null ? ' act' : '');
+    custom.textContent = '✏️ Custom name (edit after placing)';
+    custom.addEventListener('click', () => { paletteNpc = null; renderPalette(); });
+    box.appendChild(custom);
+    for (const p of NPC_PRESETS) {
+      const btn = document.createElement('button');
+      btn.className = 'palBtn sec' + (paletteNpc?.npcId === p.npcId ? ' act' : '');
+      btn.textContent = '🧍 ' + p.name;
+      btn.addEventListener('click', () => { paletteNpc = p; renderPalette(); });
+      box.appendChild(btn);
+    }
+    box.appendChild(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Click ground to place an anchor; click an existing anchor to select it.' }));
+  } else if (mode === 'connector') {
+    box.innerHTML = '<p class="muted">Click a footprint edge cell to mark where the wilderness path network should connect in. Click an existing connector to select it.</p>';
+  } else {
+    box.innerHTML = '<p class="muted">Pan mode — drag to move the view, scroll to zoom.</p>';
+  }
+}
+
+// ── Inspector ───────────────────────────────────────────────────────────────────
+function renderInspector() {
+  const m = activeLocale();
+  const box = $('inspectorBox');
+  if (!m || !selected) { $('inspectorTag').textContent = 'none selected'; box.innerHTML = '<p class="muted">Select an object, NPC anchor, or connector on the canvas to edit it here.</p>'; return; }
+  if (selected.type === 'object') {
+    const o = m.objects.find(x => x.id === selected.id);
+    if (!o) { selected = null; return renderInspector(); }
+    $('inspectorTag').textContent = 'object';
+    box.innerHTML = `
+      <div class="g2"><div><label>Label</label><input id="insLabel" value="${escapeAttr(o.label)}"></div>
+      <div><label>Kind</label><input id="insKind" value="${escapeAttr(o.kind)}" readonly></div></div>
+      <div class="g2" style="margin-top:6px"><div><label>Col</label><input id="insCol" type="number" value="${o.col}"></div>
+      <div><label>Row</label><input id="insRow" type="number" value="${o.row}"></div></div>
+      <div class="g2" style="margin-top:6px"><div><label>Width</label><input id="insW" type="number" min="1" value="${o.w}"></div>
+      <div><label>Height</label><input id="insH" type="number" min="1" value="${o.h}"></div></div>
+      <div class="row" style="margin-top:8px"><button class="ok" id="insSave">Save</button><button class="bad" id="insDelete">Delete</button></div>`;
+    $('insSave').addEventListener('click', () => {
+      o.label = $('insLabel').value.trim();
+      o.col = Math.round(Number($('insCol').value)) || 0;
+      o.row = Math.round(Number($('insRow').value)) || 0;
+      o.w = Math.max(1, Math.round(Number($('insW').value)) || 1);
+      o.h = Math.max(1, Math.round(Number($('insH').value)) || 1);
+      finishEdit();
+    });
+    $('insDelete').addEventListener('click', () => { m.objects = m.objects.filter(x => x.id !== o.id); selected = null; finishEdit(); });
+  } else if (selected.type === 'npc') {
+    const n = m.npcAnchors.find(x => x.id === selected.id);
+    if (!n) { selected = null; return renderInspector(); }
+    $('inspectorTag').textContent = 'npc anchor';
+    box.innerHTML = `
+      <div class="g2"><div><label>Name</label><input id="insName" value="${escapeAttr(n.name)}"></div>
+      <div><label>NPC id</label><input id="insNpcId" value="${escapeAttr(n.npcId)}"></div></div>
+      <div class="g2" style="margin-top:6px"><div><label>Col</label><input id="insCol" type="number" value="${n.col}"></div>
+      <div><label>Row</label><input id="insRow" type="number" value="${n.row}"></div></div>
+      <div style="margin-top:6px"><label>Facing</label>
+        <select id="insFacing">
+          ${['north','east','south','west'].map(d => `<option value="${d}" ${n.facing===d?'selected':''}>${d}</option>`).join('')}
+        </select>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="ok" id="insSave">Save</button><button class="bad" id="insDelete">Delete</button></div>`;
+    $('insSave').addEventListener('click', () => {
+      n.name = $('insName').value.trim() || 'NPC';
+      n.npcId = $('insNpcId').value.trim();
+      n.col = Math.round(Number($('insCol').value)) || 0;
+      n.row = Math.round(Number($('insRow').value)) || 0;
+      n.facing = $('insFacing').value;
+      finishEdit();
+    });
+    $('insDelete').addEventListener('click', () => { m.npcAnchors = m.npcAnchors.filter(x => x.id !== n.id); selected = null; finishEdit(); });
+  } else if (selected.type === 'connector') {
+    const c = m.connectors.find(x => x.id === selected.id);
+    if (!c) { selected = null; return renderInspector(); }
+    $('inspectorTag').textContent = 'connector';
+    box.innerHTML = `
+      <div><label>Label</label><input id="insLabel" value="${escapeAttr(c.label)}"></div>
+      <div class="g2" style="margin-top:6px"><div><label>Col</label><input id="insCol" type="number" value="${c.col}"></div>
+      <div><label>Row</label><input id="insRow" type="number" value="${c.row}"></div></div>
+      <div style="margin-top:6px"><label>Side</label>
+        <select id="insSide">
+          ${['north','east','south','west'].map(d => `<option value="${d}" ${c.side===d?'selected':''}>${d}</option>`).join('')}
+        </select>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="ok" id="insSave">Save</button><button class="bad" id="insDelete">Delete</button></div>`;
+    $('insSave').addEventListener('click', () => {
+      c.label = $('insLabel').value.trim() || 'Wilderness path';
+      c.col = Math.round(Number($('insCol').value)) || 0;
+      c.row = Math.round(Number($('insRow').value)) || 0;
+      c.side = $('insSide').value;
+      finishEdit();
+    });
+    $('insDelete').addEventListener('click', () => { m.connectors = m.connectors.filter(x => x.id !== c.id); selected = null; finishEdit(); });
+  }
+}
+function escapeAttr(s) { return String(s ?? '').replace(/"/g, '&quot;'); }
+
+// ── Locale list / settings binding ───────────────────────────────────────────────
+function renderLocaleList() {
+  $('localeCountTag').textContent = ws.locales.length;
+  const list = $('localeList');
+  list.innerHTML = '';
+  for (const l of ws.locales) {
+    const div = document.createElement('div');
+    div.className = 'item' + (l.id === ws.activeId ? ' sel' : '');
+    div.innerHTML = `<div class="item-name">${escapeAttr(l.name)}</div><div class="item-meta">${escapeAttr(l.id)} · ${escapeAttr(l.category)}${l.singleton?' · singleton':''}</div>`;
+    div.addEventListener('click', () => { ws.activeId = l.id; selected = null; saveWorkspace(); updateAll(); fitView(); });
+    list.appendChild(div);
+  }
+}
+
+function renderSettings() {
+  const m = activeLocale();
+  $('activeLocalePill').textContent = m ? m.name : 'no locale';
+  $('settingsTag').textContent = m ? m.id : '—';
+  if (!m) return;
+  $('locId').value = m.id;
+  $('locName').value = m.name;
+  $('locCategory').value = m.category;
+  $('locSingleton').checked = m.singleton;
+  $('locDescription').value = m.description;
+  $('locTags').value = m.tags.join(', ');
+  $('locCols').value = m.cols;
+  $('locRows').value = m.rows;
+  $('locClearance').value = m.placement.clearanceTiles;
+  $('locMinDist').value = m.placement.minDistanceFromEntry;
+  $('locFlatGround').checked = m.placement.requiresFlatGround;
+  $('locPlacementNotes').value = m.placement.notes;
+  renderZoneChecks();
+}
+
+function renderZoneChecks() {
+  const m = activeLocale();
+  const box = $('zoneChecks');
+  box.innerHTML = '';
+  if (!m) return;
+  for (const z of WILDERNESS_ZONES) {
+    const wrap = document.createElement('label');
+    wrap.className = 'chk';
+    const checked = (m.placement.allowedZones || []).includes(z.id);
+    wrap.innerHTML = `<input type="checkbox" data-zone="${z.id}" ${checked?'checked':''}> ${z.label}`;
+    box.appendChild(wrap);
+  }
+}
+
+$('applySettingsBtn').addEventListener('click', () => {
+  const m = activeLocale();
+  if (!m) return;
+  const newId = $('locId').value.trim() || m.id;
+  if (newId !== m.id && ws.locales.some(l => l.id === newId)) { alert('That id is already used by another locale in the workspace.'); return; }
+  m.id = newId;
+  m.name = $('locName').value.trim() || m.name;
+  m.category = $('locCategory').value;
+  m.singleton = $('locSingleton').checked;
+  m.description = $('locDescription').value;
+  m.tags = $('locTags').value.split(',').map(s => s.trim()).filter(Boolean);
+  const nc = clamp(Math.round(Number($('locCols').value)) || m.cols, 4, 120);
+  const nr = clamp(Math.round(Number($('locRows').value)) || m.rows, 4, 120);
+  if (nc !== m.cols || nr !== m.rows) {
+    for (const key of Object.keys(m.tiles)) {
+      const [c, r] = key.split(',').map(Number);
+      if (c >= nc || r >= nr) delete m.tiles[key];
+    }
+    m.cols = nc; m.rows = nr;
+  }
+  ws.activeId = m.id;
+  finishEdit(); renderLocaleList(); fitView();
+});
+
+$('applyPlacementBtn').addEventListener('click', () => {
+  const m = activeLocale();
+  if (!m) return;
+  m.placement.clearanceTiles = clamp(Math.round(Number($('locClearance').value)) || 0, 0, 20);
+  m.placement.minDistanceFromEntry = clamp(Math.round(Number($('locMinDist').value)) || 0, 0, 500);
+  m.placement.requiresFlatGround = $('locFlatGround').checked;
+  m.placement.notes = $('locPlacementNotes').value;
+  m.placement.allowedZones = Array.from($('zoneChecks').querySelectorAll('input[data-zone]:checked')).map(i => i.dataset.zone);
+  finishEdit();
+});
+
+// ── New / duplicate / delete ─────────────────────────────────────────────────────
+$('newLocaleBtn').addEventListener('click', () => {
+  const m = makeLocale();
+  ws.locales.push(m); ws.activeId = m.id; selected = null;
+  finishEdit(); renderLocaleList(); renderSettings(); fitView();
+});
+$('dupLocaleBtn').addEventListener('click', () => {
+  const src = activeLocale();
+  if (!src) return;
+  const copy = sanitizeLoaded(JSON.parse(JSON.stringify(src)));
+  copy.id = src.id + '_copy';
+  while (ws.locales.some(l => l.id === copy.id)) copy.id += '_2';
+  copy.name = src.name + ' copy';
+  ws.locales.push(copy); ws.activeId = copy.id; selected = null;
+  finishEdit(); renderLocaleList(); renderSettings(); fitView();
+});
+$('delLocaleBtn').addEventListener('click', () => {
+  const m = activeLocale();
+  if (!m) return;
+  if (!confirm(`Delete locale "${m.name}" from the workspace? (The repo file, if any, is untouched.)`)) return;
+  ws.locales = ws.locales.filter(l => l.id !== m.id);
+  ws.activeId = ws.locales[0]?.id || null;
+  selected = null;
+  finishEdit(); renderLocaleList(); renderSettings(); fitView();
+});
+
+// ── Repo library ──────────────────────────────────────────────────────────────
+async function loadLibrary() {
+  const box = $('libraryList');
+  try {
+    const res = await fetch('../../config/locales/index.json');
+    const idx = await res.json();
+    const entries = idx.locales || [];
+    $('libraryCountTag').textContent = entries.length;
+    box.innerHTML = '';
+    if (!entries.length) { box.innerHTML = '<div class="muted">No repo locales yet.</div>'; return; }
+    for (const e of entries) {
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.innerHTML = `<div class="item-name">${escapeAttr(e.name)}</div><div class="item-meta">${escapeAttr(e.id)} · ${escapeAttr(e.category)}</div>`;
+      div.addEventListener('click', async () => {
+        const existing = ws.locales.find(l => l.id === e.id);
+        if (existing) { ws.activeId = existing.id; selected = null; saveWorkspace(); updateAll(); fitView(); return; }
+        try {
+          const r = await fetch('../../' + e.file);
+          const data = await r.json();
+          const m = sanitizeLoaded(data);
+          ws.locales.push(m); ws.activeId = m.id; selected = null;
+          finishEdit(); renderLocaleList(); renderSettings(); fitView();
+        } catch (err) { alert('Could not load ' + e.file + ': ' + err.message); }
+      });
+      box.appendChild(div);
+    }
+  } catch (e) {
+    box.innerHTML = `<div class="muted">Could not load index: ${e.message}</div>`;
+    $('libraryCountTag').textContent = '—';
+  }
+}
+
+// ── Validation ────────────────────────────────────────────────────────────────
+function renderValidation() {
+  const m = activeLocale();
+  const list = $('validateList');
+  list.innerHTML = '';
+  if (!m) { $('validateCountTag').textContent = '—'; return; }
+  const issues = [];
+  const tileCount = Object.keys(m.tiles).length;
+  if (!tileCount) issues.push({ level:'error', msg:'No footprint tiles painted — this locale has no shape yet.' });
+  if (!m.connectors.length) issues.push({ level:'warning', msg:'No connectors marked — the wilderness path network will have nothing to route to.' });
+  if (!/^locale_/.test(m.id)) issues.push({ level:'info', msg:'Id does not follow the "locale_" naming convention.' });
+  const dupes = ws.locales.filter(l => l.id === m.id);
+  if (dupes.length > 1) issues.push({ level:'error', msg:'Another locale in this workspace shares this id.' });
+  if ((m.category === 'dwelling' || m.category === 'great_fey_shrine') && !m.npcAnchors.length) {
+    issues.push({ level:'warning', msg:`No NPC anchors placed — a ${m.category === 'dwelling' ? 'dwelling' : 'shrine'} usually anchors at least one named character.` });
+  }
+  if (!m.singleton && (m.category === 'dwelling' || m.category === 'great_fey_shrine')) {
+    issues.push({ level:'info', msg:'Not marked singleton — story locations like this are usually placed exactly once in the world.' });
+  }
+  const objOut = m.objects.filter(o => o.col < 0 || o.row < 0 || o.col+o.w > m.cols || o.row+o.h > m.rows);
+  if (objOut.length) issues.push({ level:'warning', msg:`${objOut.length} object(s) extend outside the canvas bounds.` });
+  issues.push({ level:'info', msg:`Footprint: ${tileCount} tile(s) painted, canvas ${m.cols}×${m.rows}.` });
+
+  $('validateCountTag').textContent = issues.filter(i => i.level === 'error').length ? `${issues.filter(i=>i.level==='error').length} error(s)` : 'ok';
+  for (const i of issues) {
+    const div = document.createElement('div');
+    div.className = 'vIssue ' + i.level;
+    div.textContent = i.msg;
+    list.appendChild(div);
+  }
+}
+
+// ── JSON export ───────────────────────────────────────────────────────────────
+function buildExport(m) {
+  return {
+    schema: 'hobunji_locale.v1',
+    id: m.id, name: m.name, category: m.category, singleton: m.singleton,
+    description: m.description, tags: m.tags, cols: m.cols, rows: m.rows,
+    tiles: m.tiles, objects: m.objects, npcAnchors: m.npcAnchors, connectors: m.connectors,
+    placement: m.placement, meta: m.meta
+  };
+}
+function renderJson() {
+  const m = activeLocale();
+  $('jsonPreview').value = m ? JSON.stringify(buildExport(m), null, 2) : '';
+}
+$('copyJsonBtn').addEventListener('click', () => {
+  const m = activeLocale(); if (!m) return;
+  navigator.clipboard?.writeText(JSON.stringify(buildExport(m), null, 2))
+    .then(() => setStatus('Copied JSON to clipboard.'))
+    .catch(() => { $('jsonPreview').select(); document.execCommand('copy'); setStatus('Copied JSON.'); });
+});
+$('downloadJsonBtn').addEventListener('click', () => {
+  const m = activeLocale(); if (!m) return;
+  const blob = new Blob([JSON.stringify(buildExport(m), null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${m.id}.json`;
+  a.click();
+  setStatus(`Downloaded ${m.id}.json — place it under docs/config/locales/ and register it in index.json.`);
+});
+$('copyIndexEntryBtn').addEventListener('click', () => {
+  const m = activeLocale(); if (!m) return;
+  const entry = { id: m.id, file: `config/locales/${m.id}.json`, name: m.name, category: m.category, singleton: m.singleton };
+  navigator.clipboard?.writeText(JSON.stringify(entry, null, 2) + ',')
+    .then(() => setStatus('Copied a docs/config/locales/index.json entry to clipboard.'))
+    .catch(() => setStatus('Could not copy to clipboard.'));
+});
+$('importBtn').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', async e => {
+  const f = e.target.files?.[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    const m = sanitizeLoaded(data);
+    while (ws.locales.some(l => l.id === m.id)) m.id += '_imported';
+    ws.locales.push(m); ws.activeId = m.id; selected = null;
+    finishEdit(); renderLocaleList(); renderSettings(); fitView();
+  } catch (err) { setStatus('Import failed: ' + err.message); }
+  finally { e.target.value = ''; }
+});
+
+function setStatus(msg) { $('statusPill').textContent = msg; setTimeout(() => { $('statusPill').textContent = 'Ready'; }, 3500); }
+
+function updateHud() {
+  const m = activeLocale();
+  if (!m) { $('footprintPill').textContent = '—'; $('blendPill').textContent = '—'; return; }
+  const tileCount = Object.keys(m.tiles).length;
+  let blend = 0;
+  for (const key of Object.keys(m.tiles)) { const [c,r] = key.split(',').map(Number); if (isBlendEdge(m,c,r)) blend++; }
+  $('footprintPill').textContent = `${tileCount} footprint tiles`;
+  $('blendPill').textContent = `${blend} blend-edge cells`;
+}
+
+function updateAll() {
+  renderLocaleList(); renderSettings(); renderPalette(); renderInspector();
+  renderValidation(); renderJson(); updateHud(); draw();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+if (!loadWorkspace()) {
+  const m = makeLocale();
+  ws.locales = [m];
+  ws.activeId = m.id;
+}
+updateAll();
+fitView();
+loadLibrary();
+setMode('pan');
+
+// Expose a tiny bridge so the dev-tools hub (docs/tools/index.html) can hook in later.
+window._localeEditorBridge = {
+  getWorkspace: () => JSON.parse(JSON.stringify(ws)),
+  loadLocale: (data) => {
+    const m = sanitizeLoaded(data);
+    if (!ws.locales.some(l => l.id === m.id)) ws.locales.push(m);
+    ws.activeId = m.id; selected = null;
+    finishEdit(); renderLocaleList(); renderSettings(); fitView();
+  }
+};
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "schema": "hobunji-locale-index/v1",
+  "locales": [
+    {
+      "id": "locale_leaf_pahu_house",
+      "file": "config/locales/locale_leaf_pahu_house.json",
+      "name": "Leaf & Pahu's House",
+      "category": "dwelling",
+      "singleton": true
+    },
+    {
+      "id": "locale_researchers_tent",
+      "file": "config/locales/locale_researchers_tent.json",
+      "name": "Researcher's Tent",
+      "category": "story_poi",
+      "singleton": true
+    },
+    {
+      "id": "locale_banubu_shrine",
+      "file": "config/locales/locale_banubu_shrine.json",
+      "name": "Banubu's Shrine",
+      "category": "great_fey_shrine",
+      "singleton": true
+    },
+    {
+      "id": "locale_hikihiki_shrine",
+      "file": "config/locales/locale_hikihiki_shrine.json",
+      "name": "Hiki-hiki's Shrine",
+      "category": "great_fey_shrine",
+      "singleton": true
+    },
+    {
+      "id": "locale_mother_rahayobi_shrine",
+      "file": "config/locales/locale_mother_rahayobi_shrine.json",
+      "name": "Mother Rahayobi's Shrine",
+      "category": "great_fey_shrine",
+      "singleton": true
+    },
+    {
+      "id": "locale_old_man_nohuknuk_shrine",
+      "file": "config/locales/locale_old_man_nohuknuk_shrine.json",
+      "name": "Old Man Nohuknuk's Shrine",
+      "category": "great_fey_shrine",
+      "singleton": true
+    }
+  ]
+}
