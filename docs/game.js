@@ -7669,9 +7669,11 @@
       // plateau-stack offset every tile goes through) and a resolved elevTier
       // looked up at that anchor cell — see mergeZoneTiles.
       const _zoneLayouts = new Map();
+      window._zoneLayouts = _zoneLayouts; // devtools/QA inspection hook, mirrors window._npcWalkers
       // mapId → [{ group, bldg, piece, wbOpts, wbGableOpts }] — mirrors
       // _townBuildingGroups but per zone map; see _spawnZoneBuildings.
       const _zoneBuildingGroups = new Map();
+      window._zoneBuildingGroups = _zoneBuildingGroups; // devtools/QA inspection hook
       // mapId → [THREE.Object3D, ...] (meshes + point lights) — decor/processing
       // furniture props spawned for a zone map; see _spawnZoneDecorFurniture.
       const _zoneDecorFurnitureGroups = new Map();
