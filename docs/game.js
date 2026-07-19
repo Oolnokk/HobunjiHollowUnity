@@ -6842,6 +6842,28 @@
           ctx.fill();
           ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1; ctx.stroke();
         }
+        // Garanki Gabu's live position, drawn as his own portrait (the same
+        // baked head-with-cosmetics canvas his world model and dialogue
+        // portrait use — see makeNpcWalker's avatarFrontCanvas) instead of a
+        // plain dot, so he reads as a person to go find rather than another
+        // static map marker. Tracks whichever zone he's actually in right
+        // now, independent of which zone tab the player happens to be
+        // standing in or viewing.
+        const garanki = npcWalkers.find(w => w.rec?.id === 'garanki_gabu');
+        if (garanki && garanki.area === zoneId && garanki.avatarFrontCanvas) {
+          const gx = garanki.root.position.x * scaleX, gy = garanki.root.position.z * scaleY;
+          const gr = Math.max(4, markerR * 1.3);
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(gx, gy, gr, 0, Math.PI * 2);
+          ctx.closePath();
+          ctx.clip();
+          ctx.drawImage(garanki.avatarFrontCanvas, gx - gr, gy - gr, gr * 2, gr * 2);
+          ctx.restore();
+          ctx.beginPath();
+          ctx.arc(gx, gy, gr, 0, Math.PI * 2);
+          ctx.strokeStyle = '#f0d060'; ctx.lineWidth = 1.5; ctx.stroke();
+        }
         if (opts.showPlayer) {
           const mx = (player.x / TILE) * scaleX, my = (player.y / TILE) * scaleY;
           ctx.beginPath();
@@ -10941,15 +10963,30 @@
           }
 
           // Resolve real authored tile/transition data for every top-level exterior
-          // zone (Northern Cliffs, Southern Cloud Forest) so buildZoneScene can
-          // render actual cliff/terrain content instead of EXTERIOR_ZONES' tiny flat
-          // placeholder grid.
+          // zone so buildZoneScene can render actual cliff/terrain content instead
+          // of EXTERIOR_ZONES' tiny flat placeholder grid. This predates the Tothal
+          // Shift procedural generator (WildernessMapGenerator) -- all four of
+          // EXTERIOR_ZONES' own zones are now fully owned by that system instead
+          // (see performTothalShift's own _zoneLayouts.set(zoneId, ...) call),
+          // which runs later at world start and would otherwise race this one for
+          // the exact same _zoneLayouts key: whichever finished last silently won,
+          // meaning the player could end up standing on (and testing bug fixes
+          // against) this stale hand-authored layout instead of the freshly
+          // generated one, with no visible sign that had happened. allZoneMapIds
+          // itself still needs to include EXTERIOR_ZONES ids below -- both this
+          // loop's own transition classification (allZoneMapIds.has(...) a few
+          // lines down) and the town's own transitions further below use it to
+          // recognize "this leads into a wilderness zone" -- only the actual
+          // _zoneLayouts.set(...) for one of those four is skipped, so town's
+          // real authored gate into e.g. Northern Cliffs still works, it just
+          // doesn't get to build (and race) that zone's own terrain/buildings.
           const allZoneMapIds = new Set(Object.keys(EXTERIOR_ZONES));
           for (const m of resolvedMaps) {
             if (m.category === 'exterior' && m.id !== 'map_hobunji_town' && !m.isSubmap) allZoneMapIds.add(m.id);
           }
 
           for (const zoneMapId of allZoneMapIds) {
+            if (EXTERIOR_ZONES[zoneMapId]) continue; // owned entirely by performTothalShift now
             const zm = resolvedMaps.find(m => m.id === zoneMapId);
             if (!zm) continue;
             const outTiles = new Map(), mesas = [], outBuildings = [], outDecor = [], outFurniture = [];
