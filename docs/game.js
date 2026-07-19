@@ -25397,8 +25397,11 @@
               // used the swing-timer system (see fireFishingBridge's own note on
               // this), so gating the arc button behind it here would just mean
               // a stray leftover toolSwingT from whatever was equipped before
-              // switching to the harpoon could silently eat the tap.
-              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'use_spot' || act === 'obj_exit_house' || act.startsWith('obj_') || act.startsWith('fish_');
+              // switching to the harpoon could silently eat the tap. climb is the
+              // same story: it's pure traversal, not a tool swing, so a leftover
+              // toolSwingT from whatever was equipped before walking up to a
+              // cliff shouldn't be able to eat the tap either.
+              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
               if (isNavAction || toolSwingT <= 0) useActiveAction();
             }
 
