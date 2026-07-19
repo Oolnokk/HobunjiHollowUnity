@@ -146,6 +146,7 @@
         if (targetPanel === 'generalStore') renderGeneralStorePage();
         if (targetPanel === 'carpenterShop') renderCarpenterShopPage();
         if (targetPanel === 'jubmirShop') renderJubmirShopPage();
+        if (targetPanel === 'metalCraftShop') renderMetalCraftShopPage();
         if (targetPanel === 'alchemy') renderAlchemyPanel();
         if (targetPanel === 'tasks') renderTasksPanel();
         if (targetPanel === 'relationships') renderRelationshipsPanel();
@@ -185,6 +186,7 @@
         if (id === 'generalStore') renderGeneralStorePage();
         if (id === 'carpenterShop') renderCarpenterShopPage();
         if (id === 'jubmirShop') renderJubmirShopPage();
+        if (id === 'metalCraftShop') renderMetalCraftShopPage();
         if (id === 'alchemy') renderAlchemyPanel();
         if (id === 'tasks') renderTasksPanel();
         if (id === 'relationships') renderRelationshipsPanel();
@@ -479,6 +481,13 @@
                 // authored before pools existed (bare {type:'openShop'}).
                 const pool = WARES_POOLS[act.pool || 'generalStoreWares'];
                 if (pool) { closeNpcDialogue(); openMenu(pool.menuId); }
+                skipNav = true;
+              } else if (act.type === 'openCraftMenu') {
+                // Sloomi/Kzubug's smithing counter — craft/plate/reinforce
+                // verdigris tools from dug-up metal bars (see
+                // renderMetalCraftShopPage). Both smiths offer the identical
+                // service, so there's no per-NPC pool indirection needed.
+                closeNpcDialogue(); openMenu('metalCraftShop');
                 skipNav = true;
               } else if (act.type === 'startChat') {
                 _beginNpcConversation(_dlgNpcRec);
@@ -1413,8 +1422,13 @@
       function weaponAbility(action) {
         const cfg = combatConfig().weaponAbilities?.[action];
         if (!cfg) return null;
+        // A smith-crafted verdigris weapon's damage scales with its
+        // effective metal tier (see toolMetalMultiplier) — reinforcement-
+        // aware, so a reinforced tool fights at the reinforcing metal's
+        // power even though its own base-metal identity never changes.
+        const metalMul = toolMetalMultiplier(equipmentSlots.weapon);
         return {
-          damage: Number(cfg.damage) || 0,
+          damage: (Number(cfg.damage) || 0) * metalMul,
           halfConeRad: (Number(cfg.halfConeDeg) || 0) * Math.PI / 180,
           rangePx: TILE * (Number(cfg.rangeTiles) || 0),
           staminaCost: Number(cfg.staminaCost) || 0,
@@ -1829,6 +1843,91 @@
         pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust', dmgType: 'blunt' },
       };
 
+      // ── Metal registry (dug-up bars, the verdigris hierarchy) ──────────
+      // Clean/polished target hex + verdigris hex ported from the tool-sprite
+      // recolorer dev tool's METAL_PRESETS list. `tier` is null for metals
+      // that don't produce a verdigris (dug up and sold, or used only for
+      // cosmetic plating) — the seven that do have tier: 1 (weakest, native
+      // copper) through 7 (strongest, tumbaga) form the hierarchy Sloomi/
+      // Kzubug can craft real tools from and reinforce a tool up through
+      // (see toolEffectiveMetalKey). Placeholder tuning throughout.
+      const METAL_DEFS = {
+        nativeCopper:    { label: 'Native Copper',    hex: '#B87333', verdigrisHex: '#3FAF9F', tier: 1 },
+        lowTinBronze:    { label: 'Low-Tin Bronze',   hex: '#B66A2E', verdigrisHex: '#4EAA86', tier: 2 },
+        tinBronze:       { label: 'Tin Bronze',       hex: '#CD7F32', verdigrisHex: '#57B38B', tier: 3 },
+        highTinBronze:   { label: 'High-Tin Bronze',  hex: '#BAA06A', verdigrisHex: '#78BFA5', tier: 4 },
+        arsenicalBronze: { label: 'Arsenical Bronze', hex: '#B4A78E', verdigrisHex: '#8ABFB0', tier: 5 },
+        leadedBronze:    { label: 'Leaded Bronze',    hex: '#997047', verdigrisHex: '#4E9672', tier: 6 },
+        tumbaga:         { label: 'Tumbaga',           hex: '#C87A2A', verdigrisHex: '#40A88C', tier: 7 },
+        tin:             { label: 'Tin',               hex: '#C8CCD0', verdigrisHex: null, tier: null },
+        lead:            { label: 'Lead',              hex: '#6D7375', verdigrisHex: null, tier: null },
+        silver:          { label: 'Silver',            hex: '#C0C0C0', verdigrisHex: null, tier: null },
+        gold:            { label: 'Gold',              hex: '#D4AF37', verdigrisHex: null, tier: null },
+        electrumGold:    { label: 'Electrum',          hex: '#DCCB71', verdigrisHex: null, tier: null },
+        electrumSilver:  { label: 'Pale Electrum',     hex: '#CEC88E', verdigrisHex: null, tier: null },
+        pewter:          { label: 'Early Pewter',      hex: '#AEB4B5', verdigrisHex: null, tier: null },
+      };
+      // Weakest → strongest, i.e. the hierarchy Sloomi/Kzubug craft/reinforce with.
+      const VERDIGRIS_METAL_KEYS = Object.keys(METAL_DEFS)
+        .filter(k => METAL_DEFS[k].tier != null)
+        .sort((a, b) => METAL_DEFS[a].tier - METAL_DEFS[b].tier);
+
+      function metalBarItemKey(metalKey) { return 'bar_' + metalKey; }
+
+      // A tier-linear damage/efficacy scalar — read by both weaponAbility()
+      // (combat damage) and, going forward, any other tool-use "efficacy"
+      // roll that wants to share the same material-tier scale.
+      function metalDmgMultiplier(metalKey) {
+        const tier = METAL_DEFS[metalKey]?.tier;
+        return tier ? 0.85 + tier * 0.05 : 1; // tier1=0.90 … tier7=1.20
+      }
+
+      // ── Tool "shapes" (the physical object) vs. metal (what it's crafted
+      // from) — TOOL_ITEM_DEFS below still keys everything by a single flat
+      // itemKey (mastery, equip slots, gearInventory.tools all already work
+      // that way), so a crafted tool's key is just `${shapeKey}_${metalKey}`
+      // (see craftedToolItemKey) — a brand-new key per shape+metal
+      // combination, automatically getting its own independent mastery/
+      // verdigris/plating/reinforcement tracking for free since all of that
+      // state is already keyed by itemKey.
+      const TOOL_SHAPE_DEFS = {
+        hoe:          { label: 'Hoe',           icon: '🪓', baseSprite: 'assets/toolsprites/hoe_bronzehoe.png',        slots: ['hoe'],                     animStyle: 'chop'   },
+        hatchet:      { label: 'Hatchet',       icon: '🪓', baseSprite: 'assets/toolsprites/axe_hatchet.png',          slots: ['axe', 'weapon'],           animStyle: 'sweep',  dmgType: 'sharp' },
+        fishingmace:  { label: 'Fishing Mace',  icon: '🎣', baseSprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true, dmgType: 'blunt'  },
+        fishingspear: { label: 'Fishing Spear', icon: '🎣', baseSprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'thrust', spinning: false, dmgType: 'sharp' },
+        pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', baseSprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust', dmgType: 'blunt' },
+      };
+      // Every shape is unlocked from the start — "you unlock all the current
+      // ones by default" — this is just the set Sloomi/Kzubug's crafting
+      // counter offers; it's never spent/consumed so it isn't gearInventory
+      // state the way owned tools/mastery/plating are.
+      const UNLOCKED_TOOL_SHAPES = Object.keys(TOOL_SHAPE_DEFS);
+      function craftedToolItemKey(shapeKey, metalKey) { return shapeKey + '_' + metalKey; }
+
+      // Registers one TOOL_ITEM_DEFS entry per (shape × verdigris metal)
+      // combination — the original 5 hand-authored keys above (bronzehoe,
+      // hatchet, fishingmace, fishingspear, pickshovel) are untouched, since
+      // they're the starting bronze-age kit baked into makeDefaultGear() and
+      // every existing save's mastery/equip data. `shapeKey`/`metalKey` on
+      // these generated entries mark them as smith-crafted, verdigris-
+      // capable tools (see toolVerdigrisFraction/toolEffectiveMetalKey).
+      for (const metalKey of VERDIGRIS_METAL_KEYS) {
+        for (const [shapeKey, shape] of Object.entries(TOOL_SHAPE_DEFS)) {
+          const itemKey = craftedToolItemKey(shapeKey, metalKey);
+          TOOL_ITEM_DEFS[itemKey] = {
+            label: `${METAL_DEFS[metalKey].label} ${shape.label}`,
+            icon: shape.icon,
+            sprite: shape.baseSprite,
+            slots: shape.slots,
+            animStyle: shape.animStyle,
+            dmgType: shape.dmgType,
+            spinning: shape.spinning,
+            shapeKey, metalKey,
+            itemKey, // self-reference — lets icon rendering resolve mastery/plating without a separate key param
+          };
+        }
+      }
+
       // Drives the weapon-tool loadout's Combo slot (see combat-loadout.js) —
       // a sweep-style weapon (hatchet, fishing mace) plays the 3-Swing Combo,
       // a thrust-style weapon (fishing spear, pick-shovel) plays the 3-Poke
@@ -1924,6 +2023,62 @@
         awardToolMasteryXp(equipmentSlots[tool], MASTERY_XP_PER_TOOL_USE);
       }
 
+      // ── Verdigris coverage, cosmetic plating, metal reinforcement ──────
+      // Continuous with the tool's own XP total (not stepped by mastery
+      // LEVEL) — 0% verdigris at 0 XP, 100% ("maximum verdigris") exactly
+      // at the mastery-5 threshold, same MASTERY_XP_THRESHOLDS toolMasteryLevel
+      // already reads. Only meaningful for a smith-crafted verdigris tool
+      // (TOOL_ITEM_DEFS[itemKey].metalKey set) — anything else reads as 0.
+      function toolVerdigrisFraction(itemKey) {
+        if (!TOOL_ITEM_DEFS[itemKey]?.metalKey) return 0;
+        const maxXp = MASTERY_XP_THRESHOLDS[MASTERY_XP_THRESHOLDS.length - 1];
+        return Math.max(0, Math.min(1, toolMasteryXp(itemKey) / maxXp));
+      }
+
+      // gearInventory.toolPlating[itemKey] = { mode: 'cosmetic'|'resistant', metalKey }
+      // 'cosmetic': any metal's clean color, hiding the live verdigris entirely.
+      // 'resistant': the tool's OWN base metal, clean/polished — "the same
+      // metal, just not oxidized". Absent = show the live verdigris (default).
+      function toolPlating(itemKey) {
+        return gearInventory?.toolPlating?.[itemKey] || null;
+      }
+      function setToolPlating(itemKey, mode, metalKey) {
+        if (!gearInventory) return;
+        if (!gearInventory.toolPlating) gearInventory.toolPlating = {};
+        gearInventory.toolPlating[itemKey] = { mode, metalKey };
+        saveGearInventory();
+      }
+      function clearToolPlating(itemKey) {
+        if (!gearInventory?.toolPlating) return;
+        delete gearInventory.toolPlating[itemKey];
+        saveGearInventory();
+      }
+
+      // gearInventory.toolReinforcement[itemKey] = { metalKey } — a higher-
+      // tier verdigris metal's power grafted onto this literal tool by
+      // Sloomi/Kzubug's reinforcement service. The tool keeps its own base
+      // metal's identity — label, sprite recolor hue, verdigris color, and
+      // mastery XP all stay keyed to itemKey exactly as before — only its
+      // effective combat/tool stats borrow the reinforcing metal's tier.
+      function toolReinforcementMetal(itemKey) {
+        return gearInventory?.toolReinforcement?.[itemKey]?.metalKey || null;
+      }
+      function setToolReinforcement(itemKey, metalKey) {
+        if (!gearInventory) return;
+        if (!gearInventory.toolReinforcement) gearInventory.toolReinforcement = {};
+        gearInventory.toolReinforcement[itemKey] = { metalKey };
+        saveGearInventory();
+      }
+
+      // The metal this tool actually fights/works with — its own base metal
+      // unless reinforced with something higher-tier (see above).
+      function toolEffectiveMetalKey(itemKey) {
+        return toolReinforcementMetal(itemKey) || TOOL_ITEM_DEFS[itemKey]?.metalKey || null;
+      }
+      function toolMetalMultiplier(itemKey) {
+        return metalDmgMultiplier(toolEffectiveMetalKey(itemKey));
+      }
+
       // ── Motes of Prowess ────────────────────────────────────────────
       // Spent on ability-upgrade choices (see combat-progression.js);
       // earned from combat (creature kills) and other future sources.
@@ -1951,12 +2106,86 @@
 
       window.ToolIconRender?.warm(Object.values(TOOL_ITEM_DEFS).map(d => d.sprite));
 
+      // ── Metal/verdigris tool icon recolor bridge ────────────────────────
+      // A crafted verdigris tool's icon isn't a static PNG — it's the shape's
+      // base sprite recolored to the tool's effective metal (see
+      // toolEffectiveMetalKey) and oxidized to this literal tool's own
+      // verdigris fraction (or its cosmetic plating, if any). ToolMetalRecolor
+      // does the actual pixel work asynchronously; this just kicks it off
+      // once per (itemKey, plating, verdigris-fraction) combination and
+      // registers the result with ToolIconRender under a synthetic key so
+      // the rest of the icon pipeline (trim/rotate/effect overlay) doesn't
+      // need to know the sprite wasn't a plain file load.
+      const _metalToolIconRequested = new Set();
+      function metalToolRecolorOptions(itemKey) {
+        const def = TOOL_ITEM_DEFS[itemKey];
+        if (!def?.metalKey) return null;
+        const baseMetal = METAL_DEFS[def.metalKey];
+        const plating = toolPlating(itemKey);
+        if (plating?.mode === 'cosmetic') {
+          const platingMetal = METAL_DEFS[plating.metalKey] || baseMetal;
+          return { targetHex: platingMetal.hex, verdigrisHex: null, oxidationAmount: 0 };
+        }
+        if (plating?.mode === 'resistant') {
+          return { targetHex: baseMetal.hex, verdigrisHex: null, oxidationAmount: 0 };
+        }
+        return { targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: toolVerdigrisFraction(itemKey) };
+      }
+      const _metalToolDataUrlCache = new Map(); // same cache key -> data URL, for plain <img src> consumers
+      function metalToolCacheKey(itemKey, opts) {
+        const plating = toolPlating(itemKey);
+        return `toolmetal:${itemKey}:${plating ? plating.mode + ':' + plating.metalKey : 'live'}:${opts.oxidationAmount.toFixed(2)}`;
+      }
+      function ensureMetalToolIconSource(itemKey) {
+        const def = TOOL_ITEM_DEFS[itemKey];
+        const opts = metalToolRecolorOptions(itemKey);
+        if (!def?.sprite || !opts) return null;
+        const key = metalToolCacheKey(itemKey, opts);
+        if (_metalToolIconRequested.has(key)) return key;
+        _metalToolIconRequested.add(key);
+        window.ToolMetalRecolor?.getRecoloredCanvas(def.sprite, opts).then(canvas => {
+          window.ToolIconRender?.registerCanvasSource(key, canvas);
+          try { _metalToolDataUrlCache.set(key, canvas.toDataURL('image/png')); } catch {}
+          // A plain <img src> consumer (see metalToolImgSrc) was showing the
+          // un-recolored base sprite until now — refresh the panels that
+          // render tool sprites via <img> once the real recolor lands.
+          buildEquipmentSlots();
+        });
+        return key;
+      }
+      // Resolves an <img src> for a tool def — the plain sprite path for an
+      // ordinary tool, or (once ready) a data URL of its metal+verdigris
+      // recolor for a smith-crafted one. Falls back to the plain base
+      // sprite (still teal-keyed) until the async recolor above resolves.
+      function metalToolImgSrc(def) {
+        if (def?.metalKey && def?.itemKey) {
+          const opts = metalToolRecolorOptions(def.itemKey);
+          if (opts) {
+            const key = metalToolCacheKey(def.itemKey, opts);
+            const cached = _metalToolDataUrlCache.get(key);
+            if (cached) return cached;
+            ensureMetalToolIconSource(def.itemKey);
+          }
+        }
+        return def?.sprite || '';
+      }
+      // Plain sprite path for an ordinary tool, or a synthetic
+      // ToolIconRender key for a smith-crafted verdigris tool — see above.
+      function iconSpriteSourceFor(def) {
+        if (def?.metalKey && def?.itemKey) {
+          const key = ensureMetalToolIconSource(def.itemKey);
+          if (key) return key;
+        }
+        return def?.sprite || null;
+      }
+
       // Resolved icon for a tool-select badge (the equipped item's own
       // sprite, upright and trimmed) — falls back to `fallbackEmoji` until
       // the sprite has finished loading, or if the slot holds nothing.
       function toolSelectIconHTML(def, fallbackEmoji, cssSize) {
-        if (def?.sprite) {
-          const html = window.ToolIconRender?.getIconHTML(def.sprite, 'plain', cssSize, def.label);
+        const src = iconSpriteSourceFor(def);
+        if (src) {
+          const html = window.ToolIconRender?.getIconHTML(src, 'plain', cssSize, def.label);
           if (html) return html;
         }
         return def?.icon || fallbackEmoji;
@@ -1980,7 +2209,9 @@
           style = 'plain';
         }
         if (!style) return fallbackEmoji;
-        const html = window.ToolIconRender?.getIconHTML(def.sprite, style, '1.3em', def.label + ' ' + action);
+        const src = iconSpriteSourceFor(def);
+        if (!src) return fallbackEmoji;
+        const html = window.ToolIconRender?.getIconHTML(src, style, '1.3em', def.label + ' ' + action);
         return html || fallbackEmoji;
       }
 
@@ -2011,6 +2242,12 @@
           // abilities' 5 upgrade levels can be chosen — see
           // combat-progression.js.
           toolMastery: {},
+          // toolPlating[itemKey] = { mode: 'cosmetic'|'resistant', metalKey } —
+          // Sloomi/Kzubug's cosmetic plating service (see setToolPlating).
+          toolPlating: {},
+          // toolReinforcement[itemKey] = { metalKey } — Sloomi/Kzubug's metal
+          // reinforcement service (see setToolReinforcement).
+          toolReinforcement: {},
           // Spent on ability-upgrade choices (level N choice costs N motes —
           // see combat-progression.js); earned from combat (creature kills)
           // and other future sources. Character save data, not world data.
@@ -5490,6 +5727,9 @@
       const FOLLOW_FAR_PX  = TILE * 2.2;
       const FOLLOW_NEAR_PX = TILE * 1.1;
       const ALERT_RANGE_PX = TILE * 4.5;
+      // How far a companion can "smell" a buried treasure digsite — see
+      // updateCompanions' treasure-hint branch and nearestTreasureDigsitePixelPos.
+      const TREASURE_HINT_RANGE_PX = TILE * 9;
 
       function updateCompanions(dt) {
         for (const c of companionObjects) {
@@ -5610,7 +5850,23 @@
             moving = moveCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(dyp, dxp);
           } else {
-            moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
+            // Fable 2-style treasure hint: with nothing else to do, a
+            // companion bounces toward the nearest still-buried treasure
+            // digsite in this zone instead of wandering aimlessly near its
+            // master — "leading you to it". Only wilderness zones carry
+            // buried treasure (see _zoneTreasureObjects), so elsewhere this
+            // is always a no-op and behavior is unchanged.
+            const treasureHint = _isZoneArea(currentArea) ? nearestTreasureDigsitePixelPos(currentArea, master.x, master.y) : null;
+            if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) {
+              if (!c._treasureHintAnnounced) {
+                c._treasureHintAnnounced = true;
+                showToast(`${c.def.label} perks up, sniffing at something nearby!`, true);
+              }
+              moving = wanderTick(c, dt, treasureHint.x, treasureHint.y, TILE * 1.4);
+            } else {
+              c._treasureHintAnnounced = false;
+              moving = wanderTick(c, dt, master.x, master.y, FOLLOW_NEAR_PX);
+            }
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
           c.facing = aimAngle;
@@ -6100,6 +6356,7 @@
           member.alchemyActiveEffects = serializeActiveAlchemyEffects();
           member.alchemyReagentState = serializeZoneReagentState();
           member.wildBerryState = serializeZoneBerryState();
+          member.zoneTreasureState = serializeZoneTreasureState();
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
       }
@@ -7712,6 +7969,17 @@
       // mapId → { day, placements: [{col,row,key}, ...] } — same shape/role
       // as _zoneReagentPersist.
       const _zoneBerryPersist = new Map();
+      // mapId → Map("col,row" -> pickable buried-treasure world object,
+      // either a digsite or the chest it becomes once dug up) — see
+      // ensureZoneTreasure/getWorldObjectAt.
+      const _zoneTreasureObjects = new Map();
+      // mapId → [THREE.Group, ...] (digsite mound + chest meshes).
+      const _zoneTreasureMeshGroups = new Map();
+      // mapId → { week, placements: [{col,row,state:'buried'|'dug', metalKeys:[...]}] } —
+      // same shape/role as _zoneReagentPersist/_zoneBerryPersist, but keyed
+      // to a week index (see treasureWeekIndex) instead of calendar.day —
+      // buried treasure is meant to be rarer than reagents/berries.
+      const _zoneTreasurePersist = new Map();
       // mapIds whose _zoneLayouts entry was replaced by a Tothal Shift (see
       // performTothalShift) while the player was standing inside that same
       // zone — rebuilding the live THREE.Scene out from under them mid-visit
@@ -11962,6 +12230,7 @@
         if (!zi) return;
         ensureZoneReagents(mapId);
         ensureZoneBerries(mapId); // after reagents, so it can see today's reagent tiles and avoid them
+        ensureZoneTreasure(mapId); // after both, so it can avoid their tiles too
         const fromScene = getActiveScene();
         _currentBuildingMapId = null;
         currentArea = mapId;
@@ -12542,6 +12811,10 @@
         _zoneBerryMeshGroups.delete(mapId);
         _zoneBerryObjects.delete(mapId);
         _zoneBerryPersist.delete(mapId);
+        // Same reasoning again, for buried treasure.
+        _zoneTreasureMeshGroups.delete(mapId);
+        _zoneTreasureObjects.delete(mapId);
+        _zoneTreasurePersist.delete(mapId);
       }
 
       // ── Wild berry bushes (wilderness-zone counterpart of purchasable
@@ -12692,6 +12965,212 @@
         _zoneBerryPersist.clear();
         Object.entries(saved || {}).forEach(([mapId, v]) => {
           if (v && Array.isArray(v.placements)) _zoneBerryPersist.set(mapId, { day: v.day, placements: v.placements });
+        });
+      }
+
+      // ── Buried wilderness treasure (dig sites → chests) ─────────────────
+      // A companion (see updateCompanions' treasure-hint branch) periodically
+      // bounces toward the nearest buried digsite instead of idly wandering —
+      // "leading you to it", Fable 2 dog-style. Digging one up with a shovel
+      // or pick equipped turns it into an openable chest holding a few metal
+      // bars (see METAL_DEFS/VERDIGRIS_METAL_KEYS). Deliberately rarer than
+      // reagents/berries — scattered per week (see treasureWeekIndex), not
+      // per day, and only 1-2 per zone.
+      function treasureWeekIndex() {
+        return Math.floor((calendar.day - 1) / 7);
+      }
+
+      // Weighted toward common low-tier bars with a rare shot at a
+      // higher-tier one — Math.pow(rnd(),2.2) biases the roll toward 0
+      // (weakest) before scaling across the hierarchy.
+      function rollTreasureMetalKeys() {
+        const count = 1 + Math.floor(rnd() * 3); // 1-3 bars
+        const keys = [];
+        for (let i = 0; i < count; i++) {
+          const idx = Math.min(VERDIGRIS_METAL_KEYS.length - 1, Math.floor(Math.pow(rnd(), 2.2) * VERDIGRIS_METAL_KEYS.length));
+          keys.push(VERDIGRIS_METAL_KEYS[idx]);
+        }
+        return keys;
+      }
+
+      function scatterTreasureForZone(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return [];
+        const targetCount = 1 + Math.floor((zi.cols * zi.rows) / 3200); // rare — usually 1-2 per zone
+        const rng = _mbRng(_seedFromString(mapId + ':treasure:' + treasureWeekIndex()));
+        const avoid = [...(_zoneReagentPersist.get(mapId)?.placements || []), ...(_zoneBerryPersist.get(mapId)?.placements || [])];
+        const spots = findZoneFlatEmptyTiles(mapId, targetCount, rng, avoid);
+        return spots.map(({ col, row }) => ({ col, row, state: 'buried', metalKeys: rollTreasureMetalKeys() }));
+      }
+
+      // Low dirt-mound marker over a buried chest — subtle on purpose; a
+      // companion's hint (see updateCompanions) is meant to be the main way
+      // a player notices one, not the mound reading as an obvious landmark.
+      function buildTreasureDigsiteMesh() {
+        const mat = new THREE.MeshLambertMaterial({ color: 0x5b4326 });
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.4, 0.14, 8), mat);
+        mesh.castShadow = true;
+        return mesh;
+      }
+      // Simple wood-and-band chest silhouette — same box+lid shape as
+      // makeSellCrate/makeSupplyBox, just its own wood/gold coloring.
+      function buildTreasureChestMesh() {
+        const group = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.42, 0.44), new THREE.MeshLambertMaterial({ color: 0x6b4a2b }));
+        body.position.y = 0.21;
+        body.castShadow = true;
+        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.46), new THREE.MeshLambertMaterial({ color: 0xcaa233 }));
+        lid.position.y = 0.445;
+        lid.castShadow = true;
+        group.add(body, lid);
+        return group;
+      }
+
+      // Digsite → "Dig" (needs a shovel or pick equipped) → becomes a chest
+      // at the same tile. Matches the getButtons()/onAction() shape every
+      // other world-object type uses (see makeReagentPlantObject).
+      function makeTreasureDigsiteObject(mapId, col, row, placement, mesh) {
+        return {
+          id: 'treasuredig_' + mapId + '_' + col + '_' + row, type: 'treasure_digsite',
+          col, row, mesh,
+          label: '⛏️ Disturbed Earth',
+          getButtons() {
+            const canDig = !!(equipmentSlots.shovel || equipmentSlots.pick);
+            return [{
+              icon: '⛏️',
+              label: canDig ? 'Dig up the buried chest' : 'Need a shovel or pick to dig here',
+              action: 'obj_dig_treasure', style: 'primary', allowed: canDig,
+            }];
+          },
+          onAction(action) {
+            if (action !== 'obj_dig_treasure') return { ok: false, message: 'Unknown action.' };
+            if (!equipmentSlots.shovel && !equipmentSlots.pick) return { ok: false, message: 'You need a shovel or pick equipped to dig here.' };
+            awardToolUseMasteryXp(equipmentSlots.shovel ? 'shovel' : 'pick');
+            _zoneScenes.get(mapId)?.scene.remove(mesh);
+            const groups = _zoneTreasureMeshGroups.get(mapId);
+            if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
+            placement.state = 'dug';
+            const zi = _zoneScenes.get(mapId);
+            const chestMesh = buildTreasureChestMesh();
+            const tile = zi?.grid[row]?.[col];
+            chestMesh.position.set(col + 0.5, tile ? tileSurfaceYInArea(tile, mapId) : NORMAL_TOP, row + 0.5);
+            zi?.scene.add(chestMesh);
+            groups?.push(chestMesh);
+            _zoneTreasureObjects.get(mapId)?.set(col + ',' + row, makeTreasureChestObject(mapId, col, row, placement, chestMesh));
+            return { ok: true, message: 'You dig up a buried chest!' };
+          },
+        };
+      }
+
+      function makeTreasureChestObject(mapId, col, row, placement, mesh) {
+        return {
+          id: 'treasurechest_' + mapId + '_' + col + '_' + row, type: 'treasure_chest',
+          col, row, mesh,
+          label: '🗝️ Buried Chest',
+          getButtons() {
+            return [{ icon: '🗝️', label: 'Open the chest', action: 'obj_open_treasure_chest', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_open_treasure_chest') return { ok: false, message: 'Unknown action.' };
+            const parts = [];
+            for (const metalKey of placement.metalKeys) {
+              const key = metalBarItemKey(metalKey);
+              inventory[key] = Math.min(99, (inventory[key] || 0) + 1);
+              parts.push((ITEM_DEFS[key]?.icon || '🔶') + ' ' + METAL_DEFS[metalKey].label + ' Bar');
+            }
+            _zoneScenes.get(mapId)?.scene.remove(mesh);
+            const groups = _zoneTreasureMeshGroups.get(mapId);
+            if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
+            _zoneTreasureObjects.get(mapId)?.delete(col + ',' + row);
+            const persisted = _zoneTreasurePersist.get(mapId);
+            if (persisted) persisted.placements = persisted.placements.filter(p => p !== placement);
+            refreshItemScroll();
+            return { ok: true, message: 'Opened the chest: ' + parts.join(', ') };
+          },
+        };
+      }
+
+      function clearZoneTreasureMeshes(mapId) {
+        const scene = _zoneScenes.get(mapId)?.scene;
+        const groups = _zoneTreasureMeshGroups.get(mapId);
+        if (scene && groups) groups.forEach(g => scene.remove(g));
+        _zoneTreasureMeshGroups.delete(mapId);
+        _zoneTreasureObjects.delete(mapId);
+      }
+
+      // Called alongside ensureZoneReagents/ensureZoneBerries on every zone
+      // entry — rescatters only once a new week starts (see
+      // treasureWeekIndex); otherwise just rebuilds whatever this week's
+      // placements still are (some may already be 'dug' → render as chests).
+      function ensureZoneTreasure(mapId) {
+        if (typeof WildernessMapGenerator === 'undefined') return;
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return;
+        let persisted = _zoneTreasurePersist.get(mapId);
+        if (persisted?.week === treasureWeekIndex()) {
+          if (_zoneTreasureMeshGroups.has(mapId)) return; // already built for this week
+        } else {
+          persisted = { week: treasureWeekIndex(), placements: scatterTreasureForZone(mapId) };
+          _zoneTreasurePersist.set(mapId, persisted);
+        }
+        clearZoneTreasureMeshes(mapId);
+        const groups = [];
+        const objMap = new Map();
+        for (const placement of persisted.placements) {
+          const { col, row, state } = placement;
+          const mesh = state === 'dug' ? buildTreasureChestMesh() : buildTreasureDigsiteMesh();
+          const tile = zi.grid[row]?.[col];
+          mesh.position.set(col + 0.5, tile ? tileSurfaceYInArea(tile, mapId) : NORMAL_TOP, row + 0.5);
+          zi.scene.add(mesh);
+          groups.push(mesh);
+          objMap.set(col + ',' + row, state === 'dug'
+            ? makeTreasureChestObject(mapId, col, row, placement, mesh)
+            : makeTreasureDigsiteObject(mapId, col, row, placement, mesh));
+        }
+        _zoneTreasureMeshGroups.set(mapId, groups);
+        _zoneTreasureObjects.set(mapId, objMap);
+        debugLog(`ensureZoneTreasure(${mapId}): built ${groups.length} treasure site(s) for week ${treasureWeekIndex()}`);
+      }
+
+      // Nearest still-buried digsite in a zone, in the same pixel-space
+      // coordinates as creature x/y — used by updateCompanions' treasure-hint
+      // branch. Ignores already-dug chests (nothing left to lead anyone to).
+      function nearestTreasureDigsitePixelPos(mapId, fromX, fromY) {
+        const objs = _zoneTreasureObjects.get(mapId);
+        if (!objs) return null;
+        let best = null, bestDist = Infinity;
+        for (const obj of objs.values()) {
+          if (obj.type !== 'treasure_digsite') continue;
+          const x = (obj.col + 0.5) * TILE, y = (obj.row + 0.5) * TILE;
+          const d = Math.hypot(x - fromX, y - fromY);
+          if (d < bestDist) { bestDist = d; best = { x, y, dist: d }; }
+        }
+        return best;
+      }
+
+      // Only rescatters zones whose week has actually gone stale (unlike
+      // reagents/berries, treasure isn't meant to reroll every day) — see
+      // advanceDay.
+      function respawnAllZoneTreasure() {
+        if (typeof WildernessMapGenerator === 'undefined') return;
+        for (const mapId of WildernessMapGenerator.zoneMapIds()) {
+          const persisted = _zoneTreasurePersist.get(mapId);
+          if (persisted && persisted.week === treasureWeekIndex()) continue; // not stale yet
+          clearZoneTreasureMeshes(mapId);
+          _zoneTreasurePersist.delete(mapId);
+        }
+        if (_isZoneArea(currentArea)) ensureZoneTreasure(currentArea);
+      }
+
+      function serializeZoneTreasureState() {
+        const out = {};
+        _zoneTreasurePersist.forEach((v, mapId) => { out[mapId] = { week: v.week, placements: v.placements }; });
+        return out;
+      }
+      function restoreZoneTreasureState(saved) {
+        _zoneTreasurePersist.clear();
+        Object.entries(saved || {}).forEach(([mapId, v]) => {
+          if (v && Array.isArray(v.placements)) _zoneTreasurePersist.set(mapId, { week: v.week, placements: v.placements });
         });
       }
 
@@ -13543,6 +14022,7 @@
         if (_isZoneArea(currentArea)) {
           return _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneBerryObjects.get(currentArea)?.get(col + ',' + row)
+              || _zoneTreasureObjects.get(currentArea)?.get(col + ',' + row)
               || null;
         }
         if (currentArea !== 'farm') return null;
@@ -13984,6 +14464,194 @@
         });
       }
 
+      // ── Sloomi/Kzubug's smithing counter ────────────────────────────────
+      // Craft a new verdigris tool from dug-up metal bars (see
+      // METAL_DEFS/VERDIGRIS_METAL_KEYS/craftedToolItemKey), then plate,
+      // clear plating, or reinforce any owned crafted tool. Both smiths
+      // offer this identical service — see the 'openCraftMenu' dialogue
+      // action and each NPC's dialogueTrees entry.
+      let metalCraftActiveShape = UNLOCKED_TOOL_SHAPES[0];
+      const CRAFT_BAR_COST    = 3;  // bars of the chosen metal, for a new tool or a reinforcement
+      const CRAFT_LABOR_GOLD  = 15; // gold labor fee, same for crafting new or reinforcing
+      const PLATE_BAR_COST    = 1;  // bars of the plating metal (cosmetic or resistant)
+      const PLATE_LABOR_GOLD  = 8;
+
+      function craftMetalTool(shapeKey, metalKey) {
+        const barKey = metalBarItemKey(metalKey);
+        if ((inventory[barKey] || 0) < CRAFT_BAR_COST) { showToast(`Not enough ${METAL_DEFS[metalKey].label} bars.`, false); return; }
+        if ((inventory.gold || 0) < CRAFT_LABOR_GOLD) { showToast("Not enough gold for the smith's labor.", false); return; }
+        inventory[barKey] -= CRAFT_BAR_COST;
+        clampInventoryStack(barKey);
+        inventory.gold -= CRAFT_LABOR_GOLD;
+        const itemKey = craftedToolItemKey(shapeKey, metalKey);
+        if (!gearInventory.tools) gearInventory.tools = {};
+        gearInventory.tools[itemKey] = true;
+        saveGearInventory();
+        showToast(`Smithed a ${TOOL_ITEM_DEFS[itemKey].label}!`, true);
+        renderMetalCraftShopPage();
+        buildInventoryGrid();
+        buildEquipmentSlots();
+        saveMemberWorldData();
+      }
+
+      // choice: 'clear' | 'resistant' | 'cosmetic:<metalKey>' — see the
+      // <select> built in renderMetalCraftShopPage.
+      function applyMetalToolPlating(itemKey, choice) {
+        const def = TOOL_ITEM_DEFS[itemKey];
+        if (!gearInventory?.tools?.[itemKey] || !def?.metalKey) return;
+        if (choice === 'clear') {
+          const plating = toolPlating(itemKey);
+          if (!plating) { showToast('No plating to clear.', false); return; }
+          const refundMetal = plating.mode === 'cosmetic' ? plating.metalKey : def.metalKey;
+          inventory[metalBarItemKey(refundMetal)] = Math.min(99, (inventory[metalBarItemKey(refundMetal)] || 0) + PLATE_BAR_COST);
+          clearToolPlating(itemKey);
+          showToast('Cleared plating — back to live verdigris, materials returned.', true);
+        } else if (choice === 'resistant' || choice.startsWith('cosmetic:')) {
+          const metalKey = choice === 'resistant' ? def.metalKey : choice.slice('cosmetic:'.length);
+          const metal = METAL_DEFS[metalKey];
+          if (!metal) return;
+          const barKey = metalBarItemKey(metalKey);
+          if ((inventory[barKey] || 0) < PLATE_BAR_COST) { showToast(`Not enough ${metal.label} bars.`, false); return; }
+          if ((inventory.gold || 0) < PLATE_LABOR_GOLD) { showToast('Not enough gold.', false); return; }
+          inventory[barKey] -= PLATE_BAR_COST;
+          clampInventoryStack(barKey);
+          inventory.gold -= PLATE_LABOR_GOLD;
+          setToolPlating(itemKey, choice === 'resistant' ? 'resistant' : 'cosmetic', metalKey);
+          showToast(choice === 'resistant' ? 'Applied a verdigris-resistant coat.' : `Plated with ${metal.label}.`, true);
+        } else {
+          return;
+        }
+        refreshMetalToolWorldTexture(itemKey);
+        renderMetalCraftShopPage();
+        buildInventoryGrid();
+        saveMemberWorldData();
+      }
+
+      // Same cost as smithing a whole new tool — see task spec. Keeps the
+      // tool's own base-metal identity (itemKey never changes, so its
+      // mastery/verdigris/plating all keep tracking exactly as before);
+      // only its effective damage/efficacy borrows metalKey's tier (see
+      // toolEffectiveMetalKey/toolMetalMultiplier).
+      function reinforceMetalTool(itemKey, metalKey) {
+        const def = TOOL_ITEM_DEFS[itemKey];
+        const metal = METAL_DEFS[metalKey];
+        if (!def?.metalKey || !metal) return;
+        const currentTier = METAL_DEFS[toolEffectiveMetalKey(itemKey)]?.tier || 0;
+        if (metal.tier <= currentTier) { showToast("That metal isn't stronger than what this tool already fights with.", false); return; }
+        const barKey = metalBarItemKey(metalKey);
+        if ((inventory[barKey] || 0) < CRAFT_BAR_COST) { showToast(`Not enough ${metal.label} bars.`, false); return; }
+        if ((inventory.gold || 0) < CRAFT_LABOR_GOLD) { showToast("Not enough gold for the smith's labor.", false); return; }
+        inventory[barKey] -= CRAFT_BAR_COST;
+        clampInventoryStack(barKey);
+        inventory.gold -= CRAFT_LABOR_GOLD;
+        setToolReinforcement(itemKey, metalKey);
+        showToast(`${def.label} reinforced with ${metal.label}!`, true);
+        renderMetalCraftShopPage();
+        saveMemberWorldData();
+      }
+
+      function renderMetalCraftShopPage() {
+        const goldEl = document.getElementById('mcGoldDisplay');
+        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
+        const list = document.getElementById('metalCraftShopList');
+        if (!list) return;
+        list.innerHTML = '';
+
+        const craftHdr = document.createElement('div');
+        craftHdr.className = 'shop-section-label';
+        craftHdr.textContent = `🔨 Craft a New Tool  (${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g)`;
+        list.appendChild(craftHdr);
+
+        const shapeTabs = document.createElement('div');
+        shapeTabs.className = 'supply-tabs';
+        UNLOCKED_TOOL_SHAPES.forEach(shapeKey => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'supply-tab' + (shapeKey === metalCraftActiveShape ? ' active' : '');
+          btn.textContent = TOOL_SHAPE_DEFS[shapeKey].label;
+          btn.onclick = () => { metalCraftActiveShape = shapeKey; renderMetalCraftShopPage(); };
+          shapeTabs.appendChild(btn);
+        });
+        list.appendChild(shapeTabs);
+
+        VERDIGRIS_METAL_KEYS.forEach(metalKey => {
+          const metal = METAL_DEFS[metalKey];
+          const owned = inventory[metalBarItemKey(metalKey)] || 0;
+          const itemKey = craftedToolItemKey(metalCraftActiveShape, metalKey);
+          const alreadyOwned = !!gearInventory?.tools?.[itemKey];
+          const row = document.createElement('div');
+          row.className = 'shop-row';
+          row.innerHTML = `
+            <div class="sh-icon">🔶</div>
+            <div class="sh-info">
+              <div class="sh-name">${esc(metal.label)} ${esc(TOOL_SHAPE_DEFS[metalCraftActiveShape].label)} (tier ${metal.tier})</div>
+              <div class="sh-desc">Bars owned: ${owned}${alreadyOwned ? ' — already smithed' : ''}</div>
+              <div class="sh-price">${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g</div>
+            </div>
+            <button class="shop-buy-btn" data-metal="${metalKey}" ${alreadyOwned ? 'disabled' : ''}>${alreadyOwned ? 'Owned' : 'Smith'}</button>
+          `;
+          row.querySelector('[data-metal]')?.addEventListener('click', () => craftMetalTool(metalCraftActiveShape, metalKey));
+          list.appendChild(row);
+        });
+
+        const ownedCrafted = Object.keys(gearInventory?.tools || {}).filter(key => TOOL_ITEM_DEFS[key]?.metalKey);
+        if (ownedCrafted.length) {
+          const plateHdr = document.createElement('div');
+          plateHdr.className = 'shop-section-label';
+          plateHdr.textContent = '✨ Plate, Clear, or Reinforce';
+          list.appendChild(plateHdr);
+
+          ownedCrafted.forEach(itemKey => {
+            const def = TOOL_ITEM_DEFS[itemKey];
+            const verdigrisPct = Math.round(toolVerdigrisFraction(itemKey) * 100);
+            const plating = toolPlating(itemKey);
+            const effectiveMetal = toolEffectiveMetalKey(itemKey);
+            const reinforced = toolReinforcementMetal(itemKey);
+            const platingText = plating
+              ? (plating.mode === 'cosmetic' ? `Plated: ${METAL_DEFS[plating.metalKey]?.label}` : 'Verdigris-resistant coat')
+              : `Live verdigris: ${verdigrisPct}%`;
+            const plateOptions = [
+              `<option value="clear">— live verdigris (clear plating) —</option>`,
+              `<option value="resistant">Verdigris-resistant coat (${esc(METAL_DEFS[def.metalKey].label)})</option>`,
+              // Cosmetic plating is specifically a non-verdigris metal's
+              // clean color (see spec) — a verdigris metal already shows
+              // its own live oxidation, so "resistant" (above) is the
+              // same-metal option instead.
+              ...Object.keys(METAL_DEFS).filter(k => METAL_DEFS[k].tier == null && (inventory[metalBarItemKey(k)] || 0) > 0)
+                .map(k => `<option value="cosmetic:${k}">Cosmetic: ${esc(METAL_DEFS[k].label)}</option>`),
+            ].join('');
+            const reinforceOptions = VERDIGRIS_METAL_KEYS
+              .filter(k => METAL_DEFS[k].tier > (METAL_DEFS[effectiveMetal]?.tier || 0) && (inventory[metalBarItemKey(k)] || 0) >= CRAFT_BAR_COST)
+              .map(k => `<option value="${k}">${esc(METAL_DEFS[k].label)} (tier ${METAL_DEFS[k].tier})</option>`).join('');
+            const row = document.createElement('div');
+            row.className = 'shop-row mc-tool-row';
+            row.innerHTML = `
+              <div class="sh-icon">${def.icon}</div>
+              <div class="sh-info">
+                <div class="sh-name">${esc(def.label)}${reinforced ? ' (reinforced: ' + esc(METAL_DEFS[reinforced].label) + ')' : ''}</div>
+                <div class="sh-desc">${esc(platingText)} — Mastery ${toolMasteryLevel(itemKey)}/5</div>
+                <div class="mc-tool-controls">
+                  <select class="mc-plate-select">${plateOptions}</select>
+                  <button class="shop-buy-btn mc-plate-btn">Apply</button>
+                </div>
+                ${reinforceOptions ? `<div class="mc-tool-controls">
+                  <select class="mc-reinforce-select">${reinforceOptions}</select>
+                  <button class="shop-buy-btn mc-reinforce-btn">Reinforce (${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g)</button>
+                </div>` : ''}
+              </div>
+            `;
+            row.querySelector('.mc-plate-btn')?.addEventListener('click', () => {
+              applyMetalToolPlating(itemKey, row.querySelector('.mc-plate-select').value);
+            });
+            row.querySelector('.mc-reinforce-btn')?.addEventListener('click', () => {
+              const sel = row.querySelector('.mc-reinforce-select');
+              if (sel) reinforceMetalTool(itemKey, sel.value);
+            });
+            list.appendChild(row);
+          });
+        }
+      }
+
             // Item scroll — ordered list of scrollable inventory slots
       const inventoryItems = [
         { key: 'needlegrainSeeds',   icon: '🌾', label: 'NEEDLEGRAIN SEEDS', max: 99, seedFor: 'needlegrain' },
@@ -14091,6 +14759,45 @@
         garWolfMilk: { icon: '🥛', label: 'Gar-wolf Milk', cat: 'material', sellPrice: 10, tags: ['Material', 'Milk', 'Gar-wolf'], desc: 'Milk collected from a housed gar-wolf. Pale white with a faint blue sheen.', spriteIcon: 'jar_liquid.png', spriteColor: 0xEFF3F8, spriteMode: 'keyed' },
         dabinggiHoundVenom: { icon: '🧪', label: 'Dabinggi-hound Venom', cat: 'material', sellPrice: 15, tags: ['Material', 'Venom', 'Dabinggi-hound'], desc: 'Venom milked from a housed dabinggi-hound. A vivid, lime-green fluid.', spriteIcon: 'jar_liquid.png', spriteColor: 0xA6E22E, spriteMode: 'keyed' },
       };
+
+      // ── Metal bars (dug up from wilderness treasure chests — see
+      // ensureZoneTreasure) — one per METAL_DEFS entry, verdigris-capable
+      // or not; non-verdigris bars are only useful for cosmetic plating.
+      Object.entries(METAL_DEFS).forEach(([metalKey, metal]) => {
+        const key = metalBarItemKey(metalKey);
+        if (!inventoryItems.some(item => item.key === key)) {
+          inventoryItems.push({ key, icon: '🔶', label: metal.label.toUpperCase() + ' BAR', max: 99 });
+        }
+        if (!ITEM_DEFS[key]) {
+          ITEM_DEFS[key] = {
+            icon: '🔶',
+            label: metal.label + ' Bar',
+            cat: 'material',
+            sellPrice: 4 + (metal.tier || 1) * 3,
+            tags: ['Material', 'Metal Bar', metal.tier != null ? 'Verdigris Metal' : 'Plating Metal'],
+            desc: metal.tier != null
+              ? `A bar of ${metal.label.toLowerCase()}, tier ${metal.tier} of the verdigris hierarchy. Sloomi or Kzubug can smith it into tools.`
+              : `A bar of ${metal.label.toLowerCase()}. Doesn't take a verdigris — Sloomi or Kzubug can still use it for cosmetic plating.`,
+          };
+        }
+      });
+
+      // ── Smith-crafted verdigris tools (see craftedToolItemKey) — one per
+      // TOOL_ITEM_DEFS entry carrying a metalKey. Sellable like the starting
+      // 5 hand-authored tool keys just above.
+      Object.entries(TOOL_ITEM_DEFS).forEach(([key, def]) => {
+        if (!def.metalKey || ITEM_DEFS[key]) return;
+        const tags = ['Tool', TOOL_SHAPE_DEFS[def.shapeKey]?.label || def.shapeKey];
+        if (def.slots?.includes('weapon')) tags.push('Weapon');
+        ITEM_DEFS[key] = {
+          icon: def.icon,
+          label: def.label,
+          cat: 'tool',
+          sellPrice: 0,
+          tags,
+          desc: `A ${METAL_DEFS[def.metalKey]?.label.toLowerCase()} ${TOOL_SHAPE_DEFS[def.shapeKey]?.label.toLowerCase()}, smithed by Sloomi or Kzubug. Its verdigris grows with this tool's own mastery.`,
+        };
+      });
 
       Object.values(PROCESSING_FURNITURE_DEFS).forEach(def => {
         // Used by inventory rendering and item scroll after furniture orders are delivered.
@@ -15053,7 +15760,7 @@
           cell.setAttribute('title', slot + (def ? ': ' + def.label : ' (empty)'));
           if (def) {
             const img = document.createElement('img');
-            img.src = def.sprite; img.className = 'ies-sprite'; img.alt = def.label;
+            img.src = metalToolImgSrc(def); img.className = 'ies-sprite'; img.alt = def.label;
             cell.appendChild(img);
             const unBtn = document.createElement('button');
             unBtn.className = 'ies-unequip'; unBtn.textContent = '✕'; unBtn.title = 'Unassign ' + def.label;
@@ -15089,7 +15796,7 @@
             cell.className = 'inv-equip-slot';
             cell.setAttribute('title', def.label + ' (Mastery ' + toolMasteryLevel(key) + '/5) — click to assign');
             const img = document.createElement('img');
-            img.src = def.sprite; img.className = 'ies-sprite'; img.alt = def.label;
+            img.src = metalToolImgSrc(def); img.className = 'ies-sprite'; img.alt = def.label;
             cell.appendChild(img);
             const lbl = document.createElement('span');
             lbl.className = 'ies-label';
@@ -21827,10 +22534,30 @@
           const cur = toolMeshMap[activeTool];
           Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
           if (cur) toolHolder.add(cur);
+          // A smith-crafted verdigris tool's in-hand mesh should show its
+          // metal/verdigris/plating, not the flat teal placeholder art —
+          // see refreshMetalToolWorldTexture.
+          if (def.metalKey) refreshMetalToolWorldTexture(key);
         });
         tex.magFilter = THREE.NearestFilter;
         tex.minFilter = THREE.NearestFilter;
         toolTextures[key] = tex;
+      }
+
+      // Swaps a crafted tool's in-hand mesh texture to its current metal/
+      // verdigris/plating recolor — called once its base texture finishes
+      // loading (see above) and again any time Sloomi/Kzubug changes its
+      // plating (see applyMetalToolPlating). Reinforcement never calls this:
+      // per design, reinforcing keeps the tool's own base-metal appearance.
+      function refreshMetalToolWorldTexture(itemKey) {
+        const def = TOOL_ITEM_DEFS[itemKey];
+        const opts = metalToolRecolorOptions(itemKey);
+        const tex = toolTextures[itemKey];
+        if (!def?.sprite || !opts || !tex) return;
+        window.ToolMetalRecolor?.getRecoloredCanvas(def.sprite, opts).then(canvas => {
+          tex.image = canvas;
+          tex.needsUpdate = true;
+        });
       }
 
       // Build a PNG plane mesh sized to the sprite's pixel aspect ratio
@@ -24610,6 +25337,7 @@
         pendingDenRespawn.clear();
         respawnAllZoneReagents();
         respawnAllZoneBerries();
+        respawnAllZoneTreasure();
       }
 
       // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
@@ -24629,6 +25357,7 @@
         checkTothalShift();
         pendingDenRespawn.clear();
         respawnAllZoneReagents();
+        respawnAllZoneTreasure();
         player.health  = player.maxHealth;
         player.stamina = player.maxStamina;
         const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
@@ -27032,6 +27761,7 @@
         restoreActiveAlchemyEffects(playerData.alchemyActiveEffects);
         restoreZoneReagentState(playerData.alchemyReagentState);
         restoreZoneBerryState(playerData.wildBerryState);
+        restoreZoneTreasureState(playerData.zoneTreasureState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
         // session, unlike the static reagent/furniture/fish tables) — rebuild

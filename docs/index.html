@@ -546,6 +546,21 @@
         </div>
       </div><!-- /mpJubmirShop -->
 
+      <!-- ── Smithing counter pane (no tab button — opened via Sloomi's or
+           Kzubug's "openCraftMenu" dialogue choice, same pattern as the
+           General Store/Carpenter/Jubmir panes above). Craft verdigris tools
+           from dug-up metal bars, then plate/clear/reinforce them; see
+           renderMetalCraftShopPage() in game.js. ───────────────────────── -->
+      <div class="mp-pane" id="mpMetalCraftShop">
+        <div class="supply-top-row">
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="mcGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title">Sloomi &amp; Kzubug's Smithing Counter</div>
+          <div id="metalCraftShopList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpMetalCraftShop -->
+
       <!-- ── Alchemy pane (no tab button — opened only via the Alchemy Table's
            interact prompt, same "openMenu-only" pattern as Supplies/Shipping) ── -->
       <div class="mp-pane" id="mpAlchemy">
@@ -1006,6 +1021,7 @@
 
   <script src="js/tool-icon-render.js?v=20260712d"></script>
   <script src="js/sprite-recolor.js?v=20260712a"></script>
+  <script src="js/tool-metal-recolor.js?v=20260719a"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the
