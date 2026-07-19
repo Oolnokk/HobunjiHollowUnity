@@ -6475,16 +6475,10 @@
             }
             // The Researcher's Tent's exterior placement moves with the rest
             // of the terrain each shift (see stampLocales) -- its entrance
-            // transition into the (not-yet-authored) building interior has to
-            // follow it there rather than sitting at a fixed spot the tent
-            // may no longer occupy.
+            // transition into the building interior has to follow it there
+            // rather than sitting at a fixed spot the tent may no longer
+            // occupy.
             const tentInstance = localeInstances.find(inst => inst.localeId === 'locale_researchers_tent');
-            const tentTransitions = tentInstance ? [{
-              id: 'sp_ncl_tent', label: "Researcher's Tent",
-              col: (tentInstance.connectors[0] || tentInstance).x,
-              row: (tentInstance.connectors[0] || tentInstance).y,
-              target: 'building', targetMapId: 'map_i_researchers_tent',
-            }] : [];
             // The actual tent mesh (docs/config/pieces/researchers-tent.json),
             // fed through the same zoneData.buildings pipeline _spawnZoneBuildings
             // already uses for authored zone buildings -- without this, stampLocale's
@@ -6494,12 +6488,35 @@
             // default; each step here is a further 90° clockwise turn from there).
             const TENT_DOOR_ROTATION_BY_SIDE = { south: 0, east: 90, north: 180, west: 270 };
             const tentStructureObj = tentInstance?.objects.find(o => o.kind === 'structure');
+            const tentDoorSide = tentInstance?.connectors[0]?.side || 'south';
             const tentElevTier = tentStructureObj ? (merged.tiles.get(`${tentStructureObj.x},${tentStructureObj.y}`)?.elevTier || 0) : 0;
             const tentBuilding = tentStructureObj ? [{
               id: 'bldg_researchers_tent', pieceFile: 'config/pieces/researchers-tent.json',
               gridX: tentStructureObj.x, gridZ: tentStructureObj.y,
-              rotationDeg: TENT_DOOR_ROTATION_BY_SIDE[tentInstance.connectors[0]?.side] ?? 0,
+              rotationDeg: TENT_DOOR_ROTATION_BY_SIDE[tentDoorSide] ?? 0,
               elevTier: tentElevTier, footprintW: 3, footprintD: 3,
+            }] : [];
+            // The locale's connector marks where the wilderness path enters
+            // the *locale* (see stampLocale's pathAnchor use of it) -- it can
+            // sit several tiles from the tent itself (room for a clearing/
+            // desk/statues in between), so using it directly as the "enter
+            // the tent" trigger tile used to put that trigger nowhere near
+            // the actual door, making the transition seem unresponsive. The
+            // real door tile is one step off whichever edge of the
+            // structure's footprint TENT_DOOR_ROTATION_BY_SIDE turns to
+            // face, so derive it from tentStructureObj's own (already
+            // locale-scaled) position + size instead.
+            const TENT_DOOR_TILE_OFFSET_BY_SIDE = tentStructureObj ? {
+              south: { dx: Math.round(tentStructureObj.w / 2), dz: tentStructureObj.h },
+              east:  { dx: tentStructureObj.w, dz: Math.round(tentStructureObj.h / 2) },
+              north: { dx: Math.round(tentStructureObj.w / 2), dz: -1 },
+              west:  { dx: -1, dz: Math.round(tentStructureObj.h / 2) },
+            }[tentDoorSide] : null;
+            const tentTransitions = (tentInstance && tentStructureObj && TENT_DOOR_TILE_OFFSET_BY_SIDE) ? [{
+              id: 'sp_ncl_tent', label: "Researcher's Tent",
+              col: tentStructureObj.x + TENT_DOOR_TILE_OFFSET_BY_SIDE.dx,
+              row: tentStructureObj.y + TENT_DOOR_TILE_OFFSET_BY_SIDE.dz,
+              target: 'building', targetMapId: 'map_i_researchers_tent',
             }] : [];
             // Garanki Gabu's desk + 3 specimen statues (locale_researchers_tent's
             // decor/prop objects) -- rendered through the same zoneData.decor
@@ -6517,7 +6534,13 @@
               const stations = [];
               if (desk) stations.push({ id: 'station_researchers_tent_desk', label: "Garanki's Desk", area: zoneId, c: desk.x, r: desk.y, pose: 'stand' });
               statues.forEach((s, i) => { if (s) stations.push({ id: `station_researchers_tent_statue_${i + 1}`, label: `Specimen Statue ${i + 1}`, area: zoneId, c: s.x, r: s.y, pose: 'stand' }); });
-              if (tentStructureObj) stations.push({ id: 'station_researchers_tent_sleep', label: "Garanki's Cot", area: zoneId, c: tentStructureObj.x, r: tentStructureObj.y, pose: 'stand' });
+              // station_researchers_tent_sleep is NOT registered here — it lives
+              // inside config/maps/map_i_researchers_tent.json's own npcStations
+              // (auto-registered by loadBuildingScene once that interior loads).
+              // Registering it at tentStructureObj's position, like the other
+              // stations, used to put Garanki's "sleeping" rule (20:00-08:00,
+              // over half the day) standing inside/behind the opaque exterior
+              // tent mesh in the wilderness zone — impossible to see or find.
               registerNpcStations(stations, zoneId);
             }
 
@@ -11176,6 +11199,33 @@
         return group;
       }
 
+      // Flat cloth-colored wall panels for a canvas tent interior (see
+      // loadBuildingScene's mapData.wallStyle === 'canvas' handling) — same
+      // bare-quad approach as buildCavernWalls just above, minus the rock
+      // bump displacement, tinted to match the exterior tent piece's canvas
+      // material (HousePieceGen's matCanvas, 0xcbb489) instead of brick.
+      function buildCanvasWalls(wallPanels, wallHeight) {
+        const group = new THREE.Group();
+        if (!wallPanels.length) return group;
+        const mat = new THREE.MeshLambertMaterial({ color: 0xcbb489, side: THREE.DoubleSide });
+        const pos = [], idx = []; let vi = 0;
+        for (const panel of wallPanels) {
+          const [bl, br, tr, tl] = panelCornersFor(panel);
+          pos.push(bl.x, bl.y, bl.z, br.x, br.y, br.z, tr.x, tr.y, tr.z, tl.x, tl.y, tl.z);
+          idx.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+          vi += 4;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setIndex(idx);
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.receiveShadow = true;
+        mesh.userData.cameraObstacle = true;
+        group.add(mesh);
+        return group;
+      }
+
       // A den's cavern floor: an organic irregular blob (seeded RNG growth,
       // biased toward rounder shapes, then a safe erosion pass that only ever
       // trims dead-end spurs — removing a cell with exactly one neighbor can
@@ -11396,8 +11446,10 @@
           bScene.add(dl);
           const floorMat = mapData.wallStyle === 'cavern'
             ? new THREE.MeshLambertMaterial({ color: 0x4a463f }) // bare cavern dirt/stone, no plank texture
+            : mapData.wallStyle === 'canvas'
+            ? new THREE.MeshLambertMaterial({ color: 0x8a7a5c }) // packed dirt under the tent's groundsheet, no plank texture
             : new THREE.MeshLambertMaterial({ color: 0x8b6914 });
-          if (mapData.wallStyle !== 'cavern') {
+          if (mapData.wallStyle !== 'cavern' && mapData.wallStyle !== 'canvas') {
             new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
               tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
               floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
@@ -11410,12 +11462,16 @@
             bScene.add(fl);
           }
           // Irregular brick walls with gaps at all exit tiles — or, for a den's
-          // cavern (mapData.wallStyle === 'cavern'), solid deformed rock walls
-          // instead (see buildCavernWalls).
+          // cavern (mapData.wallStyle === 'cavern'), solid deformed rock walls,
+          // or for a canvas tent interior (mapData.wallStyle === 'canvas'),
+          // flat cloth-colored panels matching the exterior tent piece's
+          // 'canvas' material (see HousePieceGen's matCanvas) instead of brick.
           const wallPanels = buildWallPanelsFromFloorSet(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
           if (wallPanels.length) {
             const wallGroup = mapData.wallStyle === 'cavern'
               ? buildCavernWalls(wallPanels, INTERIOR_WALL_HEIGHT)
+              : mapData.wallStyle === 'canvas'
+              ? buildCanvasWalls(wallPanels, INTERIOR_WALL_HEIGHT)
               : houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
             _markOutline(wallGroup);
             bScene.add(wallGroup);
