@@ -10328,14 +10328,49 @@
           try { const res = await fetch('config/npcs/hobunji-starter-npc-database.json'); const json = await res.json(); dbNpcs = json.npcs || []; } catch {}
         }
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+        const deferred = [];
         for (const rec of dbNpcs) {
           const target = resolveNpcScheduleTarget(rec);
-          if (!target) { console.warn('[NPC] No schedule target for', rec?.id, '— skipped'); continue; }
+          if (!target) { deferred.push(rec); continue; }
           try { const w = await makeNpcWalker(rec, target); if (w) npcWalkers.push(w); }
           catch (e) { console.warn('NPC walker failed for schedule', rec?.id, e); }
         }
         console.log(`[NPC] Spawned ${npcWalkers.length}/${dbNpcs.length} walkers. inspect: window._npcWalkers`);
         console.log('[NPC] Areas:', npcWalkers.map(w => (w.rec?.id || '?') + '@' + (w.area || w.root?._pendingBuildingAdd || (w.root?._pendingTownAdd ? 'town(pending)' : '?'))));
+        if (deferred.length) {
+          console.log('[NPC] Deferred (no schedule target resolvable yet):', deferred.map(r => r.id));
+          _retrySpawnDeferredNpcs(deferred);
+        }
+      }
+
+      // Some NPCs (e.g. Garanki Gabu) only have schedule stations that come
+      // from content the Tothal Shift stamps into a wilderness zone at world
+      // boot -- but that shift runs fire-and-forget (see checkTothalShift's
+      // call site) and hasn't necessarily finished by the time
+      // spawnScheduledNpcs() runs at module init, so resolveNpcScheduleTarget()
+      // has nothing to resolve to yet for them. Spawning them at a made-up
+      // fallback position instead (defaultPosition) used to "fix" the missing
+      // NPC but created a worse, more visible bug: they'd spawn wherever that
+      // fallback pointed -- often far from their real, just-stamped station in
+      // a large procedurally generated zone -- and only *begin* the (slow,
+      // ~1.25 tiles/sec) walk there once their schedule re-resolves, so the
+      // NPC would still be nowhere near where a player would look for them for
+      // a long time. Waiting and retrying instead means they're only ever
+      // created once there's a real station to spawn at.
+      function _retrySpawnDeferredNpcs(records, attempt = 0) {
+        const MAX_ATTEMPTS = 30; // ~30s at 1s apart -- Tothal Shift is described as "a few seconds"
+        setTimeout(async () => {
+          const stillDeferred = [];
+          for (const rec of records) {
+            const target = resolveNpcScheduleTarget(rec);
+            if (!target) { stillDeferred.push(rec); continue; }
+            try { const w = await makeNpcWalker(rec, target); if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); } }
+            catch (e) { console.warn('NPC walker failed for schedule (retry)', rec?.id, e); }
+          }
+          if (!stillDeferred.length) return;
+          if (attempt + 1 < MAX_ATTEMPTS) _retrySpawnDeferredNpcs(stillDeferred, attempt + 1);
+          else console.warn('[NPC] Gave up waiting for a schedule target after retries:', stillDeferred.map(r => r.id));
+        }, 1000);
       }
 
       // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.

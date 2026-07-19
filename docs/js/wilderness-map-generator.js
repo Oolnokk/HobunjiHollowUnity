@@ -3200,10 +3200,29 @@
     // hobunjiMapTileType) -- everything else in the locale's tile palette
     // renders as plain grass for now, which is still a real, occupied,
     // walkable clearing shaped exactly like the authored footprint.
+    //
+    // requiresFlatGround only verified the *raw* height here was uniform --
+    // it says nothing about whether these tiles still carry a stale
+    // plateauGroupId from whatever terrain existed before the locale was
+    // stamped over it. A tile can be genuinely flat and still sit at the
+    // edge of some plateau's mask; mergeZoneTilesInto (terrain-preview.js)
+    // reclassifies exactly those edge cells as sloped/incline "ring" tiles
+    // at scene-build time, purely from adjacency to a differently-grouped
+    // (or ungrouped) neighbor -- it never looks at the raw height this
+    // filter checked. That's a locale clearing that reads as flat and
+    // walkable at generation time but can render (and collide) as a solid
+    // cliff-wall slope later, exactly the kind of thing that would land the
+    // player inside solid geometry when a saved position lands back on one
+    // of these tiles. Clearing the tag keeps every locale-painted tile out
+    // of that reclassification entirely, so the whole clearing renders at
+    // one flat, walkable tier no matter what plateau it happened to land on.
     for (const [key, tileDef] of Object.entries(locale.tiles || {})) {
       const [c, r] = key.split(',').map(Number);
       const tile = tileAt(anchorX + c, anchorY + r);
       if (!tile) continue;
+      tile.plateauGroupId = null;
+      tile.plateauRing = false;
+      tile.plateauInterior = false;
       if (tileDef.type === 'path') { tile.path = true; }
       else if (tileDef.type === 'river' || tileDef.type === 'stream') { tile.water = true; tile.terrain = tileDef.type; }
       else if (tileDef.type === 'waterfall') { tile.waterfall = true; }
