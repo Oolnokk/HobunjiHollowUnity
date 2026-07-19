@@ -232,9 +232,10 @@
       display: none;
       position: fixed;
       left: var(--play-left); top: var(--oy);
-      width: 150px; height: 150px;
+      width: 75px; height: 75px;
       z-index: 18;
       padding: 4px;
+      opacity: 0.8;
       background: var(--glass);
       border: 1px solid var(--border-bright);
       border-top: none; border-left: none;

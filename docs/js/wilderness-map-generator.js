@@ -3239,7 +3239,7 @@
         w: bbox.w, h: bbox.h,
         connectors: (locale.connectors || []).map(c => ({ col: c.col, row: c.row, side: c.side, label: c.label })),
         npcAnchors: (locale.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, col: n.col, row: n.row, facing: n.facing })),
-        objects: (locale.objects || []).map(o => ({ kind: o.kind, key: o.key, label: o.label, col: o.col, row: o.row, w: o.w, h: o.h }))
+        objects: (locale.objects || []).map(o => ({ id: o.id, kind: o.kind, key: o.key, label: o.label, col: o.col, row: o.row, w: o.w, h: o.h }))
       }
     });
     logDebug(`locale stamped: ${locale.id} at (${anchorX},${anchorY})`);
@@ -7873,7 +7873,7 @@
           connectors: (meta.connectors || []).map(c => ({ ...toWorld(c.col, c.row), side: c.side, label: c.label })),
           npcAnchors: (meta.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, ...toWorld(n.col, n.row), facing: n.facing })),
           objects: (meta.objects || []).map(o => ({
-            kind: o.kind, key: o.key, label: o.label, ...toWorld(o.col, o.row),
+            id: o.id, kind: o.kind, key: o.key, label: o.label, ...toWorld(o.col, o.row),
             w: o.w * localeScale, h: o.h * localeScale
           }))
         };

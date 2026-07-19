@@ -34,10 +34,10 @@
       "type": "grass"
     },
     "5,3": {
-      "type": "rock"
+      "type": "grass"
     },
     "6,3": {
-      "type": "rock"
+      "type": "grass"
     },
     "2,4": {
       "type": "rock"
@@ -64,10 +64,10 @@
       "type": "grass"
     },
     "5,5": {
-      "type": "rock"
+      "type": "grass"
     },
     "6,5": {
-      "type": "rock"
+      "type": "grass"
     },
     "4,6": {
       "type": "rock"
@@ -90,9 +90,62 @@
       "w": 2,
       "h": 2,
       "rot": 0
+    },
+    {
+      "id": "obj_desk",
+      "kind": "decor",
+      "key": "desk",
+      "label": "Field Desk",
+      "col": 5,
+      "row": 3,
+      "w": 2,
+      "h": 1,
+      "rot": 0
+    },
+    {
+      "id": "obj_statue_1",
+      "kind": "prop",
+      "key": "statue",
+      "label": "Specimen Statue 1",
+      "col": 3,
+      "row": 5,
+      "w": 1,
+      "h": 1,
+      "rot": 0
+    },
+    {
+      "id": "obj_statue_2",
+      "kind": "prop",
+      "key": "statue",
+      "label": "Specimen Statue 2",
+      "col": 5,
+      "row": 5,
+      "w": 1,
+      "h": 1,
+      "rot": 0
+    },
+    {
+      "id": "obj_statue_3",
+      "kind": "prop",
+      "key": "statue",
+      "label": "Specimen Statue 3",
+      "col": 6,
+      "row": 5,
+      "w": 1,
+      "h": 1,
+      "rot": 0
     }
   ],
-  "npcAnchors": [],
+  "npcAnchors": [
+    {
+      "id": "npc_garanki",
+      "npcId": "garanki_gabu",
+      "name": "Garanki Gabu",
+      "col": 4,
+      "row": 3,
+      "facing": "east"
+    }
+  ],
   "connectors": [
     {
       "id": "conn_1",

@@ -2154,6 +2154,7 @@
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', desc: 'A small decorative woven rug.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
+        statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
         stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.' },
         tableLong:     { itemKey: 'tableLongFurniture',     icon: '🍽️', name: 'Long Table',           modelFile: 'table_long.glb',               price: 42, fw: 4, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A long communal dining table.' },
         tableRound:    { itemKey: 'tableRoundFurniture',    icon: '🍽️', name: 'Round Table',          modelFile: 'table_round.glb',              price: 28, fw: 2, fd: 2, color: 0x7a5c3a, area: 'interior', desc: 'A round wooden dining table.' },
@@ -6500,6 +6501,25 @@
               rotationDeg: TENT_DOOR_ROTATION_BY_SIDE[tentInstance.connectors[0]?.side] ?? 0,
               elevTier: tentElevTier, footprintW: 3, footprintD: 3,
             }] : [];
+            // Garanki Gabu's desk + 3 specimen statues (locale_researchers_tent's
+            // decor/prop objects) -- rendered through the same zoneData.decor
+            // pipeline _spawnZoneDecorFurniture already uses, and re-registered as
+            // named npcStations every shift (see hobunji-starter-npc-database.json's
+            // scheduleHooks) so his schedule always finds them at their *current*
+            // stamped position instead of a coordinate that stops matching once the
+            // tent moves.
+            const tentDecorObjs = tentInstance ? tentInstance.objects.filter(o => o.kind === 'decor' || o.kind === 'prop') : [];
+            const tentDecor = tentDecorObjs.map(o => ({ col: o.x, row: o.y, key: o.key, elevTier: merged.tiles.get(`${o.x},${o.y}`)?.elevTier || 0 }));
+            if (tentInstance) {
+              const findObj = id => tentInstance.objects.find(o => o.id === id);
+              const desk = findObj('obj_desk');
+              const statues = ['obj_statue_1', 'obj_statue_2', 'obj_statue_3'].map(findObj);
+              const stations = [];
+              if (desk) stations.push({ id: 'station_researchers_tent_desk', label: "Garanki's Desk", area: zoneId, c: desk.x, r: desk.y, pose: 'stand' });
+              statues.forEach((s, i) => { if (s) stations.push({ id: `station_researchers_tent_statue_${i + 1}`, label: `Specimen Statue ${i + 1}`, area: zoneId, c: s.x, r: s.y, pose: 'stand' }); });
+              if (tentStructureObj) stations.push({ id: 'station_researchers_tent_sleep', label: "Garanki's Cot", area: zoneId, c: tentStructureObj.x, r: tentStructureObj.y, pose: 'stand' });
+              registerNpcStations(stations, zoneId);
+            }
 
             const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
             // One entrance transition per den, at its mouth tile — leads into
@@ -6535,7 +6555,7 @@
                 ...tentTransitions,
                 ...denTransitions,
               ],
-              toTownExit, mesas: merged.mesas, buildings: [...(merged.buildings || []), ...tentBuilding], decor: [], furniture: [],
+              toTownExit, mesas: merged.mesas, buildings: [...(merged.buildings || []), ...tentBuilding], decor: tentDecor, furniture: [],
               dens: workspace.animalDens || [],
               foliagePatches: workspace.foliagePatches || [],
               ambushStations: workspace.ambushStations || [],
@@ -8564,6 +8584,15 @@
         _zoneScenes.set(mapId, info);
         _spawnZoneBuildings(mapId);
         _spawnZoneDecorFurniture(mapId);
+        // Any NPC whose schedule targeted this zone before its (expensive,
+        // built-on-first-visit) scene existed was left parked in _pendingZoneAdd
+        // limbo (see makeNpcWalker/transferToArea) -- drop them in now that it's here.
+        for (const w of npcWalkers) {
+          if (w.root._pendingZoneAdd === mapId) {
+            w.root._pendingZoneAdd = null;
+            zScene.add(w.root); w.root._npcScene = zScene;
+          }
+        }
         return info;
       }
 
@@ -10335,12 +10364,18 @@
         const spawnArea = normalizeNpcArea(spawnTarget.area);
         root.position.set(spawnTarget.c + 0.5, npcSurfaceY(spawnArea, spawnTarget.c, spawnTarget.r), spawnTarget.r + 0.5);
         const sc = sceneForNpcArea(spawnArea);
-        if (sc) { sc.add(root); root._npcScene = sc; root._pendingTownAdd = false; root._pendingBuildingAdd = null; }
-        else if (spawnArea === 'town') { root._npcScene = null; root._pendingTownAdd = true; root._pendingBuildingAdd = null; }
+        if (sc) { sc.add(root); root._npcScene = sc; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
+        else if (spawnArea === 'town') { root._npcScene = null; root._pendingTownAdd = true; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
         else if (_isBuildingArea(spawnArea)) {
-          root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = spawnArea;
+          root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = spawnArea; root._pendingZoneAdd = null;
           if (!_buildingScenes.has(spawnArea)) loadBuildingScene(spawnArea);
-        } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; }
+        } else if (_isZoneArea(spawnArea)) {
+          // Unlike buildings, zone scenes are expensive to build (full terrain
+          // mesh generation) -- don't eagerly warm one up just to park an idle
+          // NPC there; wait for the player to actually visit it, same as any
+          // other zone content that only exists once the scene is built.
+          root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = spawnArea;
+        } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
 
         const walker = {
           root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
@@ -10363,13 +10398,15 @@
             if (root._npcScene) root._npcScene.remove(root);
             else { scene.remove(root); interiorScene?.remove(root); townScene?.remove(root); }
             _buildingScenes.forEach(bi => bi?.scene?.remove(root));
-            root._pendingTownAdd = false; root._pendingBuildingAdd = null;
+            root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null;
             const nextScene = sceneForNpcArea(area);
             if (nextScene) { nextScene.add(root); root._npcScene = nextScene; }
             else if (area === 'town') { root._npcScene = null; root._pendingTownAdd = true; }
             else if (_isBuildingArea(area)) {
               root._npcScene = null; root._pendingBuildingAdd = area;
               if (!_buildingScenes.has(area)) loadBuildingScene(area);
+            } else if (_isZoneArea(area)) {
+              root._npcScene = null; root._pendingZoneAdd = area;
             } else { scene.add(root); root._npcScene = scene; }
             this.area = area;
             this.resetRouteState();
