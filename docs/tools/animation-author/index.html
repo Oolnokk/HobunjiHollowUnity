@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Hobunji Animation Author V15</title>
+<link rel="stylesheet" href="base.css">
+
+
+<link rel="stylesheet" href="viewport.css">
+
+
+<link rel="stylesheet" href="backdrop-host.css">
+
+<link rel="stylesheet" href="animation-author.css">
+
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Hobunji Gameplay Backdrop Host</h1>
+    <span id="statusPill" class="pill warn">Not loaded</span>
+    <span class="grow"></span>
+    <button id="reloadBtn" class="good">Load repository</button>
+    <button id="debugBtn" class="secondary">Diagnostics</button>
+  </header>
+
+  <main id="layout">
+    <section id="stagePanel">
+      <div id="threeWrap">
+        <canvas id="view3d"></canvas>
+        <!--
+          UI COMBINATION CONTRACT
+          -----------------------
+          Keep #view3d and the repository/avatar runtime intact. Add ordinary HUD,
+          minigame, or menu markup inside #gameUiOverlayRoot. Add modal/full-screen
+          menu markup inside #gameModalOverlayRoot. Direct children receive pointer
+          events automatically; empty overlay space passes input through to the 3D view.
+        -->
+        <div id="gameUiOverlayRoot" class="hobunjiUiOverlay" data-hobunji-ui-root="hud" aria-label="Gameplay UI preview layer"></div>
+        <div id="gameModalOverlayRoot" class="hobunjiUiOverlay hobunjiUiModalOverlay" data-hobunji-ui-root="modal" aria-label="Menu and modal UI preview layer"></div>
+        <div id="stageOverlay">
+          <div class="overlayCard">
+            <div id="overlayTitle"><span class="spinner"></span>Waiting to load repository</div>
+            <div id="overlayDetail" class="small muted" style="margin-top:7px">The file will fetch the same portrait pipeline and NPC database used by <code>docs/tools/character-studio</code>.</div>
+          </div>
+        </div>
+        <div id="stageToolbar">
+          <button id="frontViewBtn" class="secondary">Front</button>
+          <button id="angleViewBtn" class="secondary active">Angle</button>
+          <button id="sideViewBtn" class="secondary">Side</button>
+          <button id="backViewBtn" class="secondary">Back</button>
+          <button id="rotateBtn" class="secondary">Auto-rotate: Off</button>
+          <button id="kurrayaToggleBtn" class="secondary" disabled>Kurraya: Loading</button>
+          <button id="resetBtn" class="secondary">Reset view</button>
+        </div>
+      </div>
+
+      <details id="portraitPanel" class="panel collapsiblePanel">
+        <summary><span>Portraits, downloads & selected NPC</span><span id="selectedSummaryLabel" class="pill">No NPC selected</span></summary>
+        <div id="portraitStrip">
+          <div class="portraitBox"><b>Front portrait PNG</b><div class="portraitCanvasWrap"><canvas id="frontCanvas" width="200" height="200"></canvas></div></div>
+          <div class="portraitBox"><b>Behind portrait PNG</b><div class="portraitCanvasWrap"><canvas id="backCanvas" width="200" height="200"></canvas></div></div>
+          <div id="selectedSummary" class="portraitBox">
+            <h2 id="selectedName">No NPC selected</h2>
+            <div id="selectedMeta">The selected database record will appear here.</div>
+            <div class="row">
+              <button id="downloadFrontBtn" class="secondary" disabled>Front PNG</button>
+              <button id="downloadBackBtn" class="secondary" disabled>Back PNG</button>
+              <button id="downloadNpcBtn" class="secondary" disabled>NPC JSON</button>
+            </div>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <details id="leftPanel" class="panel collapsiblePanel">
+      <summary><span>Backdrop setup</span><span id="countPill" class="pill">0 NPCs</span></summary>
+      <div class="collapsibleBody selectorBody">
+        <div class="panelSection">
+          <details class="repoSettings" id="repoSettings">
+            <summary>Repository source</summary>
+            <div class="repoFields">
+              <div><label for="ownerInput">Owner</label><input id="ownerInput" value="Oolnokk" autocomplete="off" autocapitalize="off"></div>
+              <div><label for="repoInput">Repository</label><input id="repoInput" value="HobunjiHollowUnity" autocomplete="off" autocapitalize="off"></div>
+              <div><label for="refInput">Branch / ref</label><input id="refInput" value="main" autocomplete="off" autocapitalize="off"></div>
+              <div><label for="docsInput">Docs root</label><input id="docsInput" value="docs/" autocomplete="off" autocapitalize="off"></div>
+              <div class="full"><label for="dbPathInput">NPC database path</label><input id="dbPathInput" value="docs/config/npcs/hobunji-starter-npc-database.json" autocomplete="off" autocapitalize="off"></div>
+              <div class="full row">
+                <button id="applySourceBtn" class="good grow">Load this source</button>
+                <label class="fileButton secondary" for="dbFileInput">Upload DB JSON</label>
+                <input id="dbFileInput" class="hidden" type="file" accept=".json,application/json">
+              </div>
+              <div class="full small muted">Public GitHub repository access is required. The resolved commit is used for every script, config, asset, and database request.</div>
+            </div>
+          </details>
+        </div>
+        <div id="avatarModeSection" class="panelSection">
+          <div class="panelTitle"><b>Preview type</b><span id="previewModePill" class="pill">NPC</span></div>
+          <div class="segmented">
+            <button id="npcModeBtn" class="secondary active">NPC avatars</button>
+            <button id="creatureModeBtn" class="secondary" disabled>Creature avatars</button>
+          </div>
+        </div>
+        <div id="creatureEditor" class="panelSection hidden">
+          <div class="panelTitle"><b>Creature appearance</b><span id="creatureStatusPill" class="pill warn">Not rendered</span></div>
+          <div class="creatureGrid">
+            <div><label for="creatureSpeciesSelect">Species</label><select id="creatureSpeciesSelect"></select></div>
+            <div><label for="creatureFrameSelect">Animation frame</label><select id="creatureFrameSelect"></select></div>
+          </div>
+          <canvas id="creaturePreviewCanvas" width="512" height="256" aria-label="Creature sprite preview"></canvas>
+          <div id="creatureBaseControl"></div>
+          <div id="creaturePatternControls"></div>
+          <div class="row" style="margin-top:9px">
+            <button id="randomizeCreatureBtn" class="secondary">Randomize preview</button>
+            <button id="resetCreatureBtn" class="secondary">Reset species</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button id="downloadCreaturePngBtn" class="secondary" disabled>Download creature PNG</button>
+            <button id="downloadCreatureJsonBtn" class="secondary" disabled>Download genotype JSON</button>
+          </div>
+          <pre id="creatureGenotypeJson">{}</pre>
+          <div class="authorHelp">Colors and enabled pattern layers are written directly into the same genotype shape consumed by the repository renderer. Pattern order is fixed by the species definition, matching gameplay.</div>
+        </div>
+        <div id="npcSearchSection" class="panelSection">
+          <div class="panelTitle"><b>NPC database</b></div>
+          <input id="searchInput" type="search" placeholder="Search name, id, species, role…" autocomplete="off">
+        </div>
+        <div id="npcList" aria-live="polite"><div class="muted small">Load the repository to populate the database.</div></div>
+      </div>
+    </details>
+
+
+    <details id="kurrayaPanel" class="panel collapsiblePanel">
+      <summary><span>Kurraya plane assembly & avatar equipment authoring</span><span id="kurrayaSummaryLabel" class="pill">Not loaded</span></summary>
+      <div class="collapsibleBody authoringBody">
+        <div class="authorGrid">
+          <div class="card">
+            <h3>Kurraya source & equipment state</h3>
+            <dl class="toolSource">
+              <dt>Front plane</dt><dd id="kurrayaFrontPath">docs/assets/toolsprites/kurraya_front.png</dd>
+              <dt>Top plane</dt><dd id="kurrayaTopPath">docs/assets/toolsprites/kurraya_top.png</dd>
+              <dt>Avatar profile</dt><dd id="kurrayaProfileLabel">No NPC selected</dd>
+              <dt>Asset status</dt><dd id="kurrayaAssetStatus">Waiting for repository</dd>
+            </dl>
+            <div class="row" style="margin-top:10px">
+              <button id="equipKurrayaBtn" class="good grow" disabled>Equip Kurraya</button>
+              <button id="reloadKurrayaBtn" class="secondary" disabled>Reload planes</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <button id="snapKurrayaHandBtn" class="secondary grow" disabled>Snap attachment to avatar hand</button>
+              <button id="resetKurrayaBtn" class="secondary" disabled>Reset this avatar</button>
+            </div>
+            <div class="authorHelp">The Kurraya is parented directly to the selected avatar model. Its attachment transform is therefore authored in avatar-local coordinates and moves with that avatar.</div>
+          </div>
+
+          <div class="card">
+            <h3>3D transform gizmo</h3>
+            <label for="kurrayaGizmoTarget">Editing target</label>
+            <select id="kurrayaGizmoTarget" disabled>
+              <option value="attachment">Whole equipped Kurraya</option>
+              <option value="front">Front plane within assembly</option>
+              <option value="top">Top plane within assembly</option>
+            </select>
+            <div class="segmented" style="margin-top:9px">
+              <button id="kurrayaMoveBtn" class="secondary active" disabled>Move</button>
+              <button id="kurrayaRotateBtn" class="secondary" disabled>Rotate</button>
+              <button id="kurrayaScaleBtn" class="secondary" disabled>Scale</button>
+              <button id="kurrayaGizmoOffBtn" class="secondary" disabled>Gizmo off</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <button id="kurrayaSpaceBtn" class="secondary grow" disabled>Space: Local</button>
+              <button id="kurrayaAxesBtn" class="secondary" disabled>Axes: Off</button>
+            </div>
+            <div class="authorHelp">Drag the gizmo in the 3D view, or type exact values below. Orbiting is temporarily disabled while a gizmo handle is being dragged.</div>
+          </div>
+        </div>
+
+        <div class="authorGrid">
+          <div class="card">
+            <h3>Equipped position on avatar</h3>
+            <div id="attachmentTransformFields" class="transformEditor"></div>
+            <div class="authorHelp">This is the parent transform that places the completed two-plane tool relative to the avatar. X is side-to-side, Y is height, and Z is forward/back. “Snap to hand” uses the avatar plane renderer’s measured hand attachment metadata as a starting point.</div>
+          </div>
+          <div class="card">
+            <h3>Front PNG plane</h3>
+            <div id="frontTransformFields" class="transformEditor"></div>
+            <div class="authorHelp">The front sprite begins at 0° pitch. Its base geometry preserves the PNG’s native 320×663 aspect ratio.</div>
+          </div>
+          <div class="card">
+            <h3>Top PNG plane</h3>
+            <div id="topTransformFields" class="transformEditor"></div>
+            <div class="authorHelp">The top sprite begins at exactly 90° pitch relative to an ordinary PNG plane. Its base geometry preserves the PNG’s native 318×247 aspect ratio.</div>
+          </div>
+          <div class="card">
+            <h3>Authoring JSON</h3>
+            <div class="row" style="margin-bottom:8px">
+              <button id="downloadKurrayaBtn" class="secondary" disabled>Download attachment JSON</button>
+              <button id="copyKurrayaBtn" class="secondary" disabled>Copy JSON</button>
+              <label class="fileButton secondary" for="importKurrayaInput">Import JSON</label>
+              <input id="importKurrayaInput" class="hidden" type="file" accept=".json,application/json">
+            </div>
+            <div class="row" style="margin-bottom:8px">
+              <button id="downloadEquippedNpcBtn" class="secondary grow" disabled>Download selected NPC with authored Kurraya data</button>
+            </div>
+            <pre id="kurrayaJson">{}</pre>
+            <div class="authorHelp">The attachment profile is also saved locally per repository and NPC as you edit. Downloaded NPC JSON adds the non-destructive <code>avatarEquipmentAuthoring.kurraya</code> field.</div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details id="rightPanel" class="panel collapsiblePanel">
+      <summary><span>Repository & avatar details</span><span class="pill">Metadata</span></summary>
+      <div class="collapsibleBody detailsBody">
+        <div class="card">
+          <h3>Loaded source</h3>
+          <dl class="kv">
+            <dt>Repository</dt><dd id="sourceRepo">—</dd>
+            <dt>Requested ref</dt><dd id="sourceRef">—</dd>
+            <dt>Resolved commit</dt><dd id="sourceSha">—</dd>
+            <dt>Database</dt><dd id="sourceDb">—</dd>
+            <dt>Schema</dt><dd id="sourceSchema">—</dd>
+          </dl>
+          <div class="row" style="margin-top:9px"><button id="downloadDbBtn" class="secondary" disabled>Download loaded DB</button></div>
+        </div>
+        <div class="card">
+          <h3>Selected NPC</h3>
+          <dl class="kv">
+            <dt>ID</dt><dd id="detailId">—</dd>
+            <dt>Home</dt><dd id="detailHome">—</dd>
+            <dt>Species</dt><dd id="detailSpecies">—</dd>
+            <dt>Gender</dt><dd id="detailGender">—</dd>
+            <dt>Age band</dt><dd id="detailAge">—</dd>
+            <dt>Role</dt><dd id="detailRole">—</dd>
+            <dt>Tags</dt><dd id="detailTags">—</dd>
+          </dl>
+        </div>
+        <div class="card">
+          <h3>Appearance data used by renderer</h3>
+          <pre id="appearanceJson">{}</pre>
+        </div>
+        <div class="card">
+          <h3>Plane metadata</h3>
+          <pre id="planeJson">{}</pre>
+        </div>
+      </div>
+    </details>
+  </main>
+</div>
+
+<div id="debugPanel">
+  <div id="debugHead">
+    <b>Diagnostics</b><span class="grow"></span>
+    <button id="copyDebugBtn" class="secondary">Copy</button>
+    <button id="clearDebugBtn" class="secondary">Clear</button>
+    <button id="closeDebugBtn" class="secondary">Close</button>
+  </div>
+  <div id="debugLog"></div>
+</div>
+
+<script src="animation-author-01.js"></script>
+<script src="animation-author-02.js"></script>
+<script src="animation-author-03.js"></script>
+<script src="animation-author-04.js"></script>
+<script src="animation-author-05.js"></script>
+<script src="animation-author-06.js"></script>
+<script src="animation-author-07.js"></script>
+<script src="animation-author-08.js"></script>
+<script src="animation-author-09.js"></script>
+<script src="animation-author-10.js"></script>
+<script src="animation-author-11.js"></script>
+<script src="animation-author-12.js"></script>
+<script src="animation-author-13.js"></script>
+<script src="animation-author-14.js"></script>
+<script src="animation-author-15.js"></script>
+<script src="animation-author-16.js"></script>
+</body>
+</html>
