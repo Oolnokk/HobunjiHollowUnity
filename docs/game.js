@@ -17768,7 +17768,13 @@
             if (tile.type === TileType.SHRUB && isChoppableTreeTile(t.col, t.row)) continue;
             tile.type = TileType.GRASS;
             inventory.mulch = Math.min(99, inventory.mulch + 1);
-            markTileDirty(t.col, t.row);
+            // markTileDirty indexes the farm's own small grid (see its
+            // declaration) — calling it with a wilderness zone's col/row
+            // (up to 100x100) reads past the farm grid's bounds. Zones get
+            // their visual refresh from refreshZoneGroundVisuals instead
+            // (see applyAction's callers), once per completed action rather
+            // than per cleared tile.
+            if (currentArea === 'farm') markTileDirty(t.col, t.row);
             cleared++;
           }
         }
@@ -18270,7 +18276,10 @@
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           inventory[logKey] = Math.min(99, (inventory[logKey] || 0) + amount);
           inventory.mulch = Math.min(99, inventory.mulch + 1);
-          markTileDirty(col, row);
+          // No markTileDirty here — it indexes the farm's own small grid,
+          // and felling a tree only ever happens in a wilderness zone (see
+          // isChoppableTreeTile). completeChargeAction's zone-refresh branch
+          // (tool === 'axe') handles the visual update instead.
           awardToolUseMasteryXp('axe');
           return { ok: true, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'} and 1 Mulch.` };
         }
@@ -18513,6 +18522,12 @@
           recomputeWater(false);
           if (result.ok !== false) markTileDirty(col, row);
         } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
+          // Note: weapon/machete vegetation clears in a zone don't trigger this —
+          // applyAction's weapon branch returns the same ok:true shape for a normal
+          // combat hit as for a veg clear, and refreshing the whole zone floor/grass
+          // mesh on every combat hit would be a real perf hit. Their cleared tile
+          // just stays visually stale (still SHRUB-shaped) until something else
+          // rebuilds the zone — a pre-existing, non-crashing gap, not fixed here.
           // Wilderness-zone counterpart of markTileDirty's farm mesh rebuild —
           // a dig/fill/raise/till/smooth just changed this tile's type, but a
           // zone's terrain is merged meshes built once rather than the farm's

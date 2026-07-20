@@ -4881,19 +4881,17 @@
     logDebug(`fallenLog/stump: placed ${placedLogLikeCount}/${settings.logs} (${fallenLogCount} logs, ${stumpCount} stumps)`);
   }
 
-  // In the live game every one of these object types renders its tile as a
-  // 'shrub' overlay (see hobunjiOverlayTypeForObject below), and in Northern
-  // Cliffs / the Southern Cloud Forest a 'shrub' tile grows into a full-size
-  // tree (crowned pine / shadewood — see FoliageGenerator), not a small prop.
-  // So a copse tile touching a fruitBush/beehive/etc (even diagonally) is
-  // just as much a tree-overlap as two copse tiles touching. Shared by
-  // placeCopses/placeFloraAndResources/placeAnimalFoodSources below.
-  const TREE_LIKE_OBJECT_TYPES = new Set(['copse', 'bush', 'fruitBush', 'mushroomPatch', 'beehive']);
+  // Only 'copse' tiles grow into a full-size tree in the live game (crowned
+  // pine / shadewood — see FoliageGenerator and _buildZoneFloorMeshes'
+  // floraKind switch); bush/fruitBush/mushroomPatch/beehive render as small
+  // props (bush/stump meshes or the generic shrub) and are free to sit right
+  // up against a tree or each other — only tree-to-tree spacing matters.
+  const TREE_LIKE_OBJECT_TYPES = new Set(['copse']);
 
   // Keep a full ring of non-tree tiles around every placed tree: checked
-  // against both already-committed tree-like objects (tile.occupiedBy, set
-  // by addObject/markOccupied) and an optional extraKeys set of positions
-  // not yet committed (copse grows a whole cluster via BFS before calling
+  // against both already-committed trees (tile.occupiedBy, set by
+  // addObject/markOccupied) and an optional extraKeys set of positions not
+  // yet committed (copse grows a whole cluster via BFS before calling
   // addObject on any of it — occupiedBy isn't set until the cluster is
   // done, so without extraKeys a cluster could otherwise pack its own tiles
   // right next to each other).
