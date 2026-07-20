@@ -8917,7 +8917,7 @@
         // footprint, smoothly blending down to the tier below across the outer
         // 1-tile margin (exactly how much smaller each plateau sub-map is than its
         // parent, so that margin is the cliff-face band).
-        _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
+        _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid, ZCOLS, ZROWS));
 
         buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
@@ -8986,13 +8986,20 @@
       // Builds every tier-transition mesa for a zone, returning the meshes so
       // the caller can track and later remove/rebuild them (see
       // rebuildZoneMesaMeshes) — used both by buildZoneScene's initial build
-      // and by a runtime tile change on a plateau's flat top.
-      function buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid) {
+      // and by a runtime tile change on a plateau's flat top. Computes the
+      // zone's path network once (not per-mesa) and hands it to every mesa so
+      // each one can leave a hole over path-network-covered ground exactly
+      // like it already does for ramps/carved tiles — without this, a path
+      // crossing a plateau and the mesa's own lid both render a flat quad at
+      // the very same (now correctly tier-matched — see buildPathNetworkGeo)
+      // height, z-fighting/clipping against each other.
+      function buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid, zcols, zrows) {
         const meshes = [];
+        const pathNet = buildPathNetworkGeo(zGrid, zcols, zrows);
         plateauMesas.forEach((mesa, i) => {
           const elevOffset = (mesa.toTier - mesa.fromTier) * PLATEAU_UNIT;
           if (elevOffset <= 0) return;
-          const mesh = buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * PLATEAU_UNIT, zGrid);
+          const mesh = buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * PLATEAU_UNIT, zGrid, pathNet);
           if (mesh) meshes.push(mesh);
         });
         return meshes;
@@ -9010,10 +9017,10 @@
         if (!zi || !zoneData?.mesas?.length) return;
         const oldMeshes = _zoneMesaMeshGroups.get(mapId);
         if (oldMeshes) for (const mesh of oldMeshes) { zi.scene.remove(mesh); if (mesh.geometry) mesh.geometry.dispose(); }
-        _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zi.scene, mapId, zoneData.mesas, zi.grid));
+        _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zi.scene, mapId, zoneData.mesas, zi.grid, zi.cols, zi.rows));
       }
 
-      function buildPlateauMesa(zScene, mapId, groupId, bb, elevOffset, zoneBaseElev = 0, zGrid = null) {
+      function buildPlateauMesa(zScene, mapId, groupId, bb, elevOffset, zoneBaseElev = 0, zGrid = null, pathNet = null) {
         const MARGIN_TILES = 1;
         const BASE = NORMAL_TOP + zoneBaseElev;
         const W = bb.maxC - bb.minC + 1, D = bb.maxR - bb.minR + 1;
@@ -9187,6 +9194,21 @@
         // builds that cell's own carved-bed mesh, and without this check the mesa's
         // solid lid simply painted over it, hiding the channel under flat ground.
         const quadIsCarved = (gi, gj) => CARVED_TILE_TYPES.has(zGrid?.[bb.minR + Math.floor(gj/2)]?.[bb.minC + Math.floor(gi/2)]?.type);
+        // A path crossing this mesa's footprint (a literal PATH tile, or a
+        // GRASS tile blended into the path network's own grassy apron — see
+        // buildPathNetworkGeo) must not ALSO get a mesa quad on top of it —
+        // the path network's own pathGeo/grassGeo already renders that
+        // ground, now correctly baked to this same tier height (see
+        // buildPathNetworkGeo's elevTier fix), so doubling it here would
+        // z-fight/clip against it instead of leaving it be, same reasoning
+        // quadIsCarved uses for river/trench/etc.
+        const quadIsPathCovered = (gi, gj) => {
+          if (!pathNet) return false;
+          const tc = bb.minC + Math.floor(gi / 2), tr = bb.minR + Math.floor(gj / 2);
+          if (!pathNet.inBounds(tc, tr) || pathNet.isExcludedTile(tc, tr)) return false;
+          const t = zGrid?.[tr]?.[tc]?.type;
+          return t === TileType.PATH || t === TileType.GRASS;
+        };
         // A quad's own corners already carry this mesa's real BFS-blended slope
         // (Y above) — steep quads (the cliff-face margin band) are exactly where
         // the old separate buildRockFormationMeshes wall used to get overlaid in
@@ -9200,7 +9222,7 @@
         const grassIdx = [], stoneIdx = [];
         for (let gj = 0; gj < GH - 1; gj++) {
           for (let gi = 0; gi < GW - 1; gi++) {
-            if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
+            if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || quadIsPathCovered(gi, gj) || !quadInOwnMask(gi, gj)) continue;
             const v00 = gj*GW+gi, v10 = gj*GW+gi+1, v01 = (gj+1)*GW+gi, v11 = (gj+1)*GW+gi+1;
             const y00 = Y[v00], y10 = Y[v10], y01 = Y[v01], y11 = Y[v11];
             const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
