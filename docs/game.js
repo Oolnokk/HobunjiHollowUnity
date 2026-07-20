@@ -7953,6 +7953,17 @@
       // mapId → THREE.InstancedMesh (grass billboard tufts) — see
       // _buildZoneGrassBillboards/refreshZoneGroundVisuals above.
       const _zoneGrassMeshes = new Map();
+      // mapId → [THREE.Mesh, ...] (one per plateau tier-transition mesa —
+      // see buildZoneMesaMeshes/buildPlateauMesa). Tracked for the same
+      // reason as _zoneFloorMeshGroups: a mesa's lid is built once from
+      // whatever tile types existed at zone-build time, and deliberately
+      // leaves a hole over any CARVED_TILE_TYPES cell (trench/raised/river/
+      // stream/waterfall) for the ordinary per-tile floor loop to fill in —
+      // but that hole (and the flat lid everywhere else) is frozen at build
+      // time otherwise, so digging a NEW trench on a plateau's flat top
+      // needs this mesh rebuilt too, or the original solid lid quad just
+      // keeps covering the freshly-carved pit underneath it.
+      const _zoneMesaMeshGroups = new Map();
       // mapId → Map("col,row" -> pickable reagent-plant world object) — the
       // wilderness counterpart to the farm's worldObjects, populated by
       // ensureZoneReagents and consulted by getWorldObjectAt.
@@ -8772,7 +8783,16 @@
           const cx = c + 0.5, cz = r + 0.5;
           const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
 
-          if (tile.skipFloor) continue; // covered by a plateau tier's mesa mesh below
+          // A genuine plateau-top tile is normally left to buildPlateauMesa's
+          // own continuous lid entirely (skipFloor) — but that lid already
+          // leaves a deliberate hole over any CARVED_TILE_TYPES cell (see
+          // quadIsCarved in buildPlateauMesa) expecting THIS loop's own
+          // TRENCH/RAISED/river/stream/waterfall branch below to fill it in.
+          // Skipping unconditionally here left that hole permanently empty —
+          // digging a trench on a plateau's flat top set tile.type correctly
+          // but never rendered anything, since skipFloor never turns back
+          // off just because the tile's now been carved into.
+          if (tile.skipFloor && !CARVED_TILE_TYPES.has(tile.type)) continue;
           if (tile.type === TileType.RAMP) continue; // covered by the ramp slope mesh below
 
           if (tile.type === TileType.ROCK) {
@@ -8897,11 +8917,7 @@
         // footprint, smoothly blending down to the tier below across the outer
         // 1-tile margin (exactly how much smaller each plateau sub-map is than its
         // parent, so that margin is the cliff-face band).
-        plateauMesas.forEach((mesa, i) => {
-          const elevOffset = (mesa.toTier - mesa.fromTier) * PLATEAU_UNIT;
-          if (elevOffset <= 0) return;
-          buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * PLATEAU_UNIT, zGrid);
-        });
+        _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
 
         buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
@@ -8967,6 +8983,36 @@
       // how much smaller each plateau's submap is than its parent (see
       // getOrCreateSubmap/resizeMapAndSubmaps in the Map Editor), since that band is
       // reserved for this cliff-face blend.
+      // Builds every tier-transition mesa for a zone, returning the meshes so
+      // the caller can track and later remove/rebuild them (see
+      // rebuildZoneMesaMeshes) — used both by buildZoneScene's initial build
+      // and by a runtime tile change on a plateau's flat top.
+      function buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid) {
+        const meshes = [];
+        plateauMesas.forEach((mesa, i) => {
+          const elevOffset = (mesa.toTier - mesa.fromTier) * PLATEAU_UNIT;
+          if (elevOffset <= 0) return;
+          const mesh = buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * PLATEAU_UNIT, zGrid);
+          if (mesh) meshes.push(mesh);
+        });
+        return meshes;
+      }
+
+      // Rebuilds a zone's plateau mesa meshes from its current grid — used
+      // after a dig/fill/raise/till/smooth changes a tile that sits on a
+      // plateau's flat top, so a newly-carved CARVED_TILE_TYPES cell's hole
+      // (or a filled-back-in cell's restored solid lid) actually shows up
+      // instead of the mesa staying frozen at whatever it looked like when
+      // the zone first loaded. See refreshZoneGroundVisuals.
+      function rebuildZoneMesaMeshes(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        const zoneData = _zoneLayouts.get(mapId);
+        if (!zi || !zoneData?.mesas?.length) return;
+        const oldMeshes = _zoneMesaMeshGroups.get(mapId);
+        if (oldMeshes) for (const mesh of oldMeshes) { zi.scene.remove(mesh); if (mesh.geometry) mesh.geometry.dispose(); }
+        _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zi.scene, mapId, zoneData.mesas, zi.grid));
+      }
+
       function buildPlateauMesa(zScene, mapId, groupId, bb, elevOffset, zoneBaseElev = 0, zGrid = null) {
         const MARGIN_TILES = 1;
         const BASE = NORMAL_TOP + zoneBaseElev;
@@ -9181,6 +9227,7 @@
         mesh.userData.cameraObstacle = true;
 
         console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(BASE+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s), stone faces=${stoneIdx.length / 6}`, 'color:#22c55e;font-weight:bold');
+        return mesh;
       }
 
       // Smooth ramp slope mesh: one quad per authored RAMP tile, with each tile's 4
@@ -12851,6 +12898,7 @@
         _zoneTreasurePersist.delete(mapId);
         _zoneFloorMeshGroups.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
+        _zoneMesaMeshGroups.delete(mapId);
       }
 
       // Rebuilds just a zone's ground floor + grass tufts (see
@@ -12876,6 +12924,10 @@
         if (oldGrass) { zi.scene.remove(oldGrass); oldGrass.geometry?.dispose(); }
         _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId));
         _zoneGrassMeshes.set(mapId, _buildZoneGrassBillboards(zi.scene, zi.grid, zi.cols, zi.rows));
+        // A dug/filled tile might sit on a plateau's flat top — its mesa lid
+        // is otherwise frozen from zone-build time (see rebuildZoneMesaMeshes)
+        // and would keep covering/exposing the wrong side of a real trench.
+        rebuildZoneMesaMeshes(mapId);
         // A dig/fill/raise here may have just turned a buried chest's tile
         // into (or out of) a real trench — see syncZoneTreasureInteractivity.
         syncZoneTreasureInteractivity(mapId);
