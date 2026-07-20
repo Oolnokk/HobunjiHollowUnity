@@ -4881,6 +4881,37 @@
     logDebug(`fallenLog/stump: placed ${placedLogLikeCount}/${settings.logs} (${fallenLogCount} logs, ${stumpCount} stumps)`);
   }
 
+  // In the live game every one of these object types renders its tile as a
+  // 'shrub' overlay (see hobunjiOverlayTypeForObject below), and in Northern
+  // Cliffs / the Southern Cloud Forest a 'shrub' tile grows into a full-size
+  // tree (crowned pine / shadewood — see FoliageGenerator), not a small prop.
+  // So a copse tile touching a fruitBush/beehive/etc (even diagonally) is
+  // just as much a tree-overlap as two copse tiles touching. Shared by
+  // placeCopses/placeFloraAndResources/placeAnimalFoodSources below.
+  const TREE_LIKE_OBJECT_TYPES = new Set(['copse', 'bush', 'fruitBush', 'mushroomPatch', 'beehive']);
+
+  // Keep a full ring of non-tree tiles around every placed tree: checked
+  // against both already-committed tree-like objects (tile.occupiedBy, set
+  // by addObject/markOccupied) and an optional extraKeys set of positions
+  // not yet committed (copse grows a whole cluster via BFS before calling
+  // addObject on any of it — occupiedBy isn't set until the cluster is
+  // done, so without extraKeys a cluster could otherwise pack its own tiles
+  // right next to each other).
+  function hasNearbyTreeObject(x, y, extraKeys) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const key = `${x + dx},${y + dy}`;
+        if (extraKeys && extraKeys.has(key)) return true;
+        const neighborTile = tileAt(x + dx, y + dy);
+        if (!neighborTile || !neighborTile.occupiedBy) continue;
+        const neighborObject = getObjectById(neighborTile.occupiedBy);
+        if (neighborObject && TREE_LIKE_OBJECT_TYPES.has(neighborObject.type)) return true;
+      }
+    }
+    return false;
+  }
+
   function placeCopses() {
     // NOTE: copse tiles are a simplified proxy for denser forest spawning in the larger game.
     // The duplicate game should spawn slightly more trees than copse tiles where room allows,
@@ -4891,11 +4922,12 @@
     let shadowCopseTiles = 0;
     const maxClusterAttempts = Math.max(200, targetCopseTiles * 7);
 
-    function copseEligible(x, y) {
+    function copseEligible(x, y, clusterKeys) {
       const tile = tileAt(x, y);
       if (!tile) return false;
       if (tile.water || tile.river || tile.path || tile.ramp || tile.cliffSkirt || tile.waterfall) return false;
       if (tile.occupiedBy) return false;
+      if (hasNearbyTreeObject(x, y, clusterKeys)) return false;
       return true;
     }
 
@@ -4934,15 +4966,33 @@
       const queue = [{ x: start.x, y: start.y }];
       const seen = new Set([`${start.x},${start.y}`]);
       const chosen = [];
+      // Mirrors `chosen`, but as a key set for hasNearbyTreeObject's O(1) lookups —
+      // needed because a tile only gets tile.occupiedBy (and so shows up to
+      // copseEligible via that path) once the whole cluster finishes below;
+      // without this a cluster could still pack its own tiles next to each
+      // other while it's still being grown.
+      const chosenKeys = new Set();
+      // Once a tile is chosen, every tile touching it (distance 1, the ring
+      // hasNearbyTreeObject now blocks) can never be chosen for this cluster — so
+      // only the next ring out (distance exactly 2) is worth queueing as a
+      // real candidate; still packs as tightly as the spacing rule allows,
+      // just skips straight past the ring that's guaranteed to fail.
+      const RING2_OFFSETS = [];
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) === 2) RING2_OFFSETS.push([dx, dy]);
+        }
+      }
 
       while (queue.length && chosen.length < desiredSize) {
         queue.sort((a, b) => (southFacingCliffShadowScore(b.x, b.y) + noise2(b.x, b.y, 94411) * 0.25) - (southFacingCliffShadowScore(a.x, a.y) + noise2(a.x, a.y, 94411) * 0.25));
         const candidate = queue.shift();
-        if (!copseEligible(candidate.x, candidate.y)) continue;
+        if (!copseEligible(candidate.x, candidate.y, chosenKeys)) continue;
         chosen.push(candidate);
+        chosenKeys.add(`${candidate.x},${candidate.y}`);
 
         const sourceTile = tileAt(candidate.x, candidate.y);
-        shuffle([[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]).forEach(([dx, dy]) => {
+        shuffle(RING2_OFFSETS).forEach(([dx, dy]) => {
           const nx = candidate.x + dx;
           const ny = candidate.y + dy;
           const key = `${nx},${ny}`;
@@ -4951,7 +5001,7 @@
           const nextTile = tileAt(nx, ny);
           if (!nextTile) return;
           if (Math.abs(nextTile.elevation - sourceTile.elevation) > 1) return;
-          if (!copseEligible(nx, ny)) return;
+          if (!copseEligible(nx, ny, chosenKeys)) return;
           const shadowScore = southFacingCliffShadowScore(nx, ny);
           if (!shadowScore && startShadowScore > 0 && chance(0.42)) return;
           queue.push({ x: nx, y: ny });
@@ -4992,6 +5042,8 @@
     placeLogsAndStumps();
 
     placeRepeated('bush', settings.bushes, {
+      // Renders as a full tree in tree zones too (see TREE_LIKE_OBJECT_TYPES) — same spacing rule as copse.
+      areaOptions: { filter: (x, y) => !hasNearbyTreeObject(x, y) },
       make: (x, y) => ({ type: 'bush', x, y, w: 1, h: 1, blocksMovement: true, note: 'bright green star' })
     });
 
@@ -5044,9 +5096,10 @@
   function placeAnimalFoodSources() {
     placeRepeated('fruitBush', settings.fruitBushes, {
       areaOptions: {
+        // Renders as a full tree in tree zones too (see TREE_LIKE_OBJECT_TYPES) — same spacing rule as copse.
         filter: (x, y) => {
           const tile = tileAt(x, y);
-          return tile && !tile.water && !tile.path && !tile.ramp && !tile.cliffSkirt && areaElevationSpread(x, y, 1, 1) <= 0;
+          return tile && !tile.water && !tile.path && !tile.ramp && !tile.cliffSkirt && areaElevationSpread(x, y, 1, 1) <= 0 && !hasNearbyTreeObject(x, y);
         }
       },
       make: (x, y, w, h, index) => ({
@@ -5064,13 +5117,14 @@
 
     placeRepeated('mushroomPatch', settings.mushrooms, {
       areaOptions: {
+        // Used to get a bonus for growing right next to a copse tile, but a
+        // copse tile is now a full tree (see TREE_LIKE_OBJECT_TYPES) — right
+        // next to one is exactly what the spacing rule below forbids, so
+        // that bonus can never actually apply anymore; falls back to its
+        // other two conditions (elevated ground / plain noise scatter).
         filter: (x, y) => {
           const tile = tileAt(x, y);
-          const nearCopse = orthogonalNeighbors(tile).some(next => {
-            const object = next.occupiedBy ? getObjectById(next.occupiedBy) : null;
-            return object && object.type === 'copse';
-          });
-          return tile && !tile.water && !tile.path && !tile.ramp && !tile.cliffSkirt && (nearCopse || tile.elevation >= 1 || noise2(x, y, 7137) > 0.52);
+          return tile && !tile.water && !tile.path && !tile.ramp && !tile.cliffSkirt && (tile.elevation >= 1 || noise2(x, y, 7137) > 0.52) && !hasNearbyTreeObject(x, y);
         }
       },
       make: (x, y, w, h, index) => ({
@@ -5088,14 +5142,15 @@
 
     placeRepeated('beehive', settings.beehives, {
       areaOptions: {
+        // Used to get a bonus for hiving right next to a copse tile, but a
+        // copse tile is now a full tree (see TREE_LIKE_OBJECT_TYPES) — right
+        // next to one is exactly what the spacing rule below forbids, so
+        // that bonus can never actually apply anymore; falls back to its
+        // plain noise scatter.
         filter: (x, y) => {
           const tile = tileAt(x, y);
           if (!tile || tile.water || tile.path || tile.ramp || tile.cliffSkirt) return false;
-          const nearCopse = orthogonalNeighbors(tile).some(next => {
-            const object = next.occupiedBy ? getObjectById(next.occupiedBy) : null;
-            return object && object.type === 'copse';
-          });
-          return nearCopse || noise2(x, y, 8129) > 0.72;
+          return noise2(x, y, 8129) > 0.72 && !hasNearbyTreeObject(x, y);
         }
       },
       make: (x, y, w, h, index) => ({

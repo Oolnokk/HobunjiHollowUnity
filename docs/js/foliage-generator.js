@@ -860,7 +860,7 @@ window.FoliageGenerator = (() => {
       leafWidth: 7, leafOffsetX: -0.6, leafOffsetY: -0.25, leafOffsetZ: -2,
       leafYawDeg: 180, leafPitchDeg: 88, leafRollDeg: -69,
       leafSurfaceClearance: 0, leafStemUp: true, trunkRollBiasDist: 0.25,
-      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 0.92,
+      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 1,
       barkColorHex: 0x4a3b33,
       leafTexture: 'assets/leaves/leaves_crowned_pine.png',
       scaleMul: 0.75
@@ -878,8 +878,8 @@ window.FoliageGenerator = (() => {
       knotUpDownBias: -0.2, knotCurl: 1, knotWonk: 0.55,
       leafWidth: 5, leafOffsetX: 0, leafOffsetY: -0.9, leafOffsetZ: 0,
       leafYawDeg: 0, leafPitchDeg: 180, leafRollDeg: 0,
-      leafSurfaceClearance: 0.02, leafStemUp: true, trunkRollBiasDist: 0.25,
-      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 0.92,
+      leafSurfaceClearance: 0.02, leafStemUp: false, trunkRollBiasDist: 0.25,
+      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 1,
       barkColorHex: 0x4a3b33,
       leafTexture: 'assets/leaves/leaves_shadewood.png',
       scaleMul: 0.5
