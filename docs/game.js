@@ -6357,6 +6357,7 @@
           member.alchemyReagentState = serializeZoneReagentState();
           member.wildBerryState = serializeZoneBerryState();
           member.zoneTreasureState = serializeZoneTreasureState();
+          member.felledTreeState = serializeZoneFelledTreeState();
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
       }
@@ -8005,6 +8006,16 @@
       // to a week index (see treasureWeekIndex) instead of calendar.day —
       // buried treasure is meant to be rarer than reagents/berries.
       const _zoneTreasurePersist = new Map();
+      // mapId → [{col, row, feltDay}, ...] — trees felled with the axe (see
+      // isChoppableTreeTile/applyAction's axe branch), each remembering the
+      // absolute calendar.day it was felled on. tickFelledTreeRegrowth grows
+      // one back (tile.type -> SHRUB; floraKind is never cleared by felling,
+      // so it renders as the same species again) once TREE_REGROWTH_DAYS
+      // have passed. Same persisted-across-reload shape/role as
+      // _zoneReagentPersist, just without the day-mismatch staleness check
+      // (a felled tile is either still felled or it isn't).
+      const _zoneFelledTreePersist = new Map();
+      const TREE_REGROWTH_DAYS = 7;
       // mapIds whose _zoneLayouts entry was replaced by a Tothal Shift (see
       // performTothalShift) while the player was standing inside that same
       // zone — rebuilding the live THREE.Scene out from under them mid-visit
@@ -8908,6 +8919,25 @@
           // merge doesn't track this through) falls back to treating any
           // SHRUB tile in a tree zone as a real tree — the prior behavior.
           if (type === TileType.SHRUB) zGrid[r][c].floraKind = floraKind || null;
+        }
+        // Re-apply any trees felled with the axe that haven't regrown yet
+        // (see _zoneFelledTreePersist/tickFelledTreeRegrowth) — zoneData.tiles
+        // above always shows the original, always-treed layout, so a fresh
+        // build here would otherwise put a felled tree right back before its
+        // TREE_REGROWTH_DAYS are up. Entries that are actually due get
+        // dropped here too (the tile's already SHRUB from zoneData.tiles,
+        // matching regrown state — nothing left for them to do).
+        {
+          const felledEntries = _zoneFelledTreePersist.get(mapId);
+          if (felledEntries?.length) {
+            const stillFelled = felledEntries.filter(entry => {
+              const due = calendar.day - entry.feltDay >= TREE_REGROWTH_DAYS;
+              if (!due && zGrid[entry.row]?.[entry.col]) zGrid[entry.row][entry.col].type = TileType.GRASS;
+              return !due;
+            });
+            if (stillFelled.length) _zoneFelledTreePersist.set(mapId, stillFelled);
+            else _zoneFelledTreePersist.delete(mapId);
+          }
         }
         // Ramp curtains: a non-ramp cell beside a ramp cell gets folded into the
         // ramp's slope as a 1-tile-wide skirt instead of sitting flat — this is
@@ -12895,6 +12925,21 @@
         });
       }
 
+      // Save/restore _zoneFelledTreePersist as a plain object — see
+      // saveMemberWorldData/spawnPlayerAvatar. Simpler shape than
+      // _zoneReagentPersist (no day-mismatch staleness check needed here).
+      function serializeZoneFelledTreeState() {
+        const out = {};
+        _zoneFelledTreePersist.forEach((entries, mapId) => { out[mapId] = entries; });
+        return out;
+      }
+      function restoreZoneFelledTreeState(saved) {
+        _zoneFelledTreePersist.clear();
+        Object.entries(saved || {}).forEach(([mapId, entries]) => {
+          if (Array.isArray(entries)) _zoneFelledTreePersist.set(mapId, entries);
+        });
+      }
+
       // Tears down a previously built zone scene so buildZoneScene(mapId)'s
       // cache check falls through and rebuilds it from whatever's now in
       // _zoneLayouts — used by a Tothal Shift to apply newly generated
@@ -12927,6 +12972,9 @@
         _zoneTreasureMeshGroups.delete(mapId);
         _zoneTreasureObjects.delete(mapId);
         _zoneTreasurePersist.delete(mapId);
+        // The whole tile layout just changed underneath any felled-tree
+        // timers too — a shift's fresh terrain has its own new trees.
+        _zoneFelledTreePersist.delete(mapId);
         _zoneFloorMeshGroups.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
         _zoneMesaMeshGroups.delete(mapId);
@@ -13381,6 +13429,34 @@
           _zoneTreasurePersist.delete(mapId);
         }
         if (_isZoneArea(currentArea)) ensureZoneTreasure(currentArea);
+      }
+
+      // Regrows trees felled with the axe once TREE_REGROWTH_DAYS have
+      // passed (see _zoneFelledTreePersist/applyAction's axe branch).
+      // Called once per day from advanceDay()/sleepInBed(), the same
+      // trigger tickCropDay() uses for the farm grid's crop aging.
+      function tickFelledTreeRegrowth() {
+        for (const [mapId, entries] of _zoneFelledTreePersist) {
+          if (!entries.length) { _zoneFelledTreePersist.delete(mapId); continue; }
+          const zi = _zoneScenes.get(mapId);
+          // Zone isn't currently built (never visited this session, or its
+          // scene was disposed) — nothing to mutate live. Leave every entry
+          // exactly as-is; buildZoneScene re-derives due/not-due from
+          // feltDay itself the next time this zone is actually built (see
+          // there), so dropping entries here without a grid to apply them
+          // to would just lose the regrowth timer entirely.
+          if (!zi) continue;
+          const stillFelled = [];
+          let regrewAny = false;
+          for (const entry of entries) {
+            if (calendar.day - entry.feltDay < TREE_REGROWTH_DAYS) { stillFelled.push(entry); continue; }
+            if (zi.grid?.[entry.row]?.[entry.col]) zi.grid[entry.row][entry.col].type = TileType.SHRUB;
+            regrewAny = true;
+          }
+          if (stillFelled.length) _zoneFelledTreePersist.set(mapId, stillFelled);
+          else _zoneFelledTreePersist.delete(mapId);
+          if (regrewAny && mapId === currentArea) refreshZoneGroundVisuals(mapId);
+        }
       }
 
       function serializeZoneTreasureState() {
@@ -18296,6 +18372,12 @@
           const amount = 2 + Math.floor(Math.random() * 2); // 2-3 logs
           tile.type = TileType.GRASS;
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          // tile.floraKind is deliberately left alone — tickFelledTreeRegrowth
+          // just flips tile.type back to SHRUB once TREE_REGROWTH_DAYS pass,
+          // and the same species grows back via _buildZoneFloorMeshes' switch.
+          const _felledEntries = _zoneFelledTreePersist.get(currentArea) || [];
+          _felledEntries.push({ col, row, feltDay: calendar.day });
+          _zoneFelledTreePersist.set(currentArea, _felledEntries);
           inventory[logKey] = Math.min(99, (inventory[logKey] || 0) + amount);
           inventory.mulch = Math.min(99, inventory.mulch + 1);
           // No markTileDirty here — it indexes the farm's own small grid,
@@ -25733,6 +25815,7 @@
         respawnAllZoneReagents();
         respawnAllZoneBerries();
         respawnAllZoneTreasure();
+        tickFelledTreeRegrowth();
       }
 
       // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
@@ -25753,6 +25836,7 @@
         pendingDenRespawn.clear();
         respawnAllZoneReagents();
         respawnAllZoneTreasure();
+        tickFelledTreeRegrowth();
         player.health  = player.maxHealth;
         player.stamina = player.maxStamina;
         const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
@@ -28157,6 +28241,7 @@
         restoreZoneReagentState(playerData.alchemyReagentState);
         restoreZoneBerryState(playerData.wildBerryState);
         restoreZoneTreasureState(playerData.zoneTreasureState);
+        restoreZoneFelledTreeState(playerData.felledTreeState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
         // session, unlike the static reagent/furniture/fish tables) — rebuild
