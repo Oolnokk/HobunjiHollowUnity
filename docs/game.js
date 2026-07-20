@@ -12876,6 +12876,9 @@
         if (oldGrass) { zi.scene.remove(oldGrass); oldGrass.geometry?.dispose(); }
         _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId));
         _zoneGrassMeshes.set(mapId, _buildZoneGrassBillboards(zi.scene, zi.grid, zi.cols, zi.rows));
+        // A dig/fill/raise here may have just turned a buried chest's tile
+        // into (or out of) a real trench — see syncZoneTreasureInteractivity.
+        syncZoneTreasureInteractivity(mapId);
       }
 
       // ── Wild berry bushes (wilderness-zone counterpart of purchasable
@@ -13191,6 +13194,39 @@
         _zoneTreasureObjects.delete(mapId);
       }
 
+      // Registers/unregisters a zone's buried chests as getWorldObjectAt
+      // objects to match each one's tile's CURRENT type — called after
+      // ensureZoneTreasure and after every refreshZoneGroundVisuals (i.e.
+      // any dig/fill/raise/till/smooth in this zone). A chest is only ever
+      // registered while its tile is a real dug trench; the moment a tile
+      // ISN'T one (never dug yet, or filled back in), it's unregistered —
+      // getWorldObjectAt then returns null there, same as any other patch of
+      // ground. This is deliberate: registering it unconditionally (even
+      // with an always-disabled "buried" button) would make it the ONLY
+      // thing the action bar shows at that tile, permanently pre-empting
+      // the normal dig/fill/till prompt a player needs to actually reach
+      // it — see the controller-priority bug this fixes. The chest's mesh
+      // (placement._mesh) is untouched either way — it's still buried
+      // beneath the ground and reappears once dug without rebuilding
+      // anything, exactly like before.
+      function syncZoneTreasureInteractivity(mapId) {
+        const persisted = _zoneTreasurePersist.get(mapId);
+        const zi = _zoneScenes.get(mapId);
+        if (!persisted || !zi) return;
+        let objMap = _zoneTreasureObjects.get(mapId);
+        if (!objMap) { objMap = new Map(); _zoneTreasureObjects.set(mapId, objMap); }
+        for (const placement of persisted.placements) {
+          if (placement.found || !placement._mesh) continue;
+          const key = placement.col + ',' + placement.row;
+          const isDug = zi.grid[placement.row]?.[placement.col]?.type === TileType.TRENCH;
+          if (isDug && !objMap.has(key)) {
+            objMap.set(key, makeTreasureChestObject(mapId, placement.col, placement.row, placement, placement._mesh));
+          } else if (!isDug && objMap.has(key)) {
+            objMap.delete(key);
+          }
+        }
+      }
+
       // Called alongside ensureZoneReagents/ensureZoneBerries on every zone
       // entry — rescatters only once a new week starts (see
       // treasureWeekIndex); otherwise just rebuilds whatever this week's
@@ -13209,7 +13245,7 @@
         }
         clearZoneTreasureMeshes(mapId);
         const groups = [];
-        const objMap = new Map();
+        _zoneTreasureObjects.set(mapId, new Map());
         for (const placement of persisted.placements) {
           if (placement.found) continue;
           const { col, row } = placement;
@@ -13217,10 +13253,19 @@
           mesh.position.set(col + 0.5, treasureChestBuriedY(mapId, col, row), row + 0.5);
           zi.scene.add(mesh);
           groups.push(mesh);
-          objMap.set(col + ',' + row, makeTreasureChestObject(mapId, col, row, placement, mesh));
+          // Tracked on the placement (not just built here) so
+          // syncZoneTreasureInteractivity can reach it later without
+          // rebuilding — the mesh itself never moves or gets swapped.
+          placement._mesh = mesh;
         }
         _zoneTreasureMeshGroups.set(mapId, groups);
-        _zoneTreasureObjects.set(mapId, objMap);
+        // Only registers a chest as an interactable getWorldObjectAt object
+        // for tiles that are ALREADY a dug trench (mid-session state, e.g.
+        // re-entering a zone after digging one up earlier) — see below for
+        // why this matters (it's what lets ordinary terrain dig/fill/till
+        // stay reachable at a still-buried tile instead of a permanently
+        // disabled chest button preempting them).
+        syncZoneTreasureInteractivity(mapId);
         debugLog(`ensureZoneTreasure(${mapId}): built ${groups.length} buried chest(s) for week ${treasureWeekIndex()}`);
       }
 
