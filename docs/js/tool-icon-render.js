@@ -69,6 +69,26 @@
     img.src = spritePath;
   }
 
+  // Registers an already-rendered canvas (e.g. a metal/verdigris-recolored
+  // tool sprite from ToolMetalRecolor) under a synthetic key, so it can flow
+  // through the exact same trim/rotate/effect pipeline as a plain sprite
+  // path. Re-registering the same key overwrites the bbox entry and drops
+  // any icons already cached for it — used when a tool's verdigris coverage
+  // changes and its icon needs to be re-rendered (see invalidate()).
+  function registerCanvasSource(key, canvas) {
+    const bbox = trimBBox(canvas);
+    bboxCache.set(key, { img: canvas, ...bbox });
+  }
+
+  // Drops a key's cached bbox/icons so the next getIconHTML/registerCanvasSource
+  // call re-derives them — used when a metal-recolored tool's verdigris
+  // fraction has moved on to a new rendered canvas.
+  function invalidate(key) {
+    bboxCache.delete(key);
+    for (const cacheKey of [...iconCache.keys()]) if (cacheKey.startsWith(key + '|')) iconCache.delete(cacheKey);
+    for (const cacheKey of [...failedIcons]) if (cacheKey.startsWith(key + '|')) failedIcons.delete(cacheKey);
+  }
+
   // Angle (degrees) the trimmed sprite is rotated to, measured from its own
   // upright axis (business end/blade at the bottom of the source image).
   const STYLE_ANGLE = { plain: 0, jab: -48, sweep: 32, chop: -18 };
@@ -205,5 +225,5 @@
     (spritePaths || []).forEach(p => p && ensureLoaded(p));
   }
 
-  window.ToolIconRender = { getIconHTML, warm };
+  window.ToolIconRender = { getIconHTML, warm, registerCanvasSource, invalidate };
 })();

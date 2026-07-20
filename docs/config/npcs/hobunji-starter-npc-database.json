@@ -3026,6 +3026,10 @@
                 {
                   "label": "Sloomi's lucky to have you.",
                   "next": "n_kzubug_3b"
+                },
+                {
+                  "label": "Got any work for a metal bar or two?",
+                  "actions": [{ "type": "openCraftMenu" }]
                 }
               ]
             },
@@ -3243,6 +3247,10 @@
                 {
                   "label": "You and Kzubug seem close.",
                   "next": "n_sloomi_3b"
+                },
+                {
+                  "label": "Got any work for a metal bar or two?",
+                  "actions": [{ "type": "openCraftMenu" }]
                 }
               ]
             },

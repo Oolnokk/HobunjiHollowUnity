@@ -607,6 +607,15 @@
     .shop-buy-btn:disabled { opacity: 0.3; pointer-events: none; }
     .sh-price { font-size: 10px; color: rgba(240,200,60,0.7); margin-top: 2px; }
 
+    /* ── Metal craft shop (Sloomi/Kzubug's smithing counter) ─── */
+    .mc-tool-row { flex-direction: column; align-items: stretch; }
+    .mc-tool-row .sh-icon { align-self: flex-start; }
+    .mc-tool-controls { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .mc-tool-controls select {
+      flex: 1; min-width: 140px; font-size: 11px; padding: 4px 6px;
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+    }
+
     /* ── Alchemy panel ──────────────────────────────────────── */
     .alch-reagent-row.selected { border-color: rgba(178,140,220,0.55); background: rgba(178,140,220,0.1); }
     .alch-count { color: var(--muted); font-size: 10px; margin-left: 4px; }
