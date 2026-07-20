@@ -21522,16 +21522,27 @@
         const smooth = t => t * t * (3 - 2 * t);
         const PATH_DY = -0.05; // shallow — a worn groove, not a trench
 
+        // Y[] stays tier-independent (local worn-groove height only) since
+        // PATH_THRESH below is tuned against it — positions[] is what
+        // actually renders, and separately bakes in each vertex's owning
+        // tile's own elevTier so a path network that sits on a plateau
+        // doesn't render pinned to ground level while the plateau ground
+        // around it sits PLATEAU_UNIT higher (previously: a path crossing a
+        // plateau rendered as a hole cut through the mesa, the flat patch
+        // sunk far below the actual elevated surface).
         const Y = new Float32Array(GW * GH);
         const positions = new Float32Array(GW * GH * 3);
         for (let gj = 0; gj < GH; gj++)
           for (let gi = 0; gi < GW; gi++) {
             const vx = minC + gi * STEP, vz = minR + gj * STEP;
             const blend = smooth(Math.min(1, Math.max(0, mask[gj*GW+gi])));
-            const y = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
+            const localY = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
+            const tci = Math.min(bw - 1, Math.floor(gi / CELLS));
+            const tcj = Math.min(bh - 1, Math.floor(gj / CELLS));
+            const tierY = (srcGrid[minR + tcj]?.[minC + tci]?.elevTier || 0) * PLATEAU_UNIT;
             const k = gj*GW+gi;
-            Y[k] = y;
-            positions[k*3] = vx; positions[k*3+1] = y; positions[k*3+2] = vz;
+            Y[k] = localY;
+            positions[k*3] = vx; positions[k*3+1] = tierY + localY; positions[k*3+2] = vz;
           }
 
         const PATH_THRESH = -0.013; // tuned for PATH_DY=-0.05 after the blur softens the mask
