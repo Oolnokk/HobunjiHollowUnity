@@ -883,6 +883,52 @@ window.FoliageGenerator = (() => {
       barkColorHex: 0x4a3b33,
       leafTexture: 'assets/leaves/leaves_shadewood.png',
       scaleMul: 0.5
+    },
+    // Ported from the standalone tool's ASSET_TYPE_DEFAULTS.Bush — a proper
+    // small leafy bush (short trunk, no roots, two low branch tiers with
+    // many short twigs, several leaf cards fanned per twig), used for
+    // wilderness-generator 'bush' objects instead of a full tree. Fields
+    // the standalone tool leaves at its own global defaults are spelled out
+    // here explicitly (radialSegments/ringSegments, trunkBend/Wonk/Twist/
+    // Noise, knotTaper/Curl/Wonk, leaf placement) rather than silently
+    // relying on this file's per-field `?? fallback` defaults matching.
+    bush: {
+      radialSegments: 6, ringSegments: 8,
+      trunkLength: 0.55, trunkRadius: 0.08, trunkTaper: 0.90, trunkBend: 0.65,
+      trunkWonk: 0.55, trunkWonkScale: 1.35, trunkTwist: 0.55,
+      trunkNoise: 0.55, trunkNoiseScale: 2.2, trunkNoiseOctaves: 3,
+      rootsEnabled: false,
+      knotEnabled: true, knotAt: 0.18, knotTiers: 2, knotTierSpacing: 0.06,
+      knotCount: 14, knotLength: 0.65, knotRadius: 0.045, knotTaper: 0.82,
+      knotUpDownBias: 0.35, knotCurl: 0.25, knotWonk: 0.55,
+      leavesPerBranch: 7, leafAlong01: 0.55, leafLength: 0.85, leafWidth: 0.42,
+      leafRandYawDeg: 180, leafRandPitchDeg: 55, leafRandRollDeg: 30,
+      leafRadial: 0.18, leafAttachToSurface: true, leafSurfaceClearance: 0.02,
+      leafSurfaceStackStep: 0.06, leafSpread: 1.0,
+      leafJitterAlong: 0.12, leafJitterSide: 0.05, leafJitterNormal: 0.08,
+      leafBottomFacesTrunk: true, leafOffsetX: 0, leafOffsetY: 0, leafOffsetZ: 0,
+      leafYawDeg: 0, leafPitchDeg: 0, leafRollDeg: 0,
+      leafStemUp: true, trunkRollBiasDist: 0.25,
+      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 1,
+      barkColorHex: 0x4a3b33,
+      leafTexture: 'assets/leaves/leaf_1.png',
+      scaleMul: 1
+    },
+    // Ported from ASSET_TYPE_DEFAULTS.Stump — trunk + roots, no branches or
+    // leaves — scaled up a bit for a "big old stump" read, with a flat cap
+    // disc on top (capTop) since a plain open tube end reads as hollow.
+    // Used for wilderness-generator 'beehive' objects.
+    stump: {
+      radialSegments: 6, ringSegments: 6,
+      trunkLength: 0.85, trunkRadius: 0.42, trunkTaper: 0.92,
+      trunkBend: 0.2, trunkWonk: 0.55, trunkWonkScale: 1.35, trunkTwist: 0.2,
+      trunkNoise: 0.55, trunkNoiseScale: 2.2, trunkNoiseOctaves: 3,
+      rootsEnabled: true, rootCount: 6, rootLength: 0.75, rootRadius: 0.17,
+      rootTaper: 0.78, rootSpread: 0.9, rootCurl: 0.55, rootWonk: 0.55,
+      knotEnabled: false,
+      capTop: true,
+      barkColorHex: 0x4a3b33,
+      scaleMul: 1
     }
   };
 
@@ -923,6 +969,20 @@ window.FoliageGenerator = (() => {
       radiusFn: (t01) => Math.max(1e-4, trunkRad * Math.pow(taper, t01 * RINGS))
     });
     woodGeoms.push(trunk.geom);
+
+    // Flat cap disc on the trunk's open top end — a plain tube end reads as
+    // hollow, which is fine for a tree lost in its own canopy but obvious on
+    // a stump. capTop is opt-in per preset (see TREE_PRESETS.stump).
+    if (preset.capTop) {
+      const topPt = trunk.spine.pts[trunk.spine.pts.length - 1];
+      const topTan = trunk.spine.tangents[trunk.spine.tangents.length - 1].clone().normalize();
+      const topRadius = Math.max(1e-4, trunkRad * Math.pow(taper, RINGS));
+      const capGeom = new T.CircleGeometry(topRadius, RADIAL);
+      const capQuat = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 0, 1), topTan);
+      const capMatrix = new T.Matrix4().compose(topPt, capQuat, new T.Vector3(1, 1, 1));
+      capGeom.applyMatrix4(capMatrix);
+      woodGeoms.push(capGeom);
+    }
 
     // Roots
     if (preset.rootsEnabled) {
@@ -1054,6 +1114,8 @@ window.FoliageGenerator = (() => {
         const trunkDirAtBase = trunkTans[nearestIdx];
         const trunkPRef = firstOrigin.clone().addScaledVector(trunkDirAtBase, -rollBiasDist);
 
+        const leavesPerBranch = Math.max(0, Math.floor(preset.leavesPerBranch ?? 1));
+
         for (const seg of branchSegs) {
           const { a: origin, b: tip, baseRadius: branchRad, taperPerRing: segTaper, rings: segRings } = seg;
           const distL = Math.max(1e-4, origin.distanceTo(tip));
@@ -1070,28 +1132,84 @@ window.FoliageGenerator = (() => {
           yAx.crossVectors(z, xAx).normalize();
           const basisM = new T.Matrix4().makeBasis(xAx, yAx, z);
           const prismQuat = new T.Quaternion().setFromRotationMatrix(basisM);
+          const surfaceRadiusAt = (zLocal) => {
+            const t01 = clamp01((zLocal / distL) + 0.5);
+            return branchRad * Math.pow(segTaper, t01 * segRings);
+          };
 
-          const midRadius = branchRad * Math.pow(segTaper, segRings * 0.5);
-          const localPos = new T.Vector3(
-            (preset.leafOffsetX || 0),
-            midRadius + Math.max(0, preset.leafSurfaceClearance || 0) + (preset.leafOffsetY || 0),
-            (preset.leafOffsetZ || 0)
-          );
+          const placeLeafCard = (localPos, localEuler, scaleY) => {
+            const localQuat = new T.Quaternion().setFromEuler(localEuler);
+            const worldQuat = prismQuat.clone().multiply(localQuat);
+            const worldPos = mid.clone().add(localPos.clone().applyQuaternion(prismQuat));
+            const m = new T.Matrix4().compose(worldPos, worldQuat, new T.Vector3(preset.leafWidth, scaleY, 1));
+            const g = unitLeaf.clone();
+            g.applyMatrix4(m);
+            leafGeoms.push(g);
+          };
 
-          const localQuat = new T.Quaternion().setFromEuler(new T.Euler(
-            Math.PI * 0.5 + degToRad(preset.leafPitchDeg || 0),
-            degToRad(preset.leafYawDeg || 0),
-            degToRad(preset.leafRollDeg || 0),
-            'XYZ'
-          ));
+          if (leavesPerBranch <= 1) {
+            // Single big textured "frond" spanning the whole branch (matches
+            // the source tool's singleLeafMode) — lies flat on the branch's
+            // top face (the +90° X pre-rotation), then pitch/yaw/roll tilt it.
+            const midRadius = surfaceRadiusAt(0);
+            const localPos = new T.Vector3(
+              (preset.leafOffsetX || 0),
+              midRadius + Math.max(0, preset.leafSurfaceClearance || 0) + (preset.leafOffsetY || 0),
+              (preset.leafOffsetZ || 0)
+            );
+            const localEuler = new T.Euler(
+              Math.PI * 0.5 + degToRad(preset.leafPitchDeg || 0),
+              degToRad(preset.leafYawDeg || 0),
+              degToRad(preset.leafRollDeg || 0),
+              'XYZ'
+            );
+            const scaleY = preset.leafStemUp !== false ? -distL : distL;
+            placeLeafCard(localPos, localEuler, scaleY);
+          } else {
+            // Several smaller leaf cards fanned symmetrically left/right off
+            // the branch surface (matches the source tool's multi-leaf
+            // branch) — used by bushy/leafy presets instead of trees.
+            const zBase = lerp(-distL * 0.5, distL * 0.5, clamp01(preset.leafAlong01 ?? 0.72));
+            const spread = Number.isFinite(preset.leafSpread) ? preset.leafSpread : 1.0;
+            const baseLeafLength = preset.leafLength || 0.5;
+            for (let k = 0; k < leavesPerBranch; k++) {
+              const localPos = new T.Vector3(0, 0, zBase);
+              let sideIndex = 0;
+              if (k > 0) {
+                const step = Math.ceil(k / 2);
+                sideIndex = (k % 2 === 1) ? -step : step;
+              }
+              let radial = Number.isFinite(preset.leafRadial) ? preset.leafRadial : 0.18;
+              if (preset.leafAttachToSurface !== false) {
+                const rSurf = surfaceRadiusAt(localPos.z);
+                const base = rSurf + Math.max(0, preset.leafSurfaceClearance || 0);
+                const stack = Math.max(0, preset.leafSurfaceStackStep || 0);
+                const extra = Math.max(0, Math.abs(sideIndex) - 1) * stack;
+                radial = base + extra;
+              }
+              localPos.x = sideIndex * radial;
+              if (k > 0) {
+                localPos.z += (rand() - 0.5) * (preset.leafJitterAlong ?? 0.12);
+                localPos.x += (rand() - 0.5) * (preset.leafJitterSide ?? 0.05) * spread;
+                localPos.y += (rand() - 0.5) * (preset.leafJitterNormal ?? 0.08) * spread;
+              }
+              localPos.x += preset.leafOffsetX || 0;
+              localPos.y += preset.leafOffsetY || 0;
+              localPos.z += preset.leafOffsetZ || 0;
 
-          const worldQuat = prismQuat.clone().multiply(localQuat);
-          const worldPos = mid.clone().add(localPos.clone().applyQuaternion(prismQuat));
-          const leafScaleY = preset.leafStemUp !== false ? -distL : distL;
-          const m = new T.Matrix4().compose(worldPos, worldQuat, new T.Vector3(preset.leafWidth, leafScaleY, 1));
-          const g = unitLeaf.clone();
-          g.applyMatrix4(m);
-          leafGeoms.push(g);
+              const yawJ = (k === 0) ? 0 : (rand() * 2 - 1) * degToRad(preset.leafRandYawDeg || 0);
+              const pitchJ = (rand() * 2 - 1) * degToRad(preset.leafRandPitchDeg || 0);
+              const rollJ = (rand() * 2 - 1) * degToRad(preset.leafRandRollDeg || 0);
+              const localEuler = new T.Euler(
+                degToRad(preset.leafPitchDeg || 0) + pitchJ,
+                degToRad(preset.leafYawDeg || 0) + yawJ,
+                degToRad(preset.leafRollDeg || 0) + rollJ + (preset.leafBottomFacesTrunk !== false ? Math.PI * 0.5 : 0),
+                'XYZ'
+              );
+              const scaleY = preset.leafStemUp !== false ? -baseLeafLength : baseLeafLength;
+              placeLeafCard(localPos, localEuler, scaleY);
+            }
+          }
         }
       }
     }
@@ -1147,6 +1265,14 @@ window.FoliageGenerator = (() => {
     buildShadewoodMesh(col, row) {
       const seedU32 = xfnv1a(`sw_${col}_${row}`);
       return buildConiferTreeGroup(TREE_PRESETS.shadewood, seedU32);
+    },
+    buildWildernessBushMesh(col, row) {
+      const seedU32 = xfnv1a(`wb_${col}_${row}`);
+      return buildConiferTreeGroup(TREE_PRESETS.bush, seedU32);
+    },
+    buildStumpMesh(col, row) {
+      const seedU32 = xfnv1a(`st_${col}_${row}`);
+      return buildConiferTreeGroup(TREE_PRESETS.stump, seedU32);
     }
   };
 })();

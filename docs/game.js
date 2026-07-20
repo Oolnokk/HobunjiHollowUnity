@@ -8822,16 +8822,27 @@
           if (tile.type === TileType.SHRUB) {
             _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             if (window.FoliageGenerator) {
-              // Northern Cliffs and the Southern Cloud Forest get their own
-              // tree species (see FoliageGenerator's TREE_PRESETS) instead of
-              // the generic bush — those builders already bake in real-world
-              // trunk/canopy scale, so skip the 2x bush multiplier for them.
-              const isCrownedPine = mapId === 'map_northern_cliffs';
-              const isShadewood   = mapId === 'map_southern_cloud_forest';
+              // Which generated object this SHRUB tile came from (see
+              // terrain-preview.js's floraKind) decides its mesh: a real
+              // tree only for 'copse' (and only in a zone with a native
+              // species — see TREE_PRESETS), a proper small bush for
+              // 'bush', a big old stump for 'beehive' (in lieu of a real
+              // beehive prop), and the generic shrub for everything else
+              // (fruitBush/mushroomPatch/unknown/hand-authored data with no
+              // floraKind at all — which also covers every other zone that
+              // has no dedicated tree species).
+              const isTreeZone = mapId === 'map_northern_cliffs' || mapId === 'map_southern_cloud_forest';
+              const isCrownedPine = isTreeZone && mapId === 'map_northern_cliffs' && (tile.floraKind === 'copse' || !tile.floraKind);
+              const isShadewood   = isTreeZone && mapId === 'map_southern_cloud_forest' && (tile.floraKind === 'copse' || !tile.floraKind);
+              const isBush   = tile.floraKind === 'bush';
+              const isStump  = tile.floraKind === 'beehive';
               const vegGroup = isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
                              : isShadewood   ? window.FoliageGenerator.buildShadewoodMesh(c, r)
+                             : isBush        ? window.FoliageGenerator.buildWildernessBushMesh(c, r)
+                             : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
                              : window.FoliageGenerator.buildShrubMesh(c, r);
-              if (!isCrownedPine && !isShadewood) vegGroup.scale.multiplyScalar(2);
+              const isNativeBuild = isCrownedPine || isShadewood || isBush || isStump;
+              if (!isNativeBuild) vegGroup.scale.multiplyScalar(2);
               vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS) + tierY, cz);
               zScene.add(vegGroup);
               _markOutline(vegGroup);
@@ -8883,13 +8894,20 @@
         // elevTier (rendered below as continuous heightfield mesas, one per tier
         // transition, in the same visual style as the distant boundary terrain beyond
         // the playable area) and, for ramp tiles, its own slope-following rampElevation.
-        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline } of (zoneData?.tiles || [])) {
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind } of (zoneData?.tiles || [])) {
           if (!zGrid[r]?.[c]) continue;
           zGrid[r][c].type = type || TileType.GRASS;
           zGrid[r][c].elevTier = elevTier || 0;
           zGrid[r][c].skipFloor = !!skipFloor;
           zGrid[r][c].incline = !!incline;
           if (type === TileType.RAMP) zGrid[r][c].rampElevation = rampElevation || 0;
+          // Which generated object (copse/bush/fruitBush/mushroomPatch/beehive)
+          // produced this SHRUB tile — see terrain-preview.js's floraKind and
+          // _buildZoneFloorMeshes below. Missing/undefined (hand-authored map
+          // data, or a tile whose object landed on a plateau footprint the
+          // merge doesn't track this through) falls back to treating any
+          // SHRUB tile in a tree zone as a real tree — the prior behavior.
+          if (type === TileType.SHRUB) zGrid[r][c].floraKind = floraKind || null;
         }
         // Ramp curtains: a non-ramp cell beside a ramp cell gets folded into the
         // ramp's slope as a 1-tile-wide skirt instead of sitting flat — this is
@@ -17614,16 +17632,20 @@
         renderCalendarMonthView();
       });
 
-      // A SHRUB tile in Northern Cliffs or the Southern Cloud Forest renders as
-      // a real tree (crowned pine / shadewood — see FoliageGenerator's
-      // TREE_PRESETS and _buildZoneFloorMeshes' mapId switch), not a plain
-      // decorative bush. Those need a proper axe-chop hold to fell (see
-      // CHOP_TREE_STAGES) rather than being destroyed for free by a shovel
-      // dig or a wide machete/axe swing.
+      // A 'copse'-sourced SHRUB tile in Northern Cliffs or the Southern Cloud
+      // Forest renders as a real tree (crowned pine / shadewood — see
+      // FoliageGenerator's TREE_PRESETS and _buildZoneFloorMeshes' floraKind
+      // switch), not a plain decorative bush/stump. Those need a proper
+      // axe-chop hold to fell (see CHOP_TREE_STAGES) rather than being
+      // destroyed for free by a shovel dig or a wide machete/axe swing.
+      // Missing floraKind (hand-authored map data with no generator
+      // metadata) defaults to "is a tree", matching _buildZoneFloorMeshes'
+      // own fallback.
       function isChoppableTreeTile(col, row) {
         if (currentArea !== 'map_northern_cliffs' && currentArea !== 'map_southern_cloud_forest') return false;
         const tile = getActiveGrid()[row]?.[col];
-        return !!tile && !tile.crop && tile.type === TileType.SHRUB;
+        if (!tile || tile.crop || tile.type !== TileType.SHRUB) return false;
+        return tile.floraKind === 'copse' || !tile.floraKind;
       }
       function treeLogItemKey() {
         return currentArea === 'map_southern_cloud_forest' ? 'shadewoodLog' : 'pineLog';
