@@ -203,6 +203,68 @@ window.FoliageGenerator = (() => {
     const col = new T.Color().setHSL(h360 / 360, s, l);
     return new T.MeshLambertMaterial({ color: col });
   }
+  function hexBarkMat(hex) {
+    return new T.MeshLambertMaterial({ color: new T.Color(hex) });
+  }
+
+  // ─── Geometry merge (position + uv, for textured leaf cards) ─────────────
+  function mergeGeomsWithUV(geoms) {
+    let totalV = 0, totalI = 0;
+    for (const g of geoms) {
+      if (!g?.getAttribute('position')?.count || !g.index) continue;
+      totalV += g.getAttribute('position').count;
+      totalI += g.index.count;
+    }
+    const pos = new Float32Array(totalV * 3);
+    const uv  = new Float32Array(totalV * 2);
+    const idx = new (totalV > 65535 ? Uint32Array : Uint16Array)(totalI);
+    let vOff = 0, iOff = 0;
+    for (const g of geoms) {
+      const pa = g.getAttribute('position');
+      const ua = g.getAttribute('uv');
+      const ia = g.index;
+      if (!pa || !ia) continue;
+      pos.set(pa.array, vOff * 3);
+      if (ua) uv.set(ua.array, vOff * 2);
+      const arr = ia.array;
+      for (let i = 0; i < arr.length; i++) idx[iOff + i] = arr[i] + vOff;
+      vOff += pa.count;
+      iOff += arr.length;
+    }
+    const out = new T.BufferGeometry();
+    out.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    out.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
+    out.setIndex(new T.BufferAttribute(idx, 1));
+    return out;
+  }
+
+  // ─── Leaf card textures (lazy-loaded, cached, shared across every tree
+  // instance of a given kind) ────────────────────────────────────────────
+  const _leafTexCache = new Map();
+  function getLeafTexture(path) {
+    let tex = _leafTexCache.get(path);
+    if (!tex) {
+      tex = new T.TextureLoader().load(path);
+      tex.colorSpace = T.SRGBColorSpace;
+      _leafTexCache.set(path, tex);
+    }
+    return tex;
+  }
+  const _leafMatCache = new Map();
+  function getLeafCardMaterial(preset) {
+    let mat = _leafMatCache.get(preset);
+    if (!mat) {
+      const tex = getLeafTexture(preset.leafTexture);
+      const col = new T.Color().setHSL((preset.leafTintH ?? 115) / 360, preset.leafTintS ?? 0.55, preset.leafTintL ?? 0.35);
+      mat = new T.MeshBasicMaterial({
+        map: tex, color: col, transparent: true,
+        opacity: preset.leafOpacity ?? 0.92, side: T.DoubleSide,
+        depthWrite: false, alphaTest: 0.05
+      });
+      _leafMatCache.set(preset, mat);
+    }
+    return mat;
+  }
 
   // ─── Needle placement (local-space, no scene required) ────────────────────
   // Places thin cylinder needles along a branch spine and returns merged geom.
@@ -778,6 +840,257 @@ window.FoliageGenerator = (() => {
     return group;
   }
 
+  // ─── Procedural conifer/canopy trees (trunk + roots + branch tiers +
+  // textured leaf cards), ported from the standalone HAFoliageGenerator tool.
+  // One preset per species; buildConiferTreeGroup does the actual assembly
+  // and applies seeded per-instance variation (trunk height, branch length,
+  // lean direction) so a cluster of the same species doesn't look copy-pasted.
+  const TREE_PRESETS = {
+    crownedPine: {
+      radialSegments: 8, ringSegments: 12,
+      trunkLength: 6.86, trunkRadius: 0.305, trunkTaper: 0.91, trunkBend: 1.02,
+      trunkWonk: 0, trunkWonkScale: 6, trunkTwist: 1.78,
+      trunkNoise: 0.39, trunkNoiseScale: 3.8, trunkNoiseOctaves: 2,
+      rootsEnabled: true, rootCount: 6, rootLength: 2.06, rootRadius: 0.164,
+      rootTaper: 0.922, rootSpread: 0.9, rootCurl: 0.28, rootWonk: 0.28,
+      knotEnabled: true, knotAt: 0.654, knotTiers: 5, knotTierSpacing: 0.133,
+      knotTierLengthDelta: -0.142, knotTierRadiusDelta: -0.142,
+      knotCount: 5, knotLength: 2.66, knotRadius: 0.104, knotTaper: 0.926,
+      knotUpDownBias: -0.63, knotCurl: 0.76, knotWonk: 0,
+      leafWidth: 7, leafOffsetX: -0.6, leafOffsetY: -0.25, leafOffsetZ: -2,
+      leafYawDeg: 180, leafPitchDeg: 88, leafRollDeg: -69,
+      leafSurfaceClearance: 0, leafStemUp: true,
+      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 0.92,
+      barkColorHex: 0x4a3b33,
+      leafTexture: 'assets/leaves/leaves_crowned_pine.png'
+    },
+    shadewood: {
+      radialSegments: 8, ringSegments: 10,
+      trunkLength: 15, trunkRadius: 0.6, trunkTaper: 0.93, trunkBend: 0.55,
+      trunkWonk: 0.85, trunkWonkScale: 1.6, trunkTwist: 0.7,
+      trunkNoise: 0.9, trunkNoiseScale: 2.2, trunkNoiseOctaves: 3,
+      rootsEnabled: true, rootCount: 9, rootLength: 2.2, rootRadius: 0.14,
+      rootTaper: 0.78, rootSpread: 1.25, rootCurl: 0.1, rootWonk: 0.55,
+      knotEnabled: true, knotAt: 0.7, knotTiers: 6, knotTierSpacing: 0.08,
+      knotTierLengthDelta: 0.75, knotTierRadiusDelta: -0.3,
+      knotCount: 7, knotLength: 3.5, knotRadius: 0.4, knotTaper: 0.82,
+      knotUpDownBias: -0.2, knotCurl: 1, knotWonk: 0.55,
+      leafWidth: 5, leafOffsetX: 0, leafOffsetY: -0.9, leafOffsetZ: 0,
+      leafYawDeg: 0, leafPitchDeg: 180, leafRollDeg: 0,
+      leafSurfaceClearance: 0.02, leafStemUp: true,
+      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 0.92,
+      barkColorHex: 0x4a3b33,
+      leafTexture: 'assets/leaves/leaves_shadewood.png'
+    }
+  };
+
+  function buildConiferTreeGroup(preset, seedU32) {
+    const rand = mulberry32(seedU32);
+    const DOWN = new T.Vector3(0, -1, 0);
+    const UP   = new T.Vector3(0,  1, 0);
+    const RADIAL = Math.max(4, Math.floor(preset.radialSegments));
+    const RINGS  = Math.max(2, Math.floor(preset.ringSegments));
+    const taper  = clamp(preset.trunkTaper, 0.45, 0.9995);
+
+    // Per-instance variation so repeated instances in a cluster read as
+    // distinct trees: trunk height, branch length, overall size, and lean
+    // direction (the underlying bend math tilts every perfectly-vertical
+    // trunk around the same fixed axis, so a random yaw is what actually
+    // makes "wonk direction" differ from tree to tree).
+    const trunkLenMul  = 1 + (rand() - 0.5) * 0.30;
+    const trunkRadMul  = 1 + (rand() - 0.5) * 0.16;
+    const branchLenMul = 1 + (rand() - 0.5) * 0.36;
+    const instScale     = 1 + (rand() - 0.5) * 0.14;
+    const instYaw        = rand() * Math.PI * 2;
+
+    const woodGeoms = [];
+    const leafGeoms = [];
+    const unitLeaf = new T.PlaneGeometry(1, 1, 1, 1);
+
+    // Trunk
+    const trunkLen = Math.max(1e-4, preset.trunkLength * trunkLenMul);
+    const trunkRad = Math.max(1e-4, preset.trunkRadius * trunkRadMul);
+    const trunk = buildWonkyChain({
+      seedU32: seedU32 ^ 0xA11CE, length: trunkLen,
+      ringSegments: RINGS, radialSegments: RADIAL,
+      origin: new T.Vector3(0, 0, 0), direction: UP,
+      bend: clamp(preset.trunkBend, 0, 2), wonk: clamp(preset.trunkWonk, 0, 2),
+      wonkScale: Math.max(0.05, preset.trunkWonkScale), twist: clamp(preset.trunkTwist, 0, 2),
+      noiseAmt: clamp(preset.trunkNoise, 0, 2), noiseScale: Math.max(0.05, preset.trunkNoiseScale),
+      noiseOctaves: preset.trunkNoiseOctaves, gravityDir: DOWN, curl: 0,
+      radiusFn: (t01) => Math.max(1e-4, trunkRad * Math.pow(taper, t01 * RINGS))
+    });
+    woodGeoms.push(trunk.geom);
+
+    // Roots
+    if (preset.rootsEnabled) {
+      const count = Math.max(0, Math.floor(preset.rootCount));
+      const rootRings = Math.max(4, Math.floor(RINGS * 0.85));
+      const rootTaperPR = clamp(preset.rootTaper, 0.4, 0.999);
+      const baseN = trunk.spine.normals[0], baseB = trunk.spine.binormals[0], baseT = trunk.spine.tangents[0];
+      for (let i = 0; i < count; i++) {
+        const ang = (i / Math.max(1, count)) * Math.PI * 2 + (rand() - 0.5) * 0.35;
+        const spread = preset.rootSpread * (0.55 + 0.65 * rand());
+        const outward = baseN.clone().multiplyScalar(Math.cos(ang)).addScaledVector(baseB, Math.sin(ang)).normalize();
+        const attachR = trunkRad * (0.98 + 0.06 * rand());
+        const origin = trunk.spine.pts[0].clone().addScaledVector(outward, attachR).addScaledVector(baseT, (rand() - 0.5) * 0.03);
+        // Shallow downward bias — real surface roots flare mostly sideways;
+        // keep the dip gentle so root tips stay inside the ground slab
+        // (SLAB_H in game.js) instead of dangling below the terrain mesh.
+        const dir = outward.clone().multiplyScalar(1.0 + spread)
+          .add(new T.Vector3(0, -(0.16 + 0.10 * rand()), 0)).normalize();
+        const rootBaseRadius = Math.max(preset.rootRadius * (0.75 + 0.55 * rand()), attachR * 0.6);
+        const rampRings = Math.max(1, Math.floor(rootRings * 0.22));
+
+        const root = buildWonkyChain({
+          seedU32: seedU32 ^ (0xB00B1E + i * 1337),
+          length: preset.rootLength * (0.75 + 0.6 * rand()),
+          ringSegments: rootRings, radialSegments: RADIAL,
+          origin, direction: dir,
+          bend: clamp(preset.trunkBend * 0.35, 0, 2), wonk: clamp(preset.rootWonk, 0, 2),
+          wonkScale: Math.max(0.05, preset.trunkWonkScale * 1.2), twist: clamp(preset.trunkTwist * 0.6, 0, 2),
+          noiseAmt: clamp(preset.trunkNoise * 0.85, 0, 2), noiseScale: Math.max(0.05, preset.trunkNoiseScale * 1.15),
+          noiseOctaves: preset.trunkNoiseOctaves, gravityDir: DOWN, curl: clamp(preset.rootCurl, 0, 2),
+          radiusFn: (t01, ringIdx) => {
+            const s = clamp01(ringIdx / rampRings);
+            const smooth = s * s * (3 - 2 * s);
+            const blended = attachR + (rootBaseRadius - attachR) * smooth;
+            const taperExp = Math.max(0, ringIdx - rampRings);
+            return Math.max(1e-4, blended * Math.pow(rootTaperPR, taperExp));
+          }
+        });
+        woodGeoms.push(root.geom);
+      }
+    }
+
+    // Branch tiers ("knots") + one textured leaf card per branch
+    if (preset.knotEnabled) {
+      const trunkPts = trunk.spine.pts, trunkTans = trunk.spine.tangents;
+      const tiers = Math.max(1, Math.min(8, Math.floor(preset.knotTiers)));
+      const spacing = clamp(preset.knotTierSpacing, 0, 0.5);
+      const dLen = clamp(preset.knotTierLengthDelta ?? 0, -0.75, 0.75);
+      const dRad = clamp(preset.knotTierRadiusDelta ?? 0, -0.75, 0.75);
+      const center = clamp01(preset.knotAt);
+      const halfSpan = tiers <= 1 ? 0 : spacing * ((tiers - 1) * 0.5);
+      const startAt = clamp01(center - halfSpan), endAt = clamp01(center + halfSpan);
+      const baseCurl = clamp(preset.knotCurl ?? 0.25, 0, 2);
+      const baseBias = clamp(preset.knotUpDownBias, -1, 1);
+      const knotTaperPR = clamp(preset.knotTaper, 0.4, 0.999);
+      const biasVec = baseBias >= 0 ? UP : DOWN;
+      const biasAmt = Math.abs(baseBias);
+
+      // Bank reference for leaf orientation: the trunk's own lean direction
+      // at its base, shared by every branch on this tree so leaf cards read
+      // as consistently "hanging" off the canopy rather than each picking an
+      // arbitrary local frame.
+      const trunkBaseTan = trunk.spine.tangents[0].clone().normalize();
+
+      for (let tier = 0; tier < tiers; tier++) {
+        const tTier = tiers <= 1 ? 0 : tier / (tiers - 1);
+        const tierAt = tiers <= 1 ? center : lerp(startAt, endAt, tTier);
+        const f = clamp01(tierAt) * (trunkPts.length - 1);
+        const i0 = Math.max(0, Math.min(trunkPts.length - 2, Math.floor(f)));
+        const alpha = f - i0;
+        const anchor = trunkPts[i0].clone().lerp(trunkPts[i0 + 1], alpha);
+        const tan = trunkTans[i0].clone().lerp(trunkTans[i0 + 1], alpha).normalize();
+
+        let right = new T.Vector3().copy(tan).cross(UP);
+        if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+        right.normalize();
+        const up = new T.Vector3().copy(right).cross(tan).normalize();
+
+        const tierLenScale = clamp(lerp(1.0, 1.0 + dLen, tTier), 0.15, 3.0);
+        const tierRadScale = clamp(lerp(1.0, 1.0 + dRad, tTier), 0.15, 3.0);
+        const attachR = Math.max(1e-4, trunkRad * Math.pow(taper, tierAt * RINGS));
+
+        const count = Math.max(0, Math.floor(preset.knotCount));
+        for (let i = 0; i < count; i++) {
+          const a = (i / Math.max(1, count)) * Math.PI * 2 + (rand() - 0.5) * 0.4;
+          const outward = new T.Vector3().addScaledVector(right, Math.cos(a)).addScaledVector(up, Math.sin(a)).normalize();
+          const dir = new T.Vector3()
+            .addScaledVector(outward, 1.0)
+            .addScaledVector(biasVec, biasAmt * 1.35)
+            .addScaledVector(tan, 0.15)
+            .normalize();
+          dir.add(new T.Vector3((rand() - 0.5) * 0.12, (rand() - 0.5) * 0.10, (rand() - 0.5) * 0.12)).normalize();
+
+          const origin = anchor.clone().addScaledVector(outward, attachR).addScaledVector(tan, (rand() - 0.5) * 0.03);
+          const branchLen = Math.max(1e-4, preset.knotLength * branchLenMul * tierLenScale * (0.55 + 0.95 * rand()));
+          const branchRad = Math.max(1e-4, preset.knotRadius * tierRadScale * (0.75 + 0.5 * rand()));
+          const branchRings = Math.max(4, Math.floor(RINGS * 0.75));
+
+          const knot = buildWonkyChain({
+            seedU32: seedU32 ^ (0xC0FFEE + tier * 1009 + i * 271),
+            length: branchLen, ringSegments: branchRings, radialSegments: RADIAL,
+            origin, direction: dir,
+            bend: clamp(preset.trunkBend * 0.25, 0, 2), wonk: clamp(preset.knotWonk, 0, 2),
+            wonkScale: Math.max(0.05, preset.trunkWonkScale * 1.25), twist: clamp(preset.trunkTwist * 0.7, 0, 2),
+            noiseAmt: clamp(preset.trunkNoise * 0.9, 0, 2), noiseScale: Math.max(0.05, preset.trunkNoiseScale * 1.15),
+            noiseOctaves: preset.trunkNoiseOctaves, gravityDir: DOWN, curl: baseCurl,
+            radiusFn: (t01, ringIdx) => Math.max(1e-4, branchRad * Math.pow(knotTaperPR, ringIdx))
+          });
+          woodGeoms.push(knot.geom);
+
+          // Single big leaf card spanning the branch (matches both presets'
+          // leavesPerBranch=1 "frond" style rather than discrete leaflets).
+          const tip = knot.spine.pts[knot.spine.pts.length - 1];
+          const distL = Math.max(1e-4, origin.distanceTo(tip));
+          const z = tip.clone().sub(origin).normalize();
+          let yRef = trunkBaseTan.clone().multiplyScalar(-1);
+          let d = yRef.dot(z);
+          yRef.addScaledVector(z, -d);
+          if (yRef.lengthSq() < 1e-8) { yRef = UP.clone(); d = yRef.dot(z); yRef.addScaledVector(z, -d); }
+          if (yRef.lengthSq() < 1e-8) yRef.set(1, 0, 0);
+          yRef.normalize();
+          const xAx = new T.Vector3().crossVectors(yRef, z).normalize();
+          const yAx = new T.Vector3().crossVectors(z, xAx).normalize();
+          const basisM = new T.Matrix4().makeBasis(xAx, yAx, z);
+          const prismQuat = new T.Quaternion().setFromRotationMatrix(basisM);
+
+          const midRadius = branchRad * Math.pow(knotTaperPR, (knot.spine.pts.length - 1) * 0.5);
+          const localPos = new T.Vector3(
+            (preset.leafOffsetX || 0),
+            midRadius + Math.max(0, preset.leafSurfaceClearance || 0) + (preset.leafOffsetY || 0),
+            (preset.leafOffsetZ || 0)
+          );
+
+          const localQuat = new T.Quaternion().setFromEuler(new T.Euler(
+            Math.PI * 0.5 + degToRad(preset.leafPitchDeg || 0),
+            degToRad(preset.leafYawDeg || 0),
+            degToRad(preset.leafRollDeg || 0),
+            'XYZ'
+          ));
+
+          const mid = origin.clone().add(tip).multiplyScalar(0.5);
+          const worldQuat = prismQuat.clone().multiply(localQuat);
+          const worldPos = mid.clone().add(localPos.clone().applyQuaternion(prismQuat));
+          const leafScaleY = preset.leafStemUp !== false ? -distL : distL;
+          const m = new T.Matrix4().compose(worldPos, worldQuat, new T.Vector3(preset.leafWidth, leafScaleY, 1));
+          const g = unitLeaf.clone();
+          g.applyMatrix4(m);
+          leafGeoms.push(g);
+        }
+      }
+    }
+
+    const group = new T.Group();
+    if (woodGeoms.length) {
+      const merged = mergeGeoms(woodGeoms);
+      merged.computeVertexNormals();
+      group.add(new T.Mesh(merged, hexBarkMat(preset.barkColorHex ?? 0x4a3b33)));
+    }
+    if (leafGeoms.length) {
+      const merged = mergeGeomsWithUV(leafGeoms);
+      group.add(new T.Mesh(merged, getLeafCardMaterial(preset)));
+    }
+    unitLeaf.dispose();
+
+    group.rotation.y = instYaw;
+    group.scale.setScalar(instScale);
+    return group;
+  }
+  function degToRad(d) { return d * Math.PI / 180; }
+
   // ─── Public API ───────────────────────────────────────────────────────────
   return {
     buildNeedlegrainMesh(growth01, col, row) {
@@ -803,6 +1116,14 @@ window.FoliageGenerator = (() => {
     buildJungleTreeMesh(col, row) {
       const seedU32 = xfnv1a(`jt_${col}_${row}`);
       return buildJungleTreeGroup(seedU32);
+    },
+    buildCrownedPineMesh(col, row) {
+      const seedU32 = xfnv1a(`cp_${col}_${row}`);
+      return buildConiferTreeGroup(TREE_PRESETS.crownedPine, seedU32);
+    },
+    buildShadewoodMesh(col, row) {
+      const seedU32 = xfnv1a(`sw_${col}_${row}`);
+      return buildConiferTreeGroup(TREE_PRESETS.shadewood, seedU32);
     }
   };
 })();

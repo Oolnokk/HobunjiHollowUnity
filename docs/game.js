@@ -8822,8 +8822,16 @@
           if (tile.type === TileType.SHRUB) {
             _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             if (window.FoliageGenerator) {
-              const vegGroup = window.FoliageGenerator.buildShrubMesh(c, r);
-              vegGroup.scale.set(2, 2, 2);
+              // Northern Cliffs and the Southern Cloud Forest get their own
+              // tree species (see FoliageGenerator's TREE_PRESETS) instead of
+              // the generic bush — those builders already bake in real-world
+              // trunk/canopy scale, so skip the 2x bush multiplier for them.
+              const isCrownedPine = mapId === 'map_northern_cliffs';
+              const isShadewood   = mapId === 'map_southern_cloud_forest';
+              const vegGroup = isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
+                             : isShadewood   ? window.FoliageGenerator.buildShadewoodMesh(c, r)
+                             : window.FoliageGenerator.buildShrubMesh(c, r);
+              if (!isCrownedPine && !isShadewood) vegGroup.scale.multiplyScalar(2);
               vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS) + tierY, cz);
               zScene.add(vegGroup);
               _markOutline(vegGroup);
