@@ -859,10 +859,11 @@ window.FoliageGenerator = (() => {
       knotUpDownBias: -0.63, knotCurl: 0.76, knotWonk: 0,
       leafWidth: 7, leafOffsetX: -0.6, leafOffsetY: -0.25, leafOffsetZ: -2,
       leafYawDeg: 180, leafPitchDeg: 88, leafRollDeg: -69,
-      leafSurfaceClearance: 0, leafStemUp: true,
+      leafSurfaceClearance: 0, leafStemUp: true, trunkRollBiasDist: 0.25,
       leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 0.92,
       barkColorHex: 0x4a3b33,
-      leafTexture: 'assets/leaves/leaves_crowned_pine.png'
+      leafTexture: 'assets/leaves/leaves_crowned_pine.png',
+      scaleMul: 0.75
     },
     shadewood: {
       radialSegments: 8, ringSegments: 10,
@@ -877,10 +878,11 @@ window.FoliageGenerator = (() => {
       knotUpDownBias: -0.2, knotCurl: 1, knotWonk: 0.55,
       leafWidth: 5, leafOffsetX: 0, leafOffsetY: -0.9, leafOffsetZ: 0,
       leafYawDeg: 0, leafPitchDeg: 180, leafRollDeg: 0,
-      leafSurfaceClearance: 0.02, leafStemUp: true,
+      leafSurfaceClearance: 0.02, leafStemUp: true, trunkRollBiasDist: 0.25,
       leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 0.92,
       barkColorHex: 0x4a3b33,
-      leafTexture: 'assets/leaves/leaves_shadewood.png'
+      leafTexture: 'assets/leaves/leaves_shadewood.png',
+      scaleMul: 0.5
     }
   };
 
@@ -979,11 +981,7 @@ window.FoliageGenerator = (() => {
       const biasVec = baseBias >= 0 ? UP : DOWN;
       const biasAmt = Math.abs(baseBias);
 
-      // Bank reference for leaf orientation: the trunk's own lean direction
-      // at its base, shared by every branch on this tree so leaf cards read
-      // as consistently "hanging" off the canopy rather than each picking an
-      // arbitrary local frame.
-      const trunkBaseTan = trunk.spine.tangents[0].clone().normalize();
+      const branchSegs = [];
 
       for (let tier = 0; tier < tiers; tier++) {
         const tTier = tiers <= 1 ? 0 : tier / (tiers - 1);
@@ -1031,23 +1029,49 @@ window.FoliageGenerator = (() => {
           });
           woodGeoms.push(knot.geom);
 
-          // Single big leaf card spanning the branch (matches both presets'
-          // leavesPerBranch=1 "frond" style rather than discrete leaflets).
-          const tip = knot.spine.pts[knot.spine.pts.length - 1];
+          const tip = knot.spine.pts[knot.spine.pts.length - 1].clone();
+          branchSegs.push({
+            a: origin.clone(), b: tip,
+            baseRadius: branchRad, taperPerRing: knotTaperPR,
+            rings: Math.max(1, knot.spine.pts.length - 1)
+          });
+        }
+      }
+
+      // Leaf cards: one big textured "frond" per branch, oriented the same
+      // way the source tool's prism frame does — Z along the branch, Y
+      // banked toward a single fixed point near the trunk base (not each
+      // branch's own local tangent), so the whole canopy reads consistently
+      // instead of every leaf picking an arbitrary local frame.
+      if (branchSegs.length) {
+        const rollBiasDist = preset.trunkRollBiasDist ?? 0.25;
+        const firstOrigin = branchSegs[0].a;
+        let nearestIdx = 0, bestD2 = Infinity;
+        for (let ti = 0; ti < trunkPts.length; ti++) {
+          const d2 = trunkPts[ti].distanceToSquared(firstOrigin);
+          if (d2 < bestD2) { bestD2 = d2; nearestIdx = ti; }
+        }
+        const trunkDirAtBase = trunkTans[nearestIdx];
+        const trunkPRef = firstOrigin.clone().addScaledVector(trunkDirAtBase, -rollBiasDist);
+
+        for (const seg of branchSegs) {
+          const { a: origin, b: tip, baseRadius: branchRad, taperPerRing: segTaper, rings: segRings } = seg;
           const distL = Math.max(1e-4, origin.distanceTo(tip));
+          const mid = origin.clone().add(tip).multiplyScalar(0.5);
           const z = tip.clone().sub(origin).normalize();
-          let yRef = trunkBaseTan.clone().multiplyScalar(-1);
-          let d = yRef.dot(z);
-          yRef.addScaledVector(z, -d);
-          if (yRef.lengthSq() < 1e-8) { yRef = UP.clone(); d = yRef.dot(z); yRef.addScaledVector(z, -d); }
-          if (yRef.lengthSq() < 1e-8) yRef.set(1, 0, 0);
-          yRef.normalize();
-          const xAx = new T.Vector3().crossVectors(yRef, z).normalize();
-          const yAx = new T.Vector3().crossVectors(z, xAx).normalize();
+
+          let yAx = trunkPRef.clone().sub(mid);
+          let d = yAx.dot(z);
+          yAx.addScaledVector(z, -d);
+          if (yAx.lengthSq() < 1e-8) { yAx = UP.clone(); d = yAx.dot(z); yAx.addScaledVector(z, -d); }
+          if (yAx.lengthSq() < 1e-8) yAx.set(1, 0, 0);
+          yAx.normalize();
+          const xAx = new T.Vector3().crossVectors(yAx, z).normalize();
+          yAx.crossVectors(z, xAx).normalize();
           const basisM = new T.Matrix4().makeBasis(xAx, yAx, z);
           const prismQuat = new T.Quaternion().setFromRotationMatrix(basisM);
 
-          const midRadius = branchRad * Math.pow(knotTaperPR, (knot.spine.pts.length - 1) * 0.5);
+          const midRadius = branchRad * Math.pow(segTaper, segRings * 0.5);
           const localPos = new T.Vector3(
             (preset.leafOffsetX || 0),
             midRadius + Math.max(0, preset.leafSurfaceClearance || 0) + (preset.leafOffsetY || 0),
@@ -1061,7 +1085,6 @@ window.FoliageGenerator = (() => {
             'XYZ'
           ));
 
-          const mid = origin.clone().add(tip).multiplyScalar(0.5);
           const worldQuat = prismQuat.clone().multiply(localQuat);
           const worldPos = mid.clone().add(localPos.clone().applyQuaternion(prismQuat));
           const leafScaleY = preset.leafStemUp !== false ? -distL : distL;
@@ -1086,7 +1109,7 @@ window.FoliageGenerator = (() => {
     unitLeaf.dispose();
 
     group.rotation.y = instYaw;
-    group.scale.setScalar(instScale);
+    group.scale.setScalar(instScale * (preset.scaleMul ?? 1));
     return group;
   }
   function degToRad(d) { return d * Math.PI / 180; }
