@@ -8774,8 +8774,13 @@
 
         const pathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS);
         if (pathNet) {
-          _addToBucket(TileType.PATH,  pathNet.pathGeo,  0, NORMAL_TOP, 0);
-          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
+          // Tiny lift above the plateau mesa lid (which shares this exact
+          // tier height wherever a path crosses a plateau — see
+          // buildPathNetworkGeo's elevTier fix) so the two coplanar surfaces
+          // don't z-fight; small enough to read as flush, not floating.
+          const PATH_Z_FIGHT_LIFT = 0.004;
+          _addToBucket(TileType.PATH,  pathNet.pathGeo,  0, NORMAL_TOP + PATH_Z_FIGHT_LIFT, 0);
+          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP + PATH_Z_FIGHT_LIFT, 0);
         }
 
         for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
