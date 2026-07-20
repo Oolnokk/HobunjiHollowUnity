@@ -14965,6 +14965,8 @@
         blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: 10, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
         greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: 9, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
+        pineLog:      { icon: '🪵', label: 'Pine Log',      cat: 'material', sellPrice: 6,  tags: ['Material', 'Wood', 'Northern Cliffs'],   desc: "A rough-cut log felled from a Northern Cliffs crowned pine. Good building timber." },
+        shadewoodLog: { icon: '🪵', label: 'Shadewood Log', cat: 'material', sellPrice: 9,  tags: ['Material', 'Wood', 'Cloud Forest'],       desc: 'A dense, dark log felled from a Southern Cloud Forest shadewood tree. Prized building timber.' },
         garWolfMeat: { icon: '🥩', label: 'Gar-wolf Meat', cat: 'material', sellPrice: 9, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a slain gar-wolf. Good for cooking or smoking.' },
         garWolfHide: { icon: '🟫', label: 'Gar-wolf Hide', cat: 'material', sellPrice: 14, tags: ['Material', 'Hide'], desc: 'A tough hide stripped from a slain gar-wolf.' },
         alphaGarWolfMeat: { icon: '🥩', label: 'Alpha Gar-wolf Meat', cat: 'material', sellPrice: 16, tags: ['Material', 'Meat'], desc: 'Prime meat butchered from a slain alpha gar-wolf.' },
@@ -17612,9 +17614,28 @@
         renderCalendarMonthView();
       });
 
-      function isDigRemovableVegetation(tile) {
+      // A SHRUB tile in Northern Cliffs or the Southern Cloud Forest renders as
+      // a real tree (crowned pine / shadewood — see FoliageGenerator's
+      // TREE_PRESETS and _buildZoneFloorMeshes' mapId switch), not a plain
+      // decorative bush. Those need a proper axe-chop hold to fell (see
+      // CHOP_TREE_STAGES) rather than being destroyed for free by a shovel
+      // dig or a wide machete/axe swing.
+      function isChoppableTreeTile(col, row) {
+        if (currentArea !== 'map_northern_cliffs' && currentArea !== 'map_southern_cloud_forest') return false;
+        const tile = getActiveGrid()[row]?.[col];
+        return !!tile && !tile.crop && tile.type === TileType.SHRUB;
+      }
+      function treeLogItemKey() {
+        return currentArea === 'map_southern_cloud_forest' ? 'shadewoodLog' : 'pineLog';
+      }
+
+      function isDigRemovableVegetation(tile, col, row) {
         // Used by shovel dig so day-one overgrowth can be destroyed by digging underneath it.
-        return !tile.crop && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB);
+        // Real trees (see isChoppableTreeTile) are excluded — they require a proper axe chop, not a free dig-through.
+        if (tile.crop) return false;
+        if (tile.type === TileType.WEEDS) return true;
+        if (tile.type !== TileType.SHRUB) return false;
+        return !(col != null && row != null && isChoppableTreeTile(col, row));
       }
 
       function blocksDiggingUnder(tile) {
@@ -17638,7 +17659,7 @@
             if (blocksDiggingUnder(tile)) return false;
             // An already-dug trench can be redug (single tap) once rain has silted it shallower.
             if (tile.type === TileType.TRENCH) return (tile.depth ?? 1) < 1;
-            return [TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type) || isDigRemovableVegetation(tile);
+            return [TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type) || isDigRemovableVegetation(tile, col, row);
           }
           if (action === 'fill') return tile.type === TileType.TRENCH;
           if (action === 'raise') return [TileType.GRASS, TileType.TILLED].includes(tile.type) && !tile.crop;
@@ -17666,7 +17687,7 @@
             if (blocksDiggingUnder(tile)) return false;
             // An already-dug trench can be redug (single tap) once rain has silted it shallower.
             if (tile.type === TileType.TRENCH) return (tile.depth ?? 1) < 1;
-            return [TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type) || isDigRemovableVegetation(tile);
+            return [TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type) || isDigRemovableVegetation(tile, col, row);
           }
           if (action === 'fill') return tile.type === TileType.TRENCH;
           if (action === 'raise') return [TileType.GRASS, TileType.TILLED].includes(tile.type) && !tile.crop;
@@ -17742,6 +17763,9 @@
         for (const t of targets) {
           const tile = tgrid[t.row][t.col];
           if (!tile.crop && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB)) {
+            // A real tree needs a proper held axe chop (see CHOP_TREE_STAGES) —
+            // a wide hack/slash cone shouldn't fell one for free mulch.
+            if (tile.type === TileType.SHRUB && isChoppableTreeTile(t.col, t.row)) continue;
             tile.type = TileType.GRASS;
             inventory.mulch = Math.min(99, inventory.mulch + 1);
             markTileDirty(t.col, t.row);
@@ -18218,7 +18242,7 @@
             awardToolUseMasteryXp('shovel');
             return { ok: true, message: 'Redug the trench back to full depth.' };
           }
-          const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile);
+          const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile, col, row);
           if (action === 'dig')   { tile.type = TileType.TRENCH; tile.depth = 1; }
           if (action === 'fill')  tile.type = TileType.GRASS;
           if (action === 'raise') tile.type = TileType.RAISED;
@@ -18233,6 +18257,22 @@
           if (action === 'smooth') tile.crop = CropType.NONE;
           awardToolUseMasteryXp('hoe');
           return { ok: true, message: action === 'till' ? 'Tilled a plantable bed.' : 'Smoothed the tile back into grass.' };
+        }
+
+        if (tool === 'axe' && action === 'chop' && isChoppableTreeTile(col, row)) {
+          // Felling a real tree — only reachable via a completed hold (see
+          // CHOP_TREE_STAGES/wouldStartCharge), unlike the instant clear
+          // below. Drops logs matching the zone's species instead of mulch.
+          const logKey = treeLogItemKey();
+          const logDef = ITEM_DEFS[logKey];
+          const amount = 2 + Math.floor(Math.random() * 2); // 2-3 logs
+          tile.type = TileType.GRASS;
+          tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          inventory[logKey] = Math.min(99, (inventory[logKey] || 0) + amount);
+          inventory.mulch = Math.min(99, inventory.mulch + 1);
+          markTileDirty(col, row);
+          awardToolUseMasteryXp('axe');
+          return { ok: true, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'} and 1 Mulch.` };
         }
 
         if (tool === 'machete' || tool === 'axe') {
@@ -18269,7 +18309,7 @@
             awardToolUseMasteryXp('pick');
             return { ok: true, message: 'Redug the trench back to full depth.' };
           }
-          const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile);
+          const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile, col, row);
           if (action === 'dig')   { tile.type = TileType.TRENCH; tile.depth = 1; }
           if (action === 'fill')  tile.type = TileType.GRASS;
           if (action === 'raise') tile.type = TileType.RAISED;
@@ -18356,6 +18396,10 @@
             const msg = "Only the farm's owner (or a granted farmhand) can do that here.";
             lastActionMessage = msg;
             showToast(msg, false);
+            return;
+          }
+          if (activeTool === 'axe') {
+            startChargeAction(getReticleTile(), CHOP_TREE_STAGES);
             return;
           }
           {
@@ -18468,7 +18512,7 @@
         if (currentArea === 'farm') {
           recomputeWater(false);
           if (result.ok !== false) markTileDirty(col, row);
-        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe')) {
+        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
           // Wilderness-zone counterpart of markTileDirty's farm mesh rebuild —
           // a dig/fill/raise/till/smooth just changed this tile's type, but a
           // zone's terrain is merged meshes built once rather than the farm's
@@ -22524,6 +22568,14 @@
       ];
       const FILL_TRENCH_STAGES = [...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP];
 
+      // Felling a real tree (see isChoppableTreeTile) — a short flurry of
+      // alternating forehand/backhand swings held through to the end, reusing
+      // the melee combo's own authored SWEEP_POSE (window.Combat.poses) via
+      // beginChargeStage's pose branch below instead of a plain tool-swing
+      // arc, so the chop actually looks like a proper weapon swing landing
+      // on the trunk rather than the generic single-axis sweep fallback.
+      const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55 }));
+
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
       let chargeAnimOverride = null;
@@ -22601,9 +22653,14 @@
       }
 
       // Whether starting this tool/action right now would kick off a multi-stage
-      // charge (new trench dig, or filling one in) rather than firing immediately.
-      // Redigging an existing shallow trench is a normal single-tap swing instead.
+      // charge (new trench dig, filling one in, or felling a real tree) rather
+      // than firing immediately. Redigging an existing shallow trench is a
+      // normal single-tap swing instead.
       function wouldStartCharge(tool, action) {
+        if (tool === 'axe' && action === 'chop') {
+          const reticle = getReticleTile();
+          return isChoppableTreeTile(reticle.col, reticle.row);
+        }
         if (!((tool === 'shovel' || tool === 'pick') && (action === 'dig' || action === 'fill'))) return false;
         const reticle = getReticleTile();
         const resolved = resolveDigFillAction(tool, action, reticle);
@@ -22627,12 +22684,32 @@
       function beginChargeStage() {
         if (!chargeAction) return;
         const stageDef = chargeAction.stages[chargeAction.stage];
-        const dur = stageDef.dur / getDigSpeedMultiplier();
+        // digSpeed only scales shovel/pick dig-and-fill stages — an axe chop's
+        // pose-driven stages (see CHOP_TREE_STAGES) swing at a fixed pace.
+        const dur = stageDef.pose ? stageDef.dur : stageDef.dur / getDigSpeedMultiplier();
         toolSwingDur = dur;
         toolSwingT   = dur;
         strikeFired  = false;
         pendingAction = null;
-        chargeAnimOverride = stageDef.anim || null;
+        if (stageDef.pose) {
+          // Reuses the melee combo's own authored sweep pose (see
+          // combat-combo.js's SWEEP_POSE, exported as window.Combat.poses)
+          // instead of a chargeAnimOverride arc — same pose-driven branch
+          // updateToolMesh already plays for weapon swings.
+          chargeAnimOverride  = null;
+          combatSwingAnim     = 'sweep';
+          combatSwingPose     = window.Combat?.poses?.SWEEP_POSE || null;
+          combatSwingSign     = stageDef.dirSign || 1;
+          combatSwingWindupFrac = 0.22;
+          combatSwingStrikeFrac = 0.55;
+          combatSwingPower    = 1;
+          combatSwingHoldS    = 0;
+          combatSwingAfflictionIds = [];
+        } else {
+          chargeAnimOverride = stageDef.anim || null;
+          combatSwingAnim  = null;
+          combatSwingPose  = null;
+        }
       }
 
       // Plays the weapon's existing arm-swing mesh animation for durationS without
@@ -22751,7 +22828,7 @@
         if (currentArea === 'farm') {
           recomputeWater(false);
           if (result.ok !== false) markTileDirty(col, row);
-        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe')) {
+        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
           // See the matching branch in firePendingAction — this is the charge-
           // action completion path (a brand-new trench dig or a fill-in is a
           // multi-stage charge, not a single tap), and needs the same fix.
