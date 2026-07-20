@@ -6170,7 +6170,14 @@
   // default (see defaultSettings).
   const ZONE_CONFIG = {
     map_northern_cliffs: { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5 },
-    map_southern_cloud_forest: { entrySide: 'north', preset: 'greatBasin', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
+    // trees/bushes well above the shared default (130/75) — this zone is
+    // meant to read as an actual dense forest, not a scattering of copses,
+    // now that FoliageGenerator gives it real full-size trees and the axe
+    // can fell them to cut paths through. The 1-tile tree spacing rule
+    // (see hasNearbyTreeObject) means the placer won't actually pack in
+    // anywhere near a literal one-tree-per-4-tiles grid, so this reads as
+    // "as dense as it'll go" rather than a precise final count.
+    map_southern_cloud_forest: { entrySide: 'north', preset: 'greatBasin', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0, trees: 700, bushes: 150 },
     map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
     map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
   };
