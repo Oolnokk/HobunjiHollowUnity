@@ -107,31 +107,32 @@
     return mesh;
   }
 
-  // Lerps `hex` toward white by `amount` (0..1) — used to build the brighter
-  // "hot core" layer of a neon glow without a second hand-authored palette.
-  function brightenColor(hex, amount) {
-    return new THREE.Color(hex).lerp(new THREE.Color(0xffffff), amount).getHex();
-  }
-
   // A resource-color arc segment (normal fill or an affliction's claimed
   // segment) rendered as three stacked layers so it reads as neon rather
   // than flat fill: a soft additive halo bled outward past the bar's own
   // edges, the ordinary crisp-color fill in the middle (unchanged from
-  // before), and a brighter additive "hot core" on top pushing the same
-  // shape toward saturated/white. Very dark colors (e.g. EXHAUSTED_COLOR)
-  // naturally glow little to nothing under this — additive blending a
-  // near-black color adds almost nothing, which is the correct look for a
-  // "drained" state anyway.
+  // before), and a narrower additive "hot core" running down the band's own
+  // center in the *same* color (not lerped toward white — doing that here
+  // desaturated the whole bar toward pale/washed-out instead of reading as
+  // a brighter version of its own hue). Stacking two additive layers of the
+  // identical saturated color brightens without shifting hue: each channel
+  // scales up together and clamps at that color's own max, it can't drift
+  // toward white the way mixing in white would. Very dark colors (e.g.
+  // EXHAUSTED_COLOR) naturally glow little to nothing under this —
+  // additive-blending a near-black color adds almost nothing, which is the
+  // correct look for a "drained" state anyway.
   const GLOW_HALO_PAD_FRAC = 0.16; // fraction of the bar's own radial width the halo bleeds past each edge
   const GLOW_HALO_OPACITY_MUL = 0.6;
-  const GLOW_HOT_OPACITY_MUL = 0.5;
-  const GLOW_HOT_BRIGHTEN = 0.55;
+  const GLOW_HOT_CORE_INSET_FRAC = 0.28; // fraction of the bar's own radial width the hot core is inset from each edge
+  const GLOW_HOT_OPACITY_MUL = 0.65;
   function makeGlowArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32) {
     const group = new THREE.Group();
-    const pad = (outerRadius - innerRadius) * GLOW_HALO_PAD_FRAC;
+    const width = outerRadius - innerRadius;
+    const pad = width * GLOW_HALO_PAD_FRAC;
+    const coreInset = width * GLOW_HOT_CORE_INSET_FRAC;
     group.add(makeArcMesh(innerRadius - pad, outerRadius + pad, startDeg, endDeg, color, opacity * GLOW_HALO_OPACITY_MUL, yOffset - 0.0006, segments, true));
     group.add(makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments));
-    group.add(makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, brightenColor(color, GLOW_HOT_BRIGHTEN), opacity * GLOW_HOT_OPACITY_MUL, yOffset + 0.0006, segments, true));
+    group.add(makeArcMesh(innerRadius + coreInset, outerRadius - coreInset, startDeg, endDeg, color, opacity * GLOW_HOT_OPACITY_MUL, yOffset + 0.0006, segments, true));
     return group;
   }
 
