@@ -21306,11 +21306,27 @@
       // fade — nothing needs to animate: the dissolved region just tracks
       // the sightline every frame, and reads as fully opaque on its own
       // whenever that line isn't actually passing through it.
+      // A hard, dithered `discard` rather than alpha blending — deliberately.
+      // Blending would mean setting material.transparent = true, which moves
+      // the material from the opaque render queue (perfectly depth-tested
+      // against everything, including other alpha-tested/transparent
+      // billboards) into the transparent queue, sorted back-to-front by
+      // distance. The player's own avatar is itself a transparent PNG-plane
+      // billboard ("PNG avatar attached to player_root") — once bark joined
+      // that same queue, draw-order between it and the avatar was no longer
+      // reliably depth-correct, and the avatar could vanish behind a "faded"
+      // tree exactly in the situation this feature targets (tool billboards
+      // apparently use a different, unaffected render path, which is why
+      // only the avatar was reported hidden). A `discard`-based hole keeps
+      // the material fully opaque outside the cut region — real geometry
+      // either fully there or fully gone, never blended — so depth testing
+      // against the avatar (or anything else) stays exactly as correct as it
+      // was before this feature existed. The dither pattern (screen-space
+      // hash vs. distance-from-line) gives the cut edge a soft, organic look
+      // without ever actually blending.
       const TREE_FADE_CUT_RADIUS = 0.85; // world units around the sightline
-      const TREE_FADE_MIN_ALPHA = 0.08;
       const _treeFadeActive = new Set(); // vegGroup refs with a compiled cutout shader
       function applySightlineCutout(material) {
-        material.transparent = true;
         material.onBeforeCompile = (shader) => {
           shader.uniforms.uCamPos = { value: new THREE.Vector3() };
           shader.uniforms.uPlayerPos = { value: new THREE.Vector3() };
@@ -21329,8 +21345,9 @@
               float tt = clamp(dot(ap, ab) / abLen2, 0.0, 1.0);
               vec3 closest = uCamPos + ab * tt;
               float d = distance(vFadeWorldPos, closest);
-              float cutFade = smoothstep(uCutRadius * 0.35, uCutRadius, d);
-              gl_FragColor.a *= mix(${TREE_FADE_MIN_ALPHA.toFixed(3)}, 1.0, cutFade);
+              float cutFade = smoothstep(uCutRadius * 0.5, uCutRadius, d);
+              float dither = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+              if (cutFade < dither) discard;
             }`
           );
           material.userData.fadeUniforms = shader.uniforms;
@@ -21440,22 +21457,37 @@
       scene.add(hemiLight);
 
       // ── Materials ─────────────────────────────────────────────────
+      // Plain MeshLambertMaterial has no light of its own, so under this
+      // game's storm/night dimming any of these can drop toward (0,0,0) --
+      // same problem the tree-bark material had (see hexBarkMat/hslMat in
+      // foliage-generator.js) and the grass billboard shader already solves
+      // with a 0.3 uLightMul floor. Ground rock tiles specifically went
+      // unnoticed until generator-placed rock objects off a plateau started
+      // actually rendering (see mergeZoneTiles' generatedObjectType exemption
+      // from the "downgrade to grass" rule) instead of always downgrading
+      // to invisible grass -- large rock mounds reading as solid black blobs
+      // under anything but bright light is this exact bug, not a texture one.
+      const TILE_EMISSIVE_FLOOR = 0.3;
+      function floorMat(colorArg) {
+        const col = colorArg instanceof THREE.Color ? colorArg : new THREE.Color(colorArg);
+        return new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(TILE_EMISSIVE_FLOOR) });
+      }
       const tileMats = {
-        grass:  new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108/360, 0.58, 0.28) }),
-        weeds:  new THREE.MeshLambertMaterial({ color: 0x247c3c }),
-        tilled: new THREE.MeshLambertMaterial({ color: 0x8a5b34 }),
-        trench: new THREE.MeshLambertMaterial({ color: 0x3a2510 }),
-        raised: new THREE.MeshLambertMaterial({ color: 0xc39a55 }),
-        paddy:  new THREE.MeshLambertMaterial({ color: 0x6aa263 }),
-        rock:   new THREE.MeshLambertMaterial({ color: 0x79807c }),
-        shrub:  new THREE.MeshLambertMaterial({ color: 0x356e36 }),
-        path:   new THREE.MeshLambertMaterial({ color: 0xb8956a }),
-        river:  new THREE.MeshLambertMaterial({ color: 0x3a4a3f }), // silty bed, seen through the water surface
-        stream: new THREE.MeshLambertMaterial({ color: 0x6b5a3a }), // sandy streambed
-        waterfall: new THREE.MeshLambertMaterial({ color: 0x3a4a3f }), // same bed as river — seen at the base of the curtain
+        grass:  floorMat(new THREE.Color().setHSL(108/360, 0.58, 0.28)),
+        weeds:  floorMat(0x247c3c),
+        tilled: floorMat(0x8a5b34),
+        trench: floorMat(0x3a2510),
+        raised: floorMat(0xc39a55),
+        paddy:  floorMat(0x6aa263),
+        rock:   floorMat(0x79807c),
+        shrub:  floorMat(0x356e36),
+        path:   floorMat(0xb8956a),
+        river:  floorMat(0x3a4a3f), // silty bed, seen through the water surface
+        stream: floorMat(0x6b5a3a), // sandy streambed
+        waterfall: floorMat(0x3a4a3f), // same bed as river — seen at the base of the curtain
       };
       // Floor material for vegetation tiles — matches weed foliage HSL color
-      const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
+      const vegFloorMat = floorMat(new THREE.Color().setHSL(108 / 360, 0.58, 0.28));
 
       // Recolors the grass ground material and the grass billboard tufts
       // (color + density) to the current regional season — vibrant/full for
@@ -21467,7 +21499,9 @@
       function applySeasonalGrassAppearance() {
         const season = currentSeason();
         tileMats.grass.color.copy(season.grassColor);
+        tileMats.grass.emissive.copy(season.grassColor).multiplyScalar(TILE_EMISSIVE_FLOOR);
         vegFloorMat.color.copy(season.grassColor);
+        vegFloorMat.emissive.copy(season.grassColor).multiplyScalar(TILE_EMISSIVE_FLOOR);
         _grassTint.copy(season.grassColor);
         if (grassBillboardMat) grassBillboardMat.uniforms.uDensity.value = season.grassDensity;
       }
