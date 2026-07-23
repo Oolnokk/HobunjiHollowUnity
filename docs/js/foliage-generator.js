@@ -259,7 +259,7 @@ window.FoliageGenerator = (() => {
       mat = new T.MeshBasicMaterial({
         map: tex, color: col, transparent: true,
         opacity: preset.leafOpacity ?? 0.92, side: T.DoubleSide,
-        depthWrite: false, alphaTest: 0.05
+        depthWrite: false, alphaTest: preset.leafAlphaCutoff ?? 0.5
       });
       _leafMatCache.set(preset, mat);
     }
@@ -846,6 +846,10 @@ window.FoliageGenerator = (() => {
   // and applies seeded per-instance variation (trunk height, branch length,
   // lean direction) so a cluster of the same species doesn't look copy-pasted.
   const TREE_PRESETS = {
+    // Updated from the standalone tool's "crowned_pine2" export (supersedes
+    // the original crowned_pine1 — knot tier deltas zeroed out, branchArchExtra
+    // added, and a substantially reworked leaf card: narrower, pitched flat
+    // instead of steep, and slid to the branch midpoint via leafAlong01).
     crownedPine: {
       radialSegments: 8, ringSegments: 12,
       trunkLength: 6.86, trunkRadius: 0.305, trunkTaper: 0.91, trunkBend: 1.02,
@@ -854,35 +858,50 @@ window.FoliageGenerator = (() => {
       rootsEnabled: true, rootCount: 6, rootLength: 2.06, rootRadius: 0.164,
       rootTaper: 0.922, rootSpread: 0.9, rootCurl: 0.28, rootWonk: 0.28,
       knotEnabled: true, knotAt: 0.654, knotTiers: 5, knotTierSpacing: 0.133,
-      knotTierLengthDelta: -0.142, knotTierRadiusDelta: -0.142,
+      knotTierLengthDelta: 0, knotTierRadiusDelta: 0, branchArchExtra: 0.35,
       knotCount: 5, knotLength: 2.66, knotRadius: 0.104, knotTaper: 0.926,
       knotUpDownBias: -0.63, knotCurl: 0.76, knotWonk: 0,
-      leafWidth: 7, leafOffsetX: -0.6, leafOffsetY: -0.25, leafOffsetZ: -2,
-      leafYawDeg: 180, leafPitchDeg: 88, leafRollDeg: -69,
-      leafSurfaceClearance: 0, leafStemUp: true, trunkRollBiasDist: 0.25,
-      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 1,
+      leafWidth: 1.75, leafOffsetX: 0, leafOffsetY: -0.5, leafOffsetZ: 0,
+      leafAlong01: 0.5, leafYawDeg: 180, leafPitchDeg: 0, leafRollDeg: -15,
+      leafSurfaceClearance: 0.01, leafStemUp: false, trunkRollBiasDist: 0.25,
+      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 1, leafAlphaCutoff: 0.5,
       barkColorHex: 0x4a3b33,
       leafTexture: 'assets/leaves/leaves_crowned_pine.png',
       scaleMul: 0.75
     },
+    // Updated from the standalone tool's "tree_shadewood2" export (supersedes
+    // the original tree_shadewood — trunkLength doubled to 30 alongside a
+    // much taller/wider canopy shape (knotAt 0.7->0.8, branchArchExtra,
+    // leafPrismLengthOffset letting the leaf card overshoot the branch tip),
+    // so scaleMul is recalibrated way down (0.5 -> 0.2) rather than reused —
+    // see the scaleMul comment below.
     shadewood: {
       radialSegments: 8, ringSegments: 10,
-      trunkLength: 15, trunkRadius: 0.6, trunkTaper: 0.93, trunkBend: 0.55,
+      trunkLength: 30, trunkRadius: 0.6, trunkTaper: 0.92, trunkBend: 0.55,
       trunkWonk: 0.85, trunkWonkScale: 1.6, trunkTwist: 0.7,
       trunkNoise: 0.9, trunkNoiseScale: 2.2, trunkNoiseOctaves: 3,
       rootsEnabled: true, rootCount: 9, rootLength: 2.2, rootRadius: 0.14,
       rootTaper: 0.78, rootSpread: 1.25, rootCurl: 0.1, rootWonk: 0.55,
-      knotEnabled: true, knotAt: 0.7, knotTiers: 6, knotTierSpacing: 0.08,
-      knotTierLengthDelta: 0.75, knotTierRadiusDelta: -0.3,
+      knotEnabled: true, knotAt: 0.8, knotTiers: 5, knotTierSpacing: 0.08,
+      knotTierLengthDelta: 0.75, knotTierRadiusDelta: -0.3, branchArchExtra: 0.5,
       knotCount: 7, knotLength: 3.5, knotRadius: 0.4, knotTaper: 0.82,
       knotUpDownBias: -0.2, knotCurl: 1, knotWonk: 0.55,
       leafWidth: 5, leafOffsetX: 0, leafOffsetY: -0.9, leafOffsetZ: 0,
-      leafYawDeg: 0, leafPitchDeg: 180, leafRollDeg: 0,
-      leafSurfaceClearance: 0.02, leafStemUp: false, trunkRollBiasDist: 0.25,
-      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 1,
+      leafAlong01: 0.88, leafYawDeg: 0, leafPitchDeg: 180, leafRollDeg: 0,
+      leafPrismLengthOffset: 5.5,
+      leafSurfaceClearance: 0.02, leafStemUp: true, trunkRollBiasDist: 0.25,
+      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 1, leafAlphaCutoff: 0.5,
       barkColorHex: 0x4a3b33,
       leafTexture: 'assets/leaves/leaves_shadewood.png',
-      scaleMul: 0.5
+      // Calibrated (not guessed) against the tool's own "canopy influence
+      // radius"/"canopy underside height" species properties — 2.75 / 6
+      // world units respectively — by building this preset unscaled in a
+      // standalone Node harness across a dozen seeds and measuring the
+      // lowest leaf card's height (~15.2 raw) and outer leaf-card-center
+      // radius (~6.2-8.1 raw depending on percentile). Height alone implies
+      // scale ~0.395, radius implies ~0.34-0.44 — close enough to treat as
+      // one target; 0.38 sits at their center.
+      scaleMul: 0.38
     },
     // Ported from the standalone tool's ASSET_TYPE_DEFAULTS.Bush — a proper
     // small leafy bush (short trunk, no roots, two low branch tiers with
@@ -1084,7 +1103,12 @@ window.FoliageGenerator = (() => {
             bend: clamp(preset.trunkBend * 0.25, 0, 2), wonk: clamp(preset.knotWonk, 0, 2),
             wonkScale: Math.max(0.05, preset.trunkWonkScale * 1.25), twist: clamp(preset.trunkTwist * 0.7, 0, 2),
             noiseAmt: clamp(preset.trunkNoise * 0.9, 0, 2), noiseScale: Math.max(0.05, preset.trunkNoiseScale * 1.15),
-            noiseOctaves: preset.trunkNoiseOctaves, gravityDir: DOWN, curl: baseCurl,
+            noiseOctaves: preset.trunkNoiseOctaves, gravityDir: DOWN,
+            // branchArchExtra is the source tool's "Tree arch extra" knob —
+            // added on top of the tier's own curl for Tree/JungleTree-style
+            // presets (every TREE_PRESETS entry here is one), 0 for presets
+            // that don't set it.
+            curl: clamp(baseCurl + (preset.branchArchExtra || 0), 0, 2),
             radiusFn: (t01, ringIdx) => Math.max(1e-4, branchRad * Math.pow(knotTaperPR, ringIdx))
           });
           woodGeoms.push(knot.geom);
@@ -1150,12 +1174,17 @@ window.FoliageGenerator = (() => {
           if (leavesPerBranch <= 1) {
             // Single big textured "frond" spanning the whole branch (matches
             // the source tool's singleLeafMode) — lies flat on the branch's
-            // top face (the +90° X pre-rotation), then pitch/yaw/roll tilt it.
-            const midRadius = surfaceRadiusAt(0);
+            // top face (the +90° X pre-rotation), then pitch/yaw/roll tilt
+            // it. Slides along the branch per leafAlong01 (0=base, 1=tip)
+            // exactly like the multi-leaf case, and its length is the
+            // branch's own span plus leafPrismLengthOffset (can overshoot
+            // past the tip for a droopier canopy card).
+            const zBase = lerp(-distL * 0.5, distL * 0.5, clamp01(preset.leafAlong01 ?? 0.5));
+            const surfR = surfaceRadiusAt(zBase);
             const localPos = new T.Vector3(
               (preset.leafOffsetX || 0),
-              midRadius + Math.max(0, preset.leafSurfaceClearance || 0) + (preset.leafOffsetY || 0),
-              (preset.leafOffsetZ || 0)
+              surfR + Math.max(0, preset.leafSurfaceClearance || 0) + (preset.leafOffsetY || 0),
+              zBase + (preset.leafOffsetZ || 0)
             );
             const localEuler = new T.Euler(
               Math.PI * 0.5 + degToRad(preset.leafPitchDeg || 0),
@@ -1163,7 +1192,8 @@ window.FoliageGenerator = (() => {
               degToRad(preset.leafRollDeg || 0),
               'XYZ'
             );
-            const scaleY = preset.leafStemUp !== false ? -distL : distL;
+            const singleLeafLength = Math.max(1e-4, distL + (preset.leafPrismLengthOffset || 0));
+            const scaleY = preset.leafStemUp !== false ? -singleLeafLength : singleLeafLength;
             placeLeafCard(localPos, localEuler, scaleY);
           } else {
             // Several smaller leaf cards fanned symmetrically left/right off
