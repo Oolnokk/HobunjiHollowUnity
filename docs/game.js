@@ -21292,6 +21292,54 @@
       const VEG_CULL_REAR_TILES = 2;
       const VEG_CULL_HYSTERESIS_TILES = 1;
       let _vegCullAccum = 999; // force a real pass on the first tick
+
+      // Fade any tree/bush/stump group whose footprint sits on the ground-plane
+      // segment between the camera and the player, so dense foliage never
+      // permanently hides the character behind it. Materials are shared across
+      // every instance of a shared geometry variant (see getTreeVariants), so
+      // fading has to clone per-instance the first time a given group actually
+      // needs it — cheap and rare (only ever a handful of groups on-screen sit
+      // directly in that line at once), unlike cloning up front for all of them.
+      const TREE_FADE_OPACITY = 0.16;
+      const TREE_FADE_LERP_PER_SEC = 5;
+      const _treeFadeActive = new Set(); // vegGroup refs currently mid-fade (opacity != target)
+      function ensureTreeFadeMaterials(vegGroup) {
+        let mats = vegGroup.userData._fadeMaterials;
+        if (mats) return mats;
+        mats = [];
+        for (const child of vegGroup.children) {
+          if (!child.material) continue;
+          const clone = child.material.clone();
+          clone.transparent = true;
+          child.material = clone;
+          mats.push(clone);
+        }
+        vegGroup.userData._fadeMaterials = mats;
+        vegGroup.userData._fadeOpacity = 1;
+        vegGroup.userData._fadeTarget = 1;
+        return mats;
+      }
+      function distPointToSegment2D(px, pz, ax, az, bx, bz) {
+        const abx = bx - ax, abz = bz - az;
+        const abLenSq = abx * abx + abz * abz;
+        let t = abLenSq > 1e-9 ? ((px - ax) * abx + (pz - az) * abz) / abLenSq : 0;
+        t = clamp(t, 0, 1);
+        const cx = ax + abx * t, cz = az + abz * t;
+        return Math.hypot(px - cx, pz - cz);
+      }
+      function updateTreeFadeAnimation(dt) {
+        if (!_treeFadeActive.size) return;
+        const step = TREE_FADE_LERP_PER_SEC * dt;
+        for (const vegGroup of _treeFadeActive) {
+          const target = vegGroup.userData._fadeTarget ?? 1;
+          let opacity = vegGroup.userData._fadeOpacity ?? 1;
+          if (Math.abs(opacity - target) <= step) opacity = target;
+          else opacity += Math.sign(target - opacity) * step;
+          vegGroup.userData._fadeOpacity = opacity;
+          for (const m of vegGroup.userData._fadeMaterials || []) m.opacity = opacity;
+          if (opacity === target && target >= 1) _treeFadeActive.delete(vegGroup);
+        }
+      }
       function updateZoneVegetationCulling(force = false) {
         if (!_isZoneArea(currentArea)) return;
         const zi = _zoneScenes.get(currentArea);
@@ -21307,6 +21355,7 @@
         const rearRange = VEG_CULL_REAR_TILES;
         const halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
         const hysteresis = VEG_CULL_HYSTERESIS_TILES;
+        const playerWX = player.x / TILE, playerWZ = player.y / TILE;
         for (const obj of cullables) {
           const s = obj.userData.cullSphere;
           const dx = s.x - camX, dz = s.z - camZ;
@@ -21317,6 +21366,24 @@
           const show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
             && side <= halfWidth + expandedRadius;
           if (force || show !== obj.visible) obj.visible = show;
+
+          if (show) {
+            const segDist = distPointToSegment2D(s.x, s.z, camX, camZ, playerWX, playerWZ);
+            const occluding = segDist < s.radius * 0.85;
+            const target = occluding ? TREE_FADE_OPACITY : 1;
+            if (target !== 1 || obj.userData._fadeMaterials) {
+              ensureTreeFadeMaterials(obj);
+              obj.userData._fadeTarget = target;
+              _treeFadeActive.add(obj);
+            }
+          } else if (obj.userData._fadeMaterials) {
+            // Culled out of the view corridor entirely — snap back to opaque
+            // immediately rather than animating a fade nobody can see.
+            obj.userData._fadeTarget = 1;
+            obj.userData._fadeOpacity = 1;
+            for (const m of obj.userData._fadeMaterials) m.opacity = 1;
+            _treeFadeActive.delete(obj);
+          }
         }
       }
 
@@ -25490,6 +25557,10 @@
           _vegCullAccum = 0;
           updateZoneVegetationCulling(force);
         }
+        // Every frame, unthrottled, but only touches the handful of trees
+        // currently mid-fade — see updateZoneVegetationCulling's occlusion
+        // check for what actually starts/stops a fade.
+        updateTreeFadeAnimation(dt);
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
