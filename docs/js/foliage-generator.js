@@ -940,7 +940,7 @@ window.FoliageGenerator = (() => {
       rootTaper: 0.922, rootSpread: 0.9, rootCurl: 0.28, rootWonk: 0.28,
       knotEnabled: true, knotAt: 0.654, knotTiers: 5, knotTierSpacing: 0.133,
       knotTierLengthDelta: 0, knotTierRadiusDelta: 0, branchArchExtra: 0.35,
-      knotCount: 5, knotLength: 2.66, knotRadius: 0.104, knotTaper: 0.926,
+      knotCount: 5, knotLength: 2.66, knotLengthJitter: 0.75, knotRadius: 0.104, knotTaper: 0.926,
       knotUpDownBias: -0.63, knotCurl: 0.76, knotWonk: 0,
       leafWidth: 1.75, leafLength: 2, leafOffsetX: 0, leafOffsetY: -0.5, leafOffsetZ: 0,
       leafAlong01: 0.5, leafYawDeg: 180, leafPitchDeg: 0, leafRollDeg: -15,
@@ -1185,7 +1185,22 @@ window.FoliageGenerator = (() => {
           dir.add(new T.Vector3((rand() - 0.5) * 0.12, (rand() - 0.5) * 0.10, (rand() - 0.5) * 0.12)).normalize();
 
           const origin = anchor.clone().addScaledVector(outward, attachR).addScaledVector(tan, (rand() - 0.5) * 0.03);
-          const branchLen = Math.max(1e-4, preset.knotLength * branchLenMul * tierLenScale * (0.55 + 0.95 * rand()));
+          // knotLengthJitter (opt-in per preset — see crownedPine) ports the
+          // standalone tool's own branch-length formula more faithfully: a
+          // 0.55-1.5x random factor with an extra "Tree species" 0.95-1.65x
+          // bonus on top, then damped toward 1.0 (full nominal length) by
+          // knotLengthJitter instead of always applying the full random
+          // swing. Left off (undefined) for presets ported before this was
+          // understood — shadewood in particular has its scaleMul calibrated
+          // against the plain formula below, and switching it over would
+          // silently invalidate that calibration — so it keeps the exact
+          // original formula unless a preset explicitly opts in.
+          const lenJitterRaw = preset.knotLengthJitter;
+          const lenRandBase = 0.55 + 0.95 * rand();
+          const lenRand = lenJitterRaw != null
+            ? lerp(1.0, lenRandBase * (0.95 + 0.7 * rand()), clamp(lenJitterRaw, 0, 1))
+            : lenRandBase;
+          const branchLen = Math.max(1e-4, preset.knotLength * branchLenMul * tierLenScale * lenRand);
           const branchRad = Math.max(1e-4, preset.knotRadius * tierRadScale * (0.75 + 0.5 * rand()));
           const branchRings = Math.max(4, Math.floor(RINGS * 0.75));
 
@@ -1365,13 +1380,19 @@ window.FoliageGenerator = (() => {
             // to its own branch's prism length (distL) rather than a fixed
             // preset.leafLength — see the multi-leaf branch below, which
             // uses leafLength directly instead since there each branch gets
-            // several small cards, not one spanning the whole thing. On top
-            // of that, an additive extra (leafPrismLengthOffset if the
-            // preset sets one — e.g. shadewood's droopier-canopy 5.5 — else
-            // falling back to leafLength itself, which is exactly what
-            // crownedPine's "crowned_pine2" tool export uses this field for
-            // in single-frond mode) lets the card overshoot the branch tip.
-            const singleLeafLength = Math.max(1e-4, distL + (preset.leafPrismLengthOffset ?? preset.leafLength ?? 0));
+            // several small cards, not one spanning the whole thing.
+            // leafPrismLengthOffset (single-leaf mode only, per the source
+            // tool) adds on top of that, letting the card overshoot the
+            // branch tip — confirmed against the tool's own source
+            // (getSerializableParamsForSave dumps every param, so its
+            // absence from an export means it was genuinely 0, not just
+            // omitted) rather than assumed, after an earlier guess that
+            // conflated it with leafLength turned out wrong: loading
+            // "crowned_pine2.json" cold into the actual standalone tool via
+            // Playwright and reading its own branch-length debug dump
+            // showed the real gap was the branch length formula below
+            // (knotLengthJitter et al), not leaf length.
+            const singleLeafLength = Math.max(1e-4, distL + (preset.leafPrismLengthOffset || 0));
             const scaleY = preset.leafStemUp !== false ? -singleLeafLength : singleLeafLength;
             placeLeafCard(localPos, localEuler, scaleY);
           } else {
