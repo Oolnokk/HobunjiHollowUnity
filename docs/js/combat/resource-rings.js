@@ -79,7 +79,7 @@
     return geometry;
   }
 
-  function makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32) {
+  function makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32, additive = false) {
     const geometry = makeFlatArcGeometry(innerRadius, outerRadius, startDeg, endDeg, segments);
     geometry.translate(0, yOffset, 0);
     const material = new THREE.MeshBasicMaterial({
@@ -96,10 +96,43 @@
       // clearly. Disabling fog is what actually makes this ring ignore every
       // ambient/lighting influence in the scene, not just direct light.
       fog: false,
+      // Additive lets a stacked glow layer (see makeGlowArcMesh) actually
+      // brighten toward a saturated/white-hot core instead of just alpha-
+      // blending flat color over flat color — same trick this file's sibling
+      // combat-cone-trail uses for its glowing swipe (see game.js).
+      ...(additive ? { blending: THREE.AdditiveBlending } : {}),
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.renderOrder = Math.round(yOffset * 100000);
     return mesh;
+  }
+
+  // Lerps `hex` toward white by `amount` (0..1) — used to build the brighter
+  // "hot core" layer of a neon glow without a second hand-authored palette.
+  function brightenColor(hex, amount) {
+    return new THREE.Color(hex).lerp(new THREE.Color(0xffffff), amount).getHex();
+  }
+
+  // A resource-color arc segment (normal fill or an affliction's claimed
+  // segment) rendered as three stacked layers so it reads as neon rather
+  // than flat fill: a soft additive halo bled outward past the bar's own
+  // edges, the ordinary crisp-color fill in the middle (unchanged from
+  // before), and a brighter additive "hot core" on top pushing the same
+  // shape toward saturated/white. Very dark colors (e.g. EXHAUSTED_COLOR)
+  // naturally glow little to nothing under this — additive blending a
+  // near-black color adds almost nothing, which is the correct look for a
+  // "drained" state anyway.
+  const GLOW_HALO_PAD_FRAC = 0.16; // fraction of the bar's own radial width the halo bleeds past each edge
+  const GLOW_HALO_OPACITY_MUL = 0.6;
+  const GLOW_HOT_OPACITY_MUL = 0.5;
+  const GLOW_HOT_BRIGHTEN = 0.55;
+  function makeGlowArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32) {
+    const group = new THREE.Group();
+    const pad = (outerRadius - innerRadius) * GLOW_HALO_PAD_FRAC;
+    group.add(makeArcMesh(innerRadius - pad, outerRadius + pad, startDeg, endDeg, color, opacity * GLOW_HALO_OPACITY_MUL, yOffset - 0.0006, segments, true));
+    group.add(makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments));
+    group.add(makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, brightenColor(color, GLOW_HOT_BRIGHTEN), opacity * GLOW_HOT_OPACITY_MUL, yOffset + 0.0006, segments, true));
+    return group;
   }
 
   function makeDashedArc(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset) {
@@ -152,7 +185,7 @@
     if (isExhaustedStamina) {
       if (displayFraction > 0) {
         const fillEnd = spec.start + (spec.end - spec.start) * displayFraction;
-        group.add(makeArcMesh(inner + radius * .02, outer - radius * .02, spec.start, fillEnd, spec.color, .95, spec.y + .004, 34));
+        group.add(makeGlowArcMesh(inner + radius * .02, outer - radius * .02, spec.start, fillEnd, spec.color, .95, spec.y + .004, 34));
         boundaryPoints.add(displayFraction * max);
       }
       group.add(makeDashedArc(inner + radius * .04, outer - radius * .04, spec.start, spec.end, 0xffffff, .34, spec.y + .009));
@@ -187,7 +220,7 @@
       const normalPieces = max ? subtractRanges([{ start: 0, end: clamp(current, 0, max) }], claimed) : [];
       for (const p of normalPieces) {
         const sf = p.start / max, ef = p.end / max;
-        group.add(makeArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, spec.color, .95, spec.y + .004, 34));
+        group.add(makeGlowArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, spec.color, .95, spec.y + .004, 34));
         boundaryPoints.add(p.start); boundaryPoints.add(p.end);
       }
 
@@ -195,7 +228,7 @@
         const def = RS.AFFLICTIONS[seg.id];
         const color = AFFLICTION_COLORS[seg.id] ?? 0xffffff;
         const sf = seg.start / max, ef = seg.end / max;
-        group.add(makeArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, color, .95, spec.y + .006 + def.priority * .00001, 24));
+        group.add(makeGlowArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, color, .95, spec.y + .006 + def.priority * .00001, 24));
         boundaryPoints.add(seg.start); boundaryPoints.add(seg.end);
       }
 
@@ -274,17 +307,23 @@
   }
 
   // Black outline around the whole ring's rim (inner+outer edge, spanning
-  // the full arc even across empty/unfilled space) plus a thin radial line
-  // at every boundary between two differently-colored segments, so the
-  // whole bar reads as cleanly divided pieces rather than blended color.
+  // the full arc even across empty/unfilled space) plus a radial line at
+  // every boundary between two differently-colored segments — including the
+  // current-resource edge (current/max and 0 are always in boundaryPoints,
+  // see buildGroundResourceArc) and every affliction-to-affliction or
+  // affliction-to-normal seam — so the whole bar reads as cleanly divided,
+  // thickly bordered pieces rather than blended color. Both thicknesses
+  // deliberately run heavy (2.5x/2.4x the original) so the border stays
+  // legible against the neon glow fill (see makeGlowArcMesh) instead of
+  // getting lost in its bloom.
   function addSegmentOutlines(group, spec, radius, max, boundaryPoints) {
     const inner = radius * spec.innerMul, outer = radius * spec.outerMul;
-    const rim = radius * .02;
+    const rim = radius * .05;
     const outlineY = spec.y + .05;
     group.add(makeArcMesh(inner - rim, inner, spec.start, spec.end, OUTLINE_COLOR, .95, outlineY, 36));
     group.add(makeArcMesh(outer, outer + rim, spec.start, spec.end, OUTLINE_COLOR, .95, outlineY, 36));
 
-    const halfWidthDeg = 1.1;
+    const halfWidthDeg = 2.6;
     for (const pt of boundaryPoints) {
       const frac = max ? clamp(pt / max, 0, 1) : 0;
       const angle = spec.start + (spec.end - spec.start) * frac;

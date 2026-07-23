@@ -1228,13 +1228,43 @@
         return true;
       }
 
+      // Routes a real footstep clip through the shared footstep AudioContext
+      // with a dulling lowpass instead of just setting .volume, so a "heavy"
+      // landing thud actually sounds tonally heavier (less high-end clack),
+      // not just louder — used by playFootstepSurface's heavy branch.
+      function playHeavyFilteredClip(snd, volume) {
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) throw new Error('no AudioContext');
+          const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
+          if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+          const source = ctx.createMediaElementSource(snd);
+          const lpf = ctx.createBiquadFilter();
+          lpf.type = 'lowpass';
+          lpf.frequency.value = 900; // dulls the clip's high end into a thud instead of a clack
+          lpf.Q.value = 0.7;
+          const gain = ctx.createGain();
+          gain.gain.value = Math.min(1, volume * 1.15); // filtering loses perceived loudness; compensate
+          source.connect(lpf).connect(gain).connect(ctx.destination);
+          snd.play().catch(() => {});
+        } catch (e) {
+          snd.volume = volume;
+          snd.play().catch(() => {});
+        }
+      }
+
       // Plays one surface's footfall at `volume` — a random pick from that
       // surface's configured clip list (audio.footsteps.surfaces[key].urls)
       // when one exists, else the oscillator+noise synth fallback tuned by
       // FOOTSTEP_POST_FX. `pan` only affects the synth fallback (a plain
       // <audio> element, like every other one-shot sfx in this file, doesn't
       // get routed through a StereoPannerNode).
-      function playFootstepSurface(surfaceKey, footstepCfg, volume, pan) {
+      //
+      // `heavy` is for a dodge/attack-lunge landing thud (see
+      // playHeavyLandingSfx): pitches noticeably down and, for real clips,
+      // runs through playHeavyFilteredClip's dulling lowpass so it reads as
+      // hitting the ground hard rather than an ordinary stride.
+      function playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy = false) {
         if (volume <= 0.002) return;
         const postFx = { ...FOOTSTEP_POST_FX[surfaceKey], ...(footstepCfg.surfaces?.[surfaceKey] || {}) };
         const urls = postFx.urls || (postFx.url ? [postFx.url] : null);
@@ -1243,9 +1273,9 @@
         if (urls && urls.length) {
           const url = urls[Math.floor(Math.random() * urls.length)];
           const snd = new Audio(url);
-          snd.volume = finalVolume;
-          snd.playbackRate = 0.92 + Math.random() * 0.16;
-          snd.play().catch(() => {});
+          snd.playbackRate = heavy ? (0.6 + Math.random() * 0.1) : (0.92 + Math.random() * 0.16);
+          if (heavy) playHeavyFilteredClip(snd, finalVolume);
+          else { snd.volume = finalVolume; snd.play().catch(() => {}); }
           return;
         }
 
@@ -1255,8 +1285,8 @@
         if (ctx.state === 'suspended') ctx.resume().catch(() => {});
         const now = ctx.currentTime;
         const base = FOOTSTEP_BASE;
-        const pitchMul = Number(postFx.pitchMul) || 1;
-        const durationS = Math.max(0.02, (Number(base.durationMs) || 55) / 1000 * (Number(postFx.durationMul) || 1));
+        const pitchMul = (Number(postFx.pitchMul) || 1) * (heavy ? 0.55 : 1);
+        const durationS = Math.max(0.02, (Number(base.durationMs) || 55) / 1000 * (Number(postFx.durationMul) || 1) * (heavy ? 2.2 : 1));
         const noiseMix = Math.max(0, Math.min(1, Number(base.noiseMix) ?? 0.82));
         const baseFreq = Math.max(20, Number(base.freq) * pitchMul);
         const variance = Math.max(0, Number(base.freqVarianceHz) || 15);
@@ -1289,7 +1319,7 @@
           noise.buffer = buffer;
           const filter = ctx.createBiquadFilter();
           filter.type = postFx.filterType || 'bandpass';
-          filter.frequency.value = baseFreq * (Number(postFx.filterFreqMul) || 3.2);
+          filter.frequency.value = baseFreq * (Number(postFx.filterFreqMul) || 3.2) * (heavy ? 0.45 : 1);
           filter.Q.value = Number(postFx.filterQ) || 1.6;
           const noiseGain = ctx.createGain();
           noiseGain.gain.setValueAtTime(finalVolume * noiseMix, now);
@@ -1304,7 +1334,9 @@
       // null for NPCs/creatures whose area has no grid (shouldn't normally
       // happen, just defends against it). `pan` is -1 (full left) .. 1 (full
       // right); leave at 0 for the player (the listener) and companions
-      // (always close, not worth panning).
+      // (always close, not worth panning). `opts.heavy` — see
+      // playHeavyLandingSfx — plays both layers through playFootstepSurface's
+      // heavy (louder, pitched-down/filtered) mode instead of a plain stride.
       //
       // Ground surfaces (grass/gravel) layer in a second, simultaneous
       // waterstep clip scaled by the tile's moisture (tile.water, 0..
@@ -1313,21 +1345,35 @@
       // volume. Actual water tiles (river/stream/paddy/waterfall) already
       // resolve straight to the 'water' surface via footstepSurfaceKey and
       // skip this blend — they're pure waterstep, not a blend target.
-      function playFootstepSfx(area, tile, volumeScale = 1, pan = 0) {
+      function playFootstepSfx(area, tile, volumeScale = 1, pan = 0, opts = {}) {
         const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false) return;
         const footstepCfg = audioCfg.footsteps || {};
         if (footstepCfg.enabled === false) return;
+        const heavy = !!opts.heavy;
         const surfaceKey = footstepSurfaceKey(area, tile?.type ?? null);
         const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
         const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1)
           * Math.max(0, volumeScale) * Math.max(0, Number(FOOTSTEP_BASE.volume) || 0.26);
-        playFootstepSurface(surfaceKey, footstepCfg, volume, pan);
+        playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy);
 
         if (surfaceKey !== 'water') {
           const wetFraction = clamp((Number(tile?.water) || 0) / MAX_WATER, 0, 1);
-          playFootstepSurface('water', footstepCfg, volume * wetFraction * FOOTSTEP_WATER_BLEND_MAX, pan);
+          playFootstepSurface('water', footstepCfg, volume * wetFraction * FOOTSTEP_WATER_BLEND_MAX, pan, heavy);
         }
+      }
+
+      // Heavy "landing thud" used when a dodge or attack lunge comes to a
+      // stop — same surface/moisture-blend as an ordinary footstep (see
+      // playFootstepSfx) but louder and run through playFootstepSurface's
+      // heavy mode so it reads as hitting the ground hard after a leap,
+      // not just another stride in the cadence. Player-only: dodges and
+      // combat lunges are a player.dodging/player.lunging-only mechanic
+      // (see performDodge/beginCombatLunge) — no pan, matching the player's
+      // own unpanned regular footsteps.
+      const HEAVY_LANDING_VOLUME_MUL = 2.0;
+      function playHeavyLandingSfx(area, tile) {
+        playFootstepSfx(area, tile, HEAVY_LANDING_VOLUME_MUL, 0, { heavy: true });
       }
 
       function combatSfxConfig() { return gameAudioConfig().combatSfx || {}; }
@@ -16682,6 +16728,7 @@
           if (player.dodgeT <= 0) {
             player.dodging = false;
             player.vx = 0; player.vy = 0;
+            playHeavyLandingSfx(currentArea, footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
           }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           return;
@@ -16712,6 +16759,7 @@
           if (isHostileInLungeCone(player.lungeHitTest)) {
             player.lunging = false;
             player.lungeHopCurrent = 0;
+            playHeavyLandingSfx(currentArea, footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
             tickPlayerFootsteps(_fsPrevX, _fsPrevY);
             return;
           }
@@ -16748,7 +16796,11 @@
           const lungeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           player.x = lungeSwept.x; player.y = lungeSwept.y;
           player.lungeHopCurrent = player.lungeHopUnits * Math.sin(eased * Math.PI);
-          if (player.lungeT <= 0) { player.lunging = false; player.lungeHopCurrent = 0; }
+          if (player.lungeT <= 0) {
+            player.lunging = false;
+            player.lungeHopCurrent = 0;
+            playHeavyLandingSfx(currentArea, footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+          }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           return;
         }
