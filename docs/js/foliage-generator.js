@@ -111,6 +111,41 @@ window.FoliageGenerator = (() => {
     return { pts, tangents, normals, binormals };
   }
 
+  // Parallel-transport tangent/normal/binormal frames for an arbitrary point
+  // list (e.g. a CatmullRomCurve3's sampled points) — same normal-propagation
+  // approach buildSpine uses for its own parametrically-generated points,
+  // just fed finite-difference tangents instead. Used by vine strands, whose
+  // control points come from wrapping around another spine (the trunk's),
+  // not from buildSpine's own bend/wonk/noise walk.
+  function framesFromPoints(pts) {
+    const tangents = [];
+    for (let i = 0; i < pts.length; i++) {
+      const prev = pts[Math.max(0, i - 1)];
+      const next = pts[Math.min(pts.length - 1, i + 1)];
+      const t = next.clone().sub(prev);
+      tangents.push(t.lengthSq() > 1e-10 ? t.normalize() : new T.Vector3(0, 1, 0));
+    }
+    const normals = [], binormals = [];
+    const worldUp = new T.Vector3(0, 1, 0);
+    const T0 = tangents[0].clone();
+    let N0 = new T.Vector3().copy(worldUp).cross(T0);
+    if (N0.lengthSq() < 1e-6) N0.set(1, 0, 0).cross(T0);
+    N0.normalize();
+    normals.push(N0); binormals.push(new T.Vector3().copy(T0).cross(N0).normalize());
+    const axis = new T.Vector3();
+    for (let i = 1; i < pts.length; i++) {
+      axis.copy(tangents[i - 1]).cross(tangents[i]);
+      let N = normals[i - 1].clone();
+      if (axis.length() > 1e-6) {
+        const angle = Math.acos(clamp(tangents[i - 1].dot(tangents[i]), -1, 1));
+        N.applyAxisAngle(axis.clone().normalize(), angle).normalize();
+      }
+      normals.push(N);
+      binormals.push(new T.Vector3().copy(tangents[i]).cross(N).normalize());
+    }
+    return { pts, tangents, normals, binormals };
+  }
+
   // ─── Tube mesh from spine ─────────────────────────────────────────────────
   function buildMeshFromSpineWithRadiusFn({ seedU32, spine, radiusFn, radialSegments, twist, noiseAmt, noiseScale, noiseOctaves }) {
     const { pts, tangents, normals, binormals } = spine;
@@ -902,6 +937,17 @@ window.FoliageGenerator = (() => {
       leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 1, leafAlphaCutoff: 0.5,
       barkColorHex: 0x4a3b33,
       leafTexture: 'assets/leaves/leaves_shadewood.png',
+      // Hanging/wrapping vines around the trunk — see buildConiferTreeGroup's
+      // vinesEnabled block (ported from the standalone tool's
+      // buildVinesAroundTrunk). All lengths/radii here are in this preset's
+      // own native (pre-scaleMul) trunk-length-30 space, same as every other
+      // field on this preset.
+      vinesEnabled: true, vineStrandCount: 5,
+      vineTop01: 0.92, vineBottom01: 0.08, vineWraps: 2.2,
+      vineSurfaceOffset: 0.05, vineHangLength: 5, vineHangWobble: 0.5,
+      vineTubeRadius: 0.06, vineTubeTaper: 0.55, vineRadialSegments: 5,
+      vineNoise: 0.35, vineNoiseScale: 1.4, vineNoiseOctaves: 2,
+      vineColorHex: 0x3a5f3a,
       // Calibrated (not guessed) against the tool's own "canopy influence
       // radius"/"canopy underside height" species properties — 2.75 / 6
       // world units respectively — by building this preset unscaled in a
@@ -981,6 +1027,7 @@ window.FoliageGenerator = (() => {
 
     const woodGeoms = [];
     const leafGeoms = [];
+    const vineGeoms = [];
     const unitLeaf = new T.PlaneGeometry(1, 1, 1, 1);
 
     // Trunk
@@ -1131,6 +1178,82 @@ window.FoliageGenerator = (() => {
         }
       }
 
+      // Vines: strands helically wound around the trunk with a dangling tail
+      // past their lower end, ported from the standalone tool's
+      // buildVinesAroundTrunk. Opt-in per preset (see TREE_PRESETS.shadewood).
+      // Built once per shared geometry variant just like everything else
+      // here (see getTreeVariants) — a per-tree-pair vine ROUTE system like
+      // the tool's separate grid-network vines would be unique geometry per
+      // instance, which is exactly what the shared-variant/culling work this
+      // session was about avoiding at this tree density.
+      if (preset.vinesEnabled) {
+        const strandCount = Math.max(0, Math.floor(preset.vineStrandCount ?? 0));
+        const n = trunk.spine.pts.length;
+        const startIdx = clamp(Math.round(clamp01(preset.vineTop01 ?? 0.95) * (n - 1)), 0, n - 1);
+        const endIdx = clamp(Math.round(clamp01(preset.vineBottom01 ?? 0.05) * (n - 1)), 0, n - 1);
+        const vineRadial = Math.max(3, Math.floor(preset.vineRadialSegments ?? 5));
+        const controlCount = Math.max(8, Math.min(36, Math.floor(vineRadial * 2.8)));
+        const sampleCount = Math.max(18, vineRadial * 6);
+        const wrapsBase = Math.max(0, preset.vineWraps ?? 1.5);
+        const surfaceOffset = Math.max(0, preset.vineSurfaceOffset ?? 0.03);
+        const tailLenBase = Math.max(0, preset.vineHangLength ?? 0);
+        const tailWobble = Math.max(0, preset.vineHangWobble ?? 0.15);
+        const trunkRadiusAt = (idx) => trunkRad * Math.pow(taper, clamp(idx, 0, n - 1));
+        const DOWN2 = new T.Vector3(0, -1, 0);
+
+        for (let si = 0; si < strandCount; si++) {
+          const phi0 = rand() * Math.PI * 2;
+          const wraps = wrapsBase * (0.8 + 0.5 * rand());
+          const cps = [];
+          for (let k = 0; k <= controlCount; k++) {
+            const u = k / controlCount;
+            const idx = clamp(Math.round(lerp(startIdx, endIdx, u)), 0, n - 1);
+            const center = trunk.spine.pts[idx];
+            const N = trunk.spine.normals[idx], B = trunk.spine.binormals[idx];
+            const phi = phi0 + Math.PI * 2 * wraps * u;
+            const outward = new T.Vector3().copy(N).multiplyScalar(Math.cos(phi)).addScaledVector(B, Math.sin(phi)).normalize();
+            const r = trunkRadiusAt(idx) + surfaceOffset;
+            const p = center.clone().addScaledVector(outward, r);
+            const wob = tailWobble * 0.15;
+            p.addScaledVector(outward, (rand() - 0.5) * wob);
+            p.addScaledVector(trunk.spine.tangents[idx], (rand() - 0.5) * wob * 0.15);
+            cps.push(p);
+          }
+          const tailLen = tailLenBase * (0.65 + 0.7 * rand());
+          if (tailLen > 1e-4) {
+            const endCenter = trunk.spine.pts[endIdx];
+            const endN = trunk.spine.normals[endIdx], endB = trunk.spine.binormals[endIdx];
+            const phiEnd = phi0 + Math.PI * 2 * wraps;
+            const outwardEnd = new T.Vector3().copy(endN).multiplyScalar(Math.cos(phiEnd)).addScaledVector(endB, Math.sin(phiEnd)).normalize();
+            const baseP = endCenter.clone().addScaledVector(outwardEnd, trunkRadiusAt(endIdx) + surfaceOffset);
+            const tailSteps = 4;
+            for (let s = 1; s <= tailSteps; s++) {
+              const tu = s / tailSteps;
+              const p = baseP.clone()
+                .addScaledVector(DOWN2, tailLen * tu)
+                .addScaledVector(outwardEnd, Math.sin(tu * Math.PI) * tailWobble * 0.35)
+                .addScaledVector(endB, (rand() - 0.5) * tailWobble * 0.18);
+              cps.push(p);
+            }
+          }
+          const curve = new T.CatmullRomCurve3(cps, false, 'catmullrom', 0.5);
+          const sampled = curve.getPoints(sampleCount);
+          const vineSpine = framesFromPoints(sampled);
+          const baseR = Math.max(1e-4, preset.vineTubeRadius ?? 0.035);
+          const taperEnd = clamp(preset.vineTubeTaper ?? 0.7, 0.05, 1);
+          const vgeo = buildMeshFromSpineWithRadiusFn({
+            seedU32: seedU32 ^ (0xA57E1E + si * 113),
+            spine: vineSpine,
+            radiusFn: (t01) => baseR * lerp(1, taperEnd, clamp01(t01)),
+            radialSegments: vineRadial, twist: 0,
+            noiseAmt: clamp(preset.vineNoise ?? 0.3, 0, 2),
+            noiseScale: Math.max(0.05, preset.vineNoiseScale ?? 1.2),
+            noiseOctaves: Math.max(1, Math.floor(preset.vineNoiseOctaves ?? 2))
+          });
+          vineGeoms.push(vgeo);
+        }
+      }
+
       // Leaf cards: one big textured "frond" per branch, oriented the same
       // way the source tool's prism frame does — Z along the branch, Y
       // banked toward a single fixed point near the trunk base (not each
@@ -1258,6 +1381,14 @@ window.FoliageGenerator = (() => {
       const merged = mergeGeoms(woodGeoms);
       merged.computeVertexNormals();
       group.add(new T.Mesh(merged, hexBarkMat(preset.barkColorHex ?? 0x4a3b33)));
+    }
+    if (vineGeoms.length) {
+      // Added before the leaf mesh so leaves stay the LAST child — canopy
+      // clamp tagging (game.js) and the shared-variant cache (getTreeVariants)
+      // both assume that.
+      const merged = mergeGeoms(vineGeoms);
+      merged.computeVertexNormals();
+      group.add(new T.Mesh(merged, hexBarkMat(preset.vineColorHex ?? 0x3a5f3a)));
     }
     if (leafGeoms.length) {
       const merged = mergeGeomsWithUV(leafGeoms);
