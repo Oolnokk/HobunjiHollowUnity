@@ -1205,10 +1205,20 @@
 
       function _playFootstepSample(url, volume, pitchVarianceMul = 0.08) {
         if (!url || volume <= 0.002) return;
-        const snd = makeGameAudio(url);
+        // Footsteps are high-frequency one-shots, so do not use makeGameAudio():
+        // it registers elements in _gameAudioElements for later unlock retries,
+        // which would retain every finished footfall until page unload.
+        const snd = new Audio(resolveAudioUrl(url));
+        const cleanup = () => {
+          snd.pause();
+          snd.removeAttribute('src');
+          try { snd.load(); } catch {}
+        };
+        snd.addEventListener('ended', cleanup, { once: true });
+        snd.addEventListener('error', cleanup, { once: true });
         snd.volume = Math.min(1, volume);
         snd.playbackRate = 1 + (Math.random() * 2 - 1) * Math.max(0, Number(pitchVarianceMul) || 0);
-        snd.play().catch(() => {});
+        snd.play().catch(cleanup);
       }
 
       // `pan` is retained for call-site compatibility; sampled footsteps are
