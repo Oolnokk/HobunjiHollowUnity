@@ -164,19 +164,25 @@
     // still audible instead of silently gliding in for the hit.
     deps.tickCreatureFootsteps?.(c, stepPx);
 
+    // Species-specific — see CREATURE_DB's attackTag (gar-wolves 'sharp',
+    // dabinggi-hounds 'poison', Uumkao'ii 'blunt') — so every one of a
+    // creature's slottable attacks (this leap, the plain bite telegraph,
+    // guardCharge) afflicts consistently with its species instead of
+    // Pounce hardcoding 'sharp'. afflictionBonusesForTag turns that tag
+    // into the actual bleed/bruise/poison application (resource-system.js).
+    // Computed once per leap frame (not per target below) since it's the
+    // same value regardless of who gets hit — also feeds the leap's own
+    // onion-ring ground trail, same treatment the player's attack lunges
+    // get (see game.js's beginCombatLunge/spawnLungeTrailStamp).
+    const dmgTag = c.def.attackTag || 'sharp';
+    const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
+    deps.tickCreatureLungeTrail?.(c, stepPx, afflictionBonuses);
+
     const headX = c.x + dirX * state.headOffsetPx, headY = c.y + dirY * state.headOffsetPx;
     for (const target of state.targets) {
       const ref = target.ref;
       if (ref.health <= 0) continue;
       if (!deps.inCone(headX, headY, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad)) continue;
-      // Species-specific — see CREATURE_DB's attackTag (gar-wolves 'sharp',
-      // dabinggi-hounds 'poison', Uumkao'ii 'blunt') — so every one of a
-      // creature's slottable attacks (this leap, the plain bite telegraph,
-      // guardCharge) afflicts consistently with its species instead of
-      // Pounce hardcoding 'sharp'. afflictionBonusesForTag turns that tag
-      // into the actual bleed/bruise/poison application (resource-system.js).
-      const dmgTag = c.def.attackTag || 'sharp';
-      const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
       if (target.isPlayer) deps.damagePlayer(state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
       else deps.damageCreature(ref, state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
       deps.playCreatureClawHit?.(c);

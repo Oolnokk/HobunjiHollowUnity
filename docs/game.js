@@ -18517,17 +18517,17 @@
       // Attack-lunge movement trail — a series of flat "onion ring" stamps
       // (concentric colored bands, like a target/tree-ring cross-section)
       // dropped along the ground path an attack's lunge (see
-      // beginCombatLunge/tickLungeTrail) actually travels, distinct from
+      // beginCombatLunge/tickLungeTrail, or a creature's Pounce leap —
+      // tickCreatureLungeTrail below) actually travels, distinct from
       // updateCombatConeTrail's weapon-swipe ribbon above: this one traces
-      // the player's own footprints through the dash, not the weapon's hit
-      // cone. Colored by whichever afflictions the attack that triggered
-      // the lunge can inflict (combatSwingAfflictionIds/Muls, set by the
-      // same triggerWeaponSwingVisual/HoldVisual call every lunging attack
-      // already makes) — outermost band is whichever affliction has the
-      // highest per-hit multiplier (i.e. is "applied most"), each nested
+      // the mover's own footprints through the dash, not the weapon/attack's
+      // hit cone. Colored by whichever afflictions the attack that triggered
+      // the lunge can inflict — outermost band is whichever affliction has
+      // the highest per-hit multiplier (i.e. is "applied most"), each nested
       // band inward is the next-highest, capped at LUNGE_TRAIL_RING_COUNT_MAX
-      // bands. An attack with no chosen affliction upgrades leaves no trail
-      // at all — there's nothing to color it by.
+      // bands. An attack with no afflictions to give it (a fresh, unleveled
+      // player attack; a creature whose attackTag maps to none) leaves no
+      // trail at all — there's nothing to color it by.
       const LUNGE_TRAIL_STAMP_SPACING_PX = TILE * 0.4;
       const LUNGE_TRAIL_RING_COUNT_MAX = 4;
       const LUNGE_TRAIL_OUTER_RADIUS = 0.46; // world units (tile-space)
@@ -18546,18 +18546,20 @@
       const LUNGE_TRAIL_OUTLINE_OPACITY = 0.9;
       const _lungeTrailStamps = [];
 
-      function spawnLungeTrailStamp(wx, wy) {
-        const ids = combatSwingAfflictionIds;
-        if (!ids.length) return; // nothing chosen to color this lunge by — no trail
-        const scene = getActiveScene();
-        if (!scene) return;
-        const muls = combatSwingAfflictionMuls;
+      // areaId/grid/sceneObj let this same stamp-builder serve both the
+      // player (currentArea/getActiveGrid()/getActiveScene()) and a
+      // creature (c.areaId/c.areaGrid/c.scene||scene — see
+      // tickCreatureLungeTrail) without either caller needing to know how
+      // the other resolves its own area context.
+      function spawnLungeTrailStamp(wx, wy, areaId, grid, sceneObj, ids, muls) {
+        if (!ids || !ids.length) return; // nothing to color this lunge by — no trail
+        if (!sceneObj) return;
         const sortedIds = [...ids]
-          .sort((a, b) => (Number(muls[b]) || 0) - (Number(muls[a]) || 0))
+          .sort((a, b) => (Number(muls?.[b]) || 0) - (Number(muls?.[a]) || 0))
           .slice(0, LUNGE_TRAIL_RING_COUNT_MAX);
 
-        const tile = footstepTileAt(currentArea, wx, wy, getActiveGrid());
-        const y = tileSurfaceYInArea(tile, currentArea) + characterGroundShadowSurfaceOffset() + 0.02;
+        const tile = footstepTileAt(areaId, wx, wy, grid);
+        const y = tileSurfaceYInArea(tile, areaId) + characterGroundShadowSurfaceOffset() + 0.02;
         const group = new THREE.Group();
         group.position.set(wx / TILE, y, wy / TILE);
         group.rotation.x = -Math.PI / 2; // lie flat on the ground, same convention as every other ground-projected ring in this file
@@ -18596,20 +18598,39 @@
           group.add(mesh);
         }
         if (group.children.length <= 1) return; // only the backing — no bands actually fit
-        scene.add(group);
-        _lungeTrailStamps.push({ group, scene, age: 0 });
+        sceneObj.add(group);
+        _lungeTrailStamps.push({ group, scene: sceneObj, age: 0 });
       }
 
       // Per-entity stride accumulator (see _footstepAdvance) tracking how far
-      // the player has traveled since the last dropped stamp — kept separate
-      // from player.footstepAccum (the ordinary footstep cadence, which
-      // keeps ticking during a lunge too) so the two don't fight over the
-      // same counter.
+      // `entity` has traveled since the last dropped stamp — kept on the
+      // entity itself under its own key (not player.footstepAccum/
+      // c.footstepAccum, the ordinary footstep cadence, which keeps ticking
+      // during a lunge/leap too) so the two don't fight over the same
+      // counter. Shared by both tickLungeTrail (player) and
+      // tickCreatureLungeTrail (Pounce) below.
+      function tickLungeTrailForEntity(entity, distPx, ids, muls, areaId, grid, sceneObj) {
+        if (!ids || !ids.length) return;
+        if (!entity._lungeTrailStride) entity._lungeTrailStride = { footstepAccum: 0, footstepFoot: false };
+        if (!_footstepAdvance(entity._lungeTrailStride, distPx, LUNGE_TRAIL_STAMP_SPACING_PX)) return;
+        spawnLungeTrailStamp(entity.x, entity.y, areaId, grid, sceneObj, ids, muls);
+      }
+
       function tickLungeTrail(prevX, prevY) {
         const dist = Math.hypot(player.x - prevX, player.y - prevY);
-        if (!player._lungeTrailStride) player._lungeTrailStride = { footstepAccum: 0, footstepFoot: false };
-        if (!_footstepAdvance(player._lungeTrailStride, dist, LUNGE_TRAIL_STAMP_SPACING_PX)) return;
-        spawnLungeTrailStamp(player.x, player.y);
+        tickLungeTrailForEntity(player, dist, combatSwingAfflictionIds, combatSwingAfflictionMuls, currentArea, getActiveGrid(), getActiveScene());
+      }
+
+      // Pounce's leap (see combat-animal-attacks.js's pounceUpdate) covers
+      // real ground exactly like a player attack lunge, so it earns the
+      // same colored-by-affliction trail — using the creature's own
+      // dmgTag-derived afflictionBonuses (ResourceSystem.afflictionBonusesForTag,
+      // {id: mul} same shape as the player's combatSwingAfflictionMuls)
+      // instead of the player's chosen upgrades. Exposed to combat-*.js via
+      // window.Combat.deps.tickCreatureLungeTrail.
+      function tickCreatureLungeTrail(c, distPx, afflictionBonuses) {
+        if (!afflictionBonuses) return;
+        tickLungeTrailForEntity(c, distPx, Object.keys(afflictionBonuses), afflictionBonuses, c.areaId, c.areaGrid, c.scene || scene);
       }
 
       // Ages/fades/removes already-dropped stamps — runs every frame
@@ -29001,6 +29022,11 @@
         // — without this, that ground covered during the leap never ticked
         // a footstep (see combat-animal-attacks.js's pounceUpdate).
         tickCreatureFootsteps,
+        // Same idea as tickCreatureFootsteps but for the colored onion-ring
+        // lunge trail (see spawnLungeTrailStamp) — Pounce's leap passes its
+        // own dmgTag-derived afflictionBonuses since it has no upgrade tree
+        // to read from the way player attacks do.
+        tickCreatureLungeTrail,
         // Gates every weapon tap/hold ability (see combat-input.js) — no
         // attacking while swimming in a river/stream, player or creature.
         isPlayerSwimming,
