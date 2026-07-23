@@ -8892,7 +8892,15 @@
                 const box = new THREE.Box3().setFromObject(vegGroup);
                 if (!box.isEmpty()) {
                   const sphere = box.getBoundingSphere(new THREE.Sphere());
-                  vegGroup.userData.cullSphere = { x: sphere.center.x, z: sphere.center.z, radius: sphere.radius };
+                  // xzRadius: horizontal-only footprint half-diagonal, for the
+                  // camera-player occlusion test (updateZoneVegetationCulling)
+                  // — the full 3D bounding-sphere radius above is dominated by
+                  // a tall tree's height, not its trunk/canopy width, and
+                  // reusing it as the occlusion test's sideways tolerance let
+                  // trees well off to the side of the sightline register as
+                  // "blocking" just for being tall.
+                  const xzRadius = Math.hypot((box.max.x - box.min.x) / 2, (box.max.z - box.min.z) / 2);
+                  vegGroup.userData.cullSphere = { x: sphere.center.x, z: sphere.center.z, radius: sphere.radius, xzRadius };
                 }
               }
               zScene.add(vegGroup);
@@ -20837,10 +20845,26 @@
       // Enable layer 1 on a mesh (or every mesh inside a Group) so the
       // selective outline pass picks it up. Flat floor slabs, water, and
       // grass billboards stay on layer 0 only and are never outlined.
+      // Meshes tagged userData.noOutline (textured leaf cards — see
+      // foliage-generator.js's getLeafCardMaterial usage) are skipped even
+      // inside an otherwise-outlined group: shellOutlineMat's inverted-hull
+      // technique needs real volume, correct normals, and a depth-writing
+      // main pass to produce a thin border. A leaf card is a flat, single-
+      // layer, depthWrite:false alpha-cutout plane with no computed normals
+      // (mergeGeomsWithUV never calls computeVertexNormals, unlike the bark/
+      // vine merges right next to it) — the shell's normal-based expand is
+      // therefore zero, so for whichever leaf cards happen to be back-facing
+      // from the current camera angle (roughly half, given the random per-
+      // leaf yaw), the BackSide shell isn't culled, has the exact same depth
+      // as the real card, passes shellOutlineMat's LessDepth test (nothing
+      // else at that depth to fail against, since the real card never wrote
+      // depth), and paints its FULL quad solid black with no alphaTest —
+      // the "black leaf rectangles" bug, camera-angle dependent since it's a
+      // different subset of back-facing cards each time the view changes.
       function _markOutline(obj) {
         if (!obj || typeof obj.isMesh === 'undefined' && !obj.isGroup) return;
-        if (obj.isMesh) { obj.layers.enable(1); return; }
-        obj.traverse(child => { if (child.isMesh) child.layers.enable(1); });
+        if (obj.isMesh) { if (!obj.userData.noOutline) obj.layers.enable(1); return; }
+        obj.traverse(child => { if (child.isMesh && !child.userData.noOutline) child.layers.enable(1); });
       }
 
       // Shared vertex shader used for coloured target outlines (supports instancing)
@@ -21484,7 +21508,7 @@
           if (force || show !== obj.visible) obj.visible = show;
 
           if (show) {
-            const blocking = isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, playerWX, playerWZ, s.radius);
+            const blocking = isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, playerWX, playerWZ, s.xzRadius ?? s.radius);
             const target = blocking ? TREE_FADE_OPACITY : 1;
             if (target !== 1 || obj.userData._fadeMaterials) {
               const mats = ensureTreeFadeMaterials(obj);

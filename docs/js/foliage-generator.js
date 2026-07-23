@@ -1429,7 +1429,13 @@ window.FoliageGenerator = (() => {
     }
     if (leafGeoms.length) {
       const merged = mergeGeomsWithUV(leafGeoms);
-      group.add(new T.Mesh(merged, getLeafCardMaterial(preset)));
+      const leafMesh = new T.Mesh(merged, getLeafCardMaterial(preset));
+      // Flat, depthWrite:false, no-computed-normals alpha-cutout cards break
+      // game.js's inverted-hull outline shell (see _markOutline's comment) —
+      // opt this mesh out of the outline layer entirely rather than fight an
+      // effect that fundamentally doesn't apply to non-volumetric geometry.
+      leafMesh.userData.noOutline = true;
+      group.add(leafMesh);
     }
     unitLeaf.dispose();
 
