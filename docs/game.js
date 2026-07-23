@@ -8854,6 +8854,12 @@
                              : window.FoliageGenerator.buildShrubMesh(c, r);
               const isNativeBuild = isCrownedPine || isShadewood || isBush || isStump;
               if (!isNativeBuild) vegGroup.scale.multiplyScalar(2);
+              // Small bushes are short enough that a player standing behind
+              // one is still mostly visible over/around it, and they're
+              // meant to read as harmless ground clutter rather than a wall
+              // — never worth the fade/ghost occlusion treatment reserved
+              // for actual trees (see updateZoneVegetationCulling).
+              if (isBush) vegGroup.userData.skipOcclusionFade = true;
               const groundY = tileSurfaceY(TileType.GRASS) + tierY;
               vegGroup.position.set(cx, groundY, cz);
               if (isShadewood) {
@@ -21360,6 +21366,12 @@
       const TREE_FADE_OPACITY = 0.25;
       const TREE_FADE_LERP_PER_SEC = 6;
       const OCCLUSION_STENCIL_REF = 7; // arbitrary; nothing else in this codebase uses the stencil buffer
+      // Sideways tolerance for the camera-player occlusion line test, as a
+      // fraction of a tree's own horizontal footprint radius (cullSphere's
+      // xzRadius) — halved from the full footprint so only trees whose trunk
+      // is genuinely close to dead-center on the sightline count as
+      // blocking, not merely anything within a whole canopy-width of it.
+      const OCCLUSION_XZ_RADIUS_MUL = 0.5;
       const _treeFadeActive = new Set(); // vegGroup refs currently mid-fade
       function ensureTreeFadeMaterials(vegGroup) {
         let mats = vegGroup.userData._fadeMaterials;
@@ -21508,7 +21520,8 @@
           if (force || show !== obj.visible) obj.visible = show;
 
           if (show) {
-            const blocking = isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, playerWX, playerWZ, s.xzRadius ?? s.radius);
+            const blocking = !obj.userData.skipOcclusionFade
+              && isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, playerWX, playerWZ, (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL);
             const target = blocking ? TREE_FADE_OPACITY : 1;
             if (target !== 1 || obj.userData._fadeMaterials) {
               const mats = ensureTreeFadeMaterials(obj);

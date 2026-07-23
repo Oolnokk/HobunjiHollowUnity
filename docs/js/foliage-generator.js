@@ -945,7 +945,7 @@ window.FoliageGenerator = (() => {
       leafWidth: 1.75, leafOffsetX: 0, leafOffsetY: -0.5, leafOffsetZ: 0,
       leafAlong01: 0.5, leafYawDeg: 180, leafPitchDeg: 0, leafRollDeg: -15,
       leafSurfaceClearance: 0.01, leafStemUp: false, trunkRollBiasDist: 0.25,
-      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 1, leafAlphaCutoff: 0.5,
+      leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 0.92, leafAlphaCutoff: 0.5,
       barkColorHex: 0x4a3b33,
       leafTexture: 'assets/leaves/leaves_crowned_pine.png',
       scaleMul: 0.75
