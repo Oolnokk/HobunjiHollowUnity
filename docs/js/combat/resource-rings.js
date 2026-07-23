@@ -89,6 +89,13 @@
       // renderOrder (below) still controls draw order among the ring's own
       // stacked layers and against other depthTest:false objects.
       depthTest: false,
+      // MeshBasicMaterial is already unlit (ignores every scene light), but
+      // it's still fogged by default — scene.fog would otherwise wash these
+      // out toward the fog/sky color at distance or under night's darker fog
+      // tint, working against the whole point of a HUD that must always read
+      // clearly. Disabling fog is what actually makes this ring ignore every
+      // ambient/lighting influence in the scene, not just direct light.
+      fog: false,
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.renderOrder = Math.round(yOffset * 100000);

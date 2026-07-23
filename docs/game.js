@@ -1132,33 +1132,32 @@
       };
 
       // ── Footstep SFX ──────────────────────────────────────────────────
-      // Placeholder footfalls, keyed by a coarse "surface" rather than raw
-      // TileType — several tile types share a footstep (e.g. grass and weeds
-      // both sound like grass underfoot). Interior floors always map to
-      // 'wood' regardless of the (irrelevant) tile type beneath them.
+      // Real recordings (docs/assets/audio/sfx/footsteps), keyed by a coarse
+      // "surface" rather than raw TileType — several tile types share a
+      // footstep (e.g. grass and weeds both sound like grass underfoot).
+      // Interior floors always map to 'gravel' regardless of the
+      // (irrelevant) tile type beneath them, until interiors get their own
+      // recorded surface.
       //
-      // Every surface reuses the exact same oscillator+noise voice (the only
-      // one of our synth attempts that reads as a footstep rather than a
-      // sound effect) — they're differentiated purely by post effects
-      // (filter shape/cutoff/Q, pitch, decay length), not a different recipe.
-      // volume raised from its original 0.26 — at that gain, stacked with
-      // the other multipliers below (baseVolume/sfxVolume/falloff), footsteps
-      // were only barely audible even standing right next to their source.
+      // Each surface's clip list normally comes from config
+      // (audio.footsteps.surfaces[key].urls, see scratchbones-config.js) —
+      // FOOTSTEP_POST_FX below only carries the oscillator+noise synth
+      // fallback tuning (filter shape/cutoff/Q, pitch, decay length) used
+      // when no urls are configured for a surface.
       const FOOTSTEP_BASE = Object.freeze({
         waveform: 'triangle', freq: 55, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.6,
       });
 
-      // Swap in real recordings later by setting `url` on a surface's post-fx
-      // entry, same convention as _playNpcDialogueLetterSfx's cfg.url.
       const FOOTSTEP_POST_FX = Object.freeze({
-        grass: {},
-        dirt:  { filterFreqMul: 2.4, filterQ: 1.2, durationMul: 1.15 },
-        path:  { filterFreqMul: 4.6, filterQ: 2.4, durationMul: 0.6,  pitchMul: 1.2,  volumeMul: 0.9 },
-        mud:   { filterFreqMul: 1.5, filterQ: 0.9, durationMul: 1.8,  pitchMul: 0.7,  volumeMul: 1.1 },
-        water: { filterFreqMul: 5.5, filterQ: 1.0, durationMul: 1.3,  pitchMul: 1.7,  volumeMul: 1.0, filterType: 'highpass' },
-        rock:  { filterFreqMul: 5.2, filterQ: 2.8, durationMul: 0.5,  pitchMul: 1.35, volumeMul: 0.95 },
-        wood:  { filterFreqMul: 3.6, filterQ: 1.8, durationMul: 0.75, pitchMul: 1.1,  volumeMul: 0.9 },
+        grass:  {},
+        gravel: { filterFreqMul: 4.6, filterQ: 2.4, durationMul: 0.6, pitchMul: 1.2, volumeMul: 0.9 },
+        water:  { filterFreqMul: 5.5, filterQ: 1.0, durationMul: 1.3, pitchMul: 1.7, volumeMul: 1.0, filterType: 'highpass' },
       });
+
+      // How much of a ground footstep's own volume a simultaneous waterstep
+      // blends in at when the tile is fully flooded (tile.water === MAX_WATER)
+      // — scales linearly down to 0 at tile.water === 0. See playFootstepSfx.
+      const FOOTSTEP_WATER_BLEND_MAX = 0.8;
 
       // Distance an entity must travel between alternating footfalls, in world px
       // (TILE-scaled so the same constant works for player/creature px coords
@@ -1181,30 +1180,40 @@
       // silent even standing right next to the player.
       const FOOTSTEP_QUIET_SCALE = 0.7;
 
+      // Grass = grasstep. Path (and everything else that's hard-packed/
+      // exposed ground rather than turf — tilled/raised soil, dug trenches,
+      // rock, shrub, ramps) = gravelstep. Anything that actually holds
+      // standing water (river/stream/waterfall/paddy) = waterstep — this is
+      // "swimming" territory, not a moisture blend (see playFootstepSfx for
+      // the blend applied to grass/gravel ground tiles instead).
       function footstepSurfaceKey(area, type) {
-        if (area === 'interior' || _isBuildingArea(area)) return 'wood';
+        if (area === 'interior' || _isBuildingArea(area)) return 'gravel'; // temporary — no dedicated interior surface yet
         switch (type) {
           case TileType.PADDY:
           case TileType.RIVER:
-          case TileType.STREAM:  return 'water';
+          case TileType.STREAM:
+          case TileType.WATERFALL: return 'water';
+          case TileType.PATH:
+          case TileType.RAMP:
           case TileType.TILLED:
-          case TileType.RAISED:  return 'dirt';
-          case TileType.PATH:    return 'path';
-          case TileType.TRENCH:  return 'mud';
+          case TileType.RAISED:
+          case TileType.TRENCH:
           case TileType.ROCK:
-          case TileType.SHRUB:   return 'rock';
-          default:               return 'grass'; // GRASS, WEEDS
+          case TileType.SHRUB:     return 'gravel';
+          default:                 return 'grass'; // GRASS, WEEDS
         }
       }
 
-      // Returns the TileType at a world-px coordinate within `area`'s own grid
-      // (not necessarily the player's currentArea — used for NPCs/creatures
-      // walking around in areas the player isn't currently viewing).
-      function footstepTileTypeAt(area, wx, wy, grid) {
+      // Returns the tile object at a world-px coordinate within `area`'s own
+      // grid (not necessarily the player's currentArea — used for NPCs/
+      // creatures walking around in areas the player isn't currently
+      // viewing). Callers read both .type (surface) and .water (moisture
+      // blend) off the result.
+      function footstepTileAt(area, wx, wy, grid) {
         const g = grid || npcGridForArea(area);
         if (!g) return null;
         const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
-        return g[row]?.[col]?.type ?? null;
+        return g[row]?.[col] ?? null;
       }
 
       // Advances a per-entity footstep stride accumulator; returns true (and
@@ -1219,25 +1228,22 @@
         return true;
       }
 
-      // `pan` is -1 (full left) .. 1 (full right); leave at 0 for the player
-      // (the listener) and companions (always close, not worth panning).
-      function playFootstepSfx(area, type, volumeScale = 1, pan = 0) {
-        const audioCfg = gameAudioConfig();
-        if (audioCfg.enabled === false) return;
-        const footstepCfg = audioCfg.footsteps || {};
-        if (footstepCfg.enabled === false) return;
-        const surfaceKey = footstepSurfaceKey(area, type);
-        const postFx = { ...FOOTSTEP_POST_FX[surfaceKey], ...(footstepCfg.surfaces?.[surfaceKey] || {}) };
-        const base = FOOTSTEP_BASE;
-        const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
-        const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1)
-          * Math.max(0, volumeScale) * Math.max(0, Number(base.volume) || 0.26)
-          * Math.max(0, Number(postFx.volumeMul) || 1);
+      // Plays one surface's footfall at `volume` — a random pick from that
+      // surface's configured clip list (audio.footsteps.surfaces[key].urls)
+      // when one exists, else the oscillator+noise synth fallback tuned by
+      // FOOTSTEP_POST_FX. `pan` only affects the synth fallback (a plain
+      // <audio> element, like every other one-shot sfx in this file, doesn't
+      // get routed through a StereoPannerNode).
+      function playFootstepSurface(surfaceKey, footstepCfg, volume, pan) {
         if (volume <= 0.002) return;
+        const postFx = { ...FOOTSTEP_POST_FX[surfaceKey], ...(footstepCfg.surfaces?.[surfaceKey] || {}) };
+        const urls = postFx.urls || (postFx.url ? [postFx.url] : null);
+        const finalVolume = Math.min(1, volume * Math.max(0, Number(postFx.volumeMul) || 1));
 
-        if (postFx.url) {
-          const snd = new Audio(postFx.url);
-          snd.volume = Math.min(1, volume);
+        if (urls && urls.length) {
+          const url = urls[Math.floor(Math.random() * urls.length)];
+          const snd = new Audio(url);
+          snd.volume = finalVolume;
           snd.playbackRate = 0.92 + Math.random() * 0.16;
           snd.play().catch(() => {});
           return;
@@ -1248,6 +1254,7 @@
         const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
         if (ctx.state === 'suspended') ctx.resume().catch(() => {});
         const now = ctx.currentTime;
+        const base = FOOTSTEP_BASE;
         const pitchMul = Number(postFx.pitchMul) || 1;
         const durationS = Math.max(0.02, (Number(base.durationMs) || 55) / 1000 * (Number(postFx.durationMul) || 1));
         const noiseMix = Math.max(0, Math.min(1, Number(base.noiseMix) ?? 0.82));
@@ -1266,7 +1273,7 @@
           const oscGain = ctx.createGain();
           osc.type = base.waveform || 'triangle';
           osc.frequency.value = baseFreq + (Math.random() * 2 - 1) * variance;
-          oscGain.gain.setValueAtTime(volume * (1 - noiseMix), now);
+          oscGain.gain.setValueAtTime(finalVolume * (1 - noiseMix), now);
           oscGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
           osc.connect(oscGain).connect(outNode);
           osc.start(now);
@@ -1285,11 +1292,41 @@
           filter.frequency.value = baseFreq * (Number(postFx.filterFreqMul) || 3.2);
           filter.Q.value = Number(postFx.filterQ) || 1.6;
           const noiseGain = ctx.createGain();
-          noiseGain.gain.setValueAtTime(volume * noiseMix, now);
+          noiseGain.gain.setValueAtTime(finalVolume * noiseMix, now);
           noiseGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
           noise.connect(filter).connect(noiseGain).connect(outNode);
           noise.start(now);
           noise.stop(now + durationS);
+        }
+      }
+
+      // `tile` is the grid tile the footstep lands on (see footstepTileAt) —
+      // null for NPCs/creatures whose area has no grid (shouldn't normally
+      // happen, just defends against it). `pan` is -1 (full left) .. 1 (full
+      // right); leave at 0 for the player (the listener) and companions
+      // (always close, not worth panning).
+      //
+      // Ground surfaces (grass/gravel) layer in a second, simultaneous
+      // waterstep clip scaled by the tile's moisture (tile.water, 0..
+      // MAX_WATER) — a bone-dry tile blends none in, a fully flooded one
+      // blends it in at FOOTSTEP_WATER_BLEND_MAX (80%) of the footstep's own
+      // volume. Actual water tiles (river/stream/paddy/waterfall) already
+      // resolve straight to the 'water' surface via footstepSurfaceKey and
+      // skip this blend — they're pure waterstep, not a blend target.
+      function playFootstepSfx(area, tile, volumeScale = 1, pan = 0) {
+        const audioCfg = gameAudioConfig();
+        if (audioCfg.enabled === false) return;
+        const footstepCfg = audioCfg.footsteps || {};
+        if (footstepCfg.enabled === false) return;
+        const surfaceKey = footstepSurfaceKey(area, tile?.type ?? null);
+        const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
+        const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1)
+          * Math.max(0, volumeScale) * Math.max(0, Number(FOOTSTEP_BASE.volume) || 0.26);
+        playFootstepSurface(surfaceKey, footstepCfg, volume, pan);
+
+        if (surfaceKey !== 'water') {
+          const wetFraction = clamp((Number(tile?.water) || 0) / MAX_WATER, 0, 1);
+          playFootstepSurface('water', footstepCfg, volume * wetFraction * FOOTSTEP_WATER_BLEND_MAX, pan);
         }
       }
 
@@ -5095,12 +5132,12 @@
         // Linear, not squared — squared falloff made anything past ~30% of
         // earshot drop to near-silence, which was most of the usable range.
         const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-        const type = footstepTileTypeAt(c.areaId, c.x, c.y, c.areaGrid);
+        const tile = footstepTileAt(c.areaId, c.x, c.y, c.areaGrid);
         // Whistled companions stay quiet (like the player) and unpanned —
         // hostiles/wild creatures get the full directional treatment.
-        if (c.isCompanion) { playFootstepSfx(c.areaId, type, falloff * FOOTSTEP_QUIET_SCALE); return; }
+        if (c.isCompanion) { playFootstepSfx(c.areaId, tile, falloff * FOOTSTEP_QUIET_SCALE); return; }
         const pan = Math.max(-1, Math.min(1, (c.x - player.x) / FOOTSTEP_PAN_RANGE_PX));
-        playFootstepSfx(c.areaId, type, falloff, pan);
+        playFootstepSfx(c.areaId, tile, falloff, pan);
       }
 
       // Narrow terrain gate for creature movement — unlike tileSpeedAt (used by
@@ -8331,14 +8368,12 @@
       }
 
       function unlockGameAudio(reason = 'user gesture') {
-        // Resuming suspended AudioContexts must happen on every gesture, not just
-        // the first: _musicAudioCtx/_rainAudioCtx are created lazily (the first
-        // time music or rain actually tries to play), which is often well after
-        // the player's first click/tap — by which point a one-shot unlock would
-        // already be spent and the newly-created context would stay suspended
-        // (silently) forever.
-        const rainCtx = window._rainAudioCtx;
-        if (rainCtx?.state === 'suspended') rainCtx.resume().catch(err => audioDebug('rain audio resume failed: ' + (err?.name || err), 'rain-resume-fail', 0));
+        // Resuming a suspended AudioContext must happen on every gesture, not just
+        // the first: _musicAudioCtx is created lazily (the first time music
+        // actually tries to play), which is often well after the player's
+        // first click/tap — by which point a one-shot unlock would already be
+        // spent and the newly-created context would stay suspended (silently)
+        // forever.
         if (_musicAudioCtx?.state === 'suspended') _musicAudioCtx.resume().catch(err => audioDebug('music audio resume failed: ' + (err?.name || err), 'music-resume-fail', 0));
         if (!_gameAudioUnlocked) {
           _gameAudioUnlocked = true;
@@ -10994,8 +11029,8 @@
         // earshot drop to near-silence, which was most of the usable range.
         const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
             const pan = Math.max(-1, Math.min(1, (wx - player.x) / FOOTSTEP_PAN_RANGE_PX));
-            const type = footstepTileTypeAt(this.area, wx, wy, npcGridForArea(this.area));
-            playFootstepSfx(this.area, type, falloff, pan);
+            const tile = footstepTileAt(this.area, wx, wy, npcGridForArea(this.area));
+            playFootstepSfx(this.area, tile, falloff, pan);
           },
           moveToward(tx, tz, dt) {
             const cfg = npcMovementConfig();
@@ -16619,8 +16654,8 @@
       function tickPlayerFootsteps(prevX, prevY) {
         const dist = Math.hypot(player.x - prevX, player.y - prevY);
         if (!_footstepAdvance(player, dist, FOOTSTEP_PLAYER_STRIDE_PX)) return;
-        const type = footstepTileTypeAt(currentArea, player.x, player.y, getActiveGrid());
-        playFootstepSfx(currentArea, type, 1);
+        const tile = footstepTileAt(currentArea, player.x, player.y, getActiveGrid());
+        playFootstepSfx(currentArea, tile, 1);
       }
 
       function updateMovement(dt) {
@@ -20535,100 +20570,43 @@
         }
       }
 
-      // ── Layered rain audio (ported from ScratchbonesGame's outdoor weather) ──
-      // Three pink-noise sources at different playback rates, each narrowed by
-      // its own filter band (bright/mid/rumble), cross-faded by rain intensity.
-      function _buildRainPinkNoise(audioCtx) {
-        const len = audioCtx.sampleRate * 2;
-        const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
-        const d = buf.getChannelData(0);
-        let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0;
-        for (let i = 0; i < len; i++) {
-          const w = Math.random() * 2 - 1;
-          b0 = 0.99886 * b0 + w * 0.0555179;
-          b1 = 0.99332 * b1 + w * 0.0750759;
-          b2 = 0.96900 * b2 + w * 0.1538520;
-          b3 = 0.86650 * b3 + w * 0.3104856;
-          b4 = 0.55000 * b4 + w * 0.5329522;
-          b5 = -0.7616 * b5 - w * 0.0168980;
-          d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + w * 0.5362) * 0.10;
-        }
-        return buf;
+      // ── Layered rain audio ──────────────────────────────────────────────
+      // Weather-driven mix of three real rain recordings (gentle/mid/heavy —
+      // see audio.bgs.gentlerain/midrain/heavyrain) instead of synthesized
+      // noise. Reuses the same looping-<audio>-element plumbing as the
+      // birds/wind/nightbugs bgs layers (setLoopingBgs) rather than Web
+      // Audio buffer sources, so all three tracks live in _loopingBgs and
+      // get the same autoplay-unlock/retry handling for free.
+      //
+      // Weights form a triangular crossfade over rainStrength/3 (0..1):
+      // gentle owns low intensity, mid the middle, heavy the high end, with
+      // neighboring bands overlapping instead of hard-cutting between them.
+      function rainLayerWeights(intensity) {
+        const gentle = clamp(1 - intensity / 0.66, 0, 1);
+        const mid    = clamp(1 - Math.abs(intensity - 0.5) / 0.5, 0, 1);
+        const heavy  = clamp((intensity - 0.34) / 0.66, 0, 1);
+        return { gentle, mid, heavy };
       }
 
-      function _createRainAudio() {
-        let ctx = null, gainH = null, gainM = null, gainL = null, lpf = null, started = false;
-
-        function start() {
-          if (started) return;
-          started = true;
-          try {
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            if (!AudioCtx) return;
-            ctx = window._rainAudioCtx || (window._rainAudioCtx = new AudioCtx());
-            const buf = _buildRainPinkNoise(ctx);
-
-            function makeSource(rate) {
-              const s = ctx.createBufferSource();
-              s.buffer = buf; s.loop = true; s.playbackRate.value = rate; s.start();
-              return s;
-            }
-            const srcH = makeSource(1.00);
-            const srcM = makeSource(0.95);
-            const srcL = makeSource(0.81);
-
-            // Tighter Q than the original port (and quieter master gain below) —
-            // same scuffy/noise-heavy, narrow-band treatment given to footsteps
-            // (FOOTSTEP_POST_FX bandpass Q ~0.9-2.8) instead of smooth broadband hiss.
-            const hpf = ctx.createBiquadFilter();
-            hpf.type = 'highpass'; hpf.frequency.value = 950; hpf.Q.value = 1.6;
-            const bpf = ctx.createBiquadFilter();
-            bpf.type = 'bandpass'; bpf.frequency.value = 330; bpf.Q.value = 1.8;
-            lpf = ctx.createBiquadFilter();
-            lpf.type = 'lowpass'; lpf.frequency.value = 115; lpf.Q.value = 1.4;
-
-            gainH = ctx.createGain(); gainH.gain.value = 0;
-            gainM = ctx.createGain(); gainM.gain.value = 0;
-            gainL = ctx.createGain(); gainL.gain.value = 0;
-
-            const master = ctx.createGain();
-            master.gain.value = Math.max(0, Number(gameAudioConfig().rainVolume) || 0.20);
-
-            srcH.connect(hpf); hpf.connect(gainH); gainH.connect(master);
-            srcM.connect(bpf); bpf.connect(gainM); gainM.connect(master);
-            srcL.connect(lpf); lpf.connect(gainL); gainL.connect(master);
-            master.connect(ctx.destination);
-          } catch (e) {
-            console.warn('[rainAudio] Web Audio unavailable:', e);
-          }
-        }
-
-        function setIntensity(v) {
-          if (!ctx || !gainH) return;
-          if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-          const now = ctx.currentTime, tc = 1.2;
-          gainH.gain.setTargetAtTime(v * 1.0, now, tc);
-          gainM.gain.setTargetAtTime(v * 0.72, now, tc);
-          const lv = v > 0.5 ? Math.pow((v - 0.5) * 2, 1.6) : 0;
-          gainL.gain.setTargetAtTime(lv * 0.68, now, tc);
-          if (lpf) lpf.frequency.setTargetAtTime(145 - v * 73, now, tc);
-        }
-
-        return { start, setIntensity };
-      }
-
-      let _rainAudio = null;
       function updateRainAudio() {
         const audioCfg = gameAudioConfig();
-        if (audioCfg.enabled === false) return;
+        const bgs = audioCfg.bgs || {};
+        if (audioCfg.enabled === false) {
+          setLoopingBgs('raingentle', '', 0);
+          setLoopingBgs('rainmid', '', 0);
+          setLoopingBgs('rainheavy', '', 0);
+          return;
+        }
         const outdoors = currentArea === 'farm' || currentArea === 'town';
         const indoors = currentArea === 'interior' || _isBuildingArea(currentArea);
         const intensity = (outdoors && !indoors && calendar.isRaining)
           ? Math.min(1, (calendar.rainStrength || 0) / 3)
           : 0;
-        if (!_rainAudio) _rainAudio = _createRainAudio();
-        if (intensity > 0) _rainAudio.start();
-        _rainAudio.setIntensity(intensity);
+        const weights = rainLayerWeights(intensity);
+        const master = Math.max(0, Number(audioCfg.rainVolume) || 1);
+        setLoopingBgs('raingentle', bgs.gentlerain, weights.gentle * (bgs.gentlerainVolume ?? 0.45) * master);
+        setLoopingBgs('rainmid',    bgs.midrain,    weights.mid    * (bgs.midrainVolume    ?? 0.55) * master);
+        setLoopingBgs('rainheavy',  bgs.heavyrain,  weights.heavy  * (bgs.heavyrainVolume   ?? 0.65) * master);
       }
 
       function tileSpeedAt(wx, wy) {
