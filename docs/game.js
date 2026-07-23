@@ -8868,22 +8868,31 @@
                 // Tag the lowest point of the leaf canopy so the camera can be
                 // kept from rising above it while the player is nearby (see
                 // canopyZoomFloor) — mirrors the standalone foliage tool's own
-                // camera-vs-canopy obstruction concept. The leaf-card mesh is
-                // always the LAST child buildConiferTreeGroup adds (after the
-                // bark mesh), when leaves exist at all.
-                const leafMesh = vegGroup.children[vegGroup.children.length - 1];
-                if (leafMesh && leafMesh.geometry && leafMesh !== vegGroup.children[0]) {
-                  leafMesh.geometry.computeBoundingBox();
-                  const bb = leafMesh.geometry.boundingBox;
+                // camera-vs-canopy obstruction concept. canopyLocal is computed
+                // once per shared tree variant (see foliage-generator.js's
+                // getTreeVariants), not per instance — just scale it by this
+                // instance's own transform.
+                const canopyLocal = vegGroup.userData.canopyLocal;
+                if (canopyLocal) {
                   const scaleTotal = vegGroup.scale.x;
-                  const radius = Math.max(
-                    Math.abs(bb.min.x), Math.abs(bb.max.x),
-                    Math.abs(bb.min.z), Math.abs(bb.max.z)
-                  ) * scaleTotal;
                   vegGroup.userData.canopyClamp = {
-                    x: cx, z: cz, radius,
-                    undersideY: groundY + bb.min.y * scaleTotal,
+                    x: cx, z: cz, radius: canopyLocal.radius * scaleTotal,
+                    undersideY: groundY + canopyLocal.undersideY * scaleTotal,
                   };
+                }
+              }
+              if (isNativeBuild) {
+                // Bounding sphere for view-corridor culling (see
+                // updateZoneVegetationCulling) — computed once per instance at
+                // build time, not per frame. Ports the standalone foliage
+                // tool's own forestCullSphere concept: a dense forest pays for
+                // full per-object visibility work at ~7Hz instead of every
+                // frame, and only for objects a camera-aligned corridor could
+                // plausibly show.
+                const box = new THREE.Box3().setFromObject(vegGroup);
+                if (!box.isEmpty()) {
+                  const sphere = box.getBoundingSphere(new THREE.Sphere());
+                  vegGroup.userData.cullSphere = { x: sphere.center.x, z: sphere.center.z, radius: sphere.radius };
                 }
               }
               zScene.add(vegGroup);
@@ -9055,7 +9064,12 @@
         const canopyZones = [];
         zScene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
 
-        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones };
+        // Trees/bushes/stumps eligible for view-corridor culling — see
+        // updateZoneVegetationCulling.
+        const cullables = [];
+        zScene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
+
+        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables };
         _zoneScenes.set(mapId, info);
         _spawnZoneBuildings(mapId);
         _spawnZoneDecorFurniture(mapId);
@@ -13039,12 +13053,16 @@
         if (oldGrass) { zi.scene.remove(oldGrass); oldGrass.geometry?.dispose(); }
         _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId));
         _zoneGrassMeshes.set(mapId, _buildZoneGrassBillboards(zi.scene, zi.grid, zi.cols, zi.rows));
-        // Re-derive canopy clamp zones (see buildZoneScene) — a felled tree's
-        // mesh is gone after this rebuild, and leaving its stale entry in
-        // zi.canopyZones would keep hard-limiting zoom over an empty stump.
+        // Re-derive canopy clamp zones and cullables (see buildZoneScene) — a
+        // felled tree's mesh is gone after this rebuild, and leaving its stale
+        // entries around would keep hard-limiting zoom / culling nothing over
+        // an empty stump.
         const canopyZones = [];
         zi.scene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
         zi.canopyZones = canopyZones;
+        const cullables = [];
+        zi.scene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
+        zi.cullables = cullables;
         // A dug/filled tile might sit on a plateau's flat top — its mesa lid
         // is otherwise frozen from zone-build time (see rebuildZoneMesaMeshes)
         // and would keep covering/exposing the wrong side of a real trench.
@@ -21254,6 +21272,48 @@
       }
       updateCameraPosition();
 
+      // Camera-aligned view-corridor culling for dense zone vegetation — ports
+      // the standalone foliage tool's updateForestGeometryCulling. Toggling
+      // .visible on whole tree/bush/stump groups (bounding sphere precomputed
+      // once at build time, see cullSphere tagging in _buildZoneFloorMeshes)
+      // is far cheaper than every one of those groups' own per-object frustum
+      // test every single frame, and this corridor can hide far more than
+      // default frustum culling would (behind camera, wide off to the sides)
+      // — the "1-2 tile gaps throughout" density this exists to support can
+      // put thousands of these groups in one zone.
+      const VEG_CULL_FORWARD_TILES = 42;
+      const VEG_CULL_WIDTH_TILES = 30;
+      const VEG_CULL_REAR_TILES = 2;
+      const VEG_CULL_HYSTERESIS_TILES = 1;
+      let _vegCullAccum = 999; // force a real pass on the first tick
+      function updateZoneVegetationCulling(force = false) {
+        if (!_isZoneArea(currentArea)) return;
+        const zi = _zoneScenes.get(currentArea);
+        const cullables = zi?.cullables;
+        if (!cullables || !cullables.length) return;
+        const camX = camera.position.x, camZ = camera.position.z;
+        let viewX = camTargetX - camX, viewZ = camTargetZ - camZ;
+        let viewLen = Math.hypot(viewX, viewZ);
+        if (viewLen < 1e-5) { viewX = 0; viewZ = 1; viewLen = 1; }
+        viewX /= viewLen; viewZ /= viewLen;
+        const rightX = viewZ, rightZ = -viewX;
+        const forwardRange = VEG_CULL_FORWARD_TILES;
+        const rearRange = VEG_CULL_REAR_TILES;
+        const halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
+        const hysteresis = VEG_CULL_HYSTERESIS_TILES;
+        for (const obj of cullables) {
+          const s = obj.userData.cullSphere;
+          const dx = s.x - camX, dz = s.z - camZ;
+          const along = dx * viewX + dz * viewZ;
+          const side = Math.abs(dx * rightX + dz * rightZ);
+          const sticky = obj.visible ? hysteresis : 0;
+          const expandedRadius = s.radius + sticky;
+          const show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
+            && side <= halfWidth + expandedRadius;
+          if (force || show !== obj.visible) obj.visible = show;
+        }
+      }
+
       // ── Lighting ──────────────────────────────────────────────────
       const ambientLight = new THREE.AmbientLight(0xffeedd, 0.7);
       scene.add(ambientLight);
@@ -25416,6 +25476,14 @@
         camTargetZ += (wz - camTargetZ) * camLerp;
         camTargetY += (wy - camTargetY) * camLerp;
         updateCameraPosition();
+
+        // Throttled to ~7Hz, not every frame — see updateZoneVegetationCulling.
+        _vegCullAccum += dt;
+        if (_vegCullAccum >= 0.14) {
+          const force = _vegCullAccum >= 900; // first tick after script load
+          _vegCullAccum = 0;
+          updateZoneVegetationCulling(force);
+        }
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);

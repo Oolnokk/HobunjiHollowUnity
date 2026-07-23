@@ -4890,19 +4890,25 @@
 
   // Minimum pre-scale Chebyshev distance between two tree tiles. This is
   // pre-scale (copse-placement) space — the later 2x density pass
-  // (GENERATION_TILE_SCALE) turns every tile here into a 2x2 final block,
-  // so the FINAL tile gap between two trees works out to 2*dist-2 (only
-  // even gaps are reachable at all, since both trees' blocks are 2 wide).
-  // A rendered tree's canopy is ~2.75-3 world units in radius (see
-  // FoliageGenerator's TREE_PRESETS — crownedPine/shadewood, both roughly
-  // the same order of magnitude), i.e. a 5.5-6 unit diameter, and 1 world
-  // unit = 1 final tile — so a bare minimum tile gap of 1-2 (the previous
-  // value here) leaves canopies overlapping by several tiles even though
-  // the *tile* footprints themselves don't touch. dist=4 -> final gap 6,
-  // final trunk-to-trunk distance ~8, landing the canopy-*edge* gap at
-  // roughly 8 - 2*2.875 ≈ 2.25 tiles — closer to an actually-visible gap
-  // between canopies instead of a wall of overlapping foliage.
-  const TREE_SPACING_MIN_DIST = 4;
+  // (GENERATION_TILE_SCALE) doubles every coordinate, and each tree object
+  // now keeps a fixed 1x1 *final*-tile footprint regardless of scale (see
+  // scaleGeneratedObject's SINGLE_TILE_FOOTPRINT_OBJECT_TYPES — a tree used
+  // to inherit the generic scale x scale block instead, which meant every
+  // single copse placement rendered as 4 separate full-size trees stacked
+  // within 1-2 world units of each other; that's what "1 trunk = 1 tile" is
+  // fixing). So the FINAL empty-tile gap between two trunks is 2*dist-1.
+  // dist=1 (the loosest legal value — hasNearbyTreeObject's ring radius is
+  // dist-1, so dist=1 means "just don't reuse a tile", no extra gap forced)
+  // gives a 1-tile final gap: the tightest packing the generator supports,
+  // deliberately dense enough that rendered canopies (~2.75-6 world units in
+  // radius depending on species — see FoliageGenerator's TREE_PRESETS) overlap
+  // into a continuous mass. That overlap is intentional/desired (a real
+  // rainforest canopy is continuous from above), not a bug — see the explicit
+  // "1 trunk = 1 tile, allowing overlap" call. View-corridor culling
+  // (updateZoneVegetationCulling in game.js) plus shared 3-variant tree
+  // geometry (getTreeVariants in foliage-generator.js) are what keep this
+  // density from tanking FPS.
+  const TREE_SPACING_MIN_DIST = 1;
 
   // Keep every tree at least TREE_SPACING_MIN_DIST from every other tree:
   // checked against both already-committed trees (tile.occupiedBy, set by
@@ -6189,19 +6195,19 @@
   const ZONE_CONFIG = {
     map_northern_cliffs: { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5 },
     // trees/bushes well above the shared default (130/75) — this zone is
-    // meant to read as an actual dense forest, not a scattering of copses,
-    // now that FoliageGenerator gives it real full-size trees and the axe
-    // can fell them to cut paths through. The 1-tile tree spacing rule
-    // (see hasNearbyTreeObject) means the placer won't actually pack in
-    // anywhere near a literal one-tree-per-4-tiles grid, so this reads as
-    // "as dense as it'll go" rather than a precise final count.
-    // 350 is close to this map's natural saturation point under the wider
-    // TREE_SPACING_MIN_DIST rule (empirically ~350-400 trees fit before the
-    // placer starts failing most of its attempts) — pushing the target much
-    // higher than that just burns generation time on doomed attempts
-    // without adding more trees. See TREE_SPACING_MIN_DIST's own comment for
-    // why the gap is wider than it used to be.
-    map_southern_cloud_forest: { entrySide: 'north', preset: 'greatBasin', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0, trees: 350, bushes: 150 },
+    // meant to read as an actual dense rainforest, not a scattering of
+    // copses, now that FoliageGenerator gives it real full-size trees (with
+    // only TREE_VARIANT_COUNT shared shapes and view-corridor culling to
+    // keep it cheap to render — see getTreeVariants/updateZoneVegetationCulling)
+    // and the axe can fell them to cut paths through. TREE_SPACING_MIN_DIST=1
+    // packs trees about as tight as the placer supports (~1-tile final gaps,
+    // canopies meant to overlap into a continuous mass), so trees here is a
+    // saturation target, not a precise final count. 4000 empirically lands
+    // ~3000 actually placed (Node smoke test against this exact config) —
+    // close to where the zone's eligible grass area saturates; pushing much
+    // higher mostly burns generation time on doomed placement attempts
+    // without adding meaningfully more trees.
+    map_southern_cloud_forest: { entrySide: 'north', preset: 'greatBasin', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0, trees: 4000, bushes: 150 },
     map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
     map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
   };
@@ -6291,12 +6297,32 @@
     return output;
   }
 
+  // These are placed pre-scale as single, exact-tile flora markers (see
+  // placeCopses/placeRepeated, all w:1,h:1) representing one tree/bush/etc,
+  // not an area footprint. Scaling their w/h by GENERATION_TILE_SCALE like
+  // every other object (buildings, plateaus — genuinely multi-tile things)
+  // would balloon each one into a scale x scale block, and both markOccupied
+  // and hobunjiObjectOverlayByTile mark every tile in that block as the same
+  // 'shrub' overlay — which _buildZoneFloorMeshes then renders as a FULL
+  // separate tree/bush mesh on every one of those tiles. At the default 2x
+  // scale that's 4 real, fully-sized, independently-wonked trees stacked
+  // within 1-2 world units of each other for what generation intended as a
+  // single trunk — exactly the bunched/interleaved-roots look reported after
+  // TREE_SPACING_MIN_DIST was already widened. Keeping the footprint at
+  // exactly 1 final tile is what actually gives "1 trunk = 1 tile"; the
+  // other scale*scale-1 tiles fall back to their base terrain (grass) and
+  // stay free for other flora, matching the "empty just means no tree"
+  // spacing rule these objects otherwise honor.
+  const SINGLE_TILE_FOOTPRINT_OBJECT_TYPES = new Set(['copse', 'bush', 'fruitBush', 'mushroomPatch', 'beehive']);
+
   function scaleGeneratedObject(object, scale) {
     const output = clonePlain(object);
     output.x = scalePointCoordinate(object.x, scale);
     output.y = scalePointCoordinate(object.y, scale);
-    output.w = Math.max(1, scaleScalar(object.w || 1, scale, 0));
-    output.h = Math.max(1, scaleScalar(object.h || 1, scale, 0));
+    const keepUnitFootprint = SINGLE_TILE_FOOTPRINT_OBJECT_TYPES.has(object.type)
+      && (object.w || 1) === 1 && (object.h || 1) === 1;
+    output.w = keepUnitFootprint ? 1 : Math.max(1, scaleScalar(object.w || 1, scale, 0));
+    output.h = keepUnitFootprint ? 1 : Math.max(1, scaleScalar(object.h || 1, scale, 0));
     if (object.pathAnchor) output.pathAnchor = scaleMapPoint(object.pathAnchor, scale);
     if (object.escapeAnchor) output.escapeAnchor = scaleMapPoint(object.escapeAnchor, scale);
     if (object.mouthAnchor) output.mouthAnchor = scaleMapPoint(object.mouthAnchor, scale);

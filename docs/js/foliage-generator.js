@@ -1260,6 +1260,68 @@ window.FoliageGenerator = (() => {
     group.scale.setScalar(instScale * (preset.scaleMul ?? 1));
     return group;
   }
+
+  // ─── Shared tree geometry variants ────────────────────────────────────────
+  // A dense forest calling buildConiferTreeGroup fresh per tile means one
+  // unique BufferGeometry (trunk + every knot branch + every leaf card) built
+  // from scratch for every single tree — real CPU cost at zone-build time and
+  // real GPU memory per instance. The standalone tool's own "Network Layout"
+  // mode solves this by reusing a small fixed number of exact species shapes
+  // (gridForestVariantCount, default 3) and varying only the cheap per-instance
+  // transform (position/yaw/scale) across placements — full visual diversity
+  // per tile without regenerating geometry per tile. Ported here the same way:
+  // build TREE_VARIANT_COUNT full trees ONCE per species (fixed seeds, so every
+  // session/zone-regeneration reuses the identical shapes), cache them, and
+  // have each tile clone()+retransform whichever variant it's assigned —
+  // THREE's Object3D.clone() copies the scene-graph structure but shares the
+  // underlying geometry/material by reference, so a clone costs a few small
+  // JS objects, not a new vertex buffer.
+  const TREE_VARIANT_COUNT = 3;
+  const _treeVariantCache = new Map(); // presetKey -> Group[]
+
+  function getTreeVariants(presetKey, preset) {
+    let variants = _treeVariantCache.get(presetKey);
+    if (variants) return variants;
+    variants = [];
+    for (let i = 0; i < TREE_VARIANT_COUNT; i++) {
+      const variantSeed = xfnv1a(`${presetKey}_variant_${i}`) >>> 0;
+      const group = buildConiferTreeGroup(preset, variantSeed);
+      // Canopy bounds in the variant's own local (unscaled) space — cached
+      // once here instead of per-instance; callers scale by their own
+      // instance's group.scale.x to get world-space canopy radius/underside
+      // (see canopyClamp tagging in game.js's _buildZoneFloorMeshes).
+      const leafMesh = group.children[group.children.length - 1];
+      if (leafMesh && leafMesh.geometry && leafMesh !== group.children[0]) {
+        leafMesh.geometry.computeBoundingBox();
+        const bb = leafMesh.geometry.boundingBox;
+        group.userData.canopyLocal = {
+          radius: Math.max(Math.abs(bb.min.x), Math.abs(bb.max.x), Math.abs(bb.min.z), Math.abs(bb.max.z)),
+          undersideY: bb.min.y,
+        };
+      }
+      variants.push(group);
+    }
+    _treeVariantCache.set(presetKey, variants);
+    return variants;
+  }
+
+  function buildTreeInstance(presetKey, preset, seedU32) {
+    const variants = getTreeVariants(presetKey, preset);
+    const rand = mulberry32(seedU32);
+    const variantIndex = Math.floor(rand() * variants.length) % variants.length;
+    const variant = variants[variantIndex];
+    const inst = variant.clone();
+    // Same per-instance jitter buildConiferTreeGroup itself applies (see
+    // instScale/instYaw above) — kept as a pure transform here too, so the
+    // shared geometry is never touched, just the instance's own matrix.
+    const instScale = 1 + (rand() - 0.5) * 0.14;
+    const instYaw = rand() * Math.PI * 2;
+    inst.rotation.y = instYaw;
+    inst.scale.setScalar(instScale * (preset.scaleMul ?? 1));
+    if (variant.userData.canopyLocal) inst.userData.canopyLocal = variant.userData.canopyLocal;
+    return inst;
+  }
+
   function degToRad(d) { return d * Math.PI / 180; }
 
   // ─── Public API ───────────────────────────────────────────────────────────
@@ -1290,11 +1352,11 @@ window.FoliageGenerator = (() => {
     },
     buildCrownedPineMesh(col, row) {
       const seedU32 = xfnv1a(`cp_${col}_${row}`);
-      return buildConiferTreeGroup(TREE_PRESETS.crownedPine, seedU32);
+      return buildTreeInstance('crownedPine', TREE_PRESETS.crownedPine, seedU32);
     },
     buildShadewoodMesh(col, row) {
       const seedU32 = xfnv1a(`sw_${col}_${row}`);
-      return buildConiferTreeGroup(TREE_PRESETS.shadewood, seedU32);
+      return buildTreeInstance('shadewood', TREE_PRESETS.shadewood, seedU32);
     },
     buildWildernessBushMesh(col, row) {
       const seedU32 = xfnv1a(`wb_${col}_${row}`);
