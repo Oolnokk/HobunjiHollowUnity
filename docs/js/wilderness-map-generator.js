@@ -194,6 +194,19 @@
       // remaining spacing-eligible tile after the normal weighted-cluster
       // placement loop, instead of stopping once `trees` tiles are placed.
       treesFillGaps: false,
+      // Post-process on the finished copse set (see placeCopses' tail) —
+      // treeThinning randomly drops this fraction of placed trees entirely
+      // (helps performance, thins out an oversaturated fill), and
+      // treeVarietyFraction converts this fraction of the *survivors* into a
+      // different 1x1 point of interest (bush/rock/treasure) for visual
+      // variety and a further mesh-count cut, since those are all cheaper to
+      // render than a full procedural tree.
+      treeThinning: 0,
+      treeVarietyFraction: 0,
+      // Chebyshev clearance (final tiles) kept clear of trees around every
+      // animal den's doorway tile (see placeAnimalDens' mouthAnchor) — a
+      // tree spawning right on/next to a den's entrance was blocking it.
+      denEntranceTreeClearance: 3,
       logs: 30,
       bushes: 75,
       forage: 55,
@@ -4994,12 +5007,28 @@
     let shadowCopseTiles = 0;
     const maxClusterAttempts = Math.max(200, targetCopseTiles * 7);
 
+    // Animal dens are placed before flora (see generateWorkspace's call
+    // order) — their footprint (object.w x object.h) already blocks trees
+    // via tile.occupiedBy, but the doorway tile (mouthAnchor) sits one tile
+    // *outside* that footprint specifically so it reads as an entrance, and
+    // was never itself protected — a tree spawning right on or beside it
+    // could block the den off entirely.
+    const denEntrances = (map.objects || [])
+      .filter(o => o.type === 'animalDen' && o.mouthAnchor)
+      .map(o => o.mouthAnchor);
+    const denClearance = Math.max(0, Number(settings.denEntranceTreeClearance) || 0);
+    function nearDenEntrance(x, y) {
+      if (!denEntrances.length || denClearance <= 0) return false;
+      return denEntrances.some(a => Math.max(Math.abs(x - a.x), Math.abs(y - a.y)) <= denClearance);
+    }
+
     function copseEligible(x, y, clusterKeys) {
       const tile = tileAt(x, y);
       if (!tile) return false;
       if (tile.water || tile.river || tile.path || tile.ramp || tile.cliffSkirt || tile.waterfall) return false;
       if (tile.occupiedBy) return false;
       if (hasNearbyTreeObject(x, y, clusterKeys)) return false;
+      if (nearDenEntrance(x, y)) return false;
       return true;
     }
 
@@ -5135,6 +5164,54 @@
         gapFilled++;
       }
       logDebug(`copse gap-fill pass: +${gapFilled} additional tiles (total ${placedCopseTiles})`);
+    }
+
+    // Post-process on the finished copse set — see treeThinning/
+    // treeVarietyFraction's own comments in defaultSettings. Both are no-ops
+    // at their default of 0.
+    const allCopses = (map.objects || []).filter(o => o.type === 'copse');
+    const removedIds = new Set();
+    let thinnedOut = 0;
+    if (settings.treeThinning > 0) {
+      for (const object of allCopses) {
+        if (rng() >= settings.treeThinning) continue;
+        const idx = map.objects.indexOf(object);
+        if (idx >= 0) map.objects.splice(idx, 1);
+        if (map.objectById) map.objectById.delete(object.id);
+        const tile = tileAt(object.x, object.y);
+        if (tile && tile.occupiedBy === object.id) tile.occupiedBy = null;
+        removedIds.add(object.id);
+        thinnedOut++;
+      }
+    }
+    let convertedToVariety = 0;
+    if (settings.treeVarietyFraction > 0) {
+      const varietyMakers = [
+        () => ({ type: 'bush', blocksMovement: true, note: 'bright green star (was a copse tile — see treeVarietyFraction)' }),
+        () => {
+          const oreKind = pick(oreKinds);
+          return withRarity({ type: 'diggableRockOre', oreKind, blocksMovement: true, note: 'light gray hexagon, one tile, with rarity-pool superscript marker (was a copse tile)' }, 'diggableRockOre', { oreKind });
+        },
+        () => withRarity({ type: 'treasureDigspot', blocksMovement: false, note: 'yellow X with rarity-pool superscript marker (was a copse tile)' }, 'treasureDigspot')
+      ];
+      for (const object of allCopses) {
+        if (removedIds.has(object.id)) continue; // this same pass already thinned it out
+        if (rng() >= settings.treeVarietyFraction) continue;
+        const replacement = pick(varietyMakers)();
+        // Keep the tile position/footprint/id/copseId-derived identity, swap
+        // everything else (type, blocksMovement, rarity, ore kind, note) for
+        // the chosen replacement's own shape.
+        for (const key of Object.keys(object)) {
+          if (key === 'x' || key === 'y' || key === 'w' || key === 'h' || key === 'id') continue;
+          delete object[key];
+        }
+        Object.assign(object, replacement);
+        convertedToVariety++;
+      }
+    }
+    if (thinnedOut || convertedToVariety) {
+      placedCopseTiles -= thinnedOut;
+      logDebug(`copse post-process: thinned out ${thinnedOut}, converted ${convertedToVariety} to bush/ore/treasure variety (total copse remaining ${placedCopseTiles - convertedToVariety})`);
     }
   }
 
@@ -6303,9 +6380,16 @@
     // entryGateWidthMul shrinks the entry road-mouth from the default
     // "wide enough to clear the border escarpment cleanly" footprint (11
     // tiles wide at this zone's border depth) down near the floor.
+    // treeThinning drops 20% of the saturated fill outright (perf, and less
+    // of a wall-to-wall look); treeVarietyFraction then converts 1/6 of the
+    // survivors into a bush/ore/treasure spot instead of a tree (further
+    // mesh-count cut, cheaper to render, plus points of interest scattered
+    // through the forest); denEntranceTreeClearance keeps every animal den's
+    // doorway tile clear so trees can't wall a den off.
     map_southern_cloud_forest: {
       entrySide: 'north', preset: 'greatBasin', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0,
       trees: 4000, treesFillGaps: true, bushes: 150,
+      treeThinning: 0.2, treeVarietyFraction: 1 / 6, denEntranceTreeClearance: 3,
       plateaus: 25, plateauAreaMul: 1.5, lowProfilePlateaus: true, maxTier: 2,
       wideRamps: true, ramps: 20,
       pathWindiness: 8, entryGateWidthMul: 0.2,

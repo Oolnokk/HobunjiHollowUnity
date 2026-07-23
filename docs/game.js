@@ -11437,7 +11437,13 @@
               // them across the walkable ground — turn the un-tagged ones back to
               // grass so the real plateau cliff-face (plateau-tagged rock) reads as
               // the only solid rock terrain, and the zone is actually walkable.
-              if (!t.plateau && type === 'rock') type = 'grass';
+              // t.generatedObjectType exempts this: a generator-placed rock object
+              // (diggableRockOre/undiggableBoulder/etc, always blocksMovement:true —
+              // see wilderness-map-generator.js's placeRepeated/placeCopses' variety
+              // conversion) is deliberately solid, unlike the stray authored
+              // decoration this rule was written for; without the exemption every
+              // such object off-plateau silently vanished into invisible grass.
+              if (!t.plateau && type === 'rock' && !t.generatedObjectType) type = 'grass';
               outTiles.set(key, {
                 c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
                 rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
