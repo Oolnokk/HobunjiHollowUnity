@@ -234,12 +234,24 @@ window.FoliageGenerator = (() => {
   }
 
   // ─── Material helpers ─────────────────────────────────────────────────────
+  // MeshLambertMaterial has no light of its own — under this game's storm/
+  // night dimming it can go essentially to (0,0,0), and a bush's dense tangle
+  // of thin wood geometry (many more branch segments packed into a small area
+  // than a single tree's trunk+roots) reads as a solid black blob rather than
+  // a recognizably dark bush. Mirrors the exact fix the grass billboard
+  // shader already uses for the same problem (see uLightMul's 0.3 floor,
+  // "grassBillboardMat.uniforms.uLightMul.value = 0.3 + brightnessMul*0.7" in
+  // game.js) via a constant emissive term instead of a shader uniform, since
+  // this is a plain MeshLambertMaterial: emissive = 30% of the base color
+  // guarantees that same ~30% brightness floor regardless of scene lighting.
+  const BARK_EMISSIVE_FLOOR = 0.3;
   function hslMat(h360, s, l, roughness = 1) {
     const col = new T.Color().setHSL(h360 / 360, s, l);
-    return new T.MeshLambertMaterial({ color: col });
+    return new T.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(BARK_EMISSIVE_FLOOR) });
   }
   function hexBarkMat(hex) {
-    return new T.MeshLambertMaterial({ color: new T.Color(hex) });
+    const col = new T.Color(hex);
+    return new T.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(BARK_EMISSIVE_FLOOR) });
   }
 
   // ─── Geometry merge (position + uv, for textured leaf cards) ─────────────

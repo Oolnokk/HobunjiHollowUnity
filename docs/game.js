@@ -21293,16 +21293,50 @@
       const VEG_CULL_HYSTERESIS_TILES = 1;
       let _vegCullAccum = 999; // force a real pass on the first tick
 
-      // Fade any tree/bush/stump group whose footprint sits on the ground-plane
-      // segment between the camera and the player, so dense foliage never
-      // permanently hides the character behind it. Materials are shared across
-      // every instance of a shared geometry variant (see getTreeVariants), so
-      // fading has to clone per-instance the first time a given group actually
-      // needs it — cheap and rare (only ever a handful of groups on-screen sit
-      // directly in that line at once), unlike cloning up front for all of them.
-      const TREE_FADE_OPACITY = 0.16;
-      const TREE_FADE_LERP_PER_SEC = 5;
-      const _treeFadeActive = new Set(); // vegGroup refs currently mid-fade (opacity != target)
+      // Fade only the actual blocking PART of a tree/bush/stump — not the
+      // whole object — using a per-pixel world-space cutout around the
+      // camera→player sightline, injected into each material via
+      // onBeforeCompile. Materials are shared across every instance of a
+      // shared geometry variant (see getTreeVariants), so this still has to
+      // clone per-instance the first time a given group could plausibly need
+      // it; cheap and rare (only ever a handful of groups near the sightline
+      // at once), unlike compiling a custom shader for all of them up front.
+      // Once compiled, a clone's shader recomputes the cutout continuously
+      // from live uCamPos/uPlayerPos, so — unlike a whole-object opacity
+      // fade — nothing needs to animate: the dissolved region just tracks
+      // the sightline every frame, and reads as fully opaque on its own
+      // whenever that line isn't actually passing through it.
+      const TREE_FADE_CUT_RADIUS = 0.85; // world units around the sightline
+      const TREE_FADE_MIN_ALPHA = 0.08;
+      const _treeFadeActive = new Set(); // vegGroup refs with a compiled cutout shader
+      function applySightlineCutout(material) {
+        material.transparent = true;
+        material.onBeforeCompile = (shader) => {
+          shader.uniforms.uCamPos = { value: new THREE.Vector3() };
+          shader.uniforms.uPlayerPos = { value: new THREE.Vector3() };
+          shader.uniforms.uCutRadius = { value: TREE_FADE_CUT_RADIUS };
+          shader.vertexShader = 'varying vec3 vFadeWorldPos;\n' + shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            '#include <begin_vertex>\n  vFadeWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+          );
+          shader.fragmentShader = 'varying vec3 vFadeWorldPos;\nuniform vec3 uCamPos;\nuniform vec3 uPlayerPos;\nuniform float uCutRadius;\n' + shader.fragmentShader.replace(
+            '#include <dithering_fragment>',
+            `#include <dithering_fragment>
+            {
+              vec3 ab = uPlayerPos - uCamPos;
+              vec3 ap = vFadeWorldPos - uCamPos;
+              float abLen2 = max(dot(ab, ab), 1e-6);
+              float tt = clamp(dot(ap, ab) / abLen2, 0.0, 1.0);
+              vec3 closest = uCamPos + ab * tt;
+              float d = distance(vFadeWorldPos, closest);
+              float cutFade = smoothstep(uCutRadius * 0.35, uCutRadius, d);
+              gl_FragColor.a *= mix(${TREE_FADE_MIN_ALPHA.toFixed(3)}, 1.0, cutFade);
+            }`
+          );
+          material.userData.fadeUniforms = shader.uniforms;
+        };
+        material.needsUpdate = true;
+      }
       function ensureTreeFadeMaterials(vegGroup) {
         let mats = vegGroup.userData._fadeMaterials;
         if (mats) return mats;
@@ -21310,13 +21344,11 @@
         for (const child of vegGroup.children) {
           if (!child.material) continue;
           const clone = child.material.clone();
-          clone.transparent = true;
+          applySightlineCutout(clone);
           child.material = clone;
           mats.push(clone);
         }
         vegGroup.userData._fadeMaterials = mats;
-        vegGroup.userData._fadeOpacity = 1;
-        vegGroup.userData._fadeTarget = 1;
         return mats;
       }
       function distPointToSegment2D(px, pz, ax, az, bx, bz) {
@@ -21327,17 +21359,22 @@
         const cx = ax + abx * t, cz = az + abz * t;
         return Math.hypot(px - cx, pz - cz);
       }
-      function updateTreeFadeAnimation(dt) {
+      // Every frame (cheap — just a couple of Vector3 copies per active
+      // material), not throttled like the corridor scan below: the cutout
+      // needs to track the camera/player's continuous motion, not just
+      // whichever position they were at on the last ~7Hz culling tick.
+      const _tmpFadePlayerPos = new THREE.Vector3();
+      function updateTreeFadeUniforms() {
         if (!_treeFadeActive.size) return;
-        const step = TREE_FADE_LERP_PER_SEC * dt;
+        const camPos = camera.position;
+        const playerPos3 = _tmpFadePlayerPos.set(player.x / TILE, _playerGroundY(), player.y / TILE);
         for (const vegGroup of _treeFadeActive) {
-          const target = vegGroup.userData._fadeTarget ?? 1;
-          let opacity = vegGroup.userData._fadeOpacity ?? 1;
-          if (Math.abs(opacity - target) <= step) opacity = target;
-          else opacity += Math.sign(target - opacity) * step;
-          vegGroup.userData._fadeOpacity = opacity;
-          for (const m of vegGroup.userData._fadeMaterials || []) m.opacity = opacity;
-          if (opacity === target && target >= 1) _treeFadeActive.delete(vegGroup);
+          for (const m of vegGroup.userData._fadeMaterials || []) {
+            const u = m.userData.fadeUniforms;
+            if (!u) continue; // onBeforeCompile hasn't run yet (first render of this material)
+            u.uCamPos.value.copy(camPos);
+            u.uPlayerPos.value.copy(playerPos3);
+          }
         }
       }
       function updateZoneVegetationCulling(force = false) {
@@ -21367,21 +21404,19 @@
             && side <= halfWidth + expandedRadius;
           if (force || show !== obj.visible) obj.visible = show;
 
+          // Broad-phase only: is the sightline plausibly close enough to this
+          // instance's whole bounding sphere to need a per-pixel shader at
+          // all? The shader itself does the actual precise cutout, so this
+          // just gates which (rare) instances pay for a material clone.
           if (show) {
             const segDist = distPointToSegment2D(s.x, s.z, camX, camZ, playerWX, playerWZ);
-            const occluding = segDist < s.radius * 0.85;
-            const target = occluding ? TREE_FADE_OPACITY : 1;
-            if (target !== 1 || obj.userData._fadeMaterials) {
+            if (segDist < s.radius + TREE_FADE_CUT_RADIUS) {
               ensureTreeFadeMaterials(obj);
-              obj.userData._fadeTarget = target;
               _treeFadeActive.add(obj);
+            } else {
+              _treeFadeActive.delete(obj);
             }
-          } else if (obj.userData._fadeMaterials) {
-            // Culled out of the view corridor entirely — snap back to opaque
-            // immediately rather than animating a fade nobody can see.
-            obj.userData._fadeTarget = 1;
-            obj.userData._fadeOpacity = 1;
-            for (const m of obj.userData._fadeMaterials) m.opacity = 1;
+          } else {
             _treeFadeActive.delete(obj);
           }
         }
@@ -25558,9 +25593,9 @@
           updateZoneVegetationCulling(force);
         }
         // Every frame, unthrottled, but only touches the handful of trees
-        // currently mid-fade — see updateZoneVegetationCulling's occlusion
-        // check for what actually starts/stops a fade.
-        updateTreeFadeAnimation(dt);
+        // currently near the sightline — see updateZoneVegetationCulling's
+        // broad-phase check for what actually enters/leaves that set.
+        updateTreeFadeUniforms();
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
