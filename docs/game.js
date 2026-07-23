@@ -18335,16 +18335,7 @@
       // correctly under AdditiveBlending: a dim vertex just adds little.
       const COMBAT_CONE_TRAIL_BASELINE_INTENSITY = 0.22;
       const COMBAT_CONE_TRAIL_SPIKE_WIDTH_U = 0.24;
-      // Black outline ribbon, one per lane, sharing the same taper/arch as
-      // its colored ribbon but radially wider by this pad on both edges —
-      // renderOrder keeps it drawn first/beneath so only that pad's worth
-      // pokes out as a solid black border, same "slightly bigger dark copy
-      // behind" trick as the lunge trail's ring outlines (see
-      // spawnLungeTrailStamp) and resource-rings.js's addSegmentOutlines.
-      const COMBAT_CONE_TRAIL_OUTLINE_PAD_TILES = 0.03;
-      const COMBAT_CONE_TRAIL_OUTLINE_OPACITY = 0.85;
       const coneTrailLaneMeshes = [];
-      const coneTrailLaneOutlineMeshes = [];
       function ensureConeTrailLaneMesh(i) {
         let mesh = coneTrailLaneMeshes[i];
         if (mesh) return mesh;
@@ -18377,39 +18368,6 @@
         return mesh;
       }
 
-      function ensureConeTrailLaneOutlineMesh(i) {
-        let mesh = coneTrailLaneOutlineMeshes[i];
-        if (mesh) return mesh;
-        const geo = new THREE.BufferGeometry();
-        const vertCount = (COMBAT_CONE_TRAIL_SAMPLES + 1) * 2;
-        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
-        const indices = [];
-        for (let s = 0; s < COMBAT_CONE_TRAIL_SAMPLES; s++) {
-          const a = s * 2, b = a + 1, c = a + 2, d = a + 3;
-          indices.push(a, b, c, b, d, c);
-        }
-        geo.setIndex(indices);
-        const mat = new THREE.MeshBasicMaterial({
-          color: 0x000000,
-          transparent: true,
-          depthWrite: false,
-          // Not additive — a solid black border needs to actually read as
-          // black, not add nothing (or barely darken) the way additive
-          // blending would with black.
-          side: THREE.DoubleSide,
-          fog: false,
-        });
-        mesh = new THREE.Mesh(geo, mat);
-        mesh.visible = false;
-        mesh.frustumCulled = false;
-        // Beneath every lane's own colored ribbon (and every other lane's,
-        // harmlessly — the additive colored ribbons don't care about draw
-        // order among themselves).
-        mesh.renderOrder = -1;
-        coneTrailLaneOutlineMeshes[i] = mesh;
-        return mesh;
-      }
-
       // Called every frame alongside updateToolMesh (not from the 2D octx
       // draw pass) since it owns real scene-graph meshes, not canvas pixels.
       function updateCombatConeTrail() {
@@ -18417,7 +18375,6 @@
         const active = combatSwingAnim && combatSwingCone && toolSwingT > 0 && toolSwingDur > 0 && parent;
         if (!active) {
           for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
-          for (const mesh of coneTrailLaneOutlineMeshes) if (mesh) mesh.visible = false;
           return;
         }
         const progress = 1 - toolSwingT / toolSwingDur;
@@ -18431,7 +18388,6 @@
         // extended, rather than crawling across the whole windup too.
         if (progress < WF) {
           for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
-          for (const mesh of coneTrailLaneOutlineMeshes) if (mesh) mesh.visible = false;
           return;
         }
         const strikeT = Math.min(1, (progress - WF) / Math.max(1e-6, SF - WF));
@@ -18450,7 +18406,6 @@
         else alpha = 0;
         if (alpha <= 0.01) {
           for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
-          for (const mesh of coneTrailLaneOutlineMeshes) if (mesh) mesh.visible = false;
           return;
         }
 
@@ -18468,8 +18423,7 @@
 
         for (let lane = 0; lane < COMBAT_CONE_TRAIL_MAX_LANES; lane++) {
           const mesh = ensureConeTrailLaneMesh(lane);
-          const outlineMesh = ensureConeTrailLaneOutlineMesh(lane);
-          if (lane >= laneCount) { mesh.visible = false; outlineMesh.visible = false; continue; }
+          if (lane >= laneCount) { mesh.visible = false; continue; }
           const colorNum = ids.length
             ? (window.ResourceRings?.AFFLICTION_COLORS?.[ids[lane]] ?? 0xffffff)
             : 0xffffff;
@@ -18479,7 +18433,6 @@
           const laneRadius = rangeTiles * (1 - lane * COMBAT_CONE_TRAIL_LANE_INSET);
           const posAttr = mesh.geometry.attributes.position;
           const colorAttr = mesh.geometry.attributes.color;
-          const outlinePosAttr = outlineMesh.geometry.attributes.position;
           for (let s = 0; s <= COMBAT_CONE_TRAIL_SAMPLES; s++) {
             const u = s / COMBAT_CONE_TRAIL_SAMPLES;
             const a = angle - halfConeRad + (2 * halfConeRad) * u;
@@ -18495,56 +18448,60 @@
             const intensity = COMBAT_CONE_TRAIL_BASELINE_INTENSITY + (1 - COMBAT_CONE_TRAIL_BASELINE_INTENSITY) * spike;
             colorAttr.setXYZ(vi,     cr * intensity, cg * intensity, cb * intensity);
             colorAttr.setXYZ(vi + 1, cr * intensity, cg * intensity, cb * intensity);
-            // Same centerline/arch, just padded outward on both edges so a
-            // sliver of black shows past the colored ribbon's own border.
-            const outlineInnerR = innerR - COMBAT_CONE_TRAIL_OUTLINE_PAD_TILES;
-            const outlineOuterR = outerR + COMBAT_CONE_TRAIL_OUTLINE_PAD_TILES;
-            outlinePosAttr.setXYZ(vi,     baseX + cosA * outlineInnerR, y + arch, baseZ + sinA * outlineInnerR);
-            outlinePosAttr.setXYZ(vi + 1, baseX + cosA * outlineOuterR, y + arch, baseZ + sinA * outlineOuterR);
           }
           posAttr.needsUpdate = true;
           colorAttr.needsUpdate = true;
-          outlinePosAttr.needsUpdate = true;
           mesh.material.opacity = alpha * 0.85;
           mesh.visible = true;
           if (mesh.parent !== parent) parent.add(mesh);
-          outlineMesh.material.opacity = alpha * COMBAT_CONE_TRAIL_OUTLINE_OPACITY;
-          outlineMesh.visible = true;
-          if (outlineMesh.parent !== parent) parent.add(outlineMesh);
         }
       }
 
-      // Attack-lunge movement trail — a series of flat "onion ring" stamps
-      // (concentric colored bands, like a target/tree-ring cross-section)
-      // dropped along the ground path an attack's lunge (see
+      // Attack-lunge movement trail — a series of flat single-color ring
+      // stamps dropped along the ground path an attack's lunge (see
       // beginCombatLunge/tickLungeTrail, or a creature's Pounce leap —
       // tickCreatureLungeTrail below) actually travels, distinct from
       // updateCombatConeTrail's weapon-swipe ribbon above: this one traces
       // the mover's own footprints through the dash, not the weapon/attack's
-      // hit cone. Colored by whichever afflictions the attack that triggered
-      // the lunge can inflict — outermost band is whichever affliction has
-      // the highest per-hit multiplier (i.e. is "applied most"), each nested
-      // band inward is the next-highest, capped at LUNGE_TRAIL_RING_COUNT_MAX
-      // bands. An attack with no afflictions to give it (a fresh, unleveled
-      // player attack; a creature whose attackTag maps to none) leaves no
-      // trail at all — there's nothing to color it by.
+      // hit cone.
+      //
+      // Each individual stamp is a single affliction's color, not a nested
+      // multi-color "onion ring" — with several afflictions in play, which
+      // color any given stamp gets is picked at random, weighted by that
+      // affliction's own per-hit multiplier (see pickWeightedAfflictionId),
+      // so it's the *sequence* of stamps along the trail — how many of each
+      // color show up, in what rough proportion — that reads as "this
+      // attack applies mostly bleed with a little poison mixed in", rather
+      // than trying to cram every affliction into one stamp's own rings.
+      // An attack with no afflictions to give it (a fresh, unleveled player
+      // attack; a creature whose attackTag maps to none) leaves no trail at
+      // all — there's nothing to color it by.
       const LUNGE_TRAIL_STAMP_SPACING_PX = TILE * 0.4;
-      const LUNGE_TRAIL_RING_COUNT_MAX = 4;
       const LUNGE_TRAIL_OUTER_RADIUS = 0.46; // world units (tile-space)
-      const LUNGE_TRAIL_RING_THICKNESS = 0.1;
+      const LUNGE_TRAIL_RING_THICKNESS = 0.14;
       const LUNGE_TRAIL_LIFETIME_S = 0.55;
       const LUNGE_TRAIL_BASE_OPACITY = 0.8;
       const LUNGE_TRAIL_GROW_SCALE = 0.35; // how much each stamp expands over its lifetime as it fades
-      // Black outline treatment: a solid black backing ring spans the whole
-      // stamp (padded a little past its own outer/inner edge), drawn first/
-      // beneath every colored band; each band is then inset by half of
-      // LUNGE_TRAIL_BAND_GAP on both sides so a sliver of that backing shows
-      // through — around the stamp's rim and between every nested band —
-      // same idea as resource-rings.js's addSegmentOutlines.
-      const LUNGE_TRAIL_BAND_GAP = 0.014;
-      const LUNGE_TRAIL_OUTLINE_PAD = 0.02;
-      const LUNGE_TRAIL_OUTLINE_OPACITY = 0.9;
       const _lungeTrailStamps = [];
+
+      // Picks one id from `ids`, weighted by its multiplier in `muls` — an
+      // affliction with a 0.35 mul gets picked roughly 3.5x as often as one
+      // with 0.1, which is what lets the trail's own color mix communicate
+      // "applies mostly X" without needing every color crammed into a
+      // single stamp. Falls back to uniform-random if every weight is 0.
+      function pickWeightedAfflictionId(ids, muls) {
+        if (ids.length === 1) return ids[0];
+        let total = 0;
+        for (const id of ids) total += Math.max(0, Number(muls?.[id]) || 0);
+        if (total <= 0) return ids[Math.floor(Math.random() * ids.length)];
+        let r = Math.random() * total;
+        for (const id of ids) {
+          const w = Math.max(0, Number(muls?.[id]) || 0);
+          if (r < w) return id;
+          r -= w;
+        }
+        return ids[ids.length - 1];
+      }
 
       // areaId/grid/sceneObj let this same stamp-builder serve both the
       // player (currentArea/getActiveGrid()/getActiveScene()) and a
@@ -18554,9 +18511,8 @@
       function spawnLungeTrailStamp(wx, wy, areaId, grid, sceneObj, ids, muls) {
         if (!ids || !ids.length) return; // nothing to color this lunge by — no trail
         if (!sceneObj) return;
-        const sortedIds = [...ids]
-          .sort((a, b) => (Number(muls?.[b]) || 0) - (Number(muls?.[a]) || 0))
-          .slice(0, LUNGE_TRAIL_RING_COUNT_MAX);
+        const chosenId = pickWeightedAfflictionId(ids, muls);
+        const color = window.ResourceRings?.AFFLICTION_COLORS?.[chosenId] ?? 0xffffff;
 
         const tile = footstepTileAt(areaId, wx, wy, grid);
         const y = tileSurfaceYInArea(tile, areaId) + characterGroundShadowSurfaceOffset() + 0.02;
@@ -18564,40 +18520,19 @@
         group.position.set(wx / TILE, y, wy / TILE);
         group.rotation.x = -Math.PI / 2; // lie flat on the ground, same convention as every other ground-projected ring in this file
 
-        const outerMost = LUNGE_TRAIL_OUTER_RADIUS;
-        const innerMost = Math.max(0.02, outerMost - sortedIds.length * LUNGE_TRAIL_RING_THICKNESS);
-        const backingGeo = new THREE.RingGeometry(Math.max(0.005, innerMost - LUNGE_TRAIL_OUTLINE_PAD), outerMost + LUNGE_TRAIL_OUTLINE_PAD, 24);
-        const backingMat = new THREE.MeshBasicMaterial({
-          color: 0x000000, transparent: true, opacity: LUNGE_TRAIL_OUTLINE_OPACITY, depthWrite: false,
-          side: THREE.DoubleSide, fog: false,
+        const geo = new THREE.RingGeometry(LUNGE_TRAIL_OUTER_RADIUS - LUNGE_TRAIL_RING_THICKNESS, LUNGE_TRAIL_OUTER_RADIUS, 24);
+        const mat = new THREE.MeshBasicMaterial({
+          color, transparent: true, opacity: LUNGE_TRAIL_BASE_OPACITY, depthWrite: false,
+          side: THREE.DoubleSide,
+          // Additive, same reasoning as the combat cone trail above — reads
+          // as a clear glowing footprint regardless of what's underneath.
+          blending: THREE.AdditiveBlending,
+          fog: false,
         });
-        const backing = new THREE.Mesh(backingGeo, backingMat);
-        backing.renderOrder = 0;
-        backing.userData.baseOpacity = LUNGE_TRAIL_OUTLINE_OPACITY;
-        group.add(backing);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.userData.baseOpacity = LUNGE_TRAIL_BASE_OPACITY;
+        group.add(mesh);
 
-        for (let i = 0; i < sortedIds.length; i++) {
-          const nominalOuter = outerMost - i * LUNGE_TRAIL_RING_THICKNESS;
-          const nominalInner = nominalOuter - LUNGE_TRAIL_RING_THICKNESS;
-          const outerR = nominalOuter - LUNGE_TRAIL_BAND_GAP / 2;
-          const innerR = Math.max(0.02, nominalInner + LUNGE_TRAIL_BAND_GAP / 2);
-          if (outerR <= innerR) break;
-          const color = window.ResourceRings?.AFFLICTION_COLORS?.[sortedIds[i]] ?? 0xffffff;
-          const geo = new THREE.RingGeometry(innerR, outerR, 24);
-          const mat = new THREE.MeshBasicMaterial({
-            color, transparent: true, opacity: LUNGE_TRAIL_BASE_OPACITY, depthWrite: false,
-            side: THREE.DoubleSide,
-            // Additive, same reasoning as the combat cone trail above — reads
-            // as a clear glowing footprint regardless of what's underneath.
-            blending: THREE.AdditiveBlending,
-            fog: false,
-          });
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.renderOrder = i + 1;
-          mesh.userData.baseOpacity = LUNGE_TRAIL_BASE_OPACITY;
-          group.add(mesh);
-        }
-        if (group.children.length <= 1) return; // only the backing — no bands actually fit
         sceneObj.add(group);
         _lungeTrailStamps.push({ group, scene: sceneObj, age: 0 });
       }
