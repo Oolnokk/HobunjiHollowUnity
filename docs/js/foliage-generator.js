@@ -942,7 +942,7 @@ window.FoliageGenerator = (() => {
       knotTierLengthDelta: 0, knotTierRadiusDelta: 0, branchArchExtra: 0.35,
       knotCount: 5, knotLength: 2.66, knotRadius: 0.104, knotTaper: 0.926,
       knotUpDownBias: -0.63, knotCurl: 0.76, knotWonk: 0,
-      leafWidth: 1.75, leafOffsetX: 0, leafOffsetY: -0.5, leafOffsetZ: 0,
+      leafWidth: 1.75, leafLength: 2, leafOffsetX: 0, leafOffsetY: -0.5, leafOffsetZ: 0,
       leafAlong01: 0.5, leafYawDeg: 180, leafPitchDeg: 0, leafRollDeg: -15,
       leafSurfaceClearance: 0.01, leafStemUp: false, trunkRollBiasDist: 0.25,
       leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 0.92, leafAlphaCutoff: 0.5,
@@ -1361,7 +1361,17 @@ window.FoliageGenerator = (() => {
               degToRad(preset.leafRollDeg || 0),
               'XYZ'
             );
-            const singleLeafLength = Math.max(1e-4, distL + (preset.leafPrismLengthOffset || 0));
+            // Single-frond mode (leavesPerBranch<=1) ties the card's length
+            // to its own branch's prism length (distL) rather than a fixed
+            // preset.leafLength — see the multi-leaf branch below, which
+            // uses leafLength directly instead since there each branch gets
+            // several small cards, not one spanning the whole thing. On top
+            // of that, an additive extra (leafPrismLengthOffset if the
+            // preset sets one — e.g. shadewood's droopier-canopy 5.5 — else
+            // falling back to leafLength itself, which is exactly what
+            // crownedPine's "crowned_pine2" tool export uses this field for
+            // in single-frond mode) lets the card overshoot the branch tip.
+            const singleLeafLength = Math.max(1e-4, distL + (preset.leafPrismLengthOffset ?? preset.leafLength ?? 0));
             const scaleY = preset.leafStemUp !== false ? -singleLeafLength : singleLeafLength;
             placeLeafCard(localPos, localEuler, scaleY);
           } else {
