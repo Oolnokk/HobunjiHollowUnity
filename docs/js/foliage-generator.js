@@ -946,6 +946,10 @@ window.FoliageGenerator = (() => {
     // added, and a substantially reworked leaf card: narrower, pitched flat
     // instead of steep, and slid to the branch midpoint via leafAlong01).
     crownedPine: {
+      // See getTreeVariants' variantSeedIndices comment — the default 0/1/2
+      // seed numbering rolls short-branched trees for this preset, these 3
+      // don't.
+      variantSeedIndices: [245, 127, 149],
       radialSegments: 8, ringSegments: 12,
       trunkLength: 6.86, trunkRadius: 0.305, trunkTaper: 0.91, trunkBend: 1.02,
       trunkWonk: 0, trunkWonkScale: 6, trunkTwist: 1.78,
@@ -1512,7 +1516,15 @@ window.FoliageGenerator = (() => {
     if (variants) return variants;
     variants = [];
     for (let i = 0; i < TREE_VARIANT_COUNT; i++) {
-      const variantSeed = xfnv1a(`${presetKey}_variant_${i}`) >>> 0;
+      // Plain `_variant_0/1/2` seed strings happen to be a bad roll for
+      // crownedPine specifically: swept 300 candidate seed strings through
+      // the real branch-length formula (knotLengthJitter et al — see
+      // buildConiferTreeGroup) and found the default 0/1/2 average 2.85-3.15
+      // per branch against a true (large-sample) mean of ~3.32, while every
+      // preset that doesn't override variantSeedIndices keeps its original
+      // seed numbering untouched.
+      const variantIdx = preset.variantSeedIndices?.[i] ?? i;
+      const variantSeed = xfnv1a(`${presetKey}_variant_${variantIdx}`) >>> 0;
       const group = buildConiferTreeGroup(preset, variantSeed);
       // Canopy bounds in the variant's own local (unscaled) space — cached
       // once here instead of per-instance; callers scale by their own
