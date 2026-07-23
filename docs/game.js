@@ -21293,81 +21293,40 @@
       const VEG_CULL_HYSTERESIS_TILES = 1;
       let _vegCullAccum = 999; // force a real pass on the first tick
 
-      // Fade only the actual blocking PART of a tree/bush/stump — not the
-      // whole object — using a per-pixel world-space cutout around the
-      // camera→player sightline, injected into each material via
-      // onBeforeCompile. Materials are shared across every instance of a
-      // shared geometry variant (see getTreeVariants), so this still has to
-      // clone per-instance the first time a given group could plausibly need
-      // it; cheap and rare (only ever a handful of groups near the sightline
-      // at once), unlike compiling a custom shader for all of them up front.
-      // Once compiled, a clone's shader recomputes the cutout continuously
-      // from live uCamPos/uPlayerPos, so — unlike a whole-object opacity
-      // fade — nothing needs to animate: the dissolved region just tracks
-      // the sightline every frame, and reads as fully opaque on its own
-      // whenever that line isn't actually passing through it.
-      // A hard, dithered `discard` rather than alpha blending — deliberately.
-      // Blending would mean setting material.transparent = true, which moves
-      // the material from the opaque render queue (perfectly depth-tested
-      // against everything, including other alpha-tested/transparent
-      // billboards) into the transparent queue, sorted back-to-front by
-      // distance. The player's own avatar is itself a transparent PNG-plane
-      // billboard ("PNG avatar attached to player_root") — once bark joined
-      // that same queue, draw-order between it and the avatar was no longer
-      // reliably depth-correct, and the avatar could vanish behind a "faded"
-      // tree exactly in the situation this feature targets (tool billboards
-      // apparently use a different, unaffected render path, which is why
-      // only the avatar was reported hidden). A `discard`-based hole keeps
-      // the material fully opaque outside the cut region — real geometry
-      // either fully there or fully gone, never blended — so depth testing
-      // against the avatar (or anything else) stays exactly as correct as it
-      // was before this feature existed. The dither pattern (screen-space
-      // hash vs. distance-from-line) gives the cut edge a soft, organic look
-      // without ever actually blending.
-      const TREE_FADE_CUT_RADIUS = 0.85; // world units around the sightline
-      const _treeFadeActive = new Set(); // vegGroup refs with a compiled cutout shader
-      function applySightlineCutout(material) {
-        material.onBeforeCompile = (shader) => {
-          shader.uniforms.uCamPos = { value: new THREE.Vector3() };
-          shader.uniforms.uPlayerPos = { value: new THREE.Vector3() };
-          shader.uniforms.uCutRadius = { value: TREE_FADE_CUT_RADIUS };
-          shader.vertexShader = 'varying vec3 vFadeWorldPos;\n' + shader.vertexShader.replace(
-            '#include <begin_vertex>',
-            '#include <begin_vertex>\n  vFadeWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
-          );
-          shader.fragmentShader = 'varying vec3 vFadeWorldPos;\nuniform vec3 uCamPos;\nuniform vec3 uPlayerPos;\nuniform float uCutRadius;\n' + shader.fragmentShader.replace(
-            '#include <dithering_fragment>',
-            `#include <dithering_fragment>
-            {
-              vec3 ab = uPlayerPos - uCamPos;
-              vec3 ap = vFadeWorldPos - uCamPos;
-              float abLen2 = max(dot(ab, ab), 1e-6);
-              float tt = clamp(dot(ap, ab) / abLen2, 0.0, 1.0);
-              vec3 closest = uCamPos + ab * tt;
-              float d = distance(vFadeWorldPos, closest);
-              float cutFade = smoothstep(uCutRadius * 0.5, uCutRadius, d);
-              float dither = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
-              if (cutFade < dither) discard;
-            }`
-          );
-          material.userData.fadeUniforms = shader.uniforms;
+      // Keep the player visible when foliage is between them and the camera.
+      // Two earlier approaches both tried to dissolve/cut a hole in whichever
+      // tree was in the way, and both broke down for the same underlying
+      // reason: at this zone's density (see TREE_SPACING_MIN_DIST=1 in
+      // wilderness-map-generator.js — 1-tile gaps, canopies meant to overlap
+      // into a continuous mass), the camera-to-player line almost always
+      // crosses SEVERAL trees, not one. Cutting a clean hole through the
+      // first tree just reveals the next tree's (uncut, or differently-
+      // aligned) trunk behind it — from the player's screen this reads as a
+      // dim, noisy tunnel through layered foliage ("a cloud of darkness"),
+      // never actually the player. No amount of refining a per-tree cutout
+      // fixes that; there just isn't a single tree responsible.
+      // So: instead of touching the environment at all, render the player's
+      // own avatar and held tool with depthTest disabled and a high
+      // renderOrder whenever *anything* is between them and the camera —
+      // they draw last and on top, regardless of how many layers are in the
+      // way. This is the standard "never let the camera lose the player"
+      // technique for exactly this situation.
+      function setPlayerOccludedRenderMode(active) {
+        const renderOrder = active ? 9999 : 0;
+        const depthTest = !active;
+        const apply = (root) => {
+          if (!root) return;
+          root.traverse(o => {
+            if (!o.isMesh) return;
+            o.renderOrder = renderOrder;
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            for (const m of mats) { if (m) m.depthTest = depthTest; }
+          });
         };
-        material.needsUpdate = true;
+        apply(playerMesh.getObjectByName('player_avatar'));
+        apply(toolHolder);
       }
-      function ensureTreeFadeMaterials(vegGroup) {
-        let mats = vegGroup.userData._fadeMaterials;
-        if (mats) return mats;
-        mats = [];
-        for (const child of vegGroup.children) {
-          if (!child.material) continue;
-          const clone = child.material.clone();
-          applySightlineCutout(clone);
-          child.material = clone;
-          mats.push(clone);
-        }
-        vegGroup.userData._fadeMaterials = mats;
-        return mats;
-      }
+      let _playerOccludedByFoliage = false;
       function distPointToSegment2D(px, pz, ax, az, bx, bz) {
         const abx = bx - ax, abz = bz - az;
         const abLenSq = abx * abx + abz * abz;
@@ -21375,24 +21334,6 @@
         t = clamp(t, 0, 1);
         const cx = ax + abx * t, cz = az + abz * t;
         return Math.hypot(px - cx, pz - cz);
-      }
-      // Every frame (cheap — just a couple of Vector3 copies per active
-      // material), not throttled like the corridor scan below: the cutout
-      // needs to track the camera/player's continuous motion, not just
-      // whichever position they were at on the last ~7Hz culling tick.
-      const _tmpFadePlayerPos = new THREE.Vector3();
-      function updateTreeFadeUniforms() {
-        if (!_treeFadeActive.size) return;
-        const camPos = camera.position;
-        const playerPos3 = _tmpFadePlayerPos.set(player.x / TILE, _playerGroundY(), player.y / TILE);
-        for (const vegGroup of _treeFadeActive) {
-          for (const m of vegGroup.userData._fadeMaterials || []) {
-            const u = m.userData.fadeUniforms;
-            if (!u) continue; // onBeforeCompile hasn't run yet (first render of this material)
-            u.uCamPos.value.copy(camPos);
-            u.uPlayerPos.value.copy(playerPos3);
-          }
-        }
       }
       function updateZoneVegetationCulling(force = false) {
         if (!_isZoneArea(currentArea)) return;
@@ -21410,6 +21351,7 @@
         const halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
         const hysteresis = VEG_CULL_HYSTERESIS_TILES;
         const playerWX = player.x / TILE, playerWZ = player.y / TILE;
+        let occluded = false;
         for (const obj of cullables) {
           const s = obj.userData.cullSphere;
           const dx = s.x - camX, dz = s.z - camZ;
@@ -21421,21 +21363,14 @@
             && side <= halfWidth + expandedRadius;
           if (force || show !== obj.visible) obj.visible = show;
 
-          // Broad-phase only: is the sightline plausibly close enough to this
-          // instance's whole bounding sphere to need a per-pixel shader at
-          // all? The shader itself does the actual precise cutout, so this
-          // just gates which (rare) instances pay for a material clone.
-          if (show) {
+          if (show && !occluded) {
             const segDist = distPointToSegment2D(s.x, s.z, camX, camZ, playerWX, playerWZ);
-            if (segDist < s.radius + TREE_FADE_CUT_RADIUS) {
-              ensureTreeFadeMaterials(obj);
-              _treeFadeActive.add(obj);
-            } else {
-              _treeFadeActive.delete(obj);
-            }
-          } else {
-            _treeFadeActive.delete(obj);
+            if (segDist < s.radius) occluded = true;
           }
+        }
+        if (occluded !== _playerOccludedByFoliage) {
+          _playerOccludedByFoliage = occluded;
+          setPlayerOccludedRenderMode(occluded);
         }
       }
 
@@ -25619,17 +25554,15 @@
         camTargetY += (wy - camTargetY) * camLerp;
         updateCameraPosition();
 
-        // Throttled to ~7Hz, not every frame — see updateZoneVegetationCulling.
+        // Throttled to ~7Hz, not every frame — also drives
+        // setPlayerOccludedRenderMode (only toggles on actual state change,
+        // so no per-frame work needed for that either).
         _vegCullAccum += dt;
         if (_vegCullAccum >= 0.14) {
           const force = _vegCullAccum >= 900; // first tick after script load
           _vegCullAccum = 0;
           updateZoneVegetationCulling(force);
         }
-        // Every frame, unthrottled, but only touches the handful of trees
-        // currently near the sightline — see updateZoneVegetationCulling's
-        // broad-phase check for what actually enters/leaves that set.
-        updateTreeFadeUniforms();
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);

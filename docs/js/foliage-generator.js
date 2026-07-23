@@ -287,11 +287,36 @@ window.FoliageGenerator = (() => {
 
   // ─── Leaf card textures (lazy-loaded, cached, shared across every tree
   // instance of a given kind) ────────────────────────────────────────────
+  // Routes through the game's own in-game debug log (DEBUG tab -> Game Log)
+  // when it's present, so load status is visible without devtools; falls
+  // back to console when running standalone (e.g. this file's own test
+  // harnesses) where window.__farmLog doesn't exist.
+  function _leafDebugLog(message, level) {
+    if (typeof window !== 'undefined' && typeof window.__farmLog === 'function') {
+      window.__farmLog(message, level);
+    } else if (level === 'error') {
+      console.error(message);
+    } else {
+      console.log(message);
+    }
+  }
+
   const _leafTexCache = new Map();
   function getLeafTexture(path) {
     let tex = _leafTexCache.get(path);
     if (!tex) {
-      tex = new T.TextureLoader().load(path);
+      _leafDebugLog(`leaf texture: requesting ${path}`, 'info');
+      tex = new T.TextureLoader().load(
+        path,
+        (loadedTex) => {
+          const img = loadedTex.image;
+          _leafDebugLog(`leaf texture: loaded ${path} (${img?.width ?? '?'}x${img?.height ?? '?'}, complete=${!!img?.complete})`, 'info');
+        },
+        undefined,
+        (err) => {
+          _leafDebugLog(`leaf texture: FAILED to load ${path} — ${err?.message || err}`, 'error');
+        }
+      );
       tex.colorSpace = T.SRGBColorSpace;
       // Every leaf sprite here (leaf_1.png, leaves_crowned_pine.png,
       // leaves_shadewood.png, ...) has non-power-of-two dimensions, and the
