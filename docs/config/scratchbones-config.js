@@ -3213,7 +3213,37 @@ window.SCRATCHBONES_CONFIG = {
         "sfxVolume": 0.92,
         "footsteps": {
           "enabled": true,
-          "volume": 0.85
+          "volume": 0.85,
+          "pitchVarianceMul": 0.08,
+          "moistureWaterMaxVolume": 0.8,
+          "surfaces": {
+            "grass": { "urls": [
+              "assets/audio/sfx/footsteps/sfx_grassstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_grassstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_grassstep_3.mp3"
+            ] },
+            "path": { "urls": [
+              "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+            ] },
+            "interior": { "urls": [
+              "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+            ] },
+            "water": { "urls": [
+              "assets/audio/sfx/footsteps/sfx_waterstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
+            ] }
+          }
         },
         "bgmVolume": 0.48,
         // Played instead of the area's normal bgm/ambient cues whenever
@@ -3261,7 +3291,13 @@ window.SCRATCHBONES_CONFIG = {
           "wind1": "assets/audio/sfx/bgs/bgs_wind1.mp3",
           "wind1Volume": 0.24,
           "wind2": "assets/audio/sfx/bgs/bgs_wind2.mp3",
-          "wind2Volume": 0.18
+          "wind2Volume": 0.18,
+          "rain": {
+            "gentle": "assets/audio/sfx/bgs/bgs_gentlerain1.mp3",
+            "mid": "assets/audio/sfx/bgs/bgs_midrain1.mp3",
+            "heavy": "assets/audio/sfx/bgs/bgs_heavyrain1.mp3",
+            "volume": 0.22
+          }
         },
         "furnitureSfx": {
           "fireplace": { "url": "assets/audio/sfx/bgs/bgs_fire1.wav", "rangeTiles": 6, "volume": 0.65 }
