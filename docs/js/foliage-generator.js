@@ -337,10 +337,24 @@ window.FoliageGenerator = (() => {
     if (!mat) {
       const tex = getLeafTexture(preset.leafTexture);
       const col = new T.Color().setHSL((preset.leafTintH ?? 115) / 360, preset.leafTintS ?? 0.55, preset.leafTintL ?? 0.35);
+      // Opaque alphaTest cutout, NOT alpha-blended — matches the source
+      // tool's getLeafMaterial() exactly, comment and all: "Leaf art is a
+      // binary cutout, not blended glass. This avoids transparent-card
+      // sorting artifacts." Ours used to be transparent:true+depthWrite:
+      // false, which in a real forest scene (dozens of trees' worth of leaf
+      // cards, grass billboards, the occlusion-ghost system etc. all
+      // competing in the same transparent render queue, sorted per-object
+      // rather than per-triangle) let branches and other geometry behind a
+      // leaf card show/bleed through it — invisible in a one-tree isolated
+      // test scene, but exactly the "can I see branches through leaves in
+      // a way the tool can't" artifact reported from actual gameplay.
+      // preset.leafOpacity is intentionally NOT applied here: the tool's
+      // own getLeafMaterial() hardcodes opacity to 1 regardless of that
+      // param too (it only matters for asset types this port doesn't use).
       mat = new T.MeshBasicMaterial({
-        map: tex, color: col, transparent: true,
-        opacity: preset.leafOpacity ?? 0.92, side: T.DoubleSide,
-        depthWrite: false, alphaTest: preset.leafAlphaCutoff ?? 0.5
+        map: tex, color: col, transparent: false,
+        opacity: 1, side: T.DoubleSide,
+        depthWrite: true, depthTest: true, alphaTest: preset.leafAlphaCutoff ?? 0.5
       });
       _leafMatCache.set(preset, mat);
     }
