@@ -8854,7 +8854,38 @@
                              : window.FoliageGenerator.buildShrubMesh(c, r);
               const isNativeBuild = isCrownedPine || isShadewood || isBush || isStump;
               if (!isNativeBuild) vegGroup.scale.multiplyScalar(2);
-              vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS) + tierY, cz);
+              const groundY = tileSurfaceY(TileType.GRASS) + tierY;
+              vegGroup.position.set(cx, groundY, cz);
+              if (isShadewood) {
+                // Shadewood only: this is the species the "canopy influence
+                // radius"/"underside height" numbers were actually specified
+                // for (rainforest network mode, radius 2.75 / height 6 game
+                // tiles). Crowned pine's low, sweeping skirt branches dip to
+                // near ground level on every instance, which would make the
+                // clamp geometrically unsatisfiable (no zoom level keeps the
+                // camera below a canopy that low) and force max zoom-in
+                // constantly throughout Northern Cliffs — not what was asked.
+                // Tag the lowest point of the leaf canopy so the camera can be
+                // kept from rising above it while the player is nearby (see
+                // canopyZoomFloor) — mirrors the standalone foliage tool's own
+                // camera-vs-canopy obstruction concept. The leaf-card mesh is
+                // always the LAST child buildConiferTreeGroup adds (after the
+                // bark mesh), when leaves exist at all.
+                const leafMesh = vegGroup.children[vegGroup.children.length - 1];
+                if (leafMesh && leafMesh.geometry && leafMesh !== vegGroup.children[0]) {
+                  leafMesh.geometry.computeBoundingBox();
+                  const bb = leafMesh.geometry.boundingBox;
+                  const scaleTotal = vegGroup.scale.x;
+                  const radius = Math.max(
+                    Math.abs(bb.min.x), Math.abs(bb.max.x),
+                    Math.abs(bb.min.z), Math.abs(bb.max.z)
+                  ) * scaleTotal;
+                  vegGroup.userData.canopyClamp = {
+                    x: cx, z: cz, radius,
+                    undersideY: groundY + bb.min.y * scaleTotal,
+                  };
+                }
+              }
               zScene.add(vegGroup);
               _markOutline(vegGroup);
               meshes.push(vegGroup);
@@ -9019,7 +9050,12 @@
         const occlusionMeshes = [];
         zScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
 
-        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes };
+        // Canopy zones (tree crowns) whose underside should temporarily hard-limit
+        // manual zoom-out — see canopyZoomFloor. Plain data, not raycast targets.
+        const canopyZones = [];
+        zScene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
+
+        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones };
         _zoneScenes.set(mapId, info);
         _spawnZoneBuildings(mapId);
         _spawnZoneDecorFurniture(mapId);
@@ -13003,6 +13039,12 @@
         if (oldGrass) { zi.scene.remove(oldGrass); oldGrass.geometry?.dispose(); }
         _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId));
         _zoneGrassMeshes.set(mapId, _buildZoneGrassBillboards(zi.scene, zi.grid, zi.cols, zi.rows));
+        // Re-derive canopy clamp zones (see buildZoneScene) — a felled tree's
+        // mesh is gone after this rebuild, and leaving its stale entry in
+        // zi.canopyZones would keep hard-limiting zoom over an empty stump.
+        const canopyZones = [];
+        zi.scene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
+        zi.canopyZones = canopyZones;
         // A dug/filled tile might sit on a plateau's flat top — its mesa lid
         // is otherwise frozen from zone-build time (see rebuildZoneMesaMeshes)
         // and would keep covering/exposing the wrong side of a real trench.
@@ -21142,6 +21184,33 @@
         return { x: lookAtX + dir.x * safeDist, y: lookAtY + dir.y * safeDist + lift, z: lookAtZ + dir.z * safeDist };
       }
 
+      // How far under a tree canopy's own recorded influence radius the player
+      // has to be before manual zoom-out gets hard-limited to its underside
+      // height — ports the standalone foliage tool's camera-vs-canopy
+      // obstruction concept (see buildZoneScene's canopyZones / the
+      // vegGroup.userData.canopyClamp tagging in _buildZoneFloorMeshes).
+      // Only ever raises the effective zoom used for THIS frame's distance —
+      // never mutates s_zoomScale itself, so the player's own wheel/slider
+      // setting is restored the instant they step out of every canopy's radius.
+      function canopyZoomFloor(tx, tz, lookY) {
+        if (!_isZoneArea(currentArea)) return 0;
+        const zones = _zoneScenes.get(currentArea)?.canopyZones;
+        if (!zones || !zones.length) return 0;
+        const modeCfg = cameraModeConfig(activeCameraMode);
+        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
+        const distanceTiles = modeCfg.distanceTiles ?? 14;
+        const sinAngle = Math.sin(angle);
+        const CANOPY_CLEARANCE = 0.3;
+        let floor = 0;
+        for (const z of zones) {
+          const dx = tx - z.x, dz = tz - z.z;
+          if (dx * dx + dz * dz > z.radius * z.radius) continue;
+          const headroom = z.undersideY - CANOPY_CLEARANCE - lookY;
+          const required = headroom > 1e-4 ? (sinAngle * distanceTiles) / headroom : Infinity;
+          if (required > floor) floor = required;
+        }
+        return floor;
+      }
       function updateCameraPosition() {
         const modeCfg = cameraModeConfig(activeCameraMode);
         // A cutscene Zoom card's percent (100 = the captured shot's own
@@ -21149,11 +21218,23 @@
         // player's own s_zoomScale wheel setting so it never leaks into
         // normal gameplay once the cutscene ends (see cutscenePreviewZoomPercent).
         const cutsceneZoomMul = cutscenePreviewActive ? 100 / (cutscenePreviewZoomPercent || 100) : 1;
-        const baseDistance = (modeCfg.distanceTiles ?? 14) / s_zoomScale * cutsceneZoomMul;
+        const tx = camTargetX, tz = camTargetZ;
+        // Cutscene/dialogue/portrait framing is deliberately scripted — only
+        // clamp the ordinary gameplay camera against tree canopies.
+        let effectiveZoomScale = s_zoomScale;
+        if (!cutscenePreviewActive && !dialogueZoomActive()) {
+          const approxLookY = camTargetY + (modeCfg.targetYOffsetTiles ?? 0);
+          const floor = canopyZoomFloor(tx, tz, approxLookY);
+          if (floor > effectiveZoomScale) {
+            const cfg = desktopControlsConfig();
+            const max = Number.isFinite(Number(cfg.wheelZoomMax)) ? Number(cfg.wheelZoomMax) : 2.5;
+            effectiveZoomScale = Math.min(floor, max);
+          }
+        }
+        const baseDistance = (modeCfg.distanceTiles ?? 14) / effectiveZoomScale * cutsceneZoomMul;
         const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
         const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
         const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
-        const tx = camTargetX, tz = camTargetZ;
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
         const lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
