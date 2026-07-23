@@ -6357,6 +6357,7 @@
           member.alchemyReagentState = serializeZoneReagentState();
           member.wildBerryState = serializeZoneBerryState();
           member.zoneTreasureState = serializeZoneTreasureState();
+          member.felledTreeState = serializeZoneFelledTreeState();
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
       }
@@ -8005,6 +8006,16 @@
       // to a week index (see treasureWeekIndex) instead of calendar.day —
       // buried treasure is meant to be rarer than reagents/berries.
       const _zoneTreasurePersist = new Map();
+      // mapId → [{col, row, feltDay}, ...] — trees felled with the axe (see
+      // isChoppableTreeTile/applyAction's axe branch), each remembering the
+      // absolute calendar.day it was felled on. tickFelledTreeRegrowth grows
+      // one back (tile.type -> SHRUB; floraKind is never cleared by felling,
+      // so it renders as the same species again) once TREE_REGROWTH_DAYS
+      // have passed. Same persisted-across-reload shape/role as
+      // _zoneReagentPersist, just without the day-mismatch staleness check
+      // (a felled tile is either still felled or it isn't).
+      const _zoneFelledTreePersist = new Map();
+      const TREE_REGROWTH_DAYS = 7;
       // mapIds whose _zoneLayouts entry was replaced by a Tothal Shift (see
       // performTothalShift) while the player was standing inside that same
       // zone — rebuilding the live THREE.Scene out from under them mid-visit
@@ -8822,9 +8833,82 @@
           if (tile.type === TileType.SHRUB) {
             _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             if (window.FoliageGenerator) {
-              const vegGroup = window.FoliageGenerator.buildShrubMesh(c, r);
-              vegGroup.scale.set(2, 2, 2);
-              vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS) + tierY, cz);
+              // Which generated object this SHRUB tile came from (see
+              // terrain-preview.js's floraKind) decides its mesh: a real
+              // tree only for 'copse' (and only in a zone with a native
+              // species — see TREE_PRESETS), a proper small bush for
+              // 'bush', a big old stump for 'beehive' (in lieu of a real
+              // beehive prop), and the generic shrub for everything else
+              // (fruitBush/mushroomPatch/unknown/hand-authored data with no
+              // floraKind at all — which also covers every other zone that
+              // has no dedicated tree species).
+              const isTreeZone = mapId === 'map_northern_cliffs' || mapId === 'map_southern_cloud_forest';
+              const isCrownedPine = isTreeZone && mapId === 'map_northern_cliffs' && (tile.floraKind === 'copse' || !tile.floraKind);
+              const isShadewood   = isTreeZone && mapId === 'map_southern_cloud_forest' && (tile.floraKind === 'copse' || !tile.floraKind);
+              const isBush   = tile.floraKind === 'bush';
+              const isStump  = tile.floraKind === 'beehive';
+              const vegGroup = isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
+                             : isShadewood   ? window.FoliageGenerator.buildShadewoodMesh(c, r)
+                             : isBush        ? window.FoliageGenerator.buildWildernessBushMesh(c, r)
+                             : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
+                             : window.FoliageGenerator.buildShrubMesh(c, r);
+              const isNativeBuild = isCrownedPine || isShadewood || isBush || isStump;
+              if (!isNativeBuild) vegGroup.scale.multiplyScalar(2);
+              // Small bushes are short enough that a player standing behind
+              // one is still mostly visible over/around it, and they're
+              // meant to read as harmless ground clutter rather than a wall
+              // — never worth the fade/ghost occlusion treatment reserved
+              // for actual trees (see updateZoneVegetationCulling).
+              if (isBush) vegGroup.userData.skipOcclusionFade = true;
+              const groundY = tileSurfaceY(TileType.GRASS) + tierY;
+              vegGroup.position.set(cx, groundY, cz);
+              if (isShadewood) {
+                // Shadewood only: this is the species the "canopy influence
+                // radius"/"underside height" numbers were actually specified
+                // for (rainforest network mode, radius 2.75 / height 6 game
+                // tiles). Crowned pine's low, sweeping skirt branches dip to
+                // near ground level on every instance, which would make the
+                // clamp geometrically unsatisfiable (no zoom level keeps the
+                // camera below a canopy that low) and force max zoom-in
+                // constantly throughout Northern Cliffs — not what was asked.
+                // Tag the lowest point of the leaf canopy so the camera can be
+                // kept from rising above it while the player is nearby (see
+                // canopyZoomFloor) — mirrors the standalone foliage tool's own
+                // camera-vs-canopy obstruction concept. canopyLocal is computed
+                // once per shared tree variant (see foliage-generator.js's
+                // getTreeVariants), not per instance — just scale it by this
+                // instance's own transform.
+                const canopyLocal = vegGroup.userData.canopyLocal;
+                if (canopyLocal) {
+                  const scaleTotal = vegGroup.scale.x;
+                  vegGroup.userData.canopyClamp = {
+                    x: cx, z: cz, radius: canopyLocal.radius * scaleTotal,
+                    undersideY: groundY + canopyLocal.undersideY * scaleTotal,
+                  };
+                }
+              }
+              if (isNativeBuild) {
+                // Bounding sphere for view-corridor culling (see
+                // updateZoneVegetationCulling) — computed once per instance at
+                // build time, not per frame. Ports the standalone foliage
+                // tool's own forestCullSphere concept: a dense forest pays for
+                // full per-object visibility work at ~7Hz instead of every
+                // frame, and only for objects a camera-aligned corridor could
+                // plausibly show.
+                const box = new THREE.Box3().setFromObject(vegGroup);
+                if (!box.isEmpty()) {
+                  const sphere = box.getBoundingSphere(new THREE.Sphere());
+                  // xzRadius: horizontal-only footprint half-diagonal, for the
+                  // camera-player occlusion test (updateZoneVegetationCulling)
+                  // — the full 3D bounding-sphere radius above is dominated by
+                  // a tall tree's height, not its trunk/canopy width, and
+                  // reusing it as the occlusion test's sideways tolerance let
+                  // trees well off to the side of the sightline register as
+                  // "blocking" just for being tall.
+                  const xzRadius = Math.hypot((box.max.x - box.min.x) / 2, (box.max.z - box.min.z) / 2);
+                  vegGroup.userData.cullSphere = { x: sphere.center.x, z: sphere.center.z, radius: sphere.radius, xzRadius };
+                }
+              }
               zScene.add(vegGroup);
               _markOutline(vegGroup);
               meshes.push(vegGroup);
@@ -8875,13 +8959,39 @@
         // elevTier (rendered below as continuous heightfield mesas, one per tier
         // transition, in the same visual style as the distant boundary terrain beyond
         // the playable area) and, for ramp tiles, its own slope-following rampElevation.
-        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline } of (zoneData?.tiles || [])) {
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind } of (zoneData?.tiles || [])) {
           if (!zGrid[r]?.[c]) continue;
           zGrid[r][c].type = type || TileType.GRASS;
           zGrid[r][c].elevTier = elevTier || 0;
           zGrid[r][c].skipFloor = !!skipFloor;
           zGrid[r][c].incline = !!incline;
           if (type === TileType.RAMP) zGrid[r][c].rampElevation = rampElevation || 0;
+          // Which generated object (copse/bush/fruitBush/mushroomPatch/beehive)
+          // produced this SHRUB tile — see terrain-preview.js's floraKind and
+          // _buildZoneFloorMeshes below. Missing/undefined (hand-authored map
+          // data, or a tile whose object landed on a plateau footprint the
+          // merge doesn't track this through) falls back to treating any
+          // SHRUB tile in a tree zone as a real tree — the prior behavior.
+          if (type === TileType.SHRUB) zGrid[r][c].floraKind = floraKind || null;
+        }
+        // Re-apply any trees felled with the axe that haven't regrown yet
+        // (see _zoneFelledTreePersist/tickFelledTreeRegrowth) — zoneData.tiles
+        // above always shows the original, always-treed layout, so a fresh
+        // build here would otherwise put a felled tree right back before its
+        // TREE_REGROWTH_DAYS are up. Entries that are actually due get
+        // dropped here too (the tile's already SHRUB from zoneData.tiles,
+        // matching regrown state — nothing left for them to do).
+        {
+          const felledEntries = _zoneFelledTreePersist.get(mapId);
+          if (felledEntries?.length) {
+            const stillFelled = felledEntries.filter(entry => {
+              const due = calendar.day - entry.feltDay >= TREE_REGROWTH_DAYS;
+              if (!due && zGrid[entry.row]?.[entry.col]) zGrid[entry.row][entry.col].type = TileType.GRASS;
+              return !due;
+            });
+            if (stillFelled.length) _zoneFelledTreePersist.set(mapId, stillFelled);
+            else _zoneFelledTreePersist.delete(mapId);
+          }
         }
         // Ramp curtains: a non-ramp cell beside a ramp cell gets folded into the
         // ramp's slope as a 1-tile-wide skirt instead of sitting flat — this is
@@ -8963,7 +9073,17 @@
         const occlusionMeshes = [];
         zScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
 
-        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes };
+        // Canopy zones (tree crowns) whose underside should temporarily hard-limit
+        // manual zoom-out — see canopyZoomFloor. Plain data, not raycast targets.
+        const canopyZones = [];
+        zScene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
+
+        // Trees/bushes/stumps eligible for view-corridor culling — see
+        // updateZoneVegetationCulling.
+        const cullables = [];
+        zScene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
+
+        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables };
         _zoneScenes.set(mapId, info);
         _spawnZoneBuildings(mapId);
         _spawnZoneDecorFurniture(mapId);
@@ -11331,7 +11451,13 @@
               // them across the walkable ground — turn the un-tagged ones back to
               // grass so the real plateau cliff-face (plateau-tagged rock) reads as
               // the only solid rock terrain, and the zone is actually walkable.
-              if (!t.plateau && type === 'rock') type = 'grass';
+              // t.generatedObjectType exempts this: a generator-placed rock object
+              // (diggableRockOre/undiggableBoulder/etc, always blocksMovement:true —
+              // see wilderness-map-generator.js's placeRepeated/placeCopses' variety
+              // conversion) is deliberately solid, unlike the stray authored
+              // decoration this rule was written for; without the exemption every
+              // such object off-plateau silently vanished into invisible grass.
+              if (!t.plateau && type === 'rock' && !t.generatedObjectType) type = 'grass';
               outTiles.set(key, {
                 c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
                 rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
@@ -12869,6 +12995,21 @@
         });
       }
 
+      // Save/restore _zoneFelledTreePersist as a plain object — see
+      // saveMemberWorldData/spawnPlayerAvatar. Simpler shape than
+      // _zoneReagentPersist (no day-mismatch staleness check needed here).
+      function serializeZoneFelledTreeState() {
+        const out = {};
+        _zoneFelledTreePersist.forEach((entries, mapId) => { out[mapId] = entries; });
+        return out;
+      }
+      function restoreZoneFelledTreeState(saved) {
+        _zoneFelledTreePersist.clear();
+        Object.entries(saved || {}).forEach(([mapId, entries]) => {
+          if (Array.isArray(entries)) _zoneFelledTreePersist.set(mapId, entries);
+        });
+      }
+
       // Tears down a previously built zone scene so buildZoneScene(mapId)'s
       // cache check falls through and rebuilds it from whatever's now in
       // _zoneLayouts — used by a Tothal Shift to apply newly generated
@@ -12901,6 +13042,9 @@
         _zoneTreasureMeshGroups.delete(mapId);
         _zoneTreasureObjects.delete(mapId);
         _zoneTreasurePersist.delete(mapId);
+        // The whole tile layout just changed underneath any felled-tree
+        // timers too — a shift's fresh terrain has its own new trees.
+        _zoneFelledTreePersist.delete(mapId);
         _zoneFloorMeshGroups.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
         _zoneMesaMeshGroups.delete(mapId);
@@ -12929,6 +13073,16 @@
         if (oldGrass) { zi.scene.remove(oldGrass); oldGrass.geometry?.dispose(); }
         _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId));
         _zoneGrassMeshes.set(mapId, _buildZoneGrassBillboards(zi.scene, zi.grid, zi.cols, zi.rows));
+        // Re-derive canopy clamp zones and cullables (see buildZoneScene) — a
+        // felled tree's mesh is gone after this rebuild, and leaving its stale
+        // entries around would keep hard-limiting zoom / culling nothing over
+        // an empty stump.
+        const canopyZones = [];
+        zi.scene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
+        zi.canopyZones = canopyZones;
+        const cullables = [];
+        zi.scene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
+        zi.cullables = cullables;
         // A dug/filled tile might sit on a plateau's flat top — its mesa lid
         // is otherwise frozen from zone-build time (see rebuildZoneMesaMeshes)
         // and would keep covering/exposing the wrong side of a real trench.
@@ -13355,6 +13509,34 @@
           _zoneTreasurePersist.delete(mapId);
         }
         if (_isZoneArea(currentArea)) ensureZoneTreasure(currentArea);
+      }
+
+      // Regrows trees felled with the axe once TREE_REGROWTH_DAYS have
+      // passed (see _zoneFelledTreePersist/applyAction's axe branch).
+      // Called once per day from advanceDay()/sleepInBed(), the same
+      // trigger tickCropDay() uses for the farm grid's crop aging.
+      function tickFelledTreeRegrowth() {
+        for (const [mapId, entries] of _zoneFelledTreePersist) {
+          if (!entries.length) { _zoneFelledTreePersist.delete(mapId); continue; }
+          const zi = _zoneScenes.get(mapId);
+          // Zone isn't currently built (never visited this session, or its
+          // scene was disposed) — nothing to mutate live. Leave every entry
+          // exactly as-is; buildZoneScene re-derives due/not-due from
+          // feltDay itself the next time this zone is actually built (see
+          // there), so dropping entries here without a grid to apply them
+          // to would just lose the regrowth timer entirely.
+          if (!zi) continue;
+          const stillFelled = [];
+          let regrewAny = false;
+          for (const entry of entries) {
+            if (calendar.day - entry.feltDay < TREE_REGROWTH_DAYS) { stillFelled.push(entry); continue; }
+            if (zi.grid?.[entry.row]?.[entry.col]) zi.grid[entry.row][entry.col].type = TileType.SHRUB;
+            regrewAny = true;
+          }
+          if (stillFelled.length) _zoneFelledTreePersist.set(mapId, stillFelled);
+          else _zoneFelledTreePersist.delete(mapId);
+          if (regrewAny && mapId === currentArea) refreshZoneGroundVisuals(mapId);
+        }
       }
 
       function serializeZoneTreasureState() {
@@ -14957,6 +15139,8 @@
         blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: 10, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
         greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: 9, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
+        pineLog:      { icon: '🪵', label: 'Pine Log',      cat: 'material', sellPrice: 6,  tags: ['Material', 'Wood', 'Northern Cliffs'],   desc: "A rough-cut log felled from a Northern Cliffs crowned pine. Good building timber." },
+        shadewoodLog: { icon: '🪵', label: 'Shadewood Log', cat: 'material', sellPrice: 9,  tags: ['Material', 'Wood', 'Cloud Forest'],       desc: 'A dense, dark log felled from a Southern Cloud Forest shadewood tree. Prized building timber.' },
         garWolfMeat: { icon: '🥩', label: 'Gar-wolf Meat', cat: 'material', sellPrice: 9, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a slain gar-wolf. Good for cooking or smoking.' },
         garWolfHide: { icon: '🟫', label: 'Gar-wolf Hide', cat: 'material', sellPrice: 14, tags: ['Material', 'Hide'], desc: 'A tough hide stripped from a slain gar-wolf.' },
         alphaGarWolfMeat: { icon: '🥩', label: 'Alpha Gar-wolf Meat', cat: 'material', sellPrice: 16, tags: ['Material', 'Meat'], desc: 'Prime meat butchered from a slain alpha gar-wolf.' },
@@ -15710,6 +15894,7 @@
         }
         removePlayerAvatarChildren();
         playerMesh.add(avatarGroup);
+        addOccludedGhostSiblings(avatarGroup);
       }
 
       function clothingSpriteForCosmetic(cosmeticId) {
@@ -17604,9 +17789,32 @@
         renderCalendarMonthView();
       });
 
-      function isDigRemovableVegetation(tile) {
+      // A 'copse'-sourced SHRUB tile in Northern Cliffs or the Southern Cloud
+      // Forest renders as a real tree (crowned pine / shadewood — see
+      // FoliageGenerator's TREE_PRESETS and _buildZoneFloorMeshes' floraKind
+      // switch), not a plain decorative bush/stump. Those need a proper
+      // axe-chop hold to fell (see CHOP_TREE_STAGES) rather than being
+      // destroyed for free by a shovel dig or a wide machete/axe swing.
+      // Missing floraKind (hand-authored map data with no generator
+      // metadata) defaults to "is a tree", matching _buildZoneFloorMeshes'
+      // own fallback.
+      function isChoppableTreeTile(col, row) {
+        if (currentArea !== 'map_northern_cliffs' && currentArea !== 'map_southern_cloud_forest') return false;
+        const tile = getActiveGrid()[row]?.[col];
+        if (!tile || tile.crop || tile.type !== TileType.SHRUB) return false;
+        return tile.floraKind === 'copse' || !tile.floraKind;
+      }
+      function treeLogItemKey() {
+        return currentArea === 'map_southern_cloud_forest' ? 'shadewoodLog' : 'pineLog';
+      }
+
+      function isDigRemovableVegetation(tile, col, row) {
         // Used by shovel dig so day-one overgrowth can be destroyed by digging underneath it.
-        return !tile.crop && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB);
+        // Real trees (see isChoppableTreeTile) are excluded — they require a proper axe chop, not a free dig-through.
+        if (tile.crop) return false;
+        if (tile.type === TileType.WEEDS) return true;
+        if (tile.type !== TileType.SHRUB) return false;
+        return !(col != null && row != null && isChoppableTreeTile(col, row));
       }
 
       function blocksDiggingUnder(tile) {
@@ -17630,7 +17838,7 @@
             if (blocksDiggingUnder(tile)) return false;
             // An already-dug trench can be redug (single tap) once rain has silted it shallower.
             if (tile.type === TileType.TRENCH) return (tile.depth ?? 1) < 1;
-            return [TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type) || isDigRemovableVegetation(tile);
+            return [TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type) || isDigRemovableVegetation(tile, col, row);
           }
           if (action === 'fill') return tile.type === TileType.TRENCH;
           if (action === 'raise') return [TileType.GRASS, TileType.TILLED].includes(tile.type) && !tile.crop;
@@ -17658,7 +17866,7 @@
             if (blocksDiggingUnder(tile)) return false;
             // An already-dug trench can be redug (single tap) once rain has silted it shallower.
             if (tile.type === TileType.TRENCH) return (tile.depth ?? 1) < 1;
-            return [TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type) || isDigRemovableVegetation(tile);
+            return [TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type) || isDigRemovableVegetation(tile, col, row);
           }
           if (action === 'fill') return tile.type === TileType.TRENCH;
           if (action === 'raise') return [TileType.GRASS, TileType.TILLED].includes(tile.type) && !tile.crop;
@@ -17734,9 +17942,18 @@
         for (const t of targets) {
           const tile = tgrid[t.row][t.col];
           if (!tile.crop && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB)) {
+            // A real tree needs a proper held axe chop (see CHOP_TREE_STAGES) —
+            // a wide hack/slash cone shouldn't fell one for free mulch.
+            if (tile.type === TileType.SHRUB && isChoppableTreeTile(t.col, t.row)) continue;
             tile.type = TileType.GRASS;
             inventory.mulch = Math.min(99, inventory.mulch + 1);
-            markTileDirty(t.col, t.row);
+            // markTileDirty indexes the farm's own small grid (see its
+            // declaration) — calling it with a wilderness zone's col/row
+            // (up to 100x100) reads past the farm grid's bounds. Zones get
+            // their visual refresh from refreshZoneGroundVisuals instead
+            // (see applyAction's callers), once per completed action rather
+            // than per cleared tile.
+            if (currentArea === 'farm') markTileDirty(t.col, t.row);
             cleared++;
           }
         }
@@ -18210,7 +18427,7 @@
             awardToolUseMasteryXp('shovel');
             return { ok: true, message: 'Redug the trench back to full depth.' };
           }
-          const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile);
+          const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile, col, row);
           if (action === 'dig')   { tile.type = TileType.TRENCH; tile.depth = 1; }
           if (action === 'fill')  tile.type = TileType.GRASS;
           if (action === 'raise') tile.type = TileType.RAISED;
@@ -18225,6 +18442,31 @@
           if (action === 'smooth') tile.crop = CropType.NONE;
           awardToolUseMasteryXp('hoe');
           return { ok: true, message: action === 'till' ? 'Tilled a plantable bed.' : 'Smoothed the tile back into grass.' };
+        }
+
+        if (tool === 'axe' && action === 'chop' && isChoppableTreeTile(col, row)) {
+          // Felling a real tree — only reachable via a completed hold (see
+          // CHOP_TREE_STAGES/wouldStartCharge), unlike the instant clear
+          // below. Drops logs matching the zone's species instead of mulch.
+          const logKey = treeLogItemKey();
+          const logDef = ITEM_DEFS[logKey];
+          const amount = 2 + Math.floor(Math.random() * 2); // 2-3 logs
+          tile.type = TileType.GRASS;
+          tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          // tile.floraKind is deliberately left alone — tickFelledTreeRegrowth
+          // just flips tile.type back to SHRUB once TREE_REGROWTH_DAYS pass,
+          // and the same species grows back via _buildZoneFloorMeshes' switch.
+          const _felledEntries = _zoneFelledTreePersist.get(currentArea) || [];
+          _felledEntries.push({ col, row, feltDay: calendar.day });
+          _zoneFelledTreePersist.set(currentArea, _felledEntries);
+          inventory[logKey] = Math.min(99, (inventory[logKey] || 0) + amount);
+          inventory.mulch = Math.min(99, inventory.mulch + 1);
+          // No markTileDirty here — it indexes the farm's own small grid,
+          // and felling a tree only ever happens in a wilderness zone (see
+          // isChoppableTreeTile). completeChargeAction's zone-refresh branch
+          // (tool === 'axe') handles the visual update instead.
+          awardToolUseMasteryXp('axe');
+          return { ok: true, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'} and 1 Mulch.` };
         }
 
         if (tool === 'machete' || tool === 'axe') {
@@ -18261,7 +18503,7 @@
             awardToolUseMasteryXp('pick');
             return { ok: true, message: 'Redug the trench back to full depth.' };
           }
-          const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile);
+          const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile, col, row);
           if (action === 'dig')   { tile.type = TileType.TRENCH; tile.depth = 1; }
           if (action === 'fill')  tile.type = TileType.GRASS;
           if (action === 'raise') tile.type = TileType.RAISED;
@@ -18348,6 +18590,10 @@
             const msg = "Only the farm's owner (or a granted farmhand) can do that here.";
             lastActionMessage = msg;
             showToast(msg, false);
+            return;
+          }
+          if (activeTool === 'axe') {
+            startChargeAction(getReticleTile(), CHOP_TREE_STAGES);
             return;
           }
           {
@@ -18460,7 +18706,13 @@
         if (currentArea === 'farm') {
           recomputeWater(false);
           if (result.ok !== false) markTileDirty(col, row);
-        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe')) {
+        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
+          // Note: weapon/machete vegetation clears in a zone don't trigger this —
+          // applyAction's weapon branch returns the same ok:true shape for a normal
+          // combat hit as for a veg clear, and refreshing the whole zone floor/grass
+          // mesh on every combat hit would be a real perf hit. Their cleared tile
+          // just stays visually stale (still SHRUB-shaped) until something else
+          // rebuilds the zone — a pre-existing, non-crashing gap, not fixed here.
           // Wilderness-zone counterpart of markTileDirty's farm mesh rebuild —
           // a dig/fill/raise/till/smooth just changed this tile's type, but a
           // zone's terrain is merged meshes built once rather than the farm's
@@ -20599,10 +20851,26 @@
       // Enable layer 1 on a mesh (or every mesh inside a Group) so the
       // selective outline pass picks it up. Flat floor slabs, water, and
       // grass billboards stay on layer 0 only and are never outlined.
+      // Meshes tagged userData.noOutline (textured leaf cards — see
+      // foliage-generator.js's getLeafCardMaterial usage) are skipped even
+      // inside an otherwise-outlined group: shellOutlineMat's inverted-hull
+      // technique needs real volume, correct normals, and a depth-writing
+      // main pass to produce a thin border. A leaf card is a flat, single-
+      // layer, depthWrite:false alpha-cutout plane with no computed normals
+      // (mergeGeomsWithUV never calls computeVertexNormals, unlike the bark/
+      // vine merges right next to it) — the shell's normal-based expand is
+      // therefore zero, so for whichever leaf cards happen to be back-facing
+      // from the current camera angle (roughly half, given the random per-
+      // leaf yaw), the BackSide shell isn't culled, has the exact same depth
+      // as the real card, passes shellOutlineMat's LessDepth test (nothing
+      // else at that depth to fail against, since the real card never wrote
+      // depth), and paints its FULL quad solid black with no alphaTest —
+      // the "black leaf rectangles" bug, camera-angle dependent since it's a
+      // different subset of back-facing cards each time the view changes.
       function _markOutline(obj) {
         if (!obj || typeof obj.isMesh === 'undefined' && !obj.isGroup) return;
-        if (obj.isMesh) { obj.layers.enable(1); return; }
-        obj.traverse(child => { if (child.isMesh) child.layers.enable(1); });
+        if (obj.isMesh) { if (!obj.userData.noOutline) obj.layers.enable(1); return; }
+        obj.traverse(child => { if (child.isMesh && !child.userData.noOutline) child.layers.enable(1); });
       }
 
       // Shared vertex shader used for coloured target outlines (supports instancing)
@@ -20971,6 +21239,33 @@
         return { x: lookAtX + dir.x * safeDist, y: lookAtY + dir.y * safeDist + lift, z: lookAtZ + dir.z * safeDist };
       }
 
+      // How far under a tree canopy's own recorded influence radius the player
+      // has to be before manual zoom-out gets hard-limited to its underside
+      // height — ports the standalone foliage tool's camera-vs-canopy
+      // obstruction concept (see buildZoneScene's canopyZones / the
+      // vegGroup.userData.canopyClamp tagging in _buildZoneFloorMeshes).
+      // Only ever raises the effective zoom used for THIS frame's distance —
+      // never mutates s_zoomScale itself, so the player's own wheel/slider
+      // setting is restored the instant they step out of every canopy's radius.
+      function canopyZoomFloor(tx, tz, lookY) {
+        if (!_isZoneArea(currentArea)) return 0;
+        const zones = _zoneScenes.get(currentArea)?.canopyZones;
+        if (!zones || !zones.length) return 0;
+        const modeCfg = cameraModeConfig(activeCameraMode);
+        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
+        const distanceTiles = modeCfg.distanceTiles ?? 14;
+        const sinAngle = Math.sin(angle);
+        const CANOPY_CLEARANCE = 0.3;
+        let floor = 0;
+        for (const z of zones) {
+          const dx = tx - z.x, dz = tz - z.z;
+          if (dx * dx + dz * dz > z.radius * z.radius) continue;
+          const headroom = z.undersideY - CANOPY_CLEARANCE - lookY;
+          const required = headroom > 1e-4 ? (sinAngle * distanceTiles) / headroom : Infinity;
+          if (required > floor) floor = required;
+        }
+        return floor;
+      }
       function updateCameraPosition() {
         const modeCfg = cameraModeConfig(activeCameraMode);
         // A cutscene Zoom card's percent (100 = the captured shot's own
@@ -20978,11 +21273,23 @@
         // player's own s_zoomScale wheel setting so it never leaks into
         // normal gameplay once the cutscene ends (see cutscenePreviewZoomPercent).
         const cutsceneZoomMul = cutscenePreviewActive ? 100 / (cutscenePreviewZoomPercent || 100) : 1;
-        const baseDistance = (modeCfg.distanceTiles ?? 14) / s_zoomScale * cutsceneZoomMul;
+        const tx = camTargetX, tz = camTargetZ;
+        // Cutscene/dialogue/portrait framing is deliberately scripted — only
+        // clamp the ordinary gameplay camera against tree canopies.
+        let effectiveZoomScale = s_zoomScale;
+        if (!cutscenePreviewActive && !dialogueZoomActive()) {
+          const approxLookY = camTargetY + (modeCfg.targetYOffsetTiles ?? 0);
+          const floor = canopyZoomFloor(tx, tz, approxLookY);
+          if (floor > effectiveZoomScale) {
+            const cfg = desktopControlsConfig();
+            const max = Number.isFinite(Number(cfg.wheelZoomMax)) ? Number(cfg.wheelZoomMax) : 2.5;
+            effectiveZoomScale = Math.min(floor, max);
+          }
+        }
+        const baseDistance = (modeCfg.distanceTiles ?? 14) / effectiveZoomScale * cutsceneZoomMul;
         const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
         const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
         const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
-        const tx = camTargetX, tz = camTargetZ;
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
         const lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
@@ -21002,6 +21309,236 @@
       }
       updateCameraPosition();
 
+      // Camera-aligned view-corridor culling for dense zone vegetation — ports
+      // the standalone foliage tool's updateForestGeometryCulling. Toggling
+      // .visible on whole tree/bush/stump groups (bounding sphere precomputed
+      // once at build time, see cullSphere tagging in _buildZoneFloorMeshes)
+      // is far cheaper than every one of those groups' own per-object frustum
+      // test every single frame, and this corridor can hide far more than
+      // default frustum culling would (behind camera, wide off to the sides)
+      // — the "1-2 tile gaps throughout" density this exists to support can
+      // put thousands of these groups in one zone.
+      const VEG_CULL_FORWARD_TILES = 42;
+      const VEG_CULL_WIDTH_TILES = 30;
+      const VEG_CULL_REAR_TILES = 2;
+      const VEG_CULL_HYSTERESIS_TILES = 1;
+      let _vegCullAccum = 999; // force a real pass on the first tick
+
+      // Keep the player visible when foliage is between them and the camera —
+      // two parts, doing two different jobs, after earlier single-mechanism
+      // attempts each broke something:
+      //
+      // 1. GUARANTEE: a "ghost" duplicate of the avatar/tool plane, sharing
+      //    the same geometry+texture, gated by the STENCIL buffer rather
+      //    than by depth alone. Only the tree(s) actually identified as
+      //    blocking (below, via isBetweenCameraAndPlayer2D against the
+      //    camera-player line — the same test the cosmetic fade uses) write a
+      //    stencil marker while they're drawn; the ghost only renders where
+      //    that marker is present. A first attempt gated purely on
+      //    depthFunc=GreaterDepth (show wherever *anything* already nearer
+      //    is in the depth buffer) was verified in a Playwright repro to
+      //    also show the ghost over ordinary grass billboards standing
+      //    legitimately in front of the player — grass here renders opaque
+      //    with depthWrite:true (alphaTest cutout, not blended), so from the
+      //    depth buffer alone a near grass blade is indistinguishable from a
+      //    near occluding tree. Requiring the stencil marker too restricts
+      //    the ghost to exactly the pixels of trees we've actually flagged
+      //    as blocking, so grass (never marked) is unaffected regardless of
+      //    how near it is. An earlier version before that forced
+      //    depthTest:false + a huge renderOrder on the real avatar/tool
+      //    whenever *anything* occluded them, which broke grass even worse
+      //    (ignoring ALL prior depth, everywhere on screen).
+      //    See addOccludedGhostSiblings below; wired in at avatar/tool build
+      //    time, nothing to update per frame beyond the stencil toggling
+      //    updateZoneVegetationCulling already does for the fade.
+      // 2. COSMETIC: a plain whole-object opacity fade on whichever tree(s)
+      //    are actually sitting on the camera-to-player line, so the
+      //    obstruction itself looks acknowledged instead of staying a flat
+      //    solid wall while the player's ghost shows through it. This reuses
+      //    the same per-tree cutout attempt from earlier — that approach was
+      //    abandoned as the sole fix because dissolving tree #1 doesn't
+      //    reveal the player if tree #2 is right behind it, but as a purely
+      //    cosmetic dimming layered UNDER the ghost guarantee above (which
+      //    doesn't care whether the blocking tree is faded or fully opaque —
+      //    it keys off the stencil marker and real depth, both of which a
+      //    transparent-but-depthWrite-true clone still writes) that
+      //    limitation no longer matters.
+      const TREE_FADE_OPACITY = 0.25;
+      const TREE_FADE_LERP_PER_SEC = 6;
+      const OCCLUSION_STENCIL_REF = 7; // arbitrary; nothing else in this codebase uses the stencil buffer
+      // Sideways tolerance for the camera-player occlusion line test, as a
+      // fraction of a tree's own horizontal footprint radius (cullSphere's
+      // xzRadius) — halved from the full footprint so only trees whose trunk
+      // is genuinely close to dead-center on the sightline count as
+      // blocking, not merely anything within a whole canopy-width of it.
+      const OCCLUSION_XZ_RADIUS_MUL = 0.5;
+      const _treeFadeActive = new Set(); // vegGroup refs currently mid-fade
+      function ensureTreeFadeMaterials(vegGroup) {
+        let mats = vegGroup.userData._fadeMaterials;
+        if (mats) return mats;
+        mats = [];
+        for (const child of vegGroup.children) {
+          if (!child.material) continue;
+          const clone = child.material.clone();
+          clone.transparent = true; // depthWrite stays at its default (true) — see comment above
+          child.material = clone;
+          mats.push(clone);
+        }
+        vegGroup.userData._fadeMaterials = mats;
+        vegGroup.userData._fadeOpacity = 1;
+        vegGroup.userData._fadeTarget = 1;
+        return mats;
+      }
+      // Toggles the stencil-write state used to gate the occlusion ghost —
+      // see part 1 above. Only called on the specific tree(s) currently
+      // flagged as blocking the camera-player sightline.
+      function setTreeBlockingStencil(mats, blocking) {
+        for (const m of mats || []) {
+          m.stencilWrite = blocking;
+          if (blocking) {
+            m.stencilRef = OCCLUSION_STENCIL_REF;
+            m.stencilFunc = THREE.AlwaysStencilFunc;
+            m.stencilZPass = THREE.ReplaceStencilOp;
+            m.stencilZFail = THREE.KeepStencilOp;
+            m.stencilFail = THREE.KeepStencilOp;
+          }
+        }
+      }
+      function updateTreeFadeAnimation(dt) {
+        if (!_treeFadeActive.size) return;
+        const step = TREE_FADE_LERP_PER_SEC * dt;
+        for (const vegGroup of _treeFadeActive) {
+          const target = vegGroup.userData._fadeTarget ?? 1;
+          let opacity = vegGroup.userData._fadeOpacity ?? 1;
+          if (Math.abs(opacity - target) <= step) opacity = target;
+          else opacity += Math.sign(target - opacity) * step;
+          vegGroup.userData._fadeOpacity = opacity;
+          for (const m of vegGroup.userData._fadeMaterials || []) m.opacity = opacity;
+          if (opacity === target && target >= 1) _treeFadeActive.delete(vegGroup);
+        }
+      }
+      // GUARANTEE half — adds a ghost duplicate of each textured mesh under
+      // `root`, sharing the same geometry+texture. The ghost only draws
+      // where BOTH hold: something nearer is already in the depth buffer
+      // (depthFunc=GreaterDepth), AND that something was one of the trees
+      // explicitly marked as blocking via the stencil buffer (see
+      // setTreeBlockingStencil above) — the stencil check is what keeps
+      // grass and everything else that isn't a flagged occluder from
+      // triggering it. depthWrite:false keeps the ghost from affecting
+      // anything drawn after it. No per-frame bookkeeping needed here: it
+      // reacts automatically to whatever's in the depth/stencil buffers
+      // each frame, however many layers of trees are stacked up.
+      function addOccludedGhostSiblings(root, opts = {}) {
+        if (!root) return;
+        const originals = [];
+        root.traverse(o => { if (o.isMesh && o.material && o.material.map) originals.push(o); });
+        for (const mesh of originals) {
+          const srcMat = mesh.material;
+          const ghostMat = new THREE.MeshBasicMaterial({
+            map: srcMat.map,
+            color: opts.color ?? 0xffffff,
+            transparent: true,
+            opacity: opts.opacity ?? 0.6,
+            alphaTest: srcMat.alphaTest || 0.001,
+            side: srcMat.side,
+            depthTest: true,
+            depthFunc: THREE.GreaterDepth,
+            depthWrite: false,
+            // stencilWrite:true here doesn't mean "writes" — in three.js this
+            // flag is what enables the stencil TEST at all (WebGLState just
+            // calls stencilBuffer.setTest(material.stencilWrite), so false
+            // would skip stencil testing entirely and fall back to the
+            // depth-only check, which is exactly the grass-showing bug this
+            // was meant to fix). The Keep/Keep/Keep ops below mean it still
+            // never actually writes a new value despite the test being on.
+            stencilWrite: true,
+            stencilFunc: THREE.EqualStencilFunc,
+            stencilRef: OCCLUSION_STENCIL_REF,
+            stencilFuncMask: 0xff,
+            stencilFail: THREE.KeepStencilOp,
+            stencilZFail: THREE.KeepStencilOp,
+            stencilZPass: THREE.KeepStencilOp,
+          });
+          const ghost = new THREE.Mesh(mesh.geometry, ghostMat);
+          ghost.position.copy(mesh.position);
+          ghost.rotation.copy(mesh.rotation);
+          ghost.scale.copy(mesh.scale);
+          ghost.renderOrder = (mesh.renderOrder || 0) + 1;
+          ghost.name = (mesh.name || 'ghost') + '_occluded_ghost';
+          ghost.userData.isOccludedGhost = true;
+          ghost.matrixAutoUpdate = mesh.matrixAutoUpdate;
+          mesh.parent.add(ghost);
+        }
+      }
+      // Is (px,pz) actually BETWEEN (ax,az) [camera] and (bx,bz) [player],
+      // within `radius` of that line? Unlike a plain point-to-segment
+      // distance, this rejects anything whose projection falls outside the
+      // segment (t outside [0,1]) instead of clamping to the nearest
+      // endpoint — clamping was the bug: a tree sitting right next to the
+      // player but on the far side (behind them, from the camera's view)
+      // has an unclamped t > 1, but clamping snapped that to the player's
+      // own endpoint and reported it as "on the line" merely for being near
+      // the player, faded/ghosted every tree behind the player as well as
+      // the ones actually in front. Trees genuinely off to either side stay
+      // correctly unaffected either way since `side` (perpendicular
+      // distance) is unaffected by the clamp — only the "how far along" axis
+      // was the problem.
+      function isBetweenCameraAndPlayer2D(px, pz, ax, az, bx, bz, radius) {
+        const abx = bx - ax, abz = bz - az;
+        const abLenSq = abx * abx + abz * abz;
+        if (abLenSq < 1e-9) return false;
+        const t = ((px - ax) * abx + (pz - az) * abz) / abLenSq;
+        if (t <= 0 || t >= 1) return false;
+        const cx = ax + abx * t, cz = az + abz * t;
+        return Math.hypot(px - cx, pz - cz) < radius;
+      }
+      function updateZoneVegetationCulling(force = false) {
+        if (!_isZoneArea(currentArea)) return;
+        const zi = _zoneScenes.get(currentArea);
+        const cullables = zi?.cullables;
+        if (!cullables || !cullables.length) return;
+        const camX = camera.position.x, camZ = camera.position.z;
+        let viewX = camTargetX - camX, viewZ = camTargetZ - camZ;
+        let viewLen = Math.hypot(viewX, viewZ);
+        if (viewLen < 1e-5) { viewX = 0; viewZ = 1; viewLen = 1; }
+        viewX /= viewLen; viewZ /= viewLen;
+        const rightX = viewZ, rightZ = -viewX;
+        const forwardRange = VEG_CULL_FORWARD_TILES;
+        const rearRange = VEG_CULL_REAR_TILES;
+        const halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
+        const hysteresis = VEG_CULL_HYSTERESIS_TILES;
+        const playerWX = player.x / TILE, playerWZ = player.y / TILE;
+        for (const obj of cullables) {
+          const s = obj.userData.cullSphere;
+          const dx = s.x - camX, dz = s.z - camZ;
+          const along = dx * viewX + dz * viewZ;
+          const side = Math.abs(dx * rightX + dz * rightZ);
+          const sticky = obj.visible ? hysteresis : 0;
+          const expandedRadius = s.radius + sticky;
+          const show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
+            && side <= halfWidth + expandedRadius;
+          if (force || show !== obj.visible) obj.visible = show;
+
+          if (show) {
+            const blocking = !obj.userData.skipOcclusionFade
+              && isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, playerWX, playerWZ, (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL);
+            const target = blocking ? TREE_FADE_OPACITY : 1;
+            if (target !== 1 || obj.userData._fadeMaterials) {
+              const mats = ensureTreeFadeMaterials(obj);
+              obj.userData._fadeTarget = target;
+              _treeFadeActive.add(obj);
+              setTreeBlockingStencil(mats, blocking);
+            }
+          } else if (obj.userData._fadeMaterials) {
+            obj.userData._fadeTarget = 1;
+            obj.userData._fadeOpacity = 1;
+            for (const m of obj.userData._fadeMaterials) m.opacity = 1;
+            setTreeBlockingStencil(obj.userData._fadeMaterials, false);
+            _treeFadeActive.delete(obj);
+          }
+        }
+      }
+
       // ── Lighting ──────────────────────────────────────────────────
       const ambientLight = new THREE.AmbientLight(0xffeedd, 0.7);
       scene.add(ambientLight);
@@ -21020,22 +21557,37 @@
       scene.add(hemiLight);
 
       // ── Materials ─────────────────────────────────────────────────
+      // Plain MeshLambertMaterial has no light of its own, so under this
+      // game's storm/night dimming any of these can drop toward (0,0,0) --
+      // same problem the tree-bark material had (see hexBarkMat/hslMat in
+      // foliage-generator.js) and the grass billboard shader already solves
+      // with a 0.3 uLightMul floor. Ground rock tiles specifically went
+      // unnoticed until generator-placed rock objects off a plateau started
+      // actually rendering (see mergeZoneTiles' generatedObjectType exemption
+      // from the "downgrade to grass" rule) instead of always downgrading
+      // to invisible grass -- large rock mounds reading as solid black blobs
+      // under anything but bright light is this exact bug, not a texture one.
+      const TILE_EMISSIVE_FLOOR = 0.3;
+      function floorMat(colorArg) {
+        const col = colorArg instanceof THREE.Color ? colorArg : new THREE.Color(colorArg);
+        return new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(TILE_EMISSIVE_FLOOR) });
+      }
       const tileMats = {
-        grass:  new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108/360, 0.58, 0.28) }),
-        weeds:  new THREE.MeshLambertMaterial({ color: 0x247c3c }),
-        tilled: new THREE.MeshLambertMaterial({ color: 0x8a5b34 }),
-        trench: new THREE.MeshLambertMaterial({ color: 0x3a2510 }),
-        raised: new THREE.MeshLambertMaterial({ color: 0xc39a55 }),
-        paddy:  new THREE.MeshLambertMaterial({ color: 0x6aa263 }),
-        rock:   new THREE.MeshLambertMaterial({ color: 0x79807c }),
-        shrub:  new THREE.MeshLambertMaterial({ color: 0x356e36 }),
-        path:   new THREE.MeshLambertMaterial({ color: 0xb8956a }),
-        river:  new THREE.MeshLambertMaterial({ color: 0x3a4a3f }), // silty bed, seen through the water surface
-        stream: new THREE.MeshLambertMaterial({ color: 0x6b5a3a }), // sandy streambed
-        waterfall: new THREE.MeshLambertMaterial({ color: 0x3a4a3f }), // same bed as river — seen at the base of the curtain
+        grass:  floorMat(new THREE.Color().setHSL(108/360, 0.58, 0.28)),
+        weeds:  floorMat(0x247c3c),
+        tilled: floorMat(0x8a5b34),
+        trench: floorMat(0x3a2510),
+        raised: floorMat(0xc39a55),
+        paddy:  floorMat(0x6aa263),
+        rock:   floorMat(0x79807c),
+        shrub:  floorMat(0x356e36),
+        path:   floorMat(0xb8956a),
+        river:  floorMat(0x3a4a3f), // silty bed, seen through the water surface
+        stream: floorMat(0x6b5a3a), // sandy streambed
+        waterfall: floorMat(0x3a4a3f), // same bed as river — seen at the base of the curtain
       };
       // Floor material for vegetation tiles — matches weed foliage HSL color
-      const vegFloorMat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(108 / 360, 0.58, 0.28) });
+      const vegFloorMat = floorMat(new THREE.Color().setHSL(108 / 360, 0.58, 0.28));
 
       // Recolors the grass ground material and the grass billboard tufts
       // (color + density) to the current regional season — vibrant/full for
@@ -21047,7 +21599,9 @@
       function applySeasonalGrassAppearance() {
         const season = currentSeason();
         tileMats.grass.color.copy(season.grassColor);
+        tileMats.grass.emissive.copy(season.grassColor).multiplyScalar(TILE_EMISSIVE_FLOOR);
         vegFloorMat.color.copy(season.grassColor);
+        vegFloorMat.emissive.copy(season.grassColor).multiplyScalar(TILE_EMISSIVE_FLOOR);
         _grassTint.copy(season.grassColor);
         if (grassBillboardMat) grassBillboardMat.uniforms.uDensity.value = season.grassDensity;
       }
@@ -22516,6 +23070,14 @@
       ];
       const FILL_TRENCH_STAGES = [...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP];
 
+      // Felling a real tree (see isChoppableTreeTile) — a short flurry of
+      // alternating forehand/backhand swings held through to the end, reusing
+      // the melee combo's own authored SWEEP_POSE (window.Combat.poses) via
+      // beginChargeStage's pose branch below instead of a plain tool-swing
+      // arc, so the chop actually looks like a proper weapon swing landing
+      // on the trunk rather than the generic single-axis sweep fallback.
+      const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55 }));
+
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
       let chargeAnimOverride = null;
@@ -22593,9 +23155,14 @@
       }
 
       // Whether starting this tool/action right now would kick off a multi-stage
-      // charge (new trench dig, or filling one in) rather than firing immediately.
-      // Redigging an existing shallow trench is a normal single-tap swing instead.
+      // charge (new trench dig, filling one in, or felling a real tree) rather
+      // than firing immediately. Redigging an existing shallow trench is a
+      // normal single-tap swing instead.
       function wouldStartCharge(tool, action) {
+        if (tool === 'axe' && action === 'chop') {
+          const reticle = getReticleTile();
+          return isChoppableTreeTile(reticle.col, reticle.row);
+        }
         if (!((tool === 'shovel' || tool === 'pick') && (action === 'dig' || action === 'fill'))) return false;
         const reticle = getReticleTile();
         const resolved = resolveDigFillAction(tool, action, reticle);
@@ -22619,12 +23186,32 @@
       function beginChargeStage() {
         if (!chargeAction) return;
         const stageDef = chargeAction.stages[chargeAction.stage];
-        const dur = stageDef.dur / getDigSpeedMultiplier();
+        // digSpeed only scales shovel/pick dig-and-fill stages — an axe chop's
+        // pose-driven stages (see CHOP_TREE_STAGES) swing at a fixed pace.
+        const dur = stageDef.pose ? stageDef.dur : stageDef.dur / getDigSpeedMultiplier();
         toolSwingDur = dur;
         toolSwingT   = dur;
         strikeFired  = false;
         pendingAction = null;
-        chargeAnimOverride = stageDef.anim || null;
+        if (stageDef.pose) {
+          // Reuses the melee combo's own authored sweep pose (see
+          // combat-combo.js's SWEEP_POSE, exported as window.Combat.poses)
+          // instead of a chargeAnimOverride arc — same pose-driven branch
+          // updateToolMesh already plays for weapon swings.
+          chargeAnimOverride  = null;
+          combatSwingAnim     = 'sweep';
+          combatSwingPose     = window.Combat?.poses?.SWEEP_POSE || null;
+          combatSwingSign     = stageDef.dirSign || 1;
+          combatSwingWindupFrac = 0.22;
+          combatSwingStrikeFrac = 0.55;
+          combatSwingPower    = 1;
+          combatSwingHoldS    = 0;
+          combatSwingAfflictionIds = [];
+        } else {
+          chargeAnimOverride = stageDef.anim || null;
+          combatSwingAnim  = null;
+          combatSwingPose  = null;
+        }
       }
 
       // Plays the weapon's existing arm-swing mesh animation for durationS without
@@ -22743,7 +23330,7 @@
         if (currentArea === 'farm') {
           recomputeWater(false);
           if (result.ok !== false) markTileDirty(col, row);
-        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe')) {
+        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
           // See the matching branch in firePendingAction — this is the charge-
           // action completion path (a brand-new trench dig or a fill-in is a
           // multi-stage charge, not a single tap), and needs the same fix.
@@ -22851,6 +23438,7 @@
         const plane = new THREE.Mesh(geo, mat);
         plane.rotation.x = -Math.PI / 2;  // lie flat in XZ for all tools
         g.add(plane);
+        addOccludedGhostSiblings(g);
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
         // blade-parallel twist and the mace-mode "spinning" twirl on top each frame, derived
         // from whichever anim is actually playing rather than baked in per-item here — see
@@ -25132,6 +25720,17 @@
         camTargetY += (wy - camTargetY) * camLerp;
         updateCameraPosition();
 
+        // Throttled to ~7Hz, not every frame — drives the cosmetic tree-fade
+        // targets. The ghost-sibling visibility guarantee needs no per-frame
+        // work (it's just always in the scene, reacting to the depth buffer).
+        _vegCullAccum += dt;
+        if (_vegCullAccum >= 0.14) {
+          const force = _vegCullAccum >= 900; // first tick after script load
+          _vegCullAccum = 0;
+          updateZoneVegetationCulling(force);
+        }
+        updateTreeFadeAnimation(dt);
+
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
         if (!paused) {
@@ -25611,6 +26210,7 @@
         respawnAllZoneReagents();
         respawnAllZoneBerries();
         respawnAllZoneTreasure();
+        tickFelledTreeRegrowth();
       }
 
       // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
@@ -25631,6 +26231,7 @@
         pendingDenRespawn.clear();
         respawnAllZoneReagents();
         respawnAllZoneTreasure();
+        tickFelledTreeRegrowth();
         player.health  = player.maxHealth;
         player.stamina = player.maxStamina;
         const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
@@ -28035,6 +28636,7 @@
         restoreZoneReagentState(playerData.alchemyReagentState);
         restoreZoneBerryState(playerData.wildBerryState);
         restoreZoneTreasureState(playerData.zoneTreasureState);
+        restoreZoneFelledTreeState(playerData.felledTreeState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
         // session, unlike the static reagent/furniture/fish tables) — rebuild

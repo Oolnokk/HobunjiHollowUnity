@@ -138,10 +138,19 @@
         continue;
       }
       let type = t.type || 'grass';
-      if (!t.plateau && type === 'rock') type = 'grass';
+      // See game.js's mergeZoneTiles for the full rationale — mirrored here
+      // verbatim. t.generatedObjectType exempts generator-placed rock objects
+      // (diggableRockOre/undiggableBoulder/etc, deliberately solid) from the
+      // "stray authored decorative rock" suppression this rule exists for.
+      if (!t.plateau && type === 'rock' && !t.generatedObjectType) type = 'grass';
       outTiles.set(key, {
         c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
         rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
+        // Which generator object (copse/bush/fruitBush/mushroomPatch/beehive)
+        // this 'shrub' tile came from — lets the live game pick a matching
+        // mesh (tree/bush/stump) instead of treating every shrub tile in a
+        // tree zone as a full tree. See game.js's _buildZoneFloorMeshes.
+        floraKind: type === 'shrub' ? (t.generatedObjectType || null) : undefined,
       });
     }
 

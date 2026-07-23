@@ -155,6 +155,14 @@
       stepCurveLabel: 'Northern Cliffs',
       plateaus: 76,
       maxTier: 6,
+      // Zone-level overrides for a low, sprawling plateau look instead of the
+      // default tall/dense/many-small-blobs one — see generateWorkspace's
+      // resolvedMaxTier and choosePlateauBlobTargetArea.
+      lowProfilePlateaus: false,
+      plateauAreaMul: 1,
+      // See widenRampLineAtTightCorners — continuous 3-tile-wide ramps
+      // instead of the default mostly-1-tile-with-occasional-2-tile-shoulder.
+      wideRamps: false,
       ramps: 14,
       rampMinDiff: 1,
       rampMaxAngle: 40,
@@ -163,6 +171,13 @@
       plateauStreams: 10,
       rivers: 2,
       pathAnchors: 4,
+      // See findPath's randomBias term — multiplier on how strongly the A*
+      // path search prefers meandering over a straight line to its target.
+      pathWindiness: 1,
+      // See openBorderEntryGate — scales the entry road-mouth's carved width
+      // down from the default "wide enough to clear the border escarpment
+      // cleanly" footprint, for a zone that wants a thin entrance instead.
+      entryGateWidthMul: 1,
       animalDens: 5,
       prey: 8,
       packPredators: 5,
@@ -175,6 +190,23 @@
       statues: 8,
       pillars: 15,
       trees: 130,
+      // Opt-in per zone (see placeCopses' gap-fill pass) — claims every
+      // remaining spacing-eligible tile after the normal weighted-cluster
+      // placement loop, instead of stopping once `trees` tiles are placed.
+      treesFillGaps: false,
+      // Post-process on the finished copse set (see placeCopses' tail) —
+      // treeThinning randomly drops this fraction of placed trees entirely
+      // (helps performance, thins out an oversaturated fill), and
+      // treeVarietyFraction converts this fraction of the *survivors* into a
+      // different 1x1 point of interest (bush/rock/treasure) for visual
+      // variety and a further mesh-count cut, since those are all cheaper to
+      // render than a full procedural tree.
+      treeThinning: 0,
+      treeVarietyFraction: 0,
+      // Chebyshev clearance (final tiles) kept clear of trees around every
+      // animal den's doorway tile (see placeAnimalDens' mouthAnchor) — a
+      // tree spawning right on/next to a den's entrance was blocking it.
+      denEntranceTreeClearance: 3,
       logs: 30,
       bushes: 75,
       forage: 55,
@@ -639,15 +671,20 @@
   }
 
   function choosePlateauBlobTargetArea(blobCount, areaScale) {
-    const crowdFactor = clamp(76 / Math.max(1, blobCount), 0.74, 1.24);
-    const small = Math.round(randInt(82, 155) * areaScale * crowdFactor);
-    const medium = Math.round(randInt(145, 300) * areaScale * crowdFactor);
-    const large = Math.round(randInt(270, 520) * areaScale * crowdFactor);
+    // Uncapped on purpose (the old clamp(...,0.74,1.24) assumed blobCount
+    // stays in roughly the default's neighborhood) — a zone that deliberately
+    // asks for a third as many blobs as usual (see plateauAreaMul) wants each
+    // survivor several times bigger, not just up to +24%.
+    const crowdFactor = Math.max(0.74, 76 / Math.max(1, blobCount));
+    const areaMul = Math.max(0.1, Number(settings.plateauAreaMul) || 1);
+    const small = Math.round(randInt(82, 155) * areaScale * crowdFactor * areaMul);
+    const medium = Math.round(randInt(145, 300) * areaScale * crowdFactor * areaMul);
+    const large = Math.round(randInt(270, 520) * areaScale * crowdFactor * areaMul);
     // new variable: blobSizeRoll is used here to keep doubled plateau counts playable: each blob is still broad enough for interior walking, but overlap/edge-sharing lets coverage approach the whole map.
     const blobSizeRoll = rng();
-    if (blobSizeRoll < 0.22) return clamp(small, 64, 220);
-    if (blobSizeRoll < 0.82) return clamp(medium, 110, 420);
-    return clamp(large, 220, 680);
+    if (blobSizeRoll < 0.22) return clamp(small, 64, 220 * areaMul);
+    if (blobSizeRoll < 0.82) return clamp(medium, 110, 420 * areaMul);
+    return clamp(large, 220, 680 * areaMul);
   }
 
   function northwardTierFloatAtY(y) {
@@ -2278,7 +2315,14 @@
   }
 
   function widenRampLineAtTightCorners(line, candidate) {
-    if (!line || candidate.kind !== 'wrap') return line;
+    // settings.wideRamps (zone-level override — see map_southern_cloud_forest's
+    // ZONE_CONFIG) makes every ramp continuously wide instead of the default
+    // "only wrap-kind ramps, only at turns/every-other-ledge-tile/slopes get
+    // a single extra shoulder tile": every core point on every ramp kind gets
+    // widened, and gets a second shoulder ring further out for a 3-tile-wide
+    // ramp instead of 2.
+    const wideMode = !!settings.wideRamps;
+    if (!line || (candidate.kind !== 'wrap' && !wideMode)) return line;
     const widened = [];
     const used = new Set();
     let shoulders = 0;
@@ -2302,7 +2346,7 @@
       const nextDir = next ? { x: Math.sign(next.x - point.x), y: Math.sign(next.y - point.y) } : null;
       const turnsHere = !!(prevDir && nextDir && (prevDir.x !== nextDir.x || prevDir.y !== nextDir.y));
       const longLedgeSpacing = i % 2 === 0 && Math.abs(candidate.direction?.x || 0) > 0;
-      const shouldWiden = turnsHere || longLedgeSpacing || point.zone === 'slope';
+      const shouldWiden = wideMode || turnsHere || longLedgeSpacing || point.zone === 'slope';
       if (!shouldWiden) continue;
       const shoulderTile = rampOuterShoulderTile(point, candidate);
       if (!shoulderTile) continue;
@@ -2319,6 +2363,20 @@
       if (addPoint(shoulder)) {
         shoulders++;
         if (turnsHere) tightCornerShoulders++;
+      }
+      if (wideMode) {
+        const normal = point.rampNormal || point.normal || candidate.normal;
+        if (normal && (normal.x || normal.y)) {
+          const farTile = tileAt(shoulderTile.x + normal.x, shoulderTile.y + normal.y);
+          if (farTile && !farTile.water && !farTile.ramp && !farTile.occupiedBy && !farTile.path && farTile.elevation === candidate.low.elevation) {
+            const shoulder2 = {
+              ...point, x: farTile.x, y: farTile.y,
+              zone: 'outerLedgeShoulder', sharePlateau: false, hugsPlateau: false,
+              rampLane: 'outerShoulder', landingContact: 'threeTileLedgeShoulder'
+            };
+            if (addPoint(shoulder2)) shoulders++;
+          }
+        }
       }
     }
     widened.twoTileShoulders = shoulders;
@@ -2924,7 +2982,8 @@
     const sideTangent = sideAxisHorizontal ? { x: 1, y: 0 } : { x: 0, y: 1 };
     const maxDepth = borderEscarpmentMaxDepth();
     const gateDepth = maxDepth + 5;
-    const gateHalfWidth = Math.max(2, Math.round(maxDepth * 0.75));
+    const widthMul = Math.max(0.1, Number(settings.entryGateWidthMul) || 1);
+    const gateHalfWidth = Math.max(1, Math.round(maxDepth * 0.75 * widthMul));
     const replacementHeight = Number.isFinite(forcedReplacementHeight) ? forcedReplacementHeight : findEntryGateInteriorHeight(entry, inward, gateDepth);
     let cleared = 0;
     let roadTiles = 0;
@@ -2972,7 +3031,8 @@
       for (let y = guard; y < settings.height - guard; y++) candidates.push({ x, y, side: requested });
     }
     const gateDepth = borderEscarpmentMaxDepth() + 5;
-    const gateHalfWidth = Math.max(2, Math.round(borderEscarpmentMaxDepth() * 0.75));
+    const gateWidthMul = Math.max(0.1, Number(settings.entryGateWidthMul) || 1);
+    const gateHalfWidth = Math.max(1, Math.round(borderEscarpmentMaxDepth() * 0.75 * gateWidthMul));
     const center = requested === 'north' || requested === 'south' ? settings.width / 2 : settings.height / 2;
     const scored = candidates.map(candidate => {
       const axis = requested === 'north' || requested === 'south' ? candidate.x : candidate.y;
@@ -3775,7 +3835,11 @@
         const existingPathBias = nextTile.path ? -0.55 : 0;
         const invisibleBias = preferInvisible && nextTile.invisiblePath ? -0.75 : 0;
         const rampBias = usesRamp ? -0.35 : 0;
-        const randomBias = noise2(next.x, next.y, 1225) * 0.25;
+        // pathWindiness (zone-level override — see map_southern_cloud_forest's
+        // ZONE_CONFIG) scales this term up well past its default weight so the
+        // A* search meaningfully prefers meandering through low-noise corridors
+        // over a straight line to the goal, instead of just barely perturbing it.
+        const randomBias = noise2(next.x, next.y, 1225) * 0.25 * (Number(settings.pathWindiness) || 1);
         const g = current.g + 1 + occupiedCost + waterCost + tierCost + cliffCost + existingPathBias + invisibleBias + rampBias + randomBias;
         const k = tileIdXY(next.x, next.y);
         if (best.has(k) && best.get(k) <= g) continue;
@@ -4881,6 +4945,58 @@
     logDebug(`fallenLog/stump: placed ${placedLogLikeCount}/${settings.logs} (${fallenLogCount} logs, ${stumpCount} stumps)`);
   }
 
+  // Only 'copse' tiles grow into a full-size tree in the live game (crowned
+  // pine / shadewood — see FoliageGenerator and _buildZoneFloorMeshes'
+  // floraKind switch); bush/fruitBush/mushroomPatch/beehive render as small
+  // props (bush/stump meshes or the generic shrub) and are free to sit right
+  // up against a tree or each other — only tree-to-tree spacing matters.
+  const TREE_LIKE_OBJECT_TYPES = new Set(['copse']);
+
+  // Minimum pre-scale Chebyshev distance between two tree tiles. This is
+  // pre-scale (copse-placement) space — the later 2x density pass
+  // (GENERATION_TILE_SCALE) doubles every coordinate, and each tree object
+  // now keeps a fixed 1x1 *final*-tile footprint regardless of scale (see
+  // scaleGeneratedObject's SINGLE_TILE_FOOTPRINT_OBJECT_TYPES — a tree used
+  // to inherit the generic scale x scale block instead, which meant every
+  // single copse placement rendered as 4 separate full-size trees stacked
+  // within 1-2 world units of each other; that's what "1 trunk = 1 tile" is
+  // fixing). So the FINAL empty-tile gap between two trunks is 2*dist-1.
+  // dist=1 (the loosest legal value — hasNearbyTreeObject's ring radius is
+  // dist-1, so dist=1 means "just don't reuse a tile", no extra gap forced)
+  // gives a 1-tile final gap: the tightest packing the generator supports,
+  // deliberately dense enough that rendered canopies (~2.75-6 world units in
+  // radius depending on species — see FoliageGenerator's TREE_PRESETS) overlap
+  // into a continuous mass. That overlap is intentional/desired (a real
+  // rainforest canopy is continuous from above), not a bug — see the explicit
+  // "1 trunk = 1 tile, allowing overlap" call. View-corridor culling
+  // (updateZoneVegetationCulling in game.js) plus shared 3-variant tree
+  // geometry (getTreeVariants in foliage-generator.js) are what keep this
+  // density from tanking FPS.
+  const TREE_SPACING_MIN_DIST = 1;
+
+  // Keep every tree at least TREE_SPACING_MIN_DIST from every other tree:
+  // checked against both already-committed trees (tile.occupiedBy, set by
+  // addObject/markOccupied) and an optional extraKeys set of positions not
+  // yet committed (copse grows a whole cluster via BFS before calling
+  // addObject on any of it — occupiedBy isn't set until the cluster is
+  // done, so without extraKeys a cluster could otherwise pack its own tiles
+  // right next to each other).
+  function hasNearbyTreeObject(x, y, extraKeys) {
+    const R = TREE_SPACING_MIN_DIST - 1;
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const key = `${x + dx},${y + dy}`;
+        if (extraKeys && extraKeys.has(key)) return true;
+        const neighborTile = tileAt(x + dx, y + dy);
+        if (!neighborTile || !neighborTile.occupiedBy) continue;
+        const neighborObject = getObjectById(neighborTile.occupiedBy);
+        if (neighborObject && TREE_LIKE_OBJECT_TYPES.has(neighborObject.type)) return true;
+      }
+    }
+    return false;
+  }
+
   function placeCopses() {
     // NOTE: copse tiles are a simplified proxy for denser forest spawning in the larger game.
     // The duplicate game should spawn slightly more trees than copse tiles where room allows,
@@ -4891,11 +5007,28 @@
     let shadowCopseTiles = 0;
     const maxClusterAttempts = Math.max(200, targetCopseTiles * 7);
 
-    function copseEligible(x, y) {
+    // Animal dens are placed before flora (see generateWorkspace's call
+    // order) — their footprint (object.w x object.h) already blocks trees
+    // via tile.occupiedBy, but the doorway tile (mouthAnchor) sits one tile
+    // *outside* that footprint specifically so it reads as an entrance, and
+    // was never itself protected — a tree spawning right on or beside it
+    // could block the den off entirely.
+    const denEntrances = (map.objects || [])
+      .filter(o => o.type === 'animalDen' && o.mouthAnchor)
+      .map(o => o.mouthAnchor);
+    const denClearance = Math.max(0, Number(settings.denEntranceTreeClearance) || 0);
+    function nearDenEntrance(x, y) {
+      if (!denEntrances.length || denClearance <= 0) return false;
+      return denEntrances.some(a => Math.max(Math.abs(x - a.x), Math.abs(y - a.y)) <= denClearance);
+    }
+
+    function copseEligible(x, y, clusterKeys) {
       const tile = tileAt(x, y);
       if (!tile) return false;
       if (tile.water || tile.river || tile.path || tile.ramp || tile.cliffSkirt || tile.waterfall) return false;
       if (tile.occupiedBy) return false;
+      if (hasNearbyTreeObject(x, y, clusterKeys)) return false;
+      if (nearDenEntrance(x, y)) return false;
       return true;
     }
 
@@ -4934,15 +5067,34 @@
       const queue = [{ x: start.x, y: start.y }];
       const seen = new Set([`${start.x},${start.y}`]);
       const chosen = [];
+      // Mirrors `chosen`, but as a key set for hasNearbyTreeObject's O(1) lookups —
+      // needed because a tile only gets tile.occupiedBy (and so shows up to
+      // copseEligible via that path) once the whole cluster finishes below;
+      // without this a cluster could still pack its own tiles next to each
+      // other while it's still being grown.
+      const chosenKeys = new Set();
+      // Once a tile is chosen, every tile within TREE_SPACING_MIN_DIST-1 of
+      // it can never be chosen for this cluster (hasNearbyTreeObject blocks
+      // that whole ring) — so only the next ring out (distance exactly
+      // TREE_SPACING_MIN_DIST) is worth queueing as a real candidate; still
+      // packs as tightly as the spacing rule allows, just skips straight
+      // past the inner rings that are guaranteed to fail.
+      const NEXT_RING_OFFSETS = [];
+      for (let dy = -TREE_SPACING_MIN_DIST; dy <= TREE_SPACING_MIN_DIST; dy++) {
+        for (let dx = -TREE_SPACING_MIN_DIST; dx <= TREE_SPACING_MIN_DIST; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) === TREE_SPACING_MIN_DIST) NEXT_RING_OFFSETS.push([dx, dy]);
+        }
+      }
 
       while (queue.length && chosen.length < desiredSize) {
         queue.sort((a, b) => (southFacingCliffShadowScore(b.x, b.y) + noise2(b.x, b.y, 94411) * 0.25) - (southFacingCliffShadowScore(a.x, a.y) + noise2(a.x, a.y, 94411) * 0.25));
         const candidate = queue.shift();
-        if (!copseEligible(candidate.x, candidate.y)) continue;
+        if (!copseEligible(candidate.x, candidate.y, chosenKeys)) continue;
         chosen.push(candidate);
+        chosenKeys.add(`${candidate.x},${candidate.y}`);
 
         const sourceTile = tileAt(candidate.x, candidate.y);
-        shuffle([[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]).forEach(([dx, dy]) => {
+        shuffle(NEXT_RING_OFFSETS).forEach(([dx, dy]) => {
           const nx = candidate.x + dx;
           const ny = candidate.y + dy;
           const key = `${nx},${ny}`;
@@ -4951,7 +5103,7 @@
           const nextTile = tileAt(nx, ny);
           if (!nextTile) return;
           if (Math.abs(nextTile.elevation - sourceTile.elevation) > 1) return;
-          if (!copseEligible(nx, ny)) return;
+          if (!copseEligible(nx, ny, chosenKeys)) return;
           const shadowScore = southFacingCliffShadowScore(nx, ny);
           if (!shadowScore && startShadowScore > 0 && chance(0.42)) return;
           queue.push({ x: nx, y: ny });
@@ -4984,6 +5136,83 @@
 
     if (placedCopseTiles < targetCopseTiles) warn(`copse: placed ${placedCopseTiles}/${targetCopseTiles} tiles`);
     logDebug(`copse: placed ${placedCopseTiles}/${targetCopseTiles} tiles across ${copseClusterCount} clusters, south-facing cliff-shadow tiles ${shadowCopseTiles}`);
+
+    // Gap-fill pass (opt-in per zone via settings.treesFillGaps — see
+    // map_southern_cloud_forest's ZONE_CONFIG entry): the BFS cluster-growth
+    // loop above starts from weighted-random points and stops once it's
+    // placed `targetCopseTiles`, which — especially with a target this
+    // zone's actual eligible area can't reach anyway — leaves real gaps
+    // between and around clusters even though TREE_SPACING_MIN_DIST would
+    // still allow a tree there. This second pass sweeps every tile once more
+    // and claims every remaining eligible spot, so "gaps" only remain where
+    // the spacing rule (or terrain — water/path/cliff/etc.) genuinely
+    // forbids a tree, not just where the first pass's clusters didn't reach.
+    if (settings.treesFillGaps) {
+      let gapFilled = 0;
+      for (const tile of allTiles()) {
+        if (!copseEligible(tile.x, tile.y)) continue;
+        copseClusterCount++;
+        const clusterId = `copse_gapfill_${copseClusterCount}`;
+        const shadowScore = southFacingCliffShadowScore(tile.x, tile.y);
+        addObject({
+          type: 'copse', x: tile.x, y: tile.y, w: 1, h: 1,
+          copseId: clusterId, blocksMovement: false, recommendedTreeCount: 2,
+          shadowSouthFacingCliffScore: shadowScore ? Number(shadowScore.toFixed(2)) : undefined,
+          note: 'copse tile: gap-fill pass, claims every remaining spacing-eligible tile'
+        });
+        placedCopseTiles++;
+        gapFilled++;
+      }
+      logDebug(`copse gap-fill pass: +${gapFilled} additional tiles (total ${placedCopseTiles})`);
+    }
+
+    // Post-process on the finished copse set — see treeThinning/
+    // treeVarietyFraction's own comments in defaultSettings. Both are no-ops
+    // at their default of 0.
+    const allCopses = (map.objects || []).filter(o => o.type === 'copse');
+    const removedIds = new Set();
+    let thinnedOut = 0;
+    if (settings.treeThinning > 0) {
+      for (const object of allCopses) {
+        if (rng() >= settings.treeThinning) continue;
+        const idx = map.objects.indexOf(object);
+        if (idx >= 0) map.objects.splice(idx, 1);
+        if (map.objectById) map.objectById.delete(object.id);
+        const tile = tileAt(object.x, object.y);
+        if (tile && tile.occupiedBy === object.id) tile.occupiedBy = null;
+        removedIds.add(object.id);
+        thinnedOut++;
+      }
+    }
+    let convertedToVariety = 0;
+    if (settings.treeVarietyFraction > 0) {
+      const varietyMakers = [
+        () => ({ type: 'bush', blocksMovement: true, note: 'bright green star (was a copse tile — see treeVarietyFraction)' }),
+        () => {
+          const oreKind = pick(oreKinds);
+          return withRarity({ type: 'diggableRockOre', oreKind, blocksMovement: true, note: 'light gray hexagon, one tile, with rarity-pool superscript marker (was a copse tile)' }, 'diggableRockOre', { oreKind });
+        },
+        () => withRarity({ type: 'treasureDigspot', blocksMovement: false, note: 'yellow X with rarity-pool superscript marker (was a copse tile)' }, 'treasureDigspot')
+      ];
+      for (const object of allCopses) {
+        if (removedIds.has(object.id)) continue; // this same pass already thinned it out
+        if (rng() >= settings.treeVarietyFraction) continue;
+        const replacement = pick(varietyMakers)();
+        // Keep the tile position/footprint/id/copseId-derived identity, swap
+        // everything else (type, blocksMovement, rarity, ore kind, note) for
+        // the chosen replacement's own shape.
+        for (const key of Object.keys(object)) {
+          if (key === 'x' || key === 'y' || key === 'w' || key === 'h' || key === 'id') continue;
+          delete object[key];
+        }
+        Object.assign(object, replacement);
+        convertedToVariety++;
+      }
+    }
+    if (thinnedOut || convertedToVariety) {
+      placedCopseTiles -= thinnedOut;
+      logDebug(`copse post-process: thinned out ${thinnedOut}, converted ${convertedToVariety} to bush/ore/treasure variety (total copse remaining ${placedCopseTiles - convertedToVariety})`);
+    }
   }
 
   function placeFloraAndResources() {
@@ -4992,6 +5221,8 @@
     placeLogsAndStumps();
 
     placeRepeated('bush', settings.bushes, {
+      // Renders as a full tree in tree zones too (see TREE_LIKE_OBJECT_TYPES) — same spacing rule as copse.
+      areaOptions: { filter: (x, y) => !hasNearbyTreeObject(x, y) },
       make: (x, y) => ({ type: 'bush', x, y, w: 1, h: 1, blocksMovement: true, note: 'bright green star' })
     });
 
@@ -5044,9 +5275,10 @@
   function placeAnimalFoodSources() {
     placeRepeated('fruitBush', settings.fruitBushes, {
       areaOptions: {
+        // Renders as a full tree in tree zones too (see TREE_LIKE_OBJECT_TYPES) — same spacing rule as copse.
         filter: (x, y) => {
           const tile = tileAt(x, y);
-          return tile && !tile.water && !tile.path && !tile.ramp && !tile.cliffSkirt && areaElevationSpread(x, y, 1, 1) <= 0;
+          return tile && !tile.water && !tile.path && !tile.ramp && !tile.cliffSkirt && areaElevationSpread(x, y, 1, 1) <= 0 && !hasNearbyTreeObject(x, y);
         }
       },
       make: (x, y, w, h, index) => ({
@@ -5064,13 +5296,14 @@
 
     placeRepeated('mushroomPatch', settings.mushrooms, {
       areaOptions: {
+        // Used to get a bonus for growing right next to a copse tile, but a
+        // copse tile is now a full tree (see TREE_LIKE_OBJECT_TYPES) — right
+        // next to one is exactly what the spacing rule below forbids, so
+        // that bonus can never actually apply anymore; falls back to its
+        // other two conditions (elevated ground / plain noise scatter).
         filter: (x, y) => {
           const tile = tileAt(x, y);
-          const nearCopse = orthogonalNeighbors(tile).some(next => {
-            const object = next.occupiedBy ? getObjectById(next.occupiedBy) : null;
-            return object && object.type === 'copse';
-          });
-          return tile && !tile.water && !tile.path && !tile.ramp && !tile.cliffSkirt && (nearCopse || tile.elevation >= 1 || noise2(x, y, 7137) > 0.52);
+          return tile && !tile.water && !tile.path && !tile.ramp && !tile.cliffSkirt && (tile.elevation >= 1 || noise2(x, y, 7137) > 0.52) && !hasNearbyTreeObject(x, y);
         }
       },
       make: (x, y, w, h, index) => ({
@@ -5088,14 +5321,15 @@
 
     placeRepeated('beehive', settings.beehives, {
       areaOptions: {
+        // Used to get a bonus for hiving right next to a copse tile, but a
+        // copse tile is now a full tree (see TREE_LIKE_OBJECT_TYPES) — right
+        // next to one is exactly what the spacing rule below forbids, so
+        // that bonus can never actually apply anymore; falls back to its
+        // plain noise scatter.
         filter: (x, y) => {
           const tile = tileAt(x, y);
           if (!tile || tile.water || tile.path || tile.ramp || tile.cliffSkirt) return false;
-          const nearCopse = orthogonalNeighbors(tile).some(next => {
-            const object = next.occupiedBy ? getObjectById(next.occupiedBy) : null;
-            return object && object.type === 'copse';
-          });
-          return nearCopse || noise2(x, y, 8129) > 0.72;
+          return noise2(x, y, 8129) > 0.72 && !hasNearbyTreeObject(x, y);
         }
       },
       make: (x, y, w, h, index) => ({
@@ -6117,7 +6351,49 @@
   // default (see defaultSettings).
   const ZONE_CONFIG = {
     map_northern_cliffs: { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5 },
-    map_southern_cloud_forest: { entrySide: 'north', preset: 'greatBasin', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
+    // trees/bushes well above the shared default (130/75) — this zone is
+    // meant to read as an actual dense rainforest, not a scattering of
+    // copses, now that FoliageGenerator gives it real full-size trees (with
+    // only TREE_VARIANT_COUNT shared shapes and view-corridor culling to
+    // keep it cheap to render — see getTreeVariants/updateZoneVegetationCulling)
+    // and the axe can fell them to cut paths through. TREE_SPACING_MIN_DIST=1
+    // packs trees about as tight as the placer supports (~1-tile final gaps,
+    // canopies meant to overlap into a continuous mass), so trees here is a
+    // saturation target, not a precise final count. 4000 empirically lands
+    // ~3000 actually placed (Node smoke test against this exact config) —
+    // close to where the zone's eligible grass area saturates; pushing much
+    // higher mostly burns generation time on doomed placement attempts
+    // without adding meaningfully more trees. treesFillGaps sweeps a second
+    // time after that and claims literally every remaining spacing-eligible
+    // tile, so "gaps" only remain where terrain (water/path/cliff/etc.)
+    // actually forbids a tree.
+    // Plateaus: Northern Cliffs uses the shared default (76 blobs, dramatic
+    // preset's tier floor of 9) — this zone wants roughly a third as many,
+    // each several times bigger (plateauAreaMul, on top of the automatic
+    // per-blob upsizing choosePlateauBlobTargetArea already does as blobCount
+    // drops), and much shorter (lowProfilePlateaus opts out of the dramatic
+    // tier floor so maxTier applies as given). wideRamps makes every ramp
+    // (not just curved wrap-kind ones) continuously 3-tile wide instead of
+    // mostly 1-tile with occasional 2-tile shoulders at turns.
+    // Paths: pathWindiness scales up findPath's existing (very mild by
+    // default) noise-bias term so routes meander instead of beelining, and
+    // entryGateWidthMul shrinks the entry road-mouth from the default
+    // "wide enough to clear the border escarpment cleanly" footprint (11
+    // tiles wide at this zone's border depth) down near the floor.
+    // treeThinning drops 20% of the saturated fill outright (perf, and less
+    // of a wall-to-wall look); treeVarietyFraction then converts 1/6 of the
+    // survivors into a bush/ore/treasure spot instead of a tree (further
+    // mesh-count cut, cheaper to render, plus points of interest scattered
+    // through the forest); denEntranceTreeClearance keeps every animal den's
+    // doorway tile clear so trees can't wall a den off.
+    map_southern_cloud_forest: {
+      entrySide: 'north', preset: 'greatBasin', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0,
+      trees: 4000, treesFillGaps: true, bushes: 150,
+      treeThinning: 0.2, treeVarietyFraction: 1 / 6, denEntranceTreeClearance: 3,
+      plateaus: 25, plateauAreaMul: 1.5, lowProfilePlateaus: true, maxTier: 2,
+      wideRamps: true, ramps: 20,
+      pathWindiness: 8, entryGateWidthMul: 0.2,
+    },
     map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
     map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
   };
@@ -6207,12 +6483,32 @@
     return output;
   }
 
+  // These are placed pre-scale as single, exact-tile flora markers (see
+  // placeCopses/placeRepeated, all w:1,h:1) representing one tree/bush/etc,
+  // not an area footprint. Scaling their w/h by GENERATION_TILE_SCALE like
+  // every other object (buildings, plateaus — genuinely multi-tile things)
+  // would balloon each one into a scale x scale block, and both markOccupied
+  // and hobunjiObjectOverlayByTile mark every tile in that block as the same
+  // 'shrub' overlay — which _buildZoneFloorMeshes then renders as a FULL
+  // separate tree/bush mesh on every one of those tiles. At the default 2x
+  // scale that's 4 real, fully-sized, independently-wonked trees stacked
+  // within 1-2 world units of each other for what generation intended as a
+  // single trunk — exactly the bunched/interleaved-roots look reported after
+  // TREE_SPACING_MIN_DIST was already widened. Keeping the footprint at
+  // exactly 1 final tile is what actually gives "1 trunk = 1 tile"; the
+  // other scale*scale-1 tiles fall back to their base terrain (grass) and
+  // stay free for other flora, matching the "empty just means no tree"
+  // spacing rule these objects otherwise honor.
+  const SINGLE_TILE_FOOTPRINT_OBJECT_TYPES = new Set(['copse', 'bush', 'fruitBush', 'mushroomPatch', 'beehive']);
+
   function scaleGeneratedObject(object, scale) {
     const output = clonePlain(object);
     output.x = scalePointCoordinate(object.x, scale);
     output.y = scalePointCoordinate(object.y, scale);
-    output.w = Math.max(1, scaleScalar(object.w || 1, scale, 0));
-    output.h = Math.max(1, scaleScalar(object.h || 1, scale, 0));
+    const keepUnitFootprint = SINGLE_TILE_FOOTPRINT_OBJECT_TYPES.has(object.type)
+      && (object.w || 1) === 1 && (object.h || 1) === 1;
+    output.w = keepUnitFootprint ? 1 : Math.max(1, scaleScalar(object.w || 1, scale, 0));
+    output.h = keepUnitFootprint ? 1 : Math.max(1, scaleScalar(object.h || 1, scale, 0));
     if (object.pathAnchor) output.pathAnchor = scaleMapPoint(object.pathAnchor, scale);
     if (object.escapeAnchor) output.escapeAnchor = scaleMapPoint(object.escapeAnchor, scale);
     if (object.mouthAnchor) output.mouthAnchor = scaleMapPoint(object.mouthAnchor, scale);
@@ -7805,8 +8101,14 @@
     const stepCurveConfig = STEP_CURVE_MODES[merged.stepCurve] || STEP_CURVE_MODES.northernCliffs;
     // Dramatic presets need a tall enough maxTier to read as dramatic — same
     // floor the standalone tool applies the moment a preset is selected.
+    // lowProfilePlateaus (zone-level override, see map_southern_cloud_forest's
+    // ZONE_CONFIG entry) opts a zone out of that floor entirely, for a
+    // preset that still wants dramaticPlateaus' other behavior (packed
+    // bleacher-style clustering, near-full coverage) but much shorter
+    // elevation than what reads as "dramatic" elsewhere.
     const dramaticMinimumTier = stepCurveConfig.id === 'greatIncline' ? 16 : 9;
-    const resolvedMaxTier = preset.dramaticPlateaus ? Math.max(merged.maxTier, dramaticMinimumTier) : merged.maxTier;
+    const resolvedMaxTier = (preset.dramaticPlateaus && !merged.lowProfilePlateaus)
+      ? Math.max(merged.maxTier, dramaticMinimumTier) : merged.maxTier;
     settings = {
       ...merged,
       preset: preset.id,
