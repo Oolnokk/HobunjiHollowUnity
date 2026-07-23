@@ -15880,6 +15880,7 @@
         }
         removePlayerAvatarChildren();
         playerMesh.add(avatarGroup);
+        addOccludedGhostSiblings(avatarGroup);
       }
 
       function clothingSpriteForCosmetic(cosmeticId) {
@@ -21293,40 +21294,146 @@
       const VEG_CULL_HYSTERESIS_TILES = 1;
       let _vegCullAccum = 999; // force a real pass on the first tick
 
-      // Keep the player visible when foliage is between them and the camera.
-      // Two earlier approaches both tried to dissolve/cut a hole in whichever
-      // tree was in the way, and both broke down for the same underlying
-      // reason: at this zone's density (see TREE_SPACING_MIN_DIST=1 in
-      // wilderness-map-generator.js — 1-tile gaps, canopies meant to overlap
-      // into a continuous mass), the camera-to-player line almost always
-      // crosses SEVERAL trees, not one. Cutting a clean hole through the
-      // first tree just reveals the next tree's (uncut, or differently-
-      // aligned) trunk behind it — from the player's screen this reads as a
-      // dim, noisy tunnel through layered foliage ("a cloud of darkness"),
-      // never actually the player. No amount of refining a per-tree cutout
-      // fixes that; there just isn't a single tree responsible.
-      // So: instead of touching the environment at all, render the player's
-      // own avatar and held tool with depthTest disabled and a high
-      // renderOrder whenever *anything* is between them and the camera —
-      // they draw last and on top, regardless of how many layers are in the
-      // way. This is the standard "never let the camera lose the player"
-      // technique for exactly this situation.
-      function setPlayerOccludedRenderMode(active) {
-        const renderOrder = active ? 9999 : 0;
-        const depthTest = !active;
-        const apply = (root) => {
-          if (!root) return;
-          root.traverse(o => {
-            if (!o.isMesh) return;
-            o.renderOrder = renderOrder;
-            const mats = Array.isArray(o.material) ? o.material : [o.material];
-            for (const m of mats) { if (m) m.depthTest = depthTest; }
-          });
-        };
-        apply(playerMesh.getObjectByName('player_avatar'));
-        apply(toolHolder);
+      // Keep the player visible when foliage is between them and the camera —
+      // two parts, doing two different jobs, after earlier single-mechanism
+      // attempts each broke something:
+      //
+      // 1. GUARANTEE: a "ghost" duplicate of the avatar/tool plane, sharing
+      //    the same geometry+texture, gated by the STENCIL buffer rather
+      //    than by depth alone. Only the tree(s) actually identified as
+      //    blocking (below, via distPointToSegment2D against the camera-
+      //    player line — the same test the cosmetic fade uses) write a
+      //    stencil marker while they're drawn; the ghost only renders where
+      //    that marker is present. A first attempt gated purely on
+      //    depthFunc=GreaterDepth (show wherever *anything* already nearer
+      //    is in the depth buffer) was verified in a Playwright repro to
+      //    also show the ghost over ordinary grass billboards standing
+      //    legitimately in front of the player — grass here renders opaque
+      //    with depthWrite:true (alphaTest cutout, not blended), so from the
+      //    depth buffer alone a near grass blade is indistinguishable from a
+      //    near occluding tree. Requiring the stencil marker too restricts
+      //    the ghost to exactly the pixels of trees we've actually flagged
+      //    as blocking, so grass (never marked) is unaffected regardless of
+      //    how near it is. An earlier version before that forced
+      //    depthTest:false + a huge renderOrder on the real avatar/tool
+      //    whenever *anything* occluded them, which broke grass even worse
+      //    (ignoring ALL prior depth, everywhere on screen).
+      //    See addOccludedGhostSiblings below; wired in at avatar/tool build
+      //    time, nothing to update per frame beyond the stencil toggling
+      //    updateZoneVegetationCulling already does for the fade.
+      // 2. COSMETIC: a plain whole-object opacity fade on whichever tree(s)
+      //    are actually sitting on the camera-to-player line, so the
+      //    obstruction itself looks acknowledged instead of staying a flat
+      //    solid wall while the player's ghost shows through it. This reuses
+      //    the same per-tree cutout attempt from earlier — that approach was
+      //    abandoned as the sole fix because dissolving tree #1 doesn't
+      //    reveal the player if tree #2 is right behind it, but as a purely
+      //    cosmetic dimming layered UNDER the ghost guarantee above (which
+      //    doesn't care whether the blocking tree is faded or fully opaque —
+      //    it keys off the stencil marker and real depth, both of which a
+      //    transparent-but-depthWrite-true clone still writes) that
+      //    limitation no longer matters.
+      const TREE_FADE_OPACITY = 0.25;
+      const TREE_FADE_LERP_PER_SEC = 6;
+      const OCCLUSION_STENCIL_REF = 7; // arbitrary; nothing else in this codebase uses the stencil buffer
+      const _treeFadeActive = new Set(); // vegGroup refs currently mid-fade
+      function ensureTreeFadeMaterials(vegGroup) {
+        let mats = vegGroup.userData._fadeMaterials;
+        if (mats) return mats;
+        mats = [];
+        for (const child of vegGroup.children) {
+          if (!child.material) continue;
+          const clone = child.material.clone();
+          clone.transparent = true; // depthWrite stays at its default (true) — see comment above
+          child.material = clone;
+          mats.push(clone);
+        }
+        vegGroup.userData._fadeMaterials = mats;
+        vegGroup.userData._fadeOpacity = 1;
+        vegGroup.userData._fadeTarget = 1;
+        return mats;
       }
-      let _playerOccludedByFoliage = false;
+      // Toggles the stencil-write state used to gate the occlusion ghost —
+      // see part 1 above. Only called on the specific tree(s) currently
+      // flagged as blocking the camera-player sightline.
+      function setTreeBlockingStencil(mats, blocking) {
+        for (const m of mats || []) {
+          m.stencilWrite = blocking;
+          if (blocking) {
+            m.stencilRef = OCCLUSION_STENCIL_REF;
+            m.stencilFunc = THREE.AlwaysStencilFunc;
+            m.stencilZPass = THREE.ReplaceStencilOp;
+            m.stencilZFail = THREE.KeepStencilOp;
+            m.stencilFail = THREE.KeepStencilOp;
+          }
+        }
+      }
+      function updateTreeFadeAnimation(dt) {
+        if (!_treeFadeActive.size) return;
+        const step = TREE_FADE_LERP_PER_SEC * dt;
+        for (const vegGroup of _treeFadeActive) {
+          const target = vegGroup.userData._fadeTarget ?? 1;
+          let opacity = vegGroup.userData._fadeOpacity ?? 1;
+          if (Math.abs(opacity - target) <= step) opacity = target;
+          else opacity += Math.sign(target - opacity) * step;
+          vegGroup.userData._fadeOpacity = opacity;
+          for (const m of vegGroup.userData._fadeMaterials || []) m.opacity = opacity;
+          if (opacity === target && target >= 1) _treeFadeActive.delete(vegGroup);
+        }
+      }
+      // GUARANTEE half — adds a ghost duplicate of each textured mesh under
+      // `root`, sharing the same geometry+texture. The ghost only draws
+      // where BOTH hold: something nearer is already in the depth buffer
+      // (depthFunc=GreaterDepth), AND that something was one of the trees
+      // explicitly marked as blocking via the stencil buffer (see
+      // setTreeBlockingStencil above) — the stencil check is what keeps
+      // grass and everything else that isn't a flagged occluder from
+      // triggering it. depthWrite:false keeps the ghost from affecting
+      // anything drawn after it. No per-frame bookkeeping needed here: it
+      // reacts automatically to whatever's in the depth/stencil buffers
+      // each frame, however many layers of trees are stacked up.
+      function addOccludedGhostSiblings(root, opts = {}) {
+        if (!root) return;
+        const originals = [];
+        root.traverse(o => { if (o.isMesh && o.material && o.material.map) originals.push(o); });
+        for (const mesh of originals) {
+          const srcMat = mesh.material;
+          const ghostMat = new THREE.MeshBasicMaterial({
+            map: srcMat.map,
+            color: opts.color ?? 0xffffff,
+            transparent: true,
+            opacity: opts.opacity ?? 0.6,
+            alphaTest: srcMat.alphaTest || 0.001,
+            side: srcMat.side,
+            depthTest: true,
+            depthFunc: THREE.GreaterDepth,
+            depthWrite: false,
+            // stencilWrite:true here doesn't mean "writes" — in three.js this
+            // flag is what enables the stencil TEST at all (WebGLState just
+            // calls stencilBuffer.setTest(material.stencilWrite), so false
+            // would skip stencil testing entirely and fall back to the
+            // depth-only check, which is exactly the grass-showing bug this
+            // was meant to fix). The Keep/Keep/Keep ops below mean it still
+            // never actually writes a new value despite the test being on.
+            stencilWrite: true,
+            stencilFunc: THREE.EqualStencilFunc,
+            stencilRef: OCCLUSION_STENCIL_REF,
+            stencilFuncMask: 0xff,
+            stencilFail: THREE.KeepStencilOp,
+            stencilZFail: THREE.KeepStencilOp,
+            stencilZPass: THREE.KeepStencilOp,
+          });
+          const ghost = new THREE.Mesh(mesh.geometry, ghostMat);
+          ghost.position.copy(mesh.position);
+          ghost.rotation.copy(mesh.rotation);
+          ghost.scale.copy(mesh.scale);
+          ghost.renderOrder = (mesh.renderOrder || 0) + 1;
+          ghost.name = (mesh.name || 'ghost') + '_occluded_ghost';
+          ghost.userData.isOccludedGhost = true;
+          ghost.matrixAutoUpdate = mesh.matrixAutoUpdate;
+          mesh.parent.add(ghost);
+        }
+      }
       function distPointToSegment2D(px, pz, ax, az, bx, bz) {
         const abx = bx - ax, abz = bz - az;
         const abLenSq = abx * abx + abz * abz;
@@ -21351,7 +21458,6 @@
         const halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
         const hysteresis = VEG_CULL_HYSTERESIS_TILES;
         const playerWX = player.x / TILE, playerWZ = player.y / TILE;
-        let occluded = false;
         for (const obj of cullables) {
           const s = obj.userData.cullSphere;
           const dx = s.x - camX, dz = s.z - camZ;
@@ -21363,14 +21469,23 @@
             && side <= halfWidth + expandedRadius;
           if (force || show !== obj.visible) obj.visible = show;
 
-          if (show && !occluded) {
+          if (show) {
             const segDist = distPointToSegment2D(s.x, s.z, camX, camZ, playerWX, playerWZ);
-            if (segDist < s.radius) occluded = true;
+            const blocking = segDist < s.radius;
+            const target = blocking ? TREE_FADE_OPACITY : 1;
+            if (target !== 1 || obj.userData._fadeMaterials) {
+              const mats = ensureTreeFadeMaterials(obj);
+              obj.userData._fadeTarget = target;
+              _treeFadeActive.add(obj);
+              setTreeBlockingStencil(mats, blocking);
+            }
+          } else if (obj.userData._fadeMaterials) {
+            obj.userData._fadeTarget = 1;
+            obj.userData._fadeOpacity = 1;
+            for (const m of obj.userData._fadeMaterials) m.opacity = 1;
+            setTreeBlockingStencil(obj.userData._fadeMaterials, false);
+            _treeFadeActive.delete(obj);
           }
-        }
-        if (occluded !== _playerOccludedByFoliage) {
-          _playerOccludedByFoliage = occluded;
-          setPlayerOccludedRenderMode(occluded);
         }
       }
 
@@ -23273,6 +23388,7 @@
         const plane = new THREE.Mesh(geo, mat);
         plane.rotation.x = -Math.PI / 2;  // lie flat in XZ for all tools
         g.add(plane);
+        addOccludedGhostSiblings(g);
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
         // blade-parallel twist and the mace-mode "spinning" twirl on top each frame, derived
         // from whichever anim is actually playing rather than baked in per-item here — see
@@ -25554,15 +25670,16 @@
         camTargetY += (wy - camTargetY) * camLerp;
         updateCameraPosition();
 
-        // Throttled to ~7Hz, not every frame — also drives
-        // setPlayerOccludedRenderMode (only toggles on actual state change,
-        // so no per-frame work needed for that either).
+        // Throttled to ~7Hz, not every frame — drives the cosmetic tree-fade
+        // targets. The ghost-sibling visibility guarantee needs no per-frame
+        // work (it's just always in the scene, reacting to the depth buffer).
         _vegCullAccum += dt;
         if (_vegCullAccum >= 0.14) {
           const force = _vegCullAccum >= 900; // first tick after script load
           _vegCullAccum = 0;
           updateZoneVegetationCulling(force);
         }
+        updateTreeFadeAnimation(dt);
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
