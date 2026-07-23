@@ -20259,7 +20259,7 @@
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return null;
         const col  = Math.floor(wx / TILE);
         const row  = Math.floor(wy / TILE);
-        const tile = getActiveGrid()[row][col];
+        const tile = getActiveTileAt(col, row);
         const type = tile.type;
         if (isSolid(type)) return null;
         // Auto-reserved plateau cliff-face ring — impassable except where a
