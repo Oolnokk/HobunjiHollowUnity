@@ -246,6 +246,15 @@ window.FoliageGenerator = (() => {
     if (!tex) {
       tex = new T.TextureLoader().load(path);
       tex.colorSpace = T.SRGBColorSpace;
+      // Every leaf sprite here (leaf_1.png, leaves_crowned_pine.png,
+      // leaves_shadewood.png, ...) has non-power-of-two dimensions, and the
+      // default minFilter needs mipmaps — under WebGL1 (this game bundles
+      // three.js r128) a mipmap-filtered NPOT texture is "incomplete" and the
+      // whole thing renders solid black instead of erroring. The existing
+      // grass_1.png billboard material already sidesteps this the same way.
+      tex.magFilter = T.NearestFilter;
+      tex.minFilter = T.NearestFilter;
+      tex.generateMipmaps = false;
       _leafTexCache.set(path, tex);
     }
     return tex;
