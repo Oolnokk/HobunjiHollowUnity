@@ -21301,8 +21301,8 @@
       // 1. GUARANTEE: a "ghost" duplicate of the avatar/tool plane, sharing
       //    the same geometry+texture, gated by the STENCIL buffer rather
       //    than by depth alone. Only the tree(s) actually identified as
-      //    blocking (below, via distPointToSegment2D against the camera-
-      //    player line — the same test the cosmetic fade uses) write a
+      //    blocking (below, via isBetweenCameraAndPlayer2D against the
+      //    camera-player line — the same test the cosmetic fade uses) write a
       //    stencil marker while they're drawn; the ghost only renders where
       //    that marker is present. A first attempt gated purely on
       //    depthFunc=GreaterDepth (show wherever *anything* already nearer
@@ -21434,13 +21434,27 @@
           mesh.parent.add(ghost);
         }
       }
-      function distPointToSegment2D(px, pz, ax, az, bx, bz) {
+      // Is (px,pz) actually BETWEEN (ax,az) [camera] and (bx,bz) [player],
+      // within `radius` of that line? Unlike a plain point-to-segment
+      // distance, this rejects anything whose projection falls outside the
+      // segment (t outside [0,1]) instead of clamping to the nearest
+      // endpoint — clamping was the bug: a tree sitting right next to the
+      // player but on the far side (behind them, from the camera's view)
+      // has an unclamped t > 1, but clamping snapped that to the player's
+      // own endpoint and reported it as "on the line" merely for being near
+      // the player, faded/ghosted every tree behind the player as well as
+      // the ones actually in front. Trees genuinely off to either side stay
+      // correctly unaffected either way since `side` (perpendicular
+      // distance) is unaffected by the clamp — only the "how far along" axis
+      // was the problem.
+      function isBetweenCameraAndPlayer2D(px, pz, ax, az, bx, bz, radius) {
         const abx = bx - ax, abz = bz - az;
         const abLenSq = abx * abx + abz * abz;
-        let t = abLenSq > 1e-9 ? ((px - ax) * abx + (pz - az) * abz) / abLenSq : 0;
-        t = clamp(t, 0, 1);
+        if (abLenSq < 1e-9) return false;
+        const t = ((px - ax) * abx + (pz - az) * abz) / abLenSq;
+        if (t <= 0 || t >= 1) return false;
         const cx = ax + abx * t, cz = az + abz * t;
-        return Math.hypot(px - cx, pz - cz);
+        return Math.hypot(px - cx, pz - cz) < radius;
       }
       function updateZoneVegetationCulling(force = false) {
         if (!_isZoneArea(currentArea)) return;
@@ -21470,8 +21484,7 @@
           if (force || show !== obj.visible) obj.visible = show;
 
           if (show) {
-            const segDist = distPointToSegment2D(s.x, s.z, camX, camZ, playerWX, playerWZ);
-            const blocking = segDist < s.radius;
+            const blocking = isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, playerWX, playerWZ, s.radius);
             const target = blocking ? TREE_FADE_OPACITY : 1;
             if (target !== 1 || obj.userData._fadeMaterials) {
               const mats = ensureTreeFadeMaterials(obj);
