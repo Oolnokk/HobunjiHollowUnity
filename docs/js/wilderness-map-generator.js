@@ -155,6 +155,14 @@
       stepCurveLabel: 'Northern Cliffs',
       plateaus: 76,
       maxTier: 6,
+      // Zone-level overrides for a low, sprawling plateau look instead of the
+      // default tall/dense/many-small-blobs one — see generateWorkspace's
+      // resolvedMaxTier and choosePlateauBlobTargetArea.
+      lowProfilePlateaus: false,
+      plateauAreaMul: 1,
+      // See widenRampLineAtTightCorners — continuous 3-tile-wide ramps
+      // instead of the default mostly-1-tile-with-occasional-2-tile-shoulder.
+      wideRamps: false,
       ramps: 14,
       rampMinDiff: 1,
       rampMaxAngle: 40,
@@ -163,6 +171,13 @@
       plateauStreams: 10,
       rivers: 2,
       pathAnchors: 4,
+      // See findPath's randomBias term — multiplier on how strongly the A*
+      // path search prefers meandering over a straight line to its target.
+      pathWindiness: 1,
+      // See openBorderEntryGate — scales the entry road-mouth's carved width
+      // down from the default "wide enough to clear the border escarpment
+      // cleanly" footprint, for a zone that wants a thin entrance instead.
+      entryGateWidthMul: 1,
       animalDens: 5,
       prey: 8,
       packPredators: 5,
@@ -175,6 +190,10 @@
       statues: 8,
       pillars: 15,
       trees: 130,
+      // Opt-in per zone (see placeCopses' gap-fill pass) — claims every
+      // remaining spacing-eligible tile after the normal weighted-cluster
+      // placement loop, instead of stopping once `trees` tiles are placed.
+      treesFillGaps: false,
       logs: 30,
       bushes: 75,
       forage: 55,
@@ -639,15 +658,20 @@
   }
 
   function choosePlateauBlobTargetArea(blobCount, areaScale) {
-    const crowdFactor = clamp(76 / Math.max(1, blobCount), 0.74, 1.24);
-    const small = Math.round(randInt(82, 155) * areaScale * crowdFactor);
-    const medium = Math.round(randInt(145, 300) * areaScale * crowdFactor);
-    const large = Math.round(randInt(270, 520) * areaScale * crowdFactor);
+    // Uncapped on purpose (the old clamp(...,0.74,1.24) assumed blobCount
+    // stays in roughly the default's neighborhood) — a zone that deliberately
+    // asks for a third as many blobs as usual (see plateauAreaMul) wants each
+    // survivor several times bigger, not just up to +24%.
+    const crowdFactor = Math.max(0.74, 76 / Math.max(1, blobCount));
+    const areaMul = Math.max(0.1, Number(settings.plateauAreaMul) || 1);
+    const small = Math.round(randInt(82, 155) * areaScale * crowdFactor * areaMul);
+    const medium = Math.round(randInt(145, 300) * areaScale * crowdFactor * areaMul);
+    const large = Math.round(randInt(270, 520) * areaScale * crowdFactor * areaMul);
     // new variable: blobSizeRoll is used here to keep doubled plateau counts playable: each blob is still broad enough for interior walking, but overlap/edge-sharing lets coverage approach the whole map.
     const blobSizeRoll = rng();
-    if (blobSizeRoll < 0.22) return clamp(small, 64, 220);
-    if (blobSizeRoll < 0.82) return clamp(medium, 110, 420);
-    return clamp(large, 220, 680);
+    if (blobSizeRoll < 0.22) return clamp(small, 64, 220 * areaMul);
+    if (blobSizeRoll < 0.82) return clamp(medium, 110, 420 * areaMul);
+    return clamp(large, 220, 680 * areaMul);
   }
 
   function northwardTierFloatAtY(y) {
@@ -2278,7 +2302,14 @@
   }
 
   function widenRampLineAtTightCorners(line, candidate) {
-    if (!line || candidate.kind !== 'wrap') return line;
+    // settings.wideRamps (zone-level override — see map_southern_cloud_forest's
+    // ZONE_CONFIG) makes every ramp continuously wide instead of the default
+    // "only wrap-kind ramps, only at turns/every-other-ledge-tile/slopes get
+    // a single extra shoulder tile": every core point on every ramp kind gets
+    // widened, and gets a second shoulder ring further out for a 3-tile-wide
+    // ramp instead of 2.
+    const wideMode = !!settings.wideRamps;
+    if (!line || (candidate.kind !== 'wrap' && !wideMode)) return line;
     const widened = [];
     const used = new Set();
     let shoulders = 0;
@@ -2302,7 +2333,7 @@
       const nextDir = next ? { x: Math.sign(next.x - point.x), y: Math.sign(next.y - point.y) } : null;
       const turnsHere = !!(prevDir && nextDir && (prevDir.x !== nextDir.x || prevDir.y !== nextDir.y));
       const longLedgeSpacing = i % 2 === 0 && Math.abs(candidate.direction?.x || 0) > 0;
-      const shouldWiden = turnsHere || longLedgeSpacing || point.zone === 'slope';
+      const shouldWiden = wideMode || turnsHere || longLedgeSpacing || point.zone === 'slope';
       if (!shouldWiden) continue;
       const shoulderTile = rampOuterShoulderTile(point, candidate);
       if (!shoulderTile) continue;
@@ -2319,6 +2350,20 @@
       if (addPoint(shoulder)) {
         shoulders++;
         if (turnsHere) tightCornerShoulders++;
+      }
+      if (wideMode) {
+        const normal = point.rampNormal || point.normal || candidate.normal;
+        if (normal && (normal.x || normal.y)) {
+          const farTile = tileAt(shoulderTile.x + normal.x, shoulderTile.y + normal.y);
+          if (farTile && !farTile.water && !farTile.ramp && !farTile.occupiedBy && !farTile.path && farTile.elevation === candidate.low.elevation) {
+            const shoulder2 = {
+              ...point, x: farTile.x, y: farTile.y,
+              zone: 'outerLedgeShoulder', sharePlateau: false, hugsPlateau: false,
+              rampLane: 'outerShoulder', landingContact: 'threeTileLedgeShoulder'
+            };
+            if (addPoint(shoulder2)) shoulders++;
+          }
+        }
       }
     }
     widened.twoTileShoulders = shoulders;
@@ -2924,7 +2969,8 @@
     const sideTangent = sideAxisHorizontal ? { x: 1, y: 0 } : { x: 0, y: 1 };
     const maxDepth = borderEscarpmentMaxDepth();
     const gateDepth = maxDepth + 5;
-    const gateHalfWidth = Math.max(2, Math.round(maxDepth * 0.75));
+    const widthMul = Math.max(0.1, Number(settings.entryGateWidthMul) || 1);
+    const gateHalfWidth = Math.max(1, Math.round(maxDepth * 0.75 * widthMul));
     const replacementHeight = Number.isFinite(forcedReplacementHeight) ? forcedReplacementHeight : findEntryGateInteriorHeight(entry, inward, gateDepth);
     let cleared = 0;
     let roadTiles = 0;
@@ -2972,7 +3018,8 @@
       for (let y = guard; y < settings.height - guard; y++) candidates.push({ x, y, side: requested });
     }
     const gateDepth = borderEscarpmentMaxDepth() + 5;
-    const gateHalfWidth = Math.max(2, Math.round(borderEscarpmentMaxDepth() * 0.75));
+    const gateWidthMul = Math.max(0.1, Number(settings.entryGateWidthMul) || 1);
+    const gateHalfWidth = Math.max(1, Math.round(borderEscarpmentMaxDepth() * 0.75 * gateWidthMul));
     const center = requested === 'north' || requested === 'south' ? settings.width / 2 : settings.height / 2;
     const scored = candidates.map(candidate => {
       const axis = requested === 'north' || requested === 'south' ? candidate.x : candidate.y;
@@ -3775,7 +3822,11 @@
         const existingPathBias = nextTile.path ? -0.55 : 0;
         const invisibleBias = preferInvisible && nextTile.invisiblePath ? -0.75 : 0;
         const rampBias = usesRamp ? -0.35 : 0;
-        const randomBias = noise2(next.x, next.y, 1225) * 0.25;
+        // pathWindiness (zone-level override — see map_southern_cloud_forest's
+        // ZONE_CONFIG) scales this term up well past its default weight so the
+        // A* search meaningfully prefers meandering through low-noise corridors
+        // over a straight line to the goal, instead of just barely perturbing it.
+        const randomBias = noise2(next.x, next.y, 1225) * 0.25 * (Number(settings.pathWindiness) || 1);
         const g = current.g + 1 + occupiedCost + waterCost + tierCost + cliffCost + existingPathBias + invisibleBias + rampBias + randomBias;
         const k = tileIdXY(next.x, next.y);
         if (best.has(k) && best.get(k) <= g) continue;
@@ -5056,6 +5107,35 @@
 
     if (placedCopseTiles < targetCopseTiles) warn(`copse: placed ${placedCopseTiles}/${targetCopseTiles} tiles`);
     logDebug(`copse: placed ${placedCopseTiles}/${targetCopseTiles} tiles across ${copseClusterCount} clusters, south-facing cliff-shadow tiles ${shadowCopseTiles}`);
+
+    // Gap-fill pass (opt-in per zone via settings.treesFillGaps — see
+    // map_southern_cloud_forest's ZONE_CONFIG entry): the BFS cluster-growth
+    // loop above starts from weighted-random points and stops once it's
+    // placed `targetCopseTiles`, which — especially with a target this
+    // zone's actual eligible area can't reach anyway — leaves real gaps
+    // between and around clusters even though TREE_SPACING_MIN_DIST would
+    // still allow a tree there. This second pass sweeps every tile once more
+    // and claims every remaining eligible spot, so "gaps" only remain where
+    // the spacing rule (or terrain — water/path/cliff/etc.) genuinely
+    // forbids a tree, not just where the first pass's clusters didn't reach.
+    if (settings.treesFillGaps) {
+      let gapFilled = 0;
+      for (const tile of allTiles()) {
+        if (!copseEligible(tile.x, tile.y)) continue;
+        copseClusterCount++;
+        const clusterId = `copse_gapfill_${copseClusterCount}`;
+        const shadowScore = southFacingCliffShadowScore(tile.x, tile.y);
+        addObject({
+          type: 'copse', x: tile.x, y: tile.y, w: 1, h: 1,
+          copseId: clusterId, blocksMovement: false, recommendedTreeCount: 2,
+          shadowSouthFacingCliffScore: shadowScore ? Number(shadowScore.toFixed(2)) : undefined,
+          note: 'copse tile: gap-fill pass, claims every remaining spacing-eligible tile'
+        });
+        placedCopseTiles++;
+        gapFilled++;
+      }
+      logDebug(`copse gap-fill pass: +${gapFilled} additional tiles (total ${placedCopseTiles})`);
+    }
   }
 
   function placeFloraAndResources() {
@@ -6206,8 +6286,30 @@
     // ~3000 actually placed (Node smoke test against this exact config) —
     // close to where the zone's eligible grass area saturates; pushing much
     // higher mostly burns generation time on doomed placement attempts
-    // without adding meaningfully more trees.
-    map_southern_cloud_forest: { entrySide: 'north', preset: 'greatBasin', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0, trees: 4000, bushes: 150 },
+    // without adding meaningfully more trees. treesFillGaps sweeps a second
+    // time after that and claims literally every remaining spacing-eligible
+    // tile, so "gaps" only remain where terrain (water/path/cliff/etc.)
+    // actually forbids a tree.
+    // Plateaus: Northern Cliffs uses the shared default (76 blobs, dramatic
+    // preset's tier floor of 9) — this zone wants roughly a third as many,
+    // each several times bigger (plateauAreaMul, on top of the automatic
+    // per-blob upsizing choosePlateauBlobTargetArea already does as blobCount
+    // drops), and much shorter (lowProfilePlateaus opts out of the dramatic
+    // tier floor so maxTier applies as given). wideRamps makes every ramp
+    // (not just curved wrap-kind ones) continuously 3-tile wide instead of
+    // mostly 1-tile with occasional 2-tile shoulders at turns.
+    // Paths: pathWindiness scales up findPath's existing (very mild by
+    // default) noise-bias term so routes meander instead of beelining, and
+    // entryGateWidthMul shrinks the entry road-mouth from the default
+    // "wide enough to clear the border escarpment cleanly" footprint (11
+    // tiles wide at this zone's border depth) down near the floor.
+    map_southern_cloud_forest: {
+      entrySide: 'north', preset: 'greatBasin', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0,
+      trees: 4000, treesFillGaps: true, bushes: 150,
+      plateaus: 25, plateauAreaMul: 1.5, lowProfilePlateaus: true, maxTier: 2,
+      wideRamps: true, ramps: 20,
+      pathWindiness: 8, entryGateWidthMul: 0.2,
+    },
     map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
     map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
   };
@@ -7915,8 +8017,14 @@
     const stepCurveConfig = STEP_CURVE_MODES[merged.stepCurve] || STEP_CURVE_MODES.northernCliffs;
     // Dramatic presets need a tall enough maxTier to read as dramatic — same
     // floor the standalone tool applies the moment a preset is selected.
+    // lowProfilePlateaus (zone-level override, see map_southern_cloud_forest's
+    // ZONE_CONFIG entry) opts a zone out of that floor entirely, for a
+    // preset that still wants dramaticPlateaus' other behavior (packed
+    // bleacher-style clustering, near-full coverage) but much shorter
+    // elevation than what reads as "dramatic" elsewhere.
     const dramaticMinimumTier = stepCurveConfig.id === 'greatIncline' ? 16 : 9;
-    const resolvedMaxTier = preset.dramaticPlateaus ? Math.max(merged.maxTier, dramaticMinimumTier) : merged.maxTier;
+    const resolvedMaxTier = (preset.dramaticPlateaus && !merged.lowProfilePlateaus)
+      ? Math.max(merged.maxTier, dramaticMinimumTier) : merged.maxTier;
     settings = {
       ...merged,
       preset: preset.id,
