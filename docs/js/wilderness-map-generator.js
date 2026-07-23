@@ -4888,16 +4888,33 @@
   // up against a tree or each other — only tree-to-tree spacing matters.
   const TREE_LIKE_OBJECT_TYPES = new Set(['copse']);
 
-  // Keep a full ring of non-tree tiles around every placed tree: checked
-  // against both already-committed trees (tile.occupiedBy, set by
+  // Minimum pre-scale Chebyshev distance between two tree tiles. This is
+  // pre-scale (copse-placement) space — the later 2x density pass
+  // (GENERATION_TILE_SCALE) turns every tile here into a 2x2 final block,
+  // so the FINAL tile gap between two trees works out to 2*dist-2 (only
+  // even gaps are reachable at all, since both trees' blocks are 2 wide).
+  // A rendered tree's canopy is ~2.75-3 world units in radius (see
+  // FoliageGenerator's TREE_PRESETS — crownedPine/shadewood, both roughly
+  // the same order of magnitude), i.e. a 5.5-6 unit diameter, and 1 world
+  // unit = 1 final tile — so a bare minimum tile gap of 1-2 (the previous
+  // value here) leaves canopies overlapping by several tiles even though
+  // the *tile* footprints themselves don't touch. dist=4 -> final gap 6,
+  // final trunk-to-trunk distance ~8, landing the canopy-*edge* gap at
+  // roughly 8 - 2*2.875 ≈ 2.25 tiles — closer to an actually-visible gap
+  // between canopies instead of a wall of overlapping foliage.
+  const TREE_SPACING_MIN_DIST = 4;
+
+  // Keep every tree at least TREE_SPACING_MIN_DIST from every other tree:
+  // checked against both already-committed trees (tile.occupiedBy, set by
   // addObject/markOccupied) and an optional extraKeys set of positions not
   // yet committed (copse grows a whole cluster via BFS before calling
   // addObject on any of it — occupiedBy isn't set until the cluster is
   // done, so without extraKeys a cluster could otherwise pack its own tiles
   // right next to each other).
   function hasNearbyTreeObject(x, y, extraKeys) {
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
+    const R = TREE_SPACING_MIN_DIST - 1;
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
         if (dx === 0 && dy === 0) continue;
         const key = `${x + dx},${y + dy}`;
         if (extraKeys && extraKeys.has(key)) return true;
@@ -4970,15 +4987,16 @@
       // without this a cluster could still pack its own tiles next to each
       // other while it's still being grown.
       const chosenKeys = new Set();
-      // Once a tile is chosen, every tile touching it (distance 1, the ring
-      // hasNearbyTreeObject now blocks) can never be chosen for this cluster — so
-      // only the next ring out (distance exactly 2) is worth queueing as a
-      // real candidate; still packs as tightly as the spacing rule allows,
-      // just skips straight past the ring that's guaranteed to fail.
-      const RING2_OFFSETS = [];
-      for (let dy = -2; dy <= 2; dy++) {
-        for (let dx = -2; dx <= 2; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) === 2) RING2_OFFSETS.push([dx, dy]);
+      // Once a tile is chosen, every tile within TREE_SPACING_MIN_DIST-1 of
+      // it can never be chosen for this cluster (hasNearbyTreeObject blocks
+      // that whole ring) — so only the next ring out (distance exactly
+      // TREE_SPACING_MIN_DIST) is worth queueing as a real candidate; still
+      // packs as tightly as the spacing rule allows, just skips straight
+      // past the inner rings that are guaranteed to fail.
+      const NEXT_RING_OFFSETS = [];
+      for (let dy = -TREE_SPACING_MIN_DIST; dy <= TREE_SPACING_MIN_DIST; dy++) {
+        for (let dx = -TREE_SPACING_MIN_DIST; dx <= TREE_SPACING_MIN_DIST; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) === TREE_SPACING_MIN_DIST) NEXT_RING_OFFSETS.push([dx, dy]);
         }
       }
 
@@ -4990,7 +5008,7 @@
         chosenKeys.add(`${candidate.x},${candidate.y}`);
 
         const sourceTile = tileAt(candidate.x, candidate.y);
-        shuffle(RING2_OFFSETS).forEach(([dx, dy]) => {
+        shuffle(NEXT_RING_OFFSETS).forEach(([dx, dy]) => {
           const nx = candidate.x + dx;
           const ny = candidate.y + dy;
           const key = `${nx},${ny}`;
@@ -6177,7 +6195,13 @@
     // (see hasNearbyTreeObject) means the placer won't actually pack in
     // anywhere near a literal one-tree-per-4-tiles grid, so this reads as
     // "as dense as it'll go" rather than a precise final count.
-    map_southern_cloud_forest: { entrySide: 'north', preset: 'greatBasin', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0, trees: 700, bushes: 150 },
+    // 350 is close to this map's natural saturation point under the wider
+    // TREE_SPACING_MIN_DIST rule (empirically ~350-400 trees fit before the
+    // placer starts failing most of its attempts) — pushing the target much
+    // higher than that just burns generation time on doomed attempts
+    // without adding more trees. See TREE_SPACING_MIN_DIST's own comment for
+    // why the gap is wider than it used to be.
+    map_southern_cloud_forest: { entrySide: 'north', preset: 'greatBasin', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0, trees: 350, bushes: 150 },
     map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
     map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
   };
