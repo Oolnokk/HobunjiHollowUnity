@@ -134,6 +134,7 @@
         strikeFrac: 1,
         holdS: HOLD_S,
         afflictionIds: Object.keys(effects.afflictions),
+        afflictions: effects.afflictions,
         coneRangePx: rangePx,
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,

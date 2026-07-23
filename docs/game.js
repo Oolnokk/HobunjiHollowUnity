@@ -16761,6 +16761,7 @@
             player.lungeHopCurrent = 0;
             playHeavyLandingSfx(currentArea, footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
             tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+            tickLungeTrail(_fsPrevX, _fsPrevY);
             return;
           }
           // Gently re-aim the lunge toward the locked target's *current*
@@ -16802,6 +16803,7 @@
             playHeavyLandingSfx(currentArea, footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
           }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+          tickLungeTrail(_fsPrevX, _fsPrevY);
           return;
         }
 
@@ -18452,6 +18454,99 @@
           mesh.material.opacity = alpha * 0.85;
           mesh.visible = true;
           if (mesh.parent !== parent) parent.add(mesh);
+        }
+      }
+
+      // Attack-lunge movement trail — a series of flat "onion ring" stamps
+      // (concentric colored bands, like a target/tree-ring cross-section)
+      // dropped along the ground path an attack's lunge (see
+      // beginCombatLunge/tickLungeTrail) actually travels, distinct from
+      // updateCombatConeTrail's weapon-swipe ribbon above: this one traces
+      // the player's own footprints through the dash, not the weapon's hit
+      // cone. Colored by whichever afflictions the attack that triggered
+      // the lunge can inflict (combatSwingAfflictionIds/Muls, set by the
+      // same triggerWeaponSwingVisual/HoldVisual call every lunging attack
+      // already makes) — outermost band is whichever affliction has the
+      // highest per-hit multiplier (i.e. is "applied most"), each nested
+      // band inward is the next-highest, capped at LUNGE_TRAIL_RING_COUNT_MAX
+      // bands. An attack with no chosen affliction upgrades leaves no trail
+      // at all — there's nothing to color it by.
+      const LUNGE_TRAIL_STAMP_SPACING_PX = TILE * 0.4;
+      const LUNGE_TRAIL_RING_COUNT_MAX = 4;
+      const LUNGE_TRAIL_OUTER_RADIUS = 0.46; // world units (tile-space)
+      const LUNGE_TRAIL_RING_THICKNESS = 0.1;
+      const LUNGE_TRAIL_LIFETIME_S = 0.55;
+      const LUNGE_TRAIL_BASE_OPACITY = 0.8;
+      const LUNGE_TRAIL_GROW_SCALE = 0.35; // how much each stamp expands over its lifetime as it fades
+      const _lungeTrailStamps = [];
+
+      function spawnLungeTrailStamp(wx, wy) {
+        const ids = combatSwingAfflictionIds;
+        if (!ids.length) return; // nothing chosen to color this lunge by — no trail
+        const scene = getActiveScene();
+        if (!scene) return;
+        const muls = combatSwingAfflictionMuls;
+        const sortedIds = [...ids]
+          .sort((a, b) => (Number(muls[b]) || 0) - (Number(muls[a]) || 0))
+          .slice(0, LUNGE_TRAIL_RING_COUNT_MAX);
+
+        const tile = footstepTileAt(currentArea, wx, wy, getActiveGrid());
+        const y = tileSurfaceYInArea(tile, currentArea) + characterGroundShadowSurfaceOffset() + 0.02;
+        const group = new THREE.Group();
+        group.position.set(wx / TILE, y, wy / TILE);
+        group.rotation.x = -Math.PI / 2; // lie flat on the ground, same convention as every other ground-projected ring in this file
+
+        for (let i = 0; i < sortedIds.length; i++) {
+          const outerR = LUNGE_TRAIL_OUTER_RADIUS - i * LUNGE_TRAIL_RING_THICKNESS;
+          const innerR = Math.max(0.02, outerR - LUNGE_TRAIL_RING_THICKNESS);
+          if (outerR <= 0.02) break;
+          const color = window.ResourceRings?.AFFLICTION_COLORS?.[sortedIds[i]] ?? 0xffffff;
+          const geo = new THREE.RingGeometry(innerR, outerR, 24);
+          const mat = new THREE.MeshBasicMaterial({
+            color, transparent: true, opacity: LUNGE_TRAIL_BASE_OPACITY, depthWrite: false,
+            side: THREE.DoubleSide,
+            // Additive, same reasoning as the combat cone trail above — reads
+            // as a clear glowing footprint regardless of what's underneath.
+            blending: THREE.AdditiveBlending,
+            fog: false,
+          });
+          group.add(new THREE.Mesh(geo, mat));
+        }
+        if (!group.children.length) return;
+        scene.add(group);
+        _lungeTrailStamps.push({ group, scene, age: 0 });
+      }
+
+      // Per-entity stride accumulator (see _footstepAdvance) tracking how far
+      // the player has traveled since the last dropped stamp — kept separate
+      // from player.footstepAccum (the ordinary footstep cadence, which
+      // keeps ticking during a lunge too) so the two don't fight over the
+      // same counter.
+      function tickLungeTrail(prevX, prevY) {
+        const dist = Math.hypot(player.x - prevX, player.y - prevY);
+        if (!player._lungeTrailStride) player._lungeTrailStride = { footstepAccum: 0, footstepFoot: false };
+        if (!_footstepAdvance(player._lungeTrailStride, dist, LUNGE_TRAIL_STAMP_SPACING_PX)) return;
+        spawnLungeTrailStamp(player.x, player.y);
+      }
+
+      // Ages/fades/removes already-dropped stamps — runs every frame
+      // regardless of player.lunging so a stamp dropped right before the
+      // lunge ends still finishes its fade instead of vanishing or freezing.
+      function updateLungeTrailStamps(dt) {
+        for (let i = _lungeTrailStamps.length - 1; i >= 0; i--) {
+          const stamp = _lungeTrailStamps[i];
+          stamp.age += dt;
+          const t = stamp.age / LUNGE_TRAIL_LIFETIME_S;
+          if (t >= 1) {
+            stamp.group.parent?.remove(stamp.group);
+            stamp.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+            _lungeTrailStamps.splice(i, 1);
+            continue;
+          }
+          const fade = 1 - t;
+          const scale = 1 + t * LUNGE_TRAIL_GROW_SCALE;
+          stamp.group.scale.set(scale, scale, scale);
+          for (const child of stamp.group.children) child.material.opacity = LUNGE_TRAIL_BASE_OPACITY * fade;
         }
       }
 
@@ -23159,6 +23254,13 @@
       // trail's coloring (see updateCombatConeTrail); empty means a plain
       // white trail.
       let combatSwingAfflictionIds = [];
+      // Companion map for combatSwingAfflictionIds: {id: mul}, the same
+      // per-hit damage multiplier map combat-*.js passes as
+      // damageCreature's opts.afflictionBonuses (see combat-progression.js's
+      // getEffects) — set via opts.afflictions alongside afflictionIds.
+      // Lets the lunge trail (see spawnLungeTrailStamp) rank "most applied"
+      // by actual magnitude instead of just tree-level insertion order.
+      let combatSwingAfflictionMuls = {};
       // The attack's own hit cone (world-space range/half-angle/facing),
       // set via opts.coneRangePx/coneHalfConeRad/coneAngle on
       // triggerWeaponSwingVisual, or later via setCombatSwingCone for
@@ -23237,6 +23339,7 @@
           combatSwingPower    = 1;
           combatSwingHoldS    = 0;
           combatSwingAfflictionIds = [];
+          combatSwingAfflictionMuls = {};
         } else {
           chargeAnimOverride = stageDef.anim || null;
           combatSwingAnim  = null;
@@ -23291,6 +23394,7 @@
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
         combatSwingAfflictionIds = opts.afflictionIds || [];
+        combatSwingAfflictionMuls = opts.afflictions || {};
         setCombatSwingCone(opts.coneRangePx, opts.coneHalfConeRad, opts.coneAngle);
       }
 
@@ -24027,7 +24131,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingAfflictionIds = []; combatSwingCone = null; }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -25763,6 +25867,7 @@
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
+        updateLungeTrailStamps(dt);
         if (!paused) {
           updateNpcWalkers(dt);
           if (dialogueOpen) faceNpcDialogueParticipants();

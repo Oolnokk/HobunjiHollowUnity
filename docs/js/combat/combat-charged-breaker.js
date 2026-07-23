@@ -77,6 +77,7 @@
         power: POWER,
         holdS: HOLD_S,
         afflictionIds: Object.keys(effects.afflictions),
+        afflictions: effects.afflictions,
       });
     }
 
