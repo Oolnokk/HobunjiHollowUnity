@@ -101,22 +101,34 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
 .npcItem.covNone .npcBadge{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:var(--muted)}
 
 #centerPanel{flex:1;min-width:0;display:flex;flex-direction:column}
-#treeBar{display:flex;align-items:flex-start;gap:6px;padding:6px 8px;flex-shrink:0;
-  border-bottom:1px solid var(--line);background:rgba(255,255,255,.015);min-height:44px}
-#treeTabsCol{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
-.treeTabs{display:flex;gap:5px;flex:1;overflow-x:auto;min-width:0}
-.treeTab{padding:4px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;
-  border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.05);
-  white-space:nowrap;flex-shrink:0}
-.treeTab.sel{border-color:var(--warn);background:rgba(251,191,36,.12);color:var(--warn)}
-.treeTab:hover:not(.sel){background:rgba(255,255,255,.08)}
-.treeTab.extra{border-style:dashed;opacity:.88}
-.treeTab .tabCond{display:block;font-size:8px;font-weight:600;color:var(--muted);
-  margin-top:1px;text-transform:none;letter-spacing:0}
-#extraTabsWrap{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-#extraTabsWrap.hidden{display:none}
-.extraTabsLabel{font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);flex-shrink:0}
-.extraTabs{display:flex;gap:5px;flex-wrap:wrap;min-width:0}
+
+/* Table of contents (landing view for a selected NPC) */
+#tocPanel{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto;padding:14px 16px}
+#tocPanel.hidden{display:none}
+#tocHead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;margin-bottom:10px}
+#tocNpcName{font-size:15px;font-weight:800;color:var(--text)}
+#tocList{display:flex;flex-direction:column;gap:6px}
+.tocItem{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03)}
+.tocItem:hover{background:rgba(255,255,255,.06)}
+.tocItem.partial{border-style:dashed;opacity:.85}
+.tocDot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--acc)}
+.tocItem.partial .tocDot{background:var(--warn)}
+.tocMain{flex:1;min-width:0}
+.tocLabel{font-size:13px;font-weight:700;color:var(--text)}
+.tocCond{font-size:10px;color:var(--muted);margin-top:2px}
+.tocArrow{font-size:14px;color:var(--muted);flex-shrink:0}
+.tocEmptyState{color:var(--muted);font-size:12px;text-align:center;padding:30px 10px}
+#gapReadout{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);flex-shrink:0}
+#gapReadout h3{margin:0 0 3px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.gapRow{display:flex;align-items:center;gap:7px;font-size:11px;padding:3px 0;color:var(--muted)}
+.gapRow.zero{color:var(--bad);font-weight:700}
+.gapCount{margin-left:auto;flex-shrink:0;font-family:ui-monospace,Menlo,monospace;font-size:10px}
+
+/* Graph view (a single tree's node canvas) */
+#graphView{flex:1;min-height:0;display:flex;flex-direction:column}
+#graphView.hidden{display:none}
+#backToTocBtn{position:absolute;top:10px;left:10px;z-index:20;font-size:11px;padding:6px 12px 6px 10px}
 
 #canvasOuter{flex:1;min-height:0;position:relative;overflow:hidden;background-color:#07101a;touch-action:none}
 #canvas{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
@@ -314,7 +326,7 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
     <h1>Hobunji Dialogue Editor</h1>
     <button class="secondary" id="loadBtn">Load DB</button>
     <button class="good" id="exportBtn" disabled>Export DB</button>
-    <button class="secondary" id="poolModalBtn" disabled>Phrase Pools</button>
+    <button class="secondary" id="poolModalBtn" disabled title="Select an NPC first">Phrase Pools</button>
     <div class="spacer"></div>
     <span class="pill" id="statusPill">No database loaded</span>
   </div>
@@ -330,38 +342,39 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
       <div id="npcListEl"></div>
     </div>
     <div id="centerPanel">
-      <div id="treeBar">
-        <div id="treeTabsCol">
-          <div class="treeTabs" id="treeTabs"></div>
-          <div id="extraTabsWrap" class="hidden">
-            <span class="extraTabsLabel">Also available:</span>
-            <div class="extraTabs" id="extraTreeTabs"></div>
+      <div id="tocPanel">
+        <div id="tocHead">
+          <div id="tocNpcName">Trees</div>
+          <button class="good" id="addTreeBtn" disabled style="font-size:11px;flex-shrink:0">+ Add Tree</button>
+        </div>
+        <div id="tocList"></div>
+        <div id="gapReadout"></div>
+      </div>
+      <div id="graphView" class="hidden">
+        <div id="canvasOuter">
+          <button id="backToTocBtn" title="Back to table of contents">← Trees</button>
+          <div id="emptyState">
+            <div id="emptyIcon">💬</div>
+            <p id="emptyMsg">Select an NPC to begin</p>
+          </div>
+          <div id="canvas">
+            <svg id="svgLayer" xmlns="http://www.w3.org/2000/svg"></svg>
+            <div id="nodesLayer"></div>
           </div>
         </div>
-        <button id="addTreeBtn" disabled style="flex-shrink:0;font-size:11px">+ Tree</button>
-      </div>
-      <div id="canvasOuter">
-        <div id="emptyState">
-          <div id="emptyIcon">💬</div>
-          <p id="emptyMsg">Select an NPC to begin</p>
+        <div id="canvasBar">
+          <button id="btnText"   disabled style="font-size:11px">+ Text</button>
+          <button id="btnChoice" disabled style="font-size:11px">+ Choice</button>
+          <button id="btnEnd"    disabled style="font-size:11px">+ End</button>
+          <button id="btnSeq"    disabled style="font-size:11px;border-color:rgba(45,212,191,.4);background:rgba(45,212,191,.1);color:var(--seq)">+ Sequence</button>
+          <div class="barSep"></div>
+          <button class="danger" id="btnDel"   disabled style="font-size:11px">Delete Node</button>
+          <button class="warn"   id="btnEntry" disabled style="font-size:11px">Set Entry</button>
+          <div class="spacer"></div>
+          <button class="secondary" id="btnOrg"   disabled style="font-size:11px">↻ Organize</button>
+          <button class="secondary" id="btnReset" style="font-size:11px">↺ View</button>
+          <span id="zoomLabel">100%</span>
         </div>
-        <div id="canvas">
-          <svg id="svgLayer" xmlns="http://www.w3.org/2000/svg"></svg>
-          <div id="nodesLayer"></div>
-        </div>
-      </div>
-      <div id="canvasBar">
-        <button id="btnText"   disabled style="font-size:11px">+ Text</button>
-        <button id="btnChoice" disabled style="font-size:11px">+ Choice</button>
-        <button id="btnEnd"    disabled style="font-size:11px">+ End</button>
-        <button id="btnSeq"    disabled style="font-size:11px;border-color:rgba(45,212,191,.4);background:rgba(45,212,191,.1);color:var(--seq)">+ Sequence</button>
-        <div class="barSep"></div>
-        <button class="danger" id="btnDel"   disabled style="font-size:11px">Delete Node</button>
-        <button class="warn"   id="btnEntry" disabled style="font-size:11px">Set Entry</button>
-        <div class="spacer"></div>
-        <button class="secondary" id="btnOrg"   disabled style="font-size:11px">↻ Organize</button>
-        <button class="secondary" id="btnReset" style="font-size:11px">↺ View</button>
-        <span id="zoomLabel">100%</span>
       </div>
     </div>
     <div id="inspToggle" title="Cycle inspector width: normal → wide → collapsed">◂</div>
@@ -394,8 +407,8 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
 <div id="poolModal" class="hidden">
   <div id="poolBox">
     <div class="poolBoxHead">
-      <h2>Phrase Pools</h2>
-      <div class="iMuted" style="margin:2px 0 0">Reusable, conditioned snippets of text. Reference one anywhere in a dialogue line as <code>{{pool:name}}</code> — it resolves to whichever entry best matches when that line plays, cycling through unheard entries before repeating.</div>
+      <h2>Phrase Pools — <span id="poolBoxNpcName"></span></h2>
+      <div class="iMuted" style="margin:2px 0 0">Reusable, conditioned snippets of text belonging to this NPC. Reference one anywhere in their dialogue as <code>{{pool:name}}</code> — it resolves to whichever entry best matches when that line plays, cycling through unheard entries before repeating.</div>
       <button class="secondary" id="poolModalClose" style="position:absolute;top:14px;right:14px;font-size:11px">Close</button>
     </div>
     <div id="poolBoxBody">
@@ -413,6 +426,7 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
 let db        = null;
 let sel       = { npcId: null, treeId: null, nodeId: null };
 let cam       = { panX: 60, panY: 60, zoom: 1 };
+let centerView = 'toc'; // 'toc' | 'graph' — which half of #centerPanel is showing
 let dragState = null;
 let connState = null;
 let panState  = null;
@@ -524,19 +538,19 @@ function loadDatabase(json) {
   try {
     const parsed = typeof json === 'string' ? JSON.parse(json) : json;
     if (!Array.isArray(parsed.npcs)) throw new Error('Expected .npcs array');
-    if (!Array.isArray(parsed.phrasePools)) parsed.phrasePools = [];
-    for (const pool of parsed.phrasePools) {
-      pool.id ??= genId('pool_');
-      pool.name ??= 'Untitled Pool';
-      if (!Array.isArray(pool.entries)) pool.entries = [];
-      for (const entry of pool.entries) {
-        entry.id ??= genId('pe_');
-        entry.text ??= '';
-        entry.conditions        = normalizeConditions(entry.conditions || {});
-        entry.excludeConditions = normalizeConditions(entry.excludeConditions || {});
-      }
-    }
     for (const npc of parsed.npcs) {
+      if (!Array.isArray(npc.phrasePools)) npc.phrasePools = [];
+      for (const pool of npc.phrasePools) {
+        pool.id ??= genId('pool_');
+        pool.name ??= 'Untitled Pool';
+        if (!Array.isArray(pool.entries)) pool.entries = [];
+        for (const entry of pool.entries) {
+          entry.id ??= genId('pe_');
+          entry.text ??= '';
+          entry.conditions        = normalizeConditions(entry.conditions || {});
+          entry.excludeConditions = normalizeConditions(entry.excludeConditions || {});
+        }
+      }
       if (!Array.isArray(npc.dialogueTrees)) npc.dialogueTrees = [];
       for (const tree of npc.dialogueTrees) {
         if (!Array.isArray(tree.nodes)) tree.nodes = [];
@@ -552,7 +566,6 @@ function loadDatabase(json) {
     sel = { npcId: null, treeId: null, nodeId: null };
     poolSel = { poolId: null, expandedEntryId: null };
     $('exportBtn').disabled = false;
-    $('poolModalBtn').disabled = false;
     $('statusPill').textContent = `${db.npcs.length} NPC${db.npcs.length !== 1 ? 's' : ''} loaded`;
     renderAll();
     if (db.npcs.length) selectNpc(db.npcs[0].id);
@@ -573,21 +586,28 @@ function exportDatabase() {
 /* ── Selection ───────────────────────────────────────────── */
 function selectNpc(id) {
   sel.npcId = id; sel.treeId = null; sel.nodeId = null;
+  poolSel = { poolId: null, expandedEntryId: null };
   const npc = getNpc();
-  if (npc?.dialogueTrees?.length) {
-    const classified = npc.dialogueTrees.map(t => ({ id: t.id, level: classifyTree(t).level }));
-    const best = classified.find(c => c.level === 'full') || classified.find(c => c.level === 'partial');
-    sel.treeId = best ? best.id : null;
-  }
+  sel.treeId = null; sel.nodeId = null;
+  centerView = 'toc'; // the TOC is always the first thing you see for an NPC
   cam = { panX: 60, panY: 60, zoom: 1 };
-  $('addTreeBtn').disabled = false;
-  renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar();
+  $('addTreeBtn').disabled = !npc;
+  $('poolModalBtn').disabled = !npc;
+  $('poolModalBtn').title = npc ? `Manage ${npc.name || npc.id}'s reusable phrase pools` : 'Select an NPC first';
+  renderNpcList(); renderCenterPanel(); renderInspector(); updateBar();
 }
 
 function selectTree(id) {
   sel.treeId = id; sel.nodeId = null;
+  centerView = 'graph';
   cam = { panX: 60, panY: 60, zoom: 1 };
-  renderTreeBar(); renderCanvas(); renderInspector(); updateBar();
+  renderCenterPanel(); renderInspector(); updateBar();
+}
+
+function backToToc() {
+  sel.treeId = null; sel.nodeId = null;
+  centerView = 'toc';
+  renderCenterPanel(); renderInspector(); updateBar();
 }
 
 function selectNode(id) {
@@ -616,16 +636,17 @@ function addTree() {
     trigger: 'interact', priority: 0, entryNode: null, nodes: [],
     conditions, excludeConditions: emptyConditions() });
   sel.treeId = id; sel.nodeId = null;
+  centerView = 'graph'; // jump straight into editing the tree just created
   cam = { panX: 60, panY: 60, zoom: 1 };
-  setDirty(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar();
+  setDirty(); renderCenterPanel(); renderInspector(); updateBar();
 }
 
 function deleteTree(id) {
   const npc = getNpc();
   if (!npc || !confirm('Delete this dialogue tree?')) return;
   npc.dialogueTrees = npc.dialogueTrees.filter(t => t.id !== id);
-  if (sel.treeId === id) { sel.treeId = npc.dialogueTrees[0]?.id ?? null; sel.nodeId = null; }
-  setDirty(); renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector();
+  if (sel.treeId === id) { sel.treeId = null; sel.nodeId = null; centerView = 'toc'; }
+  setDirty(); renderNpcList(); renderCenterPanel(); renderInspector();
 }
 
 /* ── Node actions ────────────────────────────────────────── */
@@ -876,33 +897,37 @@ function onFiltersChanged() {
   const npc = getNpc();
   const curTree = npc?.dialogueTrees?.find(t => t.id === sel.treeId);
   if (npc && (!curTree || classifyTree(curTree).level === 'hidden')) {
-    selectNpc(npc.id); // current tree no longer valid — reselect best match (resets view)
+    selectNpc(npc.id); // current tree no longer valid — bounce back to the TOC
     return;
   }
-  renderTreeBar(); renderCanvas(); renderInspector();
+  renderCenterPanel(); renderInspector();
 }
 
 /* ── Phrase Pool Manager ─────────────────────────────────── */
 let poolSel = { poolId: null, expandedEntryId: null };
 
 function openPoolModal() {
-  if (!db) return;
-  if (!poolSel.poolId && db.phrasePools.length) poolSel.poolId = db.phrasePools[0].id;
+  const npc = getNpc();
+  if (!npc) return;
+  if (!poolSel.poolId && npc.phrasePools.length) poolSel.poolId = npc.phrasePools[0].id;
   $('poolModal').classList.remove('hidden');
   renderPoolModal();
 }
 function closePoolModal() { $('poolModal').classList.add('hidden'); }
 
 function renderPoolModal() {
-  if (!db) return;
+  const npc = getNpc();
+  if (!npc) return;
+  $('poolBoxNpcName').textContent = npc.name || npc.id;
   renderPoolList();
   renderPoolDetail();
 }
 
 function renderPoolList() {
+  const npc = getNpc();
   const el = $('poolList');
-  el.innerHTML = db.phrasePools.length
-    ? db.phrasePools.map(p => `
+  el.innerHTML = npc.phrasePools.length
+    ? npc.phrasePools.map(p => `
       <div class="poolListItem${p.id===poolSel.poolId?' sel':''}" data-id="${esc(p.id)}">
         <span class="poolListItemName">${esc(p.name || 'Untitled Pool')}</span>
         <span class="poolListItemCount">${p.entries.length}</span>
@@ -915,8 +940,9 @@ function renderPoolList() {
 }
 
 function renderPoolDetail() {
+  const npc = getNpc();
   const el = $('poolDetailCol');
-  const pool = db.phrasePools.find(p => p.id === poolSel.poolId);
+  const pool = npc.phrasePools.find(p => p.id === poolSel.poolId);
   if (!pool) {
     el.innerHTML = '<div class="poolEmptyState">Select a pool on the left, or create a new one.</div>';
     return;
@@ -933,8 +959,8 @@ function renderPoolDetail() {
   $('poolNameInput').oninput = e => { pool.name = e.target.value; setDirty(); renderPoolList(); };
   $('deletePoolBtn').onclick = () => {
     if (!confirm(`Delete phrase pool "${pool.name}"? Any {{pool:...}} references to it will resolve to nothing.`)) return;
-    db.phrasePools = db.phrasePools.filter(p => p.id !== pool.id);
-    poolSel = { poolId: db.phrasePools[0]?.id ?? null, expandedEntryId: null };
+    npc.phrasePools = npc.phrasePools.filter(p => p.id !== pool.id);
+    poolSel = { poolId: npc.phrasePools[0]?.id ?? null, expandedEntryId: null };
     setDirty(); renderPoolModal();
   };
   $('addPoolEntryBtn').onclick = () => {
@@ -980,8 +1006,9 @@ function renderPoolDetail() {
 }
 
 function addPool() {
-  const pool = emptyPool(`Pool ${db.phrasePools.length + 1}`);
-  db.phrasePools.push(pool);
+  const npc = getNpc(); if (!npc) return;
+  const pool = emptyPool(`Pool ${npc.phrasePools.length + 1}`);
+  npc.phrasePools.push(pool);
   poolSel = { poolId: pool.id, expandedEntryId: null };
   setDirty(); renderPoolModal();
 }
@@ -1021,31 +1048,89 @@ function renderNpcList() {
   el.querySelectorAll('.npcItem').forEach(el => el.addEventListener('click', () => selectNpc(el.dataset.id)));
 }
 
-/* ── Tree bar ────────────────────────────────────────────── */
-function renderTreeBar() {
-  const npc = getNpc();
-  const mainEl = $('treeTabs'), extraEl = $('extraTreeTabs'), extraWrap = $('extraTabsWrap');
-  if (!npc) { mainEl.innerHTML = ''; extraEl.innerHTML = ''; extraWrap.classList.add('hidden'); return; }
+/* ── Center panel: table of contents / graph view ───────────── */
+// A tree "specifically targets" an axis value if it conditions on that axis
+// (non-wildcard) and includes that value, and its no-fly side doesn't
+// exclude that same value — mirrors the runtime's per-axis eligibility
+// check (_dlgAxisMatch/_dlgEntryEligible in game.js) but for one axis value
+// in isolation rather than a full world state, since the gap readout is
+// asking "does anything address just this?" one value at a time.
+function treeAxisSpecificMatch(tree, axis, value) {
+  const vals = tree.conditions?.[axis];
+  if (!vals || !vals.includes(value)) return false;
+  const xvals = tree.excludeConditions?.[axis];
+  if (xvals && xvals.includes(value)) return false;
+  return true;
+}
 
-  const main = [], extra = [];
+const GAP_AXES = [
+  { key: 'weekdays',   label: 'Weekday',     values: WEEKDAYS },
+  { key: 'seasons',    label: 'Season',      values: SEASONS },
+  { key: 'weather',    label: 'Weather',     values: WEATHERS },
+  { key: 'timesOfDay', label: 'Time of day', values: TIMES_OF_DAY },
+  { key: 'encounter',  label: 'Encounter',   values: ENCOUNTERS },
+];
+function computeConditionGaps(npc) {
+  const rows = [];
+  for (const axisDef of GAP_AXES) {
+    for (const value of axisDef.values) {
+      const count = (npc.dialogueTrees || []).filter(t => treeAxisSpecificMatch(t, axisDef.key, value)).length;
+      rows.push({ label: axisDef.label, value, count });
+    }
+  }
+  rows.sort((a, b) => a.count - b.count || a.label.localeCompare(b.label));
+  return rows;
+}
+
+function renderGapReadout(npc) {
+  const el = $('gapReadout');
+  const gaps = computeConditionGaps(npc);
+  const SHOW = 12;
+  const shown = gaps.slice(0, SHOW);
+  const worstCount = gaps[0]?.count ?? 0;
+  const zeroCount = gaps.filter(g => g.count === 0).length;
+  el.innerHTML = `
+    <h3>Gap check — fewest dedicated trees first</h3>
+    ${shown.map(g => `<div class="gapRow${g.count===0?' zero':''}">${g.count===0?'⚠':'·'} ${esc(g.label)} · ${esc(g.value)}<span class="gapCount">${g.count} tree${g.count!==1?'s':''}</span></div>`).join('')}
+    ${gaps.length > SHOW ? `<div class="iMuted" style="margin-top:4px">+ ${gaps.length - SHOW} more condition value${gaps.length-SHOW!==1?'s':''}${worstCount===0?`, ${Math.max(0,zeroCount-SHOW)} more also at 0`:''}</div>` : ''}`;
+}
+
+function renderToc() {
+  const npc = getNpc();
+  $('tocNpcName').textContent = npc ? `${npc.name || npc.id} — Trees` : 'Trees';
+  const listEl = $('tocList');
+  if (!npc) { listEl.innerHTML = ''; $('gapReadout').innerHTML = ''; return; }
+
+  const rows = [];
   for (const t of npc.dialogueTrees) {
     const { level, conditionedAxes } = classifyTree(t);
     if (level === 'hidden') continue;
-    (level === 'full' ? main : extra).push({ t, conditionedAxes });
+    rows.push({ t, level, conditionedAxes });
   }
+  rows.sort((a, b) => (a.level === 'full' ? 0 : 1) - (b.level === 'full' ? 0 : 1));
 
-  mainEl.innerHTML = main.length ? main.map(({ t }) => `
-    <div class="treeTab${t.id === sel.treeId ? ' sel' : ''}" data-id="${esc(t.id)}">${esc(t.label || t.id)}</div>`).join('')
-    : (npc.dialogueTrees.length ? '<span class="iMuted" style="padding:4px 2px">No dialogue matches the selected conditions.</span>' : '');
-
-  extraEl.innerHTML = extra.map(({ t, conditionedAxes }) => {
+  listEl.innerHTML = rows.length ? rows.map(({ t, level, conditionedAxes }) => {
     const badge = conditionLabel(t.conditions || {}, conditionedAxes);
-    return `<div class="treeTab extra${t.id === sel.treeId ? ' sel' : ''}" data-id="${esc(t.id)}">${esc(t.label || t.id)}${badge ? `<span class="tabCond">${esc(badge)}</span>` : ''}</div>`;
-  }).join('');
-  extraWrap.classList.toggle('hidden', extra.length === 0);
+    return `<div class="tocItem${level==='partial'?' partial':''}" data-id="${esc(t.id)}">
+      <span class="tocDot"></span>
+      <div class="tocMain">
+        <div class="tocLabel">${esc(t.label || t.id)}</div>
+        ${badge ? `<div class="tocCond">${esc(badge)}</div>` : '<div class="tocCond">No conditions — always available</div>'}
+      </div>
+      <span class="tocArrow">›</span>
+    </div>`;
+  }).join('') : '<div class="tocEmptyState">No dialogue trees yet — click "+ Add Tree" to create one.</div>';
+  listEl.querySelectorAll('.tocItem').forEach(el => el.addEventListener('click', () => selectTree(el.dataset.id)));
 
-  [mainEl, extraEl].forEach(container =>
-    container.querySelectorAll('.treeTab').forEach(el => el.addEventListener('click', () => selectTree(el.dataset.id))));
+  renderGapReadout(npc);
+}
+
+function renderCenterPanel() {
+  const inToc = centerView === 'toc';
+  $('tocPanel').classList.toggle('hidden', !inToc);
+  $('graphView').classList.toggle('hidden', inToc);
+  if (inToc) renderToc();
+  else renderCanvas();
 }
 
 function updateBar() {
@@ -1086,10 +1171,10 @@ function renderCanvas() {
     nlayer.innerHTML = ''; $('svgLayer').innerHTML = '';
     empty.classList.remove('hidden');
     emsg.textContent = !getNpc()?.dialogueTrees?.length
-      ? 'Click "+ Tree" to create a dialogue tree'
+      ? 'Click "+ Add Tree" to create a dialogue tree'
       : (selectedAxesList().length
-          ? 'No dialogue yet for the selected conditions — click "+ Tree" to fill the gap.'
-          : 'Select a tree above to edit it');
+          ? 'No dialogue yet for the selected conditions — click "← Trees" then "+ Add Tree" to fill the gap.'
+          : 'Click "← Trees" to pick a tree to edit');
     return;
   }
   empty.classList.add('hidden');
@@ -1289,7 +1374,7 @@ const BUILT_IN_TOKENS = [
 // currently loaded database, so a newly-created pool is immediately
 // insertable without having to remember/type its {{pool:...}} syntax.
 function buildTokenButtonsHtml() {
-  const poolBtns = (db?.phrasePools || []).map(p =>
+  const poolBtns = (getNpc()?.phrasePools || []).map(p =>
     `<button type="button" class="tokenBtn poolTokenBtn" data-tok="{{pool:${esc(p.name)}}}" title="Phrase pool: ${esc(p.name)} (${p.entries.length} entr${p.entries.length===1?'y':'ies'})">pool: ${esc(p.name)}</button>`).join('');
   const builtinBtns = BUILT_IN_TOKENS.map(t =>
     `<button type="button" class="tokenBtn" data-tok="${esc(t.tok)}" title="${esc(t.hint)}">${esc(t.tok.replace(/[{}]/g,''))}</button>`).join('');
@@ -1398,11 +1483,11 @@ function renderInspector() {
       <hr class="idiv">
       <div class="iGroup">
         <button class="danger" id="iDelTree" style="width:100%;font-size:12px">Delete Tree</button></div>`;
-    $('iLabel').oninput    = e => { tree.label    = e.target.value; setDirty(); renderTreeBar(); };
+    $('iLabel').oninput    = e => { tree.label    = e.target.value; setDirty(); renderToc(); };
     $('iTrigger').onchange = e => { tree.trigger  = e.target.value; setDirty(); };
     $('iPrio').oninput     = e => { tree.priority = parseInt(e.target.value)||0; setDirty(); };
     $('iEntry').onchange   = e => { tree.entryNode = e.target.value||null; setDirty(); renderCanvas(); };
-    const onTreeConditionChange = () => { setDirty(); renderNpcList(); renderTreeBar(); };
+    const onTreeConditionChange = () => { setDirty(); renderNpcList(); renderToc(); };
     renderConditionPicker($('iReqConditions'),  tree.conditions,        onTreeConditionChange, 'require');
     renderConditionPicker($('iExclConditions'), tree.excludeConditions, onTreeConditionChange, 'exclude');
     $('iDelTree').onclick  = () => deleteTree(sel.treeId);
@@ -1828,7 +1913,7 @@ function toggleInspector() {
   setInspectorMode(next);
 }
 
-function renderAll() { renderCondFilters(); renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar(); }
+function renderAll() { renderCondFilters(); renderNpcList(); renderCenterPanel(); renderInspector(); updateBar(); }
 
 document.addEventListener('DOMContentLoaded', () => {
   $('loadBtn').onclick   = () => $('importModal').classList.remove('hidden');
@@ -1855,6 +1940,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   $('inspToggle').onclick = toggleInspector;
   $('addTreeBtn').onclick = addTree;
+  $('backToTocBtn').onclick = backToToc;
   $('btnText').onclick   = () => addNode('text');
   $('btnChoice').onclick = () => addNode('choice');
   $('btnEnd').onclick    = () => addNode('end');

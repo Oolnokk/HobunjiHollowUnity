@@ -582,12 +582,13 @@
         if (!st.heardTrees.includes(tree.id)) st.heardTrees.push(tree.id);
       }
 
-      // Resolves one {{pool:<id>}} reference against db.phrasePools for the
-      // NPC currently in the conversation, tracking which entries have been
-      // heard the same way dialogue trees are (see _markDialogueTreeHeard) so
-      // a pool cycles through its unheard entries before repeating.
+      // Resolves one {{pool:<id>}} reference against this NPC's own
+      // phrasePools (pools are per-NPC, authored in the dialogue editor's
+      // Phrase Pool Manager), tracking which entries have been heard the
+      // same way dialogue trees are (see _markDialogueTreeHeard) so a pool
+      // cycles through its unheard entries before repeating.
       function _pickPoolEntry(poolId, rec) {
-        const pool = _npcPhrasePools.find(p => p.id === poolId || p.name === poolId);
+        const pool = (rec?.phrasePools || []).find(p => p.id === poolId || p.name === poolId);
         if (!pool || !pool.entries?.length) return null;
         const world = _dlgWorldState(rec);
         const st    = _getNpcDlgState(rec?.id);
@@ -8210,10 +8211,6 @@
       let _dialogueWalker    = null;
       let _npcDialogueTypeTimer = null;
       let _npcDialogueTypeText  = '';
-      // Phrase pools (db-wide, not per-NPC) — populated alongside the NPC
-      // roster fetch in spawnScheduledNpcs, read by _pickPoolEntry when
-      // resolving a {{pool:<id>}} token.
-      let _npcPhrasePools = [];
       let _npcDialogueTypeIndex = 0;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
@@ -11373,7 +11370,7 @@
         if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         let dbNpcs = extraRecords || [];
         if (!dbNpcs.length) {
-          try { const res = await fetch('config/npcs/hobunji-starter-npc-database.json'); const json = await res.json(); dbNpcs = json.npcs || []; _npcPhrasePools = json.phrasePools || []; } catch {}
+          try { const res = await fetch('config/npcs/hobunji-starter-npc-database.json'); const json = await res.json(); dbNpcs = json.npcs || []; } catch {}
         }
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
         const deferred = [];
