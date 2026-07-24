@@ -2407,7 +2407,13 @@
 
       function makeDefaultGear() {
         return {
-          tools:    { bronzehoe: true, hatchet: true, fishingmace: true, fishingspear: true, pickshovel: true },
+          // Weakest-possible verdigris metal (see VERDIGRIS_METAL_KEYS/
+          // METAL_DEFS.nativeCopper, tier 1 of 7) rather than the old
+          // unscaled legacy keys (bronzehoe/hatchet/etc., which fought at a
+          // flat 1.0 metalDmgMultiplier — mid-hierarchy strength with no
+          // room to grow into) — a fresh character now genuinely starts at
+          // the bottom of the smithing ladder (see toolMetalMultiplier).
+          tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true },
           clothing: { hat: null, hood: null, torso: null, overwear: null },
           clothingItems: [],
           charms: [],
@@ -5160,11 +5166,45 @@
         if (player.health <= 0) respawnPlayer();
       }
 
+      // Closest Root Totem (see wilderness-map-generator.js's
+      // placeRootTotems) to a given world position, within one zone only —
+      // totems don't offer a way to reach a different zone's terrain from
+      // where the player actually died, so a death is always recovered
+      // within its own zone or (if that zone has none, or the player wasn't
+      // in a wilderness zone at all) falls back to the farmhouse. Returns
+      // the totem's pathAnchor tile ({x,y}) or null.
+      function nearestRootTotemFor(zoneId, worldX, worldY) {
+        const totems = _zoneLayouts.get(zoneId)?.rootTotems;
+        if (!totems || !totems.length) return null;
+        const px = worldX / TILE, py = worldY / TILE;
+        let best = null, bestDist = Infinity;
+        for (const t of totems) {
+          const anchor = t.pathAnchor || t;
+          const d = Math.hypot(anchor.x - px, anchor.y - py);
+          if (d < bestDist) { bestDist = d; best = anchor; }
+        }
+        return best;
+      }
+
       function respawnPlayer() {
+        const totem = _isZoneArea(currentArea) ? nearestRootTotemFor(currentArea, player.x, player.y) : null;
+        if (totem) {
+          player.x = (totem.x + 0.5) * TILE;
+          player.y = (totem.y + 0.5) * TILE;
+          player.vx = 0; player.vy = 0;
+          player.health = Math.round(player.maxHealth * 0.5);
+          player.invulnUntil = performance.now() + 1000;
+          _snapCameraTarget();
+          showToast('You awaken at the nearest Root Totem...', false);
+          return;
+        }
+        if (currentArea !== 'farm') _returnToFarmMeshes();
         player.x = COLS * TILE * 0.5;
         player.y = ROWS * TILE * 0.72;
+        player.vx = 0; player.vy = 0;
         player.health = Math.round(player.maxHealth * 0.5);
         player.invulnUntil = performance.now() + 1000;
+        _snapCameraTarget();
         showToast('You black out and stumble back to the farmhouse...', false);
       }
 
@@ -6245,6 +6285,41 @@
         } catch {}
       }
 
+      // ── World calendar (day/time-of-day/weather) — world-scoped like the
+      // Tothal year above, not character-scoped, so every character sharing
+      // a world sees the same date/time. `calendar` (declared near the top
+      // of this closure) previously had no persistence at all: it's a fresh
+      // in-memory object every page load, hardcoded back to Day 1, ~10:30 AM
+      // — so the date/time (and weather) silently reset every session no
+      // matter how long the world had actually been played. Loaded once in
+      // spawnPlayerAvatar (before checkTothalShift, since currentTothalYear()
+      // reads calendar.day) and saved on every day rollover (advanceDay/
+      // sleepInBed) plus on tab close, mirroring _saveTothalYear's pattern.
+      function _loadWorldCalendar() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return null;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.calendar ?? null;
+        } catch { return null; }
+      }
+
+      function _saveWorldCalendar() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.calendar = {
+            day: calendar.day, time01: calendar.time01, weather: calendar.weather,
+            isRaining: calendar.isRaining, rainStrength: calendar.rainStrength,
+            nextRainWindows: calendar.nextRainWindows, lastRainDay: calendar.lastRainDay,
+          };
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
       // ── Livestock (belongs to the world itself, not any character) ─────
       // [{ id, kind, col, row, releasedAt }] — released animals stay on the
       // farm for whoever plays this world, unlike gear/inventory which is
@@ -7045,6 +7120,7 @@
               ],
               toTownExit, mesas: merged.mesas, buildings: [...(merged.buildings || []), ...tentBuilding], decor: tentDecor, furniture: [],
               dens: workspace.animalDens || [],
+              rootTotems: workspace.rootTotems || [],
               foliagePatches: workspace.foliagePatches || [],
               ambushStations: workspace.ambushStations || [],
               localeInstances,
@@ -7402,7 +7478,7 @@
         dumpZone(zoneId) {
           const layout = _zoneLayouts.get(zoneId);
           if (!layout) return null;
-          return { dens: layout.dens || [], foliagePatches: layout.foliagePatches || [], ambushStations: layout.ambushStations || [] };
+          return { dens: layout.dens || [], rootTotems: layout.rootTotems || [], foliagePatches: layout.foliagePatches || [], ambushStations: layout.ambushStations || [] };
         },
         getCurrentArea: () => currentArea,
         isNightTime,
@@ -9244,6 +9320,7 @@
         buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
+        buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
         _zoneWaterMeshes.set(mapId, [
           ...buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
           ...buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
@@ -9893,6 +9970,40 @@
         _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.ROCK));
         mesh.userData.cameraObstacle = true;
         console.log(`%c[zone:${mapId}] animal den placeholders built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
+      }
+
+      // Root Totems (see wilderness-map-generator.js's placeRootTotems) — a
+      // simple carved-pole placeholder mesh (pole + a few rings + a glowing
+      // cap) marking each zone's permanent respawn checkpoint. Purely a
+      // visual landmark; the actual nearest-totem lookup on death reads
+      // zoneData.rootTotems directly (see respawnPlayer/nearestRootTotemFor),
+      // not this mesh.
+      function buildRootTotemMeshes(zScene, zGrid, totems, mapId) {
+        if (!totems || !totems.length) return;
+        const poleMat = new THREE.MeshBasicMaterial({ color: 0x5b3a22 });
+        const bandMat = new THREE.MeshBasicMaterial({ color: 0x9a6a35 });
+        const glowMat = new THREE.MeshBasicMaterial({ color: 0x7fe7c4 });
+        const group = new THREE.Group();
+        for (const totem of totems) {
+          const elevTier = zGrid?.[totem.y]?.[totem.x]?.elevTier || 0;
+          const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT;
+          const cx = totem.x + 0.5, cz = totem.y + 0.5;
+          const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 2.6, 8), poleMat);
+          pole.position.set(cx, groundY + 1.3, cz);
+          group.add(pole);
+          for (let i = 0; i < 3; i++) {
+            const band = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.07, 6, 12), bandMat);
+            band.rotation.x = Math.PI / 2;
+            band.position.set(cx, groundY + 0.55 + i * 0.75, cz);
+            group.add(band);
+          }
+          const glow = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), glowMat);
+          glow.position.set(cx, groundY + 2.75, cz);
+          group.add(glow);
+        }
+        zScene.add(group);
+        console.log(`%c[zone:${mapId}] root totems built: ${totems.length}`, 'color:#22c55e;font-weight:bold');
+        return group;
       }
 
       // Waterwall curtains: an animated vertical water sheet wherever a river
@@ -26538,6 +26649,11 @@
         if (Math.floor(previousHour) !== Math.floor(currentHour)) {
           updateRainState();
           if (Math.floor(currentHour) === MORNING_HOUR) { tickCropDay(); checkForMajorStorm(); worldObjectMorningTick(); }
+          // Cheap once-per-in-game-hour flush (~every 12 real seconds at the
+          // default DAY_LENGTH_SECONDS) so a crash/force-close between day
+          // rollovers still only loses a few minutes of in-game time
+          // instead of the whole session — see _saveWorldCalendar.
+          _saveWorldCalendar();
         }
       }
 
@@ -26558,6 +26674,7 @@
         respawnAllZoneBerries();
         respawnAllZoneTreasure();
         tickFelledTreeRegrowth();
+        _saveWorldCalendar();
       }
 
       // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
@@ -26583,6 +26700,7 @@
         player.stamina = player.maxStamina;
         const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
         lastActionMessage = msg;
+        _saveWorldCalendar();
         return { ok: true, message: msg };
       }
 
@@ -27996,6 +28114,7 @@
         calendar.rainStrength = 2;
         calendar.nextRainWindows = [{ start: 8, end: 14, strength: 2 }];
         calendar.lastRainDay = 1;
+        _saveWorldCalendar();
         Object.keys(inventory).forEach(key => { delete inventory[key]; });
         Object.assign(inventory, { ...STARTING_INVENTORY });
         clearPlacedProcessingFurniture();
@@ -28022,9 +28141,12 @@
         // Reset equipment to defaults
         packClothing = [];
         Object.keys(equipmentSlots).forEach(k => { equipmentSlots[k] = null; });
-        if (gearInventory?.tools?.bronzehoe)  equipmentSlots.hoe    = 'bronzehoe';
-        if (gearInventory?.tools?.pickshovel) equipmentSlots.shovel = 'pickshovel';
-        if (gearInventory?.tools?.hatchet)    equipmentSlots.weapon = 'hatchet';
+        if (gearInventory?.tools?.hoe_nativeCopper)      equipmentSlots.hoe    = 'hoe_nativeCopper';
+        else if (gearInventory?.tools?.bronzehoe)        equipmentSlots.hoe    = 'bronzehoe';
+        if (gearInventory?.tools?.pickshovel_nativeCopper) equipmentSlots.shovel = 'pickshovel_nativeCopper';
+        else if (gearInventory?.tools?.pickshovel)       equipmentSlots.shovel = 'pickshovel';
+        if (gearInventory?.tools?.hatchet_nativeCopper)  equipmentSlots.weapon = 'hatchet_nativeCopper';
+        else if (gearInventory?.tools?.hatchet)          equipmentSlots.weapon = 'hatchet';
         if (gearInventory?.whistles?.length)  equipmentSlots.whistle = gearInventory.whistles[0].id;
         rebuildToolMeshes();
         refreshWeaponSwitchBtn();
@@ -28867,8 +28989,12 @@
 
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
       // Safety net for any inventory/pack change not already covered by an
-      // explicit saveMemberWorldData() call above.
-      window.addEventListener('beforeunload', () => { try { saveMemberWorldData(); } catch {} });
+      // explicit saveMemberWorldData() call above. Also flushes the
+      // in-progress time-of-day (advanceDay/sleepInBed already save on their
+      // own day rollovers, but this catches whatever time01 progress
+      // happened since the last one, so closing mid-afternoon doesn't roll
+      // back to that morning next session).
+      window.addEventListener('beforeunload', () => { try { saveMemberWorldData(); _saveWorldCalendar(); } catch {} });
       fitToAspect();
       resizeCanvas();
       refreshActionBar();
@@ -28892,6 +29018,15 @@
       let gameStarted = false;
 
       async function spawnPlayerAvatar(playerData) {
+        // Restore this world's saved date/time/weather (see
+        // _loadWorldCalendar/_saveWorldCalendar) before anything reads
+        // calendar.day — checkTothalShift() below derives the current
+        // Tothal year from it, so this has to land first or the shift check
+        // runs against the just-reset "Day 1" default instead of wherever
+        // the world actually left off.
+        const _savedCalendar = _loadWorldCalendar();
+        if (_savedCalendar) Object.assign(calendar, _savedCalendar);
+
         // Fire-and-forget: the Tothal Shift at world start (or on any missed
         // year since last played) can take a few seconds across all four
         // zones, but nothing here needs to block on it — a zone only needs
@@ -29043,9 +29178,12 @@
           }
         }
         // Set default equipment slot assignments
-        if (gearInventory.tools.bronzehoe)  equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
-        if (gearInventory.tools.pickshovel) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
-        if (gearInventory.tools.hatchet)    equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
+        if (gearInventory.tools.hoe_nativeCopper)      equipmentSlots.hoe    = equipmentSlots.hoe    || 'hoe_nativeCopper';
+        else if (gearInventory.tools.bronzehoe)        equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
+        if (gearInventory.tools.pickshovel_nativeCopper) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel_nativeCopper';
+        else if (gearInventory.tools.pickshovel)       equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
+        if (gearInventory.tools.hatchet_nativeCopper)  equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet_nativeCopper';
+        else if (gearInventory.tools.hatchet)          equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
         if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
         // A cutscene preview's ephemeral profile can inherit gearInventory
         // (and an already-equipped whistle) straight from the real local

@@ -179,6 +179,10 @@
       // cleanly" footprint, for a zone that wants a thin entrance instead.
       entryGateWidthMul: 1,
       animalDens: 5,
+      // Permanent respawn checkpoints spread one-per-quadrant across the
+      // zone (see placeRootTotems) so a death anywhere in the zone always
+      // has a reasonably close totem to fall back to.
+      rootTotems: 4,
       prey: 8,
       packPredators: 5,
       ambushPredators: 3,
@@ -3994,6 +3998,40 @@
     logDebug(`animal dens placed: ${placedDens}/${settings.animalDens}`);
   }
 
+  // Root Totems — permanent wilderness respawn checkpoints. One per
+  // quadrant (a coarse 2x2 sector grid, unlike placeVeteranLandmarkAnchors'
+  // finer 3x3) so they land roughly equidistant across the whole zone
+  // instead of clustering wherever the terrain-quality score peaks —
+  // whichever quadrant the player dies in, there's always one nearby (see
+  // game.js's respawnPlayer/nearestRootTotemFor, which picks the closest
+  // one in the player's current zone by tile distance). Reuses
+  // placeVeteranLandmarkAnchors' own candidate scoring (readable, not on
+  // water/cliff/ramp, decent sightlines) and its designReserve/occupiedBy
+  // exclusion so a totem never lands inside another landmark's footprint.
+  function placeRootTotems() {
+    const sectorsX = 2, sectorsY = 2;
+    const desired = Math.max(1, settings.rootTotems || 4);
+    let placed = 0;
+    for (let sy = 0; sy < sectorsY && placed < desired; sy++) {
+      for (let sx = 0; sx < sectorsX && placed < desired; sx++) {
+        const tile = chooseSectorLandmarkCandidate(sx, sy, sectorsX, sectorsY);
+        if (!tile) continue;
+        const pathAnchor = nearestFreeWalkableNeighbor(tile.x, tile.y);
+        addObject({
+          type: 'rootTotem',
+          x: tile.x, y: tile.y, w: 1, h: 1,
+          occupies: false, blocksMovement: false,
+          pathAnchor,
+          note: 'Root Totem — a wilderness respawn checkpoint'
+        });
+        reserveDesignClearing(tile.x, tile.y, 2, 'rootTotemClearing');
+        placed++;
+      }
+    }
+    if (placed < desired) warn(`rootTotem: placed ${placed}/${desired}`);
+    logDebug(`root totems placed: ${placed}/${desired}`);
+  }
+
   function buildInvisiblePathTargets() {
     const targets = [];
     for (const object of map.objects) {
@@ -5693,7 +5731,7 @@
     if (!object) return null;
     if (object.type === 'copse' || object.type === 'bush' || object.type === 'fruitBush' || object.type === 'mushroomPatch' || object.type === 'beehive') return 'shrub';
     if (object.type === 'foragePlant' || object.type === 'rareHerb' || object.type === 'treasureDigspot') return 'weeds';
-    if (object.type === 'diggableRockOre' || object.type === 'undiggableBoulder' || object.type === 'statue' || object.type === 'submergedPillar' || object.type === 'caveOpening' || object.type === 'secretCaveOpening' || object.type === 'structure' || object.type === 'animalDen') return 'rock';
+    if (object.type === 'diggableRockOre' || object.type === 'undiggableBoulder' || object.type === 'statue' || object.type === 'submergedPillar' || object.type === 'caveOpening' || object.type === 'secretCaveOpening' || object.type === 'structure' || object.type === 'animalDen' || object.type === 'rootTotem') return 'rock';
     return null;
   }
 
@@ -8154,6 +8192,7 @@
     placeCaves();
     placeAnimalDens();
     placeVeteranLandmarkAnchors();
+    placeRootTotems();
     generatePaths();
     applyVeteranMapDesignPass();
     generateInvisibleNavigation();
@@ -8187,6 +8226,19 @@
         w: object.w || 1,
         h: object.h || 1,
         mouthAnchor: object.mouthAnchor ? { x: object.mouthAnchor.x, y: object.mouthAnchor.y } : null,
+      }));
+    // Root Totems (see placeRootTotems) — same "read the real placement
+    // instead of recovering it from the lossy tile overlay" reasoning as
+    // animalDens above. x/y is the totem's own tile; pathAnchor is the
+    // guaranteed-walkable tile beside it a player actually stands on (see
+    // game.js's respawnPlayer/nearestRootTotemFor).
+    workspace.rootTotems = (map.objects || [])
+      .filter(object => object.type === 'rootTotem')
+      .map(object => ({
+        id: object.id,
+        x: object.x,
+        y: object.y,
+        pathAnchor: object.pathAnchor ? { x: object.pathAnchor.x, y: object.pathAnchor.y } : { x: object.x, y: object.y },
       }));
     // Foliage patches (grouped copse clusters — see buildFoliagePatches) and,
     // for the dense/"rich" ones, a handful of nearby ambush-station points
