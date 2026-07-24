@@ -9065,6 +9065,18 @@
           arr.push({ geo, x, y, z });
         };
 
+        // Animal den footprints get one continuous rock mound mesh of their
+        // own (see buildAnimalDenMeshes) — without this exclusion, the
+        // ordinary per-tile ROCK treatment just below would ALSO render its
+        // own small independent rock lump on every one of those same tiles,
+        // reading as a separate "pile of rocks" sitting on/around the mound
+        // instead of one clean shape.
+        const denTileKeys = new Set();
+        for (const den of (_zoneLayouts.get(mapId)?.dens || [])) {
+          const dw = den.w || 1, dh = den.h || 1;
+          for (let dy = 0; dy < dh; dy++) for (let dx = 0; dx < dw; dx++) denTileKeys.add((den.x + dx) + ',' + (den.y + dy));
+        }
+
         const pathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS);
         if (pathNet) {
           // Tiny lift above the plateau mesa lid (which shares this exact
@@ -9095,6 +9107,7 @@
 
           if (tile.type === TileType.ROCK) {
             _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
+            if (denTileKeys.has(c + ',' + r)) continue; // plain grass under the den's own mound mesh — see above
             const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
             _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + tierY, cz);
             _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
@@ -10020,6 +10033,18 @@
         if (!dens || !dens.length) return;
         const DEN_PEAK_HEIGHT = 2.0, DEN_SINK = 0.5;
         const MOUTH_U0 = 0.3, MOUTH_U1 = 0.7, MOUTH_V0 = 0.6;
+        // The den object's own footprint (blocksMovement:true) ends at its
+        // south edge — the mouthAnchor transition tile, and one tile beyond
+        // it, sit just outside that footprint as genuinely open, walkable
+        // ground (see placeAnimalDens' mouthAnchor). LINTEL_DEPTH_TILES
+        // spans exactly those two tiles with a short rock slab bridging
+        // above them, so the entrance reads as a real overhang — rock
+        // visibly extending out over the approach — instead of just a
+        // notch cut into the mound's own face. The approach tiles
+        // themselves stay flat, open ground underneath; floating geometry
+        // doesn't affect movement in this game (collision is tile/object-
+        // based, not mesh-based), so there's no walkability concern here.
+        const LINTEL_DEPTH_TILES = 2, LINTEL_HEIGHT_FRAC = 0.7;
         const pos = [], idx = []; let vi = 0;
         let denSalt = 0;
         for (const den of dens) {
@@ -10027,13 +10052,32 @@
           const centerCol = den.x + Math.floor(w / 2), centerRow = den.y + Math.floor(h / 2);
           const elevTier = zGrid?.[centerRow]?.[centerCol]?.elevTier || 0;
           const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT - DEN_SINK;
-          const mound = buildDenRockMoundGeo(w, h, DEN_PEAK_HEIGHT, (denSalt += 97), { u0: MOUTH_U0, u1: MOUTH_U1, v0: MOUTH_V0 });
+          const salt0 = (denSalt += 97);
+          const mound = buildDenRockMoundGeo(w, h, DEN_PEAK_HEIGHT, salt0, { u0: MOUTH_U0, u1: MOUTH_U1, v0: MOUTH_V0 });
           const base = vi;
           for (let p = 0; p < mound.vertexCount; p++) {
             pos.push(den.x + mound.positions[p * 3], groundY + mound.positions[p * 3 + 1], den.y + mound.positions[p * 3 + 2]);
           }
           for (const i of mound.idx) idx.push(base + i);
           vi += mound.vertexCount;
+
+          const doorWidth = w * (MOUTH_U1 - MOUTH_U0);
+          const lintelX0 = den.x + w * MOUTH_U0, lintelZ0 = den.y + h;
+          const lintelY = groundY + DEN_PEAK_HEIGHT * LINTEL_HEIGHT_FRAC;
+          const segsU = Math.max(4, Math.round(doorWidth * ROCK_MOUND_CELLS_PER_TILE));
+          const segsV = Math.max(4, Math.round(LINTEL_DEPTH_TILES * ROCK_MOUND_CELLS_PER_TILE));
+          const lintelBump = buildRockMoundBumpField(doorWidth, LINTEL_DEPTH_TILES, lintelX0, lintelZ0, salt0 + 8);
+          const lintelBase = vi;
+          for (let j = 0; j <= segsV; j++) for (let i = 0; i <= segsU; i++) {
+            const u = i / segsU, v = j / segsV;
+            const bump = sampleRockMoundBump(lintelBump, u, v);
+            pos.push(lintelX0 + doorWidth * u, lintelY + bump * 0.6, lintelZ0 + LINTEL_DEPTH_TILES * v);
+          }
+          for (let j = 0; j < segsV; j++) for (let i = 0; i < segsU; i++) {
+            const a = lintelBase + j * (segsU + 1) + i, b = a + 1, c0 = a + (segsU + 1), d2 = c0 + 1;
+            idx.push(a, c0, d2, a, d2, b);
+          }
+          vi += (segsU + 1) * (segsV + 1);
         }
         if (!idx.length) return;
         const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide });

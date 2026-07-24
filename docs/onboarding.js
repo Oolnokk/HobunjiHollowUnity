@@ -514,13 +514,21 @@
 
   function makeDefaultGear() {
     return {
-      tools:    { bronzehoe: true, hatchet: true, fishingmace: true, fishingspear: true, pickshovel: true },
+      // Weakest verdigris metal (Native Copper, tier 1 of 7 — see game.js's
+      // VERDIGRIS_METAL_KEYS/METAL_DEFS/toolMetalMultiplier) rather than the
+      // old unscaled legacy keys, which fought at a flat, mid-hierarchy 1.0x
+      // multiplier with no room to grow into.
+      tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true },
       clothing: { hat: null, hood: null, torso: null, overwear: null },
       charms: [], whistles: [],
       // Mirrors game.js's own makeDefaultGear() — see combat-progression.js
-      // for how these drive per-tool ability upgrades. No starting stipend
-      // — earned through play (or the loadout page's dev-mode +1 button).
+      // for how toolMastery drives per-tool ability upgrades, and
+      // toolPlating/toolReinforcement for Sloomi/Kzubug's cosmetic plating
+      // and metal-reinforcement services. No starting stipend for motes —
+      // earned through play (or the loadout page's dev-mode +1 button).
       toolMastery: {},
+      toolPlating: {},
+      toolReinforcement: {},
       motesOfProwess: 0,
     };
   }
@@ -853,6 +861,46 @@
   }
 
   // ── Save Select Screen ─────────────────────────────────────────────────
+  // Same controls as game.js's in-game Settings pane "Local Save Folder"
+  // row (see docs/js/local-save-folder.js), surfaced here too so a
+  // completely fresh browser profile can pull characters/worlds back in
+  // from a previously-chosen folder before ever reaching a character to
+  // play — the in-game settings pane can't help with that since it only
+  // exists once you're already past this screen.
+  function _localSaveFolderSectionHtml() {
+    const lsf = window.LocalSaveFolder;
+    if (!lsf) return '';
+    const status = lsf.getStatus();
+    if (!status.supported) {
+      return `<div class="sl-section sl-local-save-section">
+        <div class="sl-section-label">Local Save Folder</div>
+        <div class="sl-local-save-row"><span class="sl-local-save-status">Not supported in this browser (Chrome/Edge only).</span></div>
+      </div>`;
+    }
+    let statusText;
+    if (status.state === 'ready') {
+      const when = status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleTimeString() : 'never';
+      statusText = `Saving to "${esc(status.folderName)}" — last synced ${when}.`;
+    } else if (status.state === 'needs-permission') {
+      statusText = `Folder "${esc(status.folderName)}" needs permission again this session.`;
+    } else if (status.state === 'error') {
+      statusText = 'Error: ' + esc(status.lastError || 'unknown');
+    } else {
+      statusText = 'No folder chosen yet.';
+    }
+    const buttons = [
+      (status.state === 'not-configured' || status.state === 'error')
+        ? `<button type="button" id="slLocalSaveChoose" class="sl-local-save-btn">Choose Folder</button>` : '',
+      status.folderName ? `<button type="button" id="slLocalSaveChange" class="sl-local-save-btn">Change Folder</button>` : '',
+      status.state === 'needs-permission' ? `<button type="button" id="slLocalSaveReconnect" class="sl-local-save-btn">Reconnect</button>` : '',
+      status.state === 'ready' ? `<button type="button" id="slLocalSaveLoad" class="sl-local-save-btn">Load From Folder</button>` : '',
+    ].join('');
+    return `<div class="sl-section sl-local-save-section">
+      <div class="sl-section-label">Local Save Folder</div>
+      <div class="sl-local-save-row"><span class="sl-local-save-status">${statusText}</span>${buttons}</div>
+    </div>`;
+  }
+
   function buildSaveSelectHTML() {
     const meta     = _saveMeta || makeSaveMeta();
     const chars    = meta.characters || [];
@@ -951,6 +999,7 @@
 
     return `<div class="ob-card sl-card">
       <div class="ob-title">🌿 Hobunji Hollow</div>
+      ${_localSaveFolderSectionHtml()}
       <div class="sl-section">
         <div class="sl-section-label">Choose Your Farmer</div>
         <div class="sl-char-grid">${charCardsHtml}${newCharHtml}</div>
@@ -1090,6 +1139,22 @@
 
     const playBtn = _el.querySelector('#slPlay');
     if (playBtn) playBtn.addEventListener('click', _playSaveSelect);
+
+    // Local Save Folder controls — see _localSaveFolderSectionHtml above and
+    // docs/js/local-save-folder.js for the actual folder/IndexedDB/File
+    // System Access API work.
+    const lsf = window.LocalSaveFolder;
+    if (lsf) {
+      _el.querySelector('#slLocalSaveChoose')?.addEventListener('click', () => lsf.chooseFolder());
+      _el.querySelector('#slLocalSaveChange')?.addEventListener('click', () => lsf.changeFolder());
+      _el.querySelector('#slLocalSaveReconnect')?.addEventListener('click', () => lsf.reconnect());
+      _el.querySelector('#slLocalSaveLoad')?.addEventListener('click', async () => {
+        if (!confirm('Load characters and worlds from your local folder? This overwrites your current browser save and reloads the page.')) return;
+        const result = await lsf.loadFromFolder();
+        alert(result.message);
+        if (result.ok) location.reload();
+      });
+    }
   }
 
   function rerenderSaveSelect() {
@@ -1578,6 +1643,13 @@
     // for this session, so the save-select/character-creation overlay would
     // just be unnecessary UI sitting on top of the preview — skip it.
     if (window.__hobunjiCutscenePreview) return;
+
+    // Re-renders the save-select screen's Local Save Folder row whenever its
+    // status changes (e.g. a folder picker resolving, or the periodic
+    // auto-sync ticking) — subscribed once here rather than inside
+    // attachSaveSelectListeners (which reruns on every rerenderSaveSelect
+    // and would otherwise stack a fresh subscription each time).
+    window.LocalSaveFolder?.onChange(() => { if (_flowStep === 'save-select') rerenderSaveSelect(); });
     if (!options?.resetProfile) {
       // New multi-save system: show save select if any characters exist
       const meta = loadSaveMeta();
