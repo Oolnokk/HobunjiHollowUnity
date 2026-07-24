@@ -521,6 +521,12 @@
       tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true },
       clothing: { hat: null, hood: null, torso: null, overwear: null },
       charms: [], whistles: [],
+      // Redye system: every dye the character has ever unlocked (see
+      // docs/tools' dye catalog under game.dyes.catalog). Starts with the
+      // same free "Dusty" hue + neutral set offered at character creation —
+      // see starterClothDyes() — so freely redyeing clothing in-game never
+      // has fewer options than the picker already shown here.
+      dyeCollection: starterClothDyes().map(d => d.id),
       // Mirrors game.js's own makeDefaultGear() — see combat-progression.js
       // for how toolMastery drives per-tool ability upgrades, and
       // toolPlating/toolReinforcement for Sloomi/Kzubug's cosmetic plating
@@ -540,8 +546,9 @@
       cosmeticId: catalogItem.id,
       slot:       catalogItem.category,
       label:      dyeLabel + ' ' + catalogItem.label,
-      colorA:     { h: colorA.h, s: colorA.s, v: colorA.v, label: colorA.label },
-      colorB:     usesB && colorB ? { h: colorB.h, s: colorB.s, v: colorB.v, label: colorB.label } : null,
+      baseLabel:  catalogItem.label,
+      colorA:     { h: colorA.h, s: colorA.s, v: colorA.v, hex: colorA.hex, dyeId: colorA.dyeId, label: colorA.label },
+      colorB:     usesB && colorB ? { h: colorB.h, s: colorB.s, v: colorB.v, hex: colorB.hex, dyeId: colorB.dyeId, label: colorB.label } : null,
     };
   }
 
@@ -814,17 +821,18 @@
     // picking a dye here never touches profile.bodyColors.A/B/C.
     const clothDyeA = selectedClothDye('A');
     const clothDyeB = selectedClothDye('B');
+    const clothDyeColor = (dye) => ({ ...(dye.color || {}), ...(dye.hex ? { hex: dye.hex, tintMode: 'hexShadeFill' } : {}) });
     if (clothDyeA) {
       profile.bodyColors = {
         ...(profile.bodyColors || {}),
-        HAT: { ...clothDyeA.color }, HOOD: { ...clothDyeA.color },
-        TORSO: { ...clothDyeA.color }, CLOTH: { ...clothDyeA.color },
+        HAT: clothDyeColor(clothDyeA), HOOD: clothDyeColor(clothDyeA),
+        TORSO: clothDyeColor(clothDyeA), CLOTH: clothDyeColor(clothDyeA),
       };
     }
     if (clothDyeB) {
       profile.bodyColors = {
         ...(profile.bodyColors || {}),
-        HOOD_B: { ...clothDyeB.color }, CLOTH_B: { ...clothDyeB.color },
+        HOOD_B: clothDyeColor(clothDyeB), CLOTH_B: clothDyeColor(clothDyeB),
       };
     }
 
@@ -1526,8 +1534,8 @@
           // out tinted to match skin/fur color instead of a real choice.
           const dyeA   = selectedClothDye('A');
           const dyeB   = selectedClothDye('B');
-          const colorA = dyeA ? { ...dyeA.color, label: dyeA.label } : { h: 0, s: -0.70, v: -0.30, label: 'Default' };
-          const colorB = dyeB ? { ...dyeB.color, label: dyeB.label } : colorA;
+          const colorA = dyeA ? { ...dyeA.color, hex: dyeA.hex, dyeId: dyeA.id, label: dyeA.label } : { h: 0, s: -0.70, v: -0.30, label: 'Default' };
+          const colorB = dyeB ? { ...dyeB.color, hex: dyeB.hex, dyeId: dyeB.id, label: dyeB.label } : colorA;
           for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
             const catItem = catalog.find(i => i.category === slot && playerData.equippedCosmetics.includes(i.id));
             if (catItem) gear.clothing[slot] = makeClothingItem(catItem, colorA, colorB);
