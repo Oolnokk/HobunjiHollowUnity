@@ -39,11 +39,26 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
   color:var(--muted);font-size:11px}
 #workspace{flex:1;min-height:0;display:flex}
 
-#npcSidebar{width:210px;min-width:170px;display:flex;flex-direction:column;flex-shrink:0;
+#npcSidebar{width:240px;min-width:190px;display:flex;flex-direction:column;flex-shrink:0;
   border-right:1px solid var(--line);
   background:linear-gradient(180deg,var(--panel),var(--panel2))}
 .paneHead{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;
   font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px}
+#condFilters{padding:8px 9px 6px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;
+  display:flex;flex-direction:column;gap:7px;max-height:46vh;overflow-y:auto}
+.condGroup{display:flex;flex-direction:column;gap:3px}
+.condGroupLabel{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.chipRow{display:flex;flex-wrap:wrap;gap:3px}
+.chip{font-size:10px;padding:3px 7px;border-radius:999px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);color:var(--muted);
+  user-select:none}
+.chip:hover{background:rgba(255,255,255,.08)}
+.chip.on{border-color:var(--acc);background:rgba(106,167,255,.22);color:var(--text)}
+.condRelHead{display:flex;align-items:center;gap:5px;cursor:pointer}
+.condRelHead input{width:auto;flex-shrink:0}
+.condRelRow{display:flex;align-items:center;gap:6px}
+.condRelRow input[type=range]{flex:1;width:auto}
+#relVal{font-size:10px;color:var(--muted);min-width:26px;text-align:right}
 #npcSearch{padding:5px 7px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
 #npcSearch input{font-size:12px;padding:5px 8px}
 #npcListEl{flex:1;overflow-y:auto;padding:5px}
@@ -51,21 +66,41 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
   border:1px solid transparent}
 .npcItem:hover{background:rgba(255,255,255,.05)}
 .npcItem.sel{border-color:var(--acc);background:rgba(106,167,255,.1)}
-.npcName{font-size:12px;font-weight:750;line-height:1.2}
-.npcMeta{font-size:10px;color:var(--muted);margin-top:2px}
-.npcBadge{float:right;font-size:9px;background:rgba(106,167,255,.2);
-  border:1px solid rgba(106,167,255,.3);border-radius:999px;padding:1px 5px;
-  color:var(--acc);margin-top:1px}
+.npcRow{display:flex;align-items:center;gap:7px}
+.npcAvatar{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;
+  align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#07101a;
+  transition:filter .15s,opacity .15s}
+.npcNameWrap{flex:1;min-width:0}
+.npcName{font-size:12px;font-weight:750;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npcMeta{font-size:10px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npcBadge{font-size:9px;background:rgba(106,167,255,.2);
+  border:1px solid rgba(106,167,255,.3);border-radius:999px;padding:2px 6px;
+  color:var(--acc);flex-shrink:0}
+.npcItem.covPartial .npcAvatar{filter:grayscale(.5);opacity:.6}
+.npcItem.covPartial .npcName{color:var(--muted)}
+.npcItem.covPartial .npcBadge{background:rgba(251,191,36,.15);border-color:rgba(251,191,36,.3);color:var(--warn)}
+.npcItem.covNone .npcAvatar{filter:grayscale(1);opacity:.28}
+.npcItem.covNone .npcName{color:var(--muted);opacity:.55}
+.npcItem.covNone .npcMeta{opacity:.55}
+.npcItem.covNone .npcBadge{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:var(--muted)}
 
 #centerPanel{flex:1;min-width:0;display:flex;flex-direction:column}
-#treeBar{display:flex;align-items:center;gap:6px;padding:5px 8px;flex-shrink:0;
+#treeBar{display:flex;align-items:flex-start;gap:6px;padding:6px 8px;flex-shrink:0;
   border-bottom:1px solid var(--line);background:rgba(255,255,255,.015);min-height:44px}
+#treeTabsCol{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
 .treeTabs{display:flex;gap:5px;flex:1;overflow-x:auto;min-width:0}
 .treeTab{padding:4px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;
   border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.05);
   white-space:nowrap;flex-shrink:0}
 .treeTab.sel{border-color:var(--warn);background:rgba(251,191,36,.12);color:var(--warn)}
 .treeTab:hover:not(.sel){background:rgba(255,255,255,.08)}
+.treeTab.extra{border-style:dashed;opacity:.88}
+.treeTab .tabCond{display:block;font-size:8px;font-weight:600;color:var(--muted);
+  margin-top:1px;text-transform:none;letter-spacing:0}
+#extraTabsWrap{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+#extraTabsWrap.hidden{display:none}
+.extraTabsLabel{font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);flex-shrink:0}
+.extraTabs{display:flex;gap:5px;flex-wrap:wrap;min-width:0}
 
 #canvasOuter{flex:1;min-height:0;position:relative;overflow:hidden;background-color:#07101a}
 #canvas{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
@@ -219,13 +254,47 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
   </div>
   <div id="workspace">
     <div id="npcSidebar">
+      <div class="paneHead">Conditions</div>
+      <div id="condFilters">
+        <div class="condGroup">
+          <div class="condGroupLabel">Weekday</div>
+          <div class="chipRow" id="chipWeekday"></div>
+        </div>
+        <div class="condGroup">
+          <div class="condGroupLabel">Season</div>
+          <div class="chipRow" id="chipSeason"></div>
+        </div>
+        <div class="condGroup">
+          <div class="condGroupLabel">Weather</div>
+          <div class="chipRow" id="chipWeather"></div>
+        </div>
+        <div class="condGroup">
+          <div class="condGroupLabel">Time of day</div>
+          <div class="chipRow" id="chipTime"></div>
+        </div>
+        <div class="condGroup">
+          <label class="condRelHead"><input type="checkbox" id="relEnable">
+            <span class="condGroupLabel" style="margin:0">Relationship ≥</span></label>
+          <div class="condRelRow">
+            <input type="range" id="relSlider" min="-5" max="10" step="1" value="0" disabled>
+            <span id="relVal">0</span>
+          </div>
+        </div>
+        <button class="secondary" id="clearFiltersBtn" style="width:100%;font-size:10px">Clear filters</button>
+      </div>
       <div class="paneHead">NPCs</div>
       <div id="npcSearch"><input id="npcQ" type="search" placeholder="Search…"></div>
       <div id="npcListEl"></div>
     </div>
     <div id="centerPanel">
       <div id="treeBar">
-        <div class="treeTabs" id="treeTabs"></div>
+        <div id="treeTabsCol">
+          <div class="treeTabs" id="treeTabs"></div>
+          <div id="extraTabsWrap" class="hidden">
+            <span class="extraTabsLabel">Also available:</span>
+            <div class="extraTabs" id="extraTreeTabs"></div>
+          </div>
+        </div>
         <button id="addTreeBtn" disabled style="flex-shrink:0;font-size:11px">+ Tree</button>
       </div>
       <div id="canvasOuter">
@@ -288,6 +357,11 @@ let connState = null;
 let panState  = null;
 let _seq      = 1;
 
+let filters = {
+  weekdays: [], seasons: [], weather: [], timesOfDay: [],
+  relationship: { enabled: false, min: 0 }
+};
+
 const GRID = 20;
 const snap = v => Math.round(v / GRID) * GRID;
 
@@ -304,6 +378,16 @@ const setDirty = ()  => { $('exportBtn').disabled = false; };
 const EXPRESSIONS   = ['neutral','smile','frown','laugh','yap'];
 const REVEAL_SPEEDS = ['normal','slow','fast','instant'];
 
+const WEEKDAYS     = ['Anan','Hronu','Kruru','Muunu','Naru','Tothu','Uung'];
+const SEASONS      = ['Stormtide','Deadgrass','Longpour','Coldmuck'];
+const WEATHERS     = ['clear','rain','storm'];
+const TIMES_OF_DAY = ['dawn','day','dusk','night'];
+const CONDITION_AXES = ['weekdays','seasons','weather','timesOfDay'];
+const emptyConditions = () => ({
+  weekdays: [], seasons: [], weather: [], timesOfDay: [],
+  relationship: { min: null, max: null }
+});
+
 /* ── Database I/O ─────────────────────────────────────────── */
 function loadDatabase(json) {
   try {
@@ -317,6 +401,17 @@ function loadDatabase(json) {
           nd.pos ??= { x: 60 + i * 260, y: 80 };
           nd.pos.x = snap(nd.pos.x); nd.pos.y = snap(nd.pos.y);
         });
+        const c = tree.conditions || {};
+        tree.conditions = {
+          weekdays:   Array.isArray(c.weekdays)   ? c.weekdays   : [],
+          seasons:    Array.isArray(c.seasons)    ? c.seasons    : [],
+          weather:    Array.isArray(c.weather)    ? c.weather    : [],
+          timesOfDay: Array.isArray(c.timesOfDay) ? c.timesOfDay : [],
+          relationship: {
+            min: c.relationship?.min ?? null,
+            max: c.relationship?.max ?? null
+          }
+        };
       }
     }
     db  = parsed;
@@ -343,7 +438,11 @@ function exportDatabase() {
 function selectNpc(id) {
   sel.npcId = id; sel.treeId = null; sel.nodeId = null;
   const npc = getNpc();
-  if (npc?.dialogueTrees?.length) sel.treeId = npc.dialogueTrees[0].id;
+  if (npc?.dialogueTrees?.length) {
+    const classified = npc.dialogueTrees.map(t => ({ id: t.id, level: classifyTree(t).level }));
+    const best = classified.find(c => c.level === 'full') || classified.find(c => c.level === 'partial');
+    sel.treeId = best ? best.id : null;
+  }
   cam = { panX: 60, panY: 60, zoom: 1 };
   $('addTreeBtn').disabled = false;
   renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar();
@@ -367,8 +466,14 @@ function selectNode(id) {
 function addTree() {
   const npc = getNpc(); if (!npc) return;
   const id  = genId('tree_');
+  const conditions = emptyConditions();
+  conditions.weekdays   = [...filters.weekdays];
+  conditions.seasons    = [...filters.seasons];
+  conditions.weather    = [...filters.weather];
+  conditions.timesOfDay = [...filters.timesOfDay];
+  if (filters.relationship.enabled) conditions.relationship.min = filters.relationship.min;
   npc.dialogueTrees.push({ id, label: `Tree ${npc.dialogueTrees.length + 1}`,
-    trigger: 'interact', priority: 0, entryNode: null, nodes: [] });
+    trigger: 'interact', priority: 0, entryNode: null, nodes: [], conditions });
   sel.treeId = id; sel.nodeId = null;
   cam = { panX: 60, panY: 60, zoom: 1 };
   setDirty(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar();
@@ -431,6 +536,113 @@ function connectNodes(fromId, ci, toId) {
   if (sel.nodeId === fromId) renderInspector();
 }
 
+/* ── Condition filtering ─────────────────────────────────── */
+function axisSelected(axis)       { return filters[axis].length > 0; }
+function relationshipSelected()   { return filters.relationship.enabled; }
+
+function selectedAxesList() {
+  const axes = CONDITION_AXES.filter(axisSelected);
+  if (relationshipSelected()) axes.push('relationship');
+  return axes;
+}
+
+function treeConditionedAxes(tree) {
+  const c = tree.conditions || {};
+  const axes = CONDITION_AXES.filter(a => (c[a]||[]).length > 0);
+  const rel = c.relationship;
+  if (rel && (rel.min != null || rel.max != null)) axes.push('relationship');
+  return axes;
+}
+
+function axisCompatible(tree, axis) {
+  const c = tree.conditions || {};
+  if (axis === 'relationship') {
+    const rel = c.relationship;
+    if (!rel || (rel.min == null && rel.max == null)) return true;
+    const v = filters.relationship.min;
+    if (rel.min != null && v < rel.min) return false;
+    if (rel.max != null && v > rel.max) return false;
+    return true;
+  }
+  const vals = c[axis] || [];
+  if (!vals.length) return true;
+  return vals.some(v => filters[axis].includes(v));
+}
+
+// Classifies a tree against the active filter:
+//  'full'    — matches every selected condition axis (or has no conditions at all)
+//  'partial' — compatible with the filter, but only conditioned on some of the selected axes
+//  'hidden'  — conflicts with at least one selected axis
+function classifyTree(tree) {
+  const selected = selectedAxesList();
+  if (!selected.length) return { level: 'full', conditionedAxes: treeConditionedAxes(tree) };
+  for (const axis of selected) {
+    if (!axisCompatible(tree, axis)) return { level: 'hidden', conditionedAxes: [] };
+  }
+  const conditioned = treeConditionedAxes(tree);
+  const isFull = conditioned.length === 0 || selected.every(a => conditioned.includes(a));
+  return { level: isFull ? 'full' : 'partial', conditionedAxes: conditioned };
+}
+
+function npcCoverage(npc) {
+  let full = 0, partial = 0;
+  for (const tree of npc.dialogueTrees || []) {
+    const { level } = classifyTree(tree);
+    if (level === 'full') full++;
+    else if (level === 'partial') partial++;
+  }
+  return { full, partial };
+}
+
+function conditionLabel(cond, axes) {
+  const parts = [];
+  if (axes.includes('weekdays')   && cond.weekdays?.length)   parts.push(cond.weekdays.join('/'));
+  if (axes.includes('seasons')    && cond.seasons?.length)    parts.push(cond.seasons.join('/'));
+  if (axes.includes('weather')    && cond.weather?.length)    parts.push(cond.weather.join('/'));
+  if (axes.includes('timesOfDay') && cond.timesOfDay?.length) parts.push(cond.timesOfDay.join('/'));
+  if (axes.includes('relationship') && cond.relationship) {
+    const { min, max } = cond.relationship;
+    if (min != null && max != null)      parts.push(`${min}–${max}♥`);
+    else if (min != null)                parts.push(`${min}+♥`);
+    else if (max != null)                parts.push(`≤${max}♥`);
+  }
+  return parts.join(' · ');
+}
+
+function renderCondFilters() {
+  const chipRow = (id, values, selectedArr, axis) => {
+    $(id).innerHTML = values.map(v =>
+      `<span class="chip${selectedArr.includes(v)?' on':''}" data-v="${esc(v)}">${esc(v)}</span>`).join('');
+    $(id).querySelectorAll('.chip').forEach(el => el.addEventListener('click', () => toggleFilter(axis, el.dataset.v)));
+  };
+  chipRow('chipWeekday', WEEKDAYS, filters.weekdays, 'weekdays');
+  chipRow('chipSeason',  SEASONS,  filters.seasons,  'seasons');
+  chipRow('chipWeather', WEATHERS, filters.weather,  'weather');
+  chipRow('chipTime',    TIMES_OF_DAY, filters.timesOfDay, 'timesOfDay');
+  $('relEnable').checked  = filters.relationship.enabled;
+  $('relSlider').disabled = !filters.relationship.enabled;
+  $('relSlider').value    = filters.relationship.min;
+  $('relVal').textContent = filters.relationship.min;
+}
+
+function toggleFilter(axis, v) {
+  const arr = filters[axis];
+  const i = arr.indexOf(v);
+  if (i === -1) arr.push(v); else arr.splice(i, 1);
+  onFiltersChanged();
+}
+
+function onFiltersChanged() {
+  renderCondFilters(); renderNpcList();
+  const npc = getNpc();
+  const curTree = npc?.dialogueTrees?.find(t => t.id === sel.treeId);
+  if (npc && (!curTree || classifyTree(curTree).level === 'hidden')) {
+    selectNpc(npc.id); // current tree no longer valid — reselect best match (resets view)
+    return;
+  }
+  renderTreeBar(); renderCanvas(); renderInspector();
+}
+
 /* ── NPC list ────────────────────────────────────────────── */
 function renderNpcList() {
   const el = $('npcListEl');
@@ -440,20 +652,57 @@ function renderNpcList() {
     (n.name||'').toLowerCase().includes(q) ||
     (n.role||'').toLowerCase().includes(q) ||
     (n.species||'').toLowerCase().includes(q));
-  el.innerHTML = list.map(n => `
-    <div class="npcItem${n.id === sel.npcId ? ' sel' : ''}" data-id="${esc(n.id)}">
-      <div class="npcName"><span class="npcBadge">${n.dialogueTrees?.length || 0}</span>${esc(n.name || n.id)}</div>
-      <div class="npcMeta">${esc(n.role || '—')} · ${esc(n.species || '—')}</div>
-    </div>`).join('');
+  const withCov = list.map(n => ({ n, cov: npcCoverage(n) }));
+  withCov.sort((a, b) =>
+    b.cov.full - a.cov.full ||
+    b.cov.partial - a.cov.partial ||
+    (a.n.name || a.n.id).localeCompare(b.n.name || b.n.id));
+  el.innerHTML = withCov.map(({ n, cov }) => {
+    const covClass = cov.full > 0 ? 'covFull' : (cov.partial > 0 ? 'covPartial' : 'covNone');
+    const chat  = n.appearance?.chatColor;
+    const swatch = chat ? `hsl(${chat.h},${chat.s}%,${chat.l}%)` : 'rgba(255,255,255,.15)';
+    const initial = esc((n.name || n.id || '?').trim().charAt(0).toUpperCase());
+    const badge = cov.partial ? `${cov.full}+${cov.partial}` : `${cov.full}`;
+    return `
+    <div class="npcItem ${covClass}${n.id === sel.npcId ? ' sel' : ''}" data-id="${esc(n.id)}">
+      <div class="npcRow">
+        <span class="npcAvatar" style="background:${swatch}">${initial}</span>
+        <div class="npcNameWrap">
+          <div class="npcName">${esc(n.name || n.id)}</div>
+          <div class="npcMeta">${esc(n.role || '—')} · ${esc(n.species || '—')}</div>
+        </div>
+        <span class="npcBadge" title="${cov.full} matching, ${cov.partial} related to selected conditions">${badge}</span>
+      </div>
+    </div>`;
+  }).join('');
   el.querySelectorAll('.npcItem').forEach(el => el.addEventListener('click', () => selectNpc(el.dataset.id)));
 }
 
 /* ── Tree bar ────────────────────────────────────────────── */
 function renderTreeBar() {
   const npc = getNpc();
-  $('treeTabs').innerHTML = !npc ? '' : npc.dialogueTrees.map(t => `
-    <div class="treeTab${t.id === sel.treeId ? ' sel' : ''}" data-id="${esc(t.id)}">${esc(t.label || t.id)}</div>`).join('');
-  $('treeTabs').querySelectorAll('.treeTab').forEach(el => el.addEventListener('click', () => selectTree(el.dataset.id)));
+  const mainEl = $('treeTabs'), extraEl = $('extraTreeTabs'), extraWrap = $('extraTabsWrap');
+  if (!npc) { mainEl.innerHTML = ''; extraEl.innerHTML = ''; extraWrap.classList.add('hidden'); return; }
+
+  const main = [], extra = [];
+  for (const t of npc.dialogueTrees) {
+    const { level, conditionedAxes } = classifyTree(t);
+    if (level === 'hidden') continue;
+    (level === 'full' ? main : extra).push({ t, conditionedAxes });
+  }
+
+  mainEl.innerHTML = main.length ? main.map(({ t }) => `
+    <div class="treeTab${t.id === sel.treeId ? ' sel' : ''}" data-id="${esc(t.id)}">${esc(t.label || t.id)}</div>`).join('')
+    : (npc.dialogueTrees.length ? '<span class="iMuted" style="padding:4px 2px">No dialogue matches the selected conditions.</span>' : '');
+
+  extraEl.innerHTML = extra.map(({ t, conditionedAxes }) => {
+    const badge = conditionLabel(t.conditions || {}, conditionedAxes);
+    return `<div class="treeTab extra${t.id === sel.treeId ? ' sel' : ''}" data-id="${esc(t.id)}">${esc(t.label || t.id)}${badge ? `<span class="tabCond">${esc(badge)}</span>` : ''}</div>`;
+  }).join('');
+  extraWrap.classList.toggle('hidden', extra.length === 0);
+
+  [mainEl, extraEl].forEach(container =>
+    container.querySelectorAll('.treeTab').forEach(el => el.addEventListener('click', () => selectTree(el.dataset.id))));
 }
 
 function updateBar() {
@@ -494,7 +743,10 @@ function renderCanvas() {
     nlayer.innerHTML = ''; $('svgLayer').innerHTML = '';
     empty.classList.remove('hidden');
     emsg.textContent = !getNpc()?.dialogueTrees?.length
-      ? 'Click "+ Tree" to create a dialogue tree' : 'Select a tree above to edit it';
+      ? 'Click "+ Tree" to create a dialogue tree'
+      : (selectedAxesList().length
+          ? 'No dialogue yet for the selected conditions — click "+ Tree" to fill the gap.'
+          : 'Select a tree above to edit it');
     return;
   }
   empty.classList.add('hidden');
@@ -675,6 +927,16 @@ function renderSvg() {
 }
 
 /* ── Inspector helpers ───────────────────────────────────── */
+const CONDITION_AXIS_LABEL = { weekdays: 'Weekday', seasons: 'Season', weather: 'Weather', timesOfDay: 'Time of day' };
+function condChipsBlock(key, values, selectedArr) {
+  return `<div style="margin-top:6px">
+    <div class="ceRowLabel" style="margin-bottom:3px">${CONDITION_AXIS_LABEL[key]}</div>
+    <div class="chipRow" data-key="${key}">
+      ${values.map(v => `<span class="chip${selectedArr.includes(v)?' on':''}" data-v="${esc(v)}">${esc(v)}</span>`).join('')}
+    </div>
+  </div>`;
+}
+
 function buildTagsHtml(nd, tree) {
   const tags     = nd.tags || [];
   const seqNodes = (tree.nodes||[]).filter(n => n.type === 'sequence' && n.id !== nd.id);
@@ -751,12 +1013,37 @@ function renderInspector() {
           ${nodes.map(n => `<option value="${esc(n.id)}"${tree.entryNode===n.id?' selected':''}>${esc(n.id)} (${n.type})</option>`).join('')}
         </select></div>
       <hr class="idiv">
+      <div class="iGroup"><label>Conditions</label>
+        <div class="iMuted" style="margin-bottom:5px">Leave a row empty to allow it under any value. This tree only counts as a full match when every set row is satisfied.</div>
+        ${condChipsBlock('weekdays', WEEKDAYS, tree.conditions.weekdays)}
+        ${condChipsBlock('seasons', SEASONS, tree.conditions.seasons)}
+        ${condChipsBlock('weather', WEATHERS, tree.conditions.weather)}
+        ${condChipsBlock('timesOfDay', TIMES_OF_DAY, tree.conditions.timesOfDay)}
+        <div class="ceRow" style="margin-top:6px">
+          <span class="ceRowLabel" style="min-width:64px">relationship</span>
+          <input id="iRelMin" type="number" placeholder="min" value="${tree.conditions.relationship.min ?? ''}" style="width:56px;flex-shrink:0;font-size:11px">
+          <span style="color:var(--muted);font-size:10px">to</span>
+          <input id="iRelMax" type="number" placeholder="max" value="${tree.conditions.relationship.max ?? ''}" style="width:56px;flex-shrink:0;font-size:11px">
+        </div>
+      </div>
+      <hr class="idiv">
       <div class="iGroup">
         <button class="danger" id="iDelTree" style="width:100%;font-size:12px">Delete Tree</button></div>`;
     $('iLabel').oninput    = e => { tree.label    = e.target.value; setDirty(); renderTreeBar(); };
     $('iTrigger').onchange = e => { tree.trigger  = e.target.value; setDirty(); };
     $('iPrio').oninput     = e => { tree.priority = parseInt(e.target.value)||0; setDirty(); };
     $('iEntry').onchange   = e => { tree.entryNode = e.target.value||null; setDirty(); renderCanvas(); };
+    body.querySelectorAll('.chipRow[data-key]').forEach(row => {
+      const key = row.dataset.key;
+      row.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => {
+        const arr = tree.conditions[key];
+        const i = arr.indexOf(chip.dataset.v);
+        if (i === -1) arr.push(chip.dataset.v); else arr.splice(i, 1);
+        setDirty(); renderInspector(); renderNpcList(); renderTreeBar();
+      }));
+    });
+    $('iRelMin').oninput = e => { tree.conditions.relationship.min = e.target.value===''?null:parseInt(e.target.value); setDirty(); renderNpcList(); renderTreeBar(); };
+    $('iRelMax').oninput = e => { tree.conditions.relationship.max = e.target.value===''?null:parseInt(e.target.value); setDirty(); renderNpcList(); renderTreeBar(); };
     $('iDelTree').onclick  = () => deleteTree(sel.treeId);
     return;
   }
@@ -1115,7 +1402,7 @@ function autoOrganize() {
   setDirty(); renderCanvas();
 }
 
-function renderAll() { renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar(); }
+function renderAll() { renderCondFilters(); renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar(); }
 
 document.addEventListener('DOMContentLoaded', () => {
   $('loadBtn').onclick   = () => $('importModal').classList.remove('hidden');
@@ -1133,6 +1420,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (j && loadDatabase(j)) { $('importModal').classList.add('hidden'); $('importPaste').value = ''; }
   };
   $('npcQ').oninput      = renderNpcList;
+  $('relEnable').onchange = e => { filters.relationship.enabled = e.target.checked; onFiltersChanged(); };
+  $('relSlider').oninput  = e => { filters.relationship.min = parseInt(e.target.value); $('relVal').textContent = filters.relationship.min; };
+  $('relSlider').onchange = onFiltersChanged;
+  $('clearFiltersBtn').onclick = () => {
+    filters = { weekdays: [], seasons: [], weather: [], timesOfDay: [], relationship: { enabled: false, min: 0 } };
+    onFiltersChanged();
+  };
   $('addTreeBtn').onclick = addTree;
   $('btnText').onclick   = () => addNode('text');
   $('btnChoice').onclick = () => addNode('choice');
