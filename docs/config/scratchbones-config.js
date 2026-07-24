@@ -174,9 +174,18 @@ window.SCRATCHBONES_CONFIG = {
     },
     "combat": {
       "autoTargetRangeTiles": 5.5,
+      // 'cut' is the base every weapon-tool ability (combo, flurry, charged
+      // breaker, counter shield) scales its own damageMul off of (see
+      // combat-combo.js) — tuned down from 14/24 so a starting Native Copper
+      // tool's 3-hit combo, even with every mastery level chosen, doesn't
+      // one-combo a Gar-wolf (38 HP): a fresh copper combo lands ~21 total,
+      // a fully-mastered copper combo ~25, leaving room for metal tier
+      // (0.90-1.20x) and mastery (+15-25%) to matter without early trash
+      // mobs evaporating in one combo — and leaving headroom under the
+      // player's ceiling for tougher threats to come later underground.
       "weaponAbilities": {
-        "cut": { "damage": 14, "halfConeDeg": 18, "rangeTiles": 2.0, "staminaCost": 12, "knockbackPxS": 720, "trailHalfWidthTiles": 0.38, "trailFarTiles": 2.0, "trailMaxAgeSeconds": 0.24 },
-        "slash": { "damage": 24, "halfConeDeg": 62, "rangeTiles": 2.4, "staminaCost": 20, "knockbackPxS": 1040, "trailHalfWidthTiles": 1.35, "trailFarTiles": 2.4, "trailMaxAgeSeconds": 0.34 }
+        "cut": { "damage": 6, "halfConeDeg": 18, "rangeTiles": 2.0, "staminaCost": 12, "knockbackPxS": 720, "trailHalfWidthTiles": 0.38, "trailFarTiles": 2.0, "trailMaxAgeSeconds": 0.24 },
+        "slash": { "damage": 10, "halfConeDeg": 62, "rangeTiles": 2.4, "staminaCost": 20, "knockbackPxS": 1040, "trailHalfWidthTiles": 1.35, "trailFarTiles": 2.4, "trailMaxAgeSeconds": 0.34 }
       },
       "weaponTrailLimit": 5,
       "resourceSystem": {

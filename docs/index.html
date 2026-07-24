@@ -36,6 +36,10 @@
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260712d"></script>
   <script src="js/wilderness-map-generator.js?v=20260712d"></script>
+  <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
+       only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
+       game.js already use. See docs/js/local-save-folder.js. -->
+  <script src="js/local-save-folder.js?v=20260724a"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260712d">
   <script src="onboarding.js?v=20260712g"></script>
@@ -764,6 +768,21 @@
               <option value="0.5">50%</option>
             </select>
           </label>
+          <div class="settings-section-title" style="margin-top:10px">Local Save Folder</div>
+          <div class="settings-row settings-row--stacked" id="localSaveFolderRow">
+            <div class="settings-label">
+              <div class="settings-name">Local Save Folder</div>
+              <div class="settings-desc">Mirrors your save to a real folder on disk as a backup, alongside browser storage. Only which folder you picked is remembered — not the save data itself.</div>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+              <span id="localSaveFolderStatus" style="font-size:12px; color:var(--text-dim,#99a)"></span>
+              <button type="button" id="localSaveFolderChooseBtn" class="settings-small-btn">Choose Folder</button>
+              <button type="button" id="localSaveFolderChangeBtn" class="settings-small-btn" style="display:none">Change Folder</button>
+              <button type="button" id="localSaveFolderReconnectBtn" class="settings-small-btn" style="display:none">Reconnect</button>
+              <button type="button" id="localSaveFolderSaveNowBtn" class="settings-small-btn" style="display:none">Save Now</button>
+              <button type="button" id="localSaveFolderLoadBtn" class="settings-small-btn" style="display:none">Load From Folder</button>
+            </div>
+          </div>
           <div class="settings-section-title" style="margin-top:10px">Dev Tools</div>
           <div class="settings-row">
             <div class="settings-label">

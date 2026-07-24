@@ -2407,7 +2407,13 @@
 
       function makeDefaultGear() {
         return {
-          tools:    { bronzehoe: true, hatchet: true, fishingmace: true, fishingspear: true, pickshovel: true },
+          // Weakest-possible verdigris metal (see VERDIGRIS_METAL_KEYS/
+          // METAL_DEFS.nativeCopper, tier 1 of 7) rather than the old
+          // unscaled legacy keys (bronzehoe/hatchet/etc., which fought at a
+          // flat 1.0 metalDmgMultiplier — mid-hierarchy strength with no
+          // room to grow into) — a fresh character now genuinely starts at
+          // the bottom of the smithing ladder (see toolMetalMultiplier).
+          tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true },
           clothing: { hat: null, hood: null, torso: null, overwear: null },
           clothingItems: [],
           charms: [],
@@ -5160,11 +5166,45 @@
         if (player.health <= 0) respawnPlayer();
       }
 
+      // Closest Root Totem (see wilderness-map-generator.js's
+      // placeRootTotems) to a given world position, within one zone only —
+      // totems don't offer a way to reach a different zone's terrain from
+      // where the player actually died, so a death is always recovered
+      // within its own zone or (if that zone has none, or the player wasn't
+      // in a wilderness zone at all) falls back to the farmhouse. Returns
+      // the totem's pathAnchor tile ({x,y}) or null.
+      function nearestRootTotemFor(zoneId, worldX, worldY) {
+        const totems = _zoneLayouts.get(zoneId)?.rootTotems;
+        if (!totems || !totems.length) return null;
+        const px = worldX / TILE, py = worldY / TILE;
+        let best = null, bestDist = Infinity;
+        for (const t of totems) {
+          const anchor = t.pathAnchor || t;
+          const d = Math.hypot(anchor.x - px, anchor.y - py);
+          if (d < bestDist) { bestDist = d; best = anchor; }
+        }
+        return best;
+      }
+
       function respawnPlayer() {
+        const totem = _isZoneArea(currentArea) ? nearestRootTotemFor(currentArea, player.x, player.y) : null;
+        if (totem) {
+          player.x = (totem.x + 0.5) * TILE;
+          player.y = (totem.y + 0.5) * TILE;
+          player.vx = 0; player.vy = 0;
+          player.health = Math.round(player.maxHealth * 0.5);
+          player.invulnUntil = performance.now() + 1000;
+          _snapCameraTarget();
+          showToast('You awaken at the nearest Root Totem...', false);
+          return;
+        }
+        if (currentArea !== 'farm') _returnToFarmMeshes();
         player.x = COLS * TILE * 0.5;
         player.y = ROWS * TILE * 0.72;
+        player.vx = 0; player.vy = 0;
         player.health = Math.round(player.maxHealth * 0.5);
         player.invulnUntil = performance.now() + 1000;
+        _snapCameraTarget();
         showToast('You black out and stumble back to the farmhouse...', false);
       }
 
@@ -6245,6 +6285,41 @@
         } catch {}
       }
 
+      // ── World calendar (day/time-of-day/weather) — world-scoped like the
+      // Tothal year above, not character-scoped, so every character sharing
+      // a world sees the same date/time. `calendar` (declared near the top
+      // of this closure) previously had no persistence at all: it's a fresh
+      // in-memory object every page load, hardcoded back to Day 1, ~10:30 AM
+      // — so the date/time (and weather) silently reset every session no
+      // matter how long the world had actually been played. Loaded once in
+      // spawnPlayerAvatar (before checkTothalShift, since currentTothalYear()
+      // reads calendar.day) and saved on every day rollover (advanceDay/
+      // sleepInBed) plus on tab close, mirroring _saveTothalYear's pattern.
+      function _loadWorldCalendar() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return null;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          return (meta?.worlds || []).find(w => w.id === worldId)?.calendar ?? null;
+        } catch { return null; }
+      }
+
+      function _saveWorldCalendar() {
+        const worldId = _tothalWorldId();
+        if (!worldId) return;
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          const world = (meta?.worlds || []).find(w => w.id === worldId);
+          if (!world) return;
+          world.calendar = {
+            day: calendar.day, time01: calendar.time01, weather: calendar.weather,
+            isRaining: calendar.isRaining, rainStrength: calendar.rainStrength,
+            nextRainWindows: calendar.nextRainWindows, lastRainDay: calendar.lastRainDay,
+          };
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        } catch {}
+      }
+
       // ── Livestock (belongs to the world itself, not any character) ─────
       // [{ id, kind, col, row, releasedAt }] — released animals stay on the
       // farm for whoever plays this world, unlike gear/inventory which is
@@ -7045,6 +7120,7 @@
               ],
               toTownExit, mesas: merged.mesas, buildings: [...(merged.buildings || []), ...tentBuilding], decor: tentDecor, furniture: [],
               dens: workspace.animalDens || [],
+              rootTotems: workspace.rootTotems || [],
               foliagePatches: workspace.foliagePatches || [],
               ambushStations: workspace.ambushStations || [],
               localeInstances,
@@ -7402,7 +7478,7 @@
         dumpZone(zoneId) {
           const layout = _zoneLayouts.get(zoneId);
           if (!layout) return null;
-          return { dens: layout.dens || [], foliagePatches: layout.foliagePatches || [], ambushStations: layout.ambushStations || [] };
+          return { dens: layout.dens || [], rootTotems: layout.rootTotems || [], foliagePatches: layout.foliagePatches || [], ambushStations: layout.ambushStations || [] };
         },
         getCurrentArea: () => currentArea,
         isNightTime,
@@ -8989,6 +9065,18 @@
           arr.push({ geo, x, y, z });
         };
 
+        // Animal den footprints get one continuous rock mound mesh of their
+        // own (see buildAnimalDenMeshes) — without this exclusion, the
+        // ordinary per-tile ROCK treatment just below would ALSO render its
+        // own small independent rock lump on every one of those same tiles,
+        // reading as a separate "pile of rocks" sitting on/around the mound
+        // instead of one clean shape.
+        const denTileKeys = new Set();
+        for (const den of (_zoneLayouts.get(mapId)?.dens || [])) {
+          const dw = den.w || 1, dh = den.h || 1;
+          for (let dy = 0; dy < dh; dy++) for (let dx = 0; dx < dw; dx++) denTileKeys.add((den.x + dx) + ',' + (den.y + dy));
+        }
+
         const pathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS);
         if (pathNet) {
           // Tiny lift above the plateau mesa lid (which shares this exact
@@ -9019,6 +9107,7 @@
 
           if (tile.type === TileType.ROCK) {
             _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
+            if (denTileKeys.has(c + ',' + r)) continue; // plain grass under the den's own mound mesh — see above
             const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
             _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + tierY, cz);
             _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
@@ -9244,6 +9333,7 @@
         buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
         buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
+        buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
         _zoneWaterMeshes.set(mapId, [
           ...buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
           ...buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
@@ -9847,52 +9937,139 @@
         return y00 * (1 - tx) * (1 - tz) + y10 * tx * (1 - tz) + y01 * (1 - tx) * tz + y11 * tx * tz;
       }
 
-      // Animal dens: a deliberately plain placeholder block over a den's
-      // footprint — a flat, unlit dark box with a simple rectangular gap cut
-      // into its south face for the walk-through mouth (see
-      // isAnimalDenCollisionTile's matching walkable cutout). Stands in for
-      // authored art; no rock-mound shading, no carved tunnel depth — just
-      // enough geometry to read as "a den with a door."
+      // A single rounded lump spanning a whole col x row footprint, with a
+      // hole cut into one side — not an organic BFS-grown blob (which read
+      // as an amoeba/horseshoe from directly above once scaled up), but a
+      // dome built from each point's distance to its NEAREST footprint edge
+      // (Chebyshev/L-infinity distance: contours of "distance to nearest
+      // edge = constant" are themselves smaller rectangles nested toward
+      // the center, not circles) — so the lump's own outline, measured at
+      // any height, is always a rectangle matching the footprint exactly,
+      // while it still reads as one rounded mass rising to a single peak at
+      // the center. The footprint's own w:h ratio (a den is wider than it
+      // is deep) reads as a horizontally-skewed/elongated lump for free.
+      // `mouthRect` ({u0,u1,v0}, 0-1 space) carves the hole near one edge.
+      function buildDenRockMoundGeo(colsTiles, rowsTiles, peakHeight, salt, mouthRect) {
+        const CX = Math.max(3, Math.round(colsTiles * ROCK_MOUND_CELLS_PER_TILE));
+        const CZ = Math.max(3, Math.round(rowsTiles * ROCK_MOUND_CELLS_PER_TILE));
+        const VX = CX + 1, VZ = CZ + 1;
+        let _s = (Math.imul(Math.round(colsTiles * 97) + 1, 374761393) ^ Math.imul(Math.round(rowsTiles * 131) + 1, 668265263) ^ Math.imul(salt, 2654435761)) >>> 0;
+        const rng = () => { _s += 0x6D2B79F5; let t = Math.imul(_s ^ _s >>> 15, _s | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+        // Small per-vertex jitter for a natural rock-surface texture — never
+        // large enough to disturb the overall rectangular-contour shape.
+        const roughSeed = rng() * 1000;
+        const roughDisp = (u, v) => {
+          const kx = Math.round(u * CX * 8) | 0, kz = Math.round(v * CZ * 8) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263) ^ Math.imul(roughSeed | 0, 97)) >>> 0;
+          h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.16;
+        };
+
+        const Y = new Float32Array(VX * VZ);
+        for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) {
+          const u = vi / CX, v = vj / CZ;
+          const edgeDist = Math.min(u, 1 - u, v, 1 - v); // 0 at the true footprint edge, up to 0.5 at dead center
+          const norm = Math.min(1, edgeDist * 2);
+          const dome = norm * norm * (3 - 2 * norm); // smoothstep — rounded profile, not a flat-topped mesa
+          const idxv = vj * VX + vi;
+          Y[idxv] = Math.max(0, dome * peakHeight + roughDisp(u, v) * dome);
+        }
+
+        // Carve the entrance — a straightforward drop to ~ground level
+        // within mouthRect, same as cutting a doorway into a real boulder's
+        // face; a thin blended collar around it keeps the cut edge from
+        // being a single razor-sharp ring of triangles.
+        if (mouthRect) {
+          for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) {
+            const u = vi / CX, v = vj / CZ;
+            const inU = u >= mouthRect.u0 && u <= mouthRect.u1;
+            const nearV = Math.max(0, (v - mouthRect.v0) / (1 - mouthRect.v0));
+            if (inU && nearV > 0) {
+              const idxv = vj * VX + vi;
+              Y[idxv] *= Math.max(0, 1 - nearV * 1.6);
+            }
+          }
+        }
+
+        const positions = [];
+        for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) positions.push((vi / CX) * colsTiles, Y[vj * VX + vi], (vj / CZ) * rowsTiles);
+        const idx = [];
+        for (let cj = 0; cj < CZ; cj++) for (let ci = 0; ci < CX; ci++) {
+          const v00 = cj * VX + ci, v10 = cj * VX + ci + 1, v01 = (cj + 1) * VX + ci, v11 = (cj + 1) * VX + ci + 1;
+          idx.push(v00, v01, v11, v00, v11, v10);
+        }
+        return { positions, idx, vertexCount: VX * VZ };
+      }
+
+      // Animal dens: a single rounded lump over a den's whole multi-tile
+      // footprint, with a hole cut into one side — see buildDenRockMoundGeo
+      // above for the shape itself; this just places one per den (sunk
+      // slightly into the ground) and merges them into one mesh.
       function buildAnimalDenMeshes(zScene, zGrid, dens, mapId) {
         if (!dens || !dens.length) return;
-        const DEN_HEIGHT = 2.4, DEN_SINK = 0.5;
-        const MOUTH_U0 = 0.3, MOUTH_U1 = 0.7, MOUTH_V1 = 0.65;
+        const DEN_PEAK_HEIGHT = 2.0, DEN_SINK = 0.5;
+        const MOUTH_U0 = 0.3, MOUTH_U1 = 0.7, MOUTH_V0 = 0.6;
         const pos = [], idx = []; let vi = 0;
-        const addFlatQuad = (p00, p10, p01, p11) => {
-          const base = vi;
-          pos.push(p00.x, p00.y, p00.z, p10.x, p10.y, p10.z, p01.x, p01.y, p01.z, p11.x, p11.y, p11.z);
-          idx.push(base, base + 2, base + 3, base, base + 3, base + 1);
-          vi += 4;
-        };
+        let denSalt = 0;
         for (const den of dens) {
           const w = den.w || 1, h = den.h || 1;
           const centerCol = den.x + Math.floor(w / 2), centerRow = den.y + Math.floor(h / 2);
           const elevTier = zGrid?.[centerRow]?.[centerCol]?.elevTier || 0;
-          const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT;
-          const x0 = den.x, x1 = den.x + w, z0 = den.y, z1 = den.y + h;
-          const yBase = groundY - DEN_SINK, yTop = groundY + DEN_HEIGHT;
-          addFlatQuad({ x: x1, y: yBase, z: z0 }, { x: x0, y: yBase, z: z0 }, { x: x1, y: yTop, z: z0 }, { x: x0, y: yTop, z: z0 }); // north
-          addFlatQuad({ x: x1, y: yBase, z: z1 }, { x: x1, y: yBase, z: z0 }, { x: x1, y: yTop, z: z1 }, { x: x1, y: yTop, z: z0 }); // east
-          addFlatQuad({ x: x0, y: yBase, z: z0 }, { x: x0, y: yBase, z: z1 }, { x: x0, y: yTop, z: z0 }, { x: x0, y: yTop, z: z1 }); // west
-          addFlatQuad({ x: x0, y: yTop, z: z0 }, { x: x1, y: yTop, z: z0 }, { x: x0, y: yTop, z: z1 }, { x: x1, y: yTop, z: z1 }); // top
-          // South face: a frame around a plain rectangular mouth gap.
-          const xm0 = x0 + (x1 - x0) * MOUTH_U0, xm1 = x0 + (x1 - x0) * MOUTH_U1;
-          const ym1 = yBase + (yTop - yBase) * MOUTH_V1;
-          addFlatQuad({ x: x0, y: yBase, z: z1 }, { x: xm0, y: yBase, z: z1 }, { x: x0, y: yTop, z: z1 }, { x: xm0, y: yTop, z: z1 }); // left strip
-          addFlatQuad({ x: xm1, y: yBase, z: z1 }, { x: x1, y: yBase, z: z1 }, { x: xm1, y: yTop, z: z1 }, { x: x1, y: yTop, z: z1 }); // right strip
-          addFlatQuad({ x: xm0, y: ym1, z: z1 }, { x: xm1, y: ym1, z: z1 }, { x: xm0, y: yTop, z: z1 }, { x: xm1, y: yTop, z: z1 }); // strip above the hole
+          const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT - DEN_SINK;
+          const mound = buildDenRockMoundGeo(w, h, DEN_PEAK_HEIGHT, (denSalt += 97), { u0: MOUTH_U0, u1: MOUTH_U1, v0: MOUTH_V0 });
+          const base = vi;
+          for (let p = 0; p < mound.vertexCount; p++) {
+            pos.push(den.x + mound.positions[p * 3], groundY + mound.positions[p * 3 + 1], den.y + mound.positions[p * 3 + 2]);
+          }
+          for (const i of mound.idx) idx.push(base + i);
+          vi += mound.vertexCount;
         }
         if (!idx.length) return;
-        const mat = new THREE.MeshBasicMaterial({ color: 0x0a0a0a, side: THREE.DoubleSide });
+        const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide });
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
         geo.computeVertexNormals();
         const mesh = new THREE.Mesh(geo, mat);
+        mesh.receiveShadow = true;
         zScene.add(mesh);
         _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.ROCK));
         mesh.userData.cameraObstacle = true;
-        console.log(`%c[zone:${mapId}] animal den placeholders built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
+        console.log(`%c[zone:${mapId}] animal den rock mounds built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
+      }
+
+      // Root Totems (see wilderness-map-generator.js's placeRootTotems) — a
+      // simple carved-pole placeholder mesh (pole + a few rings + a glowing
+      // cap) marking each zone's permanent respawn checkpoint. Purely a
+      // visual landmark; the actual nearest-totem lookup on death reads
+      // zoneData.rootTotems directly (see respawnPlayer/nearestRootTotemFor),
+      // not this mesh.
+      function buildRootTotemMeshes(zScene, zGrid, totems, mapId) {
+        if (!totems || !totems.length) return;
+        const poleMat = new THREE.MeshBasicMaterial({ color: 0x5b3a22 });
+        const bandMat = new THREE.MeshBasicMaterial({ color: 0x9a6a35 });
+        const glowMat = new THREE.MeshBasicMaterial({ color: 0x7fe7c4 });
+        const group = new THREE.Group();
+        for (const totem of totems) {
+          const elevTier = zGrid?.[totem.y]?.[totem.x]?.elevTier || 0;
+          const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT;
+          const cx = totem.x + 0.5, cz = totem.y + 0.5;
+          const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 2.6, 8), poleMat);
+          pole.position.set(cx, groundY + 1.3, cz);
+          group.add(pole);
+          for (let i = 0; i < 3; i++) {
+            const band = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.07, 6, 12), bandMat);
+            band.rotation.x = Math.PI / 2;
+            band.position.set(cx, groundY + 0.55 + i * 0.75, cz);
+            group.add(band);
+          }
+          const glow = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), glowMat);
+          glow.position.set(cx, groundY + 2.75, cz);
+          group.add(glow);
+        }
+        zScene.add(group);
+        console.log(`%c[zone:${mapId}] root totems built: ${totems.length}`, 'color:#22c55e;font-weight:bold');
+        return group;
       }
 
       // Waterwall curtains: an animated vertical water sheet wherever a river
@@ -25481,6 +25658,62 @@
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
       });
+
+      // Local Save Folder settings row — see docs/js/local-save-folder.js.
+      // window.LocalSaveFolder owns all the actual folder-handle/IndexedDB/
+      // File System Access API work; this just renders its status and
+      // wires the buttons.
+      (function initLocalSaveFolderSettings() {
+        const row = document.getElementById('localSaveFolderRow');
+        if (!row || !window.LocalSaveFolder) return;
+        const statusEl = document.getElementById('localSaveFolderStatus');
+        const chooseBtn = document.getElementById('localSaveFolderChooseBtn');
+        const changeBtn = document.getElementById('localSaveFolderChangeBtn');
+        const reconnectBtn = document.getElementById('localSaveFolderReconnectBtn');
+        const saveNowBtn = document.getElementById('localSaveFolderSaveNowBtn');
+        const loadBtn = document.getElementById('localSaveFolderLoadBtn');
+
+        function render(status) {
+          if (!status.supported) {
+            statusEl.textContent = 'Not supported in this browser (Chrome/Edge only).';
+            [chooseBtn, changeBtn, reconnectBtn, saveNowBtn, loadBtn].forEach(b => b.style.display = 'none');
+            return;
+          }
+          chooseBtn.style.display = (status.state === 'not-configured' || status.state === 'error') ? '' : 'none';
+          changeBtn.style.display = status.folderName ? '' : 'none';
+          reconnectBtn.style.display = status.state === 'needs-permission' ? '' : 'none';
+          saveNowBtn.style.display = status.state === 'ready' ? '' : 'none';
+          loadBtn.style.display = status.state === 'ready' ? '' : 'none';
+          if (status.state === 'ready') {
+            const when = status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleTimeString() : 'never';
+            statusEl.textContent = `Saving to "${status.folderName}" — last synced ${when}.`;
+          } else if (status.state === 'needs-permission') {
+            statusEl.textContent = `Folder "${status.folderName}" needs permission again this session.`;
+          } else if (status.state === 'error') {
+            statusEl.textContent = 'Error: ' + (status.lastError || 'unknown');
+          } else {
+            statusEl.textContent = 'No folder chosen yet.';
+          }
+        }
+
+        window.LocalSaveFolder.onChange(render);
+        render(window.LocalSaveFolder.getStatus());
+
+        chooseBtn.addEventListener('click', () => window.LocalSaveFolder.chooseFolder());
+        changeBtn.addEventListener('click', () => window.LocalSaveFolder.changeFolder());
+        reconnectBtn.addEventListener('click', () => window.LocalSaveFolder.reconnect());
+        saveNowBtn.addEventListener('click', async () => {
+          const status = await window.LocalSaveFolder.syncNow();
+          showToast(status.lastError ? ('Local save failed: ' + status.lastError) : 'Saved to local folder.', !status.lastError);
+        });
+        loadBtn.addEventListener('click', async () => {
+          if (!confirm('Load the save from your local folder? This overwrites your current browser save and reloads the page.')) return;
+          const result = await window.LocalSaveFolder.loadFromFolder();
+          showToast(result.message, result.ok);
+          if (result.ok) location.reload();
+        });
+      })();
+
       const settingShowHitboxesEl = document.getElementById('settingShowHitboxes');
       settingShowHitboxesEl.checked = s_showHitboxes;
       settingShowHitboxesEl.addEventListener('change', e => {
@@ -26538,6 +26771,11 @@
         if (Math.floor(previousHour) !== Math.floor(currentHour)) {
           updateRainState();
           if (Math.floor(currentHour) === MORNING_HOUR) { tickCropDay(); checkForMajorStorm(); worldObjectMorningTick(); }
+          // Cheap once-per-in-game-hour flush (~every 12 real seconds at the
+          // default DAY_LENGTH_SECONDS) so a crash/force-close between day
+          // rollovers still only loses a few minutes of in-game time
+          // instead of the whole session — see _saveWorldCalendar.
+          _saveWorldCalendar();
         }
       }
 
@@ -26558,6 +26796,7 @@
         respawnAllZoneBerries();
         respawnAllZoneTreasure();
         tickFelledTreeRegrowth();
+        _saveWorldCalendar();
       }
 
       // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
@@ -26583,6 +26822,7 @@
         player.stamina = player.maxStamina;
         const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
         lastActionMessage = msg;
+        _saveWorldCalendar();
         return { ok: true, message: msg };
       }
 
@@ -27996,6 +28236,7 @@
         calendar.rainStrength = 2;
         calendar.nextRainWindows = [{ start: 8, end: 14, strength: 2 }];
         calendar.lastRainDay = 1;
+        _saveWorldCalendar();
         Object.keys(inventory).forEach(key => { delete inventory[key]; });
         Object.assign(inventory, { ...STARTING_INVENTORY });
         clearPlacedProcessingFurniture();
@@ -28022,9 +28263,12 @@
         // Reset equipment to defaults
         packClothing = [];
         Object.keys(equipmentSlots).forEach(k => { equipmentSlots[k] = null; });
-        if (gearInventory?.tools?.bronzehoe)  equipmentSlots.hoe    = 'bronzehoe';
-        if (gearInventory?.tools?.pickshovel) equipmentSlots.shovel = 'pickshovel';
-        if (gearInventory?.tools?.hatchet)    equipmentSlots.weapon = 'hatchet';
+        if (gearInventory?.tools?.hoe_nativeCopper)      equipmentSlots.hoe    = 'hoe_nativeCopper';
+        else if (gearInventory?.tools?.bronzehoe)        equipmentSlots.hoe    = 'bronzehoe';
+        if (gearInventory?.tools?.pickshovel_nativeCopper) equipmentSlots.shovel = 'pickshovel_nativeCopper';
+        else if (gearInventory?.tools?.pickshovel)       equipmentSlots.shovel = 'pickshovel';
+        if (gearInventory?.tools?.hatchet_nativeCopper)  equipmentSlots.weapon = 'hatchet_nativeCopper';
+        else if (gearInventory?.tools?.hatchet)          equipmentSlots.weapon = 'hatchet';
         if (gearInventory?.whistles?.length)  equipmentSlots.whistle = gearInventory.whistles[0].id;
         rebuildToolMeshes();
         refreshWeaponSwitchBtn();
@@ -28867,8 +29111,12 @@
 
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
       // Safety net for any inventory/pack change not already covered by an
-      // explicit saveMemberWorldData() call above.
-      window.addEventListener('beforeunload', () => { try { saveMemberWorldData(); } catch {} });
+      // explicit saveMemberWorldData() call above. Also flushes the
+      // in-progress time-of-day (advanceDay/sleepInBed already save on their
+      // own day rollovers, but this catches whatever time01 progress
+      // happened since the last one, so closing mid-afternoon doesn't roll
+      // back to that morning next session).
+      window.addEventListener('beforeunload', () => { try { saveMemberWorldData(); _saveWorldCalendar(); } catch {} });
       fitToAspect();
       resizeCanvas();
       refreshActionBar();
@@ -28892,6 +29140,15 @@
       let gameStarted = false;
 
       async function spawnPlayerAvatar(playerData) {
+        // Restore this world's saved date/time/weather (see
+        // _loadWorldCalendar/_saveWorldCalendar) before anything reads
+        // calendar.day — checkTothalShift() below derives the current
+        // Tothal year from it, so this has to land first or the shift check
+        // runs against the just-reset "Day 1" default instead of wherever
+        // the world actually left off.
+        const _savedCalendar = _loadWorldCalendar();
+        if (_savedCalendar) Object.assign(calendar, _savedCalendar);
+
         // Fire-and-forget: the Tothal Shift at world start (or on any missed
         // year since last played) can take a few seconds across all four
         // zones, but nothing here needs to block on it — a zone only needs
@@ -29043,9 +29300,12 @@
           }
         }
         // Set default equipment slot assignments
-        if (gearInventory.tools.bronzehoe)  equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
-        if (gearInventory.tools.pickshovel) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
-        if (gearInventory.tools.hatchet)    equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
+        if (gearInventory.tools.hoe_nativeCopper)      equipmentSlots.hoe    = equipmentSlots.hoe    || 'hoe_nativeCopper';
+        else if (gearInventory.tools.bronzehoe)        equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
+        if (gearInventory.tools.pickshovel_nativeCopper) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel_nativeCopper';
+        else if (gearInventory.tools.pickshovel)       equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
+        if (gearInventory.tools.hatchet_nativeCopper)  equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet_nativeCopper';
+        else if (gearInventory.tools.hatchet)          equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
         if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
         // A cutscene preview's ephemeral profile can inherit gearInventory
         // (and an already-equipped whistle) straight from the real local
