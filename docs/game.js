@@ -151,6 +151,9 @@
         if (targetPanel === 'tasks') renderTasksPanel();
         if (targetPanel === 'relationships') renderRelationshipsPanel();
         auditInventorySizing();
+        // Gives a controller (which has no native Tab/click) a starting focus
+        // point to drive with the d-pad — see cycleMenuTab/moveMenuFocus.
+        document.querySelector(`.mp-tab[data-mpanel="${targetPanel}"]`)?.focus();
       }
       function closeMenu() {
         menuOpen = false;
@@ -200,6 +203,43 @@
           switchMenuPanel(id);
         });
       });
+
+      // ── Controller menu navigation ──────────────────────────
+      // Mouse/touch clicks the tabs and panes directly, and keyboard already
+      // gets free Tab/Enter navigation over these real DOM buttons once the
+      // keydown handler below returns early on menuOpen. The Gamepad API has
+      // neither — it never dispatches key/click events — so without this a
+      // controller could open the menu (see the Button9 handling in
+      // pollControllerInput) and then do nothing inside it. D-pad left/right
+      // cycles tabs, up/down walks focusable controls in the active pane,
+      // and A/B activate/back the same way they do everywhere else.
+      function menuTabList() {
+        return Array.from(document.querySelectorAll('.mp-tab')).filter(t => t.offsetParent !== null);
+      }
+      function cycleMenuTab(dir) {
+        const tabs = menuTabList();
+        if (!tabs.length) return;
+        const idx = Math.max(0, tabs.findIndex(t => t.classList.contains('active')));
+        const next = tabs[(idx + dir + tabs.length) % tabs.length];
+        switchMenuPanel(next.dataset.mpanel);
+        next.focus();
+      }
+      function menuFocusables() {
+        const scope = document.querySelector('.mp-pane.active') || menuPanel;
+        return Array.from(scope.querySelectorAll('button, select, input, a[href], [tabindex]:not([tabindex="-1"])'))
+          .filter(el => el.offsetParent !== null && !el.disabled);
+      }
+      function moveMenuFocus(dir) {
+        const focusables = menuFocusables();
+        if (!focusables.length) return;
+        const idx = focusables.indexOf(document.activeElement);
+        const next = focusables[idx === -1 ? (dir > 0 ? 0 : focusables.length - 1) : (idx + dir + focusables.length) % focusables.length];
+        next.focus();
+      }
+      function activateMenuFocus() {
+        const el = document.activeElement;
+        if (el && menuPanel.contains(el)) el.click();
+      }
       // Close button
       const mpClose = document.getElementById('mpClose');
       if (mpClose) mpClose.addEventListener('click', closeMenu);
@@ -29071,6 +29111,28 @@
         if (ry >= axisPress) down.add('RightStickDown');
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
         if (heldShift) controllerLookActive = false;
+        // Menu access: none of the actions above are user-rebindable (same
+        // as Escape/M on the keyboard, which are hardcoded specials too), so
+        // these piggyback unused/otherwise-suppressed-while-menuOpen buttons
+        // instead of taking a slot in the bindable actions list. Start
+        // (Button9) opens/closes the menu from anywhere; once it's open, B
+        // (Button1, normally dodge — already a no-op while menuOpen) and
+        // Select (Button8, unbound by default) both back out, and the d-pad
+        // (Button12-15, normally action5-8 — also a no-op while menuOpen)
+        // drives cycleMenuTab/moveMenuFocus so a pad with no keyboard can
+        // actually use what it opened.
+        const pressed = button => down.has(button) && !gamepadState.previous.has(button);
+        if (pressed('Button9') && !dialogueOpen && !fishingMinigame?.active) {
+          menuOpen ? closeMenu() : openMenu();
+        }
+        if (menuOpen) {
+          if (pressed('Button1') || pressed('Button8')) closeMenu();
+          if (pressed('Button14')) cycleMenuTab(-1);
+          if (pressed('Button15')) cycleMenuTab(1);
+          if (pressed('Button12')) moveMenuFocus(-1);
+          if (pressed('Button13')) moveMenuFocus(1);
+          if (pressed('Button0')) activateMenuFocus();
+        }
         for (const button of down) {
           if (gamepadState.previous.has(button) || button === heldShift?.button) continue;
           const actionId = getActionForButton('controller', button, heldShift);

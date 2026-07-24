@@ -1578,6 +1578,16 @@
     }
     .mp-tab:hover { color: var(--text); }
     .mp-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    /* Visible focus ring for controller d-pad navigation (see cycleMenuTab/
+       moveMenuFocus in game.js) — mouse/touch never focuses these, so this
+       only shows up for keyboard-Tab and controller nav, which is the point. */
+    #menuPanel button:focus-visible,
+    #menuPanel select:focus-visible,
+    #menuPanel input:focus-visible,
+    #menuPanel a:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
     .mp-ctrls { display: flex; align-items: center; gap: calc(0.08 * var(--col)); padding: 0; flex-shrink: 0; }
     .mp-ctrl-btn {
       width: calc(0.56 * var(--row)); height: calc(0.56 * var(--row)); border-radius: calc(0.14 * var(--row));
