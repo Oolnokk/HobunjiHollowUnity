@@ -3358,6 +3358,42 @@ window.SCRATCHBONES_CONFIG = {
             "volume": 0.9,
             "pitch": 0.95
           },
+          "fishCast": {
+            "url": "assets/audio/sfx/farming/sfx_fish_cast.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_waterstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
+            ],
+            "volume": 0.9,
+            "pitch": 0.9
+          },
+          "fishBite": {
+            "url": "assets/audio/sfx/farming/sfx_fish_bite.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_waterstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
+            ],
+            "volume": 1,
+            "pitch": 0.85
+          },
+          "fishMiss": {
+            "url": "assets/audio/sfx/farming/sfx_fish_miss.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_waterstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
+            ],
+            "volume": 0.8,
+            "pitch": 0.55
+          },
           "processStart": {
             "url": "assets/audio/sfx/processing/sfx_process_start.mp3",
             "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_start.wav",

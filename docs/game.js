@@ -13091,6 +13091,7 @@
             const persisted = _zoneReagentPersist.get(mapId);
             if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
             refreshItemScroll();
+            playObjectSfx(objectSfxConfig().harvest);
             return { ok: true, message: 'Picked ' + def.icon + ' ' + def.label + '.' };
           },
         };
@@ -13353,6 +13354,7 @@
             const persisted = _zoneBerryPersist.get(mapId);
             if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
             refreshItemScroll();
+            playObjectSfx(objectSfxConfig().harvest);
             return { ok: true, message: 'Picked ' + (fruitDef?.label || berryKey) + seedMsg };
           },
         };
@@ -19787,6 +19789,7 @@
           { x: playerMesh.position.x, y: playerMesh.position.y, z: playerMesh.position.z },
           anchorWorld
         );
+        playObjectSfx(objectSfxConfig().fishCast);
         fishingOverlayEl.innerHTML = '';
         fishingEls = null;
         fishingOverlayEl.classList.add('open');
@@ -19860,6 +19863,14 @@
         if (!fm) return;
         if (fm.phase === 'bite') { beginFishingRing(fm); return; }
         if (fm.phase === 'active') { fireFishingBridge(); return; }
+        // The catch "showoff" view (beginFishCatchView) previously only
+        // dismissed via a pointerup listener on #fcvContinueBtn — keyboard
+        // (Space/Enter/E) and gamepad (interact/action1) both already route
+        // into fishingPrimaryAction for every other phase (see the keydown
+        // handler and runInputAction), but this phase fell through as a
+        // no-op, leaving controller/keyboard players stuck unable to
+        // continue without a mouse/touch tap.
+        if (fm.phase === 'caught') { continueFromFishCatch(); return; }
       }
 
       // The dynamic action-bar buttons (btnAction1-3/btnItemAction1-2) already
@@ -19974,6 +19985,7 @@
           fm.messageType = 'good';
           lastActionMessage = fm.message;
           awardToolUseMasteryXp('harpoon');
+          playWeaponSlashSfx();
           beginFishCatchView(fm, stars);
           return;
         }
@@ -19982,6 +19994,7 @@
         // fishing the same cast indefinitely. Now a single escape just
         // ends the round and drops back to normal gameplay.
         fm.resolved = true;
+        playObjectSfx(objectSfxConfig().fishMiss);
         showToast('The fish got away!', false);
         closeFishingMinigame();
       }
@@ -20182,6 +20195,7 @@
             fm.phaseTimer = 0;
           } else if (fm.phase === 'waiting' && fm.phaseTimer >= fm.biteAt) {
             spawnFishingBiteSplash(fm.anchorWorld);
+            playObjectSfx(objectSfxConfig().fishBite);
             fm.phase = 'bite';
           }
           renderFishingOverlay();

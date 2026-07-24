@@ -45,6 +45,9 @@ silent here for the same reason plus one more: they already have their own
 dedicated `weaponSlash`/`creatureClawHit` sfx (see `audio.combatSfx`). If
 you're adding a new attack type, call `showToast(msg, ok, true)` (the 3rd
 `silent` argument) for its per-swing result, same as the existing ones.
+A successful fishing spear catch reuses this same `weaponSlash` cue
+(`playWeaponSlashSfx()`) rather than a new `objectSfx` entry — a landed
+spear is a landed hit, same sound as landing any other weapon strike.
 
 ## What to get, and where it goes
 
@@ -59,8 +62,11 @@ longer starts to feel sluggish.
 | Menu button press | `sfx/ui/sfx_ui_click.mp3` | A very short, quiet, unobtrusive UI tick. Only plays inside the tabbed main menu — never in gameplay. | generated tone |
 | Action blocked/failed | `sfx/ui/sfx_ui_error.mp3` | A short, mild "that didn't work" blip — not harsh or alarming, this covers routine stuff like "no seeds left" as often as real mistakes. | generated tone |
 | Digging | `sfx/farming/sfx_dig.mp3` | A shovel/pick biting into dirt — a heavier, louder impact than a footstep, not just a step sample played as-is. | real gravel-step recordings, louder + pitched down |
-| Harvesting/picking a crop | `sfx/farming/sfx_harvest.mp3` | A quick pluck/snap through leaves and stems — louder than an ordinary footstep. | real grass-step recordings, louder |
+| Harvesting/picking a crop, wild plant, or berry | `sfx/farming/sfx_harvest.mp3` | A quick pluck/snap through leaves and stems — louder than an ordinary footstep. Shared by farm crops, wilderness reagent plants, and wild berry bushes — all three are the same gesture. | real grass-step recordings, louder |
 | Cliff-climb stagger | `sfx/farming/sfx_climb_step.mp3` | A very low, heavy scuff on loose rock — one per scripted hop while scaling a cliff face, distinct from a normal footstep. | real gravel-step recordings, pitched way down |
+| Casting the fishing line | `sfx/farming/sfx_fish_cast.mp3` | A loud splash/plop — bait hitting the water. | real water-step recordings, louder |
+| Fish bites (bubbles rise) | `sfx/farming/sfx_fish_bite.mp3` | An even bigger splash than the cast — the moment a bite becomes reactable. | real water-step recordings, louder + lower |
+| Fish gets away | `sfx/farming/sfx_fish_miss.mp3` | A low, disappointed splash — the spear missed or the fish escaped. Plays alongside the generic error blip. | real water-step recordings, low-pitched |
 | Starting to process an aging batch | `sfx/processing/sfx_process_start.mp3` | A mechanical engage/click — the moment an Aging Barrel or Aging Vase is loaded and starts its multi-day timer. | generated tone |
 | Pestle Station finishes | `sfx/processing/sfx_process_pestle.mp3` | Mashing/pounding — mortar-and-pestle thuds. | real gravel-step recordings, pitched down |
 | Hand Squeezer finishes | `sfx/processing/sfx_process_squeezer.mp3` | A press/squeeze — juice being squeezed out. | real water-step recordings, pitched down |
